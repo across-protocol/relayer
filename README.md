@@ -1,2 +1,1 @@
-# relayer-v2
-Relayer bot for across v2
+# Across V2 Relayer
