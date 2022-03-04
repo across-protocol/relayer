@@ -7,8 +7,8 @@ import {
   ethers,
   BigNumber,
   defaultAbiCoder,
-} from "@across-protocol/contracts-v2/test/utils";
-import * as consts from "@across-protocol/contracts-v2/test/constants";
+} from "@across-protocol/contracts-v2";
+import * as consts from "@across-protocol/contracts-v2";
 
 export const spokePoolFixture = hre.deployments.createFixture(async ({ ethers }) => {
   const [deployerWallet, crossChainAdmin, hubPool] = await ethers.getSigners();

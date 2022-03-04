@@ -1,6 +1,6 @@
-import { expect, ethers, Contract, SignerWithAddress } from "@across-protocol/contracts-v2/test/utils";
+import { expect, ethers, Contract, SignerWithAddress } from "@across-protocol/contracts-v2";
 import { spokePoolFixture } from "./fixtures/SpokePool.Fixture";
-import { destinationChainId } from "@across-protocol/contracts-v2/test/constants";
+// import { destinationChainId } from "@across-protocol/contracts-v2/test/constants";
 
 import { SpokePoolEventClient } from "../src/SpokePoolEventClient";
 
