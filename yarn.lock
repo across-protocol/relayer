@@ -2,20 +2,6 @@
 # yarn lockfile v1
 
 
-"@across-protocol/contracts-v2@^0.0.6":
-  version "0.0.6"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-0.0.6.tgz#fc9c91638d1b62fd0803470b12f75e823ad0c93b"
-  integrity sha512-JTAchmcbnR+HdGhFdXB6LBBaOTEQQCieyXcvFYxZ9hohikv8KA4UfebeBnKy7e5yY1HrdjvLT8CQKnlFlszYgA==
-  dependencies:
-    "@defi-wonderland/smock" "^2.0.7"
-    "@eth-optimism/contracts" "^0.5.11"
-    "@openzeppelin/contracts" "^4.4.2"
-    "@uma/common" "^2.17.0"
-    "@uma/contracts-node" "^0.2.0"
-    "@uma/core" "^2.24.0"
-    arb-bridge-eth "^0.7.4"
-    arb-bridge-peripherals "^1.0.5"
-
 "@across-protocol/contracts@^0.1.4":
   version "0.1.4"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-0.1.4.tgz#64b3d91e639d2bb120ea94ddef3d160967047fa5"
@@ -2977,6 +2963,20 @@ acorn@^8.4.1:
   version "8.7.0"
   resolved "https://registry.yarnpkg.com/acorn/-/acorn-8.7.0.tgz#90951fde0f8f09df93549481e5fc141445b791cf"
   integrity sha512-V/LGr1APy+PXIwKebEWrkZPwoeoF+w1jiOBUmuxuiUIaOHtob8Qc9BTrYo7VuI5fR8tqsy+buA2WFooR5olqvQ==
+
+"across-contracts@npm:@across-protocol/contracts-v2@^0.0.17":
+  version "0.0.17"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-0.0.17.tgz#1879ecaf644b1ce690ffda0c912ada31432cae2c"
+  integrity sha512-Nrbd6bon212VboiTOdzM7IBMBpROyXeQgnQrwMO1BZAbhnNRQwxoRvY02DPspbScPF0koW7gfmkElWz6b5Sphg==
+  dependencies:
+    "@defi-wonderland/smock" "^2.0.7"
+    "@eth-optimism/contracts" "^0.5.11"
+    "@openzeppelin/contracts" "^4.4.2"
+    "@uma/common" "^2.17.0"
+    "@uma/contracts-node" "^0.2.0"
+    "@uma/core" "^2.24.0"
+    arb-bridge-eth "^0.7.4"
+    arb-bridge-peripherals "^1.0.5"
 
 address@^1.0.1:
   version "1.1.2"

@@ -18,7 +18,6 @@ export async function run(logger: winston.Logger): Promise<void> {
 }
 
 if (require.main === module) {
-  console.log("I");
   run(Logger)
     .then(() => {
       process.exit(0);
