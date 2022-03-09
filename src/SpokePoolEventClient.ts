@@ -19,7 +19,7 @@ export class SpokePoolEventClient {
 
   getDepositsFromDepositor(depositor: string) {
     return Object.values(this.deposits)
-      .reduce((acc, deposits) => acc.concat(deposits), [])
+      .flat()
       .filter((deposit: Deposit) => deposit.depositor === depositor);
   }
 
@@ -29,13 +29,13 @@ export class SpokePoolEventClient {
 
   getFillsForOriginChain(originChainId: number) {
     return Object.values(this.fills)
-      .reduce((acc, fills) => acc.concat(fills), [])
+      .flat()
       .filter((fill: Fill) => fill.originChainId === originChainId);
   }
 
   getFillsForRelayer(relayer: string) {
     return Object.values(this.fills)
-      .reduce((acc, fills) => acc.concat(fills), [])
+      .flat()
       .filter((fill: Fill) => fill.relayer === relayer);
   }
 
@@ -63,7 +63,5 @@ export class SpokePoolEventClient {
       const augmentedEvent: Deposit = { ...spreadEvent(event), destinationChainId: this.chainId };
       assign(this.fills, [augmentedEvent.destinationChainId], [augmentedEvent]);
     }
-
-    console.log("this.f1ills", this.fills);
   }
 }

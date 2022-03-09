@@ -1,8 +1,6 @@
-import { Deposit } from "../interfaces/SpokePool";
-
 import { Event } from "ethers";
 
-export function spreadEvent(event: Event): Deposit {
+export function spreadEvent(event: Event) {
   const keys = Object.keys(event.args).filter((key: string) => isNaN(+key)); // Extract non-numeric keys.
 
   let returnedObject: any = {};
@@ -13,5 +11,5 @@ export function spreadEvent(event: Event): Deposit {
   if (returnedObject.originChainId) returnedObject.originChainId = Number(returnedObject.originChainId);
   if (returnedObject.repaymentChainId) returnedObject.repaymentChainId = Number(returnedObject.repaymentChainId);
 
-  return returnedObject as Deposit;
+  return returnedObject;
 }

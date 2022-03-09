@@ -3,7 +3,7 @@
 // function respects the destination type; if it is an object then deep merge and if an array effectively will push.
 export function assign(obj: any, keyPath: any[], value: any) {
   const lastKeyIndex = keyPath.length - 1;
-  for (var i = 0; i < lastKeyIndex; ++i) {
+  for (let i = 0; i < lastKeyIndex; ++i) {
     const key = keyPath[i];
     if (!(key in obj)) obj[key] = {};
     obj = obj[key];
