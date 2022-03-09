@@ -48,11 +48,6 @@ describe("SpokePoolEventClient Fills", async function () {
 
     await spokePoolClient.update();
 
-    console.log(
-      "spokePoolClient.getFillsForDestinationChain(originChainId)",
-      spokePoolClient.getFillsForDestinationChain(destinationChainId)
-    );
-
     // Validate associated ChainId Events are correctly returned.
     expect(spokePoolClient.getFillsForDestinationChain(destinationChainId)).to.deep.equal([
       relayer1Chain1_1,
