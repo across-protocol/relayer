@@ -1,7 +1,6 @@
-import { expect, ethers, Contract, SignerWithAddress } from "across-contracts";
-import { spokePoolFixture, deposit, enableRoutes, destinationChainId } from "across-contracts";
+import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
+import { spokePoolFixture, deposit, enableRoutes, destinationChainId } from "./utils";
 
-import { setupTokensForWallet } from "./SpokePoolEventClient.utils";
 import { SpokePoolEventClient } from "../src/SpokePoolEventClient";
 
 let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
@@ -20,7 +19,7 @@ describe("SpokePoolEventClient Deposits", async function () {
       { originToken: erc20.address, destinationChainId: destinationChainId2 },
     ]);
     originChainId = (await ethers.provider.getNetwork()).chainId;
-    spokePoolClient = new SpokePoolEventClient(spokePool, originChainId, 0);
+    spokePoolClient = new SpokePoolEventClient(spokePool, originChainId);
   });
 
   it("Correctly fetches deposit data single depositor, single chain", async function () {

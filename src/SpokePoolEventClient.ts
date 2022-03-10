@@ -1,4 +1,4 @@
-import { spreadEvent, assign, Contract } from "./utils";
+import { spreadEvent, assign, Contract, BigNumber, toBN } from "./utils";
 import { Deposit, Fill, SpeedUp } from "./interfaces/SpokePool";
 
 export class SpokePoolEventClient {
@@ -14,7 +14,7 @@ export class SpokePoolEventClient {
   ) {}
 
   getDepositsForDestinationChain(destinationChainId: number) {
-    return this.deposits[destinationChainId];
+    return this.deposits[destinationChainId] || [];
   }
 
   getDepositsFromDepositor(depositor: string) {
@@ -24,7 +24,7 @@ export class SpokePoolEventClient {
   }
 
   getFillsForDestinationChain(destinationChainId: number) {
-    return this.fills[destinationChainId];
+    return this.fills[destinationChainId] || [];
   }
 
   getFillsForOriginChain(originChainId: number) {
@@ -39,9 +39,18 @@ export class SpokePoolEventClient {
       .filter((fill: Fill) => fill.relayer === relayer);
   }
 
+  getUnfilledAmountForDeposit(deposit: Deposit) {
+    const fills = this.getFillsForOriginChain(deposit.originChainId).filter(
+      (fill) => fill.depositId === deposit.depositId
+    );
+    console.log("fills", fills);
+    if (!fills.length) return deposit.amount; // If no fills then the full amount is remaining.
+    return deposit.amount.sub(fills.reduce((total: BigNumber, fill: Fill) => total.add(fill.fillAmount), toBN(0)));
+  }
+
   async update() {
     const searchConfig = [this.startingBlock, this.endingBlock || (await this.spokePool.provider.getBlockNumber())];
-    if (searchConfig[0] > searchConfig[1]) return;
+    if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
 
     const [depositEvents, speedUpEvents, fillEvents] = await Promise.all([
       await this.spokePool.queryFilter(this.spokePool.filters.FundsDeposited(), ...searchConfig),

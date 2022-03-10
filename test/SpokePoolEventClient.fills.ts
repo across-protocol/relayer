@@ -1,7 +1,5 @@
-import { expect, ethers, Contract, SignerWithAddress, originChainId } from "across-contracts";
-import { spokePoolFixture, fillRelay, enableRoutes } from "across-contracts";
-
-import { setupTokensForWallet } from "./SpokePoolEventClient.utils";
+import { setupTokensForWallet, expect, ethers, Contract, SignerWithAddress } from "./utils";
+import { originChainId, spokePoolFixture, fillRelay, enableRoutes } from "./utils";
 import { SpokePoolEventClient } from "../src/SpokePoolEventClient";
 
 let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
@@ -17,11 +15,8 @@ describe("SpokePoolEventClient Fills", async function () {
     ({ spokePool, erc20, destErc20, weth } = await spokePoolFixture());
     destinationChainId = (await ethers.provider.getNetwork()).chainId;
 
-    await enableRoutes(spokePool, [
-      { originToken: erc20.address, destinationChainId },
-      { originToken: erc20.address, destinationChainId },
-    ]);
-    spokePoolClient = new SpokePoolEventClient(spokePool, destinationChainId, 0);
+    await enableRoutes(spokePool, [{ originToken: erc20.address, destinationChainId }]);
+    spokePoolClient = new SpokePoolEventClient(spokePool, destinationChainId);
   });
 
   it("Correctly fetches fill data single fill, single chain", async function () {
