@@ -15,7 +15,10 @@ describe("SpokePoolEventClient Fills", async function () {
     ({ spokePool, erc20, destErc20, weth } = await spokePoolFixture());
     destinationChainId = (await ethers.provider.getNetwork()).chainId;
 
-    await enableRoutes(spokePool, [{ originToken: erc20.address, destinationChainId }]);
+    await enableRoutes(spokePool, [
+      { originToken: erc20.address, destinationChainId },
+      { originToken: erc20.address, destinationChainId },
+    ]);
     spokePoolClient = new SpokePoolEventClient(spokePool, destinationChainId);
   });
 

@@ -1,27 +1,25 @@
-import { amountToSeedWallets, amountToDeposit, originChainId, destinationChainId } from "@across-protocol/contracts-v2";
-import { Contract, SignerWithAddress, seedWallet, deploySpokePool } from "@across-protocol/contracts-v2";
-import { enableRoutes, ethers } from "@across-protocol/contracts-v2";
+import * as testUtils from "@across-protocol/contracts-v2/dist/test-utils";
+export * from "@across-protocol/contracts-v2/dist/test-utils";
+import { SpyTransport } from "@uma/financial-templates-lib";
 
 import winston from "winston";
 import sinon from "sinon";
 export { winston, sinon };
 
-import { SpyTransport } from "@uma/financial-templates-lib";
-
-export * from "@across-protocol/contracts-v2";
-
 export async function setupTokensForWallet(
-  spokePool: Contract,
-  wallet: SignerWithAddress,
-  tokens: Contract[],
-  weth: Contract,
+  spokePool: testUtils.Contract,
+  wallet: testUtils.SignerWithAddress,
+  tokens: testUtils.Contract[],
+  weth: testUtils.Contract,
   seedMultiplier: number = 1
 ) {
-  await seedWallet(wallet, tokens, weth, amountToSeedWallets.mul(seedMultiplier));
+  await testUtils.seedWallet(wallet, tokens, weth, testUtils.amountToSeedWallets.mul(seedMultiplier));
   await Promise.all(
-    tokens.map((token) => token.connect(wallet).approve(spokePool.address, amountToDeposit.mul(seedMultiplier)))
+    tokens.map((token) =>
+      token.connect(wallet).approve(spokePool.address, testUtils.amountToDeposit.mul(seedMultiplier))
+    )
   );
-  if (weth) await weth.connect(wallet).approve(spokePool.address, amountToDeposit);
+  if (weth) await weth.connect(wallet).approve(spokePool.address, testUtils.amountToDeposit);
 }
 
 export function createSpyLogger() {
@@ -35,12 +33,14 @@ export function createSpyLogger() {
 }
 
 export async function deployAndEnableSpokePool(fromChainId: number = 0, toChainId: number = 0) {
-  const { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await deploySpokePool(ethers);
+  const { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await testUtils.deploySpokePool(
+    testUtils.ethers
+  );
 
-  await spokePool.setChainId(fromChainId == 0 ? originChainId : fromChainId);
-  await enableRoutes(spokePool, [
-    { originToken: erc20.address, destinationChainId: toChainId == 0 ? destinationChainId : toChainId },
-    { originToken: weth.address, destinationChainId: toChainId == 0 ? destinationChainId : toChainId },
+  await spokePool.setChainId(fromChainId == 0 ? testUtils.originChainId : fromChainId);
+  await testUtils.enableRoutes(spokePool, [
+    { originToken: erc20.address, destinationChainId: toChainId == 0 ? testUtils.destinationChainId : toChainId },
+    { originToken: weth.address, destinationChainId: toChainId == 0 ? testUtils.destinationChainId : toChainId },
   ]);
   return { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20 };
 }

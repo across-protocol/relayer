@@ -1,11 +1,10 @@
 import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
-import { spokePoolFixture, deposit, enableRoutes, destinationChainId } from "./utils";
+import { deployAndEnableSpokePool, enableRoutes, deposit, originChainId, destinationChainId } from "./utils";
 
 import { SpokePoolEventClient } from "../src/SpokePoolEventClient";
 
 let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
 let owner: SignerWithAddress, depositor1: SignerWithAddress, depositor2: SignerWithAddress;
-let originChainId: number;
 const destinationChainId2 = destinationChainId + 1;
 
 let spokePoolClient: SpokePoolEventClient;
@@ -13,12 +12,8 @@ let spokePoolClient: SpokePoolEventClient;
 describe("SpokePoolEventClient Deposits", async function () {
   beforeEach(async function () {
     [owner, depositor1, depositor2] = await ethers.getSigners();
-    ({ spokePool, erc20, destErc20, weth } = await spokePoolFixture());
-    await enableRoutes(spokePool, [
-      { originToken: erc20.address, destinationChainId },
-      { originToken: erc20.address, destinationChainId: destinationChainId2 },
-    ]);
-    originChainId = (await ethers.provider.getNetwork()).chainId;
+    ({ spokePool, erc20, destErc20, weth } = await deployAndEnableSpokePool(originChainId));
+    await enableRoutes(spokePool, [{ originToken: erc20.address, destinationChainId: destinationChainId2 }]);
     spokePoolClient = new SpokePoolEventClient(spokePool, originChainId);
   });
 
