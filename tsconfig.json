@@ -6,6 +6,6 @@
     "outDir": "dist",
     "declaration": true
   },
-  "include": ["./scripts", "./test", "./typechain"],
+  "include": ["./scripts", "Relayer.UnfilledDeposits", "./typechain"],
   "files": ["./hardhat.config.ts"]
 }
