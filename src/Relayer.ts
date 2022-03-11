@@ -11,6 +11,7 @@ export class Relayer {
   ) {}
   checkForRelayableRelaysAndRelay() {}
 
+  // Returns all unfilled deposits over all spokePoolClients. Return values include the amount of the unfilled deposit.
   getUnfilledDeposits() {
     let unfilledDeposits: { unfilledAmount: BigNumber; deposit: Deposit }[] = [];
     // Iterate over each chainId and check for unfilled deposits.
