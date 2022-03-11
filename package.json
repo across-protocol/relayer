@@ -2,7 +2,6 @@
   "name": "relayer-v2",
   "version": "1.0.0",
   "description": "Across Protocol V2 Relayer Bot",
-  "main": "index.js",
   "repository": "git@github.com:across-protocol/relayer-v2.git",
   "author": "UMA Team",
   "license": "AGPL-3.0",
@@ -14,10 +13,18 @@
     "@across-protocol/contracts-v2":"^0.0.25",
     "hardhat": "^2.9.0"
   },
+  "files": [
+    "/contracts/**/*.sol",
+    "/artifacts/**/*",
+    "/dist/**/*"
+  ],
+  "types": "dist/index.d.ts",
+  "main": "dist/index.js",
   "scripts": {
-    "prettier": "^2.3.2",
-    "prettier-plugin-solidity": "^1.0.0-beta.13",
-    "pretty-quick": "^2.0.1"
+    "lint": "yarn prettier --list-different",
+    "lint-fix": "yarn prettier --write",
+    "prettier": "prettier .",
+    "test": "hardhat test"
   },
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "^2.0.0",
