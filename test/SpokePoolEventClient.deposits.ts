@@ -9,7 +9,7 @@ const destinationChainId2 = destinationChainId + 1;
 
 let spokePoolClient: SpokePoolEventClient;
 
-describe("SpokePoolEventClient Deposits", async function () {
+describe("SpokePoolEventClient: Deposits", async function () {
   beforeEach(async function () {
     [owner, depositor1, depositor2] = await ethers.getSigners();
     ({ spokePool, erc20, destErc20, weth } = await deployAndEnableSpokePool(originChainId));

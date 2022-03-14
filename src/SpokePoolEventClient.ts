@@ -44,12 +44,27 @@ export class SpokePoolEventClient {
   }
 
   getUnfilledAmountForDeposit(deposit: Deposit) {
-    const fills = this.getFillsForOriginChain(deposit.originChainId).filter(
-      (fill) => fill.depositId === deposit.depositId
-    );
+    const fills = this.getFillsForOriginChain(deposit.originChainId)
+      .filter((fill) => fill.depositId === deposit.depositId) // Only select the associated fill for the deposit.
+      .filter((fill) => this.validateFillForDeposit(fill, deposit)); // Validate that the fill was valid for the deposit.
 
     if (!fills.length) return deposit.amount; // If no fills then the full amount is remaining.
     return deposit.amount.sub(fills.reduce((total: BigNumber, fill: Fill) => total.add(fill.fillAmount), toBN(0)));
+  }
+
+  validateFillForDeposit(fill: Fill, deposit: Deposit) {
+    // TODO: the method below does not consider one component of a fill: the realizedLpFeePct. This should be validated
+    // through a separate async method method.
+    // TODO: This method also does not validate the destinationToken specified in the fill. This needs to be done once
+    // we have implemented the HubPoolEventClient.
+    // Ensure that each deposit element is included with the same value in the fill. Ignore elements in the deposit
+    // that are not included in the fill, such as quoteTimeStamp or originToken.
+    let isValid = true;
+    Object.keys(deposit).forEach((key) => {
+      if (fill[key] && fill[key].toString() !== deposit[key].toString()) isValid = false;
+    });
+
+    return isValid;
   }
 
   async update() {

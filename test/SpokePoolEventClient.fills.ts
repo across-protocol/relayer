@@ -1,29 +1,27 @@
 import { setupTokensForWallet, expect, ethers, Contract, SignerWithAddress } from "./utils";
-import { originChainId, spokePoolFixture, fillRelay, enableRoutes } from "./utils";
+import { originChainId, deployAndEnableSpokePool, fillRelay, destinationChainId } from "./utils";
 import { SpokePoolEventClient } from "../src/SpokePoolEventClient";
 
 let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer1: SignerWithAddress, relayer2: SignerWithAddress;
-let destinationChainId: number;
+
 const originChainId2 = originChainId + 1;
 
 let spokePoolClient: SpokePoolEventClient;
 
-describe("SpokePoolEventClient Fills", async function () {
+describe("SpokePoolEventClient: Fills", async function () {
   beforeEach(async function () {
     [owner, depositor, relayer1, relayer2] = await ethers.getSigners();
-    ({ spokePool, erc20, destErc20, weth } = await spokePoolFixture());
-    destinationChainId = (await ethers.provider.getNetwork()).chainId;
+    ({ spokePool, erc20, destErc20, weth } = await deployAndEnableSpokePool(originChainId, destinationChainId));
+    await spokePool.setChainId(destinationChainId); // The spoke pool for a fill should be at the destinationChainId.
 
-    await enableRoutes(spokePool, [
-      { originToken: erc20.address, destinationChainId },
-      { originToken: erc20.address, destinationChainId },
-    ]);
     spokePoolClient = new SpokePoolEventClient(spokePool, destinationChainId);
+
+    await setupTokensForWallet(spokePool, relayer1, [erc20, destErc20], weth, 10);
+    await setupTokensForWallet(spokePool, relayer2, [erc20, destErc20], weth, 10);
   });
 
   it("Correctly fetches fill data single fill, single chain", async function () {
-    await setupTokensForWallet(spokePool, relayer1, [erc20, destErc20], weth, 10);
     const fill1 = await fillRelay(spokePool, erc20, depositor, depositor, relayer1, 0); // 0 deposit ID
     const fill2 = await fillRelay(spokePool, erc20, depositor, depositor, relayer1, 1); // 1 deposit ID
 
@@ -32,8 +30,6 @@ describe("SpokePoolEventClient Fills", async function () {
     expect(spokePoolClient.getFillsForDestinationChain(destinationChainId)).to.deep.equal([fill1, fill2]);
   });
   it("Correctly fetches deposit data multiple fills, multiple chains", async function () {
-    await setupTokensForWallet(spokePool, relayer1, [erc20, destErc20], weth, 10);
-    await setupTokensForWallet(spokePool, relayer2, [erc20, destErc20], weth, 10);
     // Do 6 deposits. 2 for the first depositor on chain1, 1 for the first depositor on chain2, 1 for the second
     // depositor on chain1, and 2 for the second depositor on chain2.
     const relayer1Chain1_1 = await fillRelay(spokePool, erc20, depositor, depositor, relayer1, 0, originChainId);
