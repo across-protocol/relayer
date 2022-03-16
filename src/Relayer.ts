@@ -34,7 +34,7 @@ export class Relayer {
     }
   }
 
-  //TODO: right now this method will fill the whole amount of the relay. Next iteration should consider the wallet balance.
+  // TODO: right now this method will fill the whole amount of the relay. Next iteration should consider the wallet balance.
   fillRelay(
     depositInfo: { unfilledAmount: BigNumber; deposit: Deposit },
     destinationToken: string,
