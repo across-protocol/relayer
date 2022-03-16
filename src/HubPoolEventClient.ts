@@ -16,6 +16,7 @@ export class HubPoolEventClient {
   ) {}
 
   async computeRealizedLpFeePctForDeposit(deposit: Deposit) {
+    // TODO: implement this method.
     return toBNWei(0.1);
   }
 
