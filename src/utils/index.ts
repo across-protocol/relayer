@@ -1,4 +1,4 @@
-export { BigNumber, Signer, Contract, ContractFactory } from "ethers";
+export { BigNumber, Signer, Contract, ContractFactory, Transaction } from "ethers";
 export { getProvider } from "./ProviderUtils";
 export { getSigner } from "./SignerUtils";
 export { spreadEvent } from "./EventUtils";

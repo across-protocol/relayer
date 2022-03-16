@@ -10,7 +10,7 @@ export function buildFillRelayProps(
     depositInfo.deposit.depositor,
     depositInfo.deposit.recipient,
     destinationToken,
-    depositInfo.deposit.amount,
+    depositInfo.deposit.amount, // maxTokensToSend. TODO: update this to be a prop that the caller defines.
     depositInfo.unfilledAmount,
     repaymentChain,
     depositInfo.deposit.originChainId,

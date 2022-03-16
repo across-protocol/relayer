@@ -1,5 +1,5 @@
 import { getContractFactory, expect, ethers, Contract, SignerWithAddress, originChainId } from "./utils";
-import { zeroAddress, randomAddress, fillRelay, destinationChainId, toBN } from "./utils";
+import { zeroAddress, randomAddress, destinationChainId, toBN } from "./utils";
 import { HubPoolEventClient } from "../src/HubPoolEventClient";
 
 let hubPool: Contract, lpTokenFactory: Contract, mockAdapter: Contract;

@@ -19,30 +19,35 @@ export class Relayer {
       a.unfilledAmount.mul(a.deposit.relayerFeePct).lt(b.unfilledAmount.mul(b.deposit.relayerFeePct)) ? 1 : -1
     );
 
-    // Fetch the realizedLpFeePct for each unfilled deposit.
+    // Fetch the realizedLpFeePct for each unfilled deposit. Execute this in parallel as each requires an async call.
     const realizedLpFeePcts = await Promise.all(
       unfilledDeposits.map((deposit) => this.hubPoolClient.computeRealizedLpFeePctForDeposit(deposit.deposit))
     );
 
-    // Iterate over all unfilled deposits. For
+    if (unfilledDeposits.length > 0)
+      this.logger.debug({ at: "Relayer", message: "Filling deposits", number: unfilledDeposits.length });
+    else this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
+    // Iterate over all unfilled deposits. For each unfilled deposit add a fillRelay tx to the multicallBundler.
     for (const [index, unfilledDeposit] of unfilledDeposits.entries()) {
       const destinationToken = this.hubPoolClient.getDestinationTokenForDeposit(unfilledDeposit.deposit);
       this.multicallBundler.addTransaction(this.fillRelay(unfilledDeposit, destinationToken, realizedLpFeePcts[index]));
     }
   }
 
-  async fillRelay(
+  //TODO: right now this method will fill the whole amount of the relay. Next iteration should consider the wallet balance.
+  fillRelay(
     depositInfo: { unfilledAmount: BigNumber; deposit: Deposit },
     destinationToken: string,
     realizedLpFeePct: BigNumber
   ) {
-    this.getSpokePoolForDeposit(depositInfo.deposit).fillRelay(
+    this.logger.debug({ at: "Relayer", message: "Filling deposit", depositInfo, destinationToken, realizedLpFeePct });
+    return this.getDestinationSpokePoolForDeposit(depositInfo.deposit).fillRelay(
       ...buildFillRelayProps(depositInfo, destinationToken, this.repaymentChainId, realizedLpFeePct)
     );
   }
 
-  getSpokePoolForDeposit(deposit: Deposit) {
-    return this.spokePoolEventClients[deposit.originChainId].spokePool;
+  getDestinationSpokePoolForDeposit(deposit: Deposit) {
+    return this.spokePoolEventClients[deposit.destinationChainId].spokePool;
   }
 
   // Returns all unfilled deposits over all spokePoolClients. Return values include the amount of the unfilled deposit.
@@ -67,6 +72,7 @@ export class Relayer {
         unfilledDeposits.push(...unfilledDepositsForDestinationChain.filter((deposit) => deposit.unfilledAmount.gt(0)));
       }
     }
+
     return unfilledDeposits;
   }
 }

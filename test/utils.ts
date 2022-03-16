@@ -1,5 +1,6 @@
 import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 export * from "@across-protocol/contracts-v2/dist/test-utils";
+export * from "@uma/financial-templates-lib";
 import { SpyTransport } from "@uma/financial-templates-lib";
 
 import winston from "winston";
