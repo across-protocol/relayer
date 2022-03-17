@@ -19,14 +19,15 @@ export class Relayer {
       a.unfilledAmount.mul(a.deposit.relayerFeePct).lt(b.unfilledAmount.mul(b.deposit.relayerFeePct)) ? 1 : -1
     );
 
+    if (unfilledDeposits.length > 0)
+      this.logger.debug({ at: "Relayer", message: "Filling deposits", number: unfilledDeposits.length });
+    else this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
+    
     // Fetch the realizedLpFeePct for each unfilled deposit. Execute this in parallel as each requires an async call.
     const realizedLpFeePcts = await Promise.all(
       unfilledDeposits.map((deposit) => this.hubPoolClient.computeRealizedLpFeePctForDeposit(deposit.deposit))
     );
 
-    if (unfilledDeposits.length > 0)
-      this.logger.debug({ at: "Relayer", message: "Filling deposits", number: unfilledDeposits.length });
-    else this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
     
     // Iterate over all unfilled deposits. For each unfilled deposit add a fillRelay tx to the multicallBundler.
     for (const [index, unfilledDeposit] of unfilledDeposits.entries()) {
