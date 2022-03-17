@@ -22,13 +22,12 @@ export class Relayer {
     if (unfilledDeposits.length > 0)
       this.logger.debug({ at: "Relayer", message: "Filling deposits", number: unfilledDeposits.length });
     else this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
-    
+
     // Fetch the realizedLpFeePct for each unfilled deposit. Execute this in parallel as each requires an async call.
     const realizedLpFeePcts = await Promise.all(
       unfilledDeposits.map((deposit) => this.hubPoolClient.computeRealizedLpFeePctForDeposit(deposit.deposit))
     );
 
-    
     // Iterate over all unfilled deposits. For each unfilled deposit add a fillRelay tx to the multicallBundler.
     for (const [index, unfilledDeposit] of unfilledDeposits.entries()) {
       const destinationToken = this.hubPoolClient.getDestinationTokenForDeposit(unfilledDeposit.deposit);
@@ -69,7 +68,7 @@ export class Relayer {
         const unfilledDepositsForDestinationChain = depositsForDestinationChain.map((deposit) => {
           return { unfilledAmount: destinationClient.getUnfilledAmountForDeposit(deposit), deposit };
         });
-        
+
         // Remove any deposits that have no unfilled amount (i.e that have an unfilled amount of 0) and append the
         // remaining deposits to the unfilledDeposits array.
         unfilledDeposits.push(...unfilledDepositsForDestinationChain.filter((deposit) => deposit.unfilledAmount.gt(0)));
