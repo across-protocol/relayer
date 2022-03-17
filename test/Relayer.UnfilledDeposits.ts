@@ -11,7 +11,7 @@ let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let spokePoolClient_1: SpokePoolEventClient, spokePoolClient_2: SpokePoolEventClient;
 let relayer: Relayer;
 
-describe("Relayer Unfilled Deposits", async function () {
+describe("Relayer: Unfilled Deposits", async function () {
   beforeEach(async function () {
     [depositor_1, depositor_2, relayer_1] = await ethers.getSigners();
     // Deploy the two spokePools and their associated tokens. Set the chainId to match to associated chainIds. The first
@@ -27,7 +27,8 @@ describe("Relayer Unfilled Deposits", async function () {
     relayer = new Relayer(
       spyLogger,
       { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
-      0 // MulticallBundler. Update later once this is implemented.
+      null, // HubPoolClient not needed for this set of tests.
+      null // MulticallBundler. Update later once this is implemented.
     );
 
     await setupTokensForWallet(spokePool_1, depositor_1, [erc20_1], null, 10);
@@ -79,5 +80,16 @@ describe("Relayer Unfilled Deposits", async function () {
     expect(fill4.totalFilledAmount).to.equal(deposit1.amount); // should be 100% filled at this point.
     await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update()]);
     expect(relayer.getUnfilledDeposits()).to.deep.equal([{ unfilledAmount: deposit2.amount, deposit: deposit2 }]);
+  });
+  it("Correctly excludes fills that are incorrectly applied to a deposit", async function () {
+    const deposit1 = await deposit(spokePool_1, erc20_1, depositor_1, depositor_1, destinationChainId);
+
+    // Partially fill the deposit, incorrectly by setting the wrong deposit ID.
+    const fill1 = await fillRelay(spokePool_2, erc20_2, depositor_1, depositor_1, relayer_1, 1);
+
+    await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update()]);
+
+    // The deposit should show up as unfilled, since the fill was incorrectly applied to the wrong deposit.
+    expect(relayer.getUnfilledDeposits()).to.deep.equal([{ unfilledAmount: deposit1.amount, deposit: deposit1 }]);
   });
 });
