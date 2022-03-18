@@ -1,4 +1,4 @@
-import { deployAndEnableSpokePool, fillRelay, destinationChainId, originChainId, createSpyLogger } from "./utils";
+import { deploySpokePoolWithTokenAndEnable, fillRelay, destinationChainId, originChainId, createSpyLogger } from "./utils";
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, winston, sinon } from "./utils";
 
 import { SpokePoolEventClient } from "../src/SpokePoolEventClient";
@@ -16,8 +16,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     [depositor_1, depositor_2, relayer_1] = await ethers.getSigners();
     // Deploy the two spokePools and their associated tokens. Set the chainId to match to associated chainIds. The first
     // prop is the chainId set on the spoke pool. The second prop is the chain ID enabled in the route on the spokePool.
-    ({ spokePool: spokePool_1, erc20: erc20_1 } = await deployAndEnableSpokePool(originChainId, destinationChainId));
-    ({ spokePool: spokePool_2, erc20: erc20_2 } = await deployAndEnableSpokePool(destinationChainId, originChainId));
+    ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithTokenAndEnable(originChainId, destinationChainId));
+    ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithTokenAndEnable(destinationChainId, originChainId));
 
     spokePoolClient_1 = new SpokePoolEventClient(spokePool_1, originChainId);
     spokePoolClient_2 = new SpokePoolEventClient(spokePool_2, destinationChainId);

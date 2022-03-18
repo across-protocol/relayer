@@ -2,10 +2,11 @@ import { spreadEvent, assign, Contract, toBNWei, BigNumber, toBN } from "./utils
 import { Deposit, Fill, SpeedUp } from "./interfaces/SpokePool";
 import { destinationChainId } from "../test/utils";
 
+import { lpFeeCalculator } from "@across-protocol/sdk-v2";
+
 export class HubPoolEventClient {
-  private whitelistedRoutes: {
-    [originChainId: number]: { [originToken: string]: { [destinationChainId: string]: string } };
-  } = {};
+  // l1Token -> destinationChainId -> destinationToken
+  private l1TokensToDestinationTokens: { [l1Token: string]: { [destinationChainId: number]: string } } = {};
 
   public firstBlockToSearch: number;
 
@@ -21,11 +22,25 @@ export class HubPoolEventClient {
   }
 
   getDestinationTokenForDeposit(deposit: Deposit) {
-    return this.whitelistedRoutes[deposit.originChainId][deposit.originToken][deposit.destinationChainId];
+    const l1Token = this.getL1TokenForDeposit(deposit);
+    return this.getDestinationTokenForL1TokenAndDestinationChainId(l1Token, deposit.destinationChainId);
   }
 
-  getWhitelistedRoutes() {
-    return this.whitelistedRoutes;
+  getL1TokensToDestinationTokens() {
+    return this.l1TokensToDestinationTokens;
+  }
+
+  getL1TokenForDeposit(deposit: Deposit) {
+    let l1Token = null;
+    Object.keys(this.l1TokensToDestinationTokens).forEach((key) => {
+      if (this.l1TokensToDestinationTokens[key][deposit.originChainId.toString()] === deposit.originToken)
+        l1Token = key;
+    });
+    return l1Token;
+  }
+
+  getDestinationTokenForL1TokenAndDestinationChainId(l1Token: string, destinationChainId: number) {
+    return this.l1TokensToDestinationTokens[l1Token][destinationChainId];
   }
 
   validateFillForDeposit(fill: Fill, deposit: Deposit) {
@@ -36,19 +51,13 @@ export class HubPoolEventClient {
   async update() {
     const searchConfig = [this.firstBlockToSearch, this.endingBlock || (await this.getBlockNumber())];
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
-    const [whitelistRouteEvents] = await Promise.all([
-      await this.hubPool.queryFilter(this.hubPool.filters.WhitelistRoute()),
+    const [PoolRebalanceRouteEvents] = await Promise.all([
+      await this.hubPool.queryFilter(this.hubPool.filters.SetPoolRebalanceRoute()),
     ]);
 
-    for (const event of whitelistRouteEvents) {
+    for (const event of PoolRebalanceRouteEvents) {
       const args = spreadEvent(event);
-      if (args.enableRoute)
-        assign(
-          this.whitelistedRoutes, // Assign to the whitelistedRoutes object.
-          [args.originChainId, args.originToken, args.destinationChainId], // Assign along this path.
-          args.destinationToken // Assign this value.
-        );
-      else delete this.whitelistedRoutes[args.originChainId][args.originToken][args.destinationChainId];
+      assign(this.l1TokensToDestinationTokens, [args.l1Token, args.destinationChainId], args.destinationToken);
     }
   }
 

@@ -1,21 +1,18 @@
-import { deployAndEnableSpokePool, hubPoolFixture, destinationChainId, originChainId, createSpyLogger } from "./utils";
+import { deploySpokePoolWithTokenAndEnable, hubPoolFixture, destinationChainId, originChainId } from "./utils";
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, winston, sinon } from "./utils";
-import { lastSpyLogIncludes } from "./utils";
+import { lastSpyLogIncludes, createSpyLogger } from "./utils";
+import { randomLl1Token } from "./conststants";
 
 import { SpokePoolEventClient } from "../src/SpokePoolEventClient";
 import { HubPoolEventClient } from "../src/HubPoolEventClient";
 import { Relayer } from "../src/Relayer";
 import { MulticallBundler } from "../src/MulticallBundler";
 
-let spokePool_1: Contract,
-  erc20_1: Contract,
-  spokePool_2: Contract,
-  erc20_2: Contract,
-  hubPool: Contract,
-  mockAdapter: Contract;
+let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
+let hubPool: Contract, mockAdapter: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer_signer: SignerWithAddress;
-
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
+
 let spokePoolClient_1: SpokePoolEventClient, spokePoolClient_2: SpokePoolEventClient, hubPoolClient: HubPoolEventClient;
 let relayer: Relayer;
 let multicallBundler: MulticallBundler;
@@ -24,14 +21,20 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   beforeEach(async function () {
     [owner, depositor, relayer_signer] = await ethers.getSigners();
 
-    ({ spokePool: spokePool_1, erc20: erc20_1 } = await deployAndEnableSpokePool(originChainId, destinationChainId));
-    ({ spokePool: spokePool_2, erc20: erc20_2 } = await deployAndEnableSpokePool(destinationChainId, originChainId));
+    ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithTokenAndEnable(
+      originChainId,
+      destinationChainId
+    ));
+    ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithTokenAndEnable(
+      destinationChainId,
+      originChainId
+    ));
 
     ({ hubPool, mockAdapter } = await hubPoolFixture());
 
     await hubPool.setCrossChainContracts(destinationChainId, mockAdapter.address, spokePool_2.address);
-    await hubPool.whitelistRoute(originChainId, destinationChainId, erc20_1.address, erc20_2.address, true);
-    await hubPool.whitelistRoute(destinationChainId, originChainId, erc20_2.address, erc20_1.address, true);
+    await hubPool.setPoolRebalanceRoute(originChainId, randomLl1Token, erc20_1.address);
+    await hubPool.setPoolRebalanceRoute(destinationChainId, randomLl1Token, erc20_2.address);
 
     spokePoolClient_1 = new SpokePoolEventClient(spokePool_1.connect(relayer_signer), originChainId);
     spokePoolClient_2 = new SpokePoolEventClient(spokePool_2.connect(relayer_signer), destinationChainId);
@@ -84,6 +87,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     multicallBundler.clearTransactionQueue();
     await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
     await relayer.checkForUnfilledDepositsAndFill();
+    expect(multicallBundler.transactionCount()).to.equal(0); // no Transactions to send.
     expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
   });
 });

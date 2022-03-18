@@ -1,16 +1,13 @@
 import { getContractFactory, expect, ethers, Contract, SignerWithAddress, originChainId } from "./utils";
 import { zeroAddress, randomAddress, destinationChainId, toBN } from "./utils";
+import { randomLl1Token, randomOriginToken, randomDestinationToken, randomDestinationToken2 } from "./conststants";
 import { HubPoolEventClient } from "../src/HubPoolEventClient";
 
 let hubPool: Contract, lpTokenFactory: Contract, mockAdapter: Contract;
 let owner: SignerWithAddress;
 let hubPoolClient: HubPoolEventClient;
 
-const originToken = randomAddress();
-const destinationToken = randomAddress();
-const destinationToken2 = randomAddress();
-
-describe("HubPoolEventClient: Whitelisted Routes", async function () {
+describe("HubPoolEventClient: Deposit to Destination Token", async function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
 
@@ -28,39 +25,35 @@ describe("HubPoolEventClient: Whitelisted Routes", async function () {
 
   it("Correctly appends whitelisted routes to the client", async function () {
     await hubPoolClient.update();
-    expect(hubPoolClient.getWhitelistedRoutes()).to.deep.equal({});
+    expect(hubPoolClient.getL1TokensToDestinationTokens()).to.deep.equal({});
 
-    await hubPool.whitelistRoute(originChainId, destinationChainId, originToken, destinationToken, true);
+    await hubPool.setPoolRebalanceRoute(destinationChainId, randomLl1Token, randomDestinationToken);
+    await hubPool.setPoolRebalanceRoute(originChainId, randomLl1Token, randomOriginToken);
     await hubPoolClient.update();
-    expect(hubPoolClient.getWhitelistedRoutes()).to.deep.equal({
-      [originChainId]: { [originToken]: { [destinationChainId]: destinationToken } },
+    expect(hubPoolClient.getL1TokensToDestinationTokens()).to.deep.equal({
+      [randomLl1Token]: { [destinationChainId]: randomDestinationToken, [originChainId]: randomOriginToken },
     });
 
-    const deposit = {
+    const depositData = {
       depositId: 0,
       depositor: owner.address,
       recipient: owner.address,
-      originToken,
+      originToken: randomOriginToken,
       amount: toBN(1337),
       originChainId,
       destinationChainId,
       relayerFeePct: toBN(1337),
       quoteTimestamp: 1234,
     };
-    expect(hubPoolClient.getDestinationTokenForDeposit(deposit)).to.equal(destinationToken);
-  });
-  it("Re-whitelisting a route updates the mapping", async function () {
-    await hubPool.whitelistRoute(originChainId, destinationChainId, originToken, destinationToken, true);
-    await hubPool.whitelistRoute(originChainId, destinationChainId, originToken, destinationToken, false);
-    await hubPool.whitelistRoute(originChainId, destinationChainId, originToken, destinationToken2, true);
+    expect(hubPoolClient.getDestinationTokenForDeposit(depositData)).to.equal(randomDestinationToken);
+
+    // Now try changing the destination token. Client should correctly handel this.
+    await hubPool.setPoolRebalanceRoute(destinationChainId, randomLl1Token, randomDestinationToken2);
     await hubPoolClient.update();
-    expect(hubPoolClient.getWhitelistedRoutes()).to.deep.equal({
-      [originChainId]: { [originToken]: { [destinationChainId]: destinationToken2 } },
+    expect(hubPoolClient.getL1TokensToDestinationTokens()).to.deep.equal({
+      [randomLl1Token]: { [destinationChainId]: randomDestinationToken2, [originChainId]: randomOriginToken },
     });
-    // Calling update a second time changes nothing.
-    await hubPoolClient.update();
-    expect(hubPoolClient.getWhitelistedRoutes()).to.deep.equal({
-      [originChainId]: { [originToken]: { [destinationChainId]: destinationToken2 } },
-    });
+
+    expect(hubPoolClient.getDestinationTokenForDeposit(depositData)).to.equal(randomDestinationToken2);
   });
 });
