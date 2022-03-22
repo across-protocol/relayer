@@ -11,7 +11,7 @@ let spokePoolClient: SpokePoolEventClient;
 describe("SpokePoolEventClient: Validate Fill", async function () {
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
-    // Creat two spoke pools: one to act as the source and the other to act as the destination.
+    // Create two spoke pools: one to act as the source and the other to act as the destination.
     ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId));
     ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
     spokePoolClient = new SpokePoolEventClient(spokePool_2, originChainId); // create spoke pool client on the "target" chain.

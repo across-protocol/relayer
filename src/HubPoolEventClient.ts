@@ -73,9 +73,30 @@ export class HubPoolEventClient {
     return this.l1TokensToDestinationTokens[l1Token][destinationChainId];
   }
 
-  validateFillForDeposit(fill: Fill, deposit: Deposit) {
-    // TODO: this method should validate the realizedLpFeePct and the destinationToken for the fill->deposit relationship.
-    return true;
+  async validateFillForDeposit(fill: Fill, deposit: Deposit) {
+    // This method checks that the deposit and fill keys match just like in the SpokePoolEventClient function with the
+    // same name, but additionally validates that the realizedLpFeePct and the destinationToken are set correctly
+    // according to HubPool state such as its poolRebalanceRoutes and liquidity utilization.
+
+    // The following key comparison is the same as in SpokePoolEventClient:
+    let isValid = true;
+    Object.keys(deposit).forEach((key) => {
+      if (fill[key] && fill[key].toString() !== deposit[key].toString()) isValid = false;
+    });
+    if (!isValid) return false;
+
+    // Check realized LP fee %:
+    const expectedFee = await this.computeRealizedLpFeePctForDeposit(deposit);
+    if (!expectedFee.eq(fill.realizedLpFeePct)) return false;
+
+    // Check destination token
+    const l1TokenForDeposit = this.getL1TokenForDeposit(deposit);
+    const expectedDestinationToken = this.getDestinationTokenForL1TokenAndDestinationChainId(
+      l1TokenForDeposit,
+      deposit.destinationChainId
+    );
+    return Boolean(expectedDestinationToken === fill.destinationToken);
+
   }
 
   async update() {

@@ -11,7 +11,7 @@ describe("HubPoolEventClient: Deposit to Destination Token", async function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
 
-    // Deploy minimal hubPool. Dont configure the finder, timer or weth addresses as unrelated for this test file.
+    // Deploy minimal hubPool. Don't configure the finder, timer or weth addresses as unrelated for this test file.
     lpTokenFactory = await (await getContractFactory("LpTokenFactory", owner)).deploy();
     hubPool = await (
       await getContractFactory("HubPool", owner)
