@@ -1,9 +1,9 @@
 import { getContractFactory, expect, ethers, Contract, SignerWithAddress, originChainId } from "./utils";
-import { zeroAddress, randomAddress, destinationChainId, toBN } from "./utils";
-import { randomLl1Token, randomOriginToken, randomDestinationToken, randomDestinationToken2 } from "./conststants";
+import { zeroAddress, destinationChainId, toBN, deployRateModelStore, contractAt } from "./utils";
+import { randomLl1Token, randomOriginToken, randomDestinationToken, randomDestinationToken2 } from "./constants";
 import { HubPoolEventClient } from "../src/HubPoolEventClient";
 
-let hubPool: Contract, lpTokenFactory: Contract, mockAdapter: Contract;
+let hubPool: Contract, lpTokenFactory: Contract, mockAdapter: Contract, rateModelStore: Contract;
 let owner: SignerWithAddress;
 let hubPoolClient: HubPoolEventClient;
 
@@ -20,7 +20,9 @@ describe("HubPoolEventClient: Deposit to Destination Token", async function () {
     mockAdapter = await (await getContractFactory("Mock_Adapter", owner)).deploy();
     await hubPool.setCrossChainContracts(originChainId, mockAdapter.address, zeroAddress);
 
-    hubPoolClient = new HubPoolEventClient(hubPool);
+    ({ rateModelStore } = await deployRateModelStore(owner, [await contractAt("ERC20", owner, randomLl1Token)]));
+
+    hubPoolClient = new HubPoolEventClient(hubPool, rateModelStore);
   });
 
   it("Correctly appends whitelisted routes to the client", async function () {

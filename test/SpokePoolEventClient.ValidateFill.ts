@@ -1,5 +1,5 @@
 import { expect, toBNWei, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
-import { deploySpokePoolWithTokenAndEnable, fillRelay, deposit, originChainId, destinationChainId } from "./utils";
+import { deploySpokePoolWithToken, fillRelay, deposit, originChainId, destinationChainId } from "./utils";
 
 import { SpokePoolEventClient } from "../src/SpokePoolEventClient";
 
@@ -12,8 +12,8 @@ describe("SpokePoolEventClient: Validate Fill", async function () {
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
     // Creat two spoke pools: one to act as the source and the other to act as the destination.
-    ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithTokenAndEnable(originChainId, destinationChainId));
-    ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithTokenAndEnable(destinationChainId, originChainId));
+    ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId));
+    ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
     spokePoolClient = new SpokePoolEventClient(spokePool_2, originChainId); // create spoke pool client on the "target" chain.
 
     await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);

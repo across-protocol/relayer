@@ -3,6 +3,7 @@ export * from "@across-protocol/contracts-v2/dist/test-utils";
 export * from "@uma/financial-templates-lib";
 import { TokenRolesEnum } from "@uma/common";
 import { SpyTransport } from "@uma/financial-templates-lib";
+import { sampleRateModel } from "./constants";
 
 import { SpokePoolEventClient } from "../src/SpokePoolEventClient";
 
@@ -34,7 +35,7 @@ export function createSpyLogger() {
   return { spy, spyLogger };
 }
 
-export async function deploySpokePoolWithTokenAndEnable(
+export async function deploySpokePoolWithToken(
   fromChainId: number = 0,
   toChainId: number = 0,
   enableRoute: boolean = true
@@ -42,6 +43,7 @@ export async function deploySpokePoolWithTokenAndEnable(
   const { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(utils.ethers);
 
   await spokePool.setChainId(fromChainId == 0 ? utils.originChainId : fromChainId);
+
   if (enableRoute)
     await utils.enableRoutes(spokePool, [
       { originToken: erc20.address, destinationChainId: toChainId == 0 ? utils.destinationChainId : toChainId },
@@ -50,13 +52,43 @@ export async function deploySpokePoolWithTokenAndEnable(
   return { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20 };
 }
 
+export async function deployRateModelStore(signer: utils.SignerWithAddress, tokensToAdd: utils.Contract[]) {
+  const rateModelStore = await (await utils.getContractFactory("RateModelStore", signer)).deploy();
+  for (const token of tokensToAdd) await rateModelStore.updateRateModel(token.address, JSON.stringify(sampleRateModel));
+  return { rateModelStore };
+}
+
+export async function deployAndConfigureHubPool(spokePools: { l2ChainId: number; spokePool: utils.Contract }[]) {
+  const fixture = await utils.hubPoolFixture();
+
+  for (const spokePool of spokePools) {
+    await fixture.hubPool.setCrossChainContracts(
+      spokePool.l2ChainId,
+      fixture.mockAdapter.address,
+      spokePool.spokePool.address
+    );
+  }
+
+  return fixture;
+}
+
+export async function enableRoutesOnHubPool(
+  hubPool: utils.Contract,
+  rebalanceRouteTokens: { destinationChainId: number; l1Token: utils.Contract; destinationToken: utils.Contract }[]
+) {
+  for (const tkn of rebalanceRouteTokens) {
+    await hubPool.setPoolRebalanceRoute(tkn.destinationChainId, tkn.l1Token.address, tkn.destinationToken.address);
+    await hubPool.enableL1TokenForLiquidityProvision(tkn.l1Token.address);
+  }
+}
+
 export async function deploySpokePoolForIterativeTest(
   signer: utils.SignerWithAddress,
   mockAdapter: utils.Contract,
   hubPool: utils.Contract,
   desiredChainId: number = 0
 ) {
-  const { spokePool } = await deploySpokePoolWithTokenAndEnable(desiredChainId, 0, false);
+  const { spokePool } = await deploySpokePoolWithToken(desiredChainId, 0, false);
 
   await hubPool.setCrossChainContracts(utils.destinationChainId, mockAdapter.address, spokePool.address);
 
@@ -71,7 +103,7 @@ export async function deploySingleTokenAcrossSetOfChains(
   spokePools: { contract: utils.Contract; chainId: number }[],
 
   hubPool: utils.Contract,
-  associatedL1Token: string
+  associatedL1Token: utils.Contract
 ) {
   // Deploy one token per spoke pool. This of this as deploying USDC on all chains.
   let tokens = [];
@@ -91,9 +123,13 @@ export async function deploySingleTokenAcrossSetOfChains(
       ]);
     }
 
-    await hubPool.setPoolRebalanceRoute(spokePool.chainId, associatedL1Token, tokens[index].address);
+    await hubPool.setPoolRebalanceRoute(spokePool.chainId, associatedL1Token.address, tokens[index].address);
   }
   return tokens;
+}
+
+export async function getLastBlockTime(provider: any) {
+  return (await provider.getBlock(await provider.getBlockNumber())).timestamp;
 }
 
 export async function deployIterativeSpokePoolsAndToken(
@@ -115,11 +151,12 @@ export async function deployIterativeSpokePoolsAndToken(
   // For each count of numTokens deploy a new token. This will also set it as an enabled route over all chains.
   for (let i = 1; i < numTokens + 1; i++) {
     // Create an in incrementing address from 0x0000000000000000000000000000000000000001.
-    const associatedL1Token = utils.ethers.utils.getAddress(
-      utils.ethers.utils.hexZeroPad(utils.ethers.utils.hexValue(i), 20)
-    );
-    if (!l1TokenToL2Tokens[associatedL1Token]) l1TokenToL2Tokens[associatedL1Token] = [];
-    l1TokenToL2Tokens[associatedL1Token] = await deploySingleTokenAcrossSetOfChains(
+    const associatedL1Token = await (
+      await utils.getContractFactory("ExpandedERC20", signer)
+    ).deploy("Yeet Coin L1", "Coin", 18);
+    await associatedL1Token.addMember(TokenRolesEnum.MINTER, signer.address);
+    if (!l1TokenToL2Tokens[associatedL1Token.address]) l1TokenToL2Tokens[associatedL1Token.address] = [];
+    l1TokenToL2Tokens[associatedL1Token.address] = await deploySingleTokenAcrossSetOfChains(
       signer,
       spokePools.map((spokePool, index) => ({ contract: spokePool.spokePool, chainId: index + 1 })),
       hubPool,
@@ -127,4 +164,25 @@ export async function deployIterativeSpokePoolsAndToken(
     );
   }
   return { spokePools, l1TokenToL2Tokens };
+}
+
+export async function addLiquidity(
+  signer: utils.SignerWithAddress,
+  hubPool: utils.Contract,
+  l1Token: utils.Contract,
+  amount: utils.BigNumber
+) {
+  await utils.seedWallet(signer, [l1Token], null, amount);
+  await l1Token.approve(hubPool.address, amount);
+  await hubPool.enableL1TokenForLiquidityProvision(l1Token.address);
+  await hubPool.addLiquidity(l1Token.address, amount);
+}
+
+export async function contractAt(contractName: string, signer: utils.Signer, address: string) {
+  try {
+    const artifactInterface = (await utils.getContractFactory(contractName, signer)).interface;
+    return new utils.Contract(address, artifactInterface, signer);
+  } catch (error) {
+    throw new Error(`Could not find the artifact for ${contractName}! \n${error}`);
+  }
 }

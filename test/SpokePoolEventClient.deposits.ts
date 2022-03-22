@@ -1,5 +1,5 @@
 import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
-import { deploySpokePoolWithTokenAndEnable, enableRoutes, deposit, originChainId, destinationChainId } from "./utils";
+import { deploySpokePoolWithToken, enableRoutes, deposit, originChainId, destinationChainId } from "./utils";
 
 import { SpokePoolEventClient } from "../src/SpokePoolEventClient";
 
@@ -12,7 +12,7 @@ let spokePoolClient: SpokePoolEventClient;
 describe("SpokePoolEventClient: Deposits", async function () {
   beforeEach(async function () {
     [owner, depositor1, depositor2] = await ethers.getSigners();
-    ({ spokePool, erc20, destErc20, weth } = await deploySpokePoolWithTokenAndEnable(originChainId));
+    ({ spokePool, erc20, destErc20, weth } = await deploySpokePoolWithToken(originChainId));
     await enableRoutes(spokePool, [{ originToken: erc20.address, destinationChainId: destinationChainId2 }]);
     spokePoolClient = new SpokePoolEventClient(spokePool, originChainId);
   });

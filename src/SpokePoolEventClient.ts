@@ -72,9 +72,9 @@ export class SpokePoolEventClient {
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
 
     const [depositEvents, speedUpEvents, fillEvents] = await Promise.all([
-      await this.spokePool.queryFilter(this.spokePool.filters.FundsDeposited(), ...searchConfig),
-      await this.spokePool.queryFilter(this.spokePool.filters.RequestedSpeedUpDeposit(), ...searchConfig),
-      await this.spokePool.queryFilter(this.spokePool.filters.FilledRelay(), ...searchConfig),
+      this.spokePool.queryFilter(this.spokePool.filters.FundsDeposited(), ...searchConfig),
+      this.spokePool.queryFilter(this.spokePool.filters.RequestedSpeedUpDeposit(), ...searchConfig),
+      this.spokePool.queryFilter(this.spokePool.filters.FilledRelay(), ...searchConfig),
     ]);
 
     for (const event of depositEvents) {
