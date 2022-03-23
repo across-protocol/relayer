@@ -3,11 +3,8 @@ import { SpokePoolEventClient } from "./SpokePoolEventClient";
 import { HubPoolEventClient } from "./HubPoolEventClient";
 import { MulticallBundler } from "./MulticallBundler";
 import { Deposit } from "./interfaces/SpokePool";
+import { BundleEvaluationBlockNumbers } from "./interfaces/HubPool";
 
-export interface BlockRange {
-  fromBlock: number;
-  toBlock: number;
-}
 // @notice Constructs roots to submit to HubPool on L1
 export class Dataworker {
   // eslint-disable-next-line no-useless-constructor
@@ -18,26 +15,29 @@ export class Dataworker {
     readonly multicallBundler: MulticallBundler | any
   ) {}
 
-  async buildSlowRelayRoot(blockRange: BlockRange) {
+  async buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
     // Grab all deposits from SpokePoolEventClient
     // Grab all fills from SpokePoolEventClient
     // Filter out invalid fills for deposits
     // Filter out fills that fully fill a deposit
     // Group remaining fills by destination chain ID
+    // Order fills by total size
     // Construct leaf for destination chain ID
     // Construct root
   }
 
-  async buildRelayerRefundRoot(blockRange: BlockRange) {
+  async buildRelayerRefundRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
     // Grab all deposits from SpokePoolEventClient
     // Grab all fills from SpokePoolEventClient
     // Filter out invalid fills for deposits
     // Group remaining fills by destination chain ID
+    // Group by refund address
+    // Order fills by total size
     // Construct leaf for destination chain ID
     // Construct root
   }
 
-  async buildPoolRebalanceRoot(blockRange: BlockRange) {
+  async buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
     // Grab all deposits from SpokePoolEventClient
     // Grab all fills from SpokePoolEventClient
     // Filter out invalid fills for deposits
