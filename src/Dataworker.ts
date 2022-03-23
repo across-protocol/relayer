@@ -47,7 +47,10 @@ export class Dataworker {
     // For each L1 token:
     // Sum total relay refund amount ==> netSendAmount
     // Sum total realized LP fee % ==> bundleLpFee
-    // Construct leaf for destination chain ID with fills grouped by L1 token
+    // Construct leaves for destination chain ID with fills grouped by L1 token
+    // If there are too many L1 tokens for a single destination chain ID leaf,
+    //     then split up the L1 tokens across multiple leaves and give each
+    //     a unique groupIndex, starting at 0 and counting up by 1.
     // Construct root
   }
 }
