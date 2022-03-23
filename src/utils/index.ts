@@ -1,4 +1,5 @@
-export { BigNumber, Signer, Contract, ContractFactory, Transaction } from "ethers";
+export { BigNumber, Signer, Contract, ContractFactory, Transaction, utils } from "ethers";
+export type { Block } from "@ethersproject/abstract-provider";
 export { getProvider } from "./ProviderUtils";
 export { getSigner } from "./SignerUtils";
 export { spreadEvent } from "./EventUtils";

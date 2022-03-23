@@ -1,5 +1,5 @@
 import { setupTokensForWallet, expect, ethers, Contract, SignerWithAddress } from "./utils";
-import { originChainId, deployAndEnableSpokePool, fillRelay, destinationChainId } from "./utils";
+import { originChainId, deploySpokePoolWithToken, fillRelay, destinationChainId } from "./utils";
 import { SpokePoolEventClient } from "../src/SpokePoolEventClient";
 
 let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
@@ -12,7 +12,7 @@ let spokePoolClient: SpokePoolEventClient;
 describe("SpokePoolEventClient: Fills", async function () {
   beforeEach(async function () {
     [owner, depositor, relayer1, relayer2] = await ethers.getSigners();
-    ({ spokePool, erc20, destErc20, weth } = await deployAndEnableSpokePool(originChainId, destinationChainId));
+    ({ spokePool, erc20, destErc20, weth } = await deploySpokePoolWithToken(originChainId, destinationChainId));
     await spokePool.setChainId(destinationChainId); // The spoke pool for a fill should be at the destinationChainId.
 
     spokePoolClient = new SpokePoolEventClient(spokePool, destinationChainId);

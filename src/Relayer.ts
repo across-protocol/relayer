@@ -60,15 +60,14 @@ export class Relayer {
       const originClient = this.spokePoolEventClients[originChain];
       for (const destinationChain of chainIds) {
         if (originChain === destinationChain) continue;
-        const destinationClient = this.spokePoolEventClients[destinationChain];
-        const depositsForDestinationChain = originClient.getDepositsForDestinationChain(destinationChain);
         // Find all unfilled deposits for the current loops originChain -> destinationChain. Note that this also
         // validates that the deposit is filled "correctly" for the given deposit information. Additional validation is
         // needed later to verify realizedLpFeePct and the destinationToken that the SpokePoolClient can't validate.
+        const destinationClient = this.spokePoolEventClients[destinationChain];
+        const depositsForDestinationChain = originClient.getDepositsForDestinationChain(destinationChain);
         const unfilledDepositsForDestinationChain = depositsForDestinationChain.map((deposit) => {
           return { unfilledAmount: destinationClient.getUnfilledAmountForDeposit(deposit), deposit };
         });
-
         // Remove any deposits that have no unfilled amount (i.e that have an unfilled amount of 0) and append the
         // remaining deposits to the unfilledDeposits array.
         unfilledDeposits.push(...unfilledDepositsForDestinationChain.filter((deposit) => deposit.unfilledAmount.gt(0)));
