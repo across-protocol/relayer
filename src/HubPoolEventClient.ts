@@ -62,9 +62,9 @@ export class HubPoolEventClient {
 
   getL1TokenForDeposit(deposit: Deposit) {
     let l1Token = null;
-    Object.keys(this.l1TokensToDestinationTokens).forEach((key) => {
-      if (this.l1TokensToDestinationTokens[key][deposit.originChainId.toString()] === deposit.originToken)
-        l1Token = key;
+    Object.keys(this.l1TokensToDestinationTokens).forEach((_l1Token) => {
+      if (this.l1TokensToDestinationTokens[_l1Token][deposit.originChainId.toString()] === deposit.originToken)
+        l1Token = _l1Token;
     });
     return l1Token;
   }
@@ -81,12 +81,12 @@ export class HubPoolEventClient {
   async update() {
     const searchConfig = [this.firstBlockToSearch, this.endingBlock || (await this.getBlockNumber())];
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
-    const [PoolRebalanceRouteEvents, rateModelStoreEvents] = await Promise.all([
+    const [poolRebalanceRouteEvents, rateModelStoreEvents] = await Promise.all([
       this.hubPool.queryFilter(this.hubPool.filters.SetPoolRebalanceRoute(), ...searchConfig),
       this.rateModelStore.queryFilter(this.rateModelStore.filters.UpdatedRateModel(), ...searchConfig),
     ]);
 
-    for (const event of PoolRebalanceRouteEvents) {
+    for (const event of poolRebalanceRouteEvents) {
       const args = spreadEvent(event);
       assign(this.l1TokensToDestinationTokens, [args.l1Token, args.destinationChainId], args.destinationToken);
     }
