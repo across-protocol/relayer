@@ -21,7 +21,7 @@ export class Dataworker {
     // Filter out invalid fills for deposits
     // Filter out fills that fully fill a deposit
     // Group remaining fills by destination chain ID
-    // Order fills by total size
+    // Order fills by remaining fill s ize
     // Construct leaf for destination chain ID
     // Construct root
   }
