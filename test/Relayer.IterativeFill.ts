@@ -1,14 +1,15 @@
 import { hubPoolFixture, deployIterativeSpokePoolsAndToken, createSpyLogger, lastSpyLogIncludes } from "./utils";
 import { expect, deposit, ethers, Contract, getLastBlockTime, contractAt, addLiquidity } from "./utils";
 import { SignerWithAddress, setupTokensForWallet, deployRateModelStore, winston, sinon } from "./utils";
-import { amountToLp } from "./constants";
+import { amountToLp, sampleRateModel } from "./constants";
 
-import { HubPoolEventClient } from "../src/HubPoolEventClient";
+import { HubPoolClient } from "../src/clients/HubPoolClient";
+import { RateModelClient } from "../src/clients/RateModelClient";
 import { Relayer } from "../src/Relayer";
 import { MulticallBundler } from "../src/MulticallBundler";
 
 let relayer_signer: SignerWithAddress, hubPool: Contract, mockAdapter: Contract, rateModelStore: Contract;
-let hubPoolClient: HubPoolEventClient;
+let hubPoolClient: HubPoolClient, rateModelClient: RateModelClient;
 
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
@@ -24,28 +25,33 @@ describe("Relayer: Iterative fill", async function () {
     const [, , depositor] = await ethers.getSigners();
     const numChainsToDeploySpokePoolsTo = 5;
     const numTokensToDeployPerChain = 1;
+
+    ({ rateModelStore } = await deployRateModelStore(relayer_signer, []));
+    hubPoolClient = new HubPoolClient(hubPool);
+    rateModelClient = new RateModelClient(rateModelStore, hubPoolClient);
+    ({ spy, spyLogger } = createSpyLogger());
+    multicallBundler = new MulticallBundler(spyLogger, null); // leave out the gasEstimator for now.
+
     ({ spokePools, l1TokenToL2Tokens } = await deployIterativeSpokePoolsAndToken(
       relayer_signer,
       mockAdapter,
-      hubPool,
+      rateModelClient,
       numChainsToDeploySpokePoolsTo,
       numTokensToDeployPerChain
     ));
+
+    const l1Token = await contractAt("ExpandedERC20", relayer_signer, Object.keys(l1TokenToL2Tokens)[0]);
+
+    await rateModelStore.updateRateModel(l1Token.address, JSON.stringify(sampleRateModel));
+
+    await addLiquidity(relayer_signer, hubPool, l1Token, amountToLp);
+
     let spokePoolEventClients = {};
     spokePools.forEach((spokePool) => {
       spokePoolEventClients[spokePool.spokePoolClient.chainId] = spokePool.spokePoolClient;
     });
 
-    const l1Token = await contractAt("ExpandedERC20", relayer_signer, Object.keys(l1TokenToL2Tokens)[0]);
-
-    // Add liquidity the to hubPool for the L1Token
-    await addLiquidity(relayer_signer, hubPool, l1Token, amountToLp);
-
-    ({ rateModelStore } = await deployRateModelStore(relayer_signer, [l1Token]));
-    hubPoolClient = new HubPoolEventClient(hubPool, rateModelStore);
-    ({ spy, spyLogger } = createSpyLogger());
-    multicallBundler = new MulticallBundler(spyLogger, null); // leave out the gasEstimator for now.
-
+    await updateAllClients();
     relayer = new Relayer(spyLogger, spokePoolEventClients, hubPoolClient, multicallBundler);
 
     let depositCount = 0;
@@ -71,7 +77,7 @@ describe("Relayer: Iterative fill", async function () {
     expect(depositCount).to.equal(20);
 
     // Update all clients and run the relayer. Relayer should fill all 20 deposits.
-    await Promise.all([...spokePools.map((spokePool) => spokePool.spokePoolClient.update()), hubPoolClient.update()]);
+    await updateAllClients();
     await relayer.checkForUnfilledDepositsAndFill();
     expect(multicallBundler.transactionCount()).to.equal(20); // 20 transactions, filling each relay.
     const txs = await multicallBundler.executeTransactionQueue();
@@ -80,9 +86,17 @@ describe("Relayer: Iterative fill", async function () {
 
     // Re-run the execution loop and validate that no additional relays are sent.
     multicallBundler.clearTransactionQueue();
-    await Promise.all([...spokePools.map((spokePool) => spokePool.spokePoolClient.update()), hubPoolClient.update()]);
+    await updateAllClients();
     await relayer.checkForUnfilledDepositsAndFill();
     expect(multicallBundler.transactionCount()).to.equal(0); // no Transactions to send.
     expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
   });
 });
+
+async function updateAllClients() {
+  await Promise.all([
+    ...spokePools.map((spokePool) => spokePool.spokePoolClient.update()),
+    hubPoolClient.update(),
+    rateModelClient.update(),
+  ]);
+}

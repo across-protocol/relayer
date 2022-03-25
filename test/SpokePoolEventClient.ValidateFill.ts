@@ -1,20 +1,20 @@
 import { expect, toBNWei, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
 import { deploySpokePoolWithToken, fillRelay, deposit, originChainId, destinationChainId } from "./utils";
 
-import { SpokePoolEventClient } from "../src/SpokePoolEventClient";
+import { SpokePoolClient } from "../src/clients/SpokePoolClient";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
 
-let spokePoolClient: SpokePoolEventClient;
+let spokePoolClient: SpokePoolClient;
 
-describe("SpokePoolEventClient: Validate Fill", async function () {
+describe("SpokePoolClient: Fill Validation", async function () {
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
     // Creat two spoke pools: one to act as the source and the other to act as the destination.
     ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId));
     ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
-    spokePoolClient = new SpokePoolEventClient(spokePool_2, originChainId); // create spoke pool client on the "target" chain.
+    spokePoolClient = new SpokePoolClient(spokePool_2, null, originChainId); // create spoke pool client on the "target" chain.
 
     await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);
     await setupTokensForWallet(spokePool_2, relayer, [erc20_2], null, 10);
@@ -46,12 +46,22 @@ describe("SpokePoolEventClient: Validate Fill", async function () {
     expect(spokePoolClient.validateFillForDeposit({ ...validFill, relayerFeePct: toBNWei(1337) }, deposit_1)).to.be
       .false;
 
-    // Changes to the realizedLpFeePct or destinationToken should NOT be verified in the current state of the code.
-    // TODO: add a test for this when we have async support for this validation and when the HubPool can verify these.
-    expect(spokePoolClient.validateFillForDeposit({ ...validFill, realizedLpFeePct: toBNWei(1337) }, deposit_1)).to.be
+    // Validate the realizedLPFeePct and destinationToken matches. These values are optional in the deposit object and
+    // are assigned during the update method, which is not polled in this set of tests.
+
+    // Assign a realizedLPFeePct to the deposit and check it matches with the fill. The default set on a fill (from
+    // contracts-v2) is 0.1. After, try changing this to a separate value and ensure this is rejected.
+    expect(spokePoolClient.validateFillForDeposit(validFill, { ...deposit_1, realizedLpFeePct: toBNWei(0.1) })).to.be
       .true;
 
-    expect(spokePoolClient.validateFillForDeposit({ ...validFill, destinationToken: relayer.address }, deposit_1)).to.be
+    expect(spokePoolClient.validateFillForDeposit(validFill, { ...deposit_1, realizedLpFeePct: toBNWei(0.1337) })).to.be
+      .false;
+
+    // Assign a destinationToken to the deposit and ensure it is validated correctly. erc20_2 from the fillRelay method
+    // above is the destination token. After, try changing this to something that is clearly wrong.
+    expect(spokePoolClient.validateFillForDeposit(validFill, { ...deposit_1, destinationToken: erc20_2.address })).to.be
       .true;
+    expect(spokePoolClient.validateFillForDeposit(validFill, { ...deposit_1, destinationToken: owner.address })).to.be
+      .false;
   });
 });
