@@ -1,4 +1,4 @@
-import { spreadEvent, assign, Contract, toBNWei, Block, BigNumber, toBN, utils } from "../utils";
+import { spreadEvent, Contract, toBN } from "../utils";
 import { Deposit, Fill } from "../interfaces/SpokePool";
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
