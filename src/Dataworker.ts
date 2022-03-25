@@ -17,13 +17,15 @@ export class Dataworker {
 
   async update() {
     // Grab all deposits from SpokePoolEventClient
+    // Map deposits to their destination chain IDs
     // Grab all fills from SpokePoolEventClient
     // Filter out invalid fills for deposits
     // Group remaining fills by destination chain ID
   }
 
   async buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
-    // Filter out fills that fully fill a deposit
+    // Filter out fills that fully fill a deposit. Can check against the list of deposits
+    //     linked to this destination chain ID.
     // Order fills by remaining fill size
     // Construct leaf for destination chain ID
     // Construct root
@@ -41,6 +43,7 @@ export class Dataworker {
     // Group fills by L1 token
     // For each L1 token:
     // Sum total relay refund amount ==> netSendAmount
+    // Sum total slow relay amount and add to netSendAmount
     // Sum total realized LP fee % ==> bundleLpFee
     // Construct leaves for destination chain ID with fills grouped by L1 token
     // If there are too many L1 tokens for a single destination chain ID leaf,
