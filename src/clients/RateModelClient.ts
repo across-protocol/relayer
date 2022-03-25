@@ -7,7 +7,7 @@ import { HubPoolClient } from "./HubPoolClient";
 export class RateModelClient {
   private readonly blockFinder;
 
-  private cumulativeRateModelEvents: across.rateModel.RateModelEvent[] = [];
+  public cumulativeRateModelEvents: across.rateModel.RateModelEvent[] = [];
   private rateModelDictionary: across.rateModel.RateModelDictionary;
 
   public firstBlockToSearch: number;
@@ -49,6 +49,8 @@ export class RateModelClient {
   }
 
   async update() {
+    if (!this.hubPoolClient.isUpdated()) throw new Error("hubpool not updated");
+
     const searchConfig = [this.firstBlockToSearch, await this.hubPoolClient.getBlockNumber()];
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
     const rateModelStoreEvents = await this.rateModelStore.queryFilter(

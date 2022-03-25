@@ -44,7 +44,7 @@ export class HubPoolClient {
     return { liquidityUtilizationCurrent, liquidityUtilizationPostRelay };
   }
 
-  async update() {
+  async update() {    
     const searchConfig = [this.firstBlockToSearch, this.endingBlock || (await this.getBlockNumber())];
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
     const [poolRebalanceRouteEvents] = await Promise.all([
@@ -63,5 +63,9 @@ export class HubPoolClient {
 
   getProvider() {
     return this.hubPool.provider;
+  }
+
+  isUpdated(): Boolean {
+    return Object.keys(this.l1TokensToDestinationTokens).length > 0;
   }
 }

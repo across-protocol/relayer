@@ -10,7 +10,17 @@ import { RateModelClient } from "../src/clients/RateModelClient";
 
 import winston from "winston";
 import sinon from "sinon";
+import chai from "chai"
 export { winston, sinon };
+
+const assert = chai.assert;
+export { chai, assert }
+
+export function assertPromiseError(promise: Promise<any>, errMessage?: string) {
+  promise
+    .then(() => assert.isTrue(false))
+    .catch((err) => assert.isTrue(errMessage ? err.message.includes(errMessage) : true));
+}
 
 export async function setupTokensForWallet(
   spokePool: utils.Contract,
