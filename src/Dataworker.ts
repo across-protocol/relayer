@@ -15,22 +15,21 @@ export class Dataworker {
     readonly multicallBundler: MulticallBundler | any
   ) {}
 
-  async buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
+  async update() {
     // Grab all deposits from SpokePoolEventClient
     // Grab all fills from SpokePoolEventClient
     // Filter out invalid fills for deposits
-    // Filter out fills that fully fill a deposit
     // Group remaining fills by destination chain ID
-    // Order fills by remaining fill s ize
+  }
+
+  async buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
+    // Filter out fills that fully fill a deposit
+    // Order fills by remaining fill size
     // Construct leaf for destination chain ID
     // Construct root
   }
 
   async buildRelayerRefundRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
-    // Grab all deposits from SpokePoolEventClient
-    // Grab all fills from SpokePoolEventClient
-    // Filter out invalid fills for deposits
-    // Group remaining fills by destination chain ID
     // Group by refund address
     // Order fills by total size
     // Construct leaf for destination chain ID
@@ -38,10 +37,6 @@ export class Dataworker {
   }
 
   async buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
-    // Grab all deposits from SpokePoolEventClient
-    // Grab all fills from SpokePoolEventClient
-    // Filter out invalid fills for deposits
-    // Group remaining fills by destination chain ID
     // For each destination chain ID:
     // Group fills by L1 token
     // For each L1 token:
