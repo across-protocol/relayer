@@ -3,9 +3,10 @@ export * from "@across-protocol/contracts-v2/dist/test-utils";
 export * from "@uma/financial-templates-lib";
 import { TokenRolesEnum } from "@uma/common";
 import { SpyTransport } from "@uma/financial-templates-lib";
-import { sampleRateModel } from "./constants";
+import { sampleRateModel, zeroAddress } from "./constants";
 
-import { SpokePoolEventClient } from "../src/SpokePoolEventClient";
+import { SpokePoolClient } from "../src/clients/SpokePoolClient";
+import { RateModelClient } from "../src/clients/RateModelClient";
 
 import winston from "winston";
 import sinon from "sinon";
@@ -58,18 +59,25 @@ export async function deployRateModelStore(signer: utils.SignerWithAddress, toke
   return { rateModelStore };
 }
 
-export async function deployAndConfigureHubPool(spokePools: { l2ChainId: number; spokePool: utils.Contract }[]) {
-  const fixture = await utils.hubPoolFixture();
+export async function deployAndConfigureHubPool(
+  signer: utils.SignerWithAddress,
+  spokePools: { l2ChainId: number; spokePool: utils.Contract }[]
+) {
+  const lpTokenFactory = await (await utils.getContractFactory("LpTokenFactory", signer)).deploy();
+  const hubPool = await (
+    await utils.getContractFactory("HubPool", signer)
+  ).deploy(lpTokenFactory.address, zeroAddress, zeroAddress, zeroAddress);
+
+  const mockAdapter = await (await utils.getContractFactory("Mock_Adapter", signer)).deploy();
 
   for (const spokePool of spokePools) {
-    await fixture.hubPool.setCrossChainContracts(
-      spokePool.l2ChainId,
-      fixture.mockAdapter.address,
-      spokePool.spokePool.address
-    );
+    await hubPool.setCrossChainContracts(spokePool.l2ChainId, mockAdapter.address, spokePool.spokePool.address);
   }
 
-  return fixture;
+  const l1Token = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("Rando L1", "L1", 18);
+  await l1Token.addMember(TokenRolesEnum.MINTER, signer.address);
+
+  return { hubPool, mockAdapter, l1Token };
 }
 
 export async function enableRoutesOnHubPool(
@@ -82,17 +90,42 @@ export async function enableRoutesOnHubPool(
   }
 }
 
+export async function simpleDeposit(
+  spokePool: utils.Contract,
+  token: utils.Contract,
+  recipient: utils.SignerWithAddress,
+  depositor: utils.SignerWithAddress,
+  destinationChainId: number = utils.destinationChainId,
+  amountToDeposit: utils.BigNumber = utils.amountToDeposit,
+  depositRelayerFeePct: utils.BigNumber = utils.depositRelayerFeePct
+) {
+  const depositObject = await utils.deposit(
+    spokePool,
+    token,
+    recipient,
+    depositor,
+    destinationChainId,
+    amountToDeposit,
+    depositRelayerFeePct
+  );
+  return { ...depositObject, realizedLpFeePct: utils.toBN(0), destinationToken: zeroAddress };
+}
+
 export async function deploySpokePoolForIterativeTest(
   signer: utils.SignerWithAddress,
   mockAdapter: utils.Contract,
-  hubPool: utils.Contract,
+  rateModelClient: RateModelClient,
   desiredChainId: number = 0
 ) {
   const { spokePool } = await deploySpokePoolWithToken(desiredChainId, 0, false);
 
-  await hubPool.setCrossChainContracts(utils.destinationChainId, mockAdapter.address, spokePool.address);
+  await rateModelClient.hubPoolClient.hubPool.setCrossChainContracts(
+    utils.destinationChainId,
+    mockAdapter.address,
+    spokePool.address
+  );
 
-  const spokePoolClient = new SpokePoolEventClient(spokePool.connect(signer), desiredChainId);
+  const spokePoolClient = new SpokePoolClient(spokePool.connect(signer), rateModelClient, desiredChainId);
 
   return { spokePool, spokePoolClient };
 }
@@ -128,6 +161,10 @@ export async function deploySingleTokenAcrossSetOfChains(
   return tokens;
 }
 
+export function appendPropsToDeposit(deposit) {
+  return { ...deposit, realizedLpFeePct: utils.toBN(0), destinationToken: zeroAddress };
+}
+
 export async function getLastBlockTime(provider: any) {
   return (await provider.getBlock(await provider.getBlockNumber())).timestamp;
 }
@@ -135,7 +172,7 @@ export async function getLastBlockTime(provider: any) {
 export async function deployIterativeSpokePoolsAndToken(
   signer,
   mockAdapter,
-  hubPool,
+  rateModelClient,
   numSpokePools: number,
   numTokens: number
 ) {
@@ -144,9 +181,8 @@ export async function deployIterativeSpokePoolsAndToken(
 
   // For each count of numSpokePools deploy a new spoke pool. Set the chainId to the index in the array. Note that we
   // start at index of 1 here. spokePool with a chainId of 0 is not a good idea.
-  for (let i = 1; i < numSpokePools + 1; i++) {
-    spokePools.push(await deploySpokePoolForIterativeTest(signer, mockAdapter, hubPool, i));
-  }
+  for (let i = 1; i < numSpokePools + 1; i++)
+    spokePools.push(await deploySpokePoolForIterativeTest(signer, mockAdapter, rateModelClient, i));
 
   // For each count of numTokens deploy a new token. This will also set it as an enabled route over all chains.
   for (let i = 1; i < numTokens + 1; i++) {
@@ -159,7 +195,7 @@ export async function deployIterativeSpokePoolsAndToken(
     l1TokenToL2Tokens[associatedL1Token.address] = await deploySingleTokenAcrossSetOfChains(
       signer,
       spokePools.map((spokePool, index) => ({ contract: spokePool.spokePool, chainId: index + 1 })),
-      hubPool,
+      rateModelClient.hubPoolClient.hubPool,
       associatedL1Token
     );
   }

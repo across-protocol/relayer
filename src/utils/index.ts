@@ -1,4 +1,4 @@
-export { BigNumber, Signer, Contract, ContractFactory, Transaction, utils } from "ethers";
+export { BigNumber, Signer, Contract, ContractFactory, Transaction, utils, BaseContract, Event } from "ethers";
 export type { Block } from "@ethersproject/abstract-provider";
 export { getProvider } from "./ProviderUtils";
 export { getSigner } from "./SignerUtils";
@@ -9,3 +9,5 @@ export { buildFillRelayProps } from "./TransactionPropBuilder";
 
 import winston from "winston";
 export { winston };
+
+export const zeroAddress = "0x0000000000000000000000000000000000000000";

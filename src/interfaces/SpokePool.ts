@@ -6,10 +6,12 @@ export interface Deposit {
   recipient: string;
   originToken: string;
   amount: BigNumber;
-  originChainId: number;
+  originChainId: number; // appended from chainID
   destinationChainId: number;
   relayerFeePct: BigNumber;
   quoteTimestamp: number;
+  realizedLpFeePct?: BigNumber; // appended after initialization (not part of the Deposit event).
+  destinationToken?: string; // appended after initialization (not part of the Deposit event).
 }
 export interface Fill {
   relayHash: string;

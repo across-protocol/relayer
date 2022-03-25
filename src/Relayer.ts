@@ -1,6 +1,7 @@
 import { BigNumber, winston, buildFillRelayProps } from "./utils";
-import { SpokePoolEventClient } from "./SpokePoolEventClient";
-import { HubPoolEventClient } from "./HubPoolEventClient";
+import { SpokePoolClient } from "./clients/SpokePoolClient";
+import { HubPoolClient } from "./clients/HubPoolClient";
+import { RateModelClient } from "./clients/RateModelClient";
 import { MulticallBundler } from "./MulticallBundler";
 import { Deposit } from "./interfaces/SpokePool";
 
@@ -8,8 +9,8 @@ export class Relayer {
   private repaymentChainId = 1; // Set to 1 for now. In future can be dynamically set to adjust bots capital allocation.
   constructor(
     readonly logger: winston.Logger,
-    readonly spokePoolEventClients: { [chainId: number]: SpokePoolEventClient },
-    readonly hubPoolClient: HubPoolEventClient,
+    readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
+    readonly hubPoolClient: HubPoolClient,
     readonly multicallBundler: MulticallBundler | any
   ) {}
   async checkForUnfilledDepositsAndFill() {
@@ -23,50 +24,41 @@ export class Relayer {
       this.logger.debug({ at: "Relayer", message: "Filling deposits", number: unfilledDeposits.length });
     else this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
 
-    // Fetch the realizedLpFeePct for each unfilled deposit. Execute this in parallel as each requires an async call.
-    const realizedLpFeePcts = await Promise.all(
-      unfilledDeposits.map((deposit) => this.hubPoolClient.computeRealizedLpFeePctForDeposit(deposit.deposit))
-    );
-
     // Iterate over all unfilled deposits. For each unfilled deposit add a fillRelay tx to the multicallBundler.
-    for (const [index, unfilledDeposit] of unfilledDeposits.entries()) {
+    for (const unfilledDeposit of unfilledDeposits) {
       const destinationToken = this.hubPoolClient.getDestinationTokenForDeposit(unfilledDeposit.deposit);
-      this.multicallBundler.addTransaction(this.fillRelay(unfilledDeposit, destinationToken, realizedLpFeePcts[index]));
+      this.multicallBundler.addTransaction(this.fillRelay(unfilledDeposit, destinationToken));
     }
   }
 
   // TODO: right now this method will fill the whole amount of the relay. Next iteration should consider the wallet balance.
-  fillRelay(
-    depositInfo: { unfilledAmount: BigNumber; deposit: Deposit },
-    destinationToken: string,
-    realizedLpFeePct: BigNumber
-  ) {
-    this.logger.debug({ at: "Relayer", message: "Filling deposit", depositInfo, destinationToken, realizedLpFeePct });
+  fillRelay(depositInfo: { unfilledAmount: BigNumber; deposit: Deposit }, destinationToken: string) {
+    this.logger.debug({ at: "Relayer", message: "Filling deposit", depositInfo, destinationToken });
     return this.getDestinationSpokePoolForDeposit(depositInfo.deposit).fillRelay(
-      ...buildFillRelayProps(depositInfo, destinationToken, this.repaymentChainId, realizedLpFeePct)
+      ...buildFillRelayProps(depositInfo, this.repaymentChainId)
     );
   }
 
   getDestinationSpokePoolForDeposit(deposit: Deposit) {
-    return this.spokePoolEventClients[deposit.destinationChainId].spokePool;
+    return this.spokePoolClients[deposit.destinationChainId].spokePool;
   }
 
   // Returns all unfilled deposits over all spokePoolClients. Return values include the amount of the unfilled deposit.
   getUnfilledDeposits() {
     let unfilledDeposits: { unfilledAmount: BigNumber; deposit: Deposit }[] = [];
     // Iterate over each chainId and check for unfilled deposits.
-    const chainIds = Object.keys(this.spokePoolEventClients);
+    const chainIds = Object.keys(this.spokePoolClients);
     for (const originChain of chainIds) {
-      const originClient = this.spokePoolEventClients[originChain];
+      const originClient = this.spokePoolClients[originChain];
       for (const destinationChain of chainIds) {
         if (originChain === destinationChain) continue;
         // Find all unfilled deposits for the current loops originChain -> destinationChain. Note that this also
-        // validates that the deposit is filled "correctly" for the given deposit information. Additional validation is
-        // needed later to verify realizedLpFeePct and the destinationToken that the SpokePoolClient can't validate.
-        const destinationClient = this.spokePoolEventClients[destinationChain];
+        // validates that the deposit is filled "correctly" for the given deposit information. This includes validation
+        // of the all deposit -> relay props, the realizedLpFeePct and the origin->destination token mapping.
+        const destinationClient = this.spokePoolClients[destinationChain];
         const depositsForDestinationChain = originClient.getDepositsForDestinationChain(destinationChain);
         const unfilledDepositsForDestinationChain = depositsForDestinationChain.map((deposit) => {
-          return { unfilledAmount: destinationClient.getUnfilledAmountForDeposit(deposit), deposit };
+          return { unfilledAmount: destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit };
         });
         // Remove any deposits that have no unfilled amount (i.e that have an unfilled amount of 0) and append the
         // remaining deposits to the unfilledDeposits array.
