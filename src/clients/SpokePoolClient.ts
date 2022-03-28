@@ -5,7 +5,7 @@ import { Deposit, Fill, SpeedUp } from "../interfaces/SpokePool";
 export class SpokePoolClient {
   private deposits: { [DestinationChainId: number]: Deposit[] } = {};
   private fills: { [DestinationChainId: number]: Fill[] } = {};
-  private speedUps: { [DestinationChainId: number]: SpeedUp[] } = {};
+  private speedUps: { [depositorAddress: string]: { [depositId: number]: SpeedUp[] } } = {};
 
   public firstBlockToSearch: number;
 
@@ -20,13 +20,14 @@ export class SpokePoolClient {
   }
 
   getDepositsForDestinationChain(destinationChainId: number) {
-    return this.deposits[destinationChainId] || [];
+    return (this.deposits[destinationChainId] || []).map((deposit) => this.appendMaxSpeedUpSignatureToDeposit(deposit));
   }
 
   getDepositsFromDepositor(depositor: string) {
     return Object.values(this.deposits)
       .flat()
-      .filter((deposit: Deposit) => deposit.depositor === depositor);
+      .filter((deposit: Deposit) => deposit.depositor === depositor) // Select only deposits where the depositor is the same.
+      .map((deposit) => this.appendMaxSpeedUpSignatureToDeposit(deposit)); // Update the deposit with
   }
 
   getFillsForDestinationChain(destinationChainId: number) {
@@ -45,6 +46,16 @@ export class SpokePoolClient {
       .filter((fill: Fill) => fill.relayer === relayer);
   }
 
+  appendMaxSpeedUpSignatureToDeposit(deposit: Deposit) {
+    const maxSpeedUp = this.speedUps[deposit.depositor]?.[deposit.depositId].reduce((prev, current) =>
+      prev.newRelayerFeePct.gt(current.newRelayerFeePct) ? prev : current
+    );
+
+    // Only if there is a speedup and the new relayer fee is greater than the current relayer fee, replace the fee.
+    if (!maxSpeedUp || maxSpeedUp.newRelayerFeePct.lte(deposit.relayerFeePct)) return deposit;
+    return { ...deposit, speedUpSignature: maxSpeedUp.depositorSignature, relayerFeePct: maxSpeedUp.newRelayerFeePct };
+  }
+
   getValidUnfilledAmountForDeposit(deposit: Deposit) {
     const fills = this.getFillsForOriginChain(deposit.originChainId)
       .filter((fill) => fill.depositId === deposit.depositId) // Only select the associated fill for the deposit.
@@ -54,14 +65,12 @@ export class SpokePoolClient {
     return deposit.amount.sub(fills.reduce((total: BigNumber, fill: Fill) => total.add(fill.fillAmount), toBN(0)));
   }
 
+  // Ensure that each deposit element is included with the same value in the fill. This includes all elements defined
+  // by the depositor as well as the realizedLpFeePct and the destinationToken, which are pulled from other clients.
   validateFillForDeposit(fill: Fill, deposit: Deposit) {
-    // Ensure that each deposit element is included with the same value in the fill. This verifies:
-
     let isValid = true;
     Object.keys(deposit).forEach((key) => {
-      if (fill[key] && fill[key].toString() !== deposit[key].toString()) {
-        isValid = false;
-      }
+      if (fill[key] && fill[key].toString() !== deposit[key].toString()) isValid = false;
     });
 
     return isValid;
@@ -91,7 +100,7 @@ export class SpokePoolClient {
 
     for (const event of speedUpEvents) {
       const speedUp: SpeedUp = { ...spreadEvent(event), originChainId: this.chainId };
-      // assign(this.speedUps, [speedUp.destinationChainId], [speedUp]); todo: add associated reverse lookup for this.
+      assign(this.speedUps, [speedUp.depositor, speedUp.depositId], [speedUp]);
     }
 
     for (const event of fillEvents) assign(this.fills, [event.args.destinationChainId], [spreadEvent(event)]);

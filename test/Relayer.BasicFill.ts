@@ -8,7 +8,7 @@ import { HubPoolClient } from "../src/clients/HubPoolClient";
 import { RateModelClient } from "../src/clients/RateModelClient";
 import { MulticallBundler } from "../src/MulticallBundler";
 
-import { Relayer } from "../src/Relayer"; // Tested
+import { Relayer } from "../src/relayer/Relayer"; // Tested
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, mockAdapter: Contract, rateModelStore: Contract, l1Token: Contract;

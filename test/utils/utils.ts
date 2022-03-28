@@ -1,12 +1,10 @@
 import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
-export * from "@across-protocol/contracts-v2/dist/test-utils";
-export * from "@uma/financial-templates-lib";
 import { TokenRolesEnum } from "@uma/common";
 import { SpyTransport } from "@uma/financial-templates-lib";
-import { sampleRateModel, zeroAddress } from "./constants";
+import { sampleRateModel, zeroAddress } from "../constants";
 
-import { SpokePoolClient } from "../src/clients/SpokePoolClient";
-import { RateModelClient } from "../src/clients/RateModelClient";
+import { SpokePoolClient } from "../../src/clients/SpokePoolClient";
+import { RateModelClient } from "../../src/clients/RateModelClient";
 
 import winston from "winston";
 import sinon from "sinon";

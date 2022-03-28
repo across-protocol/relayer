@@ -15,12 +15,13 @@ describe("SpokePoolClient: Deposits", async function () {
     ({ spokePool, erc20, destErc20, weth } = await deploySpokePoolWithToken(originChainId));
     await enableRoutes(spokePool, [{ originToken: erc20.address, destinationChainId: destinationChainId2 }]);
     spokePoolClient = new SpokePoolClient(spokePool, null, originChainId);
+
+    await setupTokensForWallet(spokePool, depositor1, [erc20, destErc20], weth, 10);
+    await setupTokensForWallet(spokePool, depositor2, [erc20, destErc20], weth, 10);
   });
 
   it("Correctly fetches deposit data single depositor, single chain", async function () {
-    await setupTokensForWallet(spokePool, depositor1, [erc20, destErc20], weth, 10);
     const deposit1 = await simpleDeposit(spokePool, erc20, depositor1, depositor1, destinationChainId);
-
     const deposit2 = await simpleDeposit(spokePool, erc20, depositor1, depositor1, destinationChainId);
 
     await spokePoolClient.update();
@@ -28,8 +29,6 @@ describe("SpokePoolClient: Deposits", async function () {
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)).to.deep.equal([deposit1, deposit2]);
   });
   it("Correctly fetches deposit data multiple depositors, multiple chains", async function () {
-    await setupTokensForWallet(spokePool, depositor1, [erc20, destErc20], weth, 10);
-    await setupTokensForWallet(spokePool, depositor2, [erc20, destErc20], weth, 10);
     // Do 6 deposits. 2 for the first depositor on chain1, 1 for the first depositor on chain2, 1 for the second
     // depositor on chain1, and 2 for the second depositor on chain2. For each deposit append the data that is excluded
     // from the deposit as it cant be fetched from the contract directly (realizedLpFeePct, destinationToken).

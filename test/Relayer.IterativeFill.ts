@@ -5,7 +5,7 @@ import { amountToLp, sampleRateModel } from "./constants";
 
 import { HubPoolClient } from "../src/clients/HubPoolClient";
 import { RateModelClient } from "../src/clients/RateModelClient";
-import { Relayer } from "../src/Relayer";
+import { Relayer } from "../src/relayer/Relayer";
 import { MulticallBundler } from "../src/MulticallBundler";
 
 let relayer_signer: SignerWithAddress, hubPool: Contract, mockAdapter: Contract, rateModelStore: Contract;

@@ -3,7 +3,7 @@ import { Logger } from "@uma/financial-templates-lib";
 import { config } from "dotenv";
 config();
 
-import { getProvider, getSigner } from "./utils";
+import { getProvider, getSigner } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 
 export async function run(logger: winston.Logger): Promise<void> {

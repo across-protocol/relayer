@@ -1,9 +1,9 @@
-import { BigNumber, winston, buildFillRelayProps } from "./utils";
-import { SpokePoolClient } from "./clients/SpokePoolClient";
-import { HubPoolClient } from "./clients/HubPoolClient";
-import { RateModelClient } from "./clients/RateModelClient";
-import { MulticallBundler } from "./MulticallBundler";
-import { Deposit } from "./interfaces/SpokePool";
+import { BigNumber, winston, buildFillRelayProps } from "../utils";
+import { SpokePoolClient } from "../clients/SpokePoolClient";
+import { HubPoolClient } from "../clients/HubPoolClient";
+import { RateModelClient } from "../clients/RateModelClient";
+import { MulticallBundler } from "../MulticallBundler";
+import { Deposit } from "../interfaces/SpokePool";
 
 export class Relayer {
   private repaymentChainId = 1; // Set to 1 for now. In future can be dynamically set to adjust bots capital allocation.
