@@ -3,9 +3,10 @@
     "target": "es2022",
     "module": "commonjs",
     "esModuleInterop": true,
-    "outDir": "dist",
-    "declaration": true
+    "outDir": "./dist",
+    "declaration": true,
+    "skipLibCheck": true
   },
-  "include": ["./scripts", "Relayer.UnfilledDeposits", "./typechain"],
+  "include": ["./src", "index.ts"],
   "files": ["./hardhat.config.ts"]
 }
