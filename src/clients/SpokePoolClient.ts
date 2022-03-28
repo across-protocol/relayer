@@ -20,14 +20,13 @@ export class SpokePoolClient {
   }
 
   getDepositsForDestinationChain(destinationChainId: number) {
-    return (this.deposits[destinationChainId] || []).map((deposit) => this.appendMaxSpeedUpSignatureToDeposit(deposit));
+    return this.deposits[destinationChainId] || [];
   }
 
   getDepositsFromDepositor(depositor: string) {
     return Object.values(this.deposits)
       .flat()
-      .filter((deposit: Deposit) => deposit.depositor === depositor) // Select only deposits where the depositor is the same.
-      .map((deposit) => this.appendMaxSpeedUpSignatureToDeposit(deposit)); // Update the deposit with
+      .filter((deposit: Deposit) => deposit.depositor === depositor); // Select only deposits where the depositor is the same.
   }
 
   getFillsForDestinationChain(destinationChainId: number) {
@@ -102,6 +101,13 @@ export class SpokePoolClient {
       const speedUp: SpeedUp = { ...spreadEvent(event), originChainId: this.chainId };
       assign(this.speedUps, [speedUp.depositor, speedUp.depositId], [speedUp]);
     }
+
+    // Traverse all deposit events and update them with associated speedups, If they exist.
+    for (const destinationChainId of Object.keys(this.deposits))
+      for (const [index, deposit] of this.deposits[destinationChainId].entries()) {
+        const speedUpDeposit = this.appendMaxSpeedUpSignatureToDeposit(deposit);
+        if (speedUpDeposit !== deposit) this.deposits[destinationChainId][index] = speedUpDeposit;
+      }
 
     for (const event of fillEvents) assign(this.fills, [event.args.destinationChainId], [spreadEvent(event)]);
 
