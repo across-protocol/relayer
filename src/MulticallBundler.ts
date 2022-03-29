@@ -6,9 +6,7 @@ export class MultiCallBundler {
 
   // Adds defined transaction to the transaction queue.
   addTransaction(transaction: Transaction) {
-    console.log("ADDING TX", transaction);
     if (transaction) this.transactions.push(transaction);
-    console.log("this.transactions", this.transactions);
   }
 
   transactionCount() {
