@@ -13,10 +13,10 @@ export class RelayerConfig {
   constructor(env: ProcessEnv) {
     const { CONFIGURED_NETWORKS, HUB_CHAIN_ID, POLLING_DELAY } = env;
     assert(CONFIGURED_NETWORKS, "HUB_POOL_ADDRESS required");
-    this.hubPoolChainId = Number(HUB_CHAIN_ID) ?? 1;
+    this.hubPoolChainId = HUB_CHAIN_ID ? Number(HUB_CHAIN_ID) : 1;
 
     this.spokePoolChains = CONFIGURED_NETWORKS ? JSON.parse(CONFIGURED_NETWORKS) : [1, 10, 42161, 288];
 
-    this.pollingDelay = Number(env.POLLING_DELAY) ?? 60;
+    this.pollingDelay = POLLING_DELAY ? Number(POLLING_DELAY) : 60;
   }
 }

@@ -68,26 +68,22 @@ export class SpokePoolClient {
   // Ensure that each deposit element is included with the same value in the fill. This includes all elements defined
   // by the depositor as well as the realizedLpFeePct and the destinationToken, which are pulled from other clients.
   validateFillForDeposit(fill: Fill, deposit: Deposit) {
-    this.logger.debug({ at: "SpokePoolClient", message: "Validating fill for deposit", fill, deposit });
+    this.log("debug", "Validating fill for deposit", { fill, deposit });
     let isValid = true;
     Object.keys(deposit).forEach((key) => {
-      if (fill[key]) {
-        const depositVal = deposit[key].toString();
-        const fillValue = fill[key].toString();
-        if (depositVal !== fillValue) {
-          this.logger.debug({ at: "SpokePoolClient", message: "Validation mismatch!", depositVal, fillValue });
-          isValid = false;
-        }
+      if (fill[key] && deposit[key].toString() !== fill[key].toString()) {
+        this.log("debug", "Prop mismatch!", { depositVal: deposit[key].toString(), fillValue: fill[key].toString() });
+        isValid = false;
       }
     });
 
-    this.logger.debug({ at: "SpokePoolClient", message: "Finished validating fill for deposit", isValid });
+    this.log("debug", "Finished validating fill for deposit", { isValid });
     return isValid;
   }
 
   async update() {
     const searchConfig = [this.firstBlockToSearch, this.endingBlock || (await this.getBlockNumber())];
-    this.logger.debug({ at: "SpokePoolClient", message: "Updating client", searchConfig });
+    this.log("debug", "Updating client", { searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
 
     const [depositEvents, speedUpEvents, fillEvents] = await Promise.all([
@@ -100,7 +96,7 @@ export class SpokePoolClient {
     // new deposits that were found in the searchConfig (new from the previous run). This is important as this operation
     // is heavy as there is a fair bit of block number lookups that need to happen. Note this call REQUIRES that the
     // hubPoolClient is updated on the first before this call as this needed the the L1 token mapping to each L2 token.
-    this.logger.debug({ at: "SpokePoolClient", message: "Fetching realizedLpFeePct", count: depositEvents.length });
+    this.log("debug", "Fetching realizedLpFeePct", { count: depositEvents.length });
     const realizedLpFeePcts = await Promise.all(depositEvents.map((event) => this.computeRealizedLpFeePct(event)));
 
     for (const [index, event] of depositEvents.entries()) {
@@ -125,7 +121,7 @@ export class SpokePoolClient {
 
     this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
 
-    this.logger.debug({ at: "SpokePoolClient", message: "Client updated!" });
+    this.log("debug", "Client updated!");
   }
 
   private async getBlockNumber(): Promise<number> {
@@ -151,5 +147,9 @@ export class SpokePoolClient {
 
   private hubPoolClient() {
     return this.rateModelClient.hubPoolClient;
+  }
+
+  private log(level: string, message: string, data?: any) {
+    this.logger[level]({ at: "SpokePoolClient", chainId: this.chainId, message, ...data });
   }
 }

@@ -48,15 +48,19 @@ export function constructClients(logger: winston.Logger, config: RelayerConfig) 
 // If this is the first run then the hubPoolClient will have no whitelisted routes. If this is the case then first
 // update the hubPoolClient and the rateModelClients followed by the spokePoolClients. Else, update all at once.
 export async function updateClients(
+  logger: winston.Logger,
   hubPoolClient: HubPoolClient,
   rateModelClient: RateModelClient,
   spokePoolClients: { [chainId: number]: SpokePoolClient }
 ) {
-  if (hubPoolClient.getL1TokensToDestinationTokens().length === {}) {
+  if (Object.keys(hubPoolClient.getL1TokensToDestinationTokens()).length === 0) {
+    logger.debug({ at: "ClientHelper", message: "Updating clients for first run" });
     await Promise.all([hubPoolClient.update(), rateModelClient.update()]);
     await updateSpokePoolClients(spokePoolClients);
-  } else
+  } else {
+    logger.debug({ at: "ClientHelper", message: "Updating clients for standard run" });
     await Promise.all([hubPoolClient.update(), rateModelClient.update(), updateSpokePoolClients(spokePoolClients)]);
+  }
 }
 
 async function updateSpokePoolClients(spokePoolClients: { [chainId: number]: SpokePoolClient }) {

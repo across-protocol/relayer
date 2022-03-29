@@ -2,6 +2,7 @@ import winston from "winston";
 export { winston };
 export { delay } from "@uma/financial-templates-lib";
 export { BigNumber, Signer, Contract, ContractFactory, Transaction, utils, BaseContract, Event } from "ethers";
+export { ethers } from "ethers";
 export type { Block } from "@ethersproject/abstract-provider";
 
 export { getProvider } from "./ProviderUtils";

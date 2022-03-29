@@ -14,7 +14,7 @@ if (require.main === module) {
       process.exit(0);
     })
     .catch((error) => {
-      console.error("Process exited with error", error);
+      console.error("Process exited with", error);
       process.exit(1);
     });
 }

@@ -7,7 +7,7 @@ export async function processEndPollingLoop(logger: winston.Logger, fileName: St
     return true;
   }
 
-  logger.debug({ at: `${fileName}#index`, message: "End of execution loop - waiting polling delay" });
+  logger.debug({ at: `${fileName}#index`, message: `End of execution loop - waiting polling delay ${pollingDelay}s` });
   await delay(pollingDelay);
   return false;
 }

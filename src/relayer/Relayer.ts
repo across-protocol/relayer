@@ -1,4 +1,4 @@
-import { BigNumber, winston, buildFillRelayProps } from "../utils";
+import { BigNumber, winston, buildFillRelayProps, ethers } from "../utils";
 import { SpokePoolClient } from "../clients/SpokePoolClient";
 import { MultiCallBundler } from "../MultiCallBundler";
 import { Deposit } from "../interfaces/SpokePool";
@@ -28,11 +28,18 @@ export class Relayer {
     }
   }
 
-  fillRelay(depositInfo: { unfilledAmount: BigNumber; deposit: Deposit }) {
-    this.logger.debug({ at: "Relayer", message: "Filling deposit", depositInfo });
-    return this.getDestinationSpokePoolForDeposit(depositInfo.deposit).fillRelay(
-      ...buildFillRelayProps(depositInfo, this.repaymentChainId)
-    );
+  fillRelay(deposit: { unfilledAmount: BigNumber; deposit: Deposit }) {
+    this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain: this.repaymentChainId });
+    console.log("DestinationSpokePool", this.getDestinationSpokePoolForDeposit(deposit.deposit).address);
+    try {
+      return this.getDestinationSpokePoolForDeposit(deposit.deposit).fillRelay(
+        ...buildFillRelayProps(deposit, this.repaymentChainId)
+      );
+    } catch (error) {
+      console.log("COUGHT!");
+      this.logger.error({ at: "Relayer", message: "Error creating fillRelayTx", error });
+      return null;
+    }
   }
 
   getDestinationSpokePoolForDeposit(deposit: Deposit) {

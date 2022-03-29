@@ -18,7 +18,7 @@ export async function runRelayer(logger: winston.Logger): Promise<void> {
   logger.debug({ at: "Relayer#index", message: "Relayer components initialized. Starting execution loop" });
 
   for (;;) {
-    await updateClients(hubPoolClient, rateModelClient, spokePoolClients);
+    await updateClients(logger, hubPoolClient, rateModelClient, spokePoolClients);
 
     await relayer.checkForUnfilledDepositsAndFill();
 

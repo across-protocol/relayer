@@ -4,8 +4,11 @@ export class MultiCallBundler {
   private transactions: Transaction[] = [];
   constructor(readonly logger: winston.Logger, readonly gasEstimator: any) {}
 
+  // Adds defined transaction to the transaction queue.
   addTransaction(transaction: Transaction) {
-    this.transactions.push(transaction);
+    console.log("ADDING TX", transaction);
+    if (transaction) this.transactions.push(transaction);
+    console.log("this.transactions", this.transactions);
   }
 
   transactionCount() {
