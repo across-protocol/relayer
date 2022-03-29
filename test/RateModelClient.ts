@@ -80,8 +80,8 @@ describe("RateModelClient", async function () {
     ).to.deep.equal(sampleRateModel);
 
     // Block number when there is no rate model
-    expect(
-      () => rateModelClient.getRateModelForBlockNumber(l1Token.address, initialRateModelUpdate.blockNumber - 1)
+    expect(() =>
+      rateModelClient.getRateModelForBlockNumber(l1Token.address, initialRateModelUpdate.blockNumber - 1)
     ).to.throw(/before first UpdatedRateModel event/);
 
     // L1 token where there is no rate model
