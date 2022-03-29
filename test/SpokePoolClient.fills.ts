@@ -1,6 +1,6 @@
-import { setupTokensForWallet, expect, ethers, Contract, SignerWithAddress } from "./utils";
-import { originChainId, deploySpokePoolWithToken, fillRelay, destinationChainId } from "./utils";
-import { SpokePoolClient } from "../src/clients/SpokePoolClient";
+import { setupTokensForWallet, expect, ethers, Contract, SignerWithAddress, sinon, winston } from "./utils";
+import { originChainId, deploySpokePoolWithToken, fillRelay, destinationChainId, createSpyLogger } from "./utils";
+import { SpokePoolClient } from "../src/clients";
 
 let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer1: SignerWithAddress, relayer2: SignerWithAddress;
@@ -15,7 +15,7 @@ describe("SpokePoolClient: Fills", async function () {
     ({ spokePool, erc20, destErc20, weth } = await deploySpokePoolWithToken(originChainId, destinationChainId));
     await spokePool.setChainId(destinationChainId); // The spoke pool for a fill should be at the destinationChainId.
 
-    spokePoolClient = new SpokePoolClient(spokePool, null, destinationChainId);
+    spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool, null, destinationChainId);
 
     await setupTokensForWallet(spokePool, relayer1, [erc20, destErc20], weth, 10);
     await setupTokensForWallet(spokePool, relayer2, [erc20, destErc20], weth, 10);

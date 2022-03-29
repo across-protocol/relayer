@@ -1,11 +1,12 @@
-import { winston, Transaction } from "./utils";
+import { winston, Transaction } from "../utils";
 
-export class MulticallBundler {
+export class MultiCallBundler {
   private transactions: Transaction[] = [];
   constructor(readonly logger: winston.Logger, readonly gasEstimator: any) {}
 
+  // Adds defined transaction to the transaction queue.
   addTransaction(transaction: Transaction) {
-    this.transactions.push(transaction);
+    if (transaction) this.transactions.push(transaction);
   }
 
   transactionCount() {
@@ -18,13 +19,13 @@ export class MulticallBundler {
 
   async executeTransactionQueue() {
     // TODO: this should include grouping logic for multicall
-    this.logger.debug({ at: "MulticallBundler", message: "Executing tx bundle", number: this.transactions.length });
+    this.logger.debug({ at: "MultiCallBundler", message: "Executing tx bundle", number: this.transactions.length });
     const transactionResults = await Promise.all(this.transactions);
     const transactionReceipts = await Promise.all(transactionResults.map((transaction: any) => transaction.wait()));
 
     // TODO: add additional logging on error processing.
     this.logger.debug({
-      at: "MulticallBundler",
+      at: "MultiCallBundler",
       message: "All transactions executed",
       hashes: transactionReceipts.map((receipt) => receipt.transactionHash),
     });

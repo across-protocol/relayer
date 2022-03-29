@@ -1,17 +1,14 @@
-import { BigNumber, winston, buildFillRelayProps } from "./utils";
-import { SpokePoolClient } from "./clients/SpokePoolClient";
-import { HubPoolClient } from "./clients/HubPoolClient";
-import { RateModelClient } from "./clients/RateModelClient";
-import { MulticallBundler } from "./MulticallBundler";
-import { Deposit } from "./interfaces/SpokePool";
+import { BigNumber, winston, buildFillRelayProps } from "../utils";
+import { SpokePoolClient } from "../clients/SpokePoolClient";
+import { MultiCallBundler } from "../clients/MultiCallBundler";
+import { Deposit } from "../interfaces/SpokePool";
 
 export class Relayer {
   private repaymentChainId = 1; // Set to 1 for now. In future can be dynamically set to adjust bots capital allocation.
   constructor(
     readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    readonly hubPoolClient: HubPoolClient,
-    readonly multicallBundler: MulticallBundler | any
+    readonly multiCallBundler: MultiCallBundler | any
   ) {}
   async checkForUnfilledDepositsAndFill() {
     // Fetch all unfilled deposits, order by total earnable fee. Note this does not consider the price of the token
@@ -24,19 +21,23 @@ export class Relayer {
       this.logger.debug({ at: "Relayer", message: "Filling deposits", number: unfilledDeposits.length });
     else this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
 
-    // Iterate over all unfilled deposits. For each unfilled deposit add a fillRelay tx to the multicallBundler.
+    // Iterate over all unfilled deposits. For each unfilled deposit add a fillRelay tx to the multiCallBundler.
     for (const unfilledDeposit of unfilledDeposits) {
-      const destinationToken = this.hubPoolClient.getDestinationTokenForDeposit(unfilledDeposit.deposit);
-      this.multicallBundler.addTransaction(this.fillRelay(unfilledDeposit, destinationToken));
+      // TODO: right now this method will fill the whole amount of the relay. Next iteration should consider the wallet balance.
+      this.multiCallBundler.addTransaction(this.fillRelay(unfilledDeposit));
     }
   }
 
-  // TODO: right now this method will fill the whole amount of the relay. Next iteration should consider the wallet balance.
-  fillRelay(depositInfo: { unfilledAmount: BigNumber; deposit: Deposit }, destinationToken: string) {
-    this.logger.debug({ at: "Relayer", message: "Filling deposit", depositInfo, destinationToken });
-    return this.getDestinationSpokePoolForDeposit(depositInfo.deposit).fillRelay(
-      ...buildFillRelayProps(depositInfo, this.repaymentChainId)
-    );
+  fillRelay(deposit: { unfilledAmount: BigNumber; deposit: Deposit }) {
+    this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain: this.repaymentChainId });
+    try {
+      return this.getDestinationSpokePoolForDeposit(deposit.deposit).fillRelay(
+        ...buildFillRelayProps(deposit, this.repaymentChainId)
+      );
+    } catch (error) {
+      this.logger.error({ at: "Relayer", message: "Error creating fillRelayTx", error });
+      return null;
+    }
   }
 
   getDestinationSpokePoolForDeposit(deposit: Deposit) {

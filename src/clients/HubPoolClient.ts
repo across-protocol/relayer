@@ -1,5 +1,5 @@
-import { spreadEvent, assign, Contract, BaseContract, toBNWei, Block, BigNumber, toBN, utils } from "../utils";
-import { Deposit, Fill, SpeedUp } from "../interfaces/SpokePool";
+import { spreadEvent, assign, Contract, winston, BigNumber } from "../utils";
+import { Deposit } from "../interfaces/SpokePool";
 
 export class HubPoolClient {
   // l1Token -> destinationChainId -> destinationToken
@@ -9,6 +9,7 @@ export class HubPoolClient {
   public firstBlockToSearch: number;
 
   constructor(
+    readonly logger: winston.Logger,
     readonly hubPool: Contract,
     readonly startingBlock: number = 0,
     readonly endingBlock: number | null = null
@@ -16,7 +17,10 @@ export class HubPoolClient {
 
   getDestinationTokenForDeposit(deposit: Deposit) {
     const l1Token = this.getL1TokenForDeposit(deposit);
-    return this.getDestinationTokenForL1TokenAndDestinationChainId(l1Token, deposit.destinationChainId);
+    const destinationToken = this.getDestinationTokenForL1TokenDestinationChainId(l1Token, deposit.destinationChainId);
+    if (!destinationToken)
+      this.logger.error({ at: "HubPoolClient", message: "No destination token found for deposit", deposit });
+    return destinationToken;
   }
 
   getL1TokensToDestinationTokens() {
@@ -32,7 +36,7 @@ export class HubPoolClient {
     return l1Token;
   }
 
-  getDestinationTokenForL1TokenAndDestinationChainId(l1Token: string, destinationChainId: number) {
+  getDestinationTokenForL1TokenDestinationChainId(l1Token: string, destinationChainId: number) {
     return this.l1TokensToDestinationTokens[l1Token][destinationChainId];
   }
 
@@ -46,8 +50,10 @@ export class HubPoolClient {
   }
 
   async update() {
-    const searchConfig = [this.firstBlockToSearch, this.endingBlock || (await this.getBlockNumber())];
+    const searchConfig = [this.firstBlockToSearch, this.endingBlock || (await this.hubPool.provider.getBlockNumber())];
+    this.logger.debug({ at: "HubPoolClient", message: "Updating client", searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
+
     const [poolRebalanceRouteEvents] = await Promise.all([
       this.hubPool.queryFilter(this.hubPool.filters.SetPoolRebalanceRoute(), ...searchConfig),
     ]);
@@ -58,14 +64,10 @@ export class HubPoolClient {
     }
 
     this._isUpdated = true;
-  }
 
-  async getBlockNumber(): Promise<number> {
-    return await this.hubPool.provider.getBlockNumber();
-  }
+    this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
 
-  getProvider() {
-    return this.hubPool.provider;
+    this.logger.debug({ at: "HubPoolClient", message: "Client updated!" });
   }
 
   isUpdated(): Boolean {

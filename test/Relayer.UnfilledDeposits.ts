@@ -1,13 +1,10 @@
 import { createSpyLogger, sinon, deployAndConfigureHubPool, enableRoutesOnHubPool } from "./utils";
 import { deploySpokePoolWithToken, destinationChainId, deployRateModelStore, getLastBlockTime, expect } from "./utils";
 import { simpleDeposit, fillRelay, ethers, Contract, SignerWithAddress, setupTokensForWallet, winston } from "./utils";
-import { amountToLp, originChainId, amountToDeposit, amountToRelay } from "./constants";
+import { amountToLp, originChainId, amountToRelay } from "./constants";
+import { SpokePoolClient, HubPoolClient, RateModelClient } from "../src/clients";
 
-import { SpokePoolClient } from "../src/clients/SpokePoolClient";
-import { HubPoolClient } from "../src/clients/HubPoolClient";
-import { RateModelClient } from "../src/clients/RateModelClient";
-
-import { Relayer } from "../src/Relayer"; // Tested
+import { Relayer } from "../src/relayer/Relayer"; // Tested
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, l1Token: Contract, rateModelStore: Contract;
@@ -32,16 +29,15 @@ describe("Relayer: Unfilled Deposits", async function () {
     ]));
 
     ({ rateModelStore } = await deployRateModelStore(owner, [l1Token]));
-    hubPoolClient = new HubPoolClient(hubPool);
-    rateModelClient = new RateModelClient(rateModelStore, hubPoolClient);
-    spokePoolClient_1 = new SpokePoolClient(spokePool_1, rateModelClient, originChainId);
-    spokePoolClient_2 = new SpokePoolClient(spokePool_2, rateModelClient, destinationChainId);
-
     ({ spy, spyLogger } = createSpyLogger());
+    hubPoolClient = new HubPoolClient(spyLogger, hubPool);
+    rateModelClient = new RateModelClient(spyLogger, rateModelStore, hubPoolClient);
+    spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1, rateModelClient, originChainId);
+    spokePoolClient_2 = new SpokePoolClient(spyLogger, spokePool_2, rateModelClient, destinationChainId);
+
     relayerInstance = new Relayer(
       spyLogger,
       { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
-      hubPoolClient, // HubPoolClient not needed for this set of tests.
       null
     );
 
