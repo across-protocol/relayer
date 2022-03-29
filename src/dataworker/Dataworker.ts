@@ -1,24 +1,22 @@
-import { BigNumber, winston, buildFillRelayProps } from "./utils";
-import { SpokePoolEventClient } from "./SpokePoolEventClient";
-import { HubPoolEventClient } from "./HubPoolEventClient";
-import { MulticallBundler } from "./MulticallBundler";
-import { Deposit } from "./interfaces/SpokePool";
-import { BundleEvaluationBlockNumbers } from "./interfaces/HubPool";
+import { BigNumber, winston, buildFillRelayProps } from "../utils";
+import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallBundler } from "../clients";
+import { Deposit } from "../interfaces/SpokePool";
+import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";
 
 // @notice Constructs roots to submit to HubPool on L1
 export class Dataworker {
   // eslint-disable-next-line no-useless-constructor
   constructor(
     readonly logger: winston.Logger,
-    readonly spokePoolEventClients: { [chainId: number]: SpokePoolEventClient },
-    readonly hubPoolClient: HubPoolEventClient,
-    readonly multicallBundler: MulticallBundler | any
+    readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
+    readonly hubPoolClient: HubPoolClient,
+    readonly multiCallBundler: MultiCallBundler | any
   ) {}
 
   async update() {
-    // Grab all deposits from SpokePoolEventClient
+    // Grab all deposits from SpokePoolClient
     // Map deposits to their destination chain IDs
-    // Grab all fills from SpokePoolEventClient
+    // Grab all fills from SpokePoolClient
     // Filter out invalid fills for deposits
     // Group remaining fills by destination chain ID
   }
