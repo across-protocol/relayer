@@ -1,4 +1,10 @@
-import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolRebalanceLeaves, buildPoolRebalanceLeafTree } from "./utils";
+import {
+  deploySpokePoolWithToken,
+  repaymentChainId,
+  originChainId,
+  buildPoolRebalanceLeaves,
+  buildPoolRebalanceLeafTree,
+} from "./utils";
 import {
   assert,
   expect,
@@ -8,7 +14,7 @@ import {
   setupTokensForWallet,
   assertPromiseError,
   toBNWei,
-  toWei
+  toWei,
 } from "./utils";
 import { getContractFactory, hubPoolFixture, toBN } from "./utils";
 import { amountToLp, mockTreeRoot, refundProposalLiveness, totalBond } from "./constants";
@@ -22,7 +28,7 @@ let owner: SignerWithAddress;
 
 let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient;
 
-// Same rate model used for across-v1 tests: 
+// Same rate model used for across-v1 tests:
 // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L77
 const sampleRateModel = {
   UBar: toWei("0.65").toString(),
@@ -123,19 +129,18 @@ describe("RateModelClient", async function () {
     // Next, let's increase the pool utilization from 0% to 60% by sending 60% of the pool's liquidity to
     // another chain.
     const leaves = buildPoolRebalanceLeaves(
-            [repaymentChainId],
-            [[l1Token.address]],
-            [[toBN(0)]],
-            [[amountToLp.div(10).mul(6)]], // Send 60% of total liquidity to spoke pool
-            [[toBN(0)]],
-            [0]
-      );
-      const tree = await buildPoolRebalanceLeafTree(leaves);
-      await weth.approve(hubPool.address, totalBond);
+      [repaymentChainId],
+      [[l1Token.address]],
+      [[toBN(0)]],
+      [[amountToLp.div(10).mul(6)]], // Send 60% of total liquidity to spoke pool
+      [[toBN(0)]],
+      [0]
+    );
+    const tree = await buildPoolRebalanceLeafTree(leaves);
+    await weth.approve(hubPool.address, totalBond);
     await hubPool.proposeRootBundle([1], 1, tree.getHexRoot(), mockTreeRoot, mockTreeRoot);
     await timer.setCurrentTime(Number(await timer.getCurrentTime()) + refundProposalLiveness + 1);
     await hubPool.executeRootBundle(...Object.values(leaves[0]), tree.getHexProof(leaves[0]));
-    
 
     // Submit a deposit with a de minimis amount of tokens so we can isolate the computed realized lp fee % to the
     // pool utilization factor.
@@ -162,11 +167,10 @@ describe("RateModelClient", async function () {
           // Same as before, we need to use a timestamp following the `executeRootBundle` call so that we can capture
           // the current pool utilization at 10%.
           quoteTimestamp: (await ethers.provider.getBlock("latest")).timestamp,
-      },
+        },
         l1Token.address
       )
     ).to.equal(toBNWei("0.002081296752280018"));
-
   });
 });
 
