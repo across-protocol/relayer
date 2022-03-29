@@ -1,4 +1,4 @@
-import { BigNumber, winston, buildFillRelayProps, ethers } from "../utils";
+import { BigNumber, winston, buildFillRelayProps } from "../utils";
 import { SpokePoolClient } from "../clients/SpokePoolClient";
 import { MultiCallBundler } from "../MultiCallBundler";
 import { Deposit } from "../interfaces/SpokePool";
@@ -36,7 +36,6 @@ export class Relayer {
         ...buildFillRelayProps(deposit, this.repaymentChainId)
       );
     } catch (error) {
-      console.log("COUGHT!");
       this.logger.error({ at: "Relayer", message: "Error creating fillRelayTx", error });
       return null;
     }
