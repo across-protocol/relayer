@@ -10,11 +10,11 @@ import { RateModelClient } from "../src/clients/RateModelClient";
 
 import winston from "winston";
 import sinon from "sinon";
-import chai from "chai"
+import chai from "chai";
 export { winston, sinon };
 
 const assert = chai.assert;
-export { chai, assert }
+export { chai, assert };
 
 export function assertPromiseError(promise: Promise<any>, errMessage?: string) {
   promise
