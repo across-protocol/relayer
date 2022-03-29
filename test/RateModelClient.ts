@@ -1,4 +1,4 @@
-import { deploySpokePoolWithToken, destinationChainId, originChainId } from "./utils";
+import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolRebalanceLeaves, buildPoolRebalanceLeafTree } from "./utils";
 import {
   assert,
   expect,
@@ -8,31 +8,41 @@ import {
   setupTokensForWallet,
   assertPromiseError,
   toBNWei,
+  toWei
 } from "./utils";
 import { getContractFactory, hubPoolFixture, toBN } from "./utils";
-import { amountToLp, sampleRateModel } from "./constants";
+import { amountToLp, mockTreeRoot, refundProposalLiveness, totalBond } from "./constants";
 
 import { HubPoolClient } from "../src/clients/HubPoolClient";
 import { RateModelClient } from "../src/clients/RateModelClient";
 
 let spokePool: Contract, hubPool: Contract, l2Token: Contract;
-let rateModelStore: Contract, l1Token: Contract, timer: Contract;
+let rateModelStore: Contract, l1Token: Contract, timer: Contract, weth: Contract;
 let owner: SignerWithAddress;
 
 let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient;
 
+// Same rate model used for across-v1 tests: 
+// - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L77
+const sampleRateModel = {
+  UBar: toWei("0.65").toString(),
+  R0: toWei("0.00").toString(),
+  R1: toWei("0.08").toString(),
+  R2: toWei("1.00").toString(),
+};
+
 describe("RateModelClient", async function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
-    ({ spokePool, erc20: l2Token } = await deploySpokePoolWithToken(originChainId, destinationChainId));
-    ({ hubPool, timer, dai: l1Token } = await hubPoolFixture());
+    ({ spokePool, erc20: l2Token } = await deploySpokePoolWithToken(originChainId, repaymentChainId));
+    ({ hubPool, timer, dai: l1Token, weth } = await hubPoolFixture());
     await hubPool.enableL1TokenForLiquidityProvision(l1Token.address);
 
     rateModelStore = await (await getContractFactory("RateModelStore", owner)).deploy();
     hubPoolClient = new HubPoolClient(hubPool);
     rateModelClient = new RateModelClient(rateModelStore, hubPoolClient);
 
-    await setupTokensForWallet(spokePool, owner, [l1Token], null, 100); // Seed owner to LP.
+    await setupTokensForWallet(spokePool, owner, [l1Token], weth, 100); // Seed owner to LP.
     await l1Token.approve(hubPool.address, amountToLp);
     await hubPool.addLiquidity(l1Token.address, amountToLp);
   });
@@ -97,41 +107,55 @@ describe("RateModelClient", async function () {
       realizedLpFeePct: toBN(0),
       amount: amountToLp.div(10),
       originChainId,
-      destinationChainId,
+      destinationChainId: repaymentChainId,
       relayerFeePct: toBN(0),
       quoteTimestamp: initialRateModelUpdateTime,
       // Quote time needs to be >= first rate model event time
     };
     await rateModelClient.update();
 
-    // TODO: Validate that this rate is expected
+    // Relayed amount being 10% of total LP amount should give exact same results as this test in v1:
+    // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L1037
     expect(await rateModelClient.computeRealizedLpFeePct(depositData, l1Token.address)).to.equal(
-      toBNWei("0.000835322155994299")
+      toBNWei("0.000117987509354032")
     );
 
-    // Higher deposit should result in higher LP fee
+    // Relaying 60% of pool should give exact same result as this test:
+    // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L1064
     expect(
       await rateModelClient.computeRealizedLpFeePct(
-        { ...depositData, amount: depositData.amount.mul(2) },
+        { ...depositData, amount: depositData.amount.mul(6) },
         l1Token.address
       )
-    ).to.equal(toBNWei("0.000915784051288600"));
+    ).to.equal(toBNWei("0.000697507530370702"));
+    // TODO: Should be "0.002081296752280018"
 
-    // TODO: Test modifying the current liquidity utilization by executing a pool rebalance
-    // // Let's increase the pool utilization from 0% to 10% by sending 10% of the pool's liquidity to
-    // // another chain.
-    // const leaves = buildPoolRebalanceLeaves(
-    //         [destinationChainId],
-    //         [[l1Token]], // l1Token. We will only be sending 1 token to one chain.
-    //         [[0]], // bundleLpFees.
-    //         [[amountToLp.div(10)]], // netSendAmounts.
-    //         [[0]], // runningBalances.
-    //         [0] // groupIndex
-    //     );
-    //     const tree = await buildPoolRebalanceLeafTree(leaves);
-    // await hubPool.proposeRootBundle([1], 1, tree.getHexRoot(), createRandomBytes32(), createRandomBytes32);
-    // await timer.setCurrentTime(Number(await timer.getCurrentTime()) + refundProposalLiveness + 1);
-    // await hubPool.executeRootBundle(...Object.values(leaves[0]), tree.getHexProof(leaves[0]));
+    // Next, let's increase the pool utilization from 0% to 10% by sending 10% of the pool's liquidity to
+    // another chain.
+    const leaves = buildPoolRebalanceLeaves(
+            [repaymentChainId],
+            [[l1Token.address]],
+            [[toBN(0)]],
+            [[amountToLp.div(10)]], // Send 10% of total liquidity to spoke pool
+            [[toBN(0)]],
+            [0]
+      );
+      const tree = await buildPoolRebalanceLeafTree(leaves);
+      await weth.approve(hubPool.address, totalBond);
+    await hubPool.proposeRootBundle([1], 1, tree.getHexRoot(), mockTreeRoot, mockTreeRoot);
+    await timer.setCurrentTime(Number(await timer.getCurrentTime()) + refundProposalLiveness + 1);
+    const txn = await hubPool.executeRootBundle(...Object.values(leaves[0]), tree.getHexProof(leaves[0]));
+    
+    // Note: we need to set the deposit quote timestamp to one after the utilisation % jumped from 0% to 10%. This is
+    // because the rate model uses the quote time to fetch the liquidity utilization at that quote time.
+    const txnBlock = (await txn.wait()).blockNumber
+    const quoteTimestamp = Number((await ethers.provider.getBlock(txnBlock)).timestamp)
+
+    // Submit a deposit with a de minimis amount of tokens so we can isolate the computed realized lp fee % to the
+    // pool utilization factor.
+    expect(
+      await rateModelClient.computeRealizedLpFeePct({ ...depositData, amount: toBNWei("0.0000001"), quoteTimestamp }, l1Token.address)
+    ).to.equal(toBNWei("0.000235269328334481"));
   });
 });
 
