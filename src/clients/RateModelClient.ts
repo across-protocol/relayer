@@ -23,9 +23,9 @@ export class RateModelClient {
 
   async computeRealizedLpFeePct(deposit: Deposit, l1Token: string) {
     this.logger.debug({ at: "RateModelClient", message: "Computing realizedLPFeePct", deposit, l1Token });
-    // const quoteBlockNumber = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
+    const quoteBlockNumber = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
     // Set to this temporarily until we re-deploy. The RateModelStore was deployed after the spokePool's deposits.
-    const quoteBlockNumber = 30626071;
+    // const quoteBlockNumber = 30626071;
 
     const rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlockNumber);
 
