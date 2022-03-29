@@ -1,14 +1,10 @@
+import winston from "winston";
+import { getProvider, getSigner, contractAt, Contract } from "../utils";
 import { RateModelClient } from "./RateModelClient";
 import { HubPoolClient } from "./HubPoolClient";
 import { SpokePoolClient } from "./SpokePoolClient";
-import winston from "winston";
 import { RelayerConfig } from "../relayer/RelayerConfig";
-
 import { MultiCallBundler } from "../MultiCallBundler";
-
-import { getProvider, getSigner, contractAt, Contract } from "../utils";
-
-// interface
 
 export function constructClients(logger: winston.Logger, config: RelayerConfig) {
   // Create signers for each chain. Each is connected to an associated provider for that chain.
