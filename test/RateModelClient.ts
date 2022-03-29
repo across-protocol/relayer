@@ -120,23 +120,13 @@ describe("RateModelClient", async function () {
       toBNWei("0.000117987509354032")
     );
 
-    // Relaying 60% of pool should give exact same result as this test:
-    // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L1064
-    expect(
-      await rateModelClient.computeRealizedLpFeePct(
-        { ...depositData, amount: depositData.amount.mul(6) },
-        l1Token.address
-      )
-    ).to.equal(toBNWei("0.000697507530370702"));
-    // TODO: Should be "0.002081296752280018"
-
-    // Next, let's increase the pool utilization from 0% to 10% by sending 10% of the pool's liquidity to
+    // Next, let's increase the pool utilization from 0% to 60% by sending 60% of the pool's liquidity to
     // another chain.
     const leaves = buildPoolRebalanceLeaves(
             [repaymentChainId],
             [[l1Token.address]],
             [[toBN(0)]],
-            [[amountToLp.div(10)]], // Send 10% of total liquidity to spoke pool
+            [[amountToLp.div(10).mul(6)]], // Send 60% of total liquidity to spoke pool
             [[toBN(0)]],
             [0]
       );
@@ -144,18 +134,39 @@ describe("RateModelClient", async function () {
       await weth.approve(hubPool.address, totalBond);
     await hubPool.proposeRootBundle([1], 1, tree.getHexRoot(), mockTreeRoot, mockTreeRoot);
     await timer.setCurrentTime(Number(await timer.getCurrentTime()) + refundProposalLiveness + 1);
-    const txn = await hubPool.executeRootBundle(...Object.values(leaves[0]), tree.getHexProof(leaves[0]));
+    await hubPool.executeRootBundle(...Object.values(leaves[0]), tree.getHexProof(leaves[0]));
     
-    // Note: we need to set the deposit quote timestamp to one after the utilisation % jumped from 0% to 10%. This is
-    // because the rate model uses the quote time to fetch the liquidity utilization at that quote time.
-    const txnBlock = (await txn.wait()).blockNumber
-    const quoteTimestamp = Number((await ethers.provider.getBlock(txnBlock)).timestamp)
 
     // Submit a deposit with a de minimis amount of tokens so we can isolate the computed realized lp fee % to the
     // pool utilization factor.
     expect(
-      await rateModelClient.computeRealizedLpFeePct({ ...depositData, amount: toBNWei("0.0000001"), quoteTimestamp }, l1Token.address)
-    ).to.equal(toBNWei("0.000235269328334481"));
+      await rateModelClient.computeRealizedLpFeePct(
+        {
+          ...depositData,
+          amount: toBNWei("0.0000001"),
+          // Note: we need to set the deposit quote timestamp to one after the utilisation % jumped from 0% to 10%.
+          // This is because the rate model uses the quote time to fetch the liquidity utilization at that quote time.
+          quoteTimestamp: (await ethers.provider.getBlock("latest")).timestamp,
+        },
+        l1Token.address
+      )
+    ).to.equal(toBNWei("0.001371068779697899"));
+
+    // Relaying 10% of pool should give exact same result as this test, which sends a relay that is 10% of the pool's
+    // size when the pool is already at 60% utilization. The resulting post-relay utilization is therefore 70%.
+    // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L1064
+    expect(
+      await rateModelClient.computeRealizedLpFeePct(
+        {
+          ...depositData,
+          // Same as before, we need to use a timestamp following the `executeRootBundle` call so that we can capture
+          // the current pool utilization at 10%.
+          quoteTimestamp: (await ethers.provider.getBlock("latest")).timestamp,
+      },
+        l1Token.address
+      )
+    ).to.equal(toBNWei("0.002081296752280018"));
+
   });
 });
 
