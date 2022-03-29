@@ -4,6 +4,7 @@ import { Deposit, Fill, SpeedUp } from "../interfaces/SpokePool";
 export class HubPoolClient {
   // l1Token -> destinationChainId -> destinationToken
   private l1TokensToDestinationTokens: { [l1Token: string]: { [destinationChainId: number]: string } } = {};
+  private _isUpdated: boolean = false;
 
   public firstBlockToSearch: number;
 
@@ -55,6 +56,8 @@ export class HubPoolClient {
       const args = spreadEvent(event);
       assign(this.l1TokensToDestinationTokens, [args.l1Token, args.destinationChainId], args.destinationToken);
     }
+
+    this._isUpdated = true;
   }
 
   async getBlockNumber(): Promise<number> {
@@ -66,6 +69,6 @@ export class HubPoolClient {
   }
 
   isUpdated(): Boolean {
-    return Object.keys(this.l1TokensToDestinationTokens).length > 0;
+    return this._isUpdated;
   }
 }

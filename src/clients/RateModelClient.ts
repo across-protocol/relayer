@@ -10,6 +10,8 @@ export class RateModelClient {
   public cumulativeRateModelEvents: across.rateModel.RateModelEvent[] = [];
   private rateModelDictionary: across.rateModel.RateModelDictionary;
 
+  private _isUpdated: boolean = false;
+
   public firstBlockToSearch: number;
 
   constructor(readonly rateModelStore: Contract, readonly hubPoolClient: HubPoolClient) {
@@ -68,5 +70,11 @@ export class RateModelClient {
       this.cumulativeRateModelEvents = [...this.cumulativeRateModelEvents, args];
     }
     this.rateModelDictionary.updateWithEvents(this.cumulativeRateModelEvents);
+
+    this._isUpdated = true;
+  }
+
+  isUpdated(): Boolean {
+    return this._isUpdated;
   }
 }
