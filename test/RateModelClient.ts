@@ -80,20 +80,14 @@ describe("RateModelClient", async function () {
     ).to.deep.equal(sampleRateModel);
 
     // Block number when there is no rate model
-    try {
-      rateModelClient.getRateModelForBlockNumber(l1Token.address, initialRateModelUpdate.blockNumber - 1);
-      assert(false);
-    } catch (err) {
-      assert.isTrue(err.message.includes("before first UpdatedRateModel event"));
-    }
+    expect(
+      () => rateModelClient.getRateModelForBlockNumber(l1Token.address, initialRateModelUpdate.blockNumber - 1)
+    ).to.throw(/before first UpdatedRateModel event/);
 
     // L1 token where there is no rate model
-    try {
-      rateModelClient.getRateModelForBlockNumber(l2Token.address, initialRateModelUpdate.blockNumber);
-      assert(false);
-    } catch (err) {
-      assert.isTrue(err.message.includes("No updated rate model"));
-    }
+    expect(() =>
+      rateModelClient.getRateModelForBlockNumber(l2Token.address, initialRateModelUpdate.blockNumber)
+    ).to.throw(/No updated rate model events for L1 token/);
   });
 
   it("computeRealizedLpFeePct", async function () {
