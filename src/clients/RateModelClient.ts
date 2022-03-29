@@ -7,8 +7,10 @@ import { HubPoolClient } from "./HubPoolClient";
 export class RateModelClient {
   private readonly blockFinder;
 
-  private cumulativeRateModelEvents: across.rateModel.RateModelEvent[] = [];
+  public cumulativeRateModelEvents: across.rateModel.RateModelEvent[] = [];
   private rateModelDictionary: across.rateModel.RateModelDictionary;
+
+  private _isUpdated: boolean = false;
 
   public firstBlockToSearch: number;
 
@@ -58,6 +60,8 @@ export class RateModelClient {
   }
 
   async update() {
+    if (!this.hubPoolClient.isUpdated()) throw new Error("hubpool not updated");
+
     const searchConfig = [this.firstBlockToSearch, await this.rateModelStore.provider.getBlockNumber()];
     this.logger.debug({ at: "RateModelClient", message: "Updating client", searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
@@ -77,8 +81,14 @@ export class RateModelClient {
     }
     this.rateModelDictionary.updateWithEvents(this.cumulativeRateModelEvents);
 
+    this._isUpdated = true;
+
     this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
 
     this.logger.debug({ at: "RateModelClient", message: "Client updated!" });
+  }
+
+  isUpdated(): Boolean {
+    return this._isUpdated;
   }
 }

@@ -134,12 +134,10 @@ describe("Relayer: Unfilled Deposits", async function () {
 });
 
 async function updateAllClients() {
-  await Promise.all([
-    spokePoolClient_1.update(),
-    spokePoolClient_2.update(),
-    hubPoolClient.update(),
-    rateModelClient.update(),
-  ]);
+  await hubPoolClient.update();
+  await rateModelClient.update();
+  await spokePoolClient_1.update();
+  await spokePoolClient_2.update();
 }
 
 async function fillWithRealizedLpFeePct(spokePool, relayer, depositor, deposit, relayAmount = amountToRelay) {

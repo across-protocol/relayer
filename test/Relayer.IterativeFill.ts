@@ -92,9 +92,9 @@ describe("Relayer: Iterative fill", async function () {
 });
 
 async function updateAllClients() {
-  await Promise.all([
-    ...spokePools.map((spokePool) => spokePool.spokePoolClient.update()),
-    hubPoolClient.update(),
-    rateModelClient.update(),
-  ]);
+  await hubPoolClient.update();
+  await rateModelClient.update();
+  for (const spokePool of spokePools) {
+    await spokePool.spokePoolClient.update();
+  }
 }

@@ -82,6 +82,8 @@ export class SpokePoolClient {
   }
 
   async update() {
+    if (this.rateModelClient !== null && !this.rateModelClient.isUpdated()) throw new Error("ratemodel not updated");
+
     const searchConfig = [this.firstBlockToSearch, this.endingBlock || (await this.getBlockNumber())];
     this.log("debug", "Updating client", { searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
