@@ -4,6 +4,7 @@ import {
   originChainId,
   buildPoolRebalanceLeaves,
   buildPoolRebalanceLeafTree,
+  createSpyLogger
 } from "./utils";
 import {
   assert,
@@ -45,8 +46,8 @@ describe("RateModelClient", async function () {
     await hubPool.enableL1TokenForLiquidityProvision(l1Token.address);
 
     rateModelStore = await (await getContractFactory("RateModelStore", owner)).deploy();
-    hubPoolClient = new HubPoolClient(hubPool);
-    rateModelClient = new RateModelClient(rateModelStore, hubPoolClient);
+    hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
+    rateModelClient = new RateModelClient(createSpyLogger().spyLogger, rateModelStore, hubPoolClient);
 
     await setupTokensForWallet(spokePool, owner, [l1Token], weth, 100); // Seed owner to LP.
     await l1Token.approve(hubPool.address, amountToLp);
