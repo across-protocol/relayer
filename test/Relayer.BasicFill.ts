@@ -6,19 +6,19 @@ import { amountToLp } from "./constants";
 import { SpokePoolClient } from "../src/clients/SpokePoolClient";
 import { HubPoolClient } from "../src/clients/HubPoolClient";
 import { RateModelClient } from "../src/clients/RateModelClient";
-import { MulticallBundler } from "../src/MulticallBundler";
+import { MultiCallBundler } from "../src/MultiCallBundler";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
-let hubPool: Contract, mockAdapter: Contract, rateModelStore: Contract, l1Token: Contract;
+let hubPool: Contract, rateModelStore: Contract, l1Token: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient;
 let relayerInstance: Relayer;
-let multicallBundler: MulticallBundler;
+let multiCallBundler: MultiCallBundler;
 
 describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   beforeEach(async function () {
@@ -34,20 +34,24 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       { destinationChainId: destinationChainId, l1Token, destinationToken: erc20_2 },
     ]);
 
-    ({ rateModelStore } = await deployRateModelStore(owner, [l1Token]));
-    hubPoolClient = new HubPoolClient(hubPool);
-    rateModelClient = new RateModelClient(rateModelStore, hubPoolClient);
-
     ({ spy, spyLogger } = createSpyLogger());
-    multicallBundler = new MulticallBundler(spyLogger, null); // leave out the gasEstimator for now.
+    ({ rateModelStore } = await deployRateModelStore(owner, [l1Token]));
+    hubPoolClient = new HubPoolClient(spyLogger, hubPool);
+    rateModelClient = new RateModelClient(spyLogger, rateModelStore, hubPoolClient);
 
-    spokePoolClient_1 = new SpokePoolClient(spokePool_1.connect(relayer), rateModelClient, originChainId);
-    spokePoolClient_2 = new SpokePoolClient(spokePool_2.connect(relayer), rateModelClient, destinationChainId);
+    multiCallBundler = new MultiCallBundler(spyLogger, null); // leave out the gasEstimator for now.
+
+    spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(relayer), rateModelClient, originChainId);
+    spokePoolClient_2 = new SpokePoolClient(
+      spyLogger,
+      spokePool_2.connect(relayer),
+      rateModelClient,
+      destinationChainId
+    );
     relayerInstance = new Relayer(
       spyLogger,
       { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
-      hubPoolClient,
-      multicallBundler
+      multiCallBundler
     );
 
     await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // Seed owner to LP.
@@ -71,9 +75,9 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(lastSpyLogIncludes(spy, "Filling deposit")).to.be.true;
-    expect(multicallBundler.transactionCount()).to.equal(1); // One transaction, filling the one deposit.
+    expect(multiCallBundler.transactionCount()).to.equal(1); // One transaction, filling the one deposit.
 
-    const tx = await multicallBundler.executeTransactionQueue();
+    const tx = await multiCallBundler.executeTransactionQueue();
     expect(lastSpyLogIncludes(spy, "All transactions executed")).to.be.true;
     expect(tx.length).to.equal(1); // There should have been exactly one transaction.
 
@@ -92,10 +96,10 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     expect((await spokePool_1.queryFilter(spokePool_1.filters.FilledRelay())).length).to.equal(0);
 
     // Re-run the execution loop and validate that no additional relays are sent.
-    multicallBundler.clearTransactionQueue();
+    multiCallBundler.clearTransactionQueue();
     await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(multicallBundler.transactionCount()).to.equal(0); // no Transactions to send.
+    expect(multiCallBundler.transactionCount()).to.equal(0); // no Transactions to send.
     expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
   });
 });

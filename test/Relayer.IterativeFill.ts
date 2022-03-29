@@ -6,15 +6,14 @@ import { amountToLp, sampleRateModel } from "./constants";
 import { HubPoolClient } from "../src/clients/HubPoolClient";
 import { RateModelClient } from "../src/clients/RateModelClient";
 import { Relayer } from "../src/relayer/Relayer";
-import { MulticallBundler } from "../src/MulticallBundler";
+import { MultiCallBundler } from "../src/MultiCallBundler";
 
 let relayer_signer: SignerWithAddress, hubPool: Contract, mockAdapter: Contract, rateModelStore: Contract;
 let hubPoolClient: HubPoolClient, rateModelClient: RateModelClient;
-
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
 let spokePools, l1TokenToL2Tokens;
-let relayer: Relayer, multicallBundler: MulticallBundler;
+let relayer: Relayer, multiCallBundler: MultiCallBundler;
 
 describe("Relayer: Iterative fill", async function () {
   beforeEach(async function () {
@@ -26,13 +25,14 @@ describe("Relayer: Iterative fill", async function () {
     const numChainsToDeploySpokePoolsTo = 5;
     const numTokensToDeployPerChain = 1;
 
-    ({ rateModelStore } = await deployRateModelStore(relayer_signer, []));
-    hubPoolClient = new HubPoolClient(hubPool);
-    rateModelClient = new RateModelClient(rateModelStore, hubPoolClient);
     ({ spy, spyLogger } = createSpyLogger());
-    multicallBundler = new MulticallBundler(spyLogger, null); // leave out the gasEstimator for now.
+    ({ rateModelStore } = await deployRateModelStore(relayer_signer, []));
+    hubPoolClient = new HubPoolClient(spyLogger, hubPool);
+    rateModelClient = new RateModelClient(spyLogger, rateModelStore, hubPoolClient);
+    multiCallBundler = new MultiCallBundler(spyLogger, null); // leave out the gasEstimator for now.
 
     ({ spokePools, l1TokenToL2Tokens } = await deployIterativeSpokePoolsAndToken(
+      spyLogger,
       relayer_signer,
       mockAdapter,
       rateModelClient,
@@ -52,7 +52,7 @@ describe("Relayer: Iterative fill", async function () {
     });
 
     await updateAllClients();
-    relayer = new Relayer(spyLogger, spokePoolEventClients, hubPoolClient, multicallBundler);
+    relayer = new Relayer(spyLogger, spokePoolEventClients, multiCallBundler);
 
     let depositCount = 0;
 
@@ -79,16 +79,16 @@ describe("Relayer: Iterative fill", async function () {
     // Update all clients and run the relayer. Relayer should fill all 20 deposits.
     await updateAllClients();
     await relayer.checkForUnfilledDepositsAndFill();
-    expect(multicallBundler.transactionCount()).to.equal(20); // 20 transactions, filling each relay.
-    const txs = await multicallBundler.executeTransactionQueue();
+    expect(multiCallBundler.transactionCount()).to.equal(20); // 20 transactions, filling each relay.
+    const txs = await multiCallBundler.executeTransactionQueue();
     expect(lastSpyLogIncludes(spy, "All transactions executed")).to.be.true;
     expect(txs.length).to.equal(20); // There should have been exactly 20 transaction.
 
     // Re-run the execution loop and validate that no additional relays are sent.
-    multicallBundler.clearTransactionQueue();
+    multiCallBundler.clearTransactionQueue();
     await updateAllClients();
     await relayer.checkForUnfilledDepositsAndFill();
-    expect(multicallBundler.transactionCount()).to.equal(0); // no Transactions to send.
+    expect(multiCallBundler.transactionCount()).to.equal(0); // no Transactions to send.
     expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
   });
 });

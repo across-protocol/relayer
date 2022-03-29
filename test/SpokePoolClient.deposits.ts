@@ -1,4 +1,4 @@
-import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
+import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet, createSpyLogger } from "./utils";
 import { deploySpokePoolWithToken, enableRoutes, simpleDeposit, originChainId, destinationChainId } from "./utils";
 
 import { SpokePoolClient } from "../src/clients/SpokePoolClient";
@@ -14,7 +14,7 @@ describe("SpokePoolClient: Deposits", async function () {
     [owner, depositor1, depositor2] = await ethers.getSigners();
     ({ spokePool, erc20, destErc20, weth } = await deploySpokePoolWithToken(originChainId));
     await enableRoutes(spokePool, [{ originToken: erc20.address, destinationChainId: destinationChainId2 }]);
-    spokePoolClient = new SpokePoolClient(spokePool, null, originChainId);
+    spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool, null, originChainId);
 
     await setupTokensForWallet(spokePool, depositor1, [erc20, destErc20], weth, 10);
     await setupTokensForWallet(spokePool, depositor2, [erc20, destErc20], weth, 10);

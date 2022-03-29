@@ -12,6 +12,6 @@ export const sampleRateModel = {
   R2: toWei(0.75).toString(),
 };
 
-export const baseSpeedUpString = "ACROSS-V2-FEE-1.0"
+export const baseSpeedUpString = "ACROSS-V2-FEE-1.0";
 
 export * from "@across-protocol/contracts-v2/dist/test-utils"; // Contains all the Across contract constants.

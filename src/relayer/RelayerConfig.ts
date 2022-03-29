@@ -1,21 +1,22 @@
 import { ethers } from "ethers";
 import assert from "assert";
 
-const defaultConfiguredNetworks = [1, 10, 42161, 288];
-
 export interface ProcessEnv {
   [key: string]: string | undefined;
 }
 
 export class RelayerConfig {
-  readonly hubPoolAddress: string;
-  readonly configuredNetworks: number[];
+  readonly hubPoolChainId: number;
+  readonly spokePoolChains: number[];
+  readonly pollingDelay: number;
 
   constructor(env: ProcessEnv) {
-    const { HUB_POOL_ADDRESS, CONFIGURED_NETWORKS } = env;
-    assert(HUB_POOL_ADDRESS, "HUB_POOL_ADDRESS required");
-    this.hubPoolAddress = ethers.utils.getAddress(HUB_POOL_ADDRESS);
+    const { CONFIGURED_NETWORKS, HUB_CHAIN_ID, POLLING_DELAY } = env;
+    assert(CONFIGURED_NETWORKS, "HUB_POOL_ADDRESS required");
+    this.hubPoolChainId = Number(HUB_CHAIN_ID) ?? 1;
 
-    this.configuredNetworks = CONFIGURED_NETWORKS ? JSON.parse(CONFIGURED_NETWORKS) : defaultConfiguredNetworks;
+    this.spokePoolChains = CONFIGURED_NETWORKS ? JSON.parse(CONFIGURED_NETWORKS) : [1, 10, 42161, 288];
+
+    this.pollingDelay = Number(env.POLLING_DELAY) ?? 60;
   }
 }
