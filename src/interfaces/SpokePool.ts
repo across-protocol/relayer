@@ -10,8 +10,9 @@ export interface Deposit {
   destinationChainId: number;
   relayerFeePct: BigNumber;
   quoteTimestamp: number;
-  realizedLpFeePct?: BigNumber; // appended after initialization (not part of the Deposit event).
-  destinationToken?: string; // appended after initialization (not part of the Deposit event).
+  realizedLpFeePct?: BigNumber; // appended after initialization (not part of Deposit event).
+  destinationToken?: string; // appended after initialization (not part of Deposit event).
+  speedUpSignature?: string | undefined; // appended after initialization, if deposit was speedup (not part of Deposit event).
 }
 export interface Fill {
   relayHash: string;
@@ -36,6 +37,7 @@ export interface SpeedUp {
   depositorSignature: string;
   newRelayerFeePct: BigNumber;
   depositId: number;
+  originChainId: number;
 }
 
 export interface SlowFill {

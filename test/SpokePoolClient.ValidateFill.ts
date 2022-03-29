@@ -1,7 +1,7 @@
-import { expect, toBNWei, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
-import { deploySpokePoolWithToken, fillRelay, deposit, originChainId, destinationChainId } from "./utils";
+import { expect, toBNWei, ethers, fillRelay, SignerWithAddress, deposit, setupTokensForWallet } from "./utils";
+import { deploySpokePoolWithToken, Contract, originChainId, destinationChainId, createSpyLogger } from "./utils";
 
-import { SpokePoolClient } from "../src/clients/SpokePoolClient";
+import { SpokePoolClient } from "../src/clients";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
@@ -14,7 +14,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
     // Creat two spoke pools: one to act as the source and the other to act as the destination.
     ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId));
     ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
-    spokePoolClient = new SpokePoolClient(spokePool_2, null, originChainId); // create spoke pool client on the "target" chain.
+    spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_2, null, originChainId); // create spoke pool client on the "target" chain.
 
     await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);
     await setupTokensForWallet(spokePool_2, relayer, [erc20_2], null, 10);

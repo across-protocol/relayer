@@ -1,4 +1,4 @@
-import { spreadEvent, Contract, toBN } from "../utils";
+import { spreadEvent, winston, Contract, toBN } from "../utils";
 import { Deposit, Fill } from "../interfaces/SpokePool";
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
@@ -12,29 +12,38 @@ export class RateModelClient {
 
   public firstBlockToSearch: number;
 
-  constructor(readonly rateModelStore: Contract, readonly hubPoolClient: HubPoolClient) {
-    this.blockFinder = new BlockFinder(
-      this.hubPoolClient.getProvider().getBlock.bind(this.hubPoolClient.getProvider())
-    );
+  constructor(
+    readonly logger: winston.Logger,
+    readonly rateModelStore: Contract,
+    readonly hubPoolClient: HubPoolClient
+  ) {
+    this.blockFinder = new BlockFinder(this.rateModelStore.provider.getBlock.bind(this.rateModelStore.provider));
     this.rateModelDictionary = new across.rateModel.RateModelDictionary();
   }
 
   async computeRealizedLpFeePct(deposit: Deposit, l1Token: string) {
+    this.logger.debug({ at: "RateModelClient", message: "Computing realizedLPFeePct", deposit, l1Token });
     const quoteBlockNumber = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
+    // Set to this temporarily until we re-deploy. The RateModelStore was deployed after the spokePool's deposits.
+    // const quoteBlockNumber = 30626071;
 
-    const rateModelForBlockNumber = this.getRateModelForBlockNumber(l1Token, quoteBlockNumber);
+    const rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlockNumber);
 
     const blockOffset = { blockTag: quoteBlockNumber };
-    const [liquidityUtilizationCurrent, liquidityUtilizationPostRelay] = await Promise.all([
+    const [utilizationCurrent, utilizationPost] = await Promise.all([
       this.hubPoolClient.hubPool.callStatic.liquidityUtilizationCurrent(l1Token, blockOffset),
       this.hubPoolClient.hubPool.callStatic.liquidityUtilizationPostRelay(l1Token, deposit.amount, blockOffset),
     ]);
 
-    const realizedLpFeePct = lpFeeCalculator.calculateRealizedLpFeePct(
-      rateModelForBlockNumber,
-      liquidityUtilizationCurrent,
-      liquidityUtilizationPostRelay
-    );
+    const realizedLpFeePct = lpFeeCalculator.calculateRealizedLpFeePct(rateModel, utilizationCurrent, utilizationPost);
+
+    this.logger.debug({
+      at: "RateModelClient",
+      message: "Computed realizedLPFeePct",
+      quoteBlockNumber,
+      rateModel,
+      realizedLpFeePct: realizedLpFeePct.toString(),
+    });
 
     return toBN(realizedLpFeePct);
   }
@@ -49,7 +58,8 @@ export class RateModelClient {
   }
 
   async update() {
-    const searchConfig = [this.firstBlockToSearch, await this.hubPoolClient.getBlockNumber()];
+    const searchConfig = [this.firstBlockToSearch, await this.rateModelStore.provider.getBlockNumber()];
+    this.logger.debug({ at: "RateModelClient", message: "Updating client", searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
     const rateModelStoreEvents = await this.rateModelStore.queryFilter(
       this.rateModelStore.filters.UpdatedRateModel(),
@@ -66,5 +76,9 @@ export class RateModelClient {
       this.cumulativeRateModelEvents = [...this.cumulativeRateModelEvents, args];
     }
     this.rateModelDictionary.updateWithEvents(this.cumulativeRateModelEvents);
+
+    this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
+
+    this.logger.debug({ at: "RateModelClient", message: "Client updated!" });
   }
 }

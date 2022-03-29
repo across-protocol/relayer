@@ -1,6 +1,6 @@
 {
   "name": "relayer-v2",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Across Protocol V2 Relayer Bot",
   "repository": "git@github.com:across-protocol/relayer-v2.git",
   "author": "UMA Team",
@@ -15,8 +15,6 @@
     "hardhat": "^2.9.0"
   },
   "files": [
-    "/contracts/**/*.sol",
-    "/artifacts/**/*",
     "/dist/**/*"
   ],
   "types": "dist/index.d.ts",
@@ -25,7 +23,8 @@
     "lint": "yarn prettier --list-different",
     "lint-fix": "yarn prettier --write",
     "prettier": "prettier .",
-    "test": "hardhat test"
+    "test": "hardhat test",
+    "build": "tsc && rsync -a --include '*/' --include '*.d.ts' --exclude '*' ./dist/"
   },
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "^2.0.0",

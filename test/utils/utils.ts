@@ -1,12 +1,10 @@
 import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
-export * from "@across-protocol/contracts-v2/dist/test-utils";
-export * from "@uma/financial-templates-lib";
 import { TokenRolesEnum } from "@uma/common";
 import { SpyTransport } from "@uma/financial-templates-lib";
-import { sampleRateModel, zeroAddress } from "./constants";
+import { sampleRateModel, zeroAddress } from "../constants";
 
-import { SpokePoolClient } from "../src/clients/SpokePoolClient";
-import { RateModelClient } from "../src/clients/RateModelClient";
+import { SpokePoolClient } from "../../src/clients/SpokePoolClient";
+import { RateModelClient } from "../../src/clients/RateModelClient";
 
 import winston from "winston";
 import sinon from "sinon";
@@ -112,6 +110,7 @@ export async function simpleDeposit(
 }
 
 export async function deploySpokePoolForIterativeTest(
+  logger,
   signer: utils.SignerWithAddress,
   mockAdapter: utils.Contract,
   rateModelClient: RateModelClient,
@@ -125,7 +124,7 @@ export async function deploySpokePoolForIterativeTest(
     spokePool.address
   );
 
-  const spokePoolClient = new SpokePoolClient(spokePool.connect(signer), rateModelClient, desiredChainId);
+  const spokePoolClient = new SpokePoolClient(logger, spokePool.connect(signer), rateModelClient, desiredChainId);
 
   return { spokePool, spokePoolClient };
 }
@@ -170,9 +169,10 @@ export async function getLastBlockTime(provider: any) {
 }
 
 export async function deployIterativeSpokePoolsAndToken(
-  signer,
-  mockAdapter,
-  rateModelClient,
+  logger: winston.Logger,
+  signer: utils.SignerWithAddress,
+  mockAdapter: utils.Contract,
+  rateModelClient: RateModelClient,
   numSpokePools: number,
   numTokens: number
 ) {
@@ -182,7 +182,7 @@ export async function deployIterativeSpokePoolsAndToken(
   // For each count of numSpokePools deploy a new spoke pool. Set the chainId to the index in the array. Note that we
   // start at index of 1 here. spokePool with a chainId of 0 is not a good idea.
   for (let i = 1; i < numSpokePools + 1; i++)
-    spokePools.push(await deploySpokePoolForIterativeTest(signer, mockAdapter, rateModelClient, i));
+    spokePools.push(await deploySpokePoolForIterativeTest(logger, signer, mockAdapter, rateModelClient, i));
 
   // For each count of numTokens deploy a new token. This will also set it as an enabled route over all chains.
   for (let i = 1; i < numTokens + 1; i++) {

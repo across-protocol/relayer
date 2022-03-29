@@ -4,6 +4,10 @@ export function buildFillRelayProps(
   depositInfo: { unfilledAmount: BigNumber; deposit: Deposit },
   repaymentChain: number
 ) {
+  // Validate all keys are present.
+  for (const key in depositInfo.deposit)
+    if (depositInfo.deposit[key] == undefined) throw new Error(`Missing or undefined value in props! ${key}`);
+
   return [
     depositInfo.deposit.depositor,
     depositInfo.deposit.recipient,
