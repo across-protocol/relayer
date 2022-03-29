@@ -1,10 +1,9 @@
 import { setupTokensForWallet, expect, ethers, Contract, SignerWithAddress, sinon, winston } from "./utils";
 import { originChainId, deploySpokePoolWithToken, fillRelay, destinationChainId, createSpyLogger } from "./utils";
-import { SpokePoolClient } from "../src/clients/SpokePoolClient";
+import { SpokePoolClient } from "../src/clients";
 
 let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer1: SignerWithAddress, relayer2: SignerWithAddress;
-let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
 const originChainId2 = originChainId + 1;
 

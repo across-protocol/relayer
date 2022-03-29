@@ -1,11 +1,8 @@
 import { createSpyLogger, sinon, deployAndConfigureHubPool, enableRoutesOnHubPool } from "./utils";
 import { deploySpokePoolWithToken, destinationChainId, deployRateModelStore, getLastBlockTime, expect } from "./utils";
 import { simpleDeposit, fillRelay, ethers, Contract, SignerWithAddress, setupTokensForWallet, winston } from "./utils";
-import { amountToLp, originChainId, amountToDeposit, amountToRelay } from "./constants";
-
-import { SpokePoolClient } from "../src/clients/SpokePoolClient";
-import { HubPoolClient } from "../src/clients/HubPoolClient";
-import { RateModelClient } from "../src/clients/RateModelClient";
+import { amountToLp, originChainId, amountToRelay } from "./constants";
+import { SpokePoolClient, HubPoolClient, RateModelClient } from "../src/clients";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 

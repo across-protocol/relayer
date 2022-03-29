@@ -2,11 +2,7 @@ import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, or
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
 import { lastSpyLogIncludes, createSpyLogger, deployRateModelStore, deployAndConfigureHubPool, winston } from "./utils";
 import { amountToLp } from "./constants";
-
-import { SpokePoolClient } from "../src/clients/SpokePoolClient";
-import { HubPoolClient } from "../src/clients/HubPoolClient";
-import { RateModelClient } from "../src/clients/RateModelClient";
-import { MultiCallBundler } from "../src/MultiCallBundler";
+import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallBundler } from "../src/clients";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 

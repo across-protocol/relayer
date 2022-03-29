@@ -1,7 +1,7 @@
-import { expect, toBNWei, ethers, fillRelay, SignerWithAddress, deposit, setupTokensForWallet, winston } from "./utils";
-import { deploySpokePoolWithToken, Contract, originChainId, destinationChainId, sinon, createSpyLogger } from "./utils";
+import { expect, toBNWei, ethers, fillRelay, SignerWithAddress, deposit, setupTokensForWallet } from "./utils";
+import { deploySpokePoolWithToken, Contract, originChainId, destinationChainId, createSpyLogger } from "./utils";
 
-import { SpokePoolClient } from "../src/clients/SpokePoolClient";
+import { SpokePoolClient } from "../src/clients";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;

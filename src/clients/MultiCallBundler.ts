@@ -1,4 +1,4 @@
-import { winston, Transaction } from "./utils";
+import { winston, Transaction } from "../utils";
 
 export class MultiCallBundler {
   private transactions: Transaction[] = [];

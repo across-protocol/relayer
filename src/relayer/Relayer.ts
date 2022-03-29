@@ -1,6 +1,6 @@
 import { BigNumber, winston, buildFillRelayProps } from "../utils";
 import { SpokePoolClient } from "../clients/SpokePoolClient";
-import { MultiCallBundler } from "../MultiCallBundler";
+import { MultiCallBundler } from "../clients/MultiCallBundler";
 import { Deposit } from "../interfaces/SpokePool";
 
 export class Relayer {
@@ -30,7 +30,6 @@ export class Relayer {
 
   fillRelay(deposit: { unfilledAmount: BigNumber; deposit: Deposit }) {
     this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain: this.repaymentChainId });
-    console.log("DestinationSpokePool", this.getDestinationSpokePoolForDeposit(deposit.deposit).address);
     try {
       return this.getDestinationSpokePoolForDeposit(deposit.deposit).fillRelay(
         ...buildFillRelayProps(deposit, this.repaymentChainId)

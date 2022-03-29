@@ -4,7 +4,7 @@ import { RateModelClient } from "./RateModelClient";
 import { HubPoolClient } from "./HubPoolClient";
 import { SpokePoolClient } from "./SpokePoolClient";
 import { RelayerConfig } from "../relayer/RelayerConfig";
-import { MultiCallBundler } from "../MultiCallBundler";
+import { MultiCallBundler } from "./MultiCallBundler";
 
 export function constructClients(logger: winston.Logger, config: RelayerConfig) {
   // Create signers for each chain. Each is connected to an associated provider for that chain.

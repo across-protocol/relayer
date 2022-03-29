@@ -2,11 +2,9 @@ import { hubPoolFixture, deployIterativeSpokePoolsAndToken, createSpyLogger, las
 import { expect, deposit, ethers, Contract, getLastBlockTime, contractAt, addLiquidity } from "./utils";
 import { SignerWithAddress, setupTokensForWallet, deployRateModelStore, winston, sinon } from "./utils";
 import { amountToLp, sampleRateModel } from "./constants";
+import { HubPoolClient, RateModelClient, MultiCallBundler } from "../src/clients";
 
-import { HubPoolClient } from "../src/clients/HubPoolClient";
-import { RateModelClient } from "../src/clients/RateModelClient";
-import { Relayer } from "../src/relayer/Relayer";
-import { MultiCallBundler } from "../src/MultiCallBundler";
+import { Relayer } from "../src/relayer/Relayer"; // Tested
 
 let relayer_signer: SignerWithAddress, hubPool: Contract, mockAdapter: Contract, rateModelStore: Contract;
 let hubPoolClient: HubPoolClient, rateModelClient: RateModelClient;
