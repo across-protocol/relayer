@@ -1,5 +1,5 @@
-import { BigNumber, winston, buildFillRelayProps, assign } from "../utils";
-import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallBundler } from "../clients";
+import { BigNumber, winston, assign } from "../utils";
+import { SpokePoolClient, HubPoolClient, MultiCallBundler } from "../clients";
 import { Deposit, Fill } from "../interfaces/SpokePool";
 import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";
 
@@ -39,17 +39,20 @@ export class Dataworker {
       if (!originClient.isUpdated()) throw new Error(`origin spokepoolclient with chain ID ${originChainId} not updated`);
 
       // Loop over all other SpokePoolClient's to find deposits whose destination chain is the selected origin chain.
+      this.logger.debug({ at: "Dataworker", message: `Looking up data for origin spoke pool`, originChainId });
       for (const destinationChainId of Object.keys(this.spokePoolClients)) {
         if (originChainId === destinationChainId) continue;
 
         const destinationClient = this.spokePoolClients[destinationChainId];
         if (!destinationClient.isUpdated()) throw new Error(`destination spokepoolclient with chain ID ${destinationChainId} not updated`);
-  
+
         // Store deposits whose destination chain is the selected chain as unfilled deposits and set the initial fill
         // amount remaining equal to the full deposit amount minus any valid fill amounts.
         // Remove any deposits that have no unfilled amount (i.e that have an unfilled amount of 0) and append the
         // remaining deposits to the unfilledDeposits array.
         const depositsForDestinationChain = originClient.getDepositsForDestinationChain(destinationChainId);
+        this.logger.debug({ at: "Dataworker", message: `Found ${depositsForDestinationChain.length} deposits for destination chain ${destinationChainId}`, originChainId, destinationChainId });
+
         const unfilledDepositsForDestinationChain = depositsForDestinationChain
           .map((deposit) => {
             return { data: deposit, unfilledAmount: destinationClient.getValidUnfilledAmountForDeposit(deposit) };
@@ -58,6 +61,8 @@ export class Dataworker {
 
         if (unfilledDepositsForDestinationChain.length > 0) {
           assign(unfilledDeposits, [destinationChainId], unfilledDepositsForDestinationChain);
+        } else {
+          this.logger.debug({ at: "Dataworker", message: `All deposits are filled`, originChainId, destinationChainId });
         }
 
         // Grab all valid fills submitted to the destination spoke pool.
@@ -74,6 +79,7 @@ export class Dataworker {
             // No deposit matched, this fill is invalid.
             return false;
         });
+        this.logger.debug({ at: "Dataworker", message: `Found ${validFillsOnDestinationChain.length} fills on destination ${destinationChainId} matching origin ${originChainId}`, originChainId, destinationChainId });
 
         for (const fill of validFillsOnDestinationChain) {
           assign(fillsToRefund, [fill.repaymentChainId, fill.relayer], [fill]);
@@ -90,35 +96,38 @@ export class Dataworker {
   async buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
     this._loadData();
 
-    // Grab all unfilledDeposits
-    // Order by fillAmountRemaining
-    // Construct leaf for destination chain ID
+    // For each destination chain ID key in unfilledDeposits
+    //     Order by fillAmountRemaining
+    //     Make Leaf for fill
     // Construct root
   }
 
   async buildRelayerRefundRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
     this._loadData();
 
-    // Grab all fillsToRefund
-    // For each refundAddress
-    //     Order fills by fillAmount
-    //     Construct leaf for destination chain ID
-    //     Construct root
+    // For each repayment chain ID key in fillsToRefund
+    //     Group by refundAddress, and for each refund address
+    //         Order fills by fillAmount
+    //     Make Leaf for repayment chain ID
+    // Construct root
   }
 
   async buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
     this._loadData();
 
-    // For each destination chain ID (linked to 1 SpokePoolClient):
-    //    Grab all fills from SpokePoolClient
-    //        Add fill amount to netSendAmount for L1 token associated with L2 token in fill
-    //        Add realized LP fee to bundleLpFee for L1 token
-    //    Grab all unfilledDeposits
-    //        Add remaining fill amount to netSendAmount for L1 token
-    //    For each L1 token, construct leaf with netSendAmount, bundleLpFee and runningBalance for L1 token
-    //        If there are too many L1 tokens for a single destination chain ID leaf,
-    //        then split up the L1 tokens across multiple leaves and give each
-    //        a unique groupIndex, starting at 0 and counting up by 1.
+    // For each destination chain ID key in unfilledDeposits
+    //     Group by L1 token and for each L1 token:
+    //         Add unfilledAmount to netSendAmount for L1 token
+    //         Add realized LP fee to bundleLpFee for L1 token
+    //         Figure out how RunningBalances works
+    // For each repayment chain ID key in fillsToRefund
+    //     Group by L1 token and for each L1 token:
+    //         Add fillAmount to netSendAmount for L1 token
+    //         Add realized LP fee to bundleLpFee for L1 token
+    //         Figure out how RunningBalances works
+    // Join repayment chain ID and destination chain ID data together
+    // Make Leaf for destination chain ID. Optionally decide to split Leaf
+    // data into smaller pieces and form sub groups with unique groupIndex's 
     // Construct root
   }
 }
