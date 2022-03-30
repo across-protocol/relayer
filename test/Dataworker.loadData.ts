@@ -9,13 +9,7 @@ import {
   getLastBlockTime,
   fillRelay,
 } from "./utils";
-import {
-  createSpyLogger,
-  winston,
-  deployAndConfigureHubPool,
-  deployRateModelStore,
-  BigNumber,
-} from "./utils";
+import { createSpyLogger, winston, deployAndConfigureHubPool, deployRateModelStore, BigNumber } from "./utils";
 import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallBundler } from "../src/clients";
 import { amountToLp, amountToDeposit, repaymentChainId } from "./constants";
 import { Deposit, Fill } from "../src/interfaces/SpokePool";
@@ -292,19 +286,10 @@ describe("Dataworker: Load data used in all functions", async function () {
       0.25
     );
     // @dev: This fill has identical deposit data to fill2 except for the destination token being different
-    await buildFill(
-      spokePool_1,
-      l1Token,
-      depositor,
-      depositor,
-      relayer,
-      deposit2,
-      0.25
-    );
+    await buildFill(spokePool_1, l1Token, depositor, depositor, relayer, deposit2, 0.25);
     await updateAllClients();
     const data4 = dataworkerInstance._loadData();
     expect(data4.fillsToRefund).to.deep.equal(data2.fillsToRefund);
-
   });
 });
 
