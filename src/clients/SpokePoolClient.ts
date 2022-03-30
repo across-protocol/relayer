@@ -31,6 +31,10 @@ export class SpokePoolClient {
       .filter((deposit: Deposit) => deposit.depositor === depositor); // Select only deposits where the depositor is the same.
   }
 
+  getFills(): Fill[] {
+    return Object.values(this.fills).flat();
+  }
+
   getFillsForDestinationChain(destinationChainId: number): Fill[] {
     return this.fills[destinationChainId] || [];
   }
@@ -87,6 +91,10 @@ export class SpokePoolClient {
 
     this.log("debug", "Finished validating fill for deposit", { isValid });
     return isValid;
+  }
+
+  isUpdated(): Boolean {
+    return this._isUpdated;
   }
 
   async update() {
@@ -162,9 +170,5 @@ export class SpokePoolClient {
 
   private log(level: string, message: string, data?: any) {
     this.logger[level]({ at: "SpokePoolClient", chainId: this.chainId, message, ...data });
-  }
-
-  isUpdated(): Boolean {
-    return this._isUpdated;
   }
 }

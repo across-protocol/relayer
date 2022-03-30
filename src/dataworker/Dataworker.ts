@@ -23,7 +23,13 @@ export class Dataworker {
 
   // Common data re-formatting logic shared across all data worker public functions.
   _loadData(): { unfilledDeposits: UnfilledDeposits; fillsToRefund: FillsToRefund } {
-    // TODO: Add logs
+    // For each origin chain spoke pool client:
+    //     For all destination spoke pool client's:
+    //         Store deposits that are sent from origin chain to destination chain as an UnfilledDeposit
+    //             Associate this UnfilledDeposit with the destination chain and set fillAmountRemaining
+    //         Grab all fills on destination client
+    //             Attempt to map fill to an UnfilledDeposit sent from the origin chain
+    //             If a match is found, save fill and key by repaymentChainId => refundAddress
 
     const unfilledDeposits: UnfilledDeposits = {};
     const fillsToRefund: FillsToRefund = {};
@@ -41,32 +47,37 @@ export class Dataworker {
   
         // Store deposits whose destination chain is the selected chain as unfilled deposits and set the initial fill
         // amount remaining equal to the full deposit amount minus any valid fill amounts.
-        const depositsForDestinationChain = originClient.getDepositsForDestinationChain(destinationChainId);
-        const unfilledDepositsForDestinationChain = depositsForDestinationChain.map((deposit) => {
-          return { data: deposit, unfilledAmount: destinationClient.getValidUnfilledAmountForDeposit(deposit) };
-        });
-
         // Remove any deposits that have no unfilled amount (i.e that have an unfilled amount of 0) and append the
         // remaining deposits to the unfilledDeposits array.
-        assign(
-          unfilledDeposits,
-          [destinationChainId],
-          [...unfilledDepositsForDestinationChain.filter((deposit) => deposit.unfilledAmount.gt(0))]
-        );
-        // unfilledDeposits[destinationChainId] = []
-        // unfilledDeposits[destinationChainId].push(
-        //   ...unfilledDepositsForDestinationChain.filter((deposit) => deposit.unfilledAmount.gt(0))
-        // );
+        const depositsForDestinationChain = originClient.getDepositsForDestinationChain(destinationChainId);
+        const unfilledDepositsForDestinationChain = depositsForDestinationChain
+          .map((deposit) => {
+            return { data: deposit, unfilledAmount: destinationClient.getValidUnfilledAmountForDeposit(deposit) };
+          })
+          .filter((deposit) => deposit.unfilledAmount.gt(0));
 
-        // Grab all valid fills on the destination chain for the origin SpokePool.
-        // const fillsOnDestinationChain = destinationClient.getFillsForDestinationChain(destinationChainId)
-        // const validFillsOnDestinationChain = depositsForDestinationChain.map((deposit) => {
-        //   return fillsOnDestinationChain.filter((fill) => destinationClient.validateFillForDeposit(fill, deposit))
-        // })
-        // for (const fill of validFillsOnDestinationChain) {
-        //   fillsToRefund[fill.repaymentChainId][fill.refundAddress].push(fill)
+        if (unfilledDepositsForDestinationChain.length > 0) {
+          assign(unfilledDeposits, [destinationChainId], unfilledDepositsForDestinationChain);
+        }
 
-        // }
+        // Grab all valid fills submitted to the destination spoke pool.
+        const fillsOnDestinationChain = destinationClient.getFills()
+        const validFillsOnDestinationChain = fillsOnDestinationChain.filter((fill) => {
+            // For each fill, see if we can find a deposit sent from the origin client that matches it.
+            for (const deposit of depositsForDestinationChain) {
+              // @dev: It doesn't matter which client we call validateFillForDeposit() on as the logic is 
+              // chain agnostic.
+              if (destinationClient.validateFillForDeposit(fill, deposit)) return true;
+              else continue;
+            }
+
+            // No deposit matched, this fill is invalid.
+            return false;
+        });
+
+        for (const fill of validFillsOnDestinationChain) {
+          assign(fillsToRefund, [fill.repaymentChainId, fill.relayer], [fill]);
+        }
       }
     }
 
@@ -74,21 +85,13 @@ export class Dataworker {
       fillsToRefund,
       unfilledDeposits,
     };
-    // For each origin chain ID (linked to 1 SpokePoolClient):
-    //     Check all other SpokePoolClient's:
-    //         Store deposits that map to origin chain as "UnfilledDeposit". 
-    //         Associate each UnfilledDeposit with fillAmountRemaining = depositAmount
-    //     Grab all fills from SpokePoolClient
-    //         Attempt to map fill to an UnfilledDeposit, and decrement fillAmountRemaining
-    //         Save fill and key by repaymentChainId => refundAddress
-    //     Save all UnfilledDeposits with fillAmountRemaining > 0 as slowRelayFulfillments
   }
 
   async buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
     this._loadData();
 
-    // Grab all slowRelayFulfillments
-    // Order fills by fillAmountRemaining
+    // Grab all unfilledDeposits
+    // Order by fillAmountRemaining
     // Construct leaf for destination chain ID
     // Construct root
   }
@@ -96,8 +99,8 @@ export class Dataworker {
   async buildRelayerRefundRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
     this._loadData();
 
-    // Grab allFills
-    // For each refundAddress, grab fills
+    // Grab all fillsToRefund
+    // For each refundAddress
     //     Order fills by fillAmount
     //     Construct leaf for destination chain ID
     //     Construct root
@@ -110,7 +113,7 @@ export class Dataworker {
     //    Grab all fills from SpokePoolClient
     //        Add fill amount to netSendAmount for L1 token associated with L2 token in fill
     //        Add realized LP fee to bundleLpFee for L1 token
-    //    Grab all slowRelayFulfillments
+    //    Grab all unfilledDeposits
     //        Add remaining fill amount to netSendAmount for L1 token
     //    For each L1 token, construct leaf with netSendAmount, bundleLpFee and runningBalance for L1 token
     //        If there are too many L1 tokens for a single destination chain ID leaf,

@@ -2,7 +2,7 @@ import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, or
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime, fillRelay } from "./utils";
 import { lastSpyLogIncludes, createSpyLogger, winston, deployAndConfigureHubPool, deployRateModelStore, BigNumber } from "./utils";
 import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallBundler } from "../src/clients";
-import { amountToLp, amountToDeposit } from "./constants";
+import { amountToLp, amountToDeposit, repaymentChainId } from "./constants";
 import { Deposit, Fill } from "../src/interfaces/SpokePool";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
@@ -115,14 +115,26 @@ describe("Dataworker: Load data used in all functions", async function () {
     await l1Token.approve(hubPool.address, amountToLp);
     await hubPool.addLiquidity(l1Token.address, amountToLp);
 
-    await updateAllClients();
-  });
-
-  it("Fetches unfilled deposits", async function () {
     // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
     // "reasonable" block number based off the block time when looking at quote timestamps.
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
     await spokePool_2.setCurrentTime(await getLastBlockTime(spokePool_2.provider));
+  });
+
+  it("Default conditions", async function () {
+    // Throws error if spoke pool client not updated.
+    expect(() => dataworkerInstance._loadData()).to.throw(/not updated/);
+
+    // Before any deposits, returns empty dictionaries.
+    await updateAllClients();
+    expect(dataworkerInstance._loadData()).to.deep.equal({
+        unfilledDeposits: {},
+        fillsToRefund: {},
+    });
+  })
+  it("Returns unfilled deposits", async function () { 
+      await updateAllClients(); 
+
     const deposit1 = await buildDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId, amountToDeposit);
     const deposit2 = await buildDeposit(spokePool_2, erc20_2, depositor, depositor, originChainId, amountToDeposit);
 
@@ -164,6 +176,12 @@ describe("Dataworker: Load data used in all functions", async function () {
       ],
     });
 
+    // Fills that don't match deposits do not affect unfilledAmount counter. 
+    // @dev: We switch the spoke pool address in the following fills from the fills that eventually do match with
+    //       the deposits.
+    await buildFill(spokePool_1, erc20_2, depositor, depositor, relayer, deposit1, 0.5)
+    await buildFill(spokePool_2, erc20_1, depositor, depositor, relayer, deposit2, 0.25)
+
     // Two unfilled deposits (one partially filled) per destination chain ID.
     const fill1 = await buildFill(spokePool_2, erc20_2, depositor, depositor, relayer, deposit1, 0.5)
     const fill2 = await buildFill(spokePool_1, erc20_1, depositor, depositor, relayer, deposit2, 0.25)
@@ -181,16 +199,16 @@ describe("Dataworker: Load data used in all functions", async function () {
     });
 
     // One completely filled deposit per destination chain ID.
-    const fill3 = await buildFill(spokePool_2, erc20_2, depositor, depositor, relayer, deposit3, 1)
-    const fill4 = await buildFill(spokePool_1, erc20_1, depositor, depositor, relayer, deposit4, 1)
+    await buildFill(spokePool_2, erc20_2, depositor, depositor, relayer, deposit3, 1)
+    await buildFill(spokePool_1, erc20_1, depositor, depositor, relayer, deposit4, 1)
     await updateAllClients();
     const data4 = dataworkerInstance._loadData();
     expect(data4.unfilledDeposits).to.deep.equal({
         [destinationChainId]: [
-        { unfilledAmount: amountToDeposit.sub(fill3.fillAmount), data: deposit3 },
+        { unfilledAmount: amountToDeposit.sub(fill1.fillAmount), data: deposit1 },
         ],
         [originChainId]: [
-        { unfilledAmount: amountToDeposit.sub(fill4.fillAmount), data: deposit4 }, 
+        { unfilledAmount: amountToDeposit.sub(fill2.fillAmount), data: deposit2 }, 
         ],
     });
     
@@ -199,12 +217,41 @@ describe("Dataworker: Load data used in all functions", async function () {
     await buildFill(spokePool_1, erc20_1, depositor, depositor, relayer, deposit2, 1)
     await updateAllClients();
     const data5 = dataworkerInstance._loadData();
-    expect(data5.unfilledDeposits).to.deep.equal({
-      [destinationChainId]: [],
-      [originChainId]: [],
-    });
+    expect(data5.unfilledDeposits).to.deep.equal({});
+  });
+  it("Returns fills to refund", async function() {    
+    await updateAllClients(); 
+  
+    // Submit a valid fill
+    const deposit1 = await buildDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId, amountToDeposit);
+    const deposit2 = await buildDeposit(spokePool_2, erc20_2, depositor, depositor, originChainId, amountToDeposit);
+    const fill1 = await buildFill(spokePool_2, erc20_2, depositor, depositor, relayer, deposit1, 0.5)
 
-});
+    // Should return one valid fill linked to the repayment chain ID
+    await updateAllClients();
+    const data1 = dataworkerInstance._loadData();
+    expect(data1.fillsToRefund).to.deep.equal({
+        [repaymentChainId]: { [relayer.address]: [fill1] },
+    })
+
+    // Submit two more fills: one for the same relayer and one for a different one.
+    const fill2 = await buildFill(spokePool_1, erc20_1, depositor, depositor, relayer, deposit2, 0.25)
+    const fill3 = await buildFill(spokePool_2, erc20_2, depositor, depositor, depositor, deposit1, 1);
+    await updateAllClients();
+    const data2 = dataworkerInstance._loadData();
+    expect(data2.fillsToRefund).to.deep.equal({
+      [repaymentChainId]: { [relayer.address]: [fill1, fill2], [depositor.address]: [fill3] },
+    })
+
+    // Submit fills without matching deposits. These should be ignored by the client.
+    // @dev: Switch the deposit data to make fills invalid.
+    await buildFill(spokePool_2, erc20_2, depositor, depositor, relayer, deposit2, 0.5)
+    await buildFill(spokePool_2, erc20_2, depositor, depositor, depositor, deposit2, 1);
+    await updateAllClients();
+    const data3 = dataworkerInstance._loadData();
+    expect(data3.fillsToRefund).to.deep.equal(data2.fillsToRefund)
+
+  })
 });
 
 async function updateAllClients() {
