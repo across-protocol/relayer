@@ -6,6 +6,7 @@ export class SpokePoolClient {
   private deposits: { [DestinationChainId: number]: Deposit[] } = {};
   private fills: { [DestinationChainId: number]: Fill[] } = {};
   private speedUps: { [depositorAddress: string]: { [depositId: number]: SpeedUp[] } } = {};
+  private _isUpdated: boolean = false;
 
   public firstBlockToSearch: number;
 
@@ -20,7 +21,7 @@ export class SpokePoolClient {
     this.firstBlockToSearch = startingBlock;
   }
 
-  getDepositsForDestinationChain(destinationChainId: number) {
+  getDepositsForDestinationChain(destinationChainId: number): Deposit[] {
     return this.deposits[destinationChainId] || [];
   }
 
@@ -30,7 +31,7 @@ export class SpokePoolClient {
       .filter((deposit: Deposit) => deposit.depositor === depositor); // Select only deposits where the depositor is the same.
   }
 
-  getFillsForDestinationChain(destinationChainId: number) {
+  getFillsForDestinationChain(destinationChainId: number): Fill[] {
     return this.fills[destinationChainId] || [];
   }
 
@@ -46,6 +47,13 @@ export class SpokePoolClient {
       .filter((fill: Fill) => fill.relayer === relayer);
   }
 
+  async getRealizedLpFeePctForDeposit(deposit: Deposit): Promise<BigNumber> {
+    return await this.rateModelClient.computeRealizedLpFeePct(
+      deposit,
+      this.hubPoolClient().getL1TokenForDeposit(deposit)
+    );
+  }
+
   appendMaxSpeedUpSignatureToDeposit(deposit: Deposit) {
     const maxSpeedUp = this.speedUps[deposit.depositor]?.[deposit.depositId].reduce((prev, current) =>
       prev.newRelayerFeePct.gt(current.newRelayerFeePct) ? prev : current
@@ -56,7 +64,7 @@ export class SpokePoolClient {
     return { ...deposit, speedUpSignature: maxSpeedUp.depositorSignature, relayerFeePct: maxSpeedUp.newRelayerFeePct };
   }
 
-  getValidUnfilledAmountForDeposit(deposit: Deposit) {
+  getValidUnfilledAmountForDeposit(deposit: Deposit): BigNumber {
     const fills = this.getFillsForOriginChain(deposit.originChainId)
       .filter((fill) => fill.depositId === deposit.depositId) // Only select the associated fill for the deposit.
       .filter((fill) => this.validateFillForDeposit(fill, deposit)); // Validate that the fill was valid for the deposit.
@@ -123,6 +131,7 @@ export class SpokePoolClient {
 
     this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
 
+    this._isUpdated = true;
     this.log("debug", "Client updated!");
   }
 
@@ -153,5 +162,9 @@ export class SpokePoolClient {
 
   private log(level: string, message: string, data?: any) {
     this.logger[level]({ at: "SpokePoolClient", chainId: this.chainId, message, ...data });
+  }
+
+  isUpdated(): Boolean {
+    return this._isUpdated;
   }
 }
