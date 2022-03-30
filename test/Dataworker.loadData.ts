@@ -10,7 +10,6 @@ import {
   fillRelay,
 } from "./utils";
 import {
-  lastSpyLogIncludes,
   createSpyLogger,
   winston,
   deployAndConfigureHubPool,
@@ -27,7 +26,7 @@ import { toBN, toBNWei } from "../src/utils";
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, rateModelStore: Contract, l1Token: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
-let spy: sinon.SinonSpy, spyLogger: winston.Logger;
+let spyLogger: winston.Logger;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient;
@@ -95,12 +94,10 @@ describe("Dataworker: Load data used in all functions", async function () {
     // For each chain, enable routes to both erc20's so that we can fill relays
     await enableRoutesOnHubPool(hubPool, [
       { destinationChainId: originChainId, l1Token, destinationToken: erc20_1 },
-      //   { destinationChainId: originChainId, l1Token, destinationToken: erc20_2 },
       { destinationChainId: destinationChainId, l1Token, destinationToken: erc20_2 },
-      //   { destinationChainId: destinationChainId, l1Token, destinationToken: erc20_1 },
     ]);
 
-    ({ spy, spyLogger } = createSpyLogger());
+    ({ spyLogger } = createSpyLogger());
     ({ rateModelStore } = await deployRateModelStore(owner, [l1Token]));
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
     rateModelClient = new RateModelClient(spyLogger, rateModelStore, hubPoolClient);
@@ -122,19 +119,18 @@ describe("Dataworker: Load data used in all functions", async function () {
       multiCallBundler
     );
 
-    // Give owner tokens to LP on HubPool with
+    // Give owner tokens to LP on HubPool with.
     await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // Seed owner to LP.
+    await l1Token.approve(hubPool.address, amountToLp);
+    await hubPool.addLiquidity(l1Token.address, amountToLp);
 
     // Give depositors the tokens they'll deposit into spoke pools:
     await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);
     await setupTokensForWallet(spokePool_2, depositor, [erc20_2], null, 10);
 
     // Give relayers the tokens they'll need to relay on spoke pools:
-    await setupTokensForWallet(spokePool_1, relayer, [erc20_1, erc20_2], null, 10);
-    await setupTokensForWallet(spokePool_2, relayer, [erc20_1, erc20_2], null, 10);
-
-    await l1Token.approve(hubPool.address, amountToLp);
-    await hubPool.addLiquidity(l1Token.address, amountToLp);
+    await setupTokensForWallet(spokePool_1, relayer, [erc20_1, erc20_2, l1Token], null, 10);
+    await setupTokensForWallet(spokePool_2, relayer, [erc20_1, erc20_2, l1Token], null, 10);
 
     // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
     // "reasonable" block number based off the block time when looking at quote timestamps.
@@ -281,6 +277,34 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data3 = dataworkerInstance._loadData();
     expect(data3.fillsToRefund).to.deep.equal(data2.fillsToRefund);
+
+    // Submit fills that match deposit in all properties except for realized lp fee % or l1 token. These should be
+    // ignored because the rate model client deems them invalid. These are the two properties added to the deposit
+    // object by the spoke pool client.
+    // @dev: This fill has identical deposit data to fill2 except for the realized lp fee %.
+    await buildFill(
+      spokePool_1,
+      erc20_1,
+      depositor,
+      depositor,
+      relayer,
+      { ...deposit2, realizedLpFeePct: deposit2.realizedLpFeePct.div(toBN(2)) },
+      0.25
+    );
+    // @dev: This fill has identical deposit data to fill2 except for the destination token being different
+    await buildFill(
+      spokePool_1,
+      l1Token,
+      depositor,
+      depositor,
+      relayer,
+      deposit2,
+      0.25
+    );
+    await updateAllClients();
+    const data4 = dataworkerInstance._loadData();
+    expect(data4.fillsToRefund).to.deep.equal(data2.fillsToRefund);
+
   });
 });
 
