@@ -51,13 +51,6 @@ export class SpokePoolClient {
       .filter((fill: Fill) => fill.relayer === relayer);
   }
 
-  async getRealizedLpFeePctForDeposit(deposit: Deposit): Promise<BigNumber> {
-    return await this.rateModelClient.computeRealizedLpFeePct(
-      deposit,
-      this.hubPoolClient().getL1TokenForDeposit(deposit)
-    );
-  }
-
   appendMaxSpeedUpSignatureToDeposit(deposit: Deposit) {
     const maxSpeedUp = this.speedUps[deposit.depositor]?.[deposit.depositId].reduce((prev, current) =>
       prev.newRelayerFeePct.gt(current.newRelayerFeePct) ? prev : current

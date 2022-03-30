@@ -8,9 +8,9 @@ import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";
 type UnfilledDeposit = {
   data: Deposit;
   unfilledAmount: BigNumber;
-}
-type UnfilledDeposits = { [destinationChainId: number]: UnfilledDeposit[] }
-type FillsToRefund = { [repaymentChainId: number]: { [refundAddress: string]: Fill[] } }
+};
+type UnfilledDeposits = { [destinationChainId: number]: UnfilledDeposit[] };
+type FillsToRefund = { [repaymentChainId: number]: { [refundAddress: string]: Fill[] } };
 
 export class Dataworker {
   // eslint-disable-next-line no-useless-constructor
@@ -33,10 +33,11 @@ export class Dataworker {
 
     const unfilledDeposits: UnfilledDeposits = {};
     const fillsToRefund: FillsToRefund = {};
-  
+
     for (const originChainId of Object.keys(this.spokePoolClients)) {
       const originClient = this.spokePoolClients[originChainId];
-      if (!originClient.isUpdated()) throw new Error(`origin spokepoolclient with chain ID ${originChainId} not updated`);
+      if (!originClient.isUpdated())
+        throw new Error(`origin spokepoolclient with chain ID ${originChainId} not updated`);
 
       // Loop over all other SpokePoolClient's to find deposits whose destination chain is the selected origin chain.
       this.logger.debug({ at: "Dataworker", message: `Looking up data for origin spoke pool`, originChainId });
@@ -44,14 +45,20 @@ export class Dataworker {
         if (originChainId === destinationChainId) continue;
 
         const destinationClient = this.spokePoolClients[destinationChainId];
-        if (!destinationClient.isUpdated()) throw new Error(`destination spokepoolclient with chain ID ${destinationChainId} not updated`);
+        if (!destinationClient.isUpdated())
+          throw new Error(`destination spokepoolclient with chain ID ${destinationChainId} not updated`);
 
         // Store deposits whose destination chain is the selected chain as unfilled deposits and set the initial fill
         // amount remaining equal to the full deposit amount minus any valid fill amounts.
         // Remove any deposits that have no unfilled amount (i.e that have an unfilled amount of 0) and append the
         // remaining deposits to the unfilledDeposits array.
         const depositsForDestinationChain = originClient.getDepositsForDestinationChain(destinationChainId);
-        this.logger.debug({ at: "Dataworker", message: `Found ${depositsForDestinationChain.length} deposits for destination chain ${destinationChainId}`, originChainId, destinationChainId });
+        this.logger.debug({
+          at: "Dataworker",
+          message: `Found ${depositsForDestinationChain.length} deposits for destination chain ${destinationChainId}`,
+          originChainId,
+          destinationChainId,
+        });
 
         const unfilledDepositsForDestinationChain = depositsForDestinationChain
           .map((deposit) => {
@@ -62,24 +69,34 @@ export class Dataworker {
         if (unfilledDepositsForDestinationChain.length > 0) {
           assign(unfilledDeposits, [destinationChainId], unfilledDepositsForDestinationChain);
         } else {
-          this.logger.debug({ at: "Dataworker", message: `All deposits are filled`, originChainId, destinationChainId });
+          this.logger.debug({
+            at: "Dataworker",
+            message: `All deposits are filled`,
+            originChainId,
+            destinationChainId,
+          });
         }
 
         // Grab all valid fills submitted to the destination spoke pool.
-        const fillsOnDestinationChain = destinationClient.getFills()
+        const fillsOnDestinationChain = destinationClient.getFills();
         const validFillsOnDestinationChain = fillsOnDestinationChain.filter((fill) => {
-            // For each fill, see if we can find a deposit sent from the origin client that matches it.
-            for (const deposit of depositsForDestinationChain) {
-              // @dev: It doesn't matter which client we call validateFillForDeposit() on as the logic is 
-              // chain agnostic.
-              if (destinationClient.validateFillForDeposit(fill, deposit)) return true;
-              else continue;
-            }
+          // For each fill, see if we can find a deposit sent from the origin client that matches it.
+          for (const deposit of depositsForDestinationChain) {
+            // @dev: It doesn't matter which client we call validateFillForDeposit() on as the logic is
+            // chain agnostic.
+            if (destinationClient.validateFillForDeposit(fill, deposit)) return true;
+            else continue;
+          }
 
-            // No deposit matched, this fill is invalid.
-            return false;
+          // No deposit matched, this fill is invalid.
+          return false;
         });
-        this.logger.debug({ at: "Dataworker", message: `Found ${validFillsOnDestinationChain.length} fills on destination ${destinationChainId} matching origin ${originChainId}`, originChainId, destinationChainId });
+        this.logger.debug({
+          at: "Dataworker",
+          message: `Found ${validFillsOnDestinationChain.length} fills on destination ${destinationChainId} matching origin ${originChainId}`,
+          originChainId,
+          destinationChainId,
+        });
 
         for (const fill of validFillsOnDestinationChain) {
           assign(fillsToRefund, [fill.repaymentChainId, fill.relayer], [fill]);
@@ -127,7 +144,7 @@ export class Dataworker {
     //         Figure out how RunningBalances works
     // Join repayment chain ID and destination chain ID data together
     // Make Leaf for destination chain ID. Optionally decide to split Leaf
-    // data into smaller pieces and form sub groups with unique groupIndex's 
+    // data into smaller pieces and form sub groups with unique groupIndex's
     // Construct root
   }
 }
