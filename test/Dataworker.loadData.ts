@@ -1,21 +1,11 @@
-import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, originChainId, sinon } from "./utils";
-import {
-  expect,
-  deposit,
-  ethers,
-  Contract,
-  SignerWithAddress,
-  setupTokensForWallet,
-  getLastBlockTime,
-  fillRelay,
-} from "./utils";
-import { createSpyLogger, winston, deployAndConfigureHubPool, deployRateModelStore, BigNumber } from "./utils";
+import { deploySpokePoolWithToken, enableRoutesOnHubPool, expect, ethers, Contract } from "./utils";
+import { SignerWithAddress, setupTokensForWallet, getLastBlockTime, buildDeposit, buildFill } from "./utils";
+import { createSpyLogger, winston, deployAndConfigureHubPool, deployRateModelStore } from "./utils";
 import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallBundler } from "../src/clients";
-import { amountToLp, amountToDeposit, repaymentChainId } from "./constants";
-import { Deposit, Fill } from "../src/interfaces/SpokePool";
+import { amountToLp, amountToDeposit, repaymentChainId, destinationChainId, originChainId } from "./constants";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { toBN, toBNWei } from "../src/utils";
+import { toBN } from "../src/utils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, rateModelStore: Contract, l1Token: Contract;
@@ -26,53 +16,6 @@ let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient;
 let dataworkerInstance: Dataworker;
 let multiCallBundler: MultiCallBundler;
-
-async function buildDeposit(
-  spokePool: Contract,
-  tokenToDeposit: Contract,
-  recipient: SignerWithAddress,
-  depositor: SignerWithAddress,
-  _destinationChainId: number,
-  _amountToDeposit: BigNumber = amountToDeposit
-): Promise<Deposit> {
-  const _deposit = await deposit(
-    spokePool,
-    tokenToDeposit,
-    recipient,
-    depositor,
-    _destinationChainId,
-    _amountToDeposit
-  );
-  return {
-    ..._deposit,
-    destinationToken: hubPoolClient.getDestinationTokenForDeposit(_deposit),
-    realizedLpFeePct: await rateModelClient.computeRealizedLpFeePct(_deposit, l1Token.address),
-  };
-}
-
-async function buildFill(
-  spokePool: Contract,
-  destinationToken: Contract,
-  recipient: SignerWithAddress,
-  depositor: SignerWithAddress,
-  relayer: SignerWithAddress,
-  deposit: Deposit,
-  pctOfDepositToFill: number
-): Promise<Fill> {
-  return await fillRelay(
-    spokePool,
-    destinationToken,
-    recipient,
-    depositor,
-    relayer,
-    deposit.depositId,
-    deposit.originChainId,
-    deposit.amount,
-    deposit.amount.mul(toBNWei(pctOfDepositToFill)).div(toBNWei(1)),
-    deposit.realizedLpFeePct,
-    deposit.relayerFeePct
-  );
-}
 
 describe("Dataworker: Load data used in all functions", async function () {
   beforeEach(async function () {
@@ -147,14 +90,27 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
 
     const deposit1 = await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
       spokePool_1,
       erc20_1,
+      l1Token,
       depositor,
       depositor,
       destinationChainId,
       amountToDeposit
     );
-    const deposit2 = await buildDeposit(spokePool_2, erc20_2, depositor, depositor, originChainId, amountToDeposit);
+    const deposit2 = await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
+      spokePool_2,
+      erc20_2,
+      l1Token,
+      depositor,
+      depositor,
+      originChainId,
+      amountToDeposit
+    );
 
     // One completely unfilled deposit per destination chain ID.
     await updateAllClients();
@@ -166,16 +122,22 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     // Two unfilled deposits per destination chain ID.
     const deposit3 = await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
       spokePool_1,
       erc20_1,
+      l1Token,
       depositor,
       depositor,
       destinationChainId,
       amountToDeposit.mul(toBN(2))
     );
     const deposit4 = await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
       spokePool_2,
       erc20_2,
+      l1Token,
       depositor,
       depositor,
       originChainId,
@@ -238,14 +200,27 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     // Submit a valid fill
     const deposit1 = await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
       spokePool_1,
       erc20_1,
+      l1Token,
       depositor,
       depositor,
       destinationChainId,
       amountToDeposit
     );
-    const deposit2 = await buildDeposit(spokePool_2, erc20_2, depositor, depositor, originChainId, amountToDeposit);
+    const deposit2 = await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
+      spokePool_2,
+      erc20_2,
+      l1Token,
+      depositor,
+      depositor,
+      originChainId,
+      amountToDeposit
+    );
     const fill1 = await buildFill(spokePool_2, erc20_2, depositor, depositor, relayer, deposit1, 0.5);
 
     // Should return one valid fill linked to the repayment chain ID
