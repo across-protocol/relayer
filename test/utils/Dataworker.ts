@@ -4,7 +4,8 @@ import { Deposit, Fill } from "../../src/interfaces/SpokePool";
 import { toBNWei } from "../../src/utils";
 import { HubPoolClient, RateModelClient } from "../../src/clients";
 
-export async function buildDeposit(
+// Submits a deposit transaction and returns the Deposit struct that that Dataworker will load.
+export async function buildAndSendDepositForDataworker(
   rateModelClient: RateModelClient,
   hubPoolClient: HubPoolClient,
   spokePool: Contract,
@@ -30,7 +31,8 @@ export async function buildDeposit(
   };
 }
 
-export async function buildFill(
+// Submits a fillRekay transaction and returns the Fill struct that that Dataworker will load.
+export async function buildAndSendFillForDataworker(
   spokePool: Contract,
   destinationToken: Contract,
   recipient: SignerWithAddress,
