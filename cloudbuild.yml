@@ -1,7 +1,7 @@
 steps:
   - name: "gcr.io/cloud-builders/docker"
-    args: ["build", "-t", "gcr.io/images-across-6363/across", "."]
+    args: ["build", "-t", "gcr.io/images-across-6363/across-v2", "."]
 options:
   machineType: "E2_HIGHCPU_32"
 timeout: 3600s
-images: ["gcr.io/images-across-6363/across"]
+images: ["gcr.io/images-across-6363/across-v2"]
