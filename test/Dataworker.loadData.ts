@@ -97,7 +97,6 @@ describe("Dataworker: Load data used in all functions", async function () {
       erc20_1,
       l1Token,
       depositor,
-      depositor,
       destinationChainId,
       amountToDeposit
     );
@@ -107,7 +106,6 @@ describe("Dataworker: Load data used in all functions", async function () {
       spokePool_2,
       erc20_2,
       l1Token,
-      depositor,
       depositor,
       originChainId,
       amountToDeposit
@@ -129,7 +127,6 @@ describe("Dataworker: Load data used in all functions", async function () {
       erc20_1,
       l1Token,
       depositor,
-      depositor,
       destinationChainId,
       amountToDeposit.mul(toBN(2))
     );
@@ -139,7 +136,6 @@ describe("Dataworker: Load data used in all functions", async function () {
       spokePool_2,
       erc20_2,
       l1Token,
-      depositor,
       depositor,
       originChainId,
       amountToDeposit.mul(toBN(2))
@@ -160,28 +156,12 @@ describe("Dataworker: Load data used in all functions", async function () {
     // Fills that don't match deposits do not affect unfilledAmount counter.
     // Note: We switch the spoke pool address in the following fills from the fills that eventually do match with
     //       the deposits.
-    await buildAndSendFillForDataworker(spokePool_1, erc20_2, depositor, depositor, relayer, deposit1, 0.5);
-    await buildAndSendFillForDataworker(spokePool_2, erc20_1, depositor, depositor, relayer, deposit2, 0.25);
+    await buildAndSendFillForDataworker(spokePool_1, erc20_2, depositor, relayer, deposit1, 0.5);
+    await buildAndSendFillForDataworker(spokePool_2, erc20_1, depositor, relayer, deposit2, 0.25);
 
     // Two unfilled deposits (one partially filled) per destination chain ID.
-    const fill1 = await buildAndSendFillForDataworker(
-      spokePool_2,
-      erc20_2,
-      depositor,
-      depositor,
-      relayer,
-      deposit1,
-      0.5
-    );
-    const fill2 = await buildAndSendFillForDataworker(
-      spokePool_1,
-      erc20_1,
-      depositor,
-      depositor,
-      relayer,
-      deposit2,
-      0.25
-    );
+    const fill1 = await buildAndSendFillForDataworker(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.5);
+    const fill2 = await buildAndSendFillForDataworker(spokePool_1, erc20_1, depositor, relayer, deposit2, 0.25);
     await updateAllClients();
     const data3 = dataworkerInstance._loadData();
     expect(data3.unfilledDeposits).to.deep.equal({
@@ -196,8 +176,8 @@ describe("Dataworker: Load data used in all functions", async function () {
     });
 
     // One completely filled deposit per destination chain ID.
-    await buildAndSendFillForDataworker(spokePool_2, erc20_2, depositor, depositor, relayer, deposit3, 1);
-    await buildAndSendFillForDataworker(spokePool_1, erc20_1, depositor, depositor, relayer, deposit4, 1);
+    await buildAndSendFillForDataworker(spokePool_2, erc20_2, depositor, relayer, deposit3, 1);
+    await buildAndSendFillForDataworker(spokePool_1, erc20_1, depositor, relayer, deposit4, 1);
     await updateAllClients();
     const data4 = dataworkerInstance._loadData();
     expect(data4.unfilledDeposits).to.deep.equal({
@@ -206,8 +186,8 @@ describe("Dataworker: Load data used in all functions", async function () {
     });
 
     // All deposits are fulfilled
-    await buildAndSendFillForDataworker(spokePool_2, erc20_2, depositor, depositor, relayer, deposit1, 1);
-    await buildAndSendFillForDataworker(spokePool_1, erc20_1, depositor, depositor, relayer, deposit2, 1);
+    await buildAndSendFillForDataworker(spokePool_2, erc20_2, depositor, relayer, deposit1, 1);
+    await buildAndSendFillForDataworker(spokePool_1, erc20_1, depositor, relayer, deposit2, 1);
     await updateAllClients();
     const data5 = dataworkerInstance._loadData();
     expect(data5.unfilledDeposits).to.deep.equal({});
@@ -223,7 +203,6 @@ describe("Dataworker: Load data used in all functions", async function () {
       erc20_1,
       l1Token,
       depositor,
-      depositor,
       destinationChainId,
       amountToDeposit
     );
@@ -234,19 +213,10 @@ describe("Dataworker: Load data used in all functions", async function () {
       erc20_2,
       l1Token,
       depositor,
-      depositor,
       originChainId,
       amountToDeposit
     );
-    const fill1 = await buildAndSendFillForDataworker(
-      spokePool_2,
-      erc20_2,
-      depositor,
-      depositor,
-      relayer,
-      deposit1,
-      0.5
-    );
+    const fill1 = await buildAndSendFillForDataworker(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.5);
 
     // Should return one valid fill linked to the repayment chain ID
     await updateAllClients();
@@ -256,24 +226,8 @@ describe("Dataworker: Load data used in all functions", async function () {
     });
 
     // Submit two more fills: one for the same relayer and one for a different one.
-    const fill2 = await buildAndSendFillForDataworker(
-      spokePool_1,
-      erc20_1,
-      depositor,
-      depositor,
-      relayer,
-      deposit2,
-      0.25
-    );
-    const fill3 = await buildAndSendFillForDataworker(
-      spokePool_2,
-      erc20_2,
-      depositor,
-      depositor,
-      depositor,
-      deposit1,
-      1
-    );
+    const fill2 = await buildAndSendFillForDataworker(spokePool_1, erc20_1, depositor, relayer, deposit2, 0.25);
+    const fill3 = await buildAndSendFillForDataworker(spokePool_2, erc20_2, depositor, depositor, deposit1, 1);
     await updateAllClients();
     const data2 = dataworkerInstance._loadData();
     expect(data2.fillsToRefund).to.deep.equal({
@@ -282,8 +236,8 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     // Submit fills without matching deposits. These should be ignored by the client.
     // Note: Switch the deposit data to make fills invalid.
-    await buildAndSendFillForDataworker(spokePool_2, erc20_2, depositor, depositor, relayer, deposit2, 0.5);
-    await buildAndSendFillForDataworker(spokePool_2, erc20_2, depositor, depositor, depositor, deposit2, 1);
+    await buildAndSendFillForDataworker(spokePool_2, erc20_2, depositor, relayer, deposit2, 0.5);
+    await buildAndSendFillForDataworker(spokePool_2, erc20_2, depositor, depositor, deposit2, 1);
     await updateAllClients();
     const data3 = dataworkerInstance._loadData();
     expect(data3.fillsToRefund).to.deep.equal(data2.fillsToRefund);
@@ -296,13 +250,12 @@ describe("Dataworker: Load data used in all functions", async function () {
       spokePool_1,
       erc20_1,
       depositor,
-      depositor,
       relayer,
       { ...deposit2, realizedLpFeePct: deposit2.realizedLpFeePct.div(toBN(2)) },
       0.25
     );
     // Note: This fill has identical deposit data to fill2 except for the destination token being different
-    await buildAndSendFillForDataworker(spokePool_1, l1Token, depositor, depositor, relayer, deposit2, 0.25);
+    await buildAndSendFillForDataworker(spokePool_1, l1Token, depositor, relayer, deposit2, 0.25);
     await updateAllClients();
     const data4 = dataworkerInstance._loadData();
     expect(data4.fillsToRefund).to.deep.equal(data2.fillsToRefund);

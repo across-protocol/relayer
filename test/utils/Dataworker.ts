@@ -11,16 +11,15 @@ export async function buildAndSendDepositForDataworker(
   spokePool: Contract,
   tokenToDeposit: Contract,
   l1TokenForDepositedToken: Contract,
-  recipient: SignerWithAddress,
-  depositor: SignerWithAddress,
+  recipientAndDepositor: SignerWithAddress,
   _destinationChainId: number,
   _amountToDeposit: BigNumber = amountToDeposit
 ): Promise<Deposit> {
   const _deposit = await deposit(
     spokePool,
     tokenToDeposit,
-    recipient,
-    depositor,
+    recipientAndDepositor,
+    recipientAndDepositor,
     _destinationChainId,
     _amountToDeposit
   );
@@ -35,8 +34,7 @@ export async function buildAndSendDepositForDataworker(
 export async function buildAndSendFillForDataworker(
   spokePool: Contract,
   destinationToken: Contract,
-  recipient: SignerWithAddress,
-  depositor: SignerWithAddress,
+  recipientAndDepositor: SignerWithAddress,
   relayer: SignerWithAddress,
   deposit: Deposit,
   pctOfDepositToFill: number
@@ -44,8 +42,8 @@ export async function buildAndSendFillForDataworker(
   return await fillRelay(
     spokePool,
     destinationToken,
-    recipient,
-    depositor,
+    recipientAndDepositor,
+    recipientAndDepositor,
     relayer,
     deposit.depositId,
     deposit.originChainId,
