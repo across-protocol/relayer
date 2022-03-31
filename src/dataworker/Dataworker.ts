@@ -83,9 +83,9 @@ export class Dataworker {
         const validFillsOnDestinationChain = fillsOnDestinationChain.filter((fill) => {
           // For each fill, see if we can find a deposit sent from the origin client that matches it.
           for (const deposit of depositsForDestinationChain) {
-            // @dev: It doesn't matter which client we call validateFillForDeposit() on as the logic is
+            // Note1: It doesn't matter which client we call validateFillForDeposit() on as the logic is
             // chain agnostic.
-            // @dev: All of the deposits returned by `getDepositsForDestinationChain` will include the expected realized
+            // Note2: All of the deposits returned by `getDepositsForDestinationChain` will include the expected realized
             // lp fee % for the deposit quote time. If this fill does not have the same realized lp fee %, then it will
             // be ignored.
 
@@ -96,16 +96,16 @@ export class Dataworker {
           // No deposit matched, this fill is invalid.
           return false;
         });
+
         this.logger.debug({
           at: "Dataworker",
           message: `Found ${validFillsOnDestinationChain.length} fills on destination ${destinationChainId} matching origin ${originChainId}`,
           originChainId,
           destinationChainId,
         });
-
-        for (const fill of validFillsOnDestinationChain) {
-          assign(fillsToRefund, [fill.repaymentChainId, fill.relayer], [fill]);
-        }
+        validFillsOnDestinationChain.forEach((fill) =>
+          assign(fillsToRefund, [fill.repaymentChainId, fill.relayer], [fill])
+        );
       }
     }
 

@@ -195,7 +195,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     });
 
     // Fills that don't match deposits do not affect unfilledAmount counter.
-    // @dev: We switch the spoke pool address in the following fills from the fills that eventually do match with
+    // Note: We switch the spoke pool address in the following fills from the fills that eventually do match with
     //       the deposits.
     await buildFill(spokePool_1, erc20_2, depositor, depositor, relayer, deposit1, 0.5);
     await buildFill(spokePool_2, erc20_1, depositor, depositor, relayer, deposit2, 0.25);
@@ -265,7 +265,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     });
 
     // Submit fills without matching deposits. These should be ignored by the client.
-    // @dev: Switch the deposit data to make fills invalid.
+    // Note: Switch the deposit data to make fills invalid.
     await buildFill(spokePool_2, erc20_2, depositor, depositor, relayer, deposit2, 0.5);
     await buildFill(spokePool_2, erc20_2, depositor, depositor, depositor, deposit2, 1);
     await updateAllClients();
@@ -275,7 +275,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     // Submit fills that match deposit in all properties except for realized lp fee % or l1 token. These should be
     // ignored because the rate model client deems them invalid. These are the two properties added to the deposit
     // object by the spoke pool client.
-    // @dev: This fill has identical deposit data to fill2 except for the realized lp fee %.
+    // Note: This fill has identical deposit data to fill2 except for the realized lp fee %.
     await buildFill(
       spokePool_1,
       erc20_1,
@@ -285,7 +285,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       { ...deposit2, realizedLpFeePct: deposit2.realizedLpFeePct.div(toBN(2)) },
       0.25
     );
-    // @dev: This fill has identical deposit data to fill2 except for the destination token being different
+    // Note: This fill has identical deposit data to fill2 except for the destination token being different
     await buildFill(spokePool_1, l1Token, depositor, depositor, relayer, deposit2, 0.25);
     await updateAllClients();
     const data4 = dataworkerInstance._loadData();
