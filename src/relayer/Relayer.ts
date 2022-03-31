@@ -1,6 +1,5 @@
-import { BigNumber, winston, buildFillRelayProps } from "../utils";
-import { SpokePoolClient } from "../clients/SpokePoolClient";
-import { MultiCallBundler } from "../clients/MultiCallBundler";
+import { BigNumber, winston, buildFillRelayProps, Contract, getNetworkName, createFormatFunction } from "../utils";
+import { SpokePoolClient, MultiCallBundler } from "../clients";
 import { Deposit } from "../interfaces/SpokePool";
 
 export class Relayer {
@@ -24,16 +23,23 @@ export class Relayer {
     // Iterate over all unfilled deposits. For each unfilled deposit add a fillRelay tx to the multiCallBundler.
     for (const unfilledDeposit of unfilledDeposits) {
       // TODO: right now this method will fill the whole amount of the relay. Next iteration should consider the wallet balance.
-      this.multiCallBundler.addTransaction(this.fillRelay(unfilledDeposit));
+      this.multiCallBundler.enqueueTransaction(...this.fillRelay(unfilledDeposit));
     }
   }
 
-  fillRelay(deposit: { unfilledAmount: BigNumber; deposit: Deposit }) {
+  fillRelay(deposit: {
+    unfilledAmount: BigNumber;
+    deposit: Deposit;
+  }): [contract: Contract, method: string, args: any, message: string] {
     this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain: this.repaymentChainId });
     try {
-      return this.getDestinationSpokePoolForDeposit(deposit.deposit).fillRelay(
-        ...buildFillRelayProps(deposit, this.repaymentChainId)
-      );
+      const amountToFill = deposit.deposit.amount; // Right now this will send the max amount when filling. Next implementation should consider the wallet balance.
+      return [
+        this.getDestinationSpokePoolForDeposit(deposit.deposit),
+        "fillRelay",
+        buildFillRelayProps(deposit, this.repaymentChainId, amountToFill),
+        this.constructRelayFilledMessage(deposit.deposit, this.repaymentChainId, amountToFill),
+      ];
     } catch (error) {
       this.logger.error({ at: "Relayer", message: "Error creating fillRelayTx", error });
       return null;
@@ -42,6 +48,15 @@ export class Relayer {
 
   getDestinationSpokePoolForDeposit(deposit: Deposit) {
     return this.spokePoolClients[deposit.destinationChainId].spokePool;
+  }
+
+  constructRelayFilledMessage(deposit: Deposit, repaymentChainId: number, amountToFill: BigNumber) {
+    //TODO: improve log.
+    return (
+      `Relayed depositId ${deposit.depositId} from ${getNetworkName(deposit.originChainId)}` +
+      `to ${getNetworkName(deposit.destinationChainId)} of ` +
+      `${createFormatFunction(2, 4, false, 18)(deposit.amount.toString())} tokens.` // Note right now this does not factor in the decimals
+    );
   }
 
   // Returns all unfilled deposits over all spokePoolClients. Return values include the amount of the unfilled deposit.

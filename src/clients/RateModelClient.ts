@@ -25,9 +25,9 @@ export class RateModelClient {
 
   async computeRealizedLpFeePct(deposit: Deposit, l1Token: string) {
     this.logger.debug({ at: "RateModelClient", message: "Computing realizedLPFeePct", deposit, l1Token });
-    const quoteBlockNumber = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
+    let quoteBlockNumber = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
     // Set to this temporarily until we re-deploy. The RateModelStore was deployed after the spokePool's deposits.
-    // const quoteBlockNumber = 30626071;
+    if (quoteBlockNumber < 30626070) quoteBlockNumber = 30626070;
 
     const rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlockNumber);
 
@@ -60,8 +60,6 @@ export class RateModelClient {
   }
 
   async update() {
-    if (!this.hubPoolClient.isUpdated()) throw new Error("hubpool not updated");
-
     const searchConfig = [this.firstBlockToSearch, await this.rateModelStore.provider.getBlockNumber()];
     this.logger.debug({ at: "RateModelClient", message: "Updating client", searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.

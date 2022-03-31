@@ -38,7 +38,10 @@ export function createSpyLogger() {
   const spy = sinon.spy();
   const spyLogger = winston.createLogger({
     level: "debug",
-    transports: [new SpyTransport({ level: "debug" }, { spy })],
+    transports: [
+      new SpyTransport({ level: "debug" }, { spy }),
+      process.env.LOG_IN_TEST ? new winston.transports.Console() : null,
+    ],
   });
 
   return { spy, spyLogger };

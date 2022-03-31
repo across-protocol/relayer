@@ -62,7 +62,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await updateAllClients();
   });
 
-  it("Correctly fetches single unfilled deposit and fills it", async function () {
+  it.only("Correctly fetches single unfilled deposit and fills it", async function () {
     // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
     // "reasonable" block number based off the block time when looking at quote timestamps.
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
@@ -70,7 +70,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(lastSpyLogIncludes(spy, "Filling deposit")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Filled deposit")).to.be.true;
     expect(multiCallBundler.transactionCount()).to.equal(1); // One transaction, filling the one deposit.
 
     const tx = await multiCallBundler.executeTransactionQueue();

@@ -18,6 +18,8 @@ export class SpokePoolClient {
     readonly endingBlock: number | null = null
   ) {
     this.firstBlockToSearch = startingBlock;
+
+    //TODO: remove `chainId as a prop and replace with `spokePool.provider.network.chainId
   }
 
   getDepositsForDestinationChain(destinationChainId: number) {
@@ -82,10 +84,10 @@ export class SpokePoolClient {
   }
 
   async update() {
-    if (this.rateModelClient !== null && !this.rateModelClient.isUpdated()) throw new Error("ratemodel not updated");
+    if (this.rateModelClient !== null && !this.rateModelClient.isUpdated()) throw new Error("RateModel not updated");
 
     const searchConfig = [this.firstBlockToSearch, this.endingBlock || (await this.getBlockNumber())];
-    this.log("debug", "Updating client", { searchConfig });
+    this.log("debug", "Updating client", { searchConfig, spokePool: this.spokePool.address });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
 
     const [depositEvents, speedUpEvents, fillEvents] = await Promise.all([
@@ -98,7 +100,7 @@ export class SpokePoolClient {
     // new deposits that were found in the searchConfig (new from the previous run). This is important as this operation
     // is heavy as there is a fair bit of block number lookups that need to happen. Note this call REQUIRES that the
     // hubPoolClient is updated on the first before this call as this needed the the L1 token mapping to each L2 token.
-    this.log("debug", "Fetching realizedLpFeePct", { count: depositEvents.length });
+    if (depositEvents.length > 0) this.log("debug", "Fetching realizedLpFeePct", { count: depositEvents.length });
     const realizedLpFeePcts = await Promise.all(depositEvents.map((event) => this.computeRealizedLpFeePct(event)));
 
     for (const [index, event] of depositEvents.entries()) {
