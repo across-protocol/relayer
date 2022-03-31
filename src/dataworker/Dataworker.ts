@@ -67,16 +67,14 @@ export class Dataworker {
           })
           .filter((deposit) => deposit.unfilledAmount.gt(0));
 
-        if (unfilledDepositsForDestinationChain.length > 0) {
-          assign(unfilledDeposits, [destinationChainId], unfilledDepositsForDestinationChain);
-        } else {
+        if (unfilledDepositsForDestinationChain.length > 0) assign(unfilledDeposits, [destinationChainId], unfilledDepositsForDestinationChain);
+        else
           this.logger.debug({
             at: "Dataworker",
             message: `All deposits are filled`,
             originChainId,
             destinationChainId,
           });
-        }
 
         // Grab all valid fills submitted to the destination spoke pool.
         const fillsOnDestinationChain = destinationClient.getFills();
