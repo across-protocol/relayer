@@ -67,7 +67,8 @@ export class Dataworker {
           })
           .filter((deposit) => deposit.unfilledAmount.gt(0));
 
-        if (unfilledDepositsForDestinationChain.length > 0) assign(unfilledDeposits, [destinationChainId], unfilledDepositsForDestinationChain);
+        if (unfilledDepositsForDestinationChain.length > 0)
+          assign(unfilledDeposits, [destinationChainId], unfilledDepositsForDestinationChain);
         else
           this.logger.debug({
             at: "Dataworker",
