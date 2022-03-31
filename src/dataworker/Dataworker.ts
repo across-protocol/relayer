@@ -6,7 +6,7 @@ import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
 type UnfilledDeposit = {
-  data: Deposit;
+  deposit: Deposit;
   unfilledAmount: BigNumber;
 };
 type UnfilledDeposits = { [destinationChainId: number]: UnfilledDeposit[] };
@@ -34,7 +34,9 @@ export class Dataworker {
     const unfilledDeposits: UnfilledDeposits = {};
     const fillsToRefund: FillsToRefund = {};
 
-    for (const originChainId of Object.keys(this.spokePoolClients)) {
+    const allChainIds = Object.keys(this.spokePoolClients);
+    this.logger.debug({ at: "Dataworker", message: `Loading deposit and fill data`, chainIds: allChainIds });
+    for (const originChainId of allChainIds) {
       const originClient = this.spokePoolClients[originChainId];
       if (!originClient.isUpdated()) throw new Error(`origin spokepoolclient on chain ${originChainId} not updated`);
 
@@ -61,7 +63,7 @@ export class Dataworker {
 
         const unfilledDepositsForDestinationChain = depositsForDestinationChain
           .map((deposit) => {
-            return { data: deposit, unfilledAmount: destinationClient.getValidUnfilledAmountForDeposit(deposit) };
+            return { deposit, unfilledAmount: destinationClient.getValidUnfilledAmountForDeposit(deposit) };
           })
           .filter((deposit) => deposit.unfilledAmount.gt(0));
 

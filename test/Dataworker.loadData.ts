@@ -160,8 +160,8 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data1 = dataworkerInstance._loadData();
     expect(data1.unfilledDeposits).to.deep.equal({
-      [destinationChainId]: [{ unfilledAmount: amountToDeposit, data: deposit1 }],
-      [originChainId]: [{ unfilledAmount: amountToDeposit, data: deposit2 }],
+      [destinationChainId]: [{ unfilledAmount: amountToDeposit, deposit: deposit1 }],
+      [originChainId]: [{ unfilledAmount: amountToDeposit, deposit: deposit2 }],
     });
 
     // Two unfilled deposits per destination chain ID.
@@ -185,12 +185,12 @@ describe("Dataworker: Load data used in all functions", async function () {
     const data2 = dataworkerInstance._loadData();
     expect(data2.unfilledDeposits).to.deep.equal({
       [destinationChainId]: [
-        { unfilledAmount: amountToDeposit, data: deposit1 },
-        { unfilledAmount: amountToDeposit.mul(toBN(2)), data: deposit3 },
+        { unfilledAmount: amountToDeposit, deposit: deposit1 },
+        { unfilledAmount: amountToDeposit.mul(toBN(2)), deposit: deposit3 },
       ],
       [originChainId]: [
-        { unfilledAmount: amountToDeposit, data: deposit2 },
-        { unfilledAmount: amountToDeposit.mul(toBN(2)), data: deposit4 },
+        { unfilledAmount: amountToDeposit, deposit: deposit2 },
+        { unfilledAmount: amountToDeposit.mul(toBN(2)), deposit: deposit4 },
       ],
     });
 
@@ -207,12 +207,12 @@ describe("Dataworker: Load data used in all functions", async function () {
     const data3 = dataworkerInstance._loadData();
     expect(data3.unfilledDeposits).to.deep.equal({
       [destinationChainId]: [
-        { unfilledAmount: amountToDeposit.sub(fill1.fillAmount), data: deposit1 },
-        { unfilledAmount: amountToDeposit.mul(toBN(2)), data: deposit3 },
+        { unfilledAmount: amountToDeposit.sub(fill1.fillAmount), deposit: deposit1 },
+        { unfilledAmount: amountToDeposit.mul(toBN(2)), deposit: deposit3 },
       ],
       [originChainId]: [
-        { unfilledAmount: amountToDeposit.sub(fill2.fillAmount), data: deposit2 },
-        { unfilledAmount: amountToDeposit.mul(toBN(2)), data: deposit4 },
+        { unfilledAmount: amountToDeposit.sub(fill2.fillAmount), deposit: deposit2 },
+        { unfilledAmount: amountToDeposit.mul(toBN(2)), deposit: deposit4 },
       ],
     });
 
@@ -222,8 +222,8 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data4 = dataworkerInstance._loadData();
     expect(data4.unfilledDeposits).to.deep.equal({
-      [destinationChainId]: [{ unfilledAmount: amountToDeposit.sub(fill1.fillAmount), data: deposit1 }],
-      [originChainId]: [{ unfilledAmount: amountToDeposit.sub(fill2.fillAmount), data: deposit2 }],
+      [destinationChainId]: [{ unfilledAmount: amountToDeposit.sub(fill1.fillAmount), deposit: deposit1 }],
+      [originChainId]: [{ unfilledAmount: amountToDeposit.sub(fill2.fillAmount), deposit: deposit2 }],
     });
 
     // All deposits are fulfilled
