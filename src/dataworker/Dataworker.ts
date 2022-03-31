@@ -36,8 +36,7 @@ export class Dataworker {
 
     for (const originChainId of Object.keys(this.spokePoolClients)) {
       const originClient = this.spokePoolClients[originChainId];
-      if (!originClient.isUpdated())
-        throw new Error(`origin spokepoolclient with chain ID ${originChainId} not updated`);
+      if (!originClient.isUpdated()) throw new Error(`origin spokepoolclient on chain ${originChainId} not updated`);
 
       // Loop over all other SpokePoolClient's to find deposits whose destination chain is the selected origin chain.
       this.logger.debug({ at: "Dataworker", message: `Looking up data for origin spoke pool`, originChainId });
