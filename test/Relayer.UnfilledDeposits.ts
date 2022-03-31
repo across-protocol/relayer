@@ -1,4 +1,4 @@
-import { createSpyLogger, sinon, deployAndConfigureHubPool, enableRoutesOnHubPool } from "./utils";
+import { createSpyLogger, sinon, deployAndConfigureHubPool, enableRoutesOnHubPool, buildDepositStruct } from "./utils";
 import { deploySpokePoolWithToken, destinationChainId, deployRateModelStore, getLastBlockTime, expect } from "./utils";
 import { simpleDeposit, fillRelay, ethers, Contract, SignerWithAddress, setupTokensForWallet, winston } from "./utils";
 import { amountToLp, originChainId, amountToRelay } from "./constants";
@@ -66,9 +66,9 @@ describe("Relayer: Unfilled Deposits", async function () {
     const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     const deposit2 = await simpleDeposit(spokePool_2, erc20_2, depositor, depositor, originChainId);
     await updateAllClients();
-    const realizedLpFeePct = await rateModelClient.computeRealizedLpFeePct(deposit1, l1Token.address);
-    const deposit1Complete = { ...deposit1, destinationToken: erc20_2.address, realizedLpFeePct };
-    const deposit2Complete = { ...deposit2, destinationToken: erc20_1.address, realizedLpFeePct };
+    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, rateModelClient, l1Token);
+    const deposit2Complete = await buildDepositStruct(deposit2, hubPoolClient, rateModelClient, l1Token);
+
     expect(relayerInstance.getUnfilledDeposits()).to.deep.equal([
       { unfilledAmount: deposit1.amount, deposit: deposit1Complete },
       { unfilledAmount: deposit2.amount, deposit: deposit2Complete },
@@ -81,14 +81,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     const deposit2 = await simpleDeposit(spokePool_2, erc20_2, depositor, depositor, originChainId);
 
     // Partially fill the first deposit, which is sent to the second spoke pool, with one fill.
-    const realizedLpFeePct = await rateModelClient.computeRealizedLpFeePct(deposit1, l1Token.address);
-    // Manually append the destination token and the realizedLPFeePct to the deposit information as these are not
-    // returned from simpleDeposit but will be there in the relayer from the SpokePoolClient. Note that deposit1 is going
-    // from spokePool1 to spokePool2 and so the destination token is erc20_2. Equal and opposite is true for deposit2.
-    // Also note that the associated realizedLpFeePcts are the same for both deposits as they happened without any
-    // updates occurring on the hub's liquidity utilization.
-    const deposit1Complete = { ...deposit1, destinationToken: erc20_2.address, realizedLpFeePct };
-    const deposit2Complete = { ...deposit2, destinationToken: erc20_1.address, realizedLpFeePct };
+    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, rateModelClient, l1Token);
+    const deposit2Complete = await buildDepositStruct(deposit2, hubPoolClient, rateModelClient, l1Token);
 
     const fill1 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete);
     await updateAllClients();
@@ -121,8 +115,8 @@ describe("Relayer: Unfilled Deposits", async function () {
   it("Correctly excludes fills that are incorrectly applied to a deposit", async function () {
     expect(true).to.equal(true);
     const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    const realizedLpFeePct = await rateModelClient.computeRealizedLpFeePct(deposit1, l1Token.address);
-    const deposit1Complete = { ...deposit1, destinationToken: erc20_2.address, realizedLpFeePct };
+    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, rateModelClient, l1Token);
+
     // Partially fill the deposit, incorrectly by setting the wrong deposit ID.
     await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, { ...deposit1Complete, depositId: 1337 });
     await updateAllClients();
