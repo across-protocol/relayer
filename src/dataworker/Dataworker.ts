@@ -93,8 +93,7 @@ export class Dataworker {
             else continue;
           }
 
-          // No deposit matched, this fill is invalid.
-          return false;
+          return false; // No deposit matched, this fill is invalid.
         });
 
         this.logger.debug({
