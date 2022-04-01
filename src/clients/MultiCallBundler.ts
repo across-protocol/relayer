@@ -35,7 +35,7 @@ export class MultiCallBundler {
 
       // Simulate the transaction execution for the whole queue.
       const transactionsSucceed = await Promise.all(
-        this.transactions.map(async (tx: preSignedTransaction) => willSucceed(tx.contract, tx.method, tx.args))
+        this.transactions.map((tx: preSignedTransaction) => willSucceed(tx.contract, tx.method, tx.args))
       );
 
       // If any transactions will revert then log the reason and remove them from the transaction queue.

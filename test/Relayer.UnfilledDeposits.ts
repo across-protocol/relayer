@@ -139,7 +139,7 @@ async function updateAllClients() {
 }
 
 async function fillWithRealizedLpFeePct(spokePool, relayer, depositor, deposit, relayAmount = amountToRelay) {
-  const realizedLpFeePctForDeposit = await rateModelClient.computeRealizedLpFeePct(deposit, l1Token.address)
+  const realizedLpFeePctForDeposit = await rateModelClient.computeRealizedLpFeePct(deposit, l1Token.address);
   return await fillRelay(
     spokePool,
     deposit.destinationToken,

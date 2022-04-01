@@ -9,7 +9,6 @@ import { RateModelClient } from "../../src/clients/RateModelClient";
 import winston from "winston";
 import sinon from "sinon";
 import chai from "chai";
-import { AnyNsRecord } from "dns";
 export { winston, sinon };
 
 const assert = chai.assert;
