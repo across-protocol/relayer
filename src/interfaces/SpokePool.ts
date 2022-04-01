@@ -53,3 +53,16 @@ export interface SlowFill {
   depositor: string;
   recipient: string;
 }
+
+export interface UnfilledDeposit {
+  deposit: Deposit;
+  unfilledAmount: BigNumber;
+}
+export interface UnfilledDeposits {
+  [destinationChainId: number]: UnfilledDeposit[];
+}
+export interface FillsToRefund {
+  [repaymentChainId: number]: { [refundAddress: string]: Fill[] };
+}
+
+

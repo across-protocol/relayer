@@ -1,17 +1,10 @@
-import { BigNumber, winston, assign } from "../utils";
+import { winston, assign } from "../utils";
 import { SpokePoolClient, HubPoolClient, MultiCallBundler } from "../clients";
-import { Deposit, Fill } from "../interfaces/SpokePool";
+import { UnfilledDeposits, FillsToRefund } from "../interfaces/SpokePool";
 import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
-type UnfilledDeposit = {
-  deposit: Deposit;
-  unfilledAmount: BigNumber;
-};
-type UnfilledDeposits = { [destinationChainId: number]: UnfilledDeposit[] };
-type FillsToRefund = { [repaymentChainId: number]: { [refundAddress: string]: Fill[] } };
-
 export class Dataworker {
   // eslint-disable-next-line no-useless-constructor
   constructor(
@@ -149,5 +142,17 @@ export class Dataworker {
     // Make Leaf for destination chain ID. Optionally decide to split Leaf
     // data into smaller pieces and form sub groups with unique groupIndex's
     // Construct root
+  }
+
+  async validateRootBundle(
+    bundleBlockNumbers: BundleEvaluationBlockNumbers,
+    poolRebalanceRoot: string,
+    relayerRefundRoot: string,
+    slowRelayRoot: string,
+  ) {
+    this._loadData();
+
+    // Construct roots locally using class functions and compare with input roots.
+    // If any roots mismatch, efficiently pinpoint the errors to give details to the caller.
   }
 }
