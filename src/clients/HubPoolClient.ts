@@ -4,6 +4,7 @@ import { Deposit } from "../interfaces/SpokePool";
 export class HubPoolClient {
   // l1Token -> destinationChainId -> destinationToken
   private l1TokensToDestinationTokens: { [l1Token: string]: { [destinationChainId: number]: string } } = {};
+  private _isUpdated: boolean = false;
 
   public firstBlockToSearch: number;
 
@@ -62,8 +63,14 @@ export class HubPoolClient {
       assign(this.l1TokensToDestinationTokens, [args.l1Token, args.destinationChainId], args.destinationToken);
     }
 
+    this._isUpdated = true;
+
     this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
 
     this.logger.debug({ at: "HubPoolClient", message: "Client updated!" });
+  }
+
+  isUpdated(): Boolean {
+    return this._isUpdated;
   }
 }
