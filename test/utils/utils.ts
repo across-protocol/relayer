@@ -137,8 +137,6 @@ export async function deploySpokePoolForIterativeTest(
     mockAdapter.address,
     spokePool.address
   );
-  console.log("desiredChainId", desiredChainId);
-  (spokePool.provider as any).network.chainId = desiredChainId; // force the provider prop to agree with the asigned chainId.
   const spokePoolClient = new SpokePoolClient(logger, spokePool.connect(signer), rateModelClient, desiredChainId);
 
   return { spokePool, spokePoolClient };
