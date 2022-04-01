@@ -89,35 +89,27 @@ describe("Relayer: Unfilled Deposits", async function () {
     // updates occurring on the hub's liquidity utilization.
     const deposit1Complete = { ...deposit1, destinationToken: erc20_2.address, realizedLpFeePct };
     const deposit2Complete = { ...deposit2, destinationToken: erc20_1.address, realizedLpFeePct };
-    console.log("A");
     const fill1 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete);
-    console.log("B1");
     await updateAllClients();
-    console.log("B2");
     // Validate the relayer correctly computes the unfilled amount.
     expect(relayerInstance.getUnfilledDeposits()).to.deep.equal([
       { unfilledAmount: deposit1.amount.sub(fill1.fillAmount), deposit: deposit1Complete },
       { unfilledAmount: deposit2.amount, deposit: deposit2Complete },
     ]);
 
-    console.log("B");
     // Partially fill the same deposit another two times.
     const fill2 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete);
     const fill3 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete);
     await updateAllClients();
-    console.log("C");
     // Deposit 1 should now be partially filled by all three fills. This should be correctly reflected.
     const unfilledAmount = deposit1.amount.sub(fill1.fillAmount.add(fill2.fillAmount).add(fill3.fillAmount));
-    console.log("D");
     expect(relayerInstance.getUnfilledDeposits()).to.deep.equal([
       { unfilledAmount: unfilledAmount, deposit: deposit1Complete },
       { unfilledAmount: deposit2.amount, deposit: deposit2Complete },
     ]);
 
-    console.log("E");
     // Fill the reminding amount on the deposit. It should thus be removed from the unfilledDeposits list.
     const fill4 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete, unfilledAmount);
-    console.log("F");
     expect(fill4.totalFilledAmount).to.equal(deposit1.amount); // should be 100% filled at this point.
     await updateAllClients();
     expect(relayerInstance.getUnfilledDeposits()).to.deep.equal([
@@ -147,8 +139,7 @@ async function updateAllClients() {
 }
 
 async function fillWithRealizedLpFeePct(spokePool, relayer, depositor, deposit, relayAmount = amountToRelay) {
-  const realizedLpFeePctForDeposit = await rateModelClient.computeRealizedLpFeePct(deposit, l1Token.address);
-  console.log("depositXX", deposit);
+  const realizedLpFeePctForDeposit = await rateModelClient.computeRealizedLpFeePct(deposit, l1Token.address)
   return await fillRelay(
     spokePool,
     deposit.destinationToken,
