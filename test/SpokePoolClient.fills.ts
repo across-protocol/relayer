@@ -27,7 +27,7 @@ describe("SpokePoolClient: Fills", async function () {
 
     await spokePoolClient.update();
 
-    expect(spokePoolClient.getFillsForDestinationChain(destinationChainId)).to.deep.equal([fill1, fill2]);
+    expect(spokePoolClient.getFills()).to.deep.equal([fill1, fill2]);
   });
   it("Correctly fetches deposit data multiple fills, multiple chains", async function () {
     // Do 6 deposits. 2 for the first depositor on chain1, 1 for the first depositor on chain2, 1 for the second
@@ -43,7 +43,7 @@ describe("SpokePoolClient: Fills", async function () {
     await spokePoolClient.update();
 
     // Validate associated ChainId Events are correctly returned.
-    expect(spokePoolClient.getFillsForDestinationChain(destinationChainId)).to.deep.equal([
+    expect(spokePoolClient.getFills()).to.deep.equal([
       relayer1Chain1_1,
       relayer1Chain1_2,
       relayer1Chain2_1,

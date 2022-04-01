@@ -4,7 +4,7 @@ import { Deposit, Fill, SpeedUp } from "../interfaces/SpokePool";
 
 export class SpokePoolClient {
   private deposits: { [DestinationChainId: number]: Deposit[] } = {};
-  private fills: { [DestinationChainId: number]: Fill[] } = {};
+  private fills: Fill[] = [];
   private speedUps: { [depositorAddress: string]: { [depositId: number]: SpeedUp[] } } = {};
   private _isUpdated: boolean = false;
 
@@ -32,23 +32,19 @@ export class SpokePoolClient {
   }
 
   getFills(): Fill[] {
-    return Object.values(this.fills).flat();
-  }
-
-  getFillsForDestinationChain(destinationChainId: number): Fill[] {
-    return this.fills[destinationChainId] || [];
+    return this.fills;
   }
 
   getFillsForOriginChain(originChainId: number) {
-    return Object.values(this.fills)
-      .flat()
-      .filter((fill: Fill) => fill.originChainId === originChainId);
+    return this.fills.filter((fill: Fill) => fill.originChainId === originChainId);
+  }
+
+  getFillsForRepaymentChain(repaymentChainId: number) {
+    return this.fills.filter((fill: Fill) => fill.repaymentChainId === repaymentChainId);
   }
 
   getFillsForRelayer(relayer: string) {
-    return Object.values(this.fills)
-      .flat()
-      .filter((fill: Fill) => fill.relayer === relayer);
+    return this.fills.filter((fill: Fill) => fill.relayer === relayer);
   }
 
   appendMaxSpeedUpSignatureToDeposit(deposit: Deposit) {
@@ -128,7 +124,7 @@ export class SpokePoolClient {
         if (speedUpDeposit !== deposit) this.deposits[destinationChainId][index] = speedUpDeposit;
       }
 
-    for (const event of fillEvents) assign(this.fills, [event.args.destinationChainId], [spreadEvent(event)]);
+    for (const event of fillEvents) this.fills.push(spreadEvent(event))
 
     this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
 
