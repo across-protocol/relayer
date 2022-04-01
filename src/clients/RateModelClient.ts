@@ -24,7 +24,6 @@ export class RateModelClient {
   }
 
   async computeRealizedLpFeePct(deposit: Deposit, l1Token: string) {
-    console.log("deposit", deposit, "l1Token", l1Token);
     const quoteBlockNumber = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
     // Set to this temporarily until we re-deploy. The RateModelStore was deployed after the spokePool's deposits.
 
