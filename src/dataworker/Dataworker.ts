@@ -148,7 +148,7 @@ export class Dataworker {
     bundleBlockNumbers: BundleEvaluationBlockNumbers,
     poolRebalanceRoot: string,
     relayerRefundRoot: string,
-    slowRelayRoot: string,
+    slowRelayRoot: string
   ) {
     this._loadData();
 

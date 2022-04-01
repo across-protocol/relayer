@@ -64,5 +64,3 @@ export interface UnfilledDeposits {
 export interface FillsToRefund {
   [repaymentChainId: number]: { [refundAddress: string]: Fill[] };
 }
-
-
