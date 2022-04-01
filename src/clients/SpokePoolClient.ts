@@ -18,7 +18,6 @@ export class SpokePoolClient {
     readonly endingBlock: number | null = null
   ) {
     this.firstBlockToSearch = startingBlock;
-    this.chainId;
   }
 
   getDepositsForDestinationChain(destinationChainId: number) {
