@@ -1,9 +1,10 @@
-import { winston, Transaction, Contract, toBN } from "../utils";
+import { winston, getNetworkName, assign, Contract, runTransaction, willSucceed, etherscanLink } from "../utils";
 interface preSignedTransaction {
   contract: Contract;
   method: string;
   args: any;
   message: string;
+  mrkdwn: string;
 }
 
 export class MultiCallBundler {
@@ -12,8 +13,8 @@ export class MultiCallBundler {
 
   // Adds all information associated with a transaction to the transaction queue. This is the intention of the
   // caller to send a transaction. The transaction might not be executable, which should be filtered later.
-  enqueueTransaction(contract: Contract, method: string, args: any, message: string) {
-    if (contract) this.transactions.push({ contract, method, args, message });
+  enqueueTransaction(contract: Contract, method: string, args: any, message: string, mrkdwn: string) {
+    if (contract) this.transactions.push({ contract, method, args, message, mrkdwn });
   }
 
   transactionCount() {
@@ -24,7 +25,7 @@ export class MultiCallBundler {
     this.transactions = [];
   }
 
-  getTargetForTxIndex(index: number) {
+  getTarget(index: number) {
     return { target: this.transactions[index].contract.address };
   }
 
@@ -33,85 +34,84 @@ export class MultiCallBundler {
       this.logger.debug({ at: "MultiCallBundler", message: "Executing tx bundle", number: this.transactions.length });
 
       // Simulate the transaction execution for the whole queue.
-      const transactionsWillSucceed = await Promise.all(
-        this.transactions.map(async (tx: preSignedTransaction) => this.willSucceed(tx.contract, tx.method, tx.args))
+      const transactionsSucceed = await Promise.all(
+        this.transactions.map(async (tx: preSignedTransaction) => willSucceed(tx.contract, tx.method, tx.args))
       );
-      console.log("transactionsWillSucceed", transactionsWillSucceed);
 
       // If any transactions will revert then log the reason and remove them from the transaction queue.
-      if (transactionsWillSucceed.every((willSucceed) => !willSucceed))
+      if (transactionsSucceed.some((willSucceed) => !willSucceed.succeed))
         this.logger.error({
           at: "MultiCallBundler",
           message: "Some transaction in the queue are reverting!",
-          revertingTransactions: transactionsWillSucceed.map((succeed, index) =>
-            succeed ? null : { target: this.getTargetForTxIndex(index), msg: this.transactions[index].message }
+          revertingTransactions: transactionsSucceed.flatMap((willSucceed, index) =>
+            willSucceed.succeed
+              ? [] // return blank array if the transaction is succeeding. Else, return information on why reverted.
+              : { target: this.getTarget(index), reason: willSucceed.reason, message: this.transactions[index].message }
           ),
         });
-      transactionsWillSucceed.forEach((succeed, index) => (succeed ? null : this.transactions.splice(index, 1)));
+      const validTransactions: preSignedTransaction[] = transactionsSucceed.flatMap((willSucceed, i) =>
+        willSucceed.succeed ? this.transactions[i] : []
+      );
 
-      // Group by target chain.
-      let groupedTransactions = {};
-
-      for (const element of this.transactions) {
-        const chainId = (element.contract.provider as any).network.chainId;
-        if (!groupedTransactions[chainId]) groupedTransactions[chainId] = [];
-        groupedTransactions[chainId].push(element);
+      if (validTransactions.length == 0) {
+        this.logger.debug({ at: "MultiCallBundler", message: "No valid transactions in the queue" });
+        return;
       }
 
-      // Execute and wait for all transactions to be mined.
-
-      const transactionResults = await Promise.allSettled(
-        this.transactions.map((tx: preSignedTransaction) => this.runTransaction(tx.contract, tx.method, tx.args))
-      );
-
-      const transactionReceipts = await Promise.allSettled(
-        transactionResults.map((transaction: any) => transaction.wait())
-      );
+      // Group by target chain. Note that there is NO grouping by target contract. The relayer will only ever use this
+      // multiCallBundler to send multiple transactions to one target contract on a given target chain and so we dont
+      // need to group by target contract. This can be further refactored with another group by if this is needed.
+      let groupedTransactions = {};
+      for (const transaction of validTransactions)
+        assign(groupedTransactions, [(transaction.contract.provider as any).network.chainId], [transaction]);
 
       this.logger.debug({
         at: "MultiCallBundler",
-        message: "All transactions executed",
-        hashes: transactionReceipts.map((receipt: any) => {
-          receipt.status == "fulfilled" ? receipt.value.transactionHash : "Tx thrown";
-        }),
+        message: "Executing transactions grouped by target chain",
+        txs: Object.keys(groupedTransactions).map((chainId) => ({ chainId, num: groupedTransactions[chainId].length })),
       });
-      // return transactionReceipts;
+
+      // Construct multiCall transaction for each target chain.
+      const multiCallTransactionsResult = await Promise.allSettled(
+        Object.keys(groupedTransactions).map((chainId) => this.buildMultiCallBundle(groupedTransactions[chainId]))
+      );
+
+      const transactionReceipts = await Promise.allSettled(
+        multiCallTransactionsResult.map((transaction) => (transaction as any).value.wait())
+      );
+
+      // Each element in the bundle of receipts relates back to each set within the groupedTransactions. Produce log.
+      let mrkdwn = "";
+      Object.keys(groupedTransactions).forEach((chainId, chainIndex) => {
+        mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
+        groupedTransactions[chainId].forEach((transaction, groupTxIndex) => {
+          mrkdwn +=
+            `  ${groupTxIndex + 1}: ${transaction.message || "No message"}:\n` +
+            `      ◦ ${transaction.mrkdwn || "No markdown"}\n`;
+        });
+        mrkdwn += "tx " + etherscanLink((transactionReceipts[chainIndex] as any).value.transactionHash, chainId);
+      });
+      this.logger.info({ at: "MultiCallBundler", message: "Multicall batch sent! 🧙‍♂️", mrkdwn });
     } catch (error) {
       this.logger.error({ at: "MultiCallBundler", message: "Error executing tx bundle", error });
     }
   }
 
-  // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
-  // of this method should be considerate of this and catch the response to deal with the error accordingly.
-  async runTransaction(contract: Contract, method: string, args: any) {
-    try {
-      const gas = await this.getGasPrice(contract.provider);
-      this.logger.debug({ at: "MultiCallBundler", message: "sending tx", target: contract.address, method, args, gas });
-      return await contract[method](...args, gas);
-    } catch (error) {
-      throw new Error(error.reason); // Extract the reason from the transaction error and throw it.
+  async buildMultiCallBundle(transactions: preSignedTransaction[]) {
+    // Validate all transactions in the batch have the same target contract.
+    const target = transactions[0].contract;
+    if (transactions.every((tx) => tx.contract.address != target.address)) {
+      this.logger.error({
+        at: "MultiCallBundler",
+        message: "some transactions in the bundle contain different target addresses",
+        transactions: transactions.map((tx) => {
+          return { address: tx.contract.address, chainId: (tx.contract.provider as any).network.chainId };
+        }),
+      });
+      return null; // If there is a problem in the targets in the bundle return null. This will be a noop.
     }
-  }
-
-  //TODO: add in gasPrice when the SDK has this for the given chainId.
-  // For now this method will extract the provider's Fee data from the associated network and scale it by a priority
-  // scaler. This works on both mainnet and L2's by the utility switching the response structure accordingly.
-  async getGasPrice(provider, priorityScaler = toBN(1.2)) {
-    const feeData = await provider.getFeeData();
-    if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas)
-      return {
-        maxFeePerGas: feeData.maxFeePerGas.mul(priorityScaler),
-        maxPriorityFeePerGas: feeData.maxPriorityFeePerGas.mul(priorityScaler),
-      };
-    else return { gasPrice: feeData.gasPrice.mul(priorityScaler) };
-  }
-
-  async willSucceed(contract: Contract, method: string, args: any) {
-    try {
-      await contract.callStatic[method](...args);
-      return true;
-    } catch (_) {
-      return false;
-    }
+    const multiCallData = transactions.map((tx) => tx.contract.interface.encodeFunctionData(tx.method, tx.args));
+    this.logger.debug({ at: "MultiCallBundler", message: "Produced bundle", target: target.address, multiCallData });
+    return runTransaction(this.logger, target, "multicall", [multiCallData]);
   }
 }

@@ -35,6 +35,16 @@ export function constructClients(logger: winston.Logger, config: RelayerConfig) 
   // const gasEstimator = new GasEstimator() // todo when this is implemented in the SDK.
   const multiCallBundler = new MultiCallBundler(logger, null);
 
+  logger.debug({
+    at: "constructClients",
+    message: "Clients constructed",
+    hubPoolAddress: hubPool.address,
+    rateModelStoreAddress: rateModelStore.address,
+    spokePools: spokePools.map((spokePool) => {
+      return { networkId: spokePool.networkId, address: spokePool.contract.address };
+    }),
+  });
+
   return { hubPoolClient, rateModelClient, spokePoolClients, multiCallBundler };
 }
 

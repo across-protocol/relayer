@@ -30,15 +30,16 @@ export class Relayer {
   fillRelay(deposit: {
     unfilledAmount: BigNumber;
     deposit: Deposit;
-  }): [contract: Contract, method: string, args: any, message: string] {
+  }): [contract: Contract, method: string, args: any, message: string, mrkdwn: string] {
     this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain: this.repaymentChainId });
     try {
       const amountToFill = deposit.deposit.amount; // Right now this will send the max amount when filling. Next implementation should consider the wallet balance.
       return [
-        this.getDestinationSpokePoolForDeposit(deposit.deposit),
-        "fillRelay",
-        buildFillRelayProps(deposit, this.repaymentChainId, amountToFill),
-        this.constructRelayFilledMessage(deposit.deposit, this.repaymentChainId, amountToFill),
+        this.getDestinationSpokePoolForDeposit(deposit.deposit), // target contract
+        "fillRelay", // method called.
+        buildFillRelayProps(deposit, this.repaymentChainId, amountToFill), // props sent with function call.
+        "Relay instantly sent 🚀", // message sent to logger.
+        this.constructRelayFilledMrkdwn(deposit.deposit, this.repaymentChainId, amountToFill), // message details in mrkdwn
       ];
     } catch (error) {
       this.logger.error({ at: "Relayer", message: "Error creating fillRelayTx", error });
@@ -50,12 +51,15 @@ export class Relayer {
     return this.spokePoolClients[deposit.destinationChainId].spokePool;
   }
 
-  constructRelayFilledMessage(deposit: Deposit, repaymentChainId: number, amountToFill: BigNumber) {
-    //TODO: improve log.
+  constructRelayFilledMrkdwn(deposit: Deposit, repaymentChainId: number, amountToFill: BigNumber) {
     return (
-      `Relayed depositId ${deposit.depositId} from ${getNetworkName(deposit.originChainId)}` +
+      `Relayed depositId ${deposit.depositId} from ${getNetworkName(deposit.originChainId)} ` +
       `to ${getNetworkName(deposit.destinationChainId)} of ` +
-      `${createFormatFunction(2, 4, false, 18)(deposit.amount.toString())} tokens.` // Note right now this does not factor in the decimals
+      `${createFormatFunction(2, 4, false, 18)(deposit.amount.toString())} tokens ` + // Note right now this does not factor in the decimals
+      `with a fill amount of ${createFormatFunction(2, 4, false, 18)(amountToFill.toString())}. ` +
+      `Deposit relayerFee ${createFormatFunction(2, 4, false, 18)(deposit.relayerFeePct.toString())}%, ` +
+      `realizedLpFee ${createFormatFunction(2, 4, false, 18)(deposit.realizedLpFeePct.toString())}%.` +
+      `relayer repayment on ${getNetworkName(repaymentChainId)}.`
     );
   }
 

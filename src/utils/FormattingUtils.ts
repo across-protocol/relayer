@@ -11,3 +11,10 @@ export const toBN = (num: string | number | BigNumber) => {
   if (num.toString().includes(".")) return BigNumber.from(parseInt(num.toString()));
   return BigNumber.from(num.toString());
 };
+
+export { createFormatFunction } from "@uma/common";
+
+import { createEtherscanLinkMarkdown } from "@uma/common";
+
+export const etherscanLink = (txHashOrAddress: string, chainId: number | string) =>
+  createEtherscanLinkMarkdown(txHashOrAddress, Number(chainId));

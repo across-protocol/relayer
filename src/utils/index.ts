@@ -1,7 +1,6 @@
 import winston from "winston";
 export { winston };
 export { delay } from "@uma/financial-templates-lib";
-export { createFormatFunction } from "@uma/common";
 export { BigNumber, Signer, Contract, ContractFactory, Transaction, utils, BaseContract, Event, Wallet } from "ethers";
 export { ethers } from "ethers";
 export type { Block } from "@ethersproject/abstract-provider";
@@ -14,7 +13,7 @@ export * from "./FormattingUtils";
 export * from "./TransactionPropBuilder";
 export * from "./ContractInstance";
 export * from "./ExecutionUtils";
-export * from "./TransactionUtils";
 export * from "./NetworkUtils";
+export * from "./TransactionUtils";
 
 export const zeroAddress = "0x0000000000000000000000000000000000000000";

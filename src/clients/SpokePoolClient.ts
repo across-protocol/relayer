@@ -70,7 +70,6 @@ export class SpokePoolClient {
   // Ensure that each deposit element is included with the same value in the fill. This includes all elements defined
   // by the depositor as well as the realizedLpFeePct and the destinationToken, which are pulled from other clients.
   validateFillForDeposit(fill: Fill, deposit: Deposit) {
-    this.log("debug", "Validating fill for deposit", { fill, deposit });
     let isValid = true;
     Object.keys(deposit).forEach((key) => {
       if (fill[key] && deposit[key].toString() !== fill[key].toString()) {
@@ -79,7 +78,7 @@ export class SpokePoolClient {
       }
     });
 
-    this.log("debug", "Finished validating fill for deposit", { isValid });
+    this.log("debug", "Validated fill for deposit", { fill, deposit, isValid });
     return isValid;
   }
 
