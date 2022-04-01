@@ -18,7 +18,7 @@ describe("Relayer: Iterative fill", async function () {
     [relayer_signer] = await ethers.getSigners(); // note we use relayer_signer as the owner as well to simplify the test.
     ({ hubPool, mockAdapter } = await hubPoolFixture());
   });
-  it.only("One token on multiple chains", async function () {
+  it("One token on multiple chains", async function () {
     const [, , depositor] = await ethers.getSigners();
     const numChainsToDeploySpokePoolsTo = 5;
     const numTokensToDeployPerChain = 1;
