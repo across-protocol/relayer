@@ -124,7 +124,7 @@ export class SpokePoolClient {
         if (speedUpDeposit !== deposit) this.deposits[destinationChainId][index] = speedUpDeposit;
       }
 
-    for (const event of fillEvents) this.fills.push(spreadEvent(event))
+    for (const event of fillEvents) this.fills.push(spreadEvent(event));
 
     this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
 
