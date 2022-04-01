@@ -82,6 +82,7 @@ export class MultiCallBundler {
 
       // Each element in the bundle of receipts relates back to each set within the groupedTransactions. Produce log.
       let mrkdwn = "";
+      let transactionHashes = [];
       Object.keys(groupedTransactions).forEach((chainId, chainIndex) => {
         mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
         groupedTransactions[chainId].forEach((transaction, groupTxIndex) => {
@@ -89,9 +90,12 @@ export class MultiCallBundler {
             `  ${groupTxIndex + 1}: ${transaction.message || "No message"}:\n` +
             `      ◦ ${transaction.mrkdwn || "No markdown"}\n`;
         });
-        mrkdwn += "tx " + etherscanLink((transactionReceipts[chainIndex] as any).value.transactionHash, chainId);
+        const transactionHash = (transactionReceipts[chainIndex] as any).value.transactionHash;
+        mrkdwn += "tx " + etherscanLink(transactionHash, chainId);
+        transactionHashes.push(transactionHash);
       });
       this.logger.info({ at: "MultiCallBundler", message: "Multicall batch sent! 🧙‍♂️", mrkdwn });
+      return transactionHashes;
     } catch (error) {
       this.logger.error({ at: "MultiCallBundler", message: "Error executing tx bundle", error });
     }

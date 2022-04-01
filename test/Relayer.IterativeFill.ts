@@ -18,7 +18,7 @@ describe("Relayer: Iterative fill", async function () {
     [relayer_signer] = await ethers.getSigners(); // note we use relayer_signer as the owner as well to simplify the test.
     ({ hubPool, mockAdapter } = await hubPoolFixture());
   });
-  it("One token on multiple chains", async function () {
+  it.only("One token on multiple chains", async function () {
     const [, , depositor] = await ethers.getSigners();
     const numChainsToDeploySpokePoolsTo = 5;
     const numTokensToDeployPerChain = 1;
@@ -79,9 +79,9 @@ describe("Relayer: Iterative fill", async function () {
     await relayer.checkForUnfilledDepositsAndFill();
     expect(multiCallBundler.transactionCount()).to.equal(20); // 20 transactions, filling each relay.
     const txs = await multiCallBundler.executeTransactionQueue();
-    expect(lastSpyLogIncludes(spy, "All transactions executed")).to.be.true;
-    expect(txs.length).to.equal(20); // There should have been exactly 20 transaction.
-
+    expect(lastSpyLogIncludes(spy, "Multicall batch sent")).to.be.true;
+    expect(txs.length).to.equal(1); // There should have been exactly 1 transaction, sent in a multicall batch.
+    console.log("END");
     // Re-run the execution loop and validate that no additional relays are sent.
     multiCallBundler.clearTransactionQueue();
     await updateAllClients();

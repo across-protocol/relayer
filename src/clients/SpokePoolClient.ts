@@ -18,8 +18,7 @@ export class SpokePoolClient {
     readonly endingBlock: number | null = null
   ) {
     this.firstBlockToSearch = startingBlock;
-
-    //TODO: remove `chainId as a prop and replace with `spokePool.provider.network.chainId
+    this.chainId;
   }
 
   getDepositsForDestinationChain(destinationChainId: number) {
@@ -77,8 +76,6 @@ export class SpokePoolClient {
         isValid = false;
       }
     });
-
-    this.log("debug", "Validated fill for deposit", { fill, deposit, isValid });
     return isValid;
   }
 

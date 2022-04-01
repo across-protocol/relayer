@@ -9,6 +9,7 @@ import { RateModelClient } from "../../src/clients/RateModelClient";
 import winston from "winston";
 import sinon from "sinon";
 import chai from "chai";
+import { AnyNsRecord } from "dns";
 export { winston, sinon };
 
 const assert = chai.assert;
@@ -41,7 +42,7 @@ export function createSpyLogger() {
     transports: [
       new SpyTransport({ level: "debug" }, { spy }),
       process.env.LOG_IN_TEST ? new winston.transports.Console() : null,
-    ],
+    ].filter((n) => n),
   });
 
   return { spy, spyLogger };
@@ -136,7 +137,8 @@ export async function deploySpokePoolForIterativeTest(
     mockAdapter.address,
     spokePool.address
   );
-
+  console.log("desiredChainId", desiredChainId);
+  (spokePool.provider as any).network.chainId = desiredChainId; // force the provider prop to agree with the asigned chainId.
   const spokePoolClient = new SpokePoolClient(logger, spokePool.connect(signer), rateModelClient, desiredChainId);
 
   return { spokePool, spokePoolClient };

@@ -62,7 +62,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await updateAllClients();
   });
 
-  it.only("Correctly fetches single unfilled deposit and fills it", async function () {
+  it("Correctly fetches single unfilled deposit and fills it", async function () {
     // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
     // "reasonable" block number based off the block time when looking at quote timestamps.
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
@@ -70,11 +70,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(lastSpyLogIncludes(spy, "Filled deposit")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Filling deposit")).to.be.true;
     expect(multiCallBundler.transactionCount()).to.equal(1); // One transaction, filling the one deposit.
 
     const tx = await multiCallBundler.executeTransactionQueue();
-    expect(lastSpyLogIncludes(spy, "All transactions executed")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Multicall batch sent")).to.be.true;
     expect(tx.length).to.equal(1); // There should have been exactly one transaction.
 
     // Check the state change happened correctly on the smart contract. There should be exactly one fill on spokePool_2.
