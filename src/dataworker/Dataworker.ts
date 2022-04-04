@@ -1,7 +1,9 @@
 import { winston, assign } from "../utils";
+import { buildSlowRelayTree, RelayData } from "@across-protocol/contracts-v2/dist/test-utils";
 import { SpokePoolClient, HubPoolClient, MultiCallBundler } from "../clients";
-import { UnfilledDeposits, FillsToRefund } from "../interfaces/SpokePool";
+import { UnfilledDeposits, FillsToRefund, UnfilledDeposit } from "../interfaces/SpokePool";
 import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";
+import { MerkleTree } from "@across-protocol/contracts-v2/dist/utils/MerkleTree";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -106,13 +108,53 @@ export class Dataworker {
     };
   }
 
-  async buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
-    this._loadData();
+  async buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): Promise<MerkleTree<RelayData>> | null {
+    const { unfilledDeposits } = this._loadData();
 
-    // For each destination chain ID key in unfilledDeposits
-    //     Order by fillAmountRemaining
-    //     Make Leaf for fill
-    // Construct root
+    if (Object.keys(unfilledDeposits).length === 0) return null;
+
+    // Key leaves temporarily by destination chain ID which we'll re-order later.
+    const leavesByChainId: { [chainId: number]: RelayData[] } = {};
+
+    for (const destinationChainId of Object.keys(unfilledDeposits)) {
+      // We need to re-order leaves deterministically such that the same data returned by _loadData() always produces
+      // the same merkle root. So we'll order the deposits for each chain ID by unfilled amount since this will order
+      // leaves by largest token outflows from the SpokePool to fulfill slow relays. (Recall that slow relay leaf
+      // executions send to the recipient the unfilled amount of their deposit, not just the deposit amount).
+      unfilledDeposits[destinationChainId].sort(function (a: UnfilledDeposit, b: UnfilledDeposit) {
+        return a.unfilledAmount.gt(b.unfilledAmount) ? -1 : 1;
+      });
+
+      // Associate relay data implied by unfilled deposit with destination chain ID.
+      leavesByChainId[destinationChainId] = [];
+      unfilledDeposits[destinationChainId].forEach((deposit) => {
+        leavesByChainId[destinationChainId].push({
+          depositor: deposit.deposit.depositor,
+          recipient: deposit.deposit.recipient,
+          destinationToken: deposit.deposit.depositor,
+          amount: deposit.deposit.amount.toString(),
+          originChainId: deposit.deposit.originChainId.toString(),
+          destinationChainId: deposit.deposit.destinationChainId.toString(),
+          realizedLpFeePct: deposit.deposit.realizedLpFeePct.toString(),
+          relayerFeePct: deposit.deposit.relayerFeePct.toString(),
+          depositId: deposit.deposit.depositId.toString(),
+        });
+      });
+    }
+
+    // Flatten leaves deterministically so that the same root is always produced from the same _loadData return value.
+    // To do that we'll sort keys by chain ID and then concat sorted leaves.
+    const leaves: RelayData[] = Object.keys(leavesByChainId)
+      .sort(function (a, b) {
+        return Number(b) - Number(a);
+      })
+      .reduce(function (prev: RelayData[], current: string) {
+        return prev.concat(leavesByChainId[Number(current)]);
+      }, []);
+
+      return leaves.length > 0 ? await buildSlowRelayTree(leaves) : null;
+
+    // TODO: Figure out how to store merkle trees. IPFS?
   }
 
   async buildRelayerRefundRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
@@ -144,6 +186,10 @@ export class Dataworker {
     // Construct root
   }
 
+  async proposeRootBundle(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
+    // TODO: 
+  }
+
   async validateRootBundle(
     bundleBlockNumbers: BundleEvaluationBlockNumbers,
     poolRebalanceRoot: string,
@@ -154,5 +200,9 @@ export class Dataworker {
 
     // Construct roots locally using class functions and compare with input roots.
     // If any roots mismatch, efficiently pinpoint the errors to give details to the caller.
+  }
+
+  async executeSlowRelayLeaves() {
+    // TODO:
   }
 }

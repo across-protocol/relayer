@@ -291,7 +291,11 @@ export async function buildFill(
     deposit.depositId,
     deposit.originChainId,
     deposit.amount,
-    deposit.amount.mul(toBNWei(pctOfDepositToFill)).div(toBNWei(1)),
+    deposit.amount
+      .mul(toBNWei(1).sub(deposit.realizedLpFeePct.add(deposit.relayerFeePct)))
+      .mul(toBNWei(pctOfDepositToFill))
+      .div(toBNWei(1))
+      .div(toBNWei(1)),
     deposit.realizedLpFeePct,
     deposit.relayerFeePct
   );
