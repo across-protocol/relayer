@@ -5,6 +5,12 @@ import { sampleRateModel, zeroAddress } from "../constants";
 
 import { SpokePoolClient } from "../../src/clients/SpokePoolClient";
 import { RateModelClient } from "../../src/clients/RateModelClient";
+import { HubPoolClient } from "../../src/clients/HubPoolClient";
+
+import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber } from "./index";
+import { amountToDeposit } from "../constants";
+import { Deposit, Fill } from "../../src/interfaces/SpokePool";
+import { toBNWei } from "../../src/utils";
 
 import winston from "winston";
 import sinon from "sinon";
@@ -233,4 +239,62 @@ export async function contractAt(contractName: string, signer: utils.Signer, add
   } catch (error) {
     throw new Error(`Could not find the artifact for ${contractName}! \n${error}`);
   }
+}
+
+// Submits a deposit transaction and returns the Deposit struct that that clients interact with.
+export async function buildDepositStruct(
+  deposit: Deposit,
+  hubPoolClient: HubPoolClient,
+  rateModelClient: RateModelClient,
+  l1TokenForDepositedToken: Contract
+) {
+  return {
+    ...deposit,
+    destinationToken: hubPoolClient.getDestinationTokenForDeposit(deposit),
+    realizedLpFeePct: await rateModelClient.computeRealizedLpFeePct(deposit, l1TokenForDepositedToken.address),
+  };
+}
+export async function buildDeposit(
+  rateModelClient: RateModelClient,
+  hubPoolClient: HubPoolClient,
+  spokePool: Contract,
+  tokenToDeposit: Contract,
+  l1TokenForDepositedToken: Contract,
+  recipientAndDepositor: SignerWithAddress,
+  _destinationChainId: number,
+  _amountToDeposit: BigNumber = amountToDeposit
+): Promise<Deposit> {
+  const _deposit = await deposit(
+    spokePool,
+    tokenToDeposit,
+    recipientAndDepositor,
+    recipientAndDepositor,
+    _destinationChainId,
+    _amountToDeposit
+  );
+  return await buildDepositStruct(_deposit, hubPoolClient, rateModelClient, l1TokenForDepositedToken);
+}
+
+// Submits a fillRelay transaction and returns the Fill struct that that clients will interact with.
+export async function buildFill(
+  spokePool: Contract,
+  destinationToken: Contract,
+  recipientAndDepositor: SignerWithAddress,
+  relayer: SignerWithAddress,
+  deposit: Deposit,
+  pctOfDepositToFill: number
+): Promise<Fill> {
+  return await fillRelay(
+    spokePool,
+    destinationToken,
+    recipientAndDepositor,
+    recipientAndDepositor,
+    relayer,
+    deposit.depositId,
+    deposit.originChainId,
+    deposit.amount,
+    deposit.amount.mul(toBNWei(pctOfDepositToFill)).div(toBNWei(1)),
+    deposit.realizedLpFeePct,
+    deposit.relayerFeePct
+  );
 }

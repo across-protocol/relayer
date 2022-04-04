@@ -52,11 +52,6 @@ export class RateModelClient {
     return this.rateModelDictionary.getRateModelForBlockNumber(l1Token, blockNumber);
   }
 
-  async validateRealizedLpFeePctForFill(fill: Fill, deposit: Deposit) {
-    const expectedFee = await this.computeRealizedLpFeePct(deposit, this.hubPoolClient.getL1TokenForDeposit(deposit));
-    if (!expectedFee.eq(fill.realizedLpFeePct)) return false;
-  }
-
   async update() {
     if (!this.hubPoolClient.isUpdated()) throw new Error("hubpool not updated");
 

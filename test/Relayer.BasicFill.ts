@@ -1,7 +1,7 @@
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, originChainId, sinon } from "./utils";
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
 import { lastSpyLogIncludes, createSpyLogger, deployRateModelStore, deployAndConfigureHubPool, winston } from "./utils";
-import { amountToLp } from "./constants";
+import { amountToLp, sampleRateModel } from "./constants";
 import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallBundler } from "../src/clients";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
@@ -58,6 +58,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     await l1Token.approve(hubPool.address, amountToLp);
     await hubPool.addLiquidity(l1Token.address, amountToLp);
+    await rateModelStore.updateRateModel(l1Token.address, JSON.stringify(sampleRateModel));
 
     await updateAllClients();
   });

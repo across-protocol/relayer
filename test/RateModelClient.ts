@@ -7,7 +7,6 @@ import {
   createSpyLogger,
 } from "./utils";
 import {
-  assert,
   expect,
   ethers,
   Contract,
