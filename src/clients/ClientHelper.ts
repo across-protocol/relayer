@@ -38,10 +38,10 @@ export function constructClients(logger: winston.Logger, config: RelayerConfig) 
   logger.debug({
     at: "constructClients",
     message: "Clients constructed",
-    hubPoolAddress: hubPool.address,
-    rateModelStoreAddress: rateModelStore.address,
+    hubPool: hubPool.address,
+    rateModelStore: rateModelStore.address,
     spokePools: spokePools.map((spokePool) => {
-      return { networkId: spokePool.networkId, address: spokePool.contract.address };
+      return { networkId: spokePool.networkId, spokePool: spokePool.contract.address };
     }),
   });
 
