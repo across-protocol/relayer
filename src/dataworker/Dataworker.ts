@@ -110,6 +110,7 @@ export class Dataworker {
 
   async buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): Promise<MerkleTree<RelayData>> | null {
     const { unfilledDeposits } = this._loadData();
+    // TODO: Use `bundleBlockNumbers` to decide how to filter which blocks to keep in `unfilledDeposits`.
 
     if (Object.keys(unfilledDeposits).length === 0) return null;
 
@@ -187,7 +188,9 @@ export class Dataworker {
   }
 
   async proposeRootBundle(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
-    // TODO: 
+    // Create roots
+    // Store root + auxillary information useful for executing leaves on some storage layer
+    // Propose roots to HubPool contract.
   }
 
   async validateRootBundle(
@@ -203,6 +206,14 @@ export class Dataworker {
   }
 
   async executeSlowRelayLeaves() {
+    // TODO:
+  }
+
+  async executePoolRebalanceLeaves() {
+    // TODO:
+  }
+
+  async executeRelayerRefundLeaves() {
     // TODO:
   }
 }
