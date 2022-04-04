@@ -153,7 +153,7 @@ export class Dataworker {
         return prev.concat(leavesByChainId[Number(current)]);
       }, []);
 
-      return leaves.length > 0 ? await buildSlowRelayTree(leaves) : null;
+    return leaves.length > 0 ? await buildSlowRelayTree(leaves) : null;
 
     // TODO: Figure out how to store merkle trees. IPFS?
   }

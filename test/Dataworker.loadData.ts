@@ -3,7 +3,7 @@ import { SignerWithAddress } from "./utils";
 import { buildDeposit, buildFill } from "./utils";
 import { SpokePoolClient, HubPoolClient, RateModelClient } from "../src/clients";
 import { amountToDeposit, repaymentChainId, destinationChainId, originChainId } from "./constants";
-import { setupDataworker } from "./fixtures/Dataworker.Fixture"
+import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { toBN } from "../src/utils";

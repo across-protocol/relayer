@@ -3,7 +3,7 @@ import { SignerWithAddress } from "./utils";
 import { buildDeposit, buildFill } from "./utils";
 import { SpokePoolClient, HubPoolClient, RateModelClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, originChainId } from "./constants";
-import { setupDataworker } from "./fixtures/Dataworker.Fixture"
+import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { toBN } from "../src/utils";
@@ -43,64 +43,63 @@ describe("Dataworker: Build merkle roots", async function () {
 
     // Submit deposits for multiple destination chain IDs.
     const deposit1 = await buildDeposit(
-        rateModelClient,
-        hubPoolClient,
-        spokePool_1,
-        erc20_1,
-        l1Token,
-        depositor,
-        destinationChainId,
-        amountToDeposit
-      )
+      rateModelClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId,
+      amountToDeposit
+    );
     const deposit2 = await buildDeposit(
-        rateModelClient,
-        hubPoolClient,
-        spokePool_2,
-        erc20_2,
-        l1Token,
-        depositor,
-        originChainId,
-        amountToDeposit
-      );
+      rateModelClient,
+      hubPoolClient,
+      spokePool_2,
+      erc20_2,
+      l1Token,
+      depositor,
+      originChainId,
+      amountToDeposit
+    );
     const deposit3 = await buildDeposit(
-        rateModelClient,
-        hubPoolClient,
-        spokePool_1,
-        erc20_1,
-        l1Token,
-        depositor,
-        destinationChainId,
-        amountToDeposit.mul(toBN(2))
-      );
+      rateModelClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId,
+      amountToDeposit.mul(toBN(2))
+    );
     const deposit4 = await buildDeposit(
-        rateModelClient,
-        hubPoolClient,
-        spokePool_2,
-        erc20_2,
-        l1Token,
-        depositor,
-        originChainId,
-        amountToDeposit.mul(toBN(2))
-      );
+      rateModelClient,
+      hubPoolClient,
+      spokePool_2,
+      erc20_2,
+      l1Token,
+      depositor,
+      originChainId,
+      amountToDeposit.mul(toBN(2))
+    );
 
     // Slow relays should be sorted by destination chain ID and amount. We don't sort on unfilled amount since
     // there are no fills yet.
-    const expectedRelaysUnsorted: RelayData[] = [deposit1, deposit2, deposit3, deposit4]
-      .map((_deposit) => {
-        return {
-            depositor: _deposit.depositor,
-            recipient: _deposit.recipient,
-            destinationToken: _deposit.depositor,
-            amount: _deposit.amount.toString(),
-            originChainId: _deposit.originChainId.toString(),
-            destinationChainId: _deposit.destinationChainId.toString(),
-            realizedLpFeePct: _deposit.realizedLpFeePct.toString(),
-            relayerFeePct: _deposit.relayerFeePct.toString(),
-            depositId: _deposit.depositId.toString(),
-        }
-      })
+    const expectedRelaysUnsorted: RelayData[] = [deposit1, deposit2, deposit3, deposit4].map((_deposit) => {
+      return {
+        depositor: _deposit.depositor,
+        recipient: _deposit.recipient,
+        destinationToken: _deposit.depositor,
+        amount: _deposit.amount.toString(),
+        originChainId: _deposit.originChainId.toString(),
+        destinationChainId: _deposit.destinationChainId.toString(),
+        realizedLpFeePct: _deposit.realizedLpFeePct.toString(),
+        relayerFeePct: _deposit.relayerFeePct.toString(),
+        depositId: _deposit.depositId.toString(),
+      };
+    });
 
-    // Returns expected merkle root where leaves are ordered by destination chain ID and then unfilled amount 
+    // Returns expected merkle root where leaves are ordered by destination chain ID and then unfilled amount
     // (descending).
     await updateAllClients();
     const merkleRoot1 = await dataworkerInstance.buildSlowRelayRoot([]);
