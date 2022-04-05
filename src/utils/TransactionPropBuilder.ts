@@ -2,7 +2,8 @@ import { BigNumber } from "../utils";
 import { Deposit } from "../interfaces/SpokePool";
 export function buildFillRelayProps(
   depositInfo: { unfilledAmount: BigNumber; deposit: Deposit },
-  repaymentChain: number
+  repaymentChainId: number,
+  maxFillAmount: BigNumber
 ) {
   // Validate all keys are present.
   for (const key in depositInfo.deposit)
@@ -12,9 +13,9 @@ export function buildFillRelayProps(
     depositInfo.deposit.depositor,
     depositInfo.deposit.recipient,
     depositInfo.deposit.destinationToken,
-    depositInfo.deposit.amount, // maxTokensToSend. TODO: update this to be a prop that the caller defines.
+    maxFillAmount,
     depositInfo.unfilledAmount,
-    repaymentChain,
+    repaymentChainId,
     depositInfo.deposit.originChainId,
     depositInfo.deposit.realizedLpFeePct,
     depositInfo.deposit.relayerFeePct,

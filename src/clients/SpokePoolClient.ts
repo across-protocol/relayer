@@ -69,7 +69,6 @@ export class SpokePoolClient {
   // Ensure that each deposit element is included with the same value in the fill. This includes all elements defined
   // by the depositor as well as the realizedLpFeePct and the destinationToken, which are pulled from other clients.
   validateFillForDeposit(fill: Fill, deposit: Deposit) {
-    this.log("debug", "Validating fill for deposit", { fill, deposit });
     let isValid = true;
     Object.keys(deposit).forEach((key) => {
       if (fill[key] && deposit[key].toString() !== fill[key].toString()) {
@@ -77,8 +76,6 @@ export class SpokePoolClient {
         isValid = false;
       }
     });
-
-    this.log("debug", "Finished validating fill for deposit", { isValid });
     return isValid;
   }
 
@@ -87,10 +84,10 @@ export class SpokePoolClient {
   }
 
   async update() {
-    if (this.rateModelClient !== null && !this.rateModelClient.isUpdated()) throw new Error("ratemodel not updated");
+    if (this.rateModelClient !== null && !this.rateModelClient.isUpdated()) throw new Error("RateModel not updated");
 
     const searchConfig = [this.firstBlockToSearch, this.endingBlock || (await this.getBlockNumber())];
-    this.log("debug", "Updating client", { searchConfig });
+    this.log("debug", "Updating client", { searchConfig, spokePool: this.spokePool.address });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
 
     const [depositEvents, speedUpEvents, fillEvents] = await Promise.all([
@@ -103,7 +100,7 @@ export class SpokePoolClient {
     // new deposits that were found in the searchConfig (new from the previous run). This is important as this operation
     // is heavy as there is a fair bit of block number lookups that need to happen. Note this call REQUIRES that the
     // hubPoolClient is updated on the first before this call as this needed the the L1 token mapping to each L2 token.
-    this.log("debug", "Fetching realizedLpFeePct", { count: depositEvents.length });
+    if (depositEvents.length > 0) this.log("debug", "Fetching realizedLpFeePct events", { num: depositEvents.length });
     const realizedLpFeePcts = await Promise.all(depositEvents.map((event) => this.computeRealizedLpFeePct(event)));
 
     for (const [index, event] of depositEvents.entries()) {
