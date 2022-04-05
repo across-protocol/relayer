@@ -1,7 +1,7 @@
-import { getNetworkName, Contract, Wallet } from "./";
+import { getNetworkName, Contract, Wallet } from ".";
 
 import { getContractArtifact } from "@across-protocol/contracts-v2";
-import { PublicNetworks } from "@uma/common";
+import * as typechain from "@across-protocol/contracts-v2";
 
 // Return an ethers contract instance for a deployed contract, imported from the Across-protocol contracts repo.
 export function getDeployedContract(contractName: string, networkId: number, signer: Wallet): Contract {
@@ -21,4 +21,13 @@ export function castSpokePoolName(networkId: number): string {
 
   if (networkName.includes("-")) networkName = networkName.substring(0, networkName.indexOf("-"));
   return `${networkName}_SpokePool`;
+}
+
+export function getMethodType() {}
+
+export function getParamType(contractName: string, functionName: string, paramName: string) {
+  const artifact: any = typechain[`${[contractName]}__factory`];
+  const fragment = artifact.abi.find((fragment) => fragment.name === functionName);
+  console.log("fragment", fragment);
+  return fragment!.inputs.find((input) => input.name === paramName) || "";
 }

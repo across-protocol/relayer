@@ -11,9 +11,10 @@ export * from "./EventUtils";
 export * from "./ObjectUtils";
 export * from "./FormattingUtils";
 export * from "./TransactionPropBuilder";
-export * from "./ContractInstance";
+export * from "./ContractUtils";
 export * from "./ExecutionUtils";
 export * from "./NetworkUtils";
 export * from "./TransactionUtils";
+export * from "./MerkleTreeUtils";
 
 export const zeroAddress = "0x0000000000000000000000000000000000000000";
