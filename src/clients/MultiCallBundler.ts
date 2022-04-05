@@ -1,6 +1,8 @@
-import { winston, getNetworkName, assign, Contract, runTransaction, willSucceed, etherscanLink } from "../utils";
+import { winston, getNetworkName, assign, Contract, runTransaction } from "../utils";
+import { willSucceed, etherscanLink } from "../utils";
 interface AugmentedTransaction {
   contract: Contract;
+  chainId: number;
   method: string;
   args: any;
   message: string;
@@ -13,8 +15,8 @@ export class MultiCallBundler {
 
   // Adds all information associated with a transaction to the transaction queue. This is the intention of the
   // caller to send a transaction. The transaction might not be executable, which should be filtered later.
-  enqueueTransaction(contract: Contract, method: string, args: any, message: string, mrkdwn: string) {
-    if (contract) this.transactions.push({ contract, method, args, message, mrkdwn });
+  enqueueTransaction(contract: Contract, chainId: number, method: string, args: any, message: string, mrkdwn: string) {
+    this.transactions.push({ contract, chainId, method, args, message, mrkdwn });
   }
 
   transactionCount() {
@@ -58,8 +60,9 @@ export class MultiCallBundler {
       // multiCallBundler to send multiple transactions to one target contract on a given target chain and so we dont
       // need to group by target contract. This can be further refactored with another group by if this is needed.
       const groupedTransactions: { [networkId: number]: AugmentedTransaction[] } = {};
-      for (const transaction of validTransactions)
-        assign(groupedTransactions, [(transaction.contract.provider as any).network.chainId], [transaction]);
+      for (const transaction of validTransactions) {
+        assign(groupedTransactions, [transaction.chainId], [transaction]);
+      }
 
       this.logger.debug({
         at: "MultiCallBundler",
@@ -105,9 +108,9 @@ export class MultiCallBundler {
     if (transactions.every((tx) => tx.contract.address != target.address)) {
       this.logger.error({
         at: "MultiCallBundler",
-        message: "some transactions in the bundle contain different target addresses",
-        transactions: transactions.map((tx) => {
-          return { address: tx.contract.address, chainId: (tx.contract.provider as any).network.chainId };
+        message: "some transactions in the bundle contain different targets",
+        transactions: transactions.map(({ contract, chainId }) => {
+          return { targetAddress: contract.address, chainId };
         }),
       });
       return null; // If there is a problem in the targets in the bundle return null. This will be a noop.

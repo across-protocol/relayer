@@ -30,12 +30,13 @@ export class Relayer {
   fillRelay(deposit: {
     unfilledAmount: BigNumber;
     deposit: Deposit;
-  }): [contract: Contract, method: string, args: any, message: string, mrkdwn: string] {
+  }): [contract: Contract, chainId: number, method: string, args: any, message: string, mrkdwn: string] {
     this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain: this.repaymentChainId });
     try {
       const amountToFill = deposit.deposit.amount; // Right now this will send the max amount when filling. Next implementation should consider the wallet balance.
       return [
         this.getDestinationSpokePoolForDeposit(deposit.deposit), // target contract
+        deposit.deposit.destinationChainId,
         "fillRelay", // method called.
         buildFillRelayProps(deposit, this.repaymentChainId, amountToFill), // props sent with function call.
         "Relay instantly sent 🚀", // message sent to logger.

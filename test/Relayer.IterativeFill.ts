@@ -80,7 +80,7 @@ describe("Relayer: Iterative fill", async function () {
     expect(multiCallBundler.transactionCount()).to.equal(20); // 20 transactions, filling each relay.
     const txs = await multiCallBundler.executeTransactionQueue();
     expect(lastSpyLogIncludes(spy, "Multicall batch sent")).to.be.true;
-    expect(txs.length).to.equal(1); // There should have been exactly 1 transaction, sent in a multicall batch.
+    expect(txs.length).to.equal(5); // There should have been exactly 5 bundles, one to each target chainId.
     // Re-run the execution loop and validate that no additional relays are sent.
     multiCallBundler.clearTransactionQueue();
     await updateAllClients();
