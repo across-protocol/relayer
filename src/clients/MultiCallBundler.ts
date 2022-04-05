@@ -1,6 +1,6 @@
 import { winston, getNetworkName, assign, Contract, runTransaction } from "../utils";
 import { willSucceed, etherscanLink } from "../utils";
-interface AugmentedTransaction {
+export interface AugmentedTransaction {
   contract: Contract;
   chainId: number;
   method: string;
@@ -15,8 +15,8 @@ export class MultiCallBundler {
 
   // Adds all information associated with a transaction to the transaction queue. This is the intention of the
   // caller to send a transaction. The transaction might not be executable, which should be filtered later.
-  enqueueTransaction(contract: Contract, chainId: number, method: string, args: any, message: string, mrkdwn: string) {
-    this.transactions.push({ contract, chainId, method, args, message, mrkdwn });
+  enqueueTransaction(transaction: AugmentedTransaction) {
+    this.transactions.push(transaction);
   }
 
   transactionCount() {
@@ -33,7 +33,7 @@ export class MultiCallBundler {
 
       // Simulate the transaction execution for the whole queue.
       const transactionsSucceed = await Promise.all(
-        this.transactions.map((tx: AugmentedTransaction) => willSucceed(tx.contract, tx.method, tx.args))
+        this.transactions.map((transaction: AugmentedTransaction) => willSucceed(transaction))
       );
 
       // If any transactions will revert then log the reason and remove them from the transaction queue.
@@ -41,15 +41,20 @@ export class MultiCallBundler {
         this.logger.error({
           at: "MultiCallBundler",
           message: "Some transaction in the queue are reverting!",
-          revertingTransactions: transactionsSucceed.flatMap((succeed, index) =>
-            succeed.succeed
-              ? [] // return blank array if the transaction is succeeding. Else, return information on why reverted.
-              : { target: this.getTarget(index), reason: succeed.reason, message: this.transactions[index].message }
-          ),
+          revertingTransactions: transactionsSucceed
+            .filter((transaction) => !transaction.succeed)
+            .map((transaction) => {
+              return {
+                target: transaction.transaction.contract.address,
+                reason: transaction.reason,
+                message: transaction.transaction.message,
+                mrkdwn: transaction.transaction.mrkdwn,
+              };
+            }),
         });
-      const validTransactions: AugmentedTransaction[] = transactionsSucceed.flatMap((succeed, i) =>
-        succeed.succeed ? this.transactions[i] : []
-      );
+      const validTransactions: AugmentedTransaction[] = transactionsSucceed
+        .filter((transaction) => transaction.succeed)
+        .map((transaction) => transaction.transaction);
 
       if (validTransactions.length == 0) {
         this.logger.debug({ at: "MultiCallBundler", message: "No valid transactions in the queue" });
@@ -97,6 +102,7 @@ export class MultiCallBundler {
       return transactionHashes;
     } catch (error) {
       this.logger.error({ at: "MultiCallBundler", message: "Error executing tx bundle", error });
+      console.log("error", error);
     }
   }
 

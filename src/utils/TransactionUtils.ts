@@ -1,3 +1,4 @@
+import { AugmentedTransaction } from "../clients";
 import { winston, Contract, toBN } from "../utils";
 
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
@@ -26,14 +27,14 @@ export async function getGasPrice(provider, priorityScaler = toBN(1.2)) {
 }
 
 export async function willSucceed(
-  contract: Contract,
-  method: string,
-  args: any
-): Promise<{ succeed: boolean; reason: string }> {
+  transaction: AugmentedTransaction
+): Promise<{ transaction: AugmentedTransaction; succeed: boolean; reason: string }> {
   try {
-    await contract.callStatic[method](...args);
-    return { succeed: true, reason: null };
+    console.log("transaction", transaction);
+    await transaction.contract.callStatic[transaction.method](...transaction.args);
+    return { transaction, succeed: true, reason: null };
   } catch (error) {
-    return { succeed: false, reason: error.reason };
+    console.log("errorEEE", error);
+    return { transaction, succeed: false, reason: error.reason };
   }
 }
