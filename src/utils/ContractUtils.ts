@@ -26,6 +26,5 @@ export function castSpokePoolName(networkId: number): string {
 export function getParamType(contractName: string, functionName: string, paramName: string) {
   const artifact: any = typechain[`${[contractName]}__factory`];
   const fragment = artifact.abi.find((fragment) => fragment.name === functionName);
-  console.log("fragment", fragment);
   return fragment!.inputs.find((input) => input.name === paramName) || "";
 }
