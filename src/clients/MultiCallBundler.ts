@@ -102,7 +102,6 @@ export class MultiCallBundler {
       return transactionHashes;
     } catch (error) {
       this.logger.error({ at: "MultiCallBundler", message: "Error executing tx bundle", error });
-      console.log("error", error);
     }
   }
 

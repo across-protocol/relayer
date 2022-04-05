@@ -30,11 +30,9 @@ export async function willSucceed(
   transaction: AugmentedTransaction
 ): Promise<{ transaction: AugmentedTransaction; succeed: boolean; reason: string }> {
   try {
-    console.log("transaction", transaction);
     await transaction.contract.callStatic[transaction.method](...transaction.args);
     return { transaction, succeed: true, reason: null };
   } catch (error) {
-    console.log("errorEEE", error);
     return { transaction, succeed: false, reason: error.reason };
   }
 }
