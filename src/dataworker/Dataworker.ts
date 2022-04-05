@@ -132,19 +132,18 @@ export class Dataworker {
             realizedLpFeePct: deposit.deposit.realizedLpFeePct.toString(),
             relayerFeePct: deposit.deposit.relayerFeePct.toString(),
             depositId: deposit.deposit.depositId.toString(),
-          } 
+          };
         })
-      )
+      );
     });
 
     // Sort leaves deterministically so that the same root is always produced from the same _loadData return value.
     // The { Deposit ID, origin chain ID } is guaranteed to be unique so we can sort on them.
-    const sortedLeaves = leaves
-      .sort((relayA, relayB) => {
-        // Note: Smaller ID numbers will come first
-        if (relayA.originChainId === relayB.originChainId) return Number(relayA.depositId) - Number(relayB.depositId);
-        else return Number(relayA.originChainId) - Number(relayB.originChainId); 
-      })
+    const sortedLeaves = leaves.sort((relayA, relayB) => {
+      // Note: Smaller ID numbers will come first
+      if (relayA.originChainId === relayB.originChainId) return Number(relayA.depositId) - Number(relayB.depositId);
+      else return Number(relayA.originChainId) - Number(relayB.originChainId);
+    });
 
     return sortedLeaves.length > 0 ? await buildSlowRelayTree(sortedLeaves) : null;
 
