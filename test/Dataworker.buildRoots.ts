@@ -37,7 +37,7 @@ describe("Dataworker: Build merkle roots", async function () {
     await updateAllClients();
     expect(await dataworkerInstance.buildSlowRelayRoot([])).to.equal(null);
   });
-  it.only("Build slow relay root", async function () {
+  it("Build slow relay root", async function () {
     await updateAllClients();
 
     // Submit deposits for multiple destination chain IDs.
@@ -101,12 +101,6 @@ describe("Dataworker: Build merkle roots", async function () {
     // (ascending).
     await updateAllClients();
     const merkleRoot1 = await dataworkerInstance.buildSlowRelayRoot([]);
-    console.log([
-      expectedRelaysUnsorted[0],
-      expectedRelaysUnsorted[2],
-      expectedRelaysUnsorted[1],
-      expectedRelaysUnsorted[3],
-    ])
     const expectedMerkleRoot1 = await buildSlowRelayTree([
       expectedRelaysUnsorted[0],
       expectedRelaysUnsorted[2],

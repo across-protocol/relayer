@@ -119,7 +119,19 @@ export class Dataworker {
     const leaves: RelayData[] = [];
     Object.keys(unfilledDeposits).forEach((destinationChainId) => {
       leaves.push(
-        ...unfilledDeposits[destinationChainId].map((deposit: UnfilledDeposit) => deposit.deposit as RelayData)
+        ...unfilledDeposits[destinationChainId].map((deposit: UnfilledDeposit): RelayData => {
+          return {
+            depositor: deposit.deposit.depositor,
+            recipient: deposit.deposit.recipient,
+            destinationToken: deposit.deposit.depositor,
+            amount: deposit.deposit.amount,
+            originChainId: deposit.deposit.originChainId,
+            destinationChainId: deposit.deposit.destinationChainId,
+            realizedLpFeePct: deposit.deposit.realizedLpFeePct,
+            relayerFeePct: deposit.deposit.relayerFeePct,
+            depositId: deposit.deposit.depositId,
+          };
+        })
       );
     });
 
@@ -130,8 +142,6 @@ export class Dataworker {
       if (relayA.originChainId === relayB.originChainId) return relayA.depositId - relayB.depositId;
       else return relayA.originChainId - relayB.originChainId;
     });
-
-    console.log(sortedLeaves)
 
     return sortedLeaves.length > 0 ? await buildSlowRelayTree(sortedLeaves) : null;
 
