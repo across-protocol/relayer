@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import { ethers, providers } from "ethers";
 
 export function getProvider(networkId: number) {
   const nodeUrl = process.env[`NODE_URL_${networkId}`];

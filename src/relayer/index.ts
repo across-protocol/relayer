@@ -23,6 +23,7 @@ export async function runRelayer(logger: winston.Logger): Promise<void> {
     await relayer.checkForUnfilledDepositsAndFill();
 
     await multiCallBundler.executeTransactionQueue();
+    multiCallBundler.clearTransactionQueue();
 
     if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) break;
   }

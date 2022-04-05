@@ -44,7 +44,10 @@ export function createSpyLogger() {
   const spy = sinon.spy();
   const spyLogger = winston.createLogger({
     level: "debug",
-    transports: [new SpyTransport({ level: "debug" }, { spy })],
+    transports: [
+      new SpyTransport({ level: "debug" }, { spy }),
+      process.env.LOG_IN_TEST ? new winston.transports.Console() : null,
+    ].filter((n) => n),
   });
 
   return { spy, spyLogger };
@@ -139,7 +142,6 @@ export async function deploySpokePoolForIterativeTest(
     mockAdapter.address,
     spokePool.address
   );
-
   const spokePoolClient = new SpokePoolClient(logger, spokePool.connect(signer), rateModelClient, desiredChainId);
 
   return { spokePool, spokePoolClient };

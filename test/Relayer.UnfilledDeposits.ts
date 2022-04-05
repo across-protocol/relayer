@@ -105,7 +105,6 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     // Fill the reminding amount on the deposit. It should thus be removed from the unfilledDeposits list.
     const fill4 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete, unfilledAmount);
-
     expect(fill4.totalFilledAmount).to.equal(deposit1.amount); // should be 100% filled at this point.
     await updateAllClients();
     expect(relayerInstance.getUnfilledDeposits()).to.deep.equal([
