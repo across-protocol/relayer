@@ -6,7 +6,6 @@ import { amountToDeposit, destinationChainId, originChainId } from "./constants"
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { toBN } from "../src/utils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token: Contract;
@@ -38,7 +37,7 @@ describe("Dataworker: Build merkle roots", async function () {
     await updateAllClients();
     expect(await dataworkerInstance.buildSlowRelayRoot([])).to.equal(null);
   });
-  it("Build slow relay root", async function () {
+  it.only("Build slow relay root", async function () {
     await updateAllClients();
 
     // Submit deposits for multiple destination chain IDs.
@@ -102,6 +101,12 @@ describe("Dataworker: Build merkle roots", async function () {
     // (ascending).
     await updateAllClients();
     const merkleRoot1 = await dataworkerInstance.buildSlowRelayRoot([]);
+    console.log([
+      expectedRelaysUnsorted[0],
+      expectedRelaysUnsorted[2],
+      expectedRelaysUnsorted[1],
+      expectedRelaysUnsorted[3],
+    ])
     const expectedMerkleRoot1 = await buildSlowRelayTree([
       expectedRelaysUnsorted[0],
       expectedRelaysUnsorted[2],

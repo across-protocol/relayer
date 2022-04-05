@@ -1,6 +1,6 @@
 import { winston, assign, buildSlowRelayTree, MerkleTree } from "../utils";
 import { SpokePoolClient, HubPoolClient, MultiCallBundler } from "../clients";
-import { UnfilledDeposits, FillsToRefund, RelayData } from "../interfaces/SpokePool";
+import { UnfilledDeposits, FillsToRefund, RelayData, UnfilledDeposit } from "../interfaces/SpokePool";
 import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
@@ -119,19 +119,7 @@ export class Dataworker {
     const leaves: RelayData[] = [];
     Object.keys(unfilledDeposits).forEach((destinationChainId) => {
       leaves.push(
-        ...unfilledDeposits[destinationChainId].map((deposit) => {
-          return {
-            depositor: deposit.deposit.depositor,
-            recipient: deposit.deposit.recipient,
-            destinationToken: deposit.deposit.depositor,
-            amount: deposit.deposit.amount.toString(),
-            originChainId: deposit.deposit.originChainId.toString(),
-            destinationChainId: deposit.deposit.destinationChainId.toString(),
-            realizedLpFeePct: deposit.deposit.realizedLpFeePct.toString(),
-            relayerFeePct: deposit.deposit.relayerFeePct.toString(),
-            depositId: deposit.deposit.depositId.toString(),
-          };
-        })
+        ...unfilledDeposits[destinationChainId].map((deposit: UnfilledDeposit) => deposit.deposit as RelayData)
       );
     });
 
@@ -139,9 +127,11 @@ export class Dataworker {
     // The { Deposit ID, origin chain ID } is guaranteed to be unique so we can sort on them.
     const sortedLeaves = leaves.sort((relayA, relayB) => {
       // Note: Smaller ID numbers will come first
-      if (relayA.originChainId === relayB.originChainId) return Number(relayA.depositId) - Number(relayB.depositId);
-      else return Number(relayA.originChainId) - Number(relayB.originChainId);
+      if (relayA.originChainId === relayB.originChainId) return relayA.depositId - relayB.depositId;
+      else return relayA.originChainId - relayB.originChainId;
     });
+
+    console.log(sortedLeaves)
 
     return sortedLeaves.length > 0 ? await buildSlowRelayTree(sortedLeaves) : null;
 
