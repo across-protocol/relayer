@@ -37,6 +37,4 @@ export async function buildRelayerRefundTree(relayerRefundLeaves: RelayerRefundL
   return new MerkleTree<RelayerRefundLeaf>(relayerRefundLeaves, hashFn);
 }
 
-export {
-  MerkleTree
-}
+export { MerkleTree };
