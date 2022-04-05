@@ -70,7 +70,7 @@ describe("Dataworker: Build merkle roots", async function () {
       l1Token,
       depositor,
       destinationChainId,
-      amountToDeposit.mul(toBN(2))
+      amountToDeposit
     );
     const deposit4 = await buildDeposit(
       rateModelClient,
@@ -80,11 +80,10 @@ describe("Dataworker: Build merkle roots", async function () {
       l1Token,
       depositor,
       originChainId,
-      amountToDeposit.mul(toBN(2))
+      amountToDeposit
     );
 
-    // Slow relays should be sorted by destination chain ID and amount. We don't sort on unfilled amount since
-    // there are no fills yet.
+    // Slow relays should be sorted by origin chain ID and deposit ID.
     const expectedRelaysUnsorted: RelayData[] = [deposit1, deposit2, deposit3, deposit4].map((_deposit) => {
       return {
         depositor: _deposit.depositor,
@@ -99,30 +98,17 @@ describe("Dataworker: Build merkle roots", async function () {
       };
     });
 
-    // Returns expected merkle root where leaves are ordered by destination chain ID and then unfilled amount
-    // (descending).
+    // Returns expected merkle root where leaves are ordered by origin chain ID and then deposit ID
+    // (ascending).
     await updateAllClients();
     const merkleRoot1 = await dataworkerInstance.buildSlowRelayRoot([]);
     const expectedMerkleRoot1 = await buildSlowRelayTree([
-      expectedRelaysUnsorted[2],
       expectedRelaysUnsorted[0],
-      expectedRelaysUnsorted[3],
+      expectedRelaysUnsorted[2],
       expectedRelaysUnsorted[1],
+      expectedRelaysUnsorted[3],
     ]);
     expect(merkleRoot1.getHexRoot()).to.equal(expectedMerkleRoot1.getHexRoot());
-
-    // Partially fill two deposits such that the order of the deposits switches based on unfilled amounts.
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit3, 0.9);
-    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit4, 0.9);
-    await updateAllClients();
-    const merkleRoot2 = await dataworkerInstance.buildSlowRelayRoot([]);
-    const expectedMerkleRoot2 = await buildSlowRelayTree([
-      expectedRelaysUnsorted[0],
-      expectedRelaysUnsorted[2],
-      expectedRelaysUnsorted[1],
-      expectedRelaysUnsorted[3],
-    ]); // Note how deposits for the same destination chain ID are flipped.
-    expect(merkleRoot2.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
 
     // Fill deposits such that there are no unfilled deposits remaining.
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 1);

@@ -8,7 +8,7 @@ import { RateModelClient } from "../../src/clients/RateModelClient";
 import { HubPoolClient } from "../../src/clients/HubPoolClient";
 
 import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber } from "./index";
-import { amountToDeposit } from "../constants";
+import { amountToDeposit, depositRelayerFeePct } from "../constants";
 import { Deposit, Fill } from "../../src/interfaces/SpokePool";
 import { toBNWei } from "../../src/utils";
 
@@ -260,7 +260,8 @@ export async function buildDeposit(
   l1TokenForDepositedToken: Contract,
   recipientAndDepositor: SignerWithAddress,
   _destinationChainId: number,
-  _amountToDeposit: BigNumber = amountToDeposit
+  _amountToDeposit: BigNumber = amountToDeposit,
+  _relayerFeePct: BigNumber = depositRelayerFeePct
 ): Promise<Deposit> {
   const _deposit = await deposit(
     spokePool,
@@ -268,7 +269,8 @@ export async function buildDeposit(
     recipientAndDepositor,
     recipientAndDepositor,
     _destinationChainId,
-    _amountToDeposit
+    _amountToDeposit,
+    _relayerFeePct
   );
   return await buildDepositStruct(_deposit, hubPoolClient, rateModelClient, l1TokenForDepositedToken);
 }
