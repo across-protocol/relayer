@@ -68,7 +68,7 @@ export class Dataworker {
             // relays out of the relayer refund array because its possible that a deposit is submitted with a relayer
             // fee % set to 0.
             validFillsOnDestinationChain.push(...validFillsForDeposit.filter((fill: Fill) => !fill.isSlowRelay));
-         
+
             // Save deposit as an unfilled deposit if there is any amount remaining that can be filled. We'll fulfill
             // this with a slow relay that we include in a slow relay merkle root.
             if (unfilledAmount.gt(0))
