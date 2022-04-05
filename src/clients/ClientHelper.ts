@@ -1,5 +1,5 @@
 import winston from "winston";
-import { getProvider, getSigner, contractAt, Contract } from "../utils";
+import { getProvider, getSigner, getDeployedContract, Contract } from "../utils";
 import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallBundler } from "./";
 import { RelayerConfig } from "../relayer/RelayerConfig";
 
@@ -13,12 +13,12 @@ export function constructClients(logger: winston.Logger, config: RelayerConfig) 
     .map((provider) => baseSigner.connect(provider));
 
   // Create contract instances for each chain for each required contract.
-  const hubPool = contractAt("HubPool", getAddress("HubPool", config.hubPoolChainId), hubSigner);
+  const hubPool = getDeployedContract("HubPool", config.hubPoolChainId, hubSigner);
 
-  const rateModelStore = contractAt("RateModelStore", getAddress("RateModelStore", config.hubPoolChainId), hubSigner);
+  const rateModelStore = getDeployedContract("RateModelStore", config.hubPoolChainId, hubSigner);
 
   const spokePools = config.spokePoolChains.map((networkId, index) => {
-    return { networkId, contract: contractAt("SpokePool", getAddress("SpokePool", networkId), spokeSigners[index]) };
+    return { networkId, contract: getDeployedContract("SpokePool", networkId, spokeSigners[index]) };
   });
 
   // Create clients for each contract for each chain.
@@ -34,6 +34,16 @@ export function constructClients(logger: winston.Logger, config: RelayerConfig) 
 
   // const gasEstimator = new GasEstimator() // todo when this is implemented in the SDK.
   const multiCallBundler = new MultiCallBundler(logger, null);
+
+  logger.debug({
+    at: "constructClients",
+    message: "Clients constructed",
+    hubPool: hubPool.address,
+    rateModelStore: rateModelStore.address,
+    spokePools: spokePools.map((spokePool) => {
+      return { networkId: spokePool.networkId, spokePool: spokePool.contract.address };
+    }),
+  });
 
   return { hubPoolClient, rateModelClient, spokePoolClients, multiCallBundler };
 }
@@ -58,18 +68,4 @@ export async function updateClients(
 
 async function updateSpokePoolClients(spokePoolClients: { [chainId: number]: SpokePoolClient }) {
   await Promise.all(Object.values(spokePoolClients).map((client) => client.update()));
-}
-
-// TODO: this method is temp to enable this constructor to work. this should be replaced by a method from the contracts
-// package that exports the relationship between contractName and the associated chain they are deployed on.
-function getAddress(contractName: string, chainId: number) {
-  const mapping = {
-    RateModelStore: { 42: "0x5923929DF7A2D6E038bb005B167c1E8a86cd13C8" },
-    HubPool: { 42: "0xD449Af45a032Df413b497A709EeD3E8C112EbcE3" },
-    SpokePool: {
-      42: "0x73549B5639B04090033c1E77a22eE9Aa44C2eBa0",
-      69: "0x2b7b7bAE341089103dD22fa4e8D7E4FA63E11084",
-    },
-  };
-  return mapping[contractName][chainId];
 }

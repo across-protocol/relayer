@@ -1,9 +1,7 @@
-import { winston, assign } from "../utils";
-import { buildSlowRelayTree, RelayData } from "@across-protocol/contracts-v2/dist/test-utils";
+import { winston, assign, buildSlowRelayTree, MerkleTree } from "../utils";
 import { SpokePoolClient, HubPoolClient, MultiCallBundler } from "../clients";
-import { UnfilledDeposits, FillsToRefund, UnfilledDeposit, Fill, Deposit } from "../interfaces/SpokePool";
+import { UnfilledDeposits, FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill } from "../interfaces/SpokePool";
 import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";
-import { MerkleTree } from "@across-protocol/contracts-v2/dist/utils/MerkleTree";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -74,10 +72,10 @@ export class Dataworker {
             // Save deposit as an unfilled deposit if there is any amount remaining that can be filled. We'll fulfill
             // this with a slow relay that we include in a slow relay merkle root.
             if (unfilledAmount.gt(0))
-            unfilledDepositsForDestinationChain.push({
-              deposit,
-              unfilledAmount,
-            });
+              unfilledDepositsForDestinationChain.push({
+                deposit,
+                unfilledAmount,
+              });
           }
         });
 
@@ -115,46 +113,34 @@ export class Dataworker {
 
     if (Object.keys(unfilledDeposits).length === 0) return null;
 
-    // Key leaves temporarily by destination chain ID which we'll re-order later.
-    const leavesByChainId: { [chainId: number]: RelayData[] } = {};
+    const leaves: RelayData[] = [];
+    Object.keys(unfilledDeposits).forEach((destinationChainId) => {
+      leaves.push(
+        ...unfilledDeposits[destinationChainId].map((deposit: UnfilledDeposit): RelayData => {
+          return {
+            depositor: deposit.deposit.depositor,
+            recipient: deposit.deposit.recipient,
+            destinationToken: deposit.deposit.depositor,
+            amount: deposit.deposit.amount,
+            originChainId: deposit.deposit.originChainId,
+            destinationChainId: deposit.deposit.destinationChainId,
+            realizedLpFeePct: deposit.deposit.realizedLpFeePct,
+            relayerFeePct: deposit.deposit.relayerFeePct,
+            depositId: deposit.deposit.depositId,
+          };
+        })
+      );
+    });
 
-    for (const destinationChainId of Object.keys(unfilledDeposits)) {
-      // We need to re-order leaves deterministically such that the same data returned by _loadData() always produces
-      // the same merkle root. So we'll order the deposits for each chain ID by unfilled amount since this will order
-      // leaves by largest token outflows from the SpokePool to fulfill slow relays. (Recall that slow relay leaf
-      // executions send to the recipient the unfilled amount of their deposit, not just the deposit amount).
-      unfilledDeposits[destinationChainId].sort(function (a: UnfilledDeposit, b: UnfilledDeposit) {
-        return a.unfilledAmount.gt(b.unfilledAmount) ? -1 : 1;
-      });
+    // Sort leaves deterministically so that the same root is always produced from the same _loadData return value.
+    // The { Deposit ID, origin chain ID } is guaranteed to be unique so we can sort on them.
+    const sortedLeaves = leaves.sort((relayA, relayB) => {
+      // Note: Smaller ID numbers will come first
+      if (relayA.originChainId === relayB.originChainId) return relayA.depositId - relayB.depositId;
+      else return relayA.originChainId - relayB.originChainId;
+    });
 
-      // Associate relay data implied by unfilled deposit with destination chain ID.
-      leavesByChainId[destinationChainId] = [];
-      unfilledDeposits[destinationChainId].forEach((deposit) => {
-        leavesByChainId[destinationChainId].push({
-          depositor: deposit.deposit.depositor,
-          recipient: deposit.deposit.recipient,
-          destinationToken: deposit.deposit.depositor,
-          amount: deposit.deposit.amount.toString(),
-          originChainId: deposit.deposit.originChainId.toString(),
-          destinationChainId: deposit.deposit.destinationChainId.toString(),
-          realizedLpFeePct: deposit.deposit.realizedLpFeePct.toString(),
-          relayerFeePct: deposit.deposit.relayerFeePct.toString(),
-          depositId: deposit.deposit.depositId.toString(),
-        });
-      });
-    }
-
-    // Flatten leaves deterministically so that the same root is always produced from the same _loadData return value.
-    // To do that we'll sort keys by chain ID and then concat sorted leaves.
-    const leaves: RelayData[] = Object.keys(leavesByChainId)
-      .sort(function (a, b) {
-        return Number(b) - Number(a);
-      })
-      .reduce(function (prev: RelayData[], current: string) {
-        return prev.concat(leavesByChainId[Number(current)]);
-      }, []);
-
-    return leaves.length > 0 ? await buildSlowRelayTree(leaves) : null;
+    return sortedLeaves.length > 0 ? await buildSlowRelayTree(sortedLeaves) : null;
 
     // TODO: Figure out how to store merkle trees. IPFS?
   }

@@ -1,5 +1,5 @@
 import { expect, ethers, Contract } from "./utils";
-import { SignerWithAddress } from "./utils";
+import { SignerWithAddress, getExecuteSlowRelayParams, buildSlowRelayTree } from "./utils";
 import { buildDeposit, buildFill } from "./utils";
 import { SpokePoolClient, HubPoolClient, RateModelClient } from "../src/clients";
 import { amountToDeposit, repaymentChainId, destinationChainId, originChainId } from "./constants";
@@ -141,9 +141,56 @@ describe("Dataworker: Load data used in all functions", async function () {
       [originChainId]: [{ unfilledAmount: amountToDeposit.sub(fill2.fillAmount), deposit: deposit2 }],
     });
 
-    // All deposits are fulfilled
+    // All deposits are fulfilled.
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 1);
     await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 1);
+    await updateAllClients();
+    const data5 = dataworkerInstance._loadData();
+    expect(data5.unfilledDeposits).to.deep.equal({});
+
+    // Fill events emitted by slow relays are included in unfilled amount calculations.
+    // Note: submit another deposit that resembles deposit2 except that the relayer fee % is set to 0. This is crucial
+    // for this test since all slow relay executions will emit a relayerFeePct = 0, and we want to test that the
+    // dataworker client includes slow relay executions when computing a deposit's unfilled amount.
+    const deposit5 = await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
+      spokePool_2,
+      erc20_2,
+      l1Token,
+      depositor,
+      originChainId,
+      amountToDeposit,
+      toBN(0)
+    );
+    const fill3 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit5, 0.25);
+    const slowRelays = [
+      {
+        depositor: fill3.depositor,
+        recipient: fill3.recipient,
+        destinationToken: fill3.destinationToken,
+        amount: fill3.amount.toString(),
+        originChainId: fill3.originChainId.toString(),
+        destinationChainId: fill3.destinationChainId.toString(),
+        realizedLpFeePct: fill3.realizedLpFeePct.toString(),
+        relayerFeePct: fill3.relayerFeePct.toString(),
+        depositId: fill3.depositId.toString(),
+      },
+    ];
+    const tree = await buildSlowRelayTree(slowRelays);
+    await spokePool_1.relayRootBundle(tree.getHexRoot(), tree.getHexRoot());
+    await spokePool_1.connect(depositor).executeSlowRelayLeaf(
+      fill3.depositor,
+      fill3.recipient,
+      fill3.destinationToken,
+      fill3.amount.toString(),
+      fill3.originChainId.toString(),
+      fill3.realizedLpFeePct.toString(),
+      fill3.relayerFeePct.toString(),
+      fill3.depositId.toString(),
+      "0",
+      [] // Proof for tree with 1 leaf is empty
+    );
     await updateAllClients();
     const data6 = dataworkerInstance._loadData();
     expect(data6.unfilledDeposits).to.deep.equal({});
@@ -215,6 +262,57 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data4 = dataworkerInstance._loadData();
     expect(data4.fillsToRefund).to.deep.equal(data2.fillsToRefund);
+
+    // Fill events emitted by slow relays should be ignored.
+    // Note: submit another deposit that resembles deposit2 except that the relayer fee % is set to 0. This is crucial
+    // for this test since all slow relay executions will emit a relayerFeePct = 0, and we want to test that the
+    // dataworker client does not count any relays that do match a deposit but originate from slow relays.
+    const deposit3 = await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
+      spokePool_2,
+      erc20_2,
+      l1Token,
+      depositor,
+      originChainId,
+      amountToDeposit,
+      toBN(0)
+    );
+    const fill4 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit3, 0.25);
+    const slowRelays = [
+      {
+        depositor: fill4.depositor,
+        recipient: fill4.recipient,
+        destinationToken: fill4.destinationToken,
+        amount: fill4.amount.toString(),
+        originChainId: fill4.originChainId.toString(),
+        destinationChainId: fill4.destinationChainId.toString(),
+        realizedLpFeePct: fill4.realizedLpFeePct.toString(),
+        relayerFeePct: fill4.relayerFeePct.toString(),
+        depositId: fill4.depositId.toString(),
+      },
+    ];
+    const tree = await buildSlowRelayTree(slowRelays);
+    await spokePool_1.relayRootBundle(tree.getHexRoot(), tree.getHexRoot());
+    await spokePool_1.connect(depositor).executeSlowRelayLeaf(
+      fill4.depositor,
+      fill4.recipient,
+      fill4.destinationToken,
+      fill4.amount.toString(),
+      fill4.originChainId.toString(),
+      fill4.realizedLpFeePct.toString(),
+      fill4.relayerFeePct.toString(),
+      fill4.depositId.toString(),
+      "0",
+      [] // Proof for tree with 1 leaf is empty
+    );
+    await updateAllClients();
+    const data5 = dataworkerInstance._loadData();
+    // Note: If the dataworker does not explicitly filter out slow relays then the fillsToRefund object
+    // will contain refunds associated with repaymentChainId 0.
+    expect(data5.fillsToRefund).to.deep.equal({
+      [repaymentChainId]: { [relayer.address]: [fill1, fill2, fill4], [depositor.address]: [fill3] },
+    });
   });
 });
 

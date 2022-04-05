@@ -54,6 +54,19 @@ export interface SlowFill {
   recipient: string;
 }
 
+// Used in pool by spokePool to execute a slow relay.
+export interface RelayData {
+  depositor: string;
+  recipient: string;
+  destinationToken: string;
+  amount: BigNumber;
+  realizedLpFeePct: BigNumber;
+  relayerFeePct: BigNumber;
+  depositId: number;
+  originChainId: number;
+  destinationChainId: number;
+}
+
 export interface UnfilledDeposit {
   deposit: Deposit;
   unfilledAmount: BigNumber;
