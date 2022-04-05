@@ -17,7 +17,12 @@ export class Dataworker {
   ) {}
 
   // Common data re-formatting logic shared across all data worker public functions.
-  _loadData(): { unfilledDeposits: UnfilledDeposits; fillsToRefund: FillsToRefund } {
+  _loadData(/* bundleBlockNumbers: BundleEvaluationBlockNumbers */): {
+    unfilledDeposits: UnfilledDeposits;
+    fillsToRefund: FillsToRefund;
+  } {
+    // TODO: We will look up ALL deposits alongside a CONSTRAINED range of fills informed by `bundleBlockNumbers`.
+
     const unfilledDeposits: UnfilledDeposits = {};
     const fillsToRefund: FillsToRefund = {};
 
@@ -56,13 +61,24 @@ export class Dataworker {
         const unfilledDepositsForDestinationChain: UnfilledDeposit[] = [];
         depositsForDestinationChain.forEach((deposit) => {
           const { fills: validFillsForDeposit, unfilledAmount } = destinationClient.getValidFillsForDeposits(deposit);
-          // There are no refunds to be sent for slow relays.
-           validFillsOnDestinationChain.push(...validFillsForDeposit.filter((fill: Fill) => !fill.isSlowRelay));
-          if (unfilledAmount.gt(0))
+
+          // If there are no fills associated with this deposit, then we will ignore it and not treat it as an unfilled
+          // deposit.
+          if (validFillsForDeposit.length > 0) {
+            // FillRelay events emitted by slow relay executions will usually be invalid because the relayer
+            // fee % will be reset to 0 by the SpokePool contract, however we still need to explicitly filter slow
+            // relays out of the relayer refund array because its possible that a deposit is submitted with a relayer
+            // fee % set to 0.
+            validFillsOnDestinationChain.push(...validFillsForDeposit.filter((fill: Fill) => !fill.isSlowRelay));
+         
+            // Save deposit as an unfilled deposit if there is any amount remaining that can be filled. We'll fulfill
+            // this with a slow relay that we include in a slow relay merkle root.
+            if (unfilledAmount.gt(0))
             unfilledDepositsForDestinationChain.push({
               deposit,
               unfilledAmount,
             });
+          }
         });
 
         if (unfilledDepositsForDestinationChain.length > 0)
