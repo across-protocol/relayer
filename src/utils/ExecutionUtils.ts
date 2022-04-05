@@ -1,5 +1,5 @@
-import winston from "winston";
-import { delay } from "./";
+import {delay,winston} from "./";
+
 
 export async function processEndPollingLoop(logger: winston.Logger, fileName: String, pollingDelay: number) {
   if (pollingDelay === 0) {
