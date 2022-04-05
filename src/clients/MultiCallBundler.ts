@@ -81,7 +81,7 @@ export class MultiCallBundler {
       );
 
       const transactionReceipts = await Promise.allSettled(
-        multiCallTransactionsResult.map((transaction) => (transaction as any).value.wait())
+        multiCallTransactionsResult.map((transaction) => (transaction ? (transaction as any).value.wait() : null))
       );
 
       // Each element in the bundle of receipts relates back to each set within the groupedTransactions. Produce log.
@@ -105,9 +105,7 @@ export class MultiCallBundler {
     }
   }
 
-  async buildMultiCallBundle(
-    transactions: AugmentedTransaction[]
-  ): Promise<{ address: string; chainId: number } | null> {
+  buildMultiCallBundle(transactions: AugmentedTransaction[]) {
     // Validate all transactions in the batch have the same target contract.
     const target = transactions[0].contract;
     if (transactions.every((tx) => tx.contract.address != target.address)) {
