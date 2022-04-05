@@ -1,7 +1,7 @@
 import { winston, assign } from "../utils";
 import { buildSlowRelayTree, RelayData } from "@across-protocol/contracts-v2/dist/test-utils";
 import { SpokePoolClient, HubPoolClient, MultiCallBundler } from "../clients";
-import { UnfilledDeposits, FillsToRefund, UnfilledDeposit } from "../interfaces/SpokePool";
+import { UnfilledDeposits, FillsToRefund, UnfilledDeposit, Fill, Deposit } from "../interfaces/SpokePool";
 import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";
 import { MerkleTree } from "@across-protocol/contracts-v2/dist/utils/MerkleTree";
 
@@ -18,14 +18,6 @@ export class Dataworker {
 
   // Common data re-formatting logic shared across all data worker public functions.
   _loadData(): { unfilledDeposits: UnfilledDeposits; fillsToRefund: FillsToRefund } {
-    // For each origin chain spoke pool client:
-    //     For all destination spoke pool client's:
-    //         Store deposits that are sent from origin chain to destination chain as an UnfilledDeposit
-    //             Associate this UnfilledDeposit with the destination chain and set fillAmountRemaining
-    //         Grab all fills on destination client
-    //             Attempt to map fill to an UnfilledDeposit sent from the origin chain
-    //             If a match is found, save fill and key by repaymentChainId => refundAddress
-
     const unfilledDeposits: UnfilledDeposits = {};
     const fillsToRefund: FillsToRefund = {};
 
@@ -48,7 +40,7 @@ export class Dataworker {
         // amount remaining equal to the full deposit amount minus any valid fill amounts.
         // Remove any deposits that have no unfilled amount (i.e that have an unfilled amount of 0) and append the
         // remaining deposits to the unfilledDeposits array.
-        const depositsForDestinationChain = originClient.getDepositsForDestinationChain(destinationChainId);
+        const depositsForDestinationChain: Deposit[] = originClient.getDepositsForDestinationChain(destinationChainId);
         this.logger.debug({
           at: "Dataworker",
           message: `Found ${depositsForDestinationChain.length} deposits for destination chain ${destinationChainId}`,
@@ -56,11 +48,22 @@ export class Dataworker {
           destinationChainId,
         });
 
-        const unfilledDepositsForDestinationChain = depositsForDestinationChain
-          .map((deposit) => {
-            return { deposit, unfilledAmount: destinationClient.getValidUnfilledAmountForDeposit(deposit) };
-          })
-          .filter((deposit) => deposit.unfilledAmount.gt(0));
+        // For each deposit on the destination chain, fetch all valid fills associated with it and store it to a
+        // valid fill array that this client can use to construct a list of relayer refunds. Additionally, if the
+        // latest valid fill for the deposit did not completely fill it, then store the deposit as an "unfilled" deposit
+        // that we'll want to include in a list of slow relays to execute.
+        const validFillsOnDestinationChain: Fill[] = [];
+        const unfilledDepositsForDestinationChain: UnfilledDeposit[] = [];
+        depositsForDestinationChain.forEach((deposit) => {
+          const { fills: validFillsForDeposit, unfilledAmount } = destinationClient.getValidFillsForDeposits(deposit);
+          // There are no refunds to be sent for slow relays.
+           validFillsOnDestinationChain.push(...validFillsForDeposit.filter((fill: Fill) => !fill.isSlowRelay));
+          if (unfilledAmount.gt(0))
+            unfilledDepositsForDestinationChain.push({
+              deposit,
+              unfilledAmount,
+            });
+        });
 
         if (unfilledDepositsForDestinationChain.length > 0)
           assign(unfilledDeposits, [destinationChainId], unfilledDepositsForDestinationChain);
@@ -71,24 +74,6 @@ export class Dataworker {
             originChainId,
             destinationChainId,
           });
-
-        // Grab all valid fills submitted to the destination spoke pool.
-        const fillsOnDestinationChain = destinationClient.getFills();
-        const validFillsOnDestinationChain = fillsOnDestinationChain.filter((fill) => {
-          // For each fill, see if we can find a deposit sent from the origin client that matches it.
-          for (const deposit of depositsForDestinationChain) {
-            // Note1: It doesn't matter which client we call validateFillForDeposit() on as the logic is
-            // chain agnostic.
-            // Note2: All of the deposits returned by `getDepositsForDestinationChain` will include the expected realized
-            // lp fee % for the deposit quote time. If this fill does not have the same realized lp fee %, then it will
-            // be ignored.
-
-            if (destinationClient.validateFillForDeposit(fill, deposit)) return true;
-            else continue;
-          }
-
-          return false; // No deposit matched, this fill is invalid.
-        });
 
         this.logger.debug({
           at: "Dataworker",

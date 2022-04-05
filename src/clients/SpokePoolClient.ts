@@ -58,12 +58,25 @@ export class SpokePoolClient {
   }
 
   getValidUnfilledAmountForDeposit(deposit: Deposit): BigNumber {
+    return this.getValidFillsForDeposits(deposit).unfilledAmount;
+  }
+
+  getValidFillsForDeposits(deposit: Deposit): { unfilledAmount: BigNumber; fills: Fill[] } {
     const fills = this.getFillsForOriginChain(deposit.originChainId)
       .filter((fill) => fill.depositId === deposit.depositId) // Only select the associated fill for the deposit.
       .filter((fill) => this.validateFillForDeposit(fill, deposit)); // Validate that the fill was valid for the deposit.
 
-    if (!fills.length) return deposit.amount; // If no fills then the full amount is remaining.
-    return deposit.amount.sub(fills.reduce((total: BigNumber, fill: Fill) => total.add(fill.fillAmount), toBN(0)));
+    if (fills.length === 0) return { unfilledAmount: deposit.amount, fills }; // If no fills then the full amount is remaining.
+
+    // Order fills by totalFilledAmount and then return the first fill's full deposit amount minus total filled amount.
+    const fillsOrderedByTotalFilledAmount = fills.sort((fillA, fillB) =>
+      fillB.totalFilledAmount.gt(fillA.totalFilledAmount) ? 1 : -1
+    );
+    const lastFill = fillsOrderedByTotalFilledAmount[0];
+    return {
+      unfilledAmount: lastFill.amount.sub(lastFill.totalFilledAmount),
+      fills,
+    };
   }
 
   // Ensure that each deposit element is included with the same value in the fill. This includes all elements defined
