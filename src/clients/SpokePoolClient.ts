@@ -6,7 +6,7 @@ export class SpokePoolClient {
   private deposits: { [DestinationChainId: number]: Deposit[] } = {};
   private fills: Fill[] = [];
   private speedUps: { [depositorAddress: string]: { [depositId: number]: SpeedUp[] } } = {};
-  private _isUpdated: boolean = false;
+  private isUpdated: boolean = false;
 
   public firstBlockToSearch: number;
 
@@ -79,12 +79,8 @@ export class SpokePoolClient {
     return isValid;
   }
 
-  isUpdated(): Boolean {
-    return this._isUpdated;
-  }
-
   async update() {
-    if (this.rateModelClient !== null && !this.rateModelClient.isUpdated()) throw new Error("RateModel not updated");
+    if (this.rateModelClient !== null && !this.rateModelClient.isUpdated) throw new Error("RateModel not updated");
 
     const searchConfig = [this.firstBlockToSearch, this.endingBlock || (await this.getBlockNumber())];
     this.log("debug", "Updating client", { searchConfig, spokePool: this.spokePool.address });
@@ -125,7 +121,7 @@ export class SpokePoolClient {
 
     this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
 
-    this._isUpdated = true;
+    this.isUpdated = true;
     this.log("debug", "Client updated!");
   }
 
