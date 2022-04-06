@@ -115,25 +115,18 @@ export class Dataworker {
     // TODO: Use `bundleBlockNumbers` to decide how to filter which blocks to keep in `unfilledDeposits`.
 
     if (Object.keys(unfilledDeposits).length === 0) return null;
-
-    const leaves: RelayData[] = [];
-    Object.keys(unfilledDeposits).forEach((destinationChainId) => {
-      leaves.push(
-        ...unfilledDeposits[destinationChainId].map((deposit: UnfilledDeposit): RelayData => {
-          return {
-            depositor: deposit.deposit.depositor,
-            recipient: deposit.deposit.recipient,
-            destinationToken: deposit.deposit.depositor,
-            amount: deposit.deposit.amount,
-            originChainId: deposit.deposit.originChainId,
-            destinationChainId: deposit.deposit.destinationChainId,
-            realizedLpFeePct: deposit.deposit.realizedLpFeePct,
-            relayerFeePct: deposit.deposit.relayerFeePct,
-            depositId: deposit.deposit.depositId,
-          };
-        })
-      );
-    });
+    const leaves: RelayData[] = Object.values(unfilledDeposits).map(
+      (deposits: UnfilledDeposit[]) => deposits.map((deposit: UnfilledDeposit): RelayData => ({
+          depositor: deposit.deposit.depositor,
+          recipient: deposit.deposit.recipient,
+          destinationToken: deposit.deposit.depositor,
+          amount: deposit.deposit.amount,
+          originChainId: deposit.deposit.originChainId,
+          destinationChainId: deposit.deposit.destinationChainId,
+          realizedLpFeePct: deposit.deposit.realizedLpFeePct,
+          relayerFeePct: deposit.deposit.relayerFeePct,
+          depositId: deposit.deposit.depositId,
+      }))).flat();
 
     // Sort leaves deterministically so that the same root is always produced from the same _loadData return value.
     // The { Deposit ID, origin chain ID } is guaranteed to be unique so we can sort on them.
