@@ -1,3 +1,4 @@
+import { HubPoolClient } from "./../clients/HubPoolClient";
 import { BigNumber, winston, buildFillRelayProps, Contract, getNetworkName, createFormatFunction } from "../utils";
 import { SpokePoolClient, MultiCallBundler, AugmentedTransaction } from "../clients";
 import { Deposit } from "../interfaces/SpokePool";
@@ -50,11 +51,12 @@ export class Relayer {
   }
 
   constructRelayFilledMrkdwn(deposit: Deposit, repaymentChainId: number, amountToFill: BigNumber) {
+    const tokenInfo = this.spokePoolClients[deposit.originChainId].hubPoolClient().getTokenInfoForDeposit(deposit);
     return (
       `Relayed depositId ${deposit.depositId} from ${getNetworkName(deposit.originChainId)} ` +
       `to ${getNetworkName(deposit.destinationChainId)} of ` +
-      `${createFormatFunction(2, 4, false, 18)(deposit.amount.toString())} tokens ` + // Note right now this does not factor in the decimals
-      `with a fill amount of ${createFormatFunction(2, 4, false, 18)(amountToFill.toString())}. ` +
+      `${createFormatFunction(2, 4, false, tokenInfo.decimals)(deposit.amount.toString())} ${tokenInfo.symbol} ` +
+      `with a fill amount of ${createFormatFunction(2, 4, false, 18)(amountToFill.toString())} ${tokenInfo.symbol}. ` +
       `Deposit relayerFee ${createFormatFunction(2, 4, false, 18)(deposit.relayerFeePct.toString())}%, ` +
       `realizedLpFee ${createFormatFunction(2, 4, false, 18)(deposit.realizedLpFeePct.toString())}%.` +
       `relayer repayment on ${getNetworkName(repaymentChainId)}.`

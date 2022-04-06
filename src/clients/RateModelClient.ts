@@ -1,5 +1,5 @@
 import { spreadEvent, winston, Contract, toBN } from "../utils";
-import { Deposit, Fill } from "../interfaces/SpokePool";
+import { Deposit } from "../interfaces/SpokePool";
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
 import { HubPoolClient } from "./HubPoolClient";
@@ -33,6 +33,8 @@ export class RateModelClient {
     this.logger.debug({
       at: "RateModelClient",
       message: "Computed realizedLPFeePct",
+      depositId: deposit.depositId,
+      originChainId: deposit.originChainId,
       quoteBlock,
       rateModel,
       realizedLpFeePct: realizedLpFeePct.toString(),

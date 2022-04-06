@@ -6,7 +6,8 @@ export class SpokePoolClient {
   private deposits: { [DestinationChainId: number]: Deposit[] } = {};
   private fills: Fill[] = [];
   private speedUps: { [depositorAddress: string]: { [depositId: number]: SpeedUp[] } } = {};
-  private isUpdated: boolean = false;
+  private depositRoutes: { [originToken: string]: { [DestinationChainId: number]: boolean } } = {};
+  public isUpdated: boolean = false;
 
   public firstBlockToSearch: number;
 
@@ -25,7 +26,7 @@ export class SpokePoolClient {
     return this.deposits[destinationChainId] || [];
   }
 
-  getDepositsFromDepositor(depositor: string) {
+  getDepositsFromDepositor(depositor: string): Deposit[] {
     return Object.values(this.deposits)
       .flat()
       .filter((deposit: Deposit) => deposit.depositor === depositor); // Select only deposits where the depositor is the same.
@@ -33,6 +34,18 @@ export class SpokePoolClient {
 
   getFills(): Fill[] {
     return this.fills;
+  }
+
+  getDepositRoutes(): { [originToken: string]: { [DestinationChainId: number]: Boolean } } {
+    return this.depositRoutes;
+  }
+
+  isDepositRouteEnables(originToken: string, destinationChainId: number): boolean {
+    return this.depositRoutes[originToken]?.[destinationChainId] ?? false;
+  }
+
+  getAllOriginTokens(): string[] {
+    return Object.keys(this.depositRoutes);
   }
 
   getFillsForOriginChain(originChainId: number) {
@@ -86,10 +99,11 @@ export class SpokePoolClient {
     this.log("debug", "Updating client", { searchConfig, spokePool: this.spokePool.address });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
 
-    const [depositEvents, speedUpEvents, fillEvents] = await Promise.all([
+    const [depositEvents, speedUpEvents, fillEvents, enableDepositsEvents] = await Promise.all([
       this.spokePool.queryFilter(this.spokePool.filters.FundsDeposited(), ...searchConfig),
       this.spokePool.queryFilter(this.spokePool.filters.RequestedSpeedUpDeposit(), ...searchConfig),
       this.spokePool.queryFilter(this.spokePool.filters.FilledRelay(), ...searchConfig),
+      this.spokePool.queryFilter(this.spokePool.filters.EnabledDepositRoute(), ...searchConfig),
     ]);
 
     // For each depositEvent, compute the realizedLpFeePct. Note this means that we are only finding this value on the
@@ -119,10 +133,17 @@ export class SpokePoolClient {
 
     for (const event of fillEvents) this.fills.push(spreadEvent(event));
 
+    for (const event of enableDepositsEvents) {
+      const enableDeposit = spreadEvent(event);
+      assign(this.depositRoutes, [enableDeposit.originToken, enableDeposit.destinationChainId], enableDeposit.enabled);
+    }
     this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
 
     this.isUpdated = true;
     this.log("debug", "Client updated!");
+  }
+  public hubPoolClient() {
+    return this.rateModelClient.hubPoolClient;
   }
 
   private async getBlockNumber(): Promise<number> {
@@ -144,10 +165,6 @@ export class SpokePoolClient {
   private getDestinationTokenForDeposit(deposit: Deposit): string {
     if (!this.rateModelClient) return zeroAddress; // If there is no rate model client return address(0).
     return this.hubPoolClient().getDestinationTokenForDeposit(deposit);
-  }
-
-  private hubPoolClient() {
-    return this.rateModelClient.hubPoolClient;
   }
 
   private log(level: string, message: string, data?: any) {
