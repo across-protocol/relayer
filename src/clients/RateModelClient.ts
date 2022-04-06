@@ -37,7 +37,7 @@ export class RateModelClient {
       originChainId: deposit.originChainId,
       quoteBlock,
       rateModel,
-      realizedLpFeePct: realizedLpFeePct.toString(),
+      realizedLpFeePct: realizedLpFeePct,
     });
 
     return toBN(realizedLpFeePct);
