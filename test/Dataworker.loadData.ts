@@ -115,32 +115,6 @@ describe("Dataworker: Load data used in all functions", async function () {
       [originChainId]: [{ unfilledAmount: amountToDeposit.sub(fill2.fillAmount), deposit: deposit2 }],
     });
 
-    // Two partially filled deposits per destination chain ID.
-    const fill3 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit3, 0.5);
-    const fill4 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit4, 0.25);
-    await updateAllClients();
-    const data4 = dataworkerInstance._loadData();
-    expect(data4.unfilledDeposits).to.deep.equal({
-      [destinationChainId]: [
-        { unfilledAmount: amountToDeposit.sub(fill1.fillAmount), deposit: deposit1 },
-        { unfilledAmount: amountToDeposit.mul(2).sub(fill3.fillAmount), deposit: deposit3 },
-      ],
-      [originChainId]: [
-        { unfilledAmount: amountToDeposit.sub(fill2.fillAmount), deposit: deposit2 },
-        { unfilledAmount: amountToDeposit.mul(2).sub(fill4.fillAmount), deposit: deposit4 },
-      ],
-    });
-
-    // One completely filled deposit per destination chain ID.
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit3, 1);
-    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit4, 1);
-    await updateAllClients();
-    const data5 = dataworkerInstance._loadData();
-    expect(data5.unfilledDeposits).to.deep.equal({
-      [destinationChainId]: [{ unfilledAmount: amountToDeposit.sub(fill1.fillAmount), deposit: deposit1 }],
-      [originChainId]: [{ unfilledAmount: amountToDeposit.sub(fill2.fillAmount), deposit: deposit2 }],
-    });
-
     // All deposits are fulfilled.
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 1);
     await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 1);
