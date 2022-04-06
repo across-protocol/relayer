@@ -196,8 +196,10 @@ export class Dataworker {
     // If any roots mismatch, efficiently pinpoint the errors to give details to the caller.
   }
 
-  async executeSlowRelayLeaves() {
-    // TODO:
+  async executeSlowRelayLeaves(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
+    // TODO: Caller should grab `bundleBlockNumbers` from ProposeRootBundle event, recreate root and execute
+    // all leaves for root. To locate `rootBundleId`, look up `SpokePool.RelayedRootBundle` events and find event
+    // with matching roots.
   }
 
   async executePoolRebalanceLeaves() {
