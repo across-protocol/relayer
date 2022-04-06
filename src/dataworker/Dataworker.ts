@@ -141,8 +141,13 @@ export class Dataworker {
     });
 
     return sortedLeaves.length > 0 ? await buildSlowRelayTree(sortedLeaves) : null;
+  }
 
-    // TODO: Figure out how to store merkle trees. IPFS?
+  async publishRoots(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
+    const slowRelayRoot = await this.buildSlowRelayRoot(bundleBlockNumbers);
+
+    // TODO: Store root to be consumed by manual leaf executors and verifiers. Can also be used to track lifecyle
+    // of roots.
   }
 
   async buildRelayerRefundRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
