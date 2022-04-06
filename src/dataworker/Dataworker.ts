@@ -61,7 +61,8 @@ export class Dataworker {
           const { fills: validFillsForDeposit, unfilledAmount } = destinationClient.getValidFillsForDeposits(deposit);
 
           // If there are no fills associated with this deposit, then we will ignore it and not treat it as an unfilled
-          // deposit.
+          // deposit. This way we can avoid adding duplicate slow relays for deposits that have been filled
+          // in previous bundle block ranges.
           if (validFillsForDeposit.length > 0) {
             // FillRelay events emitted by slow relay executions will usually be invalid because the relayer
             // fee % will be reset to 0 by the SpokePool contract, however we still need to explicitly filter slow
