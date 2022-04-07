@@ -38,14 +38,14 @@ export class Dataworker {
           throw new Error(`destination spokepoolclient with chain ID ${destinationChainId} not updated`);
 
         // For each fill within the block range, look up associated deposit.
-        const fillsForOriginChain: Fill[] = destinationClient.getFillsForOriginChain(Number(originChainId))
+        const fillsForOriginChain: Fill[] = destinationClient.getFillsForOriginChain(Number(originChainId));
         this.logger.debug({
           at: "Dataworker",
           message: `Found ${fillsForOriginChain.length} fills for origin chain ${originChainId} on destination client ${destinationChainId}`,
           originChainId,
           destinationChainId,
         });
-  
+
         fillsForOriginChain.forEach((fill) => {
           const matchedDeposit: Deposit = originClient.getDepositForFill(fill);
           if (matchedDeposit) {
@@ -71,7 +71,7 @@ export class Dataworker {
               fill,
             });
           }
-        })
+        });
       }
     }
 
@@ -90,18 +90,18 @@ export class Dataworker {
 
     if (unfilledDeposits.length === 0) return null;
     const leaves: RelayData[] = unfilledDeposits.map(
-          (deposit: UnfilledDeposit): RelayData => ({
-            depositor: deposit.deposit.depositor,
-            recipient: deposit.deposit.recipient,
-            destinationToken: deposit.deposit.depositor,
-            amount: deposit.deposit.amount,
-            originChainId: deposit.deposit.originChainId,
-            destinationChainId: deposit.deposit.destinationChainId,
-            realizedLpFeePct: deposit.deposit.realizedLpFeePct,
-            relayerFeePct: deposit.deposit.relayerFeePct,
-            depositId: deposit.deposit.depositId,
-          })
-        )
+      (deposit: UnfilledDeposit): RelayData => ({
+        depositor: deposit.deposit.depositor,
+        recipient: deposit.deposit.recipient,
+        destinationToken: deposit.deposit.depositor,
+        amount: deposit.deposit.amount,
+        originChainId: deposit.deposit.originChainId,
+        destinationChainId: deposit.deposit.destinationChainId,
+        realizedLpFeePct: deposit.deposit.realizedLpFeePct,
+        relayerFeePct: deposit.deposit.relayerFeePct,
+        depositId: deposit.deposit.depositId,
+      })
+    );
 
     // Sort leaves deterministically so that the same root is always produced from the same _loadData return value.
     // The { Deposit ID, origin chain ID } is guaranteed to be unique so we can sort on them.
