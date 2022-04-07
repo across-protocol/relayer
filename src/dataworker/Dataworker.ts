@@ -1,6 +1,6 @@
 import { winston, assign, buildSlowRelayTree, MerkleTree } from "../utils";
 import { SpokePoolClient, HubPoolClient, MultiCallBundler } from "../clients";
-import { UnfilledDeposits, FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill } from "../interfaces/SpokePool";
+import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill } from "../interfaces/SpokePool";
 import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
@@ -16,12 +16,10 @@ export class Dataworker {
 
   // Common data re-formatting logic shared across all data worker public functions.
   _loadData(/* bundleBlockNumbers: BundleEvaluationBlockNumbers */): {
-    unfilledDeposits: UnfilledDeposits;
+    unfilledDeposits: UnfilledDeposit[];
     fillsToRefund: FillsToRefund;
   } {
-    // TODO: We will look up ALL deposits alongside a CONSTRAINED range of fills informed by `bundleBlockNumbers`.
-
-    const unfilledDeposits: UnfilledDeposits = {};
+    const unfilledDepositsForOriginChain: { [originChainIdPlusDepositId: string]: UnfilledDeposit } = {};
     const fillsToRefund: FillsToRefund = {};
 
     const allChainIds = Object.keys(this.spokePoolClients);
@@ -39,72 +37,50 @@ export class Dataworker {
         if (!destinationClient.isUpdated())
           throw new Error(`destination spokepoolclient with chain ID ${destinationChainId} not updated`);
 
-        // Store deposits whose destination chain is the selected chain as unfilled deposits and set the initial fill
-        // amount remaining equal to the full deposit amount minus any valid fill amounts.
-        // Remove any deposits that have no unfilled amount (i.e that have an unfilled amount of 0) and append the
-        // remaining deposits to the unfilledDeposits array.
-        const depositsForDestinationChain: Deposit[] = originClient.getDepositsForDestinationChain(destinationChainId);
+        // For each fill within the block range, look up associated deposit.
+        const fillsForOriginChain: Fill[] = destinationClient.getFillsForOriginChain(Number(originChainId))
         this.logger.debug({
           at: "Dataworker",
-          message: `Found ${depositsForDestinationChain.length} deposits for destination chain ${destinationChainId}`,
+          message: `Found ${fillsForOriginChain.length} fills for origin chain ${originChainId} on destination client ${destinationChainId}`,
           originChainId,
           destinationChainId,
         });
-
-        // For each deposit on the destination chain, fetch all valid fills associated with it and store it to a
-        // valid fill array that this client can use to construct a list of relayer refunds. Additionally, if the
-        // latest valid fill for the deposit did not completely fill it, then store the deposit as an "unfilled" deposit
-        // that we'll want to include in a list of slow relays to execute.
-        const validFillsOnDestinationChain: Fill[] = [];
-        const unfilledDepositsForDestinationChain: UnfilledDeposit[] = [];
-        depositsForDestinationChain.forEach((deposit) => {
-          const { fills: validFillsForDeposit, unfilledAmount } = destinationClient.getValidFillsForDeposits(deposit);
-
-          // If there are no fills associated with this deposit, then we will ignore it and not treat it as an unfilled
-          // deposit. This way we can avoid adding duplicate slow relays for deposits that have been filled
-          // in previous bundle block ranges.
-          if (validFillsForDeposit.length > 0) {
-            // FillRelay events emitted by slow relay executions will usually be invalid because the relayer
-            // fee % will be reset to 0 by the SpokePool contract, however we still need to explicitly filter slow
-            // relays out of the relayer refund array because its possible that a deposit is submitted with a relayer
-            // fee % set to 0.
-            validFillsOnDestinationChain.push(...validFillsForDeposit.filter((fill: Fill) => !fill.isSlowRelay));
-
-            // Save deposit as an unfilled deposit if there is any amount remaining that can be filled. We'll fulfill
-            // this with a slow relay that we include in a slow relay merkle root.
-            if (unfilledAmount.gt(0))
-              unfilledDepositsForDestinationChain.push({
-                deposit,
-                unfilledAmount,
+  
+        fillsForOriginChain.forEach((fill) => {
+          const matchedDeposit: Deposit = originClient.getDepositForFill(fill);
+          if (matchedDeposit) {
+            // FillRelay events emitted by slow relay executions will usually not match with any deposits because the
+            // relayer fee % will be reset to 0 by the SpokePool contract, however we still need to explicitly filter slow
+            // relays out because its possible that a deposit is submitted with a relayer fee % set to 0.
+            if (!fill.isSlowRelay) assign(fillsToRefund, [fill.repaymentChainId, fill.relayer], [fill]);
+            // Save this deposit as an unfilled deposit and update its unfilled amount if this fill occurred later
+            // than the last saved fill for this deposit.
+            const fillUnfilledAmount = fill.amount.sub(fill.totalFilledAmount);
+            const fillKey = `${originChainId}+${fill.depositId}`;
+            const existingMatchedDepositForFill: UnfilledDeposit | undefined = unfilledDepositsForOriginChain[fillKey];
+            if (!existingMatchedDepositForFill || existingMatchedDepositForFill.unfilledAmount.gt(fillUnfilledAmount)) {
+              assign(unfilledDepositsForOriginChain, [fillKey], {
+                deposit: matchedDeposit,
+                unfilledAmount: fillUnfilledAmount,
               });
+            }
+          } else {
+            this.logger.debug({
+              at: "Dataworker",
+              message: `Could not find deposit for fill on origin client`,
+              fill,
+            });
           }
-        });
-
-        if (unfilledDepositsForDestinationChain.length > 0)
-          assign(unfilledDeposits, [destinationChainId], unfilledDepositsForDestinationChain);
-        else
-          this.logger.debug({
-            at: "Dataworker",
-            message: `All deposits are filled`,
-            originChainId,
-            destinationChainId,
-          });
-
-        this.logger.debug({
-          at: "Dataworker",
-          message: `Found ${validFillsOnDestinationChain.length} fills on destination ${destinationChainId} matching origin ${originChainId}`,
-          originChainId,
-          destinationChainId,
-        });
-        validFillsOnDestinationChain.forEach((fill) =>
-          assign(fillsToRefund, [fill.repaymentChainId, fill.relayer], [fill])
-        );
+        })
       }
     }
 
+    // Remove deposits that have been fully filled from unfilled deposit array
     return {
       fillsToRefund,
-      unfilledDeposits,
+      unfilledDeposits: Object.values(unfilledDepositsForOriginChain)
+        .flat()
+        .filter((unfilledDeposit) => unfilledDeposit.unfilledAmount.gt(0)),
     };
   }
 
@@ -112,10 +88,8 @@ export class Dataworker {
     const { unfilledDeposits } = this._loadData();
     // TODO: Use `bundleBlockNumbers` to decide how to filter which blocks to keep in `unfilledDeposits`.
 
-    if (Object.keys(unfilledDeposits).length === 0) return null;
-    const leaves: RelayData[] = Object.values(unfilledDeposits)
-      .map((deposits: UnfilledDeposit[]) =>
-        deposits.map(
+    if (unfilledDeposits.length === 0) return null;
+    const leaves: RelayData[] = unfilledDeposits.map(
           (deposit: UnfilledDeposit): RelayData => ({
             depositor: deposit.deposit.depositor,
             recipient: deposit.deposit.recipient,
@@ -128,8 +102,6 @@ export class Dataworker {
             depositId: deposit.deposit.depositId,
           })
         )
-      )
-      .flat();
 
     // Sort leaves deterministically so that the same root is always produced from the same _loadData return value.
     // The { Deposit ID, origin chain ID } is guaranteed to be unique so we can sort on them.

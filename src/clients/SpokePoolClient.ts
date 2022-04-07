@@ -35,7 +35,7 @@ export class SpokePoolClient {
     return this.fills;
   }
 
-  getFillsForOriginChain(originChainId: number) {
+  getFillsForOriginChain(originChainId: number): Fill[] {
     return this.fills.filter((fill: Fill) => fill.originChainId === originChainId);
   }
 
@@ -57,11 +57,13 @@ export class SpokePoolClient {
     return { ...deposit, speedUpSignature: maxSpeedUp.depositorSignature, relayerFeePct: maxSpeedUp.newRelayerFeePct };
   }
 
-  getValidUnfilledAmountForDeposit(deposit: Deposit): BigNumber {
-    return this.getValidFillsForDeposits(deposit).unfilledAmount;
+  getDepositForFill(fill: Fill): Deposit | undefined {
+    return this.getDepositsForDestinationChain(fill.destinationChainId).find((deposit) =>
+      this.validateFillForDeposit(fill, deposit)
+    );
   }
 
-  getValidFillsForDeposits(deposit: Deposit): { unfilledAmount: BigNumber; fills: Fill[] } {
+  getValidUnfilledAmountForDeposit(deposit: Deposit): BigNumber {
     const fills = this.getFillsForOriginChain(deposit.originChainId)
       .filter((fill) => fill.depositId === deposit.depositId) // Only select the associated fill for the deposit.
       .filter((fill) => this.validateFillForDeposit(fill, deposit)); // Validate that the fill was valid for the deposit.
@@ -73,10 +75,7 @@ export class SpokePoolClient {
       fillB.totalFilledAmount.gt(fillA.totalFilledAmount) ? 1 : -1
     );
     const lastFill = fillsOrderedByTotalFilledAmount[0];
-    return {
-      unfilledAmount: lastFill.amount.sub(lastFill.totalFilledAmount),
-      fills,
-    };
+    return lastFill.amount.sub(lastFill.totalFilledAmount);
   }
 
   // Ensure that each deposit element is included with the same value in the fill. This includes all elements defined
