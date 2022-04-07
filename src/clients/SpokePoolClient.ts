@@ -68,7 +68,7 @@ export class SpokePoolClient {
       .filter((fill) => fill.depositId === deposit.depositId) // Only select the associated fill for the deposit.
       .filter((fill) => this.validateFillForDeposit(fill, deposit)); // Validate that the fill was valid for the deposit.
 
-    if (fills.length === 0) return { unfilledAmount: deposit.amount, fills }; // If no fills then the full amount is remaining.
+    if (fills.length === 0) return deposit.amount; // If no fills then the full amount is remaining.
 
     // Order fills by totalFilledAmount and then return the first fill's full deposit amount minus total filled amount.
     const fillsOrderedByTotalFilledAmount = fills.sort((fillA, fillB) =>
