@@ -1,5 +1,12 @@
 import { expect, toBNWei, ethers, fillRelay, SignerWithAddress, deposit, setupTokensForWallet, toBN } from "./utils";
-import { deploySpokePoolWithToken, Contract, originChainId, destinationChainId, createSpyLogger, zeroAddress } from "./utils";
+import {
+  deploySpokePoolWithToken,
+  Contract,
+  originChainId,
+  destinationChainId,
+  createSpyLogger,
+  zeroAddress,
+} from "./utils";
 
 import { SpokePoolClient } from "../src/clients";
 
@@ -26,7 +33,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
     expect(spokePoolClient.validateFillForDeposit(fill_1, deposit_1)).to.equal(true);
   });
 
-  it("Returns deposit matched with fill", async function() {
+  it("Returns deposit matched with fill", async function () {
     const deposit_1 = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     const fill_1 = await fillRelay(spokePool_2, erc20_2, depositor, depositor, relayer, 0, originChainId);
 
@@ -37,7 +44,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
       destinationChainId
     ); // create spoke pool client on the "target" chain.
     // expect(spokePoolClientForDestinationChain.getDepositForFill(fill_1)).to.equal(undefined);
-    await spokePoolClientForDestinationChain.update()
+    await spokePoolClientForDestinationChain.update();
 
     // Override the fill's realized LP fee % and destination token so that it matches the deposit's default zero'd
     // out values. The destination token and realized LP fee % are set by the spoke pool client by querying the hub pool
@@ -46,8 +53,8 @@ describe("SpokePoolClient: Fill Validation", async function () {
     const expectedDeposit = {
       ...deposit_1,
       destinationToken: zeroAddress,
-      realizedLpFeePct: toBN(0)
-    }
+      realizedLpFeePct: toBN(0),
+    };
     expect(
       spokePoolClientForDestinationChain.getDepositForFill({
         ...fill_1,
@@ -55,7 +62,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
         realizedLpFeePct: toBN(0),
       })
     ).to.deep.equal(expectedDeposit);
-  })
+  });
 
   it("Rejects fills that dont match the deposit data", async function () {
     const deposit_1 = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
