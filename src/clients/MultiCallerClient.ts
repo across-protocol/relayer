@@ -9,7 +9,7 @@ export interface AugmentedTransaction {
   mrkdwn: string;
 }
 
-export class MultiCallBundler {
+export class MultiCallerClient {
   private transactions: AugmentedTransaction[] = [];
   constructor(readonly logger: winston.Logger, readonly gasEstimator: any) {}
 
@@ -29,7 +29,7 @@ export class MultiCallBundler {
 
   async executeTransactionQueue() {
     try {
-      this.logger.debug({ at: "MultiCallBundler", message: "Executing tx bundle", number: this.transactions.length });
+      this.logger.debug({ at: "MultiCallerClient", message: "Executing tx bundle", number: this.transactions.length });
 
       // Simulate the transaction execution for the whole queue.
       const transactionsSucceed = await Promise.all(
@@ -39,7 +39,7 @@ export class MultiCallBundler {
       // If any transactions will revert then log the reason and remove them from the transaction queue.
       if (transactionsSucceed.some((succeed) => !succeed.succeed))
         this.logger.error({
-          at: "MultiCallBundler",
+          at: "MultiCallerClient",
           message: "Some transaction in the queue are reverting!",
           revertingTransactions: transactionsSucceed
             .filter((transaction) => !transaction.succeed)
@@ -57,12 +57,12 @@ export class MultiCallBundler {
         .map((transaction) => transaction.transaction);
 
       if (validTransactions.length == 0) {
-        this.logger.debug({ at: "MultiCallBundler", message: "No valid transactions in the queue" });
+        this.logger.debug({ at: "MultiCallerClient", message: "No valid transactions in the queue" });
         return;
       }
 
       // Group by target chain. Note that there is NO grouping by target contract. The relayer will only ever use this
-      // multiCallBundler to send multiple transactions to one target contract on a given target chain and so we dont
+      // MultiCallerClient to send multiple transactions to one target contract on a given target chain and so we dont
       // need to group by target contract. This can be further refactored with another group by if this is needed.
       const groupedTransactions: { [networkId: number]: AugmentedTransaction[] } = {};
       for (const transaction of validTransactions) {
@@ -70,7 +70,7 @@ export class MultiCallBundler {
       }
 
       this.logger.debug({
-        at: "MultiCallBundler",
+        at: "MultiCallerClient",
         message: "Executing transactions grouped by target chain",
         txs: Object.keys(groupedTransactions).map((chainId) => ({ chainId, num: groupedTransactions[chainId].length })),
       });
@@ -98,10 +98,11 @@ export class MultiCallBundler {
         mrkdwn += "tx " + etherscanLink(transactionHash, chainId);
         transactionHashes.push(transactionHash);
       });
-      this.logger.info({ at: "MultiCallBundler", message: "Multicall batch sent! 🧙‍♂️", mrkdwn });
+      this.logger.info({ at: "MultiCallerClient", message: "Multicall batch sent! 🧙‍♂️", mrkdwn });
+      this.clearTransactionQueue();
       return transactionHashes;
     } catch (error) {
-      this.logger.error({ at: "MultiCallBundler", message: "Error executing tx bundle", error });
+      this.logger.error({ at: "MultiCallerClient", message: "Error executing tx bundle", error });
     }
   }
 
@@ -110,7 +111,7 @@ export class MultiCallBundler {
     const target = transactions[0].contract;
     if (transactions.every((tx) => tx.contract.address != target.address)) {
       this.logger.error({
-        at: "MultiCallBundler",
+        at: "MultiCallerClient",
         message: "some transactions in the bundle contain different targets",
         transactions: transactions.map(({ contract, chainId }) => {
           return { targetAddress: contract.address, chainId };
@@ -119,11 +120,7 @@ export class MultiCallBundler {
       return null; // If there is a problem in the targets in the bundle return null. This will be a noop.
     }
     const multiCallData = transactions.map((tx) => tx.contract.interface.encodeFunctionData(tx.method, tx.args));
-    this.logger.debug({ at: "MultiCallBundler", message: "Produced bundle", target: target.address, multiCallData });
+    this.logger.debug({ at: "MultiCallerClient", message: "Produced bundle", target: target.address, multiCallData });
     return runTransaction(this.logger, target, "multicall", [multiCallData]);
-  }
-
-  private getTarget(index: number) {
-    return { target: this.transactions[index].contract.address };
   }
 }

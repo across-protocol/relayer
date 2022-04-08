@@ -1,4 +1,4 @@
-import { spreadEvent, winston, Contract, toBN } from "../utils";
+import { spreadEvent, winston, Contract, BigNumber } from "../utils";
 import { Deposit } from "../interfaces/SpokePool";
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
@@ -22,7 +22,7 @@ export class RateModelClient {
     this.rateModelDictionary = new across.rateModel.RateModelDictionary();
   }
 
-  async computeRealizedLpFeePct(deposit: Deposit, l1Token: string) {
+  async computeRealizedLpFeePct(deposit: Deposit, l1Token: string): Promise<BigNumber> {
     const quoteBlock = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
 
     const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, quoteBlock, deposit.amount);
@@ -37,10 +37,10 @@ export class RateModelClient {
       originChainId: deposit.originChainId,
       quoteBlock,
       rateModel,
-      realizedLpFeePct: realizedLpFeePct,
+      realizedLpFeePct,
     });
 
-    return toBN(realizedLpFeePct);
+    return realizedLpFeePct;
   }
 
   getRateModelForBlockNumber(l1Token: string, blockNumber: number | undefined = undefined): across.constants.RateModel {

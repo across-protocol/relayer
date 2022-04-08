@@ -1,6 +1,6 @@
-export * from "./ClientHelper";
+export * from "./RelayerClientHelper";
 export * from "./HubPoolClient";
 export * from "./SpokePoolClient";
 export * from "./RateModelClient";
-// export * from "./TokenBalanceClient"
-export * from "./MultiCallBundler";
+export * from "./MultiCallerClient";
+export * from "./TokenClient";

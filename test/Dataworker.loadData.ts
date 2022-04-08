@@ -2,7 +2,7 @@ import { deploySpokePoolWithToken, enableRoutesOnHubPool, expect, ethers, Contra
 import { SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
 import { buildDeposit, buildFill } from "./utils";
 import { createSpyLogger, winston, deployAndConfigureHubPool, deployRateModelStore } from "./utils";
-import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallBundler } from "../src/clients";
+import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallerClient } from "../src/clients";
 import { amountToLp, amountToDeposit, repaymentChainId, destinationChainId, originChainId } from "./constants";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
@@ -16,7 +16,7 @@ let spyLogger: winston.Logger;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient;
 let dataworkerInstance: Dataworker;
-let multiCallBundler: MultiCallBundler;
+let multiCallerClient: MultiCallerClient;
 
 describe("Dataworker: Load data used in all functions", async function () {
   beforeEach(async function () {
@@ -40,7 +40,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
     rateModelClient = new RateModelClient(spyLogger, rateModelStore, hubPoolClient);
 
-    multiCallBundler = new MultiCallBundler(spyLogger, null); // leave out the gasEstimator for now.
+    multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
 
     spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(relayer), rateModelClient, originChainId);
     spokePoolClient_2 = new SpokePoolClient(
@@ -54,7 +54,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       spyLogger,
       { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
       hubPoolClient,
-      multiCallBundler
+      MultiCallerClient
     );
 
     // Give owner tokens to LP on HubPool with.

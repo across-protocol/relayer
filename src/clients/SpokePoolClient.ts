@@ -1,4 +1,4 @@
-import { spreadEvent, assign, Contract, BigNumber, toBN, Event, zeroAddress, winston } from "../utils";
+import { spreadEvent, assign, Contract, BigNumber, toBN, Event, ZERO_ADDRESS, winston } from "../utils";
 import { RateModelClient } from "./RateModelClient";
 import { Deposit, Fill, SpeedUp } from "../interfaces/SpokePool";
 
@@ -142,6 +142,7 @@ export class SpokePoolClient {
     this.isUpdated = true;
     this.log("debug", "Client updated!");
   }
+
   public hubPoolClient() {
     return this.rateModelClient.hubPoolClient;
   }
@@ -163,7 +164,7 @@ export class SpokePoolClient {
   }
 
   private getDestinationTokenForDeposit(deposit: Deposit): string {
-    if (!this.rateModelClient) return zeroAddress; // If there is no rate model client return address(0).
+    if (!this.rateModelClient) return ZERO_ADDRESS; // If there is no rate model client return address(0).
     return this.hubPoolClient().getDestinationTokenForDeposit(deposit);
   }
 
