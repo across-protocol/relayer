@@ -40,7 +40,7 @@ export class SpokePoolClient {
     return this.depositRoutes;
   }
 
-  isDepositRouteEnables(originToken: string, destinationChainId: number): boolean {
+  isDepositRouteEnabled(originToken: string, destinationChainId: number): boolean {
     return this.depositRoutes[originToken]?.[destinationChainId] ?? false;
   }
 
