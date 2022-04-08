@@ -20,3 +20,9 @@ export interface RelayerRefundLeaf {
   l2TokenAddress: string;
   refundAddresses: string[];
 }
+
+export interface L1Token {
+  address: string;
+  symbol: string;
+  decimals: number;
+}

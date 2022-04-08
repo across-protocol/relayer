@@ -1,11 +1,13 @@
 import { spreadEvent, assign, Contract, winston, BigNumber } from "../utils";
-import { Deposit } from "../interfaces/SpokePool";
+import { Deposit, L1Token } from "../interfaces";
+import { ExpandedERC20__factory } from "@across-protocol/contracts-v2";
 
 export class HubPoolClient {
-  // l1Token -> destinationChainId -> destinationToken
+  // L1Token -> destinationChainId -> destinationToken
   private l1TokensToDestinationTokens: { [l1Token: string]: { [destinationChainId: number]: string } } = {};
-  private _isUpdated: boolean = false;
+  private l1Tokens: L1Token[] = []; // L1Tokens and their associated info.
 
+  public isUpdated: boolean = false;
   public firstBlockToSearch: number;
 
   constructor(
@@ -40,13 +42,29 @@ export class HubPoolClient {
     return this.l1TokensToDestinationTokens[l1Token][destinationChainId];
   }
 
-  async getPoolUtilization(quoteBlockNumber: number, l1Token: string, amount: BigNumber) {
+  async getCurrentPoolUtilization(l1Token: string) {
+    return await this.hubPool.callStatic.liquidityUtilizationCurrent(l1Token);
+  }
+
+  async getPostRelayPoolUtilization(l1Token: string, quoteBlockNumber: number, relaySize: BigNumber) {
     const blockOffset = { blockTag: quoteBlockNumber };
-    const [liquidityUtilizationCurrent, liquidityUtilizationPostRelay] = await Promise.all([
+    const [current, post] = await Promise.all([
       this.hubPool.callStatic.liquidityUtilizationCurrent(l1Token, blockOffset),
-      this.hubPool.callStatic.liquidityUtilizationPostRelay(l1Token, amount.toString(), blockOffset),
+      this.hubPool.callStatic.liquidityUtilizationPostRelay(l1Token, relaySize, blockOffset),
     ]);
-    return { liquidityUtilizationCurrent, liquidityUtilizationPostRelay };
+    return { current, post };
+  }
+
+  getL1Tokens() {
+    return this.l1Tokens;
+  }
+
+  getTokenInfoForL1Token(l1Token: string): L1Token {
+    return this.l1Tokens.find((token) => token.address === l1Token);
+  }
+
+  getTokenInfoForDeposit(deposit: Deposit): L1Token {
+    return this.getTokenInfoForL1Token(this.getL1TokenForDeposit(deposit));
   }
 
   async update() {
@@ -54,8 +72,9 @@ export class HubPoolClient {
     this.logger.debug({ at: "HubPoolClient", message: "Updating client", searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
 
-    const [poolRebalanceRouteEvents] = await Promise.all([
+    const [poolRebalanceRouteEvents, l1TokensLPEvents] = await Promise.all([
       this.hubPool.queryFilter(this.hubPool.filters.SetPoolRebalanceRoute(), ...searchConfig),
+      this.hubPool.queryFilter(this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), ...searchConfig),
     ]);
 
     for (const event of poolRebalanceRouteEvents) {
@@ -63,14 +82,20 @@ export class HubPoolClient {
       assign(this.l1TokensToDestinationTokens, [args.l1Token, args.destinationChainId], args.destinationToken);
     }
 
-    this._isUpdated = true;
+    // For each enabled Lp token fetch the token symbol and decimals from the token contract. Note this logic will
+    // only run iff a new token has been enabled. Will only append iff the info is not there already.
+    const tokenInfo = await Promise.all(l1TokensLPEvents.map((event) => this.getTokenInfo(spreadEvent(event).l1Token)));
+    for (const info of tokenInfo) if (!this.l1Tokens.includes(info)) this.l1Tokens.push(info);
 
+    this.isUpdated = true;
     this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
 
     this.logger.debug({ at: "HubPoolClient", message: "Client updated!" });
   }
 
-  isUpdated(): Boolean {
-    return this._isUpdated;
+  private async getTokenInfo(address: string): Promise<L1Token> {
+    const token = new Contract(address, ExpandedERC20__factory.abi, this.hubPool.signer);
+    const [symbol, decimals] = await Promise.all([token.symbol(), token.decimals()]);
+    return { address, symbol, decimals };
   }
 }
