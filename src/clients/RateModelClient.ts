@@ -1,5 +1,5 @@
 import { spreadEvent, winston, Contract, toBN } from "../utils";
-import { Deposit, Fill } from "../interfaces/SpokePool";
+import { Deposit } from "../interfaces/SpokePool";
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
 import { HubPoolClient } from "./HubPoolClient";
@@ -9,10 +9,9 @@ export class RateModelClient {
 
   public cumulativeRateModelEvents: across.rateModel.RateModelEvent[] = [];
   private rateModelDictionary: across.rateModel.RateModelDictionary;
-
-  private _isUpdated: boolean = false;
-
   public firstBlockToSearch: number;
+
+  public isUpdated: boolean = false;
 
   constructor(
     readonly logger: winston.Logger,
@@ -24,25 +23,21 @@ export class RateModelClient {
   }
 
   async computeRealizedLpFeePct(deposit: Deposit, l1Token: string) {
-    const quoteBlockNumber = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
-    // Set to this temporarily until we re-deploy. The RateModelStore was deployed after the spokePool's deposits.
+    const quoteBlock = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
 
-    const rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlockNumber);
+    const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, quoteBlock, deposit.amount);
 
-    const blockOffset = { blockTag: quoteBlockNumber };
-    const [utilizationCurrent, utilizationPost] = await Promise.all([
-      this.hubPoolClient.hubPool.callStatic.liquidityUtilizationCurrent(l1Token, blockOffset),
-      this.hubPoolClient.hubPool.callStatic.liquidityUtilizationPostRelay(l1Token, deposit.amount, blockOffset),
-    ]);
-
-    const realizedLpFeePct = lpFeeCalculator.calculateRealizedLpFeePct(rateModel, utilizationCurrent, utilizationPost);
+    const rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
+    const realizedLpFeePct = lpFeeCalculator.calculateRealizedLpFeePct(rateModel, current, post);
 
     this.logger.debug({
       at: "RateModelClient",
       message: "Computed realizedLPFeePct",
-      quoteBlockNumber,
+      depositId: deposit.depositId,
+      originChainId: deposit.originChainId,
+      quoteBlock,
       rateModel,
-      realizedLpFeePct: realizedLpFeePct.toString(),
+      realizedLpFeePct: realizedLpFeePct,
     });
 
     return toBN(realizedLpFeePct);
@@ -53,8 +48,6 @@ export class RateModelClient {
   }
 
   async update() {
-    if (!this.hubPoolClient.isUpdated()) throw new Error("hubpool not updated");
-
     const searchConfig = [this.firstBlockToSearch, await this.rateModelStore.provider.getBlockNumber()];
     this.logger.debug({ at: "RateModelClient", message: "Updating client", searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
@@ -74,14 +67,9 @@ export class RateModelClient {
     }
     this.rateModelDictionary.updateWithEvents(this.cumulativeRateModelEvents);
 
-    this._isUpdated = true;
-
+    this.isUpdated = true;
     this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
 
     this.logger.debug({ at: "RateModelClient", message: "Client updated!" });
-  }
-
-  isUpdated(): Boolean {
-    return this._isUpdated;
   }
 }

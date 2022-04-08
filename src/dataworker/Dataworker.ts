@@ -31,7 +31,7 @@ export class Dataworker {
     this.logger.debug({ at: "Dataworker", message: `Loading deposit and fill data`, chainIds: allChainIds });
     for (const originChainId of allChainIds) {
       const originClient = this.spokePoolClients[originChainId];
-      if (!originClient.isUpdated()) throw new Error(`origin spokepoolclient on chain ${originChainId} not updated`);
+      if (!originClient.isUpdated) throw new Error(`origin SpokePoolClient on chain ${originChainId} not updated`);
 
       // Loop over all other SpokePoolClient's to find deposits whose destination chain is the selected origin chain.
       this.logger.debug({ at: "Dataworker", message: `Looking up data for origin spoke pool`, originChainId });
@@ -39,8 +39,8 @@ export class Dataworker {
         if (originChainId === destinationChainId) continue;
 
         const destinationClient = this.spokePoolClients[destinationChainId];
-        if (!destinationClient.isUpdated())
-          throw new Error(`destination spokepoolclient with chain ID ${destinationChainId} not updated`);
+        if (!destinationClient.isUpdated)
+          throw new Error(`destination SpokePoolClient with chain ID ${destinationChainId} not updated`);
 
         // Store deposits whose destination chain is the selected chain as unfilled deposits and set the initial fill
         // amount remaining equal to the full deposit amount minus any valid fill amounts.

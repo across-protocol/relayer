@@ -12,6 +12,8 @@ export function assign(obj: any, keyPath: any[], value: any) {
   if (!obj[keyPath[lastKeyIndex]] || typeof obj[keyPath[lastKeyIndex]] == "string") obj[keyPath[lastKeyIndex]] = value;
   // If the object at the deep path is an array then append array wise.
   else if (Array.isArray(value)) obj[keyPath[lastKeyIndex]] = [...obj[keyPath[lastKeyIndex]], ...value];
+  // If the value is false bool then set to false. This special case is needed as {...false} = {} which causes issues.
+  else if (value === false) obj[keyPath[lastKeyIndex]] = false;
   // If the object at the deep path is an object then append object wise.
   else obj[keyPath[lastKeyIndex]] = { ...obj[keyPath[lastKeyIndex]], ...value };
 }
