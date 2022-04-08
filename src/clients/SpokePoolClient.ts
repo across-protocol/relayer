@@ -16,7 +16,7 @@ export class SpokePoolClient {
     readonly spokePool: Contract,
     readonly rateModelClient: RateModelClient | null, // RateModelStore can be excluded. This disables some deposit validation.
     readonly chainId: number,
-    readonly startingBlock: number = 10775151,
+    readonly startingBlock: number = 0,
     readonly endingBlock: number | null = null
   ) {
     this.firstBlockToSearch = startingBlock;
