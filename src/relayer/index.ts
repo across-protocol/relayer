@@ -31,8 +31,7 @@ export async function runRelayer(_logger: winston.Logger): Promise<void> {
       if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) break;
     }
   } catch (error) {
-    logger.error({ at: "Relayer#index", message: "There was an execution error! Re-running loop", error
-   });
+    logger.error({ at: "Relayer#index", message: "There was an execution error! Re-running loop", error });
     await runRelayer(logger);
   }
 }

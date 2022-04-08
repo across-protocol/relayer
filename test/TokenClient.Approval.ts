@@ -43,7 +43,7 @@ describe("TokenClient: Origin token approval", async function () {
     expect(lastSpyLogIncludes(spy, weth_1.address)).to.be.true;
     expect(lastSpyLogIncludes(spy, weth_2.address)).to.be.true;
 
-    // Approvals should be set correctly. Note that erc20_1 is checked to be approved on spokePool_2 and erc20_2 is 
+    // Approvals should be set correctly. Note that erc20_1 is checked to be approved on spokePool_2 and erc20_2 is
     // checked on spokePool_1 as this is the associated token route.
     expect(await erc20_1.allowance(owner.address, spokePool_2.address)).to.equal(MAX_SAFE_ALLOWANCE);
     expect(await erc20_2.allowance(owner.address, spokePool_1.address)).to.equal(MAX_SAFE_ALLOWANCE);
