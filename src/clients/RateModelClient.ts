@@ -16,8 +16,10 @@ export class RateModelClient {
   constructor(
     readonly logger: winston.Logger,
     readonly rateModelStore: Contract,
-    readonly hubPoolClient: HubPoolClient
+    readonly hubPoolClient: HubPoolClient,
+    readonly startingBlock: number = 0
   ) {
+    this.firstBlockToSearch = startingBlock;
     this.blockFinder = new BlockFinder(this.rateModelStore.provider.getBlock.bind(this.rateModelStore.provider));
     this.rateModelDictionary = new across.rateModel.RateModelDictionary();
   }

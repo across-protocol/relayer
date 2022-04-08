@@ -92,7 +92,7 @@ export class TokenClient {
       });
     });
     if (tokensToApprove.length === 0) {
-      this.logger.info({ at: "tokenClient", message: `All token approvals set` });
+      this.logger.debug({ at: "tokenClient", message: `All token approvals set` });
       return;
     }
 

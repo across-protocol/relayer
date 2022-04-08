@@ -7,23 +7,32 @@ import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients, updateRelayerClients } from "../clients";
 import { processEndPollingLoop, winston } from "../utils";
 
-export async function runRelayer(logger: winston.Logger): Promise<void> {
-  const config = new RelayerConfig(process.env);
-  logger.info({ at: "Relayer#index", message: "Relayer starting🏃‍♂️", config });
+let logger: winston.Logger;
 
-  const relayerClients = constructRelayerClients(logger, config);
+export async function runRelayer(_logger: winston.Logger): Promise<void> {
+  logger = _logger;
+  try {
+    const config = new RelayerConfig(process.env);
+    logger.info({ at: "Relayer#index", message: "Relayer starting🏃‍♂️", config });
 
-  const relayer = new Relayer(logger, relayerClients);
+    const relayerClients = constructRelayerClients(logger, config);
 
-  logger.debug({ at: "Relayer#index", message: "Relayer components initialized. Starting execution loop" });
+    const relayer = new Relayer(logger, relayerClients);
 
-  for (;;) {
-    await updateRelayerClients(logger, relayerClients);
+    logger.debug({ at: "Relayer#index", message: "Relayer components initialized. Starting execution loop" });
 
-    await relayer.checkForUnfilledDepositsAndFill();
+    for (;;) {
+      await updateRelayerClients(logger, relayerClients);
 
-    await relayerClients.multiCallerClient.executeTransactionQueue();
+      await relayer.checkForUnfilledDepositsAndFill();
 
-    if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) break;
+      await relayerClients.multiCallerClient.executeTransactionQueue();
+
+      if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) break;
+    }
+  } catch (error) {
+    logger.error({ at: "Relayer#index", message: "There was an execution error! Re-running loop", error
+   });
+    await runRelayer(logger);
   }
 }
