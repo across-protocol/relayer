@@ -116,12 +116,16 @@ describe("Dataworker: Load data used in all functions", async function () {
       { unfilledAmount: amountToDeposit.sub(fill2.fillAmount), deposit: deposit2 },
     ]);
 
-    // All deposits are fulfilled.
+    // All deposits are fulfilled; unfilled deposits that are fully filled should be ignored.
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 1);
     await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 1);
     await updateAllClients();
     const data5 = dataworkerInstance._loadData();
     expect(data5.unfilledDeposits).to.deep.equal([]);
+
+    // TODO: Add test where deposit has matched fills but none were the first ever fill for that deposit (i.e. where
+    // fill.amount != fill.totalAmountFilled). This can only be done after adding in block range constraints on Fill
+    // events queried. Also test that fill amounts equal to zero don't count as first fills.
 
     // Fill events emitted by slow relays are included in unfilled amount calculations.
     // Note: submit another deposit that resembles deposit2 except that the relayer fee % is set to 0. This is crucial

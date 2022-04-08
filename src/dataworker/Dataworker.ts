@@ -1,4 +1,4 @@
-import { winston, assign, buildSlowRelayTree, MerkleTree } from "../utils";
+import { winston, assign, buildSlowRelayTree, MerkleTree, toBN } from "../utils";
 import { SpokePoolClient, HubPoolClient, MultiCallBundler } from "../clients";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill } from "../interfaces/SpokePool";
 import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";
@@ -19,7 +19,7 @@ export class Dataworker {
     unfilledDeposits: UnfilledDeposit[];
     fillsToRefund: FillsToRefund;
   } {
-    const unfilledDepositsForOriginChain: { [originChainIdPlusDepositId: string]: UnfilledDeposit } = {};
+    const unfilledDepositsForOriginChain: { [originChainIdPlusDepositId: string]: UnfilledDeposit[] } = {};
     const fillsToRefund: FillsToRefund = {};
 
     const allChainIds = Object.keys(this.spokePoolClients);
@@ -53,17 +53,21 @@ export class Dataworker {
             // relayer fee % will be reset to 0 by the SpokePool contract, however we still need to explicitly filter slow
             // relays out because its possible that a deposit is submitted with a relayer fee % set to 0.
             if (!fill.isSlowRelay) assign(fillsToRefund, [fill.repaymentChainId, fill.relayer], [fill]);
-            // Save this deposit as an unfilled deposit and update its unfilled amount if this fill occurred later
-            // than the last saved fill for this deposit.
-            const fillUnfilledAmount = fill.amount.sub(fill.totalFilledAmount);
-            const fillKey = `${originChainId}+${fill.depositId}`;
-            const existingMatchedDepositForFill: UnfilledDeposit | undefined = unfilledDepositsForOriginChain[fillKey];
-            if (!existingMatchedDepositForFill || existingMatchedDepositForFill.unfilledAmount.gt(fillUnfilledAmount)) {
-              assign(unfilledDepositsForOriginChain, [fillKey], {
-                deposit: matchedDeposit,
-                unfilledAmount: fillUnfilledAmount,
-              });
-            }
+            const depositUnfilledAmount = fill.amount.sub(fill.totalFilledAmount);
+            const depositKey = `${originChainId}+${fill.depositId}`;
+            assign(
+              unfilledDepositsForOriginChain,
+              [depositKey],
+              [
+                {
+                  unfilledAmount: depositUnfilledAmount,
+                  deposit: matchedDeposit,
+                  // A first partial fill for a deposit is characterized by one whose total filled amount post-fill
+                  // is equal to the amount sent in the fill, and where the fill amount is greater than zero.
+                  hasFirstPartialFill: fill.fillAmount.eq(fill.totalFilledAmount) && fill.fillAmount.gt(toBN(0)),
+                },
+              ]
+            );
           } else {
             this.logger.debug({
               at: "Dataworker",
@@ -75,12 +79,32 @@ export class Dataworker {
       }
     }
 
+    // For each deposit with a matched fill, figure out the unfilled amount that we need to slow relay. We will filter
+    // out any deposits that are fully filled, or any deposits that were already slow relayed in a previous epoch.
+    const unfilledDeposits = Object.keys(unfilledDepositsForOriginChain).map((_originChainIdPlusDepositId: string): UnfilledDeposit => {
+        const _unfilledDeposits = unfilledDepositsForOriginChain[_originChainIdPlusDepositId];
+
+        // Remove deposits with no matched fills.
+        if (_unfilledDeposits.length === 0) return { unfilledAmount: toBN(0), deposit: undefined };
+        // Remove deposits where there isn't a fill with fillAmount == totalFilledAmount && fillAmount > 0. This ensures
+        // that we'll only be slow relaying deposits where the first fill
+        // (i.e. the one with fillAmount == totalFilledAmount) is in this epoch.
+        if (
+          !_unfilledDeposits.some((_unfilledDeposit: UnfilledDeposit) => _unfilledDeposit.hasFirstPartialFill === true)
+        )
+          return { unfilledAmount: toBN(0), deposit: undefined };
+        // Take the smallest unfilled amount since each fill can only decrease the unfilled amount.
+        _unfilledDeposits.sort((unfilledDepositA, unfilledDepositB) =>
+          unfilledDepositA.unfilledAmount.gt(unfilledDepositB.unfilledAmount) ? 1 : -1
+        );
+        return { unfilledAmount: _unfilledDeposits[0].unfilledAmount, deposit: _unfilledDeposits[0].deposit };
+      })
+      .filter((unfilledDeposit: UnfilledDeposit) => unfilledDeposit.unfilledAmount.gt(0));
+
     // Remove deposits that have been fully filled from unfilled deposit array
     return {
       fillsToRefund,
-      unfilledDeposits: Object.values(unfilledDepositsForOriginChain)
-        .flat()
-        .filter((unfilledDeposit) => unfilledDeposit.unfilledAmount.gt(0)),
+      unfilledDeposits,
     };
   }
 

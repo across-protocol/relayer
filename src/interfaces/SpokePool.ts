@@ -70,6 +70,7 @@ export interface RelayData {
 export interface UnfilledDeposit {
   deposit: Deposit;
   unfilledAmount: BigNumber;
+  hasFirstPartialFill?: boolean;
 }
 export interface FillsToRefund {
   [repaymentChainId: number]: { [refundAddress: string]: Fill[] };
