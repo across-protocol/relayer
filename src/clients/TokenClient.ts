@@ -84,33 +84,30 @@ export class TokenClient {
   }
 
   async setOriginTokenApprovals() {
-    try {
-      const tokensToApprove: { chainId: string; token: string }[] = [];
-      Object.keys(this.tokenData).forEach((chainId) => {
-        Object.keys(this.tokenData[chainId]).forEach((token) => {
-          if (this.tokenData[chainId][token].allowance.lt(toBN(MAX_SAFE_ALLOWANCE)))
-            tokensToApprove.push({ chainId, token });
-        });
+    const tokensToApprove: { chainId: string; token: string }[] = [];
+    Object.keys(this.tokenData).forEach((chainId) => {
+      Object.keys(this.tokenData[chainId]).forEach((token) => {
+        if (this.tokenData[chainId][token].allowance.lt(toBN(MAX_SAFE_ALLOWANCE)))
+          tokensToApprove.push({ chainId, token });
       });
-      if (tokensToApprove.length === 0) this.logger.info({ at: "tokenClient", message: `All token approvals set` });
-
-      for (const { token, chainId } of tokensToApprove) {
-        const targetSpokePool = this.spokePoolClients[chainId].spokePool;
-        const contract = new Contract(token, ERC20.abi, targetSpokePool.signer);
-        const tx = await runTransaction(this.logger, contract, "approve", [
-          targetSpokePool.address,
-          MAX_SAFE_ALLOWANCE,
-        ]);
-        const receipt = tx.wait();
-        const mrkdwn =
-          `The relay has approved the SpokePool ${etherscanLink(targetSpokePool.address, chainId)} ` +
-          `to spend ${await contract.symbol()} ${etherscanLink(token, chainId)} on ${getNetworkName(chainId)}.` +
-          `tx ${etherscanLink(receipt.transactionHash, chainId)}`;
-        this.logger.info({ at: "tokenClient", message: `Approved whitelisted token! 💰`, mrkdwn });
-      }
-    } catch (error) {
-      this.logger.error({ at: "tokenClient", message: `Failed to set token approvals`, error });
+    });
+    if (tokensToApprove.length === 0) {
+      this.logger.info({ at: "tokenClient", message: `All token approvals set` });
+      return;
     }
+
+    let mrkdwn = "Approval transactions: \n";
+    for (const { token, chainId } of tokensToApprove) {
+      const targetSpokePool = this.spokePoolClients[chainId].spokePool;
+      const contract = new Contract(token, ERC20.abi, targetSpokePool.signer);
+      const tx = await runTransaction(this.logger, contract, "approve", [targetSpokePool.address, MAX_SAFE_ALLOWANCE]);
+      const receipt = await tx.wait();
+      mrkdwn +=
+        ` - Approved SpokePool ${etherscanLink(targetSpokePool.address, chainId)} ` +
+        `to spend ${await contract.symbol()} ${etherscanLink(token, chainId)} on ${getNetworkName(chainId)}.` +
+        `tx ${etherscanLink(receipt.transactionHash, chainId)}\n`;
+    }
+    this.logger.info({ at: "tokenClient", message: `Approved whitelisted tokens! 💰`, mrkdwn });
   }
 
   async update() {

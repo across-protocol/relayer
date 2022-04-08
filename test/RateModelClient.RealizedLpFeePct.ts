@@ -53,7 +53,7 @@ describe("RateModelClient: RealizedLpFeePct", async function () {
     expect(rateModelClient.cumulativeRateModelEvents.length).to.equal(1);
   });
 
-  it.only("getRateModelForBlockNumber", async function () {
+  it("getRateModelForBlockNumber", async function () {
     await rateModelStore.updateRateModel(l1Token.address, JSON.stringify(sampleRateModel));
     await updateAllClients();
 
