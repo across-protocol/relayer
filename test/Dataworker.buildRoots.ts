@@ -98,10 +98,10 @@ describe("Dataworker: Build merkle roots", async function () {
     });
 
     // Add fills for each deposit so dataworker includes deposits as slow relays:
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0);
-    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 0);
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit3, 0);
-    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit4, 0);
+    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.1);
+    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 0.1);
+    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit3, 0.1);
+    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit4, 0.1);
 
     // Returns expected merkle root where leaves are ordered by origin chain ID and then deposit ID
     // (ascending).

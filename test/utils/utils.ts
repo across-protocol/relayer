@@ -323,26 +323,26 @@ export async function buildModifiedFill(
     realizedLpFeePct: fillToBuildFrom.realizedLpFeePct.toString(),
     relayerFeePct: fillToBuildFrom.relayerFeePct.toString(),
     depositId: fillToBuildFrom.depositId.toString(),
-  }
+  };
   const { signature } = await utils.modifyRelayHelper(
     fillToBuildFrom.relayerFeePct.mul(multipleOfOriginalRelayerFeePct),
     fillToBuildFrom.depositId.toString(),
     fillToBuildFrom.originChainId.toString(),
     depositor
   );
-  const updatedRelayerFeePct = fillToBuildFrom.relayerFeePct.mul(multipleOfOriginalRelayerFeePct)
+  const updatedRelayerFeePct = fillToBuildFrom.relayerFeePct.mul(multipleOfOriginalRelayerFeePct);
   await spokePool.connect(relayer).fillRelayWithUpdatedFee(
-      ...utils.getFillRelayUpdatedFeeParams(
-        relayDataFromFill,
-        fillToBuildFrom.amount
-          .mul(toBNWei(1).sub(fillToBuildFrom.realizedLpFeePct.add(updatedRelayerFeePct)))
-          .mul(toBNWei(pctOfDepositToFill))
-          .div(toBNWei(1))
-          .div(toBNWei(1)),
-        updatedRelayerFeePct,
-        signature
+    ...utils.getFillRelayUpdatedFeeParams(
+      relayDataFromFill,
+      fillToBuildFrom.amount
+        .mul(toBNWei(1).sub(fillToBuildFrom.realizedLpFeePct.add(updatedRelayerFeePct)))
+        .mul(toBNWei(pctOfDepositToFill))
+        .div(toBNWei(1))
+        .div(toBNWei(1)),
+      updatedRelayerFeePct,
+      signature
     )
-  )
+  );
   const [events, destinationChainId] = await Promise.all([
     spokePool.queryFilter(spokePool.filters.FilledRelay()),
     spokePool.chainId(),

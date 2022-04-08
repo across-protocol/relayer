@@ -1,5 +1,11 @@
 import { expect, ethers, Contract } from "./utils";
-import { SignerWithAddress, getExecuteSlowRelayParams, buildSlowRelayTree, getFillRelayUpdatedFeeParams, modifyRelayHelper } from "./utils";
+import {
+  SignerWithAddress,
+  getExecuteSlowRelayParams,
+  buildSlowRelayTree,
+  getFillRelayUpdatedFeeParams,
+  modifyRelayHelper,
+} from "./utils";
 import { buildDeposit, buildFill, buildModifiedFill } from "./utils";
 import { SpokePoolClient, HubPoolClient, RateModelClient } from "../src/clients";
 import { amountToDeposit, repaymentChainId, destinationChainId, originChainId } from "./constants";
@@ -295,15 +301,14 @@ describe("Dataworker: Load data used in all functions", async function () {
     });
 
     // Speed up relays are included. Re-use the same fill information
-    const fill5 = await buildModifiedFill(spokePool_1, depositor, relayer, fill2, 2, 0.1)
-    expect(fill5.totalFilledAmount.gt(fill5.fillAmount), "speed up fill didn't match original deposit")
+    const fill5 = await buildModifiedFill(spokePool_1, depositor, relayer, fill2, 2, 0.1);
+    expect(fill5.totalFilledAmount.gt(fill5.fillAmount), "speed up fill didn't match original deposit");
     await updateAllClients();
     // TODO: Uncomment following test once https://github.com/across-protocol/contracts-v2/pull/133 is merged
     // const data6 = dataworkerInstance._loadData();
     // expect(data6.fillsToRefund).to.deep.equal({
     //   [repaymentChainId]: { [relayer.address]: [fill1, fill2, fill4, fill5], [depositor.address]: [fill3] },
     // });
-
   });
 });
 

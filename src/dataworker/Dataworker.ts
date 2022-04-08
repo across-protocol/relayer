@@ -81,7 +81,8 @@ export class Dataworker {
 
     // For each deposit with a matched fill, figure out the unfilled amount that we need to slow relay. We will filter
     // out any deposits that are fully filled, or any deposits that were already slow relayed in a previous epoch.
-    const unfilledDeposits = Object.keys(unfilledDepositsForOriginChain).map((_originChainIdPlusDepositId: string): UnfilledDeposit => {
+    const unfilledDeposits = Object.keys(unfilledDepositsForOriginChain)
+      .map((_originChainIdPlusDepositId: string): UnfilledDeposit => {
         const _unfilledDeposits = unfilledDepositsForOriginChain[_originChainIdPlusDepositId];
 
         // Remove deposits with no matched fills.
