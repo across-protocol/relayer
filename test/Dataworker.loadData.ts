@@ -1,79 +1,37 @@
-import { deploySpokePoolWithToken, enableRoutesOnHubPool, expect, ethers, Contract } from "./utils";
-import { SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
+import { expect, ethers, Contract } from "./utils";
+import { SignerWithAddress, getExecuteSlowRelayParams, buildSlowRelayTree } from "./utils";
 import { buildDeposit, buildFill } from "./utils";
-import { createSpyLogger, winston, deployAndConfigureHubPool, deployRateModelStore } from "./utils";
-import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallerClient } from "../src/clients";
-import { amountToLp, amountToDeposit, repaymentChainId, destinationChainId, originChainId } from "./constants";
+import { SpokePoolClient, HubPoolClient, RateModelClient } from "../src/clients";
+import { amountToDeposit, repaymentChainId, destinationChainId, originChainId } from "./constants";
+import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { toBN } from "../src/utils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
-let hubPool: Contract, rateModelStore: Contract, l1Token: Contract;
-let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
-let spyLogger: winston.Logger;
+let l1Token: Contract;
+let depositor: SignerWithAddress, relayer: SignerWithAddress;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient;
 let dataworkerInstance: Dataworker;
-let multiCallerClient: MultiCallerClient;
 
 describe("Dataworker: Load data used in all functions", async function () {
   beforeEach(async function () {
-    [owner, depositor, relayer] = await ethers.getSigners();
-    ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId));
-    ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
-
-    // Only set cross chain contracts for one spoke pool to begin with.
-    ({ hubPool, l1Token } = await deployAndConfigureHubPool(owner, [
-      { l2ChainId: destinationChainId, spokePool: spokePool_2 },
-    ]));
-
-    // For each chain, enable routes to both erc20's so that we can fill relays
-    await enableRoutesOnHubPool(hubPool, [
-      { destinationChainId: originChainId, l1Token, destinationToken: erc20_1 },
-      { destinationChainId: destinationChainId, l1Token, destinationToken: erc20_2 },
-    ]);
-
-    ({ spyLogger } = createSpyLogger());
-    ({ rateModelStore } = await deployRateModelStore(owner, [l1Token]));
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-    rateModelClient = new RateModelClient(spyLogger, rateModelStore, hubPoolClient);
-
-    multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
-
-    spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(relayer), rateModelClient, originChainId);
-    spokePoolClient_2 = new SpokePoolClient(
-      spyLogger,
-      spokePool_2.connect(relayer),
+    ({
+      spokePool_1,
+      erc20_1,
+      spokePool_2,
+      erc20_2,
       rateModelClient,
-      destinationChainId
-    );
-
-    dataworkerInstance = new Dataworker(
-      spyLogger,
-      { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
       hubPoolClient,
-      MultiCallerClient
-    );
-
-    // Give owner tokens to LP on HubPool with.
-    await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // Seed owner to LP.
-    await l1Token.approve(hubPool.address, amountToLp);
-    await hubPool.addLiquidity(l1Token.address, amountToLp);
-
-    // Give depositors the tokens they'll deposit into spoke pools:
-    await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);
-    await setupTokensForWallet(spokePool_2, depositor, [erc20_2], null, 10);
-
-    // Give relayers the tokens they'll need to relay on spoke pools:
-    await setupTokensForWallet(spokePool_1, relayer, [erc20_1, erc20_2, l1Token], null, 10);
-    await setupTokensForWallet(spokePool_2, relayer, [erc20_1, erc20_2, l1Token], null, 10);
-
-    // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
-    // "reasonable" block number based off the block time when looking at quote timestamps.
-    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
-    await spokePool_2.setCurrentTime(await getLastBlockTime(spokePool_2.provider));
+      l1Token,
+      depositor,
+      relayer,
+      dataworkerInstance,
+      spokePoolClient_1,
+      spokePoolClient_2,
+    } = await setupDataworker(ethers));
   });
 
   it("Default conditions", async function () {
@@ -185,12 +143,59 @@ describe("Dataworker: Load data used in all functions", async function () {
       [originChainId]: [{ unfilledAmount: amountToDeposit.sub(fill2.fillAmount), deposit: deposit2 }],
     });
 
-    // All deposits are fulfilled
+    // All deposits are fulfilled.
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 1);
     await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 1);
     await updateAllClients();
     const data5 = dataworkerInstance._loadData();
     expect(data5.unfilledDeposits).to.deep.equal({});
+
+    // Fill events emitted by slow relays are included in unfilled amount calculations.
+    // Note: submit another deposit that resembles deposit2 except that the relayer fee % is set to 0. This is crucial
+    // for this test since all slow relay executions will emit a relayerFeePct = 0, and we want to test that the
+    // dataworker client includes slow relay executions when computing a deposit's unfilled amount.
+    const deposit5 = await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
+      spokePool_2,
+      erc20_2,
+      l1Token,
+      depositor,
+      originChainId,
+      amountToDeposit,
+      toBN(0)
+    );
+    const fill3 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit5, 0.25);
+    const slowRelays = [
+      {
+        depositor: fill3.depositor,
+        recipient: fill3.recipient,
+        destinationToken: fill3.destinationToken,
+        amount: fill3.amount,
+        originChainId: fill3.originChainId.toString(),
+        destinationChainId: fill3.destinationChainId.toString(),
+        realizedLpFeePct: fill3.realizedLpFeePct,
+        relayerFeePct: fill3.relayerFeePct,
+        depositId: fill3.depositId.toString(),
+      },
+    ];
+    const tree = await buildSlowRelayTree(slowRelays);
+    await spokePool_1.relayRootBundle(tree.getHexRoot(), tree.getHexRoot());
+    await spokePool_1.connect(depositor).executeSlowRelayLeaf(
+      fill3.depositor,
+      fill3.recipient,
+      fill3.destinationToken,
+      fill3.amount.toString(),
+      fill3.originChainId.toString(),
+      fill3.realizedLpFeePct.toString(),
+      fill3.relayerFeePct.toString(),
+      fill3.depositId.toString(),
+      "0",
+      [] // Proof for tree with 1 leaf is empty
+    );
+    await updateAllClients();
+    const data6 = dataworkerInstance._loadData();
+    expect(data6.unfilledDeposits).to.deep.equal({});
   });
   it("Returns fills to refund", async function () {
     await updateAllClients();
@@ -259,6 +264,57 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data4 = dataworkerInstance._loadData();
     expect(data4.fillsToRefund).to.deep.equal(data2.fillsToRefund);
+
+    // Fill events emitted by slow relays should be ignored.
+    // Note: submit another deposit that resembles deposit2 except that the relayer fee % is set to 0. This is crucial
+    // for this test since all slow relay executions will emit a relayerFeePct = 0, and we want to test that the
+    // dataworker client does not count any relays that do match a deposit but originate from slow relays.
+    const deposit3 = await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
+      spokePool_2,
+      erc20_2,
+      l1Token,
+      depositor,
+      originChainId,
+      amountToDeposit,
+      toBN(0)
+    );
+    const fill4 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit3, 0.25);
+    const slowRelays = [
+      {
+        depositor: fill4.depositor,
+        recipient: fill4.recipient,
+        destinationToken: fill4.destinationToken,
+        amount: fill4.amount,
+        originChainId: fill4.originChainId.toString(),
+        destinationChainId: fill4.destinationChainId.toString(),
+        realizedLpFeePct: fill4.realizedLpFeePct,
+        relayerFeePct: fill4.relayerFeePct,
+        depositId: fill4.depositId.toString(),
+      },
+    ];
+    const tree = await buildSlowRelayTree(slowRelays);
+    await spokePool_1.relayRootBundle(tree.getHexRoot(), tree.getHexRoot());
+    await spokePool_1.connect(depositor).executeSlowRelayLeaf(
+      fill4.depositor,
+      fill4.recipient,
+      fill4.destinationToken,
+      fill4.amount.toString(),
+      fill4.originChainId.toString(),
+      fill4.realizedLpFeePct.toString(),
+      fill4.relayerFeePct.toString(),
+      fill4.depositId.toString(),
+      "0",
+      [] // Proof for tree with 1 leaf is empty
+    );
+    await updateAllClients();
+    const data5 = dataworkerInstance._loadData();
+    // Note: If the dataworker does not explicitly filter out slow relays then the fillsToRefund object
+    // will contain refunds associated with repaymentChainId 0.
+    expect(data5.fillsToRefund).to.deep.equal({
+      [repaymentChainId]: { [relayer.address]: [fill1, fill2, fill4], [depositor.address]: [fill3] },
+    });
   });
 });
 

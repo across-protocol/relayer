@@ -62,9 +62,9 @@ export interface RelayData {
   amount: BigNumber;
   realizedLpFeePct: BigNumber;
   relayerFeePct: BigNumber;
-  depositId: string;
-  originChainId: string;
-  destinationChainId: string;
+  depositId: number;
+  originChainId: number;
+  destinationChainId: number;
 }
 
 export interface UnfilledDeposit {

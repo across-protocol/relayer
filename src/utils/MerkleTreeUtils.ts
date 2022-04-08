@@ -36,3 +36,5 @@ export async function buildRelayerRefundTree(relayerRefundLeaves: RelayerRefundL
   const hashFn = (input: RelayerRefundLeaf) => utils.keccak256(utils.defaultAbiCoder.encode([paramType!], [input]));
   return new MerkleTree<RelayerRefundLeaf>(relayerRefundLeaves, hashFn);
 }
+
+export { MerkleTree };

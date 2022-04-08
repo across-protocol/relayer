@@ -142,7 +142,6 @@ export class SpokePoolClient {
     this.isUpdated = true;
     this.log("debug", "Client updated!");
   }
-
   public hubPoolClient() {
     return this.rateModelClient.hubPoolClient;
   }

@@ -1,6 +1,6 @@
-import { winston, assign } from "../utils";
+import { winston, assign, buildSlowRelayTree, MerkleTree } from "../utils";
 import { SpokePoolClient, HubPoolClient, MultiCallerClient } from "../clients";
-import { UnfilledDeposits, FillsToRefund } from "../interfaces/SpokePool";
+import { UnfilledDeposits, FillsToRefund, RelayData, UnfilledDeposit } from "../interfaces/SpokePool";
 import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
@@ -80,8 +80,12 @@ export class Dataworker {
             // Note2: All of the deposits returned by `getDepositsForDestinationChain` will include the expected realized
             // lp fee % for the deposit quote time. If this fill does not have the same realized lp fee %, then it will
             // be ignored.
-
-            if (destinationClient.validateFillForDeposit(fill, deposit)) return true;
+            // Note3: FillRelay events emitted by slow relay executions will usually be invalid because the relayer
+            // fee % will be reset to 0 by the SpokePool contract, however we still need to explicitly filter slow
+            // relays out of the relayer refund array because its possible that a deposit is submitted with a relayer
+            // fee % set to 0.
+            if (fill.isSlowRelay) continue;
+            else if (destinationClient.validateFillForDeposit(fill, deposit)) return true;
             else continue;
           }
 
@@ -106,13 +110,40 @@ export class Dataworker {
     };
   }
 
-  async buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
-    this._loadData();
+  async buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): Promise<MerkleTree<RelayData>> | null {
+    const { unfilledDeposits } = this._loadData();
+    // TODO: Use `bundleBlockNumbers` to decide how to filter which blocks to keep in `unfilledDeposits`.
 
-    // For each destination chain ID key in unfilledDeposits
-    //     Order by fillAmountRemaining
-    //     Make Leaf for fill
-    // Construct root
+    if (Object.keys(unfilledDeposits).length === 0) return null;
+    const leaves: RelayData[] = Object.values(unfilledDeposits)
+      .map((deposits: UnfilledDeposit[]) =>
+        deposits.map(
+          (deposit: UnfilledDeposit): RelayData => ({
+            depositor: deposit.deposit.depositor,
+            recipient: deposit.deposit.recipient,
+            destinationToken: deposit.deposit.depositor,
+            amount: deposit.deposit.amount,
+            originChainId: deposit.deposit.originChainId,
+            destinationChainId: deposit.deposit.destinationChainId,
+            realizedLpFeePct: deposit.deposit.realizedLpFeePct,
+            relayerFeePct: deposit.deposit.relayerFeePct,
+            depositId: deposit.deposit.depositId,
+          })
+        )
+      )
+      .flat();
+
+    // Sort leaves deterministically so that the same root is always produced from the same _loadData return value.
+    // The { Deposit ID, origin chain ID } is guaranteed to be unique so we can sort on them.
+    const sortedLeaves = leaves.sort((relayA, relayB) => {
+      // Note: Smaller ID numbers will come first
+      if (relayA.originChainId === relayB.originChainId) return relayA.depositId - relayB.depositId;
+      else return relayA.originChainId - relayB.originChainId;
+    });
+
+    return sortedLeaves.length > 0 ? await buildSlowRelayTree(sortedLeaves) : null;
+
+    // TODO: Figure out how to store merkle trees. IPFS?
   }
 
   async buildRelayerRefundRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
@@ -144,6 +175,12 @@ export class Dataworker {
     // Construct root
   }
 
+  async proposeRootBundle(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
+    // Create roots
+    // Store root + auxillary information useful for executing leaves on some storage layer
+    // Propose roots to HubPool contract.
+  }
+
   async validateRootBundle(
     bundleBlockNumbers: BundleEvaluationBlockNumbers,
     poolRebalanceRoot: string,
@@ -154,5 +191,17 @@ export class Dataworker {
 
     // Construct roots locally using class functions and compare with input roots.
     // If any roots mismatch, efficiently pinpoint the errors to give details to the caller.
+  }
+
+  async executeSlowRelayLeaves() {
+    // TODO:
+  }
+
+  async executePoolRebalanceLeaves() {
+    // TODO:
+  }
+
+  async executeRelayerRefundLeaves() {
+    // TODO:
   }
 }
