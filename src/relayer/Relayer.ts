@@ -95,11 +95,7 @@ export class Relayer {
       });
     });
 
-    this.logger.warn({
-      at: "Relayer",
-      message: "Insufficient balance to fill all relays 💸!",
-      mrkdwn,
-    });
+    this.logger.warn({ at: "Relayer", message: "Insufficient balance to fill all relays 💸!", mrkdwn });
 
     this.clients.tokenClient.clearTokenShortfall();
   }
