@@ -1,12 +1,13 @@
 import { expect, ethers, Contract } from "./utils";
-import { SignerWithAddress, getExecuteSlowRelayParams, buildSlowRelayTree } from "./utils";
-import { buildDeposit, buildFill } from "./utils";
+import { SignerWithAddress, getExecuteSlowRelayParams, buildSlowRelayTree, getFillRelayUpdatedFeeParams, modifyRelayHelper } from "./utils";
+import { buildDeposit, buildFill, buildModifiedFill } from "./utils";
 import { SpokePoolClient, HubPoolClient, RateModelClient } from "../src/clients";
 import { amountToDeposit, repaymentChainId, destinationChainId, originChainId } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { toBN } from "../src/utils";
+import { assert } from "console";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token: Contract;
@@ -212,9 +213,10 @@ describe("Dataworker: Load data used in all functions", async function () {
     });
 
     // Submit fills without matching deposits. These should be ignored by the client.
-    // Note: Switch the deposit data to make fills invalid.
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit2, 0.5);
-    await buildFill(spokePool_2, erc20_2, depositor, depositor, deposit2, 1);
+    // Note: Switch just the relayer fee % to make fills invalid. This also ensures that client is correctly
+    // distinguishing between valid speed up fills with modified relayer fee %'s and invalid fill relay calls
+    // with all correct fill params except for the relayer fee %.
+    await buildFill(spokePool_1, erc20_1, depositor, relayer, { ...deposit2, relayerFeePct: toBN(0) }, 0.5);
     await updateAllClients();
     const data3 = dataworkerInstance._loadData();
     expect(data3.fillsToRefund).to.deep.equal(data2.fillsToRefund);
@@ -287,6 +289,17 @@ describe("Dataworker: Load data used in all functions", async function () {
     expect(data5.fillsToRefund).to.deep.equal({
       [repaymentChainId]: { [relayer.address]: [fill1, fill2, fill4], [depositor.address]: [fill3] },
     });
+
+    // Speed up relays are included. Re-use the same fill information
+    const fill5 = await buildModifiedFill(spokePool_1, depositor, relayer, fill2, 2, 0.1)
+    expect(fill5.totalFilledAmount.gt(fill5.fillAmount), "speed up fill didn't match original deposit")
+    await updateAllClients();
+    // TODO: Uncomment following test once https://github.com/across-protocol/contracts-v2/pull/133 is merged
+    // const data6 = dataworkerInstance._loadData();
+    // expect(data6.fillsToRefund).to.deep.equal({
+    //   [repaymentChainId]: { [relayer.address]: [fill1, fill2, fill4, fill5], [depositor.address]: [fill3] },
+    // });
+
   });
 });
 

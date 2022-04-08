@@ -96,10 +96,10 @@ export class SpokePoolClient {
   validateFillForDeposit(fill: Fill, deposit: Deposit) {
     let isValid = true;
     Object.keys(deposit).forEach((key) => {
-      if (fill[key] && deposit[key].toString() !== fill[key].toString()) {
+      if (fill[key] !== undefined && deposit[key].toString() !== fill[key].toString()) {
         this.log("debug", "Prop mismatch!", { depositVal: deposit[key].toString(), fillValue: fill[key].toString() });
         isValid = false;
-      }
+      }  
     });
     return isValid;
   }
