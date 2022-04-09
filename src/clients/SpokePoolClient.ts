@@ -85,7 +85,11 @@ export class SpokePoolClient {
 
     // Order fills by totalFilledAmount and then return the first fill's full deposit amount minus total filled amount.
     const fillsOrderedByTotalFilledAmount = fills.sort((fillA, fillB) =>
-      fillB.totalFilledAmount.gt(fillA.totalFilledAmount) ? 1 : -1
+      fillB.totalFilledAmount.gt(fillA.totalFilledAmount)
+        ? 1
+        : fillB.totalFilledAmount.lt(fillA.totalFilledAmount)
+        ? -1
+        : 0
     );
     const lastFill = fillsOrderedByTotalFilledAmount[0];
     return lastFill.amount.sub(lastFill.totalFilledAmount);

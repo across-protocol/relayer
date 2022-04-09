@@ -81,10 +81,8 @@ export class Dataworker {
 
     // For each deposit with a matched fill, figure out the unfilled amount that we need to slow relay. We will filter
     // out any deposits that are fully filled, or any deposits that were already slow relayed in a previous epoch.
-    const unfilledDeposits = Object.keys(unfilledDepositsForOriginChain)
-      .map((_originChainIdPlusDepositId: string): UnfilledDeposit => {
-        const _unfilledDeposits = unfilledDepositsForOriginChain[_originChainIdPlusDepositId];
-
+    const unfilledDeposits = Object.values(unfilledDepositsForOriginChain)
+      .map((_unfilledDeposits: UnfilledDeposit[]): UnfilledDeposit => {
         // Remove deposits with no matched fills.
         if (_unfilledDeposits.length === 0) return { unfilledAmount: toBN(0), deposit: undefined };
         // Remove deposits where there isn't a fill with fillAmount == totalFilledAmount && fillAmount > 0. This ensures
@@ -96,7 +94,11 @@ export class Dataworker {
           return { unfilledAmount: toBN(0), deposit: undefined };
         // Take the smallest unfilled amount since each fill can only decrease the unfilled amount.
         _unfilledDeposits.sort((unfilledDepositA, unfilledDepositB) =>
-          unfilledDepositA.unfilledAmount.gt(unfilledDepositB.unfilledAmount) ? 1 : -1
+          unfilledDepositA.unfilledAmount.gt(unfilledDepositB.unfilledAmount)
+            ? 1
+            : unfilledDepositA.unfilledAmount.lt(unfilledDepositB.unfilledAmount)
+            ? -1
+            : 0
         );
         return { unfilledAmount: _unfilledDeposits[0].unfilledAmount, deposit: _unfilledDeposits[0].deposit };
       })
