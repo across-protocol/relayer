@@ -91,8 +91,7 @@ export class MultiCallerClient {
         mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
         groupedTransactions[chainId].forEach((transaction, groupTxIndex) => {
           mrkdwn +=
-            `  ${groupTxIndex + 1}: ${transaction.message || "No message"}:\n` +
-            `      ◦ ${transaction.mrkdwn || "No markdown"}\n`;
+            `  ${groupTxIndex + 1}: ${transaction.message || "No message"}: ` + `${transaction.mrkdwn || "No mrkdwn"}`;
         });
         const transactionHash = (transactionReceipts[chainIndex] as any).value.transactionHash;
         mrkdwn += "tx " + etherscanLink(transactionHash, chainId);

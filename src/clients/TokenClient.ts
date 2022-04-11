@@ -19,17 +19,17 @@ export class TokenClient {
   }
 
   getDataForToken(chainId: number, token: string) {
-    this._validateChainTokenPair(chainId, token);
+    if (!this._hasTokenPairData(chainId, token)) return {};
     return this.tokenData[chainId][token];
   }
 
   getBalance(chainId: number | string, token: string) {
-    this._validateChainTokenPair(chainId, token);
+    if (!this._hasTokenPairData(chainId, token)) return toBN(0);
     return this.tokenData[chainId][token].balance;
   }
 
   getAllowanceOnChain(chainId: number, token: string) {
-    this._validateChainTokenPair(chainId, token);
+    if (!this._hasTokenPairData(chainId, token)) return toBN(0);
     return this.tokenData[chainId][token].allowance;
   }
 
@@ -67,6 +67,8 @@ export class TokenClient {
     Object.keys(this.tokenShortfall).forEach((chainId) =>
       Object.keys(this.tokenShortfall[chainId]).forEach((token) =>
         assign(tokenShortfall, [chainId, token], {
+          ballance: this.getBalance(chainId, token),
+          needed: this.getShortfallTotalRequirement(chainId, token),
           shortfall: this.getShortfallTotalRequirement(chainId, token).sub(this.getBalance(chainId, token)),
           deposits: this.getShortfallDeposits(chainId, token),
         })
@@ -96,7 +98,7 @@ export class TokenClient {
       return;
     }
 
-    let mrkdwn = "Approval transactions: \n";
+    let mrkdwn = "*Approval transactions:* \n";
     for (const { token, chainId } of tokensToApprove) {
       const targetSpokePool = this.spokePoolClients[chainId].spokePool;
       const contract = new Contract(token, ERC20.abi, targetSpokePool.signer);
@@ -104,7 +106,7 @@ export class TokenClient {
       const receipt = await tx.wait();
       mrkdwn +=
         ` - Approved SpokePool ${etherscanLink(targetSpokePool.address, chainId)} ` +
-        `to spend ${await contract.symbol()} ${etherscanLink(token, chainId)} on ${getNetworkName(chainId)}.` +
+        `to spend ${await contract.symbol()} ${etherscanLink(token, chainId)} on ${getNetworkName(chainId)}. ` +
         `tx ${etherscanLink(receipt.transactionHash, chainId)}\n`;
     }
     this.logger.info({ at: "tokenClient", message: `Approved whitelisted tokens! 💰`, mrkdwn });
@@ -139,9 +141,12 @@ export class TokenClient {
 
     return { tokenData, chainId: spokePoolClient.chainId };
   }
-  private _validateChainTokenPair(chainId: number | string, token: string) {
-    if (this.tokenData === {}) throw new Error("Token data not initialized");
-    if (!this.tokenData[chainId]) throw new Error(`No data for chain ${chainId}`);
-    if (!this.tokenData[chainId][token]) throw new Error(`No token data for chain ${chainId} and token ${token}`);
+  private _hasTokenPairData(chainId: number | string, token: string) {
+    let hasData = true;
+    if (this.tokenData === {}) hasData = false;
+    else if (!this.tokenData[chainId]) hasData = false;
+    else if (!this.tokenData[chainId][token]) hasData = false;
+    if (!hasData) this.logger.warn({ at: "TokenClient", message: `No data on ${getNetworkName(chainId)} -> ${token}` });
+    return hasData;
   }
 }

@@ -83,14 +83,18 @@ export class Relayer {
 
   private handleTokenShortfall() {
     const tokenShortfall = this.clients.tokenClient.getTokenShortfall();
+
     let mrkdwn = "";
     Object.keys(tokenShortfall).forEach((chainId) => {
-      mrkdwn += `Shortfall on ${getNetworkName(chainId)}:\n`;
+      mrkdwn += `*Shortfall on ${getNetworkName(chainId)}:\n*`;
       Object.keys(tokenShortfall[chainId]).forEach((token) => {
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfo(chainId, token);
+        const formatFunction = createFormatFunction(2, 4, false, decimals);
         mrkdwn +=
           ` - ${symbol} cumulative shortfall of ` +
-          `${createFormatFunction(2, 4, false, decimals)(tokenShortfall[chainId][token].shortfall)}. ` +
+          `${formatFunction(tokenShortfall[chainId][token].shortfall)} ` +
+          `(have ${formatFunction(tokenShortfall[chainId][token].ballance)} but need ` +
+          `${formatFunction(tokenShortfall[chainId][token].needed)}). ` +
           `This is blocking deposits: ${tokenShortfall[chainId][token].deposits}\n`;
       });
     });
