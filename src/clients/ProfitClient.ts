@@ -37,7 +37,7 @@ export class ProfitClient {
 
   getPriceOfToken(token: string) {
     if (!this.tokenPrices[token]) {
-      this.logger.warn({ at: "ProfitClient", message: `Token ${token} not found` });
+      this.logger.warn({ at: "ProfitClient", message: `Token ${token} not found in state. Using 0` });
       return toBN(0);
     }
     return this.tokenPrices[token];
@@ -48,19 +48,19 @@ export class ProfitClient {
     const tokenPriceInUsd = this.getPriceOfToken(l1Token);
     const fillRevenueInRelayedToken = deposit.relayerFeePct.mul(fillAmount).div(toBN(10).pow(decimals));
     const fillRevenueInUsd = fillRevenueInRelayedToken.mul(tokenPriceInUsd);
-    const discount = toBN(1).sub(this.relayerDiscount);
+    const discount = toBNWei(1).sub(this.relayerDiscount);
     const minimumAcceptableRevenue = chainIdToMinRevenue[deposit.destinationChainId].mul(discount).div(toBN(1e18));
     const fillProfitable = fillRevenueInUsd.gte(minimumAcceptableRevenue);
     this.logger.debug({
       at: "ProfitClient",
-      message: "considered fill profitability",
+      message: "Considered fill profitability",
       deposit,
       fillAmount,
       tokenPriceInUsd,
       fillRevenueInRelayedToken,
       fillRevenueInUsd,
       minimumAcceptableRevenue,
-      discount,
+      discount: this.relayerDiscount,
       fillProfitable,
     });
     return fillProfitable;
@@ -71,13 +71,15 @@ export class ProfitClient {
   }
 
   async update() {
-    // const l1Tokens = this.hubPoolClient.getL1Tokens();
-    const l1Tokens = [
-      { address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", symbol: "WETH", decimals: 18 },
-      { address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", symbol: "USDC", decimals: 6 },
+    const l1Tokens = this.hubPoolClient.getL1Tokens();
+    const l1TokensOverride = [
+      { address: "0xc778417E063141139Fce010982780140Aa0cD5Ab", symbol: "WETH", decimals: 18 },
+      { address: "0x4DBCdF9B62e891a7cec5A2568C3F4FAF9E8Abe2b", symbol: "USDC", decimals: 6 },
     ];
     this.logger.debug({ at: "ProfitClient", message: "Updating client", l1Tokens });
-    const prices = await Promise.allSettled(l1Tokens.map((l1Token: L1Token) => this.getTokenPrice(l1Token.address)));
+    const prices = await Promise.allSettled(
+      l1TokensOverride.map((l1Token: L1Token) => this.getTokenPrice(l1Token.address))
+    );
 
     let errors = [];
     for (const [index, priceResponse] of prices.entries()) {
@@ -87,7 +89,7 @@ export class ProfitClient {
     if (errors.length > 0) {
       let mrkdwn = "The following L1 token prices could not be fetched:\n";
       errors.forEach((token: L1Token) => {
-        mrkdwn += `- ${token.symbol} Not found. Using last known price of ${this.getPriceOfToken(token.address)}\n`;
+        mrkdwn += `- ${token.symbol} Not found. Using last known price of ${this.getPriceOfToken(token.address)}.\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
     }
