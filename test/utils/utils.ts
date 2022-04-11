@@ -317,11 +317,11 @@ export async function buildModifiedFill(
     depositor: fillToBuildFrom.depositor,
     recipient: fillToBuildFrom.recipient,
     destinationToken: fillToBuildFrom.destinationToken,
-    amount: fillToBuildFrom.amount.toString(),
+    amount: fillToBuildFrom.amount,
     originChainId: fillToBuildFrom.originChainId.toString(),
     destinationChainId: fillToBuildFrom.destinationChainId.toString(),
-    realizedLpFeePct: fillToBuildFrom.realizedLpFeePct.toString(),
-    relayerFeePct: fillToBuildFrom.relayerFeePct.toString(),
+    realizedLpFeePct: fillToBuildFrom.realizedLpFeePct,
+    relayerFeePct: fillToBuildFrom.relayerFeePct,
     depositId: fillToBuildFrom.depositId.toString(),
   };
   const { signature } = await utils.modifyRelayHelper(
@@ -350,13 +350,13 @@ export async function buildModifiedFill(
   const lastEvent = events[events.length - 1];
   if (lastEvent.args)
     return {
-      relayHash: lastEvent.args.relayHash,
       amount: lastEvent.args.amount,
       totalFilledAmount: lastEvent.args.totalFilledAmount,
       fillAmount: lastEvent.args.fillAmount,
       repaymentChainId: Number(lastEvent.args.repaymentChainId),
       originChainId: Number(lastEvent.args.originChainId),
       relayerFeePct: lastEvent.args.relayerFeePct,
+      appliedRelayerFeePct: lastEvent.args.appliedRelayerFeePct,
       realizedLpFeePct: lastEvent.args.realizedLpFeePct,
       depositId: lastEvent.args.depositId,
       destinationToken: lastEvent.args.destinationToken,

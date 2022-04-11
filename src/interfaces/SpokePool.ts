@@ -15,13 +15,13 @@ export interface Deposit {
   speedUpSignature?: string | undefined; // appended after initialization, if deposit was speedup (not part of Deposit event).
 }
 export interface Fill {
-  relayHash: string;
   amount: BigNumber;
   totalFilledAmount: BigNumber;
   fillAmount: BigNumber;
   repaymentChainId: number;
   originChainId: number;
   relayerFeePct: BigNumber;
+  appliedRelayerFeePct: BigNumber;
   realizedLpFeePct: BigNumber;
   depositId: number;
   destinationToken: string;

@@ -88,11 +88,11 @@ describe("Dataworker: Build merkle roots", async function () {
         depositor: _deposit.depositor,
         recipient: _deposit.recipient,
         destinationToken: _deposit.depositor,
-        amount: _deposit.amount.toString(),
+        amount: _deposit.amount,
         originChainId: _deposit.originChainId.toString(),
         destinationChainId: _deposit.destinationChainId.toString(),
-        realizedLpFeePct: _deposit.realizedLpFeePct.toString(),
-        relayerFeePct: _deposit.relayerFeePct.toString(),
+        realizedLpFeePct: _deposit.realizedLpFeePct,
+        relayerFeePct: _deposit.relayerFeePct,
         depositId: _deposit.depositId.toString(),
       };
     });

@@ -154,11 +154,11 @@ describe("Dataworker: Load data used in all functions", async function () {
         depositor: fill3.depositor,
         recipient: fill3.recipient,
         destinationToken: fill3.destinationToken,
-        amount: fill3.amount.toString(),
+        amount: fill3.amount,
         originChainId: fill3.originChainId.toString(),
         destinationChainId: fill3.destinationChainId.toString(),
-        realizedLpFeePct: fill3.realizedLpFeePct.toString(),
-        relayerFeePct: fill3.relayerFeePct.toString(),
+        realizedLpFeePct: fill3.realizedLpFeePct,
+        relayerFeePct: fill3.relayerFeePct,
         depositId: fill3.depositId.toString(),
       },
     ];
@@ -270,11 +270,11 @@ describe("Dataworker: Load data used in all functions", async function () {
         depositor: fill4.depositor,
         recipient: fill4.recipient,
         destinationToken: fill4.destinationToken,
-        amount: fill4.amount.toString(),
+        amount: fill4.amount,
         originChainId: fill4.originChainId.toString(),
         destinationChainId: fill4.destinationChainId.toString(),
-        realizedLpFeePct: fill4.realizedLpFeePct.toString(),
-        relayerFeePct: fill4.relayerFeePct.toString(),
+        realizedLpFeePct: fill4.realizedLpFeePct,
+        relayerFeePct: fill4.relayerFeePct,
         depositId: fill4.depositId.toString(),
       },
     ];
@@ -304,11 +304,10 @@ describe("Dataworker: Load data used in all functions", async function () {
     const fill5 = await buildModifiedFill(spokePool_1, depositor, relayer, fill2, 2, 0.1);
     expect(fill5.totalFilledAmount.gt(fill5.fillAmount), "speed up fill didn't match original deposit");
     await updateAllClients();
-    // TODO: Uncomment following test once https://github.com/across-protocol/contracts-v2/pull/133 is merged
-    // const data6 = dataworkerInstance._loadData();
-    // expect(data6.fillsToRefund).to.deep.equal({
-    //   [repaymentChainId]: { [relayer.address]: [fill1, fill2, fill4, fill5], [depositor.address]: [fill3] },
-    // });
+    const data6 = dataworkerInstance._loadData();
+    expect(data6.fillsToRefund).to.deep.equal({
+      [repaymentChainId]: { [relayer.address]: [fill1, fill2, fill4, fill5], [depositor.address]: [fill3] },
+    });
   });
 });
 
