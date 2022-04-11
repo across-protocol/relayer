@@ -88,14 +88,20 @@ describe("Dataworker: Build merkle roots", async function () {
         depositor: _deposit.depositor,
         recipient: _deposit.recipient,
         destinationToken: _deposit.depositor,
-        amount: _deposit.amount.toString(),
+        amount: _deposit.amount,
         originChainId: _deposit.originChainId.toString(),
         destinationChainId: _deposit.destinationChainId.toString(),
-        realizedLpFeePct: _deposit.realizedLpFeePct.toString(),
-        relayerFeePct: _deposit.relayerFeePct.toString(),
+        realizedLpFeePct: _deposit.realizedLpFeePct,
+        relayerFeePct: _deposit.relayerFeePct,
         depositId: _deposit.depositId.toString(),
       };
     });
+
+    // Add fills for each deposit so dataworker includes deposits as slow relays:
+    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.1);
+    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 0.1);
+    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit3, 0.1);
+    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit4, 0.1);
 
     // Returns expected merkle root where leaves are ordered by origin chain ID and then deposit ID
     // (ascending).

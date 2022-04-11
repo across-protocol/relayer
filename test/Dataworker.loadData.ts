@@ -1,6 +1,6 @@
 import { expect, ethers, Contract } from "./utils";
-import { SignerWithAddress, getExecuteSlowRelayParams, buildSlowRelayTree } from "./utils";
-import { buildDeposit, buildFill } from "./utils";
+import { SignerWithAddress, buildSlowRelayTree } from "./utils";
+import { buildDeposit, buildFill, buildModifiedFill } from "./utils";
 import { SpokePoolClient, HubPoolClient, RateModelClient } from "../src/clients";
 import { amountToDeposit, repaymentChainId, destinationChainId, originChainId } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
@@ -41,7 +41,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     // Before any deposits, returns empty dictionaries.
     await updateAllClients();
     expect(dataworkerInstance._loadData()).to.deep.equal({
-      unfilledDeposits: {},
+      unfilledDeposits: [],
       fillsToRefund: {},
     });
   });
@@ -69,16 +69,13 @@ describe("Dataworker: Load data used in all functions", async function () {
       amountToDeposit
     );
 
-    // One completely unfilled deposit per destination chain ID.
+    // Unfilled deposits are ignored.
     await updateAllClients();
     const data1 = dataworkerInstance._loadData();
-    expect(data1.unfilledDeposits).to.deep.equal({
-      [destinationChainId]: [{ unfilledAmount: amountToDeposit, deposit: deposit1 }],
-      [originChainId]: [{ unfilledAmount: amountToDeposit, deposit: deposit2 }],
-    });
+    expect(data1.unfilledDeposits).to.deep.equal([]);
 
-    // Two unfilled deposits per destination chain ID.
-    const deposit3 = await buildDeposit(
+    // Two deposits with no fills per destination chain ID.
+    await buildDeposit(
       rateModelClient,
       hubPoolClient,
       spokePool_1,
@@ -88,7 +85,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       destinationChainId,
       amountToDeposit.mul(toBN(2))
     );
-    const deposit4 = await buildDeposit(
+    await buildDeposit(
       rateModelClient,
       hubPoolClient,
       spokePool_2,
@@ -100,16 +97,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     );
     await updateAllClients();
     const data2 = dataworkerInstance._loadData();
-    expect(data2.unfilledDeposits).to.deep.equal({
-      [destinationChainId]: [
-        { unfilledAmount: amountToDeposit, deposit: deposit1 },
-        { unfilledAmount: amountToDeposit.mul(toBN(2)), deposit: deposit3 },
-      ],
-      [originChainId]: [
-        { unfilledAmount: amountToDeposit, deposit: deposit2 },
-        { unfilledAmount: amountToDeposit.mul(toBN(2)), deposit: deposit4 },
-      ],
-    });
+    expect(data2.unfilledDeposits).to.deep.equal([]);
 
     // Fills that don't match deposits do not affect unfilledAmount counter.
     // Note: We switch the spoke pool address in the following fills from the fills that eventually do match with
@@ -117,38 +105,26 @@ describe("Dataworker: Load data used in all functions", async function () {
     await buildFill(spokePool_1, erc20_2, depositor, relayer, deposit1, 0.5);
     await buildFill(spokePool_2, erc20_1, depositor, relayer, deposit2, 0.25);
 
-    // Two unfilled deposits (one partially filled) per destination chain ID.
+    // One partially filled deposit per destination chain ID.
     const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.5);
     const fill2 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 0.25);
     await updateAllClients();
     const data3 = dataworkerInstance._loadData();
-    expect(data3.unfilledDeposits).to.deep.equal({
-      [destinationChainId]: [
-        { unfilledAmount: amountToDeposit.sub(fill1.fillAmount), deposit: deposit1 },
-        { unfilledAmount: amountToDeposit.mul(toBN(2)), deposit: deposit3 },
-      ],
-      [originChainId]: [
-        { unfilledAmount: amountToDeposit.sub(fill2.fillAmount), deposit: deposit2 },
-        { unfilledAmount: amountToDeposit.mul(toBN(2)), deposit: deposit4 },
-      ],
-    });
+    expect(data3.unfilledDeposits).to.deep.equal([
+      { unfilledAmount: amountToDeposit.sub(fill1.fillAmount), deposit: deposit1 },
+      { unfilledAmount: amountToDeposit.sub(fill2.fillAmount), deposit: deposit2 },
+    ]);
 
-    // One completely filled deposit per destination chain ID.
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit3, 1);
-    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit4, 1);
-    await updateAllClients();
-    const data4 = dataworkerInstance._loadData();
-    expect(data4.unfilledDeposits).to.deep.equal({
-      [destinationChainId]: [{ unfilledAmount: amountToDeposit.sub(fill1.fillAmount), deposit: deposit1 }],
-      [originChainId]: [{ unfilledAmount: amountToDeposit.sub(fill2.fillAmount), deposit: deposit2 }],
-    });
-
-    // All deposits are fulfilled.
+    // All deposits are fulfilled; unfilled deposits that are fully filled should be ignored.
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 1);
     await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 1);
     await updateAllClients();
     const data5 = dataworkerInstance._loadData();
-    expect(data5.unfilledDeposits).to.deep.equal({});
+    expect(data5.unfilledDeposits).to.deep.equal([]);
+
+    // TODO: Add test where deposit has matched fills but none were the first ever fill for that deposit (i.e. where
+    // fill.amount != fill.totalAmountFilled). This can only be done after adding in block range constraints on Fill
+    // events queried. Also test that fill amounts equal to zero don't count as first fills.
 
     // Fill events emitted by slow relays are included in unfilled amount calculations.
     // Note: submit another deposit that resembles deposit2 except that the relayer fee % is set to 0. This is crucial
@@ -171,11 +147,11 @@ describe("Dataworker: Load data used in all functions", async function () {
         depositor: fill3.depositor,
         recipient: fill3.recipient,
         destinationToken: fill3.destinationToken,
-        amount: fill3.amount.toString(),
+        amount: fill3.amount,
         originChainId: fill3.originChainId.toString(),
         destinationChainId: fill3.destinationChainId.toString(),
-        realizedLpFeePct: fill3.realizedLpFeePct.toString(),
-        relayerFeePct: fill3.relayerFeePct.toString(),
+        realizedLpFeePct: fill3.realizedLpFeePct,
+        relayerFeePct: fill3.relayerFeePct,
         depositId: fill3.depositId.toString(),
       },
     ];
@@ -195,7 +171,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     );
     await updateAllClients();
     const data6 = dataworkerInstance._loadData();
-    expect(data6.unfilledDeposits).to.deep.equal({});
+    expect(data6.unfilledDeposits).to.deep.equal([]);
   });
   it("Returns fills to refund", async function () {
     await updateAllClients();
@@ -240,9 +216,10 @@ describe("Dataworker: Load data used in all functions", async function () {
     });
 
     // Submit fills without matching deposits. These should be ignored by the client.
-    // Note: Switch the deposit data to make fills invalid.
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit2, 0.5);
-    await buildFill(spokePool_2, erc20_2, depositor, depositor, deposit2, 1);
+    // Note: Switch just the relayer fee % to make fills invalid. This also ensures that client is correctly
+    // distinguishing between valid speed up fills with modified relayer fee %'s and invalid fill relay calls
+    // with all correct fill params except for the relayer fee %.
+    await buildFill(spokePool_1, erc20_1, depositor, relayer, { ...deposit2, relayerFeePct: toBN(0) }, 0.5);
     await updateAllClients();
     const data3 = dataworkerInstance._loadData();
     expect(data3.fillsToRefund).to.deep.equal(data2.fillsToRefund);
@@ -286,11 +263,11 @@ describe("Dataworker: Load data used in all functions", async function () {
         depositor: fill4.depositor,
         recipient: fill4.recipient,
         destinationToken: fill4.destinationToken,
-        amount: fill4.amount.toString(),
+        amount: fill4.amount,
         originChainId: fill4.originChainId.toString(),
         destinationChainId: fill4.destinationChainId.toString(),
-        realizedLpFeePct: fill4.realizedLpFeePct.toString(),
-        relayerFeePct: fill4.relayerFeePct.toString(),
+        realizedLpFeePct: fill4.realizedLpFeePct,
+        relayerFeePct: fill4.relayerFeePct,
         depositId: fill4.depositId.toString(),
       },
     ];
@@ -314,6 +291,15 @@ describe("Dataworker: Load data used in all functions", async function () {
     // will contain refunds associated with repaymentChainId 0.
     expect(data5.fillsToRefund).to.deep.equal({
       [repaymentChainId]: { [relayer.address]: [fill1, fill2, fill4], [depositor.address]: [fill3] },
+    });
+
+    // Speed up relays are included. Re-use the same fill information
+    const fill5 = await buildModifiedFill(spokePool_1, depositor, relayer, fill2, 2, 0.1);
+    expect(fill5.totalFilledAmount.gt(fill5.fillAmount), "speed up fill didn't match original deposit");
+    await updateAllClients();
+    const data6 = dataworkerInstance._loadData();
+    expect(data6.fillsToRefund).to.deep.equal({
+      [repaymentChainId]: { [relayer.address]: [fill1, fill2, fill4, fill5], [depositor.address]: [fill3] },
     });
   });
 });

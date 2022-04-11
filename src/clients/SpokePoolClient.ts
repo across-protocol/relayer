@@ -48,7 +48,7 @@ export class SpokePoolClient {
     return Object.keys(this.depositRoutes);
   }
 
-  getFillsForOriginChain(originChainId: number) {
+  getFillsForOriginChain(originChainId: number): Fill[] {
     return this.fills.filter((fill: Fill) => fill.originChainId === originChainId);
   }
 
@@ -70,13 +70,29 @@ export class SpokePoolClient {
     return { ...deposit, speedUpSignature: maxSpeedUp.depositorSignature, relayerFeePct: maxSpeedUp.newRelayerFeePct };
   }
 
+  getDepositForFill(fill: Fill): Deposit | undefined {
+    return this.getDepositsForDestinationChain(fill.destinationChainId).find((deposit) =>
+      this.validateFillForDeposit(fill, deposit)
+    );
+  }
+
   getValidUnfilledAmountForDeposit(deposit: Deposit): BigNumber {
     const fills = this.getFillsForOriginChain(deposit.originChainId)
       .filter((fill) => fill.depositId === deposit.depositId) // Only select the associated fill for the deposit.
       .filter((fill) => this.validateFillForDeposit(fill, deposit)); // Validate that the fill was valid for the deposit.
 
-    if (!fills.length) return deposit.amount; // If no fills then the full amount is remaining.
-    return deposit.amount.sub(fills.reduce((total: BigNumber, fill: Fill) => total.add(fill.fillAmount), toBN(0)));
+    if (fills.length === 0) return deposit.amount; // If no fills then the full amount is remaining.
+
+    // Order fills by totalFilledAmount and then return the first fill's full deposit amount minus total filled amount.
+    const fillsOrderedByTotalFilledAmount = fills.sort((fillA, fillB) =>
+      fillB.totalFilledAmount.gt(fillA.totalFilledAmount)
+        ? 1
+        : fillB.totalFilledAmount.lt(fillA.totalFilledAmount)
+        ? -1
+        : 0
+    );
+    const lastFill = fillsOrderedByTotalFilledAmount[0];
+    return lastFill.amount.sub(lastFill.totalFilledAmount);
   }
 
   // Ensure that each deposit element is included with the same value in the fill. This includes all elements defined
@@ -84,7 +100,7 @@ export class SpokePoolClient {
   validateFillForDeposit(fill: Fill, deposit: Deposit) {
     let isValid = true;
     Object.keys(deposit).forEach((key) => {
-      if (fill[key] && deposit[key].toString() !== fill[key].toString()) {
+      if (fill[key] !== undefined && deposit[key].toString() !== fill[key].toString()) {
         this.log("debug", "Prop mismatch!", { depositVal: deposit[key].toString(), fillValue: fill[key].toString() });
         isValid = false;
       }
