@@ -1,11 +1,5 @@
 import { expect, ethers, Contract } from "./utils";
-import {
-  SignerWithAddress,
-  getExecuteSlowRelayParams,
-  buildSlowRelayTree,
-  getFillRelayUpdatedFeeParams,
-  modifyRelayHelper,
-} from "./utils";
+import { SignerWithAddress, buildSlowRelayTree } from "./utils";
 import { buildDeposit, buildFill, buildModifiedFill } from "./utils";
 import { SpokePoolClient, HubPoolClient, RateModelClient } from "../src/clients";
 import { amountToDeposit, repaymentChainId, destinationChainId, originChainId } from "./constants";
@@ -13,7 +7,6 @@ import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { toBN } from "../src/utils";
-import { assert } from "console";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token: Contract;
