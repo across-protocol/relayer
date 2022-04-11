@@ -67,7 +67,7 @@ export class TokenClient {
     Object.keys(this.tokenShortfall).forEach((chainId) =>
       Object.keys(this.tokenShortfall[chainId]).forEach((token) =>
         assign(tokenShortfall, [chainId, token], {
-          ballance: this.getBalance(chainId, token),
+          balance: this.getBalance(chainId, token),
           needed: this.getShortfallTotalRequirement(chainId, token),
           shortfall: this.getShortfallTotalRequirement(chainId, token).sub(this.getBalance(chainId, token)),
           deposits: this.getShortfallDeposits(chainId, token),

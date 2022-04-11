@@ -29,27 +29,31 @@ describe("TokenClient: Token shortfall", async function () {
     expect(tokenClient.getTokenShortfall()).to.deep.equal({});
 
     // Mint token balance to 69. Try and fill a deposit of 420. There should be a token shortfall of 420-69 = 351.
-    await erc20_2.mint(owner.address, toBNWei("69"));
+    const balance = toBNWei(69);
+    await erc20_2.mint(owner.address, balance);
     await updateAllClients();
     const depositId = 1;
-
+    let needed = toBNWei(420);
+    let shortfall = needed.sub(balance);
     tokenClient.captureTokenShortfall(destinationChainId, erc20_2.address, depositId, toBNWei(420));
     expect(tokenClient.getTokenShortfall()).to.deep.equal({
-      [destinationChainId]: { [erc20_2.address]: { deposits: [depositId], shortfall: toBNWei(351) } },
+      [destinationChainId]: { [erc20_2.address]: { deposits: [depositId], balance, needed, shortfall } },
     });
 
     // A subsequent shortfall deposit of 42 should add to the token shortfall and append the deposit id as 351+42 = 393.
     const depositId2 = 2;
 
     tokenClient.captureTokenShortfall(destinationChainId, erc20_2.address, depositId2, toBNWei(42));
+    needed = needed.add(toBNWei(42));
+    shortfall = needed.sub(balance);
     expect(tokenClient.getTokenShortfall()).to.deep.equal({
-      [destinationChainId]: { [erc20_2.address]: { deposits: [depositId, depositId2], shortfall: toBNWei(393) } },
+      [destinationChainId]: { [erc20_2.address]: { deposits: [depositId, depositId2], balance, needed, shortfall } },
     });
 
     // Updating the client should not impact anything.
     await updateAllClients();
     expect(tokenClient.getTokenShortfall()).to.deep.equal({
-      [destinationChainId]: { [erc20_2.address]: { deposits: [depositId, depositId2], shortfall: toBNWei(393) } },
+      [destinationChainId]: { [erc20_2.address]: { deposits: [depositId, depositId2], balance, needed, shortfall } },
     });
   });
 });
