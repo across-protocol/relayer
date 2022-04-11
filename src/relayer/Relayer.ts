@@ -21,12 +21,17 @@ export class Relayer {
     else this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
 
     // Iterate over all unfilled deposits. For each unfilled deposit: a) check that the token balance client has enough
-    // balance to fill the unfilled amount. b) if the token balance client has enough balance, fill the unfilled amount.
-    // If not enough ballance add the shortfall to the shortfall tracker to produce an appropriate log at end of execution.
+    // balance to fill the unfilled amount. b) the fill is profitable. If both hold true then fill the unfilled amount.
+    // If not enough ballance add the shortfall to the shortfall tracker to produce an appropriate log. If unprofitable
+    // then add the unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
     for (const { deposit, unfilledAmount } of unfilledDeposits) {
-      if (this.clients.tokenClient.getBalance(deposit.destinationChainId, deposit.destinationToken).gte(unfilledAmount))
-        this.fillRelay(deposit, unfilledAmount);
-      else {
+      if (this.clients.tokenClient.hasSufficientBalanceForFill(deposit, unfilledAmount)) {
+        if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount)) {
+          this.fillRelay(deposit, unfilledAmount);
+        } else {
+          this.clients.profitClient.captureUnprofitableFill(deposit, unfilledAmount);
+        }
+      } else {
         this.clients.tokenClient.captureTokenShortfallForDeposit(deposit, unfilledAmount);
         // TODO: this should also execute a 0 sized fill.
       }

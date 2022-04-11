@@ -45,6 +45,10 @@ export class TokenClient {
     return this.tokenShortfall?.[chainId]?.[token]?.deposits || [];
   }
 
+  hasSufficientBalanceForFill(deposit: Deposit, fillAmount: BigNumber) {
+    return this.getBalance(deposit.destinationChainId, deposit.destinationToken).gte(fillAmount);
+  }
+
   // If the relayer tries to execute a relay but does not have enough tokens to fully fill it it will capture the
   // shortfall by calling this method. This will simply track the information for logging purposes.
   captureTokenShortfall(chainId: number, token: string, depositId: number, unfilledAmount: BigNumber) {
