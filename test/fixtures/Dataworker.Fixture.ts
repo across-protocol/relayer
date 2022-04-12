@@ -40,7 +40,7 @@ export async function setupDataworker(ethers: any): Promise<{
   // Enable deposit routes for second L2 tokens so relays can be sent between spoke pool 1 <--> 2.
   await enableRoutes(spokePool_1, [{ originToken: erc20_2.address, destinationChainId: destinationChainId }]);
   await enableRoutes(spokePool_2, [{ originToken: erc20_1.address, destinationChainId: originChainId }]);
-  
+
   // For each chain, enable routes to both erc20's so that we can fill relays
   await enableRoutesOnHubPool(hubPool, [
     { destinationChainId: originChainId, l1Token: l1Token_1, destinationToken: erc20_1 },

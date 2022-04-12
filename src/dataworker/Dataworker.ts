@@ -1,4 +1,14 @@
-import { winston, assign, buildSlowRelayTree, MerkleTree, toBN, RelayerRefundLeaf, BigNumber, buildRelayerRefundTree, toBNWei } from "../utils";
+import {
+  winston,
+  assign,
+  buildSlowRelayTree,
+  MerkleTree,
+  toBN,
+  RelayerRefundLeaf,
+  BigNumber,
+  buildRelayerRefundTree,
+  toBNWei,
+} from "../utils";
 import { SpokePoolClient, HubPoolClient, MultiCallBundler } from "../clients";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill } from "../interfaces/SpokePool";
 import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";
@@ -163,7 +173,7 @@ export class Dataworker {
         const refunds: { [refundAddress: string]: BigNumber } = {};
         fillsToRefund[repaymentChainId][l2TokenAddress].forEach((fill: Fill) => {
           const existingFillAmountForRelayer = refunds[fill.relayer] ? refunds[fill.relayer] : toBN(0);
-          const currentRefundAmount = fill.fillAmount.mul(toBNWei(1).sub(fill.realizedLpFeePct)).div(toBNWei(1))
+          const currentRefundAmount = fill.fillAmount.mul(toBNWei(1).sub(fill.realizedLpFeePct)).div(toBNWei(1));
           assign(refunds, [fill.relayer], existingFillAmountForRelayer.add(currentRefundAmount));
         });
         // Sort leaves deterministically so that the same root is always produced from the same _loadData return value.
@@ -189,12 +199,11 @@ export class Dataworker {
     if (leaves.length === 0) return null;
     leaves.sort((leafA, leafB) => {
       if (!leafA.chainId.eq(leafB.chainId)) {
-        return leafA.chainId.sub(leafB.chainId).toNumber()
-      }
-      else if (leafA.l2TokenAddress.localeCompare(leafB.l2TokenAddress) !== 0) {
-        return leafA.l2TokenAddress.localeCompare(leafB.l2TokenAddress)
-      } else throw new Error("TODO: Implement tertiary sorting of leaves")
-    })
+        return leafA.chainId.sub(leafB.chainId).toNumber();
+      } else if (leafA.l2TokenAddress.localeCompare(leafB.l2TokenAddress) !== 0) {
+        return leafA.l2TokenAddress.localeCompare(leafB.l2TokenAddress);
+      } else throw new Error("TODO: Implement tertiary sorting of leaves");
+    });
     const sortedLeaves = leaves.map((leaf: RelayerRefundLeaf, i: number) => {
       return { ...leaf, leafId: toBN(i) };
     });
