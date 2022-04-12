@@ -134,9 +134,6 @@ describe("Dataworker: Load data used in all functions", async function () {
     // events queried. Also test that fill amounts equal to zero don't count as first fills.
 
     // Fill events emitted by slow relays are included in unfilled amount calculations.
-    // Note: submit another deposit that resembles deposit2 except that the relayer fee % is set to 0. This is crucial
-    // for this test since all slow relay executions will emit a relayerFeePct = 0, and we want to test that the
-    // dataworker client includes slow relay executions when computing a deposit's unfilled amount.
     const deposit5 = await buildDeposit(
       rateModelClient,
       hubPoolClient,
@@ -145,10 +142,17 @@ describe("Dataworker: Load data used in all functions", async function () {
       l1Token_1,
       depositor,
       originChainId,
-      amountToDeposit,
-      toBN(0)
+      amountToDeposit
     );
     const fill3 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit5, 0.25);
+    
+    // One unfilled deposit that we're going to slow fill:
+    await updateAllClients();
+    const data6 = dataworkerInstance._loadData();
+    expect(data6.unfilledDeposits).to.deep.equal([
+      { unfilledAmount: amountToDeposit.sub(fill3.fillAmount), deposit: deposit5 },
+    ]);
+
     const slowRelays = [
       {
         depositor: fill3.depositor,
@@ -176,9 +180,11 @@ describe("Dataworker: Load data used in all functions", async function () {
       "0",
       [] // Proof for tree with 1 leaf is empty
     );
+
+    // The unfilled deposit has now been fully filled.
     await updateAllClients();
-    const data6 = dataworkerInstance._loadData();
-    expect(data6.unfilledDeposits).to.deep.equal([]);
+    const data7 = dataworkerInstance._loadData();
+    expect(data7.unfilledDeposits).to.deep.equal([]);
   });
   it("Returns fills to refund", async function () {
     await updateAllClients();
@@ -248,9 +254,6 @@ describe("Dataworker: Load data used in all functions", async function () {
     expect(data4.fillsToRefund).to.deep.equal(data2.fillsToRefund);
 
     // Fill events emitted by slow relays should be ignored.
-    // Note: submit another deposit that resembles deposit2 except that the relayer fee % is set to 0. This is crucial
-    // for this test since all slow relay executions will emit a relayerFeePct = 0, and we want to test that the
-    // dataworker client does not count any relays that do match a deposit but originate from slow relays.
     const deposit3 = await buildDeposit(
       rateModelClient,
       hubPoolClient,
@@ -260,7 +263,6 @@ describe("Dataworker: Load data used in all functions", async function () {
       depositor,
       originChainId,
       amountToDeposit,
-      toBN(0)
     );
     const fill3 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit3, 0.25);
     const slowRelays = [

@@ -16,7 +16,6 @@ import { amountToDeposit, destinationChainId, originChainId } from "./constants"
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { RelayerRefundLeaf } from "../src/utils";
 import { Deposit } from "../src/interfaces/SpokePool";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
