@@ -1,4 +1,4 @@
-import { winston, assign, buildSlowRelayTree, MerkleTree, toBN } from "../utils";
+import { winston, assign, buildSlowRelayTree, MerkleTree, toBN, RelayerRefundLeaf, BigNumber, buildRelayerRefundTree, toBNWei } from "../utils";
 import { SpokePoolClient, HubPoolClient, MultiCallBundler } from "../clients";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill } from "../interfaces/SpokePool";
 import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";
@@ -19,6 +19,8 @@ export class Dataworker {
     unfilledDeposits: UnfilledDeposit[];
     fillsToRefund: FillsToRefund;
   } {
+    if (!this.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
+
     const unfilledDepositsForOriginChain: { [originChainIdPlusDepositId: string]: UnfilledDeposit[] } = {};
     const fillsToRefund: FillsToRefund = {};
 
@@ -52,7 +54,7 @@ export class Dataworker {
             // FillRelay events emitted by slow relay executions will usually not match with any deposits because the
             // relayer fee % will be reset to 0 by the SpokePool contract, however we still need to explicitly filter slow
             // relays out because its possible that a deposit is submitted with a relayer fee % set to 0.
-            if (!fill.isSlowRelay) assign(fillsToRefund, [fill.repaymentChainId, fill.relayer], [fill]);
+            if (!fill.isSlowRelay) assign(fillsToRefund, [fill.repaymentChainId, fill.destinationToken], [fill]);
             const depositUnfilledAmount = fill.amount.sub(fill.totalFilledAmount);
             const depositKey = `${originChainId}+${fill.depositId}`;
             assign(
@@ -148,14 +150,56 @@ export class Dataworker {
     // of roots.
   }
 
-  async buildRelayerRefundRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
-    this._loadData();
+  async buildRelayerRefundRoot(
+    bundleBlockNumbers: BundleEvaluationBlockNumbers
+  ): Promise<MerkleTree<RelayerRefundLeaf>> | null {
+    const { fillsToRefund } = this._loadData();
+    if (Object.keys(fillsToRefund).length === 0) return null;
 
-    // For each repayment chain ID key in fillsToRefund
-    //     Group by refundAddress, and for each refund address
-    //         Order fills by fillAmount
-    //     Make Leaf for repayment chain ID
-    // Construct root
+    const leaves: RelayerRefundLeaf[] = [];
+    Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
+      Object.keys(fillsToRefund[repaymentChainId]).forEach((l2TokenAddress: string) => {
+        // Sum refunds for all refund addresses for each L2 token.
+        const refunds: { [refundAddress: string]: BigNumber } = {};
+        fillsToRefund[repaymentChainId][l2TokenAddress].forEach((fill: Fill) => {
+          const existingFillAmountForRelayer = refunds[fill.relayer] ? refunds[fill.relayer] : toBN(0);
+          const currentRefundAmount = fill.fillAmount.mul(toBNWei(1).sub(fill.realizedLpFeePct)).div(toBNWei(1))
+          assign(refunds, [fill.relayer], existingFillAmountForRelayer.add(currentRefundAmount));
+        });
+        // Sort leaves deterministically so that the same root is always produced from the same _loadData return value.
+        // Sort by refund address (ascending).
+        const sortedRefundAddresses = Object.keys(refunds).sort((addressA, addressB) =>
+          addressA.localeCompare(addressB)
+        );
+
+        // Create leaf for repayment chain ID and L2 token address combination.
+        leaves.push({
+          leafId: toBN(0), // Will be updated before inserting into tree after we sort all leaves.
+          chainId: BigNumber.from(repaymentChainId),
+          amountToReturn: toBN(0),
+          l2TokenAddress: l2TokenAddress,
+          refundAddresses: sortedRefundAddresses,
+          refundAmounts: sortedRefundAddresses.map((address) => refunds[address]),
+          // TODO: Make sure refund arrays length are capped and their contents are split in the worst case
+        });
+      });
+    });
+
+    // Sort leaves by chain ID and then L2 token address in ascending order.
+    if (leaves.length === 0) return null;
+    leaves.sort((leafA, leafB) => {
+      if (!leafA.chainId.eq(leafB.chainId)) {
+        return leafA.chainId.sub(leafB.chainId).toNumber()
+      }
+      else if (leafA.l2TokenAddress.localeCompare(leafB.l2TokenAddress) !== 0) {
+        return leafA.l2TokenAddress.localeCompare(leafB.l2TokenAddress)
+      } else throw new Error("TODO: Implement tertiary sorting of leaves")
+    })
+    const sortedLeaves = leaves.map((leaf: RelayerRefundLeaf, i: number) => {
+      return { ...leaf, leafId: toBN(i) };
+    });
+
+    return await buildRelayerRefundTree(sortedLeaves);
   }
 
   async buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
