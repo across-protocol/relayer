@@ -1,4 +1,4 @@
-import { spreadEvent, assign, Contract, BigNumber, toBN, Event, zeroAddress, winston } from "../utils";
+import { spreadEvent, assign, Contract, BigNumber, toBN, Event, ZERO_ADDRESS, winston } from "../utils";
 import { RateModelClient } from "./RateModelClient";
 import { Deposit, Fill, SpeedUp } from "../interfaces/SpokePool";
 
@@ -40,7 +40,7 @@ export class SpokePoolClient {
     return this.depositRoutes;
   }
 
-  isDepositRouteEnables(originToken: string, destinationChainId: number): boolean {
+  isDepositRouteEnabled(originToken: string, destinationChainId: number): boolean {
     return this.depositRoutes[originToken]?.[destinationChainId] ?? false;
   }
 
@@ -179,7 +179,7 @@ export class SpokePoolClient {
   }
 
   private getDestinationTokenForDeposit(deposit: Deposit): string {
-    if (!this.rateModelClient) return zeroAddress; // If there is no rate model client return address(0).
+    if (!this.rateModelClient) return ZERO_ADDRESS; // If there is no rate model client return address(0).
     return this.hubPoolClient().getDestinationTokenForDeposit(deposit);
   }
 

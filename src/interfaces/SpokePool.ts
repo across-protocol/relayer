@@ -6,7 +6,7 @@ export interface Deposit {
   recipient: string;
   originToken: string;
   amount: BigNumber;
-  originChainId: number; // appended from chainID
+  originChainId: number; // appended from chainID in the client.
   destinationChainId: number;
   relayerFeePct: BigNumber;
   quoteTimestamp: number;

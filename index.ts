@@ -1,4 +1,4 @@
-import { Logger } from "@uma/financial-templates-lib";
+import { delay, Logger } from "@uma/financial-templates-lib";
 
 import { runRelayer } from "./src/relayer";
 
@@ -13,8 +13,9 @@ if (require.main === module) {
     .then(() => {
       process.exit(0);
     })
-    .catch((error) => {
+    .catch(async (error) => {
       console.error("Process exited with", error);
+      await delay(5);
       process.exit(1);
     });
 }

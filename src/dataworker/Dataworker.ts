@@ -9,7 +9,8 @@ import {
   buildRelayerRefundTree,
   toBNWei,
 } from "../utils";
-import { SpokePoolClient, HubPoolClient, MultiCallBundler } from "../clients";
+import { SpokePoolClient, HubPoolClient } from "../clients";
+import { SpokePoolClient, HubPoolClient, MultiCallerClient } from "../clients";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill } from "../interfaces/SpokePool";
 import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";
 
@@ -21,7 +22,7 @@ export class Dataworker {
     readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient,
-    readonly multiCallBundler: MultiCallBundler | any
+    readonly multiCallerClient: MultiCallerClient | any
   ) {}
 
   // Common data re-formatting logic shared across all data worker public functions.

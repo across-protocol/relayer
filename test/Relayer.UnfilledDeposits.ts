@@ -35,11 +35,13 @@ describe("Relayer: Unfilled Deposits", async function () {
     spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1, rateModelClient, originChainId);
     spokePoolClient_2 = new SpokePoolClient(spyLogger, spokePool_2, rateModelClient, destinationChainId);
 
-    relayerInstance = new Relayer(
-      spyLogger,
-      { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
-      null
-    );
+    relayerInstance = new Relayer(spyLogger, {
+      spokePoolClients: { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
+      hubPoolClient,
+      rateModelClient,
+      tokenClient: null,
+      multiCallerClient: null,
+    });
 
     await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // seed the owner to LP.
     await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 100); // seed the depositor to LP.

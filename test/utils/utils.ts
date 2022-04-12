@@ -1,5 +1,6 @@
 import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 import { TokenRolesEnum } from "@uma/common";
+export { MAX_SAFE_ALLOWANCE } from "@uma/common";
 import { SpyTransport } from "@uma/financial-templates-lib";
 import { sampleRateModel, zeroAddress } from "../constants";
 

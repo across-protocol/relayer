@@ -1,6 +1,5 @@
-import { spreadEvent, assign, Contract, winston, BigNumber } from "../utils";
+import { spreadEvent, assign, Contract, winston, BigNumber, ERC20 } from "../utils";
 import { Deposit, L1Token } from "../interfaces";
-import { ExpandedERC20__factory } from "@across-protocol/contracts-v2";
 
 export class HubPoolClient {
   // L1Token -> destinationChainId -> destinationToken
@@ -20,8 +19,7 @@ export class HubPoolClient {
   getDestinationTokenForDeposit(deposit: Deposit) {
     const l1Token = this.getL1TokenForDeposit(deposit);
     const destinationToken = this.getDestinationTokenForL1TokenDestinationChainId(l1Token, deposit.destinationChainId);
-    if (!destinationToken)
-      this.logger.error({ at: "HubPoolClient", message: "No destination token found for deposit", deposit });
+    if (!destinationToken) this.logger.error({ at: "HubPoolClient", message: "No destination token found", deposit });
     return destinationToken;
   }
 
@@ -35,6 +33,7 @@ export class HubPoolClient {
       if (this.l1TokensToDestinationTokens[_l1Token][deposit.originChainId.toString()] === deposit.originToken)
         l1Token = _l1Token;
     });
+    if (l1Token === null) throw new Error(`Could not find L1 Token for deposit!,${JSON.stringify(deposit)}`);
     return l1Token;
   }
 
@@ -67,6 +66,11 @@ export class HubPoolClient {
     return this.getTokenInfoForL1Token(this.getL1TokenForDeposit(deposit));
   }
 
+  getTokenInfo(chainId: number | string, tokenAddress: string): L1Token {
+    const deposit = { originChainId: parseInt(chainId.toString()), originToken: tokenAddress } as Deposit;
+    return this.getTokenInfoForDeposit(deposit);
+  }
+
   async update() {
     const searchConfig = [this.firstBlockToSearch, this.endingBlock || (await this.hubPool.provider.getBlockNumber())];
     this.logger.debug({ at: "HubPoolClient", message: "Updating client", searchConfig });
@@ -84,7 +88,9 @@ export class HubPoolClient {
 
     // For each enabled Lp token fetch the token symbol and decimals from the token contract. Note this logic will
     // only run iff a new token has been enabled. Will only append iff the info is not there already.
-    const tokenInfo = await Promise.all(l1TokensLPEvents.map((event) => this.getTokenInfo(spreadEvent(event).l1Token)));
+    const tokenInfo = await Promise.all(
+      l1TokensLPEvents.map((event) => this.fetchTokenInfoFromContract(spreadEvent(event).l1Token))
+    );
     for (const info of tokenInfo) if (!this.l1Tokens.includes(info)) this.l1Tokens.push(info);
 
     this.isUpdated = true;
@@ -93,8 +99,8 @@ export class HubPoolClient {
     this.logger.debug({ at: "HubPoolClient", message: "Client updated!" });
   }
 
-  private async getTokenInfo(address: string): Promise<L1Token> {
-    const token = new Contract(address, ExpandedERC20__factory.abi, this.hubPool.signer);
+  private async fetchTokenInfoFromContract(address: string): Promise<L1Token> {
+    const token = new Contract(address, ERC20.abi, this.hubPool.signer);
     const [symbol, decimals] = await Promise.all([token.symbol(), token.decimals()]);
     return { address, symbol, decimals };
   }
