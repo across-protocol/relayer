@@ -2,16 +2,16 @@ import { hubPoolFixture, deployIterativeSpokePoolsAndToken, createSpyLogger, las
 import { expect, deposit, ethers, Contract, getLastBlockTime, contractAt, addLiquidity } from "./utils";
 import { SignerWithAddress, setupTokensForWallet, deployRateModelStore, winston, sinon } from "./utils";
 import { amountToLp, sampleRateModel } from "./constants";
-import { HubPoolClient, RateModelClient, MultiCallBundler } from "../src/clients";
+import { HubPoolClient, RateModelClient, MultiCallerClient, TokenClient } from "../src/clients";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 
 let relayer_signer: SignerWithAddress, hubPool: Contract, mockAdapter: Contract, rateModelStore: Contract;
-let hubPoolClient: HubPoolClient, rateModelClient: RateModelClient;
+let hubPoolClient: HubPoolClient, rateModelClient: RateModelClient, tokenClient: TokenClient;
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
 let spokePools, l1TokenToL2Tokens;
-let relayer: Relayer, multiCallBundler: MultiCallBundler;
+let relayer: Relayer, multiCallerClient: MultiCallerClient;
 
 describe("Relayer: Iterative fill", async function () {
   beforeEach(async function () {
@@ -27,7 +27,7 @@ describe("Relayer: Iterative fill", async function () {
     ({ rateModelStore } = await deployRateModelStore(relayer_signer, []));
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
     rateModelClient = new RateModelClient(spyLogger, rateModelStore, hubPoolClient);
-    multiCallBundler = new MultiCallBundler(spyLogger, null); // leave out the gasEstimator for now.
+    multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
 
     ({ spokePools, l1TokenToL2Tokens } = await deployIterativeSpokePoolsAndToken(
       spyLogger,
@@ -44,13 +44,20 @@ describe("Relayer: Iterative fill", async function () {
 
     await addLiquidity(relayer_signer, hubPool, l1Token, amountToLp);
 
-    let spokePoolEventClients = {};
+    let spokePoolClients = {};
     spokePools.forEach((spokePool) => {
-      spokePoolEventClients[spokePool.spokePoolClient.chainId] = spokePool.spokePoolClient;
+      spokePoolClients[spokePool.spokePoolClient.chainId] = spokePool.spokePoolClient;
     });
 
+    tokenClient = new TokenClient(spyLogger, relayer_signer.address, spokePoolClients);
     await updateAllClients();
-    relayer = new Relayer(spyLogger, spokePoolEventClients, multiCallBundler);
+    relayer = new Relayer(spyLogger, {
+      spokePoolClients,
+      hubPoolClient,
+      rateModelClient,
+      tokenClient,
+      multiCallerClient,
+    });
 
     let depositCount = 0;
 
@@ -77,15 +84,15 @@ describe("Relayer: Iterative fill", async function () {
     // Update all clients and run the relayer. Relayer should fill all 20 deposits.
     await updateAllClients();
     await relayer.checkForUnfilledDepositsAndFill();
-    expect(multiCallBundler.transactionCount()).to.equal(20); // 20 transactions, filling each relay.
-    const txs = await multiCallBundler.executeTransactionQueue();
+    expect(multiCallerClient.transactionCount()).to.equal(20); // 20 transactions, filling each relay.
+    const txs = await multiCallerClient.executeTransactionQueue();
     expect(lastSpyLogIncludes(spy, "Multicall batch sent")).to.be.true;
     expect(txs.length).to.equal(5); // There should have been exactly 5 bundles, one to each target chainId.
     // Re-run the execution loop and validate that no additional relays are sent.
-    multiCallBundler.clearTransactionQueue();
+    multiCallerClient.clearTransactionQueue();
     await updateAllClients();
     await relayer.checkForUnfilledDepositsAndFill();
-    expect(multiCallBundler.transactionCount()).to.equal(0); // no Transactions to send.
+    expect(multiCallerClient.transactionCount()).to.equal(0); // no Transactions to send.
     expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
   });
 });
@@ -93,6 +100,7 @@ describe("Relayer: Iterative fill", async function () {
 async function updateAllClients() {
   await hubPoolClient.update();
   await rateModelClient.update();
+  await tokenClient.update();
   for (const spokePool of spokePools) {
     await spokePool.spokePoolClient.update();
   }

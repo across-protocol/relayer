@@ -7,6 +7,7 @@ import * as typechain from "@across-protocol/contracts-v2"; //TODO: refactor onc
 export function getDeployedContract(contractName: string, networkId: number, signer: Wallet): Contract {
   try {
     if (contractName === "SpokePool") contractName = castSpokePoolName(networkId);
+
     const address = getDeployedAddress(contractName, networkId);
     const artifact = typechain[`${[contractName.replace("_", "")]}__factory`];
     return new Contract(address, artifact.abi, signer);

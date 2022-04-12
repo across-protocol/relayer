@@ -1,21 +1,6 @@
-import {
-  deploySpokePoolWithToken,
-  repaymentChainId,
-  originChainId,
-  buildPoolRebalanceLeaves,
-  buildPoolRebalanceLeafTree,
-  createSpyLogger,
-} from "./utils";
-import {
-  expect,
-  ethers,
-  Contract,
-  SignerWithAddress,
-  setupTokensForWallet,
-  assertPromiseError,
-  toBNWei,
-  toWei,
-} from "./utils";
+import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolRebalanceLeaves } from "./utils";
+import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet, assertPromiseError } from "./utils";
+import { toBNWei, toWei, buildPoolRebalanceLeafTree, createSpyLogger } from "./utils";
 import { getContractFactory, hubPoolFixture, toBN } from "./utils";
 import { amountToLp, mockTreeRoot, refundProposalLiveness, totalBond } from "./constants";
 
@@ -37,7 +22,7 @@ const sampleRateModel = {
   R2: toWei("1.00").toString(),
 };
 
-describe("RateModelClient", async function () {
+describe("RateModelClient: RealizedLpFeePct", async function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
     ({ spokePool, erc20: l2Token } = await deploySpokePoolWithToken(originChainId, repaymentChainId));

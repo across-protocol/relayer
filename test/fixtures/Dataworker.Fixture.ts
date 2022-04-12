@@ -1,7 +1,7 @@
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, Contract, hre } from "../utils";
 import { SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "../utils";
 import { createSpyLogger, winston, deployAndConfigureHubPool, deployRateModelStore } from "../utils";
-import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallBundler } from "../../src/clients";
+import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallerClient } from "../../src/clients";
 import { amountToLp, destinationChainId, originChainId } from "../constants";
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
@@ -22,7 +22,7 @@ export async function setupDataworker(ethers: any): Promise<{
   hubPoolClient: HubPoolClient;
   dataworkerInstance: Dataworker;
   spyLogger: winston.Logger;
-  multiCallBundler: MultiCallBundler;
+  multiCallerClient: MultiCallerClient;
   owner: SignerWithAddress;
   depositor: SignerWithAddress;
   relayer: SignerWithAddress;
@@ -47,7 +47,7 @@ export async function setupDataworker(ethers: any): Promise<{
   const hubPoolClient = new HubPoolClient(spyLogger, hubPool);
   const rateModelClient = new RateModelClient(spyLogger, rateModelStore, hubPoolClient);
 
-  const multiCallBundler = new MultiCallBundler(spyLogger, null); // leave out the gasEstimator for now.
+  const multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
 
   const spokePoolClient_1 = new SpokePoolClient(
     spyLogger,
@@ -66,7 +66,7 @@ export async function setupDataworker(ethers: any): Promise<{
     spyLogger,
     { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
     hubPoolClient,
-    multiCallBundler
+    multiCallerClient
   );
 
   // Give owner tokens to LP on HubPool with.
@@ -99,7 +99,7 @@ export async function setupDataworker(ethers: any): Promise<{
     hubPoolClient,
     dataworkerInstance,
     spyLogger,
-    multiCallBundler,
+    multiCallerClient,
     owner,
     depositor,
     relayer,
