@@ -20,7 +20,7 @@ import { RelayerRefundLeaf } from "../src/utils";
 import { Deposit } from "../src/interfaces/SpokePool";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
-let l1Token_1: Contract, l1Token_2: Contract;
+let l1Token_1: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;

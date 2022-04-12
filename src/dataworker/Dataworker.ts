@@ -194,7 +194,6 @@ export class Dataworker {
           l2TokenAddress,
           refundAddresses: sortedRefundAddresses,
           refundAmounts: sortedRefundAddresses.map((address) => refunds[address]),
-          // TODO: Make sure refund arrays length are capped and their contents are split in the worst case
         });
       });
     });
@@ -212,9 +211,8 @@ export class Dataworker {
       .map((leaf: RelayerRefundLeaf, i: number) => {
         return { ...leaf, leafId: toBN(i) };
       });
-    // const indexedLeaves = leaves.map((leaf: RelayerRefundLeaf, i: number) => {
-    //   return { ...leaf, leafId: toBN(i) };
-    // });
+
+    // TODO: Make sure refund arrays length are capped and their contents are split in the worst case
     return indexedLeaves.length > 0 ? await buildRelayerRefundTree(indexedLeaves) : null;
   }
 
