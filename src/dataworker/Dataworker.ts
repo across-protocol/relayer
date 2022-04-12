@@ -174,13 +174,15 @@ export class Dataworker {
         fillsToRefund[repaymentChainId][l2TokenAddress].forEach((fill: Fill) => {
           const existingFillAmountForRelayer = refunds[fill.relayer] ? refunds[fill.relayer] : toBN(0);
           const currentRefundAmount = fill.fillAmount.mul(toBNWei(1).sub(fill.realizedLpFeePct)).div(toBNWei(1));
-          assign(refunds, [fill.relayer], existingFillAmountForRelayer.add(currentRefundAmount));
+          refunds[fill.relayer] = existingFillAmountForRelayer.add(currentRefundAmount);
         });
         // Sort leaves deterministically so that the same root is always produced from the same _loadData return value.
-        // Sort by refund address (ascending).
-        const sortedRefundAddresses = Object.keys(refunds).sort((addressA, addressB) =>
-          addressA.localeCompare(addressB)
-        );
+        // Sort by refund amount (descending) and then address (ascending).
+        const sortedRefundAddresses = Object.keys(refunds).sort((addressA, addressB) => {
+          if (refunds[addressA].gt(refunds[addressB])) return -1;
+          if (refunds[addressA].lt(refunds[addressB])) return 1;
+          return addressA.localeCompare(addressB);
+        });
 
         // Create leaf for repayment chain ID and L2 token address combination.
         leaves.push({

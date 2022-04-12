@@ -136,7 +136,7 @@ describe("Dataworker: Build merkle roots", async function () {
     await updateAllClients();
     expect(await dataworkerInstance.buildSlowRelayRoot([])).to.equal(null);
   });
-  it.only("Build relayer refund root", async function () {
+  it("Build relayer refund root", async function () {
     await updateAllClients();
 
     // Submit deposits for multiple L2 tokens.
@@ -158,7 +158,7 @@ describe("Dataworker: Build merkle roots", async function () {
       l1Token_1,
       depositor,
       originChainId,
-      amountToDeposit.mul(2)
+      amountToDeposit
     );
     const deposit3 = await buildDeposit(
       rateModelClient,
@@ -178,7 +178,7 @@ describe("Dataworker: Build merkle roots", async function () {
       l1Token_1,
       depositor,
       originChainId,
-      amountToDeposit
+      amountToDeposit.mul(2)
     );
     const deposit5 = await buildDeposit(
       rateModelClient,
@@ -238,8 +238,8 @@ describe("Dataworker: Build merkle roots", async function () {
       chainId: toBN(100),
       amountToReturn: toBN(0),
       l2TokenAddress: erc20_1.address,
-      refundAddresses: [relayer.address, depositor.address],
-      refundAmounts: [expectedRefundAmount(deposit2), expectedRefundAmount(deposit4)],
+      refundAddresses: [depositor.address, relayer.address], // Reversed order because deposit4 refund amount is larger.
+      refundAmounts: [expectedRefundAmount(deposit4), expectedRefundAmount(deposit2)],
     };
     await updateAllClients();
     const merkleRoot2 = await dataworkerInstance.buildRelayerRefundRoot([]);
