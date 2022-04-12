@@ -37,7 +37,6 @@ describe("Dataworker: Build merkle roots", async function () {
       rateModelClient,
       hubPoolClient,
       l1Token_1,
-      l1Token_2,
       depositor,
       relayer,
       dataworkerInstance,
