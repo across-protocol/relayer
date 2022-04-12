@@ -46,9 +46,10 @@ describe("Dataworker: Build merkle roots", async function () {
     } = await setupDataworker(ethers));
   });
   it("Default conditions", async function () {
-    // Before any deposits, returns null.
+    // When given empty input data, returns null.
     await updateAllClients();
     expect(await dataworkerInstance.buildSlowRelayRoot([])).to.equal(null);
+    expect(await dataworkerInstance.buildRelayerRefundRoot([])).to.equal(null);
   });
   it("Build slow relay root", async function () {
     await updateAllClients();

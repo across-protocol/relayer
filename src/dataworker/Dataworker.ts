@@ -167,29 +167,31 @@ export class Dataworker {
     if (Object.keys(fillsToRefund).length === 0) return null;
 
     const leaves: RelayerRefundLeaf[] = [];
+
+    // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
     Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
       Object.keys(fillsToRefund[repaymentChainId]).forEach((l2TokenAddress: string) => {
-        // Sum refunds for all refund addresses for each L2 token.
+        // Group refunds by recipient for this L2 token address.
         const refunds: { [refundAddress: string]: BigNumber } = {};
         fillsToRefund[repaymentChainId][l2TokenAddress].forEach((fill: Fill) => {
           const existingFillAmountForRelayer = refunds[fill.relayer] ? refunds[fill.relayer] : toBN(0);
           const currentRefundAmount = fill.fillAmount.mul(toBNWei(1).sub(fill.realizedLpFeePct)).div(toBNWei(1));
           refunds[fill.relayer] = existingFillAmountForRelayer.add(currentRefundAmount);
         });
-        // Sort leaves deterministically so that the same root is always produced from the same _loadData return value.
-        // Sort by refund amount (descending) and then address (ascending).
+        // We need to sort leaves deterministically so that the same root is always produced from the same _loadData
+        // return value, so sort refund addresses by refund amount (descending) and then address (ascending).
         const sortedRefundAddresses = Object.keys(refunds).sort((addressA, addressB) => {
           if (refunds[addressA].gt(refunds[addressB])) return -1;
           if (refunds[addressA].lt(refunds[addressB])) return 1;
           return addressA.localeCompare(addressB);
         });
 
-        // Create leaf for repayment chain ID and L2 token address combination.
+        // Create leaf for { repaymentChainId, L2TokenAddress }.
         leaves.push({
-          leafId: toBN(0), // Will be updated before inserting into tree after we sort all leaves.
+          leafId: toBN(0), // Will be updated before inserting into tree when we sort all leaves.
           chainId: BigNumber.from(repaymentChainId),
-          amountToReturn: toBN(0),
-          l2TokenAddress: l2TokenAddress,
+          amountToReturn: toBN(0), // TODO: Derive amountToReturn
+          l2TokenAddress,
           refundAddresses: sortedRefundAddresses,
           refundAmounts: sortedRefundAddresses.map((address) => refunds[address]),
           // TODO: Make sure refund arrays length are capped and their contents are split in the worst case
@@ -197,20 +199,23 @@ export class Dataworker {
       });
     });
 
-    // Sort leaves by chain ID and then L2 token address in ascending order.
-    if (leaves.length === 0) return null;
-    leaves.sort((leafA, leafB) => {
-      if (!leafA.chainId.eq(leafB.chainId)) {
-        return leafA.chainId.sub(leafB.chainId).toNumber();
-      } else if (leafA.l2TokenAddress.localeCompare(leafB.l2TokenAddress) !== 0) {
-        return leafA.l2TokenAddress.localeCompare(leafB.l2TokenAddress);
-      } else throw new Error("TODO: Implement tertiary sorting of leaves");
-    });
-    const sortedLeaves = leaves.map((leaf: RelayerRefundLeaf, i: number) => {
-      return { ...leaf, leafId: toBN(i) };
-    });
-
-    return await buildRelayerRefundTree(sortedLeaves);
+    // Sort leaves by chain ID and then L2 token address in ascending order. Assign leaves unique, ascending ID's
+    // beginning from 0.
+    const indexedLeaves = [...leaves]
+      .sort((leafA, leafB) => {
+        if (!leafA.chainId.eq(leafB.chainId)) {
+          return leafA.chainId.sub(leafB.chainId).toNumber();
+        } else if (leafA.l2TokenAddress.localeCompare(leafB.l2TokenAddress) !== 0) {
+          return leafA.l2TokenAddress.localeCompare(leafB.l2TokenAddress);
+        } else throw new Error("TODO: Implement tertiary sorting of leaves");
+      })
+      .map((leaf: RelayerRefundLeaf, i: number) => {
+        return { ...leaf, leafId: toBN(i) };
+      });
+    // const indexedLeaves = leaves.map((leaf: RelayerRefundLeaf, i: number) => {
+    //   return { ...leaf, leafId: toBN(i) };
+    // });
+    return indexedLeaves.length > 0 ? await buildRelayerRefundTree(indexedLeaves) : null;
   }
 
   async buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
