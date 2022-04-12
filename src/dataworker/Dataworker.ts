@@ -9,7 +9,6 @@ import {
   buildRelayerRefundTree,
   toBNWei,
 } from "../utils";
-import { SpokePoolClient, HubPoolClient } from "../clients";
 import { SpokePoolClient, HubPoolClient, MultiCallerClient } from "../clients";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill } from "../interfaces/SpokePool";
 import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";

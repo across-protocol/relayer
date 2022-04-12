@@ -145,7 +145,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       amountToDeposit
     );
     const fill3 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit5, 0.25);
-    
+
     // One unfilled deposit that we're going to slow fill:
     await updateAllClients();
     const data6 = dataworkerInstance._loadData();
@@ -262,7 +262,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       l1Token_2,
       depositor,
       originChainId,
-      amountToDeposit,
+      amountToDeposit
     );
     const fill3 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit3, 0.25);
     const slowRelays = [
