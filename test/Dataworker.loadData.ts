@@ -32,7 +32,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       dataworkerInstance,
       spokePoolClient_1,
       spokePoolClient_2,
-    } = await setupDataworker(ethers));
+    } = await setupDataworker(ethers, 25));
   });
 
   it("Default conditions", async function () {
@@ -49,6 +49,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     expect(dataworkerInstance._loadData()).to.deep.equal({
       unfilledDeposits: [],
+      deposits: [],
       fillsToRefund: {},
     });
   });

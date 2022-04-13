@@ -2,15 +2,18 @@ import { deploySpokePoolWithToken, enableRoutesOnHubPool, Contract, hre, enableR
 import { SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "../utils";
 import { createSpyLogger, winston, deployAndConfigureHubPool, deployRateModelStore } from "../utils";
 import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallerClient } from "../../src/clients";
-import { amountToLp, destinationChainId, originChainId } from "../constants";
+import { amountToLp, destinationChainId, MAX_REFUNDS_PER_LEAF, originChainId } from "../constants";
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 
-export const dataworkerFixture = hre.deployments.createFixture(async ({ ethers }) => {
-  return await setupDataworker(ethers);
+export const dataworkerFixture = hre.deployments.createFixture(async ({ ethers }, maxRefundLeaf: number) => {
+  return await setupDataworker(ethers, maxRefundLeaf);
 });
 
-export async function setupDataworker(ethers: any): Promise<{
+export async function setupDataworker(
+  ethers: any,
+  maxRefundsPerLeaf: number
+): Promise<{
   spokePool_1: Contract;
   erc20_1: Contract;
   spokePool_2: Contract;
@@ -73,7 +76,8 @@ export async function setupDataworker(ethers: any): Promise<{
     spyLogger,
     { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
     hubPoolClient,
-    multiCallerClient
+    multiCallerClient,
+    maxRefundsPerLeaf
   );
 
   // Give owner tokens to LP on HubPool with.

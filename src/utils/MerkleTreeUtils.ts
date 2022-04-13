@@ -1,5 +1,5 @@
 import { getParamType, utils, BigNumber } from ".";
-import { RelayData, PoolRebalanceLeaf, RelayerRefundLeaf } from "../interfaces";
+import { RelayData, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
 import { MerkleTree } from "@across-protocol/contracts-v2";
 
 export async function buildSlowRelayTree(relays: RelayData[]) {
@@ -37,4 +37,4 @@ export async function buildRelayerRefundTree(relayerRefundLeaves: RelayerRefundL
   return new MerkleTree<RelayerRefundLeaf>(relayerRefundLeaves, hashFn);
 }
 
-export { MerkleTree, RelayerRefundLeaf };
+export { MerkleTree, RelayerRefundLeaf, RelayerRefundLeafWithGroup };

@@ -31,7 +31,7 @@ export async function setupTokensForWallet(
   spokePool: utils.Contract,
   wallet: utils.SignerWithAddress,
   tokens: utils.Contract[],
-  weth: utils.Contract,
+  weth?: utils.Contract,
   seedMultiplier: number = 1
 ) {
   await utils.seedWallet(wallet, tokens, weth, utils.amountToSeedWallets.mul(seedMultiplier));

@@ -5,6 +5,7 @@ import {
   MerkleTree,
   toBN,
   RelayerRefundLeaf,
+  RelayerRefundLeafWithGroup,
   BigNumber,
   buildRelayerRefundTree,
   toBNWei,
@@ -21,18 +22,21 @@ export class Dataworker {
     readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient,
-    readonly multiCallerClient: MultiCallerClient | any
+    readonly multiCallerClient: MultiCallerClient | any,
+    readonly maxRefundsPerLeaf: number = 25
   ) {}
 
   // Common data re-formatting logic shared across all data worker public functions.
   _loadData(/* bundleBlockNumbers: BundleEvaluationBlockNumbers */): {
     unfilledDeposits: UnfilledDeposit[];
     fillsToRefund: FillsToRefund;
+    deposits: Deposit[];
   } {
     if (!this.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
 
     const unfilledDepositsForOriginChain: { [originChainIdPlusDepositId: string]: UnfilledDeposit[] } = {};
     const fillsToRefund: FillsToRefund = {};
+    const deposits: Deposit[] = [];
 
     const allChainIds = Object.keys(this.spokePoolClients);
     this.logger.debug({ at: "Dataworker", message: `Loading deposit and fill data`, chainIds: allChainIds });
@@ -48,6 +52,9 @@ export class Dataworker {
         const destinationClient = this.spokePoolClients[destinationChainId];
         if (!destinationClient.isUpdated)
           throw new Error(`destination SpokePoolClient with chain ID ${destinationChainId} not updated`);
+
+        // Store all deposits, for use in constructing a pool rebalance root.
+        deposits.push(...originClient.getDepositsForDestinationChain(destinationChainId));
 
         // For each fill within the block range, look up associated deposit.
         const fillsForOriginChain: Fill[] = destinationClient.getFillsForOriginChain(Number(originChainId));
@@ -119,6 +126,7 @@ export class Dataworker {
     // Remove deposits that have been fully filled from unfilled deposit array
     return {
       fillsToRefund,
+      deposits,
       unfilledDeposits,
     };
   }
@@ -166,7 +174,7 @@ export class Dataworker {
     const { fillsToRefund } = this._loadData();
     if (Object.keys(fillsToRefund).length === 0) return null;
 
-    const leaves: RelayerRefundLeaf[] = [];
+    const leaves: RelayerRefundLeafWithGroup[] = [];
 
     // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
     Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
@@ -186,38 +194,46 @@ export class Dataworker {
           return addressA.localeCompare(addressB);
         });
 
-        // Create leaf for { repaymentChainId, L2TokenAddress }.
-        leaves.push({
-          leafId: toBN(0), // Will be updated before inserting into tree when we sort all leaves.
-          chainId: BigNumber.from(repaymentChainId),
-          amountToReturn: toBN(0), // TODO: Derive amountToReturn
-          l2TokenAddress,
-          refundAddresses: sortedRefundAddresses,
-          refundAmounts: sortedRefundAddresses.map((address) => refunds[address]),
-        });
+        // Create leaf for { repaymentChainId, L2TokenAddress }, split leaves into sub-leaves if there are too many
+        // refunds.
+        for (let i = 0; i < sortedRefundAddresses.length; i += this.maxRefundsPerLeaf)
+          leaves.push({
+            groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
+            // L2 token address
+            leafId: toBN(0), // Will be updated before inserting into tree when we sort all leaves.
+            chainId: BigNumber.from(repaymentChainId),
+            amountToReturn: toBN(0), // TODO: Derive amountToReturn
+            l2TokenAddress,
+            refundAddresses: sortedRefundAddresses.slice(i, i + this.maxRefundsPerLeaf),
+            refundAmounts: sortedRefundAddresses
+              .slice(i, i + this.maxRefundsPerLeaf)
+              .map((address) => refunds[address]),
+          });
       });
     });
 
     // Sort leaves by chain ID and then L2 token address in ascending order. Assign leaves unique, ascending ID's
     // beginning from 0.
-    const indexedLeaves = [...leaves]
+    const indexedLeaves: RelayerRefundLeaf[] = [...leaves]
       .sort((leafA, leafB) => {
         if (!leafA.chainId.eq(leafB.chainId)) {
           return leafA.chainId.sub(leafB.chainId).toNumber();
         } else if (leafA.l2TokenAddress.localeCompare(leafB.l2TokenAddress) !== 0) {
           return leafA.l2TokenAddress.localeCompare(leafB.l2TokenAddress);
-        } else throw new Error("TODO: Implement tertiary sorting of leaves");
+        } else return leafA.groupIndex - leafB.groupIndex;
       })
-      .map((leaf: RelayerRefundLeaf, i: number) => {
-        return { ...leaf, leafId: toBN(i) };
+      .map((leaf: RelayerRefundLeafWithGroup, i: number): RelayerRefundLeaf => {
+        const newLeaf = leaf;
+        delete newLeaf.groupIndex; // Delete group index now that we've used it to sort leaves for the same
+        // { repaymentChain, l2TokenAddress } since it doesn't exist in RelayerRefundLeaf
+        return { ...newLeaf, leafId: toBN(i) };
       });
 
-    // TODO: Make sure refund arrays length are capped and their contents are split in the worst case
     return indexedLeaves.length > 0 ? await buildRelayerRefundTree(indexedLeaves) : null;
   }
 
   async buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
-    this._loadData();
+    const { fillsToRefund, deposits, unfilledDeposits } = this._loadData();
 
     // For each destination chain ID key in unfilledDeposits
     //     Group by L1 token and for each L1 token:

@@ -21,6 +21,10 @@ export interface RelayerRefundLeaf {
   refundAddresses: string[];
 }
 
+export interface RelayerRefundLeafWithGroup extends RelayerRefundLeaf {
+  groupIndex: number;
+}
+
 export interface L1Token {
   address: string;
   symbol: string;

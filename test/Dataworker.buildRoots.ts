@@ -8,12 +8,14 @@ import {
   buildRelayerRefundTree,
   toBN,
   toBNWei,
+  setupTokensForWallet,
+  BigNumber,
 } from "./utils";
 import { SignerWithAddress } from "./utils";
 import { buildDeposit, buildFill } from "./utils";
 import { SpokePoolClient, HubPoolClient, RateModelClient } from "../src/clients";
-import { amountToDeposit, destinationChainId, originChainId } from "./constants";
-import { setupDataworker } from "./fixtures/Dataworker.Fixture";
+import { amountToDeposit, destinationChainId, originChainId, MAX_REFUNDS_PER_LEAF } from "./constants";
+import { setupDataworker, dataworkerFixture } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { Deposit } from "../src/interfaces/SpokePool";
@@ -41,7 +43,7 @@ describe("Dataworker: Build merkle roots", async function () {
       dataworkerInstance,
       spokePoolClient_1,
       spokePoolClient_2,
-    } = await setupDataworker(ethers));
+    } = await setupDataworker(ethers, MAX_REFUNDS_PER_LEAF));
   });
   it("Default conditions", async function () {
     // When given empty input data, returns null.
@@ -269,6 +271,49 @@ describe("Dataworker: Build merkle roots", async function () {
     const merkleRoot3 = await dataworkerInstance.buildRelayerRefundRoot([]);
     const expectedMerkleRoot3 = await buildTree([leaf3, leaf4, leaf1, leaf2]);
     expect(merkleRoot3.getHexRoot()).to.equal(expectedMerkleRoot3.getHexRoot());
+
+    // Splits leaf into multiple leaves if refunds > MAX_REFUNDS_PER_LEAF.
+    const deposit7 = await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token_1,
+      depositor,
+      destinationChainId,
+      amountToDeposit
+    );
+    const allSigners: SignerWithAddress[] = await ethers.getSigners();
+    expect(allSigners.length >= MAX_REFUNDS_PER_LEAF + 1, "ethers.getSigners doesn't have enough signers");
+    for (let i = 0; i < MAX_REFUNDS_PER_LEAF + 1; i++) {
+      await setupTokensForWallet(spokePool_2, allSigners[i], [erc20_2]);
+      await buildFillForRepaymentChain(spokePool_2, allSigners[i], deposit7, 0.01 + i * 0.01, 98);
+    }
+    // Note: Higher refund amounts for same chain and L2 token should come first, so we test that by increasing
+    // the fill amount in the above loop for each fill. Ultimately, the latest fills send the most tokens and
+    // should come in the first leaf.
+    const leaf5 = {
+      chainId: toBN(98),
+      amountToReturn: toBN(0),
+      l2TokenAddress: erc20_2.address,
+      refundAddresses: [allSigners[3].address, allSigners[2].address, allSigners[1].address],
+      refundAmounts: [
+        expectedRefundAmount(deposit7).mul(toBNWei("0.04")).div(toBNWei("1")),
+        expectedRefundAmount(deposit7).mul(toBNWei("0.03")).div(toBNWei("1")),
+        expectedRefundAmount(deposit7).mul(toBNWei("0.02")).div(toBNWei("1")),
+      ],
+    };
+    const leaf6 = {
+      chainId: toBN(98),
+      amountToReturn: toBN(0),
+      l2TokenAddress: erc20_2.address,
+      refundAddresses: [allSigners[0].address],
+      refundAmounts: [expectedRefundAmount(deposit7).mul(toBNWei("0.01")).div(toBNWei("1"))],
+    };
+    await updateAllClients();
+    const merkleRoot4 = await dataworkerInstance.buildRelayerRefundRoot([]);
+    const expectedMerkleRoot4 = await buildTree([leaf5, leaf6, leaf3, leaf4, leaf1, leaf2]);
+    expect(merkleRoot4.getHexRoot()).to.equal(expectedMerkleRoot4.getHexRoot());
   });
 });
 
