@@ -30,13 +30,13 @@ export class RelayerProcessor {
       return;
     }
 
-    const relayedRootBundleEvents = await spokePool.queryFilter(
+    const executedRelayerRefundEvents = await spokePool.queryFilter(
       spokePool.filters.ExecutedRelayerRefundRoot(),
       startingBlock,
       endingBlock
     );
 
-    for (const event of relayedRootBundleEvents) {
+    for (const event of executedRelayerRefundEvents) {
       let caller: string;
 
       switch (event.event) {
