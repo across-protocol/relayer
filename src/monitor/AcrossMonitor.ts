@@ -129,7 +129,7 @@ export class AcrossMonitor {
             " " +
             event.action +
             " on " +
-            PublicNetworks[this.monitorConfig.hubPoolChainId].name,
+            PublicNetworks[chainId].name,
           notificationPath: "across-monitor",
         });
       }
