@@ -8,14 +8,12 @@ export interface EventInfo {
   transactionHash: string;
   caller: string;
   action: string;
-  slowRelayRoot: string;
-  relayerRefundRoot: string;
   rootBundleId: number;
 }
 
 export class RelayerProcessor {
   private eventActions: { [key: string]: string } = {
-    RelayedRootBundleEvent: "relayed",
+    ExecutedRelayerRefundRoot: "refund root executed",
   };
 
   // eslint-disable-next-line no-useless-constructor
@@ -33,7 +31,7 @@ export class RelayerProcessor {
     }
 
     const relayedRootBundleEvents = await spokePool.queryFilter(
-      spokePool.filters.RelayedRootBundle(),
+      spokePool.filters.ExecutedRelayerRefundRoot(),
       startingBlock,
       endingBlock
     );
@@ -42,8 +40,8 @@ export class RelayerProcessor {
       let caller: string;
 
       switch (event.event) {
-        case "RelayedRootBundleEvent":
-          caller = "TODO";
+        case "ExecutedRelayerRefundRootEvent":
+          caller = event.args.caller;
           break;
         default:
           this.logger.error(`[getRelayedEventsInfo] unhandled event ${event.event}`);
@@ -55,11 +53,9 @@ export class RelayerProcessor {
         blockNumber: event.blockNumber,
         logIndex: event.logIndex,
         transactionHash: event.transactionHash,
-        slowRelayRoot: event.args.slowRelayRoot,
-        relayerRefundRoot: event.args.relayerRefundRoot,
-        rootBundleId: event.args.rootBundleId,
         caller,
         action: this.eventActions[event.event],
+        rootBundleId: event.args.rootBundleId,
       };
       eventsInfo.push(eventInfo);
     }
