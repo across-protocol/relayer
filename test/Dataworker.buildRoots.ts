@@ -1,16 +1,5 @@
-import {
-  expect,
-  ethers,
-  Contract,
-  buildSlowRelayTree,
-  RelayData,
-  buildFillForRepaymentChain,
-  buildRelayerRefundTree,
-  toBN,
-  toBNWei,
-  setupTokensForWallet,
-} from "./utils";
-import { SignerWithAddress } from "./utils";
+import { buildSlowRelayTree, RelayData, buildFillForRepaymentChain, buildRelayerRefundTree } from "./utils";
+import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
 import { buildDeposit, buildFill } from "./utils";
 import { HubPoolClient, RateModelClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, originChainId, MAX_REFUNDS_PER_LEAF } from "./constants";
@@ -119,7 +108,7 @@ describe("Dataworker: Build merkle roots", async function () {
     // Returns expected merkle root where leaves are ordered by origin chain ID and then deposit ID
     // (ascending).
     await updateAllClients();
-    const merkleRoot1 = await dataworkerInstance.buildSlowRelayRoot([]);
+    const merkleRoot1 = dataworkerInstance.buildSlowRelayRoot([]);
     const expectedMerkleRoot1 = await buildSlowRelayTree([
       expectedRelaysUnsorted[0],
       expectedRelaysUnsorted[2],
@@ -134,7 +123,7 @@ describe("Dataworker: Build merkle roots", async function () {
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit3, 1);
     await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit4, 1);
     await updateAllClients();
-    expect(await dataworkerInstance.buildSlowRelayRoot([])).to.equal(null);
+    expect(dataworkerInstance.buildSlowRelayRoot([])).to.equal(null);
   });
   it("Build relayer refund root", async function () {
     await updateAllClients();
@@ -227,7 +216,7 @@ describe("Dataworker: Build merkle roots", async function () {
     };
 
     await updateAllClients();
-    const merkleRoot1 = await dataworkerInstance.buildRelayerRefundRoot([]);
+    const merkleRoot1 = dataworkerInstance.buildRelayerRefundRoot([]);
     const expectedMerkleRoot1 = await buildTree([leaf1]);
     expect(merkleRoot1.getHexRoot()).to.equal(expectedMerkleRoot1.getHexRoot());
 
@@ -242,7 +231,7 @@ describe("Dataworker: Build merkle roots", async function () {
       refundAmounts: [expectedRefundAmount(deposit4), expectedRefundAmount(deposit2)],
     };
     await updateAllClients();
-    const merkleRoot2 = await dataworkerInstance.buildRelayerRefundRoot([]);
+    const merkleRoot2 = dataworkerInstance.buildRelayerRefundRoot([]);
     const expectedMerkleRoot2 = await buildTree([leaf1, leaf2]);
     expect(merkleRoot2.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
 
@@ -310,7 +299,7 @@ describe("Dataworker: Build merkle roots", async function () {
       refundAmounts: [expectedRefundAmount(deposit7).mul(toBNWei("0.01")).div(toBNWei("1"))],
     };
     await updateAllClients();
-    const merkleRoot4 = await dataworkerInstance.buildRelayerRefundRoot([]);
+    const merkleRoot4 = dataworkerInstance.buildRelayerRefundRoot([]);
     const expectedMerkleRoot4 = await buildTree([leaf5, leaf6, leaf3, leaf4, leaf1, leaf2]);
     expect(merkleRoot4.getHexRoot()).to.equal(expectedMerkleRoot4.getHexRoot());
   });

@@ -2,6 +2,7 @@ import { winston, assign, buildSlowRelayTree, MerkleTree, toBN } from "../utils"
 import { RelayerRefundLeaf, RelayerRefundLeafWithGroup, BigNumber, buildRelayerRefundTree, toBNWei } from "../utils";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill, BundleEvaluationBlockNumbers } from "../interfaces";
 import { DataworkerClients } from "../clients";
+import { createContractObjectFromJson } from "@uma/common";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -111,12 +112,12 @@ export class Dataworker {
     return { fillsToRefund, deposits, unfilledDeposits };
   }
 
-  async buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): Promise<MerkleTree<RelayData>> | null {
+  buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): MerkleTree<RelayData> | null {
     const { unfilledDeposits } = this._loadData();
     // TODO: Use `bundleBlockNumbers` to decide how to filter which blocks to keep in `unfilledDeposits`.
 
     if (unfilledDeposits.length === 0) return null;
-    const leaves: RelayData[] = unfilledDeposits.map(
+    const slowRelayLeaves: RelayData[] = unfilledDeposits.map(
       (deposit: UnfilledDeposit): RelayData => ({
         depositor: deposit.deposit.depositor,
         recipient: deposit.deposit.recipient,
@@ -132,13 +133,13 @@ export class Dataworker {
 
     // Sort leaves deterministically so that the same root is always produced from the same _loadData return value.
     // The { Deposit ID, origin chain ID } is guaranteed to be unique so we can sort on them.
-    const sortedLeaves = leaves.sort((relayA, relayB) => {
+    const sortedLeaves = slowRelayLeaves.sort((relayA, relayB) => {
       // Note: Smaller ID numbers will come first
       if (relayA.originChainId === relayB.originChainId) return relayA.depositId - relayB.depositId;
       else return relayA.originChainId - relayB.originChainId;
     });
 
-    return sortedLeaves.length > 0 ? await buildSlowRelayTree(sortedLeaves) : null;
+    return sortedLeaves.length > 0 ? buildSlowRelayTree(sortedLeaves) : null;
   }
 
   async publishRoots(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
@@ -148,13 +149,11 @@ export class Dataworker {
     // of roots.
   }
 
-  async buildRelayerRefundRoot(
-    bundleBlockNumbers: BundleEvaluationBlockNumbers
-  ): Promise<MerkleTree<RelayerRefundLeaf>> | null {
+  buildRelayerRefundRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): MerkleTree<RelayerRefundLeaf> | null {
     const { fillsToRefund } = this._loadData();
     if (Object.keys(fillsToRefund).length === 0) return null;
 
-    const leaves: RelayerRefundLeafWithGroup[] = [];
+    const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
 
     // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
     Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
@@ -171,17 +170,19 @@ export class Dataworker {
         const sortedRefundAddresses = Object.keys(refunds).sort((addressA, addressB) => {
           if (refunds[addressA].gt(refunds[addressB])) return -1;
           if (refunds[addressA].lt(refunds[addressB])) return 1;
-          return addressA.localeCompare(addressB);
+          const sortOutput = this.sortAddresses(addressA, addressB);
+          if (sortOutput !== 0) return sortOutput;
+          else throw new Error("Unexpected matching address");
         });
 
         // Create leaf for { repaymentChainId, L2TokenAddress }, split leaves into sub-leaves if there are too many
         // refunds.
         for (let i = 0; i < sortedRefundAddresses.length; i += this.clients.configStoreClient.maxRefundsPerLeaf)
-          leaves.push({
+          relayerRefundLeaves.push({
             groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
             // L2 token address
-            leafId: toBN(0), // Will be updated before inserting into tree when we sort all leaves.
-            chainId: BigNumber.from(repaymentChainId),
+            leafId: 0, // Will be updated before inserting into tree when we sort all leaves.
+            chainId: Number(repaymentChainId),
             amountToReturn: toBN(0), // TODO: Derive amountToReturn
             l2TokenAddress,
             refundAddresses: sortedRefundAddresses.slice(i, i + this.clients.configStoreClient.maxRefundsPerLeaf),
@@ -194,22 +195,21 @@ export class Dataworker {
 
     // Sort leaves by chain ID and then L2 token address in ascending order. Assign leaves unique, ascending ID's
     // beginning from 0.
-    const indexedLeaves: RelayerRefundLeaf[] = [...leaves]
+    const indexedLeaves: RelayerRefundLeaf[] = [...relayerRefundLeaves]
       .sort((leafA, leafB) => {
-        if (!leafA.chainId.eq(leafB.chainId)) {
-          return leafA.chainId.sub(leafB.chainId).toNumber();
-        } else if (leafA.l2TokenAddress.localeCompare(leafB.l2TokenAddress) !== 0) {
-          return leafA.l2TokenAddress.localeCompare(leafB.l2TokenAddress);
+        if (leafA.chainId !== leafB.chainId) {
+          return leafA.chainId - leafB.chainId;
+        } else if (this.sortAddresses(leafA.l2TokenAddress, leafB.l2TokenAddress) !== 0) {
+          return this.sortAddresses(leafA.l2TokenAddress, leafB.l2TokenAddress);
         } else return leafA.groupIndex - leafB.groupIndex;
       })
       .map((leaf: RelayerRefundLeafWithGroup, i: number): RelayerRefundLeaf => {
-        const newLeaf = leaf;
-        delete newLeaf.groupIndex; // Delete group index now that we've used it to sort leaves for the same
+        delete leaf.groupIndex; // Delete group index now that we've used it to sort leaves for the same
         // { repaymentChain, l2TokenAddress } since it doesn't exist in RelayerRefundLeaf
-        return { ...newLeaf, leafId: toBN(i) };
+        return { ...leaf, leafId: i };
       });
 
-    return indexedLeaves.length > 0 ? await buildRelayerRefundTree(indexedLeaves) : null;
+    return indexedLeaves.length > 0 ? buildRelayerRefundTree(indexedLeaves) : null;
   }
 
   async buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
@@ -261,5 +261,15 @@ export class Dataworker {
 
   async executeRelayerRefundLeaves() {
     // TODO:
+  }
+
+  // Private helper functions
+  sortAddresses(addressA: string, addressB: string) {
+    // Convert address strings to BigNumbers and then sort numerical value of the BigNumber.
+    const bnAddressA = BigNumber.from(addressA);
+    const bnAddressB = BigNumber.from(addressB);
+    if (bnAddressA.gt(bnAddressB)) return 1;
+    else if (bnAddressA.lt(bnAddressB)) return -1;
+    else return 0;
   }
 }
