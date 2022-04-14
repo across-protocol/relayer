@@ -1,12 +1,6 @@
-<<<<<<< HEAD
-import { winston, assign, buildSlowRelayTree, MerkleTree } from "../utils";
-import { SpokePoolClient, HubPoolClient, MultiCallerClient } from "../clients";
-import { UnfilledDeposits, FillsToRefund, RelayData, UnfilledDeposit } from "../interfaces/SpokePool";
-=======
 import { winston, assign, buildSlowRelayTree, MerkleTree, toBN } from "../utils";
 import { SpokePoolClient, HubPoolClient, MultiCallerClient } from "../clients";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill } from "../interfaces/SpokePool";
->>>>>>> master
 import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients

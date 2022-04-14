@@ -1,10 +1,6 @@
 import winston from "winston";
 import { getProvider, getSigner, getDeployedContract, Contract } from "../utils";
-<<<<<<< HEAD
 import { SpokePoolClient, HubPoolClient, RateModelClient, TokenClient, ProfitClient, MultiCallerClient } from ".";
-=======
-import { SpokePoolClient, HubPoolClient, RateModelClient, TokenClient, MultiCallerClient } from ".";
->>>>>>> master
 import { RelayerConfig } from "../relayer/RelayerConfig";
 
 export interface RelayerClients {
@@ -12,10 +8,7 @@ export interface RelayerClients {
   hubPoolClient: HubPoolClient;
   rateModelClient: RateModelClient;
   tokenClient: TokenClient;
-<<<<<<< HEAD
   profitClient: ProfitClient;
-=======
->>>>>>> master
   multiCallerClient: MultiCallerClient;
 }
 
@@ -49,11 +42,8 @@ export function constructRelayerClients(logger: winston.Logger, config: RelayerC
 
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients);
 
-<<<<<<< HEAD
   const profitClient = new ProfitClient(logger, hubPoolClient, config.relayerDiscount);
 
-=======
->>>>>>> master
   // const gasEstimator = new GasEstimator() // todo when this is implemented in the SDK.
   const multiCallerClient = new MultiCallerClient(logger, null);
 
@@ -68,11 +58,7 @@ export function constructRelayerClients(logger: winston.Logger, config: RelayerC
     }),
   });
 
-<<<<<<< HEAD
   return { hubPoolClient, rateModelClient, spokePoolClients, tokenClient, profitClient, multiCallerClient };
-=======
-  return { hubPoolClient, rateModelClient, spokePoolClients, tokenClient, multiCallerClient };
->>>>>>> master
 }
 
 // If this is the first run then the hubPoolClient will have no whitelisted routes. If this is the case then first
@@ -81,12 +67,8 @@ export async function updateRelayerClients(logger: winston.Logger, clients: Rela
   if (Object.keys(clients.hubPoolClient.getL1TokensToDestinationTokens()).length === 0) {
     logger.debug({ at: "ClientHelper", message: "Updating clients for first run" });
     await Promise.all([clients.hubPoolClient.update(), clients.rateModelClient.update()]);
-<<<<<<< HEAD
     // SpokePool client and profit client requires up to date HuPoolClient and rateModelClient.
     await Promise.all([updateSpokePoolClients(clients.spokePoolClients), clients.profitClient.update()]);
-=======
-    await updateSpokePoolClients(clients.spokePoolClients);
->>>>>>> master
     await clients.tokenClient.update(); // Token client requires up to date spokePool clients to fetch token routes.
   } else {
     logger.debug({ at: "ClientHelper", message: "Updating clients for standard run" });
@@ -94,10 +76,7 @@ export async function updateRelayerClients(logger: winston.Logger, clients: Rela
       clients.hubPoolClient.update(),
       clients.rateModelClient.update(),
       clients.tokenClient.update(),
-<<<<<<< HEAD
       clients.profitClient.update(),
-=======
->>>>>>> master
       updateSpokePoolClients(clients.spokePoolClients),
     ]);
   }
