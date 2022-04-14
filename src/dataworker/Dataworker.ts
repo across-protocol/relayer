@@ -108,11 +108,7 @@ export class Dataworker {
       .filter((unfilledDeposit: UnfilledDeposit) => unfilledDeposit.unfilledAmount.gt(0));
 
     // Remove deposits that have been fully filled from unfilled deposit array
-    return {
-      fillsToRefund,
-      deposits,
-      unfilledDeposits,
-    };
+    return { fillsToRefund, deposits, unfilledDeposits };
   }
 
   async buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): Promise<MerkleTree<RelayData>> | null {
