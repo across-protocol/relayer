@@ -12,7 +12,6 @@ export function getDeployedContract(contractName: string, networkId: number, sig
     const artifact = typechain[`${[contractName.replace("_", "")]}__factory`];
     return new Contract(address, artifact.abi, signer);
   } catch (error) {
-    console.log("e", error);
     throw new Error(`Could not find address for contract ${contractName} on ${networkId}`);
   }
 }

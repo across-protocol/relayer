@@ -98,7 +98,7 @@ export class Relayer {
         mrkdwn +=
           ` - ${symbol} cumulative shortfall of ` +
           `${formatFunction(tokenShortfall[chainId][token].shortfall)} ` +
-          `(have ${formatFunction(tokenShortfall[chainId][token].ballance)} but need ` +
+          `(have ${formatFunction(tokenShortfall[chainId][token].balance)} but need ` +
           `${formatFunction(tokenShortfall[chainId][token].needed)}). ` +
           `This is blocking deposits: ${tokenShortfall[chainId][token].deposits}\n`;
       });
