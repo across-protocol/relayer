@@ -1,30 +1,13 @@
-import {
-  winston,
-  assign,
-  buildSlowRelayTree,
-  MerkleTree,
-  toBN,
-  RelayerRefundLeaf,
-  RelayerRefundLeafWithGroup,
-  BigNumber,
-  buildRelayerRefundTree,
-  toBNWei,
-} from "../utils";
-import { SpokePoolClient, HubPoolClient, MultiCallerClient } from "../clients";
-import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill } from "../interfaces/SpokePool";
-import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";
+import { winston, assign, buildSlowRelayTree, MerkleTree, toBN } from "../utils";
+import { RelayerRefundLeaf, RelayerRefundLeafWithGroup, BigNumber, buildRelayerRefundTree, toBNWei } from "../utils";
+import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill, BundleEvaluationBlockNumbers } from "../interfaces";
+import { DataworkerClients } from "../clients";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
 export class Dataworker {
   // eslint-disable-next-line no-useless-constructor
-  constructor(
-    readonly logger: winston.Logger,
-    readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    readonly hubPoolClient: HubPoolClient,
-    readonly multiCallerClient: MultiCallerClient | any,
-    readonly maxRefundsPerLeaf: number = 25
-  ) {}
+  constructor(readonly logger: winston.Logger, readonly clients: DataworkerClients) {}
 
   // Common data re-formatting logic shared across all data worker public functions.
   _loadData(/* bundleBlockNumbers: BundleEvaluationBlockNumbers */): {
@@ -32,24 +15,25 @@ export class Dataworker {
     fillsToRefund: FillsToRefund;
     deposits: Deposit[];
   } {
-    if (!this.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
+    if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
+    if (!this.clients.configStoreClient.isUpdated) throw new Error(`ConfigStoreClient not updated`);
 
     const unfilledDepositsForOriginChain: { [originChainIdPlusDepositId: string]: UnfilledDeposit[] } = {};
     const fillsToRefund: FillsToRefund = {};
     const deposits: Deposit[] = [];
 
-    const allChainIds = Object.keys(this.spokePoolClients);
+    const allChainIds = Object.keys(this.clients.spokePoolClients);
     this.logger.debug({ at: "Dataworker", message: `Loading deposit and fill data`, chainIds: allChainIds });
     for (const originChainId of allChainIds) {
-      const originClient = this.spokePoolClients[originChainId];
+      const originClient = this.clients.spokePoolClients[originChainId];
       if (!originClient.isUpdated) throw new Error(`origin SpokePoolClient on chain ${originChainId} not updated`);
 
       // Loop over all other SpokePoolClient's to find deposits whose destination chain is the selected origin chain.
       this.logger.debug({ at: "Dataworker", message: `Looking up data for origin spoke pool`, originChainId });
-      for (const destinationChainId of Object.keys(this.spokePoolClients)) {
+      for (const destinationChainId of Object.keys(this.clients.spokePoolClients)) {
         if (originChainId === destinationChainId) continue;
 
-        const destinationClient = this.spokePoolClients[destinationChainId];
+        const destinationClient = this.clients.spokePoolClients[destinationChainId];
         if (!destinationClient.isUpdated)
           throw new Error(`destination SpokePoolClient with chain ID ${destinationChainId} not updated`);
 
@@ -196,7 +180,7 @@ export class Dataworker {
 
         // Create leaf for { repaymentChainId, L2TokenAddress }, split leaves into sub-leaves if there are too many
         // refunds.
-        for (let i = 0; i < sortedRefundAddresses.length; i += this.maxRefundsPerLeaf)
+        for (let i = 0; i < sortedRefundAddresses.length; i += this.clients.configStoreClient.maxRefundsPerLeaf)
           leaves.push({
             groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
             // L2 token address
@@ -204,9 +188,9 @@ export class Dataworker {
             chainId: BigNumber.from(repaymentChainId),
             amountToReturn: toBN(0), // TODO: Derive amountToReturn
             l2TokenAddress,
-            refundAddresses: sortedRefundAddresses.slice(i, i + this.maxRefundsPerLeaf),
+            refundAddresses: sortedRefundAddresses.slice(i, i + this.clients.configStoreClient.maxRefundsPerLeaf),
             refundAmounts: sortedRefundAddresses
-              .slice(i, i + this.maxRefundsPerLeaf)
+              .slice(i, i + this.clients.configStoreClient.maxRefundsPerLeaf)
               .map((address) => refunds[address]),
           });
       });

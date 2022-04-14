@@ -9,13 +9,12 @@ import {
   toBN,
   toBNWei,
   setupTokensForWallet,
-  BigNumber,
 } from "./utils";
 import { SignerWithAddress } from "./utils";
 import { buildDeposit, buildFill } from "./utils";
-import { SpokePoolClient, HubPoolClient, RateModelClient } from "../src/clients";
+import { HubPoolClient, RateModelClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, originChainId, MAX_REFUNDS_PER_LEAF } from "./constants";
-import { setupDataworker, dataworkerFixture } from "./fixtures/Dataworker.Fixture";
+import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { Deposit } from "../src/interfaces/SpokePool";
@@ -24,9 +23,10 @@ let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Co
 let l1Token_1: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress;
 
-let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient;
 let dataworkerInstance: Dataworker;
+
+let updateAllClients: () => Promise<void>;
 
 describe("Dataworker: Build merkle roots", async function () {
   beforeEach(async function () {
@@ -41,8 +41,7 @@ describe("Dataworker: Build merkle roots", async function () {
       depositor,
       relayer,
       dataworkerInstance,
-      spokePoolClient_1,
-      spokePoolClient_2,
+      updateAllClients,
     } = await setupDataworker(ethers, MAX_REFUNDS_PER_LEAF));
   });
   it("Default conditions", async function () {
@@ -316,10 +315,3 @@ describe("Dataworker: Build merkle roots", async function () {
     expect(merkleRoot4.getHexRoot()).to.equal(expectedMerkleRoot4.getHexRoot());
   });
 });
-
-async function updateAllClients() {
-  await hubPoolClient.update();
-  await rateModelClient.update();
-  await spokePoolClient_1.update();
-  await spokePoolClient_2.update();
-}

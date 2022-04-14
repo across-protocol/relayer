@@ -16,6 +16,8 @@ let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient;
 let dataworkerInstance: Dataworker;
 
+let updateAllClients: () => Promise<void>;
+
 describe("Dataworker: Load data used in all functions", async function () {
   beforeEach(async function () {
     ({
@@ -32,6 +34,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       dataworkerInstance,
       spokePoolClient_1,
       spokePoolClient_2,
+      updateAllClients,
     } = await setupDataworker(ethers, 25));
   });
 
@@ -311,10 +314,3 @@ describe("Dataworker: Load data used in all functions", async function () {
     });
   });
 });
-
-async function updateAllClients() {
-  await hubPoolClient.update();
-  await rateModelClient.update();
-  await spokePoolClient_1.update();
-  await spokePoolClient_2.update();
-}

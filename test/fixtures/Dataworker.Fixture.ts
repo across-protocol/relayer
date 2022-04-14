@@ -1,8 +1,14 @@
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, Contract, hre, enableRoutes } from "../utils";
 import { SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "../utils";
 import { createSpyLogger, winston, deployAndConfigureHubPool, deployRateModelStore } from "../utils";
-import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallerClient } from "../../src/clients";
-import { amountToLp, destinationChainId, MAX_REFUNDS_PER_LEAF, originChainId } from "../constants";
+import {
+  SpokePoolClient,
+  HubPoolClient,
+  RateModelClient,
+  MultiCallerClient,
+  ConfigStoreClient,
+} from "../../src/clients";
+import { amountToLp, destinationChainId, originChainId, MAX_REFUNDS_PER_LEAF } from "../constants";
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 
@@ -30,6 +36,7 @@ export async function setupDataworker(
   owner: SignerWithAddress;
   depositor: SignerWithAddress;
   relayer: SignerWithAddress;
+  updateAllClients: () => Promise<void>;
 }> {
   const [owner, depositor, relayer] = await ethers.getSigners();
   const { spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId);
@@ -58,6 +65,7 @@ export async function setupDataworker(
   const rateModelClient = new RateModelClient(spyLogger, rateModelStore, hubPoolClient);
 
   const multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
+  const configStoreClient = new ConfigStoreClient(spyLogger, MAX_REFUNDS_PER_LEAF);
 
   const spokePoolClient_1 = new SpokePoolClient(
     spyLogger,
@@ -72,13 +80,13 @@ export async function setupDataworker(
     destinationChainId
   );
 
-  const dataworkerInstance = new Dataworker(
-    spyLogger,
-    { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
+  const dataworkerInstance = new Dataworker(spyLogger, {
+    spokePoolClients: { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
     hubPoolClient,
+    rateModelClient,
     multiCallerClient,
-    maxRefundsPerLeaf
-  );
+    configStoreClient,
+  });
 
   // Give owner tokens to LP on HubPool with.
   await setupTokensForWallet(spokePool_1, owner, [l1Token_1, l1Token_2], null, 100); // Seed owner to LP.
@@ -117,5 +125,12 @@ export async function setupDataworker(
     owner,
     depositor,
     relayer,
+    updateAllClients: async () => {
+      await hubPoolClient.update();
+      await configStoreClient.update();
+      await rateModelClient.update();
+      await spokePoolClient_1.update();
+      await spokePoolClient_2.update();
+    },
   };
 }
