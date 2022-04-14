@@ -170,7 +170,7 @@ export class Dataworker {
         const sortedRefundAddresses = Object.keys(refunds).sort((addressA, addressB) => {
           if (refunds[addressA].gt(refunds[addressB])) return -1;
           if (refunds[addressA].lt(refunds[addressB])) return 1;
-          const sortOutput = this.sortAddresses(addressA, addressB);
+          const sortOutput = this.compareAddresses(addressA, addressB);
           if (sortOutput !== 0) return sortOutput;
           else throw new Error("Unexpected matching address");
         });
@@ -199,9 +199,10 @@ export class Dataworker {
       .sort((leafA, leafB) => {
         if (leafA.chainId !== leafB.chainId) {
           return leafA.chainId - leafB.chainId;
-        } else if (this.sortAddresses(leafA.l2TokenAddress, leafB.l2TokenAddress) !== 0) {
-          return this.sortAddresses(leafA.l2TokenAddress, leafB.l2TokenAddress);
-        } else return leafA.groupIndex - leafB.groupIndex;
+        } else if (this.compareAddresses(leafA.l2TokenAddress, leafB.l2TokenAddress) !== 0) {
+          return this.compareAddresses(leafA.l2TokenAddress, leafB.l2TokenAddress);
+        } else if (leafA.groupIndex !== leafB.groupIndex) return leafA.groupIndex - leafB.groupIndex;
+        else throw new Error("Unexpected leaf group indices match");
       })
       .map((leaf: RelayerRefundLeafWithGroup, i: number): RelayerRefundLeaf => {
         delete leaf.groupIndex; // Delete group index now that we've used it to sort leaves for the same
@@ -264,7 +265,7 @@ export class Dataworker {
   }
 
   // Private helper functions
-  sortAddresses(addressA: string, addressB: string) {
+  compareAddresses(addressA: string, addressB: string) {
     // Convert address strings to BigNumbers and then sort numerical value of the BigNumber.
     const bnAddressA = BigNumber.from(addressA);
     const bnAddressB = BigNumber.from(addressB);
