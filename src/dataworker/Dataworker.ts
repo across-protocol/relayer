@@ -213,7 +213,7 @@ export class Dataworker {
     return indexedLeaves.length > 0 ? buildRelayerRefundTree(indexedLeaves) : null;
   }
 
-  async buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
+  buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
     const { fillsToRefund, deposits, unfilledDeposits } = this._loadData();
 
     // For each destination chain ID key in unfilledDeposits
@@ -263,6 +263,4 @@ export class Dataworker {
   async executeRelayerRefundLeaves() {
     // TODO:
   }
-
-  // Private helper functions
 }
