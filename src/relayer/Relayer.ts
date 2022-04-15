@@ -32,13 +32,14 @@ export class Relayer {
           this.clients.profitClient.captureUnprofitableFill(deposit, unfilledAmount);
         }
       } else {
-        this.clients.tokenClient.captureTokenShortfallForDeposit(deposit, unfilledAmount);
+        this.clients.tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
         // TODO: this should also execute a 0 sized fill.
       }
     }
 
-    // If during the execution run we had shortfalls then handel it by producing an associated log.
-    if (this.clients.tokenClient.anyCapturedShortfalls()) this.handleTokenShortfall();
+    // If during the execution run we had shortfalls or unprofitable fills then handel it by producing associated logs.
+    if (this.clients.tokenClient.anyCapturedShortFallFills()) this.handleTokenShortfall();
+    if (this.clients.profitClient.anyCapturedUnprofitableFills()) this.handleUnprofitableFill();
   }
 
   fillRelay(deposit: Deposit, fillAmount: BigNumber) {
@@ -86,12 +87,15 @@ export class Relayer {
     return unfilledDeposits;
   }
 
+  // TODO: that the implementations below for both methods will produce logs on each iteration of the bot. This should
+  // be refactored to only log ONCE on the first time seeing each log. This will be left for a later PR.
+
   private handleTokenShortfall() {
     const tokenShortfall = this.clients.tokenClient.getTokenShortfall();
 
     let mrkdwn = "";
     Object.keys(tokenShortfall).forEach((chainId) => {
-      mrkdwn += `*Shortfall on ${getNetworkName(chainId)}:\n*`;
+      mrkdwn += `*Shortfall on ${getNetworkName(chainId)}:*\n`;
       Object.keys(tokenShortfall[chainId]).forEach((token) => {
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfo(chainId, token);
         const formatFunction = createFormatFunction(2, 4, false, decimals);
@@ -104,8 +108,35 @@ export class Relayer {
       });
     });
 
-    this.logger.warn({ at: "Relayer", message: "Insufficient balance to fill all relays 💸!", mrkdwn });
+    this.logger.warn({ at: "Relayer", message: "Insufficient balance to fill all deposits 💸!", mrkdwn });
 
+    this.clients.tokenClient.clearTokenShortfall();
+  }
+
+  private handleUnprofitableFill() {
+    const unprofitableDeposits = this.clients.profitClient.getUnprofitableFills();
+
+    let mrkdwn = "";
+    Object.keys(unprofitableDeposits).forEach((chainId) => {
+      mrkdwn += `*Unprofitable deposits on ${getNetworkName(chainId)}:*\n`;
+      Object.keys(unprofitableDeposits[chainId]).forEach((depositId) => {
+        const { deposit, fillAmount } = unprofitableDeposits[chainId][depositId];
+        const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
+        const formatFunction = createFormatFunction(2, 4, false, decimals);
+        mrkdwn +=
+          `- DepositId ${deposit.depositId} of amount ${formatFunction(deposit.amount)} ${symbol}` +
+          ` with a relayerFeePct ${formatFunction(deposit.relayerFeePct)} being relayed from ` +
+          `${getNetworkName(deposit.originChainId)} to ${getNetworkName(deposit.destinationChainId)}` +
+          ` and an unfilled amount of  ${formatFunction(fillAmount)} ${symbol} is unprofitable!\n`;
+      });
+    });
+
+    this.logger.warn({ at: "Relayer", message: "Not relaying unprofitable deposits 🙅‍♂️!", mrkdwn });
+
+    this.clients.profitClient.clearUnprofitableFills();
+
+    // Note that this implementation right now will result in each run of the bot logging for insufficient token balance.
+    // Storing these logs and only emmitting them once will be done in a subsequent PR.
     this.clients.tokenClient.clearTokenShortfall();
   }
 

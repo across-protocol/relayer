@@ -59,7 +59,7 @@ export class TokenClient {
     const deposits = [...this.getShortfallDeposits(chainId, token), depositId];
     assign(this.tokenShortfall, [chainId, token], { deposits, totalRequirement });
   }
-  captureTokenShortfallForDeposit(deposit: Deposit, unfilledAmount: BigNumber) {
+  captureTokenShortfallForFill(deposit: Deposit, unfilledAmount: BigNumber) {
     this.logger.debug({ at: "TokenClient", message: "Handling token shortfall", deposit, unfilledAmount });
     this.captureTokenShortfall(deposit.destinationChainId, deposit.destinationToken, deposit.depositId, unfilledAmount);
   }
@@ -81,7 +81,7 @@ export class TokenClient {
     return tokenShortfall;
   }
 
-  anyCapturedShortfalls(): boolean {
+  anyCapturedShortFallFills(): boolean {
     return Object.keys(this.tokenShortfall).length != 0;
   }
 

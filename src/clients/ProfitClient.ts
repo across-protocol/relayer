@@ -1,6 +1,5 @@
-import { BigNumber, winston, assign, ERC20, toBNWei, toBN, MAX_SAFE_ALLOWANCE } from "../utils";
-import { runTransaction, getNetworkName, etherscanLink } from "../utils";
-import { HubPoolClient, SpokePoolClient } from ".";
+import { BigNumber, winston, toBNWei, toBN, assign } from "../utils";
+import { HubPoolClient } from ".";
 import { Deposit, L1Token } from "../interfaces";
 import { Coingecko } from "@uma/sdk";
 
@@ -25,14 +24,19 @@ const chainIdToMinRevenue = {
 
 export class ProfitClient {
   private readonly coingecko;
-  private tokenPrices: { [l1Token: string]: BigNumber } = {};
+  protected tokenPrices: { [l1Token: string]: BigNumber } = {};
+  private unprofitableFills: { [chainId: number]: { deposit: Deposit; fillAmount: BigNumber }[] } = {};
 
   constructor(
     readonly logger: winston.Logger,
     readonly hubPoolClient: HubPoolClient,
-    readonly relayerDiscount: BigNumber = toBN(0)
+    readonly relayerDiscount: BigNumber = toBNWei(0)
   ) {
     this.coingecko = new Coingecko();
+  }
+
+  getAllPrices() {
+    return this.tokenPrices;
   }
 
   getPriceOfToken(token: string) {
@@ -43,13 +47,30 @@ export class ProfitClient {
     return this.tokenPrices[token];
   }
 
+  getUnprofitableFills() {
+    return this.unprofitableFills;
+  }
+
+  clearUnprofitableFills() {
+    this.unprofitableFills = {};
+  }
+
   isFillProfitable(deposit: Deposit, fillAmount: BigNumber) {
+    if (toBN(this.relayerDiscount).eq(toBNWei(1))) {
+      this.logger.debug({ at: "ProfitClient", message: "Relayer discount set to 100%. Accepting relay" });
+      return true;
+    }
+
+    if (toBN(deposit.relayerFeePct).eq(toBN(0))) {
+      this.logger.debug({ at: "ProfitClient", message: "Deposit set 0 relayerFeePct. Rejecting relay" });
+      return false;
+    }
     const { decimals, address: l1Token } = this.hubPoolClient.getTokenInfoForDeposit(deposit);
     const tokenPriceInUsd = this.getPriceOfToken(l1Token);
-    const fillRevenueInRelayedToken = deposit.relayerFeePct.mul(fillAmount).div(toBN(10).pow(decimals));
-    const fillRevenueInUsd = fillRevenueInRelayedToken.mul(tokenPriceInUsd);
+    const fillRevenueInRelayedToken = toBN(deposit.relayerFeePct).mul(fillAmount).div(toBN(10).pow(decimals));
+    const fillRevenueInUsd = fillRevenueInRelayedToken.mul(tokenPriceInUsd).div(toBNWei(1));
     const discount = toBNWei(1).sub(this.relayerDiscount);
-    const minimumAcceptableRevenue = chainIdToMinRevenue[deposit.destinationChainId].mul(discount).div(toBN(1e18));
+    const minimumAcceptableRevenue = chainIdToMinRevenue[deposit.destinationChainId].mul(discount).div(toBNWei(1));
     const fillProfitable = fillRevenueInUsd.gte(minimumAcceptableRevenue);
     this.logger.debug({
       at: "ProfitClient",
@@ -67,24 +88,23 @@ export class ProfitClient {
   }
 
   captureUnprofitableFill(deposit: Deposit, fillAmount: BigNumber) {
-    console.log("CAPTURED", deposit, fillAmount);
+    this.logger.debug({ at: "TokenClient", message: "Handling unprofitable fill", deposit, fillAmount });
+    assign(this.unprofitableFills, [deposit.originChainId], [{ deposit, fillAmount }]);
+  }
+
+  anyCapturedUnprofitableFills(): boolean {
+    return Object.keys(this.unprofitableFills).length != 0;
   }
 
   async update() {
     const l1Tokens = this.hubPoolClient.getL1Tokens();
-    const l1TokensOverride = [
-      { address: "0xc778417E063141139Fce010982780140Aa0cD5Ab", symbol: "WETH", decimals: 18 },
-      { address: "0x4DBCdF9B62e891a7cec5A2568C3F4FAF9E8Abe2b", symbol: "USDC", decimals: 6 },
-    ];
     this.logger.debug({ at: "ProfitClient", message: "Updating client", l1Tokens });
-    const prices = await Promise.allSettled(
-      l1TokensOverride.map((l1Token: L1Token) => this.getTokenPrice(l1Token.address))
-    );
+    const prices = await Promise.allSettled(l1Tokens.map((l1Token: L1Token) => this.coingeckoPrice(l1Token.address)));
 
     let errors = [];
     for (const [index, priceResponse] of prices.entries()) {
       if (priceResponse.status === "rejected") errors.push(l1Tokens[index]);
-      else this.tokenPrices[l1Tokens[index].address] = toBN(priceResponse.value[1]);
+      else this.tokenPrices[l1Tokens[index].address] = toBNWei(priceResponse.value[1]);
     }
     if (errors.length > 0) {
       let mrkdwn = "The following L1 token prices could not be fetched:\n";
@@ -96,7 +116,7 @@ export class ProfitClient {
     this.logger.debug({ at: "ProfitClient", message: "Updated client", tokenPrices: this.tokenPrices });
   }
 
-  private async getTokenPrice(token: string) {
+  private async coingeckoPrice(token: string) {
     return await this.coingecko.getCurrentPriceByContract(token, "usd");
   }
 }
