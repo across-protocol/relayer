@@ -10,9 +10,7 @@ export interface BotModes {
   unknownRootBundleCallersEnabled: boolean; // Monitors relay related events triggered by non-whitelisted addresses
 }
 
-export class AcrossMonitorConfig {
-  readonly errorRetries: number;
-  readonly errorRetriesTimeout: number;
+export class MonitorConfig {
   readonly spokePoolChainIds: number[];
   readonly spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }>;
   readonly hubPoolChainId: number;
@@ -20,7 +18,7 @@ export class AcrossMonitorConfig {
   readonly utilizationThreshold: number;
   readonly hubPoolStartingBlock: number | undefined;
   readonly hubPoolEndingBlock: number | undefined;
-  readonly whitelistedAddresses: string[];
+  readonly whitelistedDataworkers: string[];
   readonly whitelistedRelayers: string[];
   readonly botModes: BotModes;
 
@@ -33,12 +31,10 @@ export class AcrossMonitorConfig {
       UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED,
       HUB_CHAIN_ID,
       UTILIZATION_THRESHOLD,
-      WHITELISTED_ADDRESSES,
+      WHITELISTED_DATA_WORKERS,
       SPOKE_POOL_CHAIN_IDS,
       SPOKE_POOLS_BLOCKS,
       WHITELISTED_RELAYERS,
-      ERROR_RETRIES,
-      ERROR_RETRIES_TIMEOUT,
     } = env;
 
     this.hubPoolChainId = HUB_CHAIN_ID ? Number(HUB_CHAIN_ID) : 1;
@@ -47,9 +43,9 @@ export class AcrossMonitorConfig {
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
     };
 
-    this.whitelistedAddresses = WHITELISTED_ADDRESSES ? JSON.parse(WHITELISTED_ADDRESSES) : [];
-    for (let i = 0; i < this.whitelistedAddresses.length; i++) {
-      this.whitelistedAddresses[i] = ethers.utils.getAddress(this.whitelistedAddresses[i]);
+    this.whitelistedDataworkers = WHITELISTED_DATA_WORKERS ? JSON.parse(WHITELISTED_DATA_WORKERS) : [];
+    for (let i = 0; i < this.whitelistedDataworkers.length; i++) {
+      this.whitelistedDataworkers[i] = ethers.utils.getAddress(this.whitelistedDataworkers[i]);
     }
 
     this.whitelistedRelayers = WHITELISTED_RELAYERS ? JSON.parse(WHITELISTED_RELAYERS) : [];
@@ -71,8 +67,5 @@ export class AcrossMonitorConfig {
 
     this.spokePoolChainIds = SPOKE_POOL_CHAIN_IDS ? JSON.parse(SPOKE_POOL_CHAIN_IDS) : [1, 10, 42161, 288];
     this.spokePoolsBlocks = SPOKE_POOLS_BLOCKS ? JSON.parse(SPOKE_POOLS_BLOCKS) : {};
-
-    this.errorRetries = ERROR_RETRIES ? Number(ERROR_RETRIES) : 3;
-    this.errorRetriesTimeout = ERROR_RETRIES_TIMEOUT ? Number(ERROR_RETRIES_TIMEOUT) : 1;
   }
 }
