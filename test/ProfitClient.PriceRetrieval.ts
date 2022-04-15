@@ -25,8 +25,6 @@ describe("ProfitClient: Price Retrieval", async function () {
     await profitClient.update();
 
     // The client should have fetched the prices for both tokens.
-    console.log(Object.keys(profitClient.getAllPrices()));
-    console.log([mainnetWeth, mainnetUsdc]);
     expect(Object.keys(profitClient.getAllPrices())).to.deep.equal([mainnetWeth, mainnetUsdc]);
     Object.values(profitClient.getAllPrices()).forEach((price: BigNumber) => expect(price.gt(toBN(0))).to.be.true);
     Object.keys(profitClient.getAllPrices()).forEach(
