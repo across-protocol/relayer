@@ -1,4 +1,4 @@
-import { winston, assign, buildSlowRelayTree, MerkleTree, toBN } from "../utils";
+import { winston, assign, buildSlowRelayTree, MerkleTree, toBN, compareAddresses } from "../utils";
 import { RelayerRefundLeaf, RelayerRefundLeafWithGroup, BigNumber, buildRelayerRefundTree, toBNWei } from "../utils";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill, BundleEvaluationBlockNumbers } from "../interfaces";
 import { DataworkerClients } from "../clients";
@@ -170,7 +170,7 @@ export class Dataworker {
         const sortedRefundAddresses = Object.keys(refunds).sort((addressA, addressB) => {
           if (refunds[addressA].gt(refunds[addressB])) return -1;
           if (refunds[addressA].lt(refunds[addressB])) return 1;
-          const sortOutput = this.compareAddresses(addressA, addressB);
+          const sortOutput = compareAddresses(addressA, addressB);
           if (sortOutput !== 0) return sortOutput;
           else throw new Error("Unexpected matching address");
         });
@@ -199,8 +199,8 @@ export class Dataworker {
       .sort((leafA, leafB) => {
         if (leafA.chainId !== leafB.chainId) {
           return leafA.chainId - leafB.chainId;
-        } else if (this.compareAddresses(leafA.l2TokenAddress, leafB.l2TokenAddress) !== 0) {
-          return this.compareAddresses(leafA.l2TokenAddress, leafB.l2TokenAddress);
+        } else if (compareAddresses(leafA.l2TokenAddress, leafB.l2TokenAddress) !== 0) {
+          return compareAddresses(leafA.l2TokenAddress, leafB.l2TokenAddress);
         } else if (leafA.groupIndex !== leafB.groupIndex) return leafA.groupIndex - leafB.groupIndex;
         else throw new Error("Unexpected leaf group indices match");
       })
@@ -265,12 +265,4 @@ export class Dataworker {
   }
 
   // Private helper functions
-  compareAddresses(addressA: string, addressB: string) {
-    // Convert address strings to BigNumbers and then sort numerical value of the BigNumber.
-    const bnAddressA = BigNumber.from(addressA);
-    const bnAddressB = BigNumber.from(addressB);
-    if (bnAddressA.gt(bnAddressB)) return 1;
-    else if (bnAddressA.lt(bnAddressB)) return -1;
-    else return 0;
-  }
 }
