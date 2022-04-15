@@ -305,26 +305,23 @@ export async function buildFill(
   deposit: Deposit,
   pctOfDepositToFill: number
 ): Promise<Fill> {
-  return {
-    ...(await fillRelay(
-      spokePool,
-      destinationToken,
-      recipientAndDepositor,
-      recipientAndDepositor,
-      relayer,
-      deposit.depositId,
-      deposit.originChainId,
-      deposit.amount,
-      deposit.amount
-        .mul(toBNWei(1).sub(deposit.realizedLpFeePct.add(deposit.relayerFeePct)))
-        .mul(toBNWei(pctOfDepositToFill))
-        .div(toBNWei(1))
-        .div(toBNWei(1)),
-      deposit.realizedLpFeePct,
-      deposit.relayerFeePct
-    )),
-    ...{ appliedRelayerFeePct: toBN(0) }, // temp work arround while the bot is limited on the older verson of the contract
-  };
+  return await fillRelay(
+    spokePool,
+    destinationToken,
+    recipientAndDepositor,
+    recipientAndDepositor,
+    relayer,
+    deposit.depositId,
+    deposit.originChainId,
+    deposit.amount,
+    deposit.amount
+      .mul(toBNWei(1).sub(deposit.realizedLpFeePct.add(deposit.relayerFeePct)))
+      .mul(toBNWei(pctOfDepositToFill))
+      .div(toBNWei(1))
+      .div(toBNWei(1)),
+    deposit.realizedLpFeePct,
+    deposit.relayerFeePct
+  );
 }
 
 export async function buildModifiedFill(
