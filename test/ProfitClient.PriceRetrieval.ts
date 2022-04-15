@@ -26,9 +26,11 @@ describe("ProfitClient: Price Retrieval", async function () {
 
     // The client should have fetched the prices for both tokens.
     expect(Object.keys(profitClient.getAllPrices())).to.deep.equal([mainnetWeth, mainnetUsdc]);
-    Object.values(profitClient.getAllPrices()).forEach((price: BigNumber) => expect(price.gt(toBN(0))).to.be.true);
+    Object.values(profitClient.getAllPrices()).forEach(
+      (price: BigNumber) => expect(toBN(price).gt(toBN(0))).to.be.true
+    );
     Object.keys(profitClient.getAllPrices()).forEach(
-      (token) => expect(profitClient.getPriceOfToken(token).gt(toBN(0))).to.be.true
+      (token) => expect(toBN(profitClient.getPriceOfToken(token)).gt(toBN(0))).to.be.true
     );
   });
 });
