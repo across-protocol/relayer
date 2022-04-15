@@ -25,8 +25,7 @@ export class RateModelClient {
   }
 
   async computeRealizedLpFeePct(deposit: Deposit, l1Token: string): Promise<BigNumber> {
-    // const quoteBlock = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
-    const quoteBlock = 10469009;
+    const quoteBlock = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
 
     const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, quoteBlock, deposit.amount);
 
