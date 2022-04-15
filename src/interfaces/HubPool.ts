@@ -3,22 +3,26 @@ import { BigNumber } from "../utils";
 export type BundleEvaluationBlockNumbers = number[];
 
 export interface PoolRebalanceLeaf {
-  chainId: BigNumber;
-  groupIndex: BigNumber;
+  chainId: number;
+  groupIndex: number;
   bundleLpFees: BigNumber[];
   netSendAmounts: BigNumber[];
   runningBalances: BigNumber[];
-  leafId: BigNumber;
+  leafId: number;
   l1Tokens: string[];
 }
 
 export interface RelayerRefundLeaf {
   amountToReturn: BigNumber;
-  chainId: BigNumber;
+  chainId: number;
   refundAmounts: BigNumber[];
-  leafId: BigNumber;
+  leafId: number;
   l2TokenAddress: string;
   refundAddresses: string[];
+}
+
+export interface RelayerRefundLeafWithGroup extends RelayerRefundLeaf {
+  groupIndex: number;
 }
 
 export interface L1Token {
