@@ -306,8 +306,8 @@ describe("Dataworker: Load data used in all functions", async function () {
     // Note: If the dataworker does not explicitly filter out slow relays then the fillsToRefund object
     // will contain refunds associated with repaymentChainId 0.
     expect(data5.fillsToRefund).to.deep.equal({
-      [repaymentChainId]: { 
-        [erc20_2.address]: { fills: [fill1], refunds: { [relayer.address]: getRefundForFills([fill1]) } }, 
+      [repaymentChainId]: {
+        [erc20_2.address]: { fills: [fill1], refunds: { [relayer.address]: getRefundForFills([fill1]) } },
         [erc20_1.address]: {
           fills: [fill2, fill3],
           refunds: { [relayer.address]: getRefundForFills([fill2, fill3]) },

@@ -59,7 +59,7 @@ export class Dataworker {
             if (!fill.isSlowRelay) {
               // Save fill data and associate with repayment chain and token.
               assign(fillsToRefund, [fill.repaymentChainId, fill.destinationToken, "fills"], [fill]);
-              
+
               // Update refund amount for the recipient of the refund, i.e. the relayer.
               const refund = getRefundForFills([fill]);
               const refunds = fillsToRefund[fill.repaymentChainId][fill.destinationToken].refunds;
@@ -67,8 +67,7 @@ export class Dataworker {
                 // Initiate refunds dictionary if it doesn't exist.
                 assign(fillsToRefund, [fill.repaymentChainId, fill.destinationToken, "refunds"], {});
                 fillsToRefund[fill.repaymentChainId][fill.destinationToken].refunds[fill.relayer] = refund;
-              } 
-              else if (refunds[fill.relayer]) refunds[fill.relayer] = refunds[fill.relayer].add(refund);
+              } else if (refunds[fill.relayer]) refunds[fill.relayer] = refunds[fill.relayer].add(refund);
               else refunds[fill.relayer] = refund;
             }
             const depositUnfilledAmount = fill.amount.sub(fill.totalFilledAmount);
@@ -231,7 +230,7 @@ export class Dataworker {
     if (Object.keys(fillsToRefund).length > 0) {
       Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
         Object.keys(fillsToRefund[repaymentChainId]).forEach((l2TokenAddress: string) => {
-          assign(runningBalances, [repaymentChainId, l2TokenAddress], toBN(0))
+          assign(runningBalances, [repaymentChainId, l2TokenAddress], toBN(0));
           Object.values(fillsToRefund[repaymentChainId][l2TokenAddress].refunds).forEach(
             (refund: BigNumber) =>
               (runningBalances[repaymentChainId][l2TokenAddress] =
@@ -242,7 +241,6 @@ export class Dataworker {
     }
 
     console.log(runningBalances);
-
 
     // For each destination chain ID key in unfilledDeposits
     //     Group by L1 token and for each L1 token:

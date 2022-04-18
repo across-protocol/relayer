@@ -304,7 +304,7 @@ describe("Dataworker: Build merkle roots", async function () {
     const expectedMerkleRoot4 = await buildTree([leaf5, leaf6, leaf3, leaf4, leaf1, leaf2]);
     expect(merkleRoot4.getHexRoot()).to.equal(expectedMerkleRoot4.getHexRoot());
   });
-  it("Build pool rebalance root", async function() {
+  it("Build pool rebalance root", async function () {
     await updateAllClients();
 
     // Submit deposits for multiple L2 tokens.
@@ -339,7 +339,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
     await updateAllClients();
     const merkleRoot1 = dataworkerInstance.buildPoolRebalanceRoot([]);
-    console.log(getRefundForFills([fill1, fill2, fill3, fill4]))
+    console.log(getRefundForFills([fill1, fill2, fill3, fill4]));
     // TODO:
-  })
+  });
 });

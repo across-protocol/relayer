@@ -6,7 +6,7 @@ export function _getRefundForFill(fill: Fill): BigNumber {
 }
 
 export function getRefundForFills(fills: Fill[]): BigNumber {
-  let accumulator = toBN(0)
+  let accumulator = toBN(0);
   fills.forEach((fill) => (accumulator = accumulator.add(_getRefundForFill(fill))));
-  return accumulator
+  return accumulator;
 }
