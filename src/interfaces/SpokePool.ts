@@ -77,6 +77,8 @@ export interface FillsToRefund {
     [l2TokenAddress: string]: {
       fills: Fill[];
       refunds: { [refundAddress: string]: BigNumber };
+      totalRefundAmount: BigNumber;
+      realizedLpFees: BigNumber;
     };
   };
 }

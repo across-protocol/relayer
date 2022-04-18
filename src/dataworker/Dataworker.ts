@@ -1,5 +1,6 @@
 import { winston, assign, buildSlowRelayTree, MerkleTree, toBN, compareAddresses, getRefundForFills } from "../utils";
 import { RelayerRefundLeaf, RelayerRefundLeafWithGroup, BigNumber, buildRelayerRefundTree } from "../utils";
+import { getRealizedLpFeeForFills } from "../utils";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill, BundleEvaluationBlockNumbers } from "../interfaces";
 import { RunningBalances } from "../interfaces";
 import { DataworkerClients } from "../clients";
@@ -62,13 +63,22 @@ export class Dataworker {
 
               // Update refund amount for the recipient of the refund, i.e. the relayer.
               const refund = getRefundForFills([fill]);
-              const refunds = fillsToRefund[fill.repaymentChainId][fill.destinationToken].refunds;
+              const refundObj = fillsToRefund[fill.repaymentChainId][fill.destinationToken];
+              const refunds = refundObj.refunds;
               if (!refunds) {
                 // Initiate refunds dictionary if it doesn't exist.
                 assign(fillsToRefund, [fill.repaymentChainId, fill.destinationToken, "refunds"], {});
-                fillsToRefund[fill.repaymentChainId][fill.destinationToken].refunds[fill.relayer] = refund;
+                refundObj.refunds[fill.relayer] = refund;
               } else if (refunds[fill.relayer]) refunds[fill.relayer] = refunds[fill.relayer].add(refund);
               else refunds[fill.relayer] = refund;
+
+              // Update realized LP fee and total refund amount accumulators.
+              refundObj.totalRefundAmount = refundObj.totalRefundAmount
+                ? refundObj.totalRefundAmount.add(refund)
+                : refund;
+              refundObj.realizedLpFees = refundObj.realizedLpFees
+                ? refundObj.realizedLpFees.add(getRealizedLpFeeForFills([fill]))
+                : getRealizedLpFeeForFills([fill]);
             }
             const depositUnfilledAmount = fill.amount.sub(fill.totalFilledAmount);
             const depositKey = `${originChainId}+${fill.depositId}`;
@@ -224,23 +234,29 @@ export class Dataworker {
     const { fillsToRefund, deposits, unfilledDeposits } = this._loadData();
 
     const runningBalances: RunningBalances = {};
+    const realizedLpFees: RunningBalances = {}; // Realized LP fees dictionary has same shape as runningBalances.
 
     // 1. For each FilledRelay group, identified by { repaymentChainId, L2TokenAddress }, initiate a "running balance"
     // to the total refund amount for that group.
+    // 2. Similarly, for each group sum the realized LP fees.
     if (Object.keys(fillsToRefund).length > 0) {
       Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
         Object.keys(fillsToRefund[repaymentChainId]).forEach((l2TokenAddress: string) => {
-          assign(runningBalances, [repaymentChainId, l2TokenAddress], toBN(0));
-          Object.values(fillsToRefund[repaymentChainId][l2TokenAddress].refunds).forEach(
-            (refund: BigNumber) =>
-              (runningBalances[repaymentChainId][l2TokenAddress] =
-                runningBalances[repaymentChainId][l2TokenAddress].add(refund))
+          assign(
+            runningBalances,
+            [repaymentChainId, l2TokenAddress],
+            fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount
+          );
+          assign(
+            realizedLpFees,
+            [repaymentChainId, l2TokenAddress],
+            fillsToRefund[repaymentChainId][l2TokenAddress].realizedLpFees
           );
         });
       });
     }
 
-    console.log(runningBalances);
+    console.log(runningBalances, realizedLpFees);
 
     // For each destination chain ID key in unfilledDeposits
     //     Group by L1 token and for each L1 token:

@@ -7,7 +7,7 @@ import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { Deposit } from "../src/interfaces/SpokePool";
-import { getRefundForFills } from "../src/utils";
+import { getRealizedLpFeeForFills, getRefundForFills } from "../src/utils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract;
@@ -340,6 +340,7 @@ describe("Dataworker: Build merkle roots", async function () {
     await updateAllClients();
     const merkleRoot1 = dataworkerInstance.buildPoolRebalanceRoot([]);
     console.log(getRefundForFills([fill1, fill2, fill3, fill4]));
+    console.log(getRealizedLpFeeForFills([fill1, fill2, fill3, fill4]));
     // TODO:
   });
 });

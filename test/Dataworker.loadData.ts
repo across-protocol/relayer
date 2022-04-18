@@ -6,7 +6,7 @@ import { amountToDeposit, repaymentChainId, destinationChainId, originChainId } 
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { toBN, getRefundForFills } from "../src/utils";
+import { toBN, getRefundForFills, getRealizedLpFeeForFills } from "../src/utils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, l1Token_2: Contract;
@@ -220,7 +220,12 @@ describe("Dataworker: Load data used in all functions", async function () {
     const data1 = dataworkerInstance._loadData();
     expect(data1.fillsToRefund).to.deep.equal({
       [repaymentChainId]: {
-        [erc20_2.address]: { fills: [fill1], refunds: { [relayer.address]: getRefundForFills([fill1]) } },
+        [erc20_2.address]: {
+          fills: [fill1],
+          refunds: { [relayer.address]: getRefundForFills([fill1]) },
+          totalRefundAmount: getRefundForFills([fill1]),
+          realizedLpFees: getRealizedLpFeeForFills([fill1]),
+        },
       },
     });
 
@@ -230,8 +235,18 @@ describe("Dataworker: Load data used in all functions", async function () {
     const data2 = dataworkerInstance._loadData();
     expect(data2.fillsToRefund).to.deep.equal({
       [repaymentChainId]: {
-        [erc20_2.address]: { fills: [fill1], refunds: { [relayer.address]: getRefundForFills([fill1]) } },
-        [erc20_1.address]: { fills: [fill2], refunds: { [relayer.address]: getRefundForFills([fill2]) } },
+        [erc20_2.address]: {
+          fills: [fill1],
+          refunds: { [relayer.address]: getRefundForFills([fill1]) },
+          totalRefundAmount: getRefundForFills([fill1]),
+          realizedLpFees: getRealizedLpFeeForFills([fill1]),
+        },
+        [erc20_1.address]: {
+          fills: [fill2],
+          refunds: { [relayer.address]: getRefundForFills([fill2]) },
+          totalRefundAmount: getRefundForFills([fill2]),
+          realizedLpFees: getRealizedLpFeeForFills([fill2]),
+        },
       },
     });
 
@@ -307,10 +322,17 @@ describe("Dataworker: Load data used in all functions", async function () {
     // will contain refunds associated with repaymentChainId 0.
     expect(data5.fillsToRefund).to.deep.equal({
       [repaymentChainId]: {
-        [erc20_2.address]: { fills: [fill1], refunds: { [relayer.address]: getRefundForFills([fill1]) } },
+        [erc20_2.address]: {
+          fills: [fill1],
+          refunds: { [relayer.address]: getRefundForFills([fill1]) },
+          totalRefundAmount: getRefundForFills([fill1]),
+          realizedLpFees: getRealizedLpFeeForFills([fill1]),
+        },
         [erc20_1.address]: {
           fills: [fill2, fill3],
           refunds: { [relayer.address]: getRefundForFills([fill2, fill3]) },
+          totalRefundAmount: getRefundForFills([fill2, fill3]),
+          realizedLpFees: getRealizedLpFeeForFills([fill2, fill3]),
         },
       },
     });
@@ -322,10 +344,17 @@ describe("Dataworker: Load data used in all functions", async function () {
     const data6 = dataworkerInstance._loadData();
     expect(data6.fillsToRefund).to.deep.equal({
       [repaymentChainId]: {
-        [erc20_2.address]: { fills: [fill1], refunds: { [relayer.address]: getRefundForFills([fill1]) } },
+        [erc20_2.address]: {
+          fills: [fill1],
+          refunds: { [relayer.address]: getRefundForFills([fill1]) },
+          totalRefundAmount: getRefundForFills([fill1]),
+          realizedLpFees: getRealizedLpFeeForFills([fill1]),
+        },
         [erc20_1.address]: {
           fills: [fill2, fill3, fill4],
           refunds: { [relayer.address]: getRefundForFills([fill2, fill3, fill4]) },
+          totalRefundAmount: getRefundForFills([fill2, fill3, fill4]),
+          realizedLpFees: getRealizedLpFeeForFills([fill2, fill3, fill4]),
         },
       },
     });
