@@ -7,6 +7,7 @@ import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { Deposit } from "../src/interfaces/SpokePool";
+import { getRefundForFills } from "../src/utils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract;
@@ -303,4 +304,42 @@ describe("Dataworker: Build merkle roots", async function () {
     const expectedMerkleRoot4 = await buildTree([leaf5, leaf6, leaf3, leaf4, leaf1, leaf2]);
     expect(merkleRoot4.getHexRoot()).to.equal(expectedMerkleRoot4.getHexRoot());
   });
+  it("Build pool rebalance root", async function() {
+    await updateAllClients();
+
+    // Submit deposits for multiple L2 tokens.
+    const deposit1 = await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token_1,
+      depositor,
+      destinationChainId,
+      amountToDeposit
+    );
+    const deposit3 = await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token_1,
+      depositor,
+      destinationChainId,
+      amountToDeposit
+    );
+
+    // Submit fills for two relayers on one repayment chain and one destination token. Note: we know that
+    // depositor address is alphabetically lower than relayer address, so submit fill from depositor first and test
+    // that data worker sorts on refund address.
+    const fill1 = await buildFillForRepaymentChain(spokePool_2, depositor, deposit3, 0.25, 100);
+    const fill2 = await buildFillForRepaymentChain(spokePool_2, depositor, deposit3, 1, 100);
+    const fill3 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, 100);
+    const fill4 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 1, 100);
+
+    await updateAllClients();
+    const merkleRoot1 = dataworkerInstance.buildPoolRebalanceRoot([]);
+    console.log(getRefundForFills([fill1, fill2, fill3, fill4]))
+    // TODO:
+  })
 });

@@ -6,7 +6,7 @@ import { amountToDeposit, repaymentChainId, destinationChainId, originChainId } 
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { toBN } from "../src/utils";
+import { toBN, getRefundForFills } from "../src/utils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, l1Token_2: Contract;
@@ -219,7 +219,9 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data1 = dataworkerInstance._loadData();
     expect(data1.fillsToRefund).to.deep.equal({
-      [repaymentChainId]: { [erc20_2.address]: [fill1] },
+      [repaymentChainId]: {
+        [erc20_2.address]: { fills: [fill1], refunds: { [relayer.address]: getRefundForFills([fill1]) } },
+      },
     });
 
     // Submit a fill for another L2 token.
@@ -227,7 +229,10 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data2 = dataworkerInstance._loadData();
     expect(data2.fillsToRefund).to.deep.equal({
-      [repaymentChainId]: { [erc20_2.address]: [fill1], [erc20_1.address]: [fill2] },
+      [repaymentChainId]: {
+        [erc20_2.address]: { fills: [fill1], refunds: { [relayer.address]: getRefundForFills([fill1]) } },
+        [erc20_1.address]: { fills: [fill2], refunds: { [relayer.address]: getRefundForFills([fill2]) } },
+      },
     });
 
     // Submit fills without matching deposits. These should be ignored by the client.
@@ -301,7 +306,13 @@ describe("Dataworker: Load data used in all functions", async function () {
     // Note: If the dataworker does not explicitly filter out slow relays then the fillsToRefund object
     // will contain refunds associated with repaymentChainId 0.
     expect(data5.fillsToRefund).to.deep.equal({
-      [repaymentChainId]: { [erc20_2.address]: [fill1], [erc20_1.address]: [fill2, fill3] },
+      [repaymentChainId]: { 
+        [erc20_2.address]: { fills: [fill1], refunds: { [relayer.address]: getRefundForFills([fill1]) } }, 
+        [erc20_1.address]: {
+          fills: [fill2, fill3],
+          refunds: { [relayer.address]: getRefundForFills([fill2, fill3]) },
+        },
+      },
     });
 
     // Speed up relays are included. Re-use the same fill information
@@ -310,7 +321,13 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data6 = dataworkerInstance._loadData();
     expect(data6.fillsToRefund).to.deep.equal({
-      [repaymentChainId]: { [erc20_2.address]: [fill1], [erc20_1.address]: [fill2, fill3, fill4] },
+      [repaymentChainId]: {
+        [erc20_2.address]: { fills: [fill1], refunds: { [relayer.address]: getRefundForFills([fill1]) } },
+        [erc20_1.address]: {
+          fills: [fill2, fill3, fill4],
+          refunds: { [relayer.address]: getRefundForFills([fill2, fill3, fill4]) },
+        },
+      },
     });
   });
 });

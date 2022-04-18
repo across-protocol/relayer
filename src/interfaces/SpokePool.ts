@@ -73,5 +73,16 @@ export interface UnfilledDeposit {
   hasFirstPartialFill?: boolean;
 }
 export interface FillsToRefund {
-  [repaymentChainId: number]: { [l2TokenAddress: string]: Fill[] };
+  [repaymentChainId: number]: {
+    [l2TokenAddress: string]: {
+      fills: Fill[];
+      refunds: { [refundAddress: string]: BigNumber };
+    };
+  };
+}
+
+export interface RunningBalances {
+  [repaymentChainId: number]: {
+    [l2TokenAddress: string]: BigNumber;
+  };
 }

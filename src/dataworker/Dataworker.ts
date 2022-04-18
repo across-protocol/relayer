@@ -1,8 +1,8 @@
-import { winston, assign, buildSlowRelayTree, MerkleTree, toBN, compareAddresses } from "../utils";
-import { RelayerRefundLeaf, RelayerRefundLeafWithGroup, BigNumber, buildRelayerRefundTree, toBNWei } from "../utils";
+import { winston, assign, buildSlowRelayTree, MerkleTree, toBN, compareAddresses, getRefundForFills } from "../utils";
+import { RelayerRefundLeaf, RelayerRefundLeafWithGroup, BigNumber, buildRelayerRefundTree } from "../utils";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill, BundleEvaluationBlockNumbers } from "../interfaces";
+import { RunningBalances } from "../interfaces";
 import { DataworkerClients } from "../clients";
-import { createContractObjectFromJson } from "@uma/common";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -56,7 +56,21 @@ export class Dataworker {
             // FillRelay events emitted by slow relay executions will usually not match with any deposits because the
             // relayer fee % will be reset to 0 by the SpokePool contract, however we still need to explicitly filter slow
             // relays out because its possible that a deposit is submitted with a relayer fee % set to 0.
-            if (!fill.isSlowRelay) assign(fillsToRefund, [fill.repaymentChainId, fill.destinationToken], [fill]);
+            if (!fill.isSlowRelay) {
+              // Save fill data and associate with repayment chain and token.
+              assign(fillsToRefund, [fill.repaymentChainId, fill.destinationToken, "fills"], [fill]);
+              
+              // Update refund amount for the recipient of the refund, i.e. the relayer.
+              const refund = getRefundForFills([fill]);
+              const refunds = fillsToRefund[fill.repaymentChainId][fill.destinationToken].refunds;
+              if (!refunds) {
+                // Initiate refunds dictionary if it doesn't exist.
+                assign(fillsToRefund, [fill.repaymentChainId, fill.destinationToken, "refunds"], {});
+                fillsToRefund[fill.repaymentChainId][fill.destinationToken].refunds[fill.relayer] = refund;
+              } 
+              else if (refunds[fill.relayer]) refunds[fill.relayer] = refunds[fill.relayer].add(refund);
+              else refunds[fill.relayer] = refund;
+            }
             const depositUnfilledAmount = fill.amount.sub(fill.totalFilledAmount);
             const depositKey = `${originChainId}+${fill.depositId}`;
             assign(
@@ -158,13 +172,7 @@ export class Dataworker {
     // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
     Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
       Object.keys(fillsToRefund[repaymentChainId]).forEach((l2TokenAddress: string) => {
-        // Group refunds by recipient for this L2 token address.
-        const refunds: { [refundAddress: string]: BigNumber } = {};
-        fillsToRefund[repaymentChainId][l2TokenAddress].forEach((fill: Fill) => {
-          const existingFillAmountForRelayer = refunds[fill.relayer] ? refunds[fill.relayer] : toBN(0);
-          const currentRefundAmount = fill.fillAmount.mul(toBNWei(1).sub(fill.realizedLpFeePct)).div(toBNWei(1));
-          refunds[fill.relayer] = existingFillAmountForRelayer.add(currentRefundAmount);
-        });
+        const refunds = fillsToRefund[repaymentChainId][l2TokenAddress].refunds;
         // We need to sort leaves deterministically so that the same root is always produced from the same _loadData
         // return value, so sort refund addresses by refund amount (descending) and then address (ascending).
         const sortedRefundAddresses = Object.keys(refunds).sort((addressA, addressB) => {
@@ -215,6 +223,26 @@ export class Dataworker {
 
   buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
     const { fillsToRefund, deposits, unfilledDeposits } = this._loadData();
+
+    const runningBalances: RunningBalances = {};
+
+    // 1. For each FilledRelay group, identified by { repaymentChainId, L2TokenAddress }, initiate a "running balance"
+    // to the total refund amount for that group.
+    if (Object.keys(fillsToRefund).length > 0) {
+      Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
+        Object.keys(fillsToRefund[repaymentChainId]).forEach((l2TokenAddress: string) => {
+          assign(runningBalances, [repaymentChainId, l2TokenAddress], toBN(0))
+          Object.values(fillsToRefund[repaymentChainId][l2TokenAddress].refunds).forEach(
+            (refund: BigNumber) =>
+              (runningBalances[repaymentChainId][l2TokenAddress] =
+                runningBalances[repaymentChainId][l2TokenAddress].add(refund))
+          );
+        });
+      });
+    }
+
+    console.log(runningBalances);
+
 
     // For each destination chain ID key in unfilledDeposits
     //     Group by L1 token and for each L1 token:
