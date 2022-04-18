@@ -236,23 +236,39 @@ export class Dataworker {
     const runningBalances: RunningBalances = {};
     const realizedLpFees: RunningBalances = {}; // Realized LP fees dictionary has same shape as runningBalances.
 
-    // 1. For each FilledRelay group, identified by { repaymentChainId, L2TokenAddress }, initiate a "running balance"
+    // 1. For each FilledRelay group, identified by { repaymentChainId, L1TokenAddress }, initiate a "running balance"
     // to the total refund amount for that group.
     // 2. Similarly, for each group sum the realized LP fees.
     if (Object.keys(fillsToRefund).length > 0) {
       Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
         Object.keys(fillsToRefund[repaymentChainId]).forEach((l2TokenAddress: string) => {
+          const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpart(repaymentChainId, l2TokenAddress)
           assign(
             runningBalances,
-            [repaymentChainId, l2TokenAddress],
+            [repaymentChainId, l1TokenCounterpart],
             fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount
           );
           assign(
             realizedLpFees,
-            [repaymentChainId, l2TokenAddress],
+            [repaymentChainId, l1TokenCounterpart],
             fillsToRefund[repaymentChainId][l2TokenAddress].realizedLpFees
           );
         });
+      });
+
+      // 3. Map each deposit event to its L1 token and origin chain ID and subtract deposited amounts from running
+      // balances.
+      deposits.forEach((deposit: Deposit) => {
+        // TODO: Make sure that we're grabbing the L1 token counterpart at the deposit quote time. This is important if
+        // the L1,L2 token mapping is different now than at the quote time.
+        const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenForDeposit(deposit)
+        if (!runningBalances[deposit.originChainId.toString()]) runningBalances[deposit.originChainId.toString()] = {}
+        const runningBalanceForDeposit = runningBalances[deposit.originChainId.toString()][l1TokenCounterpart];
+        if (runningBalanceForDeposit)
+          runningBalances[deposit.originChainId.toString()][l1TokenCounterpart] = runningBalanceForDeposit.sub(
+            deposit.amount
+          );
+        else runningBalances[deposit.originChainId.toString()][l1TokenCounterpart] = deposit.amount.mul(toBN(-1))
       });
     }
 

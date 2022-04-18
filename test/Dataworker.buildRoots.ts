@@ -329,13 +329,11 @@ describe("Dataworker: Build merkle roots", async function () {
       amountToDeposit
     );
 
-    // Submit fills for two relayers on one repayment chain and one destination token. Note: we know that
-    // depositor address is alphabetically lower than relayer address, so submit fill from depositor first and test
-    // that data worker sorts on refund address.
-    const fill1 = await buildFillForRepaymentChain(spokePool_2, depositor, deposit3, 0.25, 100);
-    const fill2 = await buildFillForRepaymentChain(spokePool_2, depositor, deposit3, 1, 100);
-    const fill3 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, 100);
-    const fill4 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 1, 100);
+    // Submit fills with repayment chain set to one of the origin or destinationc hains.
+    const fill1 = await buildFillForRepaymentChain(spokePool_2, depositor, deposit3, 0.25, destinationChainId);
+    const fill2 = await buildFillForRepaymentChain(spokePool_2, depositor, deposit3, 1, destinationChainId);
+    const fill3 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, destinationChainId);
+    const fill4 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 1, destinationChainId);
 
     await updateAllClients();
     const merkleRoot1 = dataworkerInstance.buildPoolRebalanceRoot([]);

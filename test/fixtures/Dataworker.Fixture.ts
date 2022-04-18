@@ -8,7 +8,7 @@ import {
   MultiCallerClient,
   ConfigStoreClient,
 } from "../../src/clients";
-import { amountToLp, destinationChainId, originChainId, MAX_REFUNDS_PER_LEAF } from "../constants";
+import { amountToLp, destinationChainId, originChainId, MAX_REFUNDS_PER_LEAF, repaymentChainId } from "../constants";
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 

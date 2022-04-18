@@ -1,5 +1,5 @@
 import { spreadEvent, assign, Contract, winston, BigNumber, ERC20 } from "../utils";
-import { Deposit, L1Token } from "../interfaces";
+import { Deposit, Fill, L1Token } from "../interfaces";
 
 export class HubPoolClient {
   // L1Token -> destinationChainId -> destinationToken
@@ -34,6 +34,16 @@ export class HubPoolClient {
         l1Token = _l1Token;
     });
     if (l1Token === null) throw new Error(`Could not find L1 Token for deposit!,${JSON.stringify(deposit)}`);
+    return l1Token;
+  }
+
+  getL1TokenCounterpart(repaymentChainId: string, l2Token: string) {
+    let l1Token = null;
+    Object.keys(this.l1TokensToDestinationTokens).forEach((_l1Token) => {
+      if (this.l1TokensToDestinationTokens[_l1Token][repaymentChainId] === l2Token)
+        l1Token = _l1Token;
+    });
+    if (l1Token === null) throw new Error(`Could not find L1 Token for repayment chain ${repaymentChainId} and L2 token ${l2Token}!`);
     return l1Token;
   }
 

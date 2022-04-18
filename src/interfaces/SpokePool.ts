@@ -85,6 +85,6 @@ export interface FillsToRefund {
 
 export interface RunningBalances {
   [repaymentChainId: number]: {
-    [l2TokenAddress: string]: BigNumber;
+    [l1TokenAddress: string]: BigNumber;
   };
 }
