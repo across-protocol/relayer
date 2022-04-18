@@ -242,7 +242,7 @@ export class Dataworker {
     if (Object.keys(fillsToRefund).length > 0) {
       Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
         Object.keys(fillsToRefund[repaymentChainId]).forEach((l2TokenAddress: string) => {
-          const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpart(repaymentChainId, l2TokenAddress)
+          const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpart(repaymentChainId, l2TokenAddress);
           assign(
             runningBalances,
             [repaymentChainId, l1TokenCounterpart],
@@ -261,14 +261,14 @@ export class Dataworker {
       deposits.forEach((deposit: Deposit) => {
         // TODO: Make sure that we're grabbing the L1 token counterpart at the deposit quote time. This is important if
         // the L1,L2 token mapping is different now than at the quote time.
-        const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenForDeposit(deposit)
-        if (!runningBalances[deposit.originChainId.toString()]) runningBalances[deposit.originChainId.toString()] = {}
+        const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenForDeposit(deposit);
+        if (!runningBalances[deposit.originChainId.toString()]) runningBalances[deposit.originChainId.toString()] = {};
         const runningBalanceForDeposit = runningBalances[deposit.originChainId.toString()][l1TokenCounterpart];
         if (runningBalanceForDeposit)
           runningBalances[deposit.originChainId.toString()][l1TokenCounterpart] = runningBalanceForDeposit.sub(
             deposit.amount
           );
-        else runningBalances[deposit.originChainId.toString()][l1TokenCounterpart] = deposit.amount.mul(toBN(-1))
+        else runningBalances[deposit.originChainId.toString()][l1TokenCounterpart] = deposit.amount.mul(toBN(-1));
       });
     }
 
