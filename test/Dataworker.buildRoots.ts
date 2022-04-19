@@ -126,7 +126,7 @@ describe("Dataworker: Build merkle roots", async function () {
     await updateAllClients();
     expect(dataworkerInstance.buildSlowRelayRoot([])).to.equal(null);
   });
-  it("Build relayer refund root", async function () {
+  it.only("Build relayer refund root", async function () {
     await updateAllClients();
 
     // Submit deposits for multiple L2 tokens.
