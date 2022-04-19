@@ -28,7 +28,7 @@ export function assertPromiseError(promise: Promise<any>, errMessage?: string) {
 }
 
 export async function setupTokensForWallet(
-  spokePool: utils.Contract,
+  contractToApprove: utils.Contract,
   wallet: utils.SignerWithAddress,
   tokens: utils.Contract[],
   weth?: utils.Contract,
@@ -36,9 +36,11 @@ export async function setupTokensForWallet(
 ) {
   await utils.seedWallet(wallet, tokens, weth, utils.amountToSeedWallets.mul(seedMultiplier));
   await Promise.all(
-    tokens.map((token) => token.connect(wallet).approve(spokePool.address, utils.amountToDeposit.mul(seedMultiplier)))
+    tokens.map((token) =>
+      token.connect(wallet).approve(contractToApprove.address, utils.amountToDeposit.mul(seedMultiplier))
+    )
   );
-  if (weth) await weth.connect(wallet).approve(spokePool.address, utils.amountToDeposit);
+  if (weth) await weth.connect(wallet).approve(contractToApprove.address, utils.amountToDeposit);
 }
 
 export function createSpyLogger() {
@@ -79,12 +81,14 @@ export async function deployRateModelStore(signer: utils.SignerWithAddress, toke
 
 export async function deployAndConfigureHubPool(
   signer: utils.SignerWithAddress,
-  spokePools: { l2ChainId: number; spokePool: utils.Contract }[]
+  spokePools: { l2ChainId: number; spokePool: utils.Contract }[],
+  finderAddress: string = zeroAddress,
+  timerAddress: string = zeroAddress
 ) {
   const lpTokenFactory = await (await utils.getContractFactory("LpTokenFactory", signer)).deploy();
   const hubPool = await (
     await utils.getContractFactory("HubPool", signer)
-  ).deploy(lpTokenFactory.address, zeroAddress, zeroAddress, zeroAddress);
+  ).deploy(lpTokenFactory.address, finderAddress, zeroAddress, timerAddress);
 
   const mockAdapter = await (await utils.getContractFactory("Mock_Adapter", signer)).deploy();
 

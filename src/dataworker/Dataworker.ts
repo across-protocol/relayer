@@ -275,16 +275,14 @@ export class Dataworker {
 
       // 4. Map all slow fills to an L1 token using its destination chain ID and destination token.
       let filteredSlowFills = slowFills.filter(
-        // First filter out all slow fills with fillAmount == 0 and that have already been included in a previous pool
-        // rebalance.
+        // First filter out all repeat slow fills. This would be all slow fills with `fillAmount == 0` and that have a
+        // matching slow fill.
         (slowFill: Fill) =>
-          !(
-            slowFill.fillAmount.eq(toBN(0)) &&
-            slowFills.some(
+            slowFill.fillAmount.gt(toBN(0)) ||
+            !slowFills.some(
               (otherSlowFill: Fill) =>
                 otherSlowFill.originChainId === slowFill.originChainId && otherSlowFill.depositId === slowFill.depositId
             )
-          )
       );
     }
 

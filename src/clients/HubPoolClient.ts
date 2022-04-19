@@ -1,10 +1,12 @@
-import { spreadEvent, assign, Contract, winston, BigNumber, ERC20 } from "../utils";
+import { spreadEvent, assign, Contract, winston, BigNumber, ERC20, Event } from "../utils";
 import { Deposit, Fill, L1Token } from "../interfaces";
 
 export class HubPoolClient {
   // L1Token -> destinationChainId -> destinationToken
   private l1TokensToDestinationTokens: { [l1Token: string]: { [destinationChainId: number]: string } } = {};
   private l1Tokens: L1Token[] = []; // L1Tokens and their associated info.
+  private proposeRootBundleEvents: Event[] = [];
+  private executeRootBundleEvents: Event[] = [];
 
   public isUpdated: boolean = false;
   public firstBlockToSearch: number;
@@ -86,9 +88,11 @@ export class HubPoolClient {
     this.logger.debug({ at: "HubPoolClient", message: "Updating client", searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
 
-    const [poolRebalanceRouteEvents, l1TokensLPEvents] = await Promise.all([
-      this.hubPool.queryFilter(this.hubPool.filters.SetPoolRebalanceRoute(), ...searchConfig),
-      this.hubPool.queryFilter(this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), ...searchConfig),
+    const [poolRebalanceRouteEvents, l1TokensLPEvents, proposeRootBundleEvents, executeRootBundleEvents] = await Promise.all([
+        this.hubPool.queryFilter(this.hubPool.filters.SetPoolRebalanceRoute(), ...searchConfig),
+        this.hubPool.queryFilter(this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), ...searchConfig),
+        this.hubPool.queryFilter(this.hubPool.filters.ProposeRootBundle(), ...searchConfig),
+        this.hubPool.queryFilter(this.hubPool.filters.RootBundleExecuted(), ...searchConfig),
     ]);
 
     for (const event of poolRebalanceRouteEvents) {
@@ -102,6 +106,9 @@ export class HubPoolClient {
       l1TokensLPEvents.map((event) => this.fetchTokenInfoFromContract(spreadEvent(event).l1Token))
     );
     for (const info of tokenInfo) if (!this.l1Tokens.includes(info)) this.l1Tokens.push(info);
+
+    this.proposeRootBundleEvents.push(...proposeRootBundleEvents);
+    this.executeRootBundleEvents.push(...executeRootBundleEvents);
 
     this.isUpdated = true;
     this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.

@@ -126,7 +126,7 @@ describe("Dataworker: Build merkle roots", async function () {
     await updateAllClients();
     expect(dataworkerInstance.buildSlowRelayRoot([])).to.equal(null);
   });
-  it.only("Build relayer refund root", async function () {
+  it("Build relayer refund root", async function () {
     await updateAllClients();
 
     // Submit deposits for multiple L2 tokens.
@@ -208,11 +208,15 @@ describe("Dataworker: Build merkle roots", async function () {
         })
       );
     };
+    const depositorBeforeRelayer = toBN(depositor.address).lt(toBN(relayer.address));
     const leaf1 = {
       chainId: toBN(100),
       amountToReturn: toBN(0),
       l2TokenAddress: erc20_2.address,
-      refundAddresses: [relayer.address, depositor.address], // Sorted ascending alphabetically
+      refundAddresses: [
+        depositorBeforeRelayer ? depositor.address : relayer.address,
+        depositorBeforeRelayer ? relayer.address : depositor.address,
+      ], // Sorted ascending alphabetically
       refundAmounts: [expectedRefundAmount(deposit1), expectedRefundAmount(deposit3)], // Refund amounts should aggregate across all fills.
     };
 
@@ -228,12 +232,13 @@ describe("Dataworker: Build merkle roots", async function () {
       chainId: toBN(100),
       amountToReturn: toBN(0),
       l2TokenAddress: erc20_1.address,
-      refundAddresses: [depositor.address, relayer.address], // Reversed order because deposit4 refund amount is larger.
+      refundAddresses: [depositor.address, relayer.address], // Ordered by fill amount
       refundAmounts: [expectedRefundAmount(deposit4), expectedRefundAmount(deposit2)],
     };
     await updateAllClients();
     const merkleRoot2 = dataworkerInstance.buildRelayerRefundRoot([]);
-    const expectedMerkleRoot2 = await buildTree([leaf1, leaf2]);
+    const leaves1And2Sorted = toBN(erc20_1.address).lt(toBN(erc20_2.address)) ? [leaf2, leaf1] : [leaf1, leaf2]
+    const expectedMerkleRoot2 = await buildTree(leaves1And2Sorted);
     expect(merkleRoot2.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
 
     // Submit fills for multiple repayment chains. Note: Send the fills for destination tokens in the
@@ -258,7 +263,8 @@ describe("Dataworker: Build merkle roots", async function () {
     };
     await updateAllClients();
     const merkleRoot3 = await dataworkerInstance.buildRelayerRefundRoot([]);
-    const expectedMerkleRoot3 = await buildTree([leaf3, leaf4, leaf1, leaf2]);
+    const leaves3And4Sorted = toBN(erc20_1.address).lt(toBN(erc20_2.address)) ? [leaf4, leaf3] : [leaf3, leaf4]
+    const expectedMerkleRoot3 = await buildTree([...leaves3And4Sorted, ...leaves1And2Sorted]);
     expect(merkleRoot3.getHexRoot()).to.equal(expectedMerkleRoot3.getHexRoot());
 
     // Splits leaf into multiple leaves if refunds > MAX_REFUNDS_PER_LEAF.
@@ -301,7 +307,7 @@ describe("Dataworker: Build merkle roots", async function () {
     };
     await updateAllClients();
     const merkleRoot4 = dataworkerInstance.buildRelayerRefundRoot([]);
-    const expectedMerkleRoot4 = await buildTree([leaf5, leaf6, leaf3, leaf4, leaf1, leaf2]);
+    const expectedMerkleRoot4 = await buildTree([leaf5, leaf6, ...leaves3And4Sorted, ...leaves1And2Sorted]);
     expect(merkleRoot4.getHexRoot()).to.equal(expectedMerkleRoot4.getHexRoot());
   });
   it("Build pool rebalance root", async function () {
