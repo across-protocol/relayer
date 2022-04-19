@@ -360,7 +360,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       },
     });
   });
-  it("Returns slow fills", async function() {
+  it("Returns slow fills", async function () {
     await updateAllClients();
 
     // We're going to slow relay deposit1
@@ -415,7 +415,6 @@ describe("Dataworker: Load data used in all functions", async function () {
       [] // Proof for tree with 1 leaf is empty
     );
 
-
     // The unfilled deposit has now been fully filled.
     await updateAllClients();
     const data1 = dataworkerInstance._loadData();
@@ -431,7 +430,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       },
     ]);
   });
-  it("Returns deposits", async function() {
+  it("Returns deposits", async function () {
     await updateAllClients();
 
     const deposit1 = await buildDeposit(
@@ -449,5 +448,5 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data1 = dataworkerInstance._loadData();
     expect(data1.deposits).to.deep.equal([deposit1]);
-  })
+  });
 });

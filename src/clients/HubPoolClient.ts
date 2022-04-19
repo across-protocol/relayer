@@ -88,12 +88,13 @@ export class HubPoolClient {
     this.logger.debug({ at: "HubPoolClient", message: "Updating client", searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
 
-    const [poolRebalanceRouteEvents, l1TokensLPEvents, proposeRootBundleEvents, executeRootBundleEvents] = await Promise.all([
+    const [poolRebalanceRouteEvents, l1TokensLPEvents, proposeRootBundleEvents, executeRootBundleEvents] =
+      await Promise.all([
         this.hubPool.queryFilter(this.hubPool.filters.SetPoolRebalanceRoute(), ...searchConfig),
         this.hubPool.queryFilter(this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), ...searchConfig),
         this.hubPool.queryFilter(this.hubPool.filters.ProposeRootBundle(), ...searchConfig),
         this.hubPool.queryFilter(this.hubPool.filters.RootBundleExecuted(), ...searchConfig),
-    ]);
+      ]);
 
     for (const event of poolRebalanceRouteEvents) {
       const args = spreadEvent(event);

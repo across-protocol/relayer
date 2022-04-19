@@ -1,5 +1,5 @@
 import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
-import { umaEcosystemFixture } from "@across-protocol/contracts-v2/dist/test/fixtures/UmaEcosystem.Fixture"
+import { umaEcosystemFixture } from "@across-protocol/contracts-v2/dist/test/fixtures/UmaEcosystem.Fixture";
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, Contract, hre, enableRoutes } from "../utils";
 import { SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "../utils";
 import { createSpyLogger, winston, deployAndConfigureHubPool, deployRateModelStore } from "../utils";
@@ -20,7 +20,10 @@ export const dataworkerFixture = hre.deployments.createFixture(async ({ ethers }
 
 // Sets up all contracts neccessary to build and execute leaves in dataworker merkle roots: relayer refund, slow relay,
 // and pool rebalance roots.
-export async function setupDataworker(ethers: any, maxRefundLeaf: number): Promise<{
+export async function setupDataworker(
+  ethers: any,
+  maxRefundLeaf: number
+): Promise<{
   hubPool: Contract;
   spokePool_1: Contract;
   erc20_1: Contract;
@@ -55,7 +58,7 @@ export async function setupDataworker(ethers: any, maxRefundLeaf: number): Promi
     owner,
     [{ l2ChainId: destinationChainId, spokePool: spokePool_2 }],
     parentFixture.finder.address,
-    parentFixture.timer.address,
+    parentFixture.timer.address
   );
 
   // Enable deposit routes for second L2 tokens so relays can be sent between spoke pool 1 <--> 2.
@@ -74,7 +77,7 @@ export async function setupDataworker(ethers: any, maxRefundLeaf: number): Promi
   const mockAdapter = await (await utils.getContractFactory("Mock_Adapter", owner)).deploy();
   await hubPool.setCrossChainContracts(destinationChainId, mockAdapter.address, spokePool_1.address);
   await hubPool.setCrossChainContracts(originChainId, mockAdapter.address, spokePool_2.address);
-  
+
   // Set bond currency on hub pool so that roots can be proposed.
   await parentFixture.collateralWhitelist.addToWhitelist(l1Token_1.address);
   await parentFixture.store.setFinalFee(l1Token_1.address, { rawValue: "0" });

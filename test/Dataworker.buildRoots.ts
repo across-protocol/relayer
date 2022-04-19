@@ -237,7 +237,7 @@ describe("Dataworker: Build merkle roots", async function () {
     };
     await updateAllClients();
     const merkleRoot2 = dataworkerInstance.buildRelayerRefundRoot([]);
-    const leaves1And2Sorted = toBN(erc20_1.address).lt(toBN(erc20_2.address)) ? [leaf2, leaf1] : [leaf1, leaf2]
+    const leaves1And2Sorted = toBN(erc20_1.address).lt(toBN(erc20_2.address)) ? [leaf2, leaf1] : [leaf1, leaf2];
     const expectedMerkleRoot2 = await buildTree(leaves1And2Sorted);
     expect(merkleRoot2.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
 
@@ -263,7 +263,7 @@ describe("Dataworker: Build merkle roots", async function () {
     };
     await updateAllClients();
     const merkleRoot3 = await dataworkerInstance.buildRelayerRefundRoot([]);
-    const leaves3And4Sorted = toBN(erc20_1.address).lt(toBN(erc20_2.address)) ? [leaf4, leaf3] : [leaf3, leaf4]
+    const leaves3And4Sorted = toBN(erc20_1.address).lt(toBN(erc20_2.address)) ? [leaf4, leaf3] : [leaf3, leaf4];
     const expectedMerkleRoot3 = await buildTree([...leaves3And4Sorted, ...leaves1And2Sorted]);
     expect(merkleRoot3.getHexRoot()).to.equal(expectedMerkleRoot3.getHexRoot());
 

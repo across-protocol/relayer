@@ -81,7 +81,7 @@ export class Dataworker {
               refundObj.realizedLpFees = refundObj.realizedLpFees
                 ? refundObj.realizedLpFees.add(getRealizedLpFeeForFills([fill]))
                 : getRealizedLpFeeForFills([fill]);
-            } else slowFills.push(fill)
+            } else slowFills.push(fill);
             const depositUnfilledAmount = fill.amount.sub(fill.totalFilledAmount);
             const depositKey = `${originChainId}+${fill.depositId}`;
             assign(
@@ -278,11 +278,11 @@ export class Dataworker {
         // First filter out all repeat slow fills. This would be all slow fills with `fillAmount == 0` and that have a
         // matching slow fill.
         (slowFill: Fill) =>
-            slowFill.fillAmount.gt(toBN(0)) ||
-            !slowFills.some(
-              (otherSlowFill: Fill) =>
-                otherSlowFill.originChainId === slowFill.originChainId && otherSlowFill.depositId === slowFill.depositId
-            )
+          slowFill.fillAmount.gt(toBN(0)) ||
+          !slowFills.some(
+            (otherSlowFill: Fill) =>
+              otherSlowFill.originChainId === slowFill.originChainId && otherSlowFill.depositId === slowFill.depositId
+          )
       );
     }
 

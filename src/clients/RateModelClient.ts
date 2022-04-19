@@ -58,6 +58,7 @@ export class RateModelClient {
       ...searchConfig
     );
 
+    console.log(rateModelStoreEvents);
     for (const event of rateModelStoreEvents) {
       const args = {
         blockNumber: event.blockNumber,
