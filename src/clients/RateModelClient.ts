@@ -34,6 +34,9 @@ export class RateModelClient {
       quoteBlock = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
       rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
     } catch (error) {
+      if ((await this.hubPoolClient.hubPool.provider.getNetwork()).chainId == 1)
+        throw new error("Bad rate model store deployment");
+
       quoteBlock = await this.blockFinder.getLatestBlock().number;
       rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
     }
