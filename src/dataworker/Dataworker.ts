@@ -233,7 +233,7 @@ export class Dataworker {
   }
 
   buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
-    const { fillsToRefund, deposits, unfilledDeposits } = this._loadData();
+    const { fillsToRefund, deposits, slowFills } = this._loadData();
 
     const runningBalances: RunningBalances = {};
     const realizedLpFees: RunningBalances = {}; // Realized LP fees dictionary has same shape as runningBalances.
@@ -272,6 +272,20 @@ export class Dataworker {
           );
         else runningBalances[deposit.originChainId.toString()][l1TokenCounterpart] = deposit.amount.mul(toBN(-1));
       });
+
+      // 4. Map all slow fills to an L1 token using its destination chain ID and destination token.
+      let filteredSlowFills = slowFills.filter(
+        // First filter out all slow fills with fillAmount == 0 and that have already been included in a previous pool
+        // rebalance.
+        (slowFill: Fill) =>
+          !(
+            slowFill.fillAmount.eq(toBN(0)) &&
+            slowFills.some(
+              (otherSlowFill: Fill) =>
+                otherSlowFill.originChainId === slowFill.originChainId && otherSlowFill.depositId === slowFill.depositId
+            )
+          )
+      );
     }
 
     console.log(runningBalances, realizedLpFees);
