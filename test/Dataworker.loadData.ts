@@ -54,6 +54,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       unfilledDeposits: [],
       deposits: [],
       fillsToRefund: {},
+      slowFills: [],
     });
   });
   it("Returns unfilled deposits", async function () {
@@ -359,4 +360,94 @@ describe("Dataworker: Load data used in all functions", async function () {
       },
     });
   });
+  it("Returns slow fills", async function() {
+    await updateAllClients();
+
+    // We're going to slow relay deposit1
+    const deposit1 = await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
+      spokePool_2,
+      erc20_2,
+      l1Token_1,
+      depositor,
+      originChainId,
+      amountToDeposit
+    );
+    // Send funds to SpokePool that we're going to slow relay out of to fund the slow fill..
+    await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token_2,
+      depositor,
+      destinationChainId,
+      amountToDeposit
+    );
+    // Fill deposit partially for convenience so that we can grab its params to construct the slow relay.
+    const fill1 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit1, 0.25);
+    const slowRelays = [
+      {
+        depositor: fill1.depositor,
+        recipient: fill1.recipient,
+        destinationToken: fill1.destinationToken,
+        amount: fill1.amount,
+        originChainId: fill1.originChainId.toString(),
+        destinationChainId: fill1.destinationChainId.toString(),
+        realizedLpFeePct: fill1.realizedLpFeePct,
+        relayerFeePct: fill1.relayerFeePct,
+        depositId: fill1.depositId.toString(),
+      },
+    ];
+    const tree = await buildSlowRelayTree(slowRelays);
+    await spokePool_1.relayRootBundle(tree.getHexRoot(), tree.getHexRoot());
+    await spokePool_1.connect(depositor).executeSlowRelayLeaf(
+      fill1.depositor,
+      fill1.recipient,
+      fill1.destinationToken,
+      fill1.amount.toString(),
+      fill1.originChainId.toString(),
+      fill1.realizedLpFeePct.toString(),
+      fill1.relayerFeePct.toString(),
+      fill1.depositId.toString(),
+      "0",
+      [] // Proof for tree with 1 leaf is empty
+    );
+
+
+    // The unfilled deposit has now been fully filled.
+    await updateAllClients();
+    const data1 = dataworkerInstance._loadData();
+    expect(data1.slowFills).to.deep.equal([
+      {
+        ...fill1,
+        totalFilledAmount: fill1.amount, // Slow relay always fully fills deposit
+        fillAmount: fill1.amount.sub(fill1.totalFilledAmount), // Fills remaining after fill1
+        repaymentChainId: 0, // Always set to 0 for slow fills
+        appliedRelayerFeePct: toBN(0), // Always set to 0 since there was no relayer
+        isSlowRelay: true,
+        relayer: depositor.address, // Set to caller of `executeSlowRelayLeaf`
+      },
+    ]);
+  });
+  it("Returns deposits", async function() {
+    await updateAllClients();
+
+    const deposit1 = await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
+      spokePool_2,
+      erc20_2,
+      l1Token_1,
+      depositor,
+      originChainId,
+      amountToDeposit
+    );
+
+    // Should include all deposits, even those not matched by a relay
+    await updateAllClients();
+    const data1 = dataworkerInstance._loadData();
+    expect(data1.deposits).to.deep.equal([deposit1]);
+  })
 });

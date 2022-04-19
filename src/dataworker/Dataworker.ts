@@ -15,6 +15,7 @@ export class Dataworker {
   _loadData(/* bundleBlockNumbers: BundleEvaluationBlockNumbers */): {
     unfilledDeposits: UnfilledDeposit[];
     fillsToRefund: FillsToRefund;
+    slowFills: Fill[];
     deposits: Deposit[];
   } {
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
@@ -23,6 +24,7 @@ export class Dataworker {
     const unfilledDepositsForOriginChain: { [originChainIdPlusDepositId: string]: UnfilledDeposit[] } = {};
     const fillsToRefund: FillsToRefund = {};
     const deposits: Deposit[] = [];
+    const slowFills: Fill[] = [];
 
     const allChainIds = Object.keys(this.clients.spokePoolClients);
     this.logger.debug({ at: "Dataworker", message: `Loading deposit and fill data`, chainIds: allChainIds });
@@ -79,7 +81,7 @@ export class Dataworker {
               refundObj.realizedLpFees = refundObj.realizedLpFees
                 ? refundObj.realizedLpFees.add(getRealizedLpFeeForFills([fill]))
                 : getRealizedLpFeeForFills([fill]);
-            }
+            } else slowFills.push(fill)
             const depositUnfilledAmount = fill.amount.sub(fill.totalFilledAmount);
             const depositKey = `${originChainId}+${fill.depositId}`;
             assign(
@@ -132,7 +134,7 @@ export class Dataworker {
       .filter((unfilledDeposit: UnfilledDeposit) => unfilledDeposit.unfilledAmount.gt(0));
 
     // Remove deposits that have been fully filled from unfilled deposit array
-    return { fillsToRefund, deposits, unfilledDeposits };
+    return { fillsToRefund, deposits, unfilledDeposits, slowFills };
   }
 
   buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): MerkleTree<RelayData> | null {
