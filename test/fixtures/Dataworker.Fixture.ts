@@ -1,16 +1,9 @@
-import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
-import { umaEcosystemFixture } from "@across-protocol/contracts-v2/dist/test/fixtures/UmaEcosystem.Fixture";
+import { setupUmaEcosystem } from "./UmaEcosystemFixture";
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, Contract, hre, enableRoutes } from "../utils";
 import { SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "../utils";
 import { createSpyLogger, winston, deployAndConfigureHubPool, deployRateModelStore } from "../utils";
-import {
-  SpokePoolClient,
-  HubPoolClient,
-  RateModelClient,
-  MultiCallerClient,
-  ConfigStoreClient,
-} from "../../src/clients";
-import { amountToLp, destinationChainId, originChainId, MAX_REFUNDS_PER_LEAF, repaymentChainId } from "../constants";
+import * as clients from "../../src/clients";
+import { amountToLp, destinationChainId, originChainId } from "../constants";
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 
@@ -32,13 +25,13 @@ export async function setupDataworker(
   l1Token_1: Contract;
   l1Token_2: Contract;
   timer: Contract;
-  spokePoolClient_1: SpokePoolClient;
-  spokePoolClient_2: SpokePoolClient;
-  rateModelClient: RateModelClient;
-  hubPoolClient: HubPoolClient;
+  spokePoolClient_1: clients.SpokePoolClient;
+  spokePoolClient_2: clients.SpokePoolClient;
+  rateModelClient: clients.RateModelClient;
+  hubPoolClient: clients.HubPoolClient;
   dataworkerInstance: Dataworker;
   spyLogger: winston.Logger;
-  multiCallerClient: MultiCallerClient;
+  multiCallerClient: clients.MultiCallerClient;
   owner: SignerWithAddress;
   depositor: SignerWithAddress;
   relayer: SignerWithAddress;
@@ -47,18 +40,18 @@ export async function setupDataworker(
 }> {
   const [owner, depositor, relayer, dataworker] = await ethers.getSigners();
 
-  // Deploy UMA system and link Finder with HubPool, which we'll need to execute roots.
-  const parentFixture = await umaEcosystemFixture();
-
   const { spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId);
   const { spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId);
 
-  // Only set cross chain contracts for one spoke pool to begin with.
+  const umaEcosystem = await setupUmaEcosystem(owner);
   const { hubPool, l1Token_1, l1Token_2 } = await deployAndConfigureHubPool(
     owner,
-    [{ l2ChainId: destinationChainId, spokePool: spokePool_2 }],
-    parentFixture.finder.address,
-    parentFixture.timer.address
+    [
+      { l2ChainId: destinationChainId, spokePool: spokePool_2 },
+      { l2ChainId: originChainId, spokePool: spokePool_2 },
+    ],
+    umaEcosystem.finder.address,
+    umaEcosystem.timer.address
   );
 
   // Enable deposit routes for second L2 tokens so relays can be sent between spoke pool 1 <--> 2.
@@ -73,14 +66,9 @@ export async function setupDataworker(
     { destinationChainId: destinationChainId, l1Token: l1Token_2, destinationToken: erc20_1 },
   ]);
 
-  // Enable cross chain contracts so that pool rebalance leaves can be executed.
-  const mockAdapter = await (await utils.getContractFactory("Mock_Adapter", owner)).deploy();
-  await hubPool.setCrossChainContracts(destinationChainId, mockAdapter.address, spokePool_1.address);
-  await hubPool.setCrossChainContracts(originChainId, mockAdapter.address, spokePool_2.address);
-
   // Set bond currency on hub pool so that roots can be proposed.
-  await parentFixture.collateralWhitelist.addToWhitelist(l1Token_1.address);
-  await parentFixture.store.setFinalFee(l1Token_1.address, { rawValue: "0" });
+  await umaEcosystem.collateralWhitelist.addToWhitelist(l1Token_1.address);
+  await umaEcosystem.store.setFinalFee(l1Token_1.address, { rawValue: "0" });
   await hubPool.setBond(l1Token_1.address, "1"); // We set to 1 Wei since we can't set to 0.
 
   // Give dataworker final fee bond to propose roots with:
@@ -88,19 +76,19 @@ export async function setupDataworker(
 
   const { spyLogger } = createSpyLogger();
   const { rateModelStore } = await deployRateModelStore(owner, [l1Token_1, l1Token_2]);
-  const hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-  const rateModelClient = new RateModelClient(spyLogger, rateModelStore, hubPoolClient);
+  const hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool);
+  const rateModelClient = new clients.RateModelClient(spyLogger, rateModelStore, hubPoolClient);
 
-  const multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
-  const configStoreClient = new ConfigStoreClient(spyLogger, maxRefundLeaf);
+  const multiCallerClient = new clients.MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
+  const configStoreClient = new clients.ConfigStoreClient(spyLogger, maxRefundLeaf);
 
-  const spokePoolClient_1 = new SpokePoolClient(
+  const spokePoolClient_1 = new clients.SpokePoolClient(
     spyLogger,
     spokePool_1.connect(relayer),
     rateModelClient,
     originChainId
   );
-  const spokePoolClient_2 = new SpokePoolClient(
+  const spokePoolClient_2 = new clients.SpokePoolClient(
     spyLogger,
     spokePool_2.connect(relayer),
     rateModelClient,
@@ -143,7 +131,7 @@ export async function setupDataworker(
     erc20_2,
     l1Token_1,
     l1Token_2,
-    timer: parentFixture.timer,
+    timer: umaEcosystem.timer,
     spokePoolClient_1,
     spokePoolClient_2,
     rateModelClient,
