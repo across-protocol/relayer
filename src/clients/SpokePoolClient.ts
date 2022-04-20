@@ -1,6 +1,7 @@
-import { spreadEvent, assign, Contract, BigNumber, toBN, Event, ZERO_ADDRESS, winston } from "../utils";
+import { assign, Contract, BigNumber, toBN, Event, ZERO_ADDRESS, winston } from "../utils";
+import { spreadEventWithBlockNumber, spreadEvent } from "../utils"
 import { RateModelClient } from "./RateModelClient";
-import { Deposit, Fill, SpeedUp } from "../interfaces/SpokePool";
+import { Deposit, Fill, SpeedUp, FillWithBlock } from "../interfaces/SpokePool";
 
 export class SpokePoolClient {
   private deposits: { [DestinationChainId: number]: Deposit[] } = {};
@@ -10,6 +11,7 @@ export class SpokePoolClient {
   public isUpdated: boolean = false;
 
   public firstBlockToSearch: number;
+  public fillsWithBlockNumbers: FillWithBlock[] = [];
 
   constructor(
     readonly logger: winston.Logger,
@@ -52,6 +54,10 @@ export class SpokePoolClient {
     return this.fills.filter((fill: Fill) => fill.originChainId === originChainId);
   }
 
+  getFillsWithBlockForOriginChain(originChainId: number): FillWithBlock[] {
+    return this.fillsWithBlockNumbers.filter((fill: Fill) => fill.originChainId === originChainId);
+  }
+
   getFillsForRepaymentChain(repaymentChainId: number) {
     return this.fills.filter((fill: Fill) => fill.repaymentChainId === repaymentChainId);
   }
@@ -71,8 +77,9 @@ export class SpokePoolClient {
   }
 
   getDepositForFill(fill: Fill): Deposit | undefined {
-    return this.getDepositsForDestinationChain(fill.destinationChainId).find((deposit) =>
-      this.validateFillForDeposit(fill, deposit)
+    const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill.
+    return this.getDepositsForDestinationChain(fillCopy.destinationChainId).find((deposit) =>
+      this.validateFillForDeposit(fillCopy, deposit)
     );
   }
 
@@ -147,7 +154,10 @@ export class SpokePoolClient {
         if (speedUpDeposit !== deposit) this.deposits[destinationChainId][index] = speedUpDeposit;
       }
 
-    for (const event of fillEvents) this.fills.push(spreadEvent(event));
+    for (const event of fillEvents) {
+      this.fills.push(spreadEvent(event));
+      this.fillsWithBlockNumbers.push(spreadEventWithBlockNumber(event));
+    }
 
     for (const event of enableDepositsEvents) {
       const enableDeposit = spreadEvent(event);

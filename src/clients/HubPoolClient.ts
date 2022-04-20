@@ -1,5 +1,6 @@
-import { spreadEvent, assign, Contract, winston, BigNumber, ERC20, Event } from "../utils";
+import { spreadEvent, assign, Contract, winston, BigNumber, ERC20, Event, sortEventsAscending } from "../utils";
 import { Deposit, Fill, L1Token } from "../interfaces";
+import { SpokePoolClient, CHAIN_ID_LIST_INDICES } from ".";
 
 export class HubPoolClient {
   // L1Token -> destinationChainId -> destinationToken
@@ -81,6 +82,31 @@ export class HubPoolClient {
   getTokenInfo(chainId: number | string, tokenAddress: string): L1Token {
     const deposit = { originChainId: parseInt(chainId.toString()), originToken: tokenAddress } as Deposit;
     return this.getTokenInfoForDeposit(deposit);
+  }
+
+  // TODO:
+  // Query CrossChainContractsSet events to find spoke pools at specified `block`.
+  // getCrossChainContractsForBlock(block:number): { [chainId: number]: SpokePoolClient } {
+  // }
+
+  // // Returns an ordered array of block ranges for each spoke pool. For an ordered list of `toBlocks`, this function
+  // // will find the corresponding `fromBlocks` for each chain. The order of chains can be found in CHAIN_ID_LIST.
+  // getRootBundleEvaluationBlockRange(toBlocks: number[]): number[][] {
+  //   // Find latest RootBundleExecuted event with matching chain ID while still being earlier than the toBlock.
+  //   const blockRanges: number[][] = toBlocks.map((block, i) => {
+  //     const chainId = CHAIN_ID_LIST_INDICES[i]
+  //     // Sort event block heights from latest to earliest, so we find the events right before our target block.
+  //     const precedingExecuteRootBundleEvent: Event = this.executeRootBundleEvents.sort((ex, ey) => ey.blockNumber - ex.blockNumber).find(
+  //       (e: Event) => e.args.chainId === chainId && e.blockNumber < block
+  //     );
+  //     const precedingProposeRootBundleEvent: Event = this.proposeRootBundleEvents.sort((ex, ey) => ey.blockNumber - ex.blockNumber).find(
+  //       (e: Event) => e.blockNumber < precedingExecuteRootBundleEvent.blockNumber
+  //     );
+  //   })
+  // }
+
+  getEarliestProposeRootEventAfterBlock(block: number): Event {
+    return sortEventsAscending(this.proposeRootBundleEvents).find((e: Event) => e.blockNumber > block) as Event;
   }
 
   async update() {

@@ -32,6 +32,9 @@ export interface Fill {
   destinationChainId: number;
 }
 
+export interface FillWithBlock extends Fill {
+  blockNumber: number;
+}
 export interface SpeedUp {
   depositor: string;
   depositorSignature: string;

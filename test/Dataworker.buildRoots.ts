@@ -341,6 +341,24 @@ describe("Dataworker: Build merkle roots", async function () {
     const fill3 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, destinationChainId);
     const fill4 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 1, destinationChainId);
 
+    // Partial fill deposit1
+    // Partial fill deposit2
+
+    // Construct slow relay root which should include deposit1 and deposit2
+    // Construct pool rebalance root which should equal:
+    // + Refund for fill1 and fill 2
+    // - Deposit for deposit2 and deposit1
+    // + slow relay refund.
+
+    // Propose roots.
+    // Before executing the leaf, fully fill deposit1.
+
+    // Now, execute the leaf, which should trigger a FillRelay event to be emitted with isSlowRelay=true.
+    // Construct another pool rebalance root:
+    // +0 relayer refunds
+    // -0 deposits
+    // - slowRelayRefund sent in part A because it was fully filled before the slow relay was executed. 
+    // - 0 slowRelayRefund for deposit2 because the slow relay was fully executed.
     await updateAllClients();
     const merkleRoot1 = dataworkerInstance.buildPoolRebalanceRoot([]);
     console.log(getRefundForFills([fill1, fill2, fill3, fill4]));
