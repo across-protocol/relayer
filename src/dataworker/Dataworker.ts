@@ -274,9 +274,9 @@ export class Dataworker {
       });
 
       // 4. Map all slow fills to an L1 token using its destination chain ID and destination token.
+      // Filter out all repeat slow fills. This would be all slow fills with `fillAmount == 0` and that have a
+      // matching slow fill.
       let filteredSlowFills = slowFills.filter(
-        // First filter out all repeat slow fills. This would be all slow fills with `fillAmount == 0` and that have a
-        // matching slow fill.
         (slowFill: Fill) =>
           slowFill.fillAmount.gt(toBN(0)) ||
           !slowFills.some(
@@ -284,6 +284,17 @@ export class Dataworker {
               otherSlowFill.originChainId === slowFill.originChainId && otherSlowFill.depositId === slowFill.depositId
           )
       );
+
+      // 5. for all non-repeat slow fills, find the FilledRelay event that originally triggered this slow relay.
+      // Recall that slow fills for a deposit are only included in the root bundle if a non-zero amount fill was
+      // submitted for that deposit.
+
+      // 6. Using the block number of the FilledRelay event that triggered the slow fill, determine the root bundle 
+      // block range that would have included the slow fill and then grab the unfilled amount for the slow fill
+      // at this previous block range.
+
+      // 7. Subtract the current slow fill filledAmount from the originally sent unfilledAmount for the original
+      // slow relay included in the root bundle to determine how to adjust the running balance.
     }
 
     console.log(runningBalances, realizedLpFees);
