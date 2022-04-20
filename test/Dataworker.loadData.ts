@@ -332,7 +332,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       appliedRelayerFeePct: toBN(0), // Always set to 0 since there was no relayer
       isSlowRelay: true,
       relayer: depositor.address, // Set to caller of `executeSlowRelayLeaf`
-    }
+    };
     const data5 = dataworkerInstance._loadData();
     expect(data5.fillsToRefund).to.deep.equal({
       [slowFill3.destinationChainId]: {
@@ -340,7 +340,7 @@ describe("Dataworker: Load data used in all functions", async function () {
           fills: [slowFill3], // Slow fill gets added to fills list
           totalRefundAmount: getRefundForFills([slowFill3]), // Slow fill does affect total refund amount
           realizedLpFees: getRealizedLpFeeForFills([slowFill3]), // Slow fill does affect realized LP fee
-        }
+        },
       },
       [repaymentChainId]: {
         [erc20_2.address]: {
@@ -369,7 +369,7 @@ describe("Dataworker: Load data used in all functions", async function () {
           fills: [slowFill3],
           totalRefundAmount: getRefundForFills([slowFill3]),
           realizedLpFees: getRealizedLpFeeForFills([slowFill3]),
-        }
+        },
       },
       [repaymentChainId]: {
         [erc20_2.address]: {
@@ -381,7 +381,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         [erc20_1.address]: {
           fills: [fill2, fill3, fill4],
           refunds: { [relayer.address]: getRefundForFills([fill2, fill3, fill4]) },
-          totalRefundAmount: getRefundForFills([fill2, fill3, fill4 ]),
+          totalRefundAmount: getRefundForFills([fill2, fill3, fill4]),
           realizedLpFees: getRealizedLpFeeForFills([fill2, fill3, fill4]),
         },
       },

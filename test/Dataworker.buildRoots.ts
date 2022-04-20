@@ -2,8 +2,15 @@ import { buildSlowRelayTree, RelayData, buildFillForRepaymentChain, buildRelayer
 import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
 import { buildDeposit, buildFill, buildPoolRebalanceLeaves, buildPoolRebalanceLeafTree, BigNumber } from "./utils";
 import { HubPoolClient, RateModelClient } from "../src/clients";
-import { amountToDeposit, destinationChainId, originChainId, MAX_REFUNDS_PER_LEAF, mockTreeRoot, realizedLpFeePct } from "./constants";
-import { refundProposalLiveness, CHAIN_ID_TEST_LIST } from "./constants"
+import {
+  amountToDeposit,
+  destinationChainId,
+  originChainId,
+  MAX_REFUNDS_PER_LEAF,
+  mockTreeRoot,
+  realizedLpFeePct,
+} from "./constants";
+import { refundProposalLiveness, CHAIN_ID_TEST_LIST } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
@@ -340,7 +347,7 @@ describe("Dataworker: Build merkle roots", async function () {
     );
     await updateAllClients();
 
-    const deposits = [deposit1, deposit2]
+    const deposits = [deposit1, deposit2];
 
     // Note: Submit fills with repayment chain set to one of the origin or destination chains since we have spoke
     // pools deployed on those chains.
@@ -361,7 +368,7 @@ describe("Dataworker: Build merkle roots", async function () {
       },
       [originChainId]: {
         [l1Token_1.address]: getRefundForFills([fill2, fill3]).sub(deposit1.amount),
-      }
+      },
     };
     const expectedRealizedLpFees: RunningBalances = {
       [destinationChainId]: {
@@ -369,32 +376,33 @@ describe("Dataworker: Build merkle roots", async function () {
       },
       [originChainId]: {
         [l1Token_1.address]: getRealizedLpFeeForFills([fill2, fill3]),
-      }
+      },
     };
     await updateAllClients();
     const merkleRoot1 = dataworkerInstance.buildPoolRebalanceRoot([]);
-    expect(merkleRoot1.runningBalances).to.deep.equal(expectedRunningBalances)
-    expect(merkleRoot1.realizedLpFees).to.deep.equal(expectedRealizedLpFees)
+    expect(merkleRoot1.runningBalances).to.deep.equal(expectedRunningBalances);
+    expect(merkleRoot1.realizedLpFees).to.deep.equal(expectedRealizedLpFees);
 
     // Construct slow relay root which should include deposit1 and deposit2
-    const expectedRelays: RelayData[] = deposits.map((_deposit) => {
-      return {
-        depositor: _deposit.depositor,
-        recipient: _deposit.recipient,
-        destinationToken: _deposit.destinationToken,
-        amount: _deposit.amount,
-        originChainId: _deposit.originChainId.toString(),
-        destinationChainId: _deposit.destinationChainId.toString(),
-        realizedLpFeePct: _deposit.realizedLpFeePct,
-        relayerFeePct: _deposit.relayerFeePct,
-        depositId: _deposit.depositId.toString(),
-      };
-    }) // leaves should be ordered by origin chain ID and then deposit ID (ascending).
-    .sort((relayA, relayB) => {
-      if (relayA.originChainId !== relayB.originChainId)
-        return Number(relayA.originChainId) - Number(relayB.originChainId)
-      else return Number(relayA.depositId) - Number(relayB.depositId)
-    });
+    const expectedRelays: RelayData[] = deposits
+      .map((_deposit) => {
+        return {
+          depositor: _deposit.depositor,
+          recipient: _deposit.recipient,
+          destinationToken: _deposit.destinationToken,
+          amount: _deposit.amount,
+          originChainId: _deposit.originChainId.toString(),
+          destinationChainId: _deposit.destinationChainId.toString(),
+          realizedLpFeePct: _deposit.realizedLpFeePct,
+          relayerFeePct: _deposit.relayerFeePct,
+          depositId: _deposit.depositId.toString(),
+        };
+      }) // leaves should be ordered by origin chain ID and then deposit ID (ascending).
+      .sort((relayA, relayB) => {
+        if (relayA.originChainId !== relayB.originChainId)
+          return Number(relayA.originChainId) - Number(relayB.originChainId);
+        else return Number(relayA.depositId) - Number(relayB.depositId);
+      });
     // Returns expected merkle root where leaves are ordered by origin chain ID and then deposit ID
     // (ascending).
     const expectedSlowRelayTree = await buildSlowRelayTree(expectedRelays);
@@ -412,7 +420,7 @@ describe("Dataworker: Build merkle roots", async function () {
         Object.keys(runningBalances).map((_) => 0) // group index
       );
       const tree = await buildPoolRebalanceLeafTree(leaves);
-    
+
       return { leaves, tree };
     }
     const { tree: poolRebalanceTree, leaves: poolRebalanceLeaves } = await constructPoolRebalanceTree(
@@ -423,7 +431,7 @@ describe("Dataworker: Build merkle roots", async function () {
     // Propose root bundle so that we can test that the dataworker looks up ProposeRootBundle events properly.
     // Similarly, execute the root bundle because constructing the pool rebalance root is expected to look up
     // ExecutedRootBundleEvents.
-    const currentBlock = await hubPool.provider.getBlockNumber()
+    const currentBlock = await hubPool.provider.getBlockNumber();
     await hubPool.connect(dataworker).proposeRootBundle(
       Array(CHAIN_ID_TEST_LIST.length).fill(currentBlock + 5), // Set current block number as end block for bundle. Its important that we set a block for every possible chain ID. Add 5 blocks for buffer
       // so all fills to this point are before these blocks.
@@ -441,7 +449,7 @@ describe("Dataworker: Build merkle roots", async function () {
           .connect(dataworker)
           .executeRootBundle(...Object.values(leaf), poolRebalanceTree.getHexProof(leaf));
       })
-    )
+    );
 
     // Execute 1 slow relay leaf:
     // Before we can execute the leaves on the spoke pool, we need to actually publish them since we're using a mock
@@ -472,27 +480,35 @@ describe("Dataworker: Build merkle roots", async function () {
       appliedRelayerFeePct: toBN(0), // Always set to 0 since there was no relayer
       isSlowRelay: true,
       relayer: dataworker.address, // Set to caller of `executeSlowRelayLeaf`
-    }
+    };
     await updateAllClients();
 
     // Running balance should now have accounted for the slow fill. However, there are no "extra" funds remaining in the
     // spoke pool following this slow fill because there were no fills that were submitted after the root bundle
     // was submitted that included the slow fill. The new running balance should only have added the slow fill amount.
     const merkleRoot2 = dataworkerInstance.buildPoolRebalanceRoot([]);
-    expectedRunningBalances[slowFill2.destinationChainId][l1Token_1.address] = expectedRunningBalances[slowFill2.destinationChainId][l1Token_1.address].add(getRefundForFills([slowFill2]))
-    expectedRealizedLpFees[slowFill2.destinationChainId][l1Token_1.address] = expectedRealizedLpFees[slowFill2.destinationChainId][l1Token_1.address].add(getRealizedLpFeeForFills([slowFill2]))
-    expect(merkleRoot2.runningBalances).to.deep.equal(expectedRunningBalances)
-    expect(merkleRoot2.realizedLpFees).to.deep.equal(expectedRealizedLpFees)
+    expectedRunningBalances[slowFill2.destinationChainId][l1Token_1.address] = expectedRunningBalances[
+      slowFill2.destinationChainId
+    ][l1Token_1.address].add(getRefundForFills([slowFill2]));
+    expectedRealizedLpFees[slowFill2.destinationChainId][l1Token_1.address] = expectedRealizedLpFees[
+      slowFill2.destinationChainId
+    ][l1Token_1.address].add(getRealizedLpFeeForFills([slowFill2]));
+    expect(merkleRoot2.runningBalances).to.deep.equal(expectedRunningBalances);
+    expect(merkleRoot2.realizedLpFees).to.deep.equal(expectedRealizedLpFees);
 
     // Now, submit another partial fill for the deposit whose slow fill has NOT been executed yet. This should result
     // in the slow fill execution leaving excess funds in the spoke pool.
     const fill4 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, destinationChainId);
     await updateAllClients();
     const merkleRoot3 = dataworkerInstance.buildPoolRebalanceRoot([]);
-    expectedRunningBalances[fill4.destinationChainId][l1Token_1.address] = expectedRunningBalances[fill4.destinationChainId][l1Token_1.address].add(getRefundForFills([fill4]))
-    expectedRealizedLpFees[fill4.destinationChainId][l1Token_1.address] = expectedRealizedLpFees[fill4.destinationChainId][l1Token_1.address].add(getRealizedLpFeeForFills([fill4]))
-    expect(merkleRoot3.runningBalances).to.deep.equal(expectedRunningBalances)
-    expect(merkleRoot3.realizedLpFees).to.deep.equal(expectedRealizedLpFees)
+    expectedRunningBalances[fill4.destinationChainId][l1Token_1.address] = expectedRunningBalances[
+      fill4.destinationChainId
+    ][l1Token_1.address].add(getRefundForFills([fill4]));
+    expectedRealizedLpFees[fill4.destinationChainId][l1Token_1.address] = expectedRealizedLpFees[
+      fill4.destinationChainId
+    ][l1Token_1.address].add(getRealizedLpFeeForFills([fill4]));
+    expect(merkleRoot3.runningBalances).to.deep.equal(expectedRunningBalances);
+    expect(merkleRoot3.realizedLpFees).to.deep.equal(expectedRealizedLpFees);
 
     // Execute second slow relay leaf:
     // Before we can execute the leaves on the spoke pool, we need to actually publish them since we're using a mock
@@ -523,18 +539,24 @@ describe("Dataworker: Build merkle roots", async function () {
       appliedRelayerFeePct: toBN(0), // Always set to 0 since there was no relayer
       isSlowRelay: true,
       relayer: dataworker.address, // Set to caller of `executeSlowRelayLeaf`
-    }
+    };
     await updateAllClients();
 
     // Running balance should decrease by excess from slow fill since fill4 was sent before the slow fill could be
     // executed. Since fill4 filled the remainder of the deposit, the entire slow fill amount should be subtracted
-    // from running balances.     
+    // from running balances.
     const merkleRoot4 = dataworkerInstance.buildPoolRebalanceRoot([]);
     const sentAmount = fill1.amount.sub(fill1.totalFilledAmount);
     const excess = sentAmount.sub(slowFill1.fillAmount);
-    expectedRunningBalances[slowFill1.destinationChainId][l1Token_1.address] = expectedRunningBalances[slowFill1.destinationChainId][l1Token_1.address].add(getRefundForFills([slowFill1])).sub(excess)
-    expectedRealizedLpFees[slowFill1.destinationChainId][l1Token_1.address] = expectedRealizedLpFees[slowFill1.destinationChainId][l1Token_1.address].add(getRealizedLpFeeForFills([slowFill1]))
-    expect(merkleRoot4.runningBalances).to.deep.equal(expectedRunningBalances)
-    expect(merkleRoot4.realizedLpFees).to.deep.equal(expectedRealizedLpFees)
+    expectedRunningBalances[slowFill1.destinationChainId][l1Token_1.address] = expectedRunningBalances[
+      slowFill1.destinationChainId
+    ][l1Token_1.address]
+      .add(getRefundForFills([slowFill1]))
+      .sub(excess);
+    expectedRealizedLpFees[slowFill1.destinationChainId][l1Token_1.address] = expectedRealizedLpFees[
+      slowFill1.destinationChainId
+    ][l1Token_1.address].add(getRealizedLpFeeForFills([slowFill1]));
+    expect(merkleRoot4.runningBalances).to.deep.equal(expectedRunningBalances);
+    expect(merkleRoot4.realizedLpFees).to.deep.equal(expectedRealizedLpFees);
   });
 });

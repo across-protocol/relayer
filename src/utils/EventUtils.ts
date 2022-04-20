@@ -17,8 +17,8 @@ export function spreadEvent(event: Event) {
 export function spreadEventWithBlockNumber(event: Event) {
   return {
     ...spreadEvent(event),
-    blockNumber: event.blockNumber
-  }
+    blockNumber: event.blockNumber,
+  };
 }
 
 export function sortEventsAscending(events: { blockNumber: number }[]): { blockNumber: number }[] {

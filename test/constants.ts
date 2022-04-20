@@ -15,7 +15,7 @@ export const sampleRateModel = {
   R2: toWei(0.75).toString(),
 };
 
-export const CHAIN_ID_TEST_LIST = [originChainId, destinationChainId, repaymentChainId]
+export const CHAIN_ID_TEST_LIST = [originChainId, destinationChainId, repaymentChainId];
 
 export const baseSpeedUpString = "ACROSS-V2-FEE-1.0";
 

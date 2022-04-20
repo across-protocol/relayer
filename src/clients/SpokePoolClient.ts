@@ -1,5 +1,5 @@
 import { assign, Contract, BigNumber, toBN, Event, ZERO_ADDRESS, winston } from "../utils";
-import { spreadEventWithBlockNumber, spreadEvent } from "../utils"
+import { spreadEventWithBlockNumber, spreadEvent } from "../utils";
 import { RateModelClient } from "./RateModelClient";
 import { Deposit, Fill, SpeedUp, FillWithBlock } from "../interfaces/SpokePool";
 
