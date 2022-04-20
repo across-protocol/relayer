@@ -1,4 +1,4 @@
-import { spreadEvent, assign, Contract, BigNumber } from "../utils";
+import { spreadEvent, assign, Contract, BigNumber, EventSearchConfig } from "../utils";
 import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery } from "../utils";
 import { RateModelClient } from "./RateModelClient";
 import { Deposit, Fill, SpeedUp } from "../interfaces/SpokePool";
@@ -17,11 +17,9 @@ export class SpokePoolClient {
     readonly spokePool: Contract,
     readonly rateModelClient: RateModelClient | null, // RateModelStore can be excluded. This disables some deposit validation.
     readonly chainId: number,
-    readonly maxBlockLookBack: number = 0,
-    readonly startingBlock: number = 0,
-    readonly endingBlock: number | null = null
+    readonly eventSearchConfig: EventSearchConfig
   ) {
-    this.firstBlockToSearch = startingBlock;
+    this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
 
   getDepositsForDestinationChain(destinationChainId: number): Deposit[] {
@@ -115,8 +113,8 @@ export class SpokePoolClient {
 
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
-      toBlock: this.endingBlock || (await this.spokePool.provider.getBlockNumber()),
-      maxBlockLookBack: this.maxBlockLookBack,
+      toBlock: this.eventSearchConfig.toBlock || (await this.spokePool.provider.getBlockNumber()),
+      maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
 
     this.log("debug", "Updating client", { searchConfig, spokePool: this.spokePool.address });

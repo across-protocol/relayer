@@ -1,4 +1,4 @@
-import { spreadEvent, winston, Contract, BigNumber, paginatedEventQuery } from "../utils";
+import { spreadEvent, winston, Contract, BigNumber, paginatedEventQuery, EventSearchConfig } from "../utils";
 import { Deposit } from "../interfaces/SpokePool";
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
@@ -17,11 +17,9 @@ export class RateModelClient {
     readonly logger: winston.Logger,
     readonly rateModelStore: Contract,
     readonly hubPoolClient: HubPoolClient,
-    readonly maxBlockLookBack: number = 0,
-    readonly startingBlock: number = 0,
-    readonly endingBlock: number | null = null
+    readonly eventSearchConfig: EventSearchConfig
   ) {
-    this.firstBlockToSearch = startingBlock;
+    this.firstBlockToSearch = eventSearchConfig.fromBlock;
     this.blockFinder = new BlockFinder(this.rateModelStore.provider.getBlock.bind(this.rateModelStore.provider));
     this.rateModelDictionary = new across.rateModel.RateModelDictionary();
   }
@@ -67,8 +65,8 @@ export class RateModelClient {
   async update() {
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
-      toBlock: this.endingBlock || (await this.rateModelStore.provider.getBlockNumber()),
-      maxBlockLookBack: this.maxBlockLookBack,
+      toBlock: this.eventSearchConfig.toBlock || (await this.rateModelStore.provider.getBlockNumber()),
+      maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
 
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than

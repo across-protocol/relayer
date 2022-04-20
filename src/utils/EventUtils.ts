@@ -14,12 +14,6 @@ export function spreadEvent(event: Event) {
   return returnedObject;
 }
 
-export interface EventSearchConfig {
-  fromBlock: number;
-  toBlock: number;
-  maxBlockLookBack: number;
-}
-
 export async function paginatedEventQuery(contract: Contract, filter: EventFilter, searchConfig: EventSearchConfig) {
   // If the max block look back is set to 0 then we dont need to do any pagination and can query over the whole range.
   if (searchConfig.maxBlockLookBack === 0)
@@ -36,4 +30,10 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
   }
 
   return (await Promise.all(promises)).flat();
+}
+
+export interface EventSearchConfig {
+  fromBlock: number;
+  toBlock: number | null;
+  maxBlockLookBack: number;
 }

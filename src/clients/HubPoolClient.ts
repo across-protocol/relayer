@@ -1,4 +1,5 @@
-import { spreadEvent, assign, Contract, winston, BigNumber, ERC20, paginatedEventQuery } from "../utils";
+import { spreadEvent, assign, Contract, winston } from "../utils";
+import { BigNumber, ERC20, paginatedEventQuery, EventSearchConfig } from "../utils";
 import { Deposit, L1Token } from "../interfaces";
 
 export class HubPoolClient {
@@ -12,9 +13,7 @@ export class HubPoolClient {
   constructor(
     readonly logger: winston.Logger,
     readonly hubPool: Contract,
-    readonly maxBlockLookBack: number = 0,
-    readonly startingBlock: number = 0,
-    readonly endingBlock: number | null = null
+    readonly eventSearchConfig: EventSearchConfig
   ) {}
 
   getDestinationTokenForDeposit(deposit: Deposit) {
@@ -75,8 +74,8 @@ export class HubPoolClient {
   async update() {
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
-      toBlock: this.endingBlock || (await this.hubPool.provider.getBlockNumber()),
-      maxBlockLookBack: this.maxBlockLookBack,
+      toBlock: this.eventSearchConfig.toBlock || (await this.hubPool.provider.getBlockNumber()),
+      maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
     this.logger.debug({ at: "HubPoolClient", message: "Updating client", searchConfig });
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
