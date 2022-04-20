@@ -2,10 +2,10 @@
 # yarn lockfile v1
 
 
-"@across-protocol/contracts-v2@^0.0.43":
-  version "0.0.43"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-0.0.43.tgz#ec66b1575ba0654a1a245636773247d5dbd23ff8"
-  integrity sha512-cM1Gu05keXALSVWqQaJnZec0nStvh2TvNhrJ5Jb0khBRI5HIAE1sOP1/DsiCRhz+/RrcWd+nl3YX5KFGDm+wUg==
+"@across-protocol/contracts-v2@^0.0.46":
+  version "0.0.46"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-0.0.46.tgz#4571b89ac6e34cce0bb25cce53ea72f5f085f8d7"
+  integrity sha512-b8i/eILa5S5zMbp0NVCdrEvyO0I2FJnZpLrhBvkHpux8ZdIYHU6yg3O8geRZCnLmt2GpkXft5bmhh7gRYs76YQ==
   dependencies:
     "@defi-wonderland/smock" "^2.0.7"
     "@eth-optimism/contracts" "^0.5.11"

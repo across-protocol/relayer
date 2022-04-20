@@ -1,4 +1,5 @@
-import { spreadEvent, assign, Contract, BigNumber, toBN, Event, ZERO_ADDRESS, winston } from "../utils";
+import { spreadEvent, assign, Contract, BigNumber } from "../utils";
+import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery } from "../utils";
 import { RateModelClient } from "./RateModelClient";
 import { Deposit, Fill, SpeedUp } from "../interfaces/SpokePool";
 
@@ -16,6 +17,7 @@ export class SpokePoolClient {
     readonly spokePool: Contract,
     readonly rateModelClient: RateModelClient | null, // RateModelStore can be excluded. This disables some deposit validation.
     readonly chainId: number,
+    readonly maxBlockLookBack: number = 0,
     readonly startingBlock: number = 0,
     readonly endingBlock: number | null = null
   ) {
@@ -111,15 +113,20 @@ export class SpokePoolClient {
   async update() {
     if (this.rateModelClient !== null && !this.rateModelClient.isUpdated) throw new Error("RateModel not updated");
 
-    const searchConfig = [this.firstBlockToSearch, this.endingBlock || (await this.getBlockNumber())];
+    const searchConfig = {
+      fromBlock: this.firstBlockToSearch,
+      toBlock: this.endingBlock || (await this.spokePool.provider.getBlockNumber()),
+      maxBlockLookBack: this.maxBlockLookBack,
+    };
+
     this.log("debug", "Updating client", { searchConfig, spokePool: this.spokePool.address });
-    if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
+    if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
     const [depositEvents, speedUpEvents, fillEvents, enableDepositsEvents] = await Promise.all([
-      this.spokePool.queryFilter(this.spokePool.filters.FundsDeposited(), ...searchConfig),
-      this.spokePool.queryFilter(this.spokePool.filters.RequestedSpeedUpDeposit(), ...searchConfig),
-      this.spokePool.queryFilter(this.spokePool.filters.FilledRelay(), ...searchConfig),
-      this.spokePool.queryFilter(this.spokePool.filters.EnabledDepositRoute(), ...searchConfig),
+      paginatedEventQuery(this.spokePool, this.spokePool.filters.FundsDeposited(), searchConfig),
+      paginatedEventQuery(this.spokePool, this.spokePool.filters.RequestedSpeedUpDeposit(), searchConfig),
+      paginatedEventQuery(this.spokePool, this.spokePool.filters.FilledRelay(), searchConfig),
+      paginatedEventQuery(this.spokePool, this.spokePool.filters.EnabledDepositRoute(), searchConfig),
     ]);
 
     // For each depositEvent, compute the realizedLpFeePct. Note this means that we are only finding this value on the
@@ -160,10 +167,6 @@ export class SpokePoolClient {
   }
   public hubPoolClient() {
     return this.rateModelClient.hubPoolClient;
-  }
-
-  private async getBlockNumber(): Promise<number> {
-    return await this.spokePool.provider.getBlockNumber();
   }
 
   private async computeRealizedLpFeePct(depositEvent: Event) {

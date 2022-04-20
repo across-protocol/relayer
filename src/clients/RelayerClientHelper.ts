@@ -1,5 +1,5 @@
 import winston from "winston";
-import { getProvider, getSigner, getDeployedContract, Contract } from "../utils";
+import { getProvider, getSigner, getDeployedContract, getDeploymentBlockNumber, Contract } from "../utils";
 import { SpokePoolClient, HubPoolClient, RateModelClient, TokenClient, MultiCallerClient } from ".";
 import { RelayerConfig } from "../relayer/RelayerConfig";
 import { Clients } from "./ClientHelper";
@@ -27,13 +27,31 @@ export function constructRelayerClients(logger: winston.Logger, config: RelayerC
     return { networkId, contract: getDeployedContract("SpokePool", networkId, spokeSigners[index]) };
   });
 
-  const hubPoolClient = new HubPoolClient(logger, hubPool);
+  const hubPoolClient = new HubPoolClient(
+    logger,
+    hubPool,
+    config.maxBlockLookBack[config.hubPoolChainId],
+    getDeploymentBlockNumber("HubPool", config.hubPoolChainId)
+  );
 
-  const rateModelClient = new RateModelClient(logger, rateModelStore, hubPoolClient);
+  const rateModelClient = new RateModelClient(
+    logger,
+    rateModelStore,
+    hubPoolClient,
+    config.maxBlockLookBack[config.hubPoolChainId],
+    getDeploymentBlockNumber("RateModelStore", config.hubPoolChainId)
+  );
 
   let spokePoolClients = {};
   spokePools.forEach((obj: { networkId: number; contract: Contract }) => {
-    spokePoolClients[obj.networkId] = new SpokePoolClient(logger, obj.contract, rateModelClient, obj.networkId);
+    spokePoolClients[obj.networkId] = new SpokePoolClient(
+      logger,
+      obj.contract,
+      rateModelClient,
+      obj.networkId,
+      config.maxBlockLookBack[obj.networkId],
+      getDeploymentBlockNumber("SpokePool", obj.networkId)
+    );
   });
 
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients);
