@@ -17,7 +17,7 @@ export class RateModelClient {
     readonly logger: winston.Logger,
     readonly rateModelStore: Contract,
     readonly hubPoolClient: HubPoolClient,
-    readonly eventSearchConfig: EventSearchConfig
+    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
     this.blockFinder = new BlockFinder(this.rateModelStore.provider.getBlock.bind(this.rateModelStore.provider));
@@ -91,7 +91,7 @@ export class RateModelClient {
     this.rateModelDictionary.updateWithEvents(this.cumulativeRateModelEvents);
 
     this.isUpdated = true;
-    this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
+    this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.logger.debug({ at: "RateModelClient", message: "Client updated!" });
   }

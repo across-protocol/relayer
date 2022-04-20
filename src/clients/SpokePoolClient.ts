@@ -17,7 +17,7 @@ export class SpokePoolClient {
     readonly spokePool: Contract,
     readonly rateModelClient: RateModelClient | null, // RateModelStore can be excluded. This disables some deposit validation.
     readonly chainId: number,
-    readonly eventSearchConfig: EventSearchConfig
+    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
@@ -158,7 +158,7 @@ export class SpokePoolClient {
       const enableDeposit = spreadEvent(event);
       assign(this.depositRoutes, [enableDeposit.originToken, enableDeposit.destinationChainId], enableDeposit.enabled);
     }
-    this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
+    this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.isUpdated = true;
     this.log("debug", "Client updated!");

@@ -13,8 +13,10 @@ export class HubPoolClient {
   constructor(
     readonly logger: winston.Logger,
     readonly hubPool: Contract,
-    readonly eventSearchConfig: EventSearchConfig
-  ) {}
+    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
+  ) {
+    this.firstBlockToSearch = eventSearchConfig.fromBlock;
+  }
 
   getDestinationTokenForDeposit(deposit: Deposit) {
     const l1Token = this.getL1TokenForDeposit(deposit);
@@ -98,7 +100,7 @@ export class HubPoolClient {
     for (const info of tokenInfo) if (!this.l1Tokens.includes(info)) this.l1Tokens.push(info);
 
     this.isUpdated = true;
-    this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
+    this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.logger.debug({ at: "HubPoolClient", message: "Client updated!" });
   }
