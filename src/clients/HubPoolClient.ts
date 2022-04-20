@@ -106,7 +106,7 @@ export class HubPoolClient {
   // }
 
   getEarliestProposeRootEventAfterBlock(block: number): Event {
-    return sortEventsAscending(this.proposeRootBundleEvents).find((e: Event) => e.blockNumber > block) as Event;
+    return sortEventsAscending(this.proposeRootBundleEvents).find((e: Event) => e.blockNumber >= block) as Event;
   }
 
   async update() {

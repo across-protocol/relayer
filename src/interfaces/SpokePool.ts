@@ -79,7 +79,7 @@ export interface FillsToRefund {
   [repaymentChainId: number]: {
     [l2TokenAddress: string]: {
       fills: Fill[];
-      refunds: { [refundAddress: string]: BigNumber };
+      refunds?: { [refundAddress: string]: BigNumber };
       totalRefundAmount: BigNumber;
       realizedLpFees: BigNumber;
     };

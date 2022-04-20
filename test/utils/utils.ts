@@ -381,12 +381,13 @@ export async function buildFillForRepaymentChain(
   relayer: SignerWithAddress,
   depositToFill: Deposit,
   pctOfDepositToFill: number,
-  repaymentChainId: number
+  repaymentChainId: number,
+  destinationToken: string = depositToFill.destinationToken
 ): Promise<Fill> {
   const relayDataFromDeposit = {
     depositor: depositToFill.depositor,
     recipient: depositToFill.recipient,
-    destinationToken: depositToFill.destinationToken,
+    destinationToken,
     amount: depositToFill.amount,
     originChainId: depositToFill.originChainId.toString(),
     destinationChainId: depositToFill.destinationChainId.toString(),
