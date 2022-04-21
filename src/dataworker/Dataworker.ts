@@ -1,26 +1,9 @@
-import {
-  winston,
-  assign,
-  buildSlowRelayTree,
-  MerkleTree,
-  toBN,
-  compareAddresses,
-  getRefundForFills,
-  sortEventsDescending,
-} from "../utils";
-import { RelayerRefundLeaf, RelayerRefundLeafWithGroup, BigNumber, buildRelayerRefundTree } from "../utils";
+import { winston, assign, MerkleTree, toBN, compareAddresses, getRefundForFills, sortEventsDescending } from "../utils";
+import { RelayerRefundLeaf, RelayerRefundLeafWithGroup, buildRelayerRefundTree, buildSlowRelayTree } from "../utils";
 import { getRealizedLpFeeForFills, sortEventsAscending } from "../utils";
-import {
-  FillsToRefund,
-  RelayData,
-  UnfilledDeposit,
-  Deposit,
-  Fill,
-  BundleEvaluationBlockNumbers,
-  FillWithBlock,
-} from "../interfaces";
-import { RunningBalances } from "../interfaces";
-import { CHAIN_ID_LIST_INDICES, DataworkerClients } from "../clients";
+import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill, FillWithBlock } from "../interfaces";
+import { RunningBalances, BundleEvaluationBlockNumbers } from "../interfaces";
+import { DataworkerClients } from "../clients";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
