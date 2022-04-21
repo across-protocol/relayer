@@ -23,7 +23,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     // prop is the chainId set on the spoke pool. The second prop is the chain ID enabled in the route on the spokePool.
     ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId));
     ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
-    ({ hubPool, l1Token } = await deployAndConfigureHubPool(owner, [
+    ({ hubPool, l1Token_1: l1Token } = await deployAndConfigureHubPool(owner, [
       { l2ChainId: originChainId, spokePool: spokePool_1 },
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
     ]));

@@ -1,41 +1,45 @@
-import { winston, assign, buildSlowRelayTree, MerkleTree, toBN } from "../utils";
-import { SpokePoolClient, HubPoolClient, MultiCallerClient } from "../clients";
-import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill } from "../interfaces/SpokePool";
-import { BundleEvaluationBlockNumbers } from "../interfaces/HubPool";
+import { winston, assign, buildSlowRelayTree, MerkleTree, toBN, compareAddresses } from "../utils";
+import { RelayerRefundLeaf, RelayerRefundLeafWithGroup, BigNumber, buildRelayerRefundTree, toBNWei } from "../utils";
+import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill, BundleEvaluationBlockNumbers } from "../interfaces";
+import { DataworkerClients } from "../clients";
+import { createContractObjectFromJson } from "@uma/common";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
 export class Dataworker {
   // eslint-disable-next-line no-useless-constructor
-  constructor(
-    readonly logger: winston.Logger,
-    readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    readonly hubPoolClient: HubPoolClient,
-    readonly multiCallerClient: MultiCallerClient | any
-  ) {}
+  constructor(readonly logger: winston.Logger, readonly clients: DataworkerClients) {}
 
   // Common data re-formatting logic shared across all data worker public functions.
   _loadData(/* bundleBlockNumbers: BundleEvaluationBlockNumbers */): {
     unfilledDeposits: UnfilledDeposit[];
     fillsToRefund: FillsToRefund;
+    deposits: Deposit[];
   } {
+    if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
+    if (!this.clients.configStoreClient.isUpdated) throw new Error(`ConfigStoreClient not updated`);
+
     const unfilledDepositsForOriginChain: { [originChainIdPlusDepositId: string]: UnfilledDeposit[] } = {};
     const fillsToRefund: FillsToRefund = {};
+    const deposits: Deposit[] = [];
 
-    const allChainIds = Object.keys(this.spokePoolClients);
+    const allChainIds = Object.keys(this.clients.spokePoolClients);
     this.logger.debug({ at: "Dataworker", message: `Loading deposit and fill data`, chainIds: allChainIds });
     for (const originChainId of allChainIds) {
-      const originClient = this.spokePoolClients[originChainId];
+      const originClient = this.clients.spokePoolClients[originChainId];
       if (!originClient.isUpdated) throw new Error(`origin SpokePoolClient on chain ${originChainId} not updated`);
 
       // Loop over all other SpokePoolClient's to find deposits whose destination chain is the selected origin chain.
       this.logger.debug({ at: "Dataworker", message: `Looking up data for origin spoke pool`, originChainId });
-      for (const destinationChainId of Object.keys(this.spokePoolClients)) {
+      for (const destinationChainId of Object.keys(this.clients.spokePoolClients)) {
         if (originChainId === destinationChainId) continue;
 
-        const destinationClient = this.spokePoolClients[destinationChainId];
+        const destinationClient = this.clients.spokePoolClients[destinationChainId];
         if (!destinationClient.isUpdated)
           throw new Error(`destination SpokePoolClient with chain ID ${destinationChainId} not updated`);
+
+        // Store all deposits, for use in constructing a pool rebalance root.
+        deposits.push(...originClient.getDepositsForDestinationChain(destinationChainId));
 
         // For each fill within the block range, look up associated deposit.
         const fillsForOriginChain: Fill[] = destinationClient.getFillsForOriginChain(Number(originChainId));
@@ -52,7 +56,7 @@ export class Dataworker {
             // FillRelay events emitted by slow relay executions will usually not match with any deposits because the
             // relayer fee % will be reset to 0 by the SpokePool contract, however we still need to explicitly filter slow
             // relays out because its possible that a deposit is submitted with a relayer fee % set to 0.
-            if (!fill.isSlowRelay) assign(fillsToRefund, [fill.repaymentChainId, fill.relayer], [fill]);
+            if (!fill.isSlowRelay) assign(fillsToRefund, [fill.repaymentChainId, fill.destinationToken], [fill]);
             const depositUnfilledAmount = fill.amount.sub(fill.totalFilledAmount);
             const depositKey = `${originChainId}+${fill.depositId}`;
             assign(
@@ -105,18 +109,15 @@ export class Dataworker {
       .filter((unfilledDeposit: UnfilledDeposit) => unfilledDeposit.unfilledAmount.gt(0));
 
     // Remove deposits that have been fully filled from unfilled deposit array
-    return {
-      fillsToRefund,
-      unfilledDeposits,
-    };
+    return { fillsToRefund, deposits, unfilledDeposits };
   }
 
-  async buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): Promise<MerkleTree<RelayData>> | null {
+  buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): MerkleTree<RelayData> | null {
     const { unfilledDeposits } = this._loadData();
     // TODO: Use `bundleBlockNumbers` to decide how to filter which blocks to keep in `unfilledDeposits`.
 
     if (unfilledDeposits.length === 0) return null;
-    const leaves: RelayData[] = unfilledDeposits.map(
+    const slowRelayLeaves: RelayData[] = unfilledDeposits.map(
       (deposit: UnfilledDeposit): RelayData => ({
         depositor: deposit.deposit.depositor,
         recipient: deposit.deposit.recipient,
@@ -132,13 +133,13 @@ export class Dataworker {
 
     // Sort leaves deterministically so that the same root is always produced from the same _loadData return value.
     // The { Deposit ID, origin chain ID } is guaranteed to be unique so we can sort on them.
-    const sortedLeaves = leaves.sort((relayA, relayB) => {
+    const sortedLeaves = slowRelayLeaves.sort((relayA, relayB) => {
       // Note: Smaller ID numbers will come first
       if (relayA.originChainId === relayB.originChainId) return relayA.depositId - relayB.depositId;
       else return relayA.originChainId - relayB.originChainId;
     });
 
-    return sortedLeaves.length > 0 ? await buildSlowRelayTree(sortedLeaves) : null;
+    return sortedLeaves.length > 0 ? buildSlowRelayTree(sortedLeaves) : null;
   }
 
   async publishRoots(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
@@ -148,18 +149,72 @@ export class Dataworker {
     // of roots.
   }
 
-  async buildRelayerRefundRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
-    this._loadData();
+  buildRelayerRefundRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): MerkleTree<RelayerRefundLeaf> | null {
+    const { fillsToRefund } = this._loadData();
+    if (Object.keys(fillsToRefund).length === 0) return null;
 
-    // For each repayment chain ID key in fillsToRefund
-    //     Group by refundAddress, and for each refund address
-    //         Order fills by fillAmount
-    //     Make Leaf for repayment chain ID
-    // Construct root
+    const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
+
+    // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
+    Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
+      Object.keys(fillsToRefund[repaymentChainId]).forEach((l2TokenAddress: string) => {
+        // Group refunds by recipient for this L2 token address.
+        const refunds: { [refundAddress: string]: BigNumber } = {};
+        fillsToRefund[repaymentChainId][l2TokenAddress].forEach((fill: Fill) => {
+          const existingFillAmountForRelayer = refunds[fill.relayer] ? refunds[fill.relayer] : toBN(0);
+          const currentRefundAmount = fill.fillAmount.mul(toBNWei(1).sub(fill.realizedLpFeePct)).div(toBNWei(1));
+          refunds[fill.relayer] = existingFillAmountForRelayer.add(currentRefundAmount);
+        });
+        // We need to sort leaves deterministically so that the same root is always produced from the same _loadData
+        // return value, so sort refund addresses by refund amount (descending) and then address (ascending).
+        const sortedRefundAddresses = Object.keys(refunds).sort((addressA, addressB) => {
+          if (refunds[addressA].gt(refunds[addressB])) return -1;
+          if (refunds[addressA].lt(refunds[addressB])) return 1;
+          const sortOutput = compareAddresses(addressA, addressB);
+          if (sortOutput !== 0) return sortOutput;
+          else throw new Error("Unexpected matching address");
+        });
+
+        // Create leaf for { repaymentChainId, L2TokenAddress }, split leaves into sub-leaves if there are too many
+        // refunds.
+        for (let i = 0; i < sortedRefundAddresses.length; i += this.clients.configStoreClient.maxRefundsPerLeaf)
+          relayerRefundLeaves.push({
+            groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
+            // L2 token address
+            leafId: 0, // Will be updated before inserting into tree when we sort all leaves.
+            chainId: Number(repaymentChainId),
+            amountToReturn: toBN(0), // TODO: Derive amountToReturn
+            l2TokenAddress,
+            refundAddresses: sortedRefundAddresses.slice(i, i + this.clients.configStoreClient.maxRefundsPerLeaf),
+            refundAmounts: sortedRefundAddresses
+              .slice(i, i + this.clients.configStoreClient.maxRefundsPerLeaf)
+              .map((address) => refunds[address]),
+          });
+      });
+    });
+
+    // Sort leaves by chain ID and then L2 token address in ascending order. Assign leaves unique, ascending ID's
+    // beginning from 0.
+    const indexedLeaves: RelayerRefundLeaf[] = [...relayerRefundLeaves]
+      .sort((leafA, leafB) => {
+        if (leafA.chainId !== leafB.chainId) {
+          return leafA.chainId - leafB.chainId;
+        } else if (compareAddresses(leafA.l2TokenAddress, leafB.l2TokenAddress) !== 0) {
+          return compareAddresses(leafA.l2TokenAddress, leafB.l2TokenAddress);
+        } else if (leafA.groupIndex !== leafB.groupIndex) return leafA.groupIndex - leafB.groupIndex;
+        else throw new Error("Unexpected leaf group indices match");
+      })
+      .map((leaf: RelayerRefundLeafWithGroup, i: number): RelayerRefundLeaf => {
+        delete leaf.groupIndex; // Delete group index now that we've used it to sort leaves for the same
+        // { repaymentChain, l2TokenAddress } since it doesn't exist in RelayerRefundLeaf
+        return { ...leaf, leafId: i };
+      });
+
+    return indexedLeaves.length > 0 ? buildRelayerRefundTree(indexedLeaves) : null;
   }
 
-  async buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
-    this._loadData();
+  buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
+    const { fillsToRefund, deposits, unfilledDeposits } = this._loadData();
 
     // For each destination chain ID key in unfilledDeposits
     //     Group by L1 token and for each L1 token:

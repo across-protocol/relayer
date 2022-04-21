@@ -31,7 +31,7 @@ export async function setupTokensForWallet(
   spokePool: utils.Contract,
   wallet: utils.SignerWithAddress,
   tokens: utils.Contract[],
-  weth: utils.Contract,
+  weth?: utils.Contract,
   seedMultiplier: number = 1
 ) {
   await utils.seedWallet(wallet, tokens, weth, utils.amountToSeedWallets.mul(seedMultiplier));
@@ -110,10 +110,12 @@ export async function deployAndConfigureHubPool(
     await hubPool.setCrossChainContracts(spokePool.l2ChainId, mockAdapter.address, spokePool.spokePool.address);
   }
 
-  const l1Token = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("Rando L1", "L1", 18);
-  await l1Token.addMember(TokenRolesEnum.MINTER, signer.address);
+  const l1Token_1 = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("Rando L1", "L1", 18);
+  await l1Token_1.addMember(TokenRolesEnum.MINTER, signer.address);
+  const l1Token_2 = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("Rando L1", "L1", 18);
+  await l1Token_2.addMember(TokenRolesEnum.MINTER, signer.address);
 
-  return { hubPool, mockAdapter, l1Token };
+  return { hubPool, mockAdapter, l1Token_1, l1Token_2 };
 }
 
 export async function enableRoutesOnHubPool(
@@ -360,6 +362,61 @@ export async function buildModifiedFill(
         .div(toBNWei(1)),
       updatedRelayerFeePct,
       signature
+    )
+  );
+  const [events, destinationChainId] = await Promise.all([
+    spokePool.queryFilter(spokePool.filters.FilledRelay()),
+    spokePool.chainId(),
+  ]);
+  const lastEvent = events[events.length - 1];
+  if (lastEvent.args)
+    return {
+      amount: lastEvent.args.amount,
+      totalFilledAmount: lastEvent.args.totalFilledAmount,
+      fillAmount: lastEvent.args.fillAmount,
+      repaymentChainId: Number(lastEvent.args.repaymentChainId),
+      originChainId: Number(lastEvent.args.originChainId),
+      relayerFeePct: lastEvent.args.relayerFeePct,
+      appliedRelayerFeePct: lastEvent.args.appliedRelayerFeePct,
+      realizedLpFeePct: lastEvent.args.realizedLpFeePct,
+      depositId: lastEvent.args.depositId,
+      destinationToken: lastEvent.args.destinationToken,
+      relayer: lastEvent.args.relayer,
+      depositor: lastEvent.args.depositor,
+      recipient: lastEvent.args.recipient,
+      isSlowRelay: lastEvent.args.isSlowRelay,
+      destinationChainId: Number(destinationChainId),
+    };
+  else return null;
+}
+
+export async function buildFillForRepaymentChain(
+  spokePool: Contract,
+  relayer: SignerWithAddress,
+  depositToFill: Deposit,
+  pctOfDepositToFill: number,
+  repaymentChainId: number
+): Promise<Fill> {
+  const relayDataFromDeposit = {
+    depositor: depositToFill.depositor,
+    recipient: depositToFill.recipient,
+    destinationToken: depositToFill.destinationToken,
+    amount: depositToFill.amount,
+    originChainId: depositToFill.originChainId.toString(),
+    destinationChainId: depositToFill.destinationChainId.toString(),
+    realizedLpFeePct: depositToFill.realizedLpFeePct,
+    relayerFeePct: depositToFill.relayerFeePct,
+    depositId: depositToFill.depositId.toString(),
+  };
+  await spokePool.connect(relayer).fillRelay(
+    ...utils.getFillRelayParams(
+      relayDataFromDeposit,
+      depositToFill.amount
+        .mul(toBNWei(1).sub(depositToFill.realizedLpFeePct.add(depositToFill.relayerFeePct)))
+        .mul(toBNWei(pctOfDepositToFill))
+        .div(toBNWei(1))
+        .div(toBNWei(1)),
+      repaymentChainId
     )
   );
   const [events, destinationChainId] = await Promise.all([

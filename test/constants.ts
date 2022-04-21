@@ -4,6 +4,9 @@ export const randomOriginToken = randomAddress();
 export const randomDestinationToken = randomAddress();
 export const randomDestinationToken2 = randomAddress();
 
+// Max number of refunds in relayer refund leaf for a { repaymentChainId, L2TokenAddress }.
+export const MAX_REFUNDS_PER_LEAF = 3;
+
 // DAI's Rate model.
 export const sampleRateModel = {
   UBar: toWei(0.8).toString(),

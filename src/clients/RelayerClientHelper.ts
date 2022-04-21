@@ -2,11 +2,9 @@ import winston from "winston";
 import { getProvider, getSigner, getDeployedContract, Contract } from "../utils";
 import { SpokePoolClient, HubPoolClient, RateModelClient, TokenClient, ProfitClient, MultiCallerClient } from ".";
 import { RelayerConfig } from "../relayer/RelayerConfig";
+import { Clients } from "./ClientHelper";
 
-export interface RelayerClients {
-  spokePoolClients: { [chainId: number]: SpokePoolClient };
-  hubPoolClient: HubPoolClient;
-  rateModelClient: RateModelClient;
+export interface RelayerClients extends Clients {
   tokenClient: TokenClient;
   profitClient: ProfitClient;
   multiCallerClient: MultiCallerClient;

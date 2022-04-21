@@ -23,7 +23,7 @@ describe("Relayer: Token balance shortfall", async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
     ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId));
     ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
-    ({ hubPool, l1Token } = await deployAndConfigureHubPool(owner, [
+    ({ hubPool, l1Token_1: l1Token } = await deployAndConfigureHubPool(owner, [
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
     ]));
 

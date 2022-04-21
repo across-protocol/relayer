@@ -19,6 +19,7 @@ export * from "./ExecutionUtils";
 export * from "./NetworkUtils";
 export * from "./TransactionUtils";
 export * from "./MerkleTreeUtils";
+export * from "./AddressUtils";
 
 export { ZERO_ADDRESS, MAX_SAFE_ALLOWANCE } from "@uma/common";
 
