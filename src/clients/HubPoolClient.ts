@@ -1,4 +1,5 @@
-import { spreadEvent, assign, Contract, winston, BigNumber, ERC20, Event, sortEventsAscending, toBN } from "../utils";
+import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, toBN } from "../utils";
+import { spreadEvent, spreadEventWithBlockNumber } from "../utils";
 import { Deposit, L1Token, ProposedRootBundle } from "../interfaces";
 
 export class HubPoolClient {
@@ -123,9 +124,7 @@ export class HubPoolClient {
     for (const info of tokenInfo) if (!this.l1Tokens.includes(info)) this.l1Tokens.push(info);
 
     this.proposedRootBundles.push(
-      ...proposeRootBundleEvents.map((e): ProposedRootBundle => {
-        return { ...spreadEvent(e), blockNumber: e.blockNumber };
-      })
+      ...proposeRootBundleEvents.map((e): ProposedRootBundle => spreadEventWithBlockNumber(e))
     );
 
     this.isUpdated = true;
