@@ -181,7 +181,7 @@ export class Dataworker {
       (deposit: UnfilledDeposit): RelayData => ({
         depositor: deposit.deposit.depositor,
         recipient: deposit.deposit.recipient,
-        destinationToken: deposit.deposit.depositor,
+        destinationToken: deposit.deposit.destinationToken,
         amount: deposit.deposit.amount,
         originChainId: deposit.deposit.originChainId,
         destinationChainId: deposit.deposit.destinationChainId,

@@ -10,8 +10,8 @@ import { HubPoolClient } from "../../src/clients/HubPoolClient";
 
 import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber } from "./index";
 import { amountToDeposit, depositRelayerFeePct } from "../constants";
-import { Deposit, Fill } from "../../src/interfaces/SpokePool";
-import { toBNWei } from "../../src/utils";
+import { Deposit, Fill, RelayData, RunningBalances } from "../../src/interfaces/SpokePool";
+import { buildRelayerRefundTree, MerkleTree, toBN, toBNWei } from "../../src/utils";
 
 import winston from "winston";
 import sinon from "sinon";
@@ -430,4 +430,93 @@ export async function buildFillForRepaymentChain(
       destinationChainId: Number(destinationChainId),
     };
   else return null;
+}
+
+// Returns expected leaves ordered by origin chain ID and then deposit ID(ascending). Ordering is implemented
+// same way that dataworker orders them.
+export function buildSlowRelayLeaves(deposits: Deposit[]) {
+  return deposits
+    .map((_deposit) => {
+      return {
+        depositor: _deposit.depositor,
+        recipient: _deposit.recipient,
+        destinationToken: _deposit.destinationToken,
+        amount: _deposit.amount,
+        originChainId: _deposit.originChainId.toString(),
+        destinationChainId: _deposit.destinationChainId.toString(),
+        realizedLpFeePct: _deposit.realizedLpFeePct,
+        relayerFeePct: _deposit.relayerFeePct,
+        depositId: _deposit.depositId.toString(),
+      };
+    }) // leaves should be ordered by origin chain ID and then deposit ID (ascending).
+    .sort((relayA, relayB) => {
+      if (relayA.originChainId !== relayB.originChainId)
+        return Number(relayA.originChainId) - Number(relayB.originChainId);
+      else return Number(relayA.depositId) - Number(relayB.depositId);
+    });
+}
+
+// Adds `leafId` to incomplete input `leaves` and then constructs a relayer refund leaf tree.
+export async function buildRelayerRefundTreeWithUnassignedLeafIds(
+  leaves: {
+    chainId: number;
+    amountToReturn: BigNumber;
+    l2TokenAddress: string;
+    refundAddresses: string[];
+    refundAmounts: BigNumber[];
+  }[]
+) {
+  return await buildRelayerRefundTree(
+    leaves.map((leaf, id) => {
+      return { ...leaf, leafId: id };
+    })
+  );
+}
+
+export async function constructPoolRebalanceTree(runningBalances: RunningBalances, realizedLpFees: RunningBalances) {
+  const leaves = utils.buildPoolRebalanceLeaves(
+    Object.keys(runningBalances).map((x) => Number(x)), // Where funds are getting sent.
+    Object.values(runningBalances).map((runningBalanceForL1Token) => Object.keys(runningBalanceForL1Token)), // l1Tokens.
+    Object.values(realizedLpFees).map((realizedLpForL1Token) => Object.values(realizedLpForL1Token)), // bundleLpFees.
+    Object.values(runningBalances).map((runningBalanceForL1Token) =>
+      Object.values(runningBalanceForL1Token).map((x: BigNumber) => x.mul(toBN(-1)))
+    ), // netSendAmounts.
+    Object.values(runningBalances).map((runningBalanceForL1Token) => Object.values(runningBalanceForL1Token)), // runningBalances.
+    Object.keys(runningBalances).map((_) => 0) // group index
+  );
+  const tree = await utils.buildPoolRebalanceLeafTree(leaves);
+
+  return { leaves, tree };
+}
+
+export async function buildSlowFill(
+  spokePool: Contract,
+  lastFillForDeposit: Fill,
+  relayer: SignerWithAddress,
+  proof: string[],
+  rootBundleId: string = "0"
+): Promise<Fill> {
+  await spokePool
+    .connect(relayer)
+    .executeSlowRelayLeaf(
+      lastFillForDeposit.depositor,
+      lastFillForDeposit.recipient,
+      lastFillForDeposit.destinationToken,
+      lastFillForDeposit.amount.toString(),
+      lastFillForDeposit.originChainId.toString(),
+      lastFillForDeposit.realizedLpFeePct.toString(),
+      lastFillForDeposit.relayerFeePct.toString(),
+      lastFillForDeposit.depositId.toString(),
+      rootBundleId,
+      proof
+    );
+  return {
+    ...lastFillForDeposit,
+    totalFilledAmount: lastFillForDeposit.amount, // Slow relay always fully fills deposit
+    fillAmount: lastFillForDeposit.amount.sub(lastFillForDeposit.totalFilledAmount), // Fills remaining after latest fill for deposit
+    repaymentChainId: 0, // Always set to 0 for slow fills
+    appliedRelayerFeePct: toBN(0), // Always set to 0 since there was no relayer
+    isSlowRelay: true,
+    relayer: relayer.address, // Set to caller of `executeSlowRelayLeaf`
+  };
 }
