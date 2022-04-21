@@ -69,8 +69,9 @@ export class ProfitClient {
     const tokenPriceInUsd = this.getPriceOfToken(l1Token);
     const fillRevenueInRelayedToken = toBN(deposit.relayerFeePct).mul(fillAmount).div(toBN(10).pow(decimals));
     const fillRevenueInUsd = fillRevenueInRelayedToken.mul(tokenPriceInUsd).div(toBNWei(1));
-    const discount = toBNWei(1).sub(this.relayerDiscount);
-    const minimumAcceptableRevenue = chainIdToMinRevenue[deposit.destinationChainId].mul(discount).div(toBNWei(1));
+    // How much minimumAcceptableRevenue is scaled. If relayer discount is 0 then need minimumAcceptableRevenue at min.
+    const revenueScalar = toBNWei(1).sub(this.relayerDiscount);
+    const minimumAcceptableRevenue = chainIdToMinRevenue[deposit.destinationChainId].mul(revenueScalar).div(toBNWei(1));
     const fillProfitable = fillRevenueInUsd.gte(minimumAcceptableRevenue);
     this.logger.debug({
       at: "ProfitClient",
