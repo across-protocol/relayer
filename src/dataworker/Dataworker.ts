@@ -326,7 +326,6 @@ export class Dataworker {
                 fillThatTriggeredSlowFill.destinationChainId,
                 this.chainIdListForBundleEvaluationBlockNumbers
               );
-              console.log(endingBlockNumberForRootBundleContainingSlowFill, allFills)
             // Using bundle block number for chain from ProposeRootBundleEvent, find latest fill in the root bundle.
             const lastFillBeforeSlowFillIncludedInRoot = sortEventsDescending(allFills).find(
               (fill: FillWithBlock) =>
@@ -384,6 +383,8 @@ export class Dataworker {
     // 6. Factor in latest RootBundleExecuted.runningBalance before this one.
 
     // 7. Factor in MAX_POOL_REBALANCE_LEAF_SIZE
+
+    // TODO: Add helpful logs everywhere.
 
     return {
       runningBalances,
