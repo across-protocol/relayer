@@ -95,6 +95,7 @@ export class HubPoolClient {
       const chainIdIndex = chainIdList.indexOf(chain);
       if (chainIdIndex === -1) throw new Error("Can't find fill.destinationChainId in CHAIN_ID_LIST");
       if (bundleEvaluationBlockNumbers[chainIdIndex].gt(toBN(block)))
+        // TODO: Can this be a `gte`?
         endingBlockNumber = bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
     });
     if (!endingBlockNumber) throw new Error("Can't find ProposeRootBundle event containing block");

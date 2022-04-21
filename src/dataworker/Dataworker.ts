@@ -327,29 +327,20 @@ export class Dataworker {
                 this.chainIdListForBundleEvaluationBlockNumbers
               );
             // Using bundle block number for chain from ProposeRootBundleEvent, find latest fill in the root bundle.
-            const lastFillBeforeSlowFillIncludedInRoot = sortEventsDescending(allFills).find(
-              (fill: FillWithBlock) =>
-                !fill.isSlowRelay &&
-                endingBlockNumberForRootBundleContainingSlowFill > fill.blockNumber &&
-                fill.amount.eq(slowFill.amount) &&
-                fill.originChainId === slowFill.originChainId &&
-                fill.destinationChainId === slowFill.destinationChainId &&
-                fill.relayerFeePct.eq(slowFill.relayerFeePct) &&
-                fill.depositId === slowFill.depositId &&
-                fill.recipient === slowFill.recipient &&
-                fill.depositor === slowFill.depositor
-            ) as FillWithBlock;
+            const lastFillBeforeSlowFillIncludedInRoot = this._matchSlowFillWithFillBeforeBlock(
+              slowFill,
+              allFills,
+              endingBlockNumberForRootBundleContainingSlowFill
+            );
             if (!lastFillBeforeSlowFillIncludedInRoot)
               throw new Error("Can't last fill submitted before slow fill was included in root bundle proposal");
 
             // Recompute how much the matched root bundle sent for this slow fill. Subtract the amount that was
             // actually executed on the L2 from the amount that was sent. This should give us the excess that was sent.
             // Subtract that amount from the running balance so we ultimately send it back to L1.
-            const amountUnfilledAtRootBundleProposal = lastFillBeforeSlowFillIncludedInRoot.amount.sub(
-              lastFillBeforeSlowFillIncludedInRoot.totalFilledAmount
-            );
-            const amountFilledInSlowRelay = slowFill.fillAmount;
-            const extraFundsSent = amountUnfilledAtRootBundleProposal.sub(amountFilledInSlowRelay);
+            const extraFundsSent = lastFillBeforeSlowFillIncludedInRoot.amount
+              .sub(lastFillBeforeSlowFillIncludedInRoot.totalFilledAmount)
+              .sub(slowFill.fillAmount);
             if (extraFundsSent.eq(toBN(0))) return; // Exit early if slow fill left no excess funds.
             const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpart(
               slowFill.destinationChainId.toString(),
@@ -422,5 +413,21 @@ export class Dataworker {
 
   async executeRelayerRefundLeaves() {
     // TODO:
+  }
+
+  // Return fill with matching relay data as slow fill that emitted before the `lastBlock`.
+  _matchSlowFillWithFillBeforeBlock(slowFill: Fill, allFills: FillWithBlock[], lastBlock: number): FillWithBlock {
+    return sortEventsDescending(allFills).find(
+      (fill: FillWithBlock) =>
+        !fill.isSlowRelay &&
+        lastBlock > fill.blockNumber && // TODO: Can this be a >=?
+        fill.amount.eq(slowFill.amount) &&
+        fill.originChainId === slowFill.originChainId &&
+        fill.destinationChainId === slowFill.destinationChainId &&
+        fill.relayerFeePct.eq(slowFill.relayerFeePct) &&
+        fill.depositId === slowFill.depositId &&
+        fill.recipient === slowFill.recipient &&
+        fill.depositor === slowFill.depositor
+    ) as FillWithBlock;
   }
 }
