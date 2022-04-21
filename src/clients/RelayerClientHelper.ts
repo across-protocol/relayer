@@ -3,14 +3,15 @@ import { getProvider, getSigner, getDeployedContract, Contract } from "../utils"
 import { SpokePoolClient, HubPoolClient, RateModelClient, TokenClient, MultiCallerClient } from ".";
 import { RelayerConfig } from "../relayer/RelayerConfig";
 import { Clients } from "./ClientHelper";
+import { promises } from "dns";
 
 export interface RelayerClients extends Clients {
   tokenClient: TokenClient;
 }
 
-export function constructRelayerClients(logger: winston.Logger, config: RelayerConfig): RelayerClients {
+export async function constructRelayerClients(logger: winston.Logger, config: RelayerConfig): Promise<RelayerClients> {
   // Create signers for each chain. Each is connected to an associated provider for that chain.
-  const baseSigner = getSigner();
+  const baseSigner = await getSigner();
 
   const hubSigner = baseSigner.connect(getProvider(config.hubPoolChainId));
   const spokeSigners = config.spokePoolChains

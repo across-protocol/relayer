@@ -2,7 +2,8 @@
 import winston from "winston";
 export { winston };
 export { delay } from "@uma/financial-templates-lib";
-export { BigNumber, Signer, Contract, ContractFactory, Transaction, utils, BaseContract, Event, Wallet } from "ethers";
+export { BigNumber, Signer, Contract, ContractFactory, Transaction } from "ethers";
+export { utils, BaseContract, Event, Wallet, providers } from "ethers";
 export { ethers } from "ethers";
 export type { Block } from "@ethersproject/abstract-provider";
 
@@ -19,6 +20,7 @@ export * from "./NetworkUtils";
 export * from "./TransactionUtils";
 export * from "./MerkleTreeUtils";
 export * from "./AddressUtils";
+export * from "./GckmsUtils";
 
 export { ZERO_ADDRESS, MAX_SAFE_ALLOWANCE } from "@uma/common";
 
