@@ -84,7 +84,7 @@ describe("Relayer: Token balance shortfall", async function () {
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
 
-    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all relays")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Shortfall on Hardhat2:")).to.be.true;
     expect(lastSpyLogIncludes(spy, `${await l1Token.symbol()} cumulative shortfall of 150.00`)).to.be.true;
     expect(lastSpyLogIncludes(spy, "blocking deposits: 1,0")).to.be.true;
@@ -123,7 +123,7 @@ describe("Relayer: Token balance shortfall", async function () {
 
     await relayerInstance.checkForUnfilledDepositsAndFill();
 
-    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all relays")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Shortfall on Hardhat1:")).to.be.true; // both networks should show shortfalls.
     expect(lastSpyLogIncludes(spy, "Shortfall on Hardhat2:")).to.be.true;
     expect(lastSpyLogIncludes(spy, `${await l1Token.symbol()} cumulative shortfall of 100.00`)).to.be.true;
