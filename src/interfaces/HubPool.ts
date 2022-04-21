@@ -21,6 +21,17 @@ export interface RelayerRefundLeaf {
   refundAddresses: string[];
 }
 
+export interface ProposedRootBundle {
+  blockNumber: number;
+  challengePeriodEndTimestamp: number;
+  poolRebalanceLeafCount: number;
+  bundleEvaluationBlockNumbers: BigNumber[];
+  poolRebalanceRoot: string;
+  relayerRefundRoot: string;
+  slowRelayRoot: string;
+  proposer: string;
+}
+
 export interface RelayerRefundLeafWithGroup extends RelayerRefundLeaf {
   groupIndex: number;
 }

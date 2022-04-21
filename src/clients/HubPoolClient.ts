@@ -1,13 +1,11 @@
 import { spreadEvent, assign, Contract, winston, BigNumber, ERC20, Event, sortEventsAscending, toBN } from "../utils";
-import { Deposit, Fill, L1Token } from "../interfaces";
-import { SpokePoolClient, CHAIN_ID_LIST_INDICES } from ".";
+import { Deposit, L1Token, ProposedRootBundle } from "../interfaces";
 
 export class HubPoolClient {
   // L1Token -> destinationChainId -> destinationToken
   private l1TokensToDestinationTokens: { [l1Token: string]: { [destinationChainId: number]: string } } = {};
   private l1Tokens: L1Token[] = []; // L1Tokens and their associated info.
-  private proposeRootBundleEvents: Event[] = [];
-  private executeRootBundleEvents: Event[] = [];
+  private proposedRootBundles: ProposedRootBundle[] = [];
 
   public isUpdated: boolean = false;
   public firstBlockToSearch: number;
@@ -41,10 +39,9 @@ export class HubPoolClient {
   }
 
   getL1TokenCounterpart(repaymentChainId: string, l2Token: string) {
-    let l1Token = null;
-    Object.keys(this.l1TokensToDestinationTokens).forEach((_l1Token) => {
-      if (this.l1TokensToDestinationTokens[_l1Token][repaymentChainId] === l2Token) l1Token = _l1Token;
-    });
+    const l1Token = Object.keys(this.l1TokensToDestinationTokens).find(
+      (_l1Token) => this.l1TokensToDestinationTokens[_l1Token][repaymentChainId] === l2Token
+    );
     if (l1Token === null)
       throw new Error(`Could not find L1 Token for repayment chain ${repaymentChainId} and L2 token ${l2Token}!`);
     return l1Token;
@@ -88,8 +85,8 @@ export class HubPoolClient {
   // without being smaller. It returns the bundle block number for the chain.
   getRootBundleEvalBlockNumberContainingBlock(block: number, chain: number, chainIdList: number[]): number {
     let endingBlockNumber: number;
-    sortEventsAscending(this.proposeRootBundleEvents).forEach((e: Event) => {
-      const bundleEvaluationBlockNumbers: BigNumber[] = e.args.bundleEvaluationBlockNumbers;
+    sortEventsAscending(this.proposedRootBundles).forEach((rootBundle: ProposedRootBundle) => {
+      const bundleEvaluationBlockNumbers: BigNumber[] = rootBundle.bundleEvaluationBlockNumbers;
       if (bundleEvaluationBlockNumbers.length !== chainIdList.length)
         throw new Error("Chain ID list and bundle block eval range list length do not match");
       const chainIdIndex = chainIdList.indexOf(chain);
@@ -107,13 +104,11 @@ export class HubPoolClient {
     this.logger.debug({ at: "HubPoolClient", message: "Updating client", searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
 
-    const [poolRebalanceRouteEvents, l1TokensLPEvents, proposeRootBundleEvents, executeRootBundleEvents] =
-      await Promise.all([
-        this.hubPool.queryFilter(this.hubPool.filters.SetPoolRebalanceRoute(), ...searchConfig),
-        this.hubPool.queryFilter(this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), ...searchConfig),
-        this.hubPool.queryFilter(this.hubPool.filters.ProposeRootBundle(), ...searchConfig),
-        this.hubPool.queryFilter(this.hubPool.filters.RootBundleExecuted(), ...searchConfig),
-      ]);
+    const [poolRebalanceRouteEvents, l1TokensLPEvents, proposeRootBundleEvents] = await Promise.all([
+      this.hubPool.queryFilter(this.hubPool.filters.SetPoolRebalanceRoute(), ...searchConfig),
+      this.hubPool.queryFilter(this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), ...searchConfig),
+      this.hubPool.queryFilter(this.hubPool.filters.ProposeRootBundle(), ...searchConfig),
+    ]);
 
     for (const event of poolRebalanceRouteEvents) {
       const args = spreadEvent(event);
@@ -127,8 +122,11 @@ export class HubPoolClient {
     );
     for (const info of tokenInfo) if (!this.l1Tokens.includes(info)) this.l1Tokens.push(info);
 
-    this.proposeRootBundleEvents.push(...proposeRootBundleEvents);
-    this.executeRootBundleEvents.push(...executeRootBundleEvents);
+    this.proposedRootBundles.push(
+      ...proposeRootBundleEvents.map((e): ProposedRootBundle => {
+        return { ...spreadEvent(e), blockNumber: e.blockNumber };
+      })
+    );
 
     this.isUpdated = true;
     this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
