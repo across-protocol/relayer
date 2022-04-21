@@ -3,7 +3,6 @@ import { getProvider, getSigner, getDeployedContract, Contract } from "../utils"
 import { SpokePoolClient, HubPoolClient, RateModelClient, TokenClient, MultiCallerClient } from ".";
 import { RelayerConfig } from "../relayer/RelayerConfig";
 import { Clients } from "./ClientHelper";
-import { promises } from "dns";
 
 export interface RelayerClients extends Clients {
   tokenClient: TokenClient;
