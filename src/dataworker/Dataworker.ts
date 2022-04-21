@@ -319,23 +319,19 @@ export class Dataworker {
                 fill.originChainId === slowFill.originChainId && fill.depositId === slowFill.depositId
             ) as FillWithBlock;
             if (!fillThatTriggeredSlowFill) throw new Error("Can't find earliest fill associated with slow fill");
-            // Find ProposeRootBundle event that should have included this slow fill.
-            const proposeRootBundleThatIncludedSlowFill =
-              this.clients.hubPoolClient.getEarliestProposeRootEventAfterBlock(fillThatTriggeredSlowFill.blockNumber);
-            if (!fillThatTriggeredSlowFill) throw new Error("Can't find propose root bundle that included slow fill");
-            // Find last fill before this ProposeRootBundle event's ending block number which should give us the
-            // unfilledAmount at the time that the slowFill was included in the bundle.
-            const bundleEvaluationBlockNumbers: BigNumber[] =
-              proposeRootBundleThatIncludedSlowFill.args.bundleEvaluationBlockNumbers;
-            if (bundleEvaluationBlockNumbers.length !== this.chainIdListForBundleEvaluationBlockNumbers.length)
-              throw new Error("Chain ID list and bundle block eval range list length do not match");
-            const chainIdIndex = this.chainIdListForBundleEvaluationBlockNumbers.indexOf(
-              fillThatTriggeredSlowFill.destinationChainId
-            );
-            if (chainIdIndex === -1) throw new Error("Can't find fill.destinationChainId in CHAIN_ID_LIST");
+            // Find ending block number for chain from ProposeRootBundle event that should have included this slow fill.
+            const endingBlockNumberForRootBundleContainingSlowFill =
+              this.clients.hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
+                fillThatTriggeredSlowFill.blockNumber,
+                fillThatTriggeredSlowFill.destinationChainId,
+                this.chainIdListForBundleEvaluationBlockNumbers
+              );
+              console.log(endingBlockNumberForRootBundleContainingSlowFill, allFills)
+            // Using bundle block number for chain from ProposeRootBundleEvent, find latest fill in the root bundle.
             const lastFillBeforeSlowFillIncludedInRoot = sortEventsDescending(allFills).find(
               (fill: FillWithBlock) =>
-                bundleEvaluationBlockNumbers[chainIdIndex].gt(toBN(fill.blockNumber)) &&
+                !fill.isSlowRelay &&
+                endingBlockNumberForRootBundleContainingSlowFill > fill.blockNumber &&
                 fill.amount.eq(slowFill.amount) &&
                 fill.originChainId === slowFill.originChainId &&
                 fill.destinationChainId === slowFill.destinationChainId &&
@@ -355,7 +351,6 @@ export class Dataworker {
             );
             const amountFilledInSlowRelay = slowFill.fillAmount;
             const extraFundsSent = amountUnfilledAtRootBundleProposal.sub(amountFilledInSlowRelay);
-            console.log(extraFundsSent);
             if (extraFundsSent.eq(toBN(0))) return; // Exit early if slow fill left no excess funds.
             const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpart(
               slowFill.destinationChainId.toString(),

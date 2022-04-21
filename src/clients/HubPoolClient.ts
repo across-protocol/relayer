@@ -1,4 +1,4 @@
-import { spreadEvent, assign, Contract, winston, BigNumber, ERC20, Event, sortEventsAscending } from "../utils";
+import { spreadEvent, assign, Contract, winston, BigNumber, ERC20, Event, sortEventsAscending, toBN } from "../utils";
 import { Deposit, Fill, L1Token } from "../interfaces";
 import { SpokePoolClient, CHAIN_ID_LIST_INDICES } from ".";
 
@@ -105,8 +105,21 @@ export class HubPoolClient {
   //   })
   // }
 
-  getEarliestProposeRootEventAfterBlock(block: number): Event {
-    return sortEventsAscending(this.proposeRootBundleEvents).find((e: Event) => e.blockNumber >= block) as Event;
+  // This should find the ProposeRootBundle event whose bundle block number for `chain` is closest to the `block`
+  // without being smaller. It returns the bundle block number for the chain.
+  getRootBundleEvalBlockNumberContainingBlock(block: number, chain: number, chainIdList: number[]): number {
+    let endingBlockNumber: number;
+    sortEventsAscending(this.proposeRootBundleEvents).forEach((e: Event) => {
+      const bundleEvaluationBlockNumbers: BigNumber[] = e.args.bundleEvaluationBlockNumbers;
+      if (bundleEvaluationBlockNumbers.length !== chainIdList.length)
+        throw new Error("Chain ID list and bundle block eval range list length do not match");
+      const chainIdIndex = chainIdList.indexOf(chain);
+      if (chainIdIndex === -1) throw new Error("Can't find fill.destinationChainId in CHAIN_ID_LIST");
+      if (bundleEvaluationBlockNumbers[chainIdIndex].gt(toBN(block)))
+        endingBlockNumber = bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
+    });
+    if (!endingBlockNumber) throw new Error("Can't find ProposeRootBundle event containing block");
+    return endingBlockNumber;
   }
 
   async update() {
