@@ -39,6 +39,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       spokePoolClients: { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
       hubPoolClient,
       rateModelClient,
+      profitClient: null,
       tokenClient: null,
       multiCallerClient: null,
     });

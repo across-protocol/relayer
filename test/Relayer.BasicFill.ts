@@ -1,8 +1,10 @@
-import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, originChainId, sinon } from "./utils";
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
 import { lastSpyLogIncludes, createSpyLogger, deployRateModelStore, deployAndConfigureHubPool, winston } from "./utils";
+import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId } from "./utils";
+import { originChainId, sinon, toBNWei } from "./utils";
 import { amountToLp, sampleRateModel } from "./constants";
-import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallerClient, TokenClient } from "../src/clients";
+import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallerClient } from "../src/clients";
+import { TokenClient, ProfitClient } from "../src/clients";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 
@@ -14,7 +16,7 @@ let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
 let relayerInstance: Relayer;
-let multiCallerClient: MultiCallerClient;
+let multiCallerClient: MultiCallerClient, profitClient: ProfitClient;
 
 describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   beforeEach(async function () {
@@ -46,11 +48,13 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients);
+    profitClient = new ProfitClient(spyLogger, hubPoolClient, toBNWei(1)); // Set relayer discount to 100%.
     relayerInstance = new Relayer(spyLogger, {
       spokePoolClients,
       hubPoolClient,
       rateModelClient,
       tokenClient,
+      profitClient,
       multiCallerClient,
     });
 

@@ -2,7 +2,7 @@ import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 import { TokenRolesEnum } from "@uma/common";
 export { MAX_SAFE_ALLOWANCE } from "@uma/common";
 import { SpyTransport } from "@uma/financial-templates-lib";
-import { sampleRateModel, zeroAddress } from "../constants";
+import { sampleRateModel, toBN, zeroAddress } from "../constants";
 
 import { SpokePoolClient } from "../../src/clients/SpokePoolClient";
 import { RateModelClient } from "../../src/clients/RateModelClient";
@@ -45,6 +45,7 @@ export function createSpyLogger() {
   const spy = sinon.spy();
   const spyLogger = winston.createLogger({
     level: "debug",
+    format: winston.format.combine(winston.format(bigNumberFormatter)(), winston.format.json()),
     transports: [
       new SpyTransport({ level: "debug" }, { spy }),
       process.env.LOG_IN_TEST ? new winston.transports.Console() : null,
@@ -53,6 +54,23 @@ export function createSpyLogger() {
 
   return { spy, spyLogger };
 }
+
+// TODO: remove this when we've accessed it from UMA protocol FPL: https://github.com/UMAprotocol/protocol/pull/3878
+export function bigNumberFormatter(logEntry: any) {
+  try {
+    iterativelyReplaceBigNumbers(logEntry);
+  } catch (_) {
+    return logEntry;
+  }
+  return logEntry;
+}
+
+const iterativelyReplaceBigNumbers = (obj: any) => {
+  Object.keys(obj).forEach((key) => {
+    if (BigNumber.isBigNumber(obj[key])) obj[key] = obj[key].toString();
+    else if (typeof obj[key] === "object" && obj[key] !== null) iterativelyReplaceBigNumbers(obj[key]);
+  });
+};
 
 export async function deploySpokePoolWithToken(
   fromChainId: number = 0,
