@@ -84,27 +84,6 @@ export class HubPoolClient {
     return this.getTokenInfoForDeposit(deposit);
   }
 
-  // TODO:
-  // Query CrossChainContractsSet events to find spoke pools at specified `block`.
-  // getCrossChainContractsForBlock(block:number): { [chainId: number]: SpokePoolClient } {
-  // }
-
-  // // Returns an ordered array of block ranges for each spoke pool. For an ordered list of `toBlocks`, this function
-  // // will find the corresponding `fromBlocks` for each chain. The order of chains can be found in CHAIN_ID_LIST.
-  // getRootBundleEvaluationBlockRange(toBlocks: number[]): number[][] {
-  //   // Find latest RootBundleExecuted event with matching chain ID while still being earlier than the toBlock.
-  //   const blockRanges: number[][] = toBlocks.map((block, i) => {
-  //     const chainId = CHAIN_ID_LIST_INDICES[i]
-  //     // Sort event block heights from latest to earliest, so we find the events right before our target block.
-  //     const precedingExecuteRootBundleEvent: Event = this.executeRootBundleEvents.sort((ex, ey) => ey.blockNumber - ex.blockNumber).find(
-  //       (e: Event) => e.args.chainId === chainId && e.blockNumber < block
-  //     );
-  //     const precedingProposeRootBundleEvent: Event = this.proposeRootBundleEvents.sort((ex, ey) => ey.blockNumber - ex.blockNumber).find(
-  //       (e: Event) => e.blockNumber < precedingExecuteRootBundleEvent.blockNumber
-  //     );
-  //   })
-  // }
-
   // This should find the ProposeRootBundle event whose bundle block number for `chain` is closest to the `block`
   // without being smaller. It returns the bundle block number for the chain.
   getRootBundleEvalBlockNumberContainingBlock(block: number, chain: number, chainIdList: number[]): number {
