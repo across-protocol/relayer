@@ -43,8 +43,8 @@ describe("HubPoolClient: RootBundle Events", async function () {
 
     await hubPoolClient.update();
 
-    // Happy case where `chainIdList` contains chain ID and block is lower than the bundle block range for that chain.
-    expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(20, 2, [1, 2])).to.equal(22);
+    // Happy case where `chainIdList` contains chain ID and block is <= than the bundle block range for that chain.
+    expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1, 2])).to.equal(22);
 
     // `block` is greater than bundle block number for the chain.
     expect(() => hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(23, 2, [1, 2])).to.throw(
@@ -52,12 +52,12 @@ describe("HubPoolClient: RootBundle Events", async function () {
     );
 
     // Chain ID list doesn't contain `chain`
-    expect(() => hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(20, 2, [1, 3])).to.throw(
+    expect(() => hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1, 3])).to.throw(
       /Can't find fill.destinationChainId in CHAIN_ID_LIST/
     );
 
     // Chain ID list length doesn't match bundle block range length
-    expect(() => hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(20, 2, [1])).to.throw(
+    expect(() => hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1])).to.throw(
       /Chain ID list and bundle block eval range list length do not match/
     );
   });

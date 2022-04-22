@@ -316,7 +316,7 @@ export class Dataworker {
               endingBlockNumberForRootBundleContainingSlowFill
             );
             if (!lastFillBeforeSlowFillIncludedInRoot)
-              throw new Error("Can't last fill submitted before slow fill was included in root bundle proposal");
+              throw new Error("Can't find last fill submitted before slow fill was included in root bundle proposal");
 
             // Recompute how much the matched root bundle sent for this slow fill. Subtract the amount that was
             // actually executed on the L2 from the amount that was sent. This should give us the excess that was sent.
