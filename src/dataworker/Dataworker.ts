@@ -259,7 +259,7 @@ export class Dataworker {
     const runningBalances: RunningBalances = {};
     const realizedLpFees: RunningBalances = {}; // Realized LP fees dictionary has same shape as runningBalances.
 
-    // 1. For each FilledRelay group, identified by { repaymentChainId, L1TokenAddress }, initiate a "running balance"
+    // 1. For each FilledRelay group, identified by { repaymentChainId, L1TokenAddress }, initialize a "running balance"
     // to the total refund amount for that group.
     // 2. Similarly, for each group sum the realized LP fees.
     if (Object.keys(fillsToRefund).length > 0) {
