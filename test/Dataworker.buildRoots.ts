@@ -340,6 +340,7 @@ describe("Dataworker: Build merkle roots", async function () {
     // Partial fill deposit2
     const fill2 = await buildFillForRepaymentChain(spokePool_1, depositor, deposit2, 0.3, originChainId);
     const fill3 = await buildFillForRepaymentChain(spokePool_1, depositor, deposit2, 0.2, originChainId);
+    const blockOfLastFill = await hubPool.provider.getBlockNumber();
 
     // Prior to root bundle being executed, running balances should be:
     // - deposited amount
@@ -376,27 +377,24 @@ describe("Dataworker: Build merkle roots", async function () {
     );
 
     // Propose root bundle so that we can test that the dataworker looks up ProposeRootBundle events properly.
-    // Similarly, execute the root bundle because constructing the pool rebalance root is expected to look up
+    // TODO: Similarly, execute the root bundle because constructing the pool rebalance root is expected to look up
     // ExecutedRootBundleEvents.
-    const currentBlock = await hubPool.provider.getBlockNumber();
     await hubPool.connect(dataworker).proposeRootBundle(
-      Array(CHAIN_ID_TEST_LIST.length).fill(currentBlock + 5), // Set current block number as end block for bundle. Its important that we set a block for every possible chain ID. Add 5 blocks for buffer
+      Array(CHAIN_ID_TEST_LIST.length).fill(blockOfLastFill), // Set current block number as end block for bundle. Its important that we set a block for every possible chain ID.
       // so all fills to this point are before these blocks.
       poolRebalanceLeaves.length, // poolRebalanceLeafCount.
       poolRebalanceTree.getHexRoot(), // poolRebalanceRoot
       mockTreeRoot, // relayerRefundRoot
       expectedSlowRelayTree.getHexRoot() // slowRelayRoot
     );
-
-    // Now, execute the root so that a slow relay is executed.
-    await timer.setCurrentTime(Number(await timer.getCurrentTime()) + refundProposalLiveness + 1);
-    await Promise.all(
-      poolRebalanceLeaves.map((leaf) => {
-        return hubPool
-          .connect(dataworker)
-          .executeRootBundle(...Object.values(leaf), poolRebalanceTree.getHexProof(leaf));
-      })
-    );
+    // await timer.setCurrentTime(Number(await timer.getCurrentTime()) + refundProposalLiveness + 1);
+    // await Promise.all(
+    //   poolRebalanceLeaves.map((leaf) => {
+    //     return hubPool
+    //       .connect(dataworker)
+    //       .executeRootBundle(...Object.values(leaf), poolRebalanceTree.getHexProof(leaf));
+    //   })
+    // );
 
     // Execute 1 slow relay leaf:
     // Before we can execute the leaves on the spoke pool, we need to actually publish them since we're using a mock

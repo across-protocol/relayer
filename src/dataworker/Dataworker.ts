@@ -258,8 +258,13 @@ export class Dataworker {
   } {
     const { fillsToRefund, deposits, allFills } = this._loadData();
 
+    // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
+    // slow relay refunds. They are decreased by the amount of funds already held by the SpokePool. Balances are keyed
+    // by the SpokePool's network and L1 token equivalent of the L2 token to refund.
     const runningBalances: RunningBalances = {};
-    const realizedLpFees: RunningBalances = {}; // Realized LP fees dictionary has same shape as runningBalances.
+    // Realized LP fees are keyed the same as running balances and represent the amount of LP fees that should be paid
+    // to LP's for each running balance.
+    const realizedLpFees: RunningBalances = {};
 
     // 1. For each FilledRelay group, identified by { repaymentChainId, L1TokenAddress }, initialize a "running balance"
     // to the total refund amount for that group.
@@ -279,25 +284,17 @@ export class Dataworker {
             fillsToRefund[repaymentChainId][l2TokenAddress].realizedLpFees
           );
 
-          // 3a. For any slow fills, we need to adjust the running balance in case a previous root bundle sent too many
-          // tokens to the spoke pool to pay for the slow fill, but a fill was sent before the slow relay could be
-          // executed, resulting in an excess of funds on the spoke pool. For this step, filter out repeat slow fills.
+          // 3a. For any executed slow fills, we need to adjust the running balance in case a previous root bundle sent 
+          // too many tokens to the spoke pool to pay for the slow fill, but a fill was sent before the slow relay 
+          // could be executed, resulting in an excess of funds on the spoke pool.
           const slowFills: Fill[] = fillsToRefund[repaymentChainId][l2TokenAddress].fills.filter(
             (fill: Fill) => fill.isSlowRelay
           );
-          const firstTimeSlowFills = slowFills.filter(
-            (slowFill: Fill) =>
-              slowFill.fillAmount.gt(toBN(0)) ||
-              !slowFills.some(
-                (otherSlowFill: Fill) =>
-                  otherSlowFill.originChainId === slowFill.originChainId &&
-                  otherSlowFill.depositId === slowFill.depositId
-              )
-          );
-          // 3b. for all non-repeat slow fills, find the FilledRelay event that originally triggered this slow relay.
+
+          // 3b. For all slow fills, find the FilledRelay event that originally triggered this slow relay.
           // Recall that slow fills for a deposit are only included in the root bundle if a non-zero amount fill was
           // submitted for that deposit.
-          firstTimeSlowFills.forEach((slowFill: Fill) => {
+          slowFills.forEach((slowFill: Fill) => {
             // Find the earliest fill that should have triggered this slow fill to have been published in a root bundle.
             const fillThatTriggeredSlowFill = sortEventsAscending(allFills).find(
               (fill: FillWithBlock) =>
@@ -342,7 +339,8 @@ export class Dataworker {
     }
 
     // 4. Map each deposit event to its L1 token and origin chain ID and subtract deposited amounts from running
-    // balances.
+    // balances. Note that we do not care if the deposit is matched with a fill for this epoch or not since all
+    // deposit events lock funds in the spoke pool and should decrease running balances accordingly.
     deposits.forEach((deposit: Deposit) => {
       // TODO: Make sure that we're grabbing the L1 token counterpart at the deposit quote time. This is important if
       // the L1,L2 token mapping is different now than at the quote time.
@@ -405,7 +403,7 @@ export class Dataworker {
     return sortEventsDescending(allFills).find(
       (fill: FillWithBlock) =>
         !fill.isSlowRelay &&
-        lastBlock > fill.blockNumber && // TODO: Can this be a >=?
+        lastBlock >= fill.blockNumber &&
         fill.amount.eq(slowFill.amount) &&
         fill.originChainId === slowFill.originChainId &&
         fill.destinationChainId === slowFill.destinationChainId &&
