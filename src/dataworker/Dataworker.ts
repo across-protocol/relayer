@@ -75,22 +75,9 @@ export class Dataworker {
             // Save fill data and associate with repayment chain and token.
             assign(fillsToRefund, [chainToSendRefundTo, fill.destinationToken, "fills"], [fill]);
 
-            // Update refunds dictionary for non-slow fills.
+            // Update realized LP fee and total refund amount accumulators.
             const refundObj = fillsToRefund[chainToSendRefundTo][fill.destinationToken];
             const refund = getRefundForFills([fill]);
-
-            // Save refund amount for the recipient of the refund, i.e. the relayer for non-slow relays.
-            if (!fill.isSlowRelay) {
-              // Instantiate dictionary if it doesn't exist.
-              if (!refundObj.refunds)
-                assign(fillsToRefund, [chainToSendRefundTo, fill.destinationToken, "refunds"], {});
-
-              if (refundObj.refunds[fill.relayer])
-                refundObj.refunds[fill.relayer] = refundObj.refunds[fill.relayer].add(refund);
-              else refundObj.refunds[fill.relayer] = refund;
-            }
-
-            // Update realized LP fee and total refund amount accumulators.
             refundObj.totalRefundAmount = refundObj.totalRefundAmount
               ? refundObj.totalRefundAmount.add(refund)
               : refund;
@@ -98,7 +85,8 @@ export class Dataworker {
               ? refundObj.realizedLpFees.add(getRealizedLpFeeForFills([fill]))
               : getRealizedLpFeeForFills([fill]);
 
-            // Save deposit.
+            // Save deposit as one that we'll include a slow fill for, since there is a non-slow fill
+            // for the deposit in this epoch.
             const depositUnfilledAmount = fill.amount.sub(fill.totalFilledAmount);
             const depositKey = `${originChainId}+${fill.depositId}`;
             assign(
@@ -114,6 +102,18 @@ export class Dataworker {
                 },
               ]
             );
+
+            // For non-slow relays, save refund amount for the recipient of the refund, i.e. the relayer 
+            // for non-slow relays.
+            if (!fill.isSlowRelay) {
+              // Instantiate dictionary if it doesn't exist.
+              if (!refundObj.refunds)
+                assign(fillsToRefund, [chainToSendRefundTo, fill.destinationToken, "refunds"], {});
+
+              if (refundObj.refunds[fill.relayer])
+                refundObj.refunds[fill.relayer] = refundObj.refunds[fill.relayer].add(refund);
+              else refundObj.refunds[fill.relayer] = refund;
+            }
           } else {
             this.logger.debug({
               at: "Dataworker",
@@ -132,13 +132,15 @@ export class Dataworker {
         // Remove deposits with no matched fills.
         if (_unfilledDeposits.length === 0) return { unfilledAmount: toBN(0), deposit: undefined };
         // Remove deposits where there isn't a fill with fillAmount == totalFilledAmount && fillAmount > 0. This ensures
-        // that we'll only be slow relaying deposits where the first fill
-        // (i.e. the one with fillAmount == totalFilledAmount) is in this epoch.
+        // that we'll only be slow relaying deposits where the first fill (i.e. the one with 
+        // fillAmount == totalFilledAmount) is in this epoch. We assume that we already included slow fills in a 
+        // previous epoch for these ignored deposits.
         if (
           !_unfilledDeposits.some((_unfilledDeposit: UnfilledDeposit) => _unfilledDeposit.hasFirstPartialFill === true)
         )
           return { unfilledAmount: toBN(0), deposit: undefined };
-        // Take the smallest unfilled amount since each fill can only decrease the unfilled amount.
+        // For each deposit, identify the smallest unfilled amount remaining after a fill since each fill can 
+        // only decrease the unfilled amount.
         _unfilledDeposits.sort((unfilledDepositA, unfilledDepositB) =>
           unfilledDepositA.unfilledAmount.gt(unfilledDepositB.unfilledAmount)
             ? 1
