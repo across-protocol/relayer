@@ -103,7 +103,7 @@ export class Dataworker {
               ]
             );
 
-            // For non-slow relays, save refund amount for the recipient of the refund, i.e. the relayer 
+            // For non-slow relays, save refund amount for the recipient of the refund, i.e. the relayer
             // for non-slow relays.
             if (!fill.isSlowRelay) {
               // Instantiate dictionary if it doesn't exist.
@@ -132,14 +132,14 @@ export class Dataworker {
         // Remove deposits with no matched fills.
         if (_unfilledDeposits.length === 0) return { unfilledAmount: toBN(0), deposit: undefined };
         // Remove deposits where there isn't a fill with fillAmount == totalFilledAmount && fillAmount > 0. This ensures
-        // that we'll only be slow relaying deposits where the first fill (i.e. the one with 
-        // fillAmount == totalFilledAmount) is in this epoch. We assume that we already included slow fills in a 
+        // that we'll only be slow relaying deposits where the first fill (i.e. the one with
+        // fillAmount == totalFilledAmount) is in this epoch. We assume that we already included slow fills in a
         // previous epoch for these ignored deposits.
         if (
           !_unfilledDeposits.some((_unfilledDeposit: UnfilledDeposit) => _unfilledDeposit.hasFirstPartialFill === true)
         )
           return { unfilledAmount: toBN(0), deposit: undefined };
-        // For each deposit, identify the smallest unfilled amount remaining after a fill since each fill can 
+        // For each deposit, identify the smallest unfilled amount remaining after a fill since each fill can
         // only decrease the unfilled amount.
         _unfilledDeposits.sort((unfilledDepositA, unfilledDepositB) =>
           unfilledDepositA.unfilledAmount.gt(unfilledDepositB.unfilledAmount)
