@@ -27,6 +27,7 @@ export async function setupDataworker(
   timer: Contract;
   spokePoolClient_1: clients.SpokePoolClient;
   spokePoolClient_2: clients.SpokePoolClient;
+  configStoreClient: clients.ConfigStoreClient;
   rateModelClient: clients.RateModelClient;
   hubPoolClient: clients.HubPoolClient;
   dataworkerInstance: Dataworker;
@@ -138,6 +139,7 @@ export async function setupDataworker(
     timer: umaEcosystem.timer,
     spokePoolClient_1,
     spokePoolClient_2,
+    configStoreClient,
     rateModelClient,
     hubPoolClient,
     dataworkerInstance,

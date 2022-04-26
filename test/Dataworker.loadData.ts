@@ -1,7 +1,7 @@
 import { expect, ethers, Contract } from "./utils";
 import { SignerWithAddress, buildSlowRelayTree } from "./utils";
 import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, buildSlowFill } from "./utils";
-import { SpokePoolClient, HubPoolClient, RateModelClient } from "../src/clients";
+import { SpokePoolClient, HubPoolClient, RateModelClient, ConfigStoreClient } from "../src/clients";
 import { amountToDeposit, repaymentChainId, destinationChainId, originChainId } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
@@ -13,7 +13,7 @@ let l1Token_1: Contract, l1Token_2: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient;
+let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
 let dataworkerInstance: Dataworker;
 
 let updateAllClients: () => Promise<void>;
@@ -34,19 +34,25 @@ describe("Dataworker: Load data used in all functions", async function () {
       dataworkerInstance,
       spokePoolClient_1,
       spokePoolClient_2,
+      configStoreClient,
       updateAllClients,
     } = await setupDataworker(ethers, 25));
   });
 
   it("Default conditions", async function () {
-    // Throws error if spoke pool client not updated.
-    expect(() => dataworkerInstance._loadData()).to.throw(/not updated/);
-
-    // Throws error if hub pool client not updated.
+    // Throws error if hub pool client is not updated.
+    expect(() => dataworkerInstance._loadData()).to.throw(/HubPoolClient not updated/);
+    await hubPoolClient.update()
     await rateModelClient.update();
+
+    // Throws error if config store client not updated.
+    expect(() => dataworkerInstance._loadData()).to.throw(/ConfigStoreClient not updated/);
+    await configStoreClient.update();
+
+    // Throws error if spoke pool clients not updated
+    expect(() => dataworkerInstance._loadData()).to.throw(/origin SpokePoolClient/);
     await spokePoolClient_1.update();
     await spokePoolClient_2.update();
-    expect(() => dataworkerInstance._loadData()).to.throw(/HubPoolClient not updated/);
 
     // Before any deposits, returns empty dictionaries.
     await updateAllClients();
