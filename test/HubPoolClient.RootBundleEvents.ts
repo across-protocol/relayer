@@ -47,9 +47,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
     expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1, 2])).to.equal(22);
 
     // `block` is greater than bundle block number for the chain.
-    expect(() => hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(23, 2, [1, 2])).to.throw(
-      /Can't find ProposeRootBundle event containing block/
-    );
+    expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(23, 2, [1, 2])).to.equal(undefined);
 
     // Chain ID list doesn't contain `chain`
     expect(() => hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1, 3])).to.throw(

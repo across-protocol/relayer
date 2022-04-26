@@ -95,7 +95,6 @@ export class HubPoolClient {
       if (bundleEvaluationBlockNumbers[chainIdIndex].gte(toBN(block)))
         endingBlockNumber = bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
     });
-    if (!endingBlockNumber) throw new Error("Can't find ProposeRootBundle event containing block");
     return endingBlockNumber;
   }
 

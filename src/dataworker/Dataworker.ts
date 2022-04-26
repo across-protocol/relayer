@@ -19,7 +19,7 @@ export class Dataworker {
   _loadData(/* bundleBlockNumbers: BundleEvaluationBlockNumbers */): {
     unfilledDeposits: UnfilledDeposit[];
     fillsToRefund: FillsToRefund;
-    allFills: FillWithBlock[];
+    allValidFills: FillWithBlock[];
     deposits: Deposit[];
   } {
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
@@ -28,7 +28,7 @@ export class Dataworker {
     const unfilledDepositsForOriginChain: { [originChainIdPlusDepositId: string]: UnfilledDeposit[] } = {};
     const fillsToRefund: FillsToRefund = {};
     const deposits: Deposit[] = [];
-    const allFills: FillWithBlock[] = [];
+    const allValidFills: FillWithBlock[] = [];
 
     const allChainIds = Object.keys(this.clients.spokePoolClients);
     this.logger.debug({ at: "Dataworker", message: `Loading deposit and fill data`, chainIds: allChainIds });
@@ -66,7 +66,7 @@ export class Dataworker {
 
           if (matchedDeposit) {
             // Fill was validated. Save it under all blocks with the block number so we can sort it by time.
-            allFills.push(fillWithBlock);
+            allValidFills.push(fillWithBlock);
 
             // Handle slow relay where repaymentChainId = 0. Slow relays always pay recipient on destination chain.
             // So, save the slow fill under the destination chain, and save the fast fill under its repayment chain.
@@ -98,7 +98,7 @@ export class Dataworker {
                   deposit: matchedDeposit,
                   // A first partial fill for a deposit is characterized by one whose total filled amount post-fill
                   // is equal to the amount sent in the fill, and where the fill amount is greater than zero.
-                  hasFirstPartialFill: fill.fillAmount.eq(fill.totalFilledAmount) && fill.fillAmount.gt(toBN(0)),
+                  hasFirstPartialFill: this._isFirstFillForDeposit(fill)
                 },
               ]
             );
@@ -154,7 +154,7 @@ export class Dataworker {
       .filter((unfilledDeposit: UnfilledDeposit) => unfilledDeposit.unfilledAmount.gt(0));
 
     // Remove deposits that have been fully filled from unfilled deposit array
-    return { fillsToRefund, deposits, unfilledDeposits, allFills };
+    return { fillsToRefund, deposits, unfilledDeposits, allValidFills };
   }
 
   buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): MerkleTree<RelayData> | null {
@@ -256,7 +256,7 @@ export class Dataworker {
     runningBalances: RunningBalances;
     realizedLpFees: RunningBalances;
   } {
-    const { fillsToRefund, deposits, allFills } = this._loadData();
+    const { fillsToRefund, deposits, allValidFills } = this._loadData();
 
     // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
     // slow relay refunds. They are decreased by the amount of funds already held by the SpokePool. Balances are keyed
@@ -283,61 +283,113 @@ export class Dataworker {
             [repaymentChainId, l1TokenCounterpart],
             fillsToRefund[repaymentChainId][l2TokenAddress].realizedLpFees
           );
-
-          // 3a. For any executed slow fills, we need to adjust the running balance in case a previous root bundle sent 
-          // too many tokens to the spoke pool to pay for the slow fill, but a fill was sent before the slow relay 
-          // could be executed, resulting in an excess of funds on the spoke pool.
-          const slowFills: Fill[] = fillsToRefund[repaymentChainId][l2TokenAddress].fills.filter(
-            (fill: Fill) => fill.isSlowRelay
-          );
-
-          // 3b. For all slow fills, find the FilledRelay event that originally triggered this slow relay.
-          // Recall that slow fills for a deposit are only included in the root bundle if a non-zero amount fill was
-          // submitted for that deposit.
-          slowFills.forEach((slowFill: Fill) => {
-            // Find the earliest fill that should have triggered this slow fill to have been published in a root bundle.
-            const fillThatTriggeredSlowFill = sortEventsAscending(allFills).find(
-              (fill: FillWithBlock) =>
-                fill.originChainId === slowFill.originChainId && fill.depositId === slowFill.depositId
-            ) as FillWithBlock;
-            if (!fillThatTriggeredSlowFill) throw new Error("Can't find earliest fill associated with slow fill");
-            // Find ending block number for chain from ProposeRootBundle event that should have included this slow fill.
-            const endingBlockNumberForRootBundleContainingSlowFill =
-              this.clients.hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
-                fillThatTriggeredSlowFill.blockNumber,
-                fillThatTriggeredSlowFill.destinationChainId,
-                this.chainIdListForBundleEvaluationBlockNumbers
-              );
-            // Using bundle block number for chain from ProposeRootBundleEvent, find latest fill in the root bundle.
-            const lastFillBeforeSlowFillIncludedInRoot = this._matchSlowFillWithFillBeforeBlock(
-              slowFill,
-              allFills,
-              endingBlockNumberForRootBundleContainingSlowFill
-            );
-            if (!lastFillBeforeSlowFillIncludedInRoot)
-              throw new Error("Can't find last fill submitted before slow fill was included in root bundle proposal");
-
-            // Recompute how much the matched root bundle sent for this slow fill. Subtract the amount that was
-            // actually executed on the L2 from the amount that was sent. This should give us the excess that was sent.
-            // Subtract that amount from the running balance so we ultimately send it back to L1.
-            const extraFundsSent = lastFillBeforeSlowFillIncludedInRoot.amount
-              .sub(lastFillBeforeSlowFillIncludedInRoot.totalFilledAmount)
-              .sub(slowFill.fillAmount);
-            if (extraFundsSent.eq(toBN(0))) return; // Exit early if slow fill left no excess funds.
-            const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpart(
-              slowFill.destinationChainId.toString(),
-              slowFill.destinationToken
-            );
-            if (!runningBalances[slowFill.destinationChainId]) runningBalances[slowFill.destinationChainId] = {};
-            const runningBalance = runningBalances[slowFill.destinationChainId][l1TokenCounterpart];
-            if (runningBalance)
-              runningBalances[slowFill.destinationChainId][l1TokenCounterpart] = runningBalance.sub(extraFundsSent);
-            else runningBalances[slowFill.destinationChainId][l1TokenCounterpart] = extraFundsSent.mul(toBN(-1));
-          });
         });
       });
     }
 
+    // 3. For any executed slow fills, we need to adjust the running balance in case a previous root bundle sent 
+    // too many tokens to the spoke pool to pay for the slow fill, but a fill was sent before the slow relay 
+    // could be executed, resulting in an excess of funds on the spoke pool.
+    // For all slow fills, find the FilledRelay event that originally triggered this slow relay.
+    // Recall that slow fills for a deposit are only included in the root bundle if a non-zero amount fill was
+    // submitted for that deposit.
+    allValidFills.filter(
+      (fill: Fill) => fill.isSlowRelay
+    ).forEach((slowFill: Fill) => {
+      // Find the earliest fill that should have triggered this slow fill to have been published in a root bundle.
+      const fillThatTriggeredSlowFill = sortEventsAscending(allValidFills).find(
+        (fill: FillWithBlock) =>
+          fill.originChainId === slowFill.originChainId && fill.depositId === slowFill.depositId
+      ) as FillWithBlock;
+      if (!fillThatTriggeredSlowFill) throw new Error("Can't find earliest fill associated with slow fill");
+      // Find ending block number for chain from ProposeRootBundle event that should have included this slow fill.
+      const endingBlockNumberForRootBundleContainingSlowFill =
+        this.clients.hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
+          fillThatTriggeredSlowFill.blockNumber,
+          fillThatTriggeredSlowFill.destinationChainId,
+          this.chainIdListForBundleEvaluationBlockNumbers
+        );
+      if (!endingBlockNumberForRootBundleContainingSlowFill) throw new Error("Can't find ProposeRootBundle event containing block");
+      // Using bundle block number for chain from ProposeRootBundleEvent, find latest fill in the root bundle.
+      const lastFillBeforeSlowFillIncludedInRoot = this._matchFillWithFillBeforeBlock(
+        slowFill,
+        allValidFills,
+        endingBlockNumberForRootBundleContainingSlowFill
+      );
+      if (!lastFillBeforeSlowFillIncludedInRoot)
+        throw new Error("Can't find last fill submitted before slow fill was included in root bundle proposal");
+
+      // Recompute how much the matched root bundle sent for this slow fill. Subtract the amount that was
+      // actually executed on the L2 from the amount that was sent. This should give us the excess that was sent.
+      // Subtract that amount from the running balance so we ultimately send it back to L1.
+      const extraFundsSent = lastFillBeforeSlowFillIncludedInRoot.amount
+        .sub(lastFillBeforeSlowFillIncludedInRoot.totalFilledAmount)
+        .sub(slowFill.fillAmount);
+      if (extraFundsSent.eq(toBN(0))) return; // Exit early if slow fill left no excess funds.
+      const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpart(
+        slowFill.destinationChainId.toString(),
+        slowFill.destinationToken
+      );
+      if (!runningBalances[slowFill.destinationChainId]) runningBalances[slowFill.destinationChainId] = {};
+      const runningBalance = runningBalances[slowFill.destinationChainId][l1TokenCounterpart];
+      if (runningBalance)
+        runningBalances[slowFill.destinationChainId][l1TokenCounterpart] = runningBalance.sub(extraFundsSent);
+      else runningBalances[slowFill.destinationChainId][l1TokenCounterpart] = extraFundsSent.mul(toBN(-1));
+    });
+
+  //   // TODO: 
+  //   // 4. For all fills that completely filled a relay and that followed a partial fill from a previous epoch, we need 
+  //   // to decrease running balances by the slow fill amount sent in the previous epoch, since the slow relay was never
+  //   // executed, allowing the fill to be sent completely filling the deposit.
+  //   allValidFills.filter(
+  //     (fill: Fill) => fill.totalFilledAmount === fill.amount && !this._isFirstFillForDeposit(fill)
+  //   ).forEach((fullFill: FillWithBlock) => {
+  //     // If first fill for this deposit is in this epoch, then no slow fill has been sent so we can ignore this full.
+  //     // We can check this by searching for a ProposeRootBundle event with a bundle block range that contains the 
+  //     // first fill for this deposit. If not found, then the first fill is in the current bundle and we can exit early.
+  //     const firstFill = allValidFills.find((fill: FillWithBlock) => this._isFirstFillForDeposit(fill as Fill) && this._filledSameDeposit(fill as Fill, fullFill as Fill))
+  //     if (!this.clients.hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
+  //       firstFill.blockNumber,
+  //       firstFill.destinationChainId,
+  //       this.chainIdListForBundleEvaluationBlockNumbers
+  //     )) return;
+
+  //     // If first fill is in a previous epoch, find it and identify the ProposeRootBundle event that included a slow
+  //     // fill refund for it.
+  //     // Find ending block number for chain from previous ProposeRootBundle event that should have included this slow fill.
+  //     const endingBlockNumberForRootBundleContaininSlowFill =
+  //       this.clients.hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
+  //         firstFill.blockNumber,
+  //         firstFill.destinationChainId,
+  //         this.chainIdListForBundleEvaluationBlockNumbers
+  //       );
+  //     // Using bundle block number for chain from ProposeRootBundleEvent, find latest fill in the root bundle.
+  //     const lastFillBeforeSlowFillIncludedInRoot = this._matchFillWithFillBeforeBlock(
+  //       firstFill,
+  //       allValidFills,
+  //       endingBlockNumberForRootBundleContaininSlowFill
+  //     );
+  //     if (!lastFillBeforeSlowFillIncludedInRoot)
+  //       throw new Error("Can't find last fill submitted before slow fill was included in root bundle proposal");
+  //     // Recompute how much the matched root bundle sent for this slow fill. Subtract the amount that was
+  //     // actually executed on the L2 from the amount that was sent. This should give us the excess that was sent.
+  //     // Subtract that amount from the running balance so we ultimately send it back to L1.
+  //     const extraFundsSent = lastFillBeforeSlowFillIncludedInRoot.amount
+  //       .sub(lastFillBeforeSlowFillIncludedInRoot.totalFilledAmount)
+  //       .sub(fullFill.fillAmount);
+  //     if (extraFundsSent.eq(toBN(0))) return; // Exit early if slow fill left no excess funds.
+  //     const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpart(
+  //       fullFill.destinationChainId.toString(),
+  //       fullFill.destinationToken
+  //     );
+  //     if (!runningBalances[fullFill.destinationChainId]) runningBalances[fullFill.destinationChainId] = {};
+  //     const runningBalance = runningBalances[fullFill.destinationChainId][l1TokenCounterpart];
+  //     if (runningBalance)
+  //       runningBalances[fullFill.destinationChainId][l1TokenCounterpart] = runningBalance.sub(extraFundsSent);
+  //     else runningBalances[fullFill.destinationChainId][l1TokenCounterpart] = extraFundsSent.mul(toBN(-1));
+  // });
+
+    
     // 4. Map each deposit event to its L1 token and origin chain ID and subtract deposited amounts from running
     // balances. Note that we do not care if the deposit is matched with a fill for this epoch or not since all
     // deposit events lock funds in the spoke pool and should decrease running balances accordingly.
@@ -398,19 +450,28 @@ export class Dataworker {
     // TODO:
   }
 
+  _isFirstFillForDeposit(fill: Fill): boolean {
+    return fill.fillAmount.eq(fill.totalFilledAmount) && fill.fillAmount.gt(toBN(0));
+  }
+
+  _filledSameDeposit(fillA: Fill, fillB: Fill): boolean {
+    return (
+      fillA.amount.eq(fillB.amount) &&
+      fillA.originChainId === fillB.originChainId &&
+      fillA.destinationChainId === fillB.destinationChainId &&
+      fillA.relayerFeePct.eq(fillB.relayerFeePct) &&
+      fillA.depositId === fillB.depositId &&
+      fillA.recipient === fillB.recipient &&
+      fillA.depositor === fillB.depositor
+    );
+
+  }
+
   // Return fill with matching relay data as slow fill that emitted before the `lastBlock`.
-  _matchSlowFillWithFillBeforeBlock(slowFill: Fill, allFills: FillWithBlock[], lastBlock: number): FillWithBlock {
+  _matchFillWithFillBeforeBlock(fillToMatch: Fill, allFills: FillWithBlock[], lastBlock: number): FillWithBlock {
     return sortEventsDescending(allFills).find(
       (fill: FillWithBlock) =>
-        !fill.isSlowRelay &&
-        lastBlock >= fill.blockNumber &&
-        fill.amount.eq(slowFill.amount) &&
-        fill.originChainId === slowFill.originChainId &&
-        fill.destinationChainId === slowFill.destinationChainId &&
-        fill.relayerFeePct.eq(slowFill.relayerFeePct) &&
-        fill.depositId === slowFill.depositId &&
-        fill.recipient === slowFill.recipient &&
-        fill.depositor === slowFill.depositor
+        !fill.isSlowRelay && lastBlock >= fill.blockNumber && this._filledSameDeposit(fillToMatch, fill as Fill)
     ) as FillWithBlock;
   }
 }

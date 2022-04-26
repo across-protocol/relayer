@@ -54,7 +54,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       unfilledDeposits: [],
       deposits: [],
       fillsToRefund: {},
-      allFills: [],
+      allValidFills: [],
     });
   });
   it("Returns unfilled deposits", async function () {
