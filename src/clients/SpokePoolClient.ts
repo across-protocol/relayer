@@ -147,9 +147,13 @@ export class SpokePoolClient {
       // Append the realizedLpFeePct.
       const deposit: Deposit = { ...spreadEvent(event), realizedLpFeePct: dataForQuoteTime[index].realizedLpFeePct };
       // Append the destination token to the deposit.
-      deposit.destinationToken = this.getDestinationTokenForDeposit(deposit); 
+      deposit.destinationToken = this.getDestinationTokenForDeposit(deposit);
       assign(this.deposits, [deposit.destinationChainId], [deposit]);
-      assign(this.depositsWithBlockNumbers, [deposit.destinationChainId], [{ ...deposit, blockNumber: dataForQuoteTime[index].quoteBlock }]);
+      assign(
+        this.depositsWithBlockNumbers,
+        [deposit.destinationChainId],
+        [{ ...deposit, blockNumber: dataForQuoteTime[index].quoteBlock }]
+      );
     }
 
     for (const event of speedUpEvents) {

@@ -123,33 +123,37 @@ describe("RateModelClient: RealizedLpFeePct", async function () {
 
     // Submit a deposit with a de minimis amount of tokens so we can isolate the computed realized lp fee % to the
     // pool utilization factor.
-    expect((
-      await rateModelClient.computeRealizedLpFeePct(
-        {
-          ...depositData,
-          amount: toBNWei("0.0000001"),
-          // Note: we need to set the deposit quote timestamp to one after the utilisation % jumped from 0% to 10%.
-          // This is because the rate model uses the quote time to fetch the liquidity utilization at that quote time.
-          quoteTimestamp: (await ethers.provider.getBlock("latest")).timestamp,
-        },
-        l1Token.address
-      )
-    ).realizedLpFeePct).to.equal(toBNWei("0.001371068779697899"));
+    expect(
+      (
+        await rateModelClient.computeRealizedLpFeePct(
+          {
+            ...depositData,
+            amount: toBNWei("0.0000001"),
+            // Note: we need to set the deposit quote timestamp to one after the utilisation % jumped from 0% to 10%.
+            // This is because the rate model uses the quote time to fetch the liquidity utilization at that quote time.
+            quoteTimestamp: (await ethers.provider.getBlock("latest")).timestamp,
+          },
+          l1Token.address
+        )
+      ).realizedLpFeePct
+    ).to.equal(toBNWei("0.001371068779697899"));
 
     // Relaying 10% of pool should give exact same result as this test, which sends a relay that is 10% of the pool's
     // size when the pool is already at 60% utilization. The resulting post-relay utilization is therefore 70%.
     // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L1064
-    expect((
-      await rateModelClient.computeRealizedLpFeePct(
-        {
-          ...depositData,
-          // Same as before, we need to use a timestamp following the `executeRootBundle` call so that we can capture
-          // the current pool utilization at 10%.
-          quoteTimestamp: (await ethers.provider.getBlock("latest")).timestamp,
-        },
-        l1Token.address
-      )
-    ).realizedLpFeePct).to.equal(toBNWei("0.002081296752280018"));
+    expect(
+      (
+        await rateModelClient.computeRealizedLpFeePct(
+          {
+            ...depositData,
+            // Same as before, we need to use a timestamp following the `executeRootBundle` call so that we can capture
+            // the current pool utilization at 10%.
+            quoteTimestamp: (await ethers.provider.getBlock("latest")).timestamp,
+          },
+          l1Token.address
+        )
+      ).realizedLpFeePct
+    ).to.equal(toBNWei("0.002081296752280018"));
   });
 });
 

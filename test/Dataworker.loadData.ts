@@ -42,7 +42,7 @@ describe("Dataworker: Load data used in all functions", async function () {
   it("Default conditions", async function () {
     // Throws error if hub pool client is not updated.
     expect(() => dataworkerInstance._loadData()).to.throw(/HubPoolClient not updated/);
-    await hubPoolClient.update()
+    await hubPoolClient.update();
     await rateModelClient.update();
 
     // Throws error if config store client not updated.
@@ -351,7 +351,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       originChainId,
       amountToDeposit
     );
-    const realizedLpFeePctData = await rateModelClient.computeRealizedLpFeePct(deposit1, l1Token_1.address)
+    const realizedLpFeePctData = await rateModelClient.computeRealizedLpFeePct(deposit1, l1Token_1.address);
 
     // Should include all deposits, even those not matched by a relay
     await updateAllClients();

@@ -306,7 +306,7 @@ describe("Dataworker: Build merkle roots", async function () {
   it("Build pool rebalance root", async function () {
     // Helper function we'll use in this lifecycle test to keep track of updated counter variables.
     const updateAndCheckExpectedPoolRebalanceCounters = (
-      expectedRunningBalances: RunningBalances, 
+      expectedRunningBalances: RunningBalances,
       expectedRealizedLpFees: RunningBalances,
       runningBalanceDelta: BigNumber,
       realizedLpFeeDelta: BigNumber,
@@ -318,8 +318,8 @@ describe("Dataworker: Build merkle roots", async function () {
       expectedRealizedLpFees[l2Chain][l1Token] = expectedRealizedLpFees[l2Chain][l1Token].add(realizedLpFeeDelta);
       expect(test.runningBalances).to.deep.equal(expectedRunningBalances);
       expect(test.realizedLpFees).to.deep.equal(expectedRealizedLpFees);
-    }
-    
+    };
+
     await updateAllClients();
 
     // Submit deposits for multiple L2 tokens.
@@ -370,7 +370,7 @@ describe("Dataworker: Build merkle roots", async function () {
     // Partial fill deposit3
     const fill4 = await buildFillForRepaymentChain(spokePool_1, depositor, deposit3, 0.5, originChainId);
     const blockOfLastFill = await hubPool.provider.getBlockNumber();
-    
+
     // Prior to root bundle being executed, running balances should be:
     // - deposited amount
     // + partial fill refund
@@ -520,9 +520,9 @@ describe("Dataworker: Build merkle roots", async function () {
       dataworkerInstance.buildPoolRebalanceRoot([])
     );
 
-    // Now demonstrate that for a deposit whose first fill is NOT contained in a ProposeRootBundle event, it won't 
+    // Now demonstrate that for a deposit whose first fill is NOT contained in a ProposeRootBundle event, it won't
     // affect running balance:
-    // Submit another deposit and partial fill, this should mine at a block after the ending block of the last 
+    // Submit another deposit and partial fill, this should mine at a block after the ending block of the last
     // ProposeRootBundle block range.
     // Fully fill the deposit.
     // Update client and construct root. This should increase running balance by total deposit amount, to refund

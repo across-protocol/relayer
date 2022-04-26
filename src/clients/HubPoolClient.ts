@@ -7,7 +7,9 @@ export class HubPoolClient {
   private l1TokensToDestinationTokens: { [l1Token: string]: { [destinationChainId: number]: string } } = {};
   private l1Tokens: L1Token[] = []; // L1Tokens and their associated info.
   private proposedRootBundles: ProposedRootBundle[] = [];
-  private l1TokensToDestinationTokensWithBlock: { [l1Token: string]: { [destinationChainId: number]: [{ l2Token: string, block: number }] } } = {};
+  private l1TokensToDestinationTokensWithBlock: {
+    [l1Token: string]: { [destinationChainId: number]: [{ l2Token: string; block: number }] };
+  } = {};
 
   public isUpdated: boolean = false;
   public firstBlockToSearch: number;
@@ -41,17 +43,17 @@ export class HubPoolClient {
   }
 
   getL1TokenCounterpartAtBlock(l2ChainId: string, l2Token: string, block: number) {
-    const l1Token = Object.keys(this.l1TokensToDestinationTokensWithBlock).find(
-      (_l1Token) => {
-          // We assume that l2-l1 token mapping events are sorted in descending order, so find the last mapping published
-          // before the target block.
-        return this.l1TokensToDestinationTokensWithBlock[_l1Token][l2ChainId].find(
-          (mapping: { l2Token: string; block: number }) => mapping.l2Token === l2Token && mapping.block <= block
-        )
-      }
-    );
+    const l1Token = Object.keys(this.l1TokensToDestinationTokensWithBlock).find((_l1Token) => {
+      // We assume that l2-l1 token mapping events are sorted in descending order, so find the last mapping published
+      // before the target block.
+      return this.l1TokensToDestinationTokensWithBlock[_l1Token][l2ChainId].find(
+        (mapping: { l2Token: string; block: number }) => mapping.l2Token === l2Token && mapping.block <= block
+      );
+    });
     if (!l1Token)
-      throw new Error(`Could not find L1 token mapping for chain ${l2ChainId} and L2 token ${l2Token} equal to or earlier than block ${block}!`);
+      throw new Error(
+        `Could not find L1 token mapping for chain ${l2ChainId} and L2 token ${l2Token} equal to or earlier than block ${block}!`
+      );
     return l1Token;
   }
 
@@ -105,7 +107,7 @@ export class HubPoolClient {
         // as we find the first block range that contains the target block.
         break;
       }
-    };
+    }
     return endingBlockNumber;
   }
 
@@ -128,15 +130,15 @@ export class HubPoolClient {
         [args.l1Token, args.destinationChainId],
         [{ l2Token: args.destinationToken, block: event.blockNumber }]
       );
-      // Sort l2 token to l1 token mapping events in descending order so we can easily find the first mapping update 
+      // Sort l2 token to l1 token mapping events in descending order so we can easily find the first mapping update
       // equal to or earlier than a target block. This allows a caller to look up the l1 token counterpart for an l2
       // token at a specific block height.
-      this.l1TokensToDestinationTokensWithBlock[args.l1Token][args.destinationChainId]
-        .sort((mappingA: { block: number }, mappingB: { block: number }) => {
-            return mappingB.block - mappingA.block;
-        })
+      this.l1TokensToDestinationTokensWithBlock[args.l1Token][args.destinationChainId].sort(
+        (mappingA: { block: number }, mappingB: { block: number }) => {
+          return mappingB.block - mappingA.block;
+        }
+      );
     }
-
 
     // For each enabled Lp token fetch the token symbol and decimals from the token contract. Note this logic will
     // only run iff a new token has been enabled. Will only append iff the info is not there already.
