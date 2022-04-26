@@ -50,6 +50,8 @@ export class RateModelClient {
   }
 
   async update() {
+    if (this.hubPoolClient !== null && !this.hubPoolClient.isUpdated) throw new Error("HubPool not updated");
+
     const searchConfig = [this.firstBlockToSearch, await this.rateModelStore.provider.getBlockNumber()];
     this.logger.debug({ at: "RateModelClient", message: "Updating client", searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.

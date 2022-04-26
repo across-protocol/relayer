@@ -1,5 +1,5 @@
 import { randomAddress, toWei, originChainId, destinationChainId, repaymentChainId } from "./utils";
-export const randomLl1Token = randomAddress();
+export const randomL1Token = randomAddress();
 export const randomOriginToken = randomAddress();
 export const randomDestinationToken = randomAddress();
 export const randomDestinationToken2 = randomAddress();
