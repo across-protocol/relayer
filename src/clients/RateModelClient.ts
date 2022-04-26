@@ -24,7 +24,10 @@ export class RateModelClient {
     this.rateModelDictionary = new across.rateModel.RateModelDictionary();
   }
 
-  async computeRealizedLpFeePct(deposit: Deposit, l1Token: string): Promise<BigNumber> {
+  async computeRealizedLpFeePct(
+    deposit: Deposit,
+    l1Token: string
+  ): Promise<{ realizedLpFeePct: BigNumber; quoteBlock: number }> {
     const quoteBlock = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
 
     const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, quoteBlock, deposit.amount);
@@ -42,7 +45,7 @@ export class RateModelClient {
       realizedLpFeePct,
     });
 
-    return realizedLpFeePct;
+    return { realizedLpFeePct, quoteBlock };
   }
 
   getRateModelForBlockNumber(l1Token: string, blockNumber: number | undefined = undefined): across.constants.RateModel {

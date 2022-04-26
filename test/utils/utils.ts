@@ -258,7 +258,7 @@ export async function buildDepositStruct(
   return {
     ...deposit,
     destinationToken: hubPoolClient.getDestinationTokenForDeposit(deposit),
-    realizedLpFeePct: await rateModelClient.computeRealizedLpFeePct(deposit, l1TokenForDepositedToken.address),
+    realizedLpFeePct: (await rateModelClient.computeRealizedLpFeePct(deposit, l1TokenForDepositedToken.address)).realizedLpFeePct,
   };
 }
 export async function buildDeposit(

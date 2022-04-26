@@ -1,7 +1,7 @@
 import { winston, assign, MerkleTree, toBN, compareAddresses, getRefundForFills, sortEventsDescending } from "../utils";
 import { RelayerRefundLeaf, RelayerRefundLeafWithGroup, buildRelayerRefundTree, buildSlowRelayTree } from "../utils";
-import { getRealizedLpFeeForFills, sortEventsAscending, BigNumber } from "../utils";
-import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, Fill, FillWithBlock } from "../interfaces";
+import { getRealizedLpFeeForFills, BigNumber } from "../utils";
+import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, DepositWithBlock, Fill, FillWithBlock } from "../interfaces";
 import { RunningBalances, BundleEvaluationBlockNumbers } from "../interfaces";
 import { DataworkerClients } from "../clients";
 
@@ -20,14 +20,14 @@ export class Dataworker {
     unfilledDeposits: UnfilledDeposit[];
     fillsToRefund: FillsToRefund;
     allValidFills: FillWithBlock[];
-    deposits: Deposit[];
+    deposits: DepositWithBlock[];
   } {
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
     if (!this.clients.configStoreClient.isUpdated) throw new Error(`ConfigStoreClient not updated`);
 
     const unfilledDepositsForOriginChain: { [originChainIdPlusDepositId: string]: UnfilledDeposit[] } = {};
     const fillsToRefund: FillsToRefund = {};
-    const deposits: Deposit[] = [];
+    const deposits: DepositWithBlock[] = [];
     const allValidFills: FillWithBlock[] = [];
 
     const allChainIds = Object.keys(this.clients.spokePoolClients);
@@ -45,8 +45,9 @@ export class Dataworker {
         if (!destinationClient.isUpdated)
           throw new Error(`destination SpokePoolClient with chain ID ${destinationChainId} not updated`);
 
-        // Store all deposits, for use in constructing a pool rebalance root.
-        deposits.push(...originClient.getDepositsForDestinationChain(destinationChainId));
+        // Store all deposits, for use in constructing a pool rebalance root. Save deposits with their quote time block
+        // numbers so we can pull the L1 token counterparts for the quote timestamp.
+        deposits.push(...originClient.getDepositsForDestinationChain(destinationChainId, true));
 
         // For each fill within the block range, look up associated deposit.
         const fillsForOriginChain: FillWithBlock[] = destinationClient.getFillsWithBlockForOriginChain(
@@ -378,10 +379,7 @@ export class Dataworker {
     // 5. Map each deposit event to its L1 token and origin chain ID and subtract deposited amounts from running
     // balances. Note that we do not care if the deposit is matched with a fill for this epoch or not since all
     // deposit events lock funds in the spoke pool and should decrease running balances accordingly.
-    deposits.forEach((deposit: Deposit) => {
-      // TODO: Make sure that we're grabbing the L1 token counterpart at the deposit quote time. This is important if
-      // the L1,L2 token mapping is different now than at the quote time. We'll need to look up the block height for the
-      // quote time somehow.
+    deposits.forEach((deposit: DepositWithBlock) => {
       this._updateRunningBalanceForDeposit(runningBalances, deposit, deposit.amount.mul(toBN(-1)))
     });
 
@@ -446,9 +444,13 @@ export class Dataworker {
     this._updateRunningBalance(runningBalances, fill.destinationChainId, l1TokenCounterpart, updateAmount);
   }
 
-  _updateRunningBalanceForDeposit(runningBalances, deposit: Deposit, updateAmount: BigNumber) {
-      const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenForDeposit(deposit);
-      this._updateRunningBalance(runningBalances, deposit.originChainId, l1TokenCounterpart, updateAmount);
+  _updateRunningBalanceForDeposit(runningBalances, deposit: DepositWithBlock, updateAmount: BigNumber) {
+    const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpartAtBlock(
+      deposit.originChainId.toString(),
+      deposit.originToken,
+      deposit.blockNumber
+    );
+    this._updateRunningBalance(runningBalances, deposit.originChainId, l1TokenCounterpart, updateAmount);
   }
 
   _isFirstFillForDeposit(fill: Fill): boolean {

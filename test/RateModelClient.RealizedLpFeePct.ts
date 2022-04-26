@@ -101,7 +101,7 @@ describe("RateModelClient: RealizedLpFeePct", async function () {
 
     // Relayed amount being 10% of total LP amount should give exact same results as this test in v1:
     // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L1037
-    expect(await rateModelClient.computeRealizedLpFeePct(depositData, l1Token.address)).to.equal(
+    expect((await rateModelClient.computeRealizedLpFeePct(depositData, l1Token.address)).realizedLpFeePct).to.equal(
       toBNWei("0.000117987509354032")
     );
 
@@ -123,7 +123,7 @@ describe("RateModelClient: RealizedLpFeePct", async function () {
 
     // Submit a deposit with a de minimis amount of tokens so we can isolate the computed realized lp fee % to the
     // pool utilization factor.
-    expect(
+    expect((
       await rateModelClient.computeRealizedLpFeePct(
         {
           ...depositData,
@@ -134,12 +134,12 @@ describe("RateModelClient: RealizedLpFeePct", async function () {
         },
         l1Token.address
       )
-    ).to.equal(toBNWei("0.001371068779697899"));
+    ).realizedLpFeePct).to.equal(toBNWei("0.001371068779697899"));
 
     // Relaying 10% of pool should give exact same result as this test, which sends a relay that is 10% of the pool's
     // size when the pool is already at 60% utilization. The resulting post-relay utilization is therefore 70%.
     // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L1064
-    expect(
+    expect((
       await rateModelClient.computeRealizedLpFeePct(
         {
           ...depositData,
@@ -149,7 +149,7 @@ describe("RateModelClient: RealizedLpFeePct", async function () {
         },
         l1Token.address
       )
-    ).to.equal(toBNWei("0.002081296752280018"));
+    ).realizedLpFeePct).to.equal(toBNWei("0.002081296752280018"));
   });
 });
 

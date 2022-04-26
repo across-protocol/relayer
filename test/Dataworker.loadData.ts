@@ -351,10 +351,11 @@ describe("Dataworker: Load data used in all functions", async function () {
       originChainId,
       amountToDeposit
     );
+    const realizedLpFeePctData = await rateModelClient.computeRealizedLpFeePct(deposit1, l1Token_1.address)
 
     // Should include all deposits, even those not matched by a relay
     await updateAllClients();
     const data1 = dataworkerInstance._loadData();
-    expect(data1.deposits).to.deep.equal([deposit1]);
+    expect(data1.deposits).to.deep.equal([{ ...deposit1, blockNumber: realizedLpFeePctData.quoteBlock }]);
   });
 });
