@@ -24,7 +24,10 @@ export class RateModelClient {
     this.rateModelDictionary = new across.rateModel.RateModelDictionary();
   }
 
-  async computeRealizedLpFeePct(deposit: Deposit, l1Token: string): Promise<{ realizedLpFeePct: BigNumber; quoteBlock: number }> {
+  async computeRealizedLpFeePct(
+    deposit: Deposit,
+    l1Token: string
+  ): Promise<{ realizedLpFeePct: BigNumber; quoteBlock: number }> {
     // The below is a temp work around to deal with the incorrect deployment that was done on all test nets. If the rate
     // model store is deployed after the a fill is done then some calls to this method will fail, resulting in an error.
     // For test nets we can just work around this by using the latest block number.

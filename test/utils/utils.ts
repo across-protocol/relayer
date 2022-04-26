@@ -2,7 +2,7 @@ import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 import { TokenRolesEnum } from "@uma/common";
 export { MAX_SAFE_ALLOWANCE } from "@uma/common";
 import { SpyTransport } from "@uma/financial-templates-lib";
-import { sampleRateModel, toBN, zeroAddress } from "../constants";
+import { sampleRateModel, zeroAddress } from "../constants";
 
 import { SpokePoolClient } from "../../src/clients/SpokePoolClient";
 import { RateModelClient } from "../../src/clients/RateModelClient";
@@ -10,8 +10,8 @@ import { HubPoolClient } from "../../src/clients/HubPoolClient";
 
 import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber } from "./index";
 import { amountToDeposit, depositRelayerFeePct } from "../constants";
-import { Deposit, Fill, RelayData, RunningBalances } from "../../src/interfaces/SpokePool";
-import { buildRelayerRefundTree, MerkleTree, toBN, toBNWei } from "../../src/utils";
+import { Deposit, Fill, RunningBalances } from "../../src/interfaces/SpokePool";
+import { buildRelayerRefundTree, toBN, toBNWei } from "../../src/utils";
 
 import winston from "winston";
 import sinon from "sinon";
