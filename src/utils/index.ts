@@ -1,6 +1,7 @@
 // Utils from other packages.
 import winston from "winston";
-export { winston };
+import assert from "assert";
+export { winston, assert };
 export { delay } from "@uma/financial-templates-lib";
 export { BigNumber, Signer, Contract, ContractFactory, Transaction, utils, BaseContract, Event, Wallet } from "ethers";
 export { ethers } from "ethers";

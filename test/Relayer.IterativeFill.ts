@@ -1,8 +1,9 @@
-import { hubPoolFixture, deployIterativeSpokePoolsAndToken, createSpyLogger, lastSpyLogIncludes } from "./utils";
+import { hubPoolFixture, deployIterativeSpokePoolsAndToken, createSpyLogger, lastSpyLogIncludes, toBN } from "./utils";
 import { expect, deposit, ethers, Contract, getLastBlockTime, contractAt, addLiquidity } from "./utils";
-import { SignerWithAddress, setupTokensForWallet, deployRateModelStore, winston, sinon } from "./utils";
+import { SignerWithAddress, setupTokensForWallet, deployRateModelStore, winston, sinon, toBNWei } from "./utils";
 import { amountToLp, sampleRateModel } from "./constants";
-import { HubPoolClient, RateModelClient, MultiCallerClient, TokenClient } from "../src/clients";
+import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallerClient } from "../src/clients";
+import { TokenClient, ProfitClient } from "../src/clients";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 
@@ -11,7 +12,7 @@ let hubPoolClient: HubPoolClient, rateModelClient: RateModelClient, tokenClient:
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
 let spokePools, l1TokenToL2Tokens;
-let relayer: Relayer, multiCallerClient: MultiCallerClient;
+let relayer: Relayer, multiCallerClient: MultiCallerClient, profitClient: ProfitClient;
 
 describe("Relayer: Iterative fill", async function () {
   beforeEach(async function () {
@@ -50,12 +51,14 @@ describe("Relayer: Iterative fill", async function () {
     });
 
     tokenClient = new TokenClient(spyLogger, relayer_signer.address, spokePoolClients);
+    profitClient = new ProfitClient(spyLogger, hubPoolClient, toBNWei(1)); // Set relayer discount to 100%.
     await updateAllClients();
     relayer = new Relayer(spyLogger, {
       spokePoolClients,
       hubPoolClient,
       rateModelClient,
       tokenClient,
+      profitClient,
       multiCallerClient,
     });
 

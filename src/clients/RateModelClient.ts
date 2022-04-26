@@ -24,15 +24,25 @@ export class RateModelClient {
     this.rateModelDictionary = new across.rateModel.RateModelDictionary();
   }
 
-  async computeRealizedLpFeePct(
-    deposit: Deposit,
-    l1Token: string
-  ): Promise<{ realizedLpFeePct: BigNumber; quoteBlock: number }> {
-    const quoteBlock = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
+  async computeRealizedLpFeePct(deposit: Deposit, l1Token: string): Promise<{ realizedLpFeePct: BigNumber; quoteBlock: number }> {
+    // The below is a temp work around to deal with the incorrect deployment that was done on all test nets. If the rate
+    // model store is deployed after the a fill is done then some calls to this method will fail, resulting in an error.
+    // For test nets we can just work around this by using the latest block number.
+    let quoteBlock = 0;
+    let rateModel: any;
+    try {
+      quoteBlock = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
+      rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
+    } catch (error) {
+      if ((await this.hubPoolClient.hubPool.provider.getNetwork()).chainId === 1)
+        throw new Error("Bad rate model store deployment");
+
+      quoteBlock = await this.blockFinder.getLatestBlock().number;
+      rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
+    }
 
     const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, quoteBlock, deposit.amount);
 
-    const rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
     const realizedLpFeePct = lpFeeCalculator.calculateRealizedLpFeePct(rateModel, current, post);
 
     this.logger.debug({

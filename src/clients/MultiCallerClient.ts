@@ -29,6 +29,7 @@ export class MultiCallerClient {
 
   async executeTransactionQueue() {
     try {
+      if (this.transactions.length === 0) return;
       this.logger.debug({ at: "MultiCallerClient", message: "Executing tx bundle", number: this.transactions.length });
 
       // Simulate the transaction execution for the whole queue.
@@ -91,10 +92,10 @@ export class MultiCallerClient {
         mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
         groupedTransactions[chainId].forEach((transaction, groupTxIndex) => {
           mrkdwn +=
-            `  ${groupTxIndex + 1}: ${transaction.message || "No message"}: ` + `${transaction.mrkdwn || "No mrkdwn"}`;
+            `  ${groupTxIndex + 1}. ${transaction.message || "0 message"}: ` + `${transaction.mrkdwn || "0 mrkdwn"}\n`;
         });
         const transactionHash = (transactionReceipts[chainIndex] as any).value.transactionHash;
-        mrkdwn += "tx " + etherscanLink(transactionHash, chainId);
+        mrkdwn += "\ntx " + etherscanLink(transactionHash, chainId);
         transactionHashes.push(transactionHash);
       });
       this.logger.info({ at: "MultiCallerClient", message: "Multicall batch sent! 🧙‍♂️", mrkdwn });

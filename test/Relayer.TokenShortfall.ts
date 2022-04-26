@@ -1,15 +1,10 @@
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, originChainId, sinon } from "./utils";
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
-import {
-  lastSpyLogIncludes,
-  toBNWei,
-  createSpyLogger,
-  deployRateModelStore,
-  deployAndConfigureHubPool,
-  winston,
-} from "./utils";
+import { lastSpyLogIncludes, toBNWei, createSpyLogger, deployRateModelStore } from "./utils";
+import { deployAndConfigureHubPool, winston } from "./utils";
 import { amountToLp, sampleRateModel } from "./constants";
-import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallerClient, TokenClient } from "../src/clients";
+import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallerClient, ProfitClient } from "../src/clients";
+import { TokenClient } from "../src/clients";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 
@@ -21,7 +16,7 @@ let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
 let relayerInstance: Relayer;
-let multiCallerClient: MultiCallerClient;
+let multiCallerClient: MultiCallerClient, profitClient: ProfitClient;
 
 describe("Relayer: Token balance shortfall", async function () {
   beforeEach(async function () {
@@ -51,11 +46,13 @@ describe("Relayer: Token balance shortfall", async function () {
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients);
+    profitClient = new ProfitClient(spyLogger, hubPoolClient, toBNWei(1)); // Set the profit discount to 1 (ignore relay cost.)
     relayerInstance = new Relayer(spyLogger, {
       spokePoolClients,
       hubPoolClient,
       rateModelClient,
       tokenClient,
+      profitClient,
       multiCallerClient,
     });
 
@@ -87,13 +84,13 @@ describe("Relayer: Token balance shortfall", async function () {
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
 
-    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all relays")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Shortfall on Hardhat2:")).to.be.true;
     expect(lastSpyLogIncludes(spy, `${await l1Token.symbol()} cumulative shortfall of 150.00`)).to.be.true;
     expect(lastSpyLogIncludes(spy, "blocking deposits: 1,0")).to.be.true;
 
     // At the end of the execution the tokenClient should have correctly flushed.
-    expect(tokenClient.anyCapturedShortfalls()).to.be.false;
+    expect(tokenClient.anyCapturedShortFallFills()).to.be.false;
 
     // Submitting another relay should increment the shortfall and log accordingly. Total shortfall of 250 now.
     await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
@@ -126,7 +123,7 @@ describe("Relayer: Token balance shortfall", async function () {
 
     await relayerInstance.checkForUnfilledDepositsAndFill();
 
-    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all relays")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Shortfall on Hardhat1:")).to.be.true; // both networks should show shortfalls.
     expect(lastSpyLogIncludes(spy, "Shortfall on Hardhat2:")).to.be.true;
     expect(lastSpyLogIncludes(spy, `${await l1Token.symbol()} cumulative shortfall of 100.00`)).to.be.true;
