@@ -303,7 +303,7 @@ describe("Dataworker: Build merkle roots", async function () {
     ]);
     expect(merkleRoot4.getHexRoot()).to.equal(expectedMerkleRoot4.getHexRoot());
   });
-  it("Build pool rebalance root", async function () {
+  it.only("Build pool rebalance root", async function () {
     await updateAllClients();
 
     // Submit deposits for multiple L2 tokens.
@@ -327,9 +327,19 @@ describe("Dataworker: Build merkle roots", async function () {
       originChainId,
       amountToDeposit.mul(toBN(2))
     );
+    const deposit3 = await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
+      spokePool_2,
+      erc20_2,
+      l1Token_1,
+      depositor,
+      originChainId,
+      amountToDeposit
+    );
     await updateAllClients();
 
-    const deposits = [deposit1, deposit2];
+    const deposits = [deposit1, deposit2, deposit3];
 
     // Note: Submit fills with repayment chain set to one of the origin or destination chains since we have spoke
     // pools deployed on those chains.
@@ -340,17 +350,20 @@ describe("Dataworker: Build merkle roots", async function () {
     // Partial fill deposit2
     const fill2 = await buildFillForRepaymentChain(spokePool_1, depositor, deposit2, 0.3, originChainId);
     const fill3 = await buildFillForRepaymentChain(spokePool_1, depositor, deposit2, 0.2, originChainId);
-    const blockOfLastFill = await hubPool.provider.getBlockNumber();
 
+    // Partial fill deposit3
+    const fill4 = await buildFillForRepaymentChain(spokePool_1, depositor, deposit3, 0.5, originChainId);
+    const blockOfLastFill = await hubPool.provider.getBlockNumber();
+    
     // Prior to root bundle being executed, running balances should be:
     // - deposited amount
     // + partial fill refund
     const expectedRunningBalances: RunningBalances = {
       [destinationChainId]: {
-        [l1Token_1.address]: getRefundForFills([fill1]).sub(deposit2.amount),
+        [l1Token_1.address]: getRefundForFills([fill1]).sub(deposit2.amount.add(deposit3.amount)),
       },
       [originChainId]: {
-        [l1Token_1.address]: getRefundForFills([fill2, fill3]).sub(deposit1.amount),
+        [l1Token_1.address]: getRefundForFills([fill2, fill3, fill4]).sub(deposit1.amount),
       },
     };
     const expectedRealizedLpFees: RunningBalances = {
@@ -358,7 +371,7 @@ describe("Dataworker: Build merkle roots", async function () {
         [l1Token_1.address]: getRealizedLpFeeForFills([fill1]),
       },
       [originChainId]: {
-        [l1Token_1.address]: getRealizedLpFeeForFills([fill2, fill3]),
+        [l1Token_1.address]: getRealizedLpFeeForFills([fill2, fill3, fill4]),
       },
     };
     await updateAllClients();
@@ -426,17 +439,17 @@ describe("Dataworker: Build merkle roots", async function () {
     expect(merkleRoot2.runningBalances).to.deep.equal(expectedRunningBalances);
     expect(merkleRoot2.realizedLpFees).to.deep.equal(expectedRealizedLpFees);
 
-    // Now, submit another partial fill for the deposit whose slow fill has NOT been executed yet. This should result
+    // Now, submit another partial fill for a deposit whose slow fill has NOT been executed yet. This should result
     // in the slow fill execution leaving excess funds in the spoke pool.
-    const fill4 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, destinationChainId);
+    const fill5 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, destinationChainId);
     await updateAllClients();
     const merkleRoot3 = dataworkerInstance.buildPoolRebalanceRoot([]);
-    expectedRunningBalances[fill4.destinationChainId][l1Token_1.address] = expectedRunningBalances[
-      fill4.destinationChainId
-    ][l1Token_1.address].add(getRefundForFills([fill4]));
-    expectedRealizedLpFees[fill4.destinationChainId][l1Token_1.address] = expectedRealizedLpFees[
-      fill4.destinationChainId
-    ][l1Token_1.address].add(getRealizedLpFeeForFills([fill4]));
+    expectedRunningBalances[fill5.destinationChainId][l1Token_1.address] = expectedRunningBalances[
+      fill5.destinationChainId
+    ][l1Token_1.address].add(getRefundForFills([fill5]));
+    expectedRealizedLpFees[fill5.destinationChainId][l1Token_1.address] = expectedRealizedLpFees[
+      fill5.destinationChainId
+    ][l1Token_1.address].add(getRealizedLpFeeForFills([fill5]));
     expect(merkleRoot3.runningBalances).to.deep.equal(expectedRunningBalances);
     expect(merkleRoot3.realizedLpFees).to.deep.equal(expectedRealizedLpFees);
 
@@ -447,7 +460,7 @@ describe("Dataworker: Build merkle roots", async function () {
     const secondChainToExecuteSlowRelay = await spokePool_2.chainId();
     const slowFill1 = await buildSlowFill(
       spokePool_2,
-      fill4,
+      fill5,
       dataworker,
       expectedSlowRelayTree.getHexProof(
         // We can only execute a slow relay on its destination chain, so look up the relay data with
@@ -457,8 +470,8 @@ describe("Dataworker: Build merkle roots", async function () {
     );
     await updateAllClients();
 
-    // Running balance should decrease by excess from slow fill since fill4 was sent before the slow fill could be
-    // executed. Since fill4 filled the remainder of the deposit, the entire slow fill amount should be subtracted
+    // Running balance should decrease by excess from slow fill since fill5 was sent before the slow fill could be
+    // executed. Since fill5 filled the remainder of the deposit, the entire slow fill amount should be subtracted
     // from running balances.
     const merkleRoot4 = dataworkerInstance.buildPoolRebalanceRoot([]);
     const sentAmount = fill1.amount.sub(fill1.totalFilledAmount);
@@ -473,5 +486,48 @@ describe("Dataworker: Build merkle roots", async function () {
     ][l1Token_1.address].add(getRealizedLpFeeForFills([slowFill1]));
     expect(merkleRoot4.runningBalances).to.deep.equal(expectedRunningBalances);
     expect(merkleRoot4.realizedLpFees).to.deep.equal(expectedRealizedLpFees);
+
+    // Before executing the last slow relay leaf, completely fill the deposit. This will leave the full slow fill
+    // amount remaining in the spoke pool, but this time there will not be a FilledRelay event emitted for the slow fill
+    // because it can't be executed now that the deposit is fully filled. Build the pool rebalance root and check
+    // that the slow fill full amount is decreased from running balances.
+    const fill6 = await buildFillForRepaymentChain(spokePool_1, relayer, deposit3, 1, originChainId);
+    await updateAllClients();
+    console.log("buildPoolRebalanceRoot after submitting full partial fill:")
+    const merkleRoot5 = dataworkerInstance.buildPoolRebalanceRoot([]);
+    expectedRunningBalances[fill6.destinationChainId][l1Token_1.address] = expectedRunningBalances[
+      fill6.destinationChainId
+    ][l1Token_1.address].add(getRefundForFills([fill6]));
+    expectedRealizedLpFees[fill6.destinationChainId][l1Token_1.address] = expectedRealizedLpFees[
+      fill6.destinationChainId
+    ][l1Token_1.address].add(getRealizedLpFeeForFills([fill6]));
+    expect(merkleRoot5.runningBalances).to.deep.equal(expectedRunningBalances);
+    expect(merkleRoot5.realizedLpFees).to.deep.equal(expectedRealizedLpFees);
+
+
+    // This should decrease running balances because the first fill is contained in a ProposeRootBundle event.
+
+    // Now demonstrate that for a deposit whose first fill is NOT contained in a ProposeRootBundle event, it won't 
+    // affect running balance:
+    // Submit another deposit and partial fill, this should mine at a block after the ending block of the last 
+    // ProposeRootBundle block range.
+    // Fully fill the deposit.
+    // Update client and construct root. This should increase running balance by total deposit amount, to refund
+    // the slow relay.
+    const deposit4 = await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
+      spokePool_2,
+      erc20_2,
+      l1Token_1,
+      depositor,
+      originChainId,
+      amountToDeposit
+    );
+    const fill7 = await buildFillForRepaymentChain(spokePool_1, depositor, deposit4, 0.5, originChainId);
+    const fill8 = await buildFillForRepaymentChain(spokePool_1, depositor, deposit4, 1, originChainId);
+    await updateAllClients();
+    console.log("buildPoolRebalanceRoot after submitting all fills for new deposit after ProposeRootBundle event:")
+    const merkleRoot6 = dataworkerInstance.buildPoolRebalanceRoot([]);
   });
 });

@@ -341,18 +341,23 @@ export class Dataworker {
   //   // 4. For all fills that completely filled a relay and that followed a partial fill from a previous epoch, we need 
   //   // to decrease running balances by the slow fill amount sent in the previous epoch, since the slow relay was never
   //   // executed, allowing the fill to be sent completely filling the deposit.
-  //   allValidFills.filter(
-  //     (fill: Fill) => fill.totalFilledAmount === fill.amount && !this._isFirstFillForDeposit(fill)
-  //   ).forEach((fullFill: FillWithBlock) => {
-  //     // If first fill for this deposit is in this epoch, then no slow fill has been sent so we can ignore this full.
-  //     // We can check this by searching for a ProposeRootBundle event with a bundle block range that contains the 
-  //     // first fill for this deposit. If not found, then the first fill is in the current bundle and we can exit early.
-  //     const firstFill = allValidFills.find((fill: FillWithBlock) => this._isFirstFillForDeposit(fill as Fill) && this._filledSameDeposit(fill as Fill, fullFill as Fill))
-  //     if (!this.clients.hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
-  //       firstFill.blockNumber,
-  //       firstFill.destinationChainId,
-  //       this.chainIdListForBundleEvaluationBlockNumbers
-  //     )) return;
+    allValidFills.filter(
+      (fill: Fill) => !fill.isSlowRelay && fill.totalFilledAmount.eq(fill.amount) && !this._isFirstFillForDeposit(fill)
+    ).forEach((fullFill: FillWithBlock) => {
+      // If first fill for this deposit is in this epoch, then no slow fill has been sent so we can ignore this full.
+      // We can check this by searching for a ProposeRootBundle event with a bundle block range that contains the 
+      // first fill for this deposit. If not found, then the first fill is in the current bundle and we can exit early.
+      const firstFill = allValidFills.find((fill: FillWithBlock) => this._isFirstFillForDeposit(fill as Fill) && this._filledSameDeposit(fill as Fill, fullFill as Fill))
+      console.log(firstFill, this.clients.hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
+        firstFill.blockNumber,
+        firstFill.destinationChainId,
+        this.chainIdListForBundleEvaluationBlockNumbers
+      ))
+      if (!this.clients.hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
+        firstFill.blockNumber,
+        firstFill.destinationChainId,
+        this.chainIdListForBundleEvaluationBlockNumbers
+      )) return;
 
   //     // If first fill is in a previous epoch, find it and identify the ProposeRootBundle event that included a slow
   //     // fill refund for it.
@@ -387,7 +392,7 @@ export class Dataworker {
   //     if (runningBalance)
   //       runningBalances[fullFill.destinationChainId][l1TokenCounterpart] = runningBalance.sub(extraFundsSent);
   //     else runningBalances[fullFill.destinationChainId][l1TokenCounterpart] = extraFundsSent.mul(toBN(-1));
-  // });
+  });
 
     
     // 4. Map each deposit event to its L1 token and origin chain ID and subtract deposited amounts from running
