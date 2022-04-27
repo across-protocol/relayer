@@ -407,7 +407,7 @@ export class Dataworker {
       this._updateRunningBalanceForDeposit(runningBalances, deposit, deposit.amount.mul(toBN(-1)));
     });
 
-    // 7. Factor in MAX_POOL_REBALANCE_LEAF_SIZE
+    // 6. Factor in MAX_POOL_REBALANCE_LEAF_SIZE
 
     // TODO: Add helpful logs everywhere.
 
