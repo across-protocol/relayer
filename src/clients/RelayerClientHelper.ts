@@ -10,9 +10,9 @@ export interface RelayerClients extends Clients {
   multiCallerClient: MultiCallerClient;
 }
 
-export function constructRelayerClients(logger: winston.Logger, config: RelayerConfig): RelayerClients {
+export async function constructRelayerClients(logger: winston.Logger, config: RelayerConfig): Promise<RelayerClients> {
   // Create signers for each chain. Each is connected to an associated provider for that chain.
-  const baseSigner = getSigner();
+  const baseSigner = await getSigner();
 
   const hubSigner = baseSigner.connect(getProvider(config.hubPoolChainId));
   const spokeSigners = config.spokePoolChains
