@@ -310,12 +310,17 @@ describe("Dataworker: Build merkle roots", async function () {
       expectedRealizedLpFees: RunningBalances,
       runningBalanceDelta: BigNumber,
       realizedLpFeeDelta: BigNumber,
-      l2Chain: number,
-      l1Token: string,
+      l2Chains: number[],
+      l1Tokens: string[],
       test: { runningBalances: RunningBalances; realizedLpFees: RunningBalances }
     ): void => {
-      expectedRunningBalances[l2Chain][l1Token] = expectedRunningBalances[l2Chain][l1Token].add(runningBalanceDelta);
-      expectedRealizedLpFees[l2Chain][l1Token] = expectedRealizedLpFees[l2Chain][l1Token].add(realizedLpFeeDelta);
+      l2Chains.forEach((l2Chain: number) =>
+        l1Tokens.forEach((l1Token: string) => {
+          expectedRunningBalances[l2Chain][l1Token] =
+            expectedRunningBalances[l2Chain][l1Token].add(runningBalanceDelta);
+          expectedRealizedLpFees[l2Chain][l1Token] = expectedRealizedLpFees[l2Chain][l1Token].add(realizedLpFeeDelta);
+        })
+      );
       expect(test.runningBalances).to.deep.equal(expectedRunningBalances);
       expect(test.realizedLpFees).to.deep.equal(expectedRealizedLpFees);
     };
@@ -400,14 +405,13 @@ describe("Dataworker: Build merkle roots", async function () {
     const expectedSlowRelayTree = await buildSlowRelayTree(slowRelayLeaves);
 
     // Construct pool rebalance root so we can publish slow relay root to spoke pool:
-    const { tree: poolRebalanceTree, leaves: poolRebalanceLeaves } = await constructPoolRebalanceTree(
-      expectedRunningBalances,
-      expectedRealizedLpFees
-    );
+    const {
+      tree: poolRebalanceTree,
+      leaves: poolRebalanceLeaves,
+      startingRunningBalances,
+    } = await constructPoolRebalanceTree(expectedRunningBalances, expectedRealizedLpFees);
 
     // Propose root bundle so that we can test that the dataworker looks up ProposeRootBundle events properly.
-    // TODO: Similarly, execute the root bundle because constructing the pool rebalance root is expected to look up
-    // ExecutedRootBundleEvents.
     await hubPool.connect(dataworker).proposeRootBundle(
       Array(CHAIN_ID_TEST_LIST.length).fill(blockOfLastFill), // Set current block number as end block for bundle. Its important that we set a block for every possible chain ID.
       // so all fills to this point are before these blocks.
@@ -416,7 +420,9 @@ describe("Dataworker: Build merkle roots", async function () {
       mockTreeRoot, // relayerRefundRoot
       expectedSlowRelayTree.getHexRoot() // slowRelayRoot
     );
-    // Execute root bundle so we can propose another bundle.
+
+    // Execute root bundle so we can propose another bundle. The latest running balance emitted in this event
+    // should be added to running balances.
     await timer.setCurrentTime(Number(await timer.getCurrentTime()) + refundProposalLiveness + 1);
     await Promise.all(
       poolRebalanceLeaves.map((leaf) => {
@@ -424,6 +430,16 @@ describe("Dataworker: Build merkle roots", async function () {
           .connect(dataworker)
           .executeRootBundle(...Object.values(leaf), poolRebalanceTree.getHexProof(leaf));
       })
+    );
+    await updateAllClients();
+    updateAndCheckExpectedPoolRebalanceCounters(
+      expectedRunningBalances,
+      expectedRealizedLpFees,
+      startingRunningBalances,
+      toBN(0),
+      [originChainId, destinationChainId],
+      [l1Token_1.address],
+      dataworkerInstance.buildPoolRebalanceRoot([])
     );
 
     // Execute 1 slow relay leaf:
@@ -451,8 +467,8 @@ describe("Dataworker: Build merkle roots", async function () {
       expectedRealizedLpFees,
       toBN(0),
       getRealizedLpFeeForFills([slowFill2]),
-      slowFill2.destinationChainId,
-      l1Token_1.address,
+      [slowFill2.destinationChainId],
+      [l1Token_1.address],
       dataworkerInstance.buildPoolRebalanceRoot([])
     );
 
@@ -465,8 +481,8 @@ describe("Dataworker: Build merkle roots", async function () {
       expectedRealizedLpFees,
       getRefundForFills([fill5]),
       getRealizedLpFeeForFills([fill5]),
-      fill5.destinationChainId,
-      l1Token_1.address,
+      [fill5.destinationChainId],
+      [l1Token_1.address],
       dataworkerInstance.buildPoolRebalanceRoot([])
     );
 
@@ -497,8 +513,8 @@ describe("Dataworker: Build merkle roots", async function () {
       expectedRealizedLpFees,
       excess.mul(toBN(-1)),
       getRealizedLpFeeForFills([slowFill1]),
-      fill5.destinationChainId,
-      l1Token_1.address,
+      [fill5.destinationChainId],
+      [l1Token_1.address],
       dataworkerInstance.buildPoolRebalanceRoot([])
     );
 
@@ -515,8 +531,8 @@ describe("Dataworker: Build merkle roots", async function () {
       // This should decrease running balances because the first fill is contained in a ProposeRootBundle event.
       getRefundForFills([fill6]).sub(fullSlowFillAmountToSubtract),
       getRealizedLpFeeForFills([fill6]),
-      fill6.destinationChainId,
-      l1Token_1.address,
+      [fill6.destinationChainId],
+      [l1Token_1.address],
       dataworkerInstance.buildPoolRebalanceRoot([])
     );
 
@@ -549,8 +565,8 @@ describe("Dataworker: Build merkle roots", async function () {
       expectedRealizedLpFees,
       getRefundForFills([fill7, fill8]),
       getRealizedLpFeeForFills([fill7, fill8]),
-      fill7.destinationChainId,
-      l1Token_1.address,
+      [fill7.destinationChainId],
+      [l1Token_1.address],
       dataworkerInstance.buildPoolRebalanceRoot([])
     );
 
@@ -590,8 +606,8 @@ describe("Dataworker: Build merkle roots", async function () {
       expectedRealizedLpFees,
       getRefundForFills([fill9]),
       getRealizedLpFeeForFills([fill9]),
-      fill9.destinationChainId,
-      l1Token_1.address,
+      [fill9.destinationChainId],
+      [l1Token_1.address],
       dataworkerInstance.buildPoolRebalanceRoot([])
     );
   });

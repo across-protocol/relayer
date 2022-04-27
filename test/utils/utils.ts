@@ -497,15 +497,13 @@ export async function constructPoolRebalanceTree(runningBalances: RunningBalance
     Object.keys(runningBalances).map((x) => Number(x)), // Where funds are getting sent.
     Object.values(runningBalances).map((runningBalanceForL1Token) => Object.keys(runningBalanceForL1Token)), // l1Tokens.
     Object.values(realizedLpFees).map((realizedLpForL1Token) => Object.values(realizedLpForL1Token)), // bundleLpFees.
-    Object.values(runningBalances).map((runningBalanceForL1Token) =>
-      Object.values(runningBalanceForL1Token).map((x: BigNumber) => x.mul(toBN(-1)))
-    ), // netSendAmounts.
-    Object.values(runningBalances).map((runningBalanceForL1Token) => Object.values(runningBalanceForL1Token)), // runningBalances.
+    Object.values(runningBalances).map((_) => Object.values(_).map((_) => toBNWei(-100))), // netSendAmounts.
+    Object.values(runningBalances).map((_) => Object.values(_).map((_) => toBNWei(100))), // runningBalances.
     Object.keys(runningBalances).map((_) => 0) // group index
   );
   const tree = await utils.buildPoolRebalanceLeafTree(leaves);
 
-  return { leaves, tree };
+  return { leaves, tree, startingRunningBalances: toBNWei(100) };
 }
 
 export async function buildSlowFill(

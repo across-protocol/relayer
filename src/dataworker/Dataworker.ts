@@ -297,12 +297,20 @@ export class Dataworker {
             fillsToRefund[repaymentChainId][l2TokenAddress].realizedLpFees
           );
 
+          // Start with latest RootBundleExecuted.runningBalance for {chainId, l1Token} combination if found.
+          const startingRunningBalance =
+            this.clients.hubPoolClient.getRunningBalanceBeforeBlockForChain(
+              1_000_000,
+              Number(repaymentChainId),
+              l1TokenCounterpart
+            ) || toBN(0);
+
           // totalRefundAmount won't exist for chains that only had slow fills, so we should explicitly check for it.
           if (fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount)
             assign(
               runningBalances,
               [repaymentChainId, l1TokenCounterpart],
-              fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount
+              startingRunningBalance.add(fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount)
             );
         });
       });
@@ -398,8 +406,6 @@ export class Dataworker {
     deposits.forEach((deposit: DepositWithBlock) => {
       this._updateRunningBalanceForDeposit(runningBalances, deposit, deposit.amount.mul(toBN(-1)));
     });
-
-    // 6. Factor in latest RootBundleExecuted.runningBalance before this one.
 
     // 7. Factor in MAX_POOL_REBALANCE_LEAF_SIZE
 
