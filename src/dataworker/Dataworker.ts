@@ -84,12 +84,8 @@ export class Dataworker {
             // Save fill data and associate with repayment chain and token.
             assign(fillsToRefund, [chainToSendRefundTo, fill.destinationToken, "fills"], [fill]);
 
-            // Update realized LP fee and total refund amount accumulators.
+            // Update realized LP fee accumulator for slow and non-slow fills.
             const refundObj = fillsToRefund[chainToSendRefundTo][fill.destinationToken];
-            const refund = getRefundForFills([fill]);
-            refundObj.totalRefundAmount = refundObj.totalRefundAmount
-              ? refundObj.totalRefundAmount.add(refund)
-              : refund;
             refundObj.realizedLpFees = refundObj.realizedLpFees
               ? refundObj.realizedLpFees.add(getRealizedLpFeeForFills([fill]))
               : getRealizedLpFeeForFills([fill]);
@@ -115,6 +111,13 @@ export class Dataworker {
             // For non-slow relays, save refund amount for the recipient of the refund, i.e. the relayer
             // for non-slow relays.
             if (!fill.isSlowRelay) {
+              // Update total refund amount for non-slow fills, since refunds for executed slow fills would have been
+              // included in a previous root bundle.
+              const refund = getRefundForFills([fill]);
+              refundObj.totalRefundAmount = refundObj.totalRefundAmount
+                ? refundObj.totalRefundAmount.add(refund)
+                : refund;
+
               // Instantiate dictionary if it doesn't exist.
               if (!refundObj.refunds)
                 assign(fillsToRefund, [chainToSendRefundTo, fill.destinationToken, "refunds"], {});
@@ -289,15 +292,18 @@ export class Dataworker {
             1_000_000
           );
           assign(
-            runningBalances,
-            [repaymentChainId, l1TokenCounterpart],
-            fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount
-          );
-          assign(
             realizedLpFees,
             [repaymentChainId, l1TokenCounterpart],
             fillsToRefund[repaymentChainId][l2TokenAddress].realizedLpFees
           );
+
+          // totalRefundAmount won't exist for chains that only had slow fills, so we should explicitly check for it.
+          if (fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount)
+            assign(
+              runningBalances,
+              [repaymentChainId, l1TokenCounterpart],
+              fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount
+            );
         });
       });
     }
@@ -347,11 +353,12 @@ export class Dataworker {
         // Recompute how much the matched root bundle sent for this slow fill. Subtract the amount that was
         // actually executed on the L2 from the amount that was sent. This should give us the excess that was sent.
         // Subtract that amount from the running balance so we ultimately send it back to L1.
-        const amountToSendBackToHub = fill.fillAmount
-          .add(lastFillBeforeSlowFillIncludedInRoot.totalFilledAmount)
-          .sub(lastFillBeforeSlowFillIncludedInRoot.amount);
-        if (amountToSendBackToHub.eq(toBN(0))) return; // Exit early if slow fill left no excess funds.
-        this._updateRunningBalanceForFill(runningBalances, fill, amountToSendBackToHub);
+        const amountSentForSlowFill = lastFillBeforeSlowFillIncludedInRoot.amount.sub(
+          lastFillBeforeSlowFillIncludedInRoot.totalFilledAmount
+        );
+        const excess = amountSentForSlowFill.sub(fill.fillAmount);
+        if (excess.eq(toBN(0))) return; // Exit early if slow fill left no excess funds.
+        this._updateRunningBalanceForFill(runningBalances, fill, excess.mul(toBN(-1)));
       }
       // 4. For all fills that completely filled a relay and that followed a partial fill from a previous epoch, we need
       // to decrease running balances by the slow fill amount sent in the previous epoch, since the slow relay was never
@@ -378,10 +385,10 @@ export class Dataworker {
         // back to the hub because it was completely replaced by partial fills submitted after the root bundle
         // proposal. We know that there was no slow fill execution because the `fullFill` completely filled the deposit,
         // meaning that no slow fill was executed before it, and no slow fill can be executed after it.
-        const amountToSendBackToHub = lastFillBeforeSlowFillIncludedInRoot.totalFilledAmount.sub(
-          lastFillBeforeSlowFillIncludedInRoot.amount
+        const amountSentForSlowFill = lastFillBeforeSlowFillIncludedInRoot.amount.sub(
+          lastFillBeforeSlowFillIncludedInRoot.totalFilledAmount
         );
-        this._updateRunningBalanceForFill(runningBalances, fill, amountToSendBackToHub);
+        this._updateRunningBalanceForFill(runningBalances, fill, amountSentForSlowFill.mul(toBN(-1)));
       }
     });
 

@@ -445,11 +445,11 @@ describe("Dataworker: Build merkle roots", async function () {
 
     // Running balance should now have accounted for the slow fill. However, there are no "extra" funds remaining in the
     // spoke pool following this slow fill because there were no fills that were submitted after the root bundle
-    // was submitted that included the slow fill. The new running balance should only have added the slow fill amount.
+    // was submitted that included the slow fill. The new running balance should therefore be identical to the old one.
     updateAndCheckExpectedPoolRebalanceCounters(
       expectedRunningBalances,
       expectedRealizedLpFees,
-      getRefundForFills([slowFill2]),
+      toBN(0),
       getRealizedLpFeeForFills([slowFill2]),
       slowFill2.destinationChainId,
       l1Token_1.address,
@@ -495,7 +495,7 @@ describe("Dataworker: Build merkle roots", async function () {
     updateAndCheckExpectedPoolRebalanceCounters(
       expectedRunningBalances,
       expectedRealizedLpFees,
-      getRefundForFills([slowFill1]).sub(excess),
+      excess.mul(toBN(-1)),
       getRealizedLpFeeForFills([slowFill1]),
       fill5.destinationChainId,
       l1Token_1.address,

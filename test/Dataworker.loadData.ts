@@ -289,7 +289,6 @@ describe("Dataworker: Load data used in all functions", async function () {
       [slowFill3.destinationChainId]: {
         [erc20_1.address]: {
           fills: [slowFill3], // Slow fill gets added to fills list
-          totalRefundAmount: getRefundForFills([slowFill3]), // Slow fill does affect total refund amount
           realizedLpFees: getRealizedLpFeeForFills([slowFill3]), // Slow fill does affect realized LP fee
         },
       },
@@ -318,7 +317,6 @@ describe("Dataworker: Load data used in all functions", async function () {
       [slowFill3.destinationChainId]: {
         [erc20_1.address]: {
           fills: [slowFill3],
-          totalRefundAmount: getRefundForFills([slowFill3]),
           realizedLpFees: getRealizedLpFeeForFills([slowFill3]),
         },
       },
