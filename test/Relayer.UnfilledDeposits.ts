@@ -1,4 +1,4 @@
-import { createSpyLogger, sinon, deployAndConfigureHubPool, enableRoutesOnHubPool, buildDepositStruct } from "./utils";
+import { createSpyLogger, deployAndConfigureHubPool, enableRoutesOnHubPool, buildDepositStruct } from "./utils";
 import { deploySpokePoolWithToken, destinationChainId, deployRateModelStore, getLastBlockTime, expect } from "./utils";
 import { simpleDeposit, fillRelay, ethers, Contract, SignerWithAddress, setupTokensForWallet, winston } from "./utils";
 import { amountToLp, originChainId, amountToRelay } from "./constants";
@@ -10,7 +10,7 @@ let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Co
 let hubPool: Contract, l1Token: Contract, rateModelStore: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
 
-let spy: sinon.SinonSpy, spyLogger: winston.Logger;
+let spyLogger: winston.Logger;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient;
 
@@ -29,7 +29,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     ]));
 
     ({ rateModelStore } = await deployRateModelStore(owner, [l1Token]));
-    ({ spy, spyLogger } = createSpyLogger());
+    ({ spyLogger } = createSpyLogger());
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
     rateModelClient = new RateModelClient(spyLogger, rateModelStore, hubPoolClient);
     spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1, rateModelClient, originChainId);
@@ -137,7 +137,8 @@ async function updateAllClients() {
 }
 
 async function fillWithRealizedLpFeePct(spokePool, relayer, depositor, deposit, relayAmount = amountToRelay) {
-  const realizedLpFeePctForDeposit = await rateModelClient.computeRealizedLpFeePct(deposit, l1Token.address);
+  const realizedLpFeePctForDeposit = (await rateModelClient.computeRealizedLpFeePct(deposit, l1Token.address))
+    .realizedLpFeePct;
   return await fillRelay(
     spokePool,
     deposit.destinationToken,

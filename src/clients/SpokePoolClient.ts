@@ -1,6 +1,7 @@
-import { spreadEvent, assign, Contract, BigNumber, toBN, Event, ZERO_ADDRESS, winston } from "../utils";
+import { assign, Contract, BigNumber, toBN, Event, ZERO_ADDRESS, winston } from "../utils";
+import { spreadEventWithBlockNumber, spreadEvent } from "../utils";
 import { RateModelClient } from "./RateModelClient";
-import { Deposit, Fill, SpeedUp } from "../interfaces/SpokePool";
+import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock } from "../interfaces/SpokePool";
 
 export class SpokePoolClient {
   private deposits: { [DestinationChainId: number]: Deposit[] } = {};
@@ -10,6 +11,8 @@ export class SpokePoolClient {
   public isUpdated: boolean = false;
 
   public firstBlockToSearch: number;
+  public fillsWithBlockNumbers: FillWithBlock[] = [];
+  public depositsWithBlockNumbers: { [DestinationChainId: number]: DepositWithBlock[] } = {};
 
   constructor(
     readonly logger: winston.Logger,
@@ -22,8 +25,10 @@ export class SpokePoolClient {
     this.firstBlockToSearch = startingBlock;
   }
 
-  getDepositsForDestinationChain(destinationChainId: number): Deposit[] {
-    return this.deposits[destinationChainId] || [];
+  getDepositsForDestinationChain(destinationChainId: number, withBlock = false): Deposit[] | DepositWithBlock[] {
+    return withBlock
+      ? this.depositsWithBlockNumbers[destinationChainId] || []
+      : this.deposits[destinationChainId] || [];
   }
 
   getDepositsFromDepositor(depositor: string): Deposit[] {
@@ -52,6 +57,10 @@ export class SpokePoolClient {
     return this.fills.filter((fill: Fill) => fill.originChainId === originChainId);
   }
 
+  getFillsWithBlockForOriginChain(originChainId: number): FillWithBlock[] {
+    return this.fillsWithBlockNumbers.filter((fill: Fill) => fill.originChainId === originChainId);
+  }
+
   getFillsForRepaymentChain(repaymentChainId: number) {
     return this.fills.filter((fill: Fill) => fill.repaymentChainId === repaymentChainId);
   }
@@ -71,8 +80,9 @@ export class SpokePoolClient {
   }
 
   getDepositForFill(fill: Fill): Deposit | undefined {
-    return this.getDepositsForDestinationChain(fill.destinationChainId).find((deposit) =>
-      this.validateFillForDeposit(fill, deposit)
+    const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill.
+    return this.getDepositsForDestinationChain(fillCopy.destinationChainId).find((deposit) =>
+      this.validateFillForDeposit(fillCopy, deposit)
     );
   }
 
@@ -127,12 +137,23 @@ export class SpokePoolClient {
     // is heavy as there is a fair bit of block number lookups that need to happen. Note this call REQUIRES that the
     // hubPoolClient is updated on the first before this call as this needed the the L1 token mapping to each L2 token.
     if (depositEvents.length > 0) this.log("debug", "Fetching realizedLpFeePct events", { num: depositEvents.length });
-    const realizedLpFeePcts = await Promise.all(depositEvents.map((event) => this.computeRealizedLpFeePct(event)));
+    const dataForQuoteTime = await Promise.all(
+      depositEvents.map((event) => {
+        return this.computeRealizedLpFeePct(event);
+      })
+    );
 
     for (const [index, event] of depositEvents.entries()) {
-      const deposit: Deposit = { ...spreadEvent(event), realizedLpFeePct: realizedLpFeePcts[index] }; // Append the realizedLpFeePct.
-      deposit.destinationToken = this.getDestinationTokenForDeposit(deposit); // Append the destination token to the deposit.
+      // Append the realizedLpFeePct.
+      const deposit: Deposit = { ...spreadEvent(event), realizedLpFeePct: dataForQuoteTime[index].realizedLpFeePct };
+      // Append the destination token to the deposit.
+      deposit.destinationToken = this.getDestinationTokenForDeposit(deposit);
       assign(this.deposits, [deposit.destinationChainId], [deposit]);
+      assign(
+        this.depositsWithBlockNumbers,
+        [deposit.destinationChainId],
+        [{ ...deposit, blockNumber: dataForQuoteTime[index].quoteBlock }]
+      );
     }
 
     for (const event of speedUpEvents) {
@@ -147,7 +168,10 @@ export class SpokePoolClient {
         if (speedUpDeposit !== deposit) this.deposits[destinationChainId][index] = speedUpDeposit;
       }
 
-    for (const event of fillEvents) this.fills.push(spreadEvent(event));
+    for (const event of fillEvents) {
+      this.fills.push(spreadEvent(event));
+      this.fillsWithBlockNumbers.push(spreadEventWithBlockNumber(event));
+    }
 
     for (const event of enableDepositsEvents) {
       const enableDeposit = spreadEvent(event);
@@ -167,7 +191,7 @@ export class SpokePoolClient {
   }
 
   private async computeRealizedLpFeePct(depositEvent: Event) {
-    if (!this.rateModelClient) return toBN(0); // If there is no rate model client return 0.
+    if (!this.rateModelClient) return { realizedLpFeePct: toBN(0), quoteBlock: 0 }; // If there is no rate model client return 0.
     const deposit = {
       amount: depositEvent.args.amount,
       originChainId: Number(depositEvent.args.originChainId),

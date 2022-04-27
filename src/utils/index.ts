@@ -21,6 +21,7 @@ export * from "./NetworkUtils";
 export * from "./TransactionUtils";
 export * from "./MerkleTreeUtils";
 export * from "./AddressUtils";
+export * from "./FillMathUtils";
 export * from "./GckmsUtils";
 
 export { ZERO_ADDRESS, MAX_SAFE_ALLOWANCE } from "@uma/common";

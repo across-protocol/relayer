@@ -1,19 +1,19 @@
 import { expect, ethers, Contract } from "./utils";
 import { SignerWithAddress, buildSlowRelayTree } from "./utils";
-import { buildDeposit, buildFill, buildModifiedFill } from "./utils";
-import { SpokePoolClient, HubPoolClient, RateModelClient } from "../src/clients";
+import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, buildSlowFill } from "./utils";
+import { SpokePoolClient, HubPoolClient, RateModelClient, ConfigStoreClient } from "../src/clients";
 import { amountToDeposit, repaymentChainId, destinationChainId, originChainId } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { toBN } from "../src/utils";
+import { toBN, getRefundForFills, getRealizedLpFeeForFills } from "../src/utils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, l1Token_2: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient;
+let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
 let dataworkerInstance: Dataworker;
 
 let updateAllClients: () => Promise<void>;
@@ -34,19 +34,25 @@ describe("Dataworker: Load data used in all functions", async function () {
       dataworkerInstance,
       spokePoolClient_1,
       spokePoolClient_2,
+      configStoreClient,
       updateAllClients,
     } = await setupDataworker(ethers, 25));
   });
 
   it("Default conditions", async function () {
-    // Throws error if spoke pool client not updated.
-    expect(() => dataworkerInstance._loadData()).to.throw(/not updated/);
-
-    // Throws error if hub pool client not updated.
+    // Throws error if hub pool client is not updated.
+    expect(() => dataworkerInstance._loadData()).to.throw(/HubPoolClient not updated/);
+    await hubPoolClient.update();
     await rateModelClient.update();
+
+    // Throws error if config store client not updated.
+    expect(() => dataworkerInstance._loadData()).to.throw(/ConfigStoreClient not updated/);
+    await configStoreClient.update();
+
+    // Throws error if spoke pool clients not updated
+    expect(() => dataworkerInstance._loadData()).to.throw(/origin SpokePoolClient/);
     await spokePoolClient_1.update();
     await spokePoolClient_2.update();
-    expect(() => dataworkerInstance._loadData()).to.throw(/HubPoolClient not updated/);
 
     // Before any deposits, returns empty dictionaries.
     await updateAllClients();
@@ -54,6 +60,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       unfilledDeposits: [],
       deposits: [],
       fillsToRefund: {},
+      allValidFills: [],
     });
   });
   it("Returns unfilled deposits", async function () {
@@ -110,6 +117,12 @@ describe("Dataworker: Load data used in all functions", async function () {
     const data2 = dataworkerInstance._loadData();
     expect(data2.unfilledDeposits).to.deep.equal([]);
 
+    // Fills for 0 amount do not count do not make deposit eligible for slow fill:
+    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0);
+    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 0);
+    await updateAllClients();
+    expect(dataworkerInstance._loadData().unfilledDeposits).to.deep.equal([]);
+
     // Fills that don't match deposits do not affect unfilledAmount counter.
     // Note: We switch the spoke pool address in the following fills from the fills that eventually do match with
     //       the deposits.
@@ -135,7 +148,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     // TODO: Add test where deposit has matched fills but none were the first ever fill for that deposit (i.e. where
     // fill.amount != fill.totalAmountFilled). This can only be done after adding in block range constraints on Fill
-    // events queried. Also test that fill amounts equal to zero don't count as first fills.
+    // events queried.
 
     // Fill events emitted by slow relays are included in unfilled amount calculations.
     const deposit5 = await buildDeposit(
@@ -157,33 +170,10 @@ describe("Dataworker: Load data used in all functions", async function () {
       { unfilledAmount: amountToDeposit.sub(fill3.fillAmount), deposit: deposit5 },
     ]);
 
-    const slowRelays = [
-      {
-        depositor: fill3.depositor,
-        recipient: fill3.recipient,
-        destinationToken: fill3.destinationToken,
-        amount: fill3.amount,
-        originChainId: fill3.originChainId.toString(),
-        destinationChainId: fill3.destinationChainId.toString(),
-        realizedLpFeePct: fill3.realizedLpFeePct,
-        relayerFeePct: fill3.relayerFeePct,
-        depositId: fill3.depositId.toString(),
-      },
-    ];
+    const slowRelays = buildSlowRelayLeaves([deposit5]);
     const tree = await buildSlowRelayTree(slowRelays);
     await spokePool_1.relayRootBundle(tree.getHexRoot(), tree.getHexRoot());
-    await spokePool_1.connect(depositor).executeSlowRelayLeaf(
-      fill3.depositor,
-      fill3.recipient,
-      fill3.destinationToken,
-      fill3.amount.toString(),
-      fill3.originChainId.toString(),
-      fill3.realizedLpFeePct.toString(),
-      fill3.relayerFeePct.toString(),
-      fill3.depositId.toString(),
-      "0",
-      [] // Proof for tree with 1 leaf is empty
-    );
+    await buildSlowFill(spokePool_1, fill3, depositor, []);
 
     // The unfilled deposit has now been fully filled.
     await updateAllClients();
@@ -219,7 +209,14 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data1 = dataworkerInstance._loadData();
     expect(data1.fillsToRefund).to.deep.equal({
-      [repaymentChainId]: { [erc20_2.address]: [fill1] },
+      [repaymentChainId]: {
+        [erc20_2.address]: {
+          fills: [fill1],
+          refunds: { [relayer.address]: getRefundForFills([fill1]) },
+          totalRefundAmount: getRefundForFills([fill1]),
+          realizedLpFees: getRealizedLpFeeForFills([fill1]),
+        },
+      },
     });
 
     // Submit a fill for another L2 token.
@@ -227,7 +224,20 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data2 = dataworkerInstance._loadData();
     expect(data2.fillsToRefund).to.deep.equal({
-      [repaymentChainId]: { [erc20_2.address]: [fill1], [erc20_1.address]: [fill2] },
+      [repaymentChainId]: {
+        [erc20_2.address]: {
+          fills: [fill1],
+          refunds: { [relayer.address]: getRefundForFills([fill1]) },
+          totalRefundAmount: getRefundForFills([fill1]),
+          realizedLpFees: getRealizedLpFeeForFills([fill1]),
+        },
+        [erc20_1.address]: {
+          fills: [fill2],
+          refunds: { [relayer.address]: getRefundForFills([fill2]) },
+          totalRefundAmount: getRefundForFills([fill2]),
+          realizedLpFees: getRealizedLpFeeForFills([fill2]),
+        },
+      },
     });
 
     // Submit fills without matching deposits. These should be ignored by the client.
@@ -257,7 +267,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     const data4 = dataworkerInstance._loadData();
     expect(data4.fillsToRefund).to.deep.equal(data2.fillsToRefund);
 
-    // Fill events emitted by slow relays should be ignored.
+    // Slow relay fills are added.
     const deposit3 = await buildDeposit(
       rateModelClient,
       hubPoolClient,
@@ -269,39 +279,33 @@ describe("Dataworker: Load data used in all functions", async function () {
       amountToDeposit
     );
     const fill3 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit3, 0.25);
-    const slowRelays = [
-      {
-        depositor: fill3.depositor,
-        recipient: fill3.recipient,
-        destinationToken: fill3.destinationToken,
-        amount: fill3.amount,
-        originChainId: fill3.originChainId.toString(),
-        destinationChainId: fill3.destinationChainId.toString(),
-        realizedLpFeePct: fill3.realizedLpFeePct,
-        relayerFeePct: fill3.relayerFeePct,
-        depositId: fill3.depositId.toString(),
-      },
-    ];
+    const slowRelays = buildSlowRelayLeaves([deposit3]);
     const tree = await buildSlowRelayTree(slowRelays);
     await spokePool_1.relayRootBundle(tree.getHexRoot(), tree.getHexRoot());
-    await spokePool_1.connect(depositor).executeSlowRelayLeaf(
-      fill3.depositor,
-      fill3.recipient,
-      fill3.destinationToken,
-      fill3.amount.toString(),
-      fill3.originChainId.toString(),
-      fill3.realizedLpFeePct.toString(),
-      fill3.relayerFeePct.toString(),
-      fill3.depositId.toString(),
-      "0",
-      [] // Proof for tree with 1 leaf is empty
-    );
+    const slowFill3 = await buildSlowFill(spokePool_1, fill3, depositor, []);
     await updateAllClients();
     const data5 = dataworkerInstance._loadData();
-    // Note: If the dataworker does not explicitly filter out slow relays then the fillsToRefund object
-    // will contain refunds associated with repaymentChainId 0.
     expect(data5.fillsToRefund).to.deep.equal({
-      [repaymentChainId]: { [erc20_2.address]: [fill1], [erc20_1.address]: [fill2, fill3] },
+      [slowFill3.destinationChainId]: {
+        [erc20_1.address]: {
+          fills: [slowFill3], // Slow fill gets added to fills list
+          realizedLpFees: getRealizedLpFeeForFills([slowFill3]), // Slow fill does affect realized LP fee
+        },
+      },
+      [repaymentChainId]: {
+        [erc20_2.address]: {
+          fills: [fill1],
+          refunds: { [relayer.address]: getRefundForFills([fill1]) },
+          totalRefundAmount: getRefundForFills([fill1]),
+          realizedLpFees: getRealizedLpFeeForFills([fill1]),
+        },
+        [erc20_1.address]: {
+          fills: [fill2, fill3],
+          refunds: { [relayer.address]: getRefundForFills([fill2, fill3]) },
+          totalRefundAmount: getRefundForFills([fill2, fill3]),
+          realizedLpFees: getRealizedLpFeeForFills([fill2, fill3]),
+        },
+      },
     });
 
     // Speed up relays are included. Re-use the same fill information
@@ -310,7 +314,46 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data6 = dataworkerInstance._loadData();
     expect(data6.fillsToRefund).to.deep.equal({
-      [repaymentChainId]: { [erc20_2.address]: [fill1], [erc20_1.address]: [fill2, fill3, fill4] },
+      [slowFill3.destinationChainId]: {
+        [erc20_1.address]: {
+          fills: [slowFill3],
+          realizedLpFees: getRealizedLpFeeForFills([slowFill3]),
+        },
+      },
+      [repaymentChainId]: {
+        [erc20_2.address]: {
+          fills: [fill1],
+          refunds: { [relayer.address]: getRefundForFills([fill1]) },
+          totalRefundAmount: getRefundForFills([fill1]),
+          realizedLpFees: getRealizedLpFeeForFills([fill1]),
+        },
+        [erc20_1.address]: {
+          fills: [fill2, fill3, fill4],
+          refunds: { [relayer.address]: getRefundForFills([fill2, fill3, fill4]) },
+          totalRefundAmount: getRefundForFills([fill2, fill3, fill4]),
+          realizedLpFees: getRealizedLpFeeForFills([fill2, fill3, fill4]),
+        },
+      },
     });
+  });
+  it("Returns deposits", async function () {
+    await updateAllClients();
+
+    const deposit1 = await buildDeposit(
+      rateModelClient,
+      hubPoolClient,
+      spokePool_2,
+      erc20_2,
+      l1Token_1,
+      depositor,
+      originChainId,
+      amountToDeposit
+    );
+    const realizedLpFeePctData = await rateModelClient.computeRealizedLpFeePct(deposit1, l1Token_1.address);
+
+    // Should include all deposits, even those not matched by a relay
+    await updateAllClients();
+    const data1 = dataworkerInstance._loadData();
+    expect(data1.deposits).to.deep.equal([{ ...deposit1, blockNumber: realizedLpFeePctData.quoteBlock }]);
   });
 });
