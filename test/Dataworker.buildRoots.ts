@@ -421,27 +421,6 @@ describe("Dataworker: Build merkle roots", async function () {
       expectedSlowRelayTree.getHexRoot() // slowRelayRoot
     );
 
-    // Execute root bundle so we can propose another bundle. The latest running balance emitted in this event
-    // should be added to running balances.
-    await timer.setCurrentTime(Number(await timer.getCurrentTime()) + refundProposalLiveness + 1);
-    await Promise.all(
-      poolRebalanceLeaves.map((leaf) => {
-        return hubPool
-          .connect(dataworker)
-          .executeRootBundle(...Object.values(leaf), poolRebalanceTree.getHexProof(leaf));
-      })
-    );
-    await updateAllClients();
-    updateAndCheckExpectedPoolRebalanceCounters(
-      expectedRunningBalances,
-      expectedRealizedLpFees,
-      startingRunningBalances,
-      toBN(0),
-      [originChainId, destinationChainId],
-      [l1Token_1.address],
-      dataworkerInstance.buildPoolRebalanceRoot([])
-    );
-
     // Execute 1 slow relay leaf:
     // Before we can execute the leaves on the spoke pool, we need to actually publish them since we're using a mock
     // adapter that doesn't send messages as you'd expect in executeRootBundle.
@@ -566,6 +545,27 @@ describe("Dataworker: Build merkle roots", async function () {
       getRefundForFills([fill7, fill8]),
       getRealizedLpFeeForFills([fill7, fill8]),
       [fill7.destinationChainId],
+      [l1Token_1.address],
+      dataworkerInstance.buildPoolRebalanceRoot([])
+    );
+
+    // Execute root bundle so we can propose another bundle. The latest running balance emitted in this event
+    // should be added to running balances.
+    await timer.setCurrentTime(Number(await timer.getCurrentTime()) + refundProposalLiveness + 1);
+    await Promise.all(
+      poolRebalanceLeaves.map((leaf) => {
+        return hubPool
+          .connect(dataworker)
+          .executeRootBundle(...Object.values(leaf), poolRebalanceTree.getHexProof(leaf));
+      })
+    );
+    await updateAllClients();
+    updateAndCheckExpectedPoolRebalanceCounters(
+      expectedRunningBalances,
+      expectedRealizedLpFees,
+      startingRunningBalances,
+      toBN(0),
+      [originChainId, destinationChainId],
       [l1Token_1.address],
       dataworkerInstance.buildPoolRebalanceRoot([])
     );
