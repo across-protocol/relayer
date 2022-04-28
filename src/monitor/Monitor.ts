@@ -48,13 +48,7 @@ export class Monitor {
 
     // Send notification if pool utilization is above configured threshold.
     for (const l1TokenUtilization of l1TokenUtilizations) {
-      if (
-        l1TokenUtilization.utilization.gt(
-          toBN(this.monitorConfig.utilizationThreshold)
-            .mul(toBN(toWei("1")))
-            .div(toBN(100))
-        )
-      ) {
+      if (l1TokenUtilization.utilization.gt(toBN(this.monitorConfig.utilizationThreshold).mul(toBN(toWei("0.01"))))) {
         const utilizationString = l1TokenUtilization.utilization.mul(100).toString();
         const mrkdwn = `${l1TokenUtilization.poolCollateralSymbol} pool token at \
           ${etherscanLink(l1TokenUtilization.l1Token, l1TokenUtilization.chainId)} on \
@@ -145,8 +139,8 @@ export class Monitor {
   // Compute the starting and ending block for each chain giving the provider and the config values
   private async computeStartingAndEndingBlock(
     provider: providers.Provider,
-    startingBlock: number | undefined,
-    endingBlock: number | undefined
+    configuredStartingBlock: number | undefined,
+    configuredEndingBlock: number | undefined
   ) {
     // In serverless mode (pollingDelay === 0) use block range from environment (or just the latest block if not
     // provided) to fetch for latest events.
@@ -157,10 +151,10 @@ export class Monitor {
     let finalEndingBlock: number;
 
     if (this.monitorConfig.pollingDelay === 0) {
-      finalStartingBlock = startingBlock !== undefined ? startingBlock : latestBlockNumber;
-      finalEndingBlock = endingBlock !== undefined ? endingBlock : latestBlockNumber;
+      finalStartingBlock = configuredStartingBlock !== undefined ? configuredStartingBlock : latestBlockNumber;
+      finalEndingBlock = configuredEndingBlock !== undefined ? configuredEndingBlock : latestBlockNumber;
     } else {
-      finalStartingBlock = endingBlock ? endingBlock + 1 : latestBlockNumber;
+      finalStartingBlock = configuredEndingBlock ? configuredEndingBlock + 1 : latestBlockNumber;
       finalEndingBlock = latestBlockNumber;
     }
 
