@@ -1,5 +1,5 @@
 import { setupUmaEcosystem } from "./UmaEcosystemFixture";
-import { deploySpokePoolWithToken, enableRoutesOnHubPool, Contract, hre, enableRoutes } from "../utils";
+import { deploySpokePoolWithToken, enableRoutesOnHubPool, Contract, BigNumber, enableRoutes } from "../utils";
 import { SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "../utils";
 import { createSpyLogger, winston, deployAndConfigureHubPool, deployRateModelStore } from "../utils";
 import * as clients from "../../src/clients";
@@ -12,7 +12,8 @@ import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 export async function setupDataworker(
   ethers: any,
   maxRefundPerRelayerRefundLeaf: number,
-  maxL1TokensPerPoolRebalanceLeaf: number
+  maxL1TokensPerPoolRebalanceLeaf: number,
+  defaultPoolRebalanceTokenTransferThreshold: BigNumber
 ): Promise<{
   hubPool: Contract;
   spokePool_1: Contract;
@@ -81,6 +82,10 @@ export async function setupDataworker(
   const multiCallerClient = new clients.MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
   const configStoreClient = new clients.ConfigStoreClient(
     spyLogger,
+    {
+      [l1Token_1.address]: defaultPoolRebalanceTokenTransferThreshold,
+      [l1Token_2.address]: defaultPoolRebalanceTokenTransferThreshold,
+    },
     maxRefundPerRelayerRefundLeaf,
     maxL1TokensPerPoolRebalanceLeaf
   );

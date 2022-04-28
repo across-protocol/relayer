@@ -2,26 +2,22 @@ import { buildSlowRelayTree, buildSlowRelayLeaves, buildFillForRepaymentChain } 
 import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
 import { buildRelayerRefundTreeWithUnassignedLeafIds, constructPoolRebalanceTree } from "./utils";
-import { HubPoolClient, RateModelClient } from "../src/clients";
-import {
-  amountToDeposit,
-  destinationChainId,
-  originChainId,
-  MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
-  mockTreeRoot,
-} from "./constants";
-import { refundProposalLiveness, CHAIN_ID_TEST_LIST, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
+import { ConfigStoreClient, HubPoolClient, RateModelClient } from "../src/clients";
+import { amountToDeposit, destinationChainId, originChainId, mockTreeRoot } from "./constants";
+import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
+import { refundProposalLiveness, CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-
-import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { Deposit, Fill, RunningBalances } from "../src/interfaces";
 import { getRealizedLpFeeForFills, getRefundForFills, getRefund, compareAddresses } from "../src/utils";
+
+// Tested
+import { Dataworker } from "../src/dataworker/Dataworker";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, hubPool: Contract, timer: Contract, rateModelStore: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress, dataworker: SignerWithAddress;
 
-let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient;
+let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
 let dataworkerInstance: Dataworker;
 
 let updateAllClients: () => Promise<void>;
@@ -36,6 +32,7 @@ describe("Dataworker: Build merkle roots", async function () {
       erc20_2,
       rateModelClient,
       rateModelStore,
+      configStoreClient,
       hubPoolClient,
       l1Token_1,
       depositor,
@@ -44,7 +41,12 @@ describe("Dataworker: Build merkle roots", async function () {
       dataworker,
       timer,
       updateAllClients,
-    } = await setupDataworker(ethers, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF));
+    } = await setupDataworker(
+      ethers,
+      MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
+      MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
+      DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
+    ));
   });
   it("Default conditions", async function () {
     // When given empty input data, returns null.
@@ -314,7 +316,7 @@ describe("Dataworker: Build merkle roots", async function () {
     expect(merkleRoot4.getHexRoot()).to.equal(expectedMerkleRoot4.getHexRoot());
   });
   describe("Build pool rebalance root", function () {
-    it("One L1 token", async function () {
+    it("One L1 token, full lifecycle test with slow and non-slow fills", async function () {
       // Helper function we'll use in this lifecycle test to keep track of updated counter variables.
       const updateAndCheckExpectedPoolRebalanceCounters = (
         expectedRunningBalances: RunningBalances,
@@ -623,7 +625,7 @@ describe("Dataworker: Build merkle roots", async function () {
       );
     });
     it("Many L1 tokens", async function () {
-      // In this test, each L1 token will have one deposit and fill associated with it
+      // In this test, each L1 token will have one deposit and fill associated with it.
       const depositsForL1Token: { [l1Token: string]: Deposit } = {};
       const fillsForL1Token: { [l1Token: string]: Fill } = {};
 
@@ -636,6 +638,10 @@ describe("Dataworker: Build merkle roots", async function () {
           rateModelStore,
           hubPool,
           amountToDeposit.mul(toBN(100))
+        );
+        configStoreClient.setPoolRebalanceTokenTransferThreshold(
+          l1Token.address,
+          DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
         );
         await updateAllClients(); // Update client to be aware of new token mapping so we can build deposit correctly.
         const deposit = await buildDeposit(
@@ -667,7 +673,6 @@ describe("Dataworker: Build merkle roots", async function () {
       // address.
       await updateAllClients();
       const merkleRoot1 = dataworkerInstance.buildPoolRebalanceRoot([]);
-      // We assume originChainId < destinationChainId
       const orderedChainIds = [originChainId, destinationChainId].sort((x, y) => x - y);
       const expectedLeaves = orderedChainIds
         .map((chainId) => {
@@ -692,12 +697,8 @@ describe("Dataworker: Build merkle roots", async function () {
                 chainId === originChainId
                   ? l1TokensToIncludeInLeaf.map((l1Token) => depositsForL1Token[l1Token].amount.mul(toBN(-1)))
                   : l1TokensToIncludeInLeaf.map((l1Token) => getRefundForFills([fillsForL1Token[l1Token]])),
-              netSendAmounts:
-                chainId === originChainId
-                  ? l1TokensToIncludeInLeaf.map((l1Token) => depositsForL1Token[l1Token].amount)
-                  : l1TokensToIncludeInLeaf.map((l1Token) =>
-                      getRefundForFills([fillsForL1Token[l1Token]]).mul(toBN(-1))
-                    ),
+              netSendAmounts: l1TokensToIncludeInLeaf.map((_) => toBN(0)), // Should be 0 since running balances are
+              // under threshold
               l1Tokens: l1TokensToIncludeInLeaf,
             };
           });
@@ -707,6 +708,56 @@ describe("Dataworker: Build merkle roots", async function () {
           return { ...leaf, leafId: i };
         });
       expect(merkleRoot1.leaves).to.deep.equal(expectedLeaves);
+    });
+    it("Token transfer exceeeds threshold", async function () {
+      await updateAllClients();
+      const deposit = await buildDeposit(
+        rateModelClient,
+        hubPoolClient,
+        spokePool_1,
+        erc20_1,
+        l1Token_1,
+        depositor,
+        destinationChainId,
+        amountToDeposit
+      );
+      await updateAllClients();
+      const fill = await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 1, destinationChainId);
+      await updateAllClients();
+      const merkleRoot1 = dataworkerInstance.buildPoolRebalanceRoot([]);
+
+      const orderedChainIds = [originChainId, destinationChainId].sort((x, y) => x - y);
+      const expectedLeaves1 = orderedChainIds
+        .map((chainId) => {
+          return {
+            groupIndex: 0,
+            chainId,
+            bundleLpFees: chainId === originChainId ? [toBN(0)] : [getRealizedLpFeeForFills([fill])],
+            // Running balance is <<< token threshold, so running balance should be non-zero and net send amount
+            // should be 0.
+            runningBalances: chainId === originChainId ? [deposit.amount.mul(toBN(-1))] : [getRefundForFills([fill])],
+            netSendAmounts: [toBN(0)],
+            l1Tokens: [l1Token_1.address],
+          };
+        })
+        .map((leaf, i) => {
+          return { ...leaf, leafId: i };
+        });
+      expect(merkleRoot1.leaves).to.deep.equal(expectedLeaves1);
+
+      // Now set the threshold much lower than the running balance and check that running balances for all
+      // chains gets set to 0 and net send amount is equal to the running balance. This also tests that the
+      // dataworker is comparing the absolute value of the running balance with the threshold, not the signed value.
+      configStoreClient.setPoolRebalanceTokenTransferThreshold(l1Token_1.address, toBNWei(1));
+      const merkleRoot2 = dataworkerInstance.buildPoolRebalanceRoot([]);
+      const expectedLeaves2 = expectedLeaves1.map((leaf) => {
+        return {
+          ...leaf,
+          runningBalances: [toBN(0)],
+          netSendAmounts: leaf.runningBalances,
+        };
+      });
+      expect(merkleRoot2.leaves).to.deep.equal(expectedLeaves2);
     });
   });
 });

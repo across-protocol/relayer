@@ -10,6 +10,10 @@ export const MAX_REFUNDS_PER_RELAYER_REFUND_LEAF = 3;
 // Max number of L1 tokens for a chain ID in a pool rebalance leaf.
 export const MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF = 3;
 
+// Once running balances hits this number for an L1 token, net send amount should be set to running
+// balances to transfer tokens to the spoke pool.
+export const DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD = toWei(1_000_000);
+
 // DAI's Rate model.
 export const sampleRateModel = {
   UBar: toWei(0.8).toString(),

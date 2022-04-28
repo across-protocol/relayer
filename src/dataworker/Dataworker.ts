@@ -436,6 +436,29 @@ export class Dataworker {
             i,
             i + this.clients.configStoreClient.maxL1TokensPerPoolRebalanceLeaf
           );
+
+          // If the running balance is greater than the token transfer threshold, then set the net send amount
+          // equal to the running balance and reset the running balance to 0. Otherwise, the net send amount should be
+          // 0, indicating that we do not want the data worker to trigger a token transfer between hub pool and spoke
+          // pool when executing this leaf.
+          const getNetSendAmountOrRunningBalanceForL1Token = (
+            runningBalance: BigNumber,
+            l1Token: string,
+            getRunningBalance: boolean
+          ): BigNumber => {
+            if (getRunningBalance)
+              return runningBalance
+                .abs()
+                .lt(this.clients.configStoreClient.poolRebalanceTokenTransferThreshold[l1Token])
+                ? runningBalance
+                : toBN(0);
+            else
+              return runningBalance
+                .abs()
+                .gte(this.clients.configStoreClient.poolRebalanceTokenTransferThreshold[l1Token])
+                ? runningBalance
+                : toBN(0);
+          };
           leaves.push({
             groupIndex: groupIndexForChainId++,
             leafId: leaves.length,
@@ -444,10 +467,14 @@ export class Dataworker {
               ? l1TokensToIncludeInThisLeaf.map((l1Token) => realizedLpFees[chainId][l1Token])
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
             runningBalances: runningBalances[chainId]
-              ? l1TokensToIncludeInThisLeaf.map((l1Token) => runningBalances[chainId][l1Token])
+              ? l1TokensToIncludeInThisLeaf.map((l1Token) =>
+                  getNetSendAmountOrRunningBalanceForL1Token(runningBalances[chainId][l1Token], l1Token, true)
+                )
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
             netSendAmounts: runningBalances[chainId]
-              ? l1TokensToIncludeInThisLeaf.map((l1Token) => runningBalances[chainId][l1Token].mul(toBN(-1)))
+              ? l1TokensToIncludeInThisLeaf.map((l1Token) =>
+                  getNetSendAmountOrRunningBalanceForL1Token(runningBalances[chainId][l1Token], l1Token, false)
+                )
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
             l1Tokens: l1TokensToIncludeInThisLeaf,
           });
