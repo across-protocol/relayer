@@ -50,17 +50,17 @@ export class RootBundleProcessor {
           endingBlock
         ),
         this.hubPoolClient.hubPool.queryFilter(
-          this.hubPoolClient.hubPool.filters.ProposeRootBundleEvent(),
+          this.hubPoolClient.hubPool.filters.RootBundleExecutedEvent(),
           startingBlock,
           endingBlock
         ),
         this.hubPoolClient.hubPool.queryFilter(
-          this.hubPoolClient.hubPool.filters.ProposeRootBundleEvent(),
+          this.hubPoolClient.hubPool.filters.RootBundleDisputedEvent(),
           startingBlock,
           endingBlock
         ),
         this.hubPoolClient.hubPool.queryFilter(
-          this.hubPoolClient.hubPool.filters.ProposeRootBundleEvent(),
+          this.hubPoolClient.hubPool.filters.RootBundleCanceledEvent(),
           startingBlock,
           endingBlock
         ),
