@@ -6,7 +6,9 @@ export class ConfigStoreClient {
   // eslint-disable-next-line no-useless-constructor
   constructor(
     readonly logger: winston.Logger,
-    readonly maxRefundsPerLeaf: number = 25, // TODO: Fetch this programatically from ConfigStore contract eventually.
+    // TODO: Fetch these programatically from ConfigStore contract eventually
+    readonly maxRefundsPerRelayerRefundLeaf: number = 25,
+    readonly maxL1TokensPerPoolRebalanceLeaf: number = 25,
     readonly startingBlock: number = 0
   ) {}
 

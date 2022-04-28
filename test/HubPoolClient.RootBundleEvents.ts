@@ -30,7 +30,8 @@ describe("HubPoolClient: RootBundle Events", async function () {
   beforeEach(async function () {
     ({ hubPool, l1Token_1, l1Token_2, dataworker, timer } = await setupDataworker(
       ethers,
-      constants.MAX_REFUNDS_PER_LEAF
+      constants.MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
+      constants.MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF
     ));
     hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
   });

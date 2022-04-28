@@ -122,6 +122,56 @@ export async function deployAndConfigureHubPool(
   return { hubPool, mockAdapter, l1Token_1, l1Token_2 };
 }
 
+export async function deployNewTokenMapping(
+  l2TokenHolder: utils.SignerWithAddress,
+  l1TokenHolder: utils.SignerWithAddress,
+  spokePool: utils.Contract,
+  spokePoolDestination: utils.Contract,
+  rateModelStore: utils.Contract,
+  hubPool: utils.Contract,
+  amountToSeedLpPool: BigNumber
+) {
+  // Deploy L2 token and enable it for deposits:
+  const spokePoolChainId = await spokePool.chainId();
+  const l2Token = await (await utils.getContractFactory("ExpandedERC20", l2TokenHolder)).deploy("L2 Token", "L2", 18);
+  await l2Token.addMember(TokenRolesEnum.MINTER, l2TokenHolder.address);
+
+  // Deploy second L2 token that is destination chain's counterpart to L2 token.
+  const spokePoolDestinationChainId = await spokePoolDestination.chainId();
+  const l2TokenDestination = await (await utils.getContractFactory("ExpandedERC20", l2TokenHolder)).deploy("L2 Token Destination", "L2", 18);
+  await l2TokenDestination.addMember(TokenRolesEnum.MINTER, l2TokenHolder.address);
+
+  await utils.enableRoutes(spokePoolDestination, [
+    { originToken: l2TokenDestination.address, destinationChainId: spokePoolChainId },
+  ]);
+  await utils.enableRoutes(spokePool, [
+    { originToken: l2Token.address, destinationChainId: spokePoolDestinationChainId },
+  ]);
+
+  // Deploy L1 token and set as counterpart for L2 token:
+  const l1Token = await (await utils.getContractFactory("ExpandedERC20", l1TokenHolder)).deploy("L1 Token", "L1", 18);
+  await l1Token.addMember(TokenRolesEnum.MINTER, l1TokenHolder.address);
+  await enableRoutesOnHubPool(hubPool, [
+    { destinationChainId: spokePoolChainId, l1Token, destinationToken: l2Token },
+    { destinationChainId: spokePoolDestinationChainId, l1Token, destinationToken: l2TokenDestination },
+  ]);
+  await rateModelStore.updateRateModel(l1Token.address, JSON.stringify(sampleRateModel));
+
+  // Give signer initial balance and approve hub pool and spoke pool to pull funds from it
+  await addLiquidity(l1TokenHolder, hubPool, l1Token, amountToSeedLpPool);
+  await setupTokensForWallet(spokePool, l2TokenHolder, [l2Token, l2TokenDestination], null, 100);
+  await setupTokensForWallet(spokePoolDestination, l2TokenHolder, [l2TokenDestination, l2Token], null, 100);
+
+  // Set time to provider time so blockfinder can find block for deposit quote time.
+  await spokePool.setCurrentTime(await getLastBlockTime(spokePool.provider));
+  await spokePoolDestination.setCurrentTime(await getLastBlockTime(spokePoolDestination.provider));
+
+  return {
+    l2Token,
+    l1Token
+  }
+}
+
 export async function enableRoutesOnHubPool(
   hubPool: utils.Contract,
   rebalanceRouteTokens: { destinationChainId: number; l1Token: utils.Contract; destinationToken: utils.Contract }[]
@@ -252,9 +302,9 @@ export async function addLiquidity(
   amount: utils.BigNumber
 ) {
   await utils.seedWallet(signer, [l1Token], null, amount);
-  await l1Token.approve(hubPool.address, amount);
+  await l1Token.connect(signer).approve(hubPool.address, amount);
   await hubPool.enableL1TokenForLiquidityProvision(l1Token.address);
-  await hubPool.addLiquidity(l1Token.address, amount);
+  await hubPool.connect(signer).addLiquidity(l1Token.address, amount);
 }
 
 export async function contractAt(contractName: string, signer: utils.Signer, address: string) {

@@ -7,15 +7,12 @@ import { amountToLp, destinationChainId, originChainId, CHAIN_ID_TEST_LIST } fro
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 
-export const dataworkerFixture = hre.deployments.createFixture(async ({ ethers }, maxRefundLeaf: number) => {
-  return await setupDataworker(ethers, maxRefundLeaf);
-});
-
 // Sets up all contracts neccessary to build and execute leaves in dataworker merkle roots: relayer refund, slow relay,
 // and pool rebalance roots.
 export async function setupDataworker(
   ethers: any,
-  maxRefundLeaf: number
+  maxRefundPerRelayerRefundLeaf: number,
+  maxL1TokensPerPoolRebalanceLeaf: number
 ): Promise<{
   hubPool: Contract;
   spokePool_1: Contract;
@@ -24,6 +21,7 @@ export async function setupDataworker(
   erc20_2: Contract;
   l1Token_1: Contract;
   l1Token_2: Contract;
+  rateModelStore: Contract;
   timer: Contract;
   spokePoolClient_1: clients.SpokePoolClient;
   spokePoolClient_2: clients.SpokePoolClient;
@@ -81,7 +79,11 @@ export async function setupDataworker(
   const rateModelClient = new clients.RateModelClient(spyLogger, rateModelStore, hubPoolClient);
 
   const multiCallerClient = new clients.MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
-  const configStoreClient = new clients.ConfigStoreClient(spyLogger, maxRefundLeaf);
+  const configStoreClient = new clients.ConfigStoreClient(
+    spyLogger,
+    maxRefundPerRelayerRefundLeaf,
+    maxL1TokensPerPoolRebalanceLeaf
+  );
 
   const spokePoolClient_1 = new clients.SpokePoolClient(
     spyLogger,
@@ -136,6 +138,7 @@ export async function setupDataworker(
     erc20_2,
     l1Token_1,
     l1Token_2,
+    rateModelStore,
     timer: umaEcosystem.timer,
     spokePoolClient_1,
     spokePoolClient_2,

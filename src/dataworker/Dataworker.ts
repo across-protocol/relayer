@@ -228,7 +228,11 @@ export class Dataworker {
 
         // Create leaf for { repaymentChainId, L2TokenAddress }, split leaves into sub-leaves if there are too many
         // refunds.
-        for (let i = 0; i < sortedRefundAddresses.length; i += this.clients.configStoreClient.maxRefundsPerLeaf)
+        for (
+          let i = 0;
+          i < sortedRefundAddresses.length;
+          i += this.clients.configStoreClient.maxRefundsPerRelayerRefundLeaf
+        )
           relayerRefundLeaves.push({
             groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
             // L2 token address
@@ -236,9 +240,12 @@ export class Dataworker {
             chainId: Number(repaymentChainId),
             amountToReturn: toBN(0), // TODO: Derive amountToReturn
             l2TokenAddress,
-            refundAddresses: sortedRefundAddresses.slice(i, i + this.clients.configStoreClient.maxRefundsPerLeaf),
+            refundAddresses: sortedRefundAddresses.slice(
+              i,
+              i + this.clients.configStoreClient.maxRefundsPerRelayerRefundLeaf
+            ),
             refundAmounts: sortedRefundAddresses
-              .slice(i, i + this.clients.configStoreClient.maxRefundsPerLeaf)
+              .slice(i, i + this.clients.configStoreClient.maxRefundsPerRelayerRefundLeaf)
               .map((address) => refunds[address]),
           });
       });
@@ -264,10 +271,7 @@ export class Dataworker {
     return indexedLeaves.length > 0 ? buildRelayerRefundTree(indexedLeaves) : null;
   }
 
-  buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): {
-    runningBalances: RunningBalances;
-    realizedLpFees: RunningBalances;
-  } {
+  buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
     const { fillsToRefund, deposits, allValidFills } = this._loadData();
 
     // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
@@ -407,13 +411,56 @@ export class Dataworker {
       this._updateRunningBalanceForDeposit(runningBalances, deposit, deposit.amount.mul(toBN(-1)));
     });
 
-    // 6. Factor in MAX_POOL_REBALANCE_LEAF_SIZE
+    // 6. Create one leaf per L2 chain ID. First we'll create a leaf with all L1 tokens for each chain ID, and then
+    // we'll split up any leaves with too many L1 tokens.
+    const leaves = []
+    Object.keys(runningBalances)
+      // Leaves should be sorted by ascending chain ID
+      .sort((chainIdA, chainIdB) => Number(chainIdA) - Number(chainIdB))
+      .map((chainId: string) => {
+
+        // Sort addresses.
+        const sortedL1Tokens = Object.keys(runningBalances[chainId]).sort((addressA, addressB) => {
+          return compareAddresses(addressA, addressB);
+        })
+
+        // This begins at 0 and increments for each leaf for this { chainId, L1Token } combination.
+        let groupIndexForChainId = 0;
+
+        // Split addresses into multiple leaves if there are more L1 tokens than allowed per leaf.
+        for (
+          let i = 0;
+          i < sortedL1Tokens.length;
+          i += this.clients.configStoreClient.maxL1TokensPerPoolRebalanceLeaf
+        ) {
+          const l1TokensToIncludeInThisLeaf = sortedL1Tokens.slice(
+            i,
+            i + this.clients.configStoreClient.maxL1TokensPerPoolRebalanceLeaf
+          )
+          leaves.push({
+            groupIndex: groupIndexForChainId++, 
+            leafId: leaves.length,
+            chainId: Number(chainId),
+            bundleLpFees: realizedLpFees[chainId]
+              ? l1TokensToIncludeInThisLeaf.map((l1Token) => realizedLpFees[chainId][l1Token])
+              : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
+            runningBalances: runningBalances[chainId]
+              ? l1TokensToIncludeInThisLeaf.map((l1Token) => runningBalances[chainId][l1Token])
+              : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
+            netSendAmounts: runningBalances[chainId]
+              ? l1TokensToIncludeInThisLeaf.map((l1Token) => runningBalances[chainId][l1Token].mul(toBN(-1)))
+              : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
+            l1Tokens: l1TokensToIncludeInThisLeaf
+          });
+      }
+    })
 
     // TODO: Add helpful logs everywhere.
 
     return {
       runningBalances,
       realizedLpFees,
+      leaves
     };
   }
 
