@@ -1,17 +1,12 @@
-import { winston, assign, MerkleTree, toBN, compareAddresses, getRefundForFills, sortEventsDescending } from "../utils";
-import { RelayerRefundLeaf, RelayerRefundLeafWithGroup, buildRelayerRefundTree, buildSlowRelayTree } from "../utils";
-import { getRealizedLpFeeForFills, BigNumber } from "../utils";
-import {
-  FillsToRefund,
-  RelayData,
-  UnfilledDeposit,
-  Deposit,
-  DepositWithBlock,
-  Fill,
-  FillWithBlock,
-} from "../interfaces";
+import { winston, assign, MerkleTree, compareAddresses, getRefundForFills, sortEventsDescending } from "../utils";
+import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree } from "../utils";
+import { getRealizedLpFeeForFills, BigNumber, toBN } from "../utils";
+import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, DepositWithBlock } from "../interfaces";
+import { Fill, FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
 import { RunningBalances, BundleEvaluationBlockNumbers } from "../interfaces";
 import { DataworkerClients } from "../clients";
+
+// TODO!!!: Add helpful logs everywhere.
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -413,7 +408,7 @@ export class Dataworker {
 
     // 6. Create one leaf per L2 chain ID. First we'll create a leaf with all L1 tokens for each chain ID, and then
     // we'll split up any leaves with too many L1 tokens.
-    const leaves = [];
+    const leaves: PoolRebalanceLeaf[] = [];
     Object.keys(runningBalances)
       // Leaves should be sorted by ascending chain ID
       .sort((chainIdA, chainIdB) => Number(chainIdA) - Number(chainIdB))
@@ -481,12 +476,13 @@ export class Dataworker {
         }
       });
 
-    // TODO: Add helpful logs everywhere.
+    const tree = leaves.length > 0 ? buildPoolRebalanceLeafTree(leaves) : null;
 
     return {
       runningBalances,
       realizedLpFees,
       leaves,
+      tree,
     };
   }
 

@@ -2,6 +2,7 @@ import { buildSlowRelayTree, buildSlowRelayLeaves, buildFillForRepaymentChain } 
 import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
 import { buildRelayerRefundTreeWithUnassignedLeafIds, constructPoolRebalanceTree } from "./utils";
+import { buildPoolRebalanceLeafTree } from "./utils";
 import { ConfigStoreClient, HubPoolClient, RateModelClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, originChainId, mockTreeRoot } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
@@ -624,7 +625,7 @@ describe("Dataworker: Build merkle roots", async function () {
         dataworkerInstance.buildPoolRebalanceRoot([])
       );
     });
-    it("Many L1 tokens", async function () {
+    it("Many L1 tokens, testing leaf order and root construction", async function () {
       // In this test, each L1 token will have one deposit and fill associated with it.
       const depositsForL1Token: { [l1Token: string]: Deposit } = {};
       const fillsForL1Token: { [l1Token: string]: Fill } = {};
@@ -708,6 +709,12 @@ describe("Dataworker: Build merkle roots", async function () {
           return { ...leaf, leafId: i };
         });
       expect(merkleRoot1.leaves).to.deep.equal(expectedLeaves);
+      const expectedMerkleRoot = await buildPoolRebalanceLeafTree(
+        expectedLeaves.map((leaf) => {
+          return { ...leaf, chainId: toBN(leaf.chainId), groupIndex: toBN(leaf.groupIndex), leafId: toBN(leaf.leafId) };
+        })
+      );
+      expect(dataworkerInstance.buildPoolRebalanceRoot([]).tree.getHexRoot()).to.equal(expectedMerkleRoot.getHexRoot());
     });
     it("Token transfer exceeeds threshold", async function () {
       await updateAllClients();
