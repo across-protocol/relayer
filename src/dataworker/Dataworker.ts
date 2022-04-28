@@ -413,16 +413,15 @@ export class Dataworker {
 
     // 6. Create one leaf per L2 chain ID. First we'll create a leaf with all L1 tokens for each chain ID, and then
     // we'll split up any leaves with too many L1 tokens.
-    const leaves = []
+    const leaves = [];
     Object.keys(runningBalances)
       // Leaves should be sorted by ascending chain ID
       .sort((chainIdA, chainIdB) => Number(chainIdA) - Number(chainIdB))
       .map((chainId: string) => {
-
         // Sort addresses.
         const sortedL1Tokens = Object.keys(runningBalances[chainId]).sort((addressA, addressB) => {
           return compareAddresses(addressA, addressB);
-        })
+        });
 
         // This begins at 0 and increments for each leaf for this { chainId, L1Token } combination.
         let groupIndexForChainId = 0;
@@ -436,9 +435,9 @@ export class Dataworker {
           const l1TokensToIncludeInThisLeaf = sortedL1Tokens.slice(
             i,
             i + this.clients.configStoreClient.maxL1TokensPerPoolRebalanceLeaf
-          )
+          );
           leaves.push({
-            groupIndex: groupIndexForChainId++, 
+            groupIndex: groupIndexForChainId++,
             leafId: leaves.length,
             chainId: Number(chainId),
             bundleLpFees: realizedLpFees[chainId]
@@ -450,17 +449,17 @@ export class Dataworker {
             netSendAmounts: runningBalances[chainId]
               ? l1TokensToIncludeInThisLeaf.map((l1Token) => runningBalances[chainId][l1Token].mul(toBN(-1)))
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
-            l1Tokens: l1TokensToIncludeInThisLeaf
+            l1Tokens: l1TokensToIncludeInThisLeaf,
           });
-      }
-    })
+        }
+      });
 
     // TODO: Add helpful logs everywhere.
 
     return {
       runningBalances,
       realizedLpFees,
-      leaves
+      leaves,
     };
   }
 

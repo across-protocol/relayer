@@ -138,7 +138,9 @@ export async function deployNewTokenMapping(
 
   // Deploy second L2 token that is destination chain's counterpart to L2 token.
   const spokePoolDestinationChainId = await spokePoolDestination.chainId();
-  const l2TokenDestination = await (await utils.getContractFactory("ExpandedERC20", l2TokenHolder)).deploy("L2 Token Destination", "L2", 18);
+  const l2TokenDestination = await (
+    await utils.getContractFactory("ExpandedERC20", l2TokenHolder)
+  ).deploy("L2 Token Destination", "L2", 18);
   await l2TokenDestination.addMember(TokenRolesEnum.MINTER, l2TokenHolder.address);
 
   await utils.enableRoutes(spokePoolDestination, [
@@ -168,8 +170,8 @@ export async function deployNewTokenMapping(
 
   return {
     l2Token,
-    l1Token
-  }
+    l1Token,
+  };
 }
 
 export async function enableRoutesOnHubPool(
