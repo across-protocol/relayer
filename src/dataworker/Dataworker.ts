@@ -168,7 +168,6 @@ export class Dataworker {
     const { unfilledDeposits } = this._loadData();
     // TODO: Use `bundleBlockNumbers` to decide how to filter which blocks to keep in `unfilledDeposits`.
 
-    if (unfilledDeposits.length === 0) return null;
     const slowRelayLeaves: RelayData[] = unfilledDeposits.map(
       (deposit: UnfilledDeposit): RelayData => ({
         depositor: deposit.deposit.depositor,
@@ -185,13 +184,14 @@ export class Dataworker {
 
     // Sort leaves deterministically so that the same root is always produced from the same _loadData return value.
     // The { Deposit ID, origin chain ID } is guaranteed to be unique so we can sort on them.
-    const sortedLeaves = slowRelayLeaves.sort((relayA, relayB) => {
+    const sortedLeaves = [...slowRelayLeaves].sort((relayA, relayB) => {
       // Note: Smaller ID numbers will come first
       if (relayA.originChainId === relayB.originChainId) return relayA.depositId - relayB.depositId;
       else return relayA.originChainId - relayB.originChainId;
     });
 
-    return sortedLeaves.length > 0 ? buildSlowRelayTree(sortedLeaves) : null;
+    if (sortedLeaves.length === 0) throw new Error("Cannot build tree with zero leaves");
+    return buildSlowRelayTree(sortedLeaves);
   }
 
   async publishRoots(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
@@ -203,7 +203,6 @@ export class Dataworker {
 
   buildRelayerRefundRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): MerkleTree<RelayerRefundLeaf> | null {
     const { fillsToRefund } = this._loadData();
-    if (Object.keys(fillsToRefund).length === 0) return null;
 
     const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
 
@@ -263,7 +262,8 @@ export class Dataworker {
         return { ...leaf, leafId: i };
       });
 
-    return indexedLeaves.length > 0 ? buildRelayerRefundTree(indexedLeaves) : null;
+    if (indexedLeaves.length === 0) throw new Error("Cannot build tree with zero leaves");
+    return buildRelayerRefundTree(indexedLeaves);
   }
 
   buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
@@ -453,7 +453,8 @@ export class Dataworker {
         }
       });
 
-    const tree = leaves.length > 0 ? buildPoolRebalanceLeafTree(leaves) : null;
+    if (leaves.length === 0) throw new Error("Cannot build tree with zero leaves");
+    const tree = buildPoolRebalanceLeafTree(leaves);
 
     return {
       runningBalances,
@@ -499,12 +500,13 @@ export class Dataworker {
   // equal to the running balance and reset the running balance to 0. Otherwise, the net send amount should be
   // 0, indicating that we do not want the data worker to trigger a token transfer between hub pool and spoke
   // pool when executing this leaf.
-  _getNetSendAmounForL1Token(runningBalance: BigNumber, l1Token: string): BigNumber {
+  _getNetSendAmountForL1Token(runningBalance: BigNumber, l1Token: string): BigNumber {
     return runningBalance.abs().gte(this.clients.configStoreClient.poolRebalanceTokenTransferThreshold[l1Token])
       ? runningBalance
       : toBN(0);
   }
-  _getNetSendAmountForL1Token(runningBalance: BigNumber, l1Token: string): BigNumber {
+
+  _getRunningBalanceForL1Token(runningBalance: BigNumber, l1Token: string): BigNumber {
     return runningBalance.abs().lt(this.clients.configStoreClient.poolRebalanceTokenTransferThreshold[l1Token])
       ? runningBalance
       : toBN(0);

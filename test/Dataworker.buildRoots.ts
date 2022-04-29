@@ -49,12 +49,6 @@ describe("Dataworker: Build merkle roots", async function () {
       DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
     ));
   });
-  it("Default conditions", async function () {
-    // When given empty input data, returns null.
-    await updateAllClients();
-    expect(await dataworkerInstance.buildSlowRelayRoot([])).to.equal(null);
-    expect(await dataworkerInstance.buildRelayerRefundRoot([])).to.equal(null);
-  });
   it("Build slow relay root", async function () {
     await updateAllClients();
 
@@ -122,10 +116,11 @@ describe("Dataworker: Build merkle roots", async function () {
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit3, 1);
     await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit4, 1);
     await updateAllClients();
-    expect(dataworkerInstance.buildSlowRelayRoot([])).to.equal(null);
+    expect(() => dataworkerInstance.buildSlowRelayRoot([])).to.throw();
   });
   it("Build relayer refund root", async function () {
     await updateAllClients();
+    expect(() => dataworkerInstance.buildRelayerRefundRoot([])).to.throw();
 
     // Submit deposits for multiple L2 tokens.
     const deposit1 = await buildDeposit(
@@ -340,6 +335,7 @@ describe("Dataworker: Build merkle roots", async function () {
       };
 
       await updateAllClients();
+      expect(() => dataworkerInstance.buildPoolRebalanceRoot([])).to.throw();
 
       // Submit deposits for multiple L2 tokens.
       const deposit1 = await buildDeposit(
