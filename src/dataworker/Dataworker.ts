@@ -445,7 +445,7 @@ export class Dataworker {
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
             netSendAmounts: runningBalances[chainId]
               ? l1TokensToIncludeInThisLeaf.map((l1Token) =>
-                  this._getNetSendAmounForL1Token(runningBalances[chainId][l1Token], l1Token)
+                  this._getNetSendAmountForL1Token(runningBalances[chainId][l1Token], l1Token)
                 )
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
             l1Tokens: l1TokensToIncludeInThisLeaf,
@@ -504,7 +504,7 @@ export class Dataworker {
       ? runningBalance
       : toBN(0);
   }
-  _getRunningBalanceForL1Token(runningBalance: BigNumber, l1Token: string): BigNumber {
+  _getNetSendAmountForL1Token(runningBalance: BigNumber, l1Token: string): BigNumber {
     return runningBalance.abs().lt(this.clients.configStoreClient.poolRebalanceTokenTransferThreshold[l1Token])
       ? runningBalance
       : toBN(0);
