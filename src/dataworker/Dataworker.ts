@@ -302,7 +302,7 @@ export class Dataworker {
               1_000_000,
               Number(repaymentChainId),
               l1TokenCounterpart
-            ) || toBN(0);
+            );
 
           // totalRefundAmount won't exist for chains that only had slow fills, so we should explicitly check for it.
           if (fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount)

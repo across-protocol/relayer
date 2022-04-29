@@ -112,7 +112,7 @@ export class HubPoolClient {
     return endingBlockNumber;
   }
 
-  getRunningBalanceBeforeBlockForChain(block: number, chain: number, l1Token: string): BigNumber | undefined {
+  getRunningBalanceBeforeBlockForChain(block: number, chain: number, l1Token: string): BigNumber {
     // Search through ExecutedRootBundle events in descending block order so we find the most recent event not greater
     // than the target block.
     const mostRecentExecutedRootBundleEvent = sortEventsDescending(this.executedRootBundles).find(
@@ -135,7 +135,7 @@ export class HubPoolClient {
         .map((l1Token) => l1Token.toLowerCase())
         .indexOf(l1Token.toLowerCase());
       return mostRecentExecutedRootBundleEvent.runningBalances[indexOfL1Token];
-    }
+    } else return toBN(0);
   }
 
   async update() {
