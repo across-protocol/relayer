@@ -297,12 +297,11 @@ export class Dataworker {
           );
 
           // Start with latest RootBundleExecuted.runningBalance for {chainId, l1Token} combination if found.
-          const startingRunningBalance =
-            this.clients.hubPoolClient.getRunningBalanceBeforeBlockForChain(
-              1_000_000,
-              Number(repaymentChainId),
-              l1TokenCounterpart
-            );
+          const startingRunningBalance = this.clients.hubPoolClient.getRunningBalanceBeforeBlockForChain(
+            1_000_000,
+            Number(repaymentChainId),
+            l1TokenCounterpart
+          );
 
           // totalRefundAmount won't exist for chains that only had slow fills, so we should explicitly check for it.
           if (fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount)
@@ -441,12 +440,12 @@ export class Dataworker {
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
             runningBalances: runningBalances[chainId]
               ? l1TokensToIncludeInThisLeaf.map((l1Token) =>
-                  this._getNetSendAmountOrRunningBalanceForL1Token(runningBalances[chainId][l1Token], l1Token, true)
+                  this._getRunningBalanceForL1Token(runningBalances[chainId][l1Token], l1Token)
                 )
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
             netSendAmounts: runningBalances[chainId]
               ? l1TokensToIncludeInThisLeaf.map((l1Token) =>
-                  this._getNetSendAmountOrRunningBalanceForL1Token(runningBalances[chainId][l1Token], l1Token, false)
+                  this._getNetSendAmounForL1Token(runningBalances[chainId][l1Token], l1Token)
                 )
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
             l1Tokens: l1TokensToIncludeInThisLeaf,
@@ -500,19 +499,15 @@ export class Dataworker {
   // equal to the running balance and reset the running balance to 0. Otherwise, the net send amount should be
   // 0, indicating that we do not want the data worker to trigger a token transfer between hub pool and spoke
   // pool when executing this leaf.
-  _getNetSendAmountOrRunningBalanceForL1Token(
-    runningBalance: BigNumber,
-    l1Token: string,
-    getRunningBalance: boolean
-  ): BigNumber {
-    if (getRunningBalance)
-      return runningBalance.abs().lt(this.clients.configStoreClient.poolRebalanceTokenTransferThreshold[l1Token])
-        ? runningBalance
-        : toBN(0);
-    else
-      return runningBalance.abs().gte(this.clients.configStoreClient.poolRebalanceTokenTransferThreshold[l1Token])
-        ? runningBalance
-        : toBN(0);
+  _getNetSendAmounForL1Token(runningBalance: BigNumber, l1Token: string): BigNumber {
+    return runningBalance.abs().gte(this.clients.configStoreClient.poolRebalanceTokenTransferThreshold[l1Token])
+      ? runningBalance
+      : toBN(0);
+  }
+  _getRunningBalanceForL1Token(runningBalance: BigNumber, l1Token: string): BigNumber {
+    return runningBalance.abs().lt(this.clients.configStoreClient.poolRebalanceTokenTransferThreshold[l1Token])
+      ? runningBalance
+      : toBN(0);
   }
 
   _updateRunningBalance(runningBalances: RunningBalances, l2ChainId: number, l1Token: string, updateAmount: BigNumber) {
