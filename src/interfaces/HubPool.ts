@@ -32,6 +32,17 @@ export interface ProposedRootBundle {
   proposer: string;
 }
 
+export interface ExecutedRootBundle {
+  blockNumber: number;
+  chainId: number;
+  bundleLpFees: BigNumber[];
+  netSendAmounts: BigNumber[];
+  runningBalances: BigNumber[];
+  leafId: number;
+  l1Tokens: string[];
+  proof: string[];
+}
+
 export interface RelayerRefundLeafWithGroup extends RelayerRefundLeaf {
   groupIndex: number;
 }

@@ -1,12 +1,13 @@
-import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, toBN } from "../utils";
+import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, toBN, sortEventsDescending } from "../utils";
 import { spreadEvent, spreadEventWithBlockNumber } from "../utils";
-import { Deposit, L1Token, ProposedRootBundle } from "../interfaces";
+import { Deposit, L1Token, ProposedRootBundle, ExecutedRootBundle } from "../interfaces";
 
 export class HubPoolClient {
   // L1Token -> destinationChainId -> destinationToken
   private l1TokensToDestinationTokens: { [l1Token: string]: { [destinationChainId: number]: string } } = {};
   private l1Tokens: L1Token[] = []; // L1Tokens and their associated info.
   private proposedRootBundles: ProposedRootBundle[] = [];
+  private executedRootBundles: ExecutedRootBundle[] = [];
   private l1TokensToDestinationTokensWithBlock: {
     [l1Token: string]: { [destinationChainId: number]: [{ l2Token: string; block: number }] };
   } = {};
@@ -111,16 +112,44 @@ export class HubPoolClient {
     return endingBlockNumber;
   }
 
+  getRunningBalanceBeforeBlockForChain(block: number, chain: number, l1Token: string): BigNumber {
+    // Search through ExecutedRootBundle events in descending block order so we find the most recent event not greater
+    // than the target block.
+    const mostRecentExecutedRootBundleEvent = sortEventsDescending(this.executedRootBundles).find(
+      (executedLeaf: ExecutedRootBundle) => {
+        return (
+          executedLeaf.blockNumber <= block &&
+          executedLeaf.chainId === chain &&
+          executedLeaf.l1Tokens.map((l1Token) => l1Token.toLowerCase()).includes(l1Token.toLowerCase())
+        );
+      }
+    ) as ExecutedRootBundle;
+    if (mostRecentExecutedRootBundleEvent) {
+      // Arguably we don't need to even check these array lengths since we should assume that any proposed root bundle
+      // meets this condition.
+      if (
+        mostRecentExecutedRootBundleEvent.l1Tokens.length !== mostRecentExecutedRootBundleEvent.runningBalances.length
+      )
+        throw new Error("runningBalances and L1 token of ExecutedRootBundle event are not same length");
+      const indexOfL1Token = mostRecentExecutedRootBundleEvent.l1Tokens
+        .map((l1Token) => l1Token.toLowerCase())
+        .indexOf(l1Token.toLowerCase());
+      return mostRecentExecutedRootBundleEvent.runningBalances[indexOfL1Token];
+    } else return toBN(0);
+  }
+
   async update() {
     const searchConfig = [this.firstBlockToSearch, this.endingBlock || (await this.hubPool.provider.getBlockNumber())];
     this.logger.debug({ at: "HubPoolClient", message: "Updating client", searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
 
-    const [poolRebalanceRouteEvents, l1TokensLPEvents, proposeRootBundleEvents] = await Promise.all([
-      this.hubPool.queryFilter(this.hubPool.filters.SetPoolRebalanceRoute(), ...searchConfig),
-      this.hubPool.queryFilter(this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), ...searchConfig),
-      this.hubPool.queryFilter(this.hubPool.filters.ProposeRootBundle(), ...searchConfig),
-    ]);
+    const [poolRebalanceRouteEvents, l1TokensLPEvents, proposeRootBundleEvents, executedRootBundleEvents] =
+      await Promise.all([
+        this.hubPool.queryFilter(this.hubPool.filters.SetPoolRebalanceRoute(), ...searchConfig),
+        this.hubPool.queryFilter(this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), ...searchConfig),
+        this.hubPool.queryFilter(this.hubPool.filters.ProposeRootBundle(), ...searchConfig),
+        this.hubPool.queryFilter(this.hubPool.filters.RootBundleExecuted(), ...searchConfig),
+      ]);
 
     for (const event of poolRebalanceRouteEvents) {
       const args = spreadEvent(event);
@@ -147,9 +176,8 @@ export class HubPoolClient {
     );
     for (const info of tokenInfo) if (!this.l1Tokens.includes(info)) this.l1Tokens.push(info);
 
-    this.proposedRootBundles.push(
-      ...proposeRootBundleEvents.map((e): ProposedRootBundle => spreadEventWithBlockNumber(e))
-    );
+    this.proposedRootBundles.push(...proposeRootBundleEvents.map((event) => spreadEventWithBlockNumber(event)));
+    this.executedRootBundles.push(...executedRootBundleEvents.map((event) => spreadEventWithBlockNumber(event)));
 
     this.isUpdated = true;
     this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
