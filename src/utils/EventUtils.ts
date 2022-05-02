@@ -1,5 +1,5 @@
 import { Event } from "ethers";
-import { SortableEvent } from "../interfaces"
+import { SortableEvent } from "../interfaces";
 
 export function spreadEvent(event: Event) {
   const keys = Object.keys(event.args).filter((key: string) => isNaN(+key)); // Extract non-numeric keys.
