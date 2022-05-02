@@ -14,7 +14,7 @@ describe("ProfitClient: Price Retrieval", async function () {
     [owner] = await ethers.getSigners();
     ({ spy, spyLogger } = createSpyLogger());
 
-    hubPoolClient = new MockHubPoolClient(null, null);;
+    hubPoolClient = new MockHubPoolClient(null, null);
     profitClient = new ProfitClient(spyLogger, hubPoolClient, toBN(0));
   });
 
