@@ -11,6 +11,7 @@ export class SpokePoolClient {
   public isUpdated: boolean = false;
 
   public firstBlockToSearch: number;
+  public latestBlockNumber: number;
   public fillsWithBlockNumbers: FillWithBlock[] = [];
   public depositsWithBlockNumbers: { [DestinationChainId: number]: DepositWithBlock[] } = {};
 
@@ -121,7 +122,8 @@ export class SpokePoolClient {
   async update() {
     if (this.rateModelClient !== null && !this.rateModelClient.isUpdated) throw new Error("RateModel not updated");
 
-    const searchConfig = [this.firstBlockToSearch, this.endingBlock || (await this.getBlockNumber())];
+    this.latestBlockNumber = await this.getBlockNumber();
+    const searchConfig = [this.firstBlockToSearch, this.endingBlock || this.latestBlockNumber];
     this.log("debug", "Updating client", { searchConfig, spokePool: this.spokePool.address });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
 

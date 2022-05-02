@@ -8,6 +8,10 @@ import { DataworkerClients } from "../clients";
 
 // TODO!!!: Add helpful logs everywhere.
 
+// TODO: Need to handle case where there are multiple spoke pools for a chain ID in a given block range, which would
+// happen if a spoke pool was upgraded. Probably need to make spokePoolClients also keyed by block number in addition
+// to chain ID.
+
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
 export class Dataworker {
@@ -19,7 +23,7 @@ export class Dataworker {
   ) {}
 
   // Common data re-formatting logic shared across all data worker public functions.
-  _loadData(/* bundleBlockNumbers: BundleEvaluationBlockNumbers */): {
+  _loadData(blockRangesForChains: number[][]): {
     unfilledDeposits: UnfilledDeposit[];
     fillsToRefund: FillsToRefund;
     allValidFills: FillWithBlock[];
@@ -48,14 +52,20 @@ export class Dataworker {
         if (!destinationClient.isUpdated)
           throw new Error(`destination SpokePoolClient with chain ID ${destinationChainId} not updated`);
 
+        const blockRangeForChain = this._getBlockRangeForChain(blockRangesForChains, Number(destinationChainId));
+
         // Store all deposits, for use in constructing a pool rebalance root. Save deposits with their quote time block
-        // numbers so we can pull the L1 token counterparts for the quote timestamp.
+        // numbers so we can pull the L1 token counterparts for the quote timestamp. We don't filter deposits
+        // by block range, only fills.
         deposits.push(...originClient.getDepositsForDestinationChain(destinationChainId, true));
 
         // For each fill within the block range, look up associated deposit.
-        const fillsForOriginChain: FillWithBlock[] = destinationClient.getFillsWithBlockForOriginChain(
-          Number(originChainId)
-        );
+        const fillsForOriginChain: FillWithBlock[] = destinationClient
+          .getFillsWithBlockForOriginChain(Number(originChainId))
+          .filter(
+            (fill: FillWithBlock) =>
+              fill.blockNumber <= blockRangeForChain[1] && fill.blockNumber >= blockRangeForChain[0]
+          );
         this.logger.debug({
           at: "Dataworker",
           message: `Found ${fillsForOriginChain.length} fills for origin chain ${originChainId} on destination client ${destinationChainId}`,
@@ -69,7 +79,8 @@ export class Dataworker {
           const { blockNumber, transactionIndex, logIndex, ...fill } = fillWithBlock;
 
           if (matchedDeposit) {
-            // Fill was validated. Save it under all blocks with the block number so we can sort it by time.
+            // Fill was validated. Save it under all validated fills list with the block number so we can sort it by
+            // time.
             allValidFills.push(fillWithBlock);
 
             // Handle slow relay where repaymentChainId = 0. Slow relays always pay recipient on destination chain.
@@ -164,8 +175,8 @@ export class Dataworker {
     return { fillsToRefund, deposits, unfilledDeposits, allValidFills };
   }
 
-  buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): MerkleTree<RelayData> | null {
-    const { unfilledDeposits } = this._loadData();
+  buildSlowRelayRoot(blockRangesForChains: number[][]): MerkleTree<RelayData> | null {
+    const { unfilledDeposits } = this._loadData(blockRangesForChains);
     // TODO: Use `bundleBlockNumbers` to decide how to filter which blocks to keep in `unfilledDeposits`.
 
     const slowRelayLeaves: RelayData[] = unfilledDeposits.map(
@@ -195,14 +206,12 @@ export class Dataworker {
   }
 
   async publishRoots(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
-    const slowRelayRoot = await this.buildSlowRelayRoot(bundleBlockNumbers);
-
     // TODO: Store root to be consumed by manual leaf executors and verifiers. Can also be used to track lifecyle
     // of roots.
   }
 
-  buildRelayerRefundRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): MerkleTree<RelayerRefundLeaf> | null {
-    const { fillsToRefund } = this._loadData();
+  buildRelayerRefundRoot(blockRangesForChains: number[][]): MerkleTree<RelayerRefundLeaf> | null {
+    const { fillsToRefund } = this._loadData(blockRangesForChains);
 
     const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
 
@@ -266,8 +275,8 @@ export class Dataworker {
     return buildRelayerRefundTree(indexedLeaves);
   }
 
-  buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
-    const { fillsToRefund, deposits, allValidFills } = this._loadData();
+  buildPoolRebalanceRoot(blockRangesForChains: number[][]) {
+    const { fillsToRefund, deposits, allValidFills } = this._loadData(blockRangesForChains);
 
     // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
     // slow relay refunds. They are decreased by the amount of funds already held by the SpokePool. Balances are keyed
@@ -283,12 +292,10 @@ export class Dataworker {
     if (Object.keys(fillsToRefund).length > 0) {
       Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
         Object.keys(fillsToRefund[repaymentChainId]).forEach((l2TokenAddress: string) => {
-          // TODO: Change this last param to be equal to the ending block for the repayment chain ID. For now, set it
-          // to some unrealistically high number so we always get the latest L1 token counterpart.
           const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpartAtBlock(
             repaymentChainId,
             l2TokenAddress,
-            1_000_000
+            this._getBlockRangeForChain(blockRangesForChains, Number(repaymentChainId))[1]
           );
           assign(
             realizedLpFees,
@@ -298,7 +305,7 @@ export class Dataworker {
 
           // Start with latest RootBundleExecuted.runningBalance for {chainId, l1Token} combination if found.
           const startingRunningBalance = this.clients.hubPoolClient.getRunningBalanceBeforeBlockForChain(
-            1_000_000,
+            this._getBlockRangeForChain(blockRangesForChains, Number(repaymentChainId))[1],
             Number(repaymentChainId),
             l1TokenCounterpart
           );
@@ -464,10 +471,27 @@ export class Dataworker {
     };
   }
 
-  async proposeRootBundle(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
-    // Create roots
-    // Store root + auxillary information useful for executing leaves on some storage layer
-    // Propose roots to HubPool contract.
+  async proposeRootBundle() {
+    // 1. Construct a list of ending block ranges for each chain that we want to include
+    // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
+    // list, and the order of chain ID's is hardcoded in the ConfigStore client.
+    const blockRangesForProposal = this.chainIdListForBundleEvaluationBlockNumbers.map((chainId: number) => [
+      this.clients.hubPoolClient.getNextBundleStartBlockNumber(
+        this.chainIdListForBundleEvaluationBlockNumbers,
+        this.clients.hubPoolClient.latestBlockNumber,
+        chainId
+      ),
+      this.clients.spokePoolClients[chainId].latestBlockNumber,
+    ]);
+
+    // TODO:
+    // 2. Create roots
+    this.buildPoolRebalanceRoot(blockRangesForProposal);
+    this.buildRelayerRefundRoot(blockRangesForProposal);
+    this.buildSlowRelayRoot(blockRangesForProposal);
+
+    // 3. Store root + auxillary information somewhere useful for executing leaves
+    // 4. Propose roots to HubPool contract.
   }
 
   async validateRootBundle(
@@ -476,10 +500,7 @@ export class Dataworker {
     relayerRefundRoot: string,
     slowRelayRoot: string
   ) {
-    this._loadData();
-
     // Look at latest propose root bundle event earlier than a block number
-
     // Construct roots locally using class functions and compare with the event we found earlier.
     // If any roots mismatch, pinpoint the errors to give details to the caller.
   }
@@ -562,5 +583,14 @@ export class Dataworker {
       (fill: FillWithBlock) =>
         !fill.isSlowRelay && lastBlock >= fill.blockNumber && this._filledSameDeposit(fillToMatch, fill)
     ) as FillWithBlock;
+  }
+
+  _getBlockRangeForChain(blockRange: number[][], chain: number): number[] {
+    const indexForChain = this.chainIdListForBundleEvaluationBlockNumbers.indexOf(chain);
+    if (indexForChain === -1) throw new Error(`Could not find chain ${chain} in chain ID list ${blockRange}`);
+    const blockRangeForChain = blockRange[indexForChain];
+    if (!blockRangeForChain || blockRangeForChain.length !== 2)
+      throw new Error(`Invalid block range for chain ${chain}`);
+    return blockRangeForChain;
   }
 }
