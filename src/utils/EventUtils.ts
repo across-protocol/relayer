@@ -37,3 +37,17 @@ export interface EventSearchConfig {
   toBlock: number | null;
   maxBlockLookBack: number;
 }
+export function spreadEventWithBlockNumber(event: Event) {
+  return {
+    ...spreadEvent(event),
+    blockNumber: event.blockNumber,
+  };
+}
+
+export function sortEventsAscending(events: { blockNumber: number }[]): { blockNumber: number }[] {
+  return [...events].sort((ex, ey) => ex.blockNumber - ey.blockNumber);
+}
+
+export function sortEventsDescending(events: { blockNumber: number }[]): { blockNumber: number }[] {
+  return [...events].sort((ex, ey) => ey.blockNumber - ex.blockNumber);
+}

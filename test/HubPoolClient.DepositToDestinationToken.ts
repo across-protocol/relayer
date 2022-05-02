@@ -1,6 +1,6 @@
 import { getContractFactory, expect, ethers, Contract, SignerWithAddress, originChainId } from "./utils";
 import { zeroAddress, destinationChainId, toBN, deployRateModelStore, contractAt, createSpyLogger } from "./utils";
-import { randomLl1Token, randomOriginToken, randomDestinationToken, randomDestinationToken2 } from "./constants";
+import { randomL1Token, randomOriginToken, randomDestinationToken, randomDestinationToken2 } from "./constants";
 import { HubPoolClient } from "../src/clients";
 
 let hubPool: Contract, lpTokenFactory: Contract, mockAdapter: Contract, rateModelStore: Contract;
@@ -20,7 +20,7 @@ describe("HubPoolClient: Deposit to Destination Token", async function () {
     mockAdapter = await (await getContractFactory("Mock_Adapter", owner)).deploy();
     await hubPool.setCrossChainContracts(originChainId, mockAdapter.address, zeroAddress);
 
-    ({ rateModelStore } = await deployRateModelStore(owner, [await contractAt("ERC20", owner, randomLl1Token)]));
+    ({ rateModelStore } = await deployRateModelStore(owner, [await contractAt("ERC20", owner, randomL1Token)]));
 
     hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
   });
@@ -29,11 +29,11 @@ describe("HubPoolClient: Deposit to Destination Token", async function () {
     await hubPoolClient.update();
     expect(hubPoolClient.getL1TokensToDestinationTokens()).to.deep.equal({});
 
-    await hubPool.setPoolRebalanceRoute(destinationChainId, randomLl1Token, randomDestinationToken);
-    await hubPool.setPoolRebalanceRoute(originChainId, randomLl1Token, randomOriginToken);
+    await hubPool.setPoolRebalanceRoute(destinationChainId, randomL1Token, randomDestinationToken);
+    await hubPool.setPoolRebalanceRoute(originChainId, randomL1Token, randomOriginToken);
     await hubPoolClient.update();
     expect(hubPoolClient.getL1TokensToDestinationTokens()).to.deep.equal({
-      [randomLl1Token]: { [destinationChainId]: randomDestinationToken, [originChainId]: randomOriginToken },
+      [randomL1Token]: { [destinationChainId]: randomDestinationToken, [originChainId]: randomOriginToken },
     });
 
     const depositData = {
@@ -52,12 +52,32 @@ describe("HubPoolClient: Deposit to Destination Token", async function () {
     expect(hubPoolClient.getDestinationTokenForDeposit(depositData)).to.equal(randomDestinationToken);
 
     // Now try changing the destination token. Client should correctly handel this.
-    await hubPool.setPoolRebalanceRoute(destinationChainId, randomLl1Token, randomDestinationToken2);
+    await hubPool.setPoolRebalanceRoute(destinationChainId, randomL1Token, randomDestinationToken2);
     await hubPoolClient.update();
     expect(hubPoolClient.getL1TokensToDestinationTokens()).to.deep.equal({
-      [randomLl1Token]: { [destinationChainId]: randomDestinationToken2, [originChainId]: randomOriginToken },
+      [randomL1Token]: { [destinationChainId]: randomDestinationToken2, [originChainId]: randomOriginToken },
     });
 
     expect(hubPoolClient.getDestinationTokenForDeposit(depositData)).to.equal(randomDestinationToken2);
+  });
+  it("Get L1 token counterparts at block height", async function () {
+    await hubPoolClient.update();
+    expect(() =>
+      hubPoolClient.getL1TokenCounterpartAtBlock(destinationChainId.toString(), randomDestinationToken, 0)
+    ).to.throw(/Could not find L1 token mapping/);
+
+    await hubPool.setPoolRebalanceRoute(destinationChainId, randomL1Token, randomDestinationToken);
+    const currentBlock = await hubPool.provider.getBlockNumber();
+    await hubPoolClient.update();
+    expect(
+      hubPoolClient.getL1TokenCounterpartAtBlock(destinationChainId.toString(), randomDestinationToken, currentBlock)
+    ).to.equal(randomL1Token);
+    expect(() =>
+      hubPoolClient.getL1TokenCounterpartAtBlock(
+        destinationChainId.toString(),
+        randomDestinationToken,
+        currentBlock - 10
+      )
+    ).to.throw(/Could not find L1 token mapping/);
   });
 });

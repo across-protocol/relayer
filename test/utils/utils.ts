@@ -10,8 +10,8 @@ import { HubPoolClient } from "../../src/clients/HubPoolClient";
 
 import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber } from "./index";
 import { amountToDeposit, depositRelayerFeePct } from "../constants";
-import { Deposit, Fill } from "../../src/interfaces/SpokePool";
-import { toBNWei } from "../../src/utils";
+import { Deposit, Fill, RunningBalances } from "../../src/interfaces/SpokePool";
+import { buildRelayerRefundTree, toBN, toBNWei } from "../../src/utils";
 
 import winston from "winston";
 import sinon from "sinon";
@@ -28,7 +28,7 @@ export function assertPromiseError(promise: Promise<any>, errMessage?: string) {
 }
 
 export async function setupTokensForWallet(
-  spokePool: utils.Contract,
+  contractToApprove: utils.Contract,
   wallet: utils.SignerWithAddress,
   tokens: utils.Contract[],
   weth?: utils.Contract,
@@ -36,15 +36,18 @@ export async function setupTokensForWallet(
 ) {
   await utils.seedWallet(wallet, tokens, weth, utils.amountToSeedWallets.mul(seedMultiplier));
   await Promise.all(
-    tokens.map((token) => token.connect(wallet).approve(spokePool.address, utils.amountToDeposit.mul(seedMultiplier)))
+    tokens.map((token) =>
+      token.connect(wallet).approve(contractToApprove.address, utils.amountToDeposit.mul(seedMultiplier))
+    )
   );
-  if (weth) await weth.connect(wallet).approve(spokePool.address, utils.amountToDeposit);
+  if (weth) await weth.connect(wallet).approve(contractToApprove.address, utils.amountToDeposit);
 }
 
 export function createSpyLogger() {
   const spy = sinon.spy();
   const spyLogger = winston.createLogger({
     level: "debug",
+    format: winston.format.combine(winston.format(bigNumberFormatter)(), winston.format.json()),
     transports: [
       new SpyTransport({ level: "debug" }, { spy }),
       process.env.LOG_IN_TEST ? new winston.transports.Console() : null,
@@ -53,6 +56,23 @@ export function createSpyLogger() {
 
   return { spy, spyLogger };
 }
+
+// TODO: remove this when we've accessed it from UMA protocol FPL: https://github.com/UMAprotocol/protocol/pull/3878
+export function bigNumberFormatter(logEntry: any) {
+  try {
+    iterativelyReplaceBigNumbers(logEntry);
+  } catch (_) {
+    return logEntry;
+  }
+  return logEntry;
+}
+
+const iterativelyReplaceBigNumbers = (obj: any) => {
+  Object.keys(obj).forEach((key) => {
+    if (BigNumber.isBigNumber(obj[key])) obj[key] = obj[key].toString();
+    else if (typeof obj[key] === "object" && obj[key] !== null) iterativelyReplaceBigNumbers(obj[key]);
+  });
+};
 
 export async function deploySpokePoolWithToken(
   fromChainId: number = 0,
@@ -79,12 +99,14 @@ export async function deployRateModelStore(signer: utils.SignerWithAddress, toke
 
 export async function deployAndConfigureHubPool(
   signer: utils.SignerWithAddress,
-  spokePools: { l2ChainId: number; spokePool: utils.Contract }[]
+  spokePools: { l2ChainId: number; spokePool: utils.Contract }[],
+  finderAddress: string = zeroAddress,
+  timerAddress: string = zeroAddress
 ) {
   const lpTokenFactory = await (await utils.getContractFactory("LpTokenFactory", signer)).deploy();
   const hubPool = await (
     await utils.getContractFactory("HubPool", signer)
-  ).deploy(lpTokenFactory.address, zeroAddress, zeroAddress, zeroAddress);
+  ).deploy(lpTokenFactory.address, finderAddress, zeroAddress, timerAddress);
 
   const mockAdapter = await (await utils.getContractFactory("Mock_Adapter", signer)).deploy();
 
@@ -254,7 +276,8 @@ export async function buildDepositStruct(
   return {
     ...deposit,
     destinationToken: hubPoolClient.getDestinationTokenForDeposit(deposit),
-    realizedLpFeePct: await rateModelClient.computeRealizedLpFeePct(deposit, l1TokenForDepositedToken.address),
+    realizedLpFeePct: (await rateModelClient.computeRealizedLpFeePct(deposit, l1TokenForDepositedToken.address))
+      .realizedLpFeePct,
   };
 }
 export async function buildDeposit(
@@ -377,12 +400,13 @@ export async function buildFillForRepaymentChain(
   relayer: SignerWithAddress,
   depositToFill: Deposit,
   pctOfDepositToFill: number,
-  repaymentChainId: number
+  repaymentChainId: number,
+  destinationToken: string = depositToFill.destinationToken
 ): Promise<Fill> {
   const relayDataFromDeposit = {
     depositor: depositToFill.depositor,
     recipient: depositToFill.recipient,
-    destinationToken: depositToFill.destinationToken,
+    destinationToken,
     amount: depositToFill.amount,
     originChainId: depositToFill.originChainId.toString(),
     destinationChainId: depositToFill.destinationChainId.toString(),
@@ -425,4 +449,93 @@ export async function buildFillForRepaymentChain(
       destinationChainId: Number(destinationChainId),
     };
   else return null;
+}
+
+// Returns expected leaves ordered by origin chain ID and then deposit ID(ascending). Ordering is implemented
+// same way that dataworker orders them.
+export function buildSlowRelayLeaves(deposits: Deposit[]) {
+  return deposits
+    .map((_deposit) => {
+      return {
+        depositor: _deposit.depositor,
+        recipient: _deposit.recipient,
+        destinationToken: _deposit.destinationToken,
+        amount: _deposit.amount,
+        originChainId: _deposit.originChainId.toString(),
+        destinationChainId: _deposit.destinationChainId.toString(),
+        realizedLpFeePct: _deposit.realizedLpFeePct,
+        relayerFeePct: _deposit.relayerFeePct,
+        depositId: _deposit.depositId.toString(),
+      };
+    }) // leaves should be ordered by origin chain ID and then deposit ID (ascending).
+    .sort((relayA, relayB) => {
+      if (relayA.originChainId !== relayB.originChainId)
+        return Number(relayA.originChainId) - Number(relayB.originChainId);
+      else return Number(relayA.depositId) - Number(relayB.depositId);
+    });
+}
+
+// Adds `leafId` to incomplete input `leaves` and then constructs a relayer refund leaf tree.
+export async function buildRelayerRefundTreeWithUnassignedLeafIds(
+  leaves: {
+    chainId: number;
+    amountToReturn: BigNumber;
+    l2TokenAddress: string;
+    refundAddresses: string[];
+    refundAmounts: BigNumber[];
+  }[]
+) {
+  return await buildRelayerRefundTree(
+    leaves.map((leaf, id) => {
+      return { ...leaf, leafId: id };
+    })
+  );
+}
+
+export async function constructPoolRebalanceTree(runningBalances: RunningBalances, realizedLpFees: RunningBalances) {
+  const leaves = utils.buildPoolRebalanceLeaves(
+    Object.keys(runningBalances).map((x) => Number(x)), // Where funds are getting sent.
+    Object.values(runningBalances).map((runningBalanceForL1Token) => Object.keys(runningBalanceForL1Token)), // l1Tokens.
+    Object.values(realizedLpFees).map((realizedLpForL1Token) => Object.values(realizedLpForL1Token)), // bundleLpFees.
+    Object.values(runningBalances).map((runningBalanceForL1Token) =>
+      Object.values(runningBalanceForL1Token).map((x: BigNumber) => x.mul(toBN(-1)))
+    ), // netSendAmounts.
+    Object.values(runningBalances).map((runningBalanceForL1Token) => Object.values(runningBalanceForL1Token)), // runningBalances.
+    Object.keys(runningBalances).map((_) => 0) // group index
+  );
+  const tree = await utils.buildPoolRebalanceLeafTree(leaves);
+
+  return { leaves, tree };
+}
+
+export async function buildSlowFill(
+  spokePool: Contract,
+  lastFillForDeposit: Fill,
+  relayer: SignerWithAddress,
+  proof: string[],
+  rootBundleId: string = "0"
+): Promise<Fill> {
+  await spokePool
+    .connect(relayer)
+    .executeSlowRelayLeaf(
+      lastFillForDeposit.depositor,
+      lastFillForDeposit.recipient,
+      lastFillForDeposit.destinationToken,
+      lastFillForDeposit.amount.toString(),
+      lastFillForDeposit.originChainId.toString(),
+      lastFillForDeposit.realizedLpFeePct.toString(),
+      lastFillForDeposit.relayerFeePct.toString(),
+      lastFillForDeposit.depositId.toString(),
+      rootBundleId,
+      proof
+    );
+  return {
+    ...lastFillForDeposit,
+    totalFilledAmount: lastFillForDeposit.amount, // Slow relay always fully fills deposit
+    fillAmount: lastFillForDeposit.amount.sub(lastFillForDeposit.totalFilledAmount), // Fills remaining after latest fill for deposit
+    repaymentChainId: 0, // Always set to 0 for slow fills
+    appliedRelayerFeePct: toBN(0), // Always set to 0 since there was no relayer
+    isSlowRelay: true,
+    relayer: relayer.address, // Set to caller of `executeSlowRelayLeaf`
+  };
 }

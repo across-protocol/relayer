@@ -1,9 +1,10 @@
 // Utils from other packages.
 import winston from "winston";
-export { winston };
+import assert from "assert";
+export { winston, assert };
 export { delay } from "@uma/financial-templates-lib";
 export { BigNumber, Signer, Contract, ContractFactory, Transaction } from "ethers";
-export { utils, BaseContract, Event, Wallet, EventFilter } from "ethers";
+export { utils, BaseContract, Event, Wallet, EventFilter, providers } from "ethers";
 export { ethers } from "ethers";
 export type { Block } from "@ethersproject/abstract-provider";
 
@@ -20,6 +21,8 @@ export * from "./NetworkUtils";
 export * from "./TransactionUtils";
 export * from "./MerkleTreeUtils";
 export * from "./AddressUtils";
+export * from "./FillMathUtils";
+export * from "./GckmsUtils";
 
 export { ZERO_ADDRESS, MAX_SAFE_ALLOWANCE } from "@uma/common";
 

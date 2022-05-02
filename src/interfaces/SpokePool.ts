@@ -14,6 +14,10 @@ export interface Deposit {
   destinationToken?: string; // appended after initialization (not part of Deposit event).
   speedUpSignature?: string | undefined; // appended after initialization, if deposit was speedup (not part of Deposit event).
 }
+
+export interface DepositWithBlock extends Deposit {
+  blockNumber: number;
+}
 export interface Fill {
   amount: BigNumber;
   totalFilledAmount: BigNumber;
@@ -32,6 +36,9 @@ export interface Fill {
   destinationChainId: number;
 }
 
+export interface FillWithBlock extends Fill {
+  blockNumber: number;
+}
 export interface SpeedUp {
   depositor: string;
   depositorSignature: string;
@@ -73,5 +80,18 @@ export interface UnfilledDeposit {
   hasFirstPartialFill?: boolean;
 }
 export interface FillsToRefund {
-  [repaymentChainId: number]: { [l2TokenAddress: string]: Fill[] };
+  [repaymentChainId: number]: {
+    [l2TokenAddress: string]: {
+      fills: Fill[];
+      refunds?: { [refundAddress: string]: BigNumber };
+      totalRefundAmount: BigNumber;
+      realizedLpFees: BigNumber;
+    };
+  };
+}
+
+export interface RunningBalances {
+  [repaymentChainId: number]: {
+    [l1TokenAddress: string]: BigNumber;
+  };
 }

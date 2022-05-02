@@ -24,7 +24,10 @@ export class RateModelClient {
     this.rateModelDictionary = new across.rateModel.RateModelDictionary();
   }
 
-  async computeRealizedLpFeePct(deposit: Deposit, l1Token: string): Promise<BigNumber> {
+  async computeRealizedLpFeePct(
+    deposit: Deposit,
+    l1Token: string
+  ): Promise<{ realizedLpFeePct: BigNumber; quoteBlock: number }> {
     // The below is a temp work around to deal with the incorrect deployment that was done on all test nets. If the rate
     // model store is deployed after the a fill is done then some calls to this method will fail, resulting in an error.
     // For test nets we can just work around this by using the latest block number.
@@ -35,7 +38,7 @@ export class RateModelClient {
       rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
     } catch (error) {
       if ((await this.hubPoolClient.hubPool.provider.getNetwork()).chainId === 1)
-        throw new error("Bad rate model store deployment");
+        throw new Error("Bad rate model store deployment");
 
       quoteBlock = await this.blockFinder.getLatestBlock().number;
       rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
@@ -55,7 +58,7 @@ export class RateModelClient {
       realizedLpFeePct,
     });
 
-    return realizedLpFeePct;
+    return { realizedLpFeePct, quoteBlock };
   }
 
   getRateModelForBlockNumber(l1Token: string, blockNumber: number | undefined = undefined): across.constants.RateModel {
@@ -68,8 +71,8 @@ export class RateModelClient {
       toBlock: this.eventSearchConfig.toBlock || (await this.rateModelStore.provider.getBlockNumber()),
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
-
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than
+    if (this.hubPoolClient !== null && !this.hubPoolClient.isUpdated) throw new Error("HubPool not updated");
 
     this.logger.debug({ at: "RateModelClient", message: "Updating client", searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.

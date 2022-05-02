@@ -1,5 +1,5 @@
-import { randomAddress, toWei } from "./utils";
-export const randomLl1Token = randomAddress();
+import { randomAddress, toWei, originChainId, destinationChainId, repaymentChainId } from "./utils";
+export const randomL1Token = randomAddress();
 export const randomOriginToken = randomAddress();
 export const randomDestinationToken = randomAddress();
 export const randomDestinationToken2 = randomAddress();
@@ -14,6 +14,8 @@ export const sampleRateModel = {
   R1: toWei(0.07).toString(),
   R2: toWei(0.75).toString(),
 };
+
+export const CHAIN_ID_TEST_LIST = [originChainId, destinationChainId, repaymentChainId];
 
 export const baseSpeedUpString = "ACROSS-V2-FEE-1.0";
 
