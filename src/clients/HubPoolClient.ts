@@ -176,8 +176,12 @@ export class HubPoolClient {
     );
     for (const info of tokenInfo) if (!this.l1Tokens.includes(info)) this.l1Tokens.push(info);
 
-    this.proposedRootBundles.push(...proposeRootBundleEvents.map((event) => spreadEventWithBlockNumber(event)));
-    this.executedRootBundles.push(...executedRootBundleEvents.map((event) => spreadEventWithBlockNumber(event)));
+    this.proposedRootBundles.push(
+      ...proposeRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as ProposedRootBundle)
+    );
+    this.executedRootBundles.push(
+      ...executedRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as ExecutedRootBundle)
+    );
 
     this.isUpdated = true;
     this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.

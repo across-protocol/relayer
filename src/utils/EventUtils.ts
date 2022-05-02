@@ -1,4 +1,5 @@
 import { Event } from "ethers";
+import { SortableEvent } from "../interfaces"
 
 export function spreadEvent(event: Event) {
   const keys = Object.keys(event.args).filter((key: string) => isNaN(+key)); // Extract non-numeric keys.
@@ -17,17 +18,27 @@ export function spreadEvent(event: Event) {
   return returnedObject;
 }
 
-export function spreadEventWithBlockNumber(event: Event) {
+export function spreadEventWithBlockNumber(event: Event): SortableEvent {
   return {
     ...spreadEvent(event),
     blockNumber: event.blockNumber,
+    transactionIndex: event.transactionIndex,
+    logIndex: event.logIndex,
   };
 }
 
-export function sortEventsAscending(events: { blockNumber: number }[]): { blockNumber: number }[] {
-  return [...events].sort((ex, ey) => ex.blockNumber - ey.blockNumber);
+export function sortEventsAscending(events: SortableEvent[]): SortableEvent[] {
+  return [...events].sort((ex, ey) => {
+    if (ex.blockNumber !== ey.blockNumber) return ex.blockNumber - ey.blockNumber;
+    if (ex.transactionIndex !== ey.transactionIndex) return ex.transactionIndex - ey.transactionIndex;
+    return ex.logIndex - ey.logIndex;
+  });
 }
 
-export function sortEventsDescending(events: { blockNumber: number }[]): { blockNumber: number }[] {
-  return [...events].sort((ex, ey) => ey.blockNumber - ex.blockNumber);
+export function sortEventsDescending(events: SortableEvent[]): SortableEvent[] {
+  return [...events].sort((ex, ey) => {
+    if (ex.blockNumber !== ey.blockNumber) return ey.blockNumber - ex.blockNumber;
+    if (ex.transactionIndex !== ey.transactionIndex) return ey.transactionIndex - ex.transactionIndex;
+    return ey.logIndex - ex.logIndex;
+  });
 }

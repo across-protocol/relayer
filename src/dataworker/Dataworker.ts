@@ -65,8 +65,8 @@ export class Dataworker {
 
         fillsForOriginChain.forEach((fillWithBlock) => {
           const matchedDeposit: Deposit = originClient.getDepositForFill(fillWithBlock);
-          // Now create a copy of fill with blockNumber removed.
-          const { blockNumber, ...fill } = fillWithBlock;
+          // Now create a copy of fill with block data removed.
+          const { blockNumber, transactionIndex, logIndex, ...fill } = fillWithBlock;
 
           if (matchedDeposit) {
             // Fill was validated. Save it under all blocks with the block number so we can sort it by time.
@@ -478,8 +478,10 @@ export class Dataworker {
   ) {
     this._loadData();
 
-    // Construct roots locally using class functions and compare with input roots.
-    // If any roots mismatch, efficiently pinpoint the errors to give details to the caller.
+    // Look at latest propose root bundle event earlier than a block number
+
+    // Construct roots locally using class functions and compare with the event we found earlier.
+    // If any roots mismatch, pinpoint the errors to give details to the caller.
   }
 
   async executeSlowRelayLeaves(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
