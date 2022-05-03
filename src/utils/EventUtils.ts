@@ -35,7 +35,7 @@ export function sortEventsAscending<T extends SortableEvent>(events: T[]): T[] {
   });
 }
 
-export function sortEventsDescending(events: SortableEvent[]): SortableEvent[] {
+export function sortEventsDescending<T extends SortableEvent>(events: T[]): T[] {
   return [...events].sort((ex, ey) => {
     if (ex.blockNumber !== ey.blockNumber) return ey.blockNumber - ex.blockNumber;
     if (ex.transactionIndex !== ey.transactionIndex) return ey.transactionIndex - ex.transactionIndex;
