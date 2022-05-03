@@ -215,33 +215,31 @@ describe("HubPoolClient: RootBundle Events", async function () {
     // No ProposeRootBundle events before block.
     expect(hubPoolClient.getNextBundleStartBlockNumber(chainIdList, 0, chainIdList[0])).to.equal(0);
   });
-  it("gets most recent CrossChainContractsSet event for chainID", async function() {
+  it("gets most recent CrossChainContractsSet event for chainID", async function () {
     const adapter = randomAddress();
     const spokePool1 = randomAddress();
-    const spokePool2 = randomAddress(); 
-    await hubPool
-      .connect(owner)
-      .setCrossChainContracts([11], adapter, spokePool1);
+    const spokePool2 = randomAddress();
+    await hubPool.connect(owner).setCrossChainContracts([11], adapter, spokePool1);
     const firstUpdateBlockNumber = await hubPool.provider.getBlockNumber();
     await hre.network.provider.send("evm_mine");
     await hre.network.provider.send("evm_mine");
     await hre.network.provider.send("evm_mine");
-    await hubPool
-      .connect(owner)
-      .setCrossChainContracts([11], adapter, spokePool2);
+    await hubPool.connect(owner).setCrossChainContracts([11], adapter, spokePool2);
     const secondUpdateBlockNumber = await hubPool.provider.getBlockNumber();
 
     // Default case when there are no events for a chain.
-    expect(() => hubPoolClient.getSpokePoolForBlock(firstUpdateBlockNumber, 11)).to.throw(/No cross chain contracts set/);
+    expect(() => hubPoolClient.getSpokePoolForBlock(firstUpdateBlockNumber, 11)).to.throw(
+      /No cross chain contracts set/
+    );
     await hubPoolClient.update();
 
     // Happy case where latest spoke pool at block is returned
-    expect(hubPoolClient.getSpokePoolForBlock(firstUpdateBlockNumber, 11)).to.equal(spokePool1)
-    expect(hubPoolClient.getSpokePoolForBlock(secondUpdateBlockNumber, 11)).to.equal(spokePool2)
+    expect(hubPoolClient.getSpokePoolForBlock(firstUpdateBlockNumber, 11)).to.equal(spokePool1);
+    expect(hubPoolClient.getSpokePoolForBlock(secondUpdateBlockNumber, 11)).to.equal(spokePool2);
 
     // Chain has events but none before block
     expect(() => hubPoolClient.getSpokePoolForBlock(firstUpdateBlockNumber - 1, 11)).to.throw(
       /No cross chain contract found before block/
     );
-  })
+  });
 });

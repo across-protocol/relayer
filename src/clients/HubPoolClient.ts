@@ -1,7 +1,7 @@
 import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, toBN, sortEventsDescending } from "../utils";
 import { spreadEvent, spreadEventWithBlockNumber } from "../utils";
 import { Deposit, L1Token, ProposedRootBundle, ExecutedRootBundle } from "../interfaces";
-import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces"
+import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
 
 export class HubPoolClient {
   // L1Token -> destinationChainId -> destinationToken
@@ -26,7 +26,7 @@ export class HubPoolClient {
   ) {}
 
   getSpokePoolForBlock(block: number, chain: number): string {
-    if (!this.crossChainContracts[chain]) throw new Error(`No cross chain contracts set for ${chain}`)
+    if (!this.crossChainContracts[chain]) throw new Error(`No cross chain contracts set for ${chain}`);
     const mostRecentSpokePoolUpdatebeforeBlock = (
       sortEventsDescending(this.crossChainContracts[chain]) as CrossChainContractsSet[]
     ).find((crossChainContract) => crossChainContract.blockNumber <= block);
@@ -189,14 +189,13 @@ export class HubPoolClient {
       proposeRootBundleEvents,
       executedRootBundleEvents,
       crossChainContractsSetEvents,
-    ] =
-      await Promise.all([
-        this.hubPool.queryFilter(this.hubPool.filters.SetPoolRebalanceRoute(), ...searchConfig),
-        this.hubPool.queryFilter(this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), ...searchConfig),
-        this.hubPool.queryFilter(this.hubPool.filters.ProposeRootBundle(), ...searchConfig),
-        this.hubPool.queryFilter(this.hubPool.filters.RootBundleExecuted(), ...searchConfig),
-        this.hubPool.queryFilter(this.hubPool.filters.CrossChainContractsSet(), ...searchConfig),
-      ]);
+    ] = await Promise.all([
+      this.hubPool.queryFilter(this.hubPool.filters.SetPoolRebalanceRoute(), ...searchConfig),
+      this.hubPool.queryFilter(this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), ...searchConfig),
+      this.hubPool.queryFilter(this.hubPool.filters.ProposeRootBundle(), ...searchConfig),
+      this.hubPool.queryFilter(this.hubPool.filters.RootBundleExecuted(), ...searchConfig),
+      this.hubPool.queryFilter(this.hubPool.filters.CrossChainContractsSet(), ...searchConfig),
+    ]);
 
     for (const event of crossChainContractsSetEvents) {
       const args = spreadEventWithBlockNumber(event) as CrossChainContractsSet;
@@ -211,9 +210,9 @@ export class HubPoolClient {
             logIndex: args.logIndex,
           },
         ]
-      )
+      );
     }
-  
+
     for (const event of poolRebalanceRouteEvents) {
       const args = spreadEventWithBlockNumber(event) as SetPoolRebalanceRoot;
       assign(this.l1TokensToDestinationTokens, [args.l1Token, args.destinationChainId], args.destinationToken);
