@@ -27,7 +27,7 @@ export function spreadEventWithBlockNumber(event: Event): SortableEvent {
   };
 }
 
-export function sortEventsAscending(events: SortableEvent[]): SortableEvent[] {
+export function sortEventsAscending<T extends SortableEvent>(events: T[]): T[] {
   return [...events].sort((ex, ey) => {
     if (ex.blockNumber !== ey.blockNumber) return ex.blockNumber - ey.blockNumber;
     if (ex.transactionIndex !== ey.transactionIndex) return ex.transactionIndex - ey.transactionIndex;
