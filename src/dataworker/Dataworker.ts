@@ -500,6 +500,12 @@ export class Dataworker {
     relayerRefundRoot: string,
     slowRelayRoot: string
   ) {
+    // For block number for chain, look up spoke pool at correct block height via
+    // const spokePool = this.clients.hubPoolClient.getSpokePoolForBlock(block, chain)
+    // const spokePoolSigner = this.clients.hubPoolClient.hubPool.signer.connect(getProvider(chain))
+    // const spokePoolContract = new Contract(spokePool, SpokePool.abi, spokePoolSigner)
+    // const spokePoolClient = new SpokePoolClient(this.logger, spokePoolContract, this.clients.rateModelClient, chain)
+    
     // Look at latest propose root bundle event earlier than a block number
     // Construct roots locally using class functions and compare with the event we found earlier.
     // If any roots mismatch, pinpoint the errors to give details to the caller.

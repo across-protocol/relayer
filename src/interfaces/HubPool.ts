@@ -51,3 +51,18 @@ export interface L1Token {
   symbol: string;
   decimals: number;
 }
+
+export interface CrossChainContractsSet extends SortableEvent {
+  l2ChainId: number;
+  spokePool: string;
+}
+
+export interface DestinationTokenWithBlock extends SortableEvent {
+  l2Token: string;
+}
+
+export interface SetPoolRebalanceRoot extends SortableEvent {
+  destinationChainId: number;
+  l1Token: string;
+  destinationToken: string;
+}
