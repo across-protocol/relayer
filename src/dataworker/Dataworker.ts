@@ -1,17 +1,12 @@
-import { winston, assign, MerkleTree, toBN, compareAddresses, getRefundForFills, sortEventsDescending } from "../utils";
-import { RelayerRefundLeaf, RelayerRefundLeafWithGroup, buildRelayerRefundTree, buildSlowRelayTree } from "../utils";
-import { getRealizedLpFeeForFills, BigNumber } from "../utils";
-import {
-  FillsToRefund,
-  RelayData,
-  UnfilledDeposit,
-  Deposit,
-  DepositWithBlock,
-  Fill,
-  FillWithBlock,
-} from "../interfaces";
+import { winston, assign, MerkleTree, compareAddresses, getRefundForFills, sortEventsDescending } from "../utils";
+import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree } from "../utils";
+import { getRealizedLpFeeForFills, BigNumber, toBN } from "../utils";
+import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, DepositWithBlock } from "../interfaces";
+import { Fill, FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
 import { RunningBalances, BundleEvaluationBlockNumbers } from "../interfaces";
 import { DataworkerClients } from "../clients";
+
+// TODO!!!: Add helpful logs everywhere.
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -173,7 +168,6 @@ export class Dataworker {
     const { unfilledDeposits } = this._loadData();
     // TODO: Use `bundleBlockNumbers` to decide how to filter which blocks to keep in `unfilledDeposits`.
 
-    if (unfilledDeposits.length === 0) return null;
     const slowRelayLeaves: RelayData[] = unfilledDeposits.map(
       (deposit: UnfilledDeposit): RelayData => ({
         depositor: deposit.deposit.depositor,
@@ -190,13 +184,14 @@ export class Dataworker {
 
     // Sort leaves deterministically so that the same root is always produced from the same _loadData return value.
     // The { Deposit ID, origin chain ID } is guaranteed to be unique so we can sort on them.
-    const sortedLeaves = slowRelayLeaves.sort((relayA, relayB) => {
+    const sortedLeaves = [...slowRelayLeaves].sort((relayA, relayB) => {
       // Note: Smaller ID numbers will come first
       if (relayA.originChainId === relayB.originChainId) return relayA.depositId - relayB.depositId;
       else return relayA.originChainId - relayB.originChainId;
     });
 
-    return sortedLeaves.length > 0 ? buildSlowRelayTree(sortedLeaves) : null;
+    if (sortedLeaves.length === 0) throw new Error("Cannot build tree with zero leaves");
+    return buildSlowRelayTree(sortedLeaves);
   }
 
   async publishRoots(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
@@ -208,7 +203,6 @@ export class Dataworker {
 
   buildRelayerRefundRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): MerkleTree<RelayerRefundLeaf> | null {
     const { fillsToRefund } = this._loadData();
-    if (Object.keys(fillsToRefund).length === 0) return null;
 
     const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
 
@@ -228,7 +222,11 @@ export class Dataworker {
 
         // Create leaf for { repaymentChainId, L2TokenAddress }, split leaves into sub-leaves if there are too many
         // refunds.
-        for (let i = 0; i < sortedRefundAddresses.length; i += this.clients.configStoreClient.maxRefundsPerLeaf)
+        for (
+          let i = 0;
+          i < sortedRefundAddresses.length;
+          i += this.clients.configStoreClient.maxRefundsPerRelayerRefundLeaf
+        )
           relayerRefundLeaves.push({
             groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
             // L2 token address
@@ -236,9 +234,12 @@ export class Dataworker {
             chainId: Number(repaymentChainId),
             amountToReturn: toBN(0), // TODO: Derive amountToReturn
             l2TokenAddress,
-            refundAddresses: sortedRefundAddresses.slice(i, i + this.clients.configStoreClient.maxRefundsPerLeaf),
+            refundAddresses: sortedRefundAddresses.slice(
+              i,
+              i + this.clients.configStoreClient.maxRefundsPerRelayerRefundLeaf
+            ),
             refundAmounts: sortedRefundAddresses
-              .slice(i, i + this.clients.configStoreClient.maxRefundsPerLeaf)
+              .slice(i, i + this.clients.configStoreClient.maxRefundsPerRelayerRefundLeaf)
               .map((address) => refunds[address]),
           });
       });
@@ -261,13 +262,11 @@ export class Dataworker {
         return { ...leaf, leafId: i };
       });
 
-    return indexedLeaves.length > 0 ? buildRelayerRefundTree(indexedLeaves) : null;
+    if (indexedLeaves.length === 0) throw new Error("Cannot build tree with zero leaves");
+    return buildRelayerRefundTree(indexedLeaves);
   }
 
-  buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): {
-    runningBalances: RunningBalances;
-    realizedLpFees: RunningBalances;
-  } {
+  buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
     const { fillsToRefund, deposits, allValidFills } = this._loadData();
 
     // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
@@ -297,12 +296,19 @@ export class Dataworker {
             fillsToRefund[repaymentChainId][l2TokenAddress].realizedLpFees
           );
 
+          // Start with latest RootBundleExecuted.runningBalance for {chainId, l1Token} combination if found.
+          const startingRunningBalance = this.clients.hubPoolClient.getRunningBalanceBeforeBlockForChain(
+            1_000_000,
+            Number(repaymentChainId),
+            l1TokenCounterpart
+          );
+
           // totalRefundAmount won't exist for chains that only had slow fills, so we should explicitly check for it.
           if (fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount)
             assign(
               runningBalances,
               [repaymentChainId, l1TokenCounterpart],
-              fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount
+              startingRunningBalance.add(fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount)
             );
         });
       });
@@ -399,15 +405,62 @@ export class Dataworker {
       this._updateRunningBalanceForDeposit(runningBalances, deposit, deposit.amount.mul(toBN(-1)));
     });
 
-    // 6. Factor in latest RootBundleExecuted.runningBalance before this one.
+    // 6. Create one leaf per L2 chain ID. First we'll create a leaf with all L1 tokens for each chain ID, and then
+    // we'll split up any leaves with too many L1 tokens.
+    const leaves: PoolRebalanceLeaf[] = [];
+    Object.keys(runningBalances)
+      // Leaves should be sorted by ascending chain ID
+      .sort((chainIdA, chainIdB) => Number(chainIdA) - Number(chainIdB))
+      .map((chainId: string) => {
+        // Sort addresses.
+        const sortedL1Tokens = Object.keys(runningBalances[chainId]).sort((addressA, addressB) => {
+          return compareAddresses(addressA, addressB);
+        });
 
-    // 7. Factor in MAX_POOL_REBALANCE_LEAF_SIZE
+        // This begins at 0 and increments for each leaf for this { chainId, L1Token } combination.
+        let groupIndexForChainId = 0;
 
-    // TODO: Add helpful logs everywhere.
+        // Split addresses into multiple leaves if there are more L1 tokens than allowed per leaf.
+        for (
+          let i = 0;
+          i < sortedL1Tokens.length;
+          i += this.clients.configStoreClient.maxL1TokensPerPoolRebalanceLeaf
+        ) {
+          const l1TokensToIncludeInThisLeaf = sortedL1Tokens.slice(
+            i,
+            i + this.clients.configStoreClient.maxL1TokensPerPoolRebalanceLeaf
+          );
+
+          leaves.push({
+            groupIndex: groupIndexForChainId++,
+            leafId: leaves.length,
+            chainId: Number(chainId),
+            bundleLpFees: realizedLpFees[chainId]
+              ? l1TokensToIncludeInThisLeaf.map((l1Token) => realizedLpFees[chainId][l1Token])
+              : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
+            runningBalances: runningBalances[chainId]
+              ? l1TokensToIncludeInThisLeaf.map((l1Token) =>
+                  this._getRunningBalanceForL1Token(runningBalances[chainId][l1Token], l1Token)
+                )
+              : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
+            netSendAmounts: runningBalances[chainId]
+              ? l1TokensToIncludeInThisLeaf.map((l1Token) =>
+                  this._getNetSendAmountForL1Token(runningBalances[chainId][l1Token], l1Token)
+                )
+              : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
+            l1Tokens: l1TokensToIncludeInThisLeaf,
+          });
+        }
+      });
+
+    if (leaves.length === 0) throw new Error("Cannot build tree with zero leaves");
+    const tree = buildPoolRebalanceLeafTree(leaves);
 
     return {
       runningBalances,
       realizedLpFees,
+      leaves,
+      tree,
     };
   }
 
@@ -441,6 +494,22 @@ export class Dataworker {
 
   async executeRelayerRefundLeaves() {
     // TODO:
+  }
+
+  // If the running balance is greater than the token transfer threshold, then set the net send amount
+  // equal to the running balance and reset the running balance to 0. Otherwise, the net send amount should be
+  // 0, indicating that we do not want the data worker to trigger a token transfer between hub pool and spoke
+  // pool when executing this leaf.
+  _getNetSendAmountForL1Token(runningBalance: BigNumber, l1Token: string): BigNumber {
+    return runningBalance.abs().gte(this.clients.configStoreClient.poolRebalanceTokenTransferThreshold[l1Token])
+      ? runningBalance
+      : toBN(0);
+  }
+
+  _getRunningBalanceForL1Token(runningBalance: BigNumber, l1Token: string): BigNumber {
+    return runningBalance.abs().lt(this.clients.configStoreClient.poolRebalanceTokenTransferThreshold[l1Token])
+      ? runningBalance
+      : toBN(0);
   }
 
   _updateRunningBalance(runningBalances: RunningBalances, l2ChainId: number, l1Token: string, updateAmount: BigNumber) {

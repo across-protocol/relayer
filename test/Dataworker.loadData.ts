@@ -36,7 +36,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       spokePoolClient_2,
       configStoreClient,
       updateAllClients,
-    } = await setupDataworker(ethers, 25));
+    } = await setupDataworker(ethers, 25, 25, toBN(0)));
   });
 
   it("Default conditions", async function () {
