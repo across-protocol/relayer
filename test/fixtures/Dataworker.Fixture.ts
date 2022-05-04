@@ -1,9 +1,16 @@
 import { setupUmaEcosystem } from "./UmaEcosystemFixture";
-import { deploySpokePoolWithToken, enableRoutesOnHubPool, Contract, BigNumber, enableRoutes } from "../utils";
+import {
+  deploySpokePoolWithToken,
+  enableRoutesOnHubPool,
+  Contract,
+  BigNumber,
+  enableRoutes,
+  sampleRateModel,
+} from "../utils";
 import { SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "../utils";
 import { createSpyLogger, winston, deployAndConfigureHubPool, deployConfigStore } from "../utils";
 import * as clients from "../../src/clients";
-import { amountToLp, destinationChainId, originChainId, CHAIN_ID_TEST_LIST } from "../constants";
+import { amountToLp, destinationChainId, originChainId, CHAIN_ID_TEST_LIST, utf8ToHex } from "../constants";
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 
@@ -74,19 +81,19 @@ export async function setupDataworker(
   await setupTokensForWallet(hubPool, dataworker, [l1Token_1], null, 100);
 
   const { spyLogger } = createSpyLogger();
-  const { configStore } = await deployConfigStore(owner, [l1Token_1, l1Token_2]);
-  const hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool);
-  const configStoreClient = new clients.AcrossConfigStoreClient(
-    spyLogger,
-    configStore,
-    hubPoolClient,
-    {
-      [l1Token_1.address]: defaultPoolRebalanceTokenTransferThreshold,
-      [l1Token_2.address]: defaultPoolRebalanceTokenTransferThreshold,
-    },
+
+  // Set up config store.
+  const { configStore } = await deployConfigStore(
+    owner,
+    [l1Token_1, l1Token_2],
+    maxL1TokensPerPoolRebalanceLeaf,
     maxRefundPerRelayerRefundLeaf,
-    maxL1TokensPerPoolRebalanceLeaf
+    sampleRateModel,
+    defaultPoolRebalanceTokenTransferThreshold
   );
+
+  const hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool);
+  const configStoreClient = new clients.AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
 
   const multiCallerClient = new clients.MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
 

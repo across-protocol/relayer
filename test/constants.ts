@@ -12,7 +12,7 @@ export const MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF = 3;
 
 // Once running balances hits this number for an L1 token, net send amount should be set to running
 // balances to transfer tokens to the spoke pool.
-export const DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD = toWei(1_000_000);
+export const DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD = toWei(1000);
 
 // DAI's Rate model.
 export const sampleRateModel = {
@@ -21,6 +21,11 @@ export const sampleRateModel = {
   R1: toWei(0.07).toString(),
   R2: toWei(0.75).toString(),
 };
+
+export const defaultTokenConfig = JSON.stringify({
+  rateModel: JSON.stringify(sampleRateModel),
+  transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD.toString(),
+});
 
 export const CHAIN_ID_TEST_LIST = [originChainId, destinationChainId, repaymentChainId];
 

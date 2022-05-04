@@ -2,7 +2,7 @@ import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, or
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
 import { lastSpyLogIncludes, toBNWei, createSpyLogger, deployConfigStore } from "./utils";
 import { deployAndConfigureHubPool, winston } from "./utils";
-import { amountToLp, l1TokenTransferThreshold, sampleRateModel } from "./constants";
+import { amountToLp, l1TokenTransferThreshold, sampleRateModel, defaultTokenConfig } from "./constants";
 import {
   SpokePoolClient,
   HubPoolClient,
@@ -41,7 +41,7 @@ describe("Relayer: Token balance shortfall", async function () {
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient, {}, 3, 3);
+    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
     multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
     spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(relayer), configStoreClient, originChainId);
     spokePoolClient_2 = new SpokePoolClient(
@@ -73,10 +73,7 @@ describe("Relayer: Token balance shortfall", async function () {
 
     await l1Token.approve(hubPool.address, amountToLp);
     await hubPool.addLiquidity(l1Token.address, amountToLp);
-    await configStore.updateTokenConfig(
-      l1Token.address,
-      JSON.stringify({ rateModel: JSON.stringify(sampleRateModel), transferThreshold: l1TokenTransferThreshold })
-    );
+    await configStore.updateTokenConfig(l1Token.address, defaultTokenConfig);
 
     await updateAllClients();
   });

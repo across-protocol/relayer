@@ -1,25 +1,27 @@
-import {
-  spreadEvent,
-  winston,
-  Contract,
-  BigNumber,
-  paginatedEventQuery,
-  EventSearchConfig,
-  assert,
-  toBN,
-} from "../utils";
-import { L1TokenTransferThreshold, Deposit } from "../interfaces";
+import { spreadEvent, winston, Contract, BigNumber, sortEventsDescending, spreadEventWithBlockNumber } from "../utils";
+import { paginatedEventQuery, EventSearchConfig, utf8ToHex } from "../utils";
+import { L1TokenTransferThreshold, Deposit, RefundsPerRelayerRefundLeaf, TokenConfig } from "../interfaces";
+import { L1TokensPerPoolRebalanceLeaf } from "../interfaces";
+
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
 import { HubPoolClient } from "./HubPoolClient";
 
+export const GLOBAL_CONFIG_STORE_KEYS = {
+  MAX_RELAYER_REPAYMENT_LEAF_SIZE: "MAX_RELAYER_REPAYMENT_LEAF_SIZE",
+  MAX_POOL_REBALANCE_LEAF_SIZE: "MAX_POOL_REBALANCE_LEAF_SIZE",
+};
+
+// TODO: Rename filename to match client name in follow up PR to reduce code diff.
 export class AcrossConfigStoreClient {
   private readonly blockFinder;
 
   public cumulativeRateModelUpdates: across.rateModel.RateModelEvent[] = [];
   public cumulativeTokenTransferUpdates: L1TokenTransferThreshold[] = [];
+  public cumulativeMaxRefundCountUpdates: RefundsPerRelayerRefundLeaf[] = [];
+  public cumulativeMaxL1TokenCountUpdates: L1TokensPerPoolRebalanceLeaf[] = [];
+
   private rateModelDictionary: across.rateModel.RateModelDictionary;
-  public poolRebalanceTokenTransferThreshold: { [l1Token: string]: BigNumber };
   public firstBlockToSearch: number;
 
   public isUpdated: boolean = false;
@@ -28,24 +30,11 @@ export class AcrossConfigStoreClient {
     readonly logger: winston.Logger,
     readonly rateModelStore: Contract, // TODO: Rename to ConfigStore
     readonly hubPoolClient: HubPoolClient,
-    _poolRebalanceTokenTransferThreshold: { [l1Token: string]: BigNumber },
-    readonly maxRefundsPerRelayerRefundLeaf: number = 25,
-    readonly maxL1TokensPerPoolRebalanceLeaf: number = 25,
     readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
     this.blockFinder = new BlockFinder(this.rateModelStore.provider.getBlock.bind(this.rateModelStore.provider));
     this.rateModelDictionary = new across.rateModel.RateModelDictionary();
-    Object.values(_poolRebalanceTokenTransferThreshold).forEach((threshold: BigNumber) =>
-      assert(threshold.gte(toBN(0)), "Threshold cannot be negative")
-    );
-    this.poolRebalanceTokenTransferThreshold = _poolRebalanceTokenTransferThreshold;
-  }
-
-  // Used for testing, should we block this function in prod?
-  setPoolRebalanceTokenTransferThreshold(l1Token: string, newThreshold: BigNumber) {
-    assert(newThreshold.gte(toBN(0)), "Threshold cannot be negative");
-    this.poolRebalanceTokenTransferThreshold[l1Token] = newThreshold;
   }
 
   async computeRealizedLpFeePct(
@@ -89,6 +78,31 @@ export class AcrossConfigStoreClient {
     return this.rateModelDictionary.getRateModelForBlockNumber(l1Token, blockNumber);
   }
 
+  getTokenTransferThresholdForBlock(l1Token: string, blockNumber: number = Number.MAX_SAFE_INTEGER): BigNumber {
+    const config = (sortEventsDescending(this.cumulativeTokenTransferUpdates) as L1TokenTransferThreshold[]).find(
+      (config) => config.blockNumber <= blockNumber && config.l1Token === l1Token
+    );
+    if (!config)
+      throw new Error(`Could not find TransferThreshold for L1 token ${l1Token} before block ${blockNumber}`);
+    return config.transferThreshold;
+  }
+
+  getMaxRefundCountForRelayerRefundLeafForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number {
+    const config = (sortEventsDescending(this.cumulativeMaxRefundCountUpdates) as RefundsPerRelayerRefundLeaf[]).find(
+      (config) => config.blockNumber <= blockNumber
+    );
+    if (!config) throw new Error(`Could not find MaxRefundCount before block ${blockNumber}`);
+    return config.value;
+  }
+
+  getMaxL1TokenCountForPoolRebalanceLeafForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number {
+    const config = (sortEventsDescending(this.cumulativeMaxL1TokenCountUpdates) as L1TokensPerPoolRebalanceLeaf[]).find(
+      (config) => config.blockNumber <= blockNumber
+    );
+    if (!config) throw new Error(`Could not find MaxL1TokenCount before block ${blockNumber}`);
+    return config.value;
+  }
+
   async update() {
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
@@ -105,7 +119,41 @@ export class AcrossConfigStoreClient {
       paginatedEventQuery(this.rateModelStore, this.rateModelStore.filters.UpdatedGlobalConfig(), searchConfig),
     ]);
 
+    // Save new TokenConfig updates.
     for (const event of updatedTokenConfigEvents) {
+      const args = {
+        ...(spreadEventWithBlockNumber(event) as TokenConfig),
+      };
+
+      try {
+        const rateModelForToken = JSON.parse(args.value).rateModel;
+        const transferThresholdForToken = JSON.parse(args.value).transferThreshold;
+
+        // If Token config doesn't contain all expected properties, skip it.
+        if (!(rateModelForToken && transferThresholdForToken)) {
+          this.logger.debug({ at: "RateModelClient", message: "Skipping invalid token config", args });
+          continue;
+        }
+
+        // Store RateModel:
+        // TODO: Temporarily reformat the shape of the event that we pass into the sdk.rateModel class to make it fit
+        // the expected shape. This is a fix for now that we should eventually replace when we change the sdk.rateModel
+        // class itself to work with the generalized ConfigStore.
+        const l1Token = args.key;
+        delete args.value;
+        delete args.key;
+        this.cumulativeRateModelUpdates.push({ ...args, rateModel: rateModelForToken, l1Token });
+
+        // Store transferThreshold
+        this.cumulativeTokenTransferUpdates.push({ ...args, transferThreshold: transferThresholdForToken, l1Token });
+      } catch (err) {
+        this.logger.debug({ at: "RateModelClient", message: "Cannot parse value to JSON", args });
+        continue;
+      }
+    }
+
+    // Save new Global config updates.
+    for (const event of updatedGlobalConfigEvents) {
       const args = {
         blockNumber: event.blockNumber,
         transactionIndex: event.transactionIndex,
@@ -113,28 +161,16 @@ export class AcrossConfigStoreClient {
         ...spreadEvent(event),
       };
 
-      const rateModelForToken = JSON.parse(args.value).rateModel;
-      const transferThresholdForToken = JSON.parse(args.value).transferThreshold;
-      if (!(rateModelForToken && transferThresholdForToken))
-        throw new Error("l1TokenConfig missing rateModel or transferThreshold");
-
-      // Store RateModel:
-      // TODO: Temporarily reformat the shape of the event that we pass into the sdk.rateModel class to make it fit
-      // the expected shape. This is a fix for now that we should eventually replace when we change the sdk.rateModel
-      // class itself to work with the generalized ConfigStore.
-      args.rateModel = rateModelForToken;
-      args.l1Token = args.key;
-      delete args.value;
-      delete args.key;
-      this.cumulativeRateModelUpdates.push({ ...args });
-
-      // Store transferThreshold
-      args.transferThreshold = transferThresholdForToken;
-      delete args.rateModel;
-      this.cumulativeTokenTransferUpdates.push({ ...args });
+      if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_RELAYER_REPAYMENT_LEAF_SIZE)) {
+        if (!isNaN(args.value)) this.cumulativeMaxRefundCountUpdates.push(args);
+      } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE)) {
+        if (!isNaN(args.value)) this.cumulativeMaxL1TokenCountUpdates.push(args);
+      } else {
+        this.logger.debug({ at: "RateModelClient", message: "Skipping unknown global config key", args });
+        continue;
+      }
     }
 
-    // Sort events by block height in ascending order:
     this.rateModelDictionary.updateWithEvents(this.cumulativeRateModelUpdates);
 
     this.isUpdated = true;

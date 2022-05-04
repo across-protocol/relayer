@@ -31,7 +31,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
     ({ spyLogger } = createSpyLogger());
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient, {}, 3, 3);
+    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
     spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1, configStoreClient, originChainId);
     spokePoolClient_2 = new SpokePoolClient(spyLogger, spokePool_2, configStoreClient, destinationChainId);
 

@@ -1,11 +1,12 @@
 import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolRebalanceLeaves } from "./utils";
 import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet, assertPromiseError } from "./utils";
 import { toBNWei, toWei, buildPoolRebalanceLeafTree, createSpyLogger } from "./utils";
-import { getContractFactory, hubPoolFixture, toBN } from "./utils";
-import { amountToLp, mockTreeRoot, refundProposalLiveness, totalBond, l1TokenTransferThreshold } from "./constants";
-
+import { getContractFactory, hubPoolFixture, toBN, utf8ToHex } from "./utils";
+import { amountToLp, mockTreeRoot, refundProposalLiveness, totalBond } from "./constants";
+import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
+import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
 import { HubPoolClient } from "../src/clients/HubPoolClient";
-import { AcrossConfigStoreClient } from "../src/clients/RateModelClient";
+import { AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../src/clients/RateModelClient";
 
 let spokePool: Contract, hubPool: Contract, l2Token: Contract;
 let configStore: Contract, l1Token: Contract, timer: Contract, weth: Contract;
@@ -24,7 +25,7 @@ const sampleRateModel = {
 
 const tokenConfigToUpdate = JSON.stringify({
   rateModel: JSON.stringify(sampleRateModel),
-  transferThreshold: l1TokenTransferThreshold,
+  transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
 });
 
 // TODO: Rename file name to match tested client in a follow up PR to reduce line diff.
@@ -37,7 +38,7 @@ describe("AcrossConfigStoreClient", async function () {
 
     configStore = await (await getContractFactory("AcrossConfigStore", owner)).deploy();
     hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
-    configStoreClient = new AcrossConfigStoreClient(createSpyLogger().spyLogger, configStore, hubPoolClient, {}, 3, 3);
+    configStoreClient = new AcrossConfigStoreClient(createSpyLogger().spyLogger, configStore, hubPoolClient);
 
     await setupTokensForWallet(spokePool, owner, [l1Token], weth, 100); // Seed owner to LP.
     await l1Token.approve(hubPool.address, amountToLp);
@@ -53,16 +54,52 @@ describe("AcrossConfigStoreClient", async function () {
     await configStoreClient.update();
     expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(0);
     expect(configStoreClient.cumulativeTokenTransferUpdates.length).to.equal(0);
+    expect(configStoreClient.cumulativeMaxL1TokenCountUpdates.length).to.equal(0);
+    expect(configStoreClient.cumulativeMaxRefundCountUpdates.length).to.equal(0);
 
     // Add new TokenConfig events and check that updating again pulls in new events.
     await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
     await configStoreClient.update();
     expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(1);
+    expect(configStoreClient.cumulativeTokenTransferUpdates.length).to.equal(1);
+
+    // Update ignores TokenConfig events that don't include all expected keys:
+    await configStore.updateTokenConfig(l1Token.address, "gibberish");
+    await configStore.updateTokenConfig(
+      l1Token.address,
+      JSON.stringify({ rateModel: JSON.stringify(sampleRateModel) })
+    );
+    await configStore.updateTokenConfig(l1Token.address, JSON.stringify({ transferThreshold: tokenConfigToUpdate }));
+    await configStoreClient.update();
+    expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(1);
+    expect(configStoreClient.cumulativeTokenTransferUpdates.length).to.equal(1);
 
     // Add GlobalConfig events and check that updating pulls in events
+    await configStore.updateGlobalConfig(
+      utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE),
+      MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF.toString()
+    );
+    await configStore.updateGlobalConfig(
+      utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_RELAYER_REPAYMENT_LEAF_SIZE),
+      MAX_REFUNDS_PER_RELAYER_REFUND_LEAF.toString()
+    );
+    await configStoreClient.update();
+    expect(configStoreClient.cumulativeMaxRefundCountUpdates.length).to.equal(1);
+    expect(configStoreClient.cumulativeMaxL1TokenCountUpdates.length).to.equal(1);
+
+    // Update ignores GlobalConfig events that have unexpected key or value type.
+    await configStore.updateGlobalConfig(utf8ToHex("gibberish"), MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF);
+    await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE), "gibberish");
+    await configStore.updateGlobalConfig(
+      utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_RELAYER_REPAYMENT_LEAF_SIZE),
+      "gibberish"
+    );
+    await configStoreClient.update();
+    expect(configStoreClient.cumulativeMaxRefundCountUpdates.length).to.equal(1);
+    expect(configStoreClient.cumulativeMaxL1TokenCountUpdates.length).to.equal(1);
   });
 
-  describe("RateModel", function () {
+  describe("TokenConfig", function () {
     it("getRateModelForBlockNumber", async function () {
       await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
       await updateAllClients();
@@ -164,6 +201,58 @@ describe("AcrossConfigStoreClient", async function () {
           )
         ).realizedLpFeePct
       ).to.equal(toBNWei("0.002081296752280018"));
+    });
+
+    it("Get token transfer threshold for block", async function () {
+      await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
+      await updateAllClients();
+      const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[0];
+      expect(configStoreClient.getTokenTransferThresholdForBlock(l1Token.address, initialUpdate.blockNumber)).to.equal(
+        DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
+      );
+      // Block number when there is no config
+      expect(() =>
+        configStoreClient.getTokenTransferThresholdForBlock(l1Token.address, initialUpdate.blockNumber - 1)
+      ).to.throw(/Could not find TransferThreshold/);
+
+      // L1 token where there is no config
+      expect(() =>
+        configStoreClient.getTokenTransferThresholdForBlock(l2Token.address, initialUpdate.blockNumber)
+      ).to.throw(/Could not find TransferThreshold/);
+    });
+  });
+  describe("GlobalConfig", function () {
+    it("Get max refund count for block", async function () {
+      await configStore.updateGlobalConfig(
+        utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_RELAYER_REPAYMENT_LEAF_SIZE),
+        MAX_REFUNDS_PER_RELAYER_REFUND_LEAF.toString()
+      );
+      await updateAllClients();
+      const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[0];
+      expect(configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(initialUpdate.blockNumber)).to.equal(
+        MAX_REFUNDS_PER_RELAYER_REFUND_LEAF.toString()
+      );
+
+      // Block number when there is no config
+      expect(() =>
+        configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(initialUpdate.blockNumber - 1)
+      ).to.throw(/Could not find MaxRefundCount/);
+    });
+    it("Get max l1 token count for block", async function () {
+      await configStore.updateGlobalConfig(
+        utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE),
+        MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF.toString()
+      );
+      await updateAllClients();
+      const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[0];
+      expect(configStoreClient.getMaxL1TokenCountForPoolRebalanceLeafForBlock(initialUpdate.blockNumber)).to.equal(
+        MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF.toString()
+      );
+
+      // Block number when there is no config
+      expect(() =>
+        configStoreClient.getMaxL1TokenCountForPoolRebalanceLeafForBlock(initialUpdate.blockNumber - 1)
+      ).to.throw(/Could not find MaxL1TokenCount/);
     });
   });
 });

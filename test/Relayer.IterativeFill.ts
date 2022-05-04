@@ -1,7 +1,7 @@
 import { hubPoolFixture, deployIterativeSpokePoolsAndToken, createSpyLogger, lastSpyLogIncludes, toBN } from "./utils";
 import { expect, deposit, ethers, Contract, getLastBlockTime, contractAt, addLiquidity } from "./utils";
 import { SignerWithAddress, setupTokensForWallet, deployConfigStore, winston, sinon, toBNWei } from "./utils";
-import { amountToLp, l1TokenTransferThreshold, sampleRateModel } from "./constants";
+import { amountToLp, defaultTokenConfig } from "./constants";
 import { HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
 import { TokenClient, ProfitClient } from "../src/clients";
 
@@ -27,7 +27,7 @@ describe("Relayer: Iterative fill", async function () {
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(relayer_signer, []));
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient, {}, 3, 3);
+    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
     multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
 
     ({ spokePools, l1TokenToL2Tokens } = await deployIterativeSpokePoolsAndToken(
@@ -41,10 +41,7 @@ describe("Relayer: Iterative fill", async function () {
 
     const l1Token = await contractAt("ExpandedERC20", relayer_signer, Object.keys(l1TokenToL2Tokens)[0]);
 
-    await configStore.updateTokenConfig(
-      l1Token.address,
-      JSON.stringify({ rateModel: JSON.stringify(sampleRateModel), transferThreshold: l1TokenTransferThreshold })
-    );
+    await configStore.updateTokenConfig(l1Token.address, defaultTokenConfig);
 
     await addLiquidity(relayer_signer, hubPool, l1Token, amountToLp);
 

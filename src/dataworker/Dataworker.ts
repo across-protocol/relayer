@@ -222,11 +222,10 @@ export class Dataworker {
 
         // Create leaf for { repaymentChainId, L2TokenAddress }, split leaves into sub-leaves if there are too many
         // refunds.
-        for (
-          let i = 0;
-          i < sortedRefundAddresses.length;
-          i += this.clients.configStoreClient.maxRefundsPerRelayerRefundLeaf
-        )
+        // TODO: Replace the block height hardcoded with a block from the bundle block range so we can look up the
+        // limit at the time of the proposal.
+        const maxRefundCount = this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(1_000_000);
+        for (let i = 0; i < sortedRefundAddresses.length; i += maxRefundCount)
           relayerRefundLeaves.push({
             groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
             // L2 token address
@@ -234,13 +233,8 @@ export class Dataworker {
             chainId: Number(repaymentChainId),
             amountToReturn: toBN(0), // TODO: Derive amountToReturn
             l2TokenAddress,
-            refundAddresses: sortedRefundAddresses.slice(
-              i,
-              i + this.clients.configStoreClient.maxRefundsPerRelayerRefundLeaf
-            ),
-            refundAmounts: sortedRefundAddresses
-              .slice(i, i + this.clients.configStoreClient.maxRefundsPerRelayerRefundLeaf)
-              .map((address) => refunds[address]),
+            refundAddresses: sortedRefundAddresses.slice(i, i + maxRefundCount),
+            refundAmounts: sortedRefundAddresses.slice(i, i + maxRefundCount).map((address) => refunds[address]),
           });
       });
     });
@@ -421,15 +415,10 @@ export class Dataworker {
         let groupIndexForChainId = 0;
 
         // Split addresses into multiple leaves if there are more L1 tokens than allowed per leaf.
-        for (
-          let i = 0;
-          i < sortedL1Tokens.length;
-          i += this.clients.configStoreClient.maxL1TokensPerPoolRebalanceLeaf
-        ) {
-          const l1TokensToIncludeInThisLeaf = sortedL1Tokens.slice(
-            i,
-            i + this.clients.configStoreClient.maxL1TokensPerPoolRebalanceLeaf
-          );
+        // Same as above, replace this with bundle block range for mainnet
+        const maxRefundCount = this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(1_000_000);
+        for (let i = 0; i < sortedL1Tokens.length; i += maxRefundCount) {
+          const l1TokensToIncludeInThisLeaf = sortedL1Tokens.slice(i, i + maxRefundCount);
 
           leaves.push({
             groupIndex: groupIndexForChainId++,
@@ -439,13 +428,13 @@ export class Dataworker {
               ? l1TokensToIncludeInThisLeaf.map((l1Token) => realizedLpFees[chainId][l1Token])
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
             runningBalances: runningBalances[chainId]
-              ? l1TokensToIncludeInThisLeaf.map((l1Token) =>
-                  this._getRunningBalanceForL1Token(runningBalances[chainId][l1Token], l1Token)
+              ? l1TokensToIncludeInThisLeaf.map(
+                  (l1Token) => this._getRunningBalanceForL1Token(runningBalances[chainId][l1Token], l1Token, 1_000_000) // Replace with bundle block range for mainnet
                 )
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
             netSendAmounts: runningBalances[chainId]
-              ? l1TokensToIncludeInThisLeaf.map((l1Token) =>
-                  this._getNetSendAmountForL1Token(runningBalances[chainId][l1Token], l1Token)
+              ? l1TokensToIncludeInThisLeaf.map(
+                  (l1Token) => this._getNetSendAmountForL1Token(runningBalances[chainId][l1Token], l1Token, 1_000_000) // Replace with bundle block range for mainnet
                 )
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
             l1Tokens: l1TokensToIncludeInThisLeaf,
@@ -502,14 +491,18 @@ export class Dataworker {
   // equal to the running balance and reset the running balance to 0. Otherwise, the net send amount should be
   // 0, indicating that we do not want the data worker to trigger a token transfer between hub pool and spoke
   // pool when executing this leaf.
-  _getNetSendAmountForL1Token(runningBalance: BigNumber, l1Token: string): BigNumber {
-    return runningBalance.abs().gte(this.clients.configStoreClient.poolRebalanceTokenTransferThreshold[l1Token])
+  _getNetSendAmountForL1Token(runningBalance: BigNumber, l1Token: string, mainnetBlock: number): BigNumber {
+    return runningBalance
+      .abs()
+      .gte(this.clients.configStoreClient.getTokenTransferThresholdForBlock(l1Token, mainnetBlock))
       ? runningBalance
       : toBN(0);
   }
 
-  _getRunningBalanceForL1Token(runningBalance: BigNumber, l1Token: string): BigNumber {
-    return runningBalance.abs().lt(this.clients.configStoreClient.poolRebalanceTokenTransferThreshold[l1Token])
+  _getRunningBalanceForL1Token(runningBalance: BigNumber, l1Token: string, mainnetBlock: number): BigNumber {
+    return runningBalance
+      .abs()
+      .lt(this.clients.configStoreClient.getTokenTransferThresholdForBlock(l1Token, mainnetBlock))
       ? runningBalance
       : toBN(0);
   }

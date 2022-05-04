@@ -52,9 +52,6 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
     logger,
     configStore,
     hubPoolClient,
-    {},
-    3,
-    3,
     rateModelClientSearchSettings
   );
 

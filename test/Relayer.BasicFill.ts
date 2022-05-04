@@ -2,7 +2,7 @@ import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWal
 import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfigureHubPool, winston } from "./utils";
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId } from "./utils";
 import { originChainId, sinon, toBNWei } from "./utils";
-import { amountToLp, l1TokenTransferThreshold, sampleRateModel } from "./constants";
+import { amountToLp, defaultTokenConfig } from "./constants";
 import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
 import { TokenClient, ProfitClient } from "../src/clients";
 
@@ -35,7 +35,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient, {}, 3, 3);
+    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
 
     multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
 
@@ -66,10 +66,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     await l1Token.approve(hubPool.address, amountToLp);
     await hubPool.addLiquidity(l1Token.address, amountToLp);
-    await configStore.updateTokenConfig(
-      l1Token.address,
-      JSON.stringify({ rateModel: JSON.stringify(sampleRateModel), transferThreshold: l1TokenTransferThreshold })
-    );
+    await configStore.updateTokenConfig(l1Token.address, defaultTokenConfig);
 
     await updateAllClients();
   });

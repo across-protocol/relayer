@@ -2,16 +2,22 @@ import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 import { TokenRolesEnum } from "@uma/common";
 export { MAX_SAFE_ALLOWANCE } from "@uma/common";
 import { SpyTransport } from "@uma/financial-templates-lib";
-import { sampleRateModel, zeroAddress } from "../constants";
+import {
+  DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
+  MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
+  MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
+  sampleRateModel,
+  zeroAddress,
+} from "../constants";
 
 import { SpokePoolClient } from "../../src/clients/SpokePoolClient";
-import { AcrossConfigStoreClient } from "../../src/clients/RateModelClient";
+import { AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients/RateModelClient";
 import { HubPoolClient } from "../../src/clients/HubPoolClient";
 
 import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber } from "./index";
 import { amountToDeposit, depositRelayerFeePct, l1TokenTransferThreshold } from "../constants";
 import { Deposit, Fill, RunningBalances } from "../../src/interfaces/SpokePool";
-import { buildRelayerRefundTree, toBN, toBNWei } from "../../src/utils";
+import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
 
 import winston from "winston";
 import sinon from "sinon";
@@ -91,13 +97,32 @@ export async function deploySpokePoolWithToken(
   return { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20 };
 }
 
-export async function deployConfigStore(signer: utils.SignerWithAddress, tokensToAdd: utils.Contract[]) {
+export async function deployConfigStore(
+  signer: utils.SignerWithAddress,
+  tokensToAdd: utils.Contract[],
+  maxL1TokensPerPoolRebalanceLeaf: number = MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
+  maxRefundPerRelayerRefundLeaf: number = MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
+  rateModel: Object = sampleRateModel,
+  transferThreshold: BigNumber = DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
+) {
   const configStore = await (await utils.getContractFactory("AcrossConfigStore", signer)).deploy();
   for (const token of tokensToAdd)
     await configStore.updateTokenConfig(
       token.address,
-      JSON.stringify({ rateModel: JSON.stringify(sampleRateModel), transferThreshold: l1TokenTransferThreshold })
+      JSON.stringify({
+        rateModel: JSON.stringify(rateModel),
+        transferThreshold: transferThreshold.toString(),
+      })
     );
+  await configStore.updateGlobalConfig(
+    utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE),
+    maxL1TokensPerPoolRebalanceLeaf.toString()
+  );
+  await configStore.updateGlobalConfig(
+    utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_RELAYER_REPAYMENT_LEAF_SIZE),
+    maxRefundPerRelayerRefundLeaf.toString()
+  );
+
   return { configStore };
 }
 

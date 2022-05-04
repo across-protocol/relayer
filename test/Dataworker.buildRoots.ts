@@ -1,15 +1,15 @@
-import { buildSlowRelayTree, buildSlowRelayLeaves, buildFillForRepaymentChain } from "./utils";
+import { buildSlowRelayTree, buildSlowRelayLeaves, buildFillForRepaymentChain, sampleRateModel } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
 import { buildRelayerRefundTreeWithUnassignedLeafIds, constructPoolRebalanceTree } from "./utils";
 import { buildPoolRebalanceLeafTree } from "./utils";
-import { HubPoolClient, AcrossConfigStoreClient } from "../src/clients";
+import { HubPoolClient, AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
 import { amountToDeposit, destinationChainId, originChainId, mockTreeRoot } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { refundProposalLiveness, CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { Deposit, Fill, RunningBalances } from "../src/interfaces";
-import { getRealizedLpFeeForFills, getRefundForFills, getRefund, compareAddresses } from "../src/utils";
+import { getRealizedLpFeeForFills, getRefundForFills, getRefund, compareAddresses, utf8ToHex } from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
@@ -635,10 +635,16 @@ describe("Dataworker: Build merkle roots", async function () {
           hubPool,
           amountToDeposit.mul(toBN(100))
         );
-        configStoreClient.setPoolRebalanceTokenTransferThreshold(
+
+        // Set a very high transfer threshold so leaves are not split
+        await configStore.updateTokenConfig(
           l1Token.address,
-          DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
+          JSON.stringify({
+            rateModel: JSON.stringify(sampleRateModel),
+            transferThreshold: toBNWei("1000000").toString(),
+          })
         );
+
         await updateAllClients(); // Update client to be aware of new token mapping so we can build deposit correctly.
         const deposit = await buildDeposit(
           configStoreClient,
@@ -750,7 +756,14 @@ describe("Dataworker: Build merkle roots", async function () {
       // Now set the threshold much lower than the running balance and check that running balances for all
       // chains gets set to 0 and net send amount is equal to the running balance. This also tests that the
       // dataworker is comparing the absolute value of the running balance with the threshold, not the signed value.
-      configStoreClient.setPoolRebalanceTokenTransferThreshold(l1Token_1.address, toBNWei(1));
+      await configStore.updateTokenConfig(
+        l1Token_1.address,
+        JSON.stringify({
+          rateModel: JSON.stringify(sampleRateModel),
+          transferThreshold: toBNWei(1).toString(),
+        })
+      );
+      await configStoreClient.update();
       const merkleRoot2 = dataworkerInstance.buildPoolRebalanceRoot([]);
       const expectedLeaves2 = expectedLeaves1.map((leaf) => {
         return {
