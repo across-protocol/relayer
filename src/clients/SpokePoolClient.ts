@@ -1,5 +1,6 @@
-import { assign, Contract, BigNumber, toBN, Event, ZERO_ADDRESS, winston } from "../utils";
-import { spreadEventWithBlockNumber, spreadEvent } from "../utils";
+import { spreadEvent, assign, Contract, BigNumber, EventSearchConfig } from "../utils";
+import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
+
 import { RateModelClient } from "./RateModelClient";
 import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock } from "../interfaces/SpokePool";
 
@@ -20,10 +21,9 @@ export class SpokePoolClient {
     readonly spokePool: Contract,
     readonly rateModelClient: RateModelClient | null, // RateModelStore can be excluded. This disables some deposit validation.
     readonly chainId: number,
-    readonly startingBlock: number = 0,
-    readonly endingBlock: number | null = null
+    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
   ) {
-    this.firstBlockToSearch = startingBlock;
+    this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
 
   getDepositsForDestinationChain(destinationChainId: number, withBlock = false): Deposit[] | DepositWithBlock[] {
@@ -123,15 +123,20 @@ export class SpokePoolClient {
     if (this.rateModelClient !== null && !this.rateModelClient.isUpdated) throw new Error("RateModel not updated");
 
     this.latestBlockNumber = await this.getBlockNumber();
-    const searchConfig = [this.firstBlockToSearch, this.endingBlock || this.latestBlockNumber];
+    const searchConfig = {
+      fromBlock: this.firstBlockToSearch,
+      toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
+      maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
+    };
+
     this.log("debug", "Updating client", { searchConfig, spokePool: this.spokePool.address });
-    if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
+    if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
     const [depositEvents, speedUpEvents, fillEvents, enableDepositsEvents] = await Promise.all([
-      this.spokePool.queryFilter(this.spokePool.filters.FundsDeposited(), ...searchConfig),
-      this.spokePool.queryFilter(this.spokePool.filters.RequestedSpeedUpDeposit(), ...searchConfig),
-      this.spokePool.queryFilter(this.spokePool.filters.FilledRelay(), ...searchConfig),
-      this.spokePool.queryFilter(this.spokePool.filters.EnabledDepositRoute(), ...searchConfig),
+      paginatedEventQuery(this.spokePool, this.spokePool.filters.FundsDeposited(), searchConfig),
+      paginatedEventQuery(this.spokePool, this.spokePool.filters.RequestedSpeedUpDeposit(), searchConfig),
+      paginatedEventQuery(this.spokePool, this.spokePool.filters.FilledRelay(), searchConfig),
+      paginatedEventQuery(this.spokePool, this.spokePool.filters.EnabledDepositRoute(), searchConfig),
     ]);
 
     // For each depositEvent, compute the realizedLpFeePct. Note this means that we are only finding this value on the
@@ -179,17 +184,13 @@ export class SpokePoolClient {
       const enableDeposit = spreadEvent(event);
       assign(this.depositRoutes, [enableDeposit.originToken, enableDeposit.destinationChainId], enableDeposit.enabled);
     }
-    this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
+    this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.isUpdated = true;
     this.log("debug", "Client updated!");
   }
   public hubPoolClient() {
     return this.rateModelClient.hubPoolClient;
-  }
-
-  private async getBlockNumber(): Promise<number> {
-    return await this.spokePool.provider.getBlockNumber();
   }
 
   private async computeRealizedLpFeePct(depositEvent: Event) {

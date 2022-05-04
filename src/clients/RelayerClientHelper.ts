@@ -1,5 +1,5 @@
 import winston from "winston";
-import { getProvider, getSigner, getDeployedContract, Contract } from "../utils";
+import { getProvider, getSigner, getDeployedContract, getDeploymentBlockNumber, Contract } from "../utils";
 import { SpokePoolClient, HubPoolClient, RateModelClient, TokenClient, ProfitClient, MultiCallerClient } from ".";
 import { RelayerConfig } from "../relayer/RelayerConfig";
 import { Clients } from "./ClientHelper";
@@ -16,7 +16,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
 
   const hubSigner = baseSigner.connect(getProvider(config.hubPoolChainId));
   const spokeSigners = config.spokePoolChains
-    .map((networkId) => getProvider(networkId))
+    .map((networkId) => getProvider(networkId, config.nodeQuorumThreshold))
     .map((provider) => baseSigner.connect(provider));
 
   // Create contract instances for each chain for each required contract.
@@ -29,13 +29,34 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
     return { networkId, contract: getDeployedContract("SpokePool", networkId, spokeSigners[index]) };
   });
 
-  const hubPoolClient = new HubPoolClient(logger, hubPool);
+  const hubPoolClientSearchSettings = {
+    fromBlock: getDeploymentBlockNumber("HubPool", config.hubPoolChainId),
+    toBlock: null,
+    maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
+  };
+  const hubPoolClient = new HubPoolClient(logger, hubPool, hubPoolClientSearchSettings);
 
-  const rateModelClient = new RateModelClient(logger, rateModelStore, hubPoolClient);
+  const rateModelClientSearchSettings = {
+    fromBlock: getDeploymentBlockNumber("RateModelStore", config.hubPoolChainId),
+    toBlock: null,
+    maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
+  };
+  const rateModelClient = new RateModelClient(logger, rateModelStore, hubPoolClient, rateModelClientSearchSettings);
 
   const spokePoolClients = {};
   spokePools.forEach((obj: { networkId: number; contract: Contract }) => {
-    spokePoolClients[obj.networkId] = new SpokePoolClient(logger, obj.contract, rateModelClient, obj.networkId);
+    const spokePoolClientSearchSettings = {
+      fromBlock: getDeploymentBlockNumber("SpokePool", obj.networkId),
+      toBlock: null,
+      maxBlockLookBack: config.maxBlockLookBack[obj.networkId],
+    };
+    spokePoolClients[obj.networkId] = new SpokePoolClient(
+      logger,
+      obj.contract,
+      rateModelClient,
+      obj.networkId,
+      spokePoolClientSearchSettings
+    );
   });
 
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients);
