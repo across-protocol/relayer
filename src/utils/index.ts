@@ -3,9 +3,10 @@ import winston from "winston";
 import assert from "assert";
 export { winston, assert };
 export { delay } from "@uma/financial-templates-lib";
+
 export { BigNumber, Signer, Contract, ContractFactory, Transaction } from "ethers";
-export { utils, BaseContract, Event, Wallet, providers } from "ethers";
-export { ethers } from "ethers";
+export { utils, EventFilter, BaseContract, Event, Wallet } from "ethers";
+export { ethers, providers } from "ethers";
 export type { Block } from "@ethersproject/abstract-provider";
 
 // Utils specifically for this bot.

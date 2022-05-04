@@ -11,7 +11,7 @@ describe("ProfitClient: Consider relay profit", async function () {
   beforeEach(async function () {
     ({ spyLogger } = createSpyLogger());
 
-    hubPoolClient = new MockHubPoolClient(null, null, null, null);
+    hubPoolClient = new MockHubPoolClient(null, null);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, toBN(0));
 
     profitClient.setTokenPrices({ [mainnetWeth]: toBNWei(3000), [mainnetUsdc]: toBNWei(1) }); // Seed prices
