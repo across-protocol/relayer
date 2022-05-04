@@ -122,7 +122,7 @@ export class SpokePoolClient {
   async update() {
     if (this.rateModelClient !== null && !this.rateModelClient.isUpdated) throw new Error("RateModel not updated");
 
-    this.latestBlockNumber = await this.getBlockNumber();
+    this.latestBlockNumber = await this.spokePool.provider.getBlockNumber();
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
       toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
