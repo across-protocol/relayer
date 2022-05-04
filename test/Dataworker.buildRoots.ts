@@ -3,7 +3,7 @@ import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokens
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
 import { buildRelayerRefundTreeWithUnassignedLeafIds, constructPoolRebalanceTree } from "./utils";
 import { buildPoolRebalanceLeafTree } from "./utils";
-import { ConfigStoreClient, HubPoolClient, RateModelClient } from "../src/clients";
+import { HubPoolClient, AcrossConfigStoreClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, originChainId, mockTreeRoot } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { refundProposalLiveness, CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
@@ -18,7 +18,7 @@ let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Co
 let l1Token_1: Contract, hubPool: Contract, timer: Contract, configStore: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress, dataworker: SignerWithAddress;
 
-let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
+let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
 let dataworkerInstance: Dataworker;
 
 let updateAllClients: () => Promise<void>;
@@ -31,7 +31,6 @@ describe("Dataworker: Build merkle roots", async function () {
       erc20_1,
       spokePool_2,
       erc20_2,
-      rateModelClient,
       configStore,
       configStoreClient,
       hubPoolClient,
@@ -54,7 +53,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
     // Submit deposits for multiple destination chain IDs.
     const deposit1 = await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -64,7 +63,7 @@ describe("Dataworker: Build merkle roots", async function () {
       amountToDeposit
     );
     const deposit2 = await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_2,
       erc20_2,
@@ -74,7 +73,7 @@ describe("Dataworker: Build merkle roots", async function () {
       amountToDeposit
     );
     const deposit3 = await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -84,7 +83,7 @@ describe("Dataworker: Build merkle roots", async function () {
       amountToDeposit
     );
     const deposit4 = await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_2,
       erc20_2,
@@ -124,7 +123,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
     // Submit deposits for multiple L2 tokens.
     const deposit1 = await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -134,7 +133,7 @@ describe("Dataworker: Build merkle roots", async function () {
       amountToDeposit
     );
     const deposit2 = await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_2,
       erc20_2,
@@ -144,7 +143,7 @@ describe("Dataworker: Build merkle roots", async function () {
       amountToDeposit
     );
     const deposit3 = await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -154,7 +153,7 @@ describe("Dataworker: Build merkle roots", async function () {
       amountToDeposit
     );
     const deposit4 = await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_2,
       erc20_2,
@@ -164,7 +163,7 @@ describe("Dataworker: Build merkle roots", async function () {
       amountToDeposit.mul(2)
     );
     const deposit5 = await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_2,
       erc20_2,
@@ -174,7 +173,7 @@ describe("Dataworker: Build merkle roots", async function () {
       amountToDeposit
     );
     const deposit6 = await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -262,7 +261,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
     // Splits leaf into multiple leaves if refunds > MAX_REFUNDS_PER_RELAYER_REFUND_LEAF.
     const deposit7 = await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -339,7 +338,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
       // Submit deposits for multiple L2 tokens.
       const deposit1 = await buildDeposit(
-        rateModelClient,
+        configStoreClient,
         hubPoolClient,
         spokePool_1,
         erc20_1,
@@ -349,7 +348,7 @@ describe("Dataworker: Build merkle roots", async function () {
         amountToDeposit
       );
       const deposit2 = await buildDeposit(
-        rateModelClient,
+        configStoreClient,
         hubPoolClient,
         spokePool_2,
         erc20_2,
@@ -359,7 +358,7 @@ describe("Dataworker: Build merkle roots", async function () {
         amountToDeposit.mul(toBN(2))
       );
       const deposit3 = await buildDeposit(
-        rateModelClient,
+        configStoreClient,
         hubPoolClient,
         spokePool_2,
         erc20_2,
@@ -533,7 +532,7 @@ describe("Dataworker: Build merkle roots", async function () {
       // Update client and construct root. This should increase running balance by total deposit amount, to refund
       // the slow relay.
       const deposit4 = await buildDeposit(
-        rateModelClient,
+        configStoreClient,
         hubPoolClient,
         spokePool_2,
         erc20_2,
@@ -596,7 +595,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
       // A full fill not following any partial fills is treated as a normal fill: increases the running balance.
       const deposit5 = await buildDeposit(
-        rateModelClient,
+        configStoreClient,
         hubPoolClient,
         spokePool_2,
         erc20_2,
@@ -642,7 +641,7 @@ describe("Dataworker: Build merkle roots", async function () {
         );
         await updateAllClients(); // Update client to be aware of new token mapping so we can build deposit correctly.
         const deposit = await buildDeposit(
-          rateModelClient,
+          configStoreClient,
           hubPoolClient,
           spokePool_1,
           l2Token,
@@ -715,7 +714,7 @@ describe("Dataworker: Build merkle roots", async function () {
     it("Token transfer exceeeds threshold", async function () {
       await updateAllClients();
       const deposit = await buildDeposit(
-        rateModelClient,
+        configStoreClient,
         hubPoolClient,
         spokePool_1,
         erc20_1,

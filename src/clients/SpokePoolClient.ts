@@ -1,7 +1,7 @@
 import { spreadEvent, assign, Contract, BigNumber, EventSearchConfig } from "../utils";
 import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
-import { RateModelClient } from "./RateModelClient";
+import { AcrossConfigStoreClient } from "./RateModelClient";
 import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock } from "../interfaces/SpokePool";
 
 export class SpokePoolClient {
@@ -18,7 +18,7 @@ export class SpokePoolClient {
   constructor(
     readonly logger: winston.Logger,
     readonly spokePool: Contract,
-    readonly rateModelClient: RateModelClient | null, // RateModelStore can be excluded. This disables some deposit validation.
+    readonly configStoreClient: AcrossConfigStoreClient | null, // Can be excluded. This disables some deposit validation.
     readonly chainId: number,
     readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
   ) {
@@ -119,7 +119,7 @@ export class SpokePoolClient {
   }
 
   async update() {
-    if (this.rateModelClient !== null && !this.rateModelClient.isUpdated) throw new Error("RateModel not updated");
+    if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
 
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
@@ -188,11 +188,11 @@ export class SpokePoolClient {
     this.log("debug", "Client updated!");
   }
   public hubPoolClient() {
-    return this.rateModelClient.hubPoolClient;
+    return this.configStoreClient.hubPoolClient;
   }
 
   private async computeRealizedLpFeePct(depositEvent: Event) {
-    if (!this.rateModelClient) return { realizedLpFeePct: toBN(0), quoteBlock: 0 }; // If there is no rate model client return 0.
+    if (!this.configStoreClient) return { realizedLpFeePct: toBN(0), quoteBlock: 0 }; // If there is no rate model client return 0.
     const deposit = {
       amount: depositEvent.args.amount,
       originChainId: Number(depositEvent.args.originChainId),
@@ -200,11 +200,11 @@ export class SpokePoolClient {
       quoteTimestamp: depositEvent.args.quoteTimestamp,
     } as Deposit;
 
-    return this.rateModelClient.computeRealizedLpFeePct(deposit, this.hubPoolClient().getL1TokenForDeposit(deposit));
+    return this.configStoreClient.computeRealizedLpFeePct(deposit, this.hubPoolClient().getL1TokenForDeposit(deposit));
   }
 
   private getDestinationTokenForDeposit(deposit: Deposit): string {
-    if (!this.rateModelClient) return ZERO_ADDRESS; // If there is no rate model client return address(0).
+    if (!this.configStoreClient) return ZERO_ADDRESS; // If there is no rate model client return address(0).
     return this.hubPoolClient().getDestinationTokenForDeposit(deposit);
   }
 

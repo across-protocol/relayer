@@ -26,8 +26,7 @@ export async function setupDataworker(
   timer: Contract;
   spokePoolClient_1: clients.SpokePoolClient;
   spokePoolClient_2: clients.SpokePoolClient;
-  configStoreClient: clients.ConfigStoreClient;
-  rateModelClient: clients.RateModelClient;
+  configStoreClient: clients.AcrossConfigStoreClient;
   hubPoolClient: clients.HubPoolClient;
   dataworkerInstance: Dataworker;
   spyLogger: winston.Logger;
@@ -77,11 +76,10 @@ export async function setupDataworker(
   const { spyLogger } = createSpyLogger();
   const { configStore } = await deployConfigStore(owner, [l1Token_1, l1Token_2]);
   const hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool);
-  const rateModelClient = new clients.RateModelClient(spyLogger, configStore, hubPoolClient);
-
-  const multiCallerClient = new clients.MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
-  const configStoreClient = new clients.ConfigStoreClient(
+  const configStoreClient = new clients.AcrossConfigStoreClient(
     spyLogger,
+    configStore,
+    hubPoolClient,
     {
       [l1Token_1.address]: defaultPoolRebalanceTokenTransferThreshold,
       [l1Token_2.address]: defaultPoolRebalanceTokenTransferThreshold,
@@ -90,16 +88,18 @@ export async function setupDataworker(
     maxL1TokensPerPoolRebalanceLeaf
   );
 
+  const multiCallerClient = new clients.MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
+
   const spokePoolClient_1 = new clients.SpokePoolClient(
     spyLogger,
     spokePool_1.connect(relayer),
-    rateModelClient,
+    configStoreClient,
     originChainId
   );
   const spokePoolClient_2 = new clients.SpokePoolClient(
     spyLogger,
     spokePool_2.connect(relayer),
-    rateModelClient,
+    configStoreClient,
     destinationChainId
   );
 
@@ -108,7 +108,6 @@ export async function setupDataworker(
     {
       spokePoolClients: { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
       hubPoolClient,
-      rateModelClient,
       multiCallerClient,
       configStoreClient,
     },
@@ -148,7 +147,6 @@ export async function setupDataworker(
     spokePoolClient_1,
     spokePoolClient_2,
     configStoreClient,
-    rateModelClient,
     hubPoolClient,
     dataworkerInstance,
     spyLogger,
@@ -160,7 +158,6 @@ export async function setupDataworker(
     updateAllClients: async () => {
       await hubPoolClient.update();
       await configStoreClient.update();
-      await rateModelClient.update();
       await spokePoolClient_1.update();
       await spokePoolClient_2.update();
     },

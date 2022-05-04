@@ -2,13 +2,13 @@ import { hubPoolFixture, deployIterativeSpokePoolsAndToken, createSpyLogger, las
 import { expect, deposit, ethers, Contract, getLastBlockTime, contractAt, addLiquidity } from "./utils";
 import { SignerWithAddress, setupTokensForWallet, deployConfigStore, winston, sinon, toBNWei } from "./utils";
 import { amountToLp, l1TokenTransferThreshold, sampleRateModel } from "./constants";
-import { HubPoolClient, RateModelClient, MultiCallerClient } from "../src/clients";
+import { HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
 import { TokenClient, ProfitClient } from "../src/clients";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 
 let relayer_signer: SignerWithAddress, hubPool: Contract, mockAdapter: Contract, configStore: Contract;
-let hubPoolClient: HubPoolClient, rateModelClient: RateModelClient, tokenClient: TokenClient;
+let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient, tokenClient: TokenClient;
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
 let spokePools, l1TokenToL2Tokens;
@@ -27,14 +27,14 @@ describe("Relayer: Iterative fill", async function () {
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(relayer_signer, []));
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-    rateModelClient = new RateModelClient(spyLogger, configStore, hubPoolClient);
+    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient, {}, 3, 3);
     multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
 
     ({ spokePools, l1TokenToL2Tokens } = await deployIterativeSpokePoolsAndToken(
       spyLogger,
       relayer_signer,
       mockAdapter,
-      rateModelClient,
+      configStoreClient,
       numChainsToDeploySpokePoolsTo,
       numTokensToDeployPerChain
     ));
@@ -59,7 +59,7 @@ describe("Relayer: Iterative fill", async function () {
     relayer = new Relayer(spyLogger, {
       spokePoolClients,
       hubPoolClient,
-      rateModelClient,
+      configStoreClient,
       tokenClient,
       profitClient,
       multiCallerClient,
@@ -105,7 +105,7 @@ describe("Relayer: Iterative fill", async function () {
 
 async function updateAllClients() {
   await hubPoolClient.update();
-  await rateModelClient.update();
+  await configStoreClient.update();
   await tokenClient.update();
   for (const spokePool of spokePools) {
     await spokePool.spokePoolClient.update();

@@ -1,7 +1,7 @@
 import { expect, ethers, Contract } from "./utils";
 import { SignerWithAddress, buildSlowRelayTree } from "./utils";
 import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, buildSlowFill } from "./utils";
-import { SpokePoolClient, HubPoolClient, RateModelClient, ConfigStoreClient } from "../src/clients";
+import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient } from "../src/clients";
 import { amountToDeposit, repaymentChainId, destinationChainId, originChainId } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
@@ -13,7 +13,7 @@ let l1Token_1: Contract, l1Token_2: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
+let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
 let dataworkerInstance: Dataworker;
 
 let updateAllClients: () => Promise<void>;
@@ -25,7 +25,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       erc20_1,
       spokePool_2,
       erc20_2,
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       l1Token_1,
       l1Token_2,
@@ -43,7 +43,6 @@ describe("Dataworker: Load data used in all functions", async function () {
     // Throws error if hub pool client is not updated.
     expect(() => dataworkerInstance._loadData()).to.throw(/HubPoolClient not updated/);
     await hubPoolClient.update();
-    await rateModelClient.update();
 
     // Throws error if config store client not updated.
     expect(() => dataworkerInstance._loadData()).to.throw(/ConfigStoreClient not updated/);
@@ -67,7 +66,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
 
     const deposit1 = await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -77,7 +76,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       amountToDeposit
     );
     const deposit2 = await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_2,
       erc20_2,
@@ -94,7 +93,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     // Two deposits with no fills per destination chain ID.
     await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -104,7 +103,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       amountToDeposit.mul(toBN(2))
     );
     await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_2,
       erc20_2,
@@ -152,7 +151,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     // Fill events emitted by slow relays are included in unfilled amount calculations.
     const deposit5 = await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_2,
       erc20_2,
@@ -184,7 +183,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
 
     const deposit1 = await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -194,7 +193,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       amountToDeposit
     );
     const deposit2 = await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_2,
       erc20_2,
@@ -269,7 +268,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     // Slow relay fills are added.
     const deposit3 = await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_2,
       erc20_2,
@@ -340,7 +339,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
 
     const deposit1 = await buildDeposit(
-      rateModelClient,
+      configStoreClient,
       hubPoolClient,
       spokePool_2,
       erc20_2,
@@ -349,7 +348,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       originChainId,
       amountToDeposit
     );
-    const realizedLpFeePctData = await rateModelClient.computeRealizedLpFeePct(deposit1, l1Token_1.address);
+    const realizedLpFeePctData = await configStoreClient.computeRealizedLpFeePct(deposit1, l1Token_1.address);
 
     // Should include all deposits, even those not matched by a relay
     await updateAllClients();

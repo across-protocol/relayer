@@ -1,6 +1,6 @@
 import winston from "winston";
 import { getProvider, getSigner, getDeployedContract, getDeploymentBlockNumber, Contract } from "../utils";
-import { SpokePoolClient, HubPoolClient, RateModelClient, TokenClient, ProfitClient, MultiCallerClient } from ".";
+import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, TokenClient, ProfitClient, MultiCallerClient } from ".";
 import { RelayerConfig } from "../relayer/RelayerConfig";
 import { Clients } from "./ClientHelper";
 
@@ -41,7 +41,15 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
     toBlock: null,
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
-  const rateModelClient = new RateModelClient(logger, configStore, hubPoolClient, rateModelClientSearchSettings);
+  const configStoreClient = new AcrossConfigStoreClient(
+    logger,
+    configStore,
+    hubPoolClient,
+    {},
+    3,
+    3,
+    rateModelClientSearchSettings
+  );
 
   const spokePoolClients = {};
   spokePools.forEach((obj: { networkId: number; contract: Contract }) => {
@@ -53,7 +61,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
     spokePoolClients[obj.networkId] = new SpokePoolClient(
       logger,
       obj.contract,
-      rateModelClient,
+      configStoreClient,
       obj.networkId,
       spokePoolClientSearchSettings
     );
@@ -77,7 +85,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
     }),
   });
 
-  return { hubPoolClient, rateModelClient, spokePoolClients, tokenClient, profitClient, multiCallerClient };
+  return { hubPoolClient, configStoreClient, spokePoolClients, tokenClient, profitClient, multiCallerClient };
 }
 
 // If this is the first run then the hubPoolClient will have no whitelisted routes. If this is the case then first
@@ -85,7 +93,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
 export async function updateRelayerClients(logger: winston.Logger, clients: RelayerClients) {
   if (Object.keys(clients.hubPoolClient.getL1TokensToDestinationTokens()).length === 0) {
     logger.debug({ at: "ClientHelper", message: "Updating clients for first run" });
-    await Promise.all([clients.hubPoolClient.update(), clients.rateModelClient.update()]);
+    await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
     // SpokePool client and profit client requires up to date HuPoolClient and rateModelClient.
     await Promise.all([updateSpokePoolClients(clients.spokePoolClients), clients.profitClient.update()]);
     await clients.tokenClient.update(); // Token client requires up to date spokePool clients to fetch token routes.
@@ -93,7 +101,7 @@ export async function updateRelayerClients(logger: winston.Logger, clients: Rela
     logger.debug({ at: "ClientHelper", message: "Updating clients for standard run" });
     await Promise.all([
       clients.hubPoolClient.update(),
-      clients.rateModelClient.update(),
+      clients.configStoreClient.update(),
       clients.tokenClient.update(),
       clients.profitClient.update(),
       updateSpokePoolClients(clients.spokePoolClients),

@@ -1,16 +1,16 @@
-import { spreadEvent, winston, Contract, BigNumber, paginatedEventQuery, EventSearchConfig } from "../utils";
+import { spreadEvent, winston, Contract, BigNumber, paginatedEventQuery, EventSearchConfig, assert, toBN } from "../utils";
 import { L1TokenTransferThreshold, Deposit } from "../interfaces";
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
 import { HubPoolClient } from "./HubPoolClient";
 
-// TODO: Rename to ConfigStoreClient
-export class RateModelClient {
+export class AcrossConfigStoreClient {
   private readonly blockFinder;
 
-  public cumulativeRateModelEvents: across.rateModel.RateModelEvent[] = [];
+  public cumulativeRateModelUpdates: across.rateModel.RateModelEvent[] = [];
   public cumulativeTokenTransferUpdates: L1TokenTransferThreshold[] = [];
   private rateModelDictionary: across.rateModel.RateModelDictionary;
+  public poolRebalanceTokenTransferThreshold: { [l1Token: string]: BigNumber };
   public firstBlockToSearch: number;
 
   public isUpdated: boolean = false;
@@ -19,13 +19,26 @@ export class RateModelClient {
     readonly logger: winston.Logger,
     readonly rateModelStore: Contract, // TODO: Rename to ConfigStore
     readonly hubPoolClient: HubPoolClient,
+    _poolRebalanceTokenTransferThreshold: { [l1Token: string]: BigNumber },
+    readonly maxRefundsPerRelayerRefundLeaf: number = 25,
+    readonly maxL1TokensPerPoolRebalanceLeaf: number = 25,
     readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
     this.blockFinder = new BlockFinder(this.rateModelStore.provider.getBlock.bind(this.rateModelStore.provider));
     this.rateModelDictionary = new across.rateModel.RateModelDictionary();
+    Object.values(_poolRebalanceTokenTransferThreshold).forEach((threshold: BigNumber) =>
+      assert(threshold.gte(toBN(0)), "Threshold cannot be negative")
+    );
+    this.poolRebalanceTokenTransferThreshold = _poolRebalanceTokenTransferThreshold;
   }
 
+  // Used for testing, should we block this function in prod?
+  setPoolRebalanceTokenTransferThreshold(l1Token: string, newThreshold: BigNumber) {
+    assert(newThreshold.gte(toBN(0)), "Threshold cannot be negative");
+    this.poolRebalanceTokenTransferThreshold[l1Token] = newThreshold;
+  }
+  
   async computeRealizedLpFeePct(
     deposit: Deposit,
     l1Token: string
@@ -104,7 +117,7 @@ export class RateModelClient {
       args.l1Token = args.key;
       delete args.value;
       delete args.key;
-      this.cumulativeRateModelEvents = [...this.cumulativeRateModelEvents, { ...args }];
+      this.cumulativeRateModelUpdates.push({ ...args });
 
       // Store transferThreshold
       args.transferThreshold = transferThresholdForToken;
@@ -113,7 +126,7 @@ export class RateModelClient {
     }
 
     // Sort events by block height in ascending order:
-    this.rateModelDictionary.updateWithEvents(this.cumulativeRateModelEvents);
+    this.rateModelDictionary.updateWithEvents(this.cumulativeRateModelUpdates);
 
     this.isUpdated = true;
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.

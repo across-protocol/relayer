@@ -4,7 +4,7 @@ import { getRealizedLpFeeForFills, BigNumber, toBN } from "../utils";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, DepositWithBlock } from "../interfaces";
 import { Fill, FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
 import { RunningBalances, BundleEvaluationBlockNumbers } from "../interfaces";
-import { DataworkerClients } from "../clients";
+import { Clients } from "../clients";
 
 // TODO!!!: Add helpful logs everywhere.
 
@@ -14,7 +14,7 @@ export class Dataworker {
   // eslint-disable-next-line no-useless-constructor
   constructor(
     readonly logger: winston.Logger,
-    readonly clients: DataworkerClients,
+    readonly clients: Clients,
     readonly chainIdListForBundleEvaluationBlockNumbers: number[]
   ) {}
 

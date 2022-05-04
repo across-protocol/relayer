@@ -1,8 +1,8 @@
-import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallerClient } from ".";
+import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from ".";
 
 export interface Clients {
   spokePoolClients: { [chainId: number]: SpokePoolClient };
   hubPoolClient: HubPoolClient;
-  rateModelClient: RateModelClient;
+  configStoreClient: AcrossConfigStoreClient;
   multiCallerClient: MultiCallerClient;
 }
