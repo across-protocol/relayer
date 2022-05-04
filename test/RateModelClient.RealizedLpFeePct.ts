@@ -27,6 +27,7 @@ const tokenConfigToUpdate = JSON.stringify({
   transferThreshold: l1TokenTransferThreshold,
 });
 
+// TODO: Rename file name to match tested client in a follow up PR to reduce line diff.
 describe("AcrossConfigStoreClient", async function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
@@ -65,31 +66,31 @@ describe("AcrossConfigStoreClient", async function () {
     it("getRateModelForBlockNumber", async function () {
       await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
       await updateAllClients();
-  
+
       const initialRateModelUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[0];
-  
+
       expect(
         configStoreClient.getRateModelForBlockNumber(l1Token.address, initialRateModelUpdate.blockNumber)
       ).to.deep.equal(sampleRateModel);
-  
+
       // Block number when there is no rate model
       expect(() =>
-      configStoreClient.getRateModelForBlockNumber(l1Token.address, initialRateModelUpdate.blockNumber - 1)
+        configStoreClient.getRateModelForBlockNumber(l1Token.address, initialRateModelUpdate.blockNumber - 1)
       ).to.throw(/before first UpdatedRateModel event/);
-  
+
       // L1 token where there is no rate model
       expect(() =>
-      configStoreClient.getRateModelForBlockNumber(l2Token.address, initialRateModelUpdate.blockNumber)
+        configStoreClient.getRateModelForBlockNumber(l2Token.address, initialRateModelUpdate.blockNumber)
       ).to.throw(/No updated rate model events for L1 token/);
     });
-  
+
     it("computeRealizedLpFeePct", async function () {
       await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
       await updateAllClients();
-  
+
       const initialRateModelUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[0];
       const initialRateModelUpdateTime = (await ethers.provider.getBlock(initialRateModelUpdate.blockNumber)).timestamp;
-  
+
       // Takes into account deposit amount's effect on utilization. This deposit uses 10% of the pool's liquidity
       // so the fee should reflect a 10% post deposit utilization.
       const depositData = {
@@ -107,13 +108,13 @@ describe("AcrossConfigStoreClient", async function () {
         // Quote time needs to be >= first rate model event time
       };
       await configStoreClient.update();
-  
+
       // Relayed amount being 10% of total LP amount should give exact same results as this test in v1:
       // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L1037
       expect((await configStoreClient.computeRealizedLpFeePct(depositData, l1Token.address)).realizedLpFeePct).to.equal(
         toBNWei("0.000117987509354032")
       );
-  
+
       // Next, let's increase the pool utilization from 0% to 60% by sending 60% of the pool's liquidity to
       // another chain.
       const leaves = buildPoolRebalanceLeaves(
@@ -129,7 +130,7 @@ describe("AcrossConfigStoreClient", async function () {
       await hubPool.proposeRootBundle([1], 1, tree.getHexRoot(), mockTreeRoot, mockTreeRoot);
       await timer.setCurrentTime(Number(await timer.getCurrentTime()) + refundProposalLiveness + 1);
       await hubPool.executeRootBundle(...Object.values(leaves[0]), tree.getHexProof(leaves[0]));
-  
+
       // Submit a deposit with a de minimis amount of tokens so we can isolate the computed realized lp fee % to the
       // pool utilization factor.
       expect(
@@ -146,7 +147,7 @@ describe("AcrossConfigStoreClient", async function () {
           )
         ).realizedLpFeePct
       ).to.equal(toBNWei("0.001371068779697899"));
-  
+
       // Relaying 10% of pool should give exact same result as this test, which sends a relay that is 10% of the pool's
       // size when the pool is already at 60% utilization. The resulting post-relay utilization is therefore 70%.
       // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L1064
@@ -164,8 +165,7 @@ describe("AcrossConfigStoreClient", async function () {
         ).realizedLpFeePct
       ).to.equal(toBNWei("0.002081296752280018"));
     });
-  })
-
+  });
 });
 
 async function updateAllClients() {

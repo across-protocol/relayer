@@ -3,7 +3,13 @@ import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWal
 import { lastSpyLogIncludes, toBNWei, createSpyLogger, deployConfigStore } from "./utils";
 import { deployAndConfigureHubPool, winston } from "./utils";
 import { amountToLp, l1TokenTransferThreshold, sampleRateModel } from "./constants";
-import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient, ProfitClient } from "../src/clients";
+import {
+  SpokePoolClient,
+  HubPoolClient,
+  AcrossConfigStoreClient,
+  MultiCallerClient,
+  ProfitClient,
+} from "../src/clients";
 import { TokenClient } from "../src/clients";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested

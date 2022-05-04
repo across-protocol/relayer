@@ -1,4 +1,13 @@
-import { spreadEvent, winston, Contract, BigNumber, paginatedEventQuery, EventSearchConfig, assert, toBN } from "../utils";
+import {
+  spreadEvent,
+  winston,
+  Contract,
+  BigNumber,
+  paginatedEventQuery,
+  EventSearchConfig,
+  assert,
+  toBN,
+} from "../utils";
 import { L1TokenTransferThreshold, Deposit } from "../interfaces";
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
@@ -38,7 +47,7 @@ export class AcrossConfigStoreClient {
     assert(newThreshold.gte(toBN(0)), "Threshold cannot be negative");
     this.poolRebalanceTokenTransferThreshold[l1Token] = newThreshold;
   }
-  
+
   async computeRealizedLpFeePct(
     deposit: Deposit,
     l1Token: string
