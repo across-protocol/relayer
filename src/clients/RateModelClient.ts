@@ -28,12 +28,12 @@ export class AcrossConfigStoreClient {
 
   constructor(
     readonly logger: winston.Logger,
-    readonly rateModelStore: Contract, // TODO: Rename to ConfigStore
+    readonly configStore: Contract, // TODO: Rename to ConfigStore
     readonly hubPoolClient: HubPoolClient,
     readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
-    this.blockFinder = new BlockFinder(this.rateModelStore.provider.getBlock.bind(this.rateModelStore.provider));
+    this.blockFinder = new BlockFinder(this.configStore.provider.getBlock.bind(this.configStore.provider));
     this.rateModelDictionary = new across.rateModel.RateModelDictionary();
   }
 
@@ -106,7 +106,7 @@ export class AcrossConfigStoreClient {
   async update() {
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
-      toBlock: this.eventSearchConfig.toBlock || (await this.rateModelStore.provider.getBlockNumber()),
+      toBlock: this.eventSearchConfig.toBlock || (await this.configStore.provider.getBlockNumber()),
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than
@@ -115,8 +115,8 @@ export class AcrossConfigStoreClient {
     this.logger.debug({ at: "RateModelClient", message: "Updating client", searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
     const [updatedTokenConfigEvents, updatedGlobalConfigEvents] = await Promise.all([
-      paginatedEventQuery(this.rateModelStore, this.rateModelStore.filters.UpdatedTokenConfig(), searchConfig),
-      paginatedEventQuery(this.rateModelStore, this.rateModelStore.filters.UpdatedGlobalConfig(), searchConfig),
+      paginatedEventQuery(this.configStore, this.configStore.filters.UpdatedTokenConfig(), searchConfig),
+      paginatedEventQuery(this.configStore, this.configStore.filters.UpdatedGlobalConfig(), searchConfig),
     ]);
 
     // Save new TokenConfig updates.
