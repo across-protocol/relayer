@@ -1,4 +1,5 @@
 import { BigNumber } from "../utils";
+import { SortableEvent } from "./Common";
 // @notice Passed as input to HubPool.proposeRootBundle
 export type BundleEvaluationBlockNumbers = number[];
 
@@ -21,8 +22,7 @@ export interface RelayerRefundLeaf {
   refundAddresses: string[];
 }
 
-export interface ProposedRootBundle {
-  blockNumber: number;
+export interface ProposedRootBundle extends SortableEvent {
   challengePeriodEndTimestamp: number;
   poolRebalanceLeafCount: number;
   bundleEvaluationBlockNumbers: BigNumber[];
@@ -32,8 +32,7 @@ export interface ProposedRootBundle {
   proposer: string;
 }
 
-export interface ExecutedRootBundle {
-  blockNumber: number;
+export interface ExecutedRootBundle extends SortableEvent {
   chainId: number;
   bundleLpFees: BigNumber[];
   netSendAmounts: BigNumber[];

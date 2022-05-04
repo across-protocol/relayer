@@ -1,4 +1,5 @@
 import { BigNumber } from "ethers";
+import { SortableEvent } from "./Common";
 
 export interface Deposit {
   depositId: number;
@@ -15,9 +16,7 @@ export interface Deposit {
   speedUpSignature?: string | undefined; // appended after initialization, if deposit was speedup (not part of Deposit event).
 }
 
-export interface DepositWithBlock extends Deposit {
-  blockNumber: number;
-}
+export interface DepositWithBlock extends Deposit, SortableEvent {}
 export interface Fill {
   amount: BigNumber;
   totalFilledAmount: BigNumber;
@@ -36,9 +35,8 @@ export interface Fill {
   destinationChainId: number;
 }
 
-export interface FillWithBlock extends Fill {
-  blockNumber: number;
-}
+export interface FillWithBlock extends Fill, SortableEvent {}
+
 export interface SpeedUp {
   depositor: string;
   depositorSignature: string;

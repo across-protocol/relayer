@@ -175,7 +175,7 @@ export class SpokePoolClient {
 
     for (const event of fillEvents) {
       this.fills.push(spreadEvent(event));
-      this.fillsWithBlockNumbers.push(spreadEventWithBlockNumber(event));
+      this.fillsWithBlockNumbers.push(spreadEventWithBlockNumber(event) as FillWithBlock);
     }
 
     for (const event of enableDepositsEvents) {

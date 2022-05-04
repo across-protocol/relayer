@@ -1,3 +1,4 @@
+import { SortableEvent } from "../interfaces";
 import { Contract, Event, EventFilter } from "./";
 
 export function spreadEvent(event: Event) {
@@ -25,7 +26,7 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
   // The number of queries is the range over which we are searching, divided by the maxBlockLookBack, rounded up.
   const numberOfQueries = Math.ceil((searchConfig.toBlock - searchConfig.fromBlock) / searchConfig.maxBlockLookBack);
 
-  let promises = [];
+  const promises = [];
   for (let i = 0; i < numberOfQueries; i++) {
     const fromBlock = searchConfig.fromBlock + i * searchConfig.maxBlockLookBack;
     const toBlock = Math.min(searchConfig.fromBlock + (i + 1) * searchConfig.maxBlockLookBack, searchConfig.toBlock);
@@ -40,17 +41,28 @@ export interface EventSearchConfig {
   toBlock: number | null;
   maxBlockLookBack: number;
 }
-export function spreadEventWithBlockNumber(event: Event) {
+
+export function spreadEventWithBlockNumber(event: Event): SortableEvent {
   return {
     ...spreadEvent(event),
     blockNumber: event.blockNumber,
+    transactionIndex: event.transactionIndex,
+    logIndex: event.logIndex,
   };
 }
 
-export function sortEventsAscending(events: { blockNumber: number }[]): { blockNumber: number }[] {
-  return [...events].sort((ex, ey) => ex.blockNumber - ey.blockNumber);
+export function sortEventsAscending<T extends SortableEvent>(events: T[]): T[] {
+  return [...events].sort((ex, ey) => {
+    if (ex.blockNumber !== ey.blockNumber) return ex.blockNumber - ey.blockNumber;
+    if (ex.transactionIndex !== ey.transactionIndex) return ex.transactionIndex - ey.transactionIndex;
+    return ex.logIndex - ey.logIndex;
+  });
 }
 
-export function sortEventsDescending(events: { blockNumber: number }[]): { blockNumber: number }[] {
-  return [...events].sort((ex, ey) => ey.blockNumber - ex.blockNumber);
+export function sortEventsDescending<T extends SortableEvent>(events: T[]): T[] {
+  return [...events].sort((ex, ey) => {
+    if (ex.blockNumber !== ey.blockNumber) return ey.blockNumber - ex.blockNumber;
+    if (ex.transactionIndex !== ey.transactionIndex) return ey.transactionIndex - ex.transactionIndex;
+    return ey.logIndex - ex.logIndex;
+  });
 }
