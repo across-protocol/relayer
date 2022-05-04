@@ -1,6 +1,6 @@
 import { spreadEvent, winston, Contract, BigNumber, sortEventsDescending, spreadEventWithBlockNumber } from "../utils";
 import { paginatedEventQuery, EventSearchConfig, utf8ToHex } from "../utils";
-import { L1TokenTransferThreshold, Deposit, RefundsPerRelayerRefundLeaf, TokenConfig } from "../interfaces";
+import { L1TokenTransferThreshold, Deposit, TokenConfig } from "../interfaces";
 import { GlobalConfigUpdate } from "../interfaces";
 
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
