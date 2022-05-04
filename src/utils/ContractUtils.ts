@@ -1,6 +1,6 @@
 import { getNetworkName, Contract, Wallet } from ".";
 
-import { getDeployedAddress } from "@across-protocol/contracts-v2";
+import { getDeployedAddress, getDeployedBlockNumber } from "@across-protocol/contracts-v2";
 import * as typechain from "@across-protocol/contracts-v2"; //TODO: refactor once we've fixed export from contract repo
 
 // Return an ethers contract instance for a deployed contract, imported from the Across-protocol contracts repo.
@@ -31,4 +31,13 @@ export function getParamType(contractName: string, functionName: string, paramNa
   const artifact: any = typechain[`${[contractName]}__factory`];
   const fragment = artifact.abi.find((fragment) => fragment.name === functionName);
   return fragment!.inputs.find((input) => input.name === paramName) || "";
+}
+
+export function getDeploymentBlockNumber(contractName: string, networkId: number) {
+  try {
+    if (contractName === "SpokePool") contractName = castSpokePoolName(networkId);
+    return getDeployedBlockNumber(contractName, networkId);
+  } catch (error) {
+    throw new Error(`Could not find deployment block for contract ${contractName} on ${networkId}`);
+  }
 }

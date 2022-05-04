@@ -1,4 +1,4 @@
-import { spreadEvent, winston, Contract, BigNumber } from "../utils";
+import { spreadEvent, winston, Contract, BigNumber, paginatedEventQuery, EventSearchConfig } from "../utils";
 import { Deposit } from "../interfaces/SpokePool";
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
@@ -17,9 +17,9 @@ export class RateModelClient {
     readonly logger: winston.Logger,
     readonly rateModelStore: Contract,
     readonly hubPoolClient: HubPoolClient,
-    readonly startingBlock: number = 0
+    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
   ) {
-    this.firstBlockToSearch = startingBlock;
+    this.firstBlockToSearch = eventSearchConfig.fromBlock;
     this.blockFinder = new BlockFinder(this.rateModelStore.provider.getBlock.bind(this.rateModelStore.provider));
     this.rateModelDictionary = new across.rateModel.RateModelDictionary();
   }
@@ -66,14 +66,20 @@ export class RateModelClient {
   }
 
   async update() {
+    const searchConfig = {
+      fromBlock: this.firstBlockToSearch,
+      toBlock: this.eventSearchConfig.toBlock || (await this.rateModelStore.provider.getBlockNumber()),
+      maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
+    };
+    if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than
     if (this.hubPoolClient !== null && !this.hubPoolClient.isUpdated) throw new Error("HubPool not updated");
 
-    const searchConfig = [this.firstBlockToSearch, await this.rateModelStore.provider.getBlockNumber()];
     this.logger.debug({ at: "RateModelClient", message: "Updating client", searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
-    const rateModelStoreEvents = await this.rateModelStore.queryFilter(
+    const rateModelStoreEvents = await paginatedEventQuery(
+      this.rateModelStore,
       this.rateModelStore.filters.UpdatedRateModel(),
-      ...searchConfig
+      searchConfig
     );
 
     for (const event of rateModelStoreEvents) {
@@ -88,7 +94,7 @@ export class RateModelClient {
     this.rateModelDictionary.updateWithEvents(this.cumulativeRateModelEvents);
 
     this.isUpdated = true;
-    this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
+    this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.logger.debug({ at: "RateModelClient", message: "Client updated!" });
   }
