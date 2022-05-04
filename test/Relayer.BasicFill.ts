@@ -1,15 +1,15 @@
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
-import { lastSpyLogIncludes, createSpyLogger, deployRateModelStore, deployAndConfigureHubPool, winston } from "./utils";
+import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfigureHubPool, winston } from "./utils";
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId } from "./utils";
 import { originChainId, sinon, toBNWei } from "./utils";
-import { amountToLp, sampleRateModel } from "./constants";
+import { amountToLp, l1TokenTransferThreshold, sampleRateModel } from "./constants";
 import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallerClient } from "../src/clients";
 import { TokenClient, ProfitClient } from "../src/clients";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
-let hubPool: Contract, rateModelStore: Contract, l1Token: Contract;
+let hubPool: Contract, configStore: Contract, l1Token: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
@@ -33,9 +33,9 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     ]);
 
     ({ spy, spyLogger } = createSpyLogger());
-    ({ rateModelStore } = await deployRateModelStore(owner, [l1Token]));
+    ({ configStore } = await deployConfigStore(owner, [l1Token]));
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-    rateModelClient = new RateModelClient(spyLogger, rateModelStore, hubPoolClient);
+    rateModelClient = new RateModelClient(spyLogger, configStore, hubPoolClient);
 
     multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
 
@@ -66,7 +66,10 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     await l1Token.approve(hubPool.address, amountToLp);
     await hubPool.addLiquidity(l1Token.address, amountToLp);
-    await rateModelStore.updateRateModel(l1Token.address, JSON.stringify(sampleRateModel));
+    await configStore.updateTokenConfig(
+      l1Token.address,
+      JSON.stringify({ rateModel: JSON.stringify(sampleRateModel), transferThreshold: l1TokenTransferThreshold })
+    );
 
     await updateAllClients();
   });

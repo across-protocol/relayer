@@ -1,13 +1,15 @@
 import { spreadEvent, winston, Contract, BigNumber, paginatedEventQuery, EventSearchConfig } from "../utils";
-import { Deposit } from "../interfaces/SpokePool";
+import { L1TokenTransferThreshold, Deposit } from "../interfaces";
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
 import { HubPoolClient } from "./HubPoolClient";
 
+// TODO: Rename to ConfigStoreClient
 export class RateModelClient {
   private readonly blockFinder;
 
   public cumulativeRateModelEvents: across.rateModel.RateModelEvent[] = [];
+  public cumulativeTokenTransferUpdates: L1TokenTransferThreshold[] = [];
   private rateModelDictionary: across.rateModel.RateModelDictionary;
   public firstBlockToSearch: number;
 
@@ -15,7 +17,7 @@ export class RateModelClient {
 
   constructor(
     readonly logger: winston.Logger,
-    readonly rateModelStore: Contract,
+    readonly rateModelStore: Contract, // TODO: Rename to ConfigStore
     readonly hubPoolClient: HubPoolClient,
     readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
   ) {
@@ -76,21 +78,41 @@ export class RateModelClient {
 
     this.logger.debug({ at: "RateModelClient", message: "Updating client", searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
-    const rateModelStoreEvents = await paginatedEventQuery(
-      this.rateModelStore,
-      this.rateModelStore.filters.UpdatedRateModel(),
-      searchConfig
-    );
+    const [updatedTokenConfigEvents, updatedGlobalConfigEvents] = await Promise.all([
+      paginatedEventQuery(this.rateModelStore, this.rateModelStore.filters.UpdatedTokenConfig(), searchConfig),
+      paginatedEventQuery(this.rateModelStore, this.rateModelStore.filters.UpdatedGlobalConfig(), searchConfig),
+    ]);
 
-    for (const event of rateModelStoreEvents) {
+    for (const event of updatedTokenConfigEvents) {
       const args = {
         blockNumber: event.blockNumber,
         transactionIndex: event.transactionIndex,
         logIndex: event.logIndex,
         ...spreadEvent(event),
       };
-      this.cumulativeRateModelEvents = [...this.cumulativeRateModelEvents, args];
+
+      const rateModelForToken = JSON.parse(args.value).rateModel;
+      const transferThresholdForToken = JSON.parse(args.value).transferThreshold;
+      if (!(rateModelForToken && transferThresholdForToken))
+        throw new Error("l1TokenConfig missing rateModel or transferThreshold");
+
+      // Store RateModel:
+      // TODO: Temporarily reformat the shape of the event that we pass into the sdk.rateModel class to make it fit
+      // the expected shape. This is a fix for now that we should eventually replace when we change the sdk.rateModel
+      // class itself to work with the generalized ConfigStore.
+      args.rateModel = rateModelForToken;
+      args.l1Token = args.key;
+      delete args.value;
+      delete args.key;
+      this.cumulativeRateModelEvents = [...this.cumulativeRateModelEvents, { ...args }];
+
+      // Store transferThreshold
+      args.transferThreshold = transferThresholdForToken;
+      delete args.rateModel;
+      this.cumulativeTokenTransferUpdates.push({ ...args });
     }
+
+    // Sort events by block height in ascending order:
     this.rateModelDictionary.updateWithEvents(this.cumulativeRateModelEvents);
 
     this.isUpdated = true;

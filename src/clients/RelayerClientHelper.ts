@@ -22,7 +22,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
   // Create contract instances for each chain for each required contract.
   const hubPool = getDeployedContract("HubPool", config.hubPoolChainId, hubSigner);
 
-  const rateModelStore = getDeployedContract("RateModelStore", config.hubPoolChainId, hubSigner);
+  const configStore = getDeployedContract("AcrossConfigStore", config.hubPoolChainId, hubSigner);
 
   // Create clients for each contract for each chain.
   const spokePools = config.spokePoolChains.map((networkId, index) => {
@@ -30,23 +30,23 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
   });
 
   const hubPoolClientSearchSettings = {
-    fromBlock: getDeploymentBlockNumber("HubPool", config.hubPoolChainId),
+    fromBlock: Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId)),
     toBlock: null,
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
   const hubPoolClient = new HubPoolClient(logger, hubPool, hubPoolClientSearchSettings);
 
   const rateModelClientSearchSettings = {
-    fromBlock: getDeploymentBlockNumber("RateModelStore", config.hubPoolChainId),
+    fromBlock: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),
     toBlock: null,
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
-  const rateModelClient = new RateModelClient(logger, rateModelStore, hubPoolClient, rateModelClientSearchSettings);
+  const rateModelClient = new RateModelClient(logger, configStore, hubPoolClient, rateModelClientSearchSettings);
 
   const spokePoolClients = {};
   spokePools.forEach((obj: { networkId: number; contract: Contract }) => {
     const spokePoolClientSearchSettings = {
-      fromBlock: getDeploymentBlockNumber("SpokePool", obj.networkId),
+      fromBlock: Number(getDeploymentBlockNumber("SpokePool", obj.networkId)),
       toBlock: null,
       maxBlockLookBack: config.maxBlockLookBack[obj.networkId],
     };
@@ -71,7 +71,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
     message: "Clients constructed",
     relayerWallet: baseSigner.address,
     hubPool: hubPool.address,
-    rateModelStore: rateModelStore.address,
+    configStore: configStore.address,
     spokePools: spokePools.map((spokePool) => {
       return { networkId: spokePool.networkId, spokePool: spokePool.contract.address };
     }),

@@ -1,13 +1,13 @@
 import { hubPoolFixture, deployIterativeSpokePoolsAndToken, createSpyLogger, lastSpyLogIncludes, toBN } from "./utils";
 import { expect, deposit, ethers, Contract, getLastBlockTime, contractAt, addLiquidity } from "./utils";
-import { SignerWithAddress, setupTokensForWallet, deployRateModelStore, winston, sinon, toBNWei } from "./utils";
-import { amountToLp, sampleRateModel } from "./constants";
-import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallerClient } from "../src/clients";
+import { SignerWithAddress, setupTokensForWallet, deployConfigStore, winston, sinon, toBNWei } from "./utils";
+import { amountToLp, l1TokenTransferThreshold, sampleRateModel } from "./constants";
+import { HubPoolClient, RateModelClient, MultiCallerClient } from "../src/clients";
 import { TokenClient, ProfitClient } from "../src/clients";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 
-let relayer_signer: SignerWithAddress, hubPool: Contract, mockAdapter: Contract, rateModelStore: Contract;
+let relayer_signer: SignerWithAddress, hubPool: Contract, mockAdapter: Contract, configStore: Contract;
 let hubPoolClient: HubPoolClient, rateModelClient: RateModelClient, tokenClient: TokenClient;
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
@@ -25,9 +25,9 @@ describe("Relayer: Iterative fill", async function () {
     const numTokensToDeployPerChain = 1;
 
     ({ spy, spyLogger } = createSpyLogger());
-    ({ rateModelStore } = await deployRateModelStore(relayer_signer, []));
+    ({ configStore } = await deployConfigStore(relayer_signer, []));
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-    rateModelClient = new RateModelClient(spyLogger, rateModelStore, hubPoolClient);
+    rateModelClient = new RateModelClient(spyLogger, configStore, hubPoolClient);
     multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
 
     ({ spokePools, l1TokenToL2Tokens } = await deployIterativeSpokePoolsAndToken(
@@ -41,7 +41,10 @@ describe("Relayer: Iterative fill", async function () {
 
     const l1Token = await contractAt("ExpandedERC20", relayer_signer, Object.keys(l1TokenToL2Tokens)[0]);
 
-    await rateModelStore.updateRateModel(l1Token.address, JSON.stringify(sampleRateModel));
+    await configStore.updateTokenConfig(
+      l1Token.address,
+      JSON.stringify({ rateModel: JSON.stringify(sampleRateModel), transferThreshold: l1TokenTransferThreshold })
+    );
 
     await addLiquidity(relayer_signer, hubPool, l1Token, amountToLp);
 

@@ -2,7 +2,7 @@ import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolReb
 import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet, assertPromiseError } from "./utils";
 import { toBNWei, toWei, buildPoolRebalanceLeafTree, createSpyLogger } from "./utils";
 import { getContractFactory, hubPoolFixture, toBN } from "./utils";
-import { amountToLp, mockTreeRoot, refundProposalLiveness, totalBond } from "./constants";
+import { amountToLp, mockTreeRoot, refundProposalLiveness, totalBond, l1TokenTransferThreshold } from "./constants";
 
 import { HubPoolClient } from "../src/clients/HubPoolClient";
 import { RateModelClient } from "../src/clients/RateModelClient";
@@ -22,6 +22,11 @@ const sampleRateModel = {
   R2: toWei("1.00").toString(),
 };
 
+const tokenConfigToUpdate = JSON.stringify({
+  rateModel: JSON.stringify(sampleRateModel),
+  transferThreshold: l1TokenTransferThreshold,
+});
+
 describe("RateModelClient: RealizedLpFeePct", async function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
@@ -29,7 +34,7 @@ describe("RateModelClient: RealizedLpFeePct", async function () {
     ({ hubPool, timer, dai: l1Token, weth } = await hubPoolFixture());
     await hubPool.enableL1TokenForLiquidityProvision(l1Token.address);
 
-    rateModelStore = await (await getContractFactory("RateModelStore", owner)).deploy();
+    rateModelStore = await (await getContractFactory("AcrossConfigStore", owner)).deploy();
     hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
     rateModelClient = new RateModelClient(createSpyLogger().spyLogger, rateModelStore, hubPoolClient);
 
@@ -48,16 +53,16 @@ describe("RateModelClient: RealizedLpFeePct", async function () {
     expect(rateModelClient.cumulativeRateModelEvents.length).to.equal(0);
 
     // Add new RateModelEvents and check that updating again pulls in new events.
-    await rateModelStore.updateRateModel(l1Token.address, JSON.stringify(sampleRateModel));
+    await rateModelStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
     await rateModelClient.update();
     expect(rateModelClient.cumulativeRateModelEvents.length).to.equal(1);
   });
 
   it("getRateModelForBlockNumber", async function () {
-    await rateModelStore.updateRateModel(l1Token.address, JSON.stringify(sampleRateModel));
+    await rateModelStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
     await updateAllClients();
 
-    const initialRateModelUpdate = (await rateModelStore.queryFilter(rateModelStore.filters.UpdatedRateModel()))[0];
+    const initialRateModelUpdate = (await rateModelStore.queryFilter(rateModelStore.filters.UpdatedTokenConfig()))[0];
 
     expect(
       rateModelClient.getRateModelForBlockNumber(l1Token.address, initialRateModelUpdate.blockNumber)
@@ -75,10 +80,10 @@ describe("RateModelClient: RealizedLpFeePct", async function () {
   });
 
   it("computeRealizedLpFeePct", async function () {
-    await rateModelStore.updateRateModel(l1Token.address, JSON.stringify(sampleRateModel));
+    await rateModelStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
     await updateAllClients();
 
-    const initialRateModelUpdate = (await rateModelStore.queryFilter(rateModelStore.filters.UpdatedRateModel()))[0];
+    const initialRateModelUpdate = (await rateModelStore.queryFilter(rateModelStore.filters.UpdatedTokenConfig()))[0];
     const initialRateModelUpdateTime = (await ethers.provider.getBlock(initialRateModelUpdate.blockNumber)).timestamp;
 
     // Takes into account deposit amount's effect on utilization. This deposit uses 10% of the pool's liquidity

@@ -9,7 +9,7 @@ import { RateModelClient } from "../../src/clients/RateModelClient";
 import { HubPoolClient } from "../../src/clients/HubPoolClient";
 
 import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber } from "./index";
-import { amountToDeposit, depositRelayerFeePct } from "../constants";
+import { amountToDeposit, depositRelayerFeePct, l1TokenTransferThreshold } from "../constants";
 import { Deposit, Fill, RunningBalances } from "../../src/interfaces/SpokePool";
 import { buildRelayerRefundTree, toBN, toBNWei } from "../../src/utils";
 
@@ -91,10 +91,14 @@ export async function deploySpokePoolWithToken(
   return { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20 };
 }
 
-export async function deployRateModelStore(signer: utils.SignerWithAddress, tokensToAdd: utils.Contract[]) {
-  const rateModelStore = await (await utils.getContractFactory("RateModelStore", signer)).deploy();
-  for (const token of tokensToAdd) await rateModelStore.updateRateModel(token.address, JSON.stringify(sampleRateModel));
-  return { rateModelStore };
+export async function deployConfigStore(signer: utils.SignerWithAddress, tokensToAdd: utils.Contract[]) {
+  const configStore = await (await utils.getContractFactory("AcrossConfigStore", signer)).deploy();
+  for (const token of tokensToAdd)
+    await configStore.updateTokenConfig(
+      token.address,
+      JSON.stringify({ rateModel: JSON.stringify(sampleRateModel), transferThreshold: l1TokenTransferThreshold })
+    );
+  return { configStore };
 }
 
 export async function deployAndConfigureHubPool(
@@ -127,7 +131,7 @@ export async function deployNewTokenMapping(
   l1TokenHolder: utils.SignerWithAddress,
   spokePool: utils.Contract,
   spokePoolDestination: utils.Contract,
-  rateModelStore: utils.Contract,
+  configStore: utils.Contract,
   hubPool: utils.Contract,
   amountToSeedLpPool: BigNumber
 ) {
@@ -157,7 +161,10 @@ export async function deployNewTokenMapping(
     { destinationChainId: spokePoolChainId, l1Token, destinationToken: l2Token },
     { destinationChainId: spokePoolDestinationChainId, l1Token, destinationToken: l2TokenDestination },
   ]);
-  await rateModelStore.updateRateModel(l1Token.address, JSON.stringify(sampleRateModel));
+  await configStore.updateTokenConfig(
+    l1Token.address,
+    JSON.stringify({ rateModel: JSON.stringify(sampleRateModel), transferThreshold: l1TokenTransferThreshold })
+  );
 
   // Give signer initial balance and approve hub pool and spoke pool to pull funds from it
   await addLiquidity(l1TokenHolder, hubPool, l1Token, amountToSeedLpPool);

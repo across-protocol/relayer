@@ -32,5 +32,5 @@ export {
   ExpandedERC20__factory as ERC20,
   HubPool__factory as HubPool,
   SpokePool__factory as SpokePool,
-  RateModelStore__factory as RateModelStore,
+  AcrossConfigStore__factory as AcrossConfigStore,
 } from "@across-protocol/contracts-v2";

@@ -1,5 +1,5 @@
 import { createSpyLogger, deployAndConfigureHubPool, enableRoutesOnHubPool, buildDepositStruct } from "./utils";
-import { deploySpokePoolWithToken, destinationChainId, deployRateModelStore, getLastBlockTime, expect } from "./utils";
+import { deploySpokePoolWithToken, destinationChainId, deployConfigStore, getLastBlockTime, expect } from "./utils";
 import { simpleDeposit, fillRelay, ethers, Contract, SignerWithAddress, setupTokensForWallet, winston } from "./utils";
 import { amountToLp, originChainId, amountToRelay } from "./constants";
 import { SpokePoolClient, HubPoolClient, RateModelClient } from "../src/clients";
@@ -7,7 +7,7 @@ import { SpokePoolClient, HubPoolClient, RateModelClient } from "../src/clients"
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
-let hubPool: Contract, l1Token: Contract, rateModelStore: Contract;
+let hubPool: Contract, l1Token: Contract, configStore: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
 
 let spyLogger: winston.Logger;
@@ -28,10 +28,10 @@ describe("Relayer: Unfilled Deposits", async function () {
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
     ]));
 
-    ({ rateModelStore } = await deployRateModelStore(owner, [l1Token]));
+    ({ configStore } = await deployConfigStore(owner, [l1Token]));
     ({ spyLogger } = createSpyLogger());
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-    rateModelClient = new RateModelClient(spyLogger, rateModelStore, hubPoolClient);
+    rateModelClient = new RateModelClient(spyLogger, configStore, hubPoolClient);
     spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1, rateModelClient, originChainId);
     spokePoolClient_2 = new SpokePoolClient(spyLogger, spokePool_2, rateModelClient, destinationChainId);
 
