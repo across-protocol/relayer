@@ -10,10 +10,6 @@ export interface TokenConfig extends SortableEvent {
   value: string;
 }
 
-export interface RefundsPerRelayerRefundLeaf extends SortableEvent {
-  value: number;
-}
-
-export interface L1TokensPerPoolRebalanceLeaf extends SortableEvent {
+export interface GlobalConfigUpdate extends SortableEvent {
   value: number;
 }

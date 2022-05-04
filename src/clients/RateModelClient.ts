@@ -1,7 +1,7 @@
 import { spreadEvent, winston, Contract, BigNumber, sortEventsDescending, spreadEventWithBlockNumber } from "../utils";
 import { paginatedEventQuery, EventSearchConfig, utf8ToHex } from "../utils";
 import { L1TokenTransferThreshold, Deposit, RefundsPerRelayerRefundLeaf, TokenConfig } from "../interfaces";
-import { L1TokensPerPoolRebalanceLeaf } from "../interfaces";
+import { GlobalConfigUpdate } from "../interfaces";
 
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
@@ -18,8 +18,8 @@ export class AcrossConfigStoreClient {
 
   public cumulativeRateModelUpdates: across.rateModel.RateModelEvent[] = [];
   public cumulativeTokenTransferUpdates: L1TokenTransferThreshold[] = [];
-  public cumulativeMaxRefundCountUpdates: RefundsPerRelayerRefundLeaf[] = [];
-  public cumulativeMaxL1TokenCountUpdates: L1TokensPerPoolRebalanceLeaf[] = [];
+  public cumulativeMaxRefundCountUpdates: GlobalConfigUpdate[] = [];
+  public cumulativeMaxL1TokenCountUpdates: GlobalConfigUpdate[] = [];
 
   private rateModelDictionary: across.rateModel.RateModelDictionary;
   public firstBlockToSearch: number;
@@ -88,7 +88,7 @@ export class AcrossConfigStoreClient {
   }
 
   getMaxRefundCountForRelayerRefundLeafForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number {
-    const config = (sortEventsDescending(this.cumulativeMaxRefundCountUpdates) as RefundsPerRelayerRefundLeaf[]).find(
+    const config = (sortEventsDescending(this.cumulativeMaxRefundCountUpdates) as GlobalConfigUpdate[]).find(
       (config) => config.blockNumber <= blockNumber
     );
     if (!config) throw new Error(`Could not find MaxRefundCount before block ${blockNumber}`);
@@ -96,7 +96,7 @@ export class AcrossConfigStoreClient {
   }
 
   getMaxL1TokenCountForPoolRebalanceLeafForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number {
-    const config = (sortEventsDescending(this.cumulativeMaxL1TokenCountUpdates) as L1TokensPerPoolRebalanceLeaf[]).find(
+    const config = (sortEventsDescending(this.cumulativeMaxL1TokenCountUpdates) as GlobalConfigUpdate[]).find(
       (config) => config.blockNumber <= blockNumber
     );
     if (!config) throw new Error(`Could not find MaxL1TokenCount before block ${blockNumber}`);
