@@ -151,6 +151,12 @@ export async function deployAndConfigureHubPool(
   return { hubPool, mockAdapter, l1Token_1, l1Token_2 };
 }
 
+export async function deployNewToken(owner) {
+  const l2Token = await (await utils.getContractFactory("ExpandedERC20", owner)).deploy("L2 Token", "L2", 18);
+  await l2Token.addMember(TokenRolesEnum.MINTER, l2Token.address);
+  return l2Token;
+}
+
 export async function deployNewTokenMapping(
   l2TokenHolder: utils.SignerWithAddress,
   l1TokenHolder: utils.SignerWithAddress,

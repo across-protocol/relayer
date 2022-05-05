@@ -1,5 +1,5 @@
-import { expect, ethers, Contract } from "./utils";
-import { SignerWithAddress, buildSlowRelayTree } from "./utils";
+import { expect, ethers, Contract, deployNewToken } from "./utils";
+import { SignerWithAddress, buildSlowRelayTree, buildFillForRepaymentChain, enableRoutesOnHubPool } from "./utils";
 import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, buildSlowFill } from "./utils";
 import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient } from "../src/clients";
 import { amountToDeposit, repaymentChainId, destinationChainId, originChainId } from "./constants";
@@ -10,7 +10,7 @@ import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { toBN, getRefundForFills, getRealizedLpFeeForFills } from "../src/utils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
-let l1Token_1: Contract, l1Token_2: Contract;
+let l1Token_1: Contract, l1Token_2: Contract, hubPool: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
@@ -22,6 +22,7 @@ let updateAllClients: () => Promise<void>;
 describe("Dataworker: Load data used in all functions", async function () {
   beforeEach(async function () {
     ({
+      hubPool,
       spokePool_1,
       erc20_1,
       spokePool_2,
@@ -204,38 +205,25 @@ describe("Dataworker: Load data used in all functions", async function () {
       amountToDeposit
     );
 
+    // Fills should be keyed by repayment chain and repayment token. For this test, make sure that the repayment chain
+    // ID is associated with some ERC20:
+    const repaymentToken = await deployNewToken(relayer);
+    await enableRoutesOnHubPool(hubPool, [
+      { destinationChainId: repaymentChainId, destinationToken: repaymentToken, l1Token: l1Token_1 },
+    ]);
+    await updateAllClients();
+
     // Submit a valid fill.
     const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.5);
     await updateAllClients();
     const data1 = dataworkerInstance._loadData(DEFAULT_BLOCK_RANGE_FOR_CHAIN);
     expect(data1.fillsToRefund).to.deep.equal({
       [repaymentChainId]: {
-        [erc20_2.address]: {
+        [repaymentToken.address]: {
           fills: [fill1],
           refunds: { [relayer.address]: getRefundForFills([fill1]) },
           totalRefundAmount: getRefundForFills([fill1]),
           realizedLpFees: getRealizedLpFeeForFills([fill1]),
-        },
-      },
-    });
-
-    // Submit a fill for another L2 token.
-    const fill2 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 0.25);
-    await updateAllClients();
-    const data2 = dataworkerInstance._loadData(DEFAULT_BLOCK_RANGE_FOR_CHAIN);
-    expect(data2.fillsToRefund).to.deep.equal({
-      [repaymentChainId]: {
-        [erc20_2.address]: {
-          fills: [fill1],
-          refunds: { [relayer.address]: getRefundForFills([fill1]) },
-          totalRefundAmount: getRefundForFills([fill1]),
-          realizedLpFees: getRealizedLpFeeForFills([fill1]),
-        },
-        [erc20_1.address]: {
-          fills: [fill2],
-          refunds: { [relayer.address]: getRefundForFills([fill2]) },
-          totalRefundAmount: getRefundForFills([fill2]),
-          realizedLpFees: getRealizedLpFeeForFills([fill2]),
         },
       },
     });
@@ -247,7 +235,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     await buildFill(spokePool_1, erc20_1, depositor, relayer, { ...deposit2, relayerFeePct: toBN(0) }, 0.5);
     await updateAllClients();
     const data3 = dataworkerInstance._loadData(DEFAULT_BLOCK_RANGE_FOR_CHAIN);
-    expect(data3.fillsToRefund).to.deep.equal(data2.fillsToRefund);
+    expect(data3.fillsToRefund).to.deep.equal(data1.fillsToRefund);
 
     // Submit fills that match deposit in all properties except for realized lp fee % or l1 token. These should be
     // ignored because the rate model client deems them invalid. These are the two properties added to the deposit
@@ -265,7 +253,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     await buildFill(spokePool_1, erc20_2, depositor, relayer, deposit2, 0.25);
     await updateAllClients();
     const data4 = dataworkerInstance._loadData(DEFAULT_BLOCK_RANGE_FOR_CHAIN);
-    expect(data4.fillsToRefund).to.deep.equal(data2.fillsToRefund);
+    expect(data4.fillsToRefund).to.deep.equal(data1.fillsToRefund);
 
     // Slow relay fills are added.
     const deposit3 = await buildDeposit(
@@ -293,23 +281,17 @@ describe("Dataworker: Load data used in all functions", async function () {
         },
       },
       [repaymentChainId]: {
-        [erc20_2.address]: {
-          fills: [fill1],
-          refunds: { [relayer.address]: getRefundForFills([fill1]) },
-          totalRefundAmount: getRefundForFills([fill1]),
-          realizedLpFees: getRealizedLpFeeForFills([fill1]),
-        },
-        [erc20_1.address]: {
-          fills: [fill2, fill3],
-          refunds: { [relayer.address]: getRefundForFills([fill2, fill3]) },
-          totalRefundAmount: getRefundForFills([fill2, fill3]),
-          realizedLpFees: getRealizedLpFeeForFills([fill2, fill3]),
+        [repaymentToken.address]: {
+          fills: [fill1, fill3],
+          refunds: { [relayer.address]: getRefundForFills([fill1, fill3]) },
+          totalRefundAmount: getRefundForFills([fill1, fill3]),
+          realizedLpFees: getRealizedLpFeeForFills([fill1, fill3]),
         },
       },
     });
 
     // Speed up relays are included. Re-use the same fill information
-    const fill4 = await buildModifiedFill(spokePool_1, depositor, relayer, fill2, 2, 0.1);
+    const fill4 = await buildModifiedFill(spokePool_2, depositor, relayer, fill1, 2, 0.1);
     expect(fill4.totalFilledAmount.gt(fill4.fillAmount), "speed up fill didn't match original deposit");
     await updateAllClients();
     const data6 = dataworkerInstance._loadData(DEFAULT_BLOCK_RANGE_FOR_CHAIN);
@@ -321,17 +303,11 @@ describe("Dataworker: Load data used in all functions", async function () {
         },
       },
       [repaymentChainId]: {
-        [erc20_2.address]: {
-          fills: [fill1],
-          refunds: { [relayer.address]: getRefundForFills([fill1]) },
-          totalRefundAmount: getRefundForFills([fill1]),
-          realizedLpFees: getRealizedLpFeeForFills([fill1]),
-        },
-        [erc20_1.address]: {
-          fills: [fill2, fill3, fill4],
-          refunds: { [relayer.address]: getRefundForFills([fill2, fill3, fill4]) },
-          totalRefundAmount: getRefundForFills([fill2, fill3, fill4]),
-          realizedLpFees: getRealizedLpFeeForFills([fill2, fill3, fill4]),
+        [repaymentToken.address]: {
+          fills: [fill1, fill4, fill3],
+          refunds: { [relayer.address]: getRefundForFills([fill1, fill3, fill4]) },
+          totalRefundAmount: getRefundForFills([fill1, fill3, fill4]),
+          realizedLpFees: getRealizedLpFeeForFills([fill1, fill3, fill4]),
         },
       },
     });
