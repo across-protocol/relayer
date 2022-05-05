@@ -46,10 +46,6 @@ describe("AcrossConfigStoreClient", async function () {
   });
 
   it("update", async function () {
-    // Throws if HubPool isn't updated.
-    assertPromiseError(configStoreClient.update(), "hubpool not updated");
-    await hubPoolClient.update();
-
     // If ConfigStore has no events, stores nothing.
     await configStoreClient.update();
     expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(0);

@@ -110,7 +110,6 @@ export class AcrossConfigStoreClient {
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than
-    if (this.hubPoolClient !== null && !this.hubPoolClient.isUpdated) throw new Error("HubPool not updated");
 
     this.logger.debug({ at: "RateModelClient", message: "Updating client", searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
