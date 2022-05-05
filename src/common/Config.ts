@@ -14,7 +14,6 @@ export class CommonConfig {
 
   constructor(env: ProcessEnv) {
     const { CONFIGURED_NETWORKS, HUB_CHAIN_ID, POLLING_DELAY, MAX_BLOCK_LOOK_BACK, NODE_QUORUM_THRESHOLD } = env;
-    assert(CONFIGURED_NETWORKS, "CONFIGURED_NETWORKS required");
     this.hubPoolChainId = HUB_CHAIN_ID ? Number(HUB_CHAIN_ID) : 1;
     this.spokePoolChains = CONFIGURED_NETWORKS ? JSON.parse(CONFIGURED_NETWORKS) : Constants.CHAIN_ID_LIST_INDICES;
     this.pollingDelay = POLLING_DELAY ? Number(POLLING_DELAY) : 60;

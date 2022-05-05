@@ -175,7 +175,7 @@ export class Dataworker {
     return { fillsToRefund, deposits, unfilledDeposits, allValidFills };
   }
 
-  buildSlowRelayRoot(blockRangesForChains: number[][]): MerkleTree<RelayData> | null {
+  buildSlowRelayRoot(blockRangesForChains: number[][]) {
     const { unfilledDeposits } = this._loadData(blockRangesForChains);
     // TODO: Use `bundleBlockNumbers` to decide how to filter which blocks to keep in `unfilledDeposits`.
 
@@ -202,7 +202,10 @@ export class Dataworker {
     });
 
     if (sortedLeaves.length === 0) throw new Error("Cannot build tree with zero leaves");
-    return buildSlowRelayTree(sortedLeaves);
+    return {
+      leaves: sortedLeaves,
+      tree: buildSlowRelayTree(sortedLeaves)
+    }
   }
 
   async publishRoots(blockRangesForChains: number[][]) {
@@ -210,7 +213,7 @@ export class Dataworker {
     // of roots.
   }
 
-  buildRelayerRefundRoot(blockRangesForChains: number[][]): MerkleTree<RelayerRefundLeaf> | null {
+  buildRelayerRefundRoot(blockRangesForChains: number[][]) {
     const { fillsToRefund } = this._loadData(blockRangesForChains);
 
     const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
@@ -266,7 +269,10 @@ export class Dataworker {
       });
 
     if (indexedLeaves.length === 0) throw new Error("Cannot build tree with zero leaves");
-    return buildRelayerRefundTree(indexedLeaves);
+    return {
+      leaves: indexedLeaves,
+      tree: buildRelayerRefundTree(indexedLeaves)
+    };
   }
 
   buildPoolRebalanceRoot(blockRangesForChains: number[][]) {
@@ -475,9 +481,12 @@ export class Dataworker {
 
     // TODO:
     // 2. Create roots
-    this.buildPoolRebalanceRoot(blockRangesForProposal);
-    this.buildRelayerRefundRoot(blockRangesForProposal);
-    this.buildSlowRelayRoot(blockRangesForProposal);
+    const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForProposal);
+    console.log(`poolRebalanceRoot:`, poolRebalanceRoot.leaves, poolRebalanceRoot.tree)
+    const relayerRefundRoot = this.buildRelayerRefundRoot(blockRangesForProposal);
+    console.log(`relayerRefundRoot:`, relayerRefundRoot.leaves, relayerRefundRoot.tree)
+    const slowRelayRoot = this.buildSlowRelayRoot(blockRangesForProposal);
+    console.log(`slowRelayRoot:`, slowRelayRoot.leaves, slowRelayRoot.tree)
 
     // 3. Store root + auxillary information somewhere useful for executing leaves
     // 4. Propose roots to HubPool contract.

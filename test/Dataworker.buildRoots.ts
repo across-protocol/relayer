@@ -106,7 +106,7 @@ describe("Dataworker: Build merkle roots", async function () {
     // Returns expected merkle root where leaves are ordered by origin chain ID and then deposit ID
     // (ascending).
     await updateAllClients();
-    const merkleRoot1 = dataworkerInstance.buildSlowRelayRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN);
+    const merkleRoot1 = dataworkerInstance.buildSlowRelayRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
     const expectedMerkleRoot1 = await buildSlowRelayTree(expectedSlowRelayLeaves);
     expect(merkleRoot1.getHexRoot()).to.equal(expectedMerkleRoot1.getHexRoot());
 
@@ -208,7 +208,7 @@ describe("Dataworker: Build merkle roots", async function () {
     };
 
     await updateAllClients();
-    const merkleRoot1 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN);
+    const merkleRoot1 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
     const expectedMerkleRoot1 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf1]);
     expect(merkleRoot1.getHexRoot()).to.equal(expectedMerkleRoot1.getHexRoot());
 
@@ -226,7 +226,7 @@ describe("Dataworker: Build merkle roots", async function () {
       ],
     };
     await updateAllClients();
-    const merkleRoot2 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN);
+    const merkleRoot2 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
     const leaves1And2Sorted = toBN(erc20_1.address).lt(toBN(erc20_2.address)) ? [leaf2, leaf1] : [leaf1, leaf2];
     const expectedMerkleRoot2 = await buildRelayerRefundTreeWithUnassignedLeafIds(leaves1And2Sorted);
     expect(merkleRoot2.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
@@ -252,7 +252,7 @@ describe("Dataworker: Build merkle roots", async function () {
       refundAmounts: [getRefund(deposit6.amount, deposit6.realizedLpFeePct)],
     };
     await updateAllClients();
-    const merkleRoot3 = await dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN);
+    const merkleRoot3 = await dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
     const leaves3And4Sorted = toBN(erc20_1.address).lt(toBN(erc20_2.address)) ? [leaf4, leaf3] : [leaf3, leaf4];
     const expectedMerkleRoot3 = await buildRelayerRefundTreeWithUnassignedLeafIds([
       ...leaves3And4Sorted,
@@ -302,7 +302,7 @@ describe("Dataworker: Build merkle roots", async function () {
       refundAmounts: [getRefund(deposit7.amount, deposit7.realizedLpFeePct).mul(toBNWei("0.01")).div(toBNWei("1"))],
     };
     await updateAllClients();
-    const merkleRoot4 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN);
+    const merkleRoot4 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
     const expectedMerkleRoot4 = await buildRelayerRefundTreeWithUnassignedLeafIds([
       leaf5,
       leaf6,
