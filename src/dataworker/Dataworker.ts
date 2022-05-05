@@ -1,4 +1,4 @@
-import { winston, assign, MerkleTree, compareAddresses, getRefundForFills, sortEventsDescending } from "../utils";
+import { winston, assign, compareAddresses, getRefundForFills, sortEventsDescending } from "../utils";
 import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree } from "../utils";
 import { getRealizedLpFeeForFills, BigNumber, toBN } from "../utils";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, DepositWithBlock } from "../interfaces";
@@ -45,7 +45,6 @@ export class Dataworker {
       if (!originClient.isUpdated) throw new Error(`origin SpokePoolClient on chain ${originChainId} not updated`);
 
       // Loop over all other SpokePoolClient's to find deposits whose destination chain is the selected origin chain.
-      this.logger.debug({ at: "Dataworker", message: `Looking up data for origin spoke pool`, originChainId });
       for (const destinationChainId of Object.keys(this.clients.spokePoolClients)) {
         if (originChainId === destinationChainId) continue;
 
@@ -67,12 +66,6 @@ export class Dataworker {
             (fill: FillWithBlock) =>
               fill.blockNumber <= blockRangeForChain[1] && fill.blockNumber >= blockRangeForChain[0]
           );
-        this.logger.debug({
-          at: "Dataworker",
-          message: `Found ${fillsForOriginChain.length} fills for origin chain ${originChainId} on destination client ${destinationChainId}`,
-          originChainId,
-          destinationChainId,
-        });
 
         fillsForOriginChain.forEach((fillWithBlock) => {
           const matchedDeposit: Deposit = originClient.getDepositForFill(fillWithBlock);
@@ -88,11 +81,21 @@ export class Dataworker {
             // So, save the slow fill under the destination chain, and save the fast fill under its repayment chain.
             const chainToSendRefundTo = fill.isSlowRelay ? fill.destinationChainId : fill.repaymentChainId;
 
-            // Save fill data and associate with repayment chain and token.
-            assign(fillsToRefund, [chainToSendRefundTo, fill.destinationToken, "fills"], [fill]);
+            // Save fill data and associate with repayment chain and L2 token refund should be denominated in.
+            const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForChains, 1)[1];
+            const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpartAtBlock(
+              fill.destinationChainId.toString(),
+              fill.destinationToken,
+              endBlockForMainnet
+            );
+            const repaymentToken = this.clients.hubPoolClient.getDestinationTokenForL1TokenDestinationChainId(
+              l1TokenCounterpart,
+              chainToSendRefundTo
+            );
+            assign(fillsToRefund, [chainToSendRefundTo, repaymentToken, "fills"], [fill]);
 
             // Update realized LP fee accumulator for slow and non-slow fills.
-            const refundObj = fillsToRefund[chainToSendRefundTo][fill.destinationToken];
+            const refundObj = fillsToRefund[chainToSendRefundTo][repaymentToken];
             refundObj.realizedLpFees = refundObj.realizedLpFees
               ? refundObj.realizedLpFees.add(getRealizedLpFeeForFills([fill]))
               : getRealizedLpFeeForFills([fill]);
@@ -126,8 +129,7 @@ export class Dataworker {
                 : refund;
 
               // Instantiate dictionary if it doesn't exist.
-              if (!refundObj.refunds)
-                assign(fillsToRefund, [chainToSendRefundTo, fill.destinationToken, "refunds"], {});
+              if (!refundObj.refunds) assign(fillsToRefund, [chainToSendRefundTo, repaymentToken, "refunds"], {});
 
               if (refundObj.refunds[fill.relayer])
                 refundObj.refunds[fill.relayer] = refundObj.refunds[fill.relayer].add(refund);
@@ -171,6 +173,35 @@ export class Dataworker {
       })
       // Remove deposits that are fully filled
       .filter((unfilledDeposit: UnfilledDeposit) => unfilledDeposit.unfilledAmount.gt(0));
+
+    this.logger.debug({
+      at: "Dataworker",
+      message: `Finished loading spoke pool data`,
+      unfilledDepositsByDestinationChain: unfilledDeposits.reduce((result, unfilledDeposit: UnfilledDeposit) => {
+        const existingCount = result[unfilledDeposit.deposit.destinationChainId];
+        result[unfilledDeposit.deposit.destinationChainId] = existingCount === undefined ? 1 : existingCount + 1;
+        return result;
+      }, {}),
+      depositsByOriginChain: deposits.reduce((result, deposit: DepositWithBlock) => {
+        const existingCount = result[deposit.originChainId];
+        result[deposit.originChainId] = existingCount === undefined ? 1 : existingCount + 1;
+        return result;
+      }, {}),
+      fillsToRefundByRepaymentChain: Object.keys(fillsToRefund).reduce((endResult, repaymentChain) => {
+        endResult[repaymentChain] = endResult[repaymentChain] ?? {};
+        return Object.keys(fillsToRefund[repaymentChain]).reduce((result, repaymentToken) => {
+          const existingCount = result[repaymentChain][repaymentToken];
+          const fillCount = fillsToRefund[repaymentChain][repaymentToken].fills.length
+          result[repaymentChain][repaymentToken] = existingCount === undefined ? fillCount : existingCount + fillCount;
+          return result;
+        }, endResult) 
+      }, {}),
+      allValidFillsByDestinationChain: allValidFills.reduce((result, fill: FillWithBlock) => {
+        const existingCount = result[fill.destinationChainId];
+        result[fill.destinationChainId] = existingCount === undefined ? 1 : existingCount + 1;
+        return result;
+      }, {})
+    });
 
     // Remove deposits that have been fully filled from unfilled deposit array
     return { fillsToRefund, deposits, unfilledDeposits, allValidFills };
@@ -493,11 +524,30 @@ export class Dataworker {
     // TODO:
     // 2. Create roots
     const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForProposal);
-    console.log(`poolRebalanceRoot:`, poolRebalanceRoot.leaves, poolRebalanceRoot.tree);
+    console.log(`poolRebalanceRoot:`, poolRebalanceRoot.tree.getHexRoot());
+    poolRebalanceRoot.leaves.forEach((leaf: PoolRebalanceLeaf) => {
+      const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
+        // Check if leaf value is list of BN's. For this leaf, there are no BN's not in lists.
+        if (BigNumber.isBigNumber(leaf[key][0])) result[key] = leaf[key].map((val) => val.toString())
+        else result[key] = leaf[key]
+        return result
+      }, {})
+      console.log(prettyLeaf)
+    })
     const relayerRefundRoot = this.buildRelayerRefundRoot(blockRangesForProposal);
-    console.log(`relayerRefundRoot:`, relayerRefundRoot.leaves, relayerRefundRoot.tree);
-    const slowRelayRoot = this.buildSlowRelayRoot(blockRangesForProposal);
-    console.log(`slowRelayRoot:`, slowRelayRoot.leaves, slowRelayRoot.tree);
+    console.log(`relayerRefundRoot:`, relayerRefundRoot.tree.getHexRoot());
+    relayerRefundRoot.leaves.forEach((leaf: RelayerRefundLeaf) => {
+      const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
+        // Check if leaf value is list of BN' or single BN.
+        if (Array.isArray(leaf[key]) && BigNumber.isBigNumber(leaf[key][0])) result[key] = leaf[key].map((val) => val.toString())
+        else if (BigNumber.isBigNumber(leaf[key])) result[key] = leaf[key].toString()
+        else result[key] = leaf[key]
+        return result
+      }, {})
+      console.log(prettyLeaf)
+    })
+    // const slowRelayRoot = this.buildSlowRelayRoot(blockRangesForProposal);
+    // console.log(`slowRelayRoot:`, slowRelayRoot.leaves, slowRelayRoot.tree.getHexRoot());
 
     // 3. Store root + auxillary information somewhere useful for executing leaves
     // 4. Propose roots to HubPool contract.
