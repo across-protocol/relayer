@@ -23,6 +23,13 @@ export const sampleRateModel = {
 };
 
 export const CHAIN_ID_TEST_LIST = [originChainId, destinationChainId, repaymentChainId];
+export const DEFAULT_BLOCK_RANGE_FOR_CHAIN = [
+  // For each chain ID in above list, default range is set super high so as to contain all events in a test
+  // in the straightforward test cases.
+  [0, 1_000_000],
+  [0, 1_000_000],
+  [0, 1_000_000],
+];
 
 export const baseSpeedUpString = "ACROSS-V2-FEE-1.0";
 

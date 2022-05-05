@@ -12,6 +12,7 @@ export class SpokePoolClient {
   public isUpdated: boolean = false;
 
   public firstBlockToSearch: number;
+  public latestBlockNumber: number;
   public fillsWithBlockNumbers: FillWithBlock[] = [];
   public depositsWithBlockNumbers: { [DestinationChainId: number]: DepositWithBlock[] } = {};
 
@@ -121,9 +122,10 @@ export class SpokePoolClient {
   async update() {
     if (this.rateModelClient !== null && !this.rateModelClient.isUpdated) throw new Error("RateModel not updated");
 
+    this.latestBlockNumber = await this.spokePool.provider.getBlockNumber();
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
-      toBlock: this.eventSearchConfig.toBlock || (await this.spokePool.provider.getBlockNumber()),
+      toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
 
