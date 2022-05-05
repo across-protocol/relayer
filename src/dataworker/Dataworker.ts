@@ -191,16 +191,16 @@ export class Dataworker {
         endResult[repaymentChain] = endResult[repaymentChain] ?? {};
         return Object.keys(fillsToRefund[repaymentChain]).reduce((result, repaymentToken) => {
           const existingCount = result[repaymentChain][repaymentToken];
-          const fillCount = fillsToRefund[repaymentChain][repaymentToken].fills.length
+          const fillCount = fillsToRefund[repaymentChain][repaymentToken].fills.length;
           result[repaymentChain][repaymentToken] = existingCount === undefined ? fillCount : existingCount + fillCount;
           return result;
-        }, endResult) 
+        }, endResult);
       }, {}),
       allValidFillsByDestinationChain: allValidFills.reduce((result, fill: FillWithBlock) => {
         const existingCount = result[fill.destinationChainId];
         result[fill.destinationChainId] = existingCount === undefined ? 1 : existingCount + 1;
         return result;
-      }, {})
+      }, {}),
     });
 
     // Remove deposits that have been fully filled from unfilled deposit array
@@ -208,6 +208,8 @@ export class Dataworker {
   }
 
   buildSlowRelayRoot(blockRangesForChains: number[][]) {
+    this.logger.debug({ at: "Dataworker", message: `Building slow relay root`, blockRangesForChains });
+
     // TODO: Test `blockRangesForChains`
 
     const { unfilledDeposits } = this._loadData(blockRangesForChains);
@@ -248,6 +250,8 @@ export class Dataworker {
   }
 
   buildRelayerRefundRoot(blockRangesForChains: number[][]) {
+    this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForChains });
+
     // TODO: Test `blockRangesForChains`
 
     const { fillsToRefund } = this._loadData(blockRangesForChains);
@@ -314,6 +318,8 @@ export class Dataworker {
   }
 
   buildPoolRebalanceRoot(blockRangesForChains: number[][]) {
+    this.logger.debug({ at: "Dataworker", message: `Building pool rebalance root`, blockRangesForChains });
+
     // TODO: Test `blockRangesForChains`
 
     const { fillsToRefund, deposits, allValidFills } = this._loadData(blockRangesForChains);
@@ -528,24 +534,25 @@ export class Dataworker {
     poolRebalanceRoot.leaves.forEach((leaf: PoolRebalanceLeaf) => {
       const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
         // Check if leaf value is list of BN's. For this leaf, there are no BN's not in lists.
-        if (BigNumber.isBigNumber(leaf[key][0])) result[key] = leaf[key].map((val) => val.toString())
-        else result[key] = leaf[key]
-        return result
-      }, {})
-      console.log(prettyLeaf)
-    })
+        if (BigNumber.isBigNumber(leaf[key][0])) result[key] = leaf[key].map((val) => val.toString());
+        else result[key] = leaf[key];
+        return result;
+      }, {});
+      console.log(prettyLeaf);
+    });
     const relayerRefundRoot = this.buildRelayerRefundRoot(blockRangesForProposal);
     console.log(`relayerRefundRoot:`, relayerRefundRoot.tree.getHexRoot());
     relayerRefundRoot.leaves.forEach((leaf: RelayerRefundLeaf) => {
       const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
         // Check if leaf value is list of BN' or single BN.
-        if (Array.isArray(leaf[key]) && BigNumber.isBigNumber(leaf[key][0])) result[key] = leaf[key].map((val) => val.toString())
-        else if (BigNumber.isBigNumber(leaf[key])) result[key] = leaf[key].toString()
-        else result[key] = leaf[key]
-        return result
-      }, {})
-      console.log(prettyLeaf)
-    })
+        if (Array.isArray(leaf[key]) && BigNumber.isBigNumber(leaf[key][0]))
+          result[key] = leaf[key].map((val) => val.toString());
+        else if (BigNumber.isBigNumber(leaf[key])) result[key] = leaf[key].toString();
+        else result[key] = leaf[key];
+        return result;
+      }, {});
+      console.log(prettyLeaf);
+    });
     // const slowRelayRoot = this.buildSlowRelayRoot(blockRangesForProposal);
     // console.log(`slowRelayRoot:`, slowRelayRoot.leaves, slowRelayRoot.tree.getHexRoot());
 
