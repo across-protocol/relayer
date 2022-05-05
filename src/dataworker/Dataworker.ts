@@ -241,7 +241,8 @@ export class Dataworker {
         // refunds.
         // TODO: Replace the block height hardcoded with a block from the bundle block range so we can look up the
         // limit at the time of the proposal.
-        const maxRefundCount = this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(1_000_000);
+        const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForChains, 1)[1]
+        const maxRefundCount = this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
         for (let i = 0; i < sortedRefundAddresses.length; i += maxRefundCount)
           relayerRefundLeaves.push({
             groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
@@ -296,13 +297,15 @@ export class Dataworker {
     // 1. For each FilledRelay group, identified by { repaymentChainId, L1TokenAddress }, initialize a "running balance"
     // to the total refund amount for that group.
     // 2. Similarly, for each group sum the realized LP fees.
+    const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForChains, 1)[1]
+
     if (Object.keys(fillsToRefund).length > 0) {
       Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
         Object.keys(fillsToRefund[repaymentChainId]).forEach((l2TokenAddress: string) => {
           const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpartAtBlock(
             repaymentChainId,
             l2TokenAddress,
-            this._getBlockRangeForChain(blockRangesForChains, Number(repaymentChainId))[1]
+            endBlockForMainnet
           );
           assign(
             realizedLpFees,
@@ -312,7 +315,7 @@ export class Dataworker {
 
           // Start with latest RootBundleExecuted.runningBalance for {chainId, l1Token} combination if found.
           const startingRunningBalance = this.clients.hubPoolClient.getRunningBalanceBeforeBlockForChain(
-            this._getBlockRangeForChain(blockRangesForChains, Number(repaymentChainId))[1],
+            endBlockForMainnet,
             Number(repaymentChainId),
             l1TokenCounterpart
           );
@@ -435,8 +438,9 @@ export class Dataworker {
         let groupIndexForChainId = 0;
 
         // Split addresses into multiple leaves if there are more L1 tokens than allowed per leaf.
-        // Same as above, replace this with bundle block range for mainnet
-        const maxRefundCount = this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(1_000_000);
+        const maxRefundCount = this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(
+          endBlockForMainnet
+        );
         for (let i = 0; i < sortedL1Tokens.length; i += maxRefundCount) {
           const l1TokensToIncludeInThisLeaf = sortedL1Tokens.slice(i, i + maxRefundCount);
 
@@ -449,12 +453,12 @@ export class Dataworker {
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
             runningBalances: runningBalances[chainId]
               ? l1TokensToIncludeInThisLeaf.map(
-                  (l1Token) => this._getRunningBalanceForL1Token(runningBalances[chainId][l1Token], l1Token, 1_000_000) // Replace with bundle block range for mainnet
+                  (l1Token) => this._getRunningBalanceForL1Token(runningBalances[chainId][l1Token], l1Token, endBlockForMainnet)
                 )
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
             netSendAmounts: runningBalances[chainId]
               ? l1TokensToIncludeInThisLeaf.map(
-                  (l1Token) => this._getNetSendAmountForL1Token(runningBalances[chainId][l1Token], l1Token, 1_000_000) // Replace with bundle block range for mainnet
+                  (l1Token) => this._getNetSendAmountForL1Token(runningBalances[chainId][l1Token], l1Token, endBlockForMainnet)
                 )
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
             l1Tokens: l1TokensToIncludeInThisLeaf,
