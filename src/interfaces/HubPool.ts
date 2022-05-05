@@ -1,7 +1,5 @@
 import { BigNumber } from "../utils";
 import { SortableEvent } from "./Common";
-// @notice Passed as input to HubPool.proposeRootBundle
-export type BundleEvaluationBlockNumbers = number[];
 
 export interface PoolRebalanceLeaf {
   chainId: number;

@@ -1,9 +1,9 @@
 import { getContractFactory, expect, ethers, Contract, SignerWithAddress, originChainId } from "./utils";
-import { zeroAddress, destinationChainId, toBN, deployRateModelStore, contractAt, createSpyLogger } from "./utils";
+import { zeroAddress, destinationChainId, toBN, createSpyLogger } from "./utils";
 import { randomL1Token, randomOriginToken, randomDestinationToken, randomDestinationToken2 } from "./constants";
 import { HubPoolClient } from "../src/clients";
 
-let hubPool: Contract, lpTokenFactory: Contract, mockAdapter: Contract, rateModelStore: Contract;
+let hubPool: Contract, lpTokenFactory: Contract, mockAdapter: Contract;
 let owner: SignerWithAddress;
 let hubPoolClient: HubPoolClient;
 
@@ -19,8 +19,6 @@ describe("HubPoolClient: Deposit to Destination Token", async function () {
 
     mockAdapter = await (await getContractFactory("Mock_Adapter", owner)).deploy();
     await hubPool.setCrossChainContracts(originChainId, mockAdapter.address, zeroAddress);
-
-    ({ rateModelStore } = await deployRateModelStore(owner, [await contractAt("ERC20", owner, randomL1Token)]));
 
     hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
   });
