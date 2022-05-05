@@ -555,7 +555,12 @@ export class Dataworker {
         spokePoolContract,
         this.clients.configStoreClient,
         Number(chainId),
-        this.clients.spokePoolClients[chainId].eventSearchConfig
+        {
+          fromBlock: endBlockForMainnet, // Need to override the oldest block we search in case the spoke pool was 
+          // upgraded.
+          toBlock: null,
+          maxBlockLookBack: this.clients.spokePoolClients[chainId].eventSearchConfig.maxBlockLookBack,
+        }
       );
       return result;
     }, {});
