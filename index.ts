@@ -1,10 +1,11 @@
 import { delay, Logger } from "@uma/financial-templates-lib";
 
 import { runRelayer } from "./src/relayer";
+import { runDataworker } from "./src/dataworker";
 
 export async function run(): Promise<void> {
   if (process.argv.includes("--relayer")) await runRelayer(Logger);
-  else if (process.argv.includes("--dataworker")) console.log("NOT YET IMPLEMENTED");
+  else if (process.argv.includes("--dataworker")) await runDataworker(Logger);
   else console.log("Select either relayer OR dataworker");
 }
 

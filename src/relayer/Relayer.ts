@@ -1,6 +1,6 @@
 import { BigNumber, winston, buildFillRelayProps, getNetworkName } from "../utils";
 import { createFormatFunction, etherscanLink } from "../utils";
-import { RelayerClients } from "../clients";
+import { RelayerClients } from "./RelayerClientHelper";
 
 import { Deposit } from "../interfaces/SpokePool";
 

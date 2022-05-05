@@ -3,8 +3,8 @@ import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree 
 import { getRealizedLpFeeForFills, BigNumber, toBN } from "../utils";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, DepositWithBlock } from "../interfaces";
 import { Fill, FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
-import { RunningBalances, BundleEvaluationBlockNumbers } from "../interfaces";
-import { Clients } from "../clients";
+import { RunningBalances } from "../interfaces";
+import { DataworkerClients } from "./DataworkerClientHelper";
 
 // TODO!!!: Add helpful logs everywhere.
 
@@ -14,12 +14,12 @@ export class Dataworker {
   // eslint-disable-next-line no-useless-constructor
   constructor(
     readonly logger: winston.Logger,
-    readonly clients: Clients,
+    readonly clients: DataworkerClients,
     readonly chainIdListForBundleEvaluationBlockNumbers: number[]
   ) {}
 
   // Common data re-formatting logic shared across all data worker public functions.
-  _loadData(/* bundleBlockNumbers: BundleEvaluationBlockNumbers */): {
+  _loadData(blockRangesForChains: number[][]): {
     unfilledDeposits: UnfilledDeposit[];
     fillsToRefund: FillsToRefund;
     allValidFills: FillWithBlock[];
@@ -164,8 +164,8 @@ export class Dataworker {
     return { fillsToRefund, deposits, unfilledDeposits, allValidFills };
   }
 
-  buildSlowRelayRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): MerkleTree<RelayData> | null {
-    const { unfilledDeposits } = this._loadData();
+  buildSlowRelayRoot(blockRangesForChains: number[][]): MerkleTree<RelayData> | null {
+    const { unfilledDeposits } = this._loadData(blockRangesForChains);
     // TODO: Use `bundleBlockNumbers` to decide how to filter which blocks to keep in `unfilledDeposits`.
 
     const slowRelayLeaves: RelayData[] = unfilledDeposits.map(
@@ -194,15 +194,13 @@ export class Dataworker {
     return buildSlowRelayTree(sortedLeaves);
   }
 
-  async publishRoots(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
-    const slowRelayRoot = await this.buildSlowRelayRoot(bundleBlockNumbers);
-
+  async publishRoots(blockRangesForChains: number[][]) {
     // TODO: Store root to be consumed by manual leaf executors and verifiers. Can also be used to track lifecyle
     // of roots.
   }
 
-  buildRelayerRefundRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers): MerkleTree<RelayerRefundLeaf> | null {
-    const { fillsToRefund } = this._loadData();
+  buildRelayerRefundRoot(blockRangesForChains: number[][]): MerkleTree<RelayerRefundLeaf> | null {
+    const { fillsToRefund } = this._loadData(blockRangesForChains);
 
     const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
 
@@ -260,8 +258,8 @@ export class Dataworker {
     return buildRelayerRefundTree(indexedLeaves);
   }
 
-  buildPoolRebalanceRoot(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
-    const { fillsToRefund, deposits, allValidFills } = this._loadData();
+  buildPoolRebalanceRoot(blockRangesForChains: number[][]) {
+    const { fillsToRefund, deposits, allValidFills } = this._loadData(blockRangesForChains);
 
     // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
     // slow relay refunds. They are decreased by the amount of funds already held by the SpokePool. Balances are keyed
@@ -453,27 +451,24 @@ export class Dataworker {
     };
   }
 
-  async proposeRootBundle(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
+  async proposeRootBundle() {
     // Create roots
     // Store root + auxillary information useful for executing leaves on some storage layer
     // Propose roots to HubPool contract.
   }
 
   async validateRootBundle(
-    bundleBlockNumbers: BundleEvaluationBlockNumbers,
     poolRebalanceRoot: string,
     relayerRefundRoot: string,
     slowRelayRoot: string
   ) {
-    this._loadData();
-
     // Look at latest propose root bundle event earlier than a block number
 
     // Construct roots locally using class functions and compare with the event we found earlier.
     // If any roots mismatch, pinpoint the errors to give details to the caller.
   }
 
-  async executeSlowRelayLeaves(bundleBlockNumbers: BundleEvaluationBlockNumbers) {
+  async executeSlowRelayLeaves() {
     // TODO: Caller should grab `bundleBlockNumbers` from ProposeRootBundle event, recreate root and execute
     // all leaves for root. To locate `rootBundleId`, look up `SpokePool.RelayedRootBundle` events and find event
     // with matching roots.

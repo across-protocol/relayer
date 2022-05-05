@@ -1,6 +1,3 @@
-export * from "./RelayerClientHelper";
-export * from "./ClientHelper";
-export * from "./DataworkerClientHelper";
 export * from "./HubPoolClient";
 export * from "./SpokePoolClient";
 export * from "./RateModelClient";

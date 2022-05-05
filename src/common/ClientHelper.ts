@@ -1,17 +1,16 @@
 import winston from "winston";
 import { getProvider, getSigner, getDeployedContract, getDeploymentBlockNumber, Contract } from "../utils";
-import { SpokePoolClient, HubPoolClient, MultiCallerClient } from ".";
-import { AcrossConfigStoreClient, TokenClient, ProfitClient } from ".";
-import { RelayerConfig } from "../relayer/RelayerConfig";
-import { Clients } from "./ClientHelper";
+import { SpokePoolClient, HubPoolClient, MultiCallerClient, AcrossConfigStoreClient } from "../clients";
+import { CommonConfig } from "./Config";
 
-export interface RelayerClients extends Clients {
-  tokenClient: TokenClient;
-  profitClient: ProfitClient;
-  multiCallerClient: MultiCallerClient;
+export interface Clients {
+    spokePoolClients: { [chainId: number]: SpokePoolClient };
+    hubPoolClient: HubPoolClient;
+    configStoreClient: AcrossConfigStoreClient;
+    multiCallerClient: MultiCallerClient;
 }
-
-export async function constructRelayerClients(logger: winston.Logger, config: RelayerConfig): Promise<RelayerClients> {
+  
+export async function constructClients(logger: winston.Logger, config: CommonConfig): Promise<Clients> {
   // Create signers for each chain. Each is connected to an associated provider for that chain.
   const baseSigner = await getSigner();
 
@@ -65,10 +64,6 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
     );
   });
 
-  const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients);
-
-  const profitClient = new ProfitClient(logger, hubPoolClient, config.relayerDiscount);
-
   // const gasEstimator = new GasEstimator() // todo when this is implemented in the SDK.
   const multiCallerClient = new MultiCallerClient(logger, null);
 
@@ -83,31 +78,25 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
     }),
   });
 
-  return { hubPoolClient, configStoreClient, spokePoolClients, tokenClient, profitClient, multiCallerClient };
+  return { hubPoolClient, configStoreClient, spokePoolClients, multiCallerClient };
 }
 
 // If this is the first run then the hubPoolClient will have no whitelisted routes. If this is the case then first
 // update the hubPoolClient and the rateModelClients followed by the spokePoolClients. Else, update all at once.
-export async function updateRelayerClients(logger: winston.Logger, clients: RelayerClients) {
+export async function updateClients(logger: winston.Logger, clients: Clients) {
   if (Object.keys(clients.hubPoolClient.getL1TokensToDestinationTokens()).length === 0) {
     logger.debug({ at: "ClientHelper", message: "Updating clients for first run" });
     await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
-    // SpokePool client and profit client requires up to date HuPoolClient and rateModelClient.
-    await Promise.all([updateSpokePoolClients(clients.spokePoolClients), clients.profitClient.update()]);
-    await clients.tokenClient.update(); // Token client requires up to date spokePool clients to fetch token routes.
+    // SpokePool clientrequires up to date HuPoolClient and rateModelClient.
+    await updateSpokePoolClients(clients.spokePoolClients);
   } else {
     logger.debug({ at: "ClientHelper", message: "Updating clients for standard run" });
     await Promise.all([
       clients.hubPoolClient.update(),
       clients.configStoreClient.update(),
-      clients.tokenClient.update(),
-      clients.profitClient.update(),
       updateSpokePoolClients(clients.spokePoolClients),
     ]);
   }
-
-  // Run approval check last as needs up to date route info. If no new then returns with no async calls.
-  await clients.tokenClient.setOriginTokenApprovals();
 }
 
 async function updateSpokePoolClients(spokePoolClients: { [chainId: number]: SpokePoolClient }) {
