@@ -14,6 +14,7 @@ export class HubPoolClient {
 
   public isUpdated: boolean = false;
   public firstBlockToSearch: number;
+  public latestBlockNumber: number;
 
   constructor(
     readonly logger: winston.Logger,
@@ -98,19 +99,46 @@ export class HubPoolClient {
   getRootBundleEvalBlockNumberContainingBlock(block: number, chain: number, chainIdList: number[]): number | undefined {
     let endingBlockNumber: number;
     for (const rootBundle of sortEventsAscending(this.proposedRootBundles)) {
-      const bundleEvaluationBlockNumbers: BigNumber[] = (rootBundle as ProposedRootBundle).bundleEvaluationBlockNumbers;
-      if (bundleEvaluationBlockNumbers.length !== chainIdList.length)
-        throw new Error("Chain ID list and bundle block eval range list length do not match");
-      const chainIdIndex = chainIdList.indexOf(chain);
-      if (chainIdIndex === -1) throw new Error("Can't find fill.destinationChainId in CHAIN_ID_LIST");
-      if (bundleEvaluationBlockNumbers[chainIdIndex].gte(toBN(block))) {
-        endingBlockNumber = bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
+      const bundleEvalBlockNumber = this.getBundleEndBlockForChain(
+        rootBundle as ProposedRootBundle,
+        chain,
+        chainIdList
+      );
+      if (bundleEvalBlockNumber >= block) {
+        endingBlockNumber = bundleEvalBlockNumber;
         // Since events are sorted from oldest to newest, and bundle block ranges should only increase, exit as soon
         // as we find the first block range that contains the target block.
         break;
       }
     }
     return endingBlockNumber;
+  }
+
+  getNextBundleStartBlockNumber(chainIdList: number[], latestBlock: number, chainId: number): number {
+    // Search for the latest RootBundleExecuted event with a matching chainId while still being earlier than the
+    // latest block.
+    const latestRootBundleExecutedEvent = sortEventsDescending(this.executedRootBundles).find(
+      (event: ExecutedRootBundle) => event.blockNumber <= latestBlock && event.chainId === chainId
+    );
+
+    // TODO: If no event for chain ID, then we can return a conservative default starting block like 0,
+    // or we could throw an Error.
+    if (!latestRootBundleExecutedEvent) return 0;
+
+    // Once that event is found, search for the ProposeRootBundle event that is as late as possible, but earlier than
+    // the RootBundleExecuted event we just identified.
+    const mostRecentProposeRootBundleEventWithChain = sortEventsDescending(this.proposedRootBundles).find(
+      (rootBundle: ProposedRootBundle) => rootBundle.blockNumber <= latestRootBundleExecutedEvent.blockNumber
+    ) as ProposedRootBundle;
+
+    // Same situation as when we cannot find a ExecutedRootBundleEvent, if we can't find a ProposedRootBundle
+    // event, then either return 0 or throw an error.
+    if (!mostRecentProposeRootBundleEventWithChain) return 0;
+
+    // Once this proposal event is found, determine its mapping of indices to chainId in its
+    // bundleEvaluationBlockNumbers array using CHAIN_ID_LIST. For each chainId, their starting block number is that
+    // chain's bundleEvaluationBlockNumber + 1 in this past proposal event.
+    return this.getBundleEndBlockForChain(mostRecentProposeRootBundleEventWithChain, chainId, chainIdList) + 1;
   }
 
   getRunningBalanceBeforeBlockForChain(block: number, chain: number, l1Token: string): BigNumber {
@@ -140,9 +168,10 @@ export class HubPoolClient {
   }
 
   async update() {
+    this.latestBlockNumber = await this.hubPool.provider.getBlockNumber();
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
-      toBlock: this.eventSearchConfig.toBlock || (await this.hubPool.provider.getBlockNumber()),
+      toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
     this.logger.debug({ at: "HubPoolClient", message: "Updating client", searchConfig });
@@ -198,5 +227,18 @@ export class HubPoolClient {
     const token = new Contract(address, ERC20.abi, this.hubPool.signer);
     const [symbol, decimals] = await Promise.all([token.symbol(), token.decimals()]);
     return { address, symbol, decimals };
+  }
+
+  private getBundleEndBlockForChain(
+    proposeRootBundleEvent: ProposedRootBundle,
+    chainId: number,
+    chainIdList: number[]
+  ): number {
+    const bundleEvaluationBlockNumbers: BigNumber[] = proposeRootBundleEvent.bundleEvaluationBlockNumbers;
+    if (bundleEvaluationBlockNumbers.length !== chainIdList.length)
+      throw new Error("Chain ID list and bundle block eval range list length do not match");
+    const chainIdIndex = chainIdList.indexOf(chainId);
+    if (chainIdIndex === -1) throw new Error(`Can't find chainId ${chainId} in chainIdList ${chainIdList}`);
+    return bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
   }
 }
