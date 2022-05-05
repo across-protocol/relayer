@@ -5,7 +5,7 @@ import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 
 import { constructRelayerClients, updateRelayerClients } from "../clients";
-import { processEndPollingLoop, winston } from "../utils";
+import { processEndPollingLoop, winston, delay } from "../utils";
 
 let logger: winston.Logger;
 
@@ -32,6 +32,7 @@ export async function runRelayer(_logger: winston.Logger): Promise<void> {
     }
   } catch (error) {
     logger.error({ at: "Relayer#index", message: "There was an execution error! Re-running loop", error });
+    await delay(5);
     await runRelayer(logger);
   }
 }
