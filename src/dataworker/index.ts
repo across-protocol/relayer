@@ -33,9 +33,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
         0,
         latestBlock,
       ]);
-      await dataworker.buildPoolRebalanceRoot(blockRangesForChains)
-      await dataworker.buildRelayerRefundRoot(blockRangesForChains)
-      await dataworker.buildSlowRelayRoot(blockRangesForChains)
+      await dataworker.proposeRootBundle()
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }
