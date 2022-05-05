@@ -61,10 +61,7 @@ describe("AcrossConfigStoreClient", async function () {
 
     // Update ignores TokenConfig events that don't include all expected keys:
     await configStore.updateTokenConfig(l1Token.address, "gibberish");
-    await configStore.updateTokenConfig(
-      l1Token.address,
-      JSON.stringify({ rateModel: sampleRateModel })
-    );
+    await configStore.updateTokenConfig(l1Token.address, JSON.stringify({ rateModel: sampleRateModel }));
     await configStore.updateTokenConfig(
       l1Token.address,
       JSON.stringify({ transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD })

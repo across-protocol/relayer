@@ -177,7 +177,7 @@ export class Dataworker {
   }
 
   buildSlowRelayRoot(blockRangesForChains: number[][]) {
-        // TODO: Test `blockRangesForChains`
+    // TODO: Test `blockRangesForChains`
 
     const { unfilledDeposits } = this._loadData(blockRangesForChains);
     // TODO: Use `bundleBlockNumbers` to decide how to filter which blocks to keep in `unfilledDeposits`.
@@ -207,8 +207,8 @@ export class Dataworker {
     if (sortedLeaves.length === 0) throw new Error("Cannot build tree with zero leaves");
     return {
       leaves: sortedLeaves,
-      tree: buildSlowRelayTree(sortedLeaves)
-    }
+      tree: buildSlowRelayTree(sortedLeaves),
+    };
   }
 
   async publishRoots(blockRangesForChains: number[][]) {
@@ -217,7 +217,7 @@ export class Dataworker {
   }
 
   buildRelayerRefundRoot(blockRangesForChains: number[][]) {
-        // TODO: Test `blockRangesForChains`
+    // TODO: Test `blockRangesForChains`
 
     const { fillsToRefund } = this._loadData(blockRangesForChains);
 
@@ -241,8 +241,9 @@ export class Dataworker {
         // refunds.
         // TODO: Replace the block height hardcoded with a block from the bundle block range so we can look up the
         // limit at the time of the proposal.
-        const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForChains, 1)[1]
-        const maxRefundCount = this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
+        const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForChains, 1)[1];
+        const maxRefundCount =
+          this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
         for (let i = 0; i < sortedRefundAddresses.length; i += maxRefundCount)
           relayerRefundLeaves.push({
             groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
@@ -277,12 +278,12 @@ export class Dataworker {
     if (indexedLeaves.length === 0) throw new Error("Cannot build tree with zero leaves");
     return {
       leaves: indexedLeaves,
-      tree: buildRelayerRefundTree(indexedLeaves)
+      tree: buildRelayerRefundTree(indexedLeaves),
     };
   }
 
   buildPoolRebalanceRoot(blockRangesForChains: number[][]) {
-        // TODO: Test `blockRangesForChains`
+    // TODO: Test `blockRangesForChains`
 
     const { fillsToRefund, deposits, allValidFills } = this._loadData(blockRangesForChains);
 
@@ -297,7 +298,7 @@ export class Dataworker {
     // 1. For each FilledRelay group, identified by { repaymentChainId, L1TokenAddress }, initialize a "running balance"
     // to the total refund amount for that group.
     // 2. Similarly, for each group sum the realized LP fees.
-    const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForChains, 1)[1]
+    const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForChains, 1)[1];
 
     if (Object.keys(fillsToRefund).length > 0) {
       Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
@@ -438,9 +439,8 @@ export class Dataworker {
         let groupIndexForChainId = 0;
 
         // Split addresses into multiple leaves if there are more L1 tokens than allowed per leaf.
-        const maxRefundCount = this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(
-          endBlockForMainnet
-        );
+        const maxRefundCount =
+          this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
         for (let i = 0; i < sortedL1Tokens.length; i += maxRefundCount) {
           const l1TokensToIncludeInThisLeaf = sortedL1Tokens.slice(i, i + maxRefundCount);
 
@@ -452,13 +452,13 @@ export class Dataworker {
               ? l1TokensToIncludeInThisLeaf.map((l1Token) => realizedLpFees[chainId][l1Token])
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
             runningBalances: runningBalances[chainId]
-              ? l1TokensToIncludeInThisLeaf.map(
-                  (l1Token) => this._getRunningBalanceForL1Token(runningBalances[chainId][l1Token], l1Token, endBlockForMainnet)
+              ? l1TokensToIncludeInThisLeaf.map((l1Token) =>
+                  this._getRunningBalanceForL1Token(runningBalances[chainId][l1Token], l1Token, endBlockForMainnet)
                 )
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
             netSendAmounts: runningBalances[chainId]
-              ? l1TokensToIncludeInThisLeaf.map(
-                  (l1Token) => this._getNetSendAmountForL1Token(runningBalances[chainId][l1Token], l1Token, endBlockForMainnet)
+              ? l1TokensToIncludeInThisLeaf.map((l1Token) =>
+                  this._getNetSendAmountForL1Token(runningBalances[chainId][l1Token], l1Token, endBlockForMainnet)
                 )
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
             l1Tokens: l1TokensToIncludeInThisLeaf,
@@ -493,21 +493,17 @@ export class Dataworker {
     // TODO:
     // 2. Create roots
     const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForProposal);
-    console.log(`poolRebalanceRoot:`, poolRebalanceRoot.leaves, poolRebalanceRoot.tree)
+    console.log(`poolRebalanceRoot:`, poolRebalanceRoot.leaves, poolRebalanceRoot.tree);
     const relayerRefundRoot = this.buildRelayerRefundRoot(blockRangesForProposal);
-    console.log(`relayerRefundRoot:`, relayerRefundRoot.leaves, relayerRefundRoot.tree)
+    console.log(`relayerRefundRoot:`, relayerRefundRoot.leaves, relayerRefundRoot.tree);
     const slowRelayRoot = this.buildSlowRelayRoot(blockRangesForProposal);
-    console.log(`slowRelayRoot:`, slowRelayRoot.leaves, slowRelayRoot.tree)
+    console.log(`slowRelayRoot:`, slowRelayRoot.leaves, slowRelayRoot.tree);
 
     // 3. Store root + auxillary information somewhere useful for executing leaves
     // 4. Propose roots to HubPool contract.
   }
 
-  async validateRootBundle(
-    poolRebalanceRoot: string,
-    relayerRefundRoot: string,
-    slowRelayRoot: string
-  ) {
+  async validateRootBundle(poolRebalanceRoot: string, relayerRefundRoot: string, slowRelayRoot: string) {
     // Look at latest propose root bundle event earlier than a block number
     // Construct roots locally using class functions and compare with the event we found earlier.
     // If any roots mismatch, pinpoint the errors to give details to the caller.

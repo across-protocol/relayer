@@ -1,5 +1,5 @@
 import { assert } from "../utils";
-import * as Constants from "./Constants"
+import * as Constants from "./Constants";
 
 export interface ProcessEnv {
   [key: string]: string | undefined;

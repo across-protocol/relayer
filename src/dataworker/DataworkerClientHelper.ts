@@ -10,7 +10,7 @@ export async function constructDataworkerClients(
 ): Promise<DataworkerClients> {
   const commonClients = await constructClients(logger, config);
 
-  return { ...commonClients};
+  return { ...commonClients };
 }
 
 export async function updateDataworkerClients(logger: winston.Logger, clients: DataworkerClients) {

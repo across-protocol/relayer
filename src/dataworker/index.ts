@@ -1,7 +1,7 @@
 import { config } from "dotenv";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
-import * as Constants from "../common"
+import * as Constants from "../common";
 
 import { constructDataworkerClients, updateDataworkerClients } from "./DataworkerClientHelper";
 import { processEndPollingLoop, winston, delay, getProvider } from "../utils";
@@ -28,12 +28,12 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       // TODO: For now, build and log next root + leaves.
       const latestBlocksForChainInBundleOrder = await Promise.all(
         Constants.CHAIN_ID_LIST_INDICES.map((chainId: number) => getProvider(chainId).getBlockNumber())
-      )
+      );
       const blockRangesForChains: number[][] = latestBlocksForChainInBundleOrder.map((latestBlock: number) => [
         0,
         latestBlock,
       ]);
-      await dataworker.proposeRootBundle()
+      await dataworker.proposeRootBundle();
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }

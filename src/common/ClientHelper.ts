@@ -4,12 +4,12 @@ import { SpokePoolClient, HubPoolClient, MultiCallerClient, AcrossConfigStoreCli
 import { CommonConfig } from "./Config";
 
 export interface Clients {
-    spokePoolClients: { [chainId: number]: SpokePoolClient };
-    hubPoolClient: HubPoolClient;
-    configStoreClient: AcrossConfigStoreClient;
-    multiCallerClient: MultiCallerClient;
+  spokePoolClients: { [chainId: number]: SpokePoolClient };
+  hubPoolClient: HubPoolClient;
+  configStoreClient: AcrossConfigStoreClient;
+  multiCallerClient: MultiCallerClient;
 }
-  
+
 export async function constructClients(logger: winston.Logger, config: CommonConfig): Promise<Clients> {
   // Create signers for each chain. Each is connected to an associated provider for that chain.
   const baseSigner = await getSigner();
