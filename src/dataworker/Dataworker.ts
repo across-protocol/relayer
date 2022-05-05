@@ -29,6 +29,7 @@ export class Dataworker {
     allValidFills: FillWithBlock[];
     deposits: DepositWithBlock[];
   } {
+    // TODO: Test `blockRangesForChains`
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
     if (!this.clients.configStoreClient.isUpdated) throw new Error(`ConfigStoreClient not updated`);
 
@@ -176,6 +177,8 @@ export class Dataworker {
   }
 
   buildSlowRelayRoot(blockRangesForChains: number[][]) {
+        // TODO: Test `blockRangesForChains`
+
     const { unfilledDeposits } = this._loadData(blockRangesForChains);
     // TODO: Use `bundleBlockNumbers` to decide how to filter which blocks to keep in `unfilledDeposits`.
 
@@ -214,6 +217,8 @@ export class Dataworker {
   }
 
   buildRelayerRefundRoot(blockRangesForChains: number[][]) {
+        // TODO: Test `blockRangesForChains`
+
     const { fillsToRefund } = this._loadData(blockRangesForChains);
 
     const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
@@ -276,6 +281,8 @@ export class Dataworker {
   }
 
   buildPoolRebalanceRoot(blockRangesForChains: number[][]) {
+        // TODO: Test `blockRangesForChains`
+
     const { fillsToRefund, deposits, allValidFills } = this._loadData(blockRangesForChains);
 
     // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
