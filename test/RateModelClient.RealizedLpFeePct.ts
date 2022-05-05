@@ -24,7 +24,7 @@ const sampleRateModel = {
 };
 
 const tokenConfigToUpdate = JSON.stringify({
-  rateModel: JSON.stringify(sampleRateModel),
+  rateModel: sampleRateModel,
   transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
 });
 
@@ -63,7 +63,7 @@ describe("AcrossConfigStoreClient", async function () {
     await configStore.updateTokenConfig(l1Token.address, "gibberish");
     await configStore.updateTokenConfig(
       l1Token.address,
-      JSON.stringify({ rateModel: JSON.stringify(sampleRateModel) })
+      JSON.stringify({ rateModel: sampleRateModel })
     );
     await configStore.updateTokenConfig(
       l1Token.address,

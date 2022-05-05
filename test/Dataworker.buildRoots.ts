@@ -641,7 +641,7 @@ describe("Dataworker: Build merkle roots", async function () {
         await configStore.updateTokenConfig(
           l1Token.address,
           JSON.stringify({
-            rateModel: JSON.stringify(sampleRateModel),
+            rateModel: sampleRateModel,
             transferThreshold: toBNWei("1000000").toString(),
           })
         );
@@ -762,12 +762,12 @@ describe("Dataworker: Build merkle roots", async function () {
       await configStore.updateTokenConfig(
         l1Token_1.address,
         JSON.stringify({
-          rateModel: JSON.stringify(sampleRateModel),
+          rateModel: sampleRateModel,
           transferThreshold: toBNWei(1).toString(),
         })
       );
       await configStoreClient.update();
-      const merkleRoot2 = dataworkerInstance.buildPoolRebalanceRoot([]);
+      const merkleRoot2 = dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN);
       const expectedLeaves2 = expectedLeaves1.map((leaf) => {
         return {
           ...leaf,

@@ -125,7 +125,7 @@ export class AcrossConfigStoreClient {
       };
 
       try {
-        const rateModelForToken = JSON.parse(args.value).rateModel;
+        const rateModelForToken = JSON.stringify(JSON.parse(args.value).rateModel);
         const transferThresholdForToken = JSON.parse(args.value).transferThreshold;
 
         // If Token config doesn't contain all expected properties, skip it.

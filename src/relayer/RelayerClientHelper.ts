@@ -1,7 +1,7 @@
 import winston from "winston";
 import { getSigner } from "../utils";
-import { TokenClient, ProfitClient } from ".";
-import { RelayerConfig } from "../relayer/RelayerConfig";
+import { TokenClient, ProfitClient } from "../clients";
+import { RelayerConfig } from "./RelayerConfig";
 import { Clients, constructClients, updateClients } from "../common";
 
 export interface RelayerClients extends Clients {

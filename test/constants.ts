@@ -23,7 +23,7 @@ export const sampleRateModel = {
 };
 
 export const defaultTokenConfig = JSON.stringify({
-  rateModel: JSON.stringify(sampleRateModel),
+  rateModel: sampleRateModel,
   transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD.toString(),
 });
 
