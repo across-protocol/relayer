@@ -1,10 +1,11 @@
-import { winston, assign, compareAddresses, getRefundForFills, sortEventsDescending } from "../utils";
-import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree } from "../utils";
+import { winston, assign, compareAddresses, getRefundForFills, sortEventsDescending, Contract } from "../utils";
+import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree, SpokePool } from "../utils";
 import { getRealizedLpFeeForFills, BigNumber, toBN } from "../utils";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, DepositWithBlock } from "../interfaces";
 import { Fill, FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
 import { RunningBalances } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
+import { SpokePoolClient } from "../clients";
 
 // TODO!!!: Add helpful logs everywhere.
 
@@ -23,7 +24,12 @@ export class Dataworker {
   ) {}
 
   // Common data re-formatting logic shared across all data worker public functions.
-  _loadData(blockRangesForChains: number[][]): {
+  // User must pass in spoke pool to search event data against. This allows the user to refund relays and fill deposits
+  // on deprecated spoke pools.
+  _loadData(
+    blockRangesForChains: number[][],
+    spokePoolClients: { [chainId: number]: SpokePoolClient }
+  ): {
     unfilledDeposits: UnfilledDeposit[];
     fillsToRefund: FillsToRefund;
     allValidFills: FillWithBlock[];
@@ -40,15 +46,16 @@ export class Dataworker {
 
     const allChainIds = Object.keys(this.clients.spokePoolClients);
     this.logger.debug({ at: "Dataworker", message: `Loading deposit and fill data`, chainIds: allChainIds });
+
     for (const originChainId of allChainIds) {
-      const originClient = this.clients.spokePoolClients[originChainId];
+      const originClient = spokePoolClients[originChainId];
       if (!originClient.isUpdated) throw new Error(`origin SpokePoolClient on chain ${originChainId} not updated`);
 
       // Loop over all other SpokePoolClient's to find deposits whose destination chain is the selected origin chain.
-      for (const destinationChainId of Object.keys(this.clients.spokePoolClients)) {
+      for (const destinationChainId of allChainIds) {
         if (originChainId === destinationChainId) continue;
 
-        const destinationClient = this.clients.spokePoolClients[destinationChainId];
+        const destinationClient = spokePoolClients[destinationChainId];
         if (!destinationClient.isUpdated)
           throw new Error(`destination SpokePoolClient with chain ID ${destinationChainId} not updated`);
 
@@ -207,12 +214,12 @@ export class Dataworker {
     return { fillsToRefund, deposits, unfilledDeposits, allValidFills };
   }
 
-  buildSlowRelayRoot(blockRangesForChains: number[][]) {
+  buildSlowRelayRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
     this.logger.debug({ at: "Dataworker", message: `Building slow relay root`, blockRangesForChains });
 
     // TODO: Test `blockRangesForChains`
 
-    const { unfilledDeposits } = this._loadData(blockRangesForChains);
+    const { unfilledDeposits } = this._loadData(blockRangesForChains, spokePoolClients);
     // TODO: Use `bundleBlockNumbers` to decide how to filter which blocks to keep in `unfilledDeposits`.
 
     const slowRelayLeaves: RelayData[] = unfilledDeposits.map(
@@ -249,12 +256,12 @@ export class Dataworker {
     // of roots.
   }
 
-  buildRelayerRefundRoot(blockRangesForChains: number[][]) {
+  buildRelayerRefundRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
     this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForChains });
 
     // TODO: Test `blockRangesForChains`
 
-    const { fillsToRefund } = this._loadData(blockRangesForChains);
+    const { fillsToRefund } = this._loadData(blockRangesForChains, spokePoolClients);
 
     const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
 
@@ -317,12 +324,12 @@ export class Dataworker {
     };
   }
 
-  buildPoolRebalanceRoot(blockRangesForChains: number[][]) {
+  buildPoolRebalanceRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
     this.logger.debug({ at: "Dataworker", message: `Building pool rebalance root`, blockRangesForChains });
 
     // TODO: Test `blockRangesForChains`
 
-    const { fillsToRefund, deposits, allValidFills } = this._loadData(blockRangesForChains);
+    const { fillsToRefund, deposits, allValidFills } = this._loadData(blockRangesForChains, spokePoolClients);
 
     // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
     // slow relay refunds. They are decreased by the amount of funds already held by the SpokePool. Balances are keyed
@@ -527,9 +534,36 @@ export class Dataworker {
       this.clients.spokePoolClients[chainId].latestBlockNumber,
     ]);
 
+    // 2. Construct spoke pool clients using spoke pools deployed at end of block range.
+    // We do make an assumption that the spoke pool contract was not changed during the block range. By using the
+    // spoke pool at this block instead of assuming its the currently deployed one, we can pay refunds for deposits
+    // on deprecated spoke pools.
+    const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForProposal, 1)[1];
+    this.logger.debug({
+      at: "Dataworker",
+      message: `Constructing spoke pool clients for end mainnet block in bundle range`,
+      endBlockForMainnet,
+    });
+    const spokePoolClients = this.chainIdListForBundleEvaluationBlockNumbers.reduce((result, chainId) => {
+      const spokePoolContract = new Contract(
+        this.clients.hubPoolClient.getSpokePoolForBlock(endBlockForMainnet, Number(chainId)),
+        SpokePool.abi,
+        this.clients.spokePoolClients[chainId].spokePool.signer
+      )
+      result[chainId] = new SpokePoolClient(
+        this.logger,
+        spokePoolContract,
+        this.clients.configStoreClient,
+        Number(chainId),
+        this.clients.spokePoolClients[chainId].eventSearchConfig
+      );
+      return result;
+    }, {});
+    await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update()))
+
     // TODO:
-    // 2. Create roots
-    const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForProposal);
+    // 3. Create roots.
+    const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForProposal, spokePoolClients);
     console.log(`poolRebalanceRoot:`, poolRebalanceRoot.tree.getHexRoot());
     poolRebalanceRoot.leaves.forEach((leaf: PoolRebalanceLeaf) => {
       const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
@@ -540,7 +574,7 @@ export class Dataworker {
       }, {});
       console.log(prettyLeaf);
     });
-    const relayerRefundRoot = this.buildRelayerRefundRoot(blockRangesForProposal);
+    const relayerRefundRoot = this.buildRelayerRefundRoot(blockRangesForProposal, spokePoolClients);
     console.log(`relayerRefundRoot:`, relayerRefundRoot.tree.getHexRoot());
     relayerRefundRoot.leaves.forEach((leaf: RelayerRefundLeaf) => {
       const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
@@ -553,7 +587,7 @@ export class Dataworker {
       }, {});
       console.log(prettyLeaf);
     });
-    // const slowRelayRoot = this.buildSlowRelayRoot(blockRangesForProposal);
+    // const slowRelayRoot = this.buildSlowRelayRoot(blockRangesForProposal, spokePoolClients);
     // console.log(`slowRelayRoot:`, slowRelayRoot.leaves, slowRelayRoot.tree.getHexRoot());
 
     // 3. Store root + auxillary information somewhere useful for executing leaves
