@@ -2,16 +2,22 @@ import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 import { TokenRolesEnum } from "@uma/common";
 export { MAX_SAFE_ALLOWANCE } from "@uma/common";
 import { SpyTransport } from "@uma/financial-templates-lib";
-import { sampleRateModel, zeroAddress } from "../constants";
+import {
+  DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
+  MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
+  MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
+  sampleRateModel,
+  zeroAddress,
+} from "../constants";
 
 import { SpokePoolClient } from "../../src/clients/SpokePoolClient";
-import { RateModelClient } from "../../src/clients/RateModelClient";
+import { AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients/RateModelClient";
 import { HubPoolClient } from "../../src/clients/HubPoolClient";
 
 import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber } from "./index";
-import { amountToDeposit, depositRelayerFeePct } from "../constants";
+import { amountToDeposit, depositRelayerFeePct, l1TokenTransferThreshold } from "../constants";
 import { Deposit, Fill, RunningBalances } from "../../src/interfaces/SpokePool";
-import { buildRelayerRefundTree, toBN, toBNWei } from "../../src/utils";
+import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
 
 import winston from "winston";
 import sinon from "sinon";
@@ -91,10 +97,33 @@ export async function deploySpokePoolWithToken(
   return { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20 };
 }
 
-export async function deployRateModelStore(signer: utils.SignerWithAddress, tokensToAdd: utils.Contract[]) {
-  const rateModelStore = await (await utils.getContractFactory("RateModelStore", signer)).deploy();
-  for (const token of tokensToAdd) await rateModelStore.updateRateModel(token.address, JSON.stringify(sampleRateModel));
-  return { rateModelStore };
+export async function deployConfigStore(
+  signer: utils.SignerWithAddress,
+  tokensToAdd: utils.Contract[],
+  maxL1TokensPerPoolRebalanceLeaf: number = MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
+  maxRefundPerRelayerRefundLeaf: number = MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
+  rateModel: Object = sampleRateModel,
+  transferThreshold: BigNumber = DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
+) {
+  const configStore = await (await utils.getContractFactory("AcrossConfigStore", signer)).deploy();
+  for (const token of tokensToAdd)
+    await configStore.updateTokenConfig(
+      token.address,
+      JSON.stringify({
+        rateModel: rateModel,
+        transferThreshold: transferThreshold.toString(),
+      })
+    );
+  await configStore.updateGlobalConfig(
+    utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE),
+    maxL1TokensPerPoolRebalanceLeaf.toString()
+  );
+  await configStore.updateGlobalConfig(
+    utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_RELAYER_REPAYMENT_LEAF_SIZE),
+    maxRefundPerRelayerRefundLeaf.toString()
+  );
+
+  return { configStore };
 }
 
 export async function deployAndConfigureHubPool(
@@ -122,12 +151,18 @@ export async function deployAndConfigureHubPool(
   return { hubPool, mockAdapter, l1Token_1, l1Token_2 };
 }
 
+export async function deployNewToken(owner) {
+  const l2Token = await (await utils.getContractFactory("ExpandedERC20", owner)).deploy("L2 Token", "L2", 18);
+  await l2Token.addMember(TokenRolesEnum.MINTER, l2Token.address);
+  return l2Token;
+}
+
 export async function deployNewTokenMapping(
   l2TokenHolder: utils.SignerWithAddress,
   l1TokenHolder: utils.SignerWithAddress,
   spokePool: utils.Contract,
   spokePoolDestination: utils.Contract,
-  rateModelStore: utils.Contract,
+  configStore: utils.Contract,
   hubPool: utils.Contract,
   amountToSeedLpPool: BigNumber
 ) {
@@ -157,7 +192,10 @@ export async function deployNewTokenMapping(
     { destinationChainId: spokePoolChainId, l1Token, destinationToken: l2Token },
     { destinationChainId: spokePoolDestinationChainId, l1Token, destinationToken: l2TokenDestination },
   ]);
-  await rateModelStore.updateRateModel(l1Token.address, JSON.stringify(sampleRateModel));
+  await configStore.updateTokenConfig(
+    l1Token.address,
+    JSON.stringify({ rateModel: sampleRateModel, transferThreshold: l1TokenTransferThreshold })
+  );
 
   // Give signer initial balance and approve hub pool and spoke pool to pull funds from it
   await addLiquidity(l1TokenHolder, hubPool, l1Token, amountToSeedLpPool);
@@ -209,17 +247,17 @@ export async function deploySpokePoolForIterativeTest(
   logger,
   signer: utils.SignerWithAddress,
   mockAdapter: utils.Contract,
-  rateModelClient: RateModelClient,
+  configStoreClient: AcrossConfigStoreClient,
   desiredChainId: number = 0
 ) {
   const { spokePool } = await deploySpokePoolWithToken(desiredChainId, 0, false);
 
-  await rateModelClient.hubPoolClient.hubPool.setCrossChainContracts(
+  await configStoreClient.hubPoolClient.hubPool.setCrossChainContracts(
     utils.destinationChainId,
     mockAdapter.address,
     spokePool.address
   );
-  const spokePoolClient = new SpokePoolClient(logger, spokePool.connect(signer), rateModelClient, desiredChainId);
+  const spokePoolClient = new SpokePoolClient(logger, spokePool.connect(signer), configStoreClient, desiredChainId);
 
   return { spokePool, spokePoolClient };
 }
@@ -267,7 +305,7 @@ export async function deployIterativeSpokePoolsAndToken(
   logger: winston.Logger,
   signer: utils.SignerWithAddress,
   mockAdapter: utils.Contract,
-  rateModelClient: RateModelClient,
+  configStoreClient: AcrossConfigStoreClient,
   numSpokePools: number,
   numTokens: number
 ) {
@@ -277,7 +315,7 @@ export async function deployIterativeSpokePoolsAndToken(
   // For each count of numSpokePools deploy a new spoke pool. Set the chainId to the index in the array. Note that we
   // start at index of 1 here. spokePool with a chainId of 0 is not a good idea.
   for (let i = 1; i < numSpokePools + 1; i++)
-    spokePools.push(await deploySpokePoolForIterativeTest(logger, signer, mockAdapter, rateModelClient, i));
+    spokePools.push(await deploySpokePoolForIterativeTest(logger, signer, mockAdapter, configStoreClient, i));
 
   // For each count of numTokens deploy a new token. This will also set it as an enabled route over all chains.
   for (let i = 1; i < numTokens + 1; i++) {
@@ -290,7 +328,7 @@ export async function deployIterativeSpokePoolsAndToken(
     l1TokenToL2Tokens[associatedL1Token.address] = await deploySingleTokenAcrossSetOfChains(
       signer,
       spokePools.map((spokePool, index) => ({ contract: spokePool.spokePool, chainId: index + 1 })),
-      rateModelClient.hubPoolClient.hubPool,
+      configStoreClient.hubPoolClient.hubPool,
       associatedL1Token
     );
   }
@@ -322,18 +360,18 @@ export async function contractAt(contractName: string, signer: utils.Signer, add
 export async function buildDepositStruct(
   deposit: Deposit,
   hubPoolClient: HubPoolClient,
-  rateModelClient: RateModelClient,
+  configStoreClient: AcrossConfigStoreClient,
   l1TokenForDepositedToken: Contract
 ) {
   return {
     ...deposit,
     destinationToken: hubPoolClient.getDestinationTokenForDeposit(deposit),
-    realizedLpFeePct: (await rateModelClient.computeRealizedLpFeePct(deposit, l1TokenForDepositedToken.address))
+    realizedLpFeePct: (await configStoreClient.computeRealizedLpFeePct(deposit, l1TokenForDepositedToken.address))
       .realizedLpFeePct,
   };
 }
 export async function buildDeposit(
-  rateModelClient: RateModelClient,
+  configStoreClient: AcrossConfigStoreClient,
   hubPoolClient: HubPoolClient,
   spokePool: Contract,
   tokenToDeposit: Contract,
@@ -352,7 +390,7 @@ export async function buildDeposit(
     _amountToDeposit,
     _relayerFeePct
   );
-  return await buildDepositStruct(_deposit, hubPoolClient, rateModelClient, l1TokenForDepositedToken);
+  return await buildDepositStruct(_deposit, hubPoolClient, configStoreClient, l1TokenForDepositedToken);
 }
 
 // Submits a fillRelay transaction and returns the Fill struct that that clients will interact with.

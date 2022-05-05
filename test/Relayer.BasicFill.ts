@@ -1,20 +1,20 @@
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
-import { lastSpyLogIncludes, createSpyLogger, deployRateModelStore, deployAndConfigureHubPool, winston } from "./utils";
+import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfigureHubPool, winston } from "./utils";
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId } from "./utils";
 import { originChainId, sinon, toBNWei } from "./utils";
-import { amountToLp, sampleRateModel } from "./constants";
-import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallerClient } from "../src/clients";
+import { amountToLp, defaultTokenConfig } from "./constants";
+import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
 import { TokenClient, ProfitClient } from "../src/clients";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
-let hubPool: Contract, rateModelStore: Contract, l1Token: Contract;
+let hubPool: Contract, configStore: Contract, l1Token: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
+let configStoreClient: AcrossConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
 let relayerInstance: Relayer;
 let multiCallerClient: MultiCallerClient, profitClient: ProfitClient;
 
@@ -33,17 +33,17 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     ]);
 
     ({ spy, spyLogger } = createSpyLogger());
-    ({ rateModelStore } = await deployRateModelStore(owner, [l1Token]));
+    ({ configStore } = await deployConfigStore(owner, [l1Token]));
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-    rateModelClient = new RateModelClient(spyLogger, rateModelStore, hubPoolClient);
+    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
 
     multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
 
-    spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(relayer), rateModelClient, originChainId);
+    spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(relayer), configStoreClient, originChainId);
     spokePoolClient_2 = new SpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),
-      rateModelClient,
+      configStoreClient,
       destinationChainId
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
@@ -52,7 +52,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     relayerInstance = new Relayer(spyLogger, {
       spokePoolClients,
       hubPoolClient,
-      rateModelClient,
+      configStoreClient,
       tokenClient,
       profitClient,
       multiCallerClient,
@@ -66,7 +66,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     await l1Token.approve(hubPool.address, amountToLp);
     await hubPool.addLiquidity(l1Token.address, amountToLp);
-    await rateModelStore.updateRateModel(l1Token.address, JSON.stringify(sampleRateModel));
+    await configStore.updateTokenConfig(l1Token.address, defaultTokenConfig);
 
     await updateAllClients();
   });
@@ -111,7 +111,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
 async function updateAllClients() {
   await hubPoolClient.update();
-  await rateModelClient.update();
+  await configStoreClient.update();
   await tokenClient.update();
   await spokePoolClient_1.update();
   await spokePoolClient_2.update();

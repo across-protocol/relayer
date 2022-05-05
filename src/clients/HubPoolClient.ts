@@ -1,5 +1,5 @@
-import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, toBN, sortEventsDescending } from "../utils";
-import { spreadEvent, spreadEventWithBlockNumber } from "../utils";
+import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, EventSearchConfig, toBN } from "../utils";
+import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery } from "../utils";
 import { Deposit, L1Token, ProposedRootBundle, ExecutedRootBundle } from "../interfaces";
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
 
@@ -21,9 +21,10 @@ export class HubPoolClient {
   constructor(
     readonly logger: winston.Logger,
     readonly hubPool: Contract,
-    readonly startingBlock: number = 0,
-    readonly endingBlock: number | null = null
-  ) {}
+    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
+  ) {
+    this.firstBlockToSearch = eventSearchConfig.fromBlock;
+  }
 
   getSpokePoolForBlock(block: number, chain: number): string {
     if (!this.crossChainContracts[chain]) throw new Error(`No cross chain contracts set for ${chain}`);
@@ -179,9 +180,13 @@ export class HubPoolClient {
 
   async update() {
     this.latestBlockNumber = await this.hubPool.provider.getBlockNumber();
-    const searchConfig = [this.firstBlockToSearch, this.endingBlock || this.latestBlockNumber];
+    const searchConfig = {
+      fromBlock: this.firstBlockToSearch,
+      toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
+      maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
+    };
     this.logger.debug({ at: "HubPoolClient", message: "Updating client", searchConfig });
-    if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
+    if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
     const [
       poolRebalanceRouteEvents,
@@ -190,11 +195,11 @@ export class HubPoolClient {
       executedRootBundleEvents,
       crossChainContractsSetEvents,
     ] = await Promise.all([
-      this.hubPool.queryFilter(this.hubPool.filters.SetPoolRebalanceRoute(), ...searchConfig),
-      this.hubPool.queryFilter(this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), ...searchConfig),
-      this.hubPool.queryFilter(this.hubPool.filters.ProposeRootBundle(), ...searchConfig),
-      this.hubPool.queryFilter(this.hubPool.filters.RootBundleExecuted(), ...searchConfig),
-      this.hubPool.queryFilter(this.hubPool.filters.CrossChainContractsSet(), ...searchConfig),
+      paginatedEventQuery(this.hubPool, this.hubPool.filters.SetPoolRebalanceRoute(), searchConfig),
+      paginatedEventQuery(this.hubPool, this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), searchConfig),
+      paginatedEventQuery(this.hubPool, this.hubPool.filters.ProposeRootBundle(), searchConfig),
+      paginatedEventQuery(this.hubPool, this.hubPool.filters.RootBundleExecuted(), searchConfig),
+      paginatedEventQuery(this.hubPool, this.hubPool.filters.CrossChainContractsSet(), searchConfig),
     ]);
 
     for (const event of crossChainContractsSetEvents) {
@@ -245,7 +250,7 @@ export class HubPoolClient {
     );
 
     this.isUpdated = true;
-    this.firstBlockToSearch = searchConfig[1] + 1; // Next iteration should start off from where this one ended.
+    this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.logger.debug({ at: "HubPoolClient", message: "Client updated!" });
   }
