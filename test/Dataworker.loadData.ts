@@ -16,7 +16,7 @@ let depositor: SignerWithAddress, relayer: SignerWithAddress;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
 let dataworkerInstance: Dataworker;
-const spokePoolClients: { [chainId: number]: SpokePoolClient } = {}
+const spokePoolClients: { [chainId: number]: SpokePoolClient } = {};
 
 let updateAllClients: () => Promise<void>;
 
@@ -40,21 +40,27 @@ describe("Dataworker: Load data used in all functions", async function () {
       configStoreClient,
       updateAllClients,
     } = await setupDataworker(ethers, 25, 25, toBN(0)));
-    spokePoolClients[originChainId] = spokePoolClient_1
-    spokePoolClients[destinationChainId] = spokePoolClient_2
+    spokePoolClients[originChainId] = spokePoolClient_1;
+    spokePoolClients[destinationChainId] = spokePoolClient_2;
   });
 
   it("Default conditions", async function () {
     // Throws error if hub pool client is not updated.
-    expect(() => dataworkerInstance._loadData(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)).to.throw(/HubPoolClient not updated/);
+    expect(() => dataworkerInstance._loadData(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)).to.throw(
+      /HubPoolClient not updated/
+    );
     await hubPoolClient.update();
 
     // Throws error if config store client not updated.
-    expect(() => dataworkerInstance._loadData(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)).to.throw(/ConfigStoreClient not updated/);
+    expect(() => dataworkerInstance._loadData(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)).to.throw(
+      /ConfigStoreClient not updated/
+    );
     await configStoreClient.update();
 
     // Throws error if spoke pool clients not updated
-    expect(() => dataworkerInstance._loadData(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)).to.throw(/origin SpokePoolClient/);
+    expect(() => dataworkerInstance._loadData(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)).to.throw(
+      /origin SpokePoolClient/
+    );
     await spokePoolClient_1.update();
     await spokePoolClient_2.update();
 
@@ -125,7 +131,9 @@ describe("Dataworker: Load data used in all functions", async function () {
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0);
     await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 0);
     await updateAllClients();
-    expect(dataworkerInstance._loadData(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).unfilledDeposits).to.deep.equal([]);
+    expect(
+      dataworkerInstance._loadData(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).unfilledDeposits
+    ).to.deep.equal([]);
 
     // Fills that don't match deposits do not affect unfilledAmount counter.
     // Note: We switch the spoke pool address in the following fills from the fills that eventually do match with

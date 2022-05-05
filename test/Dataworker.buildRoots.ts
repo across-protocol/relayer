@@ -27,7 +27,7 @@ let depositor: SignerWithAddress, relayer: SignerWithAddress, dataworker: Signer
 
 let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient, spokePoolClient_1: SpokePoolClient;
 let dataworkerInstance: Dataworker, spokePoolClient_2: SpokePoolClient;
-const spokePoolClients: { [chainId: number]: SpokePoolClient } = {}
+const spokePoolClients: { [chainId: number]: SpokePoolClient } = {};
 
 let updateAllClients: () => Promise<void>;
 
@@ -57,8 +57,8 @@ describe("Dataworker: Build merkle roots", async function () {
       MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
       DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
     ));
-    spokePoolClients[originChainId] = spokePoolClient_1
-    spokePoolClients[destinationChainId] = spokePoolClient_2
+    spokePoolClients[originChainId] = spokePoolClient_1;
+    spokePoolClients[destinationChainId] = spokePoolClient_2;
   });
   it("Build slow relay root", async function () {
     await updateAllClients();
@@ -212,7 +212,8 @@ describe("Dataworker: Build merkle roots", async function () {
       refundAmounts: [getRefund(deposit3.amount, deposit3.realizedLpFeePct)],
     };
     await updateAllClients();
-    const merkleRoot2 = await dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).tree;
+    const merkleRoot2 = await dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)
+      .tree;
     const expectedMerkleRoot2 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf2, leaf1]);
     expect(merkleRoot2.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
 
@@ -286,7 +287,9 @@ describe("Dataworker: Build merkle roots", async function () {
       };
 
       await updateAllClients();
-      expect(() => dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)).to.throw();
+      expect(() =>
+        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)
+      ).to.throw();
 
       // Submit deposits for multiple L2 tokens.
       const deposit1 = await buildDeposit(
@@ -667,9 +670,9 @@ describe("Dataworker: Build merkle roots", async function () {
           return { ...leaf, chainId: toBN(leaf.chainId), groupIndex: toBN(leaf.groupIndex), leafId: toBN(leaf.leafId) };
         })
       );
-      expect(dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).tree.getHexRoot()).to.equal(
-        expectedMerkleRoot.getHexRoot()
-      );
+      expect(
+        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).tree.getHexRoot()
+      ).to.equal(expectedMerkleRoot.getHexRoot());
     });
     it("Token transfer exceeeds threshold", async function () {
       await updateAllClients();

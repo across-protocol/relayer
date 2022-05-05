@@ -549,7 +549,7 @@ export class Dataworker {
         this.clients.hubPoolClient.getSpokePoolForBlock(endBlockForMainnet, Number(chainId)),
         SpokePool.abi,
         this.clients.spokePoolClients[chainId].spokePool.signer
-      )
+      );
       result[chainId] = new SpokePoolClient(
         this.logger,
         spokePoolContract,
@@ -559,7 +559,7 @@ export class Dataworker {
       );
       return result;
     }, {});
-    await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update()))
+    await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update()));
 
     // TODO:
     // 3. Create roots.
