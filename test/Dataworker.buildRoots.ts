@@ -3,7 +3,7 @@ import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokens
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
 import { buildRelayerRefundTreeWithUnassignedLeafIds, constructPoolRebalanceTree } from "./utils";
 import { buildPoolRebalanceLeafTree } from "./utils";
-import { HubPoolClient, AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
+import { HubPoolClient, AcrossConfigStoreClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, originChainId, mockTreeRoot } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { refundProposalLiveness, CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";

@@ -27,10 +27,13 @@ export const defaultTokenConfig = JSON.stringify({
   transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD.toString(),
 });
 
-export const CHAIN_ID_TEST_LIST = [originChainId, destinationChainId, repaymentChainId];
+// Add Mainnet chain ID 1 to the chain ID list because the dataworker uses this chain to look up latest GlobalConfig
+// updates for config variables like MAX_REFUND_COUNT_FOR_RELAYER_REPAYMENT_LEAF.
+export const CHAIN_ID_TEST_LIST = [originChainId, destinationChainId, repaymentChainId, 1];
 export const DEFAULT_BLOCK_RANGE_FOR_CHAIN = [
   // For each chain ID in above list, default range is set super high so as to contain all events in a test
   // in the straightforward test cases.
+  [0, 1_000_000],
   [0, 1_000_000],
   [0, 1_000_000],
   [0, 1_000_000],
