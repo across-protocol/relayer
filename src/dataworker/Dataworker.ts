@@ -1,11 +1,18 @@
-import { winston, assign, compareAddresses, getRefundForFills, sortEventsDescending } from "../utils";
+import {
+  winston,
+  assign,
+  compareAddresses,
+  getRefundForFills,
+  sortEventsDescending,
+  createFormatFunction,
+} from "../utils";
 import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree } from "../utils";
 import { getRealizedLpFeeForFills, BigNumber, toBN } from "../utils";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, DepositWithBlock, SlowFill } from "../interfaces";
 import { Fill, FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
 import { RunningBalances } from "../interfaces";
+import { EMPTY_MERKLE_ROOT } from "../common";
 import { DataworkerClients } from "./DataworkerClientHelper";
-import { Relay } from "@uma/financial-templates-lib";
 
 // TODO!!!: Add helpful logs everywhere.
 
@@ -527,19 +534,22 @@ export class Dataworker {
     // TODO:
     // 2. Create roots
     const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForProposal);
-    if (poolRebalanceRoot.tree) console.log(`poolRebalanceRoot:`, poolRebalanceRoot.tree.getHexRoot());
-    poolRebalanceRoot.leaves.forEach((leaf: PoolRebalanceLeaf) => {
+    poolRebalanceRoot.leaves.forEach((leaf: PoolRebalanceLeaf, index) => {
       const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
         // Check if leaf value is list of BN's. For this leaf, there are no BN's not in lists.
         if (BigNumber.isBigNumber(leaf[key][0])) result[key] = leaf[key].map((val) => val.toString());
         else result[key] = leaf[key];
         return result;
       }, {});
-      console.log(prettyLeaf);
+      this.logger.debug({
+        at: "Dataworker",
+        message: `Pool rebalance leaf #${index}`,
+        leaf: prettyLeaf,
+      });
+      return prettyLeaf;
     });
     const relayerRefundRoot = this.buildRelayerRefundRoot(blockRangesForProposal);
-    if (relayerRefundRoot.tree) console.log(`relayerRefundRoot:`, relayerRefundRoot.tree.getHexRoot());
-    relayerRefundRoot.leaves.forEach((leaf: RelayerRefundLeaf) => {
+    relayerRefundRoot.leaves.forEach((leaf: RelayerRefundLeaf, index) => {
       const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
         // Check if leaf value is list of BN's or single BN.
         if (Array.isArray(leaf[key]) && BigNumber.isBigNumber(leaf[key][0]))
@@ -548,26 +558,65 @@ export class Dataworker {
         else result[key] = leaf[key];
         return result;
       }, {});
-      console.log(prettyLeaf);
+      this.logger.debug({
+        at: "Dataworker",
+        message: `Relayer refund leaf #${index}`,
+        leaf: prettyLeaf,
+      });
     });
     const slowRelayRoot = this.buildSlowRelayRoot(blockRangesForProposal);
-    if (slowRelayRoot.tree) console.log(`slowRelayRoot:`, slowRelayRoot.tree.getHexRoot());
-    slowRelayRoot.leaves.forEach((leaf: RelayData) => {
+    slowRelayRoot.leaves.forEach((leaf: RelayData, index) => {
       const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
         // Check if leaf value is BN.
         if (BigNumber.isBigNumber(leaf[key])) result[key] = leaf[key].toString();
         else result[key] = leaf[key];
         return result;
       }, {});
-      console.log(prettyLeaf);
+      this.logger.debug({
+        at: "Dataworker",
+        message: `Slow relay leaf #${index}`,
+        leaf: prettyLeaf,
+      });
     });
 
-    // 3. Store root + auxillary information somewhere useful for executing leaves
+    if (poolRebalanceRoot.leaves.length === 0) {
+      this.logger.debug({
+        at: "Dataworker",
+        message: "No pool rebalance leaves, cannot propose",
+      });
+      return;
+    }
+
+    // 3. Check if a bundle is pending.
+    // TODO: Move the `rootBundleProposal` call to the HubPool client?
+    const hasPendingProposal =
+      (await this.clients.hubPoolClient.hubPool.rootBundleProposal()).unclaimedPoolRebalanceLeafCount !== 0;
+    if (hasPendingProposal) {
+      this.logger.debug({
+        at: "Dataworker",
+        message: "Has pending proposal, cannot propose",
+      });
+      return;
+    }
+
     // 4. Propose roots to HubPool contract.
+    const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
+    this._proposeRootBundle(
+      hubPoolChainId,
+      blockRangesForProposal,
+      poolRebalanceRoot.leaves,
+      poolRebalanceRoot.tree.getHexRoot(), // Tree must not be undefined if leaf count is > 0
+      relayerRefundRoot.leaves,
+      relayerRefundRoot.tree ? relayerRefundRoot.tree.getHexRoot() : EMPTY_MERKLE_ROOT,
+      slowRelayRoot.leaves,
+      slowRelayRoot.tree ? slowRelayRoot.tree.getHexRoot() : EMPTY_MERKLE_ROOT
+    );
   }
 
   async validateRootBundle(poolRebalanceRoot: string, relayerRefundRoot: string, slowRelayRoot: string) {
-    // Look at latest propose root bundle event earlier than a block number
+    // Look at latest propose root bundle event earlier than a block number.
+    // Determine start block numbers for end block numbers emitted in ProposedRootBundle event using
+    // HubPoolClient.getNextBundleStartBlockNumber and passing in the mainnet block of the propose root bundle txn
     // Construct roots locally using class functions and compare with the event we found earlier.
     // If any roots mismatch, pinpoint the errors to give details to the caller.
   }
@@ -586,6 +635,142 @@ export class Dataworker {
     // TODO:
   }
 
+  _proposeRootBundle(
+    hubPoolChainId: number,
+    bundleBlockRange: number[][],
+    poolRebalanceLeaves: any[],
+    poolRebalanceRoot: string,
+    relayerRefundLeaves: any[],
+    relayerRefundRoot: string,
+    slowRelayLeaves: any[],
+    slowRelayRoot: string
+  ) {
+    try {
+      const bundleEndBlocks = bundleBlockRange.map((block) => block[1]);
+      this.clients.multiCallerClient.enqueueTransaction({
+        contract: this.clients.hubPoolClient.hubPool, // target contract
+        chainId: hubPoolChainId,
+        method: "proposeRootBundle", // method called.
+        args: [bundleEndBlocks, poolRebalanceLeaves.length, poolRebalanceRoot, relayerRefundRoot, slowRelayRoot], // props sent with function call.
+        message: "Proposed new root bundle 🌱", // message sent to logger.
+        mrkdwn: this._generateMarkdownForRootBundle(
+          hubPoolChainId,
+          bundleBlockRange,
+          [ ...poolRebalanceLeaves],
+          poolRebalanceRoot,
+          [...relayerRefundLeaves],
+          relayerRefundRoot,
+          [...slowRelayLeaves],
+          slowRelayRoot
+        ),
+      });
+    } catch (error) {
+      this.logger.error({ at: "Dataworker", message: "Error creating proposeRootBundleTx", error });
+    }
+  }
+
+  _generateMarkdownForRootBundle(
+    hubPoolChainId: number,
+    bundleBlockRange: number[][],
+    poolRebalanceLeaves: any[],
+    poolRebalanceRoot: string,
+    relayerRefundLeaves: any[],
+    relayerRefundRoot: string,
+    slowRelayLeaves: any[],
+    slowRelayRoot: string
+  ): string {
+        // Create helpful logs to send to slack transport
+        let bundleBlockRangePretty = "";
+        this.chainIdListForBundleEvaluationBlockNumbers.forEach((chainId, index) => {
+          bundleBlockRangePretty += `\n\t\t${chainId}: ${JSON.stringify(bundleBlockRange[index])}`;
+        });
+    
+        const convertFromWei = (chainId: number, tokenAddress: string, weiVal: string) => {
+          const { decimals } = this.clients.hubPoolClient.getTokenInfo(chainId, tokenAddress);
+          const formatFunction = createFormatFunction(2, 4, false, decimals);
+          return formatFunction(weiVal);
+        };
+        const convertTokenListFromWei = (chainId: number, tokenAddresses: string[], weiVals: string[]) => {
+          return tokenAddresses.map((token, index) => {
+            return convertFromWei(chainId, token, weiVals[index])
+          });
+        };
+        const convertTokenAddressToSymbol = (chainId: number, tokenAddress: string) => {
+          return this.clients.hubPoolClient.getTokenInfo(chainId, tokenAddress).symbol;
+        };
+        const convertL1TokenAddressesToSymbols = (l1Tokens: string[]) => {
+          return l1Tokens.map((l1Token) => {
+            return convertTokenAddressToSymbol(hubPoolChainId, l1Token)
+          });
+        };
+        const shortenAddresses = (addresses: string[]) => {
+          return addresses.map((address) => shortenBytes(address))
+        }
+        const shortenBytes = (root: string) => {
+          return root.substring(0, 10)
+        }
+        let poolRebalanceLeavesPretty = "";
+        poolRebalanceLeaves.forEach((leaf, index) => {
+          // Shorten keys for ease of reading from Slack.
+          delete leaf.leafId;
+          leaf.groupId = leaf.groupIndex;
+          delete leaf.groupIndex;
+          leaf.bundleLpFees = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.bundleLpFees);
+          leaf.runningBalances = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.runningBalances);
+          leaf.netSendAmounts = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.netSendAmounts);
+          leaf.l1Tokens = convertL1TokenAddressesToSymbols(leaf.l1Tokens);
+          poolRebalanceLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
+        });
+    
+        let relayerRefundLeavesPretty = "";
+        relayerRefundLeaves.forEach((leaf, index) => {
+          // Shorten keys for ease of reading from Slack.
+          delete leaf.leafId;
+          leaf.amountToReturn = convertFromWei(leaf.chainId, leaf.l2TokenAddress, leaf.amountToReturn)
+          leaf.refundAmounts = convertTokenListFromWei(
+            leaf.chainId,
+            Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
+            leaf.refundAmounts
+          );
+          leaf.l2Token = convertTokenAddressToSymbol(leaf.chainId, leaf.l2TokenAddress)
+          delete leaf.l2TokenAddress
+          leaf.refundAddresses = shortenAddresses(leaf.refundAddresses)
+          relayerRefundLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
+        });
+    
+        let slowRelayLeavesPretty = "";
+        slowRelayLeaves.forEach((leaf, index) => {
+          // Shorten keys for ease of reading from Slack.
+          delete leaf.leafId;
+          leaf.amountToReturn = convertFromWei(leaf.chainId, leaf.l2TokenAddress, leaf.amountToReturn)
+          leaf.refundAmounts = convertTokenListFromWei(
+            leaf.chainId,
+            Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
+            leaf.refundAmounts
+          );
+          leaf.originChain = leaf.originChainId
+          leaf.destinationChain = leaf.destinationChainId
+          leaf.depositor = shortenBytes(leaf.depositor)
+          leaf.recipient = shortenBytes(leaf.recipient)
+          leaf.destToken = convertTokenAddressToSymbol(leaf.destinationChainId, leaf.destinationToken)
+          leaf.amount = convertFromWei(leaf.destinationChainId, leaf.destinationToken, leaf.amount)
+          leaf.realizedLpFee = `${convertFromWei(leaf.destinationChainId, leaf.destinationToken, leaf.realizedLpFeePct)}%`
+          leaf.relayerFee = `${convertFromWei(leaf.destinationChainId, leaf.destinationToken, leaf.relayerFeePct)}%`
+          delete leaf.destinationToken
+          delete leaf.realizedLpFeePct
+          delete leaf.relayerFeePct
+          delete leaf.originChainId
+          delete leaf.destinationChainId
+          slowRelayLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
+        });
+        return (
+          `\n\t*Bundle blocks*:${bundleBlockRangePretty}` +
+          `\n\t*PoolRebalance*:\n\t\troot:${shortenBytes(poolRebalanceRoot)}...\n\t\tleaves:${poolRebalanceLeavesPretty}` +
+          `\n\t*RelayerRefund*\n\t\troot:${shortenBytes(relayerRefundRoot)}...\n\t\tleaves:${relayerRefundLeavesPretty}` +
+          `\n\t*SlowRelay*\n\troot:${shortenBytes(slowRelayRoot)}...\n\t\tleaves:${slowRelayLeavesPretty}`
+        );
+  }
+  
   // If the running balance is greater than the token transfer threshold, then set the net send amount
   // equal to the running balance and reset the running balance to 0. Otherwise, the net send amount should be
   // 0, indicating that we do not want the data worker to trigger a token transfer between hub pool and spoke

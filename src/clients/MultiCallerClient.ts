@@ -27,10 +27,15 @@ export class MultiCallerClient {
     this.transactions = [];
   }
 
-  async executeTransactionQueue() {
+  async executeTransactionQueue(simulate = false) {
     try {
       if (this.transactions.length === 0) return;
-      this.logger.debug({ at: "MultiCallerClient", message: "Executing tx bundle", number: this.transactions.length });
+      this.logger.debug({
+        at: "MultiCallerClient",
+        message: "Executing tx bundle",
+        number: this.transactions.length,
+        simulationModeOn: simulate,
+      });
 
       // Simulate the transaction execution for the whole queue.
       const transactionsSucceed = await Promise.all(
@@ -41,7 +46,7 @@ export class MultiCallerClient {
       if (transactionsSucceed.some((succeed) => !succeed.succeed))
         this.logger.error({
           at: "MultiCallerClient",
-          message: "Some transaction in the queue are reverting!",
+          message: "Some transaction in the queue will revert!",
           revertingTransactions: transactionsSucceed
             .filter((transaction) => !transaction.succeed)
             .map((transaction) => {
@@ -68,6 +73,25 @@ export class MultiCallerClient {
       const groupedTransactions: { [networkId: number]: AugmentedTransaction[] } = {};
       for (const transaction of validTransactions) {
         assign(groupedTransactions, [transaction.chainId], [transaction]);
+      }
+
+      if (simulate) {
+        this.logger.debug({
+          at: "MultiCallerClient",
+          message: "All transactions will succeed! Logging markdown messages.",
+        });
+        let mrkdwn = "";
+        Object.keys(groupedTransactions).forEach((chainId) => {
+          mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
+          groupedTransactions[chainId].forEach((transaction, groupTxIndex) => {
+            mrkdwn +=
+              `  ${groupTxIndex + 1}. ${transaction.message || "0 message"}: ` +
+              `${transaction.mrkdwn || "0 mrkdwn"}\n`;
+          });
+        });
+        this.logger.info({ at: "MultiCallerClient", message: "Exiting simulation mode 🎮", mrkdwn });
+        this.clearTransactionQueue();
+        return;
       }
 
       this.logger.debug({

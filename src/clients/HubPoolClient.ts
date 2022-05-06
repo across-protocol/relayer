@@ -1,5 +1,6 @@
 import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, EventSearchConfig, toBN } from "../utils";
 import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery } from "../utils";
+import { Signer, MAX_SAFE_ALLOWANCE, runTransaction, etherscanLink } from "../utils";
 import { Deposit, L1Token, ProposedRootBundle, ExecutedRootBundle } from "../interfaces";
 
 export class HubPoolClient {
@@ -11,6 +12,7 @@ export class HubPoolClient {
   private l1TokensToDestinationTokensWithBlock: {
     [l1Token: string]: { [destinationChainId: number]: [{ l2Token: string; block: number }] };
   } = {};
+  private bondToken: Contract;
 
   public isUpdated: boolean = false;
   public firstBlockToSearch: number;
@@ -114,11 +116,11 @@ export class HubPoolClient {
     return endingBlockNumber;
   }
 
-  getNextBundleStartBlockNumber(chainIdList: number[], latestBlock: number, chainId: number): number {
+  getNextBundleStartBlockNumber(chainIdList: number[], latestMainnetBlock: number, chainId: number): number {
     // Search for the latest RootBundleExecuted event with a matching chainId while still being earlier than the
     // latest block.
     const latestRootBundleExecutedEvent = sortEventsDescending(this.executedRootBundles).find(
-      (event: ExecutedRootBundle) => event.blockNumber <= latestBlock && event.chainId === chainId
+      (event: ExecutedRootBundle) => event.blockNumber <= latestMainnetBlock && event.chainId === chainId
     );
 
     // TODO: If no event for chain ID, then we can return a conservative default starting block like 0,
@@ -167,6 +169,23 @@ export class HubPoolClient {
     } else return toBN(0);
   }
 
+  async setBondTokenAllowance() {
+    const ownerAddress = await this.hubPool.signer.getAddress();
+    const currentCollateralAllowance: BigNumber = await this.bondToken.allowance(ownerAddress, this.hubPool.address);
+    if (currentCollateralAllowance.lt(toBN(MAX_SAFE_ALLOWANCE))) {
+      const tx = await runTransaction(this.logger, this.bondToken, "approve", [
+        this.hubPool.address,
+        MAX_SAFE_ALLOWANCE,
+      ]);
+      const receipt = await tx.wait();
+      const mrkdwn =
+        ` - Approved HubPool ${etherscanLink(this.hubPool.address, 1)} ` +
+        `to spend ${await this.bondToken.symbol()} ${etherscanLink(this.bondToken.address, 1)}. ` +
+        `tx ${etherscanLink(receipt.transactionHash, 1)}\n`;
+      this.logger.info({ at: "hubPoolClient", message: `Approved bond tokens! 💰`, mrkdwn });
+    } else this.logger.debug({ at: "hubPoolClient", message: `Bond token approval set` });
+  }
+
   async update() {
     this.latestBlockNumber = await this.hubPool.provider.getBlockNumber();
     const searchConfig = {
@@ -177,13 +196,15 @@ export class HubPoolClient {
     this.logger.debug({ at: "HubPoolClient", message: "Updating client", searchConfig });
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
-    const [poolRebalanceRouteEvents, l1TokensLPEvents, proposeRootBundleEvents, executedRootBundleEvents] =
+    const [poolRebalanceRouteEvents, l1TokensLPEvents, proposeRootBundleEvents, executedRootBundleEvents, bondToken] =
       await Promise.all([
         paginatedEventQuery(this.hubPool, this.hubPool.filters.SetPoolRebalanceRoute(), searchConfig),
         paginatedEventQuery(this.hubPool, this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), searchConfig),
         paginatedEventQuery(this.hubPool, this.hubPool.filters.ProposeRootBundle(), searchConfig),
         paginatedEventQuery(this.hubPool, this.hubPool.filters.RootBundleExecuted(), searchConfig),
+        this.hubPool.bondToken(),
       ]);
+    this.bondToken = new Contract(bondToken, ERC20.abi, this.hubPool.signer);
 
     for (const event of poolRebalanceRouteEvents) {
       const args = spreadEvent(event);
