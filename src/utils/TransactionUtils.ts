@@ -7,23 +7,27 @@ export async function runTransaction(logger: winston.Logger, contract: Contract,
   try {
     const gas = await getGasPrice(contract.provider);
     logger.debug({ at: "TransactionUtil", message: "sending tx", target: contract.address, method, args, gas });
-    return await contract[method](...args, gas);
+    return await contract[method](...args, gas); // todo: fix gas
   } catch (error) {
+    console.log("E", error);
     throw new Error(error.reason); // Extract the reason from the transaction error and throw it.
   }
 }
 
-//TODO: add in gasPrice when the SDK has this for the given chainId.
+//TODO: add in gasPrice when the SDK has this for the given chainId. TODO: improve how we fetch prices.
 // For now this method will extract the provider's Fee data from the associated network and scale it by a priority
 // scaler. This works on both mainnet and L2's by the utility switching the response structure accordingly.
 export async function getGasPrice(provider, priorityScaler = toBN(1.2)) {
   const feeData = await provider.getFeeData();
-  if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas)
+  if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
+    // Polygon, for some or other reason, does not correctly return an appropriate maxPriorityFeePerGas and always
+    // returns 1500000000 for this number. Set to the maxFeePerGas for now as a temp workaround.
+    if (feeData.maxPriorityFeePerGas.eq(toBN(1500000000))) feeData.maxPriorityFeePerGas = feeData.maxFeePerGas;
     return {
       maxFeePerGas: feeData.maxFeePerGas.mul(priorityScaler),
       maxPriorityFeePerGas: feeData.maxPriorityFeePerGas.mul(priorityScaler),
     };
-  else return { gasPrice: feeData.gasPrice.mul(priorityScaler) };
+  } else return { gasPrice: feeData.gasPrice.mul(priorityScaler) };
 }
 
 export async function willSucceed(

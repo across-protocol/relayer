@@ -48,8 +48,11 @@ export class AcrossConfigStoreClient {
     let rateModel: any;
     try {
       quoteBlock = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
+      console.log("quoteBlock", quoteBlock);
       rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
+      console.log("rateModel", rateModel);
     } catch (error) {
+      console.log(error);
       if ((await this.hubPoolClient.hubPool.provider.getNetwork()).chainId === 1)
         throw new Error("Bad rate model store deployment");
 
@@ -57,7 +60,7 @@ export class AcrossConfigStoreClient {
       rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
     }
 
-    const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, quoteBlock, deposit.amount);
+    const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, 14718158, deposit.amount);
 
     const realizedLpFeePct = lpFeeCalculator.calculateRealizedLpFeePct(rateModel, current, post);
 
@@ -125,7 +128,8 @@ export class AcrossConfigStoreClient {
       };
 
       try {
-        const rateModelForToken = JSON.parse(args.value).rateModel;
+        const rateModelForToken = JSON.stringify(JSON.parse(args.value).rateModel);
+        console.log("rateModelForToken", rateModelForToken);
         const transferThresholdForToken = JSON.parse(args.value).transferThreshold;
 
         // If Token config doesn't contain all expected properties, skip it.

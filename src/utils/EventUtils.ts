@@ -23,8 +23,12 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
   if (searchConfig.maxBlockLookBack === 0)
     return await contract.queryFilter(filter, searchConfig.fromBlock, searchConfig.toBlock);
 
-  // The number of queries is the range over which we are searching, divided by the maxBlockLookBack, rounded up.
-  const numberOfQueries = Math.ceil((searchConfig.toBlock - searchConfig.fromBlock) / searchConfig.maxBlockLookBack);
+  // Compute the number of queries needed. If there is no maxBlockLookBack set then we can execute the whole query in
+  // one go. Else, the number of queries is the range over which we are searching, divided by the maxBlockLookBack,
+  // rounded up. This gives us the number of queries we need to execute to traverse the whole block range.
+  let numberOfQueries = 1;
+  if (!searchConfig.maxBlockLookBack) searchConfig.maxBlockLookBack = searchConfig.toBlock - searchConfig.fromBlock;
+  else numberOfQueries = Math.ceil((searchConfig.toBlock - searchConfig.fromBlock) / searchConfig.maxBlockLookBack);
 
   const promises = [];
   for (let i = 0; i < numberOfQueries; i++) {

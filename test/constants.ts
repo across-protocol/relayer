@@ -26,6 +26,7 @@ export const defaultTokenConfig = JSON.stringify({
   rateModel: JSON.stringify(sampleRateModel),
   transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD.toString(),
 });
+console.log("defaultTokenConfig", defaultTokenConfig);
 
 export const CHAIN_ID_TEST_LIST = [originChainId, destinationChainId, repaymentChainId];
 

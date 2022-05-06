@@ -147,7 +147,7 @@ export class Relayer {
       `to ${getNetworkName(deposit.destinationChainId)} of ` +
       `${createFormatFunction(2, 4, false, decimals)(deposit.amount.toString())} ${symbol}. ` +
       `with depositor ${etherscanLink(deposit.depositor, deposit.originChainId)}. ` +
-      `Fill amount of ${createFormatFunction(2, 4, false, 18)(fillAmount.toString())} ${symbol} with ` +
+      `Fill amount of ${createFormatFunction(2, 4, false, decimals)(fillAmount.toString())} ${symbol} with ` +
       `relayerFee ${createFormatFunction(2, 4, false, 18)(deposit.relayerFeePct.toString())}% & ` +
       `realizedLpFee ${createFormatFunction(2, 4, false, 18)(deposit.realizedLpFeePct.toString())}%.` +
       `Relayer repayment on ${getNetworkName(repaymentChainId)}.`
