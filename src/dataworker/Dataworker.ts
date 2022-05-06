@@ -544,35 +544,40 @@ export class Dataworker {
       message: `Constructing spoke pool clients for end mainnet block in bundle range`,
       endBlockForMainnet,
     });
-    const spokePoolClients = this.chainIdListForBundleEvaluationBlockNumbers.reduce((result, chainId) => {
-      const spokePoolContract = new Contract(
-        this.clients.hubPoolClient.getSpokePoolForBlock(endBlockForMainnet, Number(chainId)),
-        SpokePool.abi,
-        this.clients.spokePoolClients[chainId].spokePool.signer
-      );
-      result[chainId] = new SpokePoolClient(
-        this.logger,
-        spokePoolContract,
-        this.clients.configStoreClient,
-        Number(chainId),
-        {
-          // We can try to shorten the block range for this spoke pool using the current bundle's block range.
-          fromBlock: Math.max(
-            this._getBlockRangeForChain(blockRangesForProposal, chainId)[0],
-            this.clients.spokePoolClients[chainId].eventSearchConfig.fromBlock
-          ),
-          toBlock:
-            this.clients.spokePoolClients[chainId].eventSearchConfig.toBlock !== null
-              ? Math.min(
-                  this._getBlockRangeForChain(blockRangesForProposal, chainId)[1],
-                  this.clients.spokePoolClients[chainId].eventSearchConfig.toBlock
-                )
-              : null,
-          maxBlockLookBack: this.clients.spokePoolClients[chainId].eventSearchConfig.maxBlockLookBack,
-        }
-      );
-      return result;
-    }, {});
+    const spokePoolClients = Object.fromEntries(
+      this.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
+        const spokePoolContract = new Contract(
+          this.clients.hubPoolClient.getSpokePoolForBlock(endBlockForMainnet, Number(chainId)),
+          SpokePool.abi,
+          this.clients.spokePoolClients[chainId].spokePool.signer
+        );
+        const client = new SpokePoolClient(
+          this.logger,
+          spokePoolContract,
+          this.clients.configStoreClient,
+          Number(chainId),
+          {
+            // We can try to shorten the block range for this spoke pool using the current bundle's block range.
+            // This assumes that the spoke pool's deployment block was before this block range, which is always case
+            // until the first time that the spoke pool is upgraded. In this situation, there could be a block range
+            // with blocks before the new spoke pool's deployment time.
+            fromBlock: Math.max(
+              this._getBlockRangeForChain(blockRangesForProposal, chainId)[0],
+              this.clients.spokePoolClients[chainId].eventSearchConfig.fromBlock
+            ),
+            toBlock:
+              this.clients.spokePoolClients[chainId].eventSearchConfig.toBlock !== null
+                ? Math.min(
+                    this._getBlockRangeForChain(blockRangesForProposal, chainId)[1],
+                    this.clients.spokePoolClients[chainId].eventSearchConfig.toBlock
+                  )
+                : null,
+            maxBlockLookBack: this.clients.spokePoolClients[chainId].eventSearchConfig.maxBlockLookBack,
+          }
+        );
+        return [chainId, client];
+      })
+    );
     await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update()));
 
     // TODO:
