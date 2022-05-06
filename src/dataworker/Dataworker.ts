@@ -1,6 +1,6 @@
-import { winston, assign, compareAddresses, getRefundForFills, sortEventsDescending, Contract, getDeploymentBlockNumber } from "../utils";
+import { winston, assign, compareAddresses, getRefundForFills, sortEventsDescending, Contract } from "../utils";
 import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree, SpokePool } from "../utils";
-import { getRealizedLpFeeForFills, BigNumber, toBN } from "../utils";
+import { getRealizedLpFeeForFills, BigNumber, toBN, getDeploymentBlockNumber } from "../utils";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, DepositWithBlock } from "../interfaces";
 import { Fill, FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
 import { RunningBalances } from "../interfaces";
