@@ -1,6 +1,6 @@
 import { winston, assign, compareAddresses, getRefundForFills, sortEventsDescending, Contract } from "../utils";
 import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree, SpokePool } from "../utils";
-import { getRealizedLpFeeForFills, BigNumber, toBN, getDeploymentBlockNumber } from "../utils";
+import { getRealizedLpFeeForFills, BigNumber, toBN } from "../utils";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, DepositWithBlock } from "../interfaces";
 import { Fill, FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
 import { RunningBalances } from "../interfaces";
@@ -44,7 +44,7 @@ export class Dataworker {
     const deposits: DepositWithBlock[] = [];
     const allValidFills: FillWithBlock[] = [];
 
-    const allChainIds = Object.keys(this.clients.spokePoolClients);
+    const allChainIds = Object.keys(this.clients.spokePoolSigners);
     this.logger.debug({ at: "Dataworker", message: `Loading deposit and fill data`, chainIds: allChainIds });
 
     for (const originChainId of allChainIds) {
@@ -525,13 +525,18 @@ export class Dataworker {
     // 1. Construct a list of ending block ranges for each chain that we want to include
     // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
-    const blockRangesForProposal = this.chainIdListForBundleEvaluationBlockNumbers.map((chainId: number) => [
+    const latestBlockNumbers = await Promise.all(
+      this.chainIdListForBundleEvaluationBlockNumbers.map((chainId: number) =>
+        this.clients.spokePoolSigners[chainId].provider.getBlockNumber()
+      )
+    );
+    const blockRangesForProposal = this.chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => [
       this.clients.hubPoolClient.getNextBundleStartBlockNumber(
         this.chainIdListForBundleEvaluationBlockNumbers,
         this.clients.hubPoolClient.latestBlockNumber,
         chainId
       ),
-      this.clients.spokePoolClients[chainId].latestBlockNumber,
+      latestBlockNumbers[index],
     ]);
 
     // 2. Construct spoke pool clients using spoke pools deployed at end of block range.
@@ -549,7 +554,7 @@ export class Dataworker {
         const spokePoolContract = new Contract(
           this.clients.hubPoolClient.getSpokePoolForBlock(endBlockForMainnet, Number(chainId)),
           SpokePool.abi,
-          this.clients.spokePoolClients[chainId].spokePool.signer
+          this.clients.spokePoolSigners[chainId]
         );
         const client = new SpokePoolClient(
           this.logger,
@@ -563,10 +568,10 @@ export class Dataworker {
             // with blocks before the new spoke pool's deployment time.
             fromBlock: Math.max(
               this._getBlockRangeForChain(blockRangesForProposal, chainId)[0],
-              Number(getDeploymentBlockNumber("SpokePool", chainId))
+              this.clients.spokePoolClientSearchSettings[chainId].fromBlock
             ),
-            toBlock: null,
-            maxBlockLookBack: this.clients.spokePoolClients[chainId].eventSearchConfig.maxBlockLookBack,
+            toBlock: this.clients.spokePoolClientSearchSettings[chainId].toBlock,
+            maxBlockLookBack: this.clients.spokePoolClientSearchSettings[chainId].maxBlockLookBack,
           }
         );
         return [chainId, client];
