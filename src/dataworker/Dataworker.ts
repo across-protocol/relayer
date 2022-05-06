@@ -1,4 +1,4 @@
-import { winston, assign, compareAddresses, getRefundForFills, sortEventsDescending, Contract } from "../utils";
+import { winston, assign, compareAddresses, getRefundForFills, sortEventsDescending, Contract, getDeploymentBlockNumber } from "../utils";
 import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree, SpokePool } from "../utils";
 import { getRealizedLpFeeForFills, BigNumber, toBN } from "../utils";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, DepositWithBlock } from "../interfaces";
@@ -563,15 +563,9 @@ export class Dataworker {
             // with blocks before the new spoke pool's deployment time.
             fromBlock: Math.max(
               this._getBlockRangeForChain(blockRangesForProposal, chainId)[0],
-              this.clients.spokePoolClients[chainId].eventSearchConfig.fromBlock
+              Number(getDeploymentBlockNumber("SpokePool", chainId))
             ),
-            toBlock:
-              this.clients.spokePoolClients[chainId].eventSearchConfig.toBlock !== null
-                ? Math.min(
-                    this._getBlockRangeForChain(blockRangesForProposal, chainId)[1],
-                    this.clients.spokePoolClients[chainId].eventSearchConfig.toBlock
-                  )
-                : null,
+            toBlock: null,
             maxBlockLookBack: this.clients.spokePoolClients[chainId].eventSearchConfig.maxBlockLookBack,
           }
         );
