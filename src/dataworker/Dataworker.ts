@@ -556,10 +556,18 @@ export class Dataworker {
         this.clients.configStoreClient,
         Number(chainId),
         {
-          fromBlock: endBlockForMainnet, // Need to override the oldest block we search in case the spoke pool was 
-          // upgraded.
-          toBlock: null,
-          maxBlockLookBack: this.clients.spokePoolClients[chainId].eventSearchConfig.maxBlockLookBack,
+          // We can try to shorten the block range for this spoke pool using the current bundle's block range.
+          fromBlock: Math.max(
+            this._getBlockRangeForChain(blockRangesForProposal, chainId)[0],
+            this.clients.spokePoolClients[chainId].eventSearchConfig.fromBlock
+          ),
+          toBlock:
+            this.clients.spokePoolClients[chainId].eventSearchConfig.toBlock !== null
+              ? Math.min(
+                this._getBlockRangeForChain(blockRangesForProposal, chainId)[1],
+                this.clients.spokePoolClients[chainId].eventSearchConfig.toBlock
+              ) : null,
+          maxBlockLookBack: this.clients.spokePoolClients[chainId].eventSearchConfig.maxBlockLookBack
         }
       );
       return result;
