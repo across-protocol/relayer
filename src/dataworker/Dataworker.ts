@@ -1,10 +1,11 @@
 import { winston, assign, compareAddresses, getRefundForFills, sortEventsDescending } from "../utils";
 import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree } from "../utils";
 import { getRealizedLpFeeForFills, BigNumber, toBN } from "../utils";
-import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, DepositWithBlock } from "../interfaces";
+import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, DepositWithBlock, SlowFill } from "../interfaces";
 import { Fill, FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
 import { RunningBalances } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
+import { Relay } from "@uma/financial-templates-lib";
 
 // TODO!!!: Add helpful logs everywhere.
 
@@ -237,10 +238,9 @@ export class Dataworker {
       else return relayA.originChainId - relayB.originChainId;
     });
 
-    if (sortedLeaves.length === 0) throw new Error("Cannot build tree with zero leaves");
     return {
       leaves: sortedLeaves,
-      tree: buildSlowRelayTree(sortedLeaves),
+      tree: sortedLeaves.length > 0 ? buildSlowRelayTree(sortedLeaves) : undefined,
     };
   }
 
@@ -310,10 +310,9 @@ export class Dataworker {
         return { ...leaf, leafId: i };
       });
 
-    if (indexedLeaves.length === 0) throw new Error("Cannot build tree with zero leaves");
     return {
       leaves: indexedLeaves,
-      tree: buildRelayerRefundTree(indexedLeaves),
+      tree: indexedLeaves.length > 0 ? buildRelayerRefundTree(indexedLeaves) : undefined,
     };
   }
 
@@ -503,14 +502,12 @@ export class Dataworker {
         }
       });
 
-    if (leaves.length === 0) throw new Error("Cannot build tree with zero leaves");
-    const tree = buildPoolRebalanceLeafTree(leaves);
-
     return {
-      runningBalances,
+      runningBalances, // TODO: Remove runningBalances and realizedLpFees which are used to make testing more convenient
+      // but shouldn't be used by this bot.
       realizedLpFees,
       leaves,
-      tree,
+      tree: leaves.length > 0 ? buildPoolRebalanceLeafTree(leaves) : undefined,
     };
   }
 
@@ -530,7 +527,7 @@ export class Dataworker {
     // TODO:
     // 2. Create roots
     const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForProposal);
-    console.log(`poolRebalanceRoot:`, poolRebalanceRoot.tree.getHexRoot());
+    if (poolRebalanceRoot.tree) console.log(`poolRebalanceRoot:`, poolRebalanceRoot.tree.getHexRoot());
     poolRebalanceRoot.leaves.forEach((leaf: PoolRebalanceLeaf) => {
       const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
         // Check if leaf value is list of BN's. For this leaf, there are no BN's not in lists.
@@ -541,10 +538,10 @@ export class Dataworker {
       console.log(prettyLeaf);
     });
     const relayerRefundRoot = this.buildRelayerRefundRoot(blockRangesForProposal);
-    console.log(`relayerRefundRoot:`, relayerRefundRoot.tree.getHexRoot());
+    if (relayerRefundRoot.tree) console.log(`relayerRefundRoot:`, relayerRefundRoot.tree.getHexRoot());
     relayerRefundRoot.leaves.forEach((leaf: RelayerRefundLeaf) => {
       const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
-        // Check if leaf value is list of BN' or single BN.
+        // Check if leaf value is list of BN's or single BN.
         if (Array.isArray(leaf[key]) && BigNumber.isBigNumber(leaf[key][0]))
           result[key] = leaf[key].map((val) => val.toString());
         else if (BigNumber.isBigNumber(leaf[key])) result[key] = leaf[key].toString();
@@ -553,8 +550,17 @@ export class Dataworker {
       }, {});
       console.log(prettyLeaf);
     });
-    // const slowRelayRoot = this.buildSlowRelayRoot(blockRangesForProposal);
-    // console.log(`slowRelayRoot:`, slowRelayRoot.leaves, slowRelayRoot.tree.getHexRoot());
+    const slowRelayRoot = this.buildSlowRelayRoot(blockRangesForProposal);
+    if (slowRelayRoot.tree) console.log(`slowRelayRoot:`, slowRelayRoot.tree.getHexRoot());
+    slowRelayRoot.leaves.forEach((leaf: RelayData) => {
+      const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
+        // Check if leaf value is BN.
+        if (BigNumber.isBigNumber(leaf[key])) result[key] = leaf[key].toString();
+        else result[key] = leaf[key];
+        return result;
+      }, {});
+      console.log(prettyLeaf);
+    });
 
     // 3. Store root + auxillary information somewhere useful for executing leaves
     // 4. Propose roots to HubPool contract.
