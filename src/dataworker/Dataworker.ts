@@ -564,10 +564,11 @@ export class Dataworker {
           toBlock:
             this.clients.spokePoolClients[chainId].eventSearchConfig.toBlock !== null
               ? Math.min(
-                this._getBlockRangeForChain(blockRangesForProposal, chainId)[1],
-                this.clients.spokePoolClients[chainId].eventSearchConfig.toBlock
-              ) : null,
-          maxBlockLookBack: this.clients.spokePoolClients[chainId].eventSearchConfig.maxBlockLookBack
+                  this._getBlockRangeForChain(blockRangesForProposal, chainId)[1],
+                  this.clients.spokePoolClients[chainId].eventSearchConfig.toBlock
+                )
+              : null,
+          maxBlockLookBack: this.clients.spokePoolClients[chainId].eventSearchConfig.maxBlockLookBack,
         }
       );
       return result;
