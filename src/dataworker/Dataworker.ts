@@ -14,8 +14,6 @@ import { RunningBalances } from "../interfaces";
 import { EMPTY_MERKLE_ROOT } from "../common";
 import { DataworkerClients } from "./DataworkerClientHelper";
 
-// TODO!!!: Add helpful logs everywhere.
-
 // TODO: Need to handle case where there are multiple spoke pools for a chain ID in a given block range, which would
 // happen if a spoke pool was upgraded. Probably need to make spokePoolClients also keyed by block number in addition
 // to chain ID.
@@ -656,7 +654,7 @@ export class Dataworker {
         mrkdwn: this._generateMarkdownForRootBundle(
           hubPoolChainId,
           bundleBlockRange,
-          [ ...poolRebalanceLeaves],
+          [...poolRebalanceLeaves],
           poolRebalanceRoot,
           [...relayerRefundLeaves],
           relayerRefundRoot,
@@ -679,98 +677,98 @@ export class Dataworker {
     slowRelayLeaves: any[],
     slowRelayRoot: string
   ): string {
-        // Create helpful logs to send to slack transport
-        let bundleBlockRangePretty = "";
-        this.chainIdListForBundleEvaluationBlockNumbers.forEach((chainId, index) => {
-          bundleBlockRangePretty += `\n\t\t${chainId}: ${JSON.stringify(bundleBlockRange[index])}`;
-        });
-    
-        const convertFromWei = (chainId: number, tokenAddress: string, weiVal: string) => {
-          const { decimals } = this.clients.hubPoolClient.getTokenInfo(chainId, tokenAddress);
-          const formatFunction = createFormatFunction(2, 4, false, decimals);
-          return formatFunction(weiVal);
-        };
-        const convertTokenListFromWei = (chainId: number, tokenAddresses: string[], weiVals: string[]) => {
-          return tokenAddresses.map((token, index) => {
-            return convertFromWei(chainId, token, weiVals[index])
-          });
-        };
-        const convertTokenAddressToSymbol = (chainId: number, tokenAddress: string) => {
-          return this.clients.hubPoolClient.getTokenInfo(chainId, tokenAddress).symbol;
-        };
-        const convertL1TokenAddressesToSymbols = (l1Tokens: string[]) => {
-          return l1Tokens.map((l1Token) => {
-            return convertTokenAddressToSymbol(hubPoolChainId, l1Token)
-          });
-        };
-        const shortenAddresses = (addresses: string[]) => {
-          return addresses.map((address) => shortenBytes(address))
-        }
-        const shortenBytes = (root: string) => {
-          return root.substring(0, 10)
-        }
-        let poolRebalanceLeavesPretty = "";
-        poolRebalanceLeaves.forEach((leaf, index) => {
-          // Shorten keys for ease of reading from Slack.
-          delete leaf.leafId;
-          leaf.groupId = leaf.groupIndex;
-          delete leaf.groupIndex;
-          leaf.bundleLpFees = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.bundleLpFees);
-          leaf.runningBalances = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.runningBalances);
-          leaf.netSendAmounts = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.netSendAmounts);
-          leaf.l1Tokens = convertL1TokenAddressesToSymbols(leaf.l1Tokens);
-          poolRebalanceLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
-        });
-    
-        let relayerRefundLeavesPretty = "";
-        relayerRefundLeaves.forEach((leaf, index) => {
-          // Shorten keys for ease of reading from Slack.
-          delete leaf.leafId;
-          leaf.amountToReturn = convertFromWei(leaf.chainId, leaf.l2TokenAddress, leaf.amountToReturn)
-          leaf.refundAmounts = convertTokenListFromWei(
-            leaf.chainId,
-            Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
-            leaf.refundAmounts
-          );
-          leaf.l2Token = convertTokenAddressToSymbol(leaf.chainId, leaf.l2TokenAddress)
-          delete leaf.l2TokenAddress
-          leaf.refundAddresses = shortenAddresses(leaf.refundAddresses)
-          relayerRefundLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
-        });
-    
-        let slowRelayLeavesPretty = "";
-        slowRelayLeaves.forEach((leaf, index) => {
-          // Shorten keys for ease of reading from Slack.
-          delete leaf.leafId;
-          leaf.amountToReturn = convertFromWei(leaf.chainId, leaf.l2TokenAddress, leaf.amountToReturn)
-          leaf.refundAmounts = convertTokenListFromWei(
-            leaf.chainId,
-            Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
-            leaf.refundAmounts
-          );
-          leaf.originChain = leaf.originChainId
-          leaf.destinationChain = leaf.destinationChainId
-          leaf.depositor = shortenBytes(leaf.depositor)
-          leaf.recipient = shortenBytes(leaf.recipient)
-          leaf.destToken = convertTokenAddressToSymbol(leaf.destinationChainId, leaf.destinationToken)
-          leaf.amount = convertFromWei(leaf.destinationChainId, leaf.destinationToken, leaf.amount)
-          leaf.realizedLpFee = `${convertFromWei(leaf.destinationChainId, leaf.destinationToken, leaf.realizedLpFeePct)}%`
-          leaf.relayerFee = `${convertFromWei(leaf.destinationChainId, leaf.destinationToken, leaf.relayerFeePct)}%`
-          delete leaf.destinationToken
-          delete leaf.realizedLpFeePct
-          delete leaf.relayerFeePct
-          delete leaf.originChainId
-          delete leaf.destinationChainId
-          slowRelayLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
-        });
-        return (
-          `\n\t*Bundle blocks*:${bundleBlockRangePretty}` +
-          `\n\t*PoolRebalance*:\n\t\troot:${shortenBytes(poolRebalanceRoot)}...\n\t\tleaves:${poolRebalanceLeavesPretty}` +
-          `\n\t*RelayerRefund*\n\t\troot:${shortenBytes(relayerRefundRoot)}...\n\t\tleaves:${relayerRefundLeavesPretty}` +
-          `\n\t*SlowRelay*\n\troot:${shortenBytes(slowRelayRoot)}...\n\t\tleaves:${slowRelayLeavesPretty}`
-        );
+    // Create helpful logs to send to slack transport
+    let bundleBlockRangePretty = "";
+    this.chainIdListForBundleEvaluationBlockNumbers.forEach((chainId, index) => {
+      bundleBlockRangePretty += `\n\t\t${chainId}: ${JSON.stringify(bundleBlockRange[index])}`;
+    });
+
+    const convertFromWei = (chainId: number, tokenAddress: string, weiVal: string) => {
+      const { decimals } = this.clients.hubPoolClient.getTokenInfo(chainId, tokenAddress);
+      const formatFunction = createFormatFunction(2, 4, false, decimals);
+      return formatFunction(weiVal);
+    };
+    const convertTokenListFromWei = (chainId: number, tokenAddresses: string[], weiVals: string[]) => {
+      return tokenAddresses.map((token, index) => {
+        return convertFromWei(chainId, token, weiVals[index]);
+      });
+    };
+    const convertTokenAddressToSymbol = (chainId: number, tokenAddress: string) => {
+      return this.clients.hubPoolClient.getTokenInfo(chainId, tokenAddress).symbol;
+    };
+    const convertL1TokenAddressesToSymbols = (l1Tokens: string[]) => {
+      return l1Tokens.map((l1Token) => {
+        return convertTokenAddressToSymbol(hubPoolChainId, l1Token);
+      });
+    };
+    const shortenAddresses = (addresses: string[]) => {
+      return addresses.map((address) => shortenBytes(address));
+    };
+    const shortenBytes = (root: string) => {
+      return root.substring(0, 10);
+    };
+    let poolRebalanceLeavesPretty = "";
+    poolRebalanceLeaves.forEach((leaf, index) => {
+      // Shorten keys for ease of reading from Slack.
+      delete leaf.leafId;
+      leaf.groupId = leaf.groupIndex;
+      delete leaf.groupIndex;
+      leaf.bundleLpFees = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.bundleLpFees);
+      leaf.runningBalances = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.runningBalances);
+      leaf.netSendAmounts = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.netSendAmounts);
+      leaf.l1Tokens = convertL1TokenAddressesToSymbols(leaf.l1Tokens);
+      poolRebalanceLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
+    });
+
+    let relayerRefundLeavesPretty = "";
+    relayerRefundLeaves.forEach((leaf, index) => {
+      // Shorten keys for ease of reading from Slack.
+      delete leaf.leafId;
+      leaf.amountToReturn = convertFromWei(leaf.chainId, leaf.l2TokenAddress, leaf.amountToReturn);
+      leaf.refundAmounts = convertTokenListFromWei(
+        leaf.chainId,
+        Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
+        leaf.refundAmounts
+      );
+      leaf.l2Token = convertTokenAddressToSymbol(leaf.chainId, leaf.l2TokenAddress);
+      delete leaf.l2TokenAddress;
+      leaf.refundAddresses = shortenAddresses(leaf.refundAddresses);
+      relayerRefundLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
+    });
+
+    let slowRelayLeavesPretty = "";
+    slowRelayLeaves.forEach((leaf, index) => {
+      // Shorten keys for ease of reading from Slack.
+      delete leaf.leafId;
+      leaf.amountToReturn = convertFromWei(leaf.chainId, leaf.l2TokenAddress, leaf.amountToReturn);
+      leaf.refundAmounts = convertTokenListFromWei(
+        leaf.chainId,
+        Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
+        leaf.refundAmounts
+      );
+      leaf.originChain = leaf.originChainId;
+      leaf.destinationChain = leaf.destinationChainId;
+      leaf.depositor = shortenBytes(leaf.depositor);
+      leaf.recipient = shortenBytes(leaf.recipient);
+      leaf.destToken = convertTokenAddressToSymbol(leaf.destinationChainId, leaf.destinationToken);
+      leaf.amount = convertFromWei(leaf.destinationChainId, leaf.destinationToken, leaf.amount);
+      leaf.realizedLpFee = `${convertFromWei(leaf.destinationChainId, leaf.destinationToken, leaf.realizedLpFeePct)}%`;
+      leaf.relayerFee = `${convertFromWei(leaf.destinationChainId, leaf.destinationToken, leaf.relayerFeePct)}%`;
+      delete leaf.destinationToken;
+      delete leaf.realizedLpFeePct;
+      delete leaf.relayerFeePct;
+      delete leaf.originChainId;
+      delete leaf.destinationChainId;
+      slowRelayLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
+    });
+    return (
+      `\n\t*Bundle blocks*:${bundleBlockRangePretty}` +
+      `\n\t*PoolRebalance*:\n\t\troot:${shortenBytes(poolRebalanceRoot)}...\n\t\tleaves:${poolRebalanceLeavesPretty}` +
+      `\n\t*RelayerRefund*\n\t\troot:${shortenBytes(relayerRefundRoot)}...\n\t\tleaves:${relayerRefundLeavesPretty}` +
+      `\n\t*SlowRelay*\n\troot:${shortenBytes(slowRelayRoot)}...\n\t\tleaves:${slowRelayLeavesPretty}`
+    );
   }
-  
+
   // If the running balance is greater than the token transfer threshold, then set the net send amount
   // equal to the running balance and reset the running balance to 0. Otherwise, the net send amount should be
   // 0, indicating that we do not want the data worker to trigger a token transfer between hub pool and spoke
