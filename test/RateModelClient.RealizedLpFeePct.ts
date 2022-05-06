@@ -24,7 +24,7 @@ const sampleRateModel = {
 };
 
 const tokenConfigToUpdate = JSON.stringify({
-  rateModel: JSON.stringify(sampleRateModel),
+  rateModel: sampleRateModel,
   transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
 });
 
@@ -46,10 +46,6 @@ describe("AcrossConfigStoreClient", async function () {
   });
 
   it("update", async function () {
-    // Throws if HubPool isn't updated.
-    assertPromiseError(configStoreClient.update(), "hubpool not updated");
-    await hubPoolClient.update();
-
     // If ConfigStore has no events, stores nothing.
     await configStoreClient.update();
     expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(0);
@@ -65,10 +61,7 @@ describe("AcrossConfigStoreClient", async function () {
 
     // Update ignores TokenConfig events that don't include all expected keys:
     await configStore.updateTokenConfig(l1Token.address, "gibberish");
-    await configStore.updateTokenConfig(
-      l1Token.address,
-      JSON.stringify({ rateModel: JSON.stringify(sampleRateModel) })
-    );
+    await configStore.updateTokenConfig(l1Token.address, JSON.stringify({ rateModel: sampleRateModel }));
     await configStore.updateTokenConfig(
       l1Token.address,
       JSON.stringify({ transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD })

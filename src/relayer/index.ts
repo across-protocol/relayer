@@ -1,13 +1,13 @@
 import { config } from "dotenv";
-config();
-
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 
-import { constructRelayerClients, updateRelayerClients } from "../clients";
+import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
 import { processEndPollingLoop, winston, delay } from "../utils";
 
 let logger: winston.Logger;
+
+config();
 
 export async function runRelayer(_logger: winston.Logger): Promise<void> {
   logger = _logger;
