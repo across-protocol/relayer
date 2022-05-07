@@ -6,7 +6,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   1: 0, // Note: 0 gets defaulted to infinity lookback
   10: 0,
   137: 99990,
-  288: 99990,
+  288: 5000,
   42161: 99990,
 };
 
