@@ -265,7 +265,7 @@ export class Dataworker {
     const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
 
     // We need to construct a pool rebalance root in order to derive `amountToReturn` from `netSendAmount`.
-    const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForChains)
+    const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForChains);
 
     // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
     Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
@@ -313,7 +313,10 @@ export class Dataworker {
       leaf.netSendAmounts.forEach((netSendAmount, index) => {
         if (netSendAmount.gte(toBN(0))) return;
 
-        const l2TokenCounterpart = this.clients.hubPoolClient.getDestinationTokenForL1TokenDestinationChainId(leaf.l1Tokens[index], leaf.chainId)
+        const l2TokenCounterpart = this.clients.hubPoolClient.getDestinationTokenForL1TokenDestinationChainId(
+          leaf.l1Tokens[index],
+          leaf.chainId
+        );
         // If we've already seen this leaf, then skip.
         if (
           relayerRefundLeaves.some(
@@ -339,8 +342,8 @@ export class Dataworker {
           refundAddresses: [],
           refundAmounts: [],
         });
-      })
-    })
+      });
+    });
 
     // Sort leaves by chain ID and then L2 token address in ascending order. Assign leaves unique, ascending ID's
     // beginning from 0.
