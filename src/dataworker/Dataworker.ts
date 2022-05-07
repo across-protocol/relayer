@@ -874,7 +874,7 @@ export class Dataworker {
     );
     return netSendAmountForLeaf.mul(toBN(-1)).gt(toBN(0)) ? netSendAmountForLeaf.mul(toBN(-1)) : toBN(0);
   }
-  
+
   // If the running balance is greater than the token transfer threshold, then set the net send amount
   // equal to the running balance and reset the running balance to 0. Otherwise, the net send amount should be
   // 0, indicating that we do not want the data worker to trigger a token transfer between hub pool and spoke
