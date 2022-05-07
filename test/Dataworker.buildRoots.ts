@@ -9,7 +9,7 @@ import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokens
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
 import { buildRelayerRefundTreeWithUnassignedLeafIds, constructPoolRebalanceTree } from "./utils";
 import { buildPoolRebalanceLeafTree } from "./utils";
-import { HubPoolClient, AcrossConfigStoreClient } from "../src/clients";
+import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, originChainId, mockTreeRoot } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { refundProposalLiveness, CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
@@ -25,8 +25,9 @@ let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Co
 let l1Token_1: Contract, hubPool: Contract, timer: Contract, configStore: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress, dataworker: SignerWithAddress;
 
-let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
-let dataworkerInstance: Dataworker;
+let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient, spokePoolClient_1: SpokePoolClient;
+let dataworkerInstance: Dataworker, spokePoolClient_2: SpokePoolClient;
+const spokePoolClients: { [chainId: number]: SpokePoolClient } = {};
 
 let updateAllClients: () => Promise<void>;
 
@@ -47,6 +48,8 @@ describe("Dataworker: Build merkle roots", async function () {
       dataworkerInstance,
       dataworker,
       timer,
+      spokePoolClient_1,
+      spokePoolClient_2,
       updateAllClients,
     } = await setupDataworker(
       ethers,
@@ -54,6 +57,8 @@ describe("Dataworker: Build merkle roots", async function () {
       MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
       DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
     ));
+    spokePoolClients[originChainId] = spokePoolClient_1;
+    spokePoolClients[destinationChainId] = spokePoolClient_2;
   });
   it("Build slow relay root", async function () {
     await updateAllClients();
@@ -112,7 +117,7 @@ describe("Dataworker: Build merkle roots", async function () {
     // Returns expected merkle root where leaves are ordered by origin chain ID and then deposit ID
     // (ascending).
     await updateAllClients();
-    const merkleRoot1 = dataworkerInstance.buildSlowRelayRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
+    const merkleRoot1 = dataworkerInstance.buildSlowRelayRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).tree;
     const expectedMerkleRoot1 = await buildSlowRelayTree(expectedSlowRelayLeaves);
     expect(merkleRoot1.getHexRoot()).to.equal(expectedMerkleRoot1.getHexRoot());
 
@@ -122,7 +127,7 @@ describe("Dataworker: Build merkle roots", async function () {
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit3, 1);
     await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit4, 1);
     await updateAllClients();
-    expect(dataworkerInstance.buildSlowRelayRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN)).to.deep.equal({
+    expect(dataworkerInstance.buildSlowRelayRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)).to.deep.equal({
       leaves: [],
       tree: undefined,
     });
@@ -130,7 +135,7 @@ describe("Dataworker: Build merkle roots", async function () {
   describe("Build relayer refund root", function () {
     it("amountToReturn is 0", async function () {
       await updateAllClients();
-      expect(dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN)).to.deep.equal({
+      expect(dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)).to.deep.equal({
         leaves: [],
         tree: undefined,
       });
@@ -197,7 +202,7 @@ describe("Dataworker: Build merkle roots", async function () {
       };
 
       await updateAllClients();
-      const merkleRoot1 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
+      const merkleRoot1 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).tree;
       const expectedMerkleRoot1 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf1]);
       expect(merkleRoot1.getHexRoot()).to.equal(expectedMerkleRoot1.getHexRoot());
 
@@ -214,7 +219,7 @@ describe("Dataworker: Build merkle roots", async function () {
         refundAmounts: [getRefund(deposit3.amount, deposit3.realizedLpFeePct)],
       };
       await updateAllClients();
-      const merkleRoot2 = await dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
+      const merkleRoot2 = await dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).tree;
       const expectedMerkleRoot2 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf2, leaf1]);
       expect(merkleRoot2.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
 
@@ -260,7 +265,7 @@ describe("Dataworker: Build merkle roots", async function () {
         refundAmounts: [getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.01")).div(toBNWei("1"))],
       };
       await updateAllClients();
-      const merkleRoot3 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
+      const merkleRoot3 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).tree;
       const expectedMerkleRoot3 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf5, leaf6, leaf2, leaf1]);
       expect(merkleRoot3.getHexRoot()).to.equal(expectedMerkleRoot3.getHexRoot());
     });
@@ -307,7 +312,7 @@ describe("Dataworker: Build merkle roots", async function () {
       };
 
       await updateAllClients();
-      const merkleRoot1 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
+      const merkleRoot1 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).tree;
       const expectedMerkleRoot1 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf1]);
       expect(merkleRoot1.getHexRoot()).to.equal(expectedMerkleRoot1.getHexRoot());
 
@@ -364,7 +369,7 @@ describe("Dataworker: Build merkle roots", async function () {
       };
 
       await updateAllClients();
-      const merkleRoot2 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
+      const merkleRoot2 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).tree;
       const expectedMerkleRoot2 = await buildRelayerRefundTreeWithUnassignedLeafIds([newLeaf1, leaf2, leaf3]);
       expect(merkleRoot2.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
     });
@@ -393,7 +398,7 @@ describe("Dataworker: Build merkle roots", async function () {
       };
 
       await updateAllClients();
-      expect(dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN)).to.deep.equal({
+      expect(dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)).to.deep.equal({
         leaves: [],
         runningBalances: {},
         realizedLpFees: {},
@@ -469,7 +474,7 @@ describe("Dataworker: Build merkle roots", async function () {
         },
       };
       await updateAllClients();
-      const merkleRoot1 = dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN);
+      const merkleRoot1 = dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients);
       expect(merkleRoot1.runningBalances).to.deep.equal(expectedRunningBalances);
       expect(merkleRoot1.realizedLpFees).to.deep.equal(expectedRealizedLpFees);
 
@@ -521,9 +526,8 @@ describe("Dataworker: Build merkle roots", async function () {
         getRealizedLpFeeForFills([slowFill2]),
         [slowFill2.destinationChainId],
         [l1Token_1.address],
-        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN)
+        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)
       );
-      return;
 
       // Now, submit another partial fill for a deposit whose slow fill has NOT been executed yet. This should result
       // in the slow fill execution leaving excess funds in the spoke pool.
@@ -536,7 +540,7 @@ describe("Dataworker: Build merkle roots", async function () {
         getRealizedLpFeeForFills([fill5]),
         [fill5.destinationChainId],
         [l1Token_1.address],
-        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN)
+        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)
       );
 
       // Execute second slow relay leaf:
@@ -568,7 +572,7 @@ describe("Dataworker: Build merkle roots", async function () {
         getRealizedLpFeeForFills([slowFill1]),
         [fill5.destinationChainId],
         [l1Token_1.address],
-        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN)
+        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)
       );
 
       // Before executing the last slow relay leaf, completely fill the deposit. This will leave the full slow fill
@@ -586,7 +590,7 @@ describe("Dataworker: Build merkle roots", async function () {
         getRealizedLpFeeForFills([fill6]),
         [fill6.destinationChainId],
         [l1Token_1.address],
-        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN)
+        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)
       );
 
       // Now demonstrate that for a deposit whose first fill is NOT contained in a ProposeRootBundle event, it won't
@@ -620,7 +624,7 @@ describe("Dataworker: Build merkle roots", async function () {
         getRealizedLpFeeForFills([fill7, fill8]),
         [fill7.destinationChainId],
         [l1Token_1.address],
-        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN)
+        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)
       );
 
       // Execute root bundle so we can propose another bundle. The latest running balance emitted in this event
@@ -641,7 +645,7 @@ describe("Dataworker: Build merkle roots", async function () {
         toBN(0),
         [originChainId, destinationChainId],
         [l1Token_1.address],
-        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN)
+        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)
       );
 
       // Even after a ProposeRootBundle is submitted with a block range containing both fill7 and fill8, nothing changes
@@ -654,7 +658,7 @@ describe("Dataworker: Build merkle roots", async function () {
         mockTreeRoot
       );
       await updateAllClients();
-      const merkleRoot7 = dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN);
+      const merkleRoot7 = dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients);
       expect(merkleRoot7.runningBalances).to.deep.equal(expectedRunningBalances);
       expect(merkleRoot7.realizedLpFees).to.deep.equal(expectedRealizedLpFees);
 
@@ -682,7 +686,7 @@ describe("Dataworker: Build merkle roots", async function () {
         getRealizedLpFeeForFills([fill9]),
         [fill9.destinationChainId],
         [l1Token_1.address],
-        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN)
+        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)
       );
     });
     it("Many L1 tokens, testing leaf order and root construction", async function () {
@@ -739,7 +743,7 @@ describe("Dataworker: Build merkle roots", async function () {
       // for each newly created token mapping. Check that the leaves are sorted by L2 chain ID and then by L1 token
       // address.
       await updateAllClients();
-      const merkleRoot1 = dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN);
+      const merkleRoot1 = dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients);
       const orderedChainIds = [originChainId, destinationChainId].sort((x, y) => x - y);
       const expectedLeaves = orderedChainIds
         .map((chainId) => {
@@ -780,9 +784,9 @@ describe("Dataworker: Build merkle roots", async function () {
           return { ...leaf, chainId: toBN(leaf.chainId), groupIndex: toBN(leaf.groupIndex), leafId: toBN(leaf.leafId) };
         })
       );
-      expect(dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree.getHexRoot()).to.equal(
-        expectedMerkleRoot.getHexRoot()
-      );
+      expect(
+        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).tree.getHexRoot()
+      ).to.equal(expectedMerkleRoot.getHexRoot());
     });
     it("Token transfer exceeeds threshold", async function () {
       await updateAllClients();
@@ -799,7 +803,7 @@ describe("Dataworker: Build merkle roots", async function () {
       await updateAllClients();
       const fill = await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 1, destinationChainId);
       await updateAllClients();
-      const merkleRoot1 = dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN);
+      const merkleRoot1 = dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients);
 
       const orderedChainIds = [originChainId, destinationChainId].sort((x, y) => x - y);
       const expectedLeaves1 = orderedChainIds
@@ -831,7 +835,7 @@ describe("Dataworker: Build merkle roots", async function () {
         })
       );
       await configStoreClient.update();
-      const merkleRoot2 = dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN);
+      const merkleRoot2 = dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients);
       const expectedLeaves2 = expectedLeaves1.map((leaf) => {
         return {
           ...leaf,

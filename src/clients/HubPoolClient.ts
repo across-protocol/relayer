@@ -2,6 +2,7 @@ import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, Event
 import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery } from "../utils";
 import { Signer, MAX_SAFE_ALLOWANCE, runTransaction, etherscanLink } from "../utils";
 import { Deposit, L1Token, ProposedRootBundle, ExecutedRootBundle } from "../interfaces";
+import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
 
 export class HubPoolClient {
   // L1Token -> destinationChainId -> destinationToken
@@ -9,8 +10,9 @@ export class HubPoolClient {
   private l1Tokens: L1Token[] = []; // L1Tokens and their associated info.
   private proposedRootBundles: ProposedRootBundle[] = [];
   private executedRootBundles: ExecutedRootBundle[] = [];
+  private crossChainContracts: { [l2ChainId: number]: CrossChainContractsSet[] } = {};
   private l1TokensToDestinationTokensWithBlock: {
-    [l1Token: string]: { [destinationChainId: number]: [{ l2Token: string; block: number }] };
+    [l1Token: string]: { [destinationChainId: number]: DestinationTokenWithBlock[] };
   } = {};
   private bondToken: Contract;
 
@@ -24,6 +26,16 @@ export class HubPoolClient {
     readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
+  }
+
+  getSpokePoolForBlock(block: number, chain: number): string {
+    if (!this.crossChainContracts[chain]) throw new Error(`No cross chain contracts set for ${chain}`);
+    const mostRecentSpokePoolUpdatebeforeBlock = (
+      sortEventsDescending(this.crossChainContracts[chain]) as CrossChainContractsSet[]
+    ).find((crossChainContract) => crossChainContract.blockNumber <= block);
+    if (!mostRecentSpokePoolUpdatebeforeBlock)
+      throw new Error(`No cross chain contract found before block ${block} for chain ${chain}`);
+    else return mostRecentSpokePoolUpdatebeforeBlock.spokePool;
   }
 
   getDestinationTokenForDeposit(deposit: Deposit) {
@@ -49,10 +61,9 @@ export class HubPoolClient {
 
   getL1TokenCounterpartAtBlock(l2ChainId: string, l2Token: string, block: number) {
     const l1Token = Object.keys(this.l1TokensToDestinationTokensWithBlock).find((_l1Token) => {
-      // We assume that l2-l1 token mapping events are sorted in descending order, so find the last mapping published
-      // before the target block.
-      return this.l1TokensToDestinationTokensWithBlock[_l1Token][l2ChainId].find(
-        (mapping: { l2Token: string; block: number }) => mapping.l2Token === l2Token && mapping.block <= block
+      // Find the last mapping published before the target block.
+      return sortEventsDescending(this.l1TokensToDestinationTokensWithBlock[_l1Token][l2ChainId]).find(
+        (mapping: DestinationTokenWithBlock) => mapping.l2Token === l2Token && mapping.blockNumber <= block
       );
     });
     if (!l1Token)
@@ -196,31 +207,53 @@ export class HubPoolClient {
     this.logger.debug({ at: "HubPoolClient", message: "Updating client", searchConfig });
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
-    const [poolRebalanceRouteEvents, l1TokensLPEvents, proposeRootBundleEvents, executedRootBundleEvents, bondToken] =
-      await Promise.all([
-        paginatedEventQuery(this.hubPool, this.hubPool.filters.SetPoolRebalanceRoute(), searchConfig),
-        paginatedEventQuery(this.hubPool, this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), searchConfig),
-        paginatedEventQuery(this.hubPool, this.hubPool.filters.ProposeRootBundle(), searchConfig),
-        paginatedEventQuery(this.hubPool, this.hubPool.filters.RootBundleExecuted(), searchConfig),
-        this.hubPool.bondToken(),
-      ]);
+    const [
+      poolRebalanceRouteEvents,
+      l1TokensLPEvents,
+      proposeRootBundleEvents,
+      executedRootBundleEvents,
+      crossChainContractsSetEvents,
+      bondToken,
+    ] = await Promise.all([
+      paginatedEventQuery(this.hubPool, this.hubPool.filters.SetPoolRebalanceRoute(), searchConfig),
+      paginatedEventQuery(this.hubPool, this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), searchConfig),
+      paginatedEventQuery(this.hubPool, this.hubPool.filters.ProposeRootBundle(), searchConfig),
+      paginatedEventQuery(this.hubPool, this.hubPool.filters.RootBundleExecuted(), searchConfig),
+      paginatedEventQuery(this.hubPool, this.hubPool.filters.CrossChainContractsSet(), searchConfig),
+      this.hubPool.bondToken(),
+    ]);
     this.bondToken = new Contract(bondToken, ERC20.abi, this.hubPool.signer);
 
+    for (const event of crossChainContractsSetEvents) {
+      const args = spreadEventWithBlockNumber(event) as CrossChainContractsSet;
+      assign(
+        this.crossChainContracts,
+        [args.l2ChainId],
+        [
+          {
+            spokePool: args.spokePool,
+            blockNumber: args.blockNumber,
+            transactionIndex: args.transactionIndex,
+            logIndex: args.logIndex,
+          },
+        ]
+      );
+    }
+
     for (const event of poolRebalanceRouteEvents) {
-      const args = spreadEvent(event);
+      const args = spreadEventWithBlockNumber(event) as SetPoolRebalanceRoot;
       assign(this.l1TokensToDestinationTokens, [args.l1Token, args.destinationChainId], args.destinationToken);
       assign(
         this.l1TokensToDestinationTokensWithBlock,
         [args.l1Token, args.destinationChainId],
-        [{ l2Token: args.destinationToken, block: event.blockNumber }]
-      );
-      // Sort l2 token to l1 token mapping events in descending order so we can easily find the first mapping update
-      // equal to or earlier than a target block. This allows a caller to look up the l1 token counterpart for an l2
-      // token at a specific block height.
-      this.l1TokensToDestinationTokensWithBlock[args.l1Token][args.destinationChainId].sort(
-        (mappingA: { block: number }, mappingB: { block: number }) => {
-          return mappingB.block - mappingA.block;
-        }
+        [
+          {
+            l2Token: args.destinationToken,
+            blockNumber: args.blockNumber,
+            transactionIndex: args.transactionIndex,
+            logIndex: args.logIndex,
+          },
+        ]
       );
     }
 
