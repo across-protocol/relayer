@@ -31,8 +31,8 @@ export async function constructDataworkerClients(
   return { ...commonClients, spokePoolSigners, spokePoolClientSearchSettings };
 }
 
-export async function updateDataworkerClients(logger: winston.Logger, clients: DataworkerClients) {
-  await updateClients(logger, clients);
+export async function updateDataworkerClients(clients: DataworkerClients) {
+  await updateClients(clients);
 
   // Run approval on hub pool.
   await clients.hubPoolClient.setBondTokenAllowance();

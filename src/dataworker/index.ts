@@ -4,7 +4,7 @@ import { DataworkerConfig } from "./DataworkerConfig";
 import * as Constants from "../common";
 
 import { constructDataworkerClients, updateDataworkerClients } from "./DataworkerClientHelper";
-import { processEndPollingLoop, winston, delay, getProvider } from "../utils";
+import { processEndPollingLoop, winston, delay } from "../utils";
 
 let logger: winston.Logger;
 
