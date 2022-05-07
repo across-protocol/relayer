@@ -256,12 +256,16 @@ export class Dataworker {
 
   buildRelayerRefundRoot(blockRangesForChains: number[][]) {
     this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForChains });
+    const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForChains, 1)[1];
 
     // TODO: Test `blockRangesForChains`
 
     const { fillsToRefund } = this._loadData(blockRangesForChains);
 
     const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
+
+    // We need to construct a pool rebalance root in order to derive `amountToReturn` from `netSendAmount`.
+    const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForChains)
 
     // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
     Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
@@ -279,9 +283,14 @@ export class Dataworker {
 
         // Create leaf for { repaymentChainId, L2TokenAddress }, split leaves into sub-leaves if there are too many
         // refunds.
-        // TODO: Replace the block height hardcoded with a block from the bundle block range so we can look up the
-        // limit at the time of the proposal.
-        const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForChains, 1)[1];
+
+        // The `amountToReturn` for a { repaymentChainId, L2TokenAddress} should be set to max(-netSendAmount, 0).
+        const amountToReturn = this._getAmountToReturnForRelayerRefundLeaf(
+          endBlockForMainnet,
+          repaymentChainId,
+          l2TokenAddress,
+          poolRebalanceRoot.runningBalances
+        );
         const maxRefundCount =
           this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
         for (let i = 0; i < sortedRefundAddresses.length; i += maxRefundCount)
@@ -290,13 +299,48 @@ export class Dataworker {
             // L2 token address
             leafId: 0, // Will be updated before inserting into tree when we sort all leaves.
             chainId: Number(repaymentChainId),
-            amountToReturn: toBN(0), // TODO: Derive amountToReturn
+            amountToReturn: i === 0 ? amountToReturn : toBN(0),
             l2TokenAddress,
             refundAddresses: sortedRefundAddresses.slice(i, i + maxRefundCount),
             refundAmounts: sortedRefundAddresses.slice(i, i + maxRefundCount).map((address) => refunds[address]),
           });
       });
     });
+
+    // We need to construct a leaf for any pool rebalance leaves with a negative net send amount and NO fills to refund
+    // since we need to return tokens from SpokePool to HubPool.
+    poolRebalanceRoot.leaves.forEach((leaf) => {
+      leaf.netSendAmounts.forEach((netSendAmount, index) => {
+        if (netSendAmount.gte(toBN(0))) return;
+
+        const l2TokenCounterpart = this.clients.hubPoolClient.getDestinationTokenForL1TokenDestinationChainId(leaf.l1Tokens[index], leaf.chainId)
+        // If we've already seen this leaf, then skip.
+        if (
+          relayerRefundLeaves.some(
+            (relayerRefundLeaf) =>
+              relayerRefundLeaf.chainId === leaf.chainId && relayerRefundLeaf.l2TokenAddress === l2TokenCounterpart
+          )
+        )
+          return;
+
+        const amountToReturn = this._getAmountToReturnForRelayerRefundLeaf(
+          endBlockForMainnet,
+          leaf.chainId.toString(),
+          l2TokenCounterpart,
+          poolRebalanceRoot.runningBalances
+        );
+        relayerRefundLeaves.push({
+          groupIndex: 0, // Will delete this group index after using it to sort leaves for the same chain ID and
+          // L2 token address
+          leafId: 0, // Will be updated before inserting into tree when we sort all leaves.
+          chainId: leaf.chainId,
+          amountToReturn: amountToReturn, // Never 0 since there will only be one leaf for this chain + L2 token combo.
+          l2TokenAddress: l2TokenCounterpart,
+          refundAddresses: [],
+          refundAmounts: [],
+        });
+      })
+    })
 
     // Sort leaves by chain ID and then L2 token address in ascending order. Assign leaves unique, ascending ID's
     // beginning from 0.
@@ -740,12 +784,6 @@ export class Dataworker {
     slowRelayLeaves.forEach((leaf, index) => {
       // Shorten keys for ease of reading from Slack.
       delete leaf.leafId;
-      leaf.amountToReturn = convertFromWei(leaf.chainId, leaf.l2TokenAddress, leaf.amountToReturn);
-      leaf.refundAmounts = convertTokenListFromWei(
-        leaf.chainId,
-        Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
-        leaf.refundAmounts
-      );
       leaf.originChain = leaf.originChainId;
       leaf.destinationChain = leaf.destinationChainId;
       leaf.depositor = shortenBytes(leaf.depositor);
@@ -769,6 +807,25 @@ export class Dataworker {
     );
   }
 
+  _getAmountToReturnForRelayerRefundLeaf(
+    endBlockForMainnet: number,
+    leafChainId: string,
+    leafToken: string,
+    poolRebalanceRunningBalances: RunningBalances
+  ) {
+    const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpartAtBlock(
+      leafChainId,
+      leafToken,
+      endBlockForMainnet
+    );
+    const runningBalanceForLeaf = poolRebalanceRunningBalances[leafChainId][l1TokenCounterpart];
+    const netSendAmountForLeaf = this._getNetSendAmountForL1Token(
+      runningBalanceForLeaf,
+      l1TokenCounterpart,
+      endBlockForMainnet
+    );
+    return netSendAmountForLeaf.mul(toBN(-1)).gt(toBN(0)) ? netSendAmountForLeaf.mul(toBN(-1)) : toBN(0);
+  }
   // If the running balance is greater than the token transfer threshold, then set the net send amount
   // equal to the running balance and reset the running balance to 0. Otherwise, the net send amount should be
   // 0, indicating that we do not want the data worker to trigger a token transfer between hub pool and spoke

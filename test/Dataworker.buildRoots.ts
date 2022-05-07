@@ -16,7 +16,7 @@ import { refundProposalLiveness, CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_
 import { DEFAULT_BLOCK_RANGE_FOR_CHAIN } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { Deposit, Fill, RunningBalances } from "../src/interfaces";
-import { getRealizedLpFeeForFills, getRefundForFills, getRefund, compareAddresses, utf8ToHex } from "../src/utils";
+import { getRealizedLpFeeForFills, getRefundForFills, getRefund, compareAddresses } from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
@@ -127,141 +127,249 @@ describe("Dataworker: Build merkle roots", async function () {
       tree: undefined,
     });
   });
-  it("Build relayer refund root", async function () {
-    await updateAllClients();
-    expect(dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN)).to.deep.equal({
-      leaves: [],
-      tree: undefined,
+  describe("Build relayer refund root", function () {
+    it("amountToReturn is 0", async function () {
+      await updateAllClients();
+      expect(dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN)).to.deep.equal({
+        leaves: [],
+        tree: undefined,
+      });
+  
+      // Submit deposits for multiple L2 tokens.
+      const deposit1 = await buildDeposit(
+        configStoreClient,
+        hubPoolClient,
+        spokePool_1,
+        erc20_1,
+        l1Token_1,
+        depositor,
+        destinationChainId,
+        amountToDeposit
+      );
+      const deposit2 = await buildDeposit(
+        configStoreClient,
+        hubPoolClient,
+        spokePool_1,
+        erc20_1,
+        l1Token_1,
+        depositor,
+        destinationChainId,
+        amountToDeposit
+      );
+      const deposit3 = await buildDeposit(
+        configStoreClient,
+        hubPoolClient,
+        spokePool_2,
+        erc20_2,
+        l1Token_1,
+        depositor,
+        originChainId,
+        amountToDeposit
+      );
+  
+      // Submit fills for two relayers on one repayment chain and one destination token. Note: we know that
+      // depositor address is alphabetically lower than relayer address, so submit fill from depositor first and test
+      // that data worker sorts on refund address.
+      await enableRoutesOnHubPool(hubPool, [
+        { destinationChainId: 100, destinationToken: erc20_2, l1Token: l1Token_1 },
+        { destinationChainId: 99, destinationToken: erc20_1, l1Token: l1Token_1 },
+        { destinationChainId: 98, destinationToken: erc20_1, l1Token: l1Token_1 },
+      ]);
+      await updateAllClients();
+      await buildFillForRepaymentChain(spokePool_2, depositor, deposit2, 0.25, 100);
+      await buildFillForRepaymentChain(spokePool_2, depositor, deposit2, 1, 100);
+      await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, 100);
+      await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 1, 100);
+  
+      const depositorBeforeRelayer = toBN(depositor.address).lt(toBN(relayer.address));
+      const leaf1 = {
+        chainId: 100,
+        amountToReturn: toBN(0),
+        l2TokenAddress: erc20_2.address,
+        refundAddresses: [
+          depositorBeforeRelayer ? depositor.address : relayer.address,
+          depositorBeforeRelayer ? relayer.address : depositor.address,
+        ], // Sorted ascending alphabetically
+        refundAmounts: [
+          getRefund(deposit1.amount, deposit1.realizedLpFeePct),
+          getRefund(deposit3.amount, deposit3.realizedLpFeePct),
+        ], // Refund amounts should aggregate across all fills.
+      };
+  
+      await updateAllClients();
+      const merkleRoot1 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
+      const expectedMerkleRoot1 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf1]);
+      expect(merkleRoot1.getHexRoot()).to.equal(expectedMerkleRoot1.getHexRoot());
+  
+      // Submit fills for multiple repayment chains. Note: Send the fills for destination tokens in the
+      // reverse order of the fills we sent above to test that the data worker is correctly sorting leaves
+      // by L2 token address in ascending order. Also set repayment chain ID lower than first few leaves to test
+      // that these leaves come first.
+      await buildFillForRepaymentChain(spokePool_1, relayer, deposit3, 1, 99);
+      const leaf2 = {
+        chainId: 99,
+        amountToReturn: toBN(0),
+        l2TokenAddress: erc20_1.address,
+        refundAddresses: [relayer.address],
+        refundAmounts: [getRefund(deposit3.amount, deposit3.realizedLpFeePct)],
+      };
+      await updateAllClients();
+      const merkleRoot2 = await dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
+      const expectedMerkleRoot2 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf2, leaf1]);
+      expect(merkleRoot2.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
+  
+      // Splits leaf into multiple leaves if refunds > MAX_REFUNDS_PER_RELAYER_REFUND_LEAF.
+      const deposit4 = await buildDeposit(
+        configStoreClient,
+        hubPoolClient,
+        spokePool_1,
+        erc20_1,
+        l1Token_1,
+        depositor,
+        destinationChainId,
+        amountToDeposit
+      );
+      const allSigners: SignerWithAddress[] = await ethers.getSigners();
+      expect(
+        allSigners.length >= MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1,
+        "ethers.getSigners doesn't have enough signers"
+      );
+      for (let i = 0; i < MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1; i++) {
+        await setupTokensForWallet(spokePool_2, allSigners[i], [erc20_2]);
+        await buildFillForRepaymentChain(spokePool_2, allSigners[i], deposit4, 0.01 + i * 0.01, 98);
+      }
+      // Note: Higher refund amounts for same chain and L2 token should come first, so we test that by increasing
+      // the fill amount in the above loop for each fill. Ultimately, the latest fills send the most tokens and
+      // should come in the first leaf.
+      const leaf5 = {
+        chainId: 98,
+        amountToReturn: toBN(0),
+        l2TokenAddress: erc20_1.address,
+        refundAddresses: [allSigners[3].address, allSigners[2].address, allSigners[1].address],
+        refundAmounts: [
+          getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.04")).div(toBNWei("1")),
+          getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.03")).div(toBNWei("1")),
+          getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.02")).div(toBNWei("1")),
+        ],
+      };
+      const leaf6 = {
+        chainId: 98,
+        amountToReturn: toBN(0),
+        l2TokenAddress: erc20_1.address,
+        refundAddresses: [allSigners[0].address],
+        refundAmounts: [getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.01")).div(toBNWei("1"))],
+      };
+      await updateAllClients();
+      const merkleRoot3 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
+      const expectedMerkleRoot3 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf5, leaf6, leaf2, leaf1]);
+      expect(merkleRoot3.getHexRoot()).to.equal(expectedMerkleRoot3.getHexRoot());
     });
+    it("amountToReturn is non 0", async function() {
+      await updateAllClients();
 
-    // Submit deposits for multiple L2 tokens.
-    const deposit1 = await buildDeposit(
-      configStoreClient,
-      hubPoolClient,
-      spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
-      destinationChainId,
-      amountToDeposit
-    );
-    const deposit2 = await buildDeposit(
-      configStoreClient,
-      hubPoolClient,
-      spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
-      destinationChainId,
-      amountToDeposit
-    );
-    const deposit3 = await buildDeposit(
-      configStoreClient,
-      hubPoolClient,
-      spokePool_2,
-      erc20_2,
-      l1Token_1,
-      depositor,
-      originChainId,
-      amountToDeposit
-    );
+      // Submit 1 deposit to make `netSendAmount` for one chain negative.
+      await buildDeposit(
+        configStoreClient,
+        hubPoolClient,
+        spokePool_1,
+        erc20_1,
+        l1Token_1,
+        depositor,
+        destinationChainId,
+        amountToDeposit
+      );
 
-    // Submit fills for two relayers on one repayment chain and one destination token. Note: we know that
-    // depositor address is alphabetically lower than relayer address, so submit fill from depositor first and test
-    // that data worker sorts on refund address.
-    await enableRoutesOnHubPool(hubPool, [
-      { destinationChainId: 100, destinationToken: erc20_2, l1Token: l1Token_1 },
-      { destinationChainId: 99, destinationToken: erc20_1, l1Token: l1Token_1 },
-      { destinationChainId: 98, destinationToken: erc20_1, l1Token: l1Token_1 },
-    ]);
-    await updateAllClients();
-    await buildFillForRepaymentChain(spokePool_2, depositor, deposit2, 0.25, 100);
-    await buildFillForRepaymentChain(spokePool_2, depositor, deposit2, 1, 100);
-    await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, 100);
-    await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 1, 100);
+      await enableRoutesOnHubPool(hubPool, [
+        { destinationChainId: 100, destinationToken: erc20_2, l1Token: l1Token_1 },
+      ]);
+      await updateAllClients();
+      // await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 1, 100);
 
-    const depositorBeforeRelayer = toBN(depositor.address).lt(toBN(relayer.address));
-    const leaf1 = {
-      chainId: 100,
-      amountToReturn: toBN(0),
-      l2TokenAddress: erc20_2.address,
-      refundAddresses: [
-        depositorBeforeRelayer ? depositor.address : relayer.address,
-        depositorBeforeRelayer ? relayer.address : depositor.address,
-      ], // Sorted ascending alphabetically
-      refundAmounts: [
-        getRefund(deposit1.amount, deposit1.realizedLpFeePct),
-        getRefund(deposit3.amount, deposit3.realizedLpFeePct),
-      ], // Refund amounts should aggregate across all fills.
-    };
+      // Since amountToReturn is dependent on netSendAmount in pool rebalance leaf for same chain and token,
+      // let's fetch it. We'll move the token transfer threshold lower to make sure netSendAmount is negative.
+      await configStore.updateTokenConfig(
+        l1Token_1.address,
+        JSON.stringify({
+          rateModel: sampleRateModel,
+          transferThreshold: toBNWei(1).toString(),
+        })
+      );
+      await updateAllClients();
 
-    await updateAllClients();
-    const merkleRoot1 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
-    const expectedMerkleRoot1 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf1]);
-    expect(merkleRoot1.getHexRoot()).to.equal(expectedMerkleRoot1.getHexRoot());
+      // Since there was 1 unfilled deposit, there should be 1 relayer refund root for the deposit origin chain
+      // where amountToReturn = -netSendAmount.
+      const leaf1 = {
+        chainId: originChainId,
+        amountToReturn: amountToDeposit,
+        l2TokenAddress: erc20_1.address,
+        refundAddresses: [],
+        refundAmounts: [],
+      };
+  
+      await updateAllClients();
+      const merkleRoot1 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
+      const expectedMerkleRoot1 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf1]);
+      expect(merkleRoot1.getHexRoot()).to.equal(expectedMerkleRoot1.getHexRoot());
 
-    // Submit fills for multiple repayment chains. Note: Send the fills for destination tokens in the
-    // reverse order of the fills we sent above to test that the data worker is correctly sorting leaves
-    // by L2 token address in ascending order. Also set repayment chain ID lower than first few leaves to test
-    // that these leaves come first.
-    await buildFillForRepaymentChain(spokePool_1, relayer, deposit3, 1, 99);
-    const leaf2 = {
-      chainId: 99,
-      amountToReturn: toBN(0),
-      l2TokenAddress: erc20_1.address,
-      refundAddresses: [relayer.address],
-      refundAmounts: [getRefund(deposit3.amount, deposit3.realizedLpFeePct)],
-    };
-    await updateAllClients();
-    const merkleRoot2 = await dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
-    const expectedMerkleRoot2 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf2, leaf1]);
-    expect(merkleRoot2.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
+      // Now, submit fills on the origin chain such that the refunds for the origin chain need to be split amongst
+      // more than one leaves. Moreover, make sure not to fully fill the deposit so that the netSendAmount is negative,
+      // and check that the amountToReturn is 0 for all except the first leaf.
+      const deposit1 = await buildDeposit(
+        configStoreClient,
+        hubPoolClient,
+        spokePool_2,
+        erc20_2,
+        l1Token_1,
+        depositor,
+        originChainId,
+        amountToDeposit
+      );
+      const allSigners: SignerWithAddress[] = await ethers.getSigners();
+      expect(
+        allSigners.length >= MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1,
+        "ethers.getSigners doesn't have enough signers"
+      );
+      const sortedAllSigners = [...allSigners].sort((x, y) => compareAddresses(x.address, y.address))
+      const fills = []
+      for (let i = 0; i < MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1; i++) {
+        await setupTokensForWallet(spokePool_1, sortedAllSigners[i], [erc20_1]);
+        fills.push(
+          await buildFillForRepaymentChain(spokePool_1, sortedAllSigners[i], deposit1, 0.1, originChainId)
+        )
+      }
+      const refundAmountPerFill = getRefund(deposit1.amount, deposit1.realizedLpFeePct)
+        .mul(toBNWei("0.1"))
+        .div(toBNWei("1"));
+      const newLeaf1 = {
+        chainId: originChainId,
+        // amountToReturn should be deposit amount minus ALL fills for origin chain.
+        amountToReturn: amountToDeposit.sub(refundAmountPerFill.mul(toBN(MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF+1))),
+        l2TokenAddress: erc20_1.address,
+        refundAddresses: sortedAllSigners.slice(0, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF).map((x) => x.address),
+        refundAmounts: Array(MAX_REFUNDS_PER_RELAYER_REFUND_LEAF).fill(refundAmountPerFill),
+      };
+      const leaf2 = {
+        chainId: originChainId,
+        amountToReturn: toBN(0),
+        l2TokenAddress: erc20_1.address,
+        refundAddresses: [sortedAllSigners[MAX_REFUNDS_PER_RELAYER_REFUND_LEAF].address],
+        refundAmounts: [refundAmountPerFill],
+      };
 
-    // Splits leaf into multiple leaves if refunds > MAX_REFUNDS_PER_RELAYER_REFUND_LEAF.
-    const deposit4 = await buildDeposit(
-      configStoreClient,
-      hubPoolClient,
-      spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
-      destinationChainId,
-      amountToDeposit
-    );
-    const allSigners: SignerWithAddress[] = await ethers.getSigners();
-    expect(
-      allSigners.length >= MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1,
-      "ethers.getSigners doesn't have enough signers"
-    );
-    for (let i = 0; i < MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1; i++) {
-      await setupTokensForWallet(spokePool_2, allSigners[i], [erc20_2]);
-      await buildFillForRepaymentChain(spokePool_2, allSigners[i], deposit4, 0.01 + i * 0.01, 98);
-    }
-    // Note: Higher refund amounts for same chain and L2 token should come first, so we test that by increasing
-    // the fill amount in the above loop for each fill. Ultimately, the latest fills send the most tokens and
-    // should come in the first leaf.
-    const leaf5 = {
-      chainId: 98,
-      amountToReturn: toBN(0),
-      l2TokenAddress: erc20_1.address,
-      refundAddresses: [allSigners[3].address, allSigners[2].address, allSigners[1].address],
-      refundAmounts: [
-        getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.04")).div(toBNWei("1")),
-        getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.03")).div(toBNWei("1")),
-        getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.02")).div(toBNWei("1")),
-      ],
-    };
-    const leaf6 = {
-      chainId: 98,
-      amountToReturn: toBN(0),
-      l2TokenAddress: erc20_1.address,
-      refundAddresses: [allSigners[0].address],
-      refundAmounts: [getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.01")).div(toBNWei("1"))],
-    };
-    await updateAllClients();
-    const merkleRoot3 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
-    const expectedMerkleRoot3 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf5, leaf6, leaf2, leaf1]);
-    expect(merkleRoot3.getHexRoot()).to.equal(expectedMerkleRoot3.getHexRoot());
+      // There should also be a new leaf for the second deposit we submitted on the destination chain.
+      const leaf3 = {
+        chainId: destinationChainId,
+        amountToReturn: amountToDeposit,
+        l2TokenAddress: erc20_2.address,
+        refundAddresses: [],
+        refundAmounts: [],
+      }
+
+      await updateAllClients();
+      const merkleRoot2 = dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN).tree;
+      const expectedMerkleRoot2 = await buildRelayerRefundTreeWithUnassignedLeafIds([newLeaf1, leaf2, leaf3]);
+      expect(merkleRoot2.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
+    });
   });
   describe("Build pool rebalance root", function () {
     it("One L1 token full lifecycle: testing runningBalances and realizedLpFees counters", async function () {
