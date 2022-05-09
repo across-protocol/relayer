@@ -27,7 +27,7 @@ export class MultiCallerClient {
     this.transactions = [];
   }
 
-  async executeTransactionQueue(simulate = false) {
+  async executeTransactionQueue(simulationModeOn = false) {
     try {
       if (this.transactions.length === 0) return;
       this.logger.debug({
