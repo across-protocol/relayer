@@ -75,7 +75,7 @@ export class MultiCallerClient {
         assign(groupedTransactions, [transaction.chainId], [transaction]);
       }
 
-      if (simulate) {
+      if (simulationModeOn) {
         this.logger.debug({
           at: "MultiCallerClient",
           message: "All transactions will succeed! Logging markdown messages.",
