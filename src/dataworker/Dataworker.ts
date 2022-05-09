@@ -564,6 +564,9 @@ export class Dataworker {
   }
 
   async proposeRootBundle() {
+    // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
+    // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
+
     // 1. Construct a list of ending block ranges for each chain that we want to include
     // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.

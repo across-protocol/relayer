@@ -36,7 +36,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
     );
   });
 
-  const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients);
+  const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients, commonClients.hubPoolClient);
 
   const profitClient = new ProfitClient(logger, commonClients.hubPoolClient, config.relayerDiscount);
 

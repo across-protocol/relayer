@@ -13,6 +13,7 @@ import * as clients from "../../src/clients";
 import { amountToLp, destinationChainId, originChainId, CHAIN_ID_TEST_LIST, utf8ToHex } from "../constants";
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
+import { TokenClient } from "../../src/clients";
 
 // Sets up all contracts neccessary to build and execute leaves in dataworker merkle roots: relayer refund, slow relay,
 // and pool rebalance roots.
@@ -110,10 +111,13 @@ export async function setupDataworker(
     destinationChainId
   );
 
+  const tokenClient = new TokenClient(spyLogger, relayer.address, {}, hubPoolClient);
+
   const defaultEventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 };
   const dataworkerInstance = new Dataworker(
     spyLogger,
     {
+      tokenClient,
       spokePoolSigners: { [originChainId]: owner, [destinationChainId]: owner },
       spokePoolClientSearchSettings: {
         [originChainId]: defaultEventSearchConfig,

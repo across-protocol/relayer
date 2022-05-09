@@ -1,6 +1,6 @@
 import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, EventSearchConfig, toBN } from "../utils";
 import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery } from "../utils";
-import { Signer, MAX_SAFE_ALLOWANCE, runTransaction, etherscanLink } from "../utils";
+import { MAX_SAFE_ALLOWANCE, runTransaction, etherscanLink } from "../utils";
 import { Deposit, L1Token, ProposedRootBundle, ExecutedRootBundle } from "../interfaces";
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
 
@@ -14,7 +14,6 @@ export class HubPoolClient {
   private l1TokensToDestinationTokensWithBlock: {
     [l1Token: string]: { [destinationChainId: number]: DestinationTokenWithBlock[] };
   } = {};
-  private bondToken: Contract;
 
   public isUpdated: boolean = false;
   public firstBlockToSearch: number;
@@ -180,23 +179,6 @@ export class HubPoolClient {
     } else return toBN(0);
   }
 
-  async setBondTokenAllowance() {
-    const ownerAddress = await this.hubPool.signer.getAddress();
-    const currentCollateralAllowance: BigNumber = await this.bondToken.allowance(ownerAddress, this.hubPool.address);
-    if (currentCollateralAllowance.lt(toBN(MAX_SAFE_ALLOWANCE))) {
-      const tx = await runTransaction(this.logger, this.bondToken, "approve", [
-        this.hubPool.address,
-        MAX_SAFE_ALLOWANCE,
-      ]);
-      const receipt = await tx.wait();
-      const mrkdwn =
-        ` - Approved HubPool ${etherscanLink(this.hubPool.address, 1)} ` +
-        `to spend ${await this.bondToken.symbol()} ${etherscanLink(this.bondToken.address, 1)}. ` +
-        `tx ${etherscanLink(receipt.transactionHash, 1)}\n`;
-      this.logger.info({ at: "hubPoolClient", message: `Approved bond tokens! 💰`, mrkdwn });
-    } else this.logger.debug({ at: "hubPoolClient", message: `Bond token approval set` });
-  }
-
   async update() {
     this.latestBlockNumber = await this.hubPool.provider.getBlockNumber();
     const searchConfig = {
@@ -213,16 +195,13 @@ export class HubPoolClient {
       proposeRootBundleEvents,
       executedRootBundleEvents,
       crossChainContractsSetEvents,
-      bondToken,
     ] = await Promise.all([
       paginatedEventQuery(this.hubPool, this.hubPool.filters.SetPoolRebalanceRoute(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.ProposeRootBundle(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.RootBundleExecuted(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.CrossChainContractsSet(), searchConfig),
-      this.hubPool.bondToken(),
     ]);
-    this.bondToken = new Contract(bondToken, ERC20.abi, this.hubPool.signer);
 
     for (const event of crossChainContractsSetEvents) {
       const args = spreadEventWithBlockNumber(event) as CrossChainContractsSet;
