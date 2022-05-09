@@ -637,7 +637,7 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker",
         message: `Pool rebalance leaf #${index}`,
-        leaf: prettyLeaf,
+        prettyLeaf,
       });
       return prettyLeaf;
     });
