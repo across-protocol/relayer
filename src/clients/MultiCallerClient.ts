@@ -34,7 +34,7 @@ export class MultiCallerClient {
         at: "MultiCallerClient",
         message: "Executing tx bundle",
         number: this.transactions.length,
-        simulationModeOn: simulate,
+        simulationModeOn,
       });
 
       // Simulate the transaction execution for the whole queue.
