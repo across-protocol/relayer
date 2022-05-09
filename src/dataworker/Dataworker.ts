@@ -1,6 +1,7 @@
 import { winston, assign, compareAddresses, getRefundForFills, sortEventsDescending, Contract } from "../utils";
 import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree, SpokePool } from "../utils";
-import { getRealizedLpFeeForFills, BigNumber, toBN, createFormatFunction } from "../utils";
+import { getRealizedLpFeeForFills, BigNumber, toBN, convertFromWei, shortenHexString } from "../utils";
+import { shortenHexStrings } from "../utils";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, DepositWithBlock } from "../interfaces";
 import { Fill, FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
 import { RunningBalances } from "../interfaces";
@@ -778,14 +779,10 @@ export class Dataworker {
       bundleBlockRangePretty += `\n\t\t${chainId}: ${JSON.stringify(bundleBlockRange[index])}`;
     });
 
-    const convertFromWei = (chainId: number, tokenAddress: string, weiVal: string) => {
-      const { decimals } = this.clients.hubPoolClient.getTokenInfo(chainId, tokenAddress);
-      const formatFunction = createFormatFunction(2, 4, false, decimals);
-      return formatFunction(weiVal);
-    };
     const convertTokenListFromWei = (chainId: number, tokenAddresses: string[], weiVals: string[]) => {
       return tokenAddresses.map((token, index) => {
-        return convertFromWei(chainId, token, weiVals[index]);
+        const { decimals } = this.clients.hubPoolClient.getTokenInfo(chainId, token);
+        return convertFromWei(weiVals[index], decimals);
       });
     };
     const convertTokenAddressToSymbol = (chainId: number, tokenAddress: string) => {
@@ -795,12 +792,6 @@ export class Dataworker {
       return l1Tokens.map((l1Token) => {
         return convertTokenAddressToSymbol(hubPoolChainId, l1Token);
       });
-    };
-    const shortenAddresses = (addresses: string[]) => {
-      return addresses.map((address) => shortenBytes(address));
-    };
-    const shortenBytes = (root: string) => {
-      return root.substring(0, 10);
     };
     let poolRebalanceLeavesPretty = "";
     poolRebalanceLeaves.forEach((leaf, index) => {
@@ -819,7 +810,10 @@ export class Dataworker {
     relayerRefundLeaves.forEach((leaf, index) => {
       // Shorten keys for ease of reading from Slack.
       delete leaf.leafId;
-      leaf.amountToReturn = convertFromWei(leaf.chainId, leaf.l2TokenAddress, leaf.amountToReturn);
+      leaf.amountToReturn = convertFromWei(
+        leaf.amountToReturn,
+        this.clients.hubPoolClient.getTokenInfo(leaf.chainId, leaf.l2TokenAddress).decimals
+      );
       leaf.refundAmounts = convertTokenListFromWei(
         leaf.chainId,
         Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
@@ -827,22 +821,26 @@ export class Dataworker {
       );
       leaf.l2Token = convertTokenAddressToSymbol(leaf.chainId, leaf.l2TokenAddress);
       delete leaf.l2TokenAddress;
-      leaf.refundAddresses = shortenAddresses(leaf.refundAddresses);
+      leaf.refundAddresses = shortenHexStrings(leaf.refundAddresses);
       relayerRefundLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
     });
 
     let slowRelayLeavesPretty = "";
     slowRelayLeaves.forEach((leaf, index) => {
+      const decimalsForDestToken = this.clients.hubPoolClient.getTokenInfo(
+        leaf.destinationChainId,
+        leaf.destinationToken
+      ).decimals;
       // Shorten keys for ease of reading from Slack.
       delete leaf.leafId;
       leaf.originChain = leaf.originChainId;
       leaf.destinationChain = leaf.destinationChainId;
-      leaf.depositor = shortenBytes(leaf.depositor);
-      leaf.recipient = shortenBytes(leaf.recipient);
+      leaf.depositor = shortenHexString(leaf.depositor);
+      leaf.recipient = shortenHexString(leaf.recipient);
       leaf.destToken = convertTokenAddressToSymbol(leaf.destinationChainId, leaf.destinationToken);
-      leaf.amount = convertFromWei(leaf.destinationChainId, leaf.destinationToken, leaf.amount);
-      leaf.realizedLpFee = `${convertFromWei(leaf.destinationChainId, leaf.destinationToken, leaf.realizedLpFeePct)}%`;
-      leaf.relayerFee = `${convertFromWei(leaf.destinationChainId, leaf.destinationToken, leaf.relayerFeePct)}%`;
+      leaf.amount = convertFromWei(leaf.amount, decimalsForDestToken);
+      leaf.realizedLpFee = `${convertFromWei(leaf.realizedLpFeePct, decimalsForDestToken)}%`;
+      leaf.relayerFee = `${convertFromWei(leaf.relayerFeePct, decimalsForDestToken)}%`;
       delete leaf.destinationToken;
       delete leaf.realizedLpFeePct;
       delete leaf.relayerFeePct;
@@ -852,9 +850,13 @@ export class Dataworker {
     });
     return (
       `\n\t*Bundle blocks*:${bundleBlockRangePretty}` +
-      `\n\t*PoolRebalance*:\n\t\troot:${shortenBytes(poolRebalanceRoot)}...\n\t\tleaves:${poolRebalanceLeavesPretty}` +
-      `\n\t*RelayerRefund*\n\t\troot:${shortenBytes(relayerRefundRoot)}...\n\t\tleaves:${relayerRefundLeavesPretty}` +
-      `\n\t*SlowRelay*\n\troot:${shortenBytes(slowRelayRoot)}...\n\t\tleaves:${slowRelayLeavesPretty}`
+      `\n\t*PoolRebalance*:\n\t\troot:${shortenHexString(
+        poolRebalanceRoot
+      )}...\n\t\tleaves:${poolRebalanceLeavesPretty}` +
+      `\n\t*RelayerRefund*\n\t\troot:${shortenHexString(
+        relayerRefundRoot
+      )}...\n\t\tleaves:${relayerRefundLeavesPretty}` +
+      `\n\t*SlowRelay*\n\troot:${shortenHexString(slowRelayRoot)}...\n\t\tleaves:${slowRelayLeavesPretty}`
     );
   }
 
