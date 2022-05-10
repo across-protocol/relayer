@@ -110,10 +110,15 @@ export async function setupDataworker(
     destinationChainId
   );
 
+  const defaultEventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 };
   const dataworkerInstance = new Dataworker(
     spyLogger,
     {
-      spokePoolClients: { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
+      spokePoolSigners: { [originChainId]: owner, [destinationChainId]: owner },
+      spokePoolClientSearchSettings: {
+        [originChainId]: defaultEventSearchConfig,
+        [destinationChainId]: defaultEventSearchConfig,
+      },
       hubPoolClient,
       multiCallerClient,
       configStoreClient,
