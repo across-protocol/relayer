@@ -93,7 +93,6 @@ export class TokenClient {
     const tokensToApprove: { chainId: string; token: string }[] = [];
     Object.keys(this.tokenData).forEach((chainId) => {
       Object.keys(this.tokenData[chainId]).forEach((token) => {
-        console.log("token data", chainId, token, this.tokenData[chainId][token]);
         if (this.tokenData[chainId][token].allowance.lt(toBN(MAX_SAFE_ALLOWANCE)))
           tokensToApprove.push({ chainId, token });
       });
