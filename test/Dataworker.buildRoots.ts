@@ -27,7 +27,7 @@ let depositor: SignerWithAddress, relayer: SignerWithAddress, dataworker: Signer
 
 let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient, spokePoolClient_1: SpokePoolClient;
 let dataworkerInstance: Dataworker, spokePoolClient_2: SpokePoolClient;
-const spokePoolClients: { [chainId: number]: SpokePoolClient } = {};
+let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let updateAllClients: () => Promise<void>;
 
@@ -50,6 +50,7 @@ describe("Dataworker: Build merkle roots", async function () {
       timer,
       spokePoolClient_1,
       spokePoolClient_2,
+      spokePoolClients,
       updateAllClients,
     } = await setupDataworker(
       ethers,
@@ -57,8 +58,6 @@ describe("Dataworker: Build merkle roots", async function () {
       MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
       DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
     ));
-    spokePoolClients[originChainId] = spokePoolClient_1;
-    spokePoolClients[destinationChainId] = spokePoolClient_2;
   });
   it("Build slow relay root", async function () {
     await updateAllClients();

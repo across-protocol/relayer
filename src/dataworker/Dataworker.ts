@@ -49,6 +49,13 @@ export class Dataworker {
     // TODO: Test `blockRangesForChains`
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
     if (!this.clients.configStoreClient.isUpdated) throw new Error(`ConfigStoreClient not updated`);
+    this.chainIdListForBundleEvaluationBlockNumbers.forEach((chainId) => {
+      if (!spokePoolClients[chainId]) throw new Error(`Missing spoke pool client for chain ${chainId}`);
+    });
+    if (blockRangesForChains.length !== this.chainIdListForBundleEvaluationBlockNumbers.length)
+      throw new Error(
+        `Unexpected block range list length of ${blockRangesForChains.length}, should be ${this.chainIdListForBundleEvaluationBlockNumbers.length}`
+      );
 
     const unfilledDepositsForOriginChain: { [originChainIdPlusDepositId: string]: UnfilledDeposit[] } = {};
     const fillsToRefund: FillsToRefund = {};
@@ -72,10 +79,24 @@ export class Dataworker {
 
         const blockRangeForChain = this._getBlockRangeForChain(blockRangesForChains, Number(destinationChainId));
 
-        // Store all deposits, for use in constructing a pool rebalance root. Save deposits with their quote time block
-        // numbers so we can pull the L1 token counterparts for the quote timestamp. We don't filter deposits
-        // by block range, only fills.
-        deposits.push(...originClient.getDepositsForDestinationChain(destinationChainId, true));
+        // Store all deposits in range, for use in constructing a pool rebalance root. Save deposits with
+        // their quote time block numbers so we can pull the L1 token counterparts for the quote timestamp.
+        // We can safely filter `deposits` by the bundle block range because its only used to decrement running
+        // balances in the pool rebalance root. This array is NOT used when matching fills with deposits. For that,
+        // we use the wider event search config of the origin client.
+        const newDeposits: DepositWithBlock[] = originClient
+          .getDepositsForDestinationChain(destinationChainId, true)
+          .filter(
+            (deposit) =>
+              deposit.blockNumber <= blockRangeForChain[1] &&
+              deposit.blockNumber >= blockRangeForChain[0] &&
+              !deposits.some(
+                (existingDeposit) =>
+                  existingDeposit.originChainId === deposit.originChainId &&
+                  existingDeposit.depositId === deposit.depositId
+              )
+          );
+        deposits.push(...newDeposits);
 
         // For each fill within the block range, look up associated deposit.
         const fillsForOriginChain: FillWithBlock[] = destinationClient
@@ -195,6 +216,7 @@ export class Dataworker {
     this.logger.debug({
       at: "Dataworker",
       message: `Finished loading spoke pool data`,
+      blockRangesForChains,
       unfilledDepositsByDestinationChain: unfilledDeposits.reduce((result, unfilledDeposit: UnfilledDeposit) => {
         const existingCount = result[unfilledDeposit.deposit.destinationChainId];
         result[unfilledDeposit.deposit.destinationChainId] = existingCount === undefined ? 1 : existingCount + 1;
@@ -614,18 +636,7 @@ export class Dataworker {
           spokePoolContract,
           this.clients.configStoreClient,
           Number(chainId),
-          {
-            // We can try to shorten the block range for this spoke pool using the current bundle's block range.
-            // This assumes that the spoke pool's deployment block was before this block range, which is always case
-            // until the first time that the spoke pool is upgraded. In this situation, there could be a block range
-            // with blocks before the new spoke pool's deployment time.
-            fromBlock: Math.max(
-              this._getBlockRangeForChain(blockRangesForProposal, chainId)[0],
-              this.clients.spokePoolClientSearchSettings[chainId].fromBlock
-            ),
-            toBlock: this.clients.spokePoolClientSearchSettings[chainId].toBlock,
-            maxBlockLookBack: this.clients.spokePoolClientSearchSettings[chainId].maxBlockLookBack,
-          }
+          this.clients.spokePoolClientSearchSettings[chainId]
         );
         return [chainId, client];
       })
@@ -699,6 +710,15 @@ export class Dataworker {
 
     // 4. Propose roots to HubPool contract.
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
+    this.logger.debug({
+      at: "Dataworker",
+      message: "Enqueing new root bundle proposal txn",
+      blockRangesForProposal,
+      poolRebalanceLeavesCount: poolRebalanceRoot.leaves.length,
+      poolRebalanceRoot: poolRebalanceRoot.tree.getHexRoot(),
+      relayerRefundRoot: relayerRefundRoot.tree ? relayerRefundRoot.tree.getHexRoot() : EMPTY_MERKLE_ROOT,
+      slowRelayRoot: slowRelayRoot.tree ? slowRelayRoot.tree.getHexRoot() : EMPTY_MERKLE_ROOT,
+    });
     this._proposeRootBundle(
       hubPoolChainId,
       blockRangesForProposal,

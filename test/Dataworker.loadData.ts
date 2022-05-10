@@ -1,5 +1,5 @@
 import { expect, ethers, Contract, deployNewToken } from "./utils";
-import { SignerWithAddress, buildSlowRelayTree, buildFillForRepaymentChain, enableRoutesOnHubPool } from "./utils";
+import { SignerWithAddress, buildSlowRelayTree, enableRoutesOnHubPool } from "./utils";
 import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, buildSlowFill } from "./utils";
 import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient } from "../src/clients";
 import { amountToDeposit, repaymentChainId, destinationChainId, originChainId } from "./constants";
@@ -16,7 +16,7 @@ let depositor: SignerWithAddress, relayer: SignerWithAddress;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
 let dataworkerInstance: Dataworker;
-const spokePoolClients: { [chainId: number]: SpokePoolClient } = {};
+let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let updateAllClients: () => Promise<void>;
 
@@ -37,11 +37,10 @@ describe("Dataworker: Load data used in all functions", async function () {
       dataworkerInstance,
       spokePoolClient_1,
       spokePoolClient_2,
+      spokePoolClients,
       configStoreClient,
       updateAllClients,
     } = await setupDataworker(ethers, 25, 25, toBN(0)));
-    spokePoolClients[originChainId] = spokePoolClient_1;
-    spokePoolClients[destinationChainId] = spokePoolClient_2;
   });
 
   it("Default conditions", async function () {

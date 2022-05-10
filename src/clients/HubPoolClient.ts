@@ -62,7 +62,10 @@ export class HubPoolClient {
       if (this.l1TokensToDestinationTokens[_l1Token][deposit.originChainId.toString()] === deposit.originToken)
         l1Token = _l1Token;
     });
-    if (l1Token === null) throw new Error(`Could not find L1 Token for deposit!,${JSON.stringify(deposit)}`);
+    if (l1Token === null)
+      throw new Error(
+        `Could not find L1 Token for origin chain ${deposit.originChainId} and origin token ${deposit.originToken}!`
+      );
     return l1Token;
   }
 

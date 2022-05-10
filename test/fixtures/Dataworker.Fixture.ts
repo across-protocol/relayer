@@ -6,11 +6,19 @@ import {
   BigNumber,
   enableRoutes,
   sampleRateModel,
+  MAX_UINT_VAL,
 } from "../utils";
 import { SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "../utils";
 import { createSpyLogger, winston, deployAndConfigureHubPool, deployConfigStore } from "../utils";
 import * as clients from "../../src/clients";
-import { amountToLp, destinationChainId, originChainId, CHAIN_ID_TEST_LIST, utf8ToHex } from "../constants";
+import {
+  amountToLp,
+  destinationChainId,
+  originChainId,
+  CHAIN_ID_TEST_LIST,
+  utf8ToHex,
+  repaymentChainId,
+} from "../constants";
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { TokenClient } from "../../src/clients";
@@ -34,10 +42,12 @@ export async function setupDataworker(
   timer: Contract;
   spokePoolClient_1: clients.SpokePoolClient;
   spokePoolClient_2: clients.SpokePoolClient;
+  spokePoolClients: { [chainId: number]: clients.SpokePoolClient };
   configStoreClient: clients.AcrossConfigStoreClient;
   hubPoolClient: clients.HubPoolClient;
   dataworkerInstance: Dataworker;
   spyLogger: winston.Logger;
+  spy: sinon.SinonSpy;
   multiCallerClient: clients.MultiCallerClient;
   owner: SignerWithAddress;
   depositor: SignerWithAddress;
@@ -49,6 +59,8 @@ export async function setupDataworker(
 
   const { spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId);
   const { spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId);
+  const { spokePool: spokePool_3 } = await deploySpokePoolWithToken(repaymentChainId, 1);
+  const { spokePool: spokePool_4 } = await deploySpokePoolWithToken(1, repaymentChainId);
 
   const umaEcosystem = await setupUmaEcosystem(owner);
   const { hubPool, l1Token_1, l1Token_2 } = await deployAndConfigureHubPool(
@@ -56,6 +68,10 @@ export async function setupDataworker(
     [
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
       { l2ChainId: originChainId, spokePool: spokePool_1 },
+      // Following spoke pool destinations should not be used in tests but need to be set for dataworker to fetch
+      // spoke pools for those chains in proposeRootBundle
+      { l2ChainId: repaymentChainId, spokePool: spokePool_3 },
+      { l2ChainId: 1, spokePool: spokePool_4 },
     ],
     umaEcosystem.finder.address,
     umaEcosystem.timer.address
@@ -71,6 +87,13 @@ export async function setupDataworker(
     { destinationChainId: destinationChainId, l1Token: l1Token_1, destinationToken: erc20_2 },
     { destinationChainId: originChainId, l1Token: l1Token_2, destinationToken: erc20_2 },
     { destinationChainId: destinationChainId, l1Token: l1Token_2, destinationToken: erc20_1 },
+    // Need to enable L1 token route to itself on Hub Pool so that hub pool client can look up the L1 token for
+    // its own chain.
+    {
+      destinationChainId: (await hubPool.provider.getNetwork()).chainId,
+      l1Token: l1Token_1,
+      destinationToken: l1Token_1,
+    },
   ]);
 
   // Set bond currency on hub pool so that roots can be proposed.
@@ -81,7 +104,7 @@ export async function setupDataworker(
   // Give dataworker final fee bond to propose roots with:
   await setupTokensForWallet(hubPool, dataworker, [l1Token_1], null, 100);
 
-  const { spyLogger } = createSpyLogger();
+  const { spyLogger, spy } = createSpyLogger();
 
   // Set up config store.
   const { configStore } = await deployConfigStore(
@@ -110,6 +133,16 @@ export async function setupDataworker(
     configStoreClient,
     destinationChainId
   );
+  // The following spoke pool clients are dummies and should not be interacted with in the tests. We need to set a
+  // client for each chain ID in the CHAIN_ID_LIST so we'll create new empty clients so as not to confuse events
+  // per chain.
+  const spokePoolClient_3 = new clients.SpokePoolClient(
+    spyLogger,
+    spokePool_3.connect(relayer),
+    configStoreClient,
+    repaymentChainId
+  );
+  const spokePoolClient_4 = new clients.SpokePoolClient(spyLogger, spokePool_4.connect(relayer), configStoreClient, 1);
 
   const tokenClient = new TokenClient(spyLogger, relayer.address, {}, hubPoolClient);
 
@@ -118,17 +151,25 @@ export async function setupDataworker(
     spyLogger,
     {
       tokenClient,
-      spokePoolSigners: { [originChainId]: owner, [destinationChainId]: owner },
-      spokePoolClientSearchSettings: {
-        [originChainId]: defaultEventSearchConfig,
-        [destinationChainId]: defaultEventSearchConfig,
-      },
+      spokePoolSigners: Object.fromEntries(CHAIN_ID_TEST_LIST.map((chainId) => [chainId, owner])),
+      spokePoolClientSearchSettings: Object.fromEntries(
+        CHAIN_ID_TEST_LIST.map((chainId) => [chainId, defaultEventSearchConfig])
+      ),
       hubPoolClient,
       multiCallerClient,
       configStoreClient,
     },
     CHAIN_ID_TEST_LIST
   );
+
+  // This client dictionary can be conveniently passed in root builder functions that expect mapping of clients to
+  // load events from. Dataworker needs a client mapped to every chain ID set in CHAIN_ID_TEST_LIST.
+  const spokePoolClients = {
+    [originChainId]: spokePoolClient_1,
+    [destinationChainId]: spokePoolClient_2,
+    [repaymentChainId]: spokePoolClient_3,
+    1: spokePoolClient_4,
+  };
 
   // Give owner tokens to LP on HubPool with.
   await setupTokensForWallet(spokePool_1, owner, [l1Token_1, l1Token_2], null, 100); // Seed owner to LP.
@@ -162,10 +203,12 @@ export async function setupDataworker(
     timer: umaEcosystem.timer,
     spokePoolClient_1,
     spokePoolClient_2,
+    spokePoolClients,
     configStoreClient,
     hubPoolClient,
     dataworkerInstance,
     spyLogger,
+    spy,
     multiCallerClient,
     owner,
     depositor,
@@ -176,6 +219,8 @@ export async function setupDataworker(
       await configStoreClient.update();
       await spokePoolClient_1.update();
       await spokePoolClient_2.update();
+      await spokePoolClient_3.update();
+      await spokePoolClient_4.update();
     },
   };
 }
