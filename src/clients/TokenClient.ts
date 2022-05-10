@@ -1,5 +1,5 @@
 import { BigNumber, winston, assign, ERC20, Contract, toBN, MAX_SAFE_ALLOWANCE } from "../utils";
-import { runTransaction, getNetworkName, etherscanLink } from "../utils";
+import { runTransaction, getNetworkName, etherscanLink, MAX_UINT_VAL } from "../utils";
 import { SpokePoolClient } from ".";
 import { Deposit } from "../interfaces";
 
@@ -93,6 +93,7 @@ export class TokenClient {
     const tokensToApprove: { chainId: string; token: string }[] = [];
     Object.keys(this.tokenData).forEach((chainId) => {
       Object.keys(this.tokenData[chainId]).forEach((token) => {
+        console.log("token data", chainId, token, this.tokenData[chainId][token]);
         if (this.tokenData[chainId][token].allowance.lt(toBN(MAX_SAFE_ALLOWANCE)))
           tokensToApprove.push({ chainId, token });
       });
@@ -106,12 +107,12 @@ export class TokenClient {
     for (const { token, chainId } of tokensToApprove) {
       const targetSpokePool = this.spokePoolClients[chainId].spokePool;
       const contract = new Contract(token, ERC20.abi, targetSpokePool.signer);
-      const tx = await runTransaction(this.logger, contract, "approve", [targetSpokePool.address, MAX_SAFE_ALLOWANCE]);
+      const tx = await runTransaction(this.logger, contract, "approve", [targetSpokePool.address, MAX_UINT_VAL]);
       const receipt = await tx.wait();
       mrkdwn +=
         ` - Approved SpokePool ${etherscanLink(targetSpokePool.address, chainId)} ` +
         `to spend ${await contract.symbol()} ${etherscanLink(token, chainId)} on ${getNetworkName(chainId)}. ` +
-        `tx ${etherscanLink(receipt.transactionHash, chainId)}\n`;
+        `tx: ${etherscanLink(receipt.transactionHash, chainId)}\n`;
     }
     this.logger.info({ at: "tokenClient", message: `Approved whitelisted tokens! 💰`, mrkdwn });
   }

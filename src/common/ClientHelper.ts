@@ -65,7 +65,7 @@ export async function constructClients(logger: winston.Logger, config: CommonCon
   });
 
   // const gasEstimator = new GasEstimator() // todo when this is implemented in the SDK.
-  const multiCallerClient = new MultiCallerClient(logger, null);
+  const multiCallerClient = new MultiCallerClient(logger, null, config.maxTxWaitDuration);
 
   logger.debug({
     at: "constructClients",

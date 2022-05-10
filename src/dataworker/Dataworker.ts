@@ -18,7 +18,7 @@ export class Dataworker {
   // eslint-disable-next-line no-useless-constructor
   constructor(
     readonly logger: winston.Logger,
-    readonly clients: Clients,
+    readonly clients: DataworkerClients,
     readonly chainIdListForBundleEvaluationBlockNumbers: number[]
   ) {}
 

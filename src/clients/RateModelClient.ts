@@ -48,9 +48,7 @@ export class AcrossConfigStoreClient {
     let rateModel: any;
     try {
       quoteBlock = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
-      console.log("quoteBlock", quoteBlock);
       rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
-      console.log("rateModel", rateModel);
     } catch (error) {
       console.log(error);
       if ((await this.hubPoolClient.hubPool.provider.getNetwork()).chainId === 1)
@@ -60,19 +58,8 @@ export class AcrossConfigStoreClient {
       rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
     }
 
-    const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, 14718158, deposit.amount);
-
+    const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, quoteBlock, deposit.amount);
     const realizedLpFeePct = lpFeeCalculator.calculateRealizedLpFeePct(rateModel, current, post);
-
-    this.logger.debug({
-      at: "RateModelClient",
-      message: "Computed realizedLPFeePct",
-      depositId: deposit.depositId,
-      originChainId: deposit.originChainId,
-      quoteBlock,
-      rateModel,
-      realizedLpFeePct,
-    });
 
     return { realizedLpFeePct, quoteBlock };
   }

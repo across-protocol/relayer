@@ -1,4 +1,4 @@
-import { winston, getNetworkName, assign, Contract, runTransaction } from "../utils";
+import { winston, getNetworkName, assign, Contract, runTransaction, getTarget, rejectAfterDelay } from "../utils";
 import { willSucceed, etherscanLink } from "../utils";
 export interface AugmentedTransaction {
   contract: Contract;
@@ -11,7 +11,7 @@ export interface AugmentedTransaction {
 
 export class MultiCallerClient {
   private transactions: AugmentedTransaction[] = [];
-  constructor(readonly logger: winston.Logger, readonly gasEstimator: any) {}
+  constructor(readonly logger: winston.Logger, readonly gasEstimator: any, readonly maxTxWaitDuration: number) {}
 
   // Adds all information associated with a transaction to the transaction queue. This is the intention of the
   // caller to send a transaction. The transaction might not be executable, which should be filtered later.
@@ -30,7 +30,7 @@ export class MultiCallerClient {
   async executeTransactionQueue() {
     try {
       if (this.transactions.length === 0) return;
-      this.logger.debug({ at: "MultiCallerClient", message: "Executing tx bundle", number: this.transactions.length });
+      this.logger.debug({ at: "MultiCaller", message: "Executing tx bundle", number: this.transactions.length });
 
       // Simulate the transaction execution for the whole queue.
       const transactionsSucceed = await Promise.all(
@@ -40,13 +40,13 @@ export class MultiCallerClient {
       // If any transactions will revert then log the reason and remove them from the transaction queue.
       if (transactionsSucceed.some((succeed) => !succeed.succeed))
         this.logger.error({
-          at: "MultiCallerClient",
+          at: "MultiCaller",
           message: "Some transaction in the queue are reverting!",
           revertingTransactions: transactionsSucceed
             .filter((transaction) => !transaction.succeed)
             .map((transaction) => {
               return {
-                target: transaction.transaction.contract.address,
+                target: getTarget(transaction.transaction.contract.address),
                 reason: transaction.reason,
                 message: transaction.transaction.message,
                 mrkdwn: transaction.transaction.mrkdwn,
@@ -58,7 +58,7 @@ export class MultiCallerClient {
         .map((transaction) => transaction.transaction);
 
       if (validTransactions.length == 0) {
-        this.logger.debug({ at: "MultiCallerClient", message: "No valid transactions in the queue" });
+        this.logger.debug({ at: "MultiCaller", message: "No valid transactions in the queue" });
         return;
       }
 
@@ -71,7 +71,7 @@ export class MultiCallerClient {
       }
 
       this.logger.debug({
-        at: "MultiCallerClient",
+        at: "MultiCaller",
         message: "Executing transactions grouped by target chain",
         txs: Object.keys(groupedTransactions).map((chainId) => ({ chainId, num: groupedTransactions[chainId].length })),
       });
@@ -80,9 +80,14 @@ export class MultiCallerClient {
       const multiCallTransactionsResult = await Promise.allSettled(
         Object.keys(groupedTransactions).map((chainId) => this.buildMultiCallBundle(groupedTransactions[chainId]))
       );
-
+      this.logger.debug({ at: "MultiCaller", message: "Waiting for bundle transaction inclusion" });
       const transactionReceipts = await Promise.allSettled(
-        multiCallTransactionsResult.map((transaction) => (transaction ? (transaction as any).value.wait() : null))
+        multiCallTransactionsResult.map((transaction) =>
+          Promise.race([
+            rejectAfterDelay(this.maxTxWaitDuration), // limit the maximum time to wait for a transaction receipt to mine.
+            transaction ? (transaction as any)?.value?.wait() : null,
+          ])
+        )
       );
 
       // Each element in the bundle of receipts relates back to each set within the groupedTransactions. Produce log.
@@ -90,19 +95,26 @@ export class MultiCallerClient {
       const transactionHashes = [];
       Object.keys(groupedTransactions).forEach((chainId, chainIndex) => {
         mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
-        groupedTransactions[chainId].forEach((transaction, groupTxIndex) => {
-          mrkdwn +=
-            `  ${groupTxIndex + 1}. ${transaction.message || "0 message"}: ` + `${transaction.mrkdwn || "0 mrkdwn"}\n`;
-        });
-        const transactionHash = (transactionReceipts[chainIndex] as any).value.transactionHash;
-        mrkdwn += "\ntx " + etherscanLink(transactionHash, chainId);
-        transactionHashes.push(transactionHash);
+        if ((transactionReceipts[chainIndex] as any).status == "rejected") {
+          mrkdwn += ` ⚠️ Transactions sent on ${getNetworkName(chainId)} failed to execute due to exceeding timeout.\n`;
+        } else {
+          groupedTransactions[chainId].forEach((transaction, groupTxIndex) => {
+            mrkdwn += `  ${groupTxIndex + 1}. ${transaction.message || ""}: ` + `${transaction.mrkdwn || ""}\n`;
+          });
+          const transactionHash = (transactionReceipts[chainIndex] as any).value.transactionHash;
+          mrkdwn += "tx: " + etherscanLink(transactionHash, chainId) + "\n";
+          transactionHashes.push(transactionHash);
+        }
       });
-      this.logger.info({ at: "MultiCallerClient", message: "Multicall batch sent! 🧙‍♂️", mrkdwn });
+      this.logger.info({ at: "MultiCaller", message: "Multicall batch sent! 🧙‍♂️", mrkdwn });
       this.clearTransactionQueue();
       return transactionHashes;
     } catch (error) {
-      this.logger.error({ at: "MultiCallerClient", message: "Error executing tx bundle", error });
+      this.logger.error({
+        at: "MultiCaller",
+        message: "Error executing tx bundle. There might be an RPC error on of the chains",
+        error,
+      });
     }
   }
 
@@ -111,7 +123,7 @@ export class MultiCallerClient {
     const target = transactions[0].contract;
     if (transactions.every((tx) => tx.contract.address != target.address)) {
       this.logger.error({
-        at: "MultiCallerClient",
+        at: "MultiCaller",
         message: "some transactions in the bundle contain different targets",
         transactions: transactions.map(({ contract, chainId }) => {
           return { targetAddress: contract.address, chainId };
@@ -120,7 +132,7 @@ export class MultiCallerClient {
       return null; // If there is a problem in the targets in the bundle return null. This will be a noop.
     }
     const multiCallData = transactions.map((tx) => tx.contract.interface.encodeFunctionData(tx.method, tx.args));
-    this.logger.debug({ at: "MultiCallerClient", message: "Produced bundle", target: target.address, multiCallData });
+    this.logger.debug({ at: "MultiCaller", message: "Made bundle", target: getTarget(target.address), multiCallData });
     return runTransaction(this.logger, target, "multicall", [multiCallData]);
   }
 }

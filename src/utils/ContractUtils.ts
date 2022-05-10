@@ -1,6 +1,5 @@
-import { getNetworkName, Contract, Wallet } from ".";
+import { getNetworkName, Contract, Wallet, getDeployedAddress, getDeployedBlockNumber } from ".";
 
-import { getDeployedAddress, getDeployedBlockNumber } from "@across-protocol/contracts-v2";
 import * as typechain from "@across-protocol/contracts-v2"; //TODO: refactor once we've fixed export from contract repo
 
 // Return an ethers contract instance for a deployed contract, imported from the Across-protocol contracts repo.
