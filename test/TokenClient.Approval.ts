@@ -1,4 +1,4 @@
-import { deploySpokePoolWithToken, expect, ethers, Contract, MAX_SAFE_ALLOWANCE, SignerWithAddress } from "./utils";
+import { deploySpokePoolWithToken, expect, ethers, Contract, SignerWithAddress, MAX_UINT_VAL } from "./utils";
 import { createSpyLogger, winston, originChainId, destinationChainId, lastSpyLogIncludes } from "./utils";
 import { deployAndConfigureHubPool, zeroAddress, getContractFactory, utf8ToHex, toBNWei } from "./utils";
 import { TokenClient, SpokePoolClient, HubPoolClient } from "../src/clients";
@@ -57,16 +57,16 @@ describe("TokenClient: Origin token approval", async function () {
 
     // Approvals should be set correctly. Note that erc20_1 is checked to be approved on spokePool_2 and erc20_2 is
     // checked on spokePool_1 as this is the associated token route.
-    expect(await erc20_1.allowance(owner.address, spokePool_2.address)).to.equal(MAX_SAFE_ALLOWANCE);
-    expect(await erc20_2.allowance(owner.address, spokePool_1.address)).to.equal(MAX_SAFE_ALLOWANCE);
-    expect(await weth_1.allowance(owner.address, spokePool_2.address)).to.equal(MAX_SAFE_ALLOWANCE);
-    expect(await weth_2.allowance(owner.address, spokePool_1.address)).to.equal(MAX_SAFE_ALLOWANCE);
+    expect(await erc20_1.allowance(owner.address, spokePool_2.address)).to.equal(MAX_UINT_VAL);
+    expect(await erc20_2.allowance(owner.address, spokePool_1.address)).to.equal(MAX_UINT_VAL);
+    expect(await weth_1.allowance(owner.address, spokePool_2.address)).to.equal(MAX_UINT_VAL);
+    expect(await weth_2.allowance(owner.address, spokePool_1.address)).to.equal(MAX_UINT_VAL);
   });
   it("Executes expected L1 token approvals", async function () {
     await updateAllClients();
 
     await tokenClient.setBondTokenAllowance();
-    expect(await l1Token_1.allowance(owner.address, hubPool.address)).to.equal(MAX_SAFE_ALLOWANCE);
+    expect(await l1Token_1.allowance(owner.address, hubPool.address)).to.equal(MAX_UINT_VAL);
   });
 });
 

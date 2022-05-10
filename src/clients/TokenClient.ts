@@ -115,7 +115,7 @@ export class TokenClient {
       mrkdwn +=
         ` - Approved SpokePool ${etherscanLink(targetSpokePool.address, chainId)} ` +
         `to spend ${await contract.symbol()} ${etherscanLink(token, chainId)} on ${getNetworkName(chainId)}. ` +
-        `tx ${etherscanLink(receipt.transactionHash, chainId)}\n`;
+        `tx: ${etherscanLink(receipt.transactionHash, chainId)}\n`;
     }
     this.logger.info({ at: "tokenClient", message: `Approved whitelisted tokens! 💰`, mrkdwn });
   }

@@ -17,8 +17,9 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
 
   // Create clients for each contract for each chain.
   const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
-  const spokePools = config.spokePoolChains.map((networkId, index) => {
-    return { networkId, contract: getDeployedContract("SpokePool", networkId, spokePoolSigners[index]) };
+
+  const spokePools = config.spokePoolChains.map((networkId) => {
+    return { networkId, contract: getDeployedContract("SpokePool", networkId, spokePoolSigners[networkId]) };
   });
   const spokePoolClients = {};
   spokePools.forEach((obj: { networkId: number; contract: Contract }) => {
