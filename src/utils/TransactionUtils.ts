@@ -9,7 +9,6 @@ export async function runTransaction(logger: winston.Logger, contract: Contract,
     logger.debug({ at: "TxUtil", message: "sending tx", target: getTarget(contract.address), method, args, gas });
     return await contract[method](...args, gas);
   } catch (error) {
-    console.log("error", error);
     this.logger.error({ at: "TransactionUtils", message: "Error executing tx", error });
     throw new Error(error.reason); // Extract the reason from the transaction error and throw it.
   }
