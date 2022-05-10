@@ -46,7 +46,6 @@ export class Dataworker {
     allValidFills: FillWithBlock[];
     deposits: DepositWithBlock[];
   } {
-    // TODO: Test `blockRangesForChains`
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
     if (!this.clients.configStoreClient.isUpdated) throw new Error(`ConfigStoreClient not updated`);
     this.chainIdListForBundleEvaluationBlockNumbers.forEach((chainId) => {
@@ -250,8 +249,6 @@ export class Dataworker {
   buildSlowRelayRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
     this.logger.debug({ at: "Dataworker", message: `Building slow relay root`, blockRangesForChains });
 
-    // TODO: Test `blockRangesForChains`
-
     const { unfilledDeposits } = this._loadData(blockRangesForChains, spokePoolClients);
     const slowRelayLeaves: RelayData[] = unfilledDeposits.map(
       (deposit: UnfilledDeposit): RelayData => ({
@@ -284,8 +281,6 @@ export class Dataworker {
   buildRelayerRefundRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
     this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForChains });
     const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForChains, 1)[1];
-
-    // TODO: Test `blockRangesForChains`
 
     const { fillsToRefund } = this._loadData(blockRangesForChains, spokePoolClients);
 
@@ -398,8 +393,6 @@ export class Dataworker {
 
   buildPoolRebalanceRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
     this.logger.debug({ at: "Dataworker", message: `Building pool rebalance root`, blockRangesForChains });
-
-    // TODO: Test `blockRangesForChains`
 
     const { fillsToRefund, deposits, allValidFills } = this._loadData(blockRangesForChains, spokePoolClients);
 
@@ -699,7 +692,6 @@ export class Dataworker {
     }
 
     // 3. Check if a bundle is pending.
-    // TODO: Move the `rootBundleProposal` call to the HubPool client?
     if (this.clients.hubPoolClient.hasPendingProposal()) {
       this.logger.debug({
         at: "Dataworker",
