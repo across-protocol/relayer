@@ -50,7 +50,6 @@ export class AcrossConfigStoreClient {
       quoteBlock = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
       rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
     } catch (error) {
-      console.log(error);
       if ((await this.hubPoolClient.hubPool.provider.getNetwork()).chainId === 1)
         throw new Error("Bad rate model store deployment");
 
