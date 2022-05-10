@@ -1,6 +1,6 @@
 import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 import { TokenRolesEnum } from "@uma/common";
-export { MAX_SAFE_ALLOWANCE } from "@uma/common";
+export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "@uma/common";
 import { SpyTransport } from "@uma/financial-templates-lib";
 import {
   DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,

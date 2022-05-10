@@ -58,18 +58,7 @@ export class AcrossConfigStoreClient {
     }
 
     const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, quoteBlock, deposit.amount);
-
     const realizedLpFeePct = lpFeeCalculator.calculateRealizedLpFeePct(rateModel, current, post);
-
-    this.logger.debug({
-      at: "RateModelClient",
-      message: "Computed realizedLPFeePct",
-      depositId: deposit.depositId,
-      originChainId: deposit.originChainId,
-      quoteBlock,
-      rateModel,
-      realizedLpFeePct,
-    });
 
     return { realizedLpFeePct, quoteBlock };
   }

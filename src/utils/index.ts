@@ -25,7 +25,7 @@ export * from "./AddressUtils";
 export * from "./FillMathUtils";
 export * from "./GckmsUtils";
 
-export { ZERO_ADDRESS, MAX_SAFE_ALLOWANCE } from "@uma/common";
+export { ZERO_ADDRESS, MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "@uma/common";
 
 // TypeChain exports used in the bot.
 export {
@@ -34,3 +34,5 @@ export {
   SpokePool__factory as SpokePool,
   AcrossConfigStore__factory as AcrossConfigStore,
 } from "@across-protocol/contracts-v2";
+
+export { getDeployedAddress, getDeployedBlockNumber, getContractInfoFromAddress } from "@across-protocol/contracts-v2";
