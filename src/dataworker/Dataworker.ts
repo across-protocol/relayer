@@ -5,7 +5,6 @@ import { shortenHexStrings } from "../utils";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, DepositWithBlock } from "../interfaces";
 import { Fill, FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
 import { RunningBalances } from "../interfaces";
-import { EMPTY_MERKLE_ROOT } from "../common";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
 
@@ -274,7 +273,7 @@ export class Dataworker {
 
     return {
       leaves: sortedLeaves,
-      tree: sortedLeaves.length > 0 ? buildSlowRelayTree(sortedLeaves) : undefined,
+      tree: buildSlowRelayTree(sortedLeaves),
     };
   }
 
@@ -387,7 +386,7 @@ export class Dataworker {
 
     return {
       leaves: indexedLeaves,
-      tree: indexedLeaves.length > 0 ? buildRelayerRefundTree(indexedLeaves) : undefined,
+      tree: buildRelayerRefundTree(indexedLeaves),
     };
   }
 
@@ -580,7 +579,7 @@ export class Dataworker {
       runningBalances,
       realizedLpFees,
       leaves,
-      tree: leaves.length > 0 ? buildPoolRebalanceLeafTree(leaves) : undefined,
+      tree: buildPoolRebalanceLeafTree(leaves),
     };
   }
 
@@ -708,18 +707,18 @@ export class Dataworker {
       blockRangesForProposal,
       poolRebalanceLeavesCount: poolRebalanceRoot.leaves.length,
       poolRebalanceRoot: poolRebalanceRoot.tree.getHexRoot(),
-      relayerRefundRoot: relayerRefundRoot.tree ? relayerRefundRoot.tree.getHexRoot() : EMPTY_MERKLE_ROOT,
-      slowRelayRoot: slowRelayRoot.tree ? slowRelayRoot.tree.getHexRoot() : EMPTY_MERKLE_ROOT,
+      relayerRefundRoot: relayerRefundRoot.tree.getHexRoot(),
+      slowRelayRoot: slowRelayRoot.tree.getHexRoot(),
     });
     this._proposeRootBundle(
       hubPoolChainId,
       blockRangesForProposal,
       poolRebalanceRoot.leaves,
-      poolRebalanceRoot.tree.getHexRoot(), // Tree must not be undefined if leaf count is > 0
+      poolRebalanceRoot.tree.getHexRoot(),
       relayerRefundRoot.leaves,
-      relayerRefundRoot.tree ? relayerRefundRoot.tree.getHexRoot() : EMPTY_MERKLE_ROOT,
+      relayerRefundRoot.tree.getHexRoot(),
       slowRelayRoot.leaves,
-      slowRelayRoot.tree ? slowRelayRoot.tree.getHexRoot() : EMPTY_MERKLE_ROOT
+      slowRelayRoot.tree.getHexRoot()
     );
   }
 

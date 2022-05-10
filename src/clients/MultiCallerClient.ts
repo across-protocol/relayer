@@ -1,4 +1,4 @@
-import { winston, getNetworkName, assign, Contract, runTransaction, getTarget, rejectAfterDelay } from "../utils";
+import { winston, getNetworkName, assign, Contract, runTransaction, rejectAfterDelay } from "../utils";
 import { willSucceed, etherscanLink } from "../utils";
 export interface AugmentedTransaction {
   contract: Contract;
@@ -51,7 +51,7 @@ export class MultiCallerClient {
             .filter((transaction) => !transaction.succeed)
             .map((transaction) => {
               return {
-                target: getTarget(transaction.transaction.contract.address),
+                target: transaction.transaction.contract.address,
                 reason: transaction.reason,
                 message: transaction.transaction.message,
                 mrkdwn: transaction.transaction.mrkdwn,
@@ -156,7 +156,7 @@ export class MultiCallerClient {
       return null; // If there is a problem in the targets in the bundle return null. This will be a noop.
     }
     const callData = transactions.map((tx) => tx.contract.interface.encodeFunctionData(tx.method, tx.args));
-    this.logger.debug({ at: "MultiCallerClient", message: "Made bundle", target: getTarget(target.address), callData });
+    this.logger.debug({ at: "MultiCallerClient", message: "Made bundle", target: target.address, callData });
     return runTransaction(this.logger, target, "multicall", [callData]);
   }
 }

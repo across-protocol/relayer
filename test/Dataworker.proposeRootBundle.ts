@@ -5,12 +5,10 @@ import { amountToDeposit, destinationChainId, originChainId } from "./constants"
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import { MAX_UINT_VAL } from "../src/utils";
+import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT } from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
-import Sinon from "sinon";
-import { EMPTY_MERKLE_ROOT } from "../src/common";
 
 let spy: sinon.SinonSpy;
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -50,7 +48,7 @@ describe("Dataworker: Propose root bundle", async function () {
   it("Simple lifecycle", async function () {
     await updateAllClients();
 
-    const getMostRecentLog = (_spy: Sinon.SinonSpy, message: string) => {
+    const getMostRecentLog = (_spy: sinon.SinonSpy, message: string) => {
       return spy
         .getCalls()
         .sort((logA: any, logB: any) => logB.callId - logA.callId) // Sort by callId in descending order

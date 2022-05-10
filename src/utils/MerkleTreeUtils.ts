@@ -1,6 +1,6 @@
 import { getParamType, utils } from ".";
 import { RelayData, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
-import { MerkleTree } from "@across-protocol/contracts-v2";
+import { MerkleTree, EMPTY_MERKLE_ROOT } from "@across-protocol/contracts-v2";
 
 export function buildSlowRelayTree(relays: RelayData[]) {
   const paramType = getParamType("MerkleLibTest", "verifySlowRelayFulfillment", "slowRelayFulfillment");
@@ -37,4 +37,4 @@ export function buildRelayerRefundTree(relayerRefundLeaves: RelayerRefundLeaf[])
   return new MerkleTree<RelayerRefundLeaf>(relayerRefundLeaves, hashFn);
 }
 
-export { MerkleTree, RelayerRefundLeaf, RelayerRefundLeafWithGroup };
+export { MerkleTree, RelayerRefundLeaf, RelayerRefundLeafWithGroup, EMPTY_MERKLE_ROOT };
