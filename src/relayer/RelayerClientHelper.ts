@@ -44,24 +44,12 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
   return { ...commonClients, tokenClient, profitClient, spokePoolClients };
 }
 
-// If this is the first run then the hubPoolClient will have no whitelisted routes. If this is the case then first
-// update the hubPoolClient and the rateModelClients followed by the spokePoolClients. Else, update all at once.
-export async function updateRelayerClients(logger: winston.Logger, clients: RelayerClients) {
-  if (Object.keys(clients.hubPoolClient.getL1TokensToDestinationTokens()).length === 0) {
-    await updateClients(clients);
-    // Profit and SpokePoolClient client requires up to date HubPoolClient and rateModelClient.
-    // Token client requires up to date spokePool clients to fetch token routes.
-    await Promise.all([clients.profitClient.update(), updateSpokePoolClients(clients.spokePoolClients)]);
-    await clients.tokenClient.update();
-  } else {
-    logger.debug({ at: "ClientHelper", message: "Updating clients for standard run" });
-    await Promise.all([
-      updateClients(clients),
-      updateSpokePoolClients(clients.spokePoolClients),
-      clients.tokenClient.update(),
-      clients.profitClient.update(),
-    ]);
-  }
+export async function updateRelayerClients(clients: RelayerClients) {
+  await updateClients(clients);
+  // Profit and SpokePoolClient client requires up to date HubPoolClient and rateModelClient.
+  // Token client requires up to date spokePool clients to fetch token routes.
+  await Promise.all([clients.profitClient.update(), updateSpokePoolClients(clients.spokePoolClients)]);
+  await clients.tokenClient.update();
 
   // Run approval check last as needs up to date route info. If no new then returns with no async calls.
   await clients.tokenClient.setOriginTokenApprovals();

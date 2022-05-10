@@ -30,7 +30,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
     logger.debug({ at: "Dataworker#index", message: "Components initialized. Starting execution loop" });
 
     for (;;) {
-      await updateDataworkerClients(logger, clients);
+      await updateDataworkerClients(clients);
 
       await dataworker.proposeRootBundle();
 

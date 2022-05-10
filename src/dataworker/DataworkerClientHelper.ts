@@ -36,17 +36,11 @@ export async function constructDataworkerClients(
   return { ...commonClients, tokenClient, spokePoolSigners, spokePoolClientSearchSettings };
 }
 
-// If this is the first run then the hubPoolClient will have no whitelisted routes. If this is the case then first
-// update the hubPoolClient and the rateModelClients followed by the spokePoolClients. Else, update all at once.
-export async function updateDataworkerClients(logger: winston.Logger, clients: DataworkerClients) {
-  if (Object.keys(clients.hubPoolClient.getL1TokensToDestinationTokens()).length === 0) {
-    await updateClients(clients);
-    // Token client requires up to date spokePool clients to fetch token routes.
-    await clients.tokenClient.update();
-  } else {
-    logger.debug({ at: "ClientHelper", message: "Updating clients for standard run" });
-    await Promise.all([updateClients(clients), clients.tokenClient.update()]);
-  }
+export async function updateDataworkerClients(clients: DataworkerClients) {
+  await updateClients(clients);
+
+  // Token client needs updated hub pool client to pull bond token data.
+  await clients.tokenClient.update();
 
   // Run approval on hub pool.
   await clients.tokenClient.setBondTokenAllowance();
