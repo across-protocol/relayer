@@ -37,7 +37,7 @@ export async function willSucceed(
     await transaction.contract.callStatic[transaction.method](...transaction.args);
     return { transaction, succeed: true, reason: null };
   } catch (error) {
-    console.error(error)
+    console.error(error);
     return { transaction, succeed: false, reason: error.reason };
   }
 }

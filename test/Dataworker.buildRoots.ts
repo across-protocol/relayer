@@ -16,7 +16,13 @@ import { refundProposalLiveness, CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_
 import { DEFAULT_BLOCK_RANGE_FOR_CHAIN } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { Deposit, Fill, RunningBalances } from "../src/interfaces";
-import { getRealizedLpFeeForFills, getRefundForFills, getRefund, compareAddresses, EMPTY_MERKLE_ROOT } from "../src/utils";
+import {
+  getRealizedLpFeeForFills,
+  getRefundForFills,
+  getRefund,
+  compareAddresses,
+  EMPTY_MERKLE_ROOT,
+} from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
@@ -126,7 +132,9 @@ describe("Dataworker: Build merkle roots", async function () {
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit3, 1);
     await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit4, 1);
     await updateAllClients();
-    expect(dataworkerInstance.buildSlowRelayRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).leaves).to.deep.equal([]);
+    expect(dataworkerInstance.buildSlowRelayRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).leaves).to.deep.equal(
+      []
+    );
     expect(
       dataworkerInstance.buildSlowRelayRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).tree.getHexRoot()
     ).to.equal(EMPTY_MERKLE_ROOT);
@@ -134,8 +142,12 @@ describe("Dataworker: Build merkle roots", async function () {
   describe("Build relayer refund root", function () {
     it("amountToReturn is 0", async function () {
       await updateAllClients();
-      expect(dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).leaves).to.deep.equal([]);
-      expect(dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).tree.getHexRoot()).to.equal(EMPTY_MERKLE_ROOT);
+      expect(
+        dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).leaves
+      ).to.deep.equal([]);
+      expect(
+        dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).tree.getHexRoot()
+      ).to.equal(EMPTY_MERKLE_ROOT);
 
       // Submit deposits for multiple L2 tokens.
       const deposit1 = await buildDeposit(
@@ -410,8 +422,12 @@ describe("Dataworker: Build merkle roots", async function () {
       };
 
       await updateAllClients();
-      expect(dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).leaves).to.deep.equal([]);
-      expect(dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).tree.getHexRoot()).to.equal(EMPTY_MERKLE_ROOT);
+      expect(
+        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).leaves
+      ).to.deep.equal([]);
+      expect(
+        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).tree.getHexRoot()
+      ).to.equal(EMPTY_MERKLE_ROOT);
 
       // Submit deposits for multiple L2 tokens.
       const deposit1 = await buildDeposit(
