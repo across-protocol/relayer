@@ -121,7 +121,7 @@ export class SpokePoolClient {
 
   async update() {
     if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
-    
+
     this.latestBlockNumber = await this.spokePool.provider.getBlockNumber();
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
