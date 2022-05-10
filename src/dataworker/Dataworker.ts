@@ -9,10 +9,6 @@ import { EMPTY_MERKLE_ROOT } from "../common";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
 
-// TODO: Need to handle case where there are multiple spoke pools for a chain ID in a given block range, which would
-// happen if a spoke pool was upgraded. Probably need to make spokePoolClients also keyed by block number in addition
-// to chain ID.
-
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
 export class Dataworker {
@@ -20,8 +16,23 @@ export class Dataworker {
   constructor(
     readonly logger: winston.Logger,
     readonly clients: DataworkerClients,
-    readonly chainIdListForBundleEvaluationBlockNumbers: number[]
-  ) {}
+    readonly chainIdListForBundleEvaluationBlockNumbers: number[],
+    readonly maxRefundCountOverride: number = undefined,
+    readonly maxL1TokenCountOverride: number = undefined,
+    readonly tokenTransferThreshold: { [l1TokenAddress: string]: BigNumber } = {}
+  ) {
+    if (
+      maxRefundCountOverride !== undefined ||
+      maxL1TokenCountOverride !== undefined ||
+      Object.keys(tokenTransferThreshold).length > 0
+    )
+      this.logger.debug({
+        at: "Dataworker constructed with overridden config store settings",
+        maxRefundCountOverride: this.maxRefundCountOverride,
+        maxL1TokenCountOverride: this.maxL1TokenCountOverride,
+        tokenTransferThreshold: this.tokenTransferThreshold,
+      });
+  }
 
   // Common data re-formatting logic shared across all data worker public functions.
   // User must pass in spoke pool to search event data against. This allows the user to refund relays and fill deposits
@@ -220,8 +231,6 @@ export class Dataworker {
     // TODO: Test `blockRangesForChains`
 
     const { unfilledDeposits } = this._loadData(blockRangesForChains, spokePoolClients);
-    // TODO: Use `bundleBlockNumbers` to decide how to filter which blocks to keep in `unfilledDeposits`.
-
     const slowRelayLeaves: RelayData[] = unfilledDeposits.map(
       (deposit: UnfilledDeposit): RelayData => ({
         depositor: deposit.deposit.depositor,
@@ -248,11 +257,6 @@ export class Dataworker {
       leaves: sortedLeaves,
       tree: sortedLeaves.length > 0 ? buildSlowRelayTree(sortedLeaves) : undefined,
     };
-  }
-
-  async publishRoots(blockRangesForChains: number[][]) {
-    // TODO: Store root to be consumed by manual leaf executors and verifiers. Can also be used to track lifecyle
-    // of roots.
   }
 
   buildRelayerRefundRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
@@ -292,8 +296,9 @@ export class Dataworker {
           l2TokenAddress,
           poolRebalanceRoot.runningBalances
         );
-        const maxRefundCount =
-          this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
+        const maxRefundCount = this.maxRefundCountOverride
+          ? this.maxRefundCountOverride
+          : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
         for (let i = 0; i < sortedRefundAddresses.length; i += maxRefundCount)
           relayerRefundLeaves.push({
             groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
@@ -528,8 +533,9 @@ export class Dataworker {
         let groupIndexForChainId = 0;
 
         // Split addresses into multiple leaves if there are more L1 tokens than allowed per leaf.
-        const maxRefundCount =
-          this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
+        const maxRefundCount = this.maxRefundCountOverride
+          ? this.maxRefundCountOverride
+          : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
         for (let i = 0; i < sortedL1Tokens.length; i += maxRefundCount) {
           const l1TokensToIncludeInThisLeaf = sortedL1Tokens.slice(i, i + maxRefundCount);
 
@@ -556,8 +562,7 @@ export class Dataworker {
       });
 
     return {
-      runningBalances, // TODO: Remove runningBalances and realizedLpFees which are used to make testing more convenient
-      // but shouldn't be used by this bot.
+      runningBalances,
       realizedLpFees,
       leaves,
       tree: leaves.length > 0 ? buildPoolRebalanceLeafTree(leaves) : undefined,
@@ -567,6 +572,8 @@ export class Dataworker {
   async proposeRootBundle() {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
+    // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
+    // safe strategy but could lead to new roots failing to be proposed until ALL networks are healthy.
 
     // 1. Construct a list of ending block ranges for each chain that we want to include
     // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
@@ -625,7 +632,6 @@ export class Dataworker {
     );
     await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update()));
 
-    // TODO:
     // 2. Create roots
     const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForProposal, spokePoolClients);
     poolRebalanceRoot.leaves.forEach((leaf: PoolRebalanceLeaf, index) => {
@@ -885,19 +891,17 @@ export class Dataworker {
   // 0, indicating that we do not want the data worker to trigger a token transfer between hub pool and spoke
   // pool when executing this leaf.
   _getNetSendAmountForL1Token(runningBalance: BigNumber, l1Token: string, mainnetBlock: number): BigNumber {
-    return runningBalance
-      .abs()
-      .gte(this.clients.configStoreClient.getTokenTransferThresholdForBlock(l1Token, mainnetBlock))
-      ? runningBalance
-      : toBN(0);
+    const transferThreshold = this.tokenTransferThreshold[l1Token]
+      ? this.tokenTransferThreshold[l1Token]
+      : this.clients.configStoreClient.getTokenTransferThresholdForBlock(l1Token, mainnetBlock);
+    return runningBalance.abs().gte(transferThreshold) ? runningBalance : toBN(0);
   }
 
   _getRunningBalanceForL1Token(runningBalance: BigNumber, l1Token: string, mainnetBlock: number): BigNumber {
-    return runningBalance
-      .abs()
-      .lt(this.clients.configStoreClient.getTokenTransferThresholdForBlock(l1Token, mainnetBlock))
-      ? runningBalance
-      : toBN(0);
+    const transferThreshold = this.tokenTransferThreshold[l1Token]
+      ? this.tokenTransferThreshold[l1Token]
+      : this.clients.configStoreClient.getTokenTransferThresholdForBlock(l1Token, mainnetBlock);
+    return runningBalance.abs().lt(transferThreshold) ? runningBalance : toBN(0);
   }
 
   _updateRunningBalance(runningBalances: RunningBalances, l2ChainId: number, l1Token: string, updateAmount: BigNumber) {

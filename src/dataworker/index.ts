@@ -18,7 +18,14 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
 
     const clients = await constructDataworkerClients(logger, config);
 
-    const dataworker = new Dataworker(logger, clients, Constants.CHAIN_ID_LIST_INDICES);
+    const dataworker = new Dataworker(
+      logger,
+      clients,
+      Constants.CHAIN_ID_LIST_INDICES,
+      config.maxRelayerRepaymentLeafSizeOverride,
+      config.maxPoolRebalanceLeafSizeOverride,
+      config.tokenTransferThresholdOverride
+    );
 
     logger.debug({ at: "Dataworker#index", message: "Components initialized. Starting execution loop" });
 
