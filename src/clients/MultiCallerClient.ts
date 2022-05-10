@@ -30,7 +30,7 @@ export class MultiCallerClient {
   async executeTransactionQueue() {
     try {
       if (this.transactions.length === 0) return;
-      this.logger.debug({ at: "MultiCaller", message: "Executing tx bundle", number: this.transactions.length });
+      this.logger.debug({ at: "MultiCallerClient", message: "Executing tx bundle", number: this.transactions.length });
 
       // Simulate the transaction execution for the whole queue.
       const transactionsSucceed = await Promise.all(
@@ -40,7 +40,7 @@ export class MultiCallerClient {
       // If any transactions will revert then log the reason and remove them from the transaction queue.
       if (transactionsSucceed.some((succeed) => !succeed.succeed))
         this.logger.error({
-          at: "MultiCaller",
+          at: "MultiCallerClient",
           message: "Some transaction in the queue are reverting!",
           revertingTransactions: transactionsSucceed
             .filter((transaction) => !transaction.succeed)
@@ -58,7 +58,7 @@ export class MultiCallerClient {
         .map((transaction) => transaction.transaction);
 
       if (validTransactions.length == 0) {
-        this.logger.debug({ at: "MultiCaller", message: "No valid transactions in the queue" });
+        this.logger.debug({ at: "MultiCallerClient", message: "No valid transactions in the queue" });
         return;
       }
 
@@ -71,7 +71,7 @@ export class MultiCallerClient {
       }
 
       this.logger.debug({
-        at: "MultiCaller",
+        at: "MultiCallerClient",
         message: "Executing transactions grouped by target chain",
         txs: Object.keys(groupedTransactions).map((chainId) => ({ chainId, num: groupedTransactions[chainId].length })),
       });
@@ -80,7 +80,7 @@ export class MultiCallerClient {
       const multiCallTransactionsResult = await Promise.allSettled(
         Object.keys(groupedTransactions).map((chainId) => this.buildMultiCallBundle(groupedTransactions[chainId]))
       );
-      this.logger.debug({ at: "MultiCaller", message: "Waiting for bundle transaction inclusion" });
+      this.logger.debug({ at: "MultiCallerClient", message: "Waiting for bundle transaction inclusion" });
       const transactionReceipts = await Promise.allSettled(
         multiCallTransactionsResult.map((transaction) =>
           Promise.race([
@@ -106,12 +106,12 @@ export class MultiCallerClient {
           transactionHashes.push(transactionHash);
         }
       });
-      this.logger.info({ at: "MultiCaller", message: "Multicall batch sent! 🧙‍♂️", mrkdwn });
+      this.logger.info({ at: "MultiCallerClient", message: "Multicall batch sent! 🧙‍♂️", mrkdwn });
       this.clearTransactionQueue();
       return transactionHashes;
     } catch (error) {
       this.logger.error({
-        at: "MultiCaller",
+        at: "MultiCallerClient",
         message: "Error executing tx bundle. There might be an RPC error on of the chains",
         error,
       });
@@ -123,7 +123,7 @@ export class MultiCallerClient {
     const target = transactions[0].contract;
     if (transactions.every((tx) => tx.contract.address != target.address)) {
       this.logger.error({
-        at: "MultiCaller",
+        at: "MultiCallerClient",
         message: "some transactions in the bundle contain different targets",
         transactions: transactions.map(({ contract, chainId }) => {
           return { targetAddress: contract.address, chainId };
@@ -131,8 +131,8 @@ export class MultiCallerClient {
       });
       return null; // If there is a problem in the targets in the bundle return null. This will be a noop.
     }
-    const multiCallData = transactions.map((tx) => tx.contract.interface.encodeFunctionData(tx.method, tx.args));
-    this.logger.debug({ at: "MultiCaller", message: "Made bundle", target: getTarget(target.address), multiCallData });
-    return runTransaction(this.logger, target, "multicall", [multiCallData]);
+    const callData = transactions.map((tx) => tx.contract.interface.encodeFunctionData(tx.method, tx.args));
+    this.logger.debug({ at: "MultiCallerClient", message: "Made bundle", target: getTarget(target.address), callData });
+    return runTransaction(this.logger, target, "multicall", [callData]);
   }
 }
