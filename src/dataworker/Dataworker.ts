@@ -689,9 +689,7 @@ export class Dataworker {
 
     // 3. Check if a bundle is pending.
     // TODO: Move the `rootBundleProposal` call to the HubPool client?
-    const hasPendingProposal =
-      (await this.clients.hubPoolClient.hubPool.rootBundleProposal()).unclaimedPoolRebalanceLeafCount !== 0;
-    if (hasPendingProposal) {
+    if (this.clients.hubPoolClient.hasPendingProposal()) {
       this.logger.debug({
         at: "Dataworker",
         message: "Has pending proposal, cannot propose",

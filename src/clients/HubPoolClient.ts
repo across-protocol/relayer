@@ -1,7 +1,6 @@
 import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, EventSearchConfig, toBN } from "../utils";
 import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery } from "../utils";
-import { MAX_SAFE_ALLOWANCE, runTransaction, etherscanLink } from "../utils";
-import { Deposit, L1Token, ProposedRootBundle, ExecutedRootBundle } from "../interfaces";
+import { Deposit, L1Token, ProposedRootBundle, ExecutedRootBundle, RootBundle } from "../interfaces";
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
 
 export class HubPoolClient {
@@ -14,6 +13,7 @@ export class HubPoolClient {
   private l1TokensToDestinationTokensWithBlock: {
     [l1Token: string]: { [destinationChainId: number]: DestinationTokenWithBlock[] };
   } = {};
+  private pendingRootBundle: RootBundle;
 
   public isUpdated: boolean = false;
   public firstBlockToSearch: number;
@@ -25,6 +25,14 @@ export class HubPoolClient {
     readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
+  }
+
+  getPendingRootBundleProposal() {
+    return this.pendingRootBundle;
+  }
+
+  hasPendingProposal() {
+    return this.pendingRootBundle !== undefined && this.pendingRootBundle.unclaimedPoolRebalanceLeafCount > 0;
   }
 
   getSpokePoolForBlock(block: number, chain: number): string {
@@ -195,13 +203,25 @@ export class HubPoolClient {
       proposeRootBundleEvents,
       executedRootBundleEvents,
       crossChainContractsSetEvents,
+      pendingRootBundleProposal,
     ] = await Promise.all([
       paginatedEventQuery(this.hubPool, this.hubPool.filters.SetPoolRebalanceRoute(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.ProposeRootBundle(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.RootBundleExecuted(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.CrossChainContractsSet(), searchConfig),
+      this.hubPool.rootBundleProposal(),
     ]);
+
+    this.pendingRootBundle = {
+      poolRebalanceRoot: pendingRootBundleProposal.poolRebalanceRoot,
+      relayerRefundRoot: pendingRootBundleProposal.relayerRefundRoot,
+      slowRelayRoot: pendingRootBundleProposal.slowRelayRoot,
+      claimedBitMap: pendingRootBundleProposal.claimedBitMap,
+      proposer: pendingRootBundleProposal.proposer,
+      unclaimedPoolRebalanceLeafCount: pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount,
+      challengePeriodEndTimestamp: pendingRootBundleProposal.challengePeriodEndTimestamp,
+    };
 
     for (const event of crossChainContractsSetEvents) {
       const args = spreadEventWithBlockNumber(event) as CrossChainContractsSet;
