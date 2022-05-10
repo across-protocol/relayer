@@ -15,6 +15,6 @@ export const rejectAfterDelay = (seconds: number, message: string = "") =>
   new Promise((_, reject) => {
     setTimeout(reject, seconds * 1000, {
       status: "timeout",
-      message: `Execution took longer than ${seconds} seconds${message}`,
+      message: `Execution took longer than ${seconds}s ${message}`,
     });
   });
