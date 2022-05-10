@@ -1,5 +1,5 @@
 import { BigNumber, winston, assign, ERC20, Contract, toBN, MAX_SAFE_ALLOWANCE } from "../utils";
-import { runTransaction, getNetworkName, etherscanLink } from "../utils";
+import { runTransaction, getNetworkName, etherscanLink, MAX_UINT_VAL } from "../utils";
 import { HubPoolClient, SpokePoolClient } from ".";
 import { Deposit } from "../interfaces";
 
@@ -110,7 +110,7 @@ export class TokenClient {
     for (const { token, chainId } of tokensToApprove) {
       const targetSpokePool = this.spokePoolClients[chainId].spokePool;
       const contract = new Contract(token, ERC20.abi, targetSpokePool.signer);
-      const tx = await runTransaction(this.logger, contract, "approve", [targetSpokePool.address, MAX_SAFE_ALLOWANCE]);
+      const tx = await runTransaction(this.logger, contract, "approve", [targetSpokePool.address, MAX_UINT_VAL]);
       const receipt = await tx.wait();
       mrkdwn +=
         ` - Approved SpokePool ${etherscanLink(targetSpokePool.address, chainId)} ` +
@@ -129,7 +129,7 @@ export class TokenClient {
     if (currentCollateralAllowance.lt(toBN(MAX_SAFE_ALLOWANCE))) {
       const tx = await runTransaction(this.logger, this.bondToken, "approve", [
         this.hubPoolClient.hubPool.address,
-        MAX_SAFE_ALLOWANCE,
+        MAX_UINT_VAL,
       ]);
       const receipt = await tx.wait();
       const mrkdwn =
