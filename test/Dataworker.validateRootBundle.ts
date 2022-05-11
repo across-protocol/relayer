@@ -54,7 +54,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
         .sort((logA: any, logB: any) => logB.callId - logA.callId) // Sort by callId in descending order
         .find((log: any) => log.lastArg.message.includes(message)).lastArg;
     };
-    
+
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
       configStoreClient,
@@ -81,18 +81,16 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await multiCallerClient.executeTransactionQueue();
 
     // - Exit early if no pending bundle
-    await dataworkerInstance.validateRootBundle()
+    await dataworkerInstance.validateRootBundle();
     expect(lastSpyLogIncludes(spy, "No pending proposal, nothing to validate")).to.be.true;
 
     // - Exit early if pending bundle but challenge period has passed
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.validateRootBundle()
+    await dataworkerInstance.validateRootBundle();
     expect(lastSpyLogIncludes(spy, "Challenge period passed, cannot dispute")).to.be.true;
 
     // - Constructs same roots as proposed root bundle
     // - Execute or cancel previous bundle. Submit invalid one. Disputes invalid root bundle
-
-
   });
 });
