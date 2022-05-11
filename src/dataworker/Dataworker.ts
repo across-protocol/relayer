@@ -85,13 +85,13 @@ export class Dataworker {
         // We can safely filter `deposits` by the bundle block range because its only used to decrement running
         // balances in the pool rebalance root. This array is NOT used when matching fills with deposits. For that,
         // we use the wider event search config of the origin client.
-        const mainnetBlockRange = this._getBlockRangeForChain(blockRangesForChains, 1);
+        const depositChainBlockRange = this._getBlockRangeForChain(blockRangesForChains, Number(originChainId));
         const newDeposits: DepositWithBlock[] = originClient
           .getDepositsForDestinationChain(destinationChainId, true)
           .filter(
             (deposit) =>
-              deposit.blockNumber <= mainnetBlockRange[1] &&
-              deposit.blockNumber >= mainnetBlockRange[0] &&
+              deposit.blockNumber <= depositChainBlockRange[1] &&
+              deposit.blockNumber >= depositChainBlockRange[0] &&
               !deposits.some(
                 (existingDeposit) =>
                   existingDeposit.originChainId === deposit.originChainId &&
