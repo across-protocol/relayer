@@ -547,11 +547,11 @@ export class Dataworker {
         let groupIndexForChainId = 0;
 
         // Split addresses into multiple leaves if there are more L1 tokens than allowed per leaf.
-        const maxRefundCount = this.maxRefundCountOverride
-          ? this.maxRefundCountOverride
+        const maxL1TokensPerLeaf = this.maxL1TokenCountOverride
+          ? this.maxL1TokenCountOverride
           : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
-        for (let i = 0; i < sortedL1Tokens.length; i += maxRefundCount) {
-          const l1TokensToIncludeInThisLeaf = sortedL1Tokens.slice(i, i + maxRefundCount);
+        for (let i = 0; i < sortedL1Tokens.length; i += maxL1TokensPerLeaf) {
+          const l1TokensToIncludeInThisLeaf = sortedL1Tokens.slice(i, i + maxL1TokensPerLeaf);
 
           leaves.push({
             groupIndex: groupIndexForChainId++,
