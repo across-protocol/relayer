@@ -1,12 +1,11 @@
 import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolRebalanceLeaves } from "./utils";
-import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet, assertPromiseError } from "./utils";
+import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
 import { toBNWei, toWei, buildPoolRebalanceLeafTree, createSpyLogger } from "./utils";
 import { getContractFactory, hubPoolFixture, toBN, utf8ToHex } from "./utils";
 import { amountToLp, mockTreeRoot, refundProposalLiveness, totalBond } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
-import { HubPoolClient } from "../src/clients/HubPoolClient";
-import { AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../src/clients/RateModelClient";
+import { HubPoolClient, AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
 
 let spokePool: Contract, hubPool: Contract, l2Token: Contract;
 let configStore: Contract, l1Token: Contract, timer: Contract, weth: Contract;
