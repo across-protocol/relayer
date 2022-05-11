@@ -1,4 +1,4 @@
-import { processEndPollingLoop, winston, delay, getProvider, config, bootLogLevel } from "../utils";
+import { processEndPollingLoop, winston, delay, getProvider, config, startupLogLevel } from "../utils";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -10,7 +10,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
   logger = _logger;
   try {
     const config = new DataworkerConfig(process.env);
-    logger[bootLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker starting👩‍🔬", config });
+    logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker starting👩‍🔬", config });
 
     const clients = await constructDataworkerClients(logger, config);
 

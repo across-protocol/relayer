@@ -1,4 +1,4 @@
-import { winston, processEndPollingLoop, delay, config, bootLogLevel } from "../utils";
+import { winston, processEndPollingLoop, delay, config, startupLogLevel } from "../utils";
 import { Monitor } from "./Monitor";
 import { MonitorConfig } from "./MonitorConfig";
 import { constructMonitorClients } from "../clients/MonitorClientHelper";
@@ -9,7 +9,7 @@ export async function runMonitor(_logger: winston.Logger) {
   logger = _logger;
   try {
     const config = new MonitorConfig(process.env);
-    logger[bootLogLevel(config)]({ at: "AcrossMonitor#index", message: "AcrossMonitor started 🔭", config });
+    logger[startupLogLevel(config)]({ at: "AcrossMonitor#index", message: "AcrossMonitor started 🔭", config });
 
     const clients = constructMonitorClients(config, logger);
     const acrossMonitor = new Monitor(logger, config, clients);

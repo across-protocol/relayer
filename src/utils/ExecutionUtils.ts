@@ -12,7 +12,7 @@ export async function processEndPollingLoop(logger: winston.Logger, fileName: St
   return false;
 }
 
-export function bootLogLevel(config: { pollingDelay: number }) {
+export function startupLogLevel(config: { pollingDelay: number }) {
   return config.pollingDelay > 0 ? "info" : "debug";
 }
 

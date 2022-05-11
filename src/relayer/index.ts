@@ -1,4 +1,4 @@
-import { processEndPollingLoop, winston, delay, config, bootLogLevel } from "../utils";
+import { processEndPollingLoop, winston, delay, config, startupLogLevel } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
@@ -9,7 +9,7 @@ export async function runRelayer(_logger: winston.Logger): Promise<void> {
   logger = _logger;
   try {
     const config = new RelayerConfig(process.env);
-    logger[bootLogLevel(config)]({ at: "Relayer#index", message: "Relayer starting🏃‍♂️", config });
+    logger[startupLogLevel(config)]({ at: "Relayer#index", message: "Relayer starting🏃‍♂️", config });
 
     const relayerClients = await constructRelayerClients(logger, config);
 
