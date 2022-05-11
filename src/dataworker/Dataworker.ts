@@ -589,6 +589,16 @@ export class Dataworker {
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
     // safe strategy but could lead to new roots failing to be proposed until ALL networks are healthy.
 
+    // 0. Check if a bundle is pending.
+    if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
+    if (this.clients.hubPoolClient.hasPendingProposal()) {
+      this.logger.debug({
+        at: "Dataworker",
+        message: "Has pending proposal, cannot propose",
+      });
+      return;
+    }
+
     // 1. Construct a list of ending block ranges for each chain that we want to include
     // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
@@ -635,7 +645,7 @@ export class Dataworker {
     );
     await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update()));
 
-    // 2. Create roots
+    // 3. Create roots
     const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForProposal, spokePoolClients);
     poolRebalanceRoot.leaves.forEach((leaf: PoolRebalanceLeaf, index) => {
       const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
@@ -686,15 +696,6 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker",
         message: "No pool rebalance leaves, cannot propose",
-      });
-      return;
-    }
-
-    // 3. Check if a bundle is pending.
-    if (this.clients.hubPoolClient.hasPendingProposal()) {
-      this.logger.debug({
-        at: "Dataworker",
-        message: "Has pending proposal, cannot propose",
       });
       return;
     }
