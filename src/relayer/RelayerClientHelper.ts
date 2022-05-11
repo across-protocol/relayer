@@ -37,7 +37,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
   spokePools.forEach((obj: { networkId: number; contract: Contract }) => {
     const spokePoolDeploymentBlock = getDeploymentBlockNumber("SpokePool", obj.networkId);
     const spokePoolClientSearchSettings = {
-      fromBlock: fromBlocks[obj.networkId] != {} ? fromBlocks[obj.networkId] : spokePoolDeploymentBlock,
+      fromBlock: fromBlocks[obj.networkId] ?? spokePoolDeploymentBlock,
       toBlock: null,
       maxBlockLookBack: config.maxBlockLookBack[obj.networkId],
     };
