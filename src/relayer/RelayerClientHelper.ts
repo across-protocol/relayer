@@ -24,19 +24,20 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
 
   // If maxRelayerLookBack is set then offset the fromBlock to the latest block - the maxRelayerLookBack. Used in serverless mode.
   let fromBlocks = {};
-  if (config.maxRelayerLookBack) {
+  if (config.maxRelayerLookBack != {}) {
     const l2BlockNumbers = await Promise.all(
       spokePools.map((obj: { contract: Contract }) => obj.contract.provider.getBlockNumber())
     );
     spokePools.forEach((obj: { networkId: number; contract: Contract }, index) => {
-      fromBlocks[obj.networkId] = l2BlockNumbers[index] - config.maxRelayerLookBack;
+      if (config.maxRelayerLookBack[obj.networkId])
+        fromBlocks[obj.networkId] = l2BlockNumbers[index] - config.maxRelayerLookBack[obj.networkId];
     });
   }
 
   spokePools.forEach((obj: { networkId: number; contract: Contract }) => {
     const spokePoolDeploymentBlock = getDeploymentBlockNumber("SpokePool", obj.networkId);
     const spokePoolClientSearchSettings = {
-      fromBlock: fromBlocks != {} ? fromBlocks[obj.networkId] : spokePoolDeploymentBlock,
+      fromBlock: fromBlocks[obj.networkId] != {} ? fromBlocks[obj.networkId] : spokePoolDeploymentBlock,
       toBlock: null,
       maxBlockLookBack: config.maxBlockLookBack[obj.networkId],
     };
