@@ -73,4 +73,6 @@ export interface RootBundle {
   proposer: string;
   unclaimedPoolRebalanceLeafCount: number;
   challengePeriodEndTimestamp: number;
+  bundleEvaluationBlockNumbers: number[];
+  proposalBlockNumber: number;
 }

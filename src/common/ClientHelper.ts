@@ -30,7 +30,8 @@ export async function constructClients(logger: winston.Logger, config: CommonCon
 
   const hubPoolClientSearchSettings = {
     fromBlock: Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId)),
-    toBlock: null,
+    toBlock: null, // Important that we set this to `null` to always look up latest HubPool events such as
+    // ProposeRootBundle in order to match a bundle block evaluation block range with a pending root bundle.
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
   const hubPoolClient = new HubPoolClient(logger, hubPool, hubPoolClientSearchSettings);

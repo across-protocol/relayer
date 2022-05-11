@@ -616,24 +616,7 @@ export class Dataworker {
       message: `Constructing spoke pool clients for end mainnet block in bundle range`,
       endBlockForMainnet,
     });
-    const spokePoolClients = Object.fromEntries(
-      this.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
-        const spokePoolContract = new Contract(
-          this.clients.hubPoolClient.getSpokePoolForBlock(endBlockForMainnet, Number(chainId)),
-          SpokePool.abi,
-          this.clients.spokePoolSigners[chainId]
-        );
-        const client = new SpokePoolClient(
-          this.logger,
-          spokePoolContract,
-          this.clients.configStoreClient,
-          Number(chainId),
-          this.clients.spokePoolClientSearchSettings[chainId]
-        );
-        return [chainId, client];
-      })
-    );
-    await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update()));
+    const spokePoolClients = await this._constructSpokePoolClientsForBlockAndUpdate(endBlockForMainnet);
 
     // 2. Create roots
     const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForProposal, spokePoolClients);
@@ -701,7 +684,7 @@ export class Dataworker {
 
     // 4. Propose roots to HubPool contract.
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
-    this.logger.debug({
+    this.logger.info({
       at: "Dataworker",
       message: "Enqueing new root bundle proposal txn",
       blockRangesForProposal,
@@ -722,12 +705,65 @@ export class Dataworker {
     );
   }
 
-  async validateRootBundle(poolRebalanceRoot: string, relayerRefundRoot: string, slowRelayRoot: string) {
-    // Look at latest propose root bundle event earlier than a block number.
-    // Determine start block numbers for end block numbers emitted in ProposedRootBundle event using
-    // HubPoolClient.getNextBundleStartBlockNumber and passing in the mainnet block of the propose root bundle txn
-    // Construct roots locally using class functions and compare with the event we found earlier.
-    // If any roots mismatch, pinpoint the errors to give details to the caller.
+  async validateRootBundle() {
+    if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
+
+    // Exit early if a bundle is pending.
+    if (!this.clients.hubPoolClient.hasPendingProposal()) {
+      this.logger.debug({
+        at: "Dataworker",
+        message: "No pending proposal, nothing to validate",
+      });
+      return;
+    }
+
+    const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundleProposal();
+    this.logger.info({
+      at: "Dataworker",
+      message: "Validating pending proposal",
+      pendingRootBundle
+    });
+
+    // TODO: Exit early if challenge period timestamp has passed:
+
+    // Importantly, we use the block number at which the root bundle was proposed as the "latest mainnet block" in
+    // order to determine the start blocks. This means that the hub pool client will first look up the latest
+    // RootBundleExecuted event before this proposal root block in order to find the preceding ProposeRootBundle's
+    // end block.
+    const blockRangesImpliedByBundleEndBlocks = this.chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => [
+      this.clients.hubPoolClient.getNextBundleStartBlockNumber(
+          this.chainIdListForBundleEvaluationBlockNumbers,
+          pendingRootBundle.proposalBlockNumber,
+          chainId
+      ),
+      pendingRootBundle.bundleEvaluationBlockNumbers[index],
+    ]);
+
+    this.logger.info({
+      at: "Dataworker",
+      message: "Implied bundle ranges",
+      blockRangesImpliedByBundleEndBlocks,
+      chainIdListForBundleEvaluationBlockNumbers: this.chainIdListForBundleEvaluationBlockNumbers
+    });
+
+    // Construct spoke pool clients using spoke pools deployed at end of block range.
+    // We do make an assumption that the spoke pool contract was not changed during the block range. By using the
+    // spoke pool at this block instead of assuming its the currently deployed one, we can pay refunds for deposits
+    // on deprecated spoke pools.
+    const endBlockForMainnet = this._getBlockRangeForChain(blockRangesImpliedByBundleEndBlocks, 1)[1];
+    this.logger.debug({
+      at: "Dataworker",
+      message: `Constructing spoke pool clients for end mainnet block in bundle range`,
+      endBlockForMainnet,
+    });
+    const spokePoolClients = await this._constructSpokePoolClientsForBlockAndUpdate(endBlockForMainnet);
+
+    // Compare roots with expected. The roots will be different if the block range start blocks were different
+    // than the ones we constructed above when the original proposer submitted their proposal. The roots will also 
+    // be different if the events on any of the contracts were different.
+    const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesImpliedByBundleEndBlocks, spokePoolClients);
+    const relayerRefundRoot = this.buildRelayerRefundRoot(blockRangesImpliedByBundleEndBlocks, spokePoolClients);
+    const slowRelayRoot = this.buildSlowRelayRoot(blockRangesImpliedByBundleEndBlocks, spokePoolClients);
   }
 
   async executeSlowRelayLeaves() {
@@ -961,6 +997,30 @@ export class Dataworker {
       (fill: FillWithBlock) =>
         !fill.isSlowRelay && lastBlock >= fill.blockNumber && this._filledSameDeposit(fillToMatch, fill)
     ) as FillWithBlock;
+  }
+
+  async _constructSpokePoolClientsForBlockAndUpdate(
+    latestMainnetBlock: number
+  ): Promise<{ [chainId: number]: SpokePoolClient }> {
+    const spokePoolClients = Object.fromEntries(
+      this.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
+        const spokePoolContract = new Contract(
+          this.clients.hubPoolClient.getSpokePoolForBlock(latestMainnetBlock, Number(chainId)),
+          SpokePool.abi,
+          this.clients.spokePoolSigners[chainId]
+        );
+        const client = new SpokePoolClient(
+          this.logger,
+          spokePoolContract,
+          this.clients.configStoreClient,
+          Number(chainId),
+          this.clients.spokePoolClientSearchSettings[chainId]
+        );
+        return [chainId, client];
+      })
+    );
+    await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update()));
+    return spokePoolClients;
   }
 
   _getBlockRangeForChain(blockRange: number[][], chain: number): number[] {

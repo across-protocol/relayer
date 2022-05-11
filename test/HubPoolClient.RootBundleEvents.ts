@@ -44,9 +44,10 @@ describe("HubPoolClient: RootBundle Events", async function () {
 
     const liveness = Number(await hubPool.liveness());
     const proposeTime = Number(await hubPool.getCurrentTime());
-    await hubPool
+    const txn = await hubPool
       .connect(dataworker)
       .proposeRootBundle([11, 22], 2, tree.getHexRoot(), constants.mockTreeRoot, constants.mockTreeRoot);
+    const proposalBlockNumber = (await txn.wait()).blockNumber
 
     expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1, 2])).to.equal(undefined);
     await hubPoolClient.update();
@@ -59,6 +60,8 @@ describe("HubPoolClient: RootBundle Events", async function () {
       proposer: dataworker.address,
       unclaimedPoolRebalanceLeafCount: 2,
       challengePeriodEndTimestamp: proposeTime + liveness,
+      bundleEvaluationBlockNumbers: [11, 22],
+      proposalBlockNumber
     });
     expect(hubPoolClient.hasPendingProposal()).to.equal(true);
 

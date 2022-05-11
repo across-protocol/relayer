@@ -216,16 +216,6 @@ export class HubPoolClient {
       this.hubPool.rootBundleProposal(),
     ]);
 
-    this.pendingRootBundle = {
-      poolRebalanceRoot: pendingRootBundleProposal.poolRebalanceRoot,
-      relayerRefundRoot: pendingRootBundleProposal.relayerRefundRoot,
-      slowRelayRoot: pendingRootBundleProposal.slowRelayRoot,
-      claimedBitMap: pendingRootBundleProposal.claimedBitMap,
-      proposer: pendingRootBundleProposal.proposer,
-      unclaimedPoolRebalanceLeafCount: pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount,
-      challengePeriodEndTimestamp: pendingRootBundleProposal.challengePeriodEndTimestamp,
-    };
-
     for (const event of crossChainContractsSetEvents) {
       const args = spreadEventWithBlockNumber(event) as CrossChainContractsSet;
       assign(
@@ -272,6 +262,27 @@ export class HubPoolClient {
     this.executedRootBundles.push(
       ...executedRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as ExecutedRootBundle)
     );
+
+    if (pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount > 0) {
+      // We make a potentially dangerous assumption here that the most recent ProposeRootBundle event found in the 
+      // the above event search corresponds to the pending root bundle. This could NOT be the case if 
+      // `this.eventSearchConfig.toBlock !== undefined`, but in most cases this is true because we set the `toBlock`
+      // in the `eventSearchConfig` to `null` in `common/ClientHelper.ts`.
+      const mostRecentProposedRootBundle = sortEventsDescending(this.proposedRootBundles)[0];
+      this.pendingRootBundle = {
+        poolRebalanceRoot: pendingRootBundleProposal.poolRebalanceRoot,
+        relayerRefundRoot: pendingRootBundleProposal.relayerRefundRoot,
+        slowRelayRoot: pendingRootBundleProposal.slowRelayRoot,
+        claimedBitMap: pendingRootBundleProposal.claimedBitMap,
+        proposer: pendingRootBundleProposal.proposer,
+        unclaimedPoolRebalanceLeafCount: pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount,
+        challengePeriodEndTimestamp: pendingRootBundleProposal.challengePeriodEndTimestamp,
+        bundleEvaluationBlockNumbers: mostRecentProposedRootBundle.bundleEvaluationBlockNumbers.map(
+          (block: BigNumber) => block.toNumber()
+        ),
+        proposalBlockNumber: mostRecentProposedRootBundle.blockNumber,
+      };
+    }
 
     this.isUpdated = true;
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
