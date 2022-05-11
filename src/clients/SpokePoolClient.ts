@@ -154,7 +154,7 @@ export class SpokePoolClient {
       assign(
         this.depositsWithBlockNumbers,
         [deposit.destinationChainId],
-        [{ ...deposit, blockNumber: dataForQuoteTime[index].quoteBlock }]
+        [{ ...deposit, blockNumber: dataForQuoteTime[index].quoteBlock, originBlockNumber: event.blockNumber }]
       );
     }
 

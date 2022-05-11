@@ -341,12 +341,15 @@ describe("Dataworker: Load data used in all functions", async function () {
       originChainId,
       amountToDeposit
     );
+    const originBlock = await spokePool_2.provider.getBlockNumber();
     const realizedLpFeePctData = await configStoreClient.computeRealizedLpFeePct(deposit1, l1Token_1.address);
 
     // Should include all deposits, even those not matched by a relay
     await updateAllClients();
     const data1 = dataworkerInstance._loadData(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients);
-    expect(data1.deposits).to.deep.equal([{ ...deposit1, blockNumber: realizedLpFeePctData.quoteBlock }]);
+    expect(data1.deposits).to.deep.equal([
+      { ...deposit1, blockNumber: realizedLpFeePctData.quoteBlock, originBlockNumber: originBlock },
+    ]);
 
     // If block range does not cover deposits, then they are not included
     expect(dataworkerInstance._loadData(IMPOSSIBLE_BLOCK_RANGE, spokePoolClients).deposits).to.deep.equal([]);

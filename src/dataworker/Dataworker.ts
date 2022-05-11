@@ -90,8 +90,8 @@ export class Dataworker {
           .getDepositsForDestinationChain(destinationChainId, true)
           .filter(
             (deposit) =>
-              deposit.blockNumber <= depositChainBlockRange[1] &&
-              deposit.blockNumber >= depositChainBlockRange[0] &&
+              deposit.originBlockNumber <= depositChainBlockRange[1] &&
+              deposit.originBlockNumber >= depositChainBlockRange[0] &&
               !deposits.some(
                 (existingDeposit) =>
                   existingDeposit.originChainId === deposit.originChainId &&
