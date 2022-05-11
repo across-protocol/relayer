@@ -1,9 +1,9 @@
 import { expect, ethers, Contract, deployNewToken } from "./utils";
-import { SignerWithAddress, buildSlowRelayTree, buildFillForRepaymentChain, enableRoutesOnHubPool } from "./utils";
+import { SignerWithAddress, buildSlowRelayTree, enableRoutesOnHubPool } from "./utils";
 import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, buildSlowFill } from "./utils";
 import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient } from "../src/clients";
 import { amountToDeposit, repaymentChainId, destinationChainId, originChainId } from "./constants";
-import { DEFAULT_BLOCK_RANGE_FOR_CHAIN } from "./constants";
+import { DEFAULT_BLOCK_RANGE_FOR_CHAIN, IMPOSSIBLE_BLOCK_RANGE } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
@@ -16,7 +16,7 @@ let depositor: SignerWithAddress, relayer: SignerWithAddress;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
 let dataworkerInstance: Dataworker;
-const spokePoolClients: { [chainId: number]: SpokePoolClient } = {};
+let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let updateAllClients: () => Promise<void>;
 
@@ -37,11 +37,10 @@ describe("Dataworker: Load data used in all functions", async function () {
       dataworkerInstance,
       spokePoolClient_1,
       spokePoolClient_2,
+      spokePoolClients,
       configStoreClient,
       updateAllClients,
     } = await setupDataworker(ethers, 25, 25, toBN(0)));
-    spokePoolClients[originChainId] = spokePoolClient_1;
-    spokePoolClients[destinationChainId] = spokePoolClient_2;
   });
 
   it("Default conditions", async function () {
@@ -151,6 +150,9 @@ describe("Dataworker: Load data used in all functions", async function () {
       { unfilledAmount: amountToDeposit.sub(fill2.fillAmount), deposit: deposit2 },
     ]);
 
+    // If block range does not cover fills, then unfilled deposits are not included.
+    expect(dataworkerInstance._loadData(IMPOSSIBLE_BLOCK_RANGE, spokePoolClients).unfilledDeposits).to.deep.equal([]);
+
     // All deposits are fulfilled; unfilled deposits that are fully filled should be ignored.
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 1);
     await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 1);
@@ -238,6 +240,9 @@ describe("Dataworker: Load data used in all functions", async function () {
         },
       },
     });
+
+    // If block range does not cover fills, then they are not included
+    expect(dataworkerInstance._loadData(IMPOSSIBLE_BLOCK_RANGE, spokePoolClients).fillsToRefund).to.deep.equal({});
 
     // Submit fills without matching deposits. These should be ignored by the client.
     // Note: Switch just the relayer fee % to make fills invalid. This also ensures that client is correctly
@@ -342,5 +347,8 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data1 = dataworkerInstance._loadData(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients);
     expect(data1.deposits).to.deep.equal([{ ...deposit1, blockNumber: realizedLpFeePctData.quoteBlock }]);
+
+    // If block range does not cover deposits, then they are not included
+    expect(dataworkerInstance._loadData(IMPOSSIBLE_BLOCK_RANGE, spokePoolClients).deposits).to.deep.equal([]);
   });
 });

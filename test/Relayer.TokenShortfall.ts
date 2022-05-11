@@ -51,7 +51,7 @@ describe("Relayer: Token balance shortfall", async function () {
       destinationChainId
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
-    tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients);
+    tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new ProfitClient(spyLogger, hubPoolClient, toBNWei(1)); // Set the profit discount to 1 (ignore relay cost.)
     relayerInstance = new Relayer(spyLogger, {
       spokePoolClients,

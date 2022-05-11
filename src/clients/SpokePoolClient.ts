@@ -1,7 +1,7 @@
 import { spreadEvent, assign, Contract, BigNumber, EventSearchConfig } from "../utils";
 import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
-import { AcrossConfigStoreClient } from "./RateModelClient";
+import { AcrossConfigStoreClient } from "./ConfigStoreClient";
 import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock } from "../interfaces/SpokePool";
 
 export class SpokePoolClient {
