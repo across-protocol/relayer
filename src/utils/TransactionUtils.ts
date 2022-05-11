@@ -6,7 +6,7 @@ import { winston, Contract, toBN, getContractInfoFromAddress } from "../utils";
 export async function runTransaction(logger: winston.Logger, contract: Contract, method: string, args: any) {
   try {
     const gas = await getGasPrice(contract.provider);
-    logger.debug({ at: "TxUtil", message: "sending tx", target: contract.address, method, args, gas });
+    logger.debug({ at: "TxUtil", message: "sending tx", target: getTarget(contract.address), method, args, gas });
     return await contract[method](...args, gas);
   } catch (error) {
     logger.error({ at: "TxUtil", message: "Error executing tx", error });
