@@ -22,7 +22,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
   });
   const spokePoolClients = {};
 
-  // If maxRelayerLookBack is set then offset the fromBlock to the latest block - the maxRelayerLookBack. Used in serverless mode.
+  // If maxRelayerLookBack is set then offset the fromBlock to the latest - maxRelayerLookBack. Used in serverless mode.
   let fromBlocks = {};
   if (config.maxRelayerLookBack != {}) {
     const l2BlockNumbers = await Promise.all(
