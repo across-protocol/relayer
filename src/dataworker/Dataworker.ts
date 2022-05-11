@@ -663,6 +663,7 @@ export class Dataworker {
         at: "Dataworker",
         message: `Pool rebalance leaf #${index}`,
         prettyLeaf,
+        proof: poolRebalanceRoot.tree.getHexProof(leaf)
       });
       return prettyLeaf;
     });
@@ -680,6 +681,7 @@ export class Dataworker {
         at: "Dataworker",
         message: `Relayer refund leaf #${index}`,
         leaf: prettyLeaf,
+        proof: relayerRefundRoot.tree.getHexProof(leaf)
       });
     });
     const slowRelayRoot = this.buildSlowRelayRoot(blockRangesForProposal, spokePoolClients);
@@ -694,6 +696,7 @@ export class Dataworker {
         at: "Dataworker",
         message: `Slow relay leaf #${index}`,
         leaf: prettyLeaf,
+        proof: slowRelayRoot.tree.getHexProof(leaf)
       });
     });
 
