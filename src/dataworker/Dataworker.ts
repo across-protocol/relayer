@@ -61,7 +61,12 @@ export class Dataworker {
     const allValidFills: FillWithBlock[] = [];
 
     const allChainIds = Object.keys(this.clients.spokePoolSigners);
-    this.logger.debug({ at: "Dataworker", message: `Loading deposit and fill data`, chainIds: allChainIds });
+    this.logger.debug({
+      at: "Dataworker",
+      message: `Loading deposit and fill data`,
+      chainIds: allChainIds,
+      blockRangesForChains,
+    });
 
     for (const originChainId of allChainIds) {
       const originClient = spokePoolClients[originChainId];
@@ -75,19 +80,18 @@ export class Dataworker {
         if (!destinationClient.isUpdated)
           throw new Error(`destination SpokePoolClient with chain ID ${destinationChainId} not updated`);
 
-        const blockRangeForChain = this._getBlockRangeForChain(blockRangesForChains, Number(destinationChainId));
-
         // Store all deposits in range, for use in constructing a pool rebalance root. Save deposits with
         // their quote time block numbers so we can pull the L1 token counterparts for the quote timestamp.
         // We can safely filter `deposits` by the bundle block range because its only used to decrement running
         // balances in the pool rebalance root. This array is NOT used when matching fills with deposits. For that,
         // we use the wider event search config of the origin client.
+        const mainnetBlockRange = this._getBlockRangeForChain(blockRangesForChains, 1);
         const newDeposits: DepositWithBlock[] = originClient
           .getDepositsForDestinationChain(destinationChainId, true)
           .filter(
             (deposit) =>
-              deposit.blockNumber <= blockRangeForChain[1] &&
-              deposit.blockNumber >= blockRangeForChain[0] &&
+              deposit.blockNumber <= mainnetBlockRange[1] &&
+              deposit.blockNumber >= mainnetBlockRange[0] &&
               !deposits.some(
                 (existingDeposit) =>
                   existingDeposit.originChainId === deposit.originChainId &&
@@ -97,6 +101,7 @@ export class Dataworker {
         deposits.push(...newDeposits);
 
         // For each fill within the block range, look up associated deposit.
+        const blockRangeForChain = this._getBlockRangeForChain(blockRangesForChains, Number(destinationChainId));
         const fillsForOriginChain: FillWithBlock[] = destinationClient
           .getFillsWithBlockForOriginChain(Number(originChainId))
           .filter(
