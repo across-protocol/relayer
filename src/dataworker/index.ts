@@ -34,7 +34,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
 
       await dataworker.proposeRootBundle();
 
-      await clients.multiCallerClient.executeTransactionQueue(true);
+      await clients.multiCallerClient.executeTransactionQueue();
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }
