@@ -12,7 +12,6 @@ export const GLOBAL_CONFIG_STORE_KEYS = {
   MAX_POOL_REBALANCE_LEAF_SIZE: "MAX_POOL_REBALANCE_LEAF_SIZE",
 };
 
-// TODO: Rename filename to match client name in follow up PR to reduce code diff.
 export class AcrossConfigStoreClient {
   private readonly blockFinder;
 

@@ -28,7 +28,6 @@ const tokenConfigToUpdate = JSON.stringify({
   transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
 });
 
-// TODO: Rename file name to match tested client in a follow up PR to reduce line diff.
 describe("AcrossConfigStoreClient", async function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
