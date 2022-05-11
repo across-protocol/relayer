@@ -268,12 +268,6 @@ export class HubPoolClient {
       ...executedRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as ExecutedRootBundle)
     );
 
-    if (pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount > 0) {
-      // We make a potentially dangerous assumption here that the most recent ProposeRootBundle event found in the
-      // the above event search corresponds to the pending root bundle. This could NOT be the case if
-      // `this.eventSearchConfig.toBlock !== undefined`, but in most cases this is true because we set the `toBlock`
-      // in the `eventSearchConfig` to `null` in `common/ClientHelper.ts`.
-      const mostRecentProposedRootBundle = sortEventsDescending(this.proposedRootBundles)[0];
       this.pendingRootBundle = {
         poolRebalanceRoot: pendingRootBundleProposal.poolRebalanceRoot,
         relayerRefundRoot: pendingRootBundleProposal.relayerRefundRoot,
@@ -282,11 +276,19 @@ export class HubPoolClient {
         proposer: pendingRootBundleProposal.proposer,
         unclaimedPoolRebalanceLeafCount: pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount,
         challengePeriodEndTimestamp: pendingRootBundleProposal.challengePeriodEndTimestamp,
-        bundleEvaluationBlockNumbers: mostRecentProposedRootBundle.bundleEvaluationBlockNumbers.map(
-          (block: BigNumber) => block.toNumber()
-        ),
-        proposalBlockNumber: mostRecentProposedRootBundle.blockNumber,
+        bundleEvaluationBlockNumbers: undefined,
+        proposalBlockNumber: undefined
       };
+    if (pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount > 0) {
+      // We make a potentially dangerous assumption here that the most recent ProposeRootBundle event found in the
+      // the above event search corresponds to the pending root bundle. This could NOT be the case if
+      // `this.eventSearchConfig.toBlock !== undefined`, but in most cases this is true because we set the `toBlock`
+      // in the `eventSearchConfig` to `null` in `common/ClientHelper.ts`.
+      const mostRecentProposedRootBundle = sortEventsDescending(this.proposedRootBundles)[0];
+      this.pendingRootBundle.bundleEvaluationBlockNumbers = mostRecentProposedRootBundle.bundleEvaluationBlockNumbers.map(
+        (block: BigNumber) => block.toNumber()
+      )
+      this.pendingRootBundle.proposalBlockNumber = mostRecentProposedRootBundle.blockNumber
     }
 
     this.isUpdated = true;
