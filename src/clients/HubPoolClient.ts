@@ -18,6 +18,7 @@ export class HubPoolClient {
   public isUpdated: boolean = false;
   public firstBlockToSearch: number;
   public latestBlockNumber: number;
+  public currentTime: number;
 
   constructor(
     readonly logger: winston.Logger,
@@ -207,6 +208,7 @@ export class HubPoolClient {
       executedRootBundleEvents,
       crossChainContractsSetEvents,
       pendingRootBundleProposal,
+      currentTime
     ] = await Promise.all([
       paginatedEventQuery(this.hubPool, this.hubPool.filters.SetPoolRebalanceRoute(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), searchConfig),
@@ -214,7 +216,10 @@ export class HubPoolClient {
       paginatedEventQuery(this.hubPool, this.hubPool.filters.RootBundleExecuted(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.CrossChainContractsSet(), searchConfig),
       this.hubPool.rootBundleProposal(),
+      this.hubPool.getCurrentTime()
     ]);
+
+    this.currentTime = currentTime
 
     for (const event of crossChainContractsSetEvents) {
       const args = spreadEventWithBlockNumber(event) as CrossChainContractsSet;

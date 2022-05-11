@@ -733,8 +733,14 @@ export class Dataworker {
       pendingRootBundle,
     });
 
-    // TODO: Exit early if challenge period timestamp has passed:
-
+    // Exit early if challenge period timestamp has passed:
+    if (this.clients.hubPoolClient.currentTime > pendingRootBundle.challengePeriodEndTimestamp) {
+      this.logger.debug({
+        at: "Dataworker",
+        message: "Challenge period passed, cannot dispute",
+      });
+      return;
+    }
     // Importantly, we use the block number at which the root bundle was proposed as the "latest mainnet block" in
     // order to determine the start blocks. This means that the hub pool client will first look up the latest
     // RootBundleExecuted event before this proposal root block in order to find the preceding ProposeRootBundle's
