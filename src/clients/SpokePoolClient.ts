@@ -130,8 +130,11 @@ export class SpokePoolClient {
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
 
-    // Deposit route search config should always go from the deployment block to ensure we fetch all routes.
-    const depositRouteSearchConfig = { ...searchConfig, fromBlock: this.spokePoolDeploymentBlock };
+    // Deposit route search config should always go from the deployment block to ensure we fetch all routes. If this is
+    // the first run then set the from block to the deployment block of the spoke pool. Else, use the same config as the
+    // other event queries to not double search over the same event ranges.
+    const depositRouteSearchConfig = { ...searchConfig }; // shallow copy.
+    if (!this.isUpdated) depositRouteSearchConfig.fromBlock = this.spokePoolDeploymentBlock;
 
     this.log("debug", "Updating client", { searchConfig, depositRouteSearchConfig, spokePool: this.spokePool.address });
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
