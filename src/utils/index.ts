@@ -35,4 +35,4 @@ export {
   AcrossConfigStore__factory as AcrossConfigStore,
 } from "@across-protocol/contracts-v2";
 
-export { getDeployedAddress, getDeployedBlockNumber } from "@across-protocol/contracts-v2";
+export { getDeployedAddress, getDeployedBlockNumber, getContractInfoFromAddress } from "@across-protocol/contracts-v2";
