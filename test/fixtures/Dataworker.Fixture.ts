@@ -10,13 +10,7 @@ import {
 import { SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "../utils";
 import { createSpyLogger, winston, deployAndConfigureHubPool, deployConfigStore } from "../utils";
 import * as clients from "../../src/clients";
-import {
-  amountToLp,
-  destinationChainId,
-  originChainId,
-  CHAIN_ID_TEST_LIST,
-  repaymentChainId,
-} from "../constants";
+import { amountToLp, destinationChainId, originChainId, CHAIN_ID_TEST_LIST, repaymentChainId } from "../constants";
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { TokenClient } from "../../src/clients";
