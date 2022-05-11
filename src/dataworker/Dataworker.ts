@@ -684,7 +684,7 @@ export class Dataworker {
 
     // 4. Propose roots to HubPool contract.
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
-    this.logger.info({
+    this.logger.debug({
       at: "Dataworker",
       message: "Enqueing new root bundle proposal txn",
       blockRangesForProposal,
@@ -721,7 +721,7 @@ export class Dataworker {
     this.logger.info({
       at: "Dataworker",
       message: "Validating pending proposal",
-      pendingRootBundle
+      pendingRootBundle,
     });
 
     // TODO: Exit early if challenge period timestamp has passed:
@@ -730,20 +730,22 @@ export class Dataworker {
     // order to determine the start blocks. This means that the hub pool client will first look up the latest
     // RootBundleExecuted event before this proposal root block in order to find the preceding ProposeRootBundle's
     // end block.
-    const blockRangesImpliedByBundleEndBlocks = this.chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => [
-      this.clients.hubPoolClient.getNextBundleStartBlockNumber(
+    const blockRangesImpliedByBundleEndBlocks = this.chainIdListForBundleEvaluationBlockNumbers.map(
+      (chainId: number, index) => [
+        this.clients.hubPoolClient.getNextBundleStartBlockNumber(
           this.chainIdListForBundleEvaluationBlockNumbers,
           pendingRootBundle.proposalBlockNumber,
           chainId
-      ),
-      pendingRootBundle.bundleEvaluationBlockNumbers[index],
-    ]);
+        ),
+        pendingRootBundle.bundleEvaluationBlockNumbers[index],
+      ]
+    );
 
     this.logger.info({
       at: "Dataworker",
       message: "Implied bundle ranges",
       blockRangesImpliedByBundleEndBlocks,
-      chainIdListForBundleEvaluationBlockNumbers: this.chainIdListForBundleEvaluationBlockNumbers
+      chainIdListForBundleEvaluationBlockNumbers: this.chainIdListForBundleEvaluationBlockNumbers,
     });
 
     // Construct spoke pool clients using spoke pools deployed at end of block range.
@@ -759,7 +761,7 @@ export class Dataworker {
     const spokePoolClients = await this._constructSpokePoolClientsForBlockAndUpdate(endBlockForMainnet);
 
     // Compare roots with expected. The roots will be different if the block range start blocks were different
-    // than the ones we constructed above when the original proposer submitted their proposal. The roots will also 
+    // than the ones we constructed above when the original proposer submitted their proposal. The roots will also
     // be different if the events on any of the contracts were different.
     const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesImpliedByBundleEndBlocks, spokePoolClients);
     const relayerRefundRoot = this.buildRelayerRefundRoot(blockRangesImpliedByBundleEndBlocks, spokePoolClients);

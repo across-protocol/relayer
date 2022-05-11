@@ -264,8 +264,8 @@ export class HubPoolClient {
     );
 
     if (pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount > 0) {
-      // We make a potentially dangerous assumption here that the most recent ProposeRootBundle event found in the 
-      // the above event search corresponds to the pending root bundle. This could NOT be the case if 
+      // We make a potentially dangerous assumption here that the most recent ProposeRootBundle event found in the
+      // the above event search corresponds to the pending root bundle. This could NOT be the case if
       // `this.eventSearchConfig.toBlock !== undefined`, but in most cases this is true because we set the `toBlock`
       // in the `eventSearchConfig` to `null` in `common/ClientHelper.ts`.
       const mostRecentProposedRootBundle = sortEventsDescending(this.proposedRootBundles)[0];
