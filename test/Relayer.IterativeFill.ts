@@ -1,4 +1,9 @@
-import { hubPoolFixture, deployIterativeSpokePoolsAndToken, createSpyLogger, lastSpyLogIncludes, toBN } from "./utils";
+import {
+  deployAndConfigureHubPool,
+  deployIterativeSpokePoolsAndToken,
+  createSpyLogger,
+  lastSpyLogIncludes,
+} from "./utils";
 import { expect, deposit, ethers, Contract, getLastBlockTime, contractAt, addLiquidity } from "./utils";
 import { SignerWithAddress, setupTokensForWallet, deployConfigStore, winston, sinon, toBNWei } from "./utils";
 import { amountToLp, defaultTokenConfig } from "./constants";
@@ -17,7 +22,7 @@ let relayer: Relayer, multiCallerClient: MultiCallerClient, profitClient: Profit
 describe("Relayer: Iterative fill", async function () {
   beforeEach(async function () {
     [relayer_signer] = await ethers.getSigners(); // note we use relayer_signer as the owner as well to simplify the test.
-    ({ hubPool, mockAdapter } = await hubPoolFixture());
+    ({ hubPool, mockAdapter } = await deployAndConfigureHubPool(relayer_signer, []));
   });
   it("One token on multiple chains", async function () {
     const [, , depositor] = await ethers.getSigners();

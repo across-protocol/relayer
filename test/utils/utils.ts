@@ -2,21 +2,13 @@ import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 import { TokenRolesEnum } from "@uma/common";
 export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "@uma/common";
 import { SpyTransport } from "@uma/financial-templates-lib";
-import {
-  DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
-  MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
-  MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
-  sampleRateModel,
-  zeroAddress,
-} from "../constants";
-
-import { SpokePoolClient } from "../../src/clients/SpokePoolClient";
-import { AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients/RateModelClient";
-import { HubPoolClient } from "../../src/clients/HubPoolClient";
-
+import { sampleRateModel, DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "../constants";
+import { amountToDeposit, depositRelayerFeePct, l1TokenTransferThreshold, zeroAddress } from "../constants";
+import { MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF } from "../constants";
+import { HubPoolClient, AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
+import { SpokePoolClient } from "../../src/clients";
 import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber } from "./index";
-import { amountToDeposit, depositRelayerFeePct, l1TokenTransferThreshold } from "../constants";
-import { Deposit, Fill, RunningBalances } from "../../src/interfaces/SpokePool";
+import { Deposit, Fill, RunningBalances } from "../../src/interfaces";
 import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
 
 import winston from "winston";
