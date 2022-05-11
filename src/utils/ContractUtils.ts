@@ -32,10 +32,10 @@ export function getParamType(contractName: string, functionName: string, paramNa
   return fragment!.inputs.find((input) => input.name === paramName) || "";
 }
 
-export function getDeploymentBlockNumber(contractName: string, networkId: number) {
+export function getDeploymentBlockNumber(contractName: string, networkId: number): number {
   try {
     if (contractName === "SpokePool") contractName = castSpokePoolName(networkId);
-    return getDeployedBlockNumber(contractName, networkId);
+    return Number(getDeployedBlockNumber(contractName, networkId));
   } catch (error) {
     throw new Error(`Could not find deployment block for contract ${contractName} on ${networkId}`);
   }

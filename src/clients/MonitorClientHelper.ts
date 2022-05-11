@@ -11,7 +11,7 @@ export interface MonitorClients {
 export function constructMonitorClients(config: MonitorConfig, logger: winston.Logger): MonitorClients {
   const hubPool = getDeployedContract("HubPool", config.hubPoolChainId);
   const hubPoolClient = new HubPoolClient(logger, hubPool);
-  const spokePools = config.spokePoolChainIds.reduce((acc, chainId, idx) => {
+  const spokePools = config.spokePoolChains.reduce((acc, chainId) => {
     return {
       ...acc,
       [chainId]: getDeployedContract("SpokePool", chainId) as SpokePool,

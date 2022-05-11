@@ -21,7 +21,8 @@ export class SpokePoolClient {
     readonly spokePool: Contract,
     readonly configStoreClient: AcrossConfigStoreClient | null, // Can be excluded. This disables some deposit validation.
     readonly chainId: number,
-    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
+    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
+    readonly spokePoolDeploymentBlock: number = 0
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
@@ -129,14 +130,17 @@ export class SpokePoolClient {
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
 
-    this.log("debug", "Updating client", { searchConfig, spokePool: this.spokePool.address });
+    // Deposit route search config should always go from the deployment block to ensure we fetch all routes.
+    const depositRouteSearchConfig = { ...searchConfig, fromBlock: this.spokePoolDeploymentBlock };
+
+    this.log("debug", "Updating client", { searchConfig, depositRouteSearchConfig, spokePool: this.spokePool.address });
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
     const [depositEvents, speedUpEvents, fillEvents, enableDepositsEvents] = await Promise.all([
       paginatedEventQuery(this.spokePool, this.spokePool.filters.FundsDeposited(), searchConfig),
       paginatedEventQuery(this.spokePool, this.spokePool.filters.RequestedSpeedUpDeposit(), searchConfig),
       paginatedEventQuery(this.spokePool, this.spokePool.filters.FilledRelay(), searchConfig),
-      paginatedEventQuery(this.spokePool, this.spokePool.filters.EnabledDepositRoute(), searchConfig),
+      paginatedEventQuery(this.spokePool, this.spokePool.filters.EnabledDepositRoute(), depositRouteSearchConfig),
     ]);
 
     // For each depositEvent, compute the realizedLpFeePct. Note this means that we are only finding this value on the
