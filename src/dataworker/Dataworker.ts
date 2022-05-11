@@ -1,17 +1,12 @@
 import { winston, assign, compareAddresses, getRefundForFills, sortEventsDescending, Contract } from "../utils";
 import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree, SpokePool } from "../utils";
-import { getRealizedLpFeeForFills, BigNumber, toBN } from "../utils";
+import { getRealizedLpFeeForFills, BigNumber, toBN, convertFromWei, shortenHexString } from "../utils";
+import { shortenHexStrings } from "../utils";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, DepositWithBlock } from "../interfaces";
 import { Fill, FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
 import { RunningBalances } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
-
-// TODO!!!: Add helpful logs everywhere.
-
-// TODO: Need to handle case where there are multiple spoke pools for a chain ID in a given block range, which would
-// happen if a spoke pool was upgraded. Probably need to make spokePoolClients also keyed by block number in addition
-// to chain ID.
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -20,8 +15,23 @@ export class Dataworker {
   constructor(
     readonly logger: winston.Logger,
     readonly clients: DataworkerClients,
-    readonly chainIdListForBundleEvaluationBlockNumbers: number[]
-  ) {}
+    readonly chainIdListForBundleEvaluationBlockNumbers: number[],
+    readonly maxRefundCountOverride: number = undefined,
+    readonly maxL1TokenCountOverride: number = undefined,
+    readonly tokenTransferThreshold: { [l1TokenAddress: string]: BigNumber } = {}
+  ) {
+    if (
+      maxRefundCountOverride !== undefined ||
+      maxL1TokenCountOverride !== undefined ||
+      Object.keys(tokenTransferThreshold).length > 0
+    )
+      this.logger.debug({
+        at: "Dataworker constructed with overridden config store settings",
+        maxRefundCountOverride: this.maxRefundCountOverride,
+        maxL1TokenCountOverride: this.maxL1TokenCountOverride,
+        tokenTransferThreshold: this.tokenTransferThreshold,
+      });
+  }
 
   // Common data re-formatting logic shared across all data worker public functions.
   // User must pass in spoke pool to search event data against. This allows the user to refund relays and fill deposits
@@ -35,9 +45,15 @@ export class Dataworker {
     allValidFills: FillWithBlock[];
     deposits: DepositWithBlock[];
   } {
-    // TODO: Test `blockRangesForChains`
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
     if (!this.clients.configStoreClient.isUpdated) throw new Error(`ConfigStoreClient not updated`);
+    this.chainIdListForBundleEvaluationBlockNumbers.forEach((chainId) => {
+      if (!spokePoolClients[chainId]) throw new Error(`Missing spoke pool client for chain ${chainId}`);
+    });
+    if (blockRangesForChains.length !== this.chainIdListForBundleEvaluationBlockNumbers.length)
+      throw new Error(
+        `Unexpected block range list length of ${blockRangesForChains.length}, should be ${this.chainIdListForBundleEvaluationBlockNumbers.length}`
+      );
 
     const unfilledDepositsForOriginChain: { [originChainIdPlusDepositId: string]: UnfilledDeposit[] } = {};
     const fillsToRefund: FillsToRefund = {};
@@ -61,10 +77,24 @@ export class Dataworker {
 
         const blockRangeForChain = this._getBlockRangeForChain(blockRangesForChains, Number(destinationChainId));
 
-        // Store all deposits, for use in constructing a pool rebalance root. Save deposits with their quote time block
-        // numbers so we can pull the L1 token counterparts for the quote timestamp. We don't filter deposits
-        // by block range, only fills.
-        deposits.push(...originClient.getDepositsForDestinationChain(destinationChainId, true));
+        // Store all deposits in range, for use in constructing a pool rebalance root. Save deposits with
+        // their quote time block numbers so we can pull the L1 token counterparts for the quote timestamp.
+        // We can safely filter `deposits` by the bundle block range because its only used to decrement running
+        // balances in the pool rebalance root. This array is NOT used when matching fills with deposits. For that,
+        // we use the wider event search config of the origin client.
+        const newDeposits: DepositWithBlock[] = originClient
+          .getDepositsForDestinationChain(destinationChainId, true)
+          .filter(
+            (deposit) =>
+              deposit.blockNumber <= blockRangeForChain[1] &&
+              deposit.blockNumber >= blockRangeForChain[0] &&
+              !deposits.some(
+                (existingDeposit) =>
+                  existingDeposit.originChainId === deposit.originChainId &&
+                  existingDeposit.depositId === deposit.depositId
+              )
+          );
+        deposits.push(...newDeposits);
 
         // For each fill within the block range, look up associated deposit.
         const fillsForOriginChain: FillWithBlock[] = destinationClient
@@ -184,6 +214,7 @@ export class Dataworker {
     this.logger.debug({
       at: "Dataworker",
       message: `Finished loading spoke pool data`,
+      blockRangesForChains,
       unfilledDepositsByDestinationChain: unfilledDeposits.reduce((result, unfilledDeposit: UnfilledDeposit) => {
         const existingCount = result[unfilledDeposit.deposit.destinationChainId];
         result[unfilledDeposit.deposit.destinationChainId] = existingCount === undefined ? 1 : existingCount + 1;
@@ -217,11 +248,7 @@ export class Dataworker {
   buildSlowRelayRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
     this.logger.debug({ at: "Dataworker", message: `Building slow relay root`, blockRangesForChains });
 
-    // TODO: Test `blockRangesForChains`
-
     const { unfilledDeposits } = this._loadData(blockRangesForChains, spokePoolClients);
-    // TODO: Use `bundleBlockNumbers` to decide how to filter which blocks to keep in `unfilledDeposits`.
-
     const slowRelayLeaves: RelayData[] = unfilledDeposits.map(
       (deposit: UnfilledDeposit): RelayData => ({
         depositor: deposit.deposit.depositor,
@@ -244,26 +271,22 @@ export class Dataworker {
       else return relayA.originChainId - relayB.originChainId;
     });
 
-    if (sortedLeaves.length === 0) throw new Error("Cannot build tree with zero leaves");
     return {
       leaves: sortedLeaves,
       tree: buildSlowRelayTree(sortedLeaves),
     };
   }
 
-  async publishRoots(blockRangesForChains: number[][]) {
-    // TODO: Store root to be consumed by manual leaf executors and verifiers. Can also be used to track lifecyle
-    // of roots.
-  }
-
   buildRelayerRefundRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
     this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForChains });
-
-    // TODO: Test `blockRangesForChains`
+    const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForChains, 1)[1];
 
     const { fillsToRefund } = this._loadData(blockRangesForChains, spokePoolClients);
 
     const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
+
+    // We need to construct a pool rebalance root in order to derive `amountToReturn` from `netSendAmount`.
+    const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForChains, spokePoolClients);
 
     // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
     Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
@@ -281,22 +304,66 @@ export class Dataworker {
 
         // Create leaf for { repaymentChainId, L2TokenAddress }, split leaves into sub-leaves if there are too many
         // refunds.
-        // TODO: Replace the block height hardcoded with a block from the bundle block range so we can look up the
-        // limit at the time of the proposal.
-        const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForChains, 1)[1];
-        const maxRefundCount =
-          this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
+
+        // The `amountToReturn` for a { repaymentChainId, L2TokenAddress} should be set to max(-netSendAmount, 0).
+        const amountToReturn = this._getAmountToReturnForRelayerRefundLeaf(
+          endBlockForMainnet,
+          repaymentChainId,
+          l2TokenAddress,
+          poolRebalanceRoot.runningBalances
+        );
+        const maxRefundCount = this.maxRefundCountOverride
+          ? this.maxRefundCountOverride
+          : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
         for (let i = 0; i < sortedRefundAddresses.length; i += maxRefundCount)
           relayerRefundLeaves.push({
             groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
             // L2 token address
             leafId: 0, // Will be updated before inserting into tree when we sort all leaves.
             chainId: Number(repaymentChainId),
-            amountToReturn: toBN(0), // TODO: Derive amountToReturn
+            amountToReturn: i === 0 ? amountToReturn : toBN(0),
             l2TokenAddress,
             refundAddresses: sortedRefundAddresses.slice(i, i + maxRefundCount),
             refundAmounts: sortedRefundAddresses.slice(i, i + maxRefundCount).map((address) => refunds[address]),
           });
+      });
+    });
+
+    // We need to construct a leaf for any pool rebalance leaves with a negative net send amount and NO fills to refund
+    // since we need to return tokens from SpokePool to HubPool.
+    poolRebalanceRoot.leaves.forEach((leaf) => {
+      leaf.netSendAmounts.forEach((netSendAmount, index) => {
+        if (netSendAmount.gte(toBN(0))) return;
+
+        const l2TokenCounterpart = this.clients.hubPoolClient.getDestinationTokenForL1TokenDestinationChainId(
+          leaf.l1Tokens[index],
+          leaf.chainId
+        );
+        // If we've already seen this leaf, then skip.
+        if (
+          relayerRefundLeaves.some(
+            (relayerRefundLeaf) =>
+              relayerRefundLeaf.chainId === leaf.chainId && relayerRefundLeaf.l2TokenAddress === l2TokenCounterpart
+          )
+        )
+          return;
+
+        const amountToReturn = this._getAmountToReturnForRelayerRefundLeaf(
+          endBlockForMainnet,
+          leaf.chainId.toString(),
+          l2TokenCounterpart,
+          poolRebalanceRoot.runningBalances
+        );
+        relayerRefundLeaves.push({
+          groupIndex: 0, // Will delete this group index after using it to sort leaves for the same chain ID and
+          // L2 token address
+          leafId: 0, // Will be updated before inserting into tree when we sort all leaves.
+          chainId: leaf.chainId,
+          amountToReturn: amountToReturn, // Never 0 since there will only be one leaf for this chain + L2 token combo.
+          l2TokenAddress: l2TokenCounterpart,
+          refundAddresses: [],
+          refundAmounts: [],
+        });
       });
     });
 
@@ -317,7 +384,6 @@ export class Dataworker {
         return { ...leaf, leafId: i };
       });
 
-    if (indexedLeaves.length === 0) throw new Error("Cannot build tree with zero leaves");
     return {
       leaves: indexedLeaves,
       tree: buildRelayerRefundTree(indexedLeaves),
@@ -326,8 +392,6 @@ export class Dataworker {
 
   buildPoolRebalanceRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
     this.logger.debug({ at: "Dataworker", message: `Building pool rebalance root`, blockRangesForChains });
-
-    // TODO: Test `blockRangesForChains`
 
     const { fillsToRefund, deposits, allValidFills } = this._loadData(blockRangesForChains, spokePoolClients);
 
@@ -483,8 +547,9 @@ export class Dataworker {
         let groupIndexForChainId = 0;
 
         // Split addresses into multiple leaves if there are more L1 tokens than allowed per leaf.
-        const maxRefundCount =
-          this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
+        const maxRefundCount = this.maxRefundCountOverride
+          ? this.maxRefundCountOverride
+          : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
         for (let i = 0; i < sortedL1Tokens.length; i += maxRefundCount) {
           const l1TokensToIncludeInThisLeaf = sortedL1Tokens.slice(i, i + maxRefundCount);
 
@@ -510,18 +575,20 @@ export class Dataworker {
         }
       });
 
-    if (leaves.length === 0) throw new Error("Cannot build tree with zero leaves");
-    const tree = buildPoolRebalanceLeafTree(leaves);
-
     return {
       runningBalances,
       realizedLpFees,
       leaves,
-      tree,
+      tree: buildPoolRebalanceLeafTree(leaves),
     };
   }
 
   async proposeRootBundle() {
+    // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
+    // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
+    // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
+    // safe strategy but could lead to new roots failing to be proposed until ALL networks are healthy.
+
     // 1. Construct a list of ending block ranges for each chain that we want to include
     // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
@@ -561,59 +628,104 @@ export class Dataworker {
           spokePoolContract,
           this.clients.configStoreClient,
           Number(chainId),
-          {
-            // We can try to shorten the block range for this spoke pool using the current bundle's block range.
-            // This assumes that the spoke pool's deployment block was before this block range, which is always case
-            // until the first time that the spoke pool is upgraded. In this situation, there could be a block range
-            // with blocks before the new spoke pool's deployment time.
-            fromBlock: Math.max(
-              this._getBlockRangeForChain(blockRangesForProposal, chainId)[0],
-              this.clients.spokePoolClientSearchSettings[chainId].fromBlock
-            ),
-            toBlock: this.clients.spokePoolClientSearchSettings[chainId].toBlock,
-            maxBlockLookBack: this.clients.spokePoolClientSearchSettings[chainId].maxBlockLookBack,
-          }
+          this.clients.spokePoolClientSearchSettings[chainId]
         );
         return [chainId, client];
       })
     );
     await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update()));
 
-    // TODO:
-    // 3. Create roots.
+    // 2. Create roots
     const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForProposal, spokePoolClients);
-    console.log(`poolRebalanceRoot:`, poolRebalanceRoot.tree.getHexRoot());
-    poolRebalanceRoot.leaves.forEach((leaf: PoolRebalanceLeaf) => {
+    poolRebalanceRoot.leaves.forEach((leaf: PoolRebalanceLeaf, index) => {
       const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
         // Check if leaf value is list of BN's. For this leaf, there are no BN's not in lists.
         if (BigNumber.isBigNumber(leaf[key][0])) result[key] = leaf[key].map((val) => val.toString());
         else result[key] = leaf[key];
         return result;
       }, {});
-      console.log(prettyLeaf);
+      this.logger.debug({
+        at: "Dataworker",
+        message: `Pool rebalance leaf #${index}`,
+        prettyLeaf,
+      });
+      return prettyLeaf;
     });
     const relayerRefundRoot = this.buildRelayerRefundRoot(blockRangesForProposal, spokePoolClients);
-    console.log(`relayerRefundRoot:`, relayerRefundRoot.tree.getHexRoot());
-    relayerRefundRoot.leaves.forEach((leaf: RelayerRefundLeaf) => {
+    relayerRefundRoot.leaves.forEach((leaf: RelayerRefundLeaf, index) => {
       const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
-        // Check if leaf value is list of BN' or single BN.
+        // Check if leaf value is list of BN's or single BN.
         if (Array.isArray(leaf[key]) && BigNumber.isBigNumber(leaf[key][0]))
           result[key] = leaf[key].map((val) => val.toString());
         else if (BigNumber.isBigNumber(leaf[key])) result[key] = leaf[key].toString();
         else result[key] = leaf[key];
         return result;
       }, {});
-      console.log(prettyLeaf);
+      this.logger.debug({
+        at: "Dataworker",
+        message: `Relayer refund leaf #${index}`,
+        leaf: prettyLeaf,
+      });
     });
-    // const slowRelayRoot = this.buildSlowRelayRoot(blockRangesForProposal, spokePoolClients);
-    // console.log(`slowRelayRoot:`, slowRelayRoot.leaves, slowRelayRoot.tree.getHexRoot());
+    const slowRelayRoot = this.buildSlowRelayRoot(blockRangesForProposal, spokePoolClients);
+    slowRelayRoot.leaves.forEach((leaf: RelayData, index) => {
+      const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
+        // Check if leaf value is BN.
+        if (BigNumber.isBigNumber(leaf[key])) result[key] = leaf[key].toString();
+        else result[key] = leaf[key];
+        return result;
+      }, {});
+      this.logger.debug({
+        at: "Dataworker",
+        message: `Slow relay leaf #${index}`,
+        leaf: prettyLeaf,
+      });
+    });
 
-    // 3. Store root + auxillary information somewhere useful for executing leaves
+    if (poolRebalanceRoot.leaves.length === 0) {
+      this.logger.debug({
+        at: "Dataworker",
+        message: "No pool rebalance leaves, cannot propose",
+      });
+      return;
+    }
+
+    // 3. Check if a bundle is pending.
+    if (this.clients.hubPoolClient.hasPendingProposal()) {
+      this.logger.debug({
+        at: "Dataworker",
+        message: "Has pending proposal, cannot propose",
+      });
+      return;
+    }
+
     // 4. Propose roots to HubPool contract.
+    const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
+    this.logger.debug({
+      at: "Dataworker",
+      message: "Enqueing new root bundle proposal txn",
+      blockRangesForProposal,
+      poolRebalanceLeavesCount: poolRebalanceRoot.leaves.length,
+      poolRebalanceRoot: poolRebalanceRoot.tree.getHexRoot(),
+      relayerRefundRoot: relayerRefundRoot.tree.getHexRoot(),
+      slowRelayRoot: slowRelayRoot.tree.getHexRoot(),
+    });
+    this._proposeRootBundle(
+      hubPoolChainId,
+      blockRangesForProposal,
+      poolRebalanceRoot.leaves,
+      poolRebalanceRoot.tree.getHexRoot(),
+      relayerRefundRoot.leaves,
+      relayerRefundRoot.tree.getHexRoot(),
+      slowRelayRoot.leaves,
+      slowRelayRoot.tree.getHexRoot()
+    );
   }
 
   async validateRootBundle(poolRebalanceRoot: string, relayerRefundRoot: string, slowRelayRoot: string) {
-    // Look at latest propose root bundle event earlier than a block number
+    // Look at latest propose root bundle event earlier than a block number.
+    // Determine start block numbers for end block numbers emitted in ProposedRootBundle event using
+    // HubPoolClient.getNextBundleStartBlockNumber and passing in the mainnet block of the propose root bundle txn
     // Construct roots locally using class functions and compare with the event we found earlier.
     // If any roots mismatch, pinpoint the errors to give details to the caller.
   }
@@ -632,24 +744,173 @@ export class Dataworker {
     // TODO:
   }
 
+  _proposeRootBundle(
+    hubPoolChainId: number,
+    bundleBlockRange: number[][],
+    poolRebalanceLeaves: any[],
+    poolRebalanceRoot: string,
+    relayerRefundLeaves: any[],
+    relayerRefundRoot: string,
+    slowRelayLeaves: any[],
+    slowRelayRoot: string
+  ) {
+    try {
+      const bundleEndBlocks = bundleBlockRange.map((block) => block[1]);
+      this.clients.multiCallerClient.enqueueTransaction({
+        contract: this.clients.hubPoolClient.hubPool, // target contract
+        chainId: hubPoolChainId,
+        method: "proposeRootBundle", // method called.
+        args: [bundleEndBlocks, poolRebalanceLeaves.length, poolRebalanceRoot, relayerRefundRoot, slowRelayRoot], // props sent with function call.
+        message: "Proposed new root bundle 🌱", // message sent to logger.
+        mrkdwn: this._generateMarkdownForRootBundle(
+          hubPoolChainId,
+          bundleBlockRange,
+          [...poolRebalanceLeaves],
+          poolRebalanceRoot,
+          [...relayerRefundLeaves],
+          relayerRefundRoot,
+          [...slowRelayLeaves],
+          slowRelayRoot
+        ),
+      });
+    } catch (error) {
+      this.logger.error({ at: "Dataworker", message: "Error creating proposeRootBundleTx", error });
+    }
+  }
+
+  _generateMarkdownForRootBundle(
+    hubPoolChainId: number,
+    bundleBlockRange: number[][],
+    poolRebalanceLeaves: any[],
+    poolRebalanceRoot: string,
+    relayerRefundLeaves: any[],
+    relayerRefundRoot: string,
+    slowRelayLeaves: any[],
+    slowRelayRoot: string
+  ): string {
+    // Create helpful logs to send to slack transport
+    let bundleBlockRangePretty = "";
+    this.chainIdListForBundleEvaluationBlockNumbers.forEach((chainId, index) => {
+      bundleBlockRangePretty += `\n\t\t${chainId}: ${JSON.stringify(bundleBlockRange[index])}`;
+    });
+
+    const convertTokenListFromWei = (chainId: number, tokenAddresses: string[], weiVals: string[]) => {
+      return tokenAddresses.map((token, index) => {
+        const { decimals } = this.clients.hubPoolClient.getTokenInfo(chainId, token);
+        return convertFromWei(weiVals[index], decimals);
+      });
+    };
+    const convertTokenAddressToSymbol = (chainId: number, tokenAddress: string) => {
+      return this.clients.hubPoolClient.getTokenInfo(chainId, tokenAddress).symbol;
+    };
+    const convertL1TokenAddressesToSymbols = (l1Tokens: string[]) => {
+      return l1Tokens.map((l1Token) => {
+        return convertTokenAddressToSymbol(hubPoolChainId, l1Token);
+      });
+    };
+    let poolRebalanceLeavesPretty = "";
+    poolRebalanceLeaves.forEach((leaf, index) => {
+      // Shorten keys for ease of reading from Slack.
+      delete leaf.leafId;
+      leaf.groupId = leaf.groupIndex;
+      delete leaf.groupIndex;
+      leaf.bundleLpFees = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.bundleLpFees);
+      leaf.runningBalances = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.runningBalances);
+      leaf.netSendAmounts = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.netSendAmounts);
+      leaf.l1Tokens = convertL1TokenAddressesToSymbols(leaf.l1Tokens);
+      poolRebalanceLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
+    });
+
+    let relayerRefundLeavesPretty = "";
+    relayerRefundLeaves.forEach((leaf, index) => {
+      // Shorten keys for ease of reading from Slack.
+      delete leaf.leafId;
+      leaf.amountToReturn = convertFromWei(
+        leaf.amountToReturn,
+        this.clients.hubPoolClient.getTokenInfo(leaf.chainId, leaf.l2TokenAddress).decimals
+      );
+      leaf.refundAmounts = convertTokenListFromWei(
+        leaf.chainId,
+        Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
+        leaf.refundAmounts
+      );
+      leaf.l2Token = convertTokenAddressToSymbol(leaf.chainId, leaf.l2TokenAddress);
+      delete leaf.l2TokenAddress;
+      leaf.refundAddresses = shortenHexStrings(leaf.refundAddresses);
+      relayerRefundLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
+    });
+
+    let slowRelayLeavesPretty = "";
+    slowRelayLeaves.forEach((leaf, index) => {
+      const decimalsForDestToken = this.clients.hubPoolClient.getTokenInfo(
+        leaf.destinationChainId,
+        leaf.destinationToken
+      ).decimals;
+      // Shorten keys for ease of reading from Slack.
+      delete leaf.leafId;
+      leaf.originChain = leaf.originChainId;
+      leaf.destinationChain = leaf.destinationChainId;
+      leaf.depositor = shortenHexString(leaf.depositor);
+      leaf.recipient = shortenHexString(leaf.recipient);
+      leaf.destToken = convertTokenAddressToSymbol(leaf.destinationChainId, leaf.destinationToken);
+      leaf.amount = convertFromWei(leaf.amount, decimalsForDestToken);
+      leaf.realizedLpFee = `${convertFromWei(leaf.realizedLpFeePct, decimalsForDestToken)}%`;
+      leaf.relayerFee = `${convertFromWei(leaf.relayerFeePct, decimalsForDestToken)}%`;
+      delete leaf.destinationToken;
+      delete leaf.realizedLpFeePct;
+      delete leaf.relayerFeePct;
+      delete leaf.originChainId;
+      delete leaf.destinationChainId;
+      slowRelayLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
+    });
+    return (
+      `\n\t*Bundle blocks*:${bundleBlockRangePretty}` +
+      `\n\t*PoolRebalance*:\n\t\troot:${shortenHexString(
+        poolRebalanceRoot
+      )}...\n\t\tleaves:${poolRebalanceLeavesPretty}` +
+      `\n\t*RelayerRefund*\n\t\troot:${shortenHexString(
+        relayerRefundRoot
+      )}...\n\t\tleaves:${relayerRefundLeavesPretty}` +
+      `\n\t*SlowRelay*\n\troot:${shortenHexString(slowRelayRoot)}...\n\t\tleaves:${slowRelayLeavesPretty}`
+    );
+  }
+
+  _getAmountToReturnForRelayerRefundLeaf(
+    endBlockForMainnet: number,
+    leafChainId: string,
+    leafToken: string,
+    poolRebalanceRunningBalances: RunningBalances
+  ) {
+    const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpartAtBlock(
+      leafChainId,
+      leafToken,
+      endBlockForMainnet
+    );
+    const runningBalanceForLeaf = poolRebalanceRunningBalances[leafChainId][l1TokenCounterpart];
+    const netSendAmountForLeaf = this._getNetSendAmountForL1Token(
+      runningBalanceForLeaf,
+      l1TokenCounterpart,
+      endBlockForMainnet
+    );
+    return netSendAmountForLeaf.mul(toBN(-1)).gt(toBN(0)) ? netSendAmountForLeaf.mul(toBN(-1)) : toBN(0);
+  }
+
   // If the running balance is greater than the token transfer threshold, then set the net send amount
   // equal to the running balance and reset the running balance to 0. Otherwise, the net send amount should be
   // 0, indicating that we do not want the data worker to trigger a token transfer between hub pool and spoke
   // pool when executing this leaf.
   _getNetSendAmountForL1Token(runningBalance: BigNumber, l1Token: string, mainnetBlock: number): BigNumber {
-    return runningBalance
-      .abs()
-      .gte(this.clients.configStoreClient.getTokenTransferThresholdForBlock(l1Token, mainnetBlock))
-      ? runningBalance
-      : toBN(0);
+    const transferThreshold = this.tokenTransferThreshold[l1Token]
+      ? this.tokenTransferThreshold[l1Token]
+      : this.clients.configStoreClient.getTokenTransferThresholdForBlock(l1Token, mainnetBlock);
+    return runningBalance.abs().gte(transferThreshold) ? runningBalance : toBN(0);
   }
 
   _getRunningBalanceForL1Token(runningBalance: BigNumber, l1Token: string, mainnetBlock: number): BigNumber {
-    return runningBalance
-      .abs()
-      .lt(this.clients.configStoreClient.getTokenTransferThresholdForBlock(l1Token, mainnetBlock))
-      ? runningBalance
-      : toBN(0);
+    const transferThreshold = this.tokenTransferThreshold[l1Token]
+      ? this.tokenTransferThreshold[l1Token]
+      : this.clients.configStoreClient.getTokenTransferThresholdForBlock(l1Token, mainnetBlock);
+    return runningBalance.abs().lt(transferThreshold) ? runningBalance : toBN(0);
   }
 
   _updateRunningBalance(runningBalances: RunningBalances, l2ChainId: number, l1Token: string, updateAmount: BigNumber) {
