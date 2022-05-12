@@ -24,7 +24,8 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       Constants.CHAIN_ID_LIST_INDICES,
       config.maxRelayerRepaymentLeafSizeOverride,
       config.maxPoolRebalanceLeafSizeOverride,
-      config.tokenTransferThresholdOverride
+      config.tokenTransferThresholdOverride,
+      config.blockRangeEndBlockBuffer
     );
 
     logger.debug({ at: "Dataworker#index", message: "Components initialized. Starting execution loop" });
@@ -33,6 +34,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       await updateDataworkerClients(clients);
 
       await dataworker.proposeRootBundle();
+      await dataworker.validateRootBundle();
 
       await clients.multiCallerClient.executeTransactionQueue();
 

@@ -719,7 +719,7 @@ export class Dataworker {
     }
 
     const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundleProposal();
-    this.logger.info({
+    this.logger.debug({
       at: "Dataworker",
       message: "Validating pending proposal",
       pendingRootBundle,
@@ -747,6 +747,19 @@ export class Dataworker {
 
     // First, we'll evaluate the pending root bundle's block end numbers.
     const widestPossibleExpectedBlockRange = await this._getWidestPossibleExpectedBlockRange();
+    if (pendingRootBundle.bundleEvaluationBlockNumbers.length !== widestPossibleExpectedBlockRange.length) {
+      this.logger.debug({
+        at: "Dataworker",
+        message: "Unexpected bundle block range length, disputing",
+        widestPossibleExpectedBlockRange,
+        pendingEndBlocks: pendingRootBundle.bundleEvaluationBlockNumbers,
+      });
+      this._submitDisputeWithMrkdwn(
+        hubPoolChainId,
+        `Disputed pending root bundle with incorrect bundle block range length`
+      );
+      return;
+    }
 
     // Make sure that all end blocks are >= expected start blocks.
     if (
@@ -1078,7 +1091,7 @@ export class Dataworker {
   _generateMarkdownForDisputeInvalidBundleBlocks(pendingRootBundle: RootBundle, widestExpectedBlockRange: number[][]) {
     const getBlockRangePretty = (blockRange: number[][] | number[]) => {
       let bundleBlockRangePretty = "";
-      blockRange.forEach((chainId, index) => {
+      this.chainIdListForBundleEvaluationBlockNumbers.forEach((chainId, index) => {
         bundleBlockRangePretty += `\n\t\t${chainId}: ${JSON.stringify(blockRange[index])}`;
       });
       return bundleBlockRangePretty;

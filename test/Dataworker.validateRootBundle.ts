@@ -174,6 +174,21 @@ describe("Dataworker: Validate pending root bundle", async function () {
       .true;
     await multiCallerClient.executeTransactionQueue();
 
+    // Bundle range length doesn't match expected chain ID list.
+    await updateAllClients();
+    await hubPool.proposeRootBundle(
+      [1],
+      expectedPoolRebalanceRoot4.leaves.length,
+      expectedPoolRebalanceRoot4.tree.getHexRoot(),
+      expectedRelayerRefundRoot4.tree.getHexRoot(),
+      expectedSlowRelayRefundRoot4.tree.getHexRoot()
+    );
+    await updateAllClients();
+    await dataworkerInstance.validateRootBundle();
+    expect(lastSpyLogIncludes(spy, "Unexpected bundle block range length, disputing")).to.be
+      .true;
+    await multiCallerClient.executeTransactionQueue();
+    
     // PoolRebalance root is empty
     await updateAllClients();
     await hubPool.proposeRootBundle(
