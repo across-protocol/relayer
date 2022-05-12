@@ -94,10 +94,10 @@ export class HubPoolClient {
   }
 
   async getPostRelayPoolUtilization(l1Token: string, quoteBlockNumber: number, relaySize: BigNumber) {
-    const blockOffset = { blockTag: quoteBlockNumber };
+    const overrides = { blockTag: quoteBlockNumber };
     const [current, post] = await Promise.all([
-      this.hubPool.callStatic.liquidityUtilizationCurrent(l1Token, blockOffset),
-      this.hubPool.callStatic.liquidityUtilizationPostRelay(l1Token, relaySize, blockOffset),
+      this.hubPool.callStatic.liquidityUtilizationCurrent(l1Token, overrides),
+      this.hubPool.callStatic.liquidityUtilizationPostRelay(l1Token, relaySize, overrides),
     ]);
     return { current, post };
   }

@@ -1,19 +1,15 @@
-import { config } from "dotenv";
+import { processEndPollingLoop, winston, delay, config, startupLogLevel } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
-
 import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
-import { processEndPollingLoop, winston, delay } from "../utils";
-
-let logger: winston.Logger;
-
 config();
+let logger: winston.Logger;
 
 export async function runRelayer(_logger: winston.Logger): Promise<void> {
   logger = _logger;
   try {
     const config = new RelayerConfig(process.env);
-    logger.info({ at: "Relayer#index", message: "Relayer starting🏃‍♂️", config });
+    logger[startupLogLevel(config)]({ at: "Relayer#index", message: "Relayer started 🏃‍♂️", config });
 
     const relayerClients = await constructRelayerClients(logger, config);
 

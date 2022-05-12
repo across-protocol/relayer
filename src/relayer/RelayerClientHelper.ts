@@ -15,16 +15,29 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
 
   const commonClients = await constructClients(logger, config);
 
-  // Create clients for each contract for each chain.
   const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
 
   const spokePools = config.spokePoolChains.map((networkId) => {
     return { networkId, contract: getDeployedContract("SpokePool", networkId, spokePoolSigners[networkId]) };
   });
   const spokePoolClients = {};
+
+  // If maxRelayerLookBack is set then offset the fromBlock to the latest - maxRelayerLookBack. Used in serverless mode.
+  let fromBlocks = {};
+  if (config.maxRelayerLookBack != {}) {
+    const l2BlockNumbers = await Promise.all(
+      spokePools.map((obj: { contract: Contract }) => obj.contract.provider.getBlockNumber())
+    );
+    spokePools.forEach((obj: { networkId: number; contract: Contract }, index) => {
+      if (config.maxRelayerLookBack[obj.networkId])
+        fromBlocks[obj.networkId] = l2BlockNumbers[index] - config.maxRelayerLookBack[obj.networkId];
+    });
+  }
+
   spokePools.forEach((obj: { networkId: number; contract: Contract }) => {
+    const spokePoolDeploymentBlock = getDeploymentBlockNumber("SpokePool", obj.networkId);
     const spokePoolClientSearchSettings = {
-      fromBlock: Number(getDeploymentBlockNumber("SpokePool", obj.networkId)),
+      fromBlock: fromBlocks[obj.networkId] ?? spokePoolDeploymentBlock,
       toBlock: null,
       maxBlockLookBack: config.maxBlockLookBack[obj.networkId],
     };
@@ -33,7 +46,8 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
       obj.contract,
       commonClients.configStoreClient,
       obj.networkId,
-      spokePoolClientSearchSettings
+      spokePoolClientSearchSettings,
+      spokePoolDeploymentBlock
     );
   });
 

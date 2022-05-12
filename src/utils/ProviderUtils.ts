@@ -1,5 +1,7 @@
 import { ethers, providers } from "ethers";
 
+const stallTimeout = 5000;
+
 export function getProvider(networkId: number, nodeQuorumThreshold: number = 1) {
   if (process.env[`RETRY_CONFIG_${networkId}`]) return getFallbackProvider(networkId, nodeQuorumThreshold);
   else return getStandardProvider(networkId);
@@ -17,7 +19,7 @@ export function getFallbackProvider(networkId: number, nodeQuorumThreshold: numb
 
   return new providers.FallbackProvider(
     nodeUrls.map((url) => {
-      return { provider: new ethers.providers.JsonRpcProvider(url), priority: 1, stallTimeout: 2000, weight: 1 };
+      return { provider: new ethers.providers.JsonRpcProvider(url), priority: 1, stallTimeout, weight: 1 };
     }),
     nodeQuorumThreshold
   );
@@ -27,5 +29,5 @@ export function getFallbackProvider(networkId: number, nodeQuorumThreshold: numb
 export function getStandardProvider(networkId: number) {
   const nodeUrl = process.env[`NODE_URL_${networkId}`];
   if (!nodeUrl) throw new Error(`No NODE_URL_ for network ${networkId}`);
-  return new ethers.providers.JsonRpcProvider(nodeUrl);
+  return new ethers.providers.JsonRpcProvider({ url: nodeUrl, timeout: stallTimeout });
 }
