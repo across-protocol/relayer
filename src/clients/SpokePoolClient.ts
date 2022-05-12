@@ -112,7 +112,6 @@ export class SpokePoolClient {
     let isValid = true;
     Object.keys(deposit).forEach((key) => {
       if (fill[key] !== undefined && deposit[key].toString() !== fill[key].toString()) {
-        this.log("debug", "Prop mismatch!", { depositVal: deposit[key].toString(), fillValue: fill[key].toString() });
         isValid = false;
       }
     });
@@ -155,7 +154,7 @@ export class SpokePoolClient {
       assign(
         this.depositsWithBlockNumbers,
         [deposit.destinationChainId],
-        [{ ...deposit, blockNumber: dataForQuoteTime[index].quoteBlock }]
+        [{ ...deposit, blockNumber: dataForQuoteTime[index].quoteBlock, originBlockNumber: event.blockNumber }]
       );
     }
 
