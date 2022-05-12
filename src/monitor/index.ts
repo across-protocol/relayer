@@ -9,7 +9,7 @@ export async function runMonitor(_logger: winston.Logger) {
   logger = _logger;
   try {
     const config = new MonitorConfig(process.env);
-    logger[startupLogLevel(config)]({ at: "AcrossMonitor#index", message: "AcrossMonitor started 🔭", config });
+    logger[startupLogLevel(config)]({ at: "AcrossMonitor#index", message: "Monitor started 🔭", config });
 
     const clients = constructMonitorClients(config, logger);
     const acrossMonitor = new Monitor(logger, config, clients);

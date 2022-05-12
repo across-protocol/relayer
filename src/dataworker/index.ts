@@ -10,7 +10,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
   logger = _logger;
   try {
     const config = new DataworkerConfig(process.env);
-    logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker starting👩‍🔬", config });
+    logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
 
     const clients = await constructDataworkerClients(logger, config);
 
