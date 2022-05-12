@@ -794,6 +794,7 @@ export class Dataworker {
         message: "A bundle end block is > latest block for its chain, submitting dispute",
         expectedEndBlocks: widestPossibleExpectedBlockRange.map((range) => range[1]),
         pendingEndBlocks: pendingRootBundle.bundleEvaluationBlockNumbers,
+        endBlockBuffers,
       });
       this._submitDisputeWithMrkdwn(
         hubPoolChainId,
