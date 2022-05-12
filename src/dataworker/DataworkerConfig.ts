@@ -12,7 +12,7 @@ export class DataworkerConfig extends CommonConfig {
       TOKEN_TRANSFER_THRESHOLD_OVERRIDE,
       MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE,
       MAX_RELAYER_REPAYMENT_LEAF_SIZE_OVERRIDE,
-      BLOCK_RANGE_END_BLOCK_BUFFER
+      BLOCK_RANGE_END_BLOCK_BUFFER,
     } = env;
     super(env);
 

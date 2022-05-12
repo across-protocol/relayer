@@ -19,7 +19,7 @@ export class Dataworker {
     readonly maxRefundCountOverride: number = undefined,
     readonly maxL1TokenCountOverride: number = undefined,
     readonly tokenTransferThreshold: { [l1TokenAddress: string]: BigNumber } = {},
-    readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {},
+    readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {}
   ) {
     if (
       maxRefundCountOverride !== undefined ||
@@ -32,7 +32,7 @@ export class Dataworker {
         maxRefundCountOverride: this.maxRefundCountOverride,
         maxL1TokenCountOverride: this.maxL1TokenCountOverride,
         tokenTransferThreshold: this.tokenTransferThreshold,
-        blockRangeEndBlockBuffer: this.blockRangeEndBlockBuffer
+        blockRangeEndBlockBuffer: this.blockRangeEndBlockBuffer,
       });
   }
 
