@@ -9,7 +9,7 @@ export async function runRelayer(_logger: winston.Logger): Promise<void> {
   logger = _logger;
   try {
     const config = new RelayerConfig(process.env);
-    logger[startupLogLevel(config)]({ at: "Relayer#index", message: "Relayer starting🏃‍♂️", config });
+    logger[startupLogLevel(config)]({ at: "Relayer#index", message: "Relayer started 🏃‍♂️", config });
 
     const relayerClients = await constructRelayerClients(logger, config);
 
