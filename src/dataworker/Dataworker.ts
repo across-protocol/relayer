@@ -18,18 +18,21 @@ export class Dataworker {
     readonly chainIdListForBundleEvaluationBlockNumbers: number[],
     readonly maxRefundCountOverride: number = undefined,
     readonly maxL1TokenCountOverride: number = undefined,
-    readonly tokenTransferThreshold: { [l1TokenAddress: string]: BigNumber } = {}
+    readonly tokenTransferThreshold: { [l1TokenAddress: string]: BigNumber } = {},
+    readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {},
   ) {
     if (
       maxRefundCountOverride !== undefined ||
       maxL1TokenCountOverride !== undefined ||
-      Object.keys(tokenTransferThreshold).length > 0
+      Object.keys(tokenTransferThreshold).length > 0 ||
+      Object.keys(blockRangeEndBlockBuffer).length > 0
     )
       this.logger.debug({
         at: "Dataworker constructed with overridden config store settings",
         maxRefundCountOverride: this.maxRefundCountOverride,
         maxL1TokenCountOverride: this.maxL1TokenCountOverride,
         tokenTransferThreshold: this.tokenTransferThreshold,
+        blockRangeEndBlockBuffer: this.blockRangeEndBlockBuffer
       });
   }
 
@@ -764,11 +767,13 @@ export class Dataworker {
       return;
     }
 
-    // TODO: Parameterize the BUFFER
+    const endBlockBuffers = this.chainIdListForBundleEvaluationBlockNumbers.map(
+      (chainId: number) => this.blockRangeEndBlockBuffer[chainId] ?? 0
+    );
     // Make sure that all end blocks are <= latest HEAD blocks + buffer for all chains.
     if (
       pendingRootBundle.bundleEvaluationBlockNumbers.some(
-        (block, index) => block > widestPossibleExpectedBlockRange[index][1]
+        (block, index) => block > widestPossibleExpectedBlockRange[index][1] + endBlockBuffers[index]
       )
     ) {
       this.logger.debug({
