@@ -56,7 +56,6 @@ describe("HubPoolClient: RootBundle Events", async function () {
       poolRebalanceRoot: tree.getHexRoot(),
       relayerRefundRoot: constants.mockTreeRoot,
       slowRelayRoot: constants.mockTreeRoot,
-      claimedBitMap: toBN(0),
       proposer: dataworker.address,
       unclaimedPoolRebalanceLeafCount: 2,
       challengePeriodEndTimestamp: proposeTime + liveness,

@@ -1,5 +1,6 @@
-import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, EventSearchConfig, toBN } from "../utils";
-import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery } from "../utils";
+import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, EventSearchConfig } from "../utils";
+import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
+import { EMPTY_MERKLE_ROOT } from "../utils";
 import { Deposit, L1Token, ProposedRootBundle, ExecutedRootBundle, RootBundle } from "../interfaces";
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
 
@@ -272,14 +273,17 @@ export class HubPoolClient {
       poolRebalanceRoot: pendingRootBundleProposal.poolRebalanceRoot,
       relayerRefundRoot: pendingRootBundleProposal.relayerRefundRoot,
       slowRelayRoot: pendingRootBundleProposal.slowRelayRoot,
-      claimedBitMap: pendingRootBundleProposal.claimedBitMap,
       proposer: pendingRootBundleProposal.proposer,
       unclaimedPoolRebalanceLeafCount: pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount,
       challengePeriodEndTimestamp: pendingRootBundleProposal.challengePeriodEndTimestamp,
       bundleEvaluationBlockNumbers: undefined,
       proposalBlockNumber: undefined,
     };
-    if (pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount > 0) {
+    // If pending proposal is active, even if it passed the liveness period, then we can load the following root
+    // bundle properties: `bundleEvaluationBlockNumbers` and `proposalBlockNumber`, otherwise they are not relevant.
+    // We can assume that the pool rebalance root is never empty if there is a pending root on-chain, regardless
+    // if the root is disputable.
+    if (this.pendingRootBundle.poolRebalanceRoot !== EMPTY_MERKLE_ROOT) {
       // We make a potentially dangerous assumption here that the most recent ProposeRootBundle event found in the
       // the above event search corresponds to the pending root bundle. This could NOT be the case if
       // `this.eventSearchConfig.toBlock !== undefined`, but in most cases this is true because we set the `toBlock`
