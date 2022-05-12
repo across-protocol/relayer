@@ -61,7 +61,12 @@ export class Dataworker {
     const allValidFills: FillWithBlock[] = [];
 
     const allChainIds = Object.keys(this.clients.spokePoolSigners);
-    this.logger.debug({ at: "Dataworker", message: `Loading deposit and fill data`, chainIds: allChainIds });
+    this.logger.debug({
+      at: "Dataworker",
+      message: `Loading deposit and fill data`,
+      chainIds: allChainIds,
+      blockRangesForChains,
+    });
 
     for (const originChainId of allChainIds) {
       const originClient = spokePoolClients[originChainId];
@@ -75,19 +80,18 @@ export class Dataworker {
         if (!destinationClient.isUpdated)
           throw new Error(`destination SpokePoolClient with chain ID ${destinationChainId} not updated`);
 
-        const blockRangeForChain = this._getBlockRangeForChain(blockRangesForChains, Number(destinationChainId));
-
         // Store all deposits in range, for use in constructing a pool rebalance root. Save deposits with
         // their quote time block numbers so we can pull the L1 token counterparts for the quote timestamp.
         // We can safely filter `deposits` by the bundle block range because its only used to decrement running
         // balances in the pool rebalance root. This array is NOT used when matching fills with deposits. For that,
         // we use the wider event search config of the origin client.
+        const depositChainBlockRange = this._getBlockRangeForChain(blockRangesForChains, Number(originChainId));
         const newDeposits: DepositWithBlock[] = originClient
           .getDepositsForDestinationChain(destinationChainId, true)
           .filter(
             (deposit) =>
-              deposit.blockNumber <= blockRangeForChain[1] &&
-              deposit.blockNumber >= blockRangeForChain[0] &&
+              deposit.originBlockNumber <= depositChainBlockRange[1] &&
+              deposit.originBlockNumber >= depositChainBlockRange[0] &&
               !deposits.some(
                 (existingDeposit) =>
                   existingDeposit.originChainId === deposit.originChainId &&
@@ -97,6 +101,7 @@ export class Dataworker {
         deposits.push(...newDeposits);
 
         // For each fill within the block range, look up associated deposit.
+        const blockRangeForChain = this._getBlockRangeForChain(blockRangesForChains, Number(destinationChainId));
         const fillsForOriginChain: FillWithBlock[] = destinationClient
           .getFillsWithBlockForOriginChain(Number(originChainId))
           .filter(
@@ -547,11 +552,11 @@ export class Dataworker {
         let groupIndexForChainId = 0;
 
         // Split addresses into multiple leaves if there are more L1 tokens than allowed per leaf.
-        const maxRefundCount = this.maxRefundCountOverride
-          ? this.maxRefundCountOverride
+        const maxL1TokensPerLeaf = this.maxL1TokenCountOverride
+          ? this.maxL1TokenCountOverride
           : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
-        for (let i = 0; i < sortedL1Tokens.length; i += maxRefundCount) {
-          const l1TokensToIncludeInThisLeaf = sortedL1Tokens.slice(i, i + maxRefundCount);
+        for (let i = 0; i < sortedL1Tokens.length; i += maxL1TokensPerLeaf) {
+          const l1TokensToIncludeInThisLeaf = sortedL1Tokens.slice(i, i + maxL1TokensPerLeaf);
 
           leaves.push({
             groupIndex: groupIndexForChainId++,
@@ -588,6 +593,16 @@ export class Dataworker {
     // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
     // safe strategy but could lead to new roots failing to be proposed until ALL networks are healthy.
+
+    // 0. Check if a bundle is pending.
+    if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
+    if (this.clients.hubPoolClient.hasPendingProposal()) {
+      this.logger.debug({
+        at: "Dataworker",
+        message: "Has pending proposal, cannot propose",
+      });
+      return;
+    }
 
     // 1. Construct a list of ending block ranges for each chain that we want to include
     // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
@@ -635,7 +650,7 @@ export class Dataworker {
     );
     await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update()));
 
-    // 2. Create roots
+    // 3. Create roots
     const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForProposal, spokePoolClients);
     poolRebalanceRoot.leaves.forEach((leaf: PoolRebalanceLeaf, index) => {
       const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
@@ -648,6 +663,7 @@ export class Dataworker {
         at: "Dataworker",
         message: `Pool rebalance leaf #${index}`,
         prettyLeaf,
+        proof: poolRebalanceRoot.tree.getHexProof(leaf),
       });
       return prettyLeaf;
     });
@@ -665,6 +681,7 @@ export class Dataworker {
         at: "Dataworker",
         message: `Relayer refund leaf #${index}`,
         leaf: prettyLeaf,
+        proof: relayerRefundRoot.tree.getHexProof(leaf),
       });
     });
     const slowRelayRoot = this.buildSlowRelayRoot(blockRangesForProposal, spokePoolClients);
@@ -679,6 +696,7 @@ export class Dataworker {
         at: "Dataworker",
         message: `Slow relay leaf #${index}`,
         leaf: prettyLeaf,
+        proof: slowRelayRoot.tree.getHexProof(leaf),
       });
     });
 
@@ -686,15 +704,6 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker",
         message: "No pool rebalance leaves, cannot propose",
-      });
-      return;
-    }
-
-    // 3. Check if a bundle is pending.
-    if (this.clients.hubPoolClient.hasPendingProposal()) {
-      this.logger.debug({
-        at: "Dataworker",
-        message: "Has pending proposal, cannot propose",
       });
       return;
     }

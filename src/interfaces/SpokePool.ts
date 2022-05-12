@@ -16,7 +16,9 @@ export interface Deposit {
   speedUpSignature?: string | undefined; // appended after initialization, if deposit was speedup (not part of Deposit event).
 }
 
-export interface DepositWithBlock extends Deposit, SortableEvent {}
+export interface DepositWithBlock extends Deposit, SortableEvent {
+  originBlockNumber: number;
+}
 export interface Fill {
   amount: BigNumber;
   totalFilledAmount: BigNumber;
