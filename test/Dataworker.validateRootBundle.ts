@@ -185,10 +185,9 @@ describe("Dataworker: Validate pending root bundle", async function () {
     );
     await updateAllClients();
     await dataworkerInstance.validateRootBundle();
-    expect(lastSpyLogIncludes(spy, "Unexpected bundle block range length, disputing")).to.be
-      .true;
+    expect(lastSpyLogIncludes(spy, "Unexpected bundle block range length, disputing")).to.be.true;
     await multiCallerClient.executeTransactionQueue();
-    
+
     // PoolRebalance root is empty
     await updateAllClients();
     await hubPool.proposeRootBundle(
