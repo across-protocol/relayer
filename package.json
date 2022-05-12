@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@across-protocol/contracts-v2": "^0.0.54",
-    "@across-protocol/sdk-v2": "^0.0.1",
+    "@across-protocol/sdk-v2": "^0.1.1",
     "@defi-wonderland/smock": "^2.0.7",
     "@uma/common": "^2.19.0",
     "@uma/contracts-node": "^0.3.1",
