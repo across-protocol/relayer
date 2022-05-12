@@ -10,6 +10,7 @@ export async function runTransaction(logger: winston.Logger, contract: Contract,
     return await contract[method](...args, gas);
   } catch (error) {
     logger.error({ at: "TxUtil", message: "Error executing tx", error });
+    console.log(error);
     throw new Error(error.reason); // Extract the reason from the transaction error and throw it.
   }
 }
@@ -43,5 +44,9 @@ export async function willSucceed(
 }
 
 export function getTarget(targetAddress: string) {
-  return { targetAddress, ...getContractInfoFromAddress(targetAddress) };
+  try {
+    return { targetAddress, ...getContractInfoFromAddress(targetAddress) };
+  } catch (error) {
+    return { targetAddress };
+  }
 }
