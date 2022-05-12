@@ -1,6 +1,6 @@
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, originChainId, sinon } from "./utils";
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
-import { lastSpyLogIncludes, toBNWei, createSpyLogger, deployRateModelStore } from "./utils";
+import { lastSpyLogIncludes, toBNWei, createSpyLogger, deployAcrossConfigStore } from "./utils";
 import { deployAndConfigureHubPool, winston } from "./utils";
 import { amountToLp, sampleRateModel } from "./constants";
 import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallerClient, ProfitClient } from "../src/clients";
@@ -9,7 +9,7 @@ import { TokenClient } from "../src/clients";
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
-let hubPool: Contract, rateModelStore: Contract, l1Token: Contract;
+let hubPool: Contract, acrossConfigStore: Contract, l1Token: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
@@ -33,9 +33,9 @@ describe("Relayer: Token balance shortfall", async function () {
     ]);
 
     ({ spy, spyLogger } = createSpyLogger());
-    ({ rateModelStore } = await deployRateModelStore(owner, [l1Token]));
+    ({ acrossConfigStore } = await deployAcrossConfigStore(owner, [l1Token]));
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-    rateModelClient = new RateModelClient(spyLogger, rateModelStore, hubPoolClient);
+    rateModelClient = new RateModelClient(spyLogger, acrossConfigStore, hubPoolClient);
     multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
     spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(relayer), rateModelClient, originChainId);
     spokePoolClient_2 = new SpokePoolClient(
@@ -67,7 +67,7 @@ describe("Relayer: Token balance shortfall", async function () {
 
     await l1Token.approve(hubPool.address, amountToLp);
     await hubPool.addLiquidity(l1Token.address, amountToLp);
-    await rateModelStore.updateRateModel(l1Token.address, JSON.stringify(sampleRateModel));
+    await acrossConfigStore.updateTokenConfig(l1Token.address, JSON.stringify(sampleRateModel));
 
     await updateAllClients();
   });

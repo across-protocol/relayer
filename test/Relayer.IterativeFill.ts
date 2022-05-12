@@ -1,13 +1,13 @@
 import { hubPoolFixture, deployIterativeSpokePoolsAndToken, createSpyLogger, lastSpyLogIncludes, toBN } from "./utils";
 import { expect, deposit, ethers, Contract, getLastBlockTime, contractAt, addLiquidity } from "./utils";
-import { SignerWithAddress, setupTokensForWallet, deployRateModelStore, winston, sinon, toBNWei } from "./utils";
+import { SignerWithAddress, setupTokensForWallet, deployAcrossConfigStore, winston, sinon, toBNWei } from "./utils";
 import { amountToLp, sampleRateModel } from "./constants";
 import { SpokePoolClient, HubPoolClient, RateModelClient, MultiCallerClient } from "../src/clients";
 import { TokenClient, ProfitClient } from "../src/clients";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 
-let relayer_signer: SignerWithAddress, hubPool: Contract, mockAdapter: Contract, rateModelStore: Contract;
+let relayer_signer: SignerWithAddress, hubPool: Contract, mockAdapter: Contract, acrossConfigStore: Contract;
 let hubPoolClient: HubPoolClient, rateModelClient: RateModelClient, tokenClient: TokenClient;
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
@@ -25,9 +25,9 @@ describe("Relayer: Iterative fill", async function () {
     const numTokensToDeployPerChain = 1;
 
     ({ spy, spyLogger } = createSpyLogger());
-    ({ rateModelStore } = await deployRateModelStore(relayer_signer, []));
+    ({ acrossConfigStore } = await deployAcrossConfigStore(relayer_signer, []));
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-    rateModelClient = new RateModelClient(spyLogger, rateModelStore, hubPoolClient);
+    rateModelClient = new RateModelClient(spyLogger, acrossConfigStore, hubPoolClient);
     multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
 
     ({ spokePools, l1TokenToL2Tokens } = await deployIterativeSpokePoolsAndToken(
@@ -41,7 +41,7 @@ describe("Relayer: Iterative fill", async function () {
 
     const l1Token = await contractAt("ExpandedERC20", relayer_signer, Object.keys(l1TokenToL2Tokens)[0]);
 
-    await rateModelStore.updateRateModel(l1Token.address, JSON.stringify(sampleRateModel));
+    await acrossConfigStore.updateTokenConfig(l1Token.address, JSON.stringify(sampleRateModel));
 
     await addLiquidity(relayer_signer, hubPool, l1Token, amountToLp);
 

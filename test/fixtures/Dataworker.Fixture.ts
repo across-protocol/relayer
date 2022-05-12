@@ -1,7 +1,7 @@
 import { setupUmaEcosystem } from "./UmaEcosystemFixture";
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, Contract, BigNumber, enableRoutes } from "../utils";
 import { SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "../utils";
-import { createSpyLogger, winston, deployAndConfigureHubPool, deployRateModelStore } from "../utils";
+import { createSpyLogger, winston, deployAndConfigureHubPool, deployAcrossConfigStore } from "../utils";
 import * as clients from "../../src/clients";
 import { amountToLp, destinationChainId, originChainId, CHAIN_ID_TEST_LIST } from "../constants";
 
@@ -22,7 +22,7 @@ export async function setupDataworker(
   erc20_2: Contract;
   l1Token_1: Contract;
   l1Token_2: Contract;
-  rateModelStore: Contract;
+  acrossConfigStore: Contract;
   timer: Contract;
   spokePoolClient_1: clients.SpokePoolClient;
   spokePoolClient_2: clients.SpokePoolClient;
@@ -75,9 +75,9 @@ export async function setupDataworker(
   await setupTokensForWallet(hubPool, dataworker, [l1Token_1], null, 100);
 
   const { spyLogger } = createSpyLogger();
-  const { rateModelStore } = await deployRateModelStore(owner, [l1Token_1, l1Token_2]);
+  const { acrossConfigStore } = await deployAcrossConfigStore(owner, [l1Token_1, l1Token_2]);
   const hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool);
-  const rateModelClient = new clients.RateModelClient(spyLogger, rateModelStore, hubPoolClient);
+  const rateModelClient = new clients.RateModelClient(spyLogger, acrossConfigStore, hubPoolClient);
 
   const multiCallerClient = new clients.MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
   const configStoreClient = new clients.ConfigStoreClient(
@@ -143,7 +143,7 @@ export async function setupDataworker(
     erc20_2,
     l1Token_1,
     l1Token_2,
-    rateModelStore,
+    acrossConfigStore,
     timer: umaEcosystem.timer,
     spokePoolClient_1,
     spokePoolClient_2,

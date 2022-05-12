@@ -17,7 +17,7 @@ export class SpokePoolClient {
   constructor(
     readonly logger: winston.Logger,
     readonly spokePool: Contract,
-    readonly rateModelClient: RateModelClient | null, // RateModelStore can be excluded. This disables some deposit validation.
+    readonly rateModelClient: RateModelClient | null, // RateModelClient can be excluded. This disables some deposit validation.
     readonly chainId: number,
     readonly startingBlock: number = 0,
     readonly endingBlock: number | null = null

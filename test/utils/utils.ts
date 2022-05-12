@@ -91,10 +91,10 @@ export async function deploySpokePoolWithToken(
   return { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20 };
 }
 
-export async function deployRateModelStore(signer: utils.SignerWithAddress, tokensToAdd: utils.Contract[]) {
-  const rateModelStore = await (await utils.getContractFactory("RateModelStore", signer)).deploy();
-  for (const token of tokensToAdd) await rateModelStore.updateRateModel(token.address, JSON.stringify(sampleRateModel));
-  return { rateModelStore };
+export async function deployAcrossConfigStore(signer: utils.SignerWithAddress, tokensToAdd: utils.Contract[]) {
+  const acrossConfigStore = await (await utils.getContractFactory("AcrossConfigStore", signer)).deploy();
+  for (const token of tokensToAdd) await acrossConfigStore.updateTokenConfig(token.address, JSON.stringify(sampleRateModel));
+  return { acrossConfigStore };
 }
 
 export async function deployAndConfigureHubPool(
@@ -127,7 +127,7 @@ export async function deployNewTokenMapping(
   l1TokenHolder: utils.SignerWithAddress,
   spokePool: utils.Contract,
   spokePoolDestination: utils.Contract,
-  rateModelStore: utils.Contract,
+  acrossConfigStore: utils.Contract,
   hubPool: utils.Contract,
   amountToSeedLpPool: BigNumber
 ) {
@@ -157,7 +157,7 @@ export async function deployNewTokenMapping(
     { destinationChainId: spokePoolChainId, l1Token, destinationToken: l2Token },
     { destinationChainId: spokePoolDestinationChainId, l1Token, destinationToken: l2TokenDestination },
   ]);
-  await rateModelStore.updateRateModel(l1Token.address, JSON.stringify(sampleRateModel));
+  await acrossConfigStore.updateTokenConfig(l1Token.address, JSON.stringify(sampleRateModel));
 
   // Give signer initial balance and approve hub pool and spoke pool to pull funds from it
   await addLiquidity(l1TokenHolder, hubPool, l1Token, amountToSeedLpPool);

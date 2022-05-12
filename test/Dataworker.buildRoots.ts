@@ -15,7 +15,7 @@ import { getRealizedLpFeeForFills, getRefundForFills, getRefund, compareAddresse
 import { Dataworker } from "../src/dataworker/Dataworker";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
-let l1Token_1: Contract, hubPool: Contract, timer: Contract, rateModelStore: Contract;
+let l1Token_1: Contract, hubPool: Contract, timer: Contract, acrossConfigStore: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress, dataworker: SignerWithAddress;
 
 let rateModelClient: RateModelClient, hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
@@ -32,7 +32,7 @@ describe("Dataworker: Build merkle roots", async function () {
       spokePool_2,
       erc20_2,
       rateModelClient,
-      rateModelStore,
+      acrossConfigStore,
       configStoreClient,
       hubPoolClient,
       l1Token_1,
@@ -632,7 +632,7 @@ describe("Dataworker: Build merkle roots", async function () {
           relayer,
           spokePool_1,
           spokePool_2,
-          rateModelStore,
+          acrossConfigStore,
           hubPool,
           amountToDeposit.mul(toBN(100))
         );

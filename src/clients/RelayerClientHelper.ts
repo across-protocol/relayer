@@ -22,7 +22,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
   // Create contract instances for each chain for each required contract.
   const hubPool = getDeployedContract("HubPool", config.hubPoolChainId, hubSigner);
 
-  const rateModelStore = getDeployedContract("RateModelStore", config.hubPoolChainId, hubSigner);
+  const acrossConfigStore = getDeployedContract("AcrossConfigStore", config.hubPoolChainId, hubSigner);
 
   // Create clients for each contract for each chain.
   const spokePools = config.spokePoolChains.map((networkId, index) => {
@@ -31,7 +31,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
 
   const hubPoolClient = new HubPoolClient(logger, hubPool);
 
-  const rateModelClient = new RateModelClient(logger, rateModelStore, hubPoolClient);
+  const rateModelClient = new RateModelClient(logger, acrossConfigStore, hubPoolClient);
 
   const spokePoolClients = {};
   spokePools.forEach((obj: { networkId: number; contract: Contract }) => {
@@ -50,7 +50,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
     message: "Clients constructed",
     relayerWallet: baseSigner.address,
     hubPool: hubPool.address,
-    rateModelStore: rateModelStore.address,
+    acrossConfigStore: acrossConfigStore.address,
     spokePools: spokePools.map((spokePool) => {
       return { networkId: spokePool.networkId, spokePool: spokePool.contract.address };
     }),
