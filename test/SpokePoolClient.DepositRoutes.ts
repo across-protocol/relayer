@@ -41,6 +41,7 @@ describe("SpokePoolClient: Deposit Routes", async function () {
     const originToken1 = randomAddress();
     await enableRoutes(spokePool, [{ originToken: originToken1, destinationChainId }]);
     await spokePoolClient.update();
+
     expect(spokePoolClient.getDepositRoutes()).to.deep.equal({
       [originToken]: { [destinationChainId]: true, [destinationChainId2]: true },
       [originToken1]: { [destinationChainId]: true },
