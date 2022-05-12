@@ -5,7 +5,7 @@ export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
 export const CHAIN_MAX_BLOCK_LOOKBACK = {
   1: 0, // Note: 0 gets defaulted to infinity lookback
   10: 0,
-  137: 99990,
-  288: 5000,
+  137: 3490,
+  288: 4990,
   42161: 99990,
 };

@@ -71,14 +71,10 @@ describe("HubPoolClient: RootBundle Events", async function () {
     expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(23, 2, [1, 2])).to.equal(undefined);
 
     // Chain ID list doesn't contain `chain`
-    expect(() => hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1, 3])).to.throw(
-      /Can't find chainId/
-    );
+    expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1, 3])).to.equal(undefined);
 
     // Chain ID list length doesn't match bundle block range length
-    expect(() => hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1])).to.throw(
-      /Chain ID list and bundle block eval range list length do not match/
-    );
+    expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1])).to.equal(undefined);
   });
   it("gets most recent RootBundleExecuted event for chainID and L1 token", async function () {
     const { tree: tree1, leaves: leaves1 } = await constructSimpleTree(toBNWei(100));

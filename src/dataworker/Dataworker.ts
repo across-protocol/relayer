@@ -180,13 +180,11 @@ export class Dataworker {
                 refundObj.refunds[fill.relayer] = refundObj.refunds[fill.relayer].add(refund);
               else refundObj.refunds[fill.relayer] = refund;
             }
-          } else {
-            this.logger.debug({
-              at: "Dataworker",
-              message: `Could not find deposit for fill on origin client`,
-              fill,
-            });
           }
+
+          // TODO: At this point, the fill we're looking at on the destination chain from the origin chain is invalid
+          // and doesn't match with a deposit. Figure out a good way to log this information, but we can't make a new
+          // for every single invalid fill since it will flood the logs with noise.
         });
       }
     }
@@ -601,7 +599,7 @@ export class Dataworker {
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
     if (this.clients.hubPoolClient.hasPendingProposal()) {
       this.logger.debug({
-        at: "Dataworker",
+        at: "Dataworker#propose",
         message: "Has pending proposal, cannot propose",
       });
       return;
@@ -618,7 +616,7 @@ export class Dataworker {
     // on deprecated spoke pools.
     const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForProposal, 1)[1];
     this.logger.debug({
-      at: "Dataworker",
+      at: "Dataworker#propose",
       message: `Constructing spoke pool clients for end mainnet block in bundle range`,
       endBlockForMainnet,
     });
@@ -634,7 +632,7 @@ export class Dataworker {
         return result;
       }, {});
       this.logger.debug({
-        at: "Dataworker",
+        at: "Dataworker#propose",
         message: `Pool rebalance leaf #${index}`,
         prettyLeaf,
         proof: poolRebalanceRoot.tree.getHexProof(leaf),
@@ -652,7 +650,7 @@ export class Dataworker {
         return result;
       }, {});
       this.logger.debug({
-        at: "Dataworker",
+        at: "Dataworker#propose",
         message: `Relayer refund leaf #${index}`,
         leaf: prettyLeaf,
         proof: relayerRefundRoot.tree.getHexProof(leaf),
@@ -667,7 +665,7 @@ export class Dataworker {
         return result;
       }, {});
       this.logger.debug({
-        at: "Dataworker",
+        at: "Dataworker#propose",
         message: `Slow relay leaf #${index}`,
         leaf: prettyLeaf,
         proof: slowRelayRoot.tree.getHexProof(leaf),
@@ -676,7 +674,7 @@ export class Dataworker {
 
     if (poolRebalanceRoot.leaves.length === 0) {
       this.logger.debug({
-        at: "Dataworker",
+        at: "Dataworker#propose",
         message: "No pool rebalance leaves, cannot propose",
       });
       return;
@@ -685,7 +683,7 @@ export class Dataworker {
     // 4. Propose roots to HubPool contract.
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
     this.logger.debug({
-      at: "Dataworker",
+      at: "Dataworker#propose",
       message: "Enqueing new root bundle proposal txn",
       blockRangesForProposal,
       poolRebalanceLeavesCount: poolRebalanceRoot.leaves.length,
@@ -712,7 +710,7 @@ export class Dataworker {
     // Exit early if a bundle is pending.
     if (!this.clients.hubPoolClient.hasPendingProposal()) {
       this.logger.debug({
-        at: "Dataworker",
+        at: "Dataworker#validate",
         message: "No pending proposal, nothing to validate",
       });
       return;
@@ -720,15 +718,15 @@ export class Dataworker {
 
     const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundleProposal();
     this.logger.debug({
-      at: "Dataworker",
-      message: "Validating pending proposal",
+      at: "Dataworker#validate",
+      message: "Found pending proposal",
       pendingRootBundle,
     });
 
     // Exit early if challenge period timestamp has passed:
     if (this.clients.hubPoolClient.currentTime > pendingRootBundle.challengePeriodEndTimestamp) {
       this.logger.debug({
-        at: "Dataworker",
+        at: "Dataworke#validater",
         message: "Challenge period passed, cannot dispute",
       });
       return;
@@ -737,7 +735,7 @@ export class Dataworker {
     // If pool rebalance root is empty, always dispute. There should never be a bundle with an empty rebalance root.
     if (pendingRootBundle.poolRebalanceRoot === EMPTY_MERKLE_ROOT) {
       this.logger.debug({
-        at: "Dataworker",
+        at: "Dataworker#validate",
         message: "Empty pool rebalance root, submitting dispute",
         pendingRootBundle,
       });
@@ -749,7 +747,7 @@ export class Dataworker {
     const widestPossibleExpectedBlockRange = await this._getWidestPossibleExpectedBlockRange();
     if (pendingRootBundle.bundleEvaluationBlockNumbers.length !== widestPossibleExpectedBlockRange.length) {
       this.logger.debug({
-        at: "Dataworker",
+        at: "Dataworker#validate",
         message: "Unexpected bundle block range length, disputing",
         widestPossibleExpectedBlockRange,
         pendingEndBlocks: pendingRootBundle.bundleEvaluationBlockNumbers,
@@ -761,6 +759,10 @@ export class Dataworker {
       return;
     }
 
+    const endBlockBuffers = this.chainIdListForBundleEvaluationBlockNumbers.map(
+      (chainId: number) => this.blockRangeEndBlockBuffer[chainId] ?? 0
+    );
+
     // Make sure that all end blocks are >= expected start blocks.
     if (
       pendingRootBundle.bundleEvaluationBlockNumbers.some(
@@ -768,21 +770,22 @@ export class Dataworker {
       )
     ) {
       this.logger.debug({
-        at: "Dataworker",
+        at: "Dataworker#validate",
         message: "A bundle end block is < expected start block, submitting dispute",
         expectedStartBlocks: widestPossibleExpectedBlockRange.map((range) => range[0]),
         pendingEndBlocks: pendingRootBundle.bundleEvaluationBlockNumbers,
       });
       this._submitDisputeWithMrkdwn(
         hubPoolChainId,
-        this._generateMarkdownForDisputeInvalidBundleBlocks(pendingRootBundle, widestPossibleExpectedBlockRange)
+        this._generateMarkdownForDisputeInvalidBundleBlocks(
+          pendingRootBundle,
+          widestPossibleExpectedBlockRange,
+          endBlockBuffers
+        )
       );
       return;
     }
 
-    const endBlockBuffers = this.chainIdListForBundleEvaluationBlockNumbers.map(
-      (chainId: number) => this.blockRangeEndBlockBuffer[chainId] ?? 0
-    );
     // Make sure that all end blocks are <= latest HEAD blocks + buffer for all chains.
     if (
       pendingRootBundle.bundleEvaluationBlockNumbers.some(
@@ -790,7 +793,7 @@ export class Dataworker {
       )
     ) {
       this.logger.debug({
-        at: "Dataworker",
+        at: "Dataworker#validate",
         message: "A bundle end block is > latest block for its chain, submitting dispute",
         expectedEndBlocks: widestPossibleExpectedBlockRange.map((range) => range[1]),
         pendingEndBlocks: pendingRootBundle.bundleEvaluationBlockNumbers,
@@ -798,7 +801,11 @@ export class Dataworker {
       });
       this._submitDisputeWithMrkdwn(
         hubPoolChainId,
-        this._generateMarkdownForDisputeInvalidBundleBlocks(pendingRootBundle, widestPossibleExpectedBlockRange)
+        this._generateMarkdownForDisputeInvalidBundleBlocks(
+          pendingRootBundle,
+          widestPossibleExpectedBlockRange,
+          endBlockBuffers
+        )
       );
       return;
     }
@@ -812,9 +819,9 @@ export class Dataworker {
       pendingRootBundle.bundleEvaluationBlockNumbers[index],
     ]);
 
-    this.logger.info({
-      at: "Dataworker",
-      message: "Implied bundle ranges",
+    this.logger.debug({
+      at: "Dataworker#validate",
+      message: "Implied bundle ranges are valid",
       blockRangesImpliedByBundleEndBlocks,
       chainIdListForBundleEvaluationBlockNumbers: this.chainIdListForBundleEvaluationBlockNumbers,
     });
@@ -825,7 +832,7 @@ export class Dataworker {
     // on deprecated spoke pools.
     const endBlockForMainnet = this._getBlockRangeForChain(blockRangesImpliedByBundleEndBlocks, 1)[1];
     this.logger.debug({
-      at: "Dataworker",
+      at: "Dataworker#validate",
       message: `Constructing spoke pool clients for end mainnet block in bundle range`,
       endBlockForMainnet,
     });
@@ -848,7 +855,7 @@ export class Dataworker {
       expectedPoolRebalanceRoot.tree.getHexRoot() !== pendingRootBundle.poolRebalanceRoot
     ) {
       this.logger.debug({
-        at: "Dataworker",
+        at: "Dataworker#validate",
         message: "Unexpected pool rebalance root, submitting dispute",
         expectedBlockRanges: blockRangesImpliedByBundleEndBlocks,
         expectedPoolRebalanceLeaves: expectedPoolRebalanceRoot.leaves,
@@ -858,7 +865,7 @@ export class Dataworker {
       });
     } else if (expectedRelayerRefundRoot.tree.getHexRoot() !== pendingRootBundle.relayerRefundRoot) {
       this.logger.debug({
-        at: "Dataworker",
+        at: "Dataworker#validate",
         message: "Unexpected relayer refund root, submitting dispute",
         expectedBlockRanges: blockRangesImpliedByBundleEndBlocks,
         expectedRelayerRefundRoot: expectedRelayerRefundRoot.tree.getHexRoot(),
@@ -866,7 +873,7 @@ export class Dataworker {
       });
     } else if (expectedSlowRelayRoot.tree.getHexRoot() !== pendingRootBundle.slowRelayRoot) {
       this.logger.debug({
-        at: "Dataworker",
+        at: "Dataworker#validate",
         message: "Unexpected slow relay root, submitting dispute",
         expectedBlockRanges: blockRangesImpliedByBundleEndBlocks,
         expectedSlowRelayRoot: expectedSlowRelayRoot.tree.getHexRoot(),
@@ -875,7 +882,7 @@ export class Dataworker {
     } else {
       // All roots are valid! Exit early.
       this.logger.debug({
-        at: "Dataworker",
+        at: "Dataworker#validate",
         message: "Pending root bundle matches with expected",
       });
       return;
@@ -1089,7 +1096,11 @@ export class Dataworker {
     );
   }
 
-  _generateMarkdownForDisputeInvalidBundleBlocks(pendingRootBundle: RootBundle, widestExpectedBlockRange: number[][]) {
+  _generateMarkdownForDisputeInvalidBundleBlocks(
+    pendingRootBundle: RootBundle,
+    widestExpectedBlockRange: number[][],
+    buffers: number[]
+  ) {
     const getBlockRangePretty = (blockRange: number[][] | number[]) => {
       let bundleBlockRangePretty = "";
       this.chainIdListForBundleEvaluationBlockNumbers.forEach((chainId, index) => {
@@ -1100,6 +1111,7 @@ export class Dataworker {
     return (
       `Disputed pending root bundle because of invalid bundle blocks:` +
       `\n\t*Widest possible expected block range*:${getBlockRangePretty(widestExpectedBlockRange)}` +
+      `\n\t*Buffers to end blocks*:${getBlockRangePretty(buffers)}` +
       `\n\t*Pending end blocks*:${getBlockRangePretty(pendingRootBundle.bundleEvaluationBlockNumbers)}`
     );
   }

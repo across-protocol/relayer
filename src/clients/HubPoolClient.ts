@@ -120,20 +120,26 @@ export class HubPoolClient {
   }
 
   // This should find the ProposeRootBundle event whose bundle block number for `chain` is closest to the `block`
-  // without being smaller. It returns the bundle block number for the chain.
+  // without being smaller. It returns the bundle block number for the chain or undefined if not matched.
   getRootBundleEvalBlockNumberContainingBlock(block: number, chain: number, chainIdList: number[]): number | undefined {
     let endingBlockNumber: number;
     for (const rootBundle of sortEventsAscending(this.proposedRootBundles)) {
-      const bundleEvalBlockNumber = this.getBundleEndBlockForChain(
-        rootBundle as ProposedRootBundle,
-        chain,
-        chainIdList
-      );
-      if (bundleEvalBlockNumber >= block) {
-        endingBlockNumber = bundleEvalBlockNumber;
-        // Since events are sorted from oldest to newest, and bundle block ranges should only increase, exit as soon
-        // as we find the first block range that contains the target block.
-        break;
+      try {
+        // `getBundleEndBlockForChain` will error or return the bundle end block for the chain.
+        const bundleEvalBlockNumber = this.getBundleEndBlockForChain(
+          rootBundle as ProposedRootBundle,
+          chain,
+          chainIdList
+        );
+        if (bundleEvalBlockNumber >= block) {
+          endingBlockNumber = bundleEvalBlockNumber;
+          // Since events are sorted from oldest to newest, and bundle block ranges should only increase, exit as soon
+          // as we find the first block range that contains the target block.
+          break;
+        }
+      } catch (err) {
+        // Found ProposeRootBundleEvent with invalid bundle block list, skip it.
+        continue;
       }
     }
     return endingBlockNumber;
