@@ -1,4 +1,5 @@
 import { ethers, BigNumber } from "ethers";
+import { createFormatFunction } from "../utils";
 
 export const toWei = (num: string | number | BigNumber) => ethers.utils.parseEther(num.toString());
 
@@ -22,3 +23,16 @@ export const etherscanLink = (txHashOrAddress: string, chainId: number | string)
 export const utf8ToHex = (input: string) => ethers.utils.formatBytes32String(input);
 
 export const hexToUtf8 = (input: string) => ethers.utils.toUtf8String(input);
+
+export const convertFromWei = (weiVal: string, decimals: number) => {
+  const formatFunction = createFormatFunction(2, 4, false, decimals);
+  return formatFunction(weiVal);
+};
+
+export const shortenHexStrings = (addresses: string[]) => {
+  return addresses.map((address) => shortenHexString(address));
+};
+
+export const shortenHexString = (hexString: string) => {
+  return hexString.substring(0, 10);
+};

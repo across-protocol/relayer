@@ -1,18 +1,19 @@
 import { deploySpokePoolWithToken, expect, ethers, Contract, SignerWithAddress } from "./utils";
 import { createSpyLogger, winston, originChainId, destinationChainId, toBNWei } from "./utils";
+import { deployAndConfigureHubPool, zeroAddress } from "./utils";
 
-import { TokenClient, SpokePoolClient } from "../src/clients"; // Tested
+import { TokenClient, SpokePoolClient, HubPoolClient } from "../src/clients"; // Tested
 
 let spokePool_1: Contract, spokePool_2: Contract;
 let erc20_1: Contract, weth_1: Contract, erc20_2: Contract, weth_2: Contract;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
+let owner: SignerWithAddress, spyLogger: winston.Logger;
 let tokenClient: TokenClient; // tested
 
 describe("TokenClient: Balance and Allowance", async function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
-    ({ spy, spyLogger } = createSpyLogger());
+    ({ spyLogger } = createSpyLogger());
     // Using deploySpokePoolWithToken will create two tokens and enable both of them as routes.
     ({
       spokePool: spokePool_1,
@@ -24,13 +25,15 @@ describe("TokenClient: Balance and Allowance", async function () {
       erc20: erc20_2,
       weth: weth_2,
     } = await deploySpokePoolWithToken(destinationChainId, originChainId));
+    const { hubPool } = await deployAndConfigureHubPool(owner, [], zeroAddress, zeroAddress);
 
     spokePoolClient_1 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_1, null, originChainId);
     spokePoolClient_2 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_2, null, destinationChainId);
 
     const spokePoolClients = { [destinationChainId]: spokePoolClient_1, [originChainId]: spokePoolClient_2 };
+    const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
 
-    tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients);
+    tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });
 
   it("Fetches all associated balances and allowances", async function () {

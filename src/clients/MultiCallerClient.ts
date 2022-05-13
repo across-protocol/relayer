@@ -1,4 +1,4 @@
-import { winston, getNetworkName, assign, Contract, runTransaction, getTarget, rejectAfterDelay } from "../utils";
+import { winston, getNetworkName, assign, Contract, runTransaction, rejectAfterDelay, getTarget } from "../utils";
 import { willSucceed, etherscanLink } from "../utils";
 export interface AugmentedTransaction {
   contract: Contract;
@@ -27,10 +27,15 @@ export class MultiCallerClient {
     this.transactions = [];
   }
 
-  async executeTransactionQueue() {
+  async executeTransactionQueue(simulationModeOn = false) {
     try {
       if (this.transactions.length === 0) return;
-      this.logger.debug({ at: "MultiCallerClient", message: "Executing tx bundle", number: this.transactions.length });
+      this.logger.debug({
+        at: "MultiCallerClient",
+        message: "Executing tx bundle",
+        number: this.transactions.length,
+        simulationModeOn,
+      });
 
       // Simulate the transaction execution for the whole queue.
       const transactionsSucceed = await Promise.all(
@@ -41,7 +46,7 @@ export class MultiCallerClient {
       if (transactionsSucceed.some((succeed) => !succeed.succeed))
         this.logger.error({
           at: "MultiCallerClient",
-          message: "Some transaction in the queue are reverting!",
+          message: "Some transaction in the queue will revert!",
           revertingTransactions: transactionsSucceed
             .filter((transaction) => !transaction.succeed)
             .map((transaction) => {
@@ -68,6 +73,25 @@ export class MultiCallerClient {
       const groupedTransactions: { [networkId: number]: AugmentedTransaction[] } = {};
       for (const transaction of validTransactions) {
         assign(groupedTransactions, [transaction.chainId], [transaction]);
+      }
+
+      if (simulationModeOn) {
+        this.logger.debug({
+          at: "MultiCallerClient",
+          message: "All transactions will succeed! Logging markdown messages.",
+        });
+        let mrkdwn = "";
+        Object.keys(groupedTransactions).forEach((chainId) => {
+          mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
+          groupedTransactions[chainId].forEach((transaction, groupTxIndex) => {
+            mrkdwn +=
+              `  ${groupTxIndex + 1}. ${transaction.message || "0 message"}: ` +
+              `${transaction.mrkdwn || "0 mrkdwn"}\n`;
+          });
+        });
+        this.logger.info({ at: "MultiCallerClient", message: "Exiting simulation mode 🎮", mrkdwn });
+        this.clearTransactionQueue();
+        return;
       }
 
       this.logger.debug({
@@ -126,13 +150,13 @@ export class MultiCallerClient {
         at: "MultiCallerClient",
         message: "some transactions in the bundle contain different targets",
         transactions: transactions.map(({ contract, chainId }) => {
-          return { targetAddress: contract.address, chainId };
+          return { target: getTarget(contract.address), chainId };
         }),
       });
       return null; // If there is a problem in the targets in the bundle return null. This will be a noop.
     }
     const callData = transactions.map((tx) => tx.contract.interface.encodeFunctionData(tx.method, tx.args));
-    this.logger.debug({ at: "MultiCallerClient", message: "Made bundle", target: getTarget(target.address), callData });
+    this.logger.debug({ at: "MultiCallerClient", message: "Made bundle", target: target.address, callData });
     return runTransaction(this.logger, target, "multicall", [callData]);
   }
 }

@@ -5,10 +5,10 @@ import * as typechain from "@across-protocol/contracts-v2"; //TODO: refactor onc
 // Return an ethers contract instance for a deployed contract, imported from the Across-protocol contracts repo.
 export function getDeployedContract(contractName: string, networkId: number, signer?: Wallet): Contract {
   try {
-    if (contractName === "SpokePool") contractName = castSpokePoolName(networkId);
-
     const address = getDeployedAddress(contractName, networkId);
-    const artifact = typechain[`${[contractName.replace("_", "")]}__factory`];
+    // If the contractName is SpokePool then we need to modify it to find the correct contract factory artifact.
+    const factoryName = contractName === "SpokePool" ? castSpokePoolName(networkId) : contractName;
+    const artifact = typechain[`${[factoryName.replace("_", "")]}__factory`];
     return new Contract(address, artifact.abi, signer);
   } catch (error) {
     throw new Error(`Could not find address for contract ${contractName} on ${networkId}`);
@@ -16,7 +16,7 @@ export function getDeployedContract(contractName: string, networkId: number, sig
 }
 
 // If the name of the contract is SpokePool then we need to apply a transformation on the name to get the correct
-// contract name. For example, if the network is "mainnet" then the contract is called Ethereum_SpokePool.
+// contract factory name. For example, if the network is "mainnet" then the contract is called Ethereum_SpokePool.
 export function castSpokePoolName(networkId: number): string {
   let networkName = getNetworkName(networkId);
   if (networkName == "Mainnet" || networkName == "Rinkeby" || networkName == "Kovan" || networkName == "Goerli")
@@ -32,10 +32,9 @@ export function getParamType(contractName: string, functionName: string, paramNa
   return fragment!.inputs.find((input) => input.name === paramName) || "";
 }
 
-export function getDeploymentBlockNumber(contractName: string, networkId: number) {
+export function getDeploymentBlockNumber(contractName: string, networkId: number): number {
   try {
-    if (contractName === "SpokePool") contractName = castSpokePoolName(networkId);
-    return getDeployedBlockNumber(contractName, networkId);
+    return Number(getDeployedBlockNumber(contractName, networkId));
   } catch (error) {
     throw new Error(`Could not find deployment block for contract ${contractName} on ${networkId}`);
   }

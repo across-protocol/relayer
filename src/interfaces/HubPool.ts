@@ -64,3 +64,13 @@ export interface SetPoolRebalanceRoot extends SortableEvent {
   l1Token: string;
   destinationToken: string;
 }
+
+export interface RootBundle {
+  poolRebalanceRoot: string;
+  relayerRefundRoot: string;
+  slowRelayRoot: string;
+  claimedBitMap: BigNumber;
+  proposer: string;
+  unclaimedPoolRebalanceLeafCount: number;
+  challengePeriodEndTimestamp: number;
+}

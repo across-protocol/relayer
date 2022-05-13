@@ -1,6 +1,6 @@
 import { BigNumber, winston, assign, ERC20, Contract, toBN, MAX_SAFE_ALLOWANCE } from "../utils";
 import { runTransaction, getNetworkName, etherscanLink, MAX_UINT_VAL } from "../utils";
-import { SpokePoolClient } from ".";
+import { HubPoolClient, SpokePoolClient } from ".";
 import { Deposit } from "../interfaces";
 
 export class TokenClient {
@@ -8,10 +8,13 @@ export class TokenClient {
   private tokenShortfall: {
     [chainId: number]: { [token: string]: { deposits: number[]; totalRequirement: BigNumber } };
   } = {};
+  private bondToken: Contract;
+
   constructor(
     readonly logger: winston.Logger,
     readonly relayerAddress,
-    readonly spokePoolClients: { [chainId: number]: SpokePoolClient }
+    readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
+    readonly hubPoolClient: HubPoolClient
   ) {}
 
   getAllTokenData() {
@@ -59,6 +62,7 @@ export class TokenClient {
     const deposits = [...this.getShortfallDeposits(chainId, token), depositId];
     assign(this.tokenShortfall, [chainId, token], { deposits, totalRequirement });
   }
+
   captureTokenShortfallForFill(deposit: Deposit, unfilledAmount: BigNumber) {
     this.logger.debug({ at: "TokenClient", message: "Handling token shortfall", deposit, unfilledAmount });
     this.captureTokenShortfall(deposit.destinationChainId, deposit.destinationToken, deposit.depositId, unfilledAmount);
@@ -93,6 +97,7 @@ export class TokenClient {
     const tokensToApprove: { chainId: string; token: string }[] = [];
     Object.keys(this.tokenData).forEach((chainId) => {
       Object.keys(this.tokenData[chainId]).forEach((token) => {
+        if (token === "0x4200000000000000000000000000000000000006") return; // Skip if WETH on optimism. This does not require approvals.
         if (this.tokenData[chainId][token].allowance.lt(toBN(MAX_SAFE_ALLOWANCE)))
           tokensToApprove.push({ chainId, token });
       });
@@ -116,12 +121,35 @@ export class TokenClient {
     this.logger.info({ at: "tokenClient", message: `Approved whitelisted tokens! 💰`, mrkdwn });
   }
 
+  async setBondTokenAllowance() {
+    const ownerAddress = await this.hubPoolClient.hubPool.signer.getAddress();
+    const currentCollateralAllowance: BigNumber = await this.bondToken.allowance(
+      ownerAddress,
+      this.hubPoolClient.hubPool.address
+    );
+    if (currentCollateralAllowance.lt(toBN(MAX_SAFE_ALLOWANCE))) {
+      const tx = await runTransaction(this.logger, this.bondToken, "approve", [
+        this.hubPoolClient.hubPool.address,
+        MAX_UINT_VAL,
+      ]);
+      const receipt = await tx.wait();
+      const mrkdwn =
+        ` - Approved HubPool ${etherscanLink(this.hubPoolClient.hubPool.address, 1)} ` +
+        `to spend ${await this.bondToken.symbol()} ${etherscanLink(this.bondToken.address, 1)}. ` +
+        `tx ${etherscanLink(receipt.transactionHash, 1)}\n`;
+      this.logger.info({ at: "hubPoolClient", message: `Approved bond tokens! 💰`, mrkdwn });
+    } else this.logger.debug({ at: "hubPoolClient", message: `Bond token approval set` });
+  }
+
   async update() {
     this.logger.debug({ at: "TokenBalanceClient", message: "Updating client" });
 
-    const balanceInfo = await Promise.all(
-      Object.values(this.spokePoolClients).map((spokePoolClient) => this.fetchTokenData(spokePoolClient))
-    );
+    const [balanceInfo, bondToken] = await Promise.all([
+      Promise.all(Object.values(this.spokePoolClients).map((spokePoolClient) => this.fetchTokenData(spokePoolClient))),
+      this.hubPoolClient.hubPool.bondToken(),
+    ]);
+
+    this.bondToken = new Contract(bondToken, ERC20.abi, this.hubPoolClient.hubPool.signer);
 
     for (const { chainId, tokenData } of balanceInfo)
       for (const token of Object.keys(tokenData)) assign(this.tokenData, [chainId, token], tokenData[token]);
@@ -139,12 +167,13 @@ export class TokenClient {
       Promise.all(tokens.map((token) => token.allowance(this.relayerAddress, spokePoolClient.spokePool.address))),
     ]);
 
-    let tokenData = {};
+    const tokenData = {};
     for (const [index, token] of tokens.entries())
       tokenData[token.address] = { balance: balances[index], allowance: allowances[index] };
 
     return { tokenData, chainId: spokePoolClient.chainId };
   }
+
   private _hasTokenPairData(chainId: number | string, token: string) {
     let hasData = true;
     if (this.tokenData === {}) hasData = false;

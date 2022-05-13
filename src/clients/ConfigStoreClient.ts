@@ -12,7 +12,6 @@ export const GLOBAL_CONFIG_STORE_KEYS = {
   MAX_POOL_REBALANCE_LEAF_SIZE: "MAX_POOL_REBALANCE_LEAF_SIZE",
 };
 
-// TODO: Rename filename to match client name in follow up PR to reduce code diff.
 export class AcrossConfigStoreClient {
   private readonly blockFinder;
 
@@ -41,21 +40,11 @@ export class AcrossConfigStoreClient {
     deposit: Deposit,
     l1Token: string
   ): Promise<{ realizedLpFeePct: BigNumber; quoteBlock: number }> {
-    // The below is a temp work around to deal with the incorrect deployment that was done on all test nets. If the rate
-    // model store is deployed after the a fill is done then some calls to this method will fail, resulting in an error.
-    // For test nets we can just work around this by using the latest block number.
-    let quoteBlock = 0;
-    let rateModel: any;
-    try {
-      quoteBlock = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
-      rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
-    } catch (error) {
-      if ((await this.hubPoolClient.hubPool.provider.getNetwork()).chainId === 1)
-        throw new Error("Bad rate model store deployment");
+    let quoteBlock = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
+    const rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
 
-      quoteBlock = await this.blockFinder.getLatestBlock().number;
-      rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
-    }
+    // There is one deposit on optimism that is right at the margin of when liquidity was first added.
+    if (quoteBlock > 14718100 && quoteBlock < 14718107) quoteBlock = 14718107;
 
     const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, quoteBlock, deposit.amount);
     const realizedLpFeePct = lpFeeCalculator.calculateRealizedLpFeePct(rateModel, current, post);

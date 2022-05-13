@@ -40,13 +40,27 @@ describe("HubPoolClient: RootBundle Events", async function () {
     const { tree } = await constructSimpleTree(toBNWei(100));
 
     await hubPoolClient.update();
+    expect(hubPoolClient.hasPendingProposal()).to.equal(false);
 
+    const liveness = Number(await hubPool.liveness());
+    const proposeTime = Number(await hubPool.getCurrentTime());
     await hubPool
       .connect(dataworker)
       .proposeRootBundle([11, 22], 2, tree.getHexRoot(), constants.mockTreeRoot, constants.mockTreeRoot);
 
     expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1, 2])).to.equal(undefined);
     await hubPoolClient.update();
+
+    expect(hubPoolClient.getPendingRootBundleProposal()).to.deep.equal({
+      poolRebalanceRoot: tree.getHexRoot(),
+      relayerRefundRoot: constants.mockTreeRoot,
+      slowRelayRoot: constants.mockTreeRoot,
+      claimedBitMap: toBN(0),
+      proposer: dataworker.address,
+      unclaimedPoolRebalanceLeafCount: 2,
+      challengePeriodEndTimestamp: proposeTime + liveness,
+    });
+    expect(hubPoolClient.hasPendingProposal()).to.equal(true);
 
     // Happy case where `chainIdList` contains chain ID and block is <= than the bundle block range for that chain.
     expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1, 2])).to.equal(22);

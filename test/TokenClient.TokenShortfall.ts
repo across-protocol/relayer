@@ -1,9 +1,10 @@
 import { deploySpokePoolWithToken, expect, ethers, Contract, SignerWithAddress } from "./utils";
-import { createSpyLogger, winston, originChainId, destinationChainId, toBN, toBNWei } from "./utils";
-import { TokenClient, SpokePoolClient } from "../src/clients";
+import { createSpyLogger, winston, originChainId, destinationChainId, toBNWei } from "./utils";
+import { TokenClient, SpokePoolClient, HubPoolClient } from "../src/clients";
+import { deployAndConfigureHubPool, zeroAddress } from "./utils";
 
 let spokePool_1: Contract, spokePool_2: Contract;
-let erc20_1: Contract, weth_1: Contract, erc20_2: Contract, weth_2: Contract;
+let erc20_2: Contract;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let tokenClient: TokenClient; // tested
@@ -13,15 +14,17 @@ describe("TokenClient: Token shortfall", async function () {
     [owner] = await ethers.getSigners();
     ({ spy, spyLogger } = createSpyLogger());
     // Using deploySpokePoolWithToken will create two tokens and enable both of them as routes.
-    ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId));
+    ({ spokePool: spokePool_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId));
     ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
+    const { hubPool } = await deployAndConfigureHubPool(owner, [], zeroAddress, zeroAddress);
 
     spokePoolClient_1 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_1, null, originChainId);
     spokePoolClient_2 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_2, null, destinationChainId);
 
     const spokePoolClients = { [destinationChainId]: spokePoolClient_1, [originChainId]: spokePoolClient_2 };
+    const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
 
-    tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients);
+    tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });
 
   it("Captures and tracks token shortfall", async function () {
