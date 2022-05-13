@@ -64,7 +64,7 @@ export class Dataworker {
     const fillsToRefund: FillsToRefund = {};
     const deposits: DepositWithBlock[] = [];
     const allValidFills: FillWithBlock[] = [];
-    const allInvalidFills: FillWithBlock[] = [];
+    const allInvalidFillsInRange: FillWithBlock[] = [];
 
     const allChainIds = Object.keys(this.clients.spokePoolSigners);
     this.logger.debug({
@@ -107,6 +107,8 @@ export class Dataworker {
         deposits.push(...newDeposits);
 
         destinationClient.getFillsWithBlockForOriginChain(Number(originChainId)).forEach((fillWithBlock) => {
+          const blockRangeForChain = this._getBlockRangeForChain(blockRangesForChains, Number(destinationChainId));
+
           // If fill matches with a deposit, then its a valid fill
           const matchedDeposit: Deposit = originClient.getDepositForFill(fillWithBlock);
           if (matchedDeposit) {
@@ -117,7 +119,6 @@ export class Dataworker {
             allValidFills.push(fillWithBlock);
 
             // If fill is outside block range, we can skip it now since we're not going to add a refund for it.
-            const blockRangeForChain = this._getBlockRangeForChain(blockRangesForChains, Number(destinationChainId));
             if (fillWithBlock.blockNumber > blockRangeForChain[1] || fillWithBlock.blockNumber < blockRangeForChain[0])
               return;
 
@@ -184,7 +185,11 @@ export class Dataworker {
                 refundObj.refunds[fill.relayer] = refundObj.refunds[fill.relayer].add(refund);
               else refundObj.refunds[fill.relayer] = refund;
             }
-          } else allInvalidFills.push(fillWithBlock);
+          } else if (
+            fillWithBlock.blockNumber <= blockRangeForChain[1] &&
+            fillWithBlock.blockNumber >= blockRangeForChain[0]
+          )
+            allInvalidFillsInRange.push(fillWithBlock);
         });
       }
     }
@@ -245,18 +250,19 @@ export class Dataworker {
         result[fill.destinationChainId] = existingCount === undefined ? 1 : existingCount + 1;
         return result;
       }, {}),
-      allInvalidFillsByDestinationChain: allInvalidFills.reduce((result, fill: FillWithBlock) => {
+      allInvalidFillsInRangeByDestinationChain: allInvalidFillsInRange.reduce((result, fill: FillWithBlock) => {
         const existingCount = result[fill.destinationChainId];
         result[fill.destinationChainId] = existingCount === undefined ? 1 : existingCount + 1;
         return result;
       }, {}),
     });
 
-    if (allInvalidFills.length > 0)
+    if (allInvalidFillsInRange.length > 0)
       this.logger.info({
         at: "Dataworker",
-        message: `Finished loading spoke pool data and found some invalid fills`,
-        allInvalidFillsByDestinationChain: allInvalidFills.reduce((result, fill: FillWithBlock) => {
+        message: `Finished loading spoke pool data and found some invalid fills in range`,
+        blockRangesForChains,
+        allInvalidFillsByDestinationChain: allInvalidFillsInRange.reduce((result, fill: FillWithBlock) => {
           const existingCount = result[fill.destinationChainId];
           result[fill.destinationChainId] = existingCount === undefined ? 1 : existingCount + 1;
           return result;
