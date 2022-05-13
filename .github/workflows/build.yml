@@ -7,7 +7,7 @@ jobs:
   curl:
     runs-on: ubuntu-latest
     steps:
-    - name: Curl build and deploy webhook
-      uses: wei/curl@master
-      with:
-        args: ${{ secrets.PROTOCOL_BUILD_DEPLOY_WEBHOOK }}
+      - name: Curl build and deploy webhook
+        uses: wei/curl@master
+        with:
+          args: ${{ secrets.PROTOCOL_BUILD_DEPLOY_WEBHOOK }}
