@@ -338,12 +338,12 @@ export class Dataworker {
           relayerRefundLeaves.push({
             groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
             // L2 token address
-            leafId: 0, // Will be updated before inserting into tree when we sort all leaves.
-            chainId: Number(repaymentChainId),
             amountToReturn: i === 0 ? amountToReturn : toBN(0),
+            chainId: Number(repaymentChainId),
+            refundAmounts: sortedRefundAddresses.slice(i, i + maxRefundCount).map((address) => refunds[address]),
+            leafId: 0, // Will be updated before inserting into tree when we sort all leaves.
             l2TokenAddress,
             refundAddresses: sortedRefundAddresses.slice(i, i + maxRefundCount),
-            refundAmounts: sortedRefundAddresses.slice(i, i + maxRefundCount).map((address) => refunds[address]),
           });
       });
     });
@@ -573,22 +573,22 @@ export class Dataworker {
           const l1TokensToIncludeInThisLeaf = sortedL1Tokens.slice(i, i + maxL1TokensPerLeaf);
 
           leaves.push({
-            groupIndex: groupIndexForChainId++,
-            leafId: leaves.length,
             chainId: Number(chainId),
             bundleLpFees: realizedLpFees[chainId]
               ? l1TokensToIncludeInThisLeaf.map((l1Token) => realizedLpFees[chainId][l1Token])
-              : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
-            runningBalances: runningBalances[chainId]
-              ? l1TokensToIncludeInThisLeaf.map((l1Token) =>
-                  this._getRunningBalanceForL1Token(runningBalances[chainId][l1Token], l1Token, endBlockForMainnet)
-                )
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
             netSendAmounts: runningBalances[chainId]
               ? l1TokensToIncludeInThisLeaf.map((l1Token) =>
                   this._getNetSendAmountForL1Token(runningBalances[chainId][l1Token], l1Token, endBlockForMainnet)
                 )
               : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
+            runningBalances: runningBalances[chainId]
+              ? l1TokensToIncludeInThisLeaf.map((l1Token) =>
+                  this._getRunningBalanceForL1Token(runningBalances[chainId][l1Token], l1Token, endBlockForMainnet)
+                )
+              : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
+            groupIndex: groupIndexForChainId++,
+            leafId: leaves.length,
             l1Tokens: l1TokensToIncludeInThisLeaf,
           });
         }
