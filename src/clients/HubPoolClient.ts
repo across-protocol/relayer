@@ -38,7 +38,7 @@ export class HubPoolClient {
 
   getDestinationTokenForDeposit(deposit: Deposit) {
     const l1Token = this.getL1TokenForDeposit(deposit);
-    const destinationToken = this.getDestinationTokenForL1TokenDestinationChainId(l1Token, deposit.destinationChainId);
+    const destinationToken = this.getDestinationTokenForL1Token(l1Token, deposit.destinationChainId);
     if (!destinationToken) this.logger.error({ at: "HubPoolClient", message: "No destination token found", deposit });
     return destinationToken;
   }
@@ -71,7 +71,7 @@ export class HubPoolClient {
     return l1Token;
   }
 
-  getDestinationTokenForL1TokenDestinationChainId(l1Token: string, destinationChainId: number) {
+  getDestinationTokenForL1Token(l1Token: string, destinationChainId: number) {
     return this.l1TokensToDestinationTokens[l1Token][destinationChainId];
   }
 

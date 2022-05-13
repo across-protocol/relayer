@@ -95,7 +95,7 @@ export class Dataworker {
               fill.destinationToken,
               endBlockForMainnet
             );
-            const repaymentToken = this.clients.hubPoolClient.getDestinationTokenForL1TokenDestinationChainId(
+            const repaymentToken = this.clients.hubPoolClient.getDestinationTokenForL1Token(
               l1TokenCounterpart,
               chainToSendRefundTo
             );

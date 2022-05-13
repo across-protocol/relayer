@@ -1,6 +1,6 @@
 import winston from "winston";
 import { Contract, getDeployedContract, getDeploymentBlockNumber, getSigner } from "../utils";
-import { TokenClient, ProfitClient, SpokePoolClient } from "../clients";
+import { TokenClient, ProfitClient, SpokePoolClient, InventoryClient } from "../clients";
 import { RelayerConfig } from "./RelayerConfig";
 import { Clients, constructClients, updateClients, getSpokePoolSigners } from "../common";
 
@@ -8,6 +8,7 @@ export interface RelayerClients extends Clients {
   spokePoolClients: { [chainId: number]: SpokePoolClient };
   tokenClient: TokenClient;
   profitClient: ProfitClient;
+  inventoryClient: InventoryClient;
 }
 
 export async function constructRelayerClients(logger: winston.Logger, config: RelayerConfig): Promise<RelayerClients> {
@@ -41,7 +42,15 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
 
   const profitClient = new ProfitClient(logger, commonClients.hubPoolClient, config.relayerDiscount);
 
-  return { ...commonClients, tokenClient, profitClient, spokePoolClients };
+  const inventoryClient = new InventoryClient(
+    logger,
+    config.inventorySettings,
+    tokenClient,
+    commonClients.hubPoolClient,
+    config.spokePoolChains
+  );
+
+  return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient };
 }
 
 // If this is the first run then the hubPoolClient will have no whitelisted routes. If this is the case then first
@@ -65,6 +74,9 @@ export async function updateRelayerClients(logger: winston.Logger, clients: Rela
 
   // Run approval check last as needs up to date route info. If no new then returns with no async calls.
   await clients.tokenClient.setOriginTokenApprovals();
+
+  // Run inventory rebalance last as needs up to date info from all other clients and token approvals.
+  await clients.inventoryClient.rebalanceInventoryIfNeeded();
 }
 
 async function updateSpokePoolClients(spokePoolClients: { [chainId: number]: SpokePoolClient }) {
