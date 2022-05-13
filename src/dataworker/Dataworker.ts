@@ -1,4 +1,3 @@
-import { winston, assign, compareAddresses, getRefundForFills, sortEventsDescending, Contract } from "../utils";
 import { winston, assign, compareAddresses, getRefundForFills, Contract } from "../utils";
 import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree, SpokePool } from "../utils";
 import { getRealizedLpFeeForFills, BigNumber, toBN, convertFromWei, shortenHexString } from "../utils";
