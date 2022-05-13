@@ -1,14 +1,8 @@
-import {
-  buildSlowRelayTree,
-  buildSlowRelayLeaves,
-  buildFillForRepaymentChain,
-  sampleRateModel,
-  enableRoutesOnHubPool,
-} from "./utils";
+import { buildSlowRelayTree, buildSlowRelayLeaves, buildFillForRepaymentChain, enableRoutesOnHubPool } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
 import { buildRelayerRefundTreeWithUnassignedLeafIds, constructPoolRebalanceTree } from "./utils";
-import { buildPoolRebalanceLeafTree } from "./utils";
+import { buildPoolRebalanceLeafTree, sampleRateModel } from "./utils";
 import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, originChainId, mockTreeRoot } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
@@ -16,13 +10,8 @@ import { refundProposalLiveness, CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_
 import { DEFAULT_BLOCK_RANGE_FOR_CHAIN } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { Deposit, Fill, RunningBalances } from "../src/interfaces";
-import {
-  getRealizedLpFeeForFills,
-  getRefundForFills,
-  getRefund,
-  compareAddresses,
-  EMPTY_MERKLE_ROOT,
-} from "../src/utils";
+import { getRealizedLpFeeForFills, getRefundForFills, getRefund, EMPTY_MERKLE_ROOT } from "../src/utils";
+import { compareAddresses } from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
@@ -31,8 +20,8 @@ let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Co
 let l1Token_1: Contract, hubPool: Contract, timer: Contract, configStore: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress, dataworker: SignerWithAddress;
 
-let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient, spokePoolClient_1: SpokePoolClient;
-let dataworkerInstance: Dataworker, spokePoolClient_2: SpokePoolClient;
+let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
+let dataworkerInstance: Dataworker;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let updateAllClients: () => Promise<void>;
@@ -54,15 +43,14 @@ describe("Dataworker: Build merkle roots", async function () {
       dataworkerInstance,
       dataworker,
       timer,
-      spokePoolClient_1,
-      spokePoolClient_2,
       spokePoolClients,
       updateAllClients,
     } = await setupDataworker(
       ethers,
       MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
       MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
-      DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
+      DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
+      0
     ));
   });
   it("Build slow relay root", async function () {

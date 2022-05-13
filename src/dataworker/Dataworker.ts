@@ -62,6 +62,7 @@ export class Dataworker {
     const fillsToRefund: FillsToRefund = {};
     const deposits: DepositWithBlock[] = [];
     const allValidFills: FillWithBlock[] = [];
+    const allInvalidFills: FillWithBlock[] = [];
 
     const allChainIds = Object.keys(this.clients.spokePoolSigners);
     this.logger.debug({
@@ -180,11 +181,7 @@ export class Dataworker {
                 refundObj.refunds[fill.relayer] = refundObj.refunds[fill.relayer].add(refund);
               else refundObj.refunds[fill.relayer] = refund;
             }
-          }
-
-          // TODO: At this point, the fill we're looking at on the destination chain from the origin chain is invalid
-          // and doesn't match with a deposit. Figure out a good way to log this information, but we can't make a new
-          // for every single invalid fill since it will flood the logs with noise.
+          } else allInvalidFills.push(fillWithBlock);
         });
       }
     }
@@ -241,6 +238,11 @@ export class Dataworker {
         }, endResult);
       }, {}),
       allValidFillsByDestinationChain: allValidFills.reduce((result, fill: FillWithBlock) => {
+        const existingCount = result[fill.destinationChainId];
+        result[fill.destinationChainId] = existingCount === undefined ? 1 : existingCount + 1;
+        return result;
+      }, {}),
+      allInvalidFillsByDestinationChain: allInvalidFills.reduce((result, fill: FillWithBlock) => {
         const existingCount = result[fill.destinationChainId];
         result[fill.destinationChainId] = existingCount === undefined ? 1 : existingCount + 1;
         return result;
@@ -759,6 +761,12 @@ export class Dataworker {
       return;
     }
 
+    // These buffers can be configured by the bot runner. These are used to validate the end blocks specified in the
+    // pending root bundle. If the end block is greater than the latest block for its chain, then we should dispute the
+    // bundle because we can't look up events in the future for that chain. However, there are some cases where the
+    // proposer's node for that chain is returning a higher HEAD block than the bot-runner is seeing, so we can
+    // use this buffer to allow the proposer some margin of error. If the bundle end block is less than HEAD but within
+    // this buffer, then we won't dispute and we'll just exit early from this function.
     const endBlockBuffers = this.chainIdListForBundleEvaluationBlockNumbers.map(
       (chainId: number) => this.blockRangeEndBlockBuffer[chainId] ?? 0
     );
@@ -786,34 +794,49 @@ export class Dataworker {
       return;
     }
 
-    // Make sure that all end blocks are <= latest HEAD blocks + buffer for all chains.
+    // If the bundle end block is less than HEAD but within the allowable margin of error into future,
+    // then we won't dispute and we'll just exit early from this function.
     if (
       pendingRootBundle.bundleEvaluationBlockNumbers.some(
-        (block, index) => block > widestPossibleExpectedBlockRange[index][1] + endBlockBuffers[index]
+        (block, index) => block > widestPossibleExpectedBlockRange[index][1]
       )
     ) {
-      this.logger.debug({
-        at: "Dataworker#validate",
-        message: "A bundle end block is > latest block for its chain, submitting dispute",
-        expectedEndBlocks: widestPossibleExpectedBlockRange.map((range) => range[1]),
-        pendingEndBlocks: pendingRootBundle.bundleEvaluationBlockNumbers,
-        endBlockBuffers,
-      });
-      this._submitDisputeWithMrkdwn(
-        hubPoolChainId,
-        this._generateMarkdownForDisputeInvalidBundleBlocks(
-          pendingRootBundle,
-          widestPossibleExpectedBlockRange,
-          endBlockBuffers
+      // If end block is further than the allowable margin of error into the future, then dispute it.
+      if (
+        pendingRootBundle.bundleEvaluationBlockNumbers.some(
+          (block, index) => block > widestPossibleExpectedBlockRange[index][1] + endBlockBuffers[index]
         )
-      );
+      ) {
+        this.logger.debug({
+          at: "Dataworker#validate",
+          message: "A bundle end block is > latest block + buffer for its chain, submitting dispute",
+          expectedEndBlocks: widestPossibleExpectedBlockRange.map((range) => range[1]),
+          pendingEndBlocks: pendingRootBundle.bundleEvaluationBlockNumbers,
+          endBlockBuffers,
+        });
+        this._submitDisputeWithMrkdwn(
+          hubPoolChainId,
+          this._generateMarkdownForDisputeInvalidBundleBlocks(
+            pendingRootBundle,
+            widestPossibleExpectedBlockRange,
+            endBlockBuffers
+          )
+        );
+      } else {
+        this.logger.debug({
+          at: "Dataworker#validate",
+          message: "A bundle end block is > latest block but within buffer, skipping",
+          expectedEndBlocks: widestPossibleExpectedBlockRange.map((range) => range[1]),
+          pendingEndBlocks: pendingRootBundle.bundleEvaluationBlockNumbers,
+          endBlockBuffers,
+        });
+      }
       return;
     }
 
-    // We use the block number at which the root bundle was proposed as the "latest mainnet block" in
-    // order to determine the start blocks. This means that the hub pool client will first look up the latest
-    // RootBundleExecuted event before this proposal root block in order to find the preceding ProposeRootBundle's
-    // end block.
+    // The block range that we'll use to construct roots will be the end block specified in the pending root bundle,
+    // and the block right after the last valid root bundle proposal's end block. If the proposer didn't use the same
+    // start block, then they might have missed events and the roots will be different.
     const blockRangesImpliedByBundleEndBlocks = widestPossibleExpectedBlockRange.map((blockRange, index) => [
       blockRange[0],
       pendingRootBundle.bundleEvaluationBlockNumbers[index],

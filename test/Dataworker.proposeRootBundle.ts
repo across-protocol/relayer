@@ -42,7 +42,8 @@ describe("Dataworker: Propose root bundle", async function () {
       ethers,
       MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
       MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
-      DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
+      DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
+      0
     ));
   });
   it("Simple lifecycle", async function () {

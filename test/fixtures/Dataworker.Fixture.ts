@@ -21,7 +21,8 @@ export async function setupDataworker(
   ethers: any,
   maxRefundPerRelayerRefundLeaf: number,
   maxL1TokensPerPoolRebalanceLeaf: number,
-  defaultPoolRebalanceTokenTransferThreshold: BigNumber
+  defaultPoolRebalanceTokenTransferThreshold: BigNumber,
+  defaultEndBlockBuffer: number
 ): Promise<{
   hubPool: Contract;
   spokePool_1: Contract;
@@ -151,7 +152,11 @@ export async function setupDataworker(
       multiCallerClient,
       configStoreClient,
     },
-    CHAIN_ID_TEST_LIST
+    CHAIN_ID_TEST_LIST,
+    maxRefundPerRelayerRefundLeaf,
+    maxL1TokensPerPoolRebalanceLeaf,
+    Object.fromEntries(CHAIN_ID_TEST_LIST.map((chainId) => [chainId, defaultPoolRebalanceTokenTransferThreshold])),
+    Object.fromEntries(CHAIN_ID_TEST_LIST.map((chainId) => [chainId, defaultEndBlockBuffer]))
   );
 
   // This client dictionary can be conveniently passed in root builder functions that expect mapping of clients to

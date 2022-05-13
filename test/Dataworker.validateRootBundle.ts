@@ -1,7 +1,7 @@
 import { buildFillForRepaymentChain, lastSpyLogIncludes } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit } from "./utils";
 import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
-import { amountToDeposit, destinationChainId, originChainId } from "./constants";
+import { amountToDeposit, destinationChainId, BUNDLE_END_BLOCK_BUFFER } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
@@ -42,18 +42,12 @@ describe("Dataworker: Validate pending root bundle", async function () {
       ethers,
       MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
       MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
-      DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
+      DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
+      BUNDLE_END_BLOCK_BUFFER
     ));
   });
   it("Simple lifecycle", async function () {
     await updateAllClients();
-
-    const getMostRecentLog = (_spy: sinon.SinonSpy, message: string) => {
-      return spy
-        .getCalls()
-        .sort((logA: any, logB: any) => logB.callId - logA.callId) // Sort by callId in descending order
-        .find((log: any) => log.lastArg.message.includes(message)).lastArg;
-    };
 
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
@@ -134,7 +128,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     const expectedSlowRelayRefundRoot4 = dataworkerInstance.buildSlowRelayRoot(blockRange4, spokePoolClients);
 
     await hubPool.proposeRootBundle(
-      blockRange4.map((range) => range[1]),
+      Array(CHAIN_ID_TEST_LIST.length).fill(await hubPool.provider.getBlockNumber()),
       expectedPoolRebalanceRoot4.leaves.length,
       expectedPoolRebalanceRoot4.tree.getHexRoot(),
       expectedRelayerRefundRoot4.tree.getHexRoot(),
@@ -159,10 +153,10 @@ describe("Dataworker: Validate pending root bundle", async function () {
     expect(lastSpyLogIncludes(spy, "A bundle end block is < expected start block, submitting dispute")).to.be.true;
     await multiCallerClient.executeTransactionQueue();
 
-    // Bundle range end blocks are too high.
+    // Bundle range end blocks are above latest block but within buffer, should skip.
     await updateAllClients();
     await hubPool.proposeRootBundle(
-      blockRange4.map((range) => range[1] + 10),
+      Array(CHAIN_ID_TEST_LIST.length).fill(Number(await hubPool.provider.getBlockNumber()) + BUNDLE_END_BLOCK_BUFFER),
       expectedPoolRebalanceRoot4.leaves.length,
       expectedPoolRebalanceRoot4.tree.getHexRoot(),
       expectedRelayerRefundRoot4.tree.getHexRoot(),
@@ -170,8 +164,24 @@ describe("Dataworker: Validate pending root bundle", async function () {
     );
     await updateAllClients();
     await dataworkerInstance.validateRootBundle();
-    expect(lastSpyLogIncludes(spy, "A bundle end block is > latest block for its chain, submitting dispute")).to.be
-      .true;
+    expect(lastSpyLogIncludes(spy, "A bundle end block is > latest block but within buffer, skipping")).to.be.true;
+
+    // Bundle range end blocks are too high.
+    await hubPool.emergencyDeleteProposal();
+    await updateAllClients();
+    await hubPool.proposeRootBundle(
+      Array(CHAIN_ID_TEST_LIST.length).fill(
+        Number(await hubPool.provider.getBlockNumber()) + BUNDLE_END_BLOCK_BUFFER * 2
+      ),
+      expectedPoolRebalanceRoot4.leaves.length,
+      expectedPoolRebalanceRoot4.tree.getHexRoot(),
+      expectedRelayerRefundRoot4.tree.getHexRoot(),
+      expectedSlowRelayRefundRoot4.tree.getHexRoot()
+    );
+    await updateAllClients();
+    await dataworkerInstance.validateRootBundle();
+    expect(lastSpyLogIncludes(spy, "A bundle end block is > latest block + buffer for its chain, submitting dispute"))
+      .to.be.true;
     await multiCallerClient.executeTransactionQueue();
 
     // Bundle range length doesn't match expected chain ID list.
