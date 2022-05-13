@@ -29,8 +29,10 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
     for (;;) {
       await updateDataworkerClients(clients);
 
-      await dataworker.proposeRootBundle();
+      // Validate and dispute pending proposal before proposing a new one
       await dataworker.validateRootBundle();
+
+      await dataworker.proposeRootBundle();
 
       await clients.multiCallerClient.executeTransactionQueue();
 
