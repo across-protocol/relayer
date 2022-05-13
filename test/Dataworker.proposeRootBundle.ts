@@ -167,7 +167,14 @@ describe("Dataworker: Propose root bundle", async function () {
     expect(loadDataResults4.fillsToRefundByRepaymentChain).to.deep.equal({
       [destinationChainId]: { [erc20_2.address]: 1 },
     });
-    expect(loadDataResults4.allValidFillsByDestinationChain).to.deep.equal({ [destinationChainId]: 1 });
+    // Should be 2 valid fills since we don't discriminate by block range for this list. Its important that refunds
+    // stays 1 though since there is only one fill in this block range. This test is actually really important because
+    // `allValidFillsByDestinationChain` should not constrain by block range otherwise the pool rebalance root
+    // can fail to be built in cases where a fill in the block range matches a deposit with a fill in a previous
+    // root bundle. This would be a case where there is excess slow fill payment sent to the spoke pool and we need
+    // to send some back to the hub pool, because of this fill in the current block range that came after the slow
+    // fill was sent.
+    expect(loadDataResults4.allValidFillsByDestinationChain).to.deep.equal({ [destinationChainId]: 2 });
 
     // Should have enqueued a new transaction:
     expect(lastSpyLogIncludes(spy, "Enqueing new root bundle proposal txn")).to.be.true;

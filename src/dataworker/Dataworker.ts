@@ -1,12 +1,15 @@
 import { winston, assign, compareAddresses, getRefundForFills, sortEventsDescending, Contract } from "../utils";
+import { winston, assign, compareAddresses, getRefundForFills, Contract } from "../utils";
 import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree, SpokePool } from "../utils";
 import { getRealizedLpFeeForFills, BigNumber, toBN, convertFromWei, shortenHexString } from "../utils";
 import { shortenHexStrings, EMPTY_MERKLE_ROOT } from "../utils";
 import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, DepositWithBlock, RootBundle } from "../interfaces";
-import { Fill, FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
-import { RunningBalances } from "../interfaces";
+import { FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
+import { RunningBalances, BigNumberForToken } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
+import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
+import { isFirstFillForDeposit } from "./FillUtils";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -18,7 +21,7 @@ export class Dataworker {
     readonly chainIdListForBundleEvaluationBlockNumbers: number[],
     readonly maxRefundCountOverride: number = undefined,
     readonly maxL1TokenCountOverride: number = undefined,
-    readonly tokenTransferThreshold: { [l1TokenAddress: string]: BigNumber } = {},
+    readonly tokenTransferThreshold: BigNumberForToken = {},
     readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {}
   ) {
     if (
@@ -104,24 +107,23 @@ export class Dataworker {
           );
         deposits.push(...newDeposits);
 
-        // For each fill within the block range, look up associated deposit.
-        const blockRangeForChain = this._getBlockRangeForChain(blockRangesForChains, Number(destinationChainId));
-        const fillsForOriginChain: FillWithBlock[] = destinationClient
-          .getFillsWithBlockForOriginChain(Number(originChainId))
-          .filter(
-            (fill: FillWithBlock) =>
-              fill.blockNumber <= blockRangeForChain[1] && fill.blockNumber >= blockRangeForChain[0]
-          );
-
-        fillsForOriginChain.forEach((fillWithBlock) => {
+        destinationClient.getFillsWithBlockForOriginChain(Number(originChainId)).forEach((fillWithBlock) => {
+          // If fill matches with a deposit, then its a valid fill
           const matchedDeposit: Deposit = originClient.getDepositForFill(fillWithBlock);
-          // Now create a copy of fill with block data removed.
-          const { blockNumber, transactionIndex, logIndex, ...fill } = fillWithBlock;
-
           if (matchedDeposit) {
             // Fill was validated. Save it under all validated fills list with the block number so we can sort it by
-            // time.
+            // time. Note that its important we don't skip fills outside of the block range at this step because
+            // we use allValidFills to find the first fill in the entire history associated with a fill in the block
+            // range, in order to determine if we already sent a slow fill for it.
             allValidFills.push(fillWithBlock);
+
+            // If fill is outside block range, we can skip it now since we're not going to add a refund for it.
+            const blockRangeForChain = this._getBlockRangeForChain(blockRangesForChains, Number(destinationChainId));
+            if (fillWithBlock.blockNumber > blockRangeForChain[1] || fillWithBlock.blockNumber < blockRangeForChain[0])
+              return;
+
+            // Now create a copy of fill with block data removed.
+            const { blockNumber, transactionIndex, logIndex, ...fill } = fillWithBlock;
 
             // Handle slow relay where repaymentChainId = 0. Slow relays always pay recipient on destination chain.
             // So, save the slow fill under the destination chain, and save the fast fill under its repayment chain.
@@ -146,8 +148,10 @@ export class Dataworker {
               ? refundObj.realizedLpFees.add(getRealizedLpFeeForFills([fill]))
               : getRealizedLpFeeForFills([fill]);
 
-            // Save deposit as one that we'll include a slow fill for, since there is a non-slow fill
-            // for the deposit in this epoch.
+            // Save deposit as one that is eligible for a slow fill, since there is a fill
+            // for the deposit in this epoch. We save whether this fill is the first fill for the deposit, because
+            // if a deposit has its first fill in this block range, then we can send a slow fill payment to complete
+            // the deposit.
             const depositUnfilledAmount = fill.amount.sub(fill.totalFilledAmount);
             const depositKey = `${originChainId}+${fill.depositId}`;
             assign(
@@ -159,7 +163,7 @@ export class Dataworker {
                   deposit: matchedDeposit,
                   // A first partial fill for a deposit is characterized by one whose total filled amount post-fill
                   // is equal to the amount sent in the fill, and where the fill amount is greater than zero.
-                  hasFirstPartialFill: this._isFirstFillForDeposit(fill),
+                  hasFirstPartialFill: isFirstFillForDeposit(fill),
                 },
               ]
             );
@@ -187,7 +191,7 @@ export class Dataworker {
     }
 
     // For each deposit with a matched fill, figure out the unfilled amount that we need to slow relay. We will filter
-    // out any deposits that are fully filled, or any deposits that were already slow relayed in a previous epoch.
+    // out any deposits that are fully filled.
     const unfilledDeposits = Object.values(unfilledDepositsForOriginChain)
       .map((_unfilledDeposits: UnfilledDeposit[]): UnfilledDeposit => {
         // Remove deposits with no matched fills.
@@ -414,185 +418,53 @@ export class Dataworker {
 
     const { fillsToRefund, deposits, allValidFills } = this._loadData(blockRangesForChains, spokePoolClients);
 
-    // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
-    // slow relay refunds. They are decreased by the amount of funds already held by the SpokePool. Balances are keyed
-    // by the SpokePool's network and L1 token equivalent of the L2 token to refund.
-    const runningBalances: RunningBalances = {};
-    // Realized LP fees are keyed the same as running balances and represent the amount of LP fees that should be paid
-    // to LP's for each running balance.
-    const realizedLpFees: RunningBalances = {};
-
     // 1. For each FilledRelay group, identified by { repaymentChainId, L1TokenAddress }, initialize a "running balance"
     // to the total refund amount for that group.
     // 2. Similarly, for each group sum the realized LP fees.
     const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForChains, 1)[1];
 
-    if (Object.keys(fillsToRefund).length > 0) {
-      Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
-        Object.keys(fillsToRefund[repaymentChainId]).forEach((l2TokenAddress: string) => {
-          const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpartAtBlock(
-            repaymentChainId,
-            l2TokenAddress,
-            endBlockForMainnet
-          );
-          assign(
-            realizedLpFees,
-            [repaymentChainId, l1TokenCounterpart],
-            fillsToRefund[repaymentChainId][l2TokenAddress].realizedLpFees
-          );
-
-          // Start with latest RootBundleExecuted.runningBalance for {chainId, l1Token} combination if found.
-          const startingRunningBalance = this.clients.hubPoolClient.getRunningBalanceBeforeBlockForChain(
-            endBlockForMainnet,
-            Number(repaymentChainId),
-            l1TokenCounterpart
-          );
-
-          // totalRefundAmount won't exist for chains that only had slow fills, so we should explicitly check for it.
-          if (fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount)
-            assign(
-              runningBalances,
-              [repaymentChainId, l1TokenCounterpart],
-              startingRunningBalance.add(fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount)
-            );
-        });
-      });
-    }
+    // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
+    // slow relay refunds. They are decreased by the amount of funds already held by the SpokePool. Balances are keyed
+    // by the SpokePool's network and L1 token equivalent of the L2 token to refund.
+    // Realized LP fees are keyed the same as running balances and represent the amount of LP fees that should be paid
+    // to LP's for each running balance.
+    const { runningBalances, realizedLpFees } = PoolRebalanceUtils.initializeRunningBalancesFromRelayerRepayments(
+      endBlockForMainnet,
+      this.clients.hubPoolClient,
+      fillsToRefund
+    );
 
     // For certain fills associated with another partial fill from a previous root bundle, we need to adjust running
     // balances because the prior partial fill would have triggered a refund to be sent to the spoke pool to refund
     // a slow fill.
-    allValidFills.forEach((fill: FillWithBlock) => {
-      const firstFillForSameDeposit = allValidFills.find(
-        (_fill: FillWithBlock) => this._isFirstFillForDeposit(_fill as Fill) && this._filledSameDeposit(_fill, fill)
-      );
-      if (firstFillForSameDeposit === undefined) {
-        // If there is no first fill associated with a slow fill, then something is wrong because we assume that slow
-        // fills can only be sent after at least one non-zero partial fill is submitted for a deposit.
-        if (fill.isSlowRelay) throw new Error("Can't find earliest fill associated with slow fill");
-        // If there is no first fill associated with the current partial fill, then it must be the first fill and we'll
-        // skip it because there are running balance adjustments to make for this type of fill.
-        else return;
-      }
-      // Find ending block number for chain from ProposeRootBundle event that should have included a slow fill
-      // refund for this first fill. This will be undefined if there is no block range containing the first fill.
-      const rootBundleEndBlockContainingFirstFill =
-        this.clients.hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
-          firstFillForSameDeposit.blockNumber,
-          firstFillForSameDeposit.destinationChainId,
-          this.chainIdListForBundleEvaluationBlockNumbers
-        );
-      // Using bundle block number for chain from ProposeRootBundleEvent, find latest fill in the root bundle.
-      let lastFillBeforeSlowFillIncludedInRoot;
-      if (rootBundleEndBlockContainingFirstFill !== undefined) {
-        lastFillBeforeSlowFillIncludedInRoot = this._getLastMatchingFillBeforeBlock(
-          fill,
-          allValidFills,
-          rootBundleEndBlockContainingFirstFill
-        );
-      }
-
-      // 3. For any executed slow fills, we need to decrease the running balance if a previous root bundle sent
-      // tokens to the spoke pool to pay for the slow fill, but a partial fill was sent before the slow relay
-      // could be executed, resulting in an excess of funds on the spoke pool.
-      if (fill.isSlowRelay) {
-        // Since every slow fill should have a partial fill that came before it, we should always be able to find the
-        // last partial fill for the root bundle including the slow fill refund.
-        if (!lastFillBeforeSlowFillIncludedInRoot)
-          throw new Error("Can't find last fill submitted before slow fill was included in root bundle proposal");
-
-        // Recompute how much the matched root bundle sent for this slow fill. Subtract the amount that was
-        // actually executed on the L2 from the amount that was sent. This should give us the excess that was sent.
-        // Subtract that amount from the running balance so we ultimately send it back to L1.
-        const amountSentForSlowFill = lastFillBeforeSlowFillIncludedInRoot.amount.sub(
-          lastFillBeforeSlowFillIncludedInRoot.totalFilledAmount
-        );
-        const excess = amountSentForSlowFill.sub(fill.fillAmount);
-        if (excess.eq(toBN(0))) return; // Exit early if slow fill left no excess funds.
-        this._updateRunningBalanceForFill(runningBalances, fill, excess.mul(toBN(-1)));
-      }
-      // 4. For all fills that completely filled a relay and that followed a partial fill from a previous epoch, we need
-      // to decrease running balances by the slow fill amount sent in the previous epoch, since the slow relay was never
-      // executed, allowing the fill to be sent completely filling the deposit.
-      else if (fill.totalFilledAmount.eq(fill.amount)) {
-        // If first fill for this deposit is in this epoch, then no slow fill has been sent so we can ignore this fill.
-        // We can check this by searching for a ProposeRootBundle event with a bundle block range that contains the
-        // first fill for this deposit. If it is the same as the ProposeRootBundle event containing the
-        // current fill, then the first fill is in the current bundle and we can exit early.
-        const rootBundleEndBlockContainingFullFill =
-          this.clients.hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
-            fill.blockNumber,
-            fill.destinationChainId,
-            this.chainIdListForBundleEvaluationBlockNumbers
-          );
-        if (rootBundleEndBlockContainingFirstFill === rootBundleEndBlockContainingFullFill) return;
-
-        // If full fill and first fill are in different blocks, then we should always be able to find the last partial
-        // fill included in the root bundle that also included the slow fill refund.
-        if (!lastFillBeforeSlowFillIncludedInRoot)
-          throw new Error("Can't find last fill submitted before slow fill was included in root bundle proposal");
-
-        // Recompute how much the matched root bundle sent for this slow fill. This slow fill refund needs to be sent
-        // back to the hub because it was completely replaced by partial fills submitted after the root bundle
-        // proposal. We know that there was no slow fill execution because the `fullFill` completely filled the deposit,
-        // meaning that no slow fill was executed before it, and no slow fill can be executed after it.
-        const amountSentForSlowFill = lastFillBeforeSlowFillIncludedInRoot.amount.sub(
-          lastFillBeforeSlowFillIncludedInRoot.totalFilledAmount
-        );
-        this._updateRunningBalanceForFill(runningBalances, fill, amountSentForSlowFill.mul(toBN(-1)));
-      }
-    });
+    PoolRebalanceUtils.subtractExcessFromPreviousSlowFillsFromRunningBalances(
+      runningBalances,
+      this.clients.hubPoolClient,
+      allValidFills,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
 
     // 5. Map each deposit event to its L1 token and origin chain ID and subtract deposited amounts from running
     // balances. Note that we do not care if the deposit is matched with a fill for this epoch or not since all
-    // deposit events lock funds in the spoke pool and should decrease running balances accordingly.
+    // deposit events lock funds in the spoke pool and should decrease running balances accordingly. However,
+    // its important that `deposits` are all in this current block range.
     deposits.forEach((deposit: DepositWithBlock) => {
-      this._updateRunningBalanceForDeposit(runningBalances, deposit, deposit.amount.mul(toBN(-1)));
+      PoolRebalanceUtils.updateRunningBalanceForDeposit(
+        runningBalances,
+        this.clients.hubPoolClient,
+        deposit,
+        deposit.amount.mul(toBN(-1))
+      );
     });
 
-    // 6. Create one leaf per L2 chain ID. First we'll create a leaf with all L1 tokens for each chain ID, and then
-    // we'll split up any leaves with too many L1 tokens.
-    const leaves: PoolRebalanceLeaf[] = [];
-    Object.keys(runningBalances)
-      // Leaves should be sorted by ascending chain ID
-      .sort((chainIdA, chainIdB) => Number(chainIdA) - Number(chainIdB))
-      .map((chainId: string) => {
-        // Sort addresses.
-        const sortedL1Tokens = Object.keys(runningBalances[chainId]).sort((addressA, addressB) => {
-          return compareAddresses(addressA, addressB);
-        });
-
-        // This begins at 0 and increments for each leaf for this { chainId, L1Token } combination.
-        let groupIndexForChainId = 0;
-
-        // Split addresses into multiple leaves if there are more L1 tokens than allowed per leaf.
-        const maxL1TokensPerLeaf = this.maxL1TokenCountOverride
-          ? this.maxL1TokenCountOverride
-          : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
-        for (let i = 0; i < sortedL1Tokens.length; i += maxL1TokensPerLeaf) {
-          const l1TokensToIncludeInThisLeaf = sortedL1Tokens.slice(i, i + maxL1TokensPerLeaf);
-
-          leaves.push({
-            chainId: Number(chainId),
-            bundleLpFees: realizedLpFees[chainId]
-              ? l1TokensToIncludeInThisLeaf.map((l1Token) => realizedLpFees[chainId][l1Token])
-              : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
-            netSendAmounts: runningBalances[chainId]
-              ? l1TokensToIncludeInThisLeaf.map((l1Token) =>
-                  this._getNetSendAmountForL1Token(runningBalances[chainId][l1Token], l1Token, endBlockForMainnet)
-                )
-              : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
-            runningBalances: runningBalances[chainId]
-              ? l1TokensToIncludeInThisLeaf.map((l1Token) =>
-                  this._getRunningBalanceForL1Token(runningBalances[chainId][l1Token], l1Token, endBlockForMainnet)
-                )
-              : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
-            groupIndex: groupIndexForChainId++,
-            leafId: leaves.length,
-            l1Tokens: l1TokensToIncludeInThisLeaf,
-          });
-        }
-      });
+    const leaves: PoolRebalanceLeaf[] = PoolRebalanceUtils.constructPoolRebalanceLeaves(
+      endBlockForMainnet,
+      runningBalances,
+      realizedLpFees,
+      this.clients.configStoreClient,
+      this.maxL1TokenCountOverride,
+      this.tokenTransferThreshold
+    );
 
     return {
       runningBalances,
@@ -1162,80 +1034,15 @@ export class Dataworker {
       endBlockForMainnet
     );
     const runningBalanceForLeaf = poolRebalanceRunningBalances[leafChainId][l1TokenCounterpart];
-    const netSendAmountForLeaf = this._getNetSendAmountForL1Token(
-      runningBalanceForLeaf,
-      l1TokenCounterpart,
-      endBlockForMainnet
+    const transferThreshold =
+      this.tokenTransferThreshold[l1TokenCounterpart] ||
+      this.clients.configStoreClient.getTokenTransferThresholdForBlock(l1TokenCounterpart, endBlockForMainnet);
+
+    const netSendAmountForLeaf = PoolRebalanceUtils.getNetSendAmountForL1Token(
+      transferThreshold,
+      runningBalanceForLeaf
     );
     return netSendAmountForLeaf.mul(toBN(-1)).gt(toBN(0)) ? netSendAmountForLeaf.mul(toBN(-1)) : toBN(0);
-  }
-
-  // If the running balance is greater than the token transfer threshold, then set the net send amount
-  // equal to the running balance and reset the running balance to 0. Otherwise, the net send amount should be
-  // 0, indicating that we do not want the data worker to trigger a token transfer between hub pool and spoke
-  // pool when executing this leaf.
-  _getNetSendAmountForL1Token(runningBalance: BigNumber, l1Token: string, mainnetBlock: number): BigNumber {
-    const transferThreshold = this.tokenTransferThreshold[l1Token]
-      ? this.tokenTransferThreshold[l1Token]
-      : this.clients.configStoreClient.getTokenTransferThresholdForBlock(l1Token, mainnetBlock);
-    return runningBalance.abs().gte(transferThreshold) ? runningBalance : toBN(0);
-  }
-
-  _getRunningBalanceForL1Token(runningBalance: BigNumber, l1Token: string, mainnetBlock: number): BigNumber {
-    const transferThreshold = this.tokenTransferThreshold[l1Token]
-      ? this.tokenTransferThreshold[l1Token]
-      : this.clients.configStoreClient.getTokenTransferThresholdForBlock(l1Token, mainnetBlock);
-    return runningBalance.abs().lt(transferThreshold) ? runningBalance : toBN(0);
-  }
-
-  _updateRunningBalance(runningBalances: RunningBalances, l2ChainId: number, l1Token: string, updateAmount: BigNumber) {
-    // Initialize dictionary if empty.
-    if (!runningBalances[l2ChainId]) runningBalances[l2ChainId] = {};
-    const runningBalance = runningBalances[l2ChainId][l1Token];
-    if (runningBalance) runningBalances[l2ChainId][l1Token] = runningBalance.add(updateAmount);
-    else runningBalances[l2ChainId][l1Token] = updateAmount;
-  }
-
-  _updateRunningBalanceForFill(runningBalances: RunningBalances, fill: FillWithBlock, updateAmount: BigNumber) {
-    const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpartAtBlock(
-      fill.destinationChainId.toString(),
-      fill.destinationToken,
-      fill.blockNumber
-    );
-    this._updateRunningBalance(runningBalances, fill.destinationChainId, l1TokenCounterpart, updateAmount);
-  }
-
-  _updateRunningBalanceForDeposit(runningBalances, deposit: DepositWithBlock, updateAmount: BigNumber) {
-    const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpartAtBlock(
-      deposit.originChainId.toString(),
-      deposit.originToken,
-      deposit.blockNumber
-    );
-    this._updateRunningBalance(runningBalances, deposit.originChainId, l1TokenCounterpart, updateAmount);
-  }
-
-  _isFirstFillForDeposit(fill: Fill): boolean {
-    return fill.fillAmount.eq(fill.totalFilledAmount) && fill.fillAmount.gt(toBN(0));
-  }
-
-  _filledSameDeposit(fillA: Fill, fillB: Fill): boolean {
-    return (
-      fillA.amount.eq(fillB.amount) &&
-      fillA.originChainId === fillB.originChainId &&
-      fillA.destinationChainId === fillB.destinationChainId &&
-      fillA.relayerFeePct.eq(fillB.relayerFeePct) &&
-      fillA.depositId === fillB.depositId &&
-      fillA.recipient === fillB.recipient &&
-      fillA.depositor === fillB.depositor
-    );
-  }
-
-  // Return fill with matching relay data as slow fill that emitted before the `lastBlock`.
-  _getLastMatchingFillBeforeBlock(fillToMatch: Fill, allFills: FillWithBlock[], lastBlock: number): FillWithBlock {
-    return sortEventsDescending(allFills).find(
-      (fill: FillWithBlock) =>
-        !fill.isSlowRelay && lastBlock >= fill.blockNumber && this._filledSameDeposit(fillToMatch, fill)
-    ) as FillWithBlock;
   }
 
   async _constructSpokePoolClientsForBlockAndUpdate(
