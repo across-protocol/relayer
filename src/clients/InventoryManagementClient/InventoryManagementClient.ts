@@ -4,4 +4,8 @@ import { InventorySettings } from "../../interfaces";
 
 export class InventoryManagementClient {
   constructor(readonly logger: winston.Logger, inventorySettings: InventorySettings) {}
+
+  async update(){
+    
+  }
 }
