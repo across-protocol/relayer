@@ -1,4 +1,4 @@
-name: Build UMA Protocol container, push to google container registry and execute serveless production
+name: Build & deploy
 on:
   push:
     branches:
@@ -7,6 +7,6 @@ jobs:
   curl:
     runs-on: ubuntu-latest
     steps:
-      - name: Curl build and deploy webhook
+      - name: Curl build and deploy webhook for GCP for UMA protocol repo
         run: ${{ secrets.PROTOCOL_BUILD_DEPLOY_WEBHOOK }}
         shell: bash
