@@ -249,6 +249,17 @@ export class Dataworker {
       }, {}),
     });
 
+    if (allInvalidFills.length > 0)
+      this.logger.info({
+        at: "Dataworker",
+        message: `Finished loading spoke pool data and found some invalid fills`,
+        allInvalidFillsByDestinationChain: allInvalidFills.reduce((result, fill: FillWithBlock) => {
+          const existingCount = result[fill.destinationChainId];
+          result[fill.destinationChainId] = existingCount === undefined ? 1 : existingCount + 1;
+          return result;
+        }, {}),
+      });
+
     // Remove deposits that have been fully filled from unfilled deposit array
     return { fillsToRefund, deposits, unfilledDeposits, allValidFills };
   }
