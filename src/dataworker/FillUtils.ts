@@ -1,6 +1,7 @@
 import { HubPoolClient } from "../clients";
-import { Fill, FillWithBlock } from "../interfaces";
+import { Fill, FillsToRefund, FillWithBlock } from "../interfaces";
 import { sortEventsDescending, toBN } from "../utils";
+import { getBlockRangeForChain } from "./DataworkerUtils";
 
 export function isFirstFillForDeposit(fill: Fill): boolean {
   return fill.fillAmount.eq(fill.totalFilledAmount) && fill.fillAmount.gt(toBN(0));
@@ -66,4 +67,39 @@ export function getFillDataForSlowFillFromPreviousRootBundle(
     lastFillBeforeSlowFillIncludedInRoot,
     rootBundleEndBlockContainingFirstFill,
   };
+}
+
+export function getFillsInRange(
+  fills: FillWithBlock[],
+  blockRangesForChains: number[][],
+  chainIdListForBundleEvaluationBlockNumbers: number[]
+) {
+  return fills.filter((fill) => {
+    const blockRangeForChain = getBlockRangeForChain(
+      blockRangesForChains,
+      fill.destinationChainId,
+      chainIdListForBundleEvaluationBlockNumbers
+    );
+    return fill.blockNumber <= blockRangeForChain[1] && fill.blockNumber >= blockRangeForChain[0];
+  });
+}
+
+export function getFillCountGroupedByProp(fills: FillWithBlock[], propName: string) {
+  return fills.reduce((result, fill: FillWithBlock) => {
+    const existingCount = result[fill[propName]];
+    result[fill[propName]] = existingCount === undefined ? 1 : existingCount + 1;
+    return result;
+  }, {});
+}
+
+export function getFillsToRefundCountGroupedByProp(fills: FillsToRefund, propName: string) {
+  return Object.keys(fills).reduce((endResult, repaymentChain) => {
+    endResult[propName] = endResult[propName] ?? {};
+    return Object.keys(fills[repaymentChain]).reduce((result, repaymentToken) => {
+      const existingCount = result[propName][repaymentToken];
+      const fillCount = fills[repaymentChain][repaymentToken].fills.length;
+      result[propName][repaymentToken] = existingCount === undefined ? fillCount : existingCount + fillCount;
+      return result;
+    }, endResult);
+  }, {});
 }

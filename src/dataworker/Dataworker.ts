@@ -8,7 +8,10 @@ import { RunningBalances, BigNumberForToken } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
-import { isFirstFillForDeposit } from "./FillUtils";
+import { getFillCountGroupedByProp, getFillsToRefundCountGroupedByProp } from "./FillUtils";
+import { getFillsInRange, isFirstFillForDeposit } from "./FillUtils";
+import { getBlockRangeForChain } from "./DataworkerUtils";
+import { getDepositCountGroupedByProp, getUnfilledDepositCountGroupedByProp } from "./DepositUtils";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -64,7 +67,7 @@ export class Dataworker {
     const fillsToRefund: FillsToRefund = {};
     const deposits: DepositWithBlock[] = [];
     const allValidFills: FillWithBlock[] = [];
-    const allInvalidFillsInRange: FillWithBlock[] = [];
+    const allInvalidFills: FillWithBlock[] = [];
 
     const allChainIds = Object.keys(this.clients.spokePoolSigners);
     this.logger.debug({
@@ -91,7 +94,11 @@ export class Dataworker {
         // We can safely filter `deposits` by the bundle block range because its only used to decrement running
         // balances in the pool rebalance root. This array is NOT used when matching fills with deposits. For that,
         // we use the wider event search config of the origin client.
-        const depositChainBlockRange = this._getBlockRangeForChain(blockRangesForChains, Number(originChainId));
+        const depositChainBlockRange = getBlockRangeForChain(
+          blockRangesForChains,
+          Number(originChainId),
+          this.chainIdListForBundleEvaluationBlockNumbers
+        );
         const newDeposits: DepositWithBlock[] = originClient
           .getDepositsForDestinationChain(destinationChainId, true)
           .filter(
@@ -107,7 +114,11 @@ export class Dataworker {
         deposits.push(...newDeposits);
 
         destinationClient.getFillsWithBlockForOriginChain(Number(originChainId)).forEach((fillWithBlock) => {
-          const blockRangeForChain = this._getBlockRangeForChain(blockRangesForChains, Number(destinationChainId));
+          const blockRangeForChain = getBlockRangeForChain(
+            blockRangesForChains,
+            Number(destinationChainId),
+            this.chainIdListForBundleEvaluationBlockNumbers
+          );
 
           // If fill matches with a deposit, then its a valid fill
           const matchedDeposit: Deposit = originClient.getDepositForFill(fillWithBlock);
@@ -130,7 +141,11 @@ export class Dataworker {
             const chainToSendRefundTo = fill.isSlowRelay ? fill.destinationChainId : fill.repaymentChainId;
 
             // Save fill data and associate with repayment chain and L2 token refund should be denominated in.
-            const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForChains, 1)[1];
+            const endBlockForMainnet = getBlockRangeForChain(
+              blockRangesForChains,
+              1,
+              this.chainIdListForBundleEvaluationBlockNumbers
+            )[1];
             const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpartAtBlock(
               fill.destinationChainId.toString(),
               fill.destinationToken,
@@ -185,11 +200,7 @@ export class Dataworker {
                 refundObj.refunds[fill.relayer] = refundObj.refunds[fill.relayer].add(refund);
               else refundObj.refunds[fill.relayer] = refund;
             }
-          } else if (
-            fillWithBlock.blockNumber <= blockRangeForChain[1] &&
-            fillWithBlock.blockNumber >= blockRangeForChain[0]
-          )
-            allInvalidFillsInRange.push(fillWithBlock);
+          } else allInvalidFills.push(fillWithBlock);
         });
       }
     }
@@ -222,39 +233,25 @@ export class Dataworker {
       // Remove deposits that are fully filled
       .filter((unfilledDeposit: UnfilledDeposit) => unfilledDeposit.unfilledAmount.gt(0));
 
+    const allValidFillsInRange = getFillsInRange(
+      allValidFills,
+      blockRangesForChains,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
+    const allInvalidFillsInRange = getFillsInRange(
+      allInvalidFills,
+      blockRangesForChains,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
     this.logger.debug({
       at: "Dataworker",
       message: `Finished loading spoke pool data`,
       blockRangesForChains,
-      unfilledDepositsByDestinationChain: unfilledDeposits.reduce((result, unfilledDeposit: UnfilledDeposit) => {
-        const existingCount = result[unfilledDeposit.deposit.destinationChainId];
-        result[unfilledDeposit.deposit.destinationChainId] = existingCount === undefined ? 1 : existingCount + 1;
-        return result;
-      }, {}),
-      depositsByOriginChain: deposits.reduce((result, deposit: DepositWithBlock) => {
-        const existingCount = result[deposit.originChainId];
-        result[deposit.originChainId] = existingCount === undefined ? 1 : existingCount + 1;
-        return result;
-      }, {}),
-      fillsToRefundByRepaymentChain: Object.keys(fillsToRefund).reduce((endResult, repaymentChain) => {
-        endResult[repaymentChain] = endResult[repaymentChain] ?? {};
-        return Object.keys(fillsToRefund[repaymentChain]).reduce((result, repaymentToken) => {
-          const existingCount = result[repaymentChain][repaymentToken];
-          const fillCount = fillsToRefund[repaymentChain][repaymentToken].fills.length;
-          result[repaymentChain][repaymentToken] = existingCount === undefined ? fillCount : existingCount + fillCount;
-          return result;
-        }, endResult);
-      }, {}),
-      allValidFillsByDestinationChain: allValidFills.reduce((result, fill: FillWithBlock) => {
-        const existingCount = result[fill.destinationChainId];
-        result[fill.destinationChainId] = existingCount === undefined ? 1 : existingCount + 1;
-        return result;
-      }, {}),
-      allInvalidFillsInRangeByDestinationChain: allInvalidFillsInRange.reduce((result, fill: FillWithBlock) => {
-        const existingCount = result[fill.destinationChainId];
-        result[fill.destinationChainId] = existingCount === undefined ? 1 : existingCount + 1;
-        return result;
-      }, {}),
+      unfilledDepositsByDestinationChain: getUnfilledDepositCountGroupedByProp(unfilledDeposits, "destinationChainId"),
+      depositsInRangeByOriginChain: getDepositCountGroupedByProp(deposits, "originChainId"),
+      fillsToRefundInRangeByRepaymentChain: getFillsToRefundCountGroupedByProp(fillsToRefund, "repaymentChainId"),
+      allValidFillsInRangeByDestinationChain: getFillCountGroupedByProp(allValidFillsInRange, "destinationChainId"),
+      allInvalidFillsInRangeByDestinationChain: getFillCountGroupedByProp(allInvalidFillsInRange, "destinationChainId"),
     });
 
     if (allInvalidFillsInRange.length > 0)
@@ -262,11 +259,7 @@ export class Dataworker {
         at: "Dataworker",
         message: `Finished loading spoke pool data and found some invalid fills in range`,
         blockRangesForChains,
-        allInvalidFillsByDestinationChain: allInvalidFillsInRange.reduce((result, fill: FillWithBlock) => {
-          const existingCount = result[fill.destinationChainId];
-          result[fill.destinationChainId] = existingCount === undefined ? 1 : existingCount + 1;
-          return result;
-        }, {}),
+        allInvalidFillsByDestinationChain: getFillCountGroupedByProp(allInvalidFillsInRange, "destinationChainId"),
       });
 
     // Remove deposits that have been fully filled from unfilled deposit array
@@ -307,7 +300,11 @@ export class Dataworker {
 
   buildRelayerRefundRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
     this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForChains });
-    const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForChains, 1)[1];
+    const endBlockForMainnet = getBlockRangeForChain(
+      blockRangesForChains,
+      1,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    )[1];
 
     const { fillsToRefund } = this._loadData(blockRangesForChains, spokePoolClients);
 
@@ -426,7 +423,11 @@ export class Dataworker {
     // 1. For each FilledRelay group, identified by { repaymentChainId, L1TokenAddress }, initialize a "running balance"
     // to the total refund amount for that group.
     // 2. Similarly, for each group sum the realized LP fees.
-    const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForChains, 1)[1];
+    const endBlockForMainnet = getBlockRangeForChain(
+      blockRangesForChains,
+      1,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    )[1];
 
     // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
     // slow relay refunds. They are decreased by the amount of funds already held by the SpokePool. Balances are keyed
@@ -504,7 +505,11 @@ export class Dataworker {
     // We do make an assumption that the spoke pool contract was not changed during the block range. By using the
     // spoke pool at this block instead of assuming its the currently deployed one, we can pay refunds for deposits
     // on deprecated spoke pools.
-    const endBlockForMainnet = this._getBlockRangeForChain(blockRangesForProposal, 1)[1];
+    const endBlockForMainnet = getBlockRangeForChain(
+      blockRangesForProposal,
+      1,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    )[1];
     this.logger.debug({
       at: "Dataworker#propose",
       message: `Constructing spoke pool clients for end mainnet block in bundle range`,
@@ -741,7 +746,11 @@ export class Dataworker {
     // We do make an assumption that the spoke pool contract was not changed during the block range. By using the
     // spoke pool at this block instead of assuming its the currently deployed one, we can pay refunds for deposits
     // on deprecated spoke pools.
-    const endBlockForMainnet = this._getBlockRangeForChain(blockRangesImpliedByBundleEndBlocks, 1)[1];
+    const endBlockForMainnet = getBlockRangeForChain(
+      blockRangesImpliedByBundleEndBlocks,
+      1,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    )[1];
     this.logger.debug({
       at: "Dataworker#validate",
       message: `Constructing spoke pool clients for end mainnet block in bundle range`,
@@ -1065,24 +1074,15 @@ export class Dataworker {
           spokePoolContract,
           this.clients.configStoreClient,
           Number(chainId),
-          this.clients.spokePoolClientSearchSettings[chainId]
+          this.clients.spokePoolClientSearchSettings[chainId],
+          // TODO: This won't always work if the spoke pool is updated, but it will reduce the block range to search
+          // deposit route events on.
+          this.clients.spokePoolClientSearchSettings[chainId].fromBlock
         );
         return [chainId, client];
       })
     );
     await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update()));
     return spokePoolClients;
-  }
-
-  _getBlockRangeForChain(blockRange: number[][], chain: number): number[] {
-    const indexForChain = this.chainIdListForBundleEvaluationBlockNumbers.indexOf(chain);
-    if (indexForChain === -1)
-      throw new Error(
-        `Could not find chain ${chain} in chain ID list ${this.chainIdListForBundleEvaluationBlockNumbers}`
-      );
-    const blockRangeForChain = blockRange[indexForChain];
-    if (!blockRangeForChain || blockRangeForChain.length !== 2)
-      throw new Error(`Invalid block range for chain ${chain}`);
-    return blockRangeForChain;
   }
 }
