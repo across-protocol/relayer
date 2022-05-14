@@ -44,7 +44,7 @@ export interface EventSearchConfig {
   fromBlock: number;
   toBlock: number | null;
   maxBlockLookBack: number;
-  concurrency: number | null;
+  concurrency?: number | null;
 }
 
 export function spreadEventWithBlockNumber(event: Event): SortableEvent {
