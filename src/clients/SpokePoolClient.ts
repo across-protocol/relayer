@@ -148,7 +148,9 @@ export class SpokePoolClient {
     // is heavy as there is a fair bit of block number lookups that need to happen. Note this call REQUIRES that the
     // hubPoolClient is updated on the first before this call as this needed the the L1 token mapping to each L2 token.
     if (depositEvents.length > 0) this.log("debug", "Fetching realizedLpFeePct", { numDeposits: depositEvents.length });
-    const dataForQuoteTime = await Promise.all(depositEvents.map((event) => this.computeRealizedLpFeePct(event)));
+    const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number }[] = await Promise.all(
+      depositEvents.map((event) => this.computeRealizedLpFeePct(event))
+    );
 
     for (const [index, event] of depositEvents.entries()) {
       // Append the realizedLpFeePct.

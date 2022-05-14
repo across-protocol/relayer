@@ -263,7 +263,7 @@ export class HubPoolClient {
 
     // For each enabled Lp token fetch the token symbol and decimals from the token contract. Note this logic will
     // only run iff a new token has been enabled. Will only append iff the info is not there already.
-    const tokenInfo = await Promise.all(
+    const tokenInfo: L1Token[] = await Promise.all(
       l1TokensLPEvents.map((event) => this.fetchTokenInfoFromContract(spreadEvent(event).l1Token))
     );
     for (const info of tokenInfo) if (!this.l1Tokens.includes(info)) this.l1Tokens.push(info);

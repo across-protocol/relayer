@@ -1,7 +1,71 @@
 import { HubPoolClient } from "../clients";
 import { Fill, FillsToRefund, FillWithBlock } from "../interfaces";
-import { sortEventsDescending, toBN } from "../utils";
+import { assign, getRealizedLpFeeForFills, getRefundForFills, sortEventsDescending, toBN } from "../utils";
 import { getBlockRangeForChain } from "./DataworkerUtils";
+
+export function getRefundInformationFromFill(
+  fill: Fill,
+  hubPoolClient: HubPoolClient,
+  blockRangesForChains: number[][],
+  chainIdListForBundleEvaluationBlockNumbers: number[]
+) {
+  // Handle slow relay where repaymentChainId = 0. Slow relays always pay recipient on destination chain.
+  // So, save the slow fill under the destination chain, and save the fast fill under its repayment chain.
+  const chainToSendRefundTo = fill.isSlowRelay ? fill.destinationChainId : fill.repaymentChainId;
+
+  // Save fill data and associate with repayment chain and L2 token refund should be denominated in.
+  const endBlockForMainnet = getBlockRangeForChain(
+    blockRangesForChains,
+    1,
+    chainIdListForBundleEvaluationBlockNumbers
+  )[1];
+  const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
+    fill.destinationChainId.toString(),
+    fill.destinationToken,
+    endBlockForMainnet
+  );
+  const repaymentToken = hubPoolClient.getDestinationTokenForL1TokenDestinationChainId(
+    l1TokenCounterpart,
+    chainToSendRefundTo
+  );
+  return {
+    chainToSendRefundTo,
+    repaymentToken,
+  };
+}
+export function updateFillsToRefundWithValidFill(
+  fillsToRefund: FillsToRefund,
+  fill: Fill,
+  chainToSendRefundTo: number,
+  repaymentToken: string
+) {
+  assign(fillsToRefund, [chainToSendRefundTo, repaymentToken, "fills"], [fill]);
+
+  // Update realized LP fee accumulator for slow and non-slow fills.
+  const refundObj = fillsToRefund[chainToSendRefundTo][repaymentToken];
+  refundObj.realizedLpFees = refundObj.realizedLpFees
+    ? refundObj.realizedLpFees.add(getRealizedLpFeeForFills([fill]))
+    : getRealizedLpFeeForFills([fill]);
+}
+
+export function updateFillsToRefundWithSlowFill(
+  fillsToRefund: FillsToRefund,
+  fill: Fill,
+  chainToSendRefundTo: number,
+  repaymentToken: string
+) {
+  const refundObj = fillsToRefund[chainToSendRefundTo][repaymentToken];
+  // Update total refund amount for non-slow fills, since refunds for executed slow fills would have been
+  // included in a previous root bundle.
+  const refund = getRefundForFills([fill]);
+  refundObj.totalRefundAmount = refundObj.totalRefundAmount ? refundObj.totalRefundAmount.add(refund) : refund;
+
+  // Instantiate dictionary if it doesn't exist.
+  if (!refundObj.refunds) assign(fillsToRefund, [chainToSendRefundTo, repaymentToken, "refunds"], {});
+
+  if (refundObj.refunds[fill.relayer]) refundObj.refunds[fill.relayer] = refundObj.refunds[fill.relayer].add(refund);
+  else refundObj.refunds[fill.relayer] = refund;
+}
 
 export function isFirstFillForDeposit(fill: Fill): boolean {
   return fill.fillAmount.eq(fill.totalFilledAmount) && fill.fillAmount.gt(toBN(0));
@@ -92,13 +156,13 @@ export function getFillCountGroupedByProp(fills: FillWithBlock[], propName: stri
   }, {});
 }
 
-export function getFillsToRefundCountGroupedByProp(fills: FillsToRefund, propName: string) {
+export function getFillsToRefundCountGroupedByRepaymentChain(fills: FillsToRefund) {
   return Object.keys(fills).reduce((endResult, repaymentChain) => {
-    endResult[propName] = endResult[propName] ?? {};
+    endResult[repaymentChain] = endResult[repaymentChain] ?? {};
     return Object.keys(fills[repaymentChain]).reduce((result, repaymentToken) => {
-      const existingCount = result[propName][repaymentToken];
+      const existingCount = result[repaymentChain][repaymentToken];
       const fillCount = fills[repaymentChain][repaymentToken].fills.length;
-      result[propName][repaymentToken] = existingCount === undefined ? fillCount : existingCount + fillCount;
+      result[repaymentChain][repaymentToken] = existingCount === undefined ? fillCount : existingCount + fillCount;
       return result;
     }, endResult);
   }, {});

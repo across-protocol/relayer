@@ -79,6 +79,10 @@ export interface UnfilledDeposit {
   unfilledAmount: BigNumber;
   hasFirstPartialFill?: boolean;
 }
+
+export interface UnfilledDepositsForOriginChain {
+  [originChainIdPlusDepositId: string]: UnfilledDeposit[];
+}
 export interface FillsToRefund {
   [repaymentChainId: number]: {
     [l2TokenAddress: string]: {

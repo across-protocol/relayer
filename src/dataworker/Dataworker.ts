@@ -1,17 +1,20 @@
-import { winston, assign, compareAddresses, getRefundForFills, Contract } from "../utils";
+import { winston, compareAddresses, Contract } from "../utils";
 import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree, SpokePool } from "../utils";
-import { getRealizedLpFeeForFills, BigNumber, toBN, convertFromWei, shortenHexString } from "../utils";
+import { BigNumber, toBN, convertFromWei, shortenHexString } from "../utils";
 import { shortenHexStrings, EMPTY_MERKLE_ROOT } from "../utils";
-import { FillsToRefund, RelayData, UnfilledDeposit, Deposit, DepositWithBlock, RootBundle } from "../interfaces";
+import { UnfilledDeposit, Deposit, DepositWithBlock, RootBundle, UnfilledDepositsForOriginChain } from "../interfaces";
 import { FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
-import { RunningBalances, BigNumberForToken } from "../interfaces";
+import { RunningBalances, BigNumberForToken, FillsToRefund, RelayData } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
-import { getFillCountGroupedByProp, getFillsToRefundCountGroupedByProp } from "./FillUtils";
-import { getFillsInRange, isFirstFillForDeposit } from "./FillUtils";
+import { getFillsToRefundCountGroupedByRepaymentChain, updateFillsToRefundWithValidFill } from "./FillUtils";
+import { getFillsInRange, getRefundInformationFromFill, updateFillsToRefundWithSlowFill } from "./FillUtils";
+import { getFillCountGroupedByProp } from "./FillUtils";
 import { getBlockRangeForChain } from "./DataworkerUtils";
-import { getDepositCountGroupedByProp, getUnfilledDepositCountGroupedByProp } from "./DepositUtils";
+import { getUnfilledDepositCountGroupedByProp, getDepositCountGroupedByProp } from "./DepositUtils";
+import { flattenAndFilterUnfilledDepositsByOriginChain } from "./DepositUtils";
+import { updateUnfilledDepositsWithMatchedDeposit, getUniqueDepositsInRange } from "./DepositUtils";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -63,7 +66,7 @@ export class Dataworker {
         `Unexpected block range list length of ${blockRangesForChains.length}, should be ${this.chainIdListForBundleEvaluationBlockNumbers.length}`
       );
 
-    const unfilledDepositsForOriginChain: { [originChainIdPlusDepositId: string]: UnfilledDeposit[] } = {};
+    const unfilledDepositsForOriginChain: UnfilledDepositsForOriginChain = {};
     const fillsToRefund: FillsToRefund = {};
     const deposits: DepositWithBlock[] = [];
     const allValidFills: FillWithBlock[] = [];
@@ -94,24 +97,16 @@ export class Dataworker {
         // We can safely filter `deposits` by the bundle block range because its only used to decrement running
         // balances in the pool rebalance root. This array is NOT used when matching fills with deposits. For that,
         // we use the wider event search config of the origin client.
-        const depositChainBlockRange = getBlockRangeForChain(
-          blockRangesForChains,
-          Number(originChainId),
-          this.chainIdListForBundleEvaluationBlockNumbers
+        deposits.push(
+          ...getUniqueDepositsInRange(
+            blockRangesForChains,
+            Number(originChainId),
+            Number(destinationChainId),
+            this.chainIdListForBundleEvaluationBlockNumbers,
+            originClient,
+            deposits
+          )
         );
-        const newDeposits: DepositWithBlock[] = originClient
-          .getDepositsForDestinationChain(destinationChainId, true)
-          .filter(
-            (deposit) =>
-              deposit.originBlockNumber <= depositChainBlockRange[1] &&
-              deposit.originBlockNumber >= depositChainBlockRange[0] &&
-              !deposits.some(
-                (existingDeposit) =>
-                  existingDeposit.originChainId === deposit.originChainId &&
-                  existingDeposit.depositId === deposit.depositId
-              )
-          );
-        deposits.push(...newDeposits);
 
         destinationClient.getFillsWithBlockForOriginChain(Number(originChainId)).forEach((fillWithBlock) => {
           const blockRangeForChain = getBlockRangeForChain(
@@ -133,73 +128,26 @@ export class Dataworker {
             if (fillWithBlock.blockNumber > blockRangeForChain[1] || fillWithBlock.blockNumber < blockRangeForChain[0])
               return;
 
-            // Now create a copy of fill with block data removed.
+            // Now create a copy of fill with block data removed, and use its data to update the fills to refund obj.
             const { blockNumber, transactionIndex, logIndex, ...fill } = fillWithBlock;
-
-            // Handle slow relay where repaymentChainId = 0. Slow relays always pay recipient on destination chain.
-            // So, save the slow fill under the destination chain, and save the fast fill under its repayment chain.
-            const chainToSendRefundTo = fill.isSlowRelay ? fill.destinationChainId : fill.repaymentChainId;
-
-            // Save fill data and associate with repayment chain and L2 token refund should be denominated in.
-            const endBlockForMainnet = getBlockRangeForChain(
+            const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
+              fill,
+              this.clients.hubPoolClient,
               blockRangesForChains,
-              1,
               this.chainIdListForBundleEvaluationBlockNumbers
-            )[1];
-            const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpartAtBlock(
-              fill.destinationChainId.toString(),
-              fill.destinationToken,
-              endBlockForMainnet
             );
-            const repaymentToken = this.clients.hubPoolClient.getDestinationTokenForL1TokenDestinationChainId(
-              l1TokenCounterpart,
-              chainToSendRefundTo
-            );
-            assign(fillsToRefund, [chainToSendRefundTo, repaymentToken, "fills"], [fill]);
-
-            // Update realized LP fee accumulator for slow and non-slow fills.
-            const refundObj = fillsToRefund[chainToSendRefundTo][repaymentToken];
-            refundObj.realizedLpFees = refundObj.realizedLpFees
-              ? refundObj.realizedLpFees.add(getRealizedLpFeeForFills([fill]))
-              : getRealizedLpFeeForFills([fill]);
+            updateFillsToRefundWithValidFill(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
 
             // Save deposit as one that is eligible for a slow fill, since there is a fill
             // for the deposit in this epoch. We save whether this fill is the first fill for the deposit, because
             // if a deposit has its first fill in this block range, then we can send a slow fill payment to complete
             // the deposit.
-            const depositUnfilledAmount = fill.amount.sub(fill.totalFilledAmount);
-            const depositKey = `${originChainId}+${fill.depositId}`;
-            assign(
-              unfilledDepositsForOriginChain,
-              [depositKey],
-              [
-                {
-                  unfilledAmount: depositUnfilledAmount,
-                  deposit: matchedDeposit,
-                  // A first partial fill for a deposit is characterized by one whose total filled amount post-fill
-                  // is equal to the amount sent in the fill, and where the fill amount is greater than zero.
-                  hasFirstPartialFill: isFirstFillForDeposit(fill),
-                },
-              ]
-            );
+            updateUnfilledDepositsWithMatchedDeposit(fill, matchedDeposit, unfilledDepositsForOriginChain);
 
             // For non-slow relays, save refund amount for the recipient of the refund, i.e. the relayer
             // for non-slow relays.
-            if (!fill.isSlowRelay) {
-              // Update total refund amount for non-slow fills, since refunds for executed slow fills would have been
-              // included in a previous root bundle.
-              const refund = getRefundForFills([fill]);
-              refundObj.totalRefundAmount = refundObj.totalRefundAmount
-                ? refundObj.totalRefundAmount.add(refund)
-                : refund;
-
-              // Instantiate dictionary if it doesn't exist.
-              if (!refundObj.refunds) assign(fillsToRefund, [chainToSendRefundTo, repaymentToken, "refunds"], {});
-
-              if (refundObj.refunds[fill.relayer])
-                refundObj.refunds[fill.relayer] = refundObj.refunds[fill.relayer].add(refund);
-              else refundObj.refunds[fill.relayer] = refund;
-            }
+            if (!fill.isSlowRelay)
+              updateFillsToRefundWithSlowFill(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
           } else allInvalidFills.push(fillWithBlock);
         });
       }
@@ -207,39 +155,15 @@ export class Dataworker {
 
     // For each deposit with a matched fill, figure out the unfilled amount that we need to slow relay. We will filter
     // out any deposits that are fully filled.
-    const unfilledDeposits = Object.values(unfilledDepositsForOriginChain)
-      .map((_unfilledDeposits: UnfilledDeposit[]): UnfilledDeposit => {
-        // Remove deposits with no matched fills.
-        if (_unfilledDeposits.length === 0) return { unfilledAmount: toBN(0), deposit: undefined };
-        // Remove deposits where there isn't a fill with fillAmount == totalFilledAmount && fillAmount > 0. This ensures
-        // that we'll only be slow relaying deposits where the first fill (i.e. the one with
-        // fillAmount == totalFilledAmount) is in this epoch. We assume that we already included slow fills in a
-        // previous epoch for these ignored deposits.
-        if (
-          !_unfilledDeposits.some((_unfilledDeposit: UnfilledDeposit) => _unfilledDeposit.hasFirstPartialFill === true)
-        )
-          return { unfilledAmount: toBN(0), deposit: undefined };
-        // For each deposit, identify the smallest unfilled amount remaining after a fill since each fill can
-        // only decrease the unfilled amount.
-        _unfilledDeposits.sort((unfilledDepositA, unfilledDepositB) =>
-          unfilledDepositA.unfilledAmount.gt(unfilledDepositB.unfilledAmount)
-            ? 1
-            : unfilledDepositA.unfilledAmount.lt(unfilledDepositB.unfilledAmount)
-            ? -1
-            : 0
-        );
-        return { unfilledAmount: _unfilledDeposits[0].unfilledAmount, deposit: _unfilledDeposits[0].deposit };
-      })
-      // Remove deposits that are fully filled
-      .filter((unfilledDeposit: UnfilledDeposit) => unfilledDeposit.unfilledAmount.gt(0));
+    const unfilledDeposits = flattenAndFilterUnfilledDepositsByOriginChain(unfilledDepositsForOriginChain);
 
-    const allValidFillsInRange = getFillsInRange(
-      allValidFills,
+    const allInvalidFillsInRange = getFillsInRange(
+      allInvalidFills,
       blockRangesForChains,
       this.chainIdListForBundleEvaluationBlockNumbers
     );
-    const allInvalidFillsInRange = getFillsInRange(
-      allInvalidFills,
+    const allValidFillsInRange = getFillsInRange(
+      allValidFills,
       blockRangesForChains,
       this.chainIdListForBundleEvaluationBlockNumbers
     );
@@ -249,7 +173,8 @@ export class Dataworker {
       blockRangesForChains,
       unfilledDepositsByDestinationChain: getUnfilledDepositCountGroupedByProp(unfilledDeposits, "destinationChainId"),
       depositsInRangeByOriginChain: getDepositCountGroupedByProp(deposits, "originChainId"),
-      fillsToRefundInRangeByRepaymentChain: getFillsToRefundCountGroupedByProp(fillsToRefund, "repaymentChainId"),
+      fillsToRefundInRangeByRepaymentChain: getFillsToRefundCountGroupedByRepaymentChain(fillsToRefund),
+      allValidFillsByDestinationChain: getFillCountGroupedByProp(allValidFills, "destinationChainId"),
       allValidFillsInRangeByDestinationChain: getFillCountGroupedByProp(allValidFillsInRange, "destinationChainId"),
       allInvalidFillsInRangeByDestinationChain: getFillCountGroupedByProp(allInvalidFillsInRange, "destinationChainId"),
     });
@@ -259,7 +184,10 @@ export class Dataworker {
         at: "Dataworker",
         message: `Finished loading spoke pool data and found some invalid fills in range`,
         blockRangesForChains,
-        allInvalidFillsByDestinationChain: getFillCountGroupedByProp(allInvalidFillsInRange, "destinationChainId"),
+        allInvalidFillsInRangeByDestinationChain: getFillCountGroupedByProp(
+          allInvalidFillsInRange,
+          "destinationChainId"
+        ),
       });
 
     // Remove deposits that have been fully filled from unfilled deposit array

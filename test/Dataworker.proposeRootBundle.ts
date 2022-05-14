@@ -90,8 +90,8 @@ describe("Dataworker: Propose root bundle", async function () {
     const loadDataResults2 = getMostRecentLog(spy, "Finished loading spoke pool data");
     expect(loadDataResults2.blockRangesForChains).to.deep.equal(blockRange2);
     expect(loadDataResults2.unfilledDepositsByDestinationChain).to.deep.equal({ [destinationChainId]: 1 });
-    expect(loadDataResults2.depositsByOriginChain).to.deep.equal({ [originChainId]: 1 });
-    expect(loadDataResults2.fillsToRefundByRepaymentChain).to.deep.equal({
+    expect(loadDataResults2.depositsInRangeByOriginChain).to.deep.equal({ [originChainId]: 1 });
+    expect(loadDataResults2.fillsToRefundInRangeByRepaymentChain).to.deep.equal({
       [destinationChainId]: { [erc20_2.address]: 1 },
     });
     expect(loadDataResults2.allValidFillsByDestinationChain).to.deep.equal({ [destinationChainId]: 1 });
@@ -163,8 +163,8 @@ describe("Dataworker: Propose root bundle", async function () {
     const loadDataResults4 = getMostRecentLog(spy, "Finished loading spoke pool data");
     expect(loadDataResults4.blockRangesForChains).to.deep.equal(blockRange4);
     expect(loadDataResults4.unfilledDepositsByDestinationChain).to.deep.equal({});
-    expect(loadDataResults4.depositsByOriginChain).to.deep.equal({});
-    expect(loadDataResults4.fillsToRefundByRepaymentChain).to.deep.equal({
+    expect(loadDataResults4.depositsInRangeByOriginChain).to.deep.equal({});
+    expect(loadDataResults4.fillsToRefundInRangeByRepaymentChain).to.deep.equal({
       [destinationChainId]: { [erc20_2.address]: 1 },
     });
     // Should be 2 valid fills since we don't discriminate by block range for this list. Its important that refunds
