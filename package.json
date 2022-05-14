@@ -16,8 +16,9 @@
     "@uma/common": "^2.19.0",
     "@uma/contracts-node": "^0.3.1",
     "@uma/financial-templates-lib": "2.26.0",
-    "ts-node": "^10.1.0",
-    "hardhat": "^2.9.0"
+    "bluebird": "^3.7.2",
+    "hardhat": "^2.9.0",
+    "ts-node": "^10.1.0"
   },
   "files": [
     "/dist/**/*"

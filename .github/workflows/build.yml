@@ -1,0 +1,12 @@
+name: Build & deploy
+on:
+  push:
+    branches:
+      - master
+jobs:
+  curl:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Curl build and deploy webhook for GCP for UMA protocol repo
+        run: ${{ secrets.PROTOCOL_BUILD_DEPLOY_WEBHOOK }}
+        shell: bash
