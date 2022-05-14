@@ -1,4 +1,4 @@
 export interface InventorySettings {
-  minimumKeptOnL2AsPctOfTotal: number;
-  minimumL1Reserve: number;
+  targetL2PctOfTotal: { [chainId: string]: number }; // The % of the total capital that we target to have on each chainId.
+  rebalanceOvershoot: number; // When rebalancing how much extra should be sent to prevent high frequency sends.
 }

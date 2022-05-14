@@ -340,7 +340,7 @@ export class Dataworker {
       leaf.netSendAmounts.forEach((netSendAmount, index) => {
         if (netSendAmount.gte(toBN(0))) return;
 
-        const l2TokenCounterpart = this.clients.hubPoolClient.getDestinationTokenForL1TokenDestinationChainId(
+        const l2TokenCounterpart = this.clients.hubPoolClient.getDestinationTokenForL1Token(
           leaf.l1Tokens[index],
           leaf.chainId
         );

@@ -5,11 +5,13 @@ import { InventorySettings } from "../interfaces";
 export class RelayerConfig extends CommonConfig {
   readonly relayerDiscount: BigNumber;
   readonly maxRelayerLookBack: { [chainId: number]: number };
+  readonly inventorySettings: InventorySettings;
 
   constructor(env: ProcessEnv) {
-    const { RELAYER_DISCOUNT, MAX_RELAYER_DEPOSIT_LOOK_BACK } = env;
+    const { RELAYER_DISCOUNT, MAX_RELAYER_DEPOSIT_LOOK_BACK, RELAYER_INVENTORY_CONFIG } = env;
     super(env);
     this.relayerDiscount = RELAYER_DISCOUNT ? toBNWei(RELAYER_DISCOUNT) : toBNWei(0);
     this.maxRelayerLookBack = MAX_RELAYER_DEPOSIT_LOOK_BACK ? JSON.parse(MAX_RELAYER_DEPOSIT_LOOK_BACK) : {};
+    this.inventorySettings = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
   }
 }
