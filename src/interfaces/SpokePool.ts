@@ -83,11 +83,15 @@ export interface UnfilledDeposit {
 export interface UnfilledDepositsForOriginChain {
   [originChainIdPlusDepositId: string]: UnfilledDeposit[];
 }
+
+export interface Refund {
+  [refundAddress: string]: BigNumber;
+}
 export interface FillsToRefund {
   [repaymentChainId: number]: {
     [l2TokenAddress: string]: {
       fills: Fill[];
-      refunds?: { [refundAddress: string]: BigNumber };
+      refunds?: Refund;
       totalRefundAmount: BigNumber;
       realizedLpFees: BigNumber;
     };

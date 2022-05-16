@@ -1,4 +1,4 @@
-import { processEndPollingLoop, winston, delay, getProvider, config, startupLogLevel } from "../utils";
+import { processEndPollingLoop, winston, delay, config, startupLogLevel } from "../utils";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -30,11 +30,11 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       await updateDataworkerClients(clients);
 
       // Validate and dispute pending proposal before proposing a new one
-      await dataworker.validateRootBundle();
+      await dataworker.validatePendingRootBundle();
 
       await dataworker.proposeRootBundle();
 
-      await clients.multiCallerClient.executeTransactionQueue();
+      await clients.multiCallerClient.executeTransactionQueue(true);
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }

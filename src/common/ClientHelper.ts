@@ -1,7 +1,16 @@
 import winston from "winston";
-import { getProvider, getSigner, getDeployedContract, getDeploymentBlockNumber, Wallet } from "../utils";
-import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient } from "../clients";
+import {
+  getProvider,
+  getSigner,
+  getDeployedContract,
+  getDeploymentBlockNumber,
+  Wallet,
+  SpokePool,
+  Contract,
+} from "../utils";
+import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
+import { DataworkerClients } from "../dataworker/DataworkerClientHelper";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -15,6 +24,34 @@ export function getSpokePoolSigners(baseSigner: Wallet, config: CommonConfig): {
       return [chainId, baseSigner.connect(getProvider(chainId, config.nodeQuorumThreshold))];
     })
   );
+}
+
+export async function constructSpokePoolClientsForBlockAndUpdate(
+  chainIdListForBundleEvaluationBlockNumbers: number[],
+  clients: DataworkerClients,
+  logger: winston.Logger,
+  latestMainnetBlock: number
+): Promise<{ [chainId: number]: SpokePoolClient }> {
+  const spokePoolClients = Object.fromEntries(
+    chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
+      const spokePoolContract = new Contract(
+        clients.hubPoolClient.getSpokePoolForBlock(latestMainnetBlock, Number(chainId)),
+        SpokePool.abi,
+        clients.spokePoolSigners[chainId]
+      );
+      const client = new SpokePoolClient(
+        logger,
+        spokePoolContract,
+        clients.configStoreClient,
+        Number(chainId),
+        clients.spokePoolClientSearchSettings[chainId],
+        clients.spokePoolClientSearchSettings[chainId].fromBlock
+      );
+      return [chainId, client];
+    })
+  );
+  await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update()));
+  return spokePoolClients;
 }
 
 export async function constructClients(logger: winston.Logger, config: CommonConfig): Promise<Clients> {

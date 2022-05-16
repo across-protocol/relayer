@@ -185,16 +185,31 @@ describe("HubPoolClient: RootBundle Events", async function () {
     await hre.network.provider.send("evm_mine");
     await hre.network.provider.send("evm_mine");
 
+    // Initially, only execute one of the leaves. This should make the function return 0 as the start block since it
+    // ignores proposed root bundles that are only partially executed.
     await timer.setCurrentTime(Number(await timer.getCurrentTime()) + constants.refundProposalLiveness + 1);
     await hubPool.connect(dataworker).executeRootBundle(...Object.values(leaves1[0]), tree1.getHexProof(leaves1[0]));
-    await hubPool.connect(dataworker).executeRootBundle(...Object.values(leaves1[1]), tree1.getHexProof(leaves1[1]));
-    const executionBlockNumber = await hubPool.provider.getBlockNumber();
+    const partialExecutionBlockNumber = await hubPool.provider.getBlockNumber();
 
     const chainIdList = [leaves1[0].chainId.toNumber(), leaves1[1].chainId.toNumber()];
 
-    // Default case when client is unaware of events pre-update.
-    expect(hubPoolClient.getNextBundleStartBlockNumber(chainIdList, executionBlockNumber, chainIdList[0])).to.equal(0);
+    // No fully executed pool rebalance roots.
     await hubPoolClient.update();
+    expect(
+      hubPoolClient.getNextBundleStartBlockNumber(chainIdList, partialExecutionBlockNumber, chainIdList[0])
+    ).to.equal(0);
+
+    // Pool rebalance root is fully executed, returns block number based on fully executed root bundle at the latest
+    // mainnet block passed in.
+    await hubPool.connect(dataworker).executeRootBundle(...Object.values(leaves1[1]), tree1.getHexProof(leaves1[1]));
+    const executionBlockNumber = await hubPool.provider.getBlockNumber();
+    await hubPoolClient.update();
+    expect(
+      hubPoolClient.getNextBundleStartBlockNumber(chainIdList, partialExecutionBlockNumber, chainIdList[0])
+    ).to.equal(0);
+    expect(hubPoolClient.getNextBundleStartBlockNumber(chainIdList, executionBlockNumber, chainIdList[0])).to.equal(
+      bundleBlockEvalNumbers[chainIdList.indexOf(chainIdList[0])] + 1
+    );
 
     // Mine more blocks and Propose and execute another root bundle:
     await hre.network.provider.send("evm_mine");
@@ -209,6 +224,12 @@ describe("HubPoolClient: RootBundle Events", async function () {
     await hubPool.connect(dataworker).executeRootBundle(...Object.values(leaves2[0]), tree2.getHexProof(leaves2[0]));
     await hubPool.connect(dataworker).executeRootBundle(...Object.values(leaves2[1]), tree2.getHexProof(leaves2[1]));
     const secondExecutionBlockNumber = await hubPool.provider.getBlockNumber();
+    // await hubPoolClient.update();
+
+    // When client is unaware of latest events pre-update, returns block from first update.
+    expect(
+      hubPoolClient.getNextBundleStartBlockNumber(chainIdList, secondExecutionBlockNumber, chainIdList[0])
+    ).to.equal(bundleBlockEvalNumbers[chainIdList.indexOf(chainIdList[0])] + 1);
     await hubPoolClient.update();
 
     // Happy case, latest block is equal to or greater than execution block number, returns bundle eval block + 1

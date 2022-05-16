@@ -145,31 +145,45 @@ export class HubPoolClient {
     return endingBlockNumber;
   }
 
+  getMostRecentProposedRootBundle(latestBlockToSearch: number) {
+    return sortEventsDescending(this.proposedRootBundles).find(
+      (proposedRootBundle: ProposedRootBundle) => proposedRootBundle.blockNumber <= latestBlockToSearch
+    ) as ProposedRootBundle;
+  }
+
   getNextBundleStartBlockNumber(chainIdList: number[], latestMainnetBlock: number, chainId: number): number {
-    // Search for the latest RootBundleExecuted event with a matching chainId while still being earlier than the
-    // latest block.
-    const latestRootBundleExecutedEvent = sortEventsDescending(this.executedRootBundles).find(
-      (event: ExecutedRootBundle) => event.blockNumber <= latestMainnetBlock && event.chainId === chainId
-    );
-
-    // TODO: If no event for chain ID, then we can return a conservative default starting block like 0,
-    // or we could throw an Error.
-    if (!latestRootBundleExecutedEvent) return 0;
-
-    // Once that event is found, search for the ProposeRootBundle event that is as late as possible, but earlier than
-    // the RootBundleExecuted event we just identified.
-    const mostRecentProposeRootBundleEventWithChain = sortEventsDescending(this.proposedRootBundles).find(
-      (rootBundle: ProposedRootBundle) => rootBundle.blockNumber <= latestRootBundleExecutedEvent.blockNumber
+    // Search for latest ProposeRootBundleExecuted event followed by all of its RootBundleExecuted event suggesting
+    // that all pool rebalance leaves were executed. This ignores any proposed bundles that were partially executed.
+    const latestFullyExecutedPoolRebalanceRoot = sortEventsDescending(this.proposedRootBundles).find(
+      (proposedRootBundle: ProposedRootBundle) => {
+        if (proposedRootBundle.blockNumber > latestMainnetBlock) return false;
+        const followingProposedRootBundle = sortEventsAscending(this.proposedRootBundles).find(
+          (_followingProposedRootBundle: ProposedRootBundle) =>
+            _followingProposedRootBundle.blockNumber > proposedRootBundle.blockNumber
+        ) as ProposedRootBundle;
+        const followingProposedRootBundleBlock = followingProposedRootBundle
+          ? followingProposedRootBundle.blockNumber
+          : latestMainnetBlock;
+        // Figure out how many pool rebalance leaves were executed for this root bundle, but only count executed
+        // leaves before the `latestMainnetBlock` since that's the block height snapshot we're querying.
+        const executedPoolRebalanceLeaves = sortEventsAscending(this.executedRootBundles).filter(
+          (executedLeaf: ExecutedRootBundle) =>
+            executedLeaf.blockNumber <= latestMainnetBlock &&
+            executedLeaf.blockNumber >= proposedRootBundle.blockNumber &&
+            executedLeaf.blockNumber <= followingProposedRootBundleBlock
+        ) as ExecutedRootBundle[];
+        return executedPoolRebalanceLeaves.length === proposedRootBundle.poolRebalanceLeafCount;
+      }
     ) as ProposedRootBundle;
 
-    // Same situation as when we cannot find a ExecutedRootBundleEvent, if we can't find a ProposedRootBundle
-    // event, then either return 0 or throw an error.
-    if (!mostRecentProposeRootBundleEventWithChain) return 0;
+    // If no event, then we can return a conservative default starting block like 0,
+    // or we could throw an Error.
+    if (!latestFullyExecutedPoolRebalanceRoot) return 0;
 
     // Once this proposal event is found, determine its mapping of indices to chainId in its
     // bundleEvaluationBlockNumbers array using CHAIN_ID_LIST. For each chainId, their starting block number is that
     // chain's bundleEvaluationBlockNumber + 1 in this past proposal event.
-    return this.getBundleEndBlockForChain(mostRecentProposeRootBundleEventWithChain, chainId, chainIdList) + 1;
+    return this.getBundleEndBlockForChain(latestFullyExecutedPoolRebalanceRoot, chainId, chainIdList) + 1;
   }
 
   getRunningBalanceBeforeBlockForChain(block: number, chain: number, l1Token: string): BigNumber {

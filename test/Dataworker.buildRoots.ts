@@ -294,7 +294,6 @@ describe("Dataworker: Build merkle roots", async function () {
         { destinationChainId: 100, destinationToken: erc20_2, l1Token: l1Token_1 },
       ]);
       await updateAllClients();
-      // await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 1, 100);
 
       // Since amountToReturn is dependent on netSendAmount in pool rebalance leaf for same chain and token,
       // let's fetch it. We'll move the token transfer threshold lower to make sure netSendAmount is negative.

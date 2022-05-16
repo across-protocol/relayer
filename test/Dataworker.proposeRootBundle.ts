@@ -129,18 +129,17 @@ describe("Dataworker: Propose root bundle", async function () {
 
     // TEST 3:
     // Submit another root bundle proposal and check bundle block range. There should be no leaves in the new range
-    // yet. In the bundle block range, only the two chains with pool rebalance leaves should have increased their
-    // start block.
+    // yet. In the bundle block range, all chains should have increased their start block, including those without
+    // pool rebalance leaves because they should use the chain's end block from the latest fully executed proposed
+    // root bundle, which should be the bundle block in expectedPoolRebalanceRoot2 + 1.
     await updateAllClients();
     await dataworkerInstance.proposeRootBundle();
     const latestBlock3 = await hubPool.provider.getBlockNumber();
     const blockRange3 = [
       [latestBlock2 + 1, latestBlock3],
       [latestBlock2 + 1, latestBlock3],
-      // The other chains in the chain ID list did not have pool rebalance leaves executed so their start block
-      // is still set at 0.
-      [0, latestBlock3],
-      [0, latestBlock3],
+      [latestBlock2 + 1, latestBlock3],
+      [latestBlock2 + 1, latestBlock3],
     ];
     expect(lastSpyLogIncludes(spy, "No pool rebalance leaves, cannot propose")).to.be.true;
     const loadDataResults3 = getMostRecentLog(spy, "Finished loading spoke pool data");
@@ -154,8 +153,8 @@ describe("Dataworker: Propose root bundle", async function () {
     const blockRange4 = [
       [latestBlock2 + 1, latestBlock4],
       [latestBlock2 + 1, latestBlock4],
-      [0, latestBlock4],
-      [0, latestBlock4],
+      [latestBlock2 + 1, latestBlock4],
+      [latestBlock2 + 1, latestBlock4],
     ];
     const expectedPoolRebalanceRoot4 = dataworkerInstance.buildPoolRebalanceRoot(blockRange4, spokePoolClients);
     const expectedRelayerRefundRoot4 = dataworkerInstance.buildRelayerRefundRoot(blockRange4, spokePoolClients);

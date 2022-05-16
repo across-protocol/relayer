@@ -1,7 +1,18 @@
 import { AcrossConfigStoreClient, HubPoolClient } from "../clients";
 import * as interfaces from "../interfaces";
-import { BigNumberForToken } from "../interfaces";
-import { assign, BigNumber, compareAddresses, toBN } from "../utils";
+import { BigNumberForToken, PoolRebalanceLeaf, RelayData, RelayerRefundLeaf, RootBundle } from "../interfaces";
+import {
+  assign,
+  BigNumber,
+  compareAddresses,
+  convertFromWei,
+  shortenHexString,
+  shortenHexStrings,
+  toBN,
+  MerkleTree,
+  winston,
+} from "../utils";
+import { DataworkerClients } from "./DataworkerClientHelper";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "./FillUtils";
 
 export function updateRunningBalance(
@@ -240,4 +251,178 @@ export function getNetSendAmountForL1Token(transferThreshold: BigNumber, running
 
 export function getRunningBalanceForL1Token(transferThreshold: BigNumber, runningBalance: BigNumber): BigNumber {
   return runningBalance.abs().lt(transferThreshold) ? runningBalance : toBN(0);
+}
+
+// This returns a possible next block range that could be submitted as a new root bundle, or used as a reference
+// when evaluating  pending root bundle. The block end numbers must be less than the latest blocks for each chain ID
+// (because we can't evaluate events in the future), and greater than the the expected start blocks, which are the
+// greater of 0 and the latest bundle end block for an executed root bundle proposal + 1.
+export async function getWidestPossibleExpectedBlockRange(
+  chainIdListForBundleEvaluationBlockNumbers: number[],
+  clients: DataworkerClients,
+  latestMainnetBlock: number
+): Promise<number[][]> {
+  const latestBlockNumbers = await Promise.all(
+    chainIdListForBundleEvaluationBlockNumbers.map((chainId: number) =>
+      clients.spokePoolSigners[chainId].provider.getBlockNumber()
+    )
+  );
+  return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => [
+    clients.hubPoolClient.getNextBundleStartBlockNumber(
+      chainIdListForBundleEvaluationBlockNumbers,
+      latestMainnetBlock,
+      chainId
+    ),
+    latestBlockNumbers[index],
+  ]);
+}
+
+export function generateMarkdownForDisputeInvalidBundleBlocks(
+  chainIdListForBundleEvaluationBlockNumbers: number[],
+  pendingRootBundle: RootBundle,
+  widestExpectedBlockRange: number[][],
+  buffers: number[]
+) {
+  const getBlockRangePretty = (blockRange: number[][] | number[]) => {
+    let bundleBlockRangePretty = "";
+    chainIdListForBundleEvaluationBlockNumbers.forEach((chainId, index) => {
+      bundleBlockRangePretty += `\n\t\t${chainId}: ${JSON.stringify(blockRange[index])}`;
+    });
+    return bundleBlockRangePretty;
+  };
+  return (
+    `Disputed pending root bundle because of invalid bundle blocks:` +
+    `\n\t*Widest possible expected block range*:${getBlockRangePretty(widestExpectedBlockRange)}` +
+    `\n\t*Buffers to end blocks*:${getBlockRangePretty(buffers)}` +
+    `\n\t*Pending end blocks*:${getBlockRangePretty(pendingRootBundle.bundleEvaluationBlockNumbers)}`
+  );
+}
+
+export function generateMarkdownForDispute(pendingRootBundle: RootBundle) {
+  return (
+    `Disputed pending root bundle:` +
+    `\n\tPoolRebalance leaf count: ${pendingRootBundle.unclaimedPoolRebalanceLeafCount}` +
+    `\n\tPoolRebalance root: ${shortenHexString(pendingRootBundle.poolRebalanceRoot)}` +
+    `\n\tRelayerRefund root: ${shortenHexString(pendingRootBundle.relayerRefundRoot)}` +
+    `\n\tSlowRelay root: ${shortenHexString(pendingRootBundle.slowRelayRoot)}` +
+    `\n\tProposer: ${shortenHexString(pendingRootBundle.proposer)}`
+  );
+}
+
+export function generateMarkdownForRootBundle(
+  hubPoolClient: HubPoolClient,
+  chainIdListForBundleEvaluationBlockNumbers: number[],
+  hubPoolChainId: number,
+  bundleBlockRange: number[][],
+  poolRebalanceLeaves: any[],
+  poolRebalanceRoot: string,
+  relayerRefundLeaves: any[],
+  relayerRefundRoot: string,
+  slowRelayLeaves: any[],
+  slowRelayRoot: string
+): string {
+  // Create helpful logs to send to slack transport
+  let bundleBlockRangePretty = "";
+  chainIdListForBundleEvaluationBlockNumbers.forEach((chainId, index) => {
+    bundleBlockRangePretty += `\n\t\t${chainId}: ${JSON.stringify(bundleBlockRange[index])}`;
+  });
+
+  const convertTokenListFromWei = (chainId: number, tokenAddresses: string[], weiVals: string[]) => {
+    return tokenAddresses.map((token, index) => {
+      const { decimals } = hubPoolClient.getTokenInfo(chainId, token);
+      return convertFromWei(weiVals[index], decimals);
+    });
+  };
+  const convertTokenAddressToSymbol = (chainId: number, tokenAddress: string) => {
+    return hubPoolClient.getTokenInfo(chainId, tokenAddress).symbol;
+  };
+  const convertL1TokenAddressesToSymbols = (l1Tokens: string[]) => {
+    return l1Tokens.map((l1Token) => {
+      return convertTokenAddressToSymbol(hubPoolChainId, l1Token);
+    });
+  };
+  let poolRebalanceLeavesPretty = "";
+  poolRebalanceLeaves.forEach((leaf, index) => {
+    // Shorten keys for ease of reading from Slack.
+    delete leaf.leafId;
+    leaf.groupId = leaf.groupIndex;
+    delete leaf.groupIndex;
+    leaf.bundleLpFees = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.bundleLpFees);
+    leaf.runningBalances = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.runningBalances);
+    leaf.netSendAmounts = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.netSendAmounts);
+    leaf.l1Tokens = convertL1TokenAddressesToSymbols(leaf.l1Tokens);
+    poolRebalanceLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
+  });
+
+  let relayerRefundLeavesPretty = "";
+  relayerRefundLeaves.forEach((leaf, index) => {
+    // Shorten keys for ease of reading from Slack.
+    delete leaf.leafId;
+    leaf.amountToReturn = convertFromWei(
+      leaf.amountToReturn,
+      hubPoolClient.getTokenInfo(leaf.chainId, leaf.l2TokenAddress).decimals
+    );
+    leaf.refundAmounts = convertTokenListFromWei(
+      leaf.chainId,
+      Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
+      leaf.refundAmounts
+    );
+    leaf.l2Token = convertTokenAddressToSymbol(leaf.chainId, leaf.l2TokenAddress);
+    delete leaf.l2TokenAddress;
+    leaf.refundAddresses = shortenHexStrings(leaf.refundAddresses);
+    relayerRefundLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
+  });
+
+  let slowRelayLeavesPretty = "";
+  slowRelayLeaves.forEach((leaf, index) => {
+    const decimalsForDestToken = hubPoolClient.getTokenInfo(leaf.destinationChainId, leaf.destinationToken).decimals;
+    // Shorten keys for ease of reading from Slack.
+    delete leaf.leafId;
+    leaf.originChain = leaf.originChainId;
+    leaf.destinationChain = leaf.destinationChainId;
+    leaf.depositor = shortenHexString(leaf.depositor);
+    leaf.recipient = shortenHexString(leaf.recipient);
+    leaf.destToken = convertTokenAddressToSymbol(leaf.destinationChainId, leaf.destinationToken);
+    leaf.amount = convertFromWei(leaf.amount, decimalsForDestToken);
+    leaf.realizedLpFee = `${convertFromWei(leaf.realizedLpFeePct, decimalsForDestToken)}%`;
+    leaf.relayerFee = `${convertFromWei(leaf.relayerFeePct, decimalsForDestToken)}%`;
+    delete leaf.destinationToken;
+    delete leaf.realizedLpFeePct;
+    delete leaf.relayerFeePct;
+    delete leaf.originChainId;
+    delete leaf.destinationChainId;
+    slowRelayLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
+  });
+  return (
+    `\n\t*Bundle blocks*:${bundleBlockRangePretty}` +
+    `\n\t*PoolRebalance*:\n\t\troot:${shortenHexString(
+      poolRebalanceRoot
+    )}...\n\t\tleaves:${poolRebalanceLeavesPretty}` +
+    `\n\t*RelayerRefund*\n\t\troot:${shortenHexString(relayerRefundRoot)}...\n\t\tleaves:${relayerRefundLeavesPretty}` +
+    `\n\t*SlowRelay*\n\troot:${shortenHexString(slowRelayRoot)}...\n\t\tleaves:${slowRelayLeavesPretty}`
+  );
+}
+
+export function prettyPrintLeaves(
+  logger: winston.Logger,
+  tree: MerkleTree<PoolRebalanceLeaf> | MerkleTree<RelayerRefundLeaf> | MerkleTree<RelayData>,
+  leaves: PoolRebalanceLeaf[] | RelayerRefundLeaf[] | RelayData[],
+  logType = "Pool rebalance"
+) {
+  leaves.forEach((leaf, index) => {
+    const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
+      // Check if leaf value is list of BN's or single BN.
+      if (Array.isArray(leaf[key]) && BigNumber.isBigNumber(leaf[key][0]))
+        result[key] = leaf[key].map((val) => val.toString());
+      else if (BigNumber.isBigNumber(leaf[key])) result[key] = leaf[key].toString();
+      else result[key] = leaf[key];
+      return result;
+    }, {});
+    logger.debug({
+      at: "Dataworker#propose",
+      message: `${logType} leaf #${index}`,
+      leaf: prettyLeaf,
+      proof: tree.getHexProof(leaf),
+    });
+  });
 }

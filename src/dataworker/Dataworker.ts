@@ -1,13 +1,12 @@
-import { winston, compareAddresses, Contract } from "../utils";
-import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree, SpokePool } from "../utils";
-import { BigNumber, toBN, convertFromWei, shortenHexString } from "../utils";
-import { shortenHexStrings, EMPTY_MERKLE_ROOT } from "../utils";
+import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree } from "../utils";
+import { winston, toBN, EMPTY_MERKLE_ROOT } from "../utils";
 import { UnfilledDeposit, Deposit, DepositWithBlock, RootBundle, UnfilledDepositsForOriginChain } from "../interfaces";
 import { FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
-import { RunningBalances, BigNumberForToken, FillsToRefund, RelayData } from "../interfaces";
+import { BigNumberForToken, FillsToRefund, RelayData } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
+import * as RelayerRefundUtils from "./RelayerRefundUtils";
 import { getFillsToRefundCountGroupedByRepaymentChain, updateFillsToRefundWithValidFill } from "./FillUtils";
 import { getFillsInRange, getRefundInformationFromFill, updateFillsToRefundWithSlowFill } from "./FillUtils";
 import { getFillCountGroupedByProp } from "./FillUtils";
@@ -15,6 +14,7 @@ import { getBlockRangeForChain } from "./DataworkerUtils";
 import { getUnfilledDepositCountGroupedByProp, getDepositCountGroupedByProp } from "./DepositUtils";
 import { flattenAndFilterUnfilledDepositsByOriginChain } from "./DepositUtils";
 import { updateUnfilledDepositsWithMatchedDeposit, getUniqueDepositsInRange } from "./DepositUtils";
+import { constructSpokePoolClientsForBlockAndUpdate } from "../common/ClientHelper";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -108,6 +108,7 @@ export class Dataworker {
           )
         );
 
+        // Find all valid fills matching a deposit on the origin chain and sent on the destination chain.
         destinationClient.getFillsWithBlockForOriginChain(Number(originChainId)).forEach((fillWithBlock) => {
           const blockRangeForChain = getBlockRangeForChain(
             blockRangesForChains,
@@ -115,7 +116,7 @@ export class Dataworker {
             this.chainIdListForBundleEvaluationBlockNumbers
           );
 
-          // If fill matches with a deposit, then its a valid fill
+          // If fill matches with a deposit, then its a valid fill.
           const matchedDeposit: Deposit = originClient.getDepositForFill(fillWithBlock);
           if (matchedDeposit) {
             // Fill was validated. Save it under all validated fills list with the block number so we can sort it by
@@ -247,23 +248,23 @@ export class Dataworker {
         const refunds = fillsToRefund[repaymentChainId][l2TokenAddress].refunds;
         // We need to sort leaves deterministically so that the same root is always produced from the same _loadData
         // return value, so sort refund addresses by refund amount (descending) and then address (ascending).
-        const sortedRefundAddresses = Object.keys(refunds).sort((addressA, addressB) => {
-          if (refunds[addressA].gt(refunds[addressB])) return -1;
-          if (refunds[addressA].lt(refunds[addressB])) return 1;
-          const sortOutput = compareAddresses(addressA, addressB);
-          if (sortOutput !== 0) return sortOutput;
-          else throw new Error("Unexpected matching address");
-        });
+        const sortedRefundAddresses = RelayerRefundUtils.sortRefundAddresses(refunds);
 
         // Create leaf for { repaymentChainId, L2TokenAddress }, split leaves into sub-leaves if there are too many
         // refunds.
-
-        // The `amountToReturn` for a { repaymentChainId, L2TokenAddress} should be set to max(-netSendAmount, 0).
-        const amountToReturn = this._getAmountToReturnForRelayerRefundLeaf(
-          endBlockForMainnet,
+        const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpartAtBlock(
           repaymentChainId,
           l2TokenAddress,
-          poolRebalanceRoot.runningBalances
+          endBlockForMainnet
+        );
+        const transferThreshold =
+          this.tokenTransferThreshold[l1TokenCounterpart] ||
+          this.clients.configStoreClient.getTokenTransferThresholdForBlock(l1TokenCounterpart, endBlockForMainnet);
+
+        // The `amountToReturn` for a { repaymentChainId, L2TokenAddress} should be set to max(-netSendAmount, 0).
+        const amountToReturn = RelayerRefundUtils.getAmountToReturnForRelayerRefundLeaf(
+          transferThreshold,
+          poolRebalanceRoot.runningBalances[repaymentChainId][l1TokenCounterpart]
         );
         const maxRefundCount = this.maxRefundCountOverride
           ? this.maxRefundCountOverride
@@ -300,12 +301,12 @@ export class Dataworker {
           )
         )
           return;
-
-        const amountToReturn = this._getAmountToReturnForRelayerRefundLeaf(
-          endBlockForMainnet,
-          leaf.chainId.toString(),
-          l2TokenCounterpart,
-          poolRebalanceRoot.runningBalances
+        const transferThreshold =
+          this.tokenTransferThreshold[leaf.l1Tokens[index]] ||
+          this.clients.configStoreClient.getTokenTransferThresholdForBlock(leaf.l1Tokens[index], endBlockForMainnet);
+        const amountToReturn = RelayerRefundUtils.getAmountToReturnForRelayerRefundLeaf(
+          transferThreshold,
+          poolRebalanceRoot.runningBalances[leaf.chainId][leaf.l1Tokens[index]]
         );
         relayerRefundLeaves.push({
           groupIndex: 0, // Will delete this group index after using it to sort leaves for the same chain ID and
@@ -320,23 +321,7 @@ export class Dataworker {
       });
     });
 
-    // Sort leaves by chain ID and then L2 token address in ascending order. Assign leaves unique, ascending ID's
-    // beginning from 0.
-    const indexedLeaves: RelayerRefundLeaf[] = [...relayerRefundLeaves]
-      .sort((leafA, leafB) => {
-        if (leafA.chainId !== leafB.chainId) {
-          return leafA.chainId - leafB.chainId;
-        } else if (compareAddresses(leafA.l2TokenAddress, leafB.l2TokenAddress) !== 0) {
-          return compareAddresses(leafA.l2TokenAddress, leafB.l2TokenAddress);
-        } else if (leafA.groupIndex !== leafB.groupIndex) return leafA.groupIndex - leafB.groupIndex;
-        else throw new Error("Unexpected leaf group indices match");
-      })
-      .map((leaf: RelayerRefundLeafWithGroup, i: number): RelayerRefundLeaf => {
-        delete leaf.groupIndex; // Delete group index now that we've used it to sort leaves for the same
-        // { repaymentChain, l2TokenAddress } since it doesn't exist in RelayerRefundLeaf
-        return { ...leaf, leafId: i };
-      });
-
+    const indexedLeaves: RelayerRefundLeaf[] = RelayerRefundUtils.sortRelayerRefundLeaves(relayerRefundLeaves);
     return {
       leaves: indexedLeaves,
       tree: buildRelayerRefundTree(indexedLeaves),
@@ -348,15 +333,14 @@ export class Dataworker {
 
     const { fillsToRefund, deposits, allValidFills } = this._loadData(blockRangesForChains, spokePoolClients);
 
-    // 1. For each FilledRelay group, identified by { repaymentChainId, L1TokenAddress }, initialize a "running balance"
-    // to the total refund amount for that group.
-    // 2. Similarly, for each group sum the realized LP fees.
     const endBlockForMainnet = getBlockRangeForChain(
       blockRangesForChains,
       1,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
 
+    // For each FilledRelay group, identified by { repaymentChainId, L1TokenAddress }, initialize a "running balance"
+    // to the total refund amount for that group.
     // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
     // slow relay refunds. They are decreased by the amount of funds already held by the SpokePool. Balances are keyed
     // by the SpokePool's network and L1 token equivalent of the L2 token to refund.
@@ -378,7 +362,7 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     );
 
-    // 5. Map each deposit event to its L1 token and origin chain ID and subtract deposited amounts from running
+    // Map each deposit event to its L1 token and origin chain ID and subtract deposited amounts from running
     // balances. Note that we do not care if the deposit is matched with a fill for this epoch or not since all
     // deposit events lock funds in the spoke pool and should decrease running balances accordingly. However,
     // its important that `deposits` are all in this current block range.
@@ -427,7 +411,11 @@ export class Dataworker {
     // 1. Construct a list of ending block ranges for each chain that we want to include
     // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
-    const blockRangesForProposal = await this._getWidestPossibleExpectedBlockRange();
+    const blockRangesForProposal = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.clients,
+      this.clients.hubPoolClient.latestBlockNumber
+    );
 
     // 2. Construct spoke pool clients using spoke pools deployed at end of block range.
     // We do make an assumption that the spoke pool contract was not changed during the block range. By using the
@@ -443,57 +431,30 @@ export class Dataworker {
       message: `Constructing spoke pool clients for end mainnet block in bundle range`,
       endBlockForMainnet,
     });
-    const spokePoolClients = await this._constructSpokePoolClientsForBlockAndUpdate(endBlockForMainnet);
+    const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.clients,
+      this.logger,
+      endBlockForMainnet
+    );
 
     // 3. Create roots
     const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForProposal, spokePoolClients);
-    poolRebalanceRoot.leaves.forEach((leaf: PoolRebalanceLeaf, index) => {
-      const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
-        // Check if leaf value is list of BN's. For this leaf, there are no BN's not in lists.
-        if (BigNumber.isBigNumber(leaf[key][0])) result[key] = leaf[key].map((val) => val.toString());
-        else result[key] = leaf[key];
-        return result;
-      }, {});
-      this.logger.debug({
-        at: "Dataworker#propose",
-        message: `Pool rebalance leaf #${index}`,
-        prettyLeaf,
-        proof: poolRebalanceRoot.tree.getHexProof(leaf),
-      });
-      return prettyLeaf;
-    });
+    PoolRebalanceUtils.prettyPrintLeaves(
+      this.logger,
+      poolRebalanceRoot.tree,
+      poolRebalanceRoot.leaves,
+      "Pool rebalance"
+    );
     const relayerRefundRoot = this.buildRelayerRefundRoot(blockRangesForProposal, spokePoolClients);
-    relayerRefundRoot.leaves.forEach((leaf: RelayerRefundLeaf, index) => {
-      const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
-        // Check if leaf value is list of BN's or single BN.
-        if (Array.isArray(leaf[key]) && BigNumber.isBigNumber(leaf[key][0]))
-          result[key] = leaf[key].map((val) => val.toString());
-        else if (BigNumber.isBigNumber(leaf[key])) result[key] = leaf[key].toString();
-        else result[key] = leaf[key];
-        return result;
-      }, {});
-      this.logger.debug({
-        at: "Dataworker#propose",
-        message: `Relayer refund leaf #${index}`,
-        leaf: prettyLeaf,
-        proof: relayerRefundRoot.tree.getHexProof(leaf),
-      });
-    });
+    PoolRebalanceUtils.prettyPrintLeaves(
+      this.logger,
+      relayerRefundRoot.tree,
+      relayerRefundRoot.leaves,
+      "Relayer refund"
+    );
     const slowRelayRoot = this.buildSlowRelayRoot(blockRangesForProposal, spokePoolClients);
-    slowRelayRoot.leaves.forEach((leaf: RelayData, index) => {
-      const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
-        // Check if leaf value is BN.
-        if (BigNumber.isBigNumber(leaf[key])) result[key] = leaf[key].toString();
-        else result[key] = leaf[key];
-        return result;
-      }, {});
-      this.logger.debug({
-        at: "Dataworker#propose",
-        message: `Slow relay leaf #${index}`,
-        leaf: prettyLeaf,
-        proof: slowRelayRoot.tree.getHexProof(leaf),
-      });
-    });
+    PoolRebalanceUtils.prettyPrintLeaves(this.logger, slowRelayRoot.tree, slowRelayRoot.leaves, "Slow relay");
 
     if (poolRebalanceRoot.leaves.length === 0) {
       this.logger.debug({
@@ -526,7 +487,7 @@ export class Dataworker {
     );
   }
 
-  async validateRootBundle() {
+  async validatePendingRootBundle(submitDispute = true) {
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
@@ -555,31 +516,46 @@ export class Dataworker {
       return;
     }
 
+    const widestPossibleExpectedBlockRange = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.clients,
+      this.clients.hubPoolClient.latestBlockNumber
+    );
+    await this.validateRootBundle(hubPoolChainId, widestPossibleExpectedBlockRange, pendingRootBundle, submitDispute);
+  }
+
+  async validateRootBundle(
+    hubPoolChainId: number,
+    widestPossibleExpectedBlockRange: number[][],
+    rootBundle: RootBundle,
+    submitDispute: boolean
+  ): Promise<boolean> {
     // If pool rebalance root is empty, always dispute. There should never be a bundle with an empty rebalance root.
-    if (pendingRootBundle.poolRebalanceRoot === EMPTY_MERKLE_ROOT) {
+    if (rootBundle.poolRebalanceRoot === EMPTY_MERKLE_ROOT) {
       this.logger.debug({
         at: "Dataworker#validate",
         message: "Empty pool rebalance root, submitting dispute",
-        pendingRootBundle,
+        rootBundle,
       });
-      this._submitDisputeWithMrkdwn(hubPoolChainId, `Disputed pending root bundle with empty pool rebalance root`);
-      return;
+      if (submitDispute)
+        this._submitDisputeWithMrkdwn(hubPoolChainId, `Disputed pending root bundle with empty pool rebalance root`);
+      return false;
     }
 
     // First, we'll evaluate the pending root bundle's block end numbers.
-    const widestPossibleExpectedBlockRange = await this._getWidestPossibleExpectedBlockRange();
-    if (pendingRootBundle.bundleEvaluationBlockNumbers.length !== widestPossibleExpectedBlockRange.length) {
+    if (rootBundle.bundleEvaluationBlockNumbers.length !== widestPossibleExpectedBlockRange.length) {
       this.logger.debug({
         at: "Dataworker#validate",
         message: "Unexpected bundle block range length, disputing",
         widestPossibleExpectedBlockRange,
-        pendingEndBlocks: pendingRootBundle.bundleEvaluationBlockNumbers,
+        pendingEndBlocks: rootBundle.bundleEvaluationBlockNumbers,
       });
-      this._submitDisputeWithMrkdwn(
-        hubPoolChainId,
-        `Disputed pending root bundle with incorrect bundle block range length`
-      );
-      return;
+      if (submitDispute)
+        this._submitDisputeWithMrkdwn(
+          hubPoolChainId,
+          `Disputed pending root bundle with incorrect bundle block range length`
+        );
+      return false;
     }
 
     // These buffers can be configured by the bot runner. These are used to validate the end blocks specified in the
@@ -594,37 +570,35 @@ export class Dataworker {
 
     // Make sure that all end blocks are >= expected start blocks.
     if (
-      pendingRootBundle.bundleEvaluationBlockNumbers.some(
-        (block, index) => block < widestPossibleExpectedBlockRange[index][0]
-      )
+      rootBundle.bundleEvaluationBlockNumbers.some((block, index) => block < widestPossibleExpectedBlockRange[index][0])
     ) {
       this.logger.debug({
         at: "Dataworker#validate",
         message: "A bundle end block is < expected start block, submitting dispute",
         expectedStartBlocks: widestPossibleExpectedBlockRange.map((range) => range[0]),
-        pendingEndBlocks: pendingRootBundle.bundleEvaluationBlockNumbers,
+        pendingEndBlocks: rootBundle.bundleEvaluationBlockNumbers,
       });
-      this._submitDisputeWithMrkdwn(
-        hubPoolChainId,
-        this._generateMarkdownForDisputeInvalidBundleBlocks(
-          pendingRootBundle,
-          widestPossibleExpectedBlockRange,
-          endBlockBuffers
-        )
-      );
-      return;
+      if (submitDispute)
+        this._submitDisputeWithMrkdwn(
+          hubPoolChainId,
+          PoolRebalanceUtils.generateMarkdownForDisputeInvalidBundleBlocks(
+            this.chainIdListForBundleEvaluationBlockNumbers,
+            rootBundle,
+            widestPossibleExpectedBlockRange,
+            endBlockBuffers
+          )
+        );
+      return false;
     }
 
     // If the bundle end block is less than HEAD but within the allowable margin of error into future,
     // then we won't dispute and we'll just exit early from this function.
     if (
-      pendingRootBundle.bundleEvaluationBlockNumbers.some(
-        (block, index) => block > widestPossibleExpectedBlockRange[index][1]
-      )
+      rootBundle.bundleEvaluationBlockNumbers.some((block, index) => block > widestPossibleExpectedBlockRange[index][1])
     ) {
       // If end block is further than the allowable margin of error into the future, then dispute it.
       if (
-        pendingRootBundle.bundleEvaluationBlockNumbers.some(
+        rootBundle.bundleEvaluationBlockNumbers.some(
           (block, index) => block > widestPossibleExpectedBlockRange[index][1] + endBlockBuffers[index]
         )
       ) {
@@ -632,27 +606,29 @@ export class Dataworker {
           at: "Dataworker#validate",
           message: "A bundle end block is > latest block + buffer for its chain, submitting dispute",
           expectedEndBlocks: widestPossibleExpectedBlockRange.map((range) => range[1]),
-          pendingEndBlocks: pendingRootBundle.bundleEvaluationBlockNumbers,
+          pendingEndBlocks: rootBundle.bundleEvaluationBlockNumbers,
           endBlockBuffers,
         });
-        this._submitDisputeWithMrkdwn(
-          hubPoolChainId,
-          this._generateMarkdownForDisputeInvalidBundleBlocks(
-            pendingRootBundle,
-            widestPossibleExpectedBlockRange,
-            endBlockBuffers
-          )
-        );
+        if (submitDispute)
+          this._submitDisputeWithMrkdwn(
+            hubPoolChainId,
+            PoolRebalanceUtils.generateMarkdownForDisputeInvalidBundleBlocks(
+              this.chainIdListForBundleEvaluationBlockNumbers,
+              rootBundle,
+              widestPossibleExpectedBlockRange,
+              endBlockBuffers
+            )
+          );
       } else {
         this.logger.debug({
           at: "Dataworker#validate",
           message: "A bundle end block is > latest block but within buffer, skipping",
           expectedEndBlocks: widestPossibleExpectedBlockRange.map((range) => range[1]),
-          pendingEndBlocks: pendingRootBundle.bundleEvaluationBlockNumbers,
+          pendingEndBlocks: rootBundle.bundleEvaluationBlockNumbers,
           endBlockBuffers,
         });
       }
-      return;
+      return false;
     }
 
     // The block range that we'll use to construct roots will be the end block specified in the pending root bundle,
@@ -660,7 +636,7 @@ export class Dataworker {
     // start block, then they might have missed events and the roots will be different.
     const blockRangesImpliedByBundleEndBlocks = widestPossibleExpectedBlockRange.map((blockRange, index) => [
       blockRange[0],
-      pendingRootBundle.bundleEvaluationBlockNumbers[index],
+      rootBundle.bundleEvaluationBlockNumbers[index],
     ]);
 
     this.logger.debug({
@@ -684,7 +660,12 @@ export class Dataworker {
       message: `Constructing spoke pool clients for end mainnet block in bundle range`,
       endBlockForMainnet,
     });
-    const spokePoolClients = await this._constructSpokePoolClientsForBlockAndUpdate(endBlockForMainnet);
+    const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.clients,
+      this.logger,
+      endBlockForMainnet
+    );
 
     // Compare roots with expected. The roots will be different if the block range start blocks were different
     // than the ones we constructed above when the original proposer submitted their proposal. The roots will also
@@ -699,8 +680,8 @@ export class Dataworker {
     );
     const expectedSlowRelayRoot = this.buildSlowRelayRoot(blockRangesImpliedByBundleEndBlocks, spokePoolClients);
     if (
-      expectedPoolRebalanceRoot.leaves.length !== pendingRootBundle.unclaimedPoolRebalanceLeafCount ||
-      expectedPoolRebalanceRoot.tree.getHexRoot() !== pendingRootBundle.poolRebalanceRoot
+      expectedPoolRebalanceRoot.leaves.length !== rootBundle.unclaimedPoolRebalanceLeafCount ||
+      expectedPoolRebalanceRoot.tree.getHexRoot() !== rootBundle.poolRebalanceRoot
     ) {
       this.logger.debug({
         at: "Dataworker#validate",
@@ -708,24 +689,24 @@ export class Dataworker {
         expectedBlockRanges: blockRangesImpliedByBundleEndBlocks,
         expectedPoolRebalanceLeaves: expectedPoolRebalanceRoot.leaves,
         expectedPoolRebalanceRoot: expectedPoolRebalanceRoot.tree.getHexRoot(),
-        pendingRoot: pendingRootBundle.poolRebalanceRoot,
-        pendingPoolRebalanceLeafCount: pendingRootBundle.unclaimedPoolRebalanceLeafCount,
+        pendingRoot: rootBundle.poolRebalanceRoot,
+        pendingPoolRebalanceLeafCount: rootBundle.unclaimedPoolRebalanceLeafCount,
       });
-    } else if (expectedRelayerRefundRoot.tree.getHexRoot() !== pendingRootBundle.relayerRefundRoot) {
+    } else if (expectedRelayerRefundRoot.tree.getHexRoot() !== rootBundle.relayerRefundRoot) {
       this.logger.debug({
         at: "Dataworker#validate",
         message: "Unexpected relayer refund root, submitting dispute",
         expectedBlockRanges: blockRangesImpliedByBundleEndBlocks,
         expectedRelayerRefundRoot: expectedRelayerRefundRoot.tree.getHexRoot(),
-        pendingRoot: pendingRootBundle.relayerRefundRoot,
+        pendingRoot: rootBundle.relayerRefundRoot,
       });
-    } else if (expectedSlowRelayRoot.tree.getHexRoot() !== pendingRootBundle.slowRelayRoot) {
+    } else if (expectedSlowRelayRoot.tree.getHexRoot() !== rootBundle.slowRelayRoot) {
       this.logger.debug({
         at: "Dataworker#validate",
         message: "Unexpected slow relay root, submitting dispute",
         expectedBlockRanges: blockRangesImpliedByBundleEndBlocks,
         expectedSlowRelayRoot: expectedSlowRelayRoot.tree.getHexRoot(),
-        pendingRoot: pendingRootBundle.slowRelayRoot,
+        pendingRoot: rootBundle.slowRelayRoot,
       });
     } else {
       // All roots are valid! Exit early.
@@ -733,44 +714,28 @@ export class Dataworker {
         at: "Dataworker#validate",
         message: "Pending root bundle matches with expected",
       });
-      return;
+      return true;
     }
 
-    this._submitDisputeWithMrkdwn(
-      hubPoolChainId,
-      this._generateMarkdownForDispute(pendingRootBundle) +
-        `\n` +
-        this._generateMarkdownForRootBundle(
-          hubPoolChainId,
-          blockRangesImpliedByBundleEndBlocks,
-          [...expectedPoolRebalanceRoot.leaves],
-          expectedPoolRebalanceRoot.tree.getHexRoot(),
-          [...expectedRelayerRefundRoot.leaves],
-          expectedRelayerRefundRoot.tree.getHexRoot(),
-          [...expectedSlowRelayRoot.leaves],
-          expectedSlowRelayRoot.tree.getHexRoot()
-        )
-    );
-  }
-
-  // This returns a possible next block range that could be submitted as a new root bundle, or used as a reference
-  // when evaluating  pending root bundle. The block end numbers must be less than the latest blocks for each chain ID
-  // (because we can't evaluate events in the future), and greater than the the expected start blocks, which are the
-  // greater of 0 and the latest bundle end block for an executed root bundle proposal + 1.
-  async _getWidestPossibleExpectedBlockRange(): Promise<number[][]> {
-    const latestBlockNumbers = await Promise.all(
-      this.chainIdListForBundleEvaluationBlockNumbers.map((chainId: number) =>
-        this.clients.spokePoolSigners[chainId].provider.getBlockNumber()
-      )
-    );
-    return this.chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => [
-      this.clients.hubPoolClient.getNextBundleStartBlockNumber(
-        this.chainIdListForBundleEvaluationBlockNumbers,
-        this.clients.hubPoolClient.latestBlockNumber,
-        chainId
-      ),
-      latestBlockNumbers[index],
-    ]);
+    if (submitDispute)
+      this._submitDisputeWithMrkdwn(
+        hubPoolChainId,
+        PoolRebalanceUtils.generateMarkdownForDispute(rootBundle) +
+          `\n` +
+          PoolRebalanceUtils.generateMarkdownForRootBundle(
+            this.clients.hubPoolClient,
+            this.chainIdListForBundleEvaluationBlockNumbers,
+            hubPoolChainId,
+            blockRangesImpliedByBundleEndBlocks,
+            [...expectedPoolRebalanceRoot.leaves],
+            expectedPoolRebalanceRoot.tree.getHexRoot(),
+            [...expectedRelayerRefundRoot.leaves],
+            expectedRelayerRefundRoot.tree.getHexRoot(),
+            [...expectedSlowRelayRoot.leaves],
+            expectedSlowRelayRoot.tree.getHexRoot()
+          )
+      );
+    return false;
   }
 
   async executeSlowRelayLeaves() {
@@ -805,7 +770,9 @@ export class Dataworker {
         method: "proposeRootBundle", // method called.
         args: [bundleEndBlocks, poolRebalanceLeaves.length, poolRebalanceRoot, relayerRefundRoot, slowRelayRoot], // props sent with function call.
         message: "Proposed new root bundle 🌱", // message sent to logger.
-        mrkdwn: this._generateMarkdownForRootBundle(
+        mrkdwn: PoolRebalanceUtils.generateMarkdownForRootBundle(
+          this.clients.hubPoolClient,
+          this.chainIdListForBundleEvaluationBlockNumbers,
           hubPoolChainId,
           bundleBlockRange,
           [...poolRebalanceLeaves],
@@ -834,183 +801,5 @@ export class Dataworker {
     } catch (error) {
       this.logger.error({ at: "Dataworker", message: "Error creating disputeRootBundleTx", error });
     }
-  }
-
-  _generateMarkdownForRootBundle(
-    hubPoolChainId: number,
-    bundleBlockRange: number[][],
-    poolRebalanceLeaves: any[],
-    poolRebalanceRoot: string,
-    relayerRefundLeaves: any[],
-    relayerRefundRoot: string,
-    slowRelayLeaves: any[],
-    slowRelayRoot: string
-  ): string {
-    // Create helpful logs to send to slack transport
-    let bundleBlockRangePretty = "";
-    this.chainIdListForBundleEvaluationBlockNumbers.forEach((chainId, index) => {
-      bundleBlockRangePretty += `\n\t\t${chainId}: ${JSON.stringify(bundleBlockRange[index])}`;
-    });
-
-    const convertTokenListFromWei = (chainId: number, tokenAddresses: string[], weiVals: string[]) => {
-      return tokenAddresses.map((token, index) => {
-        const { decimals } = this.clients.hubPoolClient.getTokenInfo(chainId, token);
-        return convertFromWei(weiVals[index], decimals);
-      });
-    };
-    const convertTokenAddressToSymbol = (chainId: number, tokenAddress: string) => {
-      return this.clients.hubPoolClient.getTokenInfo(chainId, tokenAddress).symbol;
-    };
-    const convertL1TokenAddressesToSymbols = (l1Tokens: string[]) => {
-      return l1Tokens.map((l1Token) => {
-        return convertTokenAddressToSymbol(hubPoolChainId, l1Token);
-      });
-    };
-    let poolRebalanceLeavesPretty = "";
-    poolRebalanceLeaves.forEach((leaf, index) => {
-      // Shorten keys for ease of reading from Slack.
-      delete leaf.leafId;
-      leaf.groupId = leaf.groupIndex;
-      delete leaf.groupIndex;
-      leaf.bundleLpFees = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.bundleLpFees);
-      leaf.runningBalances = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.runningBalances);
-      leaf.netSendAmounts = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.netSendAmounts);
-      leaf.l1Tokens = convertL1TokenAddressesToSymbols(leaf.l1Tokens);
-      poolRebalanceLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
-    });
-
-    let relayerRefundLeavesPretty = "";
-    relayerRefundLeaves.forEach((leaf, index) => {
-      // Shorten keys for ease of reading from Slack.
-      delete leaf.leafId;
-      leaf.amountToReturn = convertFromWei(
-        leaf.amountToReturn,
-        this.clients.hubPoolClient.getTokenInfo(leaf.chainId, leaf.l2TokenAddress).decimals
-      );
-      leaf.refundAmounts = convertTokenListFromWei(
-        leaf.chainId,
-        Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
-        leaf.refundAmounts
-      );
-      leaf.l2Token = convertTokenAddressToSymbol(leaf.chainId, leaf.l2TokenAddress);
-      delete leaf.l2TokenAddress;
-      leaf.refundAddresses = shortenHexStrings(leaf.refundAddresses);
-      relayerRefundLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
-    });
-
-    let slowRelayLeavesPretty = "";
-    slowRelayLeaves.forEach((leaf, index) => {
-      const decimalsForDestToken = this.clients.hubPoolClient.getTokenInfo(
-        leaf.destinationChainId,
-        leaf.destinationToken
-      ).decimals;
-      // Shorten keys for ease of reading from Slack.
-      delete leaf.leafId;
-      leaf.originChain = leaf.originChainId;
-      leaf.destinationChain = leaf.destinationChainId;
-      leaf.depositor = shortenHexString(leaf.depositor);
-      leaf.recipient = shortenHexString(leaf.recipient);
-      leaf.destToken = convertTokenAddressToSymbol(leaf.destinationChainId, leaf.destinationToken);
-      leaf.amount = convertFromWei(leaf.amount, decimalsForDestToken);
-      leaf.realizedLpFee = `${convertFromWei(leaf.realizedLpFeePct, decimalsForDestToken)}%`;
-      leaf.relayerFee = `${convertFromWei(leaf.relayerFeePct, decimalsForDestToken)}%`;
-      delete leaf.destinationToken;
-      delete leaf.realizedLpFeePct;
-      delete leaf.relayerFeePct;
-      delete leaf.originChainId;
-      delete leaf.destinationChainId;
-      slowRelayLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
-    });
-    return (
-      `\n\t*Bundle blocks*:${bundleBlockRangePretty}` +
-      `\n\t*PoolRebalance*:\n\t\troot:${shortenHexString(
-        poolRebalanceRoot
-      )}...\n\t\tleaves:${poolRebalanceLeavesPretty}` +
-      `\n\t*RelayerRefund*\n\t\troot:${shortenHexString(
-        relayerRefundRoot
-      )}...\n\t\tleaves:${relayerRefundLeavesPretty}` +
-      `\n\t*SlowRelay*\n\troot:${shortenHexString(slowRelayRoot)}...\n\t\tleaves:${slowRelayLeavesPretty}`
-    );
-  }
-
-  _generateMarkdownForDispute(pendingRootBundle: RootBundle) {
-    return (
-      `Disputed pending root bundle:` +
-      `\n\tPoolRebalance leaf count: ${pendingRootBundle.unclaimedPoolRebalanceLeafCount}` +
-      `\n\tPoolRebalance root: ${shortenHexString(pendingRootBundle.poolRebalanceRoot)}` +
-      `\n\tRelayerRefund root: ${shortenHexString(pendingRootBundle.relayerRefundRoot)}` +
-      `\n\tSlowRelay root: ${shortenHexString(pendingRootBundle.slowRelayRoot)}` +
-      `\n\tProposer: ${shortenHexString(pendingRootBundle.proposer)}`
-    );
-  }
-
-  _generateMarkdownForDisputeInvalidBundleBlocks(
-    pendingRootBundle: RootBundle,
-    widestExpectedBlockRange: number[][],
-    buffers: number[]
-  ) {
-    const getBlockRangePretty = (blockRange: number[][] | number[]) => {
-      let bundleBlockRangePretty = "";
-      this.chainIdListForBundleEvaluationBlockNumbers.forEach((chainId, index) => {
-        bundleBlockRangePretty += `\n\t\t${chainId}: ${JSON.stringify(blockRange[index])}`;
-      });
-      return bundleBlockRangePretty;
-    };
-    return (
-      `Disputed pending root bundle because of invalid bundle blocks:` +
-      `\n\t*Widest possible expected block range*:${getBlockRangePretty(widestExpectedBlockRange)}` +
-      `\n\t*Buffers to end blocks*:${getBlockRangePretty(buffers)}` +
-      `\n\t*Pending end blocks*:${getBlockRangePretty(pendingRootBundle.bundleEvaluationBlockNumbers)}`
-    );
-  }
-
-  _getAmountToReturnForRelayerRefundLeaf(
-    endBlockForMainnet: number,
-    leafChainId: string,
-    leafToken: string,
-    poolRebalanceRunningBalances: RunningBalances
-  ) {
-    const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpartAtBlock(
-      leafChainId,
-      leafToken,
-      endBlockForMainnet
-    );
-    const runningBalanceForLeaf = poolRebalanceRunningBalances[leafChainId][l1TokenCounterpart];
-    const transferThreshold =
-      this.tokenTransferThreshold[l1TokenCounterpart] ||
-      this.clients.configStoreClient.getTokenTransferThresholdForBlock(l1TokenCounterpart, endBlockForMainnet);
-
-    const netSendAmountForLeaf = PoolRebalanceUtils.getNetSendAmountForL1Token(
-      transferThreshold,
-      runningBalanceForLeaf
-    );
-    return netSendAmountForLeaf.mul(toBN(-1)).gt(toBN(0)) ? netSendAmountForLeaf.mul(toBN(-1)) : toBN(0);
-  }
-
-  async _constructSpokePoolClientsForBlockAndUpdate(
-    latestMainnetBlock: number
-  ): Promise<{ [chainId: number]: SpokePoolClient }> {
-    const spokePoolClients = Object.fromEntries(
-      this.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
-        const spokePoolContract = new Contract(
-          this.clients.hubPoolClient.getSpokePoolForBlock(latestMainnetBlock, Number(chainId)),
-          SpokePool.abi,
-          this.clients.spokePoolSigners[chainId]
-        );
-        const client = new SpokePoolClient(
-          this.logger,
-          spokePoolContract,
-          this.clients.configStoreClient,
-          Number(chainId),
-          this.clients.spokePoolClientSearchSettings[chainId],
-          // TODO: This won't always work if the spoke pool is updated, but it will reduce the block range to search
-          // deposit route events on.
-          this.clients.spokePoolClientSearchSettings[chainId].fromBlock
-        );
-        return [chainId, client];
-      })
-    );
-    await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update()));
-    return spokePoolClients;
   }
 }
