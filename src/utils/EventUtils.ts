@@ -1,5 +1,5 @@
 import { SortableEvent } from "../interfaces";
-import { Contract, Event, EventFilter } from "./";
+import { Contract, Event, EventFilter, Promise } from "./";
 
 export function spreadEvent(event: Event) {
   const keys = Object.keys(event.args).filter((key: string) => isNaN(+key)); // Extract non-numeric keys.
@@ -30,7 +30,6 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
   let numberOfQueries = 1;
   if (!searchConfig.maxBlockLookBack) searchConfig.maxBlockLookBack = searchConfig.toBlock - searchConfig.fromBlock;
   else numberOfQueries = Math.ceil((searchConfig.toBlock - searchConfig.fromBlock) / searchConfig.maxBlockLookBack);
-
   const promises = [];
   for (let i = 0; i < numberOfQueries; i++) {
     const fromBlock = searchConfig.fromBlock + i * searchConfig.maxBlockLookBack;
@@ -38,13 +37,14 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
     promises.push(contract.queryFilter(filter, fromBlock, toBlock));
   }
 
-  return (await Promise.all(promises)).flat();
+  return (await Promise.all(promises, { concurrency: searchConfig.concurrency | 200 })).flat(); // Default to 200 concurrent calls.
 }
 
 export interface EventSearchConfig {
   fromBlock: number;
   toBlock: number | null;
   maxBlockLookBack: number;
+  concurrency?: number | null;
 }
 
 export function spreadEventWithBlockNumber(event: Event): SortableEvent {
