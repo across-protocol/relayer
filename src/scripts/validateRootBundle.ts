@@ -7,7 +7,7 @@
 //    NODE_URL_137=https://polygon-mainnet.infura.io/v3/KEY
 //    NODE_URL_288=https://mainnet.boba.network/
 //    NODE_URL_42161=https://arb-mainnet.g.alchemy.com/v2/KEY
-// 2. REQUEST_TIME=1652722209 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
+// 2. REQUEST_TIME=1652726987 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
 
 // For devs:
 //     Test cases:
