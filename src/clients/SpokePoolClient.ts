@@ -15,6 +15,7 @@ export class SpokePoolClient {
   public latestBlockNumber: number;
   public fillsWithBlockNumbers: FillWithBlock[] = [];
   public depositsWithBlockNumbers: { [DestinationChainId: number]: DepositWithBlock[] } = {};
+  public searchConfig: EventSearchConfig;
 
   constructor(
     readonly logger: winston.Logger,
@@ -121,7 +122,7 @@ export class SpokePoolClient {
     if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
 
     this.latestBlockNumber = await this.spokePool.provider.getBlockNumber();
-    const searchConfig = {
+    this.searchConfig = {
       fromBlock: this.firstBlockToSearch,
       toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
@@ -130,16 +131,20 @@ export class SpokePoolClient {
     // Deposit route search config should always go from the deployment block to ensure we fetch all routes. If this is
     // the first run then set the from block to the deployment block of the spoke pool. Else, use the same config as the
     // other event queries to not double search over the same event ranges.
-    const depositRouteSearchConfig = { ...searchConfig }; // shallow copy.
+    const depositRouteSearchConfig = { ...this.searchConfig }; // shallow copy.
     if (!this.isUpdated) depositRouteSearchConfig.fromBlock = this.spokePoolDeploymentBlock;
 
-    this.log("debug", "Updating client", { searchConfig, depositRouteSearchConfig, spokePool: this.spokePool.address });
-    if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
+    this.log("debug", "Updating client", {
+      searchConfig: this.searchConfig,
+      depositRouteSearchConfig,
+      spokePool: this.spokePool.address,
+    });
+    if (this.searchConfig.fromBlock > this.searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
     const [depositEvents, speedUpEvents, fillEvents, enableDepositsEvents] = await Promise.all([
-      paginatedEventQuery(this.spokePool, this.spokePool.filters.FundsDeposited(), searchConfig),
-      paginatedEventQuery(this.spokePool, this.spokePool.filters.RequestedSpeedUpDeposit(), searchConfig),
-      paginatedEventQuery(this.spokePool, this.spokePool.filters.FilledRelay(), searchConfig),
+      paginatedEventQuery(this.spokePool, this.spokePool.filters.FundsDeposited(), this.searchConfig),
+      paginatedEventQuery(this.spokePool, this.spokePool.filters.RequestedSpeedUpDeposit(), this.searchConfig),
+      paginatedEventQuery(this.spokePool, this.spokePool.filters.FilledRelay(), this.searchConfig),
       paginatedEventQuery(this.spokePool, this.spokePool.filters.EnabledDepositRoute(), depositRouteSearchConfig),
     ]);
 
@@ -184,7 +189,7 @@ export class SpokePoolClient {
       const enableDeposit = spreadEvent(event);
       assign(this.depositRoutes, [enableDeposit.originToken, enableDeposit.destinationChainId], enableDeposit.enabled);
     }
-    this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
+    this.firstBlockToSearch = this.searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.isUpdated = true;
     this.log("debug", "Client updated!");

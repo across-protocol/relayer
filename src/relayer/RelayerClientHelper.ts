@@ -60,8 +60,9 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
     logger,
     config.inventorySettings,
     tokenClient,
+    spokePoolClients,
     commonClients.hubPoolClient,
-    config.spokePoolChains
+    baseSigner.address
   );
 
   return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient };

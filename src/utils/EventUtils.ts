@@ -30,14 +30,14 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
   let numberOfQueries = 1;
   if (!searchConfig.maxBlockLookBack) searchConfig.maxBlockLookBack = searchConfig.toBlock - searchConfig.fromBlock;
   else numberOfQueries = Math.ceil((searchConfig.toBlock - searchConfig.fromBlock) / searchConfig.maxBlockLookBack);
+  console.log("numberOfQueries", numberOfQueries);
   const promises = [];
   for (let i = 0; i < numberOfQueries; i++) {
     const fromBlock = searchConfig.fromBlock + i * searchConfig.maxBlockLookBack;
     const toBlock = Math.min(searchConfig.fromBlock + (i + 1) * searchConfig.maxBlockLookBack, searchConfig.toBlock);
     promises.push(contract.queryFilter(filter, fromBlock, toBlock));
   }
-
-  return (await Promise.all(promises, { concurrency: searchConfig.concurrency | 200 })).flat(); // Default to 200 concurrent calls.
+  return (await Promise.all(promises, { concurrency: searchConfig.concurrency | 50 })).flat(); // Default to 150 concurrent calls.
 }
 
 export interface EventSearchConfig {
