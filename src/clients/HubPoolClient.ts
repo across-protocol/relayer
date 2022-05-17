@@ -124,22 +124,20 @@ export class HubPoolClient {
   getRootBundleEvalBlockNumberContainingBlock(block: number, chain: number, chainIdList: number[]): number | undefined {
     let endingBlockNumber: number;
     for (const rootBundle of sortEventsAscending(this.proposedRootBundles)) {
-      try {
-        // `getBundleEndBlockForChain` will error or return the bundle end block for the chain.
-        const bundleEvalBlockNumber = this.getBundleEndBlockForChain(
-          rootBundle as ProposedRootBundle,
-          chain,
-          chainIdList
-        );
-        if (bundleEvalBlockNumber >= block) {
-          endingBlockNumber = bundleEvalBlockNumber;
-          // Since events are sorted from oldest to newest, and bundle block ranges should only increase, exit as soon
-          // as we find the first block range that contains the target block.
-          break;
-        }
-      } catch (err) {
-        // Found ProposeRootBundleEvent with invalid bundle block list, skip it.
-        continue;
+      // `getBundleEndBlockForChain` will error or return the bundle end block for the chain.
+      const bundleEvalBlockNumber = this.getBundleEndBlockForChain(
+        rootBundle as ProposedRootBundle,
+        chain,
+        chainIdList
+      );
+
+      // If chain list doesn't contain chain, then bundleEvalBlockNumber returns 0 and the following check
+      // always fail.
+      if (bundleEvalBlockNumber >= block) {
+        endingBlockNumber = bundleEvalBlockNumber;
+        // Since events are sorted from oldest to newest, and bundle block ranges should only increase, exit as soon
+        // as we find the first block range that contains the target block.
+        break;
       }
     }
     return endingBlockNumber;
@@ -189,7 +187,8 @@ export class HubPoolClient {
     // Once this proposal event is found, determine its mapping of indices to chainId in its
     // bundleEvaluationBlockNumbers array using CHAIN_ID_LIST. For each chainId, their starting block number is that
     // chain's bundleEvaluationBlockNumber + 1 in this past proposal event.
-    return this.getBundleEndBlockForChain(latestFullyExecutedPoolRebalanceRoot, chainId, chainIdList) + 1;
+    const endBlock = this.getBundleEndBlockForChain(latestFullyExecutedPoolRebalanceRoot, chainId, chainIdList);
+    return endBlock > 0 ? endBlock + 1 : 0;
   }
 
   getRunningBalanceBeforeBlockForChain(block: number, chain: number, l1Token: string): BigNumber {
@@ -338,10 +337,11 @@ export class HubPoolClient {
     chainIdList: number[]
   ): number {
     const bundleEvaluationBlockNumbers: BigNumber[] = proposeRootBundleEvent.bundleEvaluationBlockNumbers;
-    if (bundleEvaluationBlockNumbers.length !== chainIdList.length)
-      throw new Error("Chain ID list and bundle block eval range list length do not match");
     const chainIdIndex = chainIdList.indexOf(chainId);
-    if (chainIdIndex === -1) throw new Error(`Can't find chainId ${chainId} in chainIdList ${chainIdList}`);
+    if (chainIdIndex === -1) return 0;
+    // Sometimes, the root bundle event's chain ID list will update from bundle to bundle, so we need to check that
+    // the bundle evaluation block number list is long enough to contain this index.
+    if (bundleEvaluationBlockNumbers[chainIdIndex] === undefined) return 0;
     return bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
   }
 }
