@@ -1,6 +1,13 @@
 import { AcrossConfigStoreClient, HubPoolClient } from "../clients";
 import * as interfaces from "../interfaces";
-import { BigNumberForToken, PoolRebalanceLeaf, RelayData, RelayerRefundLeaf, RootBundle } from "../interfaces";
+import {
+  BigNumberForToken,
+  PoolRebalanceLeaf,
+  RelayData,
+  RelayerRefundLeaf,
+  RootBundle,
+  UnfilledDeposit,
+} from "../interfaces";
 import {
   assign,
   BigNumber,
@@ -116,6 +123,27 @@ export function initializeRunningBalancesFromRelayerRepayments(
   };
 }
 
+export function addSlowFillsToRunningBalances(
+  latestMainnetBlock: number,
+  runningBalances: interfaces.RunningBalances,
+  hubPoolClient: HubPoolClient,
+  unfilledDeposits: UnfilledDeposit[]
+) {
+  unfilledDeposits.forEach((unfilledDeposit) => {
+    const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
+      unfilledDeposit.deposit.originChainId.toString(),
+      unfilledDeposit.deposit.originToken,
+      latestMainnetBlock
+    );
+    updateRunningBalance(
+      runningBalances,
+      unfilledDeposit.deposit.destinationChainId,
+      l1TokenCounterpart,
+      unfilledDeposit.unfilledAmount
+    );
+  });
+}
+
 export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
@@ -132,38 +160,14 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
       );
 
     // Now that we have the last fill sent in a previous root bundle that also sent a slow fill, we can compute
-    // the excess that we need to decrease running balances by. This excess only exists in two cases:
-    // 1) The current fill is a slow fill. In this case, we need to check if there were any partial fills sent
-    //    AFTER the slow fill amount was sent to the spoke pool, and BEFORE the slow fill was executed.
-    // 2) The current fill completed a deposit, meaning that the slow fill never had a chance to be executed. We should
-    //    send back the full slow fill amount sent in a previous root bundle.
+    // the excess that we need to decrease running balances by. This excess only exists in the case where the
+    // current fill completed a deposit. There will be an excess if (1) the slow fill was never executed, and (2)
+    // the slow fill was executed, but not before some partial fills were sent.
 
     // Note, if there is NO fill from a previous root bundle for the same deposit as this fill, then there has been
     // no slow fill payment sent to the spoke pool yet, so we can exit early.
 
-    // For any executed slow fills, we need to decrease the running balance if a previous root bundle sent
-    // tokens to the spoke pool to pay for the slow fill, but a partial fill was sent before the slow relay
-    // could be executed, resulting in an excess of funds on the spoke pool.
-    if (fill.isSlowRelay) {
-      // Since every slow fill should have a partial fill that came before it, we should always be able to find the
-      // last partial fill for the root bundle including the slow fill refund.
-      if (!lastFillBeforeSlowFillIncludedInRoot)
-        throw new Error("Can't find last fill submitted before slow fill was included in root bundle proposal");
-
-      // Recompute how much the matched root bundle sent for this slow fill. Subtract the amount that was
-      // actually executed on the L2 from the amount that was sent. This should give us the excess that was sent.
-      // Subtract that amount from the running balance so we ultimately send it back to L1.
-      const amountSentForSlowFill = lastFillBeforeSlowFillIncludedInRoot.amount.sub(
-        lastFillBeforeSlowFillIncludedInRoot.totalFilledAmount
-      );
-      const excess = amountSentForSlowFill.sub(fill.fillAmount);
-      if (excess.eq(toBN(0))) return; // Exit early if slow fill left no excess funds.
-      updateRunningBalanceForFill(runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
-    }
-    // For all fills that completely filled a relay and that followed a partial fill from a previous epoch, we need
-    // to decrease running balances by the slow fill amount sent in the previous epoch, since the slow relay was never
-    // executed, allowing the fill to be sent completely filling the deposit.
-    else if (fill.totalFilledAmount.eq(fill.amount)) {
+    if (fill.totalFilledAmount.eq(fill.amount)) {
       // If first fill for this deposit is in this epoch, then no slow fill has been sent so we can ignore this fill.
       // We can check this by searching for a ProposeRootBundle event with a bundle block range that contains the
       // first fill for this deposit. If it is the same as the ProposeRootBundle event containing the
@@ -180,14 +184,17 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
       if (!lastFillBeforeSlowFillIncludedInRoot)
         throw new Error("Can't find last fill submitted before slow fill was included in root bundle proposal");
 
-      // Recompute how much the matched root bundle sent for this slow fill. This slow fill refund needs to be sent
-      // back to the hub because it was completely replaced by partial fills submitted after the root bundle
-      // proposal. We know that there was no slow fill execution because the `fullFill` completely filled the deposit,
-      // meaning that no slow fill was executed before it, and no slow fill can be executed after it.
+      // Recompute how much the matched root bundle sent for this slow fill.
       const amountSentForSlowFill = lastFillBeforeSlowFillIncludedInRoot.amount.sub(
         lastFillBeforeSlowFillIncludedInRoot.totalFilledAmount
       );
-      updateRunningBalanceForFill(runningBalances, hubPoolClient, fill, amountSentForSlowFill.mul(toBN(-1)));
+
+      // If this fill is a slow fill, then the excess remaining in the contract is equal to the amount sent originally
+      // for this slow fill, and the amount filled. If this fill was not a slow fill, then that means the slow fill
+      // was never sent, so we need to send the full slow fill back.
+      const excess = fill.isSlowRelay ? amountSentForSlowFill.sub(fill.fillAmount) : amountSentForSlowFill;
+      if (excess.eq(toBN(0))) return;
+      updateRunningBalanceForFill(runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
     }
   });
 }

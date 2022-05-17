@@ -8,11 +8,13 @@ import { SpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
 import * as RelayerRefundUtils from "./RelayerRefundUtils";
 import {
+  assignValidFillToFillsToRefund,
   getFillCountGroupedByToken,
   getFillsToRefundCountGroupedByRepaymentChain,
-  updateFillsToRefundWithValidFill,
+  updateTotalRealizedLpFeePct,
+  updateTotalRefundAmount,
 } from "./FillUtils";
-import { getFillsInRange, getRefundInformationFromFill, updateFillsToRefundWithSlowFill } from "./FillUtils";
+import { getFillsInRange, getRefundInformationFromFill } from "./FillUtils";
 import { getFillCountGroupedByProp } from "./FillUtils";
 import { getBlockRangeForChain } from "./DataworkerUtils";
 import { getUnfilledDepositCountGroupedByProp, getDepositCountGroupedByToken } from "./DepositUtils";
@@ -141,7 +143,11 @@ export class Dataworker {
               blockRangesForChains,
               this.chainIdListForBundleEvaluationBlockNumbers
             );
-            updateFillsToRefundWithValidFill(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
+
+            // Fills to refund includes both slow and non-slow fills and they both should increase the
+            // total realized LP fee %.
+            assignValidFillToFillsToRefund(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
+            updateTotalRealizedLpFeePct(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
 
             // Save deposit as one that is eligible for a slow fill, since there is a fill
             // for the deposit in this epoch. We save whether this fill is the first fill for the deposit, because
@@ -150,10 +156,8 @@ export class Dataworker {
             // deposits later.
             updateUnfilledDepositsWithMatchedDeposit(fill, matchedDeposit, unfilledDepositsForOriginChain);
 
-            // For non-slow relays, save refund amount for the recipient of the refund, i.e. the relayer
-            // for non-slow relays.
-            if (!fill.isSlowRelay)
-              updateFillsToRefundWithSlowFill(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
+            // Update total refund counter for convenience when constructing relayer refund leaves
+            updateTotalRefundAmount(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
           } else allInvalidFills.push(fillWithBlock);
         });
       }
@@ -336,7 +340,10 @@ export class Dataworker {
   buildPoolRebalanceRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
     this.logger.debug({ at: "Dataworker", message: `Building pool rebalance root`, blockRangesForChains });
 
-    const { fillsToRefund, deposits, allValidFills } = this._loadData(blockRangesForChains, spokePoolClients);
+    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this._loadData(
+      blockRangesForChains,
+      spokePoolClients
+    );
 
     const endBlockForMainnet = getBlockRangeForChain(
       blockRangesForChains,
@@ -344,17 +351,26 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
 
-    // For each FilledRelay group, identified by { repaymentChainId, L1TokenAddress }, initialize a "running balance"
-    // to the total refund amount for that group.
     // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
     // slow relay refunds. They are decreased by the amount of funds already held by the SpokePool. Balances are keyed
     // by the SpokePool's network and L1 token equivalent of the L2 token to refund.
     // Realized LP fees are keyed the same as running balances and represent the amount of LP fees that should be paid
     // to LP's for each running balance.
+
+    // For each FilledRelay group, identified by { repaymentChainId, L1TokenAddress }, initialize a "running balance"
+    // to the total refund amount for that group.
     const { runningBalances, realizedLpFees } = PoolRebalanceUtils.initializeRunningBalancesFromRelayerRepayments(
       endBlockForMainnet,
       this.clients.hubPoolClient,
       fillsToRefund
+    );
+
+    // Add payments to execute slow fills.
+    PoolRebalanceUtils.addSlowFillsToRunningBalances(
+      endBlockForMainnet,
+      runningBalances,
+      this.clients.hubPoolClient,
+      unfilledDeposits
     );
 
     // For certain fills associated with another partial fill from a previous root bundle, we need to adjust running
@@ -496,7 +512,7 @@ export class Dataworker {
     );
   }
 
-  async validatePendingRootBundle(submitDispute = true) {
+  async validatePendingRootBundle() {
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
@@ -533,8 +549,7 @@ export class Dataworker {
     const { valid, reason } = await this.validateRootBundle(
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
-      pendingRootBundle,
-      submitDispute
+      pendingRootBundle
     );
     if (!valid) this._submitDisputeWithMrkdwn(hubPoolChainId, reason);
   }
@@ -542,8 +557,7 @@ export class Dataworker {
   async validateRootBundle(
     hubPoolChainId: number,
     widestPossibleExpectedBlockRange: number[][],
-    rootBundle: RootBundle,
-    submitDispute: boolean
+    rootBundle: RootBundle
   ): Promise<{ valid: boolean; reason?: string }> {
     // If pool rebalance root is empty, always dispute. There should never be a bundle with an empty rebalance root.
     if (rootBundle.poolRebalanceRoot === EMPTY_MERKLE_ROOT) {

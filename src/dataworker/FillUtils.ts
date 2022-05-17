@@ -33,30 +33,37 @@ export function getRefundInformationFromFill(
     repaymentToken,
   };
 }
-export function updateFillsToRefundWithValidFill(
+export function assignValidFillToFillsToRefund(
   fillsToRefund: FillsToRefund,
   fill: Fill,
   chainToSendRefundTo: number,
   repaymentToken: string
 ) {
   assign(fillsToRefund, [chainToSendRefundTo, repaymentToken, "fills"], [fill]);
-
-  // Update realized LP fee accumulator for slow and non-slow fills.
-  const refundObj = fillsToRefund[chainToSendRefundTo][repaymentToken];
-  refundObj.realizedLpFees = refundObj.realizedLpFees
-    ? refundObj.realizedLpFees.add(getRealizedLpFeeForFills([fill]))
-    : getRealizedLpFeeForFills([fill]);
 }
 
-export function updateFillsToRefundWithSlowFill(
+export function updateTotalRealizedLpFeePct(
   fillsToRefund: FillsToRefund,
   fill: Fill,
   chainToSendRefundTo: number,
   repaymentToken: string
 ) {
   const refundObj = fillsToRefund[chainToSendRefundTo][repaymentToken];
-  // Update total refund amount for non-slow fills, since refunds for executed slow fills would have been
-  // included in a previous root bundle.
+  refundObj.realizedLpFees = refundObj.realizedLpFees
+    ? refundObj.realizedLpFees.add(getRealizedLpFeeForFills([fill]))
+    : getRealizedLpFeeForFills([fill]);
+}
+
+export function updateTotalRefundAmount(
+  fillsToRefund: FillsToRefund,
+  fill: Fill,
+  chainToSendRefundTo: number,
+  repaymentToken: string
+) {
+  // Don't count slow relays in total refund amount, since we use this amount to conveniently construct
+  // relayer refund leaves.
+  if (fill.isSlowRelay) return;
+  const refundObj = fillsToRefund[chainToSendRefundTo][repaymentToken];
   const refund = getRefundForFills([fill]);
   refundObj.totalRefundAmount = refundObj.totalRefundAmount ? refundObj.totalRefundAmount.add(refund) : refund;
 

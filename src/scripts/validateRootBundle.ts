@@ -104,8 +104,7 @@ export async function validate(_logger: winston.Logger) {
   const { valid, reason } = await dataworker.validateRootBundle(
     config.hubPoolChainId,
     widestPossibleBlockRanges,
-    rootBundle,
-    false
+    rootBundle
   );
 
   logger.info({

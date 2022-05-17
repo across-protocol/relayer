@@ -124,7 +124,6 @@ export class HubPoolClient {
   getRootBundleEvalBlockNumberContainingBlock(block: number, chain: number, chainIdList: number[]): number | undefined {
     let endingBlockNumber: number;
     for (const rootBundle of sortEventsAscending(this.proposedRootBundles)) {
-      // `getBundleEndBlockForChain` will error or return the bundle end block for the chain.
       const bundleEvalBlockNumber = this.getBundleEndBlockForChain(
         rootBundle as ProposedRootBundle,
         chain,
@@ -338,6 +337,10 @@ export class HubPoolClient {
     return { address, symbol, decimals };
   }
 
+  // Returns end block for `chainId` in ProposedRootBundle.bundleBlockEvalNumbers. Looks up chainId
+  // in chainId list, gets the index where its located, and returns the value of the index in
+  // bundleBlockEvalNumbers. Returns 0 if `chainId` can't be found in `chainIdList` and if index doesn't
+  // exist in bundleBlockEvalNumbers.
   private getBundleEndBlockForChain(
     proposeRootBundleEvent: ProposedRootBundle,
     chainId: number,
