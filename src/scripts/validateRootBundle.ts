@@ -30,7 +30,7 @@ import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalance
 config();
 let logger: winston.Logger;
 
-export async function run(_logger: winston.Logger) {
+export async function validate(_logger: winston.Logger) {
   logger = _logger;
   if (!process.env.REQUEST_TIME)
     throw new Error("Must set environment variable 'REQUEST_TIME=<NUMBER>' to disputed price request time");
@@ -117,22 +117,19 @@ export async function run(_logger: winston.Logger) {
   });
 }
 
-export async function runLoop(_logger: winston.Logger) {
-  // Keep running main function until it works.
+export async function run(_logger: winston.Logger) {
+  // Keep trying to validate until it works.
   try {
-    for (;;) {
-      await run(_logger);
-      break;
-    }
+    await validate(_logger);
   } catch (error) {
     logger.error({ at: "RootBundleValidator", message: "Caught an error, retrying!", error });
     await delay(5);
-    await runLoop(Logger);
+    await run(Logger);
   }
 }
 
 if (require.main === module) {
-  runLoop(Logger)
+  run(Logger)
     .then(() => {
       // eslint-disable-next-line no-process-exit
       process.exit(0);
@@ -140,6 +137,6 @@ if (require.main === module) {
     .catch(async (error) => {
       logger.error({ at: "InfrastructureEntryPoint", message: "There was an error in the main entry point!", error });
       await delay(5);
-      await runLoop(Logger);
+      await run(Logger);
     });
 }
