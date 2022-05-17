@@ -347,7 +347,7 @@ export class HubPoolClient {
     const chainIdIndex = chainIdList.indexOf(chainId);
     if (chainIdIndex === -1) return 0;
     // Sometimes, the root bundle event's chain ID list will update from bundle to bundle, so we need to check that
-    // the bundle evaluation block number list is long enough to contain this index. We assume that chain ID's 
+    // the bundle evaluation block number list is long enough to contain this index. We assume that chain ID's
     // are only added to the bundle block list, never deleted.
     if (chainIdIndex >= bundleEvaluationBlockNumbers.length) return 0;
     return bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
