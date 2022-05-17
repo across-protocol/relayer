@@ -177,11 +177,11 @@ export class Dataworker {
       at: "Dataworker",
       message: `Finished loading spoke pool data`,
       blockRangesForChains,
-      unfilledDepositsByDestinationChain: getUnfilledDepositCountGroupedByProp(unfilledDeposits, "destinationChainId"),
       depositsInRangeByOriginChain: getDepositCountGroupedByToken(deposits),
-      fillsToRefundInRangeByRepaymentChain: getFillsToRefundCountGroupedByRepaymentChain(fillsToRefund),
-      allValidFillsByDestinationChain: getFillCountGroupedByProp(allValidFills, "destinationChainId"),
       allValidFillsInRangeByDestinationChain: getFillCountGroupedByToken(allValidFillsInRange),
+      fillsToRefundInRangeByRepaymentChain: getFillsToRefundCountGroupedByRepaymentChain(fillsToRefund),
+      unfilledDepositsByDestinationChain: getUnfilledDepositCountGroupedByProp(unfilledDeposits, "destinationChainId"),
+      allValidFillsByDestinationChain: getFillCountGroupedByProp(allValidFills, "destinationChainId"),
       allInvalidFillsInRangeByDestinationChain: getFillCountGroupedByToken(allInvalidFillsInRange),
     });
 

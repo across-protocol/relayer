@@ -9,6 +9,7 @@ import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT } from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
+import { getDepositPath } from "../src/dataworker/DepositUtils";
 
 let spy: sinon.SinonSpy;
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -90,7 +91,9 @@ describe("Dataworker: Propose root bundle", async function () {
     const loadDataResults2 = getMostRecentLog(spy, "Finished loading spoke pool data");
     expect(loadDataResults2.blockRangesForChains).to.deep.equal(blockRange2);
     expect(loadDataResults2.unfilledDepositsByDestinationChain).to.deep.equal({ [destinationChainId]: 1 });
-    expect(loadDataResults2.depositsInRangeByOriginChain).to.deep.equal({ [originChainId]: 1 });
+    expect(loadDataResults2.depositsInRangeByOriginChain).to.deep.equal({
+      [originChainId]: { [getDepositPath(deposit)]: 1 },
+    });
     expect(loadDataResults2.fillsToRefundInRangeByRepaymentChain).to.deep.equal({
       [destinationChainId]: { [erc20_2.address]: 1 },
     });
