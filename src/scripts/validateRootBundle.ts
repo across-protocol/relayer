@@ -17,7 +17,7 @@
 //         REQUEST_TIME=1652385167 # Empty pool rebalance root
 //         REQUEST_TIME=1652394287 # Invalid bundle block range length, assuming a valid chain ID list of 5
 
-import { winston, config, startupLogLevel, Logger } from "../utils";
+import { winston, config, startupLogLevel, Logger, delay, processEndPollingLoop } from "../utils";
 import * as Constants from "../common";
 import { Dataworker } from "../dataworker/Dataworker";
 import { DataworkerConfig } from "../dataworker/DataworkerConfig";
@@ -117,12 +117,29 @@ export async function run(_logger: winston.Logger) {
   });
 }
 
+export async function runLoop(_logger: winston.Logger) {
+  // Keep running main function until it works.
+  try {
+    for (;;) {
+      await run(_logger);
+      break;
+    }
+  } catch (error) {
+    logger.error({ at: "RootBundleValidator", message: "Caught an error, retrying!", error });
+    await delay(5);
+    await runLoop(Logger);
+  }
+}
+
 if (require.main === module) {
-  run(Logger)
+  runLoop(Logger)
     .then(() => {
+      // eslint-disable-next-line no-process-exit
       process.exit(0);
     })
     .catch(async (error) => {
-      logger.error({ at: "RootBundleValidator", message: "Caught an error!", error });
+      logger.error({ at: "InfrastructureEntryPoint", message: "There was an error in the main entry point!", error });
+      await delay(5);
+      await runLoop(Logger);
     });
 }
