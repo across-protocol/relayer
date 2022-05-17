@@ -7,7 +7,11 @@ import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
 import * as RelayerRefundUtils from "./RelayerRefundUtils";
-import { getFillsToRefundCountGroupedByRepaymentChain, updateFillsToRefundWithValidFill } from "./FillUtils";
+import {
+  getFillCountGroupedByToken,
+  getFillsToRefundCountGroupedByRepaymentChain,
+  updateFillsToRefundWithValidFill,
+} from "./FillUtils";
 import { getFillsInRange, getRefundInformationFromFill, updateFillsToRefundWithSlowFill } from "./FillUtils";
 import { getFillCountGroupedByProp } from "./FillUtils";
 import { getBlockRangeForChain } from "./DataworkerUtils";
@@ -177,8 +181,8 @@ export class Dataworker {
       depositsInRangeByOriginChain: getDepositCountGroupedByToken(deposits),
       fillsToRefundInRangeByRepaymentChain: getFillsToRefundCountGroupedByRepaymentChain(fillsToRefund),
       allValidFillsByDestinationChain: getFillCountGroupedByProp(allValidFills, "destinationChainId"),
-      allValidFillsInRangeByDestinationChain: getFillCountGroupedByProp(allValidFillsInRange, "destinationChainId"),
-      allInvalidFillsInRangeByDestinationChain: getFillCountGroupedByProp(allInvalidFillsInRange, "destinationChainId"),
+      allValidFillsInRangeByDestinationChain: getFillCountGroupedByToken(allValidFillsInRange),
+      allInvalidFillsInRangeByDestinationChain: getFillCountGroupedByToken(allInvalidFillsInRange),
     });
 
     if (allInvalidFillsInRange.length > 0)

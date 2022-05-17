@@ -156,6 +156,15 @@ export function getFillCountGroupedByProp(fills: FillWithBlock[], propName: stri
   }, {});
 }
 
+export function getFillCountGroupedByToken(fills: FillWithBlock[]) {
+  return fills.reduce((result, fill: FillWithBlock) => {
+    result[fill.destinationChainId] = result[fill.destinationChainId] ?? {};
+    const existingCount = result[fill.destinationChainId][fill.destinationToken];
+    result[fill.destinationChainId][fill.destinationToken] = existingCount === undefined ? 1 : existingCount + 1;
+    return result;
+  }, {});
+}
+
 export function getFillsToRefundCountGroupedByRepaymentChain(fills: FillsToRefund) {
   return Object.keys(fills).reduce((endResult, repaymentChain) => {
     endResult[repaymentChain] = endResult[repaymentChain] ?? {};
