@@ -380,6 +380,10 @@ export class Dataworker {
       );
     });
 
+    // Add to the running balance value from the last valid root bundle proposal for {chainId, l1Token}
+    // combination if found.
+    PoolRebalanceUtils.addLastRunningBalance(endBlockForMainnet, runningBalances, this.clients.hubPoolClient);
+
     const leaves: PoolRebalanceLeaf[] = PoolRebalanceUtils.constructPoolRebalanceLeaves(
       endBlockForMainnet,
       runningBalances,

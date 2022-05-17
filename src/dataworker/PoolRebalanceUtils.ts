@@ -56,6 +56,24 @@ export function updateRunningBalanceForDeposit(
   updateRunningBalance(runningBalances, deposit.originChainId, l1TokenCounterpart, updateAmount);
 }
 
+export function addLastRunningBalance(
+  latestMainnetBlock: number,
+  runningBalances: interfaces.RunningBalances,
+  hubPoolClient: HubPoolClient
+) {
+  Object.keys(runningBalances).forEach((repaymentChainId) => {
+    Object.keys(runningBalances[repaymentChainId]).forEach((l1TokenAddress) => {
+      const lastRunningBalance = hubPoolClient.getRunningBalanceBeforeBlockForChain(
+        latestMainnetBlock,
+        Number(repaymentChainId),
+        l1TokenAddress
+      );
+      if (!lastRunningBalance.eq(toBN(0)))
+        updateRunningBalance(runningBalances, Number(repaymentChainId), l1TokenAddress, lastRunningBalance);
+    });
+  });
+}
+
 export function initializeRunningBalancesFromRelayerRepayments(
   latestMainnetBlock: number,
   hubPoolClient: HubPoolClient,
@@ -81,21 +99,13 @@ export function initializeRunningBalancesFromRelayerRepayments(
           fillsToRefund[repaymentChainId][l2TokenAddress].realizedLpFees
         );
 
-        // Start with running balance value from last valid root bundle proposal for {chainId, l1Token}
-        // combination if found.
-        const startingRunningBalance = hubPoolClient.getRunningBalanceBeforeBlockForChain(
-          latestMainnetBlock,
-          Number(repaymentChainId),
-          l1TokenCounterpart
-        );
-
         // Add total repayment amount to running balances. Note: totalRefundAmount won't exist for chains that
         // only had slow fills, so we should explicitly check for it.
         if (fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount)
           assign(
             runningBalances,
             [repaymentChainId, l1TokenCounterpart],
-            startingRunningBalance.add(fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount)
+            fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount
           );
       });
     });
