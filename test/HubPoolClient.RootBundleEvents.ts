@@ -203,16 +203,15 @@ describe("HubPoolClient: RootBundle Events", async function () {
     const executionBlockNumber = await hubPool.provider.getBlockNumber();
     await hubPoolClient.update();
     expect(
-      hubPoolClient.getNextBundleStartBlockNumber(firstChainIdList, partialExecutionBlockNumber, firstChainIdList[0])
-    ).to.equal(0);
-    expect(
       hubPoolClient.getNextBundleStartBlockNumber(firstChainIdList, executionBlockNumber, firstChainIdList[0])
     ).to.equal(bundleBlockEvalNumbers[0] + 1);
 
     // Chain that doesn't exist in chain ID list returns 0
     expect(hubPoolClient.getNextBundleStartBlockNumber(firstChainIdList, executionBlockNumber, 999)).to.equal(0);
 
-    // Chain that does exist in chain ID list but at an index that doesn't exist in bundle block range returns 0
+    // Chain that does exist in chain ID list but at an index that doesn't exist in bundle block range list returns 0.
+    // In this case, the root bundle event's bundle list contains 1 chain, and we're looking up the chain matching the
+    // second index.
     expect(hubPoolClient.getNextBundleStartBlockNumber([...firstChainIdList, 999], executionBlockNumber, 999)).to.equal(
       0
     );

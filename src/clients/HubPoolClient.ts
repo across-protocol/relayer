@@ -188,6 +188,13 @@ export class HubPoolClient {
     // bundleEvaluationBlockNumbers array using CHAIN_ID_LIST. For each chainId, their starting block number is that
     // chain's bundleEvaluationBlockNumber + 1 in this past proposal event.
     const endBlock = this.getBundleEndBlockForChain(latestFullyExecutedPoolRebalanceRoot, chainId, chainIdList);
+
+    // If `chainId` either doesn't exist in the chainIdList, or is at an index that doesn't exist in the root bundle
+    // event's bundle block range (e.g. bundle block range has two entries, chain ID list has three, and chain matches
+    // third entry), return 0 to indicate we want to get all history for this chain that we haven't seen before.
+
+    // This assumes that chain ID's are only added to the chain ID list over time, and that chains are never
+    // deleted.
     return endBlock > 0 ? endBlock + 1 : 0;
   }
 
@@ -340,8 +347,9 @@ export class HubPoolClient {
     const chainIdIndex = chainIdList.indexOf(chainId);
     if (chainIdIndex === -1) return 0;
     // Sometimes, the root bundle event's chain ID list will update from bundle to bundle, so we need to check that
-    // the bundle evaluation block number list is long enough to contain this index.
-    if (bundleEvaluationBlockNumbers[chainIdIndex] === undefined) return 0;
+    // the bundle evaluation block number list is long enough to contain this index. We assume that chain ID's 
+    // are only added to the bundle block list, never deleted.
+    if (chainIdIndex >= bundleEvaluationBlockNumbers.length) return 0;
     return bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
   }
 }
