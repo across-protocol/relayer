@@ -165,6 +165,8 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle();
     expect(lastSpyLogIncludes(spy, "A bundle end block is > latest block but within buffer, skipping")).to.be.true;
+    await updateAllClients();
+    expect(hubPoolClient.hasPendingProposal()).to.equal(true);
 
     // Bundle range end blocks are too high.
     await hubPool.emergencyDeleteProposal();

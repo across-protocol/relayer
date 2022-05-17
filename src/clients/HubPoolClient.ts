@@ -169,7 +169,13 @@ export class HubPoolClient {
         const executedPoolRebalanceLeaves = sortEventsAscending(this.executedRootBundles).filter(
           (executedLeaf: ExecutedRootBundle) =>
             executedLeaf.blockNumber <= latestMainnetBlock &&
-            executedLeaf.blockNumber >= proposedRootBundle.blockNumber &&
+            // Note: We can use > instead of >= here because a leaf can never be executed in same block as its root
+            // proposal due to bundle liveness enforced by HubPool. This importantly avoids the edge case
+            // where the execution all leaves occurs in the same block as the next proposal, leading us to think
+            // that the next proposal is fully executed when its not.
+            executedLeaf.blockNumber > proposedRootBundle.blockNumber &&
+            // This <= makes sense because you could have an execution of a leaf in the same block as the proposal of
+            // the next.
             executedLeaf.blockNumber <= followingProposedRootBundleBlock
         ) as ExecutedRootBundle[];
         return executedPoolRebalanceLeaves.length === proposedRootBundle.poolRebalanceLeafCount;

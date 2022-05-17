@@ -142,7 +142,8 @@ export class Dataworker {
             // Save deposit as one that is eligible for a slow fill, since there is a fill
             // for the deposit in this epoch. We save whether this fill is the first fill for the deposit, because
             // if a deposit has its first fill in this block range, then we can send a slow fill payment to complete
-            // the deposit.
+            // the deposit. If other fills end up completing this deposit, then we'll remove it from the unfilled
+            // deposits later.
             updateUnfilledDepositsWithMatchedDeposit(fill, matchedDeposit, unfilledDepositsForOriginChain);
 
             // For non-slow relays, save refund amount for the recipient of the refund, i.e. the relayer
@@ -491,7 +492,7 @@ export class Dataworker {
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
-    // Exit early if a bundle is pending.
+    // Exit early if a bundle is not pending.
     if (!this.clients.hubPoolClient.hasPendingProposal()) {
       this.logger.debug({
         at: "Dataworker#validate",
@@ -521,7 +522,13 @@ export class Dataworker {
       this.clients,
       this.clients.hubPoolClient.latestBlockNumber
     );
-    await this.validateRootBundle(hubPoolChainId, widestPossibleExpectedBlockRange, pendingRootBundle, submitDispute);
+    const { valid, reason } = await this.validateRootBundle(
+      hubPoolChainId,
+      widestPossibleExpectedBlockRange,
+      pendingRootBundle,
+      submitDispute
+    );
+    if (!valid) this._submitDisputeWithMrkdwn(hubPoolChainId, reason);
   }
 
   async validateRootBundle(
@@ -529,7 +536,7 @@ export class Dataworker {
     widestPossibleExpectedBlockRange: number[][],
     rootBundle: RootBundle,
     submitDispute: boolean
-  ): Promise<boolean> {
+  ): Promise<{ valid: boolean; reason?: string }> {
     // If pool rebalance root is empty, always dispute. There should never be a bundle with an empty rebalance root.
     if (rootBundle.poolRebalanceRoot === EMPTY_MERKLE_ROOT) {
       this.logger.debug({
@@ -537,9 +544,10 @@ export class Dataworker {
         message: "Empty pool rebalance root, submitting dispute",
         rootBundle,
       });
-      if (submitDispute)
-        this._submitDisputeWithMrkdwn(hubPoolChainId, `Disputed pending root bundle with empty pool rebalance root`);
-      return false;
+      return {
+        valid: false,
+        reason: `Disputed pending root bundle with empty pool rebalance root`,
+      };
     }
 
     // First, we'll evaluate the pending root bundle's block end numbers.
@@ -550,12 +558,10 @@ export class Dataworker {
         widestPossibleExpectedBlockRange,
         pendingEndBlocks: rootBundle.bundleEvaluationBlockNumbers,
       });
-      if (submitDispute)
-        this._submitDisputeWithMrkdwn(
-          hubPoolChainId,
-          `Disputed pending root bundle with incorrect bundle block range length`
-        );
-      return false;
+      return {
+        valid: false,
+        reason: `Disputed pending root bundle with incorrect bundle block range length`,
+      };
     }
 
     // These buffers can be configured by the bot runner. These are used to validate the end blocks specified in the
@@ -578,17 +584,15 @@ export class Dataworker {
         expectedStartBlocks: widestPossibleExpectedBlockRange.map((range) => range[0]),
         pendingEndBlocks: rootBundle.bundleEvaluationBlockNumbers,
       });
-      if (submitDispute)
-        this._submitDisputeWithMrkdwn(
-          hubPoolChainId,
-          PoolRebalanceUtils.generateMarkdownForDisputeInvalidBundleBlocks(
-            this.chainIdListForBundleEvaluationBlockNumbers,
-            rootBundle,
-            widestPossibleExpectedBlockRange,
-            endBlockBuffers
-          )
-        );
-      return false;
+      return {
+        valid: false,
+        reason: PoolRebalanceUtils.generateMarkdownForDisputeInvalidBundleBlocks(
+          this.chainIdListForBundleEvaluationBlockNumbers,
+          rootBundle,
+          widestPossibleExpectedBlockRange,
+          endBlockBuffers
+        ),
+      };
     }
 
     // If the bundle end block is less than HEAD but within the allowable margin of error into future,
@@ -609,16 +613,15 @@ export class Dataworker {
           pendingEndBlocks: rootBundle.bundleEvaluationBlockNumbers,
           endBlockBuffers,
         });
-        if (submitDispute)
-          this._submitDisputeWithMrkdwn(
-            hubPoolChainId,
-            PoolRebalanceUtils.generateMarkdownForDisputeInvalidBundleBlocks(
-              this.chainIdListForBundleEvaluationBlockNumbers,
-              rootBundle,
-              widestPossibleExpectedBlockRange,
-              endBlockBuffers
-            )
-          );
+        return {
+          valid: false,
+          reason: PoolRebalanceUtils.generateMarkdownForDisputeInvalidBundleBlocks(
+            this.chainIdListForBundleEvaluationBlockNumbers,
+            rootBundle,
+            widestPossibleExpectedBlockRange,
+            endBlockBuffers
+          ),
+        };
       } else {
         this.logger.debug({
           at: "Dataworker#validate",
@@ -628,7 +631,9 @@ export class Dataworker {
           endBlockBuffers,
         });
       }
-      return false;
+      return {
+        valid: true,
+      };
     }
 
     // The block range that we'll use to construct roots will be the end block specified in the pending root bundle,
@@ -714,28 +719,29 @@ export class Dataworker {
         at: "Dataworker#validate",
         message: "Pending root bundle matches with expected",
       });
-      return true;
+      return {
+        valid: true,
+      };
     }
 
-    if (submitDispute)
-      this._submitDisputeWithMrkdwn(
-        hubPoolChainId,
+    return {
+      valid: false,
+      reason:
         PoolRebalanceUtils.generateMarkdownForDispute(rootBundle) +
-          `\n` +
-          PoolRebalanceUtils.generateMarkdownForRootBundle(
-            this.clients.hubPoolClient,
-            this.chainIdListForBundleEvaluationBlockNumbers,
-            hubPoolChainId,
-            blockRangesImpliedByBundleEndBlocks,
-            [...expectedPoolRebalanceRoot.leaves],
-            expectedPoolRebalanceRoot.tree.getHexRoot(),
-            [...expectedRelayerRefundRoot.leaves],
-            expectedRelayerRefundRoot.tree.getHexRoot(),
-            [...expectedSlowRelayRoot.leaves],
-            expectedSlowRelayRoot.tree.getHexRoot()
-          )
-      );
-    return false;
+        `\n` +
+        PoolRebalanceUtils.generateMarkdownForRootBundle(
+          this.clients.hubPoolClient,
+          this.chainIdListForBundleEvaluationBlockNumbers,
+          hubPoolChainId,
+          blockRangesImpliedByBundleEndBlocks,
+          [...expectedPoolRebalanceRoot.leaves],
+          expectedPoolRebalanceRoot.tree.getHexRoot(),
+          [...expectedRelayerRefundRoot.leaves],
+          expectedRelayerRefundRoot.tree.getHexRoot(),
+          [...expectedSlowRelayRoot.leaves],
+          expectedSlowRelayRoot.tree.getHexRoot()
+        ),
+    };
   }
 
   async executeSlowRelayLeaves() {

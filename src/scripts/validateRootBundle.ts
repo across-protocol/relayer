@@ -25,7 +25,7 @@ import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalance
 config();
 let logger: winston.Logger;
 
-export async function run(_logger: winston.Logger): Promise<boolean> {
+export async function run(_logger: winston.Logger) {
   logger = _logger;
   if (!process.env.REQUEST_TIME)
     throw new Error("Must set environment variable 'REQUEST_TIME=<NUMBER>' to disputed price request time");
@@ -96,7 +96,7 @@ export async function run(_logger: winston.Logger): Promise<boolean> {
     message: "Validating root bundle",
     rootBundle,
   });
-  const isValid = await dataworker.validateRootBundle(
+  const { valid, reason } = await dataworker.validateRootBundle(
     config.hubPoolChainId,
     widestPossibleBlockRanges,
     rootBundle,
@@ -105,12 +105,11 @@ export async function run(_logger: winston.Logger): Promise<boolean> {
 
   logger.info({
     at: "RootBundleValidator",
-    message: "Root bundle is valid",
+    message: "Validation results",
     rootBundle,
-    isValid,
+    valid,
+    invalidReason: reason,
   });
-
-  return isValid;
 }
 
 if (require.main === module) {
