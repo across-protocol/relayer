@@ -11,7 +11,7 @@ import { getFillsToRefundCountGroupedByRepaymentChain, updateFillsToRefundWithVa
 import { getFillsInRange, getRefundInformationFromFill, updateFillsToRefundWithSlowFill } from "./FillUtils";
 import { getFillCountGroupedByProp } from "./FillUtils";
 import { getBlockRangeForChain } from "./DataworkerUtils";
-import { getUnfilledDepositCountGroupedByProp, getDepositCountGroupedByProp } from "./DepositUtils";
+import { getUnfilledDepositCountGroupedByProp, getDepositCountGroupedByToken } from "./DepositUtils";
 import { flattenAndFilterUnfilledDepositsByOriginChain } from "./DepositUtils";
 import { updateUnfilledDepositsWithMatchedDeposit, getUniqueDepositsInRange } from "./DepositUtils";
 import { constructSpokePoolClientsForBlockAndUpdate } from "../common/ClientHelper";
@@ -174,7 +174,7 @@ export class Dataworker {
       message: `Finished loading spoke pool data`,
       blockRangesForChains,
       unfilledDepositsByDestinationChain: getUnfilledDepositCountGroupedByProp(unfilledDeposits, "destinationChainId"),
-      depositsInRangeByOriginChain: getDepositCountGroupedByProp(deposits, "originChainId"),
+      depositsInRangeByOriginChain: getDepositCountGroupedByToken(deposits),
       fillsToRefundInRangeByRepaymentChain: getFillsToRefundCountGroupedByRepaymentChain(fillsToRefund),
       allValidFillsByDestinationChain: getFillCountGroupedByProp(allValidFills, "destinationChainId"),
       allValidFillsInRangeByDestinationChain: getFillCountGroupedByProp(allValidFillsInRange, "destinationChainId"),

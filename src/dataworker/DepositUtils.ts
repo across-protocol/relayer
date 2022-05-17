@@ -4,10 +4,11 @@ import { assign, toBN } from "../utils";
 import { getBlockRangeForChain } from "./DataworkerUtils";
 import { isFirstFillForDeposit } from "./FillUtils";
 
-export function getDepositCountGroupedByProp(deposits: DepositWithBlock[], propName: string) {
+export function getDepositCountGroupedByToken(deposits: DepositWithBlock[]) {
   return deposits.reduce((result, deposit: DepositWithBlock) => {
-    const existingCount = result[deposit[propName]];
-    result[deposit[propName]] = existingCount === undefined ? 1 : existingCount + 1;
+    result[deposit.originChainId] = result[deposit.originChainId] ?? {};
+    const existingCount = result[deposit.originChainId][deposit.originToken];
+    result[deposit.originChainId][deposit.originToken] = existingCount === undefined ? 1 : existingCount + 1;
     return result;
   }, {});
 }
