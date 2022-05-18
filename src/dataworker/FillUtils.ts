@@ -163,13 +163,11 @@ export function getFillsInRange(
 }
 
 export function getFillCountGroupedByToken(fills: FillWithBlock[]) {
-  return fills.reduce((result, fill: FillWithBlock) => {
-    result[fill.destinationChainId] = result[fill.destinationChainId] ?? {};
-    const fillPath = `${fill.originChainId}-->${fill.destinationToken}`;
-    const existingCount = result[fill.destinationChainId][fillPath];
-    result[fill.destinationChainId][fillPath] = existingCount === undefined ? 1 : existingCount + 1;
-    return result;
-  }, {});
+  return groupObjectCountsByTwoProps(
+    fills,
+    "destinationChainId",
+    (fill) => `${fill.originChainId}-->${fill.destinationToken}`
+  );
 }
 
 export function getFillsToRefundCountGroupedByRepaymentChain(fills: FillsToRefund) {

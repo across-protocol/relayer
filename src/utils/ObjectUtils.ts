@@ -34,11 +34,11 @@ export function groupObjectCountsByThreeProps(
     return result;
   }, {});
 }
-export function groupObjectCountsByTwoProps(objects: any[], primaryProp: string, secondaryProp: string) {
+export function groupObjectCountsByTwoProps(objects: any[], primaryProp: string, getSecondaryProp: (obj) => string) {
   return objects.reduce((result, obj) => {
     result[obj[primaryProp]] = result[obj[primaryProp]] ?? {};
-    const existingCount = result[obj[primaryProp]][obj[secondaryProp]];
-    result[obj[primaryProp]][obj[secondaryProp]] = existingCount === undefined ? 1 : existingCount + 1;
+    const existingCount = result[obj[primaryProp]][getSecondaryProp(obj)];
+    result[obj[primaryProp]][getSecondaryProp(obj)] = existingCount === undefined ? 1 : existingCount + 1;
     return result;
   }, {});
 }
