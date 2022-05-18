@@ -1,9 +1,9 @@
 // NOTE: The "finalizers/" directory structure is just a strawman and is expected to change. This script is just
 // meant to demonstrate how we can use the new @arbitrum/sdk to finalize L2 --> L1 messages. Note that arb-ts
-// will be deprecated soon so this scratch work will also be helpful for changing across-v1 code to work if we 
+// will be deprecated soon so this scratch work will also be helpful for changing across-v1 code to work if we
 // still need to finalize messages after the arbitrum nitro upgrade.
-import { convertFromWei, delay, Logger, Wallet } from "../utils";
-import { getProvider, getSigner, winston } from "../utils"
+import { convertFromWei, delay, Logger, toBN, toBNWei, Wallet } from "../utils";
+import { getProvider, getSigner, winston } from "../utils";
 import { constructClients, updateClients, updateSpokePoolClients } from "../common";
 import { L2TransactionReceipt, getL2Network, L2ToL1MessageStatus, L2ToL1MessageWriter } from "@arbitrum/sdk";
 import { RelayerConfig } from "../relayer/RelayerConfig";
@@ -25,7 +25,8 @@ export function groupObjectCountsByProps(
     result[obj[primaryProp]] = result[obj[primaryProp]] ?? {};
     result[obj[primaryProp]][obj[secondaryProp]] = result[obj[primaryProp]][obj[secondaryProp]] ?? {};
     const existingCount = result[obj[primaryProp]][obj[secondaryProp]][obj[tertiaryProp]];
-    result[obj[primaryProp]][obj[secondaryProp]][obj[tertiaryProp]] = existingCount === undefined ? 1 : existingCount + 1;
+    result[obj[primaryProp]][obj[secondaryProp]][obj[tertiaryProp]] =
+      existingCount === undefined ? 1 : existingCount + 1;
     return result;
   }, {});
 }
@@ -35,7 +36,7 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
   const baseSigner = await getSigner();
   const hubSigner = baseSigner.connect(getProvider(config.hubPoolChainId));
   const commonClients = await constructClients(logger, config);
-  const spokePoolClients = await constructSpokePoolClientsWithLookback(logger, commonClients, config, baseSigner)
+  const spokePoolClients = await constructSpokePoolClientsWithLookback(logger, commonClients, config, baseSigner);
 
   // TODO: Promise.all the updates?
   await updateClients(commonClients);
@@ -69,16 +70,34 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
     //   //   "0x92f9a0115830b037908c58e0ac4ff32619be09b17ceee6a5114c8d62c84c9a54", // 0.003 WETH bridged on 05/17/22, can't be finalized until 05/24/22
     //   //   "0x884c57cf97897a5c2b1af2c9197d5130961d06ef20e7d8d93265b3338b49d962", // 2.7mil USDC bridged on 05/12/22, finalized in 0x6e44001f4297646db2f7e99d32b72312d0c2bc9f3d6653cd21c129af947987f3
     //   // ]
-    //   // event = {
-    //   //   amountToReturn: "0";
-    //   //   chainId: 42161;
-    //   //   leafId: 0;
-    //   //   l2TokenAddress: "xxx";
-    //   //   caller: "xxx";
-    //   //   transactionHash: "fill in from above";
-    //   // } 
+    // const mockTokensBridged: TokensBridged[] = [
+    //   {
+    //     amountToReturn: toBN("3000000"),
+    //     chainId: 42161,
+    //     leafId: 0,
+    //     l2TokenAddress: "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8",
+    //     caller: "0x9a8f92a830a5cb89a3816e3d267cb7791c16b04d",
+    //     transactionHash: "0x1d35b2fd1330ec331c74c9475115361d648f98014929471bdbee9fabe2c0b9da",
+    //   },
+    //   {
+    //     amountToReturn: toBNWei("0.003"),
+    //     chainId: 42161,
+    //     leafId: 0,
+    //     l2TokenAddress: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+    //     caller: "0x9a8f92a830a5cb89a3816e3d267cb7791c16b04d",
+    //     transactionHash: "0x92f9a0115830b037908c58e0ac4ff32619be09b17ceee6a5114c8d62c84c9a54",
+    //   },
+    //   {
+    //     amountToReturn: toBN("2700000000000"),
+    //     chainId: 42161,
+    //     leafId: 0,
+    //     l2TokenAddress: "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8",
+    //     caller: "0x9a8f92a830a5cb89a3816e3d267cb7791c16b04d",
+    //     transactionHash: "0x884c57cf97897a5c2b1af2c9197d5130961d06ef20e7d8d93265b3338b49d962",
+    //   }
+    // ]
 
-    const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner)
+    const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner);
     if (finalizableMessages.length > 0) {
       for (const l2Message of finalizableMessages) {
         const res = await l2Message.message.execute(l2Message.proofInfo);
@@ -89,11 +108,11 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
           rec,
         });
       }
-    } else 
+    } else
       logger.debug({
         at: "ArbitrumFinalizer",
-        message: "No finalizable messages"
-      })
+        message: "No finalizable messages",
+      });
   }
 }
 
@@ -101,8 +120,8 @@ export async function finalizeL2Transaction(
   logger: winston.Logger,
   event: TokensBridged,
   l1Signer: Wallet
-): Promise<{ 
-  message: L2ToL1MessageWriter; 
+): Promise<{
+  message: L2ToL1MessageWriter;
   proofInfo: any; // MessageBatchProofInfo not exported by arbitrum/sdk so just use type any for now
   status: string;
 }> {
@@ -116,17 +135,18 @@ export async function finalizeL2Transaction(
   });
   const l2Provider = getProvider(event.chainId);
   const receipt = await l2Provider.getTransactionReceipt(event.transactionHash);
-  const l2Receipt = new L2TransactionReceipt(receipt); 
+  const l2Receipt = new L2TransactionReceipt(receipt);
 
-  // Get L2-to-L1 message objects contained in transaction. In principle, a single transaction could trigger 
-  // any number of outgoing messages; the common case will be there's only one. In the context of Across V2, 
+  // Get L2-to-L1 message objects contained in transaction. In principle, a single transaction could trigger
+  // any number of outgoing messages; the common case will be there's only one. In the context of Across V2,
   // there should only ever be one.
-  const l2ToL1Messages = await l2Receipt.getL2ToL1Messages(l1Signer, await getL2Network(l2Provider))
+  const l2ToL1Messages = await l2Receipt.getL2ToL1Messages(l1Signer, await getL2Network(l2Provider));
   if (l2ToL1Messages.length !== 1) {
     const error = new Error(`No (or wrong number) of outgoing messages found in transaction:${event.transactionHash}`);
     logger.error({
       at: "ArbitrumFinalizer",
-      message: "Transaction that emitted TokensBridged event unexpectedly contains more than 1, or 0, L2-to-L1 messages 🤢!",
+      message:
+        "Transaction that emitted TokensBridged event unexpectedly contains more than 1, or 0, L2-to-L1 messages 🤢!",
       txnHash: event.transactionHash,
       error,
     });
@@ -140,7 +160,7 @@ export async function finalizeL2Transaction(
   }
   const l2Message = l2ToL1Messages[0];
 
-   // Now fetch the proof info we'll need in order to execute or check execution status.
+  // Now fetch the proof info we'll need in order to execute or check execution status.
   const proofInfo = await l2Message.tryGetProof(l2Provider);
 
   // Check if already executed or unconfirmed (i.e. not yet available to be executed on L1 following dispute
@@ -148,7 +168,7 @@ export async function finalizeL2Transaction(
   if (await l2Message.hasExecuted(proofInfo)) {
     logger.debug({
       at: "ArbitrumFinalizer",
-      message: "Message already executed, nothing to do."
+      message: "Message already executed, nothing to do.",
     });
     return {
       message: l2Message,
@@ -161,7 +181,7 @@ export async function finalizeL2Transaction(
     logger.debug({
       at: "ArbitrumFinalizer",
       message: "Message is unconfirmed, nothing to do.",
-      outboxMessageExecutionStatus: L2ToL1MessageStatus[outboxMessageExecutionStatus]
+      outboxMessageExecutionStatus: L2ToL1MessageStatus[outboxMessageExecutionStatus],
     });
     return {
       message: l2Message,
@@ -170,7 +190,7 @@ export async function finalizeL2Transaction(
     };
   }
 
-  // Now that its confirmed and not executed, we can use the Merkle proof data to execute our 
+  // Now that its confirmed and not executed, we can use the Merkle proof data to execute our
   // message in its outbox entry.
   return {
     message: l2Message,
@@ -185,12 +205,12 @@ export async function getFinalizableMessages(logger: winston.Logger, tokensBridg
   ).map((result, index) => {
     return { ...result, chain: tokensBridged[index].chainId, token: tokensBridged[index].l2TokenAddress };
   });
-  const statusesGrouped = groupObjectCountsByProps(l2MessagesToExecute, "status", "chain", "token")
+  const statusesGrouped = groupObjectCountsByProps(l2MessagesToExecute, "status", "chain", "token");
   logger.debug({
     at: "ArbitrumFinalizer",
     message: "Queried outbox statuses for messages",
-    statusesGrouped
-  })
+    statusesGrouped,
+  });
   return l2MessagesToExecute.filter((x) => x.status === L2ToL1MessageStatus[L2ToL1MessageStatus.CONFIRMED]);
 }
 
@@ -203,7 +223,7 @@ if (require.main === module) {
       process.exit(0);
     })
     .catch(async (error) => {
-      console.error(error)
+      console.error(error);
       logger.error({ at: "InfrastructureEntryPoint", message: "There was an error in the main entry point!", error });
       await delay(5);
       await run(logger, config);

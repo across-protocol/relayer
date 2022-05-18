@@ -50,7 +50,7 @@ export async function constructSpokePoolClientsForBlockAndUpdate(
       return [chainId, client];
     })
   );
-  await updateSpokePoolClients(spokePoolClients)
+  await updateSpokePoolClients(spokePoolClients);
   return spokePoolClients;
 }
 

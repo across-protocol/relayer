@@ -67,8 +67,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
 
   const commonClients = await constructClients(logger, config);
 
-  const spokePoolClients = await constructSpokePoolClientsWithLookback(logger, commonClients, config, baseSigner)
-
+  const spokePoolClients = await constructSpokePoolClientsWithLookback(logger, commonClients, config, baseSigner);
 
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients, commonClients.hubPoolClient);
 
