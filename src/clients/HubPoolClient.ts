@@ -328,11 +328,17 @@ export class HubPoolClient {
     // We can assume that the pool rebalance root is never empty if there is a pending root on-chain, regardless
     // if the root is disputable.
     if (this.pendingRootBundle.poolRebalanceRoot !== EMPTY_MERKLE_ROOT) {
-      // We make a potentially dangerous assumption here that the most recent ProposeRootBundle event found in the
-      // the above event search corresponds to the pending root bundle. This could NOT be the case if
-      // `this.eventSearchConfig.toBlock !== undefined`, but in most cases this is true because we set the `toBlock`
-      // in the `eventSearchConfig` to `null` in `common/ClientHelper.ts`.
+      // Throw an error if this client is configured in such a way that the most recent event does not match
+      // the pending root bundle. We should handle this case eventually, but for now loudly error so we don't dispute
+      // the wrong pending bundle.
       const mostRecentProposedRootBundle = sortEventsDescending(this.proposedRootBundles)[0];
+      if (
+        mostRecentProposedRootBundle.poolRebalanceRoot !== this.pendingRootBundle.poolRebalanceRoot &&
+        mostRecentProposedRootBundle.relayerRefundRoot !== this.pendingRootBundle.relayerRefundRoot &&
+        mostRecentProposedRootBundle.slowRelayRoot !== this.pendingRootBundle.slowRelayRoot
+      )
+        throw new Error("Latest root bundle queried by client does not match pending root bundle");
+
       this.pendingRootBundle.bundleEvaluationBlockNumbers =
         mostRecentProposedRootBundle.bundleEvaluationBlockNumbers.map((block: BigNumber) => block.toNumber());
       this.pendingRootBundle.proposalBlockNumber = mostRecentProposedRootBundle.blockNumber;
