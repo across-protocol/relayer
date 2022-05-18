@@ -43,10 +43,10 @@ export function groupObjectCountsByTwoProps(objects: any[], primaryProp: string,
   }, {});
 }
 
-export function groupObjectCountsByProp(objects: any[], primaryProp: string) {
+export function groupObjectCountsByProp(objects: any[], getProp: (obj) => string) {
   return objects.reduce((result, obj) => {
-    const existingCount = result[obj[primaryProp]];
-    result[obj[primaryProp]] = existingCount === undefined ? 1 : existingCount + 1;
+    const existingCount = result[getProp(obj)];
+    result[getProp(obj)] = existingCount === undefined ? 1 : existingCount + 1;
     return result;
   }, {});
 }

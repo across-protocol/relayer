@@ -1,5 +1,5 @@
-import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree } from "../utils";
-import { winston, toBN, EMPTY_MERKLE_ROOT, groupObjectCountsByProp } from "../utils";
+import { buildRelayerRefundTree, buildPoolRebalanceLeafTree } from "../utils";
+import { winston, toBN, EMPTY_MERKLE_ROOT, buildSlowRelayTree } from "../utils";
 import { UnfilledDeposit, Deposit, DepositWithBlock, RootBundle, UnfilledDepositsForOriginChain } from "../interfaces";
 import { FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
 import { BigNumberForToken, FillsToRefund, RelayData } from "../interfaces";
@@ -7,11 +7,10 @@ import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
 import * as RelayerRefundUtils from "./RelayerRefundUtils";
-import { assignValidFillToFillsToRefund, getFillCountGroupedByToken } from "./FillUtils";
-import { getFillsInRange, getRefundInformationFromFill, updateTotalRefundAmount } from "./FillUtils";
-import { updateTotalRealizedLpFeePct, getFillsToRefundCountGroupedByRepaymentChain } from "./FillUtils";
-import { getBlockRangeForChain } from "./DataworkerUtils";
-import { getUnfilledDepositCountGroupedByProp, getDepositCountGroupedByToken } from "./DepositUtils";
+import { assignValidFillToFillsToRefund } from "./FillUtils";
+import { getRefundInformationFromFill, updateTotalRefundAmount } from "./FillUtils";
+import { updateTotalRealizedLpFeePct } from "./FillUtils";
+import { getBlockRangeForChain, prettyPrintSpokePoolEvents } from "./DataworkerUtils";
 import { flattenAndFilterUnfilledDepositsByOriginChain } from "./DepositUtils";
 import { updateUnfilledDepositsWithMatchedDeposit, getUniqueDepositsInRange } from "./DepositUtils";
 import { constructSpokePoolClientsForBlockAndUpdate } from "../common/ClientHelper";
@@ -68,6 +67,7 @@ export class Dataworker {
 
     const unfilledDepositsForOriginChain: UnfilledDepositsForOriginChain = {};
     const fillsToRefund: FillsToRefund = {};
+    const allRelayerRefunds: any[] = [];
     const deposits: DepositWithBlock[] = [];
     const allValidFills: FillWithBlock[] = [];
     const allInvalidFills: FillWithBlock[] = [];
@@ -141,6 +141,7 @@ export class Dataworker {
             // Fills to refund includes both slow and non-slow fills and they both should increase the
             // total realized LP fee %.
             assignValidFillToFillsToRefund(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
+            allRelayerRefunds.push({ repaymentToken, repaymentChain: chainToSendRefundTo });
             updateTotalRealizedLpFeePct(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
 
             // Save deposit as one that is eligible for a slow fill, since there is a fill
@@ -161,34 +162,28 @@ export class Dataworker {
     // out any deposits that are fully filled.
     const unfilledDeposits = flattenAndFilterUnfilledDepositsByOriginChain(unfilledDepositsForOriginChain);
 
-    const allInvalidFillsInRange = getFillsInRange(
-      allInvalidFills,
+    const spokeEventsReadable = prettyPrintSpokePoolEvents(
       blockRangesForChains,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    );
-    const allValidFillsInRange = getFillsInRange(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      deposits,
       allValidFills,
-      blockRangesForChains,
-      this.chainIdListForBundleEvaluationBlockNumbers
+      allRelayerRefunds,
+      unfilledDeposits,
+      allInvalidFills
     );
     this.logger.debug({
       at: "Dataworker",
       message: `Finished loading spoke pool data`,
       blockRangesForChains,
-      depositsInRangeByOriginChain: getDepositCountGroupedByToken(deposits),
-      allValidFillsInRangeByDestinationChain: getFillCountGroupedByToken(allValidFillsInRange),
-      fillsToRefundInRangeByRepaymentChain: getFillsToRefundCountGroupedByRepaymentChain(fillsToRefund),
-      unfilledDepositsByDestinationChain: getUnfilledDepositCountGroupedByProp(unfilledDeposits, "destinationChainId"),
-      allValidFillsByDestinationChain: groupObjectCountsByProp(allValidFills, "destinationChainId"),
-      allInvalidFillsInRangeByDestinationChain: getFillCountGroupedByToken(allInvalidFillsInRange),
+      ...spokeEventsReadable,
     });
 
-    if (allInvalidFillsInRange.length > 0)
+    if (Object.keys(spokeEventsReadable.allInvalidFillsInRangeByDestinationChain).length > 0)
       this.logger.info({
         at: "Dataworker",
         message: `Finished loading spoke pool data and found some invalid fills in range`,
         blockRangesForChains,
-        allInvalidFillsInRangeByDestinationChain: groupObjectCountsByProp(allInvalidFillsInRange, "destinationChainId"),
+        allInvalidFillsInRangeByDestinationChain: spokeEventsReadable.allInvalidFillsInRangeByDestinationChain,
       });
 
     // Remove deposits that have been fully filled from unfilled deposit array

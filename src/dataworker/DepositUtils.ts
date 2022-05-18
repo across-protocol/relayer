@@ -1,22 +1,11 @@
 import { SpokePoolClient } from "../clients";
 import { Deposit, DepositWithBlock, Fill, UnfilledDeposit, UnfilledDepositsForOriginChain } from "../interfaces";
-import { assign, groupObjectCountsByTwoProps, toBN } from "../utils";
+import { assign, toBN } from "../utils";
 import { getBlockRangeForChain } from "./DataworkerUtils";
 import { isFirstFillForDeposit } from "./FillUtils";
 
 export function getDepositPath(deposit: Deposit): string {
   return `${deposit.originToken}-->${deposit.destinationChainId}`;
-}
-export function getDepositCountGroupedByToken(deposits: DepositWithBlock[]) {
-  return groupObjectCountsByTwoProps(deposits, "originChainId", (deposit) => getDepositPath(deposit));
-}
-
-export function getUnfilledDepositCountGroupedByProp(unfilledDeposits: UnfilledDeposit[], propName: string) {
-  return unfilledDeposits.reduce((result, unfilledDeposit: UnfilledDeposit) => {
-    const existingCount = result[unfilledDeposit.deposit[propName]];
-    result[unfilledDeposit.deposit[propName]] = existingCount === undefined ? 1 : existingCount + 1;
-    return result;
-  }, {});
 }
 
 export function updateUnfilledDepositsWithMatchedDeposit(

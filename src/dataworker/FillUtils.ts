@@ -1,13 +1,6 @@
 import { HubPoolClient } from "../clients";
 import { Fill, FillsToRefund, FillWithBlock } from "../interfaces";
-import {
-  assign,
-  getRealizedLpFeeForFills,
-  getRefundForFills,
-  groupObjectCountsByTwoProps,
-  sortEventsDescending,
-  toBN,
-} from "../utils";
+import { assign, getRealizedLpFeeForFills, getRefundForFills, sortEventsDescending, toBN } from "../utils";
 import { getBlockRangeForChain } from "./DataworkerUtils";
 
 export function getRefundInformationFromFill(
@@ -160,24 +153,4 @@ export function getFillsInRange(
     );
     return fill.blockNumber <= blockRangeForChain[1] && fill.blockNumber >= blockRangeForChain[0];
   });
-}
-
-export function getFillCountGroupedByToken(fills: FillWithBlock[]) {
-  return groupObjectCountsByTwoProps(
-    fills,
-    "destinationChainId",
-    (fill) => `${fill.originChainId}-->${fill.destinationToken}`
-  );
-}
-
-export function getFillsToRefundCountGroupedByRepaymentChain(fills: FillsToRefund) {
-  return Object.keys(fills).reduce((endResult, repaymentChain) => {
-    endResult[repaymentChain] = endResult[repaymentChain] ?? {};
-    return Object.keys(fills[repaymentChain]).reduce((result, repaymentToken) => {
-      const existingCount = result[repaymentChain][repaymentToken];
-      const fillCount = fills[repaymentChain][repaymentToken].fills.length;
-      result[repaymentChain][repaymentToken] = existingCount === undefined ? fillCount : existingCount + fillCount;
-      return result;
-    }, endResult);
-  }, {});
 }
