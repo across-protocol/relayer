@@ -131,7 +131,7 @@ export class HubPoolClient {
       );
 
       // If chain list doesn't contain chain, then bundleEvalBlockNumber returns 0 and the following check
-      // always fail.
+      // always fails.
       if (bundleEvalBlockNumber >= block) {
         endingBlockNumber = bundleEvalBlockNumber;
         // Since events are sorted from oldest to newest, and bundle block ranges should only increase, exit as soon
@@ -148,34 +148,47 @@ export class HubPoolClient {
     ) as ProposedRootBundle;
   }
 
+  getFollowingRootBundle(currentRootBundle: ProposedRootBundle) {
+    return sortEventsAscending(this.proposedRootBundles).find(
+      (_rootBundle: ProposedRootBundle) => _rootBundle.blockNumber > currentRootBundle.blockNumber
+    ) as ProposedRootBundle;
+  }
+
+  getExecutedLeavesForRootBundle(
+    rootBundle: ProposedRootBundle,
+    latestMainnetBlock: number,
+    followingRootBundleBlock: number
+  ) {
+    return sortEventsAscending(this.executedRootBundles).filter(
+      (executedLeaf: ExecutedRootBundle) =>
+        executedLeaf.blockNumber <= latestMainnetBlock &&
+        // Note: We can use > instead of >= here because a leaf can never be executed in same block as its root
+        // proposal due to bundle liveness enforced by HubPool. This importantly avoids the edge case
+        // where the execution all leaves occurs in the same block as the next proposal, leading us to think
+        // that the next proposal is fully executed when its not.
+        executedLeaf.blockNumber > rootBundle.blockNumber &&
+        // This <= makes sense because you could have an execution of a leaf in the same block as the proposal of
+        // the next.
+        executedLeaf.blockNumber <= followingRootBundleBlock
+    ) as ExecutedRootBundle[];
+  }
+
   getNextBundleStartBlockNumber(chainIdList: number[], latestMainnetBlock: number, chainId: number): number {
     // Search for latest ProposeRootBundleExecuted event followed by all of its RootBundleExecuted event suggesting
     // that all pool rebalance leaves were executed. This ignores any proposed bundles that were partially executed.
     const latestFullyExecutedPoolRebalanceRoot = sortEventsDescending(this.proposedRootBundles).find(
-      (proposedRootBundle: ProposedRootBundle) => {
-        if (proposedRootBundle.blockNumber > latestMainnetBlock) return false;
-        const followingProposedRootBundle = sortEventsAscending(this.proposedRootBundles).find(
-          (_followingProposedRootBundle: ProposedRootBundle) =>
-            _followingProposedRootBundle.blockNumber > proposedRootBundle.blockNumber
-        ) as ProposedRootBundle;
-        const followingProposedRootBundleBlock = followingProposedRootBundle
-          ? followingProposedRootBundle.blockNumber
-          : latestMainnetBlock;
+      (rootBundle: ProposedRootBundle) => {
+        if (rootBundle.blockNumber > latestMainnetBlock) return false;
+        const nextRootBundle = this.getFollowingRootBundle(rootBundle);
+        const followingProposedRootBundleBlock = nextRootBundle ? nextRootBundle.blockNumber : latestMainnetBlock;
         // Figure out how many pool rebalance leaves were executed for this root bundle, but only count executed
         // leaves before the `latestMainnetBlock` since that's the block height snapshot we're querying.
-        const executedPoolRebalanceLeaves = sortEventsAscending(this.executedRootBundles).filter(
-          (executedLeaf: ExecutedRootBundle) =>
-            executedLeaf.blockNumber <= latestMainnetBlock &&
-            // Note: We can use > instead of >= here because a leaf can never be executed in same block as its root
-            // proposal due to bundle liveness enforced by HubPool. This importantly avoids the edge case
-            // where the execution all leaves occurs in the same block as the next proposal, leading us to think
-            // that the next proposal is fully executed when its not.
-            executedLeaf.blockNumber > proposedRootBundle.blockNumber &&
-            // This <= makes sense because you could have an execution of a leaf in the same block as the proposal of
-            // the next.
-            executedLeaf.blockNumber <= followingProposedRootBundleBlock
-        ) as ExecutedRootBundle[];
-        return executedPoolRebalanceLeaves.length === proposedRootBundle.poolRebalanceLeafCount;
+        const executedPoolRebalanceLeaves = this.getExecutedLeavesForRootBundle(
+          rootBundle,
+          latestMainnetBlock,
+          followingProposedRootBundleBlock
+        );
+        return executedPoolRebalanceLeaves.length === rootBundle.poolRebalanceLeafCount;
       }
     ) as ProposedRootBundle;
 

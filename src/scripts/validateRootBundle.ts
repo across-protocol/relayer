@@ -26,6 +26,7 @@ import { BlockFinder } from "@uma/sdk";
 import { DataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { RootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
+import { createDataworker } from "../dataworker";
 
 config();
 let logger: winston.Logger;
@@ -36,25 +37,13 @@ export async function validate(_logger: winston.Logger) {
     throw new Error("Must set environment variable 'REQUEST_TIME=<NUMBER>' to disputed price request time");
   const priceRequestTime = Number(process.env.REQUEST_TIME);
 
-  const config = new DataworkerConfig(process.env);
+  const { clients, config, dataworker } = await createDataworker(logger);
   logger[startupLogLevel(config)]({
     at: "RootBundleValidator",
     message: "Validating most recently proposed root bundle for request time",
     priceRequestTime,
     config,
   });
-
-  const clients: DataworkerClients = await constructDataworkerClients(logger, config);
-
-  const dataworker = new Dataworker(
-    logger,
-    clients,
-    Constants.CHAIN_ID_LIST_INDICES,
-    config.maxRelayerRepaymentLeafSizeOverride,
-    config.maxPoolRebalanceLeafSizeOverride,
-    config.tokenTransferThresholdOverride,
-    config.blockRangeEndBlockBuffer
-  );
 
   // Construct blockfinder to figure out which block corresponds with the disputed price request time.
   const blockFinder = new BlockFinder(
