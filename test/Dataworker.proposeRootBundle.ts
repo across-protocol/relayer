@@ -9,6 +9,7 @@ import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT } from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
+import { getDepositPath } from "../src/dataworker/DepositUtils";
 
 let spy: sinon.SinonSpy;
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -42,7 +43,8 @@ describe("Dataworker: Propose root bundle", async function () {
       ethers,
       MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
       MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
-      DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
+      DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
+      0
     ));
   });
   it("Simple lifecycle", async function () {
@@ -89,8 +91,10 @@ describe("Dataworker: Propose root bundle", async function () {
     const loadDataResults2 = getMostRecentLog(spy, "Finished loading spoke pool data");
     expect(loadDataResults2.blockRangesForChains).to.deep.equal(blockRange2);
     expect(loadDataResults2.unfilledDepositsByDestinationChain).to.deep.equal({ [destinationChainId]: 1 });
-    expect(loadDataResults2.depositsByOriginChain).to.deep.equal({ [originChainId]: 1 });
-    expect(loadDataResults2.fillsToRefundByRepaymentChain).to.deep.equal({
+    expect(loadDataResults2.depositsInRangeByOriginChain).to.deep.equal({
+      [originChainId]: { [getDepositPath(deposit)]: 1 },
+    });
+    expect(loadDataResults2.fillsToRefundInRangeByRepaymentChain).to.deep.equal({
       [destinationChainId]: { [erc20_2.address]: 1 },
     });
     expect(loadDataResults2.allValidFillsByDestinationChain).to.deep.equal({ [destinationChainId]: 1 });
@@ -128,18 +132,17 @@ describe("Dataworker: Propose root bundle", async function () {
 
     // TEST 3:
     // Submit another root bundle proposal and check bundle block range. There should be no leaves in the new range
-    // yet. In the bundle block range, only the two chains with pool rebalance leaves should have increased their
-    // start block.
+    // yet. In the bundle block range, all chains should have increased their start block, including those without
+    // pool rebalance leaves because they should use the chain's end block from the latest fully executed proposed
+    // root bundle, which should be the bundle block in expectedPoolRebalanceRoot2 + 1.
     await updateAllClients();
     await dataworkerInstance.proposeRootBundle();
     const latestBlock3 = await hubPool.provider.getBlockNumber();
     const blockRange3 = [
       [latestBlock2 + 1, latestBlock3],
       [latestBlock2 + 1, latestBlock3],
-      // The other chains in the chain ID list did not have pool rebalance leaves executed so their start block
-      // is still set at 0.
-      [0, latestBlock3],
-      [0, latestBlock3],
+      [latestBlock2 + 1, latestBlock3],
+      [latestBlock2 + 1, latestBlock3],
     ];
     expect(lastSpyLogIncludes(spy, "No pool rebalance leaves, cannot propose")).to.be.true;
     const loadDataResults3 = getMostRecentLog(spy, "Finished loading spoke pool data");
@@ -153,8 +156,8 @@ describe("Dataworker: Propose root bundle", async function () {
     const blockRange4 = [
       [latestBlock2 + 1, latestBlock4],
       [latestBlock2 + 1, latestBlock4],
-      [0, latestBlock4],
-      [0, latestBlock4],
+      [latestBlock2 + 1, latestBlock4],
+      [latestBlock2 + 1, latestBlock4],
     ];
     const expectedPoolRebalanceRoot4 = dataworkerInstance.buildPoolRebalanceRoot(blockRange4, spokePoolClients);
     const expectedRelayerRefundRoot4 = dataworkerInstance.buildRelayerRefundRoot(blockRange4, spokePoolClients);
@@ -162,11 +165,18 @@ describe("Dataworker: Propose root bundle", async function () {
     const loadDataResults4 = getMostRecentLog(spy, "Finished loading spoke pool data");
     expect(loadDataResults4.blockRangesForChains).to.deep.equal(blockRange4);
     expect(loadDataResults4.unfilledDepositsByDestinationChain).to.deep.equal({});
-    expect(loadDataResults4.depositsByOriginChain).to.deep.equal({});
-    expect(loadDataResults4.fillsToRefundByRepaymentChain).to.deep.equal({
+    expect(loadDataResults4.depositsInRangeByOriginChain).to.deep.equal({});
+    expect(loadDataResults4.fillsToRefundInRangeByRepaymentChain).to.deep.equal({
       [destinationChainId]: { [erc20_2.address]: 1 },
     });
-    expect(loadDataResults4.allValidFillsByDestinationChain).to.deep.equal({ [destinationChainId]: 1 });
+    // Should be 2 valid fills since we don't discriminate by block range for this list. Its important that refunds
+    // stays 1 though since there is only one fill in this block range. This test is actually really important because
+    // `allValidFillsByDestinationChain` should not constrain by block range otherwise the pool rebalance root
+    // can fail to be built in cases where a fill in the block range matches a deposit with a fill in a previous
+    // root bundle. This would be a case where there is excess slow fill payment sent to the spoke pool and we need
+    // to send some back to the hub pool, because of this fill in the current block range that came after the slow
+    // fill was sent.
+    expect(loadDataResults4.allValidFillsByDestinationChain).to.deep.equal({ [destinationChainId]: 2 });
 
     // Should have enqueued a new transaction:
     expect(lastSpyLogIncludes(spy, "Enqueing new root bundle proposal txn")).to.be.true;

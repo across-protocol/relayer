@@ -1,5 +1,6 @@
-import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, EventSearchConfig, toBN } from "../utils";
-import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery } from "../utils";
+import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, EventSearchConfig } from "../utils";
+import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
+import { EMPTY_MERKLE_ROOT } from "../utils";
 import { Deposit, L1Token, ProposedRootBundle, ExecutedRootBundle, RootBundle } from "../interfaces";
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
 
@@ -18,6 +19,7 @@ export class HubPoolClient {
   public isUpdated: boolean = false;
   public firstBlockToSearch: number;
   public latestBlockNumber: number;
+  public currentTime: number;
 
   constructor(
     readonly logger: winston.Logger,
@@ -118,7 +120,7 @@ export class HubPoolClient {
   }
 
   // This should find the ProposeRootBundle event whose bundle block number for `chain` is closest to the `block`
-  // without being smaller. It returns the bundle block number for the chain.
+  // without being smaller. It returns the bundle block number for the chain or undefined if not matched.
   getRootBundleEvalBlockNumberContainingBlock(block: number, chain: number, chainIdList: number[]): number | undefined {
     let endingBlockNumber: number;
     for (const rootBundle of sortEventsAscending(this.proposedRootBundles)) {
@@ -127,6 +129,9 @@ export class HubPoolClient {
         chain,
         chainIdList
       );
+
+      // If chain list doesn't contain chain, then bundleEvalBlockNumber returns 0 and the following check
+      // always fails.
       if (bundleEvalBlockNumber >= block) {
         endingBlockNumber = bundleEvalBlockNumber;
         // Since events are sorted from oldest to newest, and bundle block ranges should only increase, exit as soon
@@ -137,31 +142,72 @@ export class HubPoolClient {
     return endingBlockNumber;
   }
 
+  getMostRecentProposedRootBundle(latestBlockToSearch: number) {
+    return sortEventsDescending(this.proposedRootBundles).find(
+      (proposedRootBundle: ProposedRootBundle) => proposedRootBundle.blockNumber <= latestBlockToSearch
+    ) as ProposedRootBundle;
+  }
+
+  getFollowingRootBundle(currentRootBundle: ProposedRootBundle) {
+    return sortEventsAscending(this.proposedRootBundles).find(
+      (_rootBundle: ProposedRootBundle) => _rootBundle.blockNumber > currentRootBundle.blockNumber
+    ) as ProposedRootBundle;
+  }
+
+  getExecutedLeavesForRootBundle(
+    rootBundle: ProposedRootBundle,
+    latestMainnetBlock: number,
+    followingRootBundleBlock: number
+  ) {
+    return sortEventsAscending(this.executedRootBundles).filter(
+      (executedLeaf: ExecutedRootBundle) =>
+        executedLeaf.blockNumber <= latestMainnetBlock &&
+        // Note: We can use > instead of >= here because a leaf can never be executed in same block as its root
+        // proposal due to bundle liveness enforced by HubPool. This importantly avoids the edge case
+        // where the execution all leaves occurs in the same block as the next proposal, leading us to think
+        // that the next proposal is fully executed when its not.
+        executedLeaf.blockNumber > rootBundle.blockNumber &&
+        // This <= makes sense because you could have an execution of a leaf in the same block as the proposal of
+        // the next.
+        executedLeaf.blockNumber <= followingRootBundleBlock
+    ) as ExecutedRootBundle[];
+  }
+
   getNextBundleStartBlockNumber(chainIdList: number[], latestMainnetBlock: number, chainId: number): number {
-    // Search for the latest RootBundleExecuted event with a matching chainId while still being earlier than the
-    // latest block.
-    const latestRootBundleExecutedEvent = sortEventsDescending(this.executedRootBundles).find(
-      (event: ExecutedRootBundle) => event.blockNumber <= latestMainnetBlock && event.chainId === chainId
-    );
-
-    // TODO: If no event for chain ID, then we can return a conservative default starting block like 0,
-    // or we could throw an Error.
-    if (!latestRootBundleExecutedEvent) return 0;
-
-    // Once that event is found, search for the ProposeRootBundle event that is as late as possible, but earlier than
-    // the RootBundleExecuted event we just identified.
-    const mostRecentProposeRootBundleEventWithChain = sortEventsDescending(this.proposedRootBundles).find(
-      (rootBundle: ProposedRootBundle) => rootBundle.blockNumber <= latestRootBundleExecutedEvent.blockNumber
+    // Search for latest ProposeRootBundleExecuted event followed by all of its RootBundleExecuted event suggesting
+    // that all pool rebalance leaves were executed. This ignores any proposed bundles that were partially executed.
+    const latestFullyExecutedPoolRebalanceRoot = sortEventsDescending(this.proposedRootBundles).find(
+      (rootBundle: ProposedRootBundle) => {
+        if (rootBundle.blockNumber > latestMainnetBlock) return false;
+        const nextRootBundle = this.getFollowingRootBundle(rootBundle);
+        const followingProposedRootBundleBlock = nextRootBundle ? nextRootBundle.blockNumber : latestMainnetBlock;
+        // Figure out how many pool rebalance leaves were executed for this root bundle, but only count executed
+        // leaves before the `latestMainnetBlock` since that's the block height snapshot we're querying.
+        const executedPoolRebalanceLeaves = this.getExecutedLeavesForRootBundle(
+          rootBundle,
+          latestMainnetBlock,
+          followingProposedRootBundleBlock
+        );
+        return executedPoolRebalanceLeaves.length === rootBundle.poolRebalanceLeafCount;
+      }
     ) as ProposedRootBundle;
 
-    // Same situation as when we cannot find a ExecutedRootBundleEvent, if we can't find a ProposedRootBundle
-    // event, then either return 0 or throw an error.
-    if (!mostRecentProposeRootBundleEventWithChain) return 0;
+    // If no event, then we can return a conservative default starting block like 0,
+    // or we could throw an Error.
+    if (!latestFullyExecutedPoolRebalanceRoot) return 0;
 
     // Once this proposal event is found, determine its mapping of indices to chainId in its
     // bundleEvaluationBlockNumbers array using CHAIN_ID_LIST. For each chainId, their starting block number is that
     // chain's bundleEvaluationBlockNumber + 1 in this past proposal event.
-    return this.getBundleEndBlockForChain(mostRecentProposeRootBundleEventWithChain, chainId, chainIdList) + 1;
+    const endBlock = this.getBundleEndBlockForChain(latestFullyExecutedPoolRebalanceRoot, chainId, chainIdList);
+
+    // If `chainId` either doesn't exist in the chainIdList, or is at an index that doesn't exist in the root bundle
+    // event's bundle block range (e.g. bundle block range has two entries, chain ID list has three, and chain matches
+    // third entry), return 0 to indicate we want to get all history for this chain that we haven't seen before.
+
+    // This assumes that chain ID's are only added to the chain ID list over time, and that chains are never
+    // deleted.
+    return endBlock > 0 ? endBlock + 1 : 0;
   }
 
   getRunningBalanceBeforeBlockForChain(block: number, chain: number, l1Token: string): BigNumber {
@@ -207,6 +253,7 @@ export class HubPoolClient {
       executedRootBundleEvents,
       crossChainContractsSetEvents,
       pendingRootBundleProposal,
+      currentTime,
     ] = await Promise.all([
       paginatedEventQuery(this.hubPool, this.hubPool.filters.SetPoolRebalanceRoute(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), searchConfig),
@@ -214,17 +261,10 @@ export class HubPoolClient {
       paginatedEventQuery(this.hubPool, this.hubPool.filters.RootBundleExecuted(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.CrossChainContractsSet(), searchConfig),
       this.hubPool.rootBundleProposal(),
+      this.hubPool.getCurrentTime(),
     ]);
 
-    this.pendingRootBundle = {
-      poolRebalanceRoot: pendingRootBundleProposal.poolRebalanceRoot,
-      relayerRefundRoot: pendingRootBundleProposal.relayerRefundRoot,
-      slowRelayRoot: pendingRootBundleProposal.slowRelayRoot,
-      claimedBitMap: pendingRootBundleProposal.claimedBitMap,
-      proposer: pendingRootBundleProposal.proposer,
-      unclaimedPoolRebalanceLeafCount: pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount,
-      challengePeriodEndTimestamp: pendingRootBundleProposal.challengePeriodEndTimestamp,
-    };
+    this.currentTime = currentTime;
 
     for (const event of crossChainContractsSetEvents) {
       const args = spreadEventWithBlockNumber(event) as CrossChainContractsSet;
@@ -261,7 +301,7 @@ export class HubPoolClient {
 
     // For each enabled Lp token fetch the token symbol and decimals from the token contract. Note this logic will
     // only run iff a new token has been enabled. Will only append iff the info is not there already.
-    const tokenInfo = await Promise.all(
+    const tokenInfo: L1Token[] = await Promise.all(
       l1TokensLPEvents.map((event) => this.fetchTokenInfoFromContract(spreadEvent(event).l1Token))
     );
     for (const info of tokenInfo) if (!this.l1Tokens.includes(info)) this.l1Tokens.push(info);
@@ -272,6 +312,37 @@ export class HubPoolClient {
     this.executedRootBundles.push(
       ...executedRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as ExecutedRootBundle)
     );
+
+    this.pendingRootBundle = {
+      poolRebalanceRoot: pendingRootBundleProposal.poolRebalanceRoot,
+      relayerRefundRoot: pendingRootBundleProposal.relayerRefundRoot,
+      slowRelayRoot: pendingRootBundleProposal.slowRelayRoot,
+      proposer: pendingRootBundleProposal.proposer,
+      unclaimedPoolRebalanceLeafCount: pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount,
+      challengePeriodEndTimestamp: pendingRootBundleProposal.challengePeriodEndTimestamp,
+      bundleEvaluationBlockNumbers: undefined,
+      proposalBlockNumber: undefined,
+    };
+    // If pending proposal is active, even if it passed the liveness period, then we can load the following root
+    // bundle properties: `bundleEvaluationBlockNumbers` and `proposalBlockNumber`, otherwise they are not relevant.
+    // We can assume that the pool rebalance root is never empty if there is a pending root on-chain, regardless
+    // if the root is disputable.
+    if (this.pendingRootBundle.poolRebalanceRoot !== EMPTY_MERKLE_ROOT) {
+      // Throw an error if this client is configured in such a way that the most recent event does not match
+      // the pending root bundle. We should handle this case eventually, but for now loudly error so we don't dispute
+      // the wrong pending bundle.
+      const mostRecentProposedRootBundle = sortEventsDescending(this.proposedRootBundles)[0];
+      if (
+        mostRecentProposedRootBundle.poolRebalanceRoot !== this.pendingRootBundle.poolRebalanceRoot &&
+        mostRecentProposedRootBundle.relayerRefundRoot !== this.pendingRootBundle.relayerRefundRoot &&
+        mostRecentProposedRootBundle.slowRelayRoot !== this.pendingRootBundle.slowRelayRoot
+      )
+        throw new Error("Latest root bundle queried by client does not match pending root bundle");
+
+      this.pendingRootBundle.bundleEvaluationBlockNumbers =
+        mostRecentProposedRootBundle.bundleEvaluationBlockNumbers.map((block: BigNumber) => block.toNumber());
+      this.pendingRootBundle.proposalBlockNumber = mostRecentProposedRootBundle.blockNumber;
+    }
 
     this.isUpdated = true;
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
@@ -285,16 +356,22 @@ export class HubPoolClient {
     return { address, symbol, decimals };
   }
 
+  // Returns end block for `chainId` in ProposedRootBundle.bundleBlockEvalNumbers. Looks up chainId
+  // in chainId list, gets the index where its located, and returns the value of the index in
+  // bundleBlockEvalNumbers. Returns 0 if `chainId` can't be found in `chainIdList` and if index doesn't
+  // exist in bundleBlockEvalNumbers.
   private getBundleEndBlockForChain(
     proposeRootBundleEvent: ProposedRootBundle,
     chainId: number,
     chainIdList: number[]
   ): number {
     const bundleEvaluationBlockNumbers: BigNumber[] = proposeRootBundleEvent.bundleEvaluationBlockNumbers;
-    if (bundleEvaluationBlockNumbers.length !== chainIdList.length)
-      throw new Error("Chain ID list and bundle block eval range list length do not match");
     const chainIdIndex = chainIdList.indexOf(chainId);
-    if (chainIdIndex === -1) throw new Error(`Can't find chainId ${chainId} in chainIdList ${chainIdList}`);
+    if (chainIdIndex === -1) return 0;
+    // Sometimes, the root bundle event's chain ID list will update from bundle to bundle, so we need to check that
+    // the bundle evaluation block number list is long enough to contain this index. We assume that chain ID's
+    // are only added to the bundle block list, never deleted.
+    if (chainIdIndex >= bundleEvaluationBlockNumbers.length) return 0;
     return bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
   }
 }

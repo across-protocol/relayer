@@ -1,7 +1,16 @@
 import winston from "winston";
-import { getProvider, getSigner, getDeployedContract, getDeploymentBlockNumber, Wallet } from "../utils";
-import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient } from "../clients";
+import {
+  getProvider,
+  getSigner,
+  getDeployedContract,
+  getDeploymentBlockNumber,
+  Wallet,
+  SpokePool,
+  Contract,
+} from "../utils";
+import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
+import { DataworkerClients } from "../dataworker/DataworkerClientHelper";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -17,6 +26,34 @@ export function getSpokePoolSigners(baseSigner: Wallet, config: CommonConfig): {
   );
 }
 
+export async function constructSpokePoolClientsForBlockAndUpdate(
+  chainIdListForBundleEvaluationBlockNumbers: number[],
+  clients: DataworkerClients,
+  logger: winston.Logger,
+  latestMainnetBlock: number
+): Promise<{ [chainId: number]: SpokePoolClient }> {
+  const spokePoolClients = Object.fromEntries(
+    chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
+      const spokePoolContract = new Contract(
+        clients.hubPoolClient.getSpokePoolForBlock(latestMainnetBlock, Number(chainId)),
+        SpokePool.abi,
+        clients.spokePoolSigners[chainId]
+      );
+      const client = new SpokePoolClient(
+        logger,
+        spokePoolContract,
+        clients.configStoreClient,
+        Number(chainId),
+        clients.spokePoolClientSearchSettings[chainId],
+        clients.spokePoolClientSearchSettings[chainId].fromBlock
+      );
+      return [chainId, client];
+    })
+  );
+  await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update()));
+  return spokePoolClients;
+}
+
 export async function constructClients(logger: winston.Logger, config: CommonConfig): Promise<Clients> {
   // Create signers for each chain. Each is connected to an associated provider for that chain.
   const baseSigner = await getSigner();
@@ -30,7 +67,8 @@ export async function constructClients(logger: winston.Logger, config: CommonCon
 
   const hubPoolClientSearchSettings = {
     fromBlock: Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId)),
-    toBlock: null,
+    toBlock: null, // Important that we set this to `null` to always look up latest HubPool events such as
+    // ProposeRootBundle in order to match a bundle block evaluation block range with a pending root bundle.
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
   const hubPoolClient = new HubPoolClient(logger, hubPool, hubPoolClientSearchSettings);

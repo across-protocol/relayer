@@ -32,7 +32,8 @@ describe("HubPoolClient: RootBundle Events", async function () {
       ethers,
       constants.MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
       constants.MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
-      constants.DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
+      constants.DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
+      0
     ));
     hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
   });
@@ -44,9 +45,10 @@ describe("HubPoolClient: RootBundle Events", async function () {
 
     const liveness = Number(await hubPool.liveness());
     const proposeTime = Number(await hubPool.getCurrentTime());
-    await hubPool
+    const txn = await hubPool
       .connect(dataworker)
       .proposeRootBundle([11, 22], 2, tree.getHexRoot(), constants.mockTreeRoot, constants.mockTreeRoot);
+    const proposalBlockNumber = (await txn.wait()).blockNumber;
 
     expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1, 2])).to.equal(undefined);
     await hubPoolClient.update();
@@ -55,10 +57,11 @@ describe("HubPoolClient: RootBundle Events", async function () {
       poolRebalanceRoot: tree.getHexRoot(),
       relayerRefundRoot: constants.mockTreeRoot,
       slowRelayRoot: constants.mockTreeRoot,
-      claimedBitMap: toBN(0),
       proposer: dataworker.address,
       unclaimedPoolRebalanceLeafCount: 2,
       challengePeriodEndTimestamp: proposeTime + liveness,
+      bundleEvaluationBlockNumbers: [11, 22],
+      proposalBlockNumber,
     });
     expect(hubPoolClient.hasPendingProposal()).to.equal(true);
 
@@ -69,14 +72,10 @@ describe("HubPoolClient: RootBundle Events", async function () {
     expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(23, 2, [1, 2])).to.equal(undefined);
 
     // Chain ID list doesn't contain `chain`
-    expect(() => hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1, 3])).to.throw(
-      /Can't find chainId/
-    );
+    expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1, 3])).to.equal(undefined);
 
     // Chain ID list length doesn't match bundle block range length
-    expect(() => hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1])).to.throw(
-      /Chain ID list and bundle block eval range list length do not match/
-    );
+    expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1])).to.equal(undefined);
   });
   it("gets most recent RootBundleExecuted event for chainID and L1 token", async function () {
     const { tree: tree1, leaves: leaves1 } = await constructSimpleTree(toBNWei(100));
@@ -173,11 +172,12 @@ describe("HubPoolClient: RootBundle Events", async function () {
 
     await hubPoolClient.update();
 
-    // Propose one root bundle with two leaves for two different L2 chains.
-    const bundleBlockEvalNumbers = [11, 22];
+    // Propose one root bundle with a chain ID list length of 1
+    const bundleBlockEvalNumbers = [11];
+    const firstChainIdList = [leaves1[0].chainId.toNumber()];
     await hubPool
       .connect(dataworker)
-      .proposeRootBundle(bundleBlockEvalNumbers, 2, tree1.getHexRoot(), constants.mockTreeRoot, constants.mockTreeRoot);
+      .proposeRootBundle(bundleBlockEvalNumbers, 1, tree1.getHexRoot(), constants.mockTreeRoot, constants.mockTreeRoot);
     const proposalBlockNumber = await hubPool.provider.getBlockNumber();
 
     // Mine blocks so proposal and execution are at different blocks, so we can test what happens if either is not
@@ -186,23 +186,44 @@ describe("HubPoolClient: RootBundle Events", async function () {
     await hre.network.provider.send("evm_mine");
     await hre.network.provider.send("evm_mine");
 
+    // Don't execute the leaves yet. This should make the function return 0 as the start block since it
+    // ignores proposed root bundles that are not fully executed.
     await timer.setCurrentTime(Number(await timer.getCurrentTime()) + constants.refundProposalLiveness + 1);
-    await hubPool.connect(dataworker).executeRootBundle(...Object.values(leaves1[0]), tree1.getHexProof(leaves1[0]));
-    await hubPool.connect(dataworker).executeRootBundle(...Object.values(leaves1[1]), tree1.getHexProof(leaves1[1]));
-    const executionBlockNumber = await hubPool.provider.getBlockNumber();
+    const partialExecutionBlockNumber = await hubPool.provider.getBlockNumber();
 
-    const chainIdList = [leaves1[0].chainId.toNumber(), leaves1[1].chainId.toNumber()];
-
-    // Default case when client is unaware of events pre-update.
-    expect(hubPoolClient.getNextBundleStartBlockNumber(chainIdList, executionBlockNumber, chainIdList[0])).to.equal(0);
+    // No fully executed pool rebalance roots.
     await hubPoolClient.update();
+    expect(
+      hubPoolClient.getNextBundleStartBlockNumber(firstChainIdList, partialExecutionBlockNumber, firstChainIdList[0])
+    ).to.equal(0);
+
+    // Pool rebalance root is fully executed, returns block number based on fully executed root bundle at the latest
+    // mainnet block passed in.
+    await hubPool.connect(dataworker).executeRootBundle(...Object.values(leaves1[0]), tree1.getHexProof(leaves1[0]));
+    const executionBlockNumber = await hubPool.provider.getBlockNumber();
+    await hubPoolClient.update();
+    expect(
+      hubPoolClient.getNextBundleStartBlockNumber(firstChainIdList, executionBlockNumber, firstChainIdList[0])
+    ).to.equal(bundleBlockEvalNumbers[0] + 1);
+
+    // Chain that doesn't exist in chain ID list returns 0
+    expect(hubPoolClient.getNextBundleStartBlockNumber(firstChainIdList, executionBlockNumber, 999)).to.equal(0);
+
+    // Chain that does exist in chain ID list but at an index that doesn't exist in bundle block range list returns 0.
+    // In this case, the root bundle event's bundle list contains 1 chain, and we're looking up the chain matching the
+    // second index.
+    expect(hubPoolClient.getNextBundleStartBlockNumber([...firstChainIdList, 999], executionBlockNumber, 999)).to.equal(
+      0
+    );
 
     // Mine more blocks and Propose and execute another root bundle:
     await hre.network.provider.send("evm_mine");
     await hre.network.provider.send("evm_mine");
     await hre.network.provider.send("evm_mine");
 
+    // This time, create a bundle with a chain ID list length of 2.
     const secondBundleBlockEvalNumbers = [66, 77];
+    const secondChainIdList = [leaves1[0].chainId.toNumber(), leaves1[1].chainId.toNumber()];
     await hubPool
       .connect(dataworker)
       .proposeRootBundle([66, 77], 2, tree2.getHexRoot(), constants.mockTreeRoot, constants.mockTreeRoot);
@@ -210,24 +231,34 @@ describe("HubPoolClient: RootBundle Events", async function () {
     await hubPool.connect(dataworker).executeRootBundle(...Object.values(leaves2[0]), tree2.getHexProof(leaves2[0]));
     await hubPool.connect(dataworker).executeRootBundle(...Object.values(leaves2[1]), tree2.getHexProof(leaves2[1]));
     const secondExecutionBlockNumber = await hubPool.provider.getBlockNumber();
+
+    // When client is unaware of latest events pre-update, returns block from first update.
+    expect(
+      hubPoolClient.getNextBundleStartBlockNumber(secondChainIdList, secondExecutionBlockNumber, secondChainIdList[0])
+    ).to.equal(bundleBlockEvalNumbers[0] + 1);
     await hubPoolClient.update();
 
     // Happy case, latest block is equal to or greater than execution block number, returns bundle eval block + 1
     // for chain at correct index.
-    for (const chain of chainIdList) {
-      expect(hubPoolClient.getNextBundleStartBlockNumber(chainIdList, secondExecutionBlockNumber, chain)).to.equal(
-        secondBundleBlockEvalNumbers[chainIdList.indexOf(chain)] + 1
-      );
-      expect(hubPoolClient.getNextBundleStartBlockNumber(chainIdList, executionBlockNumber, chain)).to.equal(
-        bundleBlockEvalNumbers[chainIdList.indexOf(chain)] + 1
-      );
-    }
+    expect(
+      hubPoolClient.getNextBundleStartBlockNumber(secondChainIdList, secondExecutionBlockNumber, secondChainIdList[0])
+    ).to.equal(secondBundleBlockEvalNumbers[0] + 1);
+    expect(
+      hubPoolClient.getNextBundleStartBlockNumber(secondChainIdList, secondExecutionBlockNumber, secondChainIdList[1])
+    ).to.equal(secondBundleBlockEvalNumbers[1] + 1);
+
+    // Passing in older block returns older end block
+    expect(
+      hubPoolClient.getNextBundleStartBlockNumber(secondChainIdList, executionBlockNumber, secondChainIdList[0])
+    ).to.equal(bundleBlockEvalNumbers[0] + 1);
 
     // No ExecuteRootBundle events before block.
-    expect(hubPoolClient.getNextBundleStartBlockNumber(chainIdList, proposalBlockNumber, chainIdList[0])).to.equal(0);
+    expect(
+      hubPoolClient.getNextBundleStartBlockNumber(secondChainIdList, proposalBlockNumber, secondChainIdList[0])
+    ).to.equal(0);
 
     // No ProposeRootBundle events before block.
-    expect(hubPoolClient.getNextBundleStartBlockNumber(chainIdList, 0, chainIdList[0])).to.equal(0);
+    expect(hubPoolClient.getNextBundleStartBlockNumber(secondChainIdList, 0, secondChainIdList[0])).to.equal(0);
   });
   it("gets most recent CrossChainContractsSet event for chainID", async function () {
     const adapter = randomAddress();
