@@ -103,3 +103,12 @@ export interface RunningBalances {
     [l1TokenAddress: string]: BigNumber;
   };
 }
+
+export interface TokensBridged {
+  amountToReturn: BigNumber;
+  chainId: number;
+  leafId: number;
+  l2TokenAddress: string;
+  caller: string;
+  transactionHash: string;
+}
