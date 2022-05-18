@@ -17,3 +17,36 @@ export function assign(obj: any, keyPath: any[], value: any) {
   // If the object at the deep path is an object then append object wise.
   else obj[keyPath[lastKeyIndex]] = { ...obj[keyPath[lastKeyIndex]], ...value };
 }
+
+// Refactor to be more generalized with N props
+export function groupObjectCountsByThreeProps(
+  objects: any[],
+  primaryProp: string,
+  secondaryProp: string,
+  tertiaryProp: string
+) {
+  return objects.reduce((result, obj) => {
+    result[obj[primaryProp]] = result[obj[primaryProp]] ?? {};
+    result[obj[primaryProp]][obj[secondaryProp]] = result[obj[primaryProp]][obj[secondaryProp]] ?? {};
+    const existingCount = result[obj[primaryProp]][obj[secondaryProp]][obj[tertiaryProp]];
+    result[obj[primaryProp]][obj[secondaryProp]][obj[tertiaryProp]] =
+      existingCount === undefined ? 1 : existingCount + 1;
+    return result;
+  }, {});
+}
+export function groupObjectCountsByTwoProps(objects: any[], primaryProp: string, secondaryProp: string) {
+  return objects.reduce((result, obj) => {
+    result[obj[primaryProp]] = result[obj[primaryProp]] ?? {};
+    const existingCount = result[obj[primaryProp]][obj[secondaryProp]];
+    result[obj[primaryProp]][obj[secondaryProp]] = existingCount === undefined ? 1 : existingCount + 1;
+    return result;
+  }, {});
+}
+
+export function groupObjectCountsByProp(objects: any[], primaryProp: string) {
+  return objects.reduce((result, obj) => {
+    const existingCount = result[obj[primaryProp]];
+    result[obj[primaryProp]] = existingCount === undefined ? 1 : existingCount + 1;
+    return result;
+  }, {});
+}

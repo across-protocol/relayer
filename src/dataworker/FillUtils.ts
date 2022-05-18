@@ -1,6 +1,13 @@
 import { HubPoolClient } from "../clients";
 import { Fill, FillsToRefund, FillWithBlock } from "../interfaces";
-import { assign, getRealizedLpFeeForFills, getRefundForFills, sortEventsDescending, toBN } from "../utils";
+import {
+  assign,
+  getRealizedLpFeeForFills,
+  getRefundForFills,
+  groupObjectCountsByTwoProps,
+  sortEventsDescending,
+  toBN,
+} from "../utils";
 import { getBlockRangeForChain } from "./DataworkerUtils";
 
 export function getRefundInformationFromFill(
@@ -153,14 +160,6 @@ export function getFillsInRange(
     );
     return fill.blockNumber <= blockRangeForChain[1] && fill.blockNumber >= blockRangeForChain[0];
   });
-}
-
-export function getFillCountGroupedByProp(fills: FillWithBlock[], propName: string) {
-  return fills.reduce((result, fill: FillWithBlock) => {
-    const existingCount = result[fill[propName]];
-    result[fill[propName]] = existingCount === undefined ? 1 : existingCount + 1;
-    return result;
-  }, {});
 }
 
 export function getFillCountGroupedByToken(fills: FillWithBlock[]) {

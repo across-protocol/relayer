@@ -2,7 +2,7 @@
 // meant to demonstrate how we can use the new @arbitrum/sdk to finalize L2 --> L1 messages. Note that arb-ts
 // will be deprecated soon so this scratch work will also be helpful for changing across-v1 code to work if we
 // still need to finalize messages after the arbitrum nitro upgrade.
-import { convertFromWei, delay, Logger, toBN, toBNWei, Wallet } from "../utils";
+import { convertFromWei, delay, groupObjectCountsByThreeProps, Logger, toBN, toBNWei, Wallet } from "../utils";
 import { getProvider, getSigner, winston } from "../utils";
 import { constructClients, updateClients, updateSpokePoolClients } from "../common";
 import { L2TransactionReceipt, getL2Network, L2ToL1MessageStatus, L2ToL1MessageWriter } from "@arbitrum/sdk";
@@ -14,23 +14,6 @@ import { TokensBridged } from "../interfaces";
 // - Set same config you'd need to run dataworker or relayer in terms of L2 node urls
 // - ts-node ./src/finalizer/index.ts --wallet mnemonic
 
-// Refactor to be more generalized with N props
-export function groupObjectCountsByProps(
-  objects: any[],
-  primaryProp: string,
-  secondaryProp: string,
-  tertiaryProp: string
-) {
-  return objects.reduce((result, obj) => {
-    result[obj[primaryProp]] = result[obj[primaryProp]] ?? {};
-    result[obj[primaryProp]][obj[secondaryProp]] = result[obj[primaryProp]][obj[secondaryProp]] ?? {};
-    const existingCount = result[obj[primaryProp]][obj[secondaryProp]][obj[tertiaryProp]];
-    result[obj[primaryProp]][obj[secondaryProp]][obj[tertiaryProp]] =
-      existingCount === undefined ? 1 : existingCount + 1;
-    return result;
-  }, {});
-}
-
 export async function run(logger: winston.Logger, config: RelayerConfig): Promise<void> {
   // Common set up with Dataworker/Relayer client helpers, can we refactor?
   const baseSigner = await getSigner();
@@ -38,7 +21,6 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
   const commonClients = await constructClients(logger, config);
   const spokePoolClients = await constructSpokePoolClientsWithLookback(logger, commonClients, config, baseSigner);
 
-  // TODO: Promise.all the updates?
   await updateClients(commonClients);
   await updateSpokePoolClients(spokePoolClients);
 
@@ -205,7 +187,7 @@ export async function getFinalizableMessages(logger: winston.Logger, tokensBridg
   ).map((result, index) => {
     return { ...result, chain: tokensBridged[index].chainId, token: tokensBridged[index].l2TokenAddress };
   });
-  const statusesGrouped = groupObjectCountsByProps(l2MessagesToExecute, "status", "chain", "token");
+  const statusesGrouped = groupObjectCountsByThreeProps(l2MessagesToExecute, "status", "chain", "token");
   logger.debug({
     at: "ArbitrumFinalizer",
     message: "Queried outbox statuses for messages",
