@@ -153,7 +153,12 @@ export class Dataworker {
 
             // Update total refund counter for convenience when constructing relayer refund leaves
             updateTotalRefundAmount(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
-          } else allInvalidFills.push(fillWithBlock);
+          } else  {
+            // Note: If the fill's origin chain is set incorrectly (e.g. equal to the destination chain, or
+            // set to some unexpected chain), then it won't be added to `allInvalidFills` because we wouldn't
+            // have been able to grab it from the destinationClient.getFillsWithBlockForOriginChain call.
+            allInvalidFills.push(fillWithBlock);
+          }
         });
       }
     }
