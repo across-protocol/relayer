@@ -1,7 +1,8 @@
 // Utils from other packages.
 import winston from "winston";
 import assert from "assert";
-export { winston, assert };
+import fetch from "node-fetch";
+export { winston, assert, fetch };
 export { delay, Logger } from "@uma/financial-templates-lib";
 
 export { BigNumber, Signer, Contract, ContractFactory, Transaction } from "ethers";
