@@ -177,6 +177,9 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         fill.destinationChainId,
         chainIdListForBundleEvaluationBlockNumbers
       );
+
+      // Note: `rootBundleEndBlockContainingFirstFill` and `rootBundleEndBlockContainingFullFill` could both
+      // be undefined in the case that both fills are in this current bundle, which is a normal case.
       if (rootBundleEndBlockContainingFirstFill === rootBundleEndBlockContainingFullFill) return;
 
       // If full fill and first fill are in different blocks, then we should always be able to find the last partial

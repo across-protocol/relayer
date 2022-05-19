@@ -110,14 +110,7 @@ export function getFillDataForSlowFillFromPreviousRootBundle(
   const firstFillForSameDeposit = allValidFills.find(
     (_fill: FillWithBlock) => isFirstFillForDeposit(_fill as Fill) && filledSameDeposit(_fill, fill)
   );
-  if (firstFillForSameDeposit === undefined) {
-    // If there is no first fill associated with a slow fill, then something is wrong because we assume that slow
-    // fills can only be sent after at least one non-zero partial fill is submitted for a deposit.
-    if (fill.isSlowRelay) throw new Error("Can't find earliest fill associated with slow fill");
-    // If there is no first fill associated with the current partial fill, then it must be the first fill and we'll
-    // skip it because there are running balance adjustments to make for this type of fill.
-    else return;
-  }
+
   // Find ending block number for chain from ProposeRootBundle event that should have included a slow fill
   // refund for this first fill. This will be undefined if there is no block range containing the first fill.
   const rootBundleEndBlockContainingFirstFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
