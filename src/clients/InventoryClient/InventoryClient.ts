@@ -17,7 +17,7 @@ export class InventoryClient {
     readonly hubPoolClient: HubPoolClient,
     readonly relayerAddress: string
   ) {
-    this.adapterManager = new AdapterManager(logger, spokePoolClients, relayerAddress);
+    this.adapterManager = new AdapterManager(logger, spokePoolClients, hubPoolClient, relayerAddress);
   }
 
   getCumulativeBalance(l1Token: string): BigNumber {

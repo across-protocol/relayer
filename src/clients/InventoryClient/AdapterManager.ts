@@ -1,12 +1,14 @@
 import { BigNumber, winston, toBNWei, toBN, assign } from "../../utils";
-import { SpokePoolClient } from "../";
+import { SpokePoolClient, HubPoolClient } from "../";
 import * as OptimismAdapter from "./OptimismAdapter";
 import * as ArbitrumAdapter from "./ArbitrumAdapter";
 import * as PolygonAdapter from "./PolygonAdapter";
+
 export class AdapterManager {
   constructor(
     readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
+    readonly hubPoolClient: HubPoolClient,
     readonly relayerAddress: string
   ) {}
 
@@ -38,8 +40,26 @@ export class AdapterManager {
     return outstandingCrossChainTransfers;
   }
 
+  async sendTokenCrossChain(chainId: number, l1Token: string, amount: BigNumber) {
+    this.logger.debug({ at: "AdapterManager", message: "Getting outstandingCrossChainTransfers", chainId, l1Token });
+    let tx;
+    switch (chainId) {
+      case 10:
+        tx = await this.sendTokensToOptimism(l1Token, amount);
+        break;
+
+      default:
+        break;
+    }
+    const receipt = await tx.wait();
+  }
+
   getProviderForChainId(chainId: number) {
     return this.spokePoolClients[chainId].spokePool.provider;
+  }
+
+  getL2TokenForL1Token(l1Token: string, chainId: number) {
+    this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId);
   }
 
   async getOutstandingOptimismTransfers(l1Tokens: string[], l1ChainId = 1, l2ChainId = 10): Promise<BigNumber[]> {
@@ -73,18 +93,29 @@ export class AdapterManager {
     );
   }
 
-  async getOutstandingArbitrumTransfers(l1Tokens: string[]): Promise<BigNumber[]> {
+  async getOutstandingArbitrumTransfers(l1Tokens: string[], l1ChainId = 1, l2ChainId = 42161): Promise<BigNumber[]> {
     return await Promise.all(
       l1Tokens.map((l1Token) =>
         ArbitrumAdapter.getOutstandingCrossChainTransfers(
-          this.getProviderForChainId(1),
-          this.getProviderForChainId(42161),
+          this.getProviderForChainId(l1ChainId),
+          this.getProviderForChainId(l2ChainId),
           this.relayerAddress,
           l1Token,
-          this.spokePoolClients[1].searchConfig,
-          this.spokePoolClients[42161].searchConfig
+          this.spokePoolClients[l1ChainId].searchConfig,
+          this.spokePoolClients[l2ChainId].searchConfig
         )
       )
+    );
+  }
+
+  async sendTokensToOptimism(l1Token: string, amount: BigNumber) {
+    await OptimismAdapter.sendTokenToTargetChain(
+      this.logger,
+      this.getProviderForChainId(1),
+      l1Token,
+      this.getL2TokenForL1Token(l1Token, 10),
+      amount,
+      true
     );
   }
 

@@ -1,13 +1,19 @@
 import { AugmentedTransaction } from "../clients";
-import { winston, Contract, toBN, getContractInfoFromAddress } from "../utils";
+import { winston, Contract, toBN, getContractInfoFromAddress, BigNumber } from "../utils";
 
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
 // of this method should be considerate of this and catch the response to deal with the error accordingly.
-export async function runTransaction(logger: winston.Logger, contract: Contract, method: string, args: any) {
+export async function runTransaction(
+  logger: winston.Logger,
+  contract: Contract,
+  method: string,
+  args: any,
+  value = BigNumber
+) {
   try {
     const gas = await getGasPrice(contract.provider);
-    logger.debug({ at: "TxUtil", message: "sending tx", target: getTarget(contract.address), method, args, gas });
-    return await contract[method](...args, gas);
+    logger.debug({ at: "TxUtil", message: "sending", target: getTarget(contract.address), method, args, gas, value });
+    return await contract[method](...args, { ...gas, value });
   } catch (error) {
     logger.error({ at: "TxUtil", message: "Error executing tx", error });
     console.log(error);

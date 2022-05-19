@@ -152,6 +152,7 @@ export async function sendTokenToTargetChain(logger, l1Provider, l1Token, l2Toke
       : l1StandardBridgeAddressOvm
     : l1StandardBridgeAddressBoba;
   const l1Bridge = new Contract(l1BridgeAddress, l1BridgeInterface, l1Provider);
+
   let value = 0;
   let method = "depositERC20";
   let args = [l1Token, l2Token, amount, l2Gas, ""];
