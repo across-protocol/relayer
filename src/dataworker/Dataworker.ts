@@ -153,7 +153,7 @@ export class Dataworker {
 
             // Update total refund counter for convenience when constructing relayer refund leaves
             updateTotalRefundAmount(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
-          } else  {
+          } else {
             // Note: If the fill's origin chain is set incorrectly (e.g. equal to the destination chain, or
             // set to some unexpected chain), then it won't be added to `allInvalidFills` because we wouldn't
             // have been able to grab it from the destinationClient.getFillsWithBlockForOriginChain call.
@@ -327,17 +327,15 @@ export class Dataworker {
       "Pool rebalance"
     );
     this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForProposal });
-    const maxRefundCount = this.maxRefundCountOverride
-      ? this.maxRefundCountOverride
-      : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
-
     const relayerRefundRoot = _buildRelayerRefundRoot(
       endBlockForMainnet,
       fillsToRefund,
       poolRebalanceRoot.leaves,
       poolRebalanceRoot.runningBalances,
       this.clients,
-      maxRefundCount,
+      this.maxRefundCountOverride
+        ? this.maxRefundCountOverride
+        : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet),
       this.tokenTransferThreshold
     );
     PoolRebalanceUtils.prettyPrintLeaves(
@@ -566,17 +564,33 @@ export class Dataworker {
     // Compare roots with expected. The roots will be different if the block range start blocks were different
     // than the ones we constructed above when the original proposer submitted their proposal. The roots will also
     // be different if the events on any of the contracts were different.
-    const expectedPoolRebalanceRoot = this.buildPoolRebalanceRoot(
+    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this._loadData(
       blockRangesImpliedByBundleEndBlocks,
       spokePoolClients
     );
-    const expectedRelayerRefundRoot = this.buildRelayerRefundRoot(
-      blockRangesImpliedByBundleEndBlocks,
-      spokePoolClients,
-      expectedPoolRebalanceRoot.leaves,
-      expectedPoolRebalanceRoot.runningBalances
+    const expectedPoolRebalanceRoot = _buildPoolRebalanceRoot(
+      endBlockForMainnet,
+      fillsToRefund,
+      deposits,
+      allValidFills,
+      unfilledDeposits,
+      this.clients,
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.maxL1TokenCountOverride,
+      this.tokenTransferThreshold
     );
-    const expectedSlowRelayRoot = this.buildSlowRelayRoot(blockRangesImpliedByBundleEndBlocks, spokePoolClients);
+    const expectedRelayerRefundRoot = _buildRelayerRefundRoot(
+      endBlockForMainnet,
+      fillsToRefund,
+      expectedPoolRebalanceRoot.leaves,
+      expectedPoolRebalanceRoot.runningBalances,
+      this.clients,
+      this.maxRefundCountOverride
+        ? this.maxRefundCountOverride
+        : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet),
+      this.tokenTransferThreshold
+    );
+    const expectedSlowRelayRoot = _buildSlowRelayRoot(unfilledDeposits);
     if (
       expectedPoolRebalanceRoot.leaves.length !== rootBundle.unclaimedPoolRebalanceLeafCount ||
       expectedPoolRebalanceRoot.tree.getHexRoot() !== rootBundle.poolRebalanceRoot
