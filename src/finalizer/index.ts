@@ -2,7 +2,7 @@
 // meant to demonstrate how we can use the new @arbitrum/sdk to finalize L2 --> L1 messages. Note that arb-ts
 // will be deprecated soon so this scratch work will also be helpful for changing across-v1 code to work if we
 // still need to finalize messages after the arbitrum nitro upgrade.
-import { convertFromWei, delay, groupObjectCountsByThreeProps, Logger, toBN, toBNWei, Wallet } from "../utils";
+import { convertFromWei, delay, groupObjectCountsByThreeProps, Logger, Wallet } from "../utils";
 import { getProvider, getSigner, winston } from "../utils";
 import { constructClients, updateClients, updateSpokePoolClients } from "../common";
 import { L2TransactionReceipt, getL2Network, L2ToL1MessageStatus, L2ToL1MessageWriter } from "@arbitrum/sdk";
