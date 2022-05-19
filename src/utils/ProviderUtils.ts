@@ -1,6 +1,6 @@
 import { ethers, providers } from "ethers";
 
-const stallTimeout = 5000;
+const stallTimeout = 10000;
 
 export function getProvider(networkId: number, nodeQuorumThreshold: number = 1) {
   if (process.env[`RETRY_CONFIG_${networkId}`]) return getFallbackProvider(networkId, nodeQuorumThreshold);

@@ -1,5 +1,5 @@
 import { spreadEvent, assign, Contract, BigNumber, EventSearchConfig } from "../../utils";
-import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../../utils";
+import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, runTransaction } from "../../utils";
 
 const l1BridgeInterface = [
   {
@@ -26,11 +26,40 @@ const l1BridgeInterface = [
     name: "ETHDepositInitiated",
     type: "event",
   },
+  {
+    inputs: [
+      { internalType: "uint32", name: "_l2Gas", type: "uint32" },
+      { internalType: "bytes", name: "_data", type: "bytes" },
+    ],
+    name: "depositETH",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "_l1Token", type: "address" },
+      { internalType: "address", name: "_l2Token", type: "address" },
+      { internalType: "uint256", name: "_amount", type: "uint256" },
+      { internalType: "uint32", name: "_l2Gas", type: "uint32" },
+      { internalType: "bytes", name: "_data", type: "bytes" },
+    ],
+    name: "depositERC20",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
 ];
 
 const tokenToEvent = {
   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "ERC20DepositInitiated", // USDC
   "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "ETHDepositInitiated", // WETH
+  "0x6B175474E89094C44Da98b954EedeAC495271d0F": "ERC20DepositInitiated", // DAI
+  "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "ERC20DepositInitiated", // WBTC
+};
+
+const customL1BridgeAddresses = {
+  "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f", // DAI
 };
 
 const l1StandardBridgeAddressOvm = "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1";
@@ -56,7 +85,14 @@ const ovmL2BridgeInterface = [
 ];
 
 const ovmL2StandardBridgeAddress = "0x4200000000000000000000000000000000000010";
+const customOvmBridgeAddresses = {
+  "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0x467194771dae2967aef3ecbedd3bf9a310c76c65",
+};
 
+const l2Gas = 200000;
+
+// todo: optimize this adapter by making it a class that stores the previous events so we dont need to re-query past
+// seen blocks on subsequent runs when running in non-serverless mode.
 export async function getOutstandingCrossChainTransfers(
   l1Provider: any,
   ovmProvider: any,
@@ -65,11 +101,19 @@ export async function getOutstandingCrossChainTransfers(
   l1SearchConfig: any,
   ovmSearchConfig: any,
   isOptimism: boolean = true
-) {
-  // TODO: this wont support looking for events for non-standard bridges (such as DAI or SNX).
-  const l1BridgeAddress = isOptimism ? l1StandardBridgeAddressOvm : l1StandardBridgeAddressBoba;
+): Promise<BigNumber> {
+  const l1BridgeAddress = isOptimism
+    ? Object.keys(customL1BridgeAddresses).includes(l1Token)
+      ? customL1BridgeAddresses[l1Token]
+      : l1StandardBridgeAddressOvm
+    : l1StandardBridgeAddressBoba;
+  const l2BridgeAddress = isOptimism
+    ? Object.keys(customOvmBridgeAddresses).includes(l1Token)
+      ? customOvmBridgeAddresses[l1Token]
+      : ovmL2StandardBridgeAddress
+    : ovmL2StandardBridgeAddress;
   const l1Bridge = new Contract(l1BridgeAddress, l1BridgeInterface, l1Provider);
-  const ovmBridge = new Contract(ovmL2StandardBridgeAddress, ovmL2BridgeInterface, ovmProvider);
+  const ovmBridge = new Contract(l2BridgeAddress, ovmL2BridgeInterface, ovmProvider);
 
   const l1Method = tokenToEvent[l1Token];
   const l1SearchFilter = l1Method == "ERC20DepositInitiated" ? [l1Token, undefined, relayerAddress] : [relayerAddress];
@@ -99,4 +143,22 @@ export async function getOutstandingCrossChainTransfers(
   console.log(isOptimism ? "optimism" : "boba", totalDepositsInitiated.toString(), totalDepositsFinalized.toString());
 
   return totalDepositsInitiated.sub(totalDepositsFinalized);
+}
+
+export async function sendTokenToTargetChain(logger, l1Provider, l1Token, l2Token, amount, isOptimism) {
+  const l1BridgeAddress = isOptimism
+    ? Object.keys(customL1BridgeAddresses).includes(l1Token)
+      ? customL1BridgeAddresses[l1Token]
+      : l1StandardBridgeAddressOvm
+    : l1StandardBridgeAddressBoba;
+  const l1Bridge = new Contract(l1BridgeAddress, l1BridgeInterface, l1Provider);
+  let value = 0;
+  let method = "depositERC20";
+  let args = [l1Token, l2Token, amount, l2Gas, ""];
+  if (tokenToEvent[l1Token] == "ETHDepositInitiated") {
+    value = amount;
+    method = "depositETH";
+    args = [l2Gas, ""];
+  }
+  await runTransaction(logger, l1Bridge, method, args);
 }

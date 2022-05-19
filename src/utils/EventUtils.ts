@@ -37,7 +37,7 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
     const toBlock = Math.min(searchConfig.fromBlock + (i + 1) * searchConfig.maxBlockLookBack, searchConfig.toBlock);
     promises.push(contract.queryFilter(filter, fromBlock, toBlock));
   }
-  return (await Promise.all(promises, { concurrency: searchConfig.concurrency | 50 })).flat(); // Default to 150 concurrent calls.
+  return (await Promise.all(promises, { concurrency: searchConfig.concurrency | 25 })).flat(); // Default to 150 concurrent calls.
 }
 
 export interface EventSearchConfig {

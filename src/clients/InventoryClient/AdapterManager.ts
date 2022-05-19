@@ -1,7 +1,8 @@
 import { BigNumber, winston, toBNWei, toBN, assign } from "../../utils";
 import { SpokePoolClient } from "../";
-import * as OptimismClient from "./OptimismClient";
-import * as ArbitrumClient from "./ArbitrumClient";
+import * as OptimismAdapter from "./OptimismAdapter";
+import * as ArbitrumAdapter from "./ArbitrumAdapter";
+import * as PolygonAdapter from "./PolygonAdapter";
 export class AdapterManager {
   constructor(
     readonly logger: winston.Logger,
@@ -19,6 +20,9 @@ export class AdapterManager {
     switch (chainId) {
       case 10:
         outstandingTransfers = await this.getOutstandingOptimismTransfers(l1Tokens, 1, 10);
+        break;
+      case 137:
+        outstandingTransfers = await this.getOutstandingPolygonTransfers(l1Tokens);
         break;
       case 288:
         outstandingTransfers = await this.getOutstandingOptimismTransfers(l1Tokens, 1, 288);
@@ -38,24 +42,10 @@ export class AdapterManager {
     return this.spokePoolClients[chainId].spokePool.provider;
   }
 
-  async getOutstandingArbitrumTransfers(l1Tokens: string[]): Promise<BigNumber[]> {
-    return await Promise.all(
-      l1Tokens.map((l1Token) =>
-        ArbitrumClient.getOutstandingCrossChainTransfers(
-          this.getProviderForChainId(1),
-          this.getProviderForChainId(42161),
-          this.relayerAddress,
-          l1Token,
-          this.spokePoolClients[1].searchConfig,
-          this.spokePoolClients[42161].searchConfig
-        )
-      )
-    );
-  }
   async getOutstandingOptimismTransfers(l1Tokens: string[], l1ChainId = 1, l2ChainId = 10): Promise<BigNumber[]> {
     return await Promise.all(
       l1Tokens.map((l1Token) =>
-        OptimismClient.getOutstandingCrossChainTransfers(
+        OptimismAdapter.getOutstandingCrossChainTransfers(
           this.getProviderForChainId(l1ChainId),
           this.getProviderForChainId(l2ChainId),
           this.relayerAddress,
@@ -63,6 +53,36 @@ export class AdapterManager {
           this.spokePoolClients[l1ChainId].searchConfig,
           this.spokePoolClients[l2ChainId].searchConfig,
           l2ChainId == 10 // isOptimism. If not 10 then must be boba (288).
+        )
+      )
+    );
+  }
+
+  async getOutstandingPolygonTransfers(l1Tokens: string[], l1ChainId = 1, l2ChainId = 137): Promise<BigNumber[]> {
+    return await Promise.all(
+      l1Tokens.map((l1Token) =>
+        PolygonAdapter.getOutstandingCrossChainTransfers(
+          this.getProviderForChainId(l1ChainId),
+          this.getProviderForChainId(l2ChainId),
+          this.relayerAddress,
+          l1Token,
+          this.spokePoolClients[l1ChainId].searchConfig,
+          this.spokePoolClients[l2ChainId].searchConfig
+        )
+      )
+    );
+  }
+
+  async getOutstandingArbitrumTransfers(l1Tokens: string[]): Promise<BigNumber[]> {
+    return await Promise.all(
+      l1Tokens.map((l1Token) =>
+        ArbitrumAdapter.getOutstandingCrossChainTransfers(
+          this.getProviderForChainId(1),
+          this.getProviderForChainId(42161),
+          this.relayerAddress,
+          l1Token,
+          this.spokePoolClients[1].searchConfig,
+          this.spokePoolClients[42161].searchConfig
         )
       )
     );
