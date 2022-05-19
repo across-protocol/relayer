@@ -1,16 +1,16 @@
-import { buildRelayerRefundTree, buildPoolRebalanceLeafTree } from "../utils";
-import { winston, toBN, EMPTY_MERKLE_ROOT, buildSlowRelayTree } from "../utils";
-import { UnfilledDeposit, Deposit, DepositWithBlock, RootBundle, UnfilledDepositsForOriginChain } from "../interfaces";
-import { FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
-import { BigNumberForToken, FillsToRefund, RelayData } from "../interfaces";
+import { winston, EMPTY_MERKLE_ROOT } from "../utils";
+import { UnfilledDeposit, Deposit, DepositWithBlock, RootBundle } from "../interfaces";
+import { UnfilledDepositsForOriginChain, RunningBalances } from "../interfaces";
+import { FillWithBlock, PoolRebalanceLeaf } from "../interfaces";
+import { BigNumberForToken, FillsToRefund } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
-import * as RelayerRefundUtils from "./RelayerRefundUtils";
 import { assignValidFillToFillsToRefund } from "./FillUtils";
 import { getRefundInformationFromFill, updateTotalRefundAmount } from "./FillUtils";
 import { updateTotalRealizedLpFeePct } from "./FillUtils";
 import { getBlockRangeForChain, prettyPrintSpokePoolEvents } from "./DataworkerUtils";
+import { _buildPoolRebalanceRoot, _buildRelayerRefundRoot, _buildSlowRelayRoot } from "./DataworkerUtils";
 import { flattenAndFilterUnfilledDepositsByOriginChain } from "./DepositUtils";
 import { updateUnfilledDepositsWithMatchedDeposit, getUniqueDepositsInRange } from "./DepositUtils";
 import { constructSpokePoolClientsForBlockAndUpdate } from "../common/ClientHelper";
@@ -194,35 +194,15 @@ export class Dataworker {
     this.logger.debug({ at: "Dataworker", message: `Building slow relay root`, blockRangesForChains });
 
     const { unfilledDeposits } = this._loadData(blockRangesForChains, spokePoolClients);
-    const slowRelayLeaves: RelayData[] = unfilledDeposits.map(
-      (deposit: UnfilledDeposit): RelayData => ({
-        depositor: deposit.deposit.depositor,
-        recipient: deposit.deposit.recipient,
-        destinationToken: deposit.deposit.destinationToken,
-        amount: deposit.deposit.amount,
-        originChainId: deposit.deposit.originChainId,
-        destinationChainId: deposit.deposit.destinationChainId,
-        realizedLpFeePct: deposit.deposit.realizedLpFeePct,
-        relayerFeePct: deposit.deposit.relayerFeePct,
-        depositId: deposit.deposit.depositId,
-      })
-    );
-
-    // Sort leaves deterministically so that the same root is always produced from the same _loadData return value.
-    // The { Deposit ID, origin chain ID } is guaranteed to be unique so we can sort on them.
-    const sortedLeaves = [...slowRelayLeaves].sort((relayA, relayB) => {
-      // Note: Smaller ID numbers will come first
-      if (relayA.originChainId === relayB.originChainId) return relayA.depositId - relayB.depositId;
-      else return relayA.originChainId - relayB.originChainId;
-    });
-
-    return {
-      leaves: sortedLeaves,
-      tree: buildSlowRelayTree(sortedLeaves),
-    };
+    return _buildSlowRelayRoot(unfilledDeposits);
   }
 
-  buildRelayerRefundRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
+  buildRelayerRefundRoot(
+    blockRangesForChains: number[][],
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    poolRebalanceLeaves: PoolRebalanceLeaf[],
+    runningBalances: RunningBalances
+  ) {
     this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForChains });
     const endBlockForMainnet = getBlockRangeForChain(
       blockRangesForChains,
@@ -231,96 +211,18 @@ export class Dataworker {
     )[1];
 
     const { fillsToRefund } = this._loadData(blockRangesForChains, spokePoolClients);
-
-    const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
-
-    // We need to construct a pool rebalance root in order to derive `amountToReturn` from `netSendAmount`.
-    const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForChains, spokePoolClients);
-
-    // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
-    Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
-      Object.keys(fillsToRefund[repaymentChainId]).forEach((l2TokenAddress: string) => {
-        const refunds = fillsToRefund[repaymentChainId][l2TokenAddress].refunds;
-        // We need to sort leaves deterministically so that the same root is always produced from the same _loadData
-        // return value, so sort refund addresses by refund amount (descending) and then address (ascending).
-        const sortedRefundAddresses = RelayerRefundUtils.sortRefundAddresses(refunds);
-
-        // Create leaf for { repaymentChainId, L2TokenAddress }, split leaves into sub-leaves if there are too many
-        // refunds.
-        const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpartAtBlock(
-          repaymentChainId,
-          l2TokenAddress,
-          endBlockForMainnet
-        );
-        const transferThreshold =
-          this.tokenTransferThreshold[l1TokenCounterpart] ||
-          this.clients.configStoreClient.getTokenTransferThresholdForBlock(l1TokenCounterpart, endBlockForMainnet);
-
-        // The `amountToReturn` for a { repaymentChainId, L2TokenAddress} should be set to max(-netSendAmount, 0).
-        const amountToReturn = RelayerRefundUtils.getAmountToReturnForRelayerRefundLeaf(
-          transferThreshold,
-          poolRebalanceRoot.runningBalances[repaymentChainId][l1TokenCounterpart]
-        );
-        const maxRefundCount = this.maxRefundCountOverride
-          ? this.maxRefundCountOverride
-          : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
-        for (let i = 0; i < sortedRefundAddresses.length; i += maxRefundCount)
-          relayerRefundLeaves.push({
-            groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
-            // L2 token address
-            amountToReturn: i === 0 ? amountToReturn : toBN(0),
-            chainId: Number(repaymentChainId),
-            refundAmounts: sortedRefundAddresses.slice(i, i + maxRefundCount).map((address) => refunds[address]),
-            leafId: 0, // Will be updated before inserting into tree when we sort all leaves.
-            l2TokenAddress,
-            refundAddresses: sortedRefundAddresses.slice(i, i + maxRefundCount),
-          });
-      });
-    });
-
-    // We need to construct a leaf for any pool rebalance leaves with a negative net send amount and NO fills to refund
-    // since we need to return tokens from SpokePool to HubPool.
-    poolRebalanceRoot.leaves.forEach((leaf) => {
-      leaf.netSendAmounts.forEach((netSendAmount, index) => {
-        if (netSendAmount.gte(toBN(0))) return;
-
-        const l2TokenCounterpart = this.clients.hubPoolClient.getDestinationTokenForL1TokenDestinationChainId(
-          leaf.l1Tokens[index],
-          leaf.chainId
-        );
-        // If we've already seen this leaf, then skip.
-        if (
-          relayerRefundLeaves.some(
-            (relayerRefundLeaf) =>
-              relayerRefundLeaf.chainId === leaf.chainId && relayerRefundLeaf.l2TokenAddress === l2TokenCounterpart
-          )
-        )
-          return;
-        const transferThreshold =
-          this.tokenTransferThreshold[leaf.l1Tokens[index]] ||
-          this.clients.configStoreClient.getTokenTransferThresholdForBlock(leaf.l1Tokens[index], endBlockForMainnet);
-        const amountToReturn = RelayerRefundUtils.getAmountToReturnForRelayerRefundLeaf(
-          transferThreshold,
-          poolRebalanceRoot.runningBalances[leaf.chainId][leaf.l1Tokens[index]]
-        );
-        relayerRefundLeaves.push({
-          groupIndex: 0, // Will delete this group index after using it to sort leaves for the same chain ID and
-          // L2 token address
-          leafId: 0, // Will be updated before inserting into tree when we sort all leaves.
-          chainId: leaf.chainId,
-          amountToReturn: amountToReturn, // Never 0 since there will only be one leaf for this chain + L2 token combo.
-          l2TokenAddress: l2TokenCounterpart,
-          refundAddresses: [],
-          refundAmounts: [],
-        });
-      });
-    });
-
-    const indexedLeaves: RelayerRefundLeaf[] = RelayerRefundUtils.sortRelayerRefundLeaves(relayerRefundLeaves);
-    return {
-      leaves: indexedLeaves,
-      tree: buildRelayerRefundTree(indexedLeaves),
-    };
+    const maxRefundCount = this.maxRefundCountOverride
+      ? this.maxRefundCountOverride
+      : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
+    return _buildRelayerRefundRoot(
+      endBlockForMainnet,
+      fillsToRefund,
+      poolRebalanceLeaves,
+      runningBalances,
+      this.clients,
+      maxRefundCount,
+      this.tokenTransferThreshold
+    );
   }
 
   buildPoolRebalanceRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
@@ -337,70 +239,17 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
 
-    // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
-    // slow relay refunds. They are decreased by the amount of funds already held by the SpokePool. Balances are keyed
-    // by the SpokePool's network and L1 token equivalent of the L2 token to refund.
-    // Realized LP fees are keyed the same as running balances and represent the amount of LP fees that should be paid
-    // to LP's for each running balance.
-
-    // For each FilledRelay group, identified by { repaymentChainId, L1TokenAddress }, initialize a "running balance"
-    // to the total refund amount for that group.
-    const { runningBalances, realizedLpFees } = PoolRebalanceUtils.initializeRunningBalancesFromRelayerRepayments(
+    return _buildPoolRebalanceRoot(
       endBlockForMainnet,
-      this.clients.hubPoolClient,
-      fillsToRefund
-    );
-
-    // Add payments to execute slow fills.
-    PoolRebalanceUtils.addSlowFillsToRunningBalances(
-      endBlockForMainnet,
-      runningBalances,
-      this.clients.hubPoolClient,
-      unfilledDeposits
-    );
-
-    // For certain fills associated with another partial fill from a previous root bundle, we need to adjust running
-    // balances because the prior partial fill would have triggered a refund to be sent to the spoke pool to refund
-    // a slow fill.
-    PoolRebalanceUtils.subtractExcessFromPreviousSlowFillsFromRunningBalances(
-      runningBalances,
-      this.clients.hubPoolClient,
+      fillsToRefund,
+      deposits,
       allValidFills,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    );
-
-    // Map each deposit event to its L1 token and origin chain ID and subtract deposited amounts from running
-    // balances. Note that we do not care if the deposit is matched with a fill for this epoch or not since all
-    // deposit events lock funds in the spoke pool and should decrease running balances accordingly. However,
-    // its important that `deposits` are all in this current block range.
-    deposits.forEach((deposit: DepositWithBlock) => {
-      PoolRebalanceUtils.updateRunningBalanceForDeposit(
-        runningBalances,
-        this.clients.hubPoolClient,
-        deposit,
-        deposit.amount.mul(toBN(-1))
-      );
-    });
-
-    // Add to the running balance value from the last valid root bundle proposal for {chainId, l1Token}
-    // combination if found.
-    PoolRebalanceUtils.addLastRunningBalance(endBlockForMainnet, runningBalances, this.clients.hubPoolClient);
-
-    const leaves: PoolRebalanceLeaf[] = PoolRebalanceUtils.constructPoolRebalanceLeaves(
-      endBlockForMainnet,
-      runningBalances,
-      realizedLpFees,
-      this.clients.configStoreClient,
+      unfilledDeposits,
+      this.clients,
+      this.chainIdListForBundleEvaluationBlockNumbers,
       this.maxL1TokenCountOverride,
       this.tokenTransferThreshold
     );
-
-    return {
-      runningBalances,
-      realizedLpFees,
-      leaves,
-      tree: buildPoolRebalanceLeafTree(leaves),
-    };
   }
 
   async proposeRootBundle() {
@@ -450,21 +299,50 @@ export class Dataworker {
     );
 
     // 3. Create roots
-    const poolRebalanceRoot = this.buildPoolRebalanceRoot(blockRangesForProposal, spokePoolClients);
+    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this._loadData(
+      blockRangesForProposal,
+      spokePoolClients
+    );
+    this.logger.debug({ at: "Dataworker", message: `Building pool rebalance root`, blockRangesForProposal });
+    const poolRebalanceRoot = _buildPoolRebalanceRoot(
+      endBlockForMainnet,
+      fillsToRefund,
+      deposits,
+      allValidFills,
+      unfilledDeposits,
+      this.clients,
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.maxL1TokenCountOverride,
+      this.tokenTransferThreshold
+    );
     PoolRebalanceUtils.prettyPrintLeaves(
       this.logger,
       poolRebalanceRoot.tree,
       poolRebalanceRoot.leaves,
       "Pool rebalance"
     );
-    const relayerRefundRoot = this.buildRelayerRefundRoot(blockRangesForProposal, spokePoolClients);
+    this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForProposal });
+    const maxRefundCount = this.maxRefundCountOverride
+      ? this.maxRefundCountOverride
+      : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
+
+    const relayerRefundRoot = _buildRelayerRefundRoot(
+      endBlockForMainnet,
+      fillsToRefund,
+      poolRebalanceRoot.leaves,
+      poolRebalanceRoot.runningBalances,
+      this.clients,
+      maxRefundCount,
+      this.tokenTransferThreshold
+    );
     PoolRebalanceUtils.prettyPrintLeaves(
       this.logger,
       relayerRefundRoot.tree,
       relayerRefundRoot.leaves,
       "Relayer refund"
     );
-    const slowRelayRoot = this.buildSlowRelayRoot(blockRangesForProposal, spokePoolClients);
+    this.logger.debug({ at: "Dataworker", message: `Building slow relay root`, blockRangesForProposal });
+    const slowRelayRoot = _buildSlowRelayRoot(unfilledDeposits);
     PoolRebalanceUtils.prettyPrintLeaves(this.logger, slowRelayRoot.tree, slowRelayRoot.leaves, "Slow relay");
 
     if (poolRebalanceRoot.leaves.length === 0) {
@@ -689,7 +567,9 @@ export class Dataworker {
     );
     const expectedRelayerRefundRoot = this.buildRelayerRefundRoot(
       blockRangesImpliedByBundleEndBlocks,
-      spokePoolClients
+      spokePoolClients,
+      expectedPoolRebalanceRoot.leaves,
+      expectedPoolRebalanceRoot.runningBalances
     );
     const expectedSlowRelayRoot = this.buildSlowRelayRoot(blockRangesImpliedByBundleEndBlocks, spokePoolClients);
     if (

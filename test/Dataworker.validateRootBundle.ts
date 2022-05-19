@@ -68,7 +68,12 @@ describe("Dataworker: Validate pending root bundle", async function () {
 
     // Construct expected roots before we propose new root so that last log contains logs about submitted txn.
     const expectedPoolRebalanceRoot2 = dataworkerInstance.buildPoolRebalanceRoot(blockRange2, spokePoolClients);
-    dataworkerInstance.buildRelayerRefundRoot(blockRange2, spokePoolClients);
+    dataworkerInstance.buildRelayerRefundRoot(
+      blockRange2,
+      spokePoolClients,
+      expectedPoolRebalanceRoot2.leaves,
+      expectedPoolRebalanceRoot2.runningBalances
+    );
     dataworkerInstance.buildSlowRelayRoot(blockRange2, spokePoolClients);
     await dataworkerInstance.proposeRootBundle();
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
@@ -124,7 +129,12 @@ describe("Dataworker: Validate pending root bundle", async function () {
     const latestBlock4 = await hubPool.provider.getBlockNumber();
     const blockRange4 = CHAIN_ID_TEST_LIST.map((_) => [latestBlock2 + 1, latestBlock4]);
     const expectedPoolRebalanceRoot4 = dataworkerInstance.buildPoolRebalanceRoot(blockRange4, spokePoolClients);
-    const expectedRelayerRefundRoot4 = dataworkerInstance.buildRelayerRefundRoot(blockRange4, spokePoolClients);
+    const expectedRelayerRefundRoot4 = dataworkerInstance.buildRelayerRefundRoot(
+      blockRange4,
+      spokePoolClients,
+      expectedPoolRebalanceRoot4.leaves,
+      expectedPoolRebalanceRoot4.runningBalances
+    );
     const expectedSlowRelayRefundRoot4 = dataworkerInstance.buildSlowRelayRoot(blockRange4, spokePoolClients);
 
     await hubPool.proposeRootBundle(
