@@ -1,5 +1,5 @@
 import { AugmentedTransaction } from "../clients";
-import { winston, Contract, toBN, getContractInfoFromAddress } from "../utils";
+import { winston, Contract, toBN, getContractInfoFromAddress, fetch } from "../utils";
 
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
 // of this method should be considerate of this and catch the response to deal with the error accordingly.
@@ -23,7 +23,8 @@ export async function getGasPrice(provider, priorityScaler = toBN(1.2), maxFeePe
   if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
     // Polygon, for some or other reason, does not correctly return an appropriate maxPriorityFeePerGas. Set the
     // maxPriorityFeePerGas to the maxFeePerGas * 5 for now as a temp workaround.
-    if (chainInfo.chainId == 137) feeData.maxPriorityFeePerGas = feeData.maxFeePerGas.mul(2);
+    if (chainInfo.chainId == 137) feeData.maxPriorityFeePerGas = toBN((await getPolygonPriorityFee()).fastest).mul(1e9);
+    if (feeData.maxPriorityFeePerGas > feeData.maxFeePerGas) feeData.maxFeePerGas = feeData.maxPriorityFeePerGas;
     return {
       maxFeePerGas: feeData.maxFeePerGas.mul(priorityScaler).mul(maxFeePerGasScaler), // scale up the maxFeePerGas. Any extra paid on this is refunded.
       maxPriorityFeePerGas: feeData.maxPriorityFeePerGas.mul(priorityScaler),
@@ -49,4 +50,9 @@ export function getTarget(targetAddress: string) {
   } catch (error) {
     return { targetAddress };
   }
+}
+
+async function getPolygonPriorityFee() {
+  let res = await fetch("https://gasstation-mainnet.matic.network");
+  return await res.json();
 }
