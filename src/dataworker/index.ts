@@ -42,6 +42,8 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
 
       await dataworker.executePoolRebalanceLeaves();
 
+      await dataworker.executeRelayerRefundLeaves();
+
       await clients.multiCallerClient.executeTransactionQueue();
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
