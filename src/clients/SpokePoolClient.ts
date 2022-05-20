@@ -2,13 +2,23 @@ import { spreadEvent, assign, Contract, BigNumber, EventSearchConfig } from "../
 import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
 import { AcrossConfigStoreClient } from "./ConfigStoreClient";
-import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock } from "../interfaces/SpokePool";
+import {
+  Deposit,
+  DepositWithBlock,
+  Fill,
+  SpeedUp,
+  FillWithBlock,
+  RootBundleRelayWithBlock,
+  RelayerRefundExecutionWithBlock,
+} from "../interfaces/SpokePool";
 
 export class SpokePoolClient {
   private deposits: { [DestinationChainId: number]: Deposit[] } = {};
   private fills: Fill[] = [];
   private speedUps: { [depositorAddress: string]: { [depositId: number]: SpeedUp[] } } = {};
   private depositRoutes: { [originToken: string]: { [DestinationChainId: number]: boolean } } = {};
+  private rootBundleRelays: RootBundleRelayWithBlock[];
+  private relayerRefundExecutions: RelayerRefundExecutionWithBlock[];
   public isUpdated: boolean = false;
 
   public firstBlockToSearch: number;
@@ -69,6 +79,14 @@ export class SpokePoolClient {
 
   getFillsForRelayer(relayer: string) {
     return this.fills.filter((fill: Fill) => fill.relayer === relayer);
+  }
+
+  getRootBundleRelays() {
+    return this.rootBundleRelays;
+  }
+
+  getRelayerRefundExecutions() {
+    return this.relayerRefundExecutions;
   }
 
   appendMaxSpeedUpSignatureToDeposit(deposit: Deposit) {
@@ -136,11 +154,20 @@ export class SpokePoolClient {
     this.log("debug", "Updating client", { searchConfig, depositRouteSearchConfig, spokePool: this.spokePool.address });
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
-    const [depositEvents, speedUpEvents, fillEvents, enableDepositsEvents] = await Promise.all([
+    const [
+      depositEvents,
+      speedUpEvents,
+      fillEvents,
+      enableDepositsEvents,
+      relayedRootBundleEvents,
+      executedRelayerRefundRootEvents,
+    ] = await Promise.all([
       paginatedEventQuery(this.spokePool, this.spokePool.filters.FundsDeposited(), searchConfig),
       paginatedEventQuery(this.spokePool, this.spokePool.filters.RequestedSpeedUpDeposit(), searchConfig),
       paginatedEventQuery(this.spokePool, this.spokePool.filters.FilledRelay(), searchConfig),
       paginatedEventQuery(this.spokePool, this.spokePool.filters.EnabledDepositRoute(), depositRouteSearchConfig),
+      paginatedEventQuery(this.spokePool, this.spokePool.filters.RelayedRootBundle(), searchConfig),
+      paginatedEventQuery(this.spokePool, this.spokePool.filters.ExecutedRelayerRefundRoot(), searchConfig),
     ]);
 
     // For each depositEvent, compute the realizedLpFeePct. Note this means that we are only finding this value on the
@@ -186,11 +213,21 @@ export class SpokePoolClient {
       const enableDeposit = spreadEvent(event);
       assign(this.depositRoutes, [enableDeposit.originToken, enableDeposit.destinationChainId], enableDeposit.enabled);
     }
+
+    for (const event of relayedRootBundleEvents) {
+      this.rootBundleRelays.push(spreadEvent(event));
+    }
+
+    for (const event of executedRelayerRefundRootEvents) {
+      this.relayerRefundExecutions.push(spreadEvent(event));
+    }
+
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.isUpdated = true;
     this.log("debug", "Client updated!");
   }
+
   public hubPoolClient() {
     return this.configStoreClient.hubPoolClient;
   }

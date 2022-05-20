@@ -37,6 +37,10 @@ export class HubPoolClient {
     return this.pendingRootBundle !== undefined && this.pendingRootBundle.unclaimedPoolRebalanceLeafCount > 0;
   }
 
+  getProposedRootBundles() {
+    return this.proposedRootBundles;
+  }
+
   getSpokePoolForBlock(block: number, chain: number): string {
     if (!this.crossChainContracts[chain]) throw new Error(`No cross chain contracts set for ${chain}`);
     const mostRecentSpokePoolUpdatebeforeBlock = (
@@ -173,24 +177,26 @@ export class HubPoolClient {
     ) as ExecutedRootBundle[];
   }
 
-  getNextBundleStartBlockNumber(chainIdList: number[], latestMainnetBlock: number, chainId: number): number {
+  getLatestFullyExecutedRootBundle(latestMainnetBlock: number): ProposedRootBundle | undefined {
     // Search for latest ProposeRootBundleExecuted event followed by all of its RootBundleExecuted event suggesting
     // that all pool rebalance leaves were executed. This ignores any proposed bundles that were partially executed.
-    const latestFullyExecutedPoolRebalanceRoot = sortEventsDescending(this.proposedRootBundles).find(
-      (rootBundle: ProposedRootBundle) => {
-        if (rootBundle.blockNumber > latestMainnetBlock) return false;
-        const nextRootBundle = this.getFollowingRootBundle(rootBundle);
-        const followingProposedRootBundleBlock = nextRootBundle ? nextRootBundle.blockNumber : latestMainnetBlock;
-        // Figure out how many pool rebalance leaves were executed for this root bundle, but only count executed
-        // leaves before the `latestMainnetBlock` since that's the block height snapshot we're querying.
-        const executedPoolRebalanceLeaves = this.getExecutedLeavesForRootBundle(
-          rootBundle,
-          latestMainnetBlock,
-          followingProposedRootBundleBlock
-        );
-        return executedPoolRebalanceLeaves.length === rootBundle.poolRebalanceLeafCount;
-      }
-    ) as ProposedRootBundle;
+    return sortEventsDescending(this.proposedRootBundles).find((rootBundle: ProposedRootBundle) => {
+      if (rootBundle.blockNumber > latestMainnetBlock) return false;
+      const nextRootBundle = this.getFollowingRootBundle(rootBundle);
+      const followingProposedRootBundleBlock = nextRootBundle ? nextRootBundle.blockNumber : latestMainnetBlock;
+      // Figure out how many pool rebalance leaves were executed for this root bundle, but only count executed
+      // leaves before the `latestMainnetBlock` since that's the block height snapshot we're querying.
+      const executedPoolRebalanceLeaves = this.getExecutedLeavesForRootBundle(
+        rootBundle,
+        latestMainnetBlock,
+        followingProposedRootBundleBlock
+      );
+      return executedPoolRebalanceLeaves.length === rootBundle.poolRebalanceLeafCount;
+    });
+  }
+
+  getNextBundleStartBlockNumber(chainIdList: number[], latestMainnetBlock: number, chainId: number): number {
+    const latestFullyExecutedPoolRebalanceRoot = this.getLatestFullyExecutedRootBundle(latestMainnetBlock);
 
     // If no event, then we can return a conservative default starting block like 0,
     // or we could throw an Error.
