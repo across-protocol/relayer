@@ -19,7 +19,7 @@ let dataworkerInstance: Dataworker, multiCallerClient: MultiCallerClient;
 
 let updateAllClients: () => Promise<void>;
 
-describe("Dataworker: Execute relayer refunds", async function () {
+describe("Dataworker: Execute pool rebalances", async function () {
   beforeEach(async function () {
     ({
       hubPool,
