@@ -6,6 +6,7 @@ import {
   RelayData,
   RelayerRefundLeaf,
   RootBundle,
+  RunningBalances,
   UnfilledDeposit,
 } from "../interfaces";
 import {
@@ -36,6 +37,7 @@ export function updateRunningBalance(
 }
 
 export function updateRunningBalanceForFill(
+  endBlockForMainnet: number,
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
   fill: interfaces.FillWithBlock,
@@ -44,7 +46,7 @@ export function updateRunningBalanceForFill(
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
     fill.destinationChainId.toString(),
     fill.destinationToken,
-    fill.blockNumber
+    endBlockForMainnet
   );
   updateRunningBalance(runningBalances, fill.destinationChainId, l1TokenCounterpart, updateAmount);
 }
@@ -82,13 +84,12 @@ export function addLastRunningBalance(
 }
 
 export function initializeRunningBalancesFromRelayerRepayments(
+  runningBalances: RunningBalances,
+  realizedLpFees: RunningBalances,
   latestMainnetBlock: number,
   hubPoolClient: HubPoolClient,
   fillsToRefund: interfaces.FillsToRefund
 ) {
-  const runningBalances = {};
-  const realizedLpFees: interfaces.RunningBalances = {};
-
   if (Object.keys(fillsToRefund).length > 0) {
     Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
       Object.keys(fillsToRefund[repaymentChainId]).forEach((l2TokenAddress: string) => {
@@ -117,10 +118,6 @@ export function initializeRunningBalancesFromRelayerRepayments(
       });
     });
   }
-  return {
-    runningBalances,
-    realizedLpFees,
-  };
 }
 
 export function addSlowFillsToRunningBalances(
@@ -145,6 +142,7 @@ export function addSlowFillsToRunningBalances(
 }
 
 export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
+  endBlockForMainnet: number,
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
   allValidFills: interfaces.FillWithBlock[],
@@ -153,6 +151,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   allValidFills.forEach((fill: interfaces.FillWithBlock) => {
     const { lastFillBeforeSlowFillIncludedInRoot, rootBundleEndBlockContainingFirstFill } =
       getFillDataForSlowFillFromPreviousRootBundle(
+        endBlockForMainnet,
         fill,
         allValidFills,
         hubPoolClient,
@@ -173,6 +172,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
       // first fill for this deposit. If it is the same as the ProposeRootBundle event containing the
       // current fill, then the first fill is in the current bundle and we can exit early.
       const rootBundleEndBlockContainingFullFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
+        endBlockForMainnet,
         fill.blockNumber,
         fill.destinationChainId,
         chainIdListForBundleEvaluationBlockNumbers
@@ -197,7 +197,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
       // was never sent, so we need to send the full slow fill back.
       const excess = fill.isSlowRelay ? amountSentForSlowFill.sub(fill.fillAmount) : amountSentForSlowFill;
       if (excess.eq(toBN(0))) return;
-      updateRunningBalanceForFill(runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
+      updateRunningBalanceForFill(endBlockForMainnet, runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
     }
   });
 }

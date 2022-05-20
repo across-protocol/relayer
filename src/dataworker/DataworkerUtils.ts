@@ -1,7 +1,7 @@
 import { BigNumberForToken, DepositWithBlock, FillsToRefund, FillWithBlock, PoolRebalanceLeaf } from "../interfaces";
 import { RelayData, RelayerRefundLeaf } from "../interfaces";
 import { RelayerRefundLeafWithGroup, RunningBalances, UnfilledDeposit } from "../interfaces";
-import { buildPoolRebalanceLeafTree, buildRelayerRefundTree, buildSlowRelayTree } from "../utils";
+import { buildPoolRebalanceLeafTree, buildRelayerRefundTree, buildSlowRelayTree, winston } from "../utils";
 import { groupObjectCountsByProp, groupObjectCountsByTwoProps, toBN } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { getDepositPath } from "./DepositUtils";
@@ -134,11 +134,6 @@ export function _buildRelayerRefundRoot(
         clients.configStoreClient.getTokenTransferThresholdForBlock(l1TokenCounterpart, endBlockForMainnet);
 
       // The `amountToReturn` for a { repaymentChainId, L2TokenAddress} should be set to max(-netSendAmount, 0).
-      if (!runningBalances[repaymentChainId][l1TokenCounterpart])
-        throw new Error(
-          `Invalid input running balance dictionary with missing value for chain ${repaymentChainId} and L1 token ${l1TokenCounterpart}`
-        );
-
       const amountToReturn = getAmountToReturnForRelayerRefundLeaf(
         transferThreshold,
         runningBalances[repaymentChainId][l1TokenCounterpart]
@@ -221,7 +216,11 @@ export function _buildPoolRebalanceRoot(
 
   // For each FilledRelay group, identified by { repaymentChainId, L1TokenAddress }, initialize a "running balance"
   // to the total refund amount for that group.
-  const { runningBalances, realizedLpFees } = initializeRunningBalancesFromRelayerRepayments(
+  const runningBalances: RunningBalances = {};
+  const realizedLpFees: RunningBalances = {};
+  initializeRunningBalancesFromRelayerRepayments(
+    runningBalances,
+    realizedLpFees,
     endBlockForMainnet,
     clients.hubPoolClient,
     fillsToRefund
@@ -234,6 +233,7 @@ export function _buildPoolRebalanceRoot(
   // balances because the prior partial fill would have triggered a refund to be sent to the spoke pool to refund
   // a slow fill.
   subtractExcessFromPreviousSlowFillsFromRunningBalances(
+    endBlockForMainnet,
     runningBalances,
     clients.hubPoolClient,
     allValidFills,

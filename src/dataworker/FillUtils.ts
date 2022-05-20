@@ -101,6 +101,7 @@ export function getLastMatchingFillBeforeBlock(
 }
 
 export function getFillDataForSlowFillFromPreviousRootBundle(
+  latestMainnetBlock: number,
   fill: FillWithBlock,
   allValidFills: FillWithBlock[],
   hubPoolClient: HubPoolClient,
@@ -114,6 +115,7 @@ export function getFillDataForSlowFillFromPreviousRootBundle(
   // Find ending block number for chain from ProposeRootBundle event that should have included a slow fill
   // refund for this first fill. This will be undefined if there is no block range containing the first fill.
   const rootBundleEndBlockContainingFirstFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
+    latestMainnetBlock,
     firstFillForSameDeposit.blockNumber,
     firstFillForSameDeposit.destinationChainId,
     chainIdListForBundleEvaluationBlockNumbers

@@ -119,11 +119,30 @@ export class HubPoolClient {
     return this.getTokenInfoForDeposit(deposit);
   }
 
+  isRootBundleValid(rootBundle: ProposedRootBundle, latestMainnetBlock: number): boolean {
+    const nextRootBundle = this.getFollowingRootBundle(rootBundle);
+    const executedLeafCount = this.getExecutedLeavesForRootBundle(
+      rootBundle,
+      latestMainnetBlock,
+      nextRootBundle ? nextRootBundle.blockNumber : latestMainnetBlock
+    );
+    return executedLeafCount.length === rootBundle.poolRebalanceLeafCount;
+  }
+
   // This should find the ProposeRootBundle event whose bundle block number for `chain` is closest to the `block`
   // without being smaller. It returns the bundle block number for the chain or undefined if not matched.
-  getRootBundleEvalBlockNumberContainingBlock(block: number, chain: number, chainIdList: number[]): number | undefined {
+  getRootBundleEvalBlockNumberContainingBlock(
+    latestMainnetBlock: number,
+    block: number,
+    chain: number,
+    chainIdList: number[]
+  ): number | undefined {
+    // TODO: Unit test this very important function!
+
     let endingBlockNumber: number;
     for (const rootBundle of sortEventsAscending(this.proposedRootBundles)) {
+      if (!this.isRootBundleValid(rootBundle, latestMainnetBlock)) continue;
+
       const bundleEvalBlockNumber = this.getBundleEndBlockForChain(
         rootBundle as ProposedRootBundle,
         chain,
@@ -179,16 +198,7 @@ export class HubPoolClient {
     const latestFullyExecutedPoolRebalanceRoot = sortEventsDescending(this.proposedRootBundles).find(
       (rootBundle: ProposedRootBundle) => {
         if (rootBundle.blockNumber > latestMainnetBlock) return false;
-        const nextRootBundle = this.getFollowingRootBundle(rootBundle);
-        const followingProposedRootBundleBlock = nextRootBundle ? nextRootBundle.blockNumber : latestMainnetBlock;
-        // Figure out how many pool rebalance leaves were executed for this root bundle, but only count executed
-        // leaves before the `latestMainnetBlock` since that's the block height snapshot we're querying.
-        const executedPoolRebalanceLeaves = this.getExecutedLeavesForRootBundle(
-          rootBundle,
-          latestMainnetBlock,
-          followingProposedRootBundleBlock
-        );
-        return executedPoolRebalanceLeaves.length === rootBundle.poolRebalanceLeafCount;
+        return this.isRootBundleValid(rootBundle, latestMainnetBlock);
       }
     ) as ProposedRootBundle;
 

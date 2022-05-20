@@ -38,7 +38,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
     hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
   });
   it("gets ProposeRootBundle event containing correct bundle block eval number", async function () {
-    const { tree } = await constructSimpleTree(toBNWei(100));
+    const { tree, leaves } = await constructSimpleTree(toBNWei(100));
 
     await hubPoolClient.update();
     expect(hubPoolClient.hasPendingProposal()).to.equal(false);
@@ -50,7 +50,10 @@ describe("HubPoolClient: RootBundle Events", async function () {
       .proposeRootBundle([11, 22], 2, tree.getHexRoot(), constants.mockTreeRoot, constants.mockTreeRoot);
     const proposalBlockNumber = (await txn.wait()).blockNumber;
 
-    expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1, 2])).to.equal(undefined);
+    // Pre update returns undefined.
+    expect(
+      hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(await hubPool.provider.getBlockNumber(), 22, 2, [1, 2])
+    ).to.equal(undefined);
     await hubPoolClient.update();
 
     expect(hubPoolClient.getPendingRootBundleProposal()).to.deep.equal({
@@ -65,17 +68,34 @@ describe("HubPoolClient: RootBundle Events", async function () {
     });
     expect(hubPoolClient.hasPendingProposal()).to.equal(true);
 
+    // Ignores root bundles that aren't full executed.
+    expect(
+      hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(await hubPool.provider.getBlockNumber(), 22, 2, [1, 2])
+    ).to.equal(undefined);
+
     // Happy case where `chainIdList` contains chain ID and block is <= than the bundle block range for that chain.
-    expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1, 2])).to.equal(22);
+    await timer.connect(dataworker).setCurrentTime(proposeTime + liveness + 1);
+    await hubPool.connect(dataworker).executeRootBundle(...Object.values(leaves[0]), tree.getHexProof(leaves[0]));
+    await hubPool.connect(dataworker).executeRootBundle(...Object.values(leaves[1]), tree.getHexProof(leaves[1]));
+    await hubPoolClient.update();
+    expect(
+      hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(await hubPool.provider.getBlockNumber(), 22, 2, [1, 2])
+    ).to.equal(22);
 
     // `block` is greater than bundle block number for the chain.
-    expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(23, 2, [1, 2])).to.equal(undefined);
+    expect(
+      hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(await hubPool.provider.getBlockNumber(), 23, 2, [1, 2])
+    ).to.equal(undefined);
 
     // Chain ID list doesn't contain `chain`
-    expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1, 3])).to.equal(undefined);
+    expect(
+      hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(await hubPool.provider.getBlockNumber(), 22, 2, [1, 3])
+    ).to.equal(undefined);
 
     // Chain ID list length doesn't match bundle block range length
-    expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(22, 2, [1])).to.equal(undefined);
+    expect(
+      hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(await hubPool.provider.getBlockNumber(), 22, 2, [1])
+    ).to.equal(undefined);
   });
   it("gets most recent RootBundleExecuted event for chainID and L1 token", async function () {
     const { tree: tree1, leaves: leaves1 } = await constructSimpleTree(toBNWei(100));

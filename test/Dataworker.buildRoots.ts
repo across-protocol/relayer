@@ -558,11 +558,10 @@ describe("Dataworker: Build merkle roots", async function () {
       const expectedSlowRelayTree = await buildSlowRelayTree(slowRelayLeaves);
 
       // Construct pool rebalance root so we can publish slow relay root to spoke pool:
-      const {
-        tree: poolRebalanceTree,
-        leaves: poolRebalanceLeaves,
-        startingRunningBalances,
-      } = await constructPoolRebalanceTree(expectedRunningBalances, expectedRealizedLpFees);
+      const { tree: poolRebalanceTree, leaves: poolRebalanceLeaves } = await constructPoolRebalanceTree(
+        expectedRunningBalances,
+        expectedRealizedLpFees
+      );
 
       // Propose root bundle so that we can test that the dataworker looks up ProposeRootBundle events properly.
       await hubPool.connect(dataworker).proposeRootBundle(
@@ -573,6 +572,28 @@ describe("Dataworker: Build merkle roots", async function () {
         mockTreeRoot, // relayerRefundRoot
         expectedSlowRelayTree.getHexRoot() // slowRelayRoot
       );
+      const pendingRootBundle = await hubPool.rootBundleProposal();
+
+      // Execute root bundle so that this root bundle is not ignored by dataworker.
+      await timer.connect(dataworker).setCurrentTime(pendingRootBundle.challengePeriodEndTimestamp + 1);
+      for (const leaf of poolRebalanceLeaves) {
+        await hubPool
+          .connect(dataworker)
+          .executeRootBundle(...Object.values(leaf), poolRebalanceTree.getHexProof(leaf));
+      }
+
+      await updateAllClients();
+      for (const leaf of poolRebalanceLeaves) {
+        const lastRunningBalance = hubPoolClient.getRunningBalanceBeforeBlockForChain(
+          await hubPool.provider.getBlockNumber(),
+          leaf.chainId.toNumber(),
+          l1Token_1.address
+        );
+        // Since we fully executed the root bundle, we need to add the running balance for the chain to the expected
+        // running balances since the data worker adds these prior running balances.
+        expectedRunningBalances[leaf.chainId.toNumber()][l1Token_1.address] =
+          expectedRunningBalances[leaf.chainId.toNumber()][l1Token_1.address].add(lastRunningBalance);
+      }
 
       // Execute 1 slow relay leaf:
       // Before we can execute the leaves on the spoke pool, we need to actually publish them since we're using a mock
@@ -686,25 +707,6 @@ describe("Dataworker: Build merkle roots", async function () {
         getRefundForFills([fill7, fill8]),
         getRealizedLpFeeForFills([fill7, fill8]),
         [fill7.destinationChainId],
-        [l1Token_1.address],
-        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)
-      );
-
-      // Execute root bundle so we can propose another bundle. The latest running balance emitted in this event
-      // should be added to running balances.
-      await timer.setCurrentTime(Number(await timer.getCurrentTime()) + refundProposalLiveness + 1);
-      for (const leaf of poolRebalanceLeaves) {
-        await hubPool
-          .connect(dataworker)
-          .executeRootBundle(...Object.values(leaf), poolRebalanceTree.getHexProof(leaf));
-      }
-      await updateAllClients();
-      updateAndCheckExpectedPoolRebalanceCounters(
-        expectedRunningBalances,
-        expectedRealizedLpFees,
-        startingRunningBalances,
-        toBN(0),
-        [originChainId, destinationChainId],
         [l1Token_1.address],
         dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)
       );
