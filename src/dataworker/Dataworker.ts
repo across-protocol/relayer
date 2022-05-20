@@ -58,7 +58,7 @@ export class Dataworker {
     readonly maxL1TokenCountOverride: number = undefined,
     readonly tokenTransferThreshold: BigNumberForToken = {},
     readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {},
-    readonly spokeRootsLookback = 10
+    readonly spokeRootsLookbackCount = 0
   ) {
     if (
       maxRefundCountOverride !== undefined ||
@@ -925,9 +925,11 @@ export class Dataworker {
       this.clients.hubPoolClient.latestBlockNumber
     );
 
-    Object.entries(spokePoolClients).forEach(async ([chainId, client]) => {
+    Object.entries(spokePoolClients).forEach(([chainId, client]) => {
       // Only grab the most recent 10.
-      const rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).slice(0, 10);
+      let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays());
+      if (this.spokeRootsLookbackCount !== 0)
+        rootBundleRelays = rootBundleRelays.slice(0, this.spokeRootsLookbackCount);
       const executedLeavesForChain = client.getRelayerRefundExecutions();
       for (const rootBundleRelay of rootBundleRelays) {
         const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
@@ -957,14 +959,16 @@ export class Dataworker {
           continue;
         }
 
-        const latestRootBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
+        const prevRootBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
           matchingRootBundle.blockNumber
         );
 
-        const blockNumberRanges = latestRootBundle.bundleEvaluationBlockNumbers.map((endBlock, i) => [
-          endBlock.toNumber() + 1,
-          matchingRootBundle[i],
-        ]);
+        const blockNumberRanges = matchingRootBundle.bundleEvaluationBlockNumbers.map((endBlock, i) => {
+          const fromBlock = prevRootBundle?.bundleEvaluationBlockNumbers?.[i]
+            ? prevRootBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
+            : 0;
+          return [fromBlock, endBlock.toNumber()];
+        });
 
         const { tree, leaves } = this.buildRelayerRefundRoot(blockNumberRanges, spokePoolClients);
         if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {
@@ -976,6 +980,7 @@ export class Dataworker {
           });
           continue;
         }
+
         const executableLeaves = leaves.filter((leaf) => {
           if (leaf.chainId !== Number(chainId)) return false;
           const executedLeaf = executedLeavesForChain.find(

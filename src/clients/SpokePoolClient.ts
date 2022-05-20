@@ -17,8 +17,8 @@ export class SpokePoolClient {
   private fills: Fill[] = [];
   private speedUps: { [depositorAddress: string]: { [depositId: number]: SpeedUp[] } } = {};
   private depositRoutes: { [originToken: string]: { [DestinationChainId: number]: boolean } } = {};
-  private rootBundleRelays: RootBundleRelayWithBlock[];
-  private relayerRefundExecutions: RelayerRefundExecutionWithBlock[];
+  private rootBundleRelays: RootBundleRelayWithBlock[] = [];
+  private relayerRefundExecutions: RelayerRefundExecutionWithBlock[] = [];
   public isUpdated: boolean = false;
 
   public firstBlockToSearch: number;

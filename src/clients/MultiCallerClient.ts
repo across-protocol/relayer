@@ -17,6 +17,7 @@ export class MultiCallerClient {
   // caller to send a transaction. The transaction might not be executable, which should be filtered later.
   enqueueTransaction(transaction: AugmentedTransaction) {
     this.transactions.push(transaction);
+    // console.log("method", transaction.method, "args", transaction.args.map((elt) => elt.toString()).join(","));
   }
 
   transactionCount() {
