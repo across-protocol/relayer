@@ -1,8 +1,26 @@
-import { buildRelayerRefundTree, buildSlowRelayTree, buildPoolRebalanceLeafTree } from "../utils";
-import { winston, toBN, EMPTY_MERKLE_ROOT } from "../utils";
-import { UnfilledDeposit, Deposit, DepositWithBlock, RootBundle, UnfilledDepositsForOriginChain } from "../interfaces";
-import { FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
-import { BigNumberForToken, FillsToRefund, RelayData } from "../interfaces";
+import {
+  buildRelayerRefundTree,
+  buildSlowRelayTree,
+  buildPoolRebalanceLeafTree,
+  winston,
+  toBN,
+  EMPTY_MERKLE_ROOT,
+} from "../utils";
+import {
+  UnfilledDeposit,
+  Deposit,
+  DepositWithBlock,
+  RootBundle,
+  UnfilledDepositsForOriginChain,
+  TreeData,
+  FillWithBlock,
+  PoolRebalanceLeaf,
+  RelayerRefundLeaf,
+  RelayerRefundLeafWithGroup,
+  BigNumberForToken,
+  FillsToRefund,
+  RelayData,
+} from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
@@ -13,13 +31,18 @@ import {
   getFillsToRefundCountGroupedByRepaymentChain,
   updateTotalRealizedLpFeePct,
   updateTotalRefundAmount,
+  getFillsInRange,
+  getRefundInformationFromFill,
+  getFillCountGroupedByProp,
 } from "./FillUtils";
-import { getFillsInRange, getRefundInformationFromFill } from "./FillUtils";
-import { getFillCountGroupedByProp } from "./FillUtils";
 import { getBlockRangeForChain } from "./DataworkerUtils";
-import { getUnfilledDepositCountGroupedByProp, getDepositCountGroupedByToken } from "./DepositUtils";
-import { flattenAndFilterUnfilledDepositsByOriginChain } from "./DepositUtils";
-import { updateUnfilledDepositsWithMatchedDeposit, getUniqueDepositsInRange } from "./DepositUtils";
+import {
+  getUnfilledDepositCountGroupedByProp,
+  getDepositCountGroupedByToken,
+  flattenAndFilterUnfilledDepositsByOriginChain,
+  updateUnfilledDepositsWithMatchedDeposit,
+  getUniqueDepositsInRange,
+} from "./DepositUtils";
 import { constructSpokePoolClientsForBlockAndUpdate } from "../common/ClientHelper";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
@@ -558,7 +581,15 @@ export class Dataworker {
     hubPoolChainId: number,
     widestPossibleExpectedBlockRange: number[][],
     rootBundle: RootBundle
-  ): Promise<{ valid: boolean; reason?: string }> {
+  ): Promise<{
+    valid: boolean;
+    reason?: string;
+    expectedTrees?: {
+      poolRebalanceTree: TreeData<PoolRebalanceLeaf>;
+      relayerRefundTree: TreeData<RelayerRefundLeaf>;
+      slowRelayTree: TreeData<RelayData>;
+    };
+  }> {
     // If pool rebalance root is empty, always dispute. There should never be a bundle with an empty rebalance root.
     if (rootBundle.poolRebalanceRoot === EMPTY_MERKLE_ROOT) {
       this.logger.debug({
@@ -706,6 +737,13 @@ export class Dataworker {
       spokePoolClients
     );
     const expectedSlowRelayRoot = this.buildSlowRelayRoot(blockRangesImpliedByBundleEndBlocks, spokePoolClients);
+
+    const expectedTrees = {
+      poolRebalanceTree: expectedPoolRebalanceRoot,
+      relayerRefundTree: expectedRelayerRefundRoot,
+      slowRelayTree: expectedSlowRelayRoot,
+    };
+
     if (
       expectedPoolRebalanceRoot.leaves.length !== rootBundle.unclaimedPoolRebalanceLeafCount ||
       expectedPoolRebalanceRoot.tree.getHexRoot() !== rootBundle.poolRebalanceRoot
@@ -743,6 +781,7 @@ export class Dataworker {
       });
       return {
         valid: true,
+        expectedTrees,
       };
     }
 
@@ -763,6 +802,7 @@ export class Dataworker {
           [...expectedSlowRelayRoot.leaves],
           expectedSlowRelayRoot.tree.getHexRoot()
         ),
+      expectedTrees,
     };
   }
 
@@ -773,7 +813,106 @@ export class Dataworker {
   }
 
   async executePoolRebalanceLeaves() {
-    // TODO:
+    if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
+    const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
+
+    // Exit early if a bundle is not pending.
+    if (!this.clients.hubPoolClient.hasPendingProposal()) {
+      this.logger.debug({
+        at: "Dataworker#executePoolRebalanceLeaves",
+        message: "No pending proposal, nothing to execute",
+      });
+      return;
+    }
+
+    // Exit early if a bundle is not pending.
+    if (!this.clients.hubPoolClient.hasPendingProposal()) {
+      this.logger.debug({
+        at: "Dataworker#executePoolRebalanceLeaves",
+        message: "No pending proposal, nothing to validate",
+      });
+      return;
+    }
+
+    const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundleProposal();
+    this.logger.debug({
+      at: "Dataworker#executePoolRebalanceLeaves",
+      message: "Found pending proposal",
+      pendingRootBundle,
+    });
+
+    // Exit early if challenge period timestamp has not passed:
+    if (this.clients.hubPoolClient.currentTime <= pendingRootBundle.challengePeriodEndTimestamp) {
+      this.logger.debug({
+        at: "Dataworke#executePoolRebalanceLeaves",
+        message: "Challenge period not passed, cannot execute",
+      });
+      return;
+    }
+
+    const widestPossibleExpectedBlockRange = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.clients,
+      this.clients.hubPoolClient.latestBlockNumber
+    );
+    const { valid, reason, expectedTrees } = await this.validateRootBundle(
+      hubPoolChainId,
+      widestPossibleExpectedBlockRange,
+      pendingRootBundle
+    );
+
+    if (!valid) {
+      this.logger.error({
+        at: "Dataworke#executePoolRebalanceLeaves",
+        message: "Found invalid proposal after challenge period!",
+        reason,
+      });
+      return;
+    }
+
+    if (valid && !expectedTrees) {
+      this.logger.error({
+        at: "Dataworke#executePoolRebalanceLeaves",
+        message:
+          "Found valid proposal, but no trees could be generated. This probably means that the proposal was never evaluated during liveness due to an odd block range!",
+        reason,
+      });
+      return;
+    }
+
+    const executedLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
+      this.clients.hubPoolClient.getMostRecentProposedRootBundle(this.clients.hubPoolClient.latestBlockNumber),
+      this.clients.hubPoolClient.latestBlockNumber,
+      this.clients.hubPoolClient.latestBlockNumber
+    );
+
+    // Filter out previously executed leaves.
+    const unexecutedLeaves = expectedTrees.poolRebalanceTree.leaves.filter((leaf) =>
+      executedLeaves.every(({ leafId }) => leafId !== leaf.leafId)
+    );
+
+    const chainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
+    unexecutedLeaves.forEach((leaf) => {
+      const proof = expectedTrees.poolRebalanceTree.tree.getHexProof(leaf);
+
+      this.clients.multiCallerClient.enqueueTransaction({
+        contract: this.clients.hubPoolClient.hubPool,
+        chainId,
+        method: "executeRootBundle",
+        args: [
+          leaf.chainId,
+          leaf.groupIndex,
+          leaf.bundleLpFees,
+          leaf.netSendAmounts,
+          leaf.runningBalances,
+          leaf.leafId,
+          leaf.l1Tokens,
+          proof,
+        ],
+        message: "Executed PoolRebalanceLeaf 🌿!",
+        mrkdwn: `Root hash: ${expectedTrees.poolRebalanceTree.tree.getHexRoot()}\nLeaf: ${leaf.leafId}`, // Just a placeholder
+      });
+    });
   }
 
   async executeRelayerRefundLeaves() {

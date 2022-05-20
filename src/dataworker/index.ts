@@ -40,6 +40,8 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
 
       await dataworker.proposeRootBundle();
 
+      await dataworker.executePoolRebalanceLeaves();
+
       await clients.multiCallerClient.executeTransactionQueue();
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
