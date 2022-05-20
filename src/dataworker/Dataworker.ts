@@ -827,15 +827,6 @@ export class Dataworker {
       return;
     }
 
-    // Exit early if a bundle is not pending.
-    if (!this.clients.hubPoolClient.hasPendingProposal()) {
-      this.logger.debug({
-        at: "Dataworker#executePoolRebalanceLeaves",
-        message: "No pending proposal, nothing to validate",
-      });
-      return;
-    }
-
     const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundleProposal();
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
