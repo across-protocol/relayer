@@ -808,10 +808,108 @@ export class Dataworker {
     };
   }
 
+  // TODO: this method and executeRelayerRefundLeaves have a lot of similarities, but they have some key differences
+  // in both the events they search for and the comparisons they make. We should try to generalize this in the future,
+  // but keeping them separate is probably the simplest for the initial implementation.
   async executeSlowRelayLeaves() {
-    // TODO: Caller should grab `bundleBlockNumbers` from ProposeRootBundle event, recreate root and execute
-    // all leaves for root. To locate `rootBundleId`, look up `SpokePool.RelayedRootBundle` events and find event
-    // with matching roots.
+    const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.clients,
+      this.logger,
+      this.clients.hubPoolClient.latestBlockNumber
+    );
+
+    Object.entries(spokePoolClients).forEach(([chainId, client]) => {
+      let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays());
+
+      // Only grab the most recent n roots that have been sent if configured to do so.
+      if (this.spokeRootsLookbackCount !== 0)
+        rootBundleRelays = rootBundleRelays.slice(0, this.spokeRootsLookbackCount);
+
+      const slowFillsForChain = client.getFills().filter((fill) => fill.isSlowRelay);
+      for (const rootBundleRelay of rootBundleRelays) {
+        const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
+          if (bundle.slowRelayRoot !== rootBundleRelay.slowRelayRoot) return false;
+
+          const followingBlockNumber =
+            this.clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber ||
+            this.clients.hubPoolClient.latestBlockNumber;
+
+          const leaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
+            bundle,
+            this.clients.hubPoolClient.latestBlockNumber,
+            followingBlockNumber
+          );
+
+          // Only use this bundle if it had valid leaves returned (meaning it was at least partially executed).
+          return leaves.length > 0;
+        });
+
+        if (!matchingRootBundle) {
+          this.logger.warn({
+            at: "Dataworke#executeSlowRelayLeaves",
+            message: "Couldn't find a mainnet root bundle for a slowRelayRoot on L2!",
+            chainId,
+            slowRelayRoot: rootBundleRelay.slowRelayRoot,
+          });
+          continue;
+        }
+
+        const prevRootBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
+          matchingRootBundle.blockNumber
+        );
+
+        const blockNumberRanges = matchingRootBundle.bundleEvaluationBlockNumbers.map((endBlock, i) => {
+          const fromBlock = prevRootBundle?.bundleEvaluationBlockNumbers?.[i]
+            ? prevRootBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
+            : 0;
+          return [fromBlock, endBlock.toNumber()];
+        });
+
+        const { tree, leaves } = this.buildSlowRelayRoot(blockNumberRanges, spokePoolClients);
+        if (tree.getHexRoot() !== rootBundleRelay.slowRelayRoot) {
+          this.logger.warn({
+            at: "Dataworke#executeSlowRelayLeaves",
+            message: "Constructed a different root for the block range!",
+            chainId,
+            publishedSlowRelayRoot: rootBundleRelay.slowRelayRoot,
+            constructedSlowRelayRoot: tree.getHexRoot(),
+          });
+          continue;
+        }
+
+        const executableLeaves = leaves.filter((leaf) => {
+          if (leaf.destinationChainId !== Number(chainId)) return false;
+          const executedLeaf = slowFillsForChain.find(
+            (event) => event.originChainId === leaf.originChainId && event.depositId === leaf.depositId
+          );
+          // Only return true if no leaf was found in the list of executed leaves.
+          return !executedLeaf;
+        });
+
+        executableLeaves.forEach((leaf) => {
+          this.clients.multiCallerClient.enqueueTransaction({
+            contract: client.spokePool,
+            chainId: Number(chainId),
+            method: "executeSlowRelayLeaf",
+            args: [
+              leaf.depositor,
+              leaf.recipient,
+              leaf.destinationToken,
+              leaf.amount,
+              leaf.originChainId,
+              leaf.realizedLpFeePct,
+              leaf.relayerFeePct,
+              leaf.depositId,
+              rootBundleRelay.rootBundleId,
+              tree.getHexProof(leaf),
+            ],
+            message: "Executed SlowRelayLeaf 🌿!",
+            mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nslowRelayRoot: ${rootBundleRelay.slowRelayRoot}\nOrigin chain: ${leaf.originChainId}\nDestination chain:${leaf.destinationChainId}\nDeposit Id: ${leaf.depositId}\n`, // Just a placeholder
+          });
+        });
+      }
+    });
   }
 
   async executePoolRebalanceLeaves() {
@@ -917,10 +1015,12 @@ export class Dataworker {
     );
 
     Object.entries(spokePoolClients).forEach(([chainId, client]) => {
-      // Only grab the most recent 10.
       let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays());
+
+      // Only grab the most recent n roots that have been sent if configured to do so.
       if (this.spokeRootsLookbackCount !== 0)
         rootBundleRelays = rootBundleRelays.slice(0, this.spokeRootsLookbackCount);
+
       const executedLeavesForChain = client.getRelayerRefundExecutions();
       for (const rootBundleRelay of rootBundleRelays) {
         const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
@@ -987,7 +1087,7 @@ export class Dataworker {
             chainId: Number(chainId),
             method: "executeRelayerRefundLeaf",
             args: [rootBundleRelay.rootBundleId, leaf, tree.getHexProof(leaf)],
-            message: "Executed PoolRebalanceLeaf 🌿!",
+            message: "Executed RelayerRefundLeaf 🌿!",
             mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nrelayerRefundRoot: ${rootBundleRelay.relayerRefundRoot}\nLeaf: ${leaf.leafId}`, // Just a placeholder
           });
         });
