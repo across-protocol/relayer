@@ -42,6 +42,9 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
 
       await dataworker.executePoolRebalanceLeaves();
 
+      // Execute slow relays before relayer refunds to give them priority for any L2 funds.
+      await dataworker.executeSlowRelayLeaves();
+
       await dataworker.executeRelayerRefundLeaves();
 
       await clients.multiCallerClient.executeTransactionQueue();

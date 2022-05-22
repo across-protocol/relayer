@@ -18,7 +18,7 @@ let dataworkerInstance: Dataworker, multiCallerClient: MultiCallerClient;
 
 let updateAllClients: () => Promise<void>;
 
-describe("Dataworker: Execute relayer refunds", async function () {
+describe("Dataworker: Execute slow relays", async function () {
   beforeEach(async function () {
     ({
       hubPool,
@@ -85,8 +85,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
     await dataworkerInstance.executePoolRebalanceLeaves();
 
     // TEST 4:
-    // Submit another fill and check that dataworker proposes another root:
-    await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 1, destinationChainId);
+    // Submit a new root with no additional actions taken to make sure that this doesn't break anything.
     await updateAllClients();
     await dataworkerInstance.proposeRootBundle();
 
@@ -102,11 +101,14 @@ describe("Dataworker: Execute relayer refunds", async function () {
     await multiCallerClient.executeTransactionQueue();
 
     await updateAllClients();
-    await dataworkerInstance.executeRelayerRefundLeaves();
-    expect(multiCallerClient.transactionCount()).to.equal(3);
+    await dataworkerInstance.executeSlowRelayLeaves();
+
+    // There should be one slow relay to execute.
+    expect(multiCallerClient.transactionCount()).to.equal(1);
 
     // Note: we need to manually supply the tokens since the L1 tokens won't be recognized in the spoke pool.
-    await erc20_2.mint(spokePool_2.address, amountToDeposit);
+    // It should only require ~1/2 of the amount because there was a prev fill that provided the other half.
+    await erc20_2.mint(spokePool_2.address, amountToDeposit.div(2).sub(1));
     await multiCallerClient.executeTransactionQueue();
   });
 });
