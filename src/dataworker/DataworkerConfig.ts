@@ -9,6 +9,7 @@ export class DataworkerConfig extends CommonConfig {
   readonly rootBundleExecutionThreshold: BigNumber;
   readonly disputerEnabled: boolean;
   readonly proposerEnabled: boolean;
+  readonly executorEnabled: boolean;
   readonly sendingTransactionsEnabled: boolean;
 
   constructor(env: ProcessEnv) {
@@ -20,6 +21,7 @@ export class DataworkerConfig extends CommonConfig {
       BLOCK_RANGE_END_BLOCK_BUFFER,
       DISPUTER_ENABLED,
       PROPOSER_ENABLED,
+      EXECUTOR_ENABLED,
       SEND_TRANSACTIONS,
     } = env;
     super(env);
@@ -46,6 +48,7 @@ export class DataworkerConfig extends CommonConfig {
       : BUNDLE_END_BLOCK_BUFFERS;
     this.disputerEnabled = DISPUTER_ENABLED === "true";
     this.proposerEnabled = PROPOSER_ENABLED === "true";
+    this.executorEnabled = EXECUTOR_ENABLED === "true";
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
     if (Object.keys(this.blockRangeEndBlockBuffer).length > 0)
       for (const chainId of this.spokePoolChains)
