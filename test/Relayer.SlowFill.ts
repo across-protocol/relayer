@@ -88,7 +88,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     );
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(spyLogIncludes(spy, -2, "1wei filling")).to.be.true;
+    expect(spyLogIncludes(spy, -2, "Zero size relay sent")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
     expect(multiCallerClient.transactionCount()).to.equal(1); // One transaction, 1wei filling the one deposit.
 
