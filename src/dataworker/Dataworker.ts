@@ -1,4 +1,4 @@
-import { winston, EMPTY_MERKLE_ROOT } from "../utils";
+import { winston, EMPTY_MERKLE_ROOT, toBN, BigNumber, toBNWei } from "../utils";
 import { UnfilledDeposit, Deposit, DepositWithBlock, RootBundle } from "../interfaces";
 import { UnfilledDepositsForOriginChain, RunningBalances } from "../interfaces";
 import { FillWithBlock, PoolRebalanceLeaf } from "../interfaces";
@@ -257,7 +257,7 @@ export class Dataworker {
     );
   }
 
-  async proposeRootBundle() {
+  async proposeRootBundle(usdThresholdToSubmitNewBundle?: BigNumber) {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
@@ -265,13 +265,13 @@ export class Dataworker {
 
     // 0. Check if a bundle is pending.
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
-    if (this.clients.hubPoolClient.hasPendingProposal()) {
-      this.logger.debug({
-        at: "Dataworker#propose",
-        message: "Has pending proposal, cannot propose",
-      });
-      return;
-    }
+    // if (this.clients.hubPoolClient.hasPendingProposal()) {
+    //   this.logger.debug({
+    //     at: "Dataworker#propose",
+    //     message: "Has pending proposal, cannot propose",
+    //   });
+    //   return;
+    // }
 
     // 1. Construct a list of ending block ranges for each chain that we want to include
     // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
@@ -327,9 +327,25 @@ export class Dataworker {
       "Pool rebalance"
     );
 
-    // Exit early if netSendAmount is == 0 or if fillsToRefund total is not above USD threshold.
-    console.log('PROFIT CLIENT!!!!')
-    console.log(this.clients.profitClient.getAllPrices())
+    // Exit early if sum of relayer refunds + slow fills > usdThresholdToSubmitNewBundle
+    Object.keys(fillsToRefund).forEach((repaymentChainId) => {
+      Object.keys(fillsToRefund[repaymentChainId]).forEach((repaymentToken) => {
+        const totalRefundAmount = fillsToRefund[repaymentChainId][repaymentToken].totalRefundAmount;
+        const l1TokenCounterpart = this.clients.hubPoolClient.getL1TokenCounterpartAtBlock(
+          repaymentChainId,
+          repaymentToken,
+          endBlockForMainnet
+        );
+        const refundTokenInfo = this.clients.hubPoolClient.getTokenInfoForL1Token(l1TokenCounterpart)
+        console.log(refundTokenInfo)
+        const tokenPriceInUsd = this.clients.profitClient.getPriceOfToken(l1TokenCounterpart);
+        console.log(repaymentChainId, repaymentToken, totalRefundAmount.toString(), tokenPriceInUsd.toString())
+
+        const totalRefundInUsd = totalRefundAmount.mul(tokenPriceInUsd).div(toBNWei(1));
+        console.log(totalRefundInUsd.toString())
+    
+      })
+    })
 
     this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForProposal });
     const relayerRefundRoot = _buildRelayerRefundRoot(
