@@ -1,4 +1,4 @@
-import { spreadEvent, assign, Contract, BigNumber, EventSearchConfig } from "../utils";
+import { spreadEvent, assign, Contract, BigNumber, EventSearchConfig, Promise } from "../utils";
 import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
 import { AcrossConfigStoreClient } from "./ConfigStoreClient";
@@ -160,15 +160,18 @@ export class SpokePoolClient {
       tokensBridgedEvents,
       relayedRootBundleEvents,
       executedRelayerRefundRootEvents,
-    ] = await Promise.all([
-      paginatedEventQuery(this.spokePool, this.spokePool.filters.FundsDeposited(), searchConfig),
-      paginatedEventQuery(this.spokePool, this.spokePool.filters.RequestedSpeedUpDeposit(), searchConfig),
-      paginatedEventQuery(this.spokePool, this.spokePool.filters.FilledRelay(), searchConfig),
-      paginatedEventQuery(this.spokePool, this.spokePool.filters.EnabledDepositRoute(), depositRouteSearchConfig),
-      paginatedEventQuery(this.spokePool, this.spokePool.filters.TokensBridged(), depositRouteSearchConfig),
-      paginatedEventQuery(this.spokePool, this.spokePool.filters.RelayedRootBundle(), searchConfig),
-      paginatedEventQuery(this.spokePool, this.spokePool.filters.ExecutedRelayerRefundRoot(), searchConfig),
-    ]);
+    ] = await Promise.all(
+      [
+        paginatedEventQuery(this.spokePool, this.spokePool.filters.FundsDeposited(), searchConfig),
+        paginatedEventQuery(this.spokePool, this.spokePool.filters.RequestedSpeedUpDeposit(), searchConfig),
+        paginatedEventQuery(this.spokePool, this.spokePool.filters.FilledRelay(), searchConfig),
+        paginatedEventQuery(this.spokePool, this.spokePool.filters.EnabledDepositRoute(), depositRouteSearchConfig),
+        paginatedEventQuery(this.spokePool, this.spokePool.filters.TokensBridged(), depositRouteSearchConfig),
+        paginatedEventQuery(this.spokePool, this.spokePool.filters.RelayedRootBundle(), searchConfig),
+        paginatedEventQuery(this.spokePool, this.spokePool.filters.ExecutedRelayerRefundRoot(), searchConfig),
+      ],
+      { concurrency: 2 }
+    );
 
     for (const event of tokensBridgedEvents) {
       this.tokensBridged.push({ ...spreadEvent(event), transactionHash: event.transactionHash });

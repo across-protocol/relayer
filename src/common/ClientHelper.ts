@@ -1,13 +1,6 @@
 import winston from "winston";
-import {
-  getProvider,
-  getSigner,
-  getDeployedContract,
-  getDeploymentBlockNumber,
-  Wallet,
-  SpokePool,
-  Contract,
-} from "../utils";
+import { getProvider, getSigner, getDeployedContract, getDeploymentBlockNumber } from "../utils";
+import { Wallet, SpokePool, Contract } from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient, ProfitClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { DataworkerClients } from "../dataworker/DataworkerClientHelper";
@@ -99,6 +92,7 @@ export async function constructClients(logger: winston.Logger, config: CommonCon
 }
 
 export async function updateClients(clients: Clients) {
-  await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
+  await clients.hubPoolClient.update();
+  await clients.configStoreClient.update();
   await clients.profitClient.update();
 }
