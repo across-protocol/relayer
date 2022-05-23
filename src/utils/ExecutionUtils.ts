@@ -18,9 +18,9 @@ export async function processCrash(logger: winston.Logger, fileName: String, pol
     message: `There was an execution error! ${pollingDelay != 0 ? "Re-running loop" : ""}`,
     error,
   });
+  await delay(5);
   if (pollingDelay === 0) return true;
 
-  await delay(5);
   return false;
 }
 
