@@ -2,7 +2,7 @@ import { buildSlowRelayTree, buildSlowRelayLeaves, buildFillForRepaymentChain, e
 import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
 import { buildRelayerRefundTreeWithUnassignedLeafIds, constructPoolRebalanceTree } from "./utils";
-import { buildPoolRebalanceLeafTree, sampleRateModel } from "./utils";
+import { buildPoolRebalanceLeafTree, sampleRateModel, fillRelay } from "./utils";
 import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient } from "../src/clients";
 import {
   amountToDeposit,
@@ -132,6 +132,35 @@ describe("Dataworker: Build merkle roots", async function () {
     expect(
       dataworkerInstance.buildSlowRelayRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).tree.getHexRoot()
     ).to.equal(EMPTY_MERKLE_ROOT);
+
+    // Includes slow fills triggered by "zero" (i.e. 1 wei) fills
+    const deposit5 = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_2,
+      erc20_2,
+      l1Token_1,
+      depositor,
+      originChainId,
+      amountToDeposit
+    );
+    await fillRelay(
+      spokePool_1,
+      erc20_1,
+      depositor,
+      depositor,
+      relayer,
+      deposit5.depositId,
+      deposit5.originChainId,
+      deposit5.amount,
+      toBN(1), // 1 wei fill
+      deposit5.realizedLpFeePct,
+      deposit5.relayerFeePct
+    );
+    await updateAllClients();
+    const merkleRoot2 = dataworkerInstance.buildSlowRelayRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients);
+    const expectedMerkleRoot2 = await buildSlowRelayTree(buildSlowRelayLeaves([deposit5]));
+    expect(merkleRoot2.tree.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
   });
   describe("Build relayer refund root", function () {
     it("amountToReturn is 0", async function () {
