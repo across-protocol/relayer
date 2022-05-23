@@ -73,8 +73,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     const deposit2Complete = await buildDepositStruct(deposit2, hubPoolClient, configStoreClient, l1Token);
 
     expect(relayerInstance.getUnfilledDeposits()).to.deep.equal([
-      { unfilledAmount: deposit1.amount, deposit: deposit1Complete },
-      { unfilledAmount: deposit2.amount, deposit: deposit2Complete },
+      { unfilledAmount: deposit1.amount, deposit: deposit1Complete, fillCount: 0 },
+      { unfilledAmount: deposit2.amount, deposit: deposit2Complete, fillCount: 0 },
     ]);
   });
   it("Correctly fetches partially filled deposits", async function () {
@@ -91,8 +91,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     await updateAllClients();
     // Validate the relayer correctly computes the unfilled amount.
     expect(relayerInstance.getUnfilledDeposits()).to.deep.equal([
-      { unfilledAmount: deposit1.amount.sub(fill1.fillAmount), deposit: deposit1Complete },
-      { unfilledAmount: deposit2.amount, deposit: deposit2Complete },
+      { unfilledAmount: deposit1.amount.sub(fill1.fillAmount), deposit: deposit1Complete, fillCount: 1 },
+      { unfilledAmount: deposit2.amount, deposit: deposit2Complete, fillCount: 0 },
     ]);
 
     // Partially fill the same deposit another two times.
@@ -102,8 +102,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     // Deposit 1 should now be partially filled by all three fills. This should be correctly reflected.
     const unfilledAmount = deposit1.amount.sub(fill1.fillAmount.add(fill2.fillAmount).add(fill3.fillAmount));
     expect(relayerInstance.getUnfilledDeposits()).to.deep.equal([
-      { unfilledAmount: unfilledAmount, deposit: deposit1Complete },
-      { unfilledAmount: deposit2.amount, deposit: deposit2Complete },
+      { unfilledAmount: unfilledAmount, deposit: deposit1Complete, fillCount: 3 },
+      { unfilledAmount: deposit2.amount, deposit: deposit2Complete, fillCount: 0 },
     ]);
 
     // Fill the reminding amount on the deposit. It should thus be removed from the unfilledDeposits list.
@@ -111,7 +111,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     expect(fill4.totalFilledAmount).to.equal(deposit1.amount); // should be 100% filled at this point.
     await updateAllClients();
     expect(relayerInstance.getUnfilledDeposits()).to.deep.equal([
-      { unfilledAmount: deposit2Complete.amount, deposit: deposit2Complete },
+      { unfilledAmount: deposit2Complete.amount, deposit: deposit2Complete, fillCount: 0 },
     ]);
   });
   it("Correctly excludes fills that are incorrectly applied to a deposit", async function () {
@@ -124,7 +124,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     await updateAllClients();
     // The deposit should show up as unfilled, since the fill was incorrectly applied to the wrong deposit.
     expect(relayerInstance.getUnfilledDeposits()).to.deep.equal([
-      { unfilledAmount: deposit1Complete.amount, deposit: deposit1Complete },
+      { unfilledAmount: deposit1Complete.amount, deposit: deposit1Complete, fillCount: 0 },
     ]);
   });
 });
