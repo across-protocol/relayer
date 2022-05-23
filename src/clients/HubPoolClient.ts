@@ -123,8 +123,7 @@ export class HubPoolClient {
     const nextRootBundle = this.getFollowingRootBundle(rootBundle);
     const executedLeafCount = this.getExecutedLeavesForRootBundle(
       rootBundle,
-      latestMainnetBlock,
-      nextRootBundle ? nextRootBundle.blockNumber : latestMainnetBlock
+      nextRootBundle ? Math.min(nextRootBundle.blockNumber, latestMainnetBlock) : latestMainnetBlock
     );
     return executedLeafCount.length === rootBundle.poolRebalanceLeafCount;
   }
@@ -137,8 +136,6 @@ export class HubPoolClient {
     chain: number,
     chainIdList: number[]
   ): number | undefined {
-    // TODO: Unit test this very important function!
-
     let endingBlockNumber: number;
     for (const rootBundle of sortEventsAscending(this.proposedRootBundles)) {
       if (!this.isRootBundleValid(rootBundle, latestMainnetBlock)) continue;
@@ -173,22 +170,15 @@ export class HubPoolClient {
     ) as ProposedRootBundle;
   }
 
-  getExecutedLeavesForRootBundle(
-    rootBundle: ProposedRootBundle,
-    latestMainnetBlock: number,
-    followingRootBundleBlock: number
-  ) {
+  getExecutedLeavesForRootBundle(rootBundle: ProposedRootBundle, latestMainnetBlockToSearch: number) {
     return sortEventsAscending(this.executedRootBundles).filter(
       (executedLeaf: ExecutedRootBundle) =>
-        executedLeaf.blockNumber <= latestMainnetBlock &&
+        executedLeaf.blockNumber <= latestMainnetBlockToSearch &&
         // Note: We can use > instead of >= here because a leaf can never be executed in same block as its root
         // proposal due to bundle liveness enforced by HubPool. This importantly avoids the edge case
         // where the execution all leaves occurs in the same block as the next proposal, leading us to think
         // that the next proposal is fully executed when its not.
-        executedLeaf.blockNumber > rootBundle.blockNumber &&
-        // This <= makes sense because you could have an execution of a leaf in the same block as the proposal of
-        // the next.
-        executedLeaf.blockNumber <= followingRootBundleBlock
+        executedLeaf.blockNumber > rootBundle.blockNumber
     ) as ExecutedRootBundle[];
   }
 

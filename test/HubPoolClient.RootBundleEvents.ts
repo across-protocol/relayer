@@ -3,6 +3,7 @@ import { SignerWithAddress, expect, ethers, Contract, toBNWei, toBN, BigNumber, 
 import { HubPoolClient } from "../src/clients";
 import * as constants from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
+import { ProposedRootBundle, RootBundle } from "../src/interfaces";
 
 let hubPool: Contract, timer: Contract;
 let l1Token_1: Contract, l1Token_2: Contract;
@@ -96,6 +97,49 @@ describe("HubPoolClient: RootBundle Events", async function () {
     expect(
       hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(await hubPool.provider.getBlockNumber(), 22, 2, [1])
     ).to.equal(undefined);
+  });
+  it("Returns validated root bundle", async function () {
+    const { tree, leaves } = await constructSimpleTree(toBNWei(100));
+
+    await hubPoolClient.update();
+    expect(hubPoolClient.hasPendingProposal()).to.equal(false);
+
+    const liveness = Number(await hubPool.liveness());
+    const proposeTime = Number(await hubPool.getCurrentTime());
+    const txn = await hubPool
+      .connect(dataworker)
+      .proposeRootBundle([11, 22], 2, tree.getHexRoot(), constants.mockTreeRoot, constants.mockTreeRoot);
+
+    // Not valid because not executed.
+    const rootBundle: ProposedRootBundle = {
+      poolRebalanceRoot: tree.getHexRoot(),
+      relayerRefundRoot: constants.mockTreeRoot,
+      slowRelayRoot: constants.mockTreeRoot,
+      proposer: dataworker.address,
+      poolRebalanceLeafCount: 2,
+      challengePeriodEndTimestamp: proposeTime + liveness,
+      bundleEvaluationBlockNumbers: [toBN(11), toBN(22)],
+      blockNumber: (await txn.wait()).blockNumber,
+      transactionIndex: 0,
+      logIndex: 0,
+    };
+    expect(hubPoolClient.isRootBundleValid(rootBundle, hubPoolClient.latestBlockNumber)).to.equal(false);
+
+    // Execute leaves.
+    await timer.connect(dataworker).setCurrentTime(proposeTime + liveness + 1);
+    await hubPool.connect(dataworker).executeRootBundle(...Object.values(leaves[0]), tree.getHexProof(leaves[0]));
+
+    // Not valid until all leaves are executed.
+    await hubPoolClient.update();
+    expect(hubPoolClient.isRootBundleValid(rootBundle, hubPoolClient.latestBlockNumber)).to.equal(false);
+    const blockNumberBeforeAllLeavesExecuted = hubPoolClient.latestBlockNumber;
+
+    await hubPool.connect(dataworker).executeRootBundle(...Object.values(leaves[1]), tree.getHexProof(leaves[1]));
+    await hubPoolClient.update();
+    expect(hubPoolClient.isRootBundleValid(rootBundle, hubPoolClient.latestBlockNumber)).to.equal(true);
+
+    // Only searches for executed leaves up to input latest mainnet block to search
+    expect(hubPoolClient.isRootBundleValid(rootBundle, blockNumberBeforeAllLeavesExecuted)).to.equal(false);
   });
   it("gets most recent RootBundleExecuted event for chainID and L1 token", async function () {
     const { tree: tree1, leaves: leaves1 } = await constructSimpleTree(toBNWei(100));
