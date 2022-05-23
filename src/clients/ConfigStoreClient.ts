@@ -41,13 +41,14 @@ export class AcrossConfigStoreClient {
     l1Token: string
   ): Promise<{ realizedLpFeePct: BigNumber; quoteBlock: number }> {
     let quoteBlock = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
+
+    // There is one deposit on optimism for DAI that is right before the DAI rate model was added.
+    if (quoteBlock === 14830339) quoteBlock = 14830390;
+
     const rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
 
     // There is one deposit on optimism that is right at the margin of when liquidity was first added.
     if (quoteBlock > 14718100 && quoteBlock < 14718107) quoteBlock = 14718107;
-
-    // There is one deposit on optimism for DAI that is right before the DAI rate model was added.
-    if (quoteBlock === 14830339) quoteBlock = 14830390;
 
     const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, quoteBlock, deposit.amount);
     const realizedLpFeePct = lpFeeCalculator.calculateRealizedLpFeePct(rateModel, current, post);
