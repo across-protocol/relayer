@@ -42,6 +42,15 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       if (config.proposerEnabled) await dataworker.proposeRootBundle(config.rootBundleExecutionThreshold);
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
 
+      if (config.executorEnabled) {
+        await dataworker.executePoolRebalanceLeaves();
+
+        // Execute slow relays before relayer refunds to give them priority for any L2 funds.
+        await dataworker.executeSlowRelayLeaves();
+  
+        await dataworker.executeRelayerRefundLeaves();
+      } 
+      
       await clients.multiCallerClient.executeTransactionQueue(!config.sendingTransactionsEnabled);
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;

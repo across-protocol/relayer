@@ -145,7 +145,7 @@ export class MultiCallerClient {
   buildMultiCallBundle(transactions: AugmentedTransaction[]) {
     // Validate all transactions in the batch have the same target contract.
     const target = transactions[0].contract;
-    if (transactions.every((tx) => tx.contract.address != target.address)) {
+    if (transactions.every((tx) => tx.contract.address !== target.address)) {
       this.logger.error({
         at: "MultiCallerClient",
         message: "some transactions in the bundle contain different targets",
