@@ -1,4 +1,4 @@
-import { winston, EMPTY_MERKLE_ROOT, sortEventsDescending } from "../utils";
+import { winston, EMPTY_MERKLE_ROOT, sortEventsDescending, BigNumber } from "../utils";
 import { UnfilledDeposit, Deposit, DepositWithBlock, RootBundle } from "../interfaces";
 import { UnfilledDepositsForOriginChain, TreeData, RunningBalances } from "../interfaces";
 import { FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf } from "../interfaces";
@@ -976,12 +976,17 @@ export class Dataworker {
           1,
           this.chainIdListForBundleEvaluationBlockNumbers
         )[1];
-
+        const allValidFillsInRange = getFillsInRange(
+          allValidFills,
+          blockNumberRanges,
+          this.chainIdListForBundleEvaluationBlockNumbers
+        );
         const expectedPoolRebalanceRoot = _buildPoolRebalanceRoot(
           endBlockForMainnet,
           fillsToRefund,
           deposits,
           allValidFills,
+          allValidFillsInRange,
           unfilledDeposits,
           this.clients,
           this.chainIdListForBundleEvaluationBlockNumbers,
