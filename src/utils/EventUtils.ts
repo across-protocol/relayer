@@ -48,7 +48,6 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
     return (await Promise.all(promises, { concurrency: searchConfig.concurrency | defaultConcurrency })).flat(); // Default to 200 concurrent calls.
   } catch (error) {
     if (retryCounter++ < maxRetries) {
-      console.log("DROP & SLEEP");
       await delay(retrySleepTime);
       return await paginatedEventQuery(contract, filter, searchConfig);
     } else throw error;
