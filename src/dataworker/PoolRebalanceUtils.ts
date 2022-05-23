@@ -21,6 +21,7 @@ import {
   winston,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
+import { getBlockRangeForChain } from "./DataworkerUtils";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "./FillUtils";
 
 export function updateRunningBalance(
@@ -143,12 +144,21 @@ export function addSlowFillsToRunningBalances(
 
 export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   endBlockForMainnet: number,
+  blockRangesForChains: number[][],
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
   allValidFills: interfaces.FillWithBlock[],
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ) {
   allValidFills.forEach((fill: interfaces.FillWithBlock) => {
+    // Skip fills that don't fall within current root bundle's block range.
+    const blockRangeForChain = getBlockRangeForChain(
+      blockRangesForChains,
+      fill.destinationChainId,
+      chainIdListForBundleEvaluationBlockNumbers
+    );
+    if (fill.blockNumber > blockRangeForChain[1] || fill.blockNumber < blockRangeForChain[0]) return;
+
     const { lastFillBeforeSlowFillIncludedInRoot, rootBundleEndBlockContainingFirstFill } =
       getFillDataForSlowFillFromPreviousRootBundle(
         endBlockForMainnet,

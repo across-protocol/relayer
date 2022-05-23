@@ -7,6 +7,8 @@ export class DataworkerConfig extends CommonConfig {
   readonly tokenTransferThresholdOverride: { [l1TokenAddress: string]: BigNumber };
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
   readonly rootBundleExecutionThreshold: BigNumber;
+  readonly disputerEnabled: boolean;
+  readonly proposerEnabled: boolean;
 
   constructor(env: ProcessEnv) {
     const {
@@ -15,6 +17,8 @@ export class DataworkerConfig extends CommonConfig {
       MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE,
       MAX_RELAYER_REPAYMENT_LEAF_SIZE_OVERRIDE,
       BLOCK_RANGE_END_BLOCK_BUFFER,
+      DISPUTER_ENABLED,
+      PROPOSER_ENABLED,
     } = env;
     super(env);
 
@@ -34,10 +38,12 @@ export class DataworkerConfig extends CommonConfig {
       : {};
     this.rootBundleExecutionThreshold = ROOT_BUNDLE_EXECUTION_THRESHOLD
       ? toBNWei(ROOT_BUNDLE_EXECUTION_THRESHOLD)
-      : toBNWei(0);
+      : toBNWei("500000");
     this.blockRangeEndBlockBuffer = BLOCK_RANGE_END_BLOCK_BUFFER
       ? JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER)
       : BUNDLE_END_BLOCK_BUFFERS;
+    this.disputerEnabled = DISPUTER_ENABLED === "true";
+    this.proposerEnabled = PROPOSER_ENABLED === "true";
     if (Object.keys(this.blockRangeEndBlockBuffer).length > 0)
       for (const chainId of this.spokePoolChains)
         assert(

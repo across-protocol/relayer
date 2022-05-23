@@ -153,7 +153,7 @@ export async function setupDataworker(
       hubPoolClient,
       multiCallerClient,
       configStoreClient,
-      profitClient
+      profitClient,
     },
     CHAIN_ID_TEST_LIST,
     maxRefundPerRelayerRefundLeaf,
