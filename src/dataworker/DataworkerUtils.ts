@@ -199,10 +199,10 @@ export function _buildRelayerRefundRoot(
 
 export function _buildPoolRebalanceRoot(
   endBlockForMainnet: number,
-  blockRangesForChain: number[][],
   fillsToRefund: FillsToRefund,
   deposits: DepositWithBlock[],
   allValidFills: FillWithBlock[],
+  allValidFillsInRange: FillWithBlock[],
   unfilledDeposits: UnfilledDeposit[],
   clients: DataworkerClients,
   chainIdListForBundleEvaluationBlockNumbers: number[],
@@ -239,10 +239,10 @@ export function _buildPoolRebalanceRoot(
   // a slow fill.
   subtractExcessFromPreviousSlowFillsFromRunningBalances(
     endBlockForMainnet,
-    blockRangesForChain,
     runningBalances,
     clients.hubPoolClient,
     allValidFills,
+    allValidFillsInRange,
     chainIdListForBundleEvaluationBlockNumbers
   );
 

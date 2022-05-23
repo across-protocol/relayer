@@ -1,4 +1,4 @@
-import { AcrossConfigStoreClient, HubPoolClient } from "../clients";
+import { AcrossConfigStoreClient, HubPoolClient, ProfitClient } from "../clients";
 import * as interfaces from "../interfaces";
 import {
   BigNumberForToken,
@@ -19,6 +19,7 @@ import {
   toBN,
   MerkleTree,
   winston,
+  toBNWei,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { getBlockRangeForChain } from "./DataworkerUtils";
@@ -142,23 +143,31 @@ export function addSlowFillsToRunningBalances(
   });
 }
 
+export function computePoolRebalanceUsdVolume(leaves: PoolRebalanceLeaf[], clients: DataworkerClients): BigNumber {
+  return leaves.reduce((result: BigNumber, poolRebalanceLeaf) => {
+    return poolRebalanceLeaf.l1Tokens.reduce((sum: BigNumber, l1Token: string, index: number) => {
+      const netSendAmount = poolRebalanceLeaf.netSendAmounts[index];
+      const runningBalance = poolRebalanceLeaf.runningBalances[index];
+      const volume = netSendAmount.abs().add(runningBalance.abs());
+      const tokenPriceInUsd = clients.profitClient.getPriceOfToken(l1Token);
+      const volumeInUsd = volume.mul(tokenPriceInUsd).div(toBNWei(1));
+      const l1TokenInfo = clients.hubPoolClient.getTokenInfoForL1Token(l1Token);
+      const volumeInUsdScaled = volumeInUsd.mul(toBN(10).pow(18 - l1TokenInfo.decimals));
+
+      return sum.add(volumeInUsdScaled);
+    }, result);
+  }, toBN(0));
+}
+
 export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   endBlockForMainnet: number,
-  blockRangesForChains: number[][],
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
   allValidFills: interfaces.FillWithBlock[],
+  allValidFillsInRange: interfaces.FillWithBlock[],
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ) {
-  allValidFills.forEach((fill: interfaces.FillWithBlock) => {
-    // Skip fills that don't fall within current root bundle's block range.
-    const blockRangeForChain = getBlockRangeForChain(
-      blockRangesForChains,
-      fill.destinationChainId,
-      chainIdListForBundleEvaluationBlockNumbers
-    );
-    if (fill.blockNumber > blockRangeForChain[1] || fill.blockNumber < blockRangeForChain[0]) return;
-
+  allValidFillsInRange.forEach((fill: interfaces.FillWithBlock) => {
     const { lastFillBeforeSlowFillIncludedInRoot, rootBundleEndBlockContainingFirstFill } =
       getFillDataForSlowFillFromPreviousRootBundle(
         endBlockForMainnet,

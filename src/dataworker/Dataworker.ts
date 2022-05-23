@@ -6,7 +6,7 @@ import { BigNumberForToken, FillsToRefund } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
-import { assignValidFillToFillsToRefund } from "./FillUtils";
+import { assignValidFillToFillsToRefund, getFillsInRange } from "./FillUtils";
 import { getRefundInformationFromFill, updateTotalRefundAmount } from "./FillUtils";
 import { updateTotalRealizedLpFeePct } from "./FillUtils";
 import { getBlockRangeForChain, prettyPrintSpokePoolEvents } from "./DataworkerUtils";
@@ -243,13 +243,18 @@ export class Dataworker {
       1,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
+    const allValidFillsInRange = getFillsInRange(
+      allValidFills,
+      blockRangesForChains,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
 
     return _buildPoolRebalanceRoot(
       endBlockForMainnet,
-      blockRangesForChains,
       fillsToRefund,
       deposits,
       allValidFills,
+      allValidFillsInRange,
       unfilledDeposits,
       this.clients,
       this.chainIdListForBundleEvaluationBlockNumbers,
@@ -309,13 +314,18 @@ export class Dataworker {
       blockRangesForProposal,
       spokePoolClients
     );
+    const allValidFillsInRange = getFillsInRange(
+      allValidFills,
+      blockRangesForProposal,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
     this.logger.debug({ at: "Dataworker", message: `Building pool rebalance root`, blockRangesForProposal });
     const poolRebalanceRoot = _buildPoolRebalanceRoot(
       endBlockForMainnet,
-      blockRangesForProposal,
       fillsToRefund,
       deposits,
       allValidFills,
+      allValidFillsInRange,
       unfilledDeposits,
       this.clients,
       this.chainIdListForBundleEvaluationBlockNumbers,
@@ -329,33 +339,16 @@ export class Dataworker {
       "Pool rebalance"
     );
 
-    // Exit early if sum of relayer refunds + slow fills > usdThresholdToSubmitNewBundle
     if (usdThresholdToSubmitNewBundle !== undefined) {
-      const totalUsdRefund = Object.keys(poolRebalanceRoot.totalRefundAmountForAllFills).reduce(
-        (result: BigNumber, repaymentChainId) => {
-          return result.add(
-            Object.keys(poolRebalanceRoot.totalRefundAmountForAllFills[repaymentChainId]).reduce(
-              (_result: BigNumber, l1Token) => {
-                const totalRefundAmount = fillsToRefund[repaymentChainId][l1Token].totalRefundAmount;
-                const refundTokenInfo = this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token);
-                const tokenPriceInUsd = this.clients.profitClient.getPriceOfToken(l1Token);
-                const totalRefundInUsd = totalRefundAmount.mul(tokenPriceInUsd).div(toBNWei(1));
-                const totalRefundInUsdScaled = totalRefundInUsd.mul(toBN(10).pow(18 - refundTokenInfo.decimals));
-                return _result.add(totalRefundInUsdScaled);
-              },
-              result
-            )
-          );
-        },
-        toBN(0)
-      );
+      // Exit early if sum of absolute values of net send amounts and running balances exceeds threshold.
+      const totalUsdRefund = PoolRebalanceUtils.computePoolRebalanceUsdVolume(poolRebalanceRoot.leaves, this.clients);
       if (totalUsdRefund.lt(usdThresholdToSubmitNewBundle)) {
         this.logger.debug({
           at: "Dataworker",
-          message: `Root bundle USD volume does not exceed threshold, exiting early`,
+          message: `Root bundle USD volume does not exceed threshold, exiting early 🟡`,
           usdThresholdToSubmitNewBundle,
           totalUsdRefund,
-          refundMap: poolRebalanceRoot.totalRefundAmountForAllFills,
+          leaves: poolRebalanceRoot.leaves,
         });
         return;
       }
@@ -603,12 +596,17 @@ export class Dataworker {
       blockRangesImpliedByBundleEndBlocks,
       spokePoolClients
     );
+    const allValidFillsInRange = getFillsInRange(
+      allValidFills,
+      blockRangesImpliedByBundleEndBlocks,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
     const expectedPoolRebalanceRoot = _buildPoolRebalanceRoot(
       endBlockForMainnet,
-      blockRangesImpliedByBundleEndBlocks,
       fillsToRefund,
       deposits,
       allValidFills,
+      allValidFillsInRange,
       unfilledDeposits,
       this.clients,
       this.chainIdListForBundleEvaluationBlockNumbers,

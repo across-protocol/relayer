@@ -42,7 +42,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       if (config.proposerEnabled) await dataworker.proposeRootBundle(config.rootBundleExecutionThreshold);
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
 
-      await clients.multiCallerClient.executeTransactionQueue();
+      await clients.multiCallerClient.executeTransactionQueue(!config.sendingTransactionsEnabled);
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }
