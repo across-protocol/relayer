@@ -37,7 +37,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
 
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled) await dataworker.validatePendingRootBundle();
-      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputed disabled" });
+      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
 
       if (config.proposerEnabled) await dataworker.proposeRootBundle(config.rootBundleExecutionThreshold);
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
@@ -49,7 +49,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
         await dataworker.executeSlowRelayLeaves();
 
         await dataworker.executeRelayerRefundLeaves();
-      }
+      } else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
 
       await clients.multiCallerClient.executeTransactionQueue(!config.sendingTransactionsEnabled);
 
