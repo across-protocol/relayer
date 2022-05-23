@@ -49,6 +49,8 @@ export class TokenClient {
   }
 
   hasSufficientBalanceForFill(deposit: Deposit, fillAmount: BigNumber) {
+    console.log("BAL", this.getBalance(deposit.destinationChainId, deposit.destinationToken).toString());
+    console.log("fillamount", fillAmount.toString());
     return this.getBalance(deposit.destinationChainId, deposit.destinationToken).gte(fillAmount);
   }
 
