@@ -4,7 +4,7 @@ import { Contract, Event, EventFilter, Promise } from "./";
 
 const defaultConcurrency = 200;
 const maxRetries = 3;
-const retrySleepTime = 5;
+const retrySleepTime = 10;
 
 export function spreadEvent(event: Event) {
   const keys = Object.keys(event.args).filter((key: string) => isNaN(+key)); // Extract non-numeric keys.
@@ -48,6 +48,7 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
     return (await Promise.all(promises, { concurrency: searchConfig.concurrency | defaultConcurrency })).flat(); // Default to 200 concurrent calls.
   } catch (error) {
     if (retryCounter++ < maxRetries) {
+      console.log("DROP & SLEEP");
       await delay(retrySleepTime);
       return await paginatedEventQuery(contract, filter, searchConfig);
     } else throw error;
