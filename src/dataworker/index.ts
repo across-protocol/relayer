@@ -49,8 +49,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
         await dataworker.executeSlowRelayLeaves();
 
         await dataworker.executeRelayerRefundLeaves();
-      }
-      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
+      } else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
 
       await clients.multiCallerClient.executeTransactionQueue(!config.sendingTransactionsEnabled);
 
