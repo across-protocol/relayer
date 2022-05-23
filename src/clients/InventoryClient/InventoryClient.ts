@@ -47,22 +47,28 @@ export class InventoryClient {
   }
 
   getEnabledChains(): number[] {
-    return [10, 137, 288, 42161];
+    return [10, 288];
     // return Object.keys(this.spokePoolClients).map((chainId) => parseInt(chainId));
   }
 
   getL1Tokens(): string[] {
-    return [
-      ...this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address),
-      "0x6B175474E89094C44Da98b954EedeAC495271d0F",
-      "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
-    ];
+    return this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address);
   }
 
   async rebalanceInventoryIfNeeded() {
-    // const distributionPerL1Token = this.getTokenDistributionPerL1Token();
-    // console.log("GETTING CROSS CHAIN BALANCES");
+    const distributionPerL1Token = this.getTokenDistributionPerL1Token();
+    console.log("GETTING CROSS CHAIN BALANCES");
     await this.update();
+
+    // console.log("SEND");
+    // const tx = await this.adapterManager.sendTokenCrossChain(
+    //   10,
+    //   "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    //   toBN(690000)
+    // );
+
+    // console.log(tx);
+    // this.adapterManager.wrapEthIfAboveThreshold();
   }
   async update() {
     this.logger.debug({ at: "InventoryClient", message: "Updating client", monitoredChains: this.getEnabledChains() });

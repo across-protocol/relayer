@@ -8,14 +8,15 @@ export async function runTransaction(
   contract: Contract,
   method: string,
   args: any,
-  value = BigNumber
+  value: BigNumber = toBN(0)
 ) {
+  const target = getTarget(contract.address);
   try {
     const gas = await getGasPrice(contract.provider);
-    logger.debug({ at: "TxUtil", message: "sending", target: getTarget(contract.address), method, args, gas, value });
+    logger.debug({ at: "TransactionUtil", message: "Sending crafted tx", target, method, args, gas, value });
     return await contract[method](...args, { ...gas, value });
   } catch (error) {
-    logger.error({ at: "TxUtil", message: "Error executing tx", error });
+    logger.error({ at: "TransactionUtil", message: "Error executing tx", error, target, method, args, value });
     console.log(error);
     throw new Error(error.reason); // Extract the reason from the transaction error and throw it.
   }
