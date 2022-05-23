@@ -326,6 +326,9 @@ export class Dataworker {
       poolRebalanceRoot.leaves,
       "Pool rebalance"
     );
+
+    // Exit early if netSendAmount is == 0 or if fillsToRefund total is above a threshold.
+
     this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForProposal });
     const relayerRefundRoot = _buildRelayerRefundRoot(
       endBlockForMainnet,

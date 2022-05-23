@@ -1,14 +1,16 @@
 import { CommonConfig, ProcessEnv, BUNDLE_END_BLOCK_BUFFERS } from "../common";
-import { BigNumber, assert } from "../utils";
+import { BigNumber, assert, toBNWei } from "../utils";
 
 export class DataworkerConfig extends CommonConfig {
   readonly maxPoolRebalanceLeafSizeOverride: number;
   readonly maxRelayerRepaymentLeafSizeOverride: number;
   readonly tokenTransferThresholdOverride: { [l1TokenAddress: string]: BigNumber };
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
+  readonly rootBundleExecutionThreshold: BigNumber;
 
   constructor(env: ProcessEnv) {
     const {
+      ROOT_BUNDLE_EXECUTION_THRESHOLD,
       TOKEN_TRANSFER_THRESHOLD_OVERRIDE,
       MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE,
       MAX_RELAYER_REPAYMENT_LEAF_SIZE_OVERRIDE,
@@ -30,6 +32,9 @@ export class DataworkerConfig extends CommonConfig {
     this.tokenTransferThresholdOverride = TOKEN_TRANSFER_THRESHOLD_OVERRIDE
       ? JSON.parse(TOKEN_TRANSFER_THRESHOLD_OVERRIDE)
       : {};
+    this.rootBundleExecutionThreshold = ROOT_BUNDLE_EXECUTION_THRESHOLD
+      ? toBNWei(ROOT_BUNDLE_EXECUTION_THRESHOLD)
+      : toBNWei(0);
     this.blockRangeEndBlockBuffer = BLOCK_RANGE_END_BLOCK_BUFFER
       ? JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER)
       : BUNDLE_END_BLOCK_BUFFERS;

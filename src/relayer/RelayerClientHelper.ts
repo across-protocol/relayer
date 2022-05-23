@@ -7,7 +7,6 @@ import { Clients, constructClients, updateClients, getSpokePoolSigners, updateSp
 export interface RelayerClients extends Clients {
   spokePoolClients: { [chainId: number]: SpokePoolClient };
   tokenClient: TokenClient;
-  profitClient: ProfitClient;
 }
 
 export interface SpokePoolClientsByChain {
