@@ -740,8 +740,28 @@ export class Dataworker {
           const executedLeaf = slowFillsForChain.find(
             (event) => event.originChainId === leaf.originChainId && event.depositId === leaf.depositId
           );
+
           // Only return true if no leaf was found in the list of executed leaves.
-          return !executedLeaf;
+          if (executedLeaf) return false;
+
+
+          const fullFill = client.getFills().find((fill) => {
+            return (
+              fill.depositId === leaf.depositId &&
+              fill.originChainId === leaf.originChainId &&
+              fill.depositor === leaf.depositor &&
+              fill.destinationChainId === leaf.destinationChainId &&
+              fill.destinationToken === leaf.destinationToken &&
+              fill.amount.eq(leaf.amount) &&
+              fill.realizedLpFeePct.eq(leaf.realizedLpFeePct) &&
+              fill.relayerFeePct.eq(leaf.relayerFeePct) &&
+              fill.recipient === leaf.recipient &&
+              fill.totalFilledAmount.eq(fill.amount) // Full fill
+            );
+          });
+
+          // If no previous full fill was found, we should try to fill.
+          return !fullFill;
         });
 
         executableLeaves.forEach((leaf) => {
@@ -948,7 +968,8 @@ export class Dataworker {
             at: "Dataworke#executeRelayerRefundLeaves",
             message: "Constructed a different root for the block range!",
             chainId,
-            relayerRefundRoot: rootBundleRelay.relayerRefundRoot,
+            publishedRelayerRefundRoot: rootBundleRelay.relayerRefundRoot,
+            constructedRelayerRefundRoot: tree.getHexRoot()
           });
           continue;
         }
