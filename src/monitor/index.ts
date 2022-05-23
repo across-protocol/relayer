@@ -26,7 +26,7 @@ export async function runMonitor(_logger: winston.Logger) {
       if (await processEndPollingLoop(logger, "Monitor", config.pollingDelay)) break;
     }
   } catch (error) {
-    if (await processCrash(logger, "Monitor", config.pollingDelay, error)) throw error;
+    if (await processCrash(logger, "Monitor", config.pollingDelay, error)) process.exit(1);
     await runMonitor(logger);
   }
 }

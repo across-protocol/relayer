@@ -27,7 +27,7 @@ export async function runRelayer(_logger: winston.Logger): Promise<void> {
       if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) break;
     }
   } catch (error) {
-    if (await processCrash(logger, "Relayer", config.pollingDelay, error)) throw error;
+    if (await processCrash(logger, "Relayer", config.pollingDelay, error)) process.exit(1);
     await runRelayer(logger);
   }
 }
