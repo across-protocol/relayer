@@ -185,7 +185,7 @@ export class Dataworker {
     });
 
     if (Object.keys(spokeEventsReadable.allInvalidFillsInRangeByDestinationChain).length > 0)
-      this.logger.info({
+      this.logger.debug({
         at: "Dataworker",
         message: `Finished loading spoke pool data and found some invalid fills in range`,
         blockRangesForChains,
@@ -763,6 +763,7 @@ export class Dataworker {
             at: "Dataworke#executeSlowRelayLeaves",
             message: "Constructed a different root for the block range!",
             chainId,
+            mainnetRootBundleBlock: matchingRootBundle.blockNumber,
             publishedSlowRelayRoot: rootBundleRelay.slowRelayRoot,
             constructedSlowRelayRoot: tree.getHexRoot(),
           });
@@ -1006,6 +1007,7 @@ export class Dataworker {
             at: "Dataworke#executeRelayerRefundLeaves",
             message: "Constructed a different root for the block range!",
             chainId,
+            mainnetRootBundleBlock: matchingRootBundle.blockNumber,
             publishedRelayerRefundRoot: rootBundleRelay.relayerRefundRoot,
             constructedRelayerRefundRoot: tree.getHexRoot(),
           });
