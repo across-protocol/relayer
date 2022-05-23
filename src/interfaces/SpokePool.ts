@@ -61,6 +61,27 @@ export interface SlowFill {
   recipient: string;
 }
 
+export interface RootBundleRelay {
+  rootBundleId: number;
+  relayerRefundRoot: string;
+  slowRelayRoot: string;
+}
+
+export interface RootBundleRelayWithBlock extends RootBundleRelay, SortableEvent {}
+
+export interface RelayerRefundExecution {
+  amountToReturn: BigNumber;
+  chainId: number;
+  refundAmounts: BigNumber[];
+  rootBundleId: number;
+  leafId: number;
+  l2TokenAddress: string;
+  refundAddresses: string[];
+  caller: string;
+}
+
+export interface RelayerRefundExecutionWithBlock extends RelayerRefundExecution, SortableEvent {}
+
 // Used in pool by spokePool to execute a slow relay.
 export interface RelayData {
   depositor: string;
