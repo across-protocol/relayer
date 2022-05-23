@@ -119,11 +119,27 @@ export class HubPoolClient {
     return this.getTokenInfoForDeposit(deposit);
   }
 
+  isRootBundleValid(rootBundle: ProposedRootBundle, latestMainnetBlock: number): boolean {
+    const nextRootBundle = this.getFollowingRootBundle(rootBundle);
+    const executedLeafCount = this.getExecutedLeavesForRootBundle(
+      rootBundle,
+      nextRootBundle ? Math.min(nextRootBundle.blockNumber, latestMainnetBlock) : latestMainnetBlock
+    );
+    return executedLeafCount.length === rootBundle.poolRebalanceLeafCount;
+  }
+
   // This should find the ProposeRootBundle event whose bundle block number for `chain` is closest to the `block`
   // without being smaller. It returns the bundle block number for the chain or undefined if not matched.
-  getRootBundleEvalBlockNumberContainingBlock(block: number, chain: number, chainIdList: number[]): number | undefined {
+  getRootBundleEvalBlockNumberContainingBlock(
+    latestMainnetBlock: number,
+    block: number,
+    chain: number,
+    chainIdList: number[]
+  ): number | undefined {
     let endingBlockNumber: number;
     for (const rootBundle of sortEventsAscending(this.proposedRootBundles)) {
+      if (!this.isRootBundleValid(rootBundle, latestMainnetBlock)) continue;
+
       const bundleEvalBlockNumber = this.getBundleEndBlockForChain(
         rootBundle as ProposedRootBundle,
         chain,
@@ -154,22 +170,15 @@ export class HubPoolClient {
     ) as ProposedRootBundle;
   }
 
-  getExecutedLeavesForRootBundle(
-    rootBundle: ProposedRootBundle,
-    latestMainnetBlock: number,
-    followingRootBundleBlock: number
-  ) {
+  getExecutedLeavesForRootBundle(rootBundle: ProposedRootBundle, latestMainnetBlockToSearch: number) {
     return sortEventsAscending(this.executedRootBundles).filter(
       (executedLeaf: ExecutedRootBundle) =>
-        executedLeaf.blockNumber <= latestMainnetBlock &&
+        executedLeaf.blockNumber <= latestMainnetBlockToSearch &&
         // Note: We can use > instead of >= here because a leaf can never be executed in same block as its root
         // proposal due to bundle liveness enforced by HubPool. This importantly avoids the edge case
         // where the execution all leaves occurs in the same block as the next proposal, leading us to think
         // that the next proposal is fully executed when its not.
-        executedLeaf.blockNumber > rootBundle.blockNumber &&
-        // This <= makes sense because you could have an execution of a leaf in the same block as the proposal of
-        // the next.
-        executedLeaf.blockNumber <= followingRootBundleBlock
+        executedLeaf.blockNumber > rootBundle.blockNumber
     ) as ExecutedRootBundle[];
   }
 
@@ -179,16 +188,7 @@ export class HubPoolClient {
     const latestFullyExecutedPoolRebalanceRoot = sortEventsDescending(this.proposedRootBundles).find(
       (rootBundle: ProposedRootBundle) => {
         if (rootBundle.blockNumber > latestMainnetBlock) return false;
-        const nextRootBundle = this.getFollowingRootBundle(rootBundle);
-        const followingProposedRootBundleBlock = nextRootBundle ? nextRootBundle.blockNumber : latestMainnetBlock;
-        // Figure out how many pool rebalance leaves were executed for this root bundle, but only count executed
-        // leaves before the `latestMainnetBlock` since that's the block height snapshot we're querying.
-        const executedPoolRebalanceLeaves = this.getExecutedLeavesForRootBundle(
-          rootBundle,
-          latestMainnetBlock,
-          followingProposedRootBundleBlock
-        );
-        return executedPoolRebalanceLeaves.length === rootBundle.poolRebalanceLeafCount;
+        return this.isRootBundleValid(rootBundle, latestMainnetBlock);
       }
     ) as ProposedRootBundle;
 

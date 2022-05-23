@@ -7,23 +7,6 @@ import { isFirstFillForDeposit } from "./FillUtils";
 export function getDepositPath(deposit: Deposit): string {
   return `${deposit.originToken}-->${deposit.destinationChainId}`;
 }
-export function getDepositCountGroupedByToken(deposits: DepositWithBlock[]) {
-  return deposits.reduce((result, deposit: DepositWithBlock) => {
-    result[deposit.originChainId] = result[deposit.originChainId] ?? {};
-    const depositPath = getDepositPath(deposit);
-    const existingCount = result[deposit.originChainId][depositPath];
-    result[deposit.originChainId][depositPath] = existingCount === undefined ? 1 : existingCount + 1;
-    return result;
-  }, {});
-}
-
-export function getUnfilledDepositCountGroupedByProp(unfilledDeposits: UnfilledDeposit[], propName: string) {
-  return unfilledDeposits.reduce((result, unfilledDeposit: UnfilledDeposit) => {
-    const existingCount = result[unfilledDeposit.deposit[propName]];
-    result[unfilledDeposit.deposit[propName]] = existingCount === undefined ? 1 : existingCount + 1;
-    return result;
-  }, {});
-}
 
 export function updateUnfilledDepositsWithMatchedDeposit(
   matchedFill: Fill,

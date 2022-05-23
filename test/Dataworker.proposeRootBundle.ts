@@ -85,7 +85,12 @@ describe("Dataworker: Propose root bundle", async function () {
 
     // Construct expected roots before we propose new root so that last log contains logs about submitted txn.
     const expectedPoolRebalanceRoot2 = dataworkerInstance.buildPoolRebalanceRoot(blockRange2, spokePoolClients);
-    const expectedRelayerRefundRoot2 = dataworkerInstance.buildRelayerRefundRoot(blockRange2, spokePoolClients);
+    const expectedRelayerRefundRoot2 = dataworkerInstance.buildRelayerRefundRoot(
+      blockRange2,
+      spokePoolClients,
+      expectedPoolRebalanceRoot2.leaves,
+      expectedPoolRebalanceRoot2.runningBalances
+    );
     const expectedSlowRelayRefundRoot2 = dataworkerInstance.buildSlowRelayRoot(blockRange2, spokePoolClients);
     await dataworkerInstance.proposeRootBundle();
     const loadDataResults2 = getMostRecentLog(spy, "Finished loading spoke pool data");
@@ -160,7 +165,12 @@ describe("Dataworker: Propose root bundle", async function () {
       [latestBlock2 + 1, latestBlock4],
     ];
     const expectedPoolRebalanceRoot4 = dataworkerInstance.buildPoolRebalanceRoot(blockRange4, spokePoolClients);
-    const expectedRelayerRefundRoot4 = dataworkerInstance.buildRelayerRefundRoot(blockRange4, spokePoolClients);
+    const expectedRelayerRefundRoot4 = dataworkerInstance.buildRelayerRefundRoot(
+      blockRange4,
+      spokePoolClients,
+      expectedPoolRebalanceRoot4.leaves,
+      expectedPoolRebalanceRoot4.runningBalances
+    );
     await dataworkerInstance.proposeRootBundle();
     const loadDataResults4 = getMostRecentLog(spy, "Finished loading spoke pool data");
     expect(loadDataResults4.blockRangesForChains).to.deep.equal(blockRange4);
