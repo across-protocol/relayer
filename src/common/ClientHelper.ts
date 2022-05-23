@@ -1,13 +1,6 @@
 import winston from "winston";
-import {
-  getProvider,
-  getSigner,
-  getDeployedContract,
-  getDeploymentBlockNumber,
-  Wallet,
-  SpokePool,
-  Contract,
-} from "../utils";
+import { getProvider, getSigner, getDeployedContract, getDeploymentBlockNumber } from "../utils";
+import { Wallet, SpokePool, Contract, Promise } from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient, ProfitClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { DataworkerClients } from "../dataworker/DataworkerClientHelper";
@@ -56,7 +49,10 @@ export async function constructSpokePoolClientsForBlockAndUpdate(
 }
 
 export async function updateSpokePoolClients(spokePoolClients: { [chainId: number]: SpokePoolClient }) {
-  await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update()));
+  await Promise.all(
+    Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update()),
+    { concurrency: 2 }
+  );
 }
 
 export async function constructClients(logger: winston.Logger, config: CommonConfig): Promise<Clients> {
@@ -99,6 +95,6 @@ export async function constructClients(logger: winston.Logger, config: CommonCon
 }
 
 export async function updateClients(clients: Clients) {
-  await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
+  await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()], { concurrency: 1 });
   await clients.profitClient.update();
 }
