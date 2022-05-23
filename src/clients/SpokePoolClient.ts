@@ -2,15 +2,8 @@ import { spreadEvent, assign, Contract, BigNumber, EventSearchConfig } from "../
 import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
 import { AcrossConfigStoreClient } from "./ConfigStoreClient";
-import {
-  Deposit,
-  DepositWithBlock,
-  Fill,
-  SpeedUp,
-  FillWithBlock,
-  RootBundleRelayWithBlock,
-  RelayerRefundExecutionWithBlock,
-} from "../interfaces/SpokePool";
+import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock } from "../interfaces/SpokePool";
+import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
 
 export class SpokePoolClient {
   private deposits: { [DestinationChainId: number]: Deposit[] } = {};
