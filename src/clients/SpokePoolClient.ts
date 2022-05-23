@@ -2,7 +2,7 @@ import { spreadEvent, assign, Contract, BigNumber, EventSearchConfig } from "../
 import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
 import { AcrossConfigStoreClient } from "./ConfigStoreClient";
-import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock } from "../interfaces/SpokePool";
+import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock, TokensBridged } from "../interfaces/SpokePool";
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
 
 export class SpokePoolClient {
@@ -10,6 +10,7 @@ export class SpokePoolClient {
   private fills: Fill[] = [];
   private speedUps: { [depositorAddress: string]: { [depositId: number]: SpeedUp[] } } = {};
   private depositRoutes: { [originToken: string]: { [DestinationChainId: number]: boolean } } = {};
+  private tokensBridged: TokensBridged[] = [];
   private rootBundleRelays: RootBundleRelayWithBlock[] = [];
   private relayerRefundExecutions: RelayerRefundExecutionWithBlock[] = [];
   public isUpdated: boolean = false;
@@ -44,6 +45,10 @@ export class SpokePoolClient {
 
   getFills(): Fill[] {
     return this.fills;
+  }
+
+  getTokensBridged(): TokensBridged[] {
+    return this.tokensBridged;
   }
 
   getDepositRoutes(): { [originToken: string]: { [DestinationChainId: number]: Boolean } } {
@@ -152,6 +157,7 @@ export class SpokePoolClient {
       speedUpEvents,
       fillEvents,
       enableDepositsEvents,
+      tokensBridgedEvents,
       relayedRootBundleEvents,
       executedRelayerRefundRootEvents,
     ] = await Promise.all([
@@ -159,9 +165,14 @@ export class SpokePoolClient {
       paginatedEventQuery(this.spokePool, this.spokePool.filters.RequestedSpeedUpDeposit(), searchConfig),
       paginatedEventQuery(this.spokePool, this.spokePool.filters.FilledRelay(), searchConfig),
       paginatedEventQuery(this.spokePool, this.spokePool.filters.EnabledDepositRoute(), depositRouteSearchConfig),
+      paginatedEventQuery(this.spokePool, this.spokePool.filters.TokensBridged(), depositRouteSearchConfig),
       paginatedEventQuery(this.spokePool, this.spokePool.filters.RelayedRootBundle(), searchConfig),
       paginatedEventQuery(this.spokePool, this.spokePool.filters.ExecutedRelayerRefundRoot(), searchConfig),
     ]);
+
+    for (const event of tokensBridgedEvents) {
+      this.tokensBridged.push({ ...spreadEvent(event), transactionHash: event.transactionHash });
+    }
 
     // For each depositEvent, compute the realizedLpFeePct. Note this means that we are only finding this value on the
     // new deposits that were found in the searchConfig (new from the previous run). This is important as this operation

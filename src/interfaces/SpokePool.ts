@@ -1,4 +1,4 @@
-import { BigNumber } from "ethers";
+import { BigNumber } from "../utils";
 import { SortableEvent } from "./Common";
 
 export interface Deposit {
@@ -123,4 +123,13 @@ export interface RunningBalances {
   [repaymentChainId: number]: {
     [l1TokenAddress: string]: BigNumber;
   };
+}
+
+export interface TokensBridged {
+  amountToReturn: BigNumber;
+  chainId: number;
+  leafId: number;
+  l2TokenAddress: string;
+  caller: string;
+  transactionHash: string;
 }

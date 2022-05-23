@@ -101,6 +101,7 @@ export function getLastMatchingFillBeforeBlock(
 }
 
 export function getFillDataForSlowFillFromPreviousRootBundle(
+  latestMainnetBlock: number,
   fill: FillWithBlock,
   allValidFills: FillWithBlock[],
   hubPoolClient: HubPoolClient,
@@ -110,17 +111,11 @@ export function getFillDataForSlowFillFromPreviousRootBundle(
   const firstFillForSameDeposit = allValidFills.find(
     (_fill: FillWithBlock) => isFirstFillForDeposit(_fill as Fill) && filledSameDeposit(_fill, fill)
   );
-  if (firstFillForSameDeposit === undefined) {
-    // If there is no first fill associated with a slow fill, then something is wrong because we assume that slow
-    // fills can only be sent after at least one non-zero partial fill is submitted for a deposit.
-    if (fill.isSlowRelay) throw new Error("Can't find earliest fill associated with slow fill");
-    // If there is no first fill associated with the current partial fill, then it must be the first fill and we'll
-    // skip it because there are running balance adjustments to make for this type of fill.
-    else return;
-  }
+
   // Find ending block number for chain from ProposeRootBundle event that should have included a slow fill
   // refund for this first fill. This will be undefined if there is no block range containing the first fill.
   const rootBundleEndBlockContainingFirstFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
+    latestMainnetBlock,
     firstFillForSameDeposit.blockNumber,
     firstFillForSameDeposit.destinationChainId,
     chainIdListForBundleEvaluationBlockNumbers
@@ -153,34 +148,4 @@ export function getFillsInRange(
     );
     return fill.blockNumber <= blockRangeForChain[1] && fill.blockNumber >= blockRangeForChain[0];
   });
-}
-
-export function getFillCountGroupedByProp(fills: FillWithBlock[], propName: string) {
-  return fills.reduce((result, fill: FillWithBlock) => {
-    const existingCount = result[fill[propName]];
-    result[fill[propName]] = existingCount === undefined ? 1 : existingCount + 1;
-    return result;
-  }, {});
-}
-
-export function getFillCountGroupedByToken(fills: FillWithBlock[]) {
-  return fills.reduce((result, fill: FillWithBlock) => {
-    result[fill.destinationChainId] = result[fill.destinationChainId] ?? {};
-    const fillPath = `${fill.originChainId}-->${fill.destinationToken}`;
-    const existingCount = result[fill.destinationChainId][fillPath];
-    result[fill.destinationChainId][fillPath] = existingCount === undefined ? 1 : existingCount + 1;
-    return result;
-  }, {});
-}
-
-export function getFillsToRefundCountGroupedByRepaymentChain(fills: FillsToRefund) {
-  return Object.keys(fills).reduce((endResult, repaymentChain) => {
-    endResult[repaymentChain] = endResult[repaymentChain] ?? {};
-    return Object.keys(fills[repaymentChain]).reduce((result, repaymentToken) => {
-      const existingCount = result[repaymentChain][repaymentToken];
-      const fillCount = fills[repaymentChain][repaymentToken].fills.length;
-      result[repaymentChain][repaymentToken] = existingCount === undefined ? fillCount : existingCount + fillCount;
-      return result;
-    }, endResult);
-  }, {});
 }

@@ -136,11 +136,27 @@ describe("Dataworker: Build merkle roots", async function () {
   describe("Build relayer refund root", function () {
     it("amountToReturn is 0", async function () {
       await updateAllClients();
+      const poolRebalanceRoot = dataworkerInstance.buildPoolRebalanceRoot(
+        DEFAULT_BLOCK_RANGE_FOR_CHAIN,
+        spokePoolClients
+      );
       expect(
-        dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).leaves
+        dataworkerInstance.buildRelayerRefundRoot(
+          DEFAULT_BLOCK_RANGE_FOR_CHAIN,
+          spokePoolClients,
+          poolRebalanceRoot.leaves,
+          poolRebalanceRoot.runningBalances
+        ).leaves
       ).to.deep.equal([]);
       expect(
-        dataworkerInstance.buildRelayerRefundRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients).tree.getHexRoot()
+        dataworkerInstance
+          .buildRelayerRefundRoot(
+            DEFAULT_BLOCK_RANGE_FOR_CHAIN,
+            spokePoolClients,
+            poolRebalanceRoot.leaves,
+            poolRebalanceRoot.runningBalances
+          )
+          .tree.getHexRoot()
       ).to.equal(EMPTY_MERKLE_ROOT);
 
       // Submit deposits for multiple L2 tokens.
@@ -205,9 +221,15 @@ describe("Dataworker: Build merkle roots", async function () {
       };
 
       await updateAllClients();
-      const merkleRoot1 = dataworkerInstance.buildRelayerRefundRoot(
+      const poolRebalanceRoot1 = dataworkerInstance.buildPoolRebalanceRoot(
         DEFAULT_BLOCK_RANGE_FOR_CHAIN,
         spokePoolClients
+      );
+      const merkleRoot1 = dataworkerInstance.buildRelayerRefundRoot(
+        DEFAULT_BLOCK_RANGE_FOR_CHAIN,
+        spokePoolClients,
+        poolRebalanceRoot1.leaves,
+        poolRebalanceRoot1.runningBalances
       ).tree;
       const expectedMerkleRoot1 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf1]);
       expect(merkleRoot1.getHexRoot()).to.equal(expectedMerkleRoot1.getHexRoot());
@@ -225,9 +247,15 @@ describe("Dataworker: Build merkle roots", async function () {
         refundAmounts: [getRefund(deposit3.amount, deposit3.realizedLpFeePct)],
       };
       await updateAllClients();
-      const merkleRoot2 = await dataworkerInstance.buildRelayerRefundRoot(
+      const poolRebalanceRoot2 = dataworkerInstance.buildPoolRebalanceRoot(
         DEFAULT_BLOCK_RANGE_FOR_CHAIN,
         spokePoolClients
+      );
+      const merkleRoot2 = await dataworkerInstance.buildRelayerRefundRoot(
+        DEFAULT_BLOCK_RANGE_FOR_CHAIN,
+        spokePoolClients,
+        poolRebalanceRoot2.leaves,
+        poolRebalanceRoot2.runningBalances
       ).tree;
       const expectedMerkleRoot2 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf2, leaf1]);
       expect(merkleRoot2.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
@@ -274,9 +302,15 @@ describe("Dataworker: Build merkle roots", async function () {
         refundAmounts: [getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.01")).div(toBNWei("1"))],
       };
       await updateAllClients();
-      const merkleRoot3 = dataworkerInstance.buildRelayerRefundRoot(
+      const poolRebalanceRoot3 = dataworkerInstance.buildPoolRebalanceRoot(
         DEFAULT_BLOCK_RANGE_FOR_CHAIN,
         spokePoolClients
+      );
+      const merkleRoot3 = dataworkerInstance.buildRelayerRefundRoot(
+        DEFAULT_BLOCK_RANGE_FOR_CHAIN,
+        spokePoolClients,
+        poolRebalanceRoot3.leaves,
+        poolRebalanceRoot3.runningBalances
       ).tree;
       const expectedMerkleRoot3 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf5, leaf6, leaf2, leaf1]);
       expect(merkleRoot3.getHexRoot()).to.equal(expectedMerkleRoot3.getHexRoot());
@@ -323,9 +357,15 @@ describe("Dataworker: Build merkle roots", async function () {
       };
 
       await updateAllClients();
-      const merkleRoot1 = dataworkerInstance.buildRelayerRefundRoot(
+      const poolRebalanceRoot1 = dataworkerInstance.buildPoolRebalanceRoot(
         DEFAULT_BLOCK_RANGE_FOR_CHAIN,
         spokePoolClients
+      );
+      const merkleRoot1 = dataworkerInstance.buildRelayerRefundRoot(
+        DEFAULT_BLOCK_RANGE_FOR_CHAIN,
+        spokePoolClients,
+        poolRebalanceRoot1.leaves,
+        poolRebalanceRoot1.runningBalances
       ).tree;
       const expectedMerkleRoot1 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf1]);
       expect(merkleRoot1.getHexRoot()).to.equal(expectedMerkleRoot1.getHexRoot());
@@ -386,9 +426,15 @@ describe("Dataworker: Build merkle roots", async function () {
       };
 
       await updateAllClients();
-      const merkleRoot2 = dataworkerInstance.buildRelayerRefundRoot(
+      const poolRebalanceRoot2 = dataworkerInstance.buildPoolRebalanceRoot(
         DEFAULT_BLOCK_RANGE_FOR_CHAIN,
         spokePoolClients
+      );
+      const merkleRoot2 = dataworkerInstance.buildRelayerRefundRoot(
+        DEFAULT_BLOCK_RANGE_FOR_CHAIN,
+        spokePoolClients,
+        poolRebalanceRoot2.leaves,
+        poolRebalanceRoot2.runningBalances
       ).tree;
       const expectedMerkleRoot2 = await buildRelayerRefundTreeWithUnassignedLeafIds([newLeaf1, leaf2, leaf3]);
       expect(merkleRoot2.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
@@ -512,11 +558,10 @@ describe("Dataworker: Build merkle roots", async function () {
       const expectedSlowRelayTree = await buildSlowRelayTree(slowRelayLeaves);
 
       // Construct pool rebalance root so we can publish slow relay root to spoke pool:
-      const {
-        tree: poolRebalanceTree,
-        leaves: poolRebalanceLeaves,
-        startingRunningBalances,
-      } = await constructPoolRebalanceTree(expectedRunningBalances, expectedRealizedLpFees);
+      const { tree: poolRebalanceTree, leaves: poolRebalanceLeaves } = await constructPoolRebalanceTree(
+        expectedRunningBalances,
+        expectedRealizedLpFees
+      );
 
       // Propose root bundle so that we can test that the dataworker looks up ProposeRootBundle events properly.
       await hubPool.connect(dataworker).proposeRootBundle(
@@ -527,6 +572,28 @@ describe("Dataworker: Build merkle roots", async function () {
         mockTreeRoot, // relayerRefundRoot
         expectedSlowRelayTree.getHexRoot() // slowRelayRoot
       );
+      const pendingRootBundle = await hubPool.rootBundleProposal();
+
+      // Execute root bundle so that this root bundle is not ignored by dataworker.
+      await timer.connect(dataworker).setCurrentTime(pendingRootBundle.challengePeriodEndTimestamp + 1);
+      for (const leaf of poolRebalanceLeaves) {
+        await hubPool
+          .connect(dataworker)
+          .executeRootBundle(...Object.values(leaf), poolRebalanceTree.getHexProof(leaf));
+      }
+
+      await updateAllClients();
+      for (const leaf of poolRebalanceLeaves) {
+        const lastRunningBalance = hubPoolClient.getRunningBalanceBeforeBlockForChain(
+          await hubPool.provider.getBlockNumber(),
+          leaf.chainId.toNumber(),
+          l1Token_1.address
+        );
+        // Since we fully executed the root bundle, we need to add the running balance for the chain to the expected
+        // running balances since the data worker adds these prior running balances.
+        expectedRunningBalances[leaf.chainId.toNumber()][l1Token_1.address] =
+          expectedRunningBalances[leaf.chainId.toNumber()][l1Token_1.address].add(lastRunningBalance);
+      }
 
       // Execute 1 slow relay leaf:
       // Before we can execute the leaves on the spoke pool, we need to actually publish them since we're using a mock
@@ -640,25 +707,6 @@ describe("Dataworker: Build merkle roots", async function () {
         getRefundForFills([fill7, fill8]),
         getRealizedLpFeeForFills([fill7, fill8]),
         [fill7.destinationChainId],
-        [l1Token_1.address],
-        dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)
-      );
-
-      // Execute root bundle so we can propose another bundle. The latest running balance emitted in this event
-      // should be added to running balances.
-      await timer.setCurrentTime(Number(await timer.getCurrentTime()) + refundProposalLiveness + 1);
-      for (const leaf of poolRebalanceLeaves) {
-        await hubPool
-          .connect(dataworker)
-          .executeRootBundle(...Object.values(leaf), poolRebalanceTree.getHexProof(leaf));
-      }
-      await updateAllClients();
-      updateAndCheckExpectedPoolRebalanceCounters(
-        expectedRunningBalances,
-        expectedRealizedLpFees,
-        startingRunningBalances,
-        toBN(0),
-        [originChainId, destinationChainId],
         [l1Token_1.address],
         dataworkerInstance.buildPoolRebalanceRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients)
       );

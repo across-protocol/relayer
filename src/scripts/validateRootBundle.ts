@@ -19,11 +19,8 @@
 
 import { winston, config, startupLogLevel, Logger, delay } from "../utils";
 import * as Constants from "../common";
-import { Dataworker } from "../dataworker/Dataworker";
-import { DataworkerConfig } from "../dataworker/DataworkerConfig";
-import { constructDataworkerClients, updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
+import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { BlockFinder } from "@uma/sdk";
-import { DataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { RootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
