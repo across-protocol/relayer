@@ -1,5 +1,5 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { BigNumber, toBNWei, ethers } from "../utils";
+import { ethers } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
