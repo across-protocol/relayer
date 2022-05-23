@@ -185,7 +185,7 @@ export class Dataworker {
     });
 
     if (Object.keys(spokeEventsReadable.allInvalidFillsInRangeByDestinationChain).length > 0)
-      this.logger.info({
+      this.logger.debug({
         at: "Dataworker",
         message: `Finished loading spoke pool data and found some invalid fills in range`,
         blockRangesForChains,
