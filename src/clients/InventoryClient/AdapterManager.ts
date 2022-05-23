@@ -1,12 +1,12 @@
 import { BigNumber, winston, toWei, toBN, assign } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
-import { OptimismAdapter } from "./";
-import * as ArbitrumAdapter from "./ArbitrumAdapter";
+import { OptimismAdapter, ArbitrumAdapter } from "./";
 import * as PolygonAdapter from "./PolygonAdapter";
 
 export class AdapterManager {
   private optimismAdapter: OptimismAdapter;
   private bobaAdapter: OptimismAdapter;
+  private arbitrumAdapter: ArbitrumAdapter;
 
   constructor(
     readonly logger: winston.Logger,
@@ -16,6 +16,7 @@ export class AdapterManager {
   ) {
     this.optimismAdapter = new OptimismAdapter(logger, spokePoolClients, relayerAddress, true);
     this.bobaAdapter = new OptimismAdapter(logger, spokePoolClients, relayerAddress, false);
+    this.arbitrumAdapter = new ArbitrumAdapter(logger, spokePoolClients, relayerAddress);
   }
 
   async getOutstandingCrossChainTokenTransferAmount(
@@ -32,16 +33,13 @@ export class AdapterManager {
     switch (chainId) {
       case 10:
         return await this.optimismAdapter.getOutstandingCrossChainTransfers(l1Tokens);
-        break;
       case 137:
         // outstandingTransfers = await this.getOutstandingPolygonTransfers(l1Tokens);
         break;
       case 288:
         return await this.bobaAdapter.getOutstandingCrossChainTransfers(l1Tokens);
-        break;
       case 42161:
-        // outstandingTransfers = await this.getOutstandingArbitrumTransfers(l1Tokens);
-        break;
+        return await this.arbitrumAdapter.getOutstandingCrossChainTransfers(l1Tokens);
       default:
         break;
     }
@@ -52,10 +50,10 @@ export class AdapterManager {
     let tx;
     switch (chainId) {
       case 10:
-        tx = await this.sendTokensToOptimism(l1Token, amount);
+        tx = await this.optimismAdapter.sendTokenToTargetChain(l1Token, this.getL2TokenForL1Token(l1Token, 10), amount);
         break;
       case 288:
-        tx = await this.sendTokensToBoba(l1Token, amount);
+        tx = await this.bobaAdapter.sendTokenToTargetChain(l1Token, this.getL2TokenForL1Token(l1Token, 10), amount);
 
       default:
         break;
@@ -126,33 +124,12 @@ export class AdapterManager {
     );
   }
 
-  async getOutstandingArbitrumTransfers(l1Tokens: string[], l1ChainId = 1, l2ChainId = 42161): Promise<BigNumber[]> {
-    return await Promise.all(
-      l1Tokens.map((l1Token) =>
-        ArbitrumAdapter.getOutstandingCrossChainTransfers(
-          this.getProvider(l1ChainId),
-          this.getProvider(l2ChainId),
-          this.relayerAddress,
-          l1Token,
-          this.spokePoolClients[l1ChainId].searchConfig,
-          this.spokePoolClients[l2ChainId].searchConfig
-        )
-      )
-    );
-  }
-
-  async sendTokensToOptimism(l1Token: string, amount: BigNumber) {
-    return await this.optimismAdapter.sendTokenToTargetChain(l1Token, this.getL2TokenForL1Token(l1Token, 10), amount);
-  }
-  async sendTokensToBoba(l1Token: string, amount: BigNumber) {
-    return await this.bobaAdapter.sendTokenToTargetChain(l1Token, this.getL2TokenForL1Token(l1Token, 10), amount);
-  }
-
   async checkTokenApprovals(l1Tokens: string[]) {
     console.log("Checking approvals");
     await Promise.all([
       this.optimismAdapter.checkTokenApprovals(l1Tokens),
       this.bobaAdapter.checkTokenApprovals(l1Tokens),
+      this.arbitrumAdapter.checkTokenApprovals(l1Tokens),
     ]);
   }
 

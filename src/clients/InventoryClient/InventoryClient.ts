@@ -47,7 +47,7 @@ export class InventoryClient {
   }
 
   getEnabledChains(): number[] {
-    return [10, 288];
+    return [10, 288,42161];
     // return Object.keys(this.spokePoolClients).map((chainId) => parseInt(chainId));
   }
 

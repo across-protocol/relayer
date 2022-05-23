@@ -1,3 +1,4 @@
+// Common
 export const weth9Abi = [
   {
     constant: false,
@@ -92,5 +93,35 @@ export const optimismL1BridgeInterface = [
     outputs: [],
     stateMutability: "nonpayable",
     type: "function",
+  },
+];
+
+// Arbitrum
+export const arbitrumL2Erc20GatewayInterface = [
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "address", name: "l1Token", type: "address" },
+      { indexed: true, internalType: "address", name: "from", type: "address" },
+      { indexed: true, internalType: "address", name: "to", type: "address" },
+      { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "DepositFinalized",
+    type: "event",
+  },
+];
+
+export const arbitrumL1Erc20GatewayInterface = [
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: false, internalType: "address", name: "l1Token", type: "address" },
+      { indexed: true, internalType: "address", name: "_from", type: "address" },
+      { indexed: true, internalType: "address", name: "_to", type: "address" },
+      { indexed: true, internalType: "uint256", name: "_sequenceNumber", type: "uint256" },
+      { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+    ],
+    name: "DepositInitiated",
+    type: "event",
   },
 ];
