@@ -1,4 +1,4 @@
-import { processEndPollingLoop, winston, delay, config, startupLogLevel } from "../utils";
+import { processEndPollingLoop, winston, delay, config, startupLogLevel, processCrash } from "../utils";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -28,8 +28,8 @@ export async function createDataworker(_logger: winston.Logger) {
 }
 export async function runDataworker(_logger: winston.Logger): Promise<void> {
   logger = _logger;
+  const { clients, config, dataworker } = await createDataworker(logger);
   try {
-    const { clients, config, dataworker } = await createDataworker(logger);
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
 
     for (;;) {
@@ -56,8 +56,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }
   } catch (error) {
-    logger.error({ at: "Dataworker#index", message: "There was an execution error! Re-running loop", error });
-    await delay(5);
+    if (await processCrash(logger, "Dataworker", config.pollingDelay, error)) throw error;
     await runDataworker(logger);
   }
 }

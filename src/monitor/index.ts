@@ -1,4 +1,4 @@
-import { winston, processEndPollingLoop, delay, config, startupLogLevel } from "../utils";
+import { winston, processEndPollingLoop, processCrash, config, startupLogLevel } from "../utils";
 import { Monitor } from "./Monitor";
 import { MonitorConfig } from "./MonitorConfig";
 import { constructMonitorClients } from "../clients/MonitorClientHelper";
@@ -7,8 +7,8 @@ let logger: winston.Logger;
 
 export async function runMonitor(_logger: winston.Logger) {
   logger = _logger;
+  const config = new MonitorConfig(process.env);
   try {
-    const config = new MonitorConfig(process.env);
     logger[startupLogLevel(config)]({ at: "AcrossMonitor#index", message: "Monitor started 🔭", config });
 
     const clients = await constructMonitorClients(config, logger);
@@ -26,8 +26,7 @@ export async function runMonitor(_logger: winston.Logger) {
       if (await processEndPollingLoop(logger, "Monitor", config.pollingDelay)) break;
     }
   } catch (error) {
-    logger.error({ at: "Monitor#index", message: "There was an execution error! Re-running loop", error });
-    await delay(5);
+    if (await processCrash(logger, "Monitor", config.pollingDelay, error)) throw error;
     await runMonitor(logger);
   }
 }
