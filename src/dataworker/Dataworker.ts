@@ -1,8 +1,8 @@
-import { winston, EMPTY_MERKLE_ROOT } from "../utils";
+import { winston, EMPTY_MERKLE_ROOT, sortEventsDescending } from "../utils";
 import { UnfilledDeposit, Deposit, DepositWithBlock, RootBundle } from "../interfaces";
-import { UnfilledDepositsForOriginChain, RunningBalances } from "../interfaces";
-import { FillWithBlock, PoolRebalanceLeaf } from "../interfaces";
-import { BigNumberForToken, FillsToRefund } from "../interfaces";
+import { UnfilledDepositsForOriginChain, TreeData, RunningBalances } from "../interfaces";
+import { FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
+import { BigNumberForToken, FillsToRefund, RelayData } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
@@ -26,7 +26,8 @@ export class Dataworker {
     readonly maxRefundCountOverride: number = undefined,
     readonly maxL1TokenCountOverride: number = undefined,
     readonly tokenTransferThreshold: BigNumberForToken = {},
-    readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {}
+    readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {},
+    readonly spokeRootsLookbackCount = 0
   ) {
     if (
       maxRefundCountOverride !== undefined ||
@@ -425,7 +426,15 @@ export class Dataworker {
     hubPoolChainId: number,
     widestPossibleExpectedBlockRange: number[][],
     rootBundle: RootBundle
-  ): Promise<{ valid: boolean; reason?: string }> {
+  ): Promise<{
+    valid: boolean;
+    reason?: string;
+    expectedTrees?: {
+      poolRebalanceTree: TreeData<PoolRebalanceLeaf>;
+      relayerRefundTree: TreeData<RelayerRefundLeaf>;
+      slowRelayTree: TreeData<RelayData>;
+    };
+  }> {
     // If pool rebalance root is empty, always dispute. There should never be a bundle with an empty rebalance root.
     if (rootBundle.poolRebalanceRoot === EMPTY_MERKLE_ROOT) {
       this.logger.debug({
@@ -590,7 +599,14 @@ export class Dataworker {
         : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet),
       this.tokenTransferThreshold
     );
+
     const expectedSlowRelayRoot = _buildSlowRelayRoot(unfilledDeposits);
+
+    const expectedTrees = {
+      poolRebalanceTree: expectedPoolRebalanceRoot,
+      relayerRefundTree: expectedRelayerRefundRoot,
+      slowRelayTree: expectedSlowRelayRoot,
+    };
     if (
       expectedPoolRebalanceRoot.leaves.length !== rootBundle.unclaimedPoolRebalanceLeafCount ||
       expectedPoolRebalanceRoot.tree.getHexRoot() !== rootBundle.poolRebalanceRoot
@@ -628,6 +644,7 @@ export class Dataworker {
       });
       return {
         valid: true,
+        expectedTrees,
       };
     }
 
@@ -648,21 +665,335 @@ export class Dataworker {
           [...expectedSlowRelayRoot.leaves],
           expectedSlowRelayRoot.tree.getHexRoot()
         ),
+      expectedTrees,
     };
   }
 
+  // TODO: this method and executeRelayerRefundLeaves have a lot of similarities, but they have some key differences
+  // in both the events they search for and the comparisons they make. We should try to generalize this in the future,
+  // but keeping them separate is probably the simplest for the initial implementation.
   async executeSlowRelayLeaves() {
-    // TODO: Caller should grab `bundleBlockNumbers` from ProposeRootBundle event, recreate root and execute
-    // all leaves for root. To locate `rootBundleId`, look up `SpokePool.RelayedRootBundle` events and find event
-    // with matching roots.
+    const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.clients,
+      this.logger,
+      this.clients.hubPoolClient.latestBlockNumber
+    );
+
+    Object.entries(spokePoolClients).forEach(([chainId, client]) => {
+      let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays());
+
+      // Only grab the most recent n roots that have been sent if configured to do so.
+      if (this.spokeRootsLookbackCount !== 0)
+        rootBundleRelays = rootBundleRelays.slice(0, this.spokeRootsLookbackCount);
+
+      const slowFillsForChain = client.getFills().filter((fill) => fill.isSlowRelay);
+      for (const rootBundleRelay of rootBundleRelays) {
+        const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
+          if (bundle.slowRelayRoot !== rootBundleRelay.slowRelayRoot) return false;
+
+          const followingBlockNumber =
+            this.clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber ||
+            this.clients.hubPoolClient.latestBlockNumber;
+
+          const leaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
+
+          // Only use this bundle if it had valid leaves returned (meaning it was at least partially executed).
+          return leaves.length > 0;
+        });
+
+        if (!matchingRootBundle) {
+          this.logger.warn({
+            at: "Dataworke#executeSlowRelayLeaves",
+            message: "Couldn't find a mainnet root bundle for a slowRelayRoot on L2!",
+            chainId,
+            slowRelayRoot: rootBundleRelay.slowRelayRoot,
+          });
+          continue;
+        }
+
+        const prevRootBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
+          matchingRootBundle.blockNumber
+        );
+
+        const blockNumberRanges = matchingRootBundle.bundleEvaluationBlockNumbers.map((endBlock, i) => {
+          const fromBlock = prevRootBundle?.bundleEvaluationBlockNumbers?.[i]
+            ? prevRootBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
+            : 0;
+          return [fromBlock, endBlock.toNumber()];
+        });
+
+        const { tree, leaves } = this.buildSlowRelayRoot(blockNumberRanges, spokePoolClients);
+        if (tree.getHexRoot() !== rootBundleRelay.slowRelayRoot) {
+          this.logger.warn({
+            at: "Dataworke#executeSlowRelayLeaves",
+            message: "Constructed a different root for the block range!",
+            chainId,
+            publishedSlowRelayRoot: rootBundleRelay.slowRelayRoot,
+            constructedSlowRelayRoot: tree.getHexRoot(),
+          });
+          continue;
+        }
+
+        const executableLeaves = leaves.filter((leaf) => {
+          if (leaf.destinationChainId !== Number(chainId)) return false;
+          const executedLeaf = slowFillsForChain.find(
+            (event) => event.originChainId === leaf.originChainId && event.depositId === leaf.depositId
+          );
+
+          // Only return true if no leaf was found in the list of executed leaves.
+          if (executedLeaf) return false;
+
+          const fullFill = client.getFills().find((fill) => {
+            return (
+              fill.depositId === leaf.depositId &&
+              fill.originChainId === leaf.originChainId &&
+              fill.depositor === leaf.depositor &&
+              fill.destinationChainId === leaf.destinationChainId &&
+              fill.destinationToken === leaf.destinationToken &&
+              fill.amount.eq(leaf.amount) &&
+              fill.realizedLpFeePct.eq(leaf.realizedLpFeePct) &&
+              fill.relayerFeePct.eq(leaf.relayerFeePct) &&
+              fill.recipient === leaf.recipient &&
+              fill.totalFilledAmount.eq(fill.amount) // Full fill
+            );
+          });
+
+          // If no previous full fill was found, we should try to fill.
+          return !fullFill;
+        });
+
+        executableLeaves.forEach((leaf) => {
+          this.clients.multiCallerClient.enqueueTransaction({
+            contract: client.spokePool,
+            chainId: Number(chainId),
+            method: "executeSlowRelayLeaf",
+            args: [
+              leaf.depositor,
+              leaf.recipient,
+              leaf.destinationToken,
+              leaf.amount,
+              leaf.originChainId,
+              leaf.realizedLpFeePct,
+              leaf.relayerFeePct,
+              leaf.depositId,
+              rootBundleRelay.rootBundleId,
+              tree.getHexProof(leaf),
+            ],
+            message: "Executed SlowRelayLeaf 🌿!",
+            mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nslowRelayRoot: ${rootBundleRelay.slowRelayRoot}\nOrigin chain: ${leaf.originChainId}\nDestination chain:${leaf.destinationChainId}\nDeposit Id: ${leaf.depositId}\n`, // Just a placeholder
+          });
+        });
+      }
+    });
   }
 
   async executePoolRebalanceLeaves() {
-    // TODO:
+    if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
+    const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
+
+    // Exit early if a bundle is not pending.
+    if (!this.clients.hubPoolClient.hasPendingProposal()) {
+      this.logger.debug({
+        at: "Dataworker#executePoolRebalanceLeaves",
+        message: "No pending proposal, nothing to execute",
+      });
+      return;
+    }
+
+    const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundleProposal();
+    this.logger.debug({
+      at: "Dataworker#executePoolRebalanceLeaves",
+      message: "Found pending proposal",
+      pendingRootBundle,
+    });
+
+    // Exit early if challenge period timestamp has not passed:
+    if (this.clients.hubPoolClient.currentTime <= pendingRootBundle.challengePeriodEndTimestamp) {
+      this.logger.debug({
+        at: "Dataworke#executePoolRebalanceLeaves",
+        message: "Challenge period not passed, cannot execute",
+      });
+      return;
+    }
+
+    const widestPossibleExpectedBlockRange = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.clients,
+      this.clients.hubPoolClient.latestBlockNumber
+    );
+    const { valid, reason, expectedTrees } = await this.validateRootBundle(
+      hubPoolChainId,
+      widestPossibleExpectedBlockRange,
+      pendingRootBundle
+    );
+
+    if (!valid) {
+      this.logger.error({
+        at: "Dataworke#executePoolRebalanceLeaves",
+        message: "Found invalid proposal after challenge period!",
+        reason,
+      });
+      return;
+    }
+
+    if (valid && !expectedTrees) {
+      this.logger.error({
+        at: "Dataworke#executePoolRebalanceLeaves",
+        message:
+          "Found valid proposal, but no trees could be generated. This probably means that the proposal was never evaluated during liveness due to an odd block range!",
+        reason,
+      });
+      return;
+    }
+
+    const executedLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
+      this.clients.hubPoolClient.getMostRecentProposedRootBundle(this.clients.hubPoolClient.latestBlockNumber),
+      this.clients.hubPoolClient.latestBlockNumber
+    );
+
+    // Filter out previously executed leaves.
+    const unexecutedLeaves = expectedTrees.poolRebalanceTree.leaves.filter((leaf) =>
+      executedLeaves.every(({ leafId }) => leafId !== leaf.leafId)
+    );
+
+    const chainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
+    unexecutedLeaves.forEach((leaf) => {
+      const proof = expectedTrees.poolRebalanceTree.tree.getHexProof(leaf);
+
+      this.clients.multiCallerClient.enqueueTransaction({
+        contract: this.clients.hubPoolClient.hubPool,
+        chainId,
+        method: "executeRootBundle",
+        args: [
+          leaf.chainId,
+          leaf.groupIndex,
+          leaf.bundleLpFees,
+          leaf.netSendAmounts,
+          leaf.runningBalances,
+          leaf.leafId,
+          leaf.l1Tokens,
+          proof,
+        ],
+        message: "Executed PoolRebalanceLeaf 🌿!",
+        mrkdwn: `Root hash: ${expectedTrees.poolRebalanceTree.tree.getHexRoot()}\nLeaf: ${leaf.leafId}`, // Just a placeholder
+      });
+    });
   }
 
   async executeRelayerRefundLeaves() {
-    // TODO:
+    const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.clients,
+      this.logger,
+      this.clients.hubPoolClient.latestBlockNumber
+    );
+
+    Object.entries(spokePoolClients).forEach(([chainId, client]) => {
+      let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays());
+
+      // Only grab the most recent n roots that have been sent if configured to do so.
+      if (this.spokeRootsLookbackCount !== 0)
+        rootBundleRelays = rootBundleRelays.slice(0, this.spokeRootsLookbackCount);
+
+      const executedLeavesForChain = client.getRelayerRefundExecutions();
+      for (const rootBundleRelay of rootBundleRelays) {
+        const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
+          if (bundle.relayerRefundRoot !== rootBundleRelay.relayerRefundRoot) return false;
+
+          const followingBlockNumber =
+            this.clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber ||
+            this.clients.hubPoolClient.latestBlockNumber;
+
+          const leaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
+
+          // Only use this bundle if it had valid leaves returned (meaning it was at least partially executed).
+          return leaves.length > 0;
+        });
+
+        if (!matchingRootBundle) {
+          this.logger.warn({
+            at: "Dataworke#executeRelayerRefundLeaves",
+            message: "Couldn't find a mainnet root bundle for a relayerRefundRoot on L2!",
+            chainId,
+            relayerRefundRoot: rootBundleRelay.relayerRefundRoot,
+          });
+          continue;
+        }
+
+        const prevRootBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
+          matchingRootBundle.blockNumber
+        );
+
+        const blockNumberRanges = matchingRootBundle.bundleEvaluationBlockNumbers.map((endBlock, i) => {
+          const fromBlock = prevRootBundle?.bundleEvaluationBlockNumbers?.[i]
+            ? prevRootBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
+            : 0;
+          return [fromBlock, endBlock.toNumber()];
+        });
+
+        const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this._loadData(
+          blockNumberRanges,
+          spokePoolClients
+        );
+
+        const endBlockForMainnet = getBlockRangeForChain(
+          blockNumberRanges,
+          1,
+          this.chainIdListForBundleEvaluationBlockNumbers
+        )[1];
+
+        const expectedPoolRebalanceRoot = _buildPoolRebalanceRoot(
+          endBlockForMainnet,
+          fillsToRefund,
+          deposits,
+          allValidFills,
+          unfilledDeposits,
+          this.clients,
+          this.chainIdListForBundleEvaluationBlockNumbers,
+          this.maxL1TokenCountOverride,
+          this.tokenTransferThreshold
+        );
+
+        const { tree, leaves } = this.buildRelayerRefundRoot(
+          blockNumberRanges,
+          spokePoolClients,
+          expectedPoolRebalanceRoot.leaves,
+          expectedPoolRebalanceRoot.runningBalances
+        );
+
+        if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {
+          this.logger.warn({
+            at: "Dataworke#executeRelayerRefundLeaves",
+            message: "Constructed a different root for the block range!",
+            chainId,
+            publishedRelayerRefundRoot: rootBundleRelay.relayerRefundRoot,
+            constructedRelayerRefundRoot: tree.getHexRoot(),
+          });
+          continue;
+        }
+
+        const executableLeaves = leaves.filter((leaf) => {
+          if (leaf.chainId !== Number(chainId)) return false;
+          const executedLeaf = executedLeavesForChain.find(
+            (event) => event.rootBundleId === rootBundleRelay.rootBundleId && event.leafId === leaf.leafId
+          );
+          // Only return true if no leaf was found in the list of executed leaves.
+          return !executedLeaf;
+        });
+
+        executableLeaves.forEach((leaf) => {
+          this.clients.multiCallerClient.enqueueTransaction({
+            contract: client.spokePool,
+            chainId: Number(chainId),
+            method: "executeRelayerRefundLeaf",
+            args: [rootBundleRelay.rootBundleId, leaf, tree.getHexProof(leaf)],
+            message: "Executed RelayerRefundLeaf 🌿!",
+            mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nrelayerRefundRoot: ${rootBundleRelay.relayerRefundRoot}\nLeaf: ${leaf.leafId}`, // Just a placeholder
+          });
+        });
+      }
+    });
   }
 
   _proposeRootBundle(

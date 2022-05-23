@@ -15,6 +15,7 @@ export function spreadEvent(event: Event) {
   if (returnedObject.originChainId) returnedObject.originChainId = Number(returnedObject.originChainId);
   if (returnedObject.repaymentChainId) returnedObject.repaymentChainId = Number(returnedObject.repaymentChainId);
   if (returnedObject.l2ChainId) returnedObject.l2ChainId = Number(returnedObject.l2ChainId);
+  if (returnedObject.rootBundleId) returnedObject.rootBundleId = Number(returnedObject.rootBundleId);
 
   return returnedObject;
 }

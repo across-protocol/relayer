@@ -3,6 +3,7 @@ import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWit
 
 import { AcrossConfigStoreClient } from "./ConfigStoreClient";
 import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock, TokensBridged } from "../interfaces/SpokePool";
+import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
 
 export class SpokePoolClient {
   private deposits: { [DestinationChainId: number]: Deposit[] } = {};
@@ -10,6 +11,8 @@ export class SpokePoolClient {
   private speedUps: { [depositorAddress: string]: { [depositId: number]: SpeedUp[] } } = {};
   private depositRoutes: { [originToken: string]: { [DestinationChainId: number]: boolean } } = {};
   private tokensBridged: TokensBridged[] = [];
+  private rootBundleRelays: RootBundleRelayWithBlock[] = [];
+  private relayerRefundExecutions: RelayerRefundExecutionWithBlock[] = [];
   public isUpdated: boolean = false;
 
   public firstBlockToSearch: number;
@@ -74,6 +77,14 @@ export class SpokePoolClient {
 
   getFillsForRelayer(relayer: string) {
     return this.fills.filter((fill: Fill) => fill.relayer === relayer);
+  }
+
+  getRootBundleRelays() {
+    return this.rootBundleRelays;
+  }
+
+  getRelayerRefundExecutions() {
+    return this.relayerRefundExecutions;
   }
 
   appendMaxSpeedUpSignatureToDeposit(deposit: Deposit) {
@@ -141,12 +152,22 @@ export class SpokePoolClient {
     this.log("debug", "Updating client", { searchConfig, depositRouteSearchConfig, spokePool: this.spokePool.address });
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
-    const [depositEvents, speedUpEvents, fillEvents, enableDepositsEvents, tokensBridgedEvents] = await Promise.all([
+    const [
+      depositEvents,
+      speedUpEvents,
+      fillEvents,
+      enableDepositsEvents,
+      tokensBridgedEvents,
+      relayedRootBundleEvents,
+      executedRelayerRefundRootEvents,
+    ] = await Promise.all([
       paginatedEventQuery(this.spokePool, this.spokePool.filters.FundsDeposited(), searchConfig),
       paginatedEventQuery(this.spokePool, this.spokePool.filters.RequestedSpeedUpDeposit(), searchConfig),
       paginatedEventQuery(this.spokePool, this.spokePool.filters.FilledRelay(), searchConfig),
       paginatedEventQuery(this.spokePool, this.spokePool.filters.EnabledDepositRoute(), depositRouteSearchConfig),
       paginatedEventQuery(this.spokePool, this.spokePool.filters.TokensBridged(), depositRouteSearchConfig),
+      paginatedEventQuery(this.spokePool, this.spokePool.filters.RelayedRootBundle(), searchConfig),
+      paginatedEventQuery(this.spokePool, this.spokePool.filters.ExecutedRelayerRefundRoot(), searchConfig),
     ]);
 
     for (const event of tokensBridgedEvents) {
@@ -196,11 +217,21 @@ export class SpokePoolClient {
       const enableDeposit = spreadEvent(event);
       assign(this.depositRoutes, [enableDeposit.originToken, enableDeposit.destinationChainId], enableDeposit.enabled);
     }
+
+    for (const event of relayedRootBundleEvents) {
+      this.rootBundleRelays.push(spreadEvent(event));
+    }
+
+    for (const event of executedRelayerRefundRootEvents) {
+      this.relayerRefundExecutions.push(spreadEvent(event));
+    }
+
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.isUpdated = true;
     this.log("debug", "Client updated!");
   }
+
   public hubPoolClient() {
     return this.configStoreClient.hubPoolClient;
   }
