@@ -93,7 +93,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     expect(multiCallerClient.transactionCount()).to.equal(1); // One transaction, zero filling the one deposit.
 
     const tx = await multiCallerClient.executeTransactionQueue();
-   expect(tx.length).to.equal(1); // There should have been exactly one transaction.
+    expect(tx.length).to.equal(1); // There should have been exactly one transaction.
 
     // Check the state change happened correctly on the smart contract. There should be exactly one fill on spokePool_2.
     const fillEvents2 = await spokePool_2.queryFilter(spokePool_2.filters.FilledRelay());
