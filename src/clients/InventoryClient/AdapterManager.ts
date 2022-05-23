@@ -54,6 +54,8 @@ export class AdapterManager {
       case 10:
         tx = await this.sendTokensToOptimism(l1Token, amount);
         break;
+      case 288:
+        tx = await this.sendTokensToBoba(l1Token, amount);
 
       default:
         break;
@@ -141,6 +143,17 @@ export class AdapterManager {
 
   async sendTokensToOptimism(l1Token: string, amount: BigNumber) {
     return await this.optimismAdapter.sendTokenToTargetChain(l1Token, this.getL2TokenForL1Token(l1Token, 10), amount);
+  }
+  async sendTokensToBoba(l1Token: string, amount: BigNumber) {
+    return await this.bobaAdapter.sendTokenToTargetChain(l1Token, this.getL2TokenForL1Token(l1Token, 10), amount);
+  }
+
+  async checkTokenApprovals(l1Tokens: string[]) {
+    console.log("Checking approvals");
+    await Promise.all([
+      this.optimismAdapter.checkTokenApprovals(l1Tokens),
+      this.bobaAdapter.checkTokenApprovals(l1Tokens),
+    ]);
   }
 
   async update() {}

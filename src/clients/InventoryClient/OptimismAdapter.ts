@@ -1,5 +1,5 @@
 import { Contract, BigNumber, toBN, Event, ZERO_ADDRESS, paginatedEventQuery, runTransaction } from "../../utils";
-import { EventSearchConfig, assign, Promise } from "../../utils";
+import { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL, assign, Promise, ERC20, etherscanLink, getNetworkName } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { weth9Abi, optimismL1BridgeInterface, optimismL2BridgeInterface } from "./ContractInterfaces";
 
@@ -56,20 +56,12 @@ export class OptimismAdapter extends BaseAdapter {
 
     let promises = [];
     for (const l1Token of l1Tokens) {
-      const l1BridgeAddress = this.isOptimism
-        ? Object.keys(customL1BridgeAddresses).includes(l1Token)
-          ? customL1BridgeAddresses[l1Token]
-          : l1StandardBridgeAddressOvm
-        : l1StandardBridgeAddressBoba;
-
-      const l2BridgeAddress = this.isOptimism
-        ? Object.keys(customOvmBridgeAddresses).includes(l1Token)
-          ? customOvmBridgeAddresses[l1Token]
-          : ovmL2StandardBridgeAddress
-        : ovmL2StandardBridgeAddress;
-
-      const l1Bridge = new Contract(l1BridgeAddress, optimismL1BridgeInterface, this.getProvider(1));
-      const l2Bridge = new Contract(l2BridgeAddress, optimismL2BridgeInterface, this.getProvider(this.chainId));
+      const l1Bridge = new Contract(this.getL1BridgeAddress(l1Token), optimismL1BridgeInterface, this.getProvider(1));
+      const l2Bridge = new Contract(
+        this.getL2BridgeAddress(l1Token),
+        optimismL2BridgeInterface,
+        this.getProvider(this.chainId)
+      );
 
       const l1Method = tokenToEvent[l1Token];
       const isErc20Token = l1Method == "ERC20DepositInitiated";
@@ -111,12 +103,7 @@ export class OptimismAdapter extends BaseAdapter {
   }
 
   async sendTokenToTargetChain(l1Token, l2Token, amount) {
-    const l1BridgeAddress = this.isOptimism
-      ? Object.keys(customL1BridgeAddresses).includes(l1Token)
-        ? customL1BridgeAddresses[l1Token]
-        : l1StandardBridgeAddressOvm
-      : l1StandardBridgeAddressBoba;
-    const l1Bridge = new Contract(l1BridgeAddress, optimismL1BridgeInterface, this.getSigner(1));
+    const l1Bridge = new Contract(this.getL1BridgeAddress(l1Token), optimismL1BridgeInterface, this.getSigner(1));
 
     let value = toBN(0);
     let method = "depositERC20";
@@ -147,5 +134,60 @@ export class OptimismAdapter extends BaseAdapter {
   }
   getName() {
     return this.isOptimism ? "OptimismAdapter" : "BobaAdapter";
+  }
+
+  async checkTokenApprovals(l1Tokens: string[]) {
+    this.logger.debug({ at: this.getName(), message: "Checking l1Tokens bridge allowances", l1Tokens });
+    // We dont need to do approvals for weth.
+    l1Tokens = l1Tokens.filter((l1Token) => tokenToEvent[l1Token] != "ETHDepositInitiated");
+    const tokensToApprove: { l1Token: any; targetContract: string }[] = [];
+    const l1TokenContracts = l1Tokens.map((l1Token) => new Contract(l1Token, ERC20.abi, this.getSigner(1)));
+
+    const allowances = await Promise.all(
+      l1TokenContracts.map((l1TokenContract) =>
+        l1TokenContract.allowance(this.relayerAddress, this.getL1BridgeAddress(l1TokenContract.address))
+      )
+    );
+
+    allowances.forEach((allowance, index) => {
+      if (allowance.lt(toBN(MAX_SAFE_ALLOWANCE)))
+        tokensToApprove.push({
+          l1Token: l1TokenContracts[index],
+          targetContract: this.getL1BridgeAddress(l1Tokens[index]),
+        });
+    });
+
+    if (tokensToApprove.length == 0) {
+      this.logger.debug({ at: this.getName(), message: "Sufficient bridge allowances", l1Tokens });
+      return;
+    }
+    console.log("tokensToApprove", tokensToApprove);
+    let mrkdwn = "*Approval transactions:* \n";
+    for (const { l1Token, targetContract } of tokensToApprove) {
+      console.log("IN", targetContract);
+      const tx = await runTransaction(this.logger, l1Token, "approve", [targetContract, MAX_UINT_VAL]);
+      const receipt = await tx.wait();
+      mrkdwn +=
+        ` - Approved Canonical token bridge ${etherscanLink(targetContract, 1)} ` +
+        `to spend ${await l1Token.symbol()} ${etherscanLink(l1Token.address, 1)} on ${getNetworkName(1)}. ` +
+        `tx: ${etherscanLink(receipt.transactionHash, 1)}\n`;
+    }
+    this.logger.info({ at: "tokenClient", message: `Approved whitelisted tokens! 💰`, mrkdwn });
+  }
+
+  getL1BridgeAddress(l1Token: string) {
+    return this.isOptimism
+      ? Object.keys(customL1BridgeAddresses).includes(l1Token)
+        ? customL1BridgeAddresses[l1Token]
+        : l1StandardBridgeAddressOvm
+      : l1StandardBridgeAddressBoba;
+  }
+
+  getL2BridgeAddress(l1Token: string) {
+    return this.isOptimism
+      ? Object.keys(customOvmBridgeAddresses).includes(l1Token)
+        ? customOvmBridgeAddresses[l1Token]
+        : ovmL2StandardBridgeAddress
+      : ovmL2StandardBridgeAddress;
   }
 }

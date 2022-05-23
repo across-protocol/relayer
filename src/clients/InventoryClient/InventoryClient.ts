@@ -60,15 +60,15 @@ export class InventoryClient {
     console.log("GETTING CROSS CHAIN BALANCES");
     await this.update();
 
-    // console.log("SEND");
+    console.log("SEND");
     // const tx = await this.adapterManager.sendTokenCrossChain(
-    //   10,
-    //   "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    //   288,
+    //   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
     //   toBN(690000)
     // );
-
+    await this.adapterManager.checkTokenApprovals(this.getL1Tokens());
+    // const tx = this.adapterManager.wrapEthIfAboveThreshold();
     // console.log(tx);
-    // this.adapterManager.wrapEthIfAboveThreshold();
   }
   async update() {
     this.logger.debug({ at: "InventoryClient", message: "Updating client", monitoredChains: this.getEnabledChains() });
