@@ -696,11 +696,7 @@ export class Dataworker {
             this.clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber ||
             this.clients.hubPoolClient.latestBlockNumber;
 
-          const leaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
-            bundle,
-            this.clients.hubPoolClient.latestBlockNumber,
-            followingBlockNumber
-          );
+          const leaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
 
           // Only use this bundle if it had valid leaves returned (meaning it was at least partially executed).
           return leaves.length > 0;
@@ -834,7 +830,6 @@ export class Dataworker {
 
     const executedLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
       this.clients.hubPoolClient.getMostRecentProposedRootBundle(this.clients.hubPoolClient.latestBlockNumber),
-      this.clients.hubPoolClient.latestBlockNumber,
       this.clients.hubPoolClient.latestBlockNumber
     );
 
@@ -891,11 +886,7 @@ export class Dataworker {
             this.clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber ||
             this.clients.hubPoolClient.latestBlockNumber;
 
-          const leaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
-            bundle,
-            this.clients.hubPoolClient.latestBlockNumber,
-            followingBlockNumber
-          );
+          const leaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
 
           // Only use this bundle if it had valid leaves returned (meaning it was at least partially executed).
           return leaves.length > 0;
@@ -922,7 +913,36 @@ export class Dataworker {
           return [fromBlock, endBlock.toNumber()];
         });
 
-        const { tree, leaves } = this.buildRelayerRefundRoot(blockNumberRanges, spokePoolClients);
+        const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this._loadData(
+          blockNumberRanges,
+          spokePoolClients
+        );
+
+        const endBlockForMainnet = getBlockRangeForChain(
+          blockNumberRanges,
+          1,
+          this.chainIdListForBundleEvaluationBlockNumbers
+        )[1];
+
+        const expectedPoolRebalanceRoot = _buildPoolRebalanceRoot(
+          endBlockForMainnet,
+          fillsToRefund,
+          deposits,
+          allValidFills,
+          unfilledDeposits,
+          this.clients,
+          this.chainIdListForBundleEvaluationBlockNumbers,
+          this.maxL1TokenCountOverride,
+          this.tokenTransferThreshold
+        );
+
+        const { tree, leaves } = this.buildRelayerRefundRoot(
+          blockNumberRanges,
+          spokePoolClients,
+          expectedPoolRebalanceRoot.leaves,
+          expectedPoolRebalanceRoot.runningBalances
+        );
+
         if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {
           this.logger.warn({
             at: "Dataworke#executeRelayerRefundLeaves",
