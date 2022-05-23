@@ -744,7 +744,6 @@ export class Dataworker {
           // Only return true if no leaf was found in the list of executed leaves.
           if (executedLeaf) return false;
 
-
           const fullFill = client.getFills().find((fill) => {
             return (
               fill.depositId === leaf.depositId &&
@@ -969,7 +968,7 @@ export class Dataworker {
             message: "Constructed a different root for the block range!",
             chainId,
             publishedRelayerRefundRoot: rootBundleRelay.relayerRefundRoot,
-            constructedRelayerRefundRoot: tree.getHexRoot()
+            constructedRelayerRefundRoot: tree.getHexRoot(),
           });
           continue;
         }
