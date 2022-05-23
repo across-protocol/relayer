@@ -1,12 +1,12 @@
-import { winston, EMPTY_MERKLE_ROOT, sortEventsDescending } from "../utils";
+import { winston, EMPTY_MERKLE_ROOT, sortEventsDescending, BigNumber } from "../utils";
 import { UnfilledDeposit, Deposit, DepositWithBlock, RootBundle } from "../interfaces";
 import { UnfilledDepositsForOriginChain, TreeData, RunningBalances } from "../interfaces";
-import { FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
+import { FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf } from "../interfaces";
 import { BigNumberForToken, FillsToRefund, RelayData } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
-import { assignValidFillToFillsToRefund } from "./FillUtils";
+import { assignValidFillToFillsToRefund, getFillsInRange } from "./FillUtils";
 import { getRefundInformationFromFill, updateTotalRefundAmount } from "./FillUtils";
 import { updateTotalRealizedLpFeePct } from "./FillUtils";
 import { getBlockRangeForChain, prettyPrintSpokePoolEvents } from "./DataworkerUtils";
@@ -244,12 +244,18 @@ export class Dataworker {
       1,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
+    const allValidFillsInRange = getFillsInRange(
+      allValidFills,
+      blockRangesForChains,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
 
     return _buildPoolRebalanceRoot(
       endBlockForMainnet,
       fillsToRefund,
       deposits,
       allValidFills,
+      allValidFillsInRange,
       unfilledDeposits,
       this.clients,
       this.chainIdListForBundleEvaluationBlockNumbers,
@@ -258,7 +264,7 @@ export class Dataworker {
     );
   }
 
-  async proposeRootBundle() {
+  async proposeRootBundle(usdThresholdToSubmitNewBundle?: BigNumber) {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
@@ -309,12 +315,18 @@ export class Dataworker {
       blockRangesForProposal,
       spokePoolClients
     );
+    const allValidFillsInRange = getFillsInRange(
+      allValidFills,
+      blockRangesForProposal,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
     this.logger.debug({ at: "Dataworker", message: `Building pool rebalance root`, blockRangesForProposal });
     const poolRebalanceRoot = _buildPoolRebalanceRoot(
       endBlockForMainnet,
       fillsToRefund,
       deposits,
       allValidFills,
+      allValidFillsInRange,
       unfilledDeposits,
       this.clients,
       this.chainIdListForBundleEvaluationBlockNumbers,
@@ -327,6 +339,22 @@ export class Dataworker {
       poolRebalanceRoot.leaves,
       "Pool rebalance"
     );
+
+    if (usdThresholdToSubmitNewBundle !== undefined) {
+      // Exit early if sum of absolute values of net send amounts and running balances exceeds threshold.
+      const totalUsdRefund = PoolRebalanceUtils.computePoolRebalanceUsdVolume(poolRebalanceRoot.leaves, this.clients);
+      if (totalUsdRefund.lt(usdThresholdToSubmitNewBundle)) {
+        this.logger.debug({
+          at: "Dataworker",
+          message: `Root bundle USD volume does not exceed threshold, exiting early 🟡`,
+          usdThresholdToSubmitNewBundle,
+          totalUsdRefund,
+          leaves: poolRebalanceRoot.leaves,
+        });
+        return;
+      }
+    }
+
     this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForProposal });
     const relayerRefundRoot = _buildRelayerRefundRoot(
       endBlockForMainnet,
@@ -577,11 +605,17 @@ export class Dataworker {
       blockRangesImpliedByBundleEndBlocks,
       spokePoolClients
     );
+    const allValidFillsInRange = getFillsInRange(
+      allValidFills,
+      blockRangesImpliedByBundleEndBlocks,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
     const expectedPoolRebalanceRoot = _buildPoolRebalanceRoot(
       endBlockForMainnet,
       fillsToRefund,
       deposits,
       allValidFills,
+      allValidFillsInRange,
       unfilledDeposits,
       this.clients,
       this.chainIdListForBundleEvaluationBlockNumbers,
@@ -942,12 +976,17 @@ export class Dataworker {
           1,
           this.chainIdListForBundleEvaluationBlockNumbers
         )[1];
-
+        const allValidFillsInRange = getFillsInRange(
+          allValidFills,
+          blockNumberRanges,
+          this.chainIdListForBundleEvaluationBlockNumbers
+        );
         const expectedPoolRebalanceRoot = _buildPoolRebalanceRoot(
           endBlockForMainnet,
           fillsToRefund,
           deposits,
           allValidFills,
+          allValidFillsInRange,
           unfilledDeposits,
           this.clients,
           this.chainIdListForBundleEvaluationBlockNumbers,

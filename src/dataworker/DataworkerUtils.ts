@@ -202,6 +202,7 @@ export function _buildPoolRebalanceRoot(
   fillsToRefund: FillsToRefund,
   deposits: DepositWithBlock[],
   allValidFills: FillWithBlock[],
+  allValidFillsInRange: FillWithBlock[],
   unfilledDeposits: UnfilledDeposit[],
   clients: DataworkerClients,
   chainIdListForBundleEvaluationBlockNumbers: number[],
@@ -237,6 +238,7 @@ export function _buildPoolRebalanceRoot(
     runningBalances,
     clients.hubPoolClient,
     allValidFills,
+    allValidFillsInRange,
     chainIdListForBundleEvaluationBlockNumbers
   );
 

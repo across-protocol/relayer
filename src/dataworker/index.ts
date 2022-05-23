@@ -36,18 +36,22 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       await updateDataworkerClients(clients);
 
       // Validate and dispute pending proposal before proposing a new one
-      await dataworker.validatePendingRootBundle();
+      if (config.disputerEnabled) await dataworker.validatePendingRootBundle();
+      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputed disabled" });
 
-      await dataworker.proposeRootBundle();
+      if (config.proposerEnabled) await dataworker.proposeRootBundle(config.rootBundleExecutionThreshold);
+      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
 
-      await dataworker.executePoolRebalanceLeaves();
+      if (config.executorEnabled) {
+        await dataworker.executePoolRebalanceLeaves();
 
-      // Execute slow relays before relayer refunds to give them priority for any L2 funds.
-      await dataworker.executeSlowRelayLeaves();
+        // Execute slow relays before relayer refunds to give them priority for any L2 funds.
+        await dataworker.executeSlowRelayLeaves();
 
-      await dataworker.executeRelayerRefundLeaves();
+        await dataworker.executeRelayerRefundLeaves();
+      }
 
-      await clients.multiCallerClient.executeTransactionQueue();
+      await clients.multiCallerClient.executeTransactionQueue(!config.sendingTransactionsEnabled);
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }

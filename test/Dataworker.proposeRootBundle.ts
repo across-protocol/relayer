@@ -1,5 +1,5 @@
 import { buildFillForRepaymentChain, lastSpyLogIncludes } from "./utils";
-import { SignerWithAddress, expect, ethers, Contract, buildDeposit } from "./utils";
+import { SignerWithAddress, expect, ethers, Contract, buildDeposit, toBNWei } from "./utils";
 import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, originChainId } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
@@ -171,6 +171,13 @@ describe("Dataworker: Propose root bundle", async function () {
       expectedPoolRebalanceRoot4.leaves,
       expectedPoolRebalanceRoot4.runningBalances
     );
+
+    // TEST 5:
+    // Won't submit anything if the USD threshold to propose a root is set and set too high:
+    await dataworkerInstance.proposeRootBundle(toBNWei("1000000"));
+    expect(lastSpyLogIncludes(spy, "Root bundle USD volume does not exceed threshold, exiting early")).to.be.true;
+
+    // TEST 4: cont.
     await dataworkerInstance.proposeRootBundle();
     const loadDataResults4 = getMostRecentLog(spy, "Finished loading spoke pool data");
     expect(loadDataResults4.blockRangesForChains).to.deep.equal(blockRange4);

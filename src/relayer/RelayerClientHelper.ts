@@ -1,13 +1,12 @@
 import winston from "winston";
 import { Contract, getDeployedContract, getDeploymentBlockNumber, getSigner, Wallet } from "../utils";
-import { TokenClient, ProfitClient, SpokePoolClient } from "../clients";
+import { TokenClient, SpokePoolClient } from "../clients";
 import { RelayerConfig } from "./RelayerConfig";
 import { Clients, constructClients, updateClients, getSpokePoolSigners, updateSpokePoolClients } from "../common";
 
 export interface RelayerClients extends Clients {
   spokePoolClients: { [chainId: number]: SpokePoolClient };
   tokenClient: TokenClient;
-  profitClient: ProfitClient;
 }
 
 export interface SpokePoolClientsByChain {
@@ -71,9 +70,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
 
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients, commonClients.hubPoolClient);
 
-  const profitClient = new ProfitClient(logger, commonClients.hubPoolClient, config.relayerDiscount);
-
-  return { ...commonClients, tokenClient, profitClient, spokePoolClients };
+  return { ...commonClients, tokenClient, spokePoolClients };
 }
 
 export async function updateRelayerClients(clients: RelayerClients) {
