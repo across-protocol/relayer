@@ -1,5 +1,10 @@
+import { delay } from "@uma/financial-templates-lib";
 import { SortableEvent } from "../interfaces";
 import { Contract, Event, EventFilter, Promise } from "./";
+
+const defaultConcurrency = 200;
+const maxRetries = 3;
+const retrySleepTime = 5;
 
 export function spreadEvent(event: Event) {
   const keys = Object.keys(event.args).filter((key: string) => isNaN(+key)); // Extract non-numeric keys.
@@ -21,6 +26,7 @@ export function spreadEvent(event: Event) {
 }
 
 export async function paginatedEventQuery(contract: Contract, filter: EventFilter, searchConfig: EventSearchConfig) {
+  let retryCounter = 0;
   // If the max block look back is set to 0 then we dont need to do any pagination and can query over the whole range.
   if (searchConfig.maxBlockLookBack === 0)
     return await contract.queryFilter(filter, searchConfig.fromBlock, searchConfig.toBlock);
@@ -38,7 +44,14 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
     promises.push(contract.queryFilter(filter, fromBlock, toBlock));
   }
 
-  return (await Promise.all(promises, { concurrency: searchConfig.concurrency | 200 })).flat(); // Default to 200 concurrent calls.
+  try {
+    return (await Promise.all(promises, { concurrency: searchConfig.concurrency | defaultConcurrency })).flat(); // Default to 200 concurrent calls.
+  } catch (error) {
+    if (retryCounter++ < maxRetries) {
+      await delay(retrySleepTime);
+      return await paginatedEventQuery(contract, filter, searchConfig);
+    } else throw error;
+  }
 }
 
 export interface EventSearchConfig {
