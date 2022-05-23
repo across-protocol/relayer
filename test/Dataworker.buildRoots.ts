@@ -161,7 +161,6 @@ describe("Dataworker: Build merkle roots", async function () {
     const merkleRoot2 = dataworkerInstance.buildSlowRelayRoot(DEFAULT_BLOCK_RANGE_FOR_CHAIN, spokePoolClients);
     const expectedMerkleRoot2 = await buildSlowRelayTree(buildSlowRelayLeaves([deposit5]));
     expect(merkleRoot2.tree.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
-
   });
   describe("Build relayer refund root", function () {
     it("amountToReturn is 0", async function () {
