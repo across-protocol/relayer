@@ -763,6 +763,7 @@ export class Dataworker {
             at: "Dataworke#executeSlowRelayLeaves",
             message: "Constructed a different root for the block range!",
             chainId,
+            mainnetRootBundleBlock: matchingRootBundle.blockNumber,
             publishedSlowRelayRoot: rootBundleRelay.slowRelayRoot,
             constructedSlowRelayRoot: tree.getHexRoot(),
           });
@@ -1006,6 +1007,7 @@ export class Dataworker {
             at: "Dataworke#executeRelayerRefundLeaves",
             message: "Constructed a different root for the block range!",
             chainId,
+            mainnetRootBundleBlock: matchingRootBundle.blockNumber,
             publishedRelayerRefundRoot: rootBundleRelay.relayerRefundRoot,
             constructedRelayerRefundRoot: tree.getHexRoot(),
           });
