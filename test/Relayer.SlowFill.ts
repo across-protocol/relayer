@@ -71,7 +71,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     await updateAllClients();
   });
 
-  it("Correctly sends zero sized fill if insufficient token balance", async function () {
+  it("Correctly sends 1wei sized fill if insufficient token balance", async function () {
     // Transfer away a lot of the relayers funds to simulate the relayer having insufficient funds.
     const balance = await erc20_1.balanceOf(relayer.address);
     await erc20_1.connect(relayer).transfer(owner.address, balance.sub(amountToDeposit));
@@ -88,9 +88,9 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     );
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(spyLogIncludes(spy, -2, "Zero filling")).to.be.true;
+    expect(spyLogIncludes(spy, -2, "1wei filling")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
-    expect(multiCallerClient.transactionCount()).to.equal(1); // One transaction, zero filling the one deposit.
+    expect(multiCallerClient.transactionCount()).to.equal(1); // One transaction, 1wei filling the one deposit.
 
     const tx = await multiCallerClient.executeTransactionQueue();
     expect(tx.length).to.equal(1); // There should have been exactly one transaction.
@@ -100,7 +100,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     expect(fillEvents2.length).to.equal(1);
     expect(fillEvents2[0].args.depositId).to.equal(deposit1.depositId);
     expect(fillEvents2[0].args.amount).to.equal(deposit1.amount);
-    expect(fillEvents2[0].args.fillAmount).to.equal(0); // zero fill size
+    expect(fillEvents2[0].args.fillAmount).to.equal(1); // 1wei fill size
     expect(fillEvents2[0].args.destinationChainId).to.equal(Number(deposit1.destinationChainId));
     expect(fillEvents2[0].args.originChainId).to.equal(Number(deposit1.originChainId));
     expect(fillEvents2[0].args.relayerFeePct).to.equal(deposit1.relayerFeePct);

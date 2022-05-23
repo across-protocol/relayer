@@ -73,7 +73,7 @@ export class Relayer {
         contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
         chainId: deposit.destinationChainId,
         method: "fillRelay", // method called.
-        args: buildFillRelayProps(deposit, this.repaymentChainId, toBN(0)), // props sent with function call.
+        args: buildFillRelayProps(deposit, this.repaymentChainId, toBN(1)), // props sent with function call.
         message: "Zero size relay sent 🐌", // message sent to logger.
         mrkdwn: this.constructZeroSizeFilledMrkdwn(deposit), // message details mrkdwn
       });
