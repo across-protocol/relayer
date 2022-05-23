@@ -24,13 +24,7 @@ export class RootBundleProcessor {
     RootBundleCanceled: "canceled",
   };
 
-  private hubPoolClient: HubPoolClient;
-  private logger: winston.Logger;
-
-  constructor(hubPoolClient: HubPoolClient, logger: winston.Logger) {
-    this.hubPoolClient = hubPoolClient;
-    this.logger = logger;
-  }
+  constructor(readonly logger: winston.Logger, readonly hubPoolClient: HubPoolClient) {}
 
   async getRootBundleEventsInfo(
     startingBlock: number | undefined,
@@ -45,22 +39,22 @@ export class RootBundleProcessor {
     const [proposeRootBundleEvents, rootBundleExecutedEvents, rootBundleDisputedEvents, rootBundleCanceledEvents] =
       await Promise.all([
         this.hubPoolClient.hubPool.queryFilter(
-          this.hubPoolClient.hubPool.filters.ProposeRootBundleEvent(),
+          this.hubPoolClient.hubPool.filters.ProposeRootBundle(),
           startingBlock,
           endingBlock
         ),
         this.hubPoolClient.hubPool.queryFilter(
-          this.hubPoolClient.hubPool.filters.RootBundleExecutedEvent(),
+          this.hubPoolClient.hubPool.filters.RootBundleExecuted(),
           startingBlock,
           endingBlock
         ),
         this.hubPoolClient.hubPool.queryFilter(
-          this.hubPoolClient.hubPool.filters.RootBundleDisputedEvent(),
+          this.hubPoolClient.hubPool.filters.RootBundleDisputed(),
           startingBlock,
           endingBlock
         ),
         this.hubPoolClient.hubPool.queryFilter(
-          this.hubPoolClient.hubPool.filters.RootBundleCanceledEvent(),
+          this.hubPoolClient.hubPool.filters.RootBundleCanceled(),
           startingBlock,
           endingBlock
         ),
