@@ -230,10 +230,6 @@ export function _buildPoolRebalanceRoot(
   // Add payments to execute slow fills.
   addSlowFillsToRunningBalances(endBlockForMainnet, runningBalances, clients.hubPoolClient, unfilledDeposits);
 
-  // Snapshot running balances after adding fast + slow fills. We'll use this in the dataworker to know whether to
-  // to submit the root bundle for profitability reasons.
-  const totalRefundAmountForAllFills: RunningBalances = { ...runningBalances };
-
   // For certain fills associated with another partial fill from a previous root bundle, we need to adjust running
   // balances because the prior partial fill would have triggered a refund to be sent to the spoke pool to refund
   // a slow fill.
@@ -272,6 +268,5 @@ export function _buildPoolRebalanceRoot(
     realizedLpFees,
     leaves,
     tree: buildPoolRebalanceLeafTree(leaves),
-    totalRefundAmountForAllFills,
   };
 }
