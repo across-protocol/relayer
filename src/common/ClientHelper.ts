@@ -8,7 +8,7 @@ import {
   SpokePool,
   Contract,
 } from "../utils";
-import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
+import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient, ProfitClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { DataworkerClients } from "../dataworker/DataworkerClientHelper";
 
@@ -16,6 +16,7 @@ export interface Clients {
   hubPoolClient: HubPoolClient;
   configStoreClient: AcrossConfigStoreClient;
   multiCallerClient: MultiCallerClient;
+  profitClient: ProfitClient;
 }
 
 export function getSpokePoolSigners(baseSigner: Wallet, config: CommonConfig): { [chainId: number]: Wallet } {
@@ -92,9 +93,12 @@ export async function constructClients(logger: winston.Logger, config: CommonCon
   // const gasEstimator = new GasEstimator() // todo when this is implemented in the SDK.
   const multiCallerClient = new MultiCallerClient(logger, null, config.maxTxWait);
 
-  return { hubPoolClient, configStoreClient, multiCallerClient };
+  const profitClient = new ProfitClient(logger, hubPoolClient, config.relayerDiscount);
+
+  return { hubPoolClient, configStoreClient, multiCallerClient, profitClient };
 }
 
 export async function updateClients(clients: Clients) {
   await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
+  await clients.profitClient.update();
 }

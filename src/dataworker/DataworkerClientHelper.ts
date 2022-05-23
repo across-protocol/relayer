@@ -6,7 +6,6 @@ import { TokenClient } from "../clients";
 
 export interface DataworkerClients extends Clients {
   tokenClient: TokenClient;
-  profitClient: ProfitClient;
   spokePoolSigners: { [chainId: number]: Wallet };
   spokePoolClientSearchSettings: { [chainId: number]: EventSearchConfig };
 }

@@ -327,7 +327,9 @@ export class Dataworker {
       "Pool rebalance"
     );
 
-    // Exit early if netSendAmount is == 0 or if fillsToRefund total is above a threshold.
+    // Exit early if netSendAmount is == 0 or if fillsToRefund total is not above USD threshold.
+    console.log('PROFIT CLIENT!!!!')
+    console.log(this.clients.profitClient.getAllPrices())
 
     this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForProposal });
     const relayerRefundRoot = _buildRelayerRefundRoot(
