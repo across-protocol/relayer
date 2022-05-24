@@ -697,6 +697,11 @@ export class Dataworker {
   // in both the events they search for and the comparisons they make. We should try to generalize this in the future,
   // but keeping them separate is probably the simplest for the initial implementation.
   async executeSlowRelayLeaves(spokePoolClients: { [chainId: number]: SpokePoolClient }) {
+    this.logger.debug({
+      at: "Dataworker#executeSlowRelayLeaves",
+      message: "Executing slow relay leaves",
+    });
+
     Object.entries(spokePoolClients).forEach(([chainId, client]) => {
       let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays());
 
@@ -807,6 +812,11 @@ export class Dataworker {
   }
 
   async executePoolRebalanceLeaves(spokePoolClients?: { [chainId: number]: SpokePoolClient }) {
+    this.logger.debug({
+      at: "Dataworker#executePoolRebalanceLeaves",
+      message: "Executing pool rebalance leaves",
+    });
+
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
@@ -901,6 +911,11 @@ export class Dataworker {
   }
 
   async executeRelayerRefundLeaves(spokePoolClients: { [chainId: number]: SpokePoolClient }) {
+    this.logger.debug({
+      at: "Dataworker#executeRelayerRefundLeaves",
+      message: "Executing relayer refund leaves",
+    });
+
     Object.entries(spokePoolClients).forEach(([chainId, client]) => {
       let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays());
 
