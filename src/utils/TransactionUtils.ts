@@ -23,7 +23,8 @@ export async function getGasPrice(provider, priorityScaler = toBN(1.2), maxFeePe
   if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
     // Polygon, for some or other reason, does not correctly return an appropriate maxPriorityFeePerGas. Set the
     // maxPriorityFeePerGas to the maxFeePerGas * 5 for now as a temp workaround.
-    if (chainInfo.chainId === 137) feeData.maxPriorityFeePerGas = ethers.utils.parseUnits((await getPolygonPriorityFee()).fastest, 9);
+    if (chainInfo.chainId === 137)
+      feeData.maxPriorityFeePerGas = ethers.utils.parseUnits((await getPolygonPriorityFee()).fastest, 9);
     if (feeData.maxPriorityFeePerGas > feeData.maxFeePerGas)
       feeData.maxFeePerGas = toBN(feeData.maxPriorityFeePerGas).mul(1.5);
     return {
