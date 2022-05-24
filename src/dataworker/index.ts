@@ -41,6 +41,9 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       await updateDataworkerClients(clients);
 
       // Construct spoke clients used to evaluate and execute leaves from pending root bundle.
+      // Since we're updating all clients once per severless run, we can precompute all spoke pool clients safely
+      // here and then recompute block ranges in the dataworker methods without any risk that the spoke pool client
+      // and the hub pool clients reference different block ranges.
       logger[startupLogLevel(config)]({
         at: "Dataworker#index",
         message: "Constructing spoke pool clients for pending root bundle",
