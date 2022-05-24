@@ -849,7 +849,7 @@ export class Dataworker {
     const widestPossibleExpectedBlockRange = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
       this.clients,
-      pendingRootBundle.proposalBlockNumber
+      this.clients.hubPoolClient.latestBlockNumber
     );
     const { valid, reason, expectedTrees } = await this.validateRootBundle(
       hubPoolChainId,
