@@ -996,7 +996,7 @@ export class Dataworker {
             method: "executeRelayerRefundLeaf",
             args: [rootBundleRelay.rootBundleId, leaf, tree.getHexProof(leaf)],
             message: "Executed RelayerRefundLeaf 🌿!",
-            mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nrelayerRefundRoot: ${rootBundleRelay.relayerRefundRoot}\nLeaf: ${leaf.leafId}`, // Just a placeholder
+            mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nrelayerRefundRoot: ${rootBundleRelay.relayerRefundRoot}\nLeaf: ${leaf.leafId}\nchainId: ${chainId}\ntoken: ${leaf.l2TokenAddress}`, // Just a placeholder
           });
         });
       }
