@@ -48,8 +48,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       const spokePoolClientsForPendingRootBundle = await constructSpokePoolClientsForPendingRootBundle(
         logger,
         dataworker.chainIdListForBundleEvaluationBlockNumbers,
-        clients,
-        true
+        clients
       );
       logger[startupLogLevel(config)]({
         at: "Dataworker#index",

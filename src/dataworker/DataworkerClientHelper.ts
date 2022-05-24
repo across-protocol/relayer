@@ -57,8 +57,7 @@ export async function updateDataworkerClients(clients: DataworkerClients) {
 export async function constructSpokePoolClientsForPendingRootBundle(
   logger: winston.Logger,
   chainIdListForBundleEvaluationBlockNumbers: number[],
-  clients: DataworkerClients,
-  constructSpokeClients: boolean
+  clients: DataworkerClients
 ) {
   const widestPossibleExpectedBlockRange = await getWidestPossibleExpectedBlockRange(
     chainIdListForBundleEvaluationBlockNumbers,
@@ -89,13 +88,12 @@ export async function constructSpokePoolClientsForPendingRootBundle(
         1,
         chainIdListForBundleEvaluationBlockNumbers
       )[1];
-      if (constructSpokeClients)
-        spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-          chainIdListForBundleEvaluationBlockNumbers,
-          clients,
-          logger,
-          endBlockForMainnet
-        );
+      spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
+        chainIdListForBundleEvaluationBlockNumbers,
+        clients,
+        logger,
+        endBlockForMainnet
+      );
     }
   }
 
