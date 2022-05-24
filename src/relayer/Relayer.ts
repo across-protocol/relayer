@@ -181,8 +181,8 @@ export class Relayer {
       `${createFormatFunction(2, 4, false, decimals)(deposit.amount.toString())} ${symbol}. ` +
       `with depositor ${etherscanLink(deposit.depositor, deposit.originChainId)}. ` +
       `Fill amount of ${createFormatFunction(2, 4, false, decimals)(fillAmount.toString())} ${symbol} with ` +
-      `relayerFee ${createFormatFunction(2, 4, false, 18)(deposit.relayerFeePct.toString())}% & ` +
-      `realizedLpFee ${createFormatFunction(2, 4, false, 18)(deposit.realizedLpFeePct.toString())}%. `
+      `relayerFee ${createFormatFunction(2, 4, false, 18)(toBN(deposit.relayerFeePct).mul(100).toString())}% & ` +
+      `realizedLpFee ${createFormatFunction(2, 4, false, 18)(toBN(deposit.realizedLpFeePct).mul(100).toString())}%. `
     );
   }
 }
