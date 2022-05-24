@@ -112,7 +112,6 @@ export class AcrossConfigStoreClient {
 
         // If Token config doesn't contain all expected properties, skip it.
         if (!(rateModelForToken && transferThresholdForToken)) {
-          this.logger.debug({ at: "RateModelClient", message: "Skipping invalid token config", args });
           continue;
         }
 
@@ -128,7 +127,6 @@ export class AcrossConfigStoreClient {
         // Store transferThreshold
         this.cumulativeTokenTransferUpdates.push({ ...args, transferThreshold: transferThresholdForToken, l1Token });
       } catch (err) {
-        this.logger.debug({ at: "RateModelClient", message: "Cannot parse value to JSON", args });
         continue;
       }
     }
@@ -147,7 +145,6 @@ export class AcrossConfigStoreClient {
       } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE)) {
         if (!isNaN(args.value)) this.cumulativeMaxL1TokenCountUpdates.push(args);
       } else {
-        this.logger.debug({ at: "RateModelClient", message: "Skipping unknown global config key", args });
         continue;
       }
     }
