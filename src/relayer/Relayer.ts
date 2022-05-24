@@ -61,6 +61,7 @@ export class Relayer {
       // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
       this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.destinationToken, fillAmount);
     } catch (error) {
+      console.log("error", error);
       this.logger.error({ at: "Relayer", message: "Error creating fillRelayTx", error });
     }
   }
@@ -181,8 +182,8 @@ export class Relayer {
       `${createFormatFunction(2, 4, false, decimals)(deposit.amount.toString())} ${symbol}. ` +
       `with depositor ${etherscanLink(deposit.depositor, deposit.originChainId)}. ` +
       `Fill amount of ${createFormatFunction(2, 4, false, decimals)(fillAmount.toString())} ${symbol} with ` +
-      `relayerFee ${createFormatFunction(2, 4, false, 18)(deposit.relayerFeePct.mul(100).toString())}% & ` +
-      `realizedLpFee ${createFormatFunction(2, 4, false, 18)(deposit.realizedLpFeePct.mul(100).toString())}%. `
+      `relayerFee ${createFormatFunction(2, 4, false, 18)(toBN(deposit.relayerFeePct).mul(100).toString())}% & ` +
+      `realizedLpFee ${createFormatFunction(2, 4, false, 18)(toBN(deposit.realizedLpFeePct).mul(100).toString())}%. `
     );
   }
 }
