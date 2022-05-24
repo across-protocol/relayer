@@ -1,6 +1,6 @@
 import { buildFillForRepaymentChain } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit } from "./utils";
-import { HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
+import { HubPoolClient, AcrossConfigStoreClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
 import { amountToDeposit, destinationChainId } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
@@ -15,6 +15,7 @@ let depositor: SignerWithAddress;
 
 let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
 let dataworkerInstance: Dataworker, multiCallerClient: MultiCallerClient;
+let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let updateAllClients: () => Promise<void>;
 
@@ -33,6 +34,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       dataworkerInstance,
       multiCallerClient,
       updateAllClients,
+      spokePoolClients,
     } = await setupDataworker(
       ethers,
       MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
@@ -59,7 +61,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
     await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
     await updateAllClients();
 
-    await dataworkerInstance.proposeRootBundle();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
 
     // Execute queue and check that root bundle is pending:
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
@@ -77,7 +79,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
     // pool rebalance leaves because they should use the chain's end block from the latest fully executed proposed
     // root bundle, which should be the bundle block in expectedPoolRebalanceRoot2 + 1.
     await updateAllClients();
-    await dataworkerInstance.proposeRootBundle();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
 
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
@@ -88,7 +90,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
     // Submit another fill and check that dataworker proposes another root:
     await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 1, destinationChainId);
     await updateAllClients();
-    await dataworkerInstance.proposeRootBundle();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
 
     // Execute queue and execute leaves:
     await multiCallerClient.executeTransactionQueue();
@@ -102,7 +104,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
     await multiCallerClient.executeTransactionQueue();
 
     await updateAllClients();
-    await dataworkerInstance.executeRelayerRefundLeaves();
+    await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients);
     expect(multiCallerClient.transactionCount()).to.equal(3);
 
     // Note: we need to manually supply the tokens since the L1 tokens won't be recognized in the spoke pool.

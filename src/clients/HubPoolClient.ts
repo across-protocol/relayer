@@ -37,6 +37,15 @@ export class HubPoolClient {
     return this.pendingRootBundle !== undefined && this.pendingRootBundle.unclaimedPoolRebalanceLeafCount > 0;
   }
 
+  getPendingRootBundleIfAvailable() {
+    const hasPendingProposal = this.hasPendingProposal();
+    const pendingRootBundle = hasPendingProposal ? this.getPendingRootBundleProposal() : undefined;
+    return {
+      hasPendingProposal,
+      pendingRootBundle,
+    };
+  }
+
   getProposedRootBundles() {
     return this.proposedRootBundles;
   }

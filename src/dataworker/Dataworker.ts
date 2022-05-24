@@ -264,7 +264,10 @@ export class Dataworker {
     );
   }
 
-  async proposeRootBundle(usdThresholdToSubmitNewBundle?: BigNumber) {
+  async proposeRootBundle(
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    usdThresholdToSubmitNewBundle?: BigNumber
+  ) {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
@@ -298,17 +301,6 @@ export class Dataworker {
       1,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
-    this.logger.debug({
-      at: "Dataworker#propose",
-      message: `Constructing spoke pool clients for end mainnet block in bundle range`,
-      endBlockForMainnet,
-    });
-    const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      this.clients,
-      this.logger,
-      endBlockForMainnet
-    );
 
     // 3. Create roots
     const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this._loadData(
@@ -408,12 +400,13 @@ export class Dataworker {
     );
   }
 
-  async validatePendingRootBundle() {
+  async validatePendingRootBundle(spokePoolClients?: { [chainId: number]: SpokePoolClient }) {
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
     // Exit early if a bundle is not pending.
-    if (!this.clients.hubPoolClient.hasPendingProposal()) {
+    const { hasPendingProposal, pendingRootBundle } = this.clients.hubPoolClient.getPendingRootBundleIfAvailable();
+    if (hasPendingProposal === false) {
       this.logger.debug({
         at: "Dataworker#validate",
         message: "No pending proposal, nothing to validate",
@@ -421,7 +414,6 @@ export class Dataworker {
       return;
     }
 
-    const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundleProposal();
     this.logger.debug({
       at: "Dataworker#validate",
       message: "Found pending proposal",
@@ -445,7 +437,8 @@ export class Dataworker {
     const { valid, reason } = await this.validateRootBundle(
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
-      pendingRootBundle
+      pendingRootBundle,
+      spokePoolClients
     );
     if (!valid) this._submitDisputeWithMrkdwn(hubPoolChainId, reason);
   }
@@ -453,7 +446,8 @@ export class Dataworker {
   async validateRootBundle(
     hubPoolChainId: number,
     widestPossibleExpectedBlockRange: number[][],
-    rootBundle: RootBundle
+    rootBundle: RootBundle,
+    spokePoolClients?: { [chainId: number]: SpokePoolClient }
   ): Promise<{
     valid: boolean;
     reason?: string;
@@ -586,17 +580,13 @@ export class Dataworker {
       1,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
-    this.logger.debug({
-      at: "Dataworker#validate",
-      message: `Constructing spoke pool clients for end mainnet block in bundle range`,
-      endBlockForMainnet,
-    });
-    const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      this.clients,
-      this.logger,
-      endBlockForMainnet
-    );
+    if (spokePoolClients === undefined)
+      spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
+        this.chainIdListForBundleEvaluationBlockNumbers,
+        this.clients,
+        this.logger,
+        endBlockForMainnet
+      );
 
     // Compare roots with expected. The roots will be different if the block range start blocks were different
     // than the ones we constructed above when the original proposer submitted their proposal. The roots will also
@@ -706,13 +696,11 @@ export class Dataworker {
   // TODO: this method and executeRelayerRefundLeaves have a lot of similarities, but they have some key differences
   // in both the events they search for and the comparisons they make. We should try to generalize this in the future,
   // but keeping them separate is probably the simplest for the initial implementation.
-  async executeSlowRelayLeaves() {
-    const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      this.clients,
-      this.logger,
-      this.clients.hubPoolClient.latestBlockNumber
-    );
+  async executeSlowRelayLeaves(spokePoolClients: { [chainId: number]: SpokePoolClient }) {
+    this.logger.debug({
+      at: "Dataworker#executeSlowRelayLeaves",
+      message: "Executing slow relay leaves",
+    });
 
     Object.entries(spokePoolClients).forEach(([chainId, client]) => {
       let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays());
@@ -823,12 +811,18 @@ export class Dataworker {
     });
   }
 
-  async executePoolRebalanceLeaves() {
+  async executePoolRebalanceLeaves(spokePoolClients?: { [chainId: number]: SpokePoolClient }) {
+    this.logger.debug({
+      at: "Dataworker#executePoolRebalanceLeaves",
+      message: "Executing pool rebalance leaves",
+    });
+
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
     // Exit early if a bundle is not pending.
-    if (!this.clients.hubPoolClient.hasPendingProposal()) {
+    const { hasPendingProposal, pendingRootBundle } = this.clients.hubPoolClient.getPendingRootBundleIfAvailable();
+    if (!hasPendingProposal) {
       this.logger.debug({
         at: "Dataworker#executePoolRebalanceLeaves",
         message: "No pending proposal, nothing to execute",
@@ -836,7 +830,6 @@ export class Dataworker {
       return;
     }
 
-    const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundleProposal();
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
       message: "Found pending proposal",
@@ -860,7 +853,8 @@ export class Dataworker {
     const { valid, reason, expectedTrees } = await this.validateRootBundle(
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
-      pendingRootBundle
+      pendingRootBundle,
+      spokePoolClients
     );
 
     if (!valid) {
@@ -918,13 +912,11 @@ export class Dataworker {
     });
   }
 
-  async executeRelayerRefundLeaves() {
-    const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      this.clients,
-      this.logger,
-      this.clients.hubPoolClient.latestBlockNumber
-    );
+  async executeRelayerRefundLeaves(spokePoolClients: { [chainId: number]: SpokePoolClient }) {
+    this.logger.debug({
+      at: "Dataworker#executeRelayerRefundLeaves",
+      message: "Executing relayer refund leaves",
+    });
 
     Object.entries(spokePoolClients).forEach(([chainId, client]) => {
       let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays());
@@ -937,7 +929,6 @@ export class Dataworker {
       for (const rootBundleRelay of rootBundleRelays) {
         const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
           if (bundle.relayerRefundRoot !== rootBundleRelay.relayerRefundRoot) return false;
-
           const followingBlockNumber =
             this.clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber ||
             this.clients.hubPoolClient.latestBlockNumber;
@@ -1032,7 +1023,7 @@ export class Dataworker {
             method: "executeRelayerRefundLeaf",
             args: [rootBundleRelay.rootBundleId, leaf, tree.getHexProof(leaf)],
             message: "Executed RelayerRefundLeaf 🌿!",
-            mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nrelayerRefundRoot: ${rootBundleRelay.relayerRefundRoot}\nLeaf: ${leaf.leafId}`, // Just a placeholder
+            mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nrelayerRefundRoot: ${rootBundleRelay.relayerRefundRoot}\nLeaf: ${leaf.leafId}\nchainId: ${chainId}\ntoken: ${leaf.l2TokenAddress}`, // Just a placeholder
           });
         });
       }

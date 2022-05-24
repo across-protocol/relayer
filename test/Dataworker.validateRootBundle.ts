@@ -75,7 +75,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       expectedPoolRebalanceRoot2.runningBalances
     );
     dataworkerInstance.buildSlowRelayRoot(blockRange2, spokePoolClients);
-    await dataworkerInstance.proposeRootBundle();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
     await multiCallerClient.executeTransactionQueue();
 
@@ -113,7 +113,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       );
     }
     await updateAllClients();
-    await dataworkerInstance.proposeRootBundle();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
     await multiCallerClient.executeTransactionQueue();
 
     // Constructs same roots as proposed root bundle
