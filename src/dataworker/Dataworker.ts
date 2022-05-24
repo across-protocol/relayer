@@ -792,18 +792,6 @@ export class Dataworker {
           return !fullFill;
         });
 
-        if (tree.getHexRoot() !== rootBundleRelay.slowRelayRoot) {
-          this.logger.warn({
-            at: "Dataworke#executeSlowRelayLeaves",
-            message: "Constructed a different root for the block range!",
-            chainId,
-            mainnetRootBundleBlock: matchingRootBundle.blockNumber,
-            publishedSlowRelayRoot: rootBundleRelay.slowRelayRoot,
-            constructedSlowRelayRoot: tree.getHexRoot(),
-          });
-          continue;
-        }
-
         executableLeaves.forEach((leaf) => {
           this.clients.multiCallerClient.enqueueTransaction({
             contract: client.spokePool,
