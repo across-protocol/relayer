@@ -53,12 +53,7 @@ export class Monitor {
           ${etherscanLink(l1TokenUtilization.l1Token, l1TokenUtilization.chainId)} on \
           ${getNetworkName(l1TokenUtilization.chainId)} is at \
           ${createFormatFunction(0, 2)(utilizationString)}% utilization!"`;
-        this.logger.warn({
-          at: "UtilizationMonitor",
-          message: "High pool utilization warning 🏊",
-          mrkdwn,
-          notificationPath: "across-monitor",
-        });
+        this.logger.warn({ at: "UtilizationMonitor", message: "High pool utilization warning 🏊", mrkdwn });
       }
     }
   }
@@ -75,14 +70,10 @@ export class Monitor {
         continue;
       }
 
-      const mrkdwn = `${etherscanLink(event.caller, this.monitorConfig.hubPoolChainId)}
-       ${event.action} on ${getNetworkName(this.monitorConfig.hubPoolChainId)}`;
-      this.logger.warn({
-        at: "UnknownRootBundleCaller",
-        message: "Across Hub Pool unknown root bundle caller warning 🥷",
-        mrkdwn,
-        notificationPath: "across-monitor",
-      });
+      const mrkdwn =
+        `An unknown EOA ${etherscanLink(event.caller, 1)} has proposed a bundle on ${getNetworkName(1)}` +
+        `\ntx: ${etherscanLink(event.transactionHash, 1)}!`;
+      this.logger.error({ at: "Monitor", message: "Unknown bundle proposer 🥷", mrkdwn });
     }
   }
 
@@ -90,24 +81,19 @@ export class Monitor {
     this.logger.debug({ at: "AcrossMonitor#UnknownRelayers", message: "Checking for unknown relayers" });
 
     for (const chainId of Object.keys(this.clients.spokePools)) {
-      const relayEvents: EventInfo[] = await this.relayerProcessor.getRelayedEventsInfo(
+      const relayEvents: any = await this.relayerProcessor.getRelayedEventsInfo(
         this.clients.spokePools[chainId],
         this.spokePoolsBlocks[chainId].startingBlock,
         this.spokePoolsBlocks[chainId].endingBlock
       );
       for (const event of relayEvents) {
         // Skip notifications for known relay caller addresses.
-        if (this.monitorConfig.whitelistedRelayers.includes(event.caller)) {
-          continue;
-        }
-        const mrkdwn = `${etherscanLink(event.caller, parseInt(chainId))} ${event.action} on 
-          ${getNetworkName(chainId)}`;
-        this.logger.warn({
-          at: "UnknownRelayer",
-          message: "Across Spoke Pool unknown relayer warning 🕺",
-          mrkdwn,
-          notificationPath: "across-monitor",
-        });
+        if (this.monitorConfig.whitelistedRelayers.includes(event.relayer)) continue;
+
+        const mrkdwn =
+          `An unknown relayer ${etherscanLink(event.relayer, chainId)}` +
+          `filled a deposit on ${getNetworkName(chainId)}\ntx: ${etherscanLink(event.transactionHash, chainId)}`;
+        this.logger.error({ at: "Monitor", message: "Unknown relayer 😱", mrkdwn });
       }
     }
   }

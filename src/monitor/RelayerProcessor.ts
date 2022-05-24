@@ -2,18 +2,17 @@ import { SpokePool } from "@across-protocol/contracts-v2";
 import { ethers } from "ethers";
 import { winston } from "../utils";
 
-export interface EventInfo {
+export interface RelayedDeposit {
   logIndex: number;
   blockNumber: number;
   transactionHash: string;
-  caller: string;
+  relayer: string;
   action: string;
-  rootBundleId: number;
 }
 
 export class RelayerProcessor {
   private eventActions: { [key: string]: string } = {
-    ExecutedRelayerRefundRoot: "refund root executed",
+    FilledRelay: "refund root executed",
   };
 
   // eslint-disable-next-line no-useless-constructor
@@ -23,41 +22,40 @@ export class RelayerProcessor {
     spokePool: SpokePool,
     startingBlock: number | undefined,
     endingBlock: number | undefined
-  ): Promise<EventInfo[]> {
-    const eventsInfo: EventInfo[] = [];
+  ): Promise<RelayedDeposit[]> {
+    const eventsInfo: RelayedDeposit[] = [];
 
     if (startingBlock > endingBlock) {
       return;
     }
 
     const executedRelayerRefundEvents = await spokePool.queryFilter(
-      spokePool.filters.ExecutedRelayerRefundRoot(),
+      spokePool.filters.FilledRelay(),
       startingBlock,
       endingBlock
     );
 
     for (const event of executedRelayerRefundEvents) {
-      let caller: string;
+      let relayer: string;
 
       switch (event.event) {
-        case "ExecutedRelayerRefundRootEvent":
-          caller = event.args.caller;
+        case "FilledRelay":
+          relayer = event.args.relayer;
           break;
         default:
-          this.logger.error(`[getRelayedEventsInfo] unhandled event ${event.event}`);
+          this.logger.error(`[FilledRelay] unhandled event ${event.event}`);
           break;
       }
 
-      caller = ethers.utils.getAddress(caller);
-      const eventInfo: EventInfo = {
+      relayer = ethers.utils.getAddress(relayer);
+      const RelayedDeposit: RelayedDeposit = {
         blockNumber: event.blockNumber,
         logIndex: event.logIndex,
         transactionHash: event.transactionHash,
-        caller,
+        relayer,
         action: this.eventActions[event.event],
-        rootBundleId: event.args.rootBundleId,
       };
-      eventsInfo.push(eventInfo);
+      eventsInfo.push(RelayedDeposit);
     }
 
     // Primary sort on block number. Secondary sort on logIndex.

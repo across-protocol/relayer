@@ -131,6 +131,7 @@ export async function finalizeL2Transaction(
         "Transaction that emitted TokensBridged event unexpectedly contains more than 1, or 0, L2-to-L1 messages 🤢!",
       txnHash: event.transactionHash,
       error,
+      notificationPath: "across-error",
     });
     // If this error gets thrown and blocks bots, can probably just remove and return something arbitrary like:
     // return {
@@ -206,7 +207,12 @@ if (require.main === module) {
     })
     .catch(async (error) => {
       console.error(error);
-      logger.error({ at: "InfrastructureEntryPoint", message: "There was an error in the main entry point!", error });
+      logger.error({
+        at: "InfrastructureEntryPoint",
+        message: "There was an error in the main entry point!",
+        error,
+        notificationPath: "across-error",
+      });
       await delay(5);
       await run(logger, config);
     });

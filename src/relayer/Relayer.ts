@@ -62,7 +62,12 @@ export class Relayer {
       this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.destinationToken, fillAmount);
     } catch (error) {
       console.log("error", error);
-      this.logger.error({ at: "Relayer", message: "Error creating fillRelayTx", error });
+      this.logger.error({
+        at: "Relayer",
+        message: "Error creating fillRelayTx",
+        error,
+        notificationPath: "across-error",
+      });
     }
   }
 
@@ -79,7 +84,12 @@ export class Relayer {
         mrkdwn: this.constructZeroSizeFilledMrkdwn(deposit), // message details mrkdwn
       });
     } catch (error) {
-      this.logger.error({ at: "Relayer", message: "Error creating zeroFillRelayTx", error });
+      this.logger.error({
+        at: "Relayer",
+        message: "Error creating zeroFillRelayTx",
+        error,
+        notificationPath: "across-error",
+      });
     }
   }
 

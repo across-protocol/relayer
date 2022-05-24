@@ -19,7 +19,6 @@ export interface EventInfo {
 export class RootBundleProcessor {
   private eventActions: { [key: string]: string } = {
     ProposeRootBundle: "proposed",
-    RootBundleExecuted: "executed",
     RootBundleDisputed: "disputed",
     RootBundleCanceled: "canceled",
   };
@@ -36,33 +35,24 @@ export class RootBundleProcessor {
       return;
     }
 
-    const [proposeRootBundleEvents, rootBundleExecutedEvents, rootBundleDisputedEvents, rootBundleCanceledEvents] =
-      await Promise.all([
-        this.hubPoolClient.hubPool.queryFilter(
-          this.hubPoolClient.hubPool.filters.ProposeRootBundle(),
-          startingBlock,
-          endingBlock
-        ),
-        this.hubPoolClient.hubPool.queryFilter(
-          this.hubPoolClient.hubPool.filters.RootBundleExecuted(),
-          startingBlock,
-          endingBlock
-        ),
-        this.hubPoolClient.hubPool.queryFilter(
-          this.hubPoolClient.hubPool.filters.RootBundleDisputed(),
-          startingBlock,
-          endingBlock
-        ),
-        this.hubPoolClient.hubPool.queryFilter(
-          this.hubPoolClient.hubPool.filters.RootBundleCanceled(),
-          startingBlock,
-          endingBlock
-        ),
-      ]);
-    const allEvents = proposeRootBundleEvents
-      .concat(rootBundleExecutedEvents)
-      .concat(rootBundleDisputedEvents)
-      .concat(rootBundleCanceledEvents);
+    const [proposeRootBundleEvents, rootBundleDisputedEvents, rootBundleCanceledEvents] = await Promise.all([
+      this.hubPoolClient.hubPool.queryFilter(
+        this.hubPoolClient.hubPool.filters.ProposeRootBundle(),
+        startingBlock,
+        endingBlock
+      ),
+      this.hubPoolClient.hubPool.queryFilter(
+        this.hubPoolClient.hubPool.filters.RootBundleDisputed(),
+        startingBlock,
+        endingBlock
+      ),
+      this.hubPoolClient.hubPool.queryFilter(
+        this.hubPoolClient.hubPool.filters.RootBundleCanceled(),
+        startingBlock,
+        endingBlock
+      ),
+    ]);
+    const allEvents = proposeRootBundleEvents.concat(rootBundleDisputedEvents).concat(rootBundleCanceledEvents);
 
     for (const event of allEvents) {
       let caller: string;
@@ -70,9 +60,6 @@ export class RootBundleProcessor {
       switch (event.event) {
         case "ProposeRootBundle":
           caller = (event as ProposeRootBundleEvent).args.proposer;
-          break;
-        case "RootBundleExecuted":
-          caller = (event as RootBundleExecutedEvent).args.caller;
           break;
         case "RootBundleDisputed":
           caller = (event as RootBundleDisputedEvent).args.disputer;
