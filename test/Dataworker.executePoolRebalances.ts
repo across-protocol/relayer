@@ -68,7 +68,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves();
+    await dataworkerInstance.executePoolRebalanceLeavesTest();
 
     // Should be 2 transactions: 1 for the to chain and 1 for the from chain.
     expect(multiCallerClient.transactionCount()).to.equal(2);
@@ -85,7 +85,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves();
+    await dataworkerInstance.executePoolRebalanceLeavesTest();
     expect(multiCallerClient.transactionCount()).to.equal(0);
 
     // TEST 4:
@@ -100,7 +100,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves();
+    await dataworkerInstance.executePoolRebalanceLeavesTest();
 
     // Should be 1 leaf since this is _only_ a second partial fill repayment and doesn't involve the deposit chain.
     expect(multiCallerClient.transactionCount()).to.equal(1);

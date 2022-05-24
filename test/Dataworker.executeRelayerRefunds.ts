@@ -1,6 +1,6 @@
 import { buildFillForRepaymentChain } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit } from "./utils";
-import { HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
+import { HubPoolClient, AcrossConfigStoreClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
 import { amountToDeposit, destinationChainId } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
@@ -15,6 +15,7 @@ let depositor: SignerWithAddress;
 
 let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
 let dataworkerInstance: Dataworker, multiCallerClient: MultiCallerClient;
+let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let updateAllClients: () => Promise<void>;
 
@@ -33,6 +34,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       dataworkerInstance,
       multiCallerClient,
       updateAllClients,
+      spokePoolClients,
     } = await setupDataworker(
       ethers,
       MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
@@ -68,7 +70,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
     // Advance time and execute rebalance leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves();
+    await dataworkerInstance.executePoolRebalanceLeavesTest();
     await multiCallerClient.executeTransactionQueue();
 
     // TEST 3:
@@ -82,7 +84,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves();
+    await dataworkerInstance.executePoolRebalanceLeavesTest();
 
     // TEST 4:
     // Submit another fill and check that dataworker proposes another root:
@@ -96,13 +98,13 @@ describe("Dataworker: Execute relayer refunds", async function () {
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves();
+    await dataworkerInstance.executePoolRebalanceLeavesTest();
 
     // Should be 1 leaf since this is _only_ a second partial fill repayment and doesn't involve the deposit chain.
     await multiCallerClient.executeTransactionQueue();
 
     await updateAllClients();
-    await dataworkerInstance.executeRelayerRefundLeaves();
+    await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients);
     expect(multiCallerClient.transactionCount()).to.equal(3);
 
     // Note: we need to manually supply the tokens since the L1 tokens won't be recognized in the spoke pool.
