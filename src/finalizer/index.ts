@@ -1,7 +1,4 @@
-// NOTE: The "finalizers/" directory structure is just a strawman and is expected to change. This script is just
-// meant to demonstrate how we can use the new @arbitrum/sdk to finalize L2 --> L1 messages. Note that arb-ts
-// will be deprecated soon so this scratch work will also be helpful for changing across-v1 code to work if we
-// still need to finalize messages after the arbitrum nitro upgrade.
+// NOTE: The "finalizers/" directory structure is just a strawman and is expected to change.
 import { convertFromWei, delay, groupObjectCountsByThreeProps, Logger, Wallet } from "../utils";
 import { getProvider, getSigner, winston } from "../utils";
 import { constructClients, updateClients, updateSpokePoolClients } from "../common";
@@ -9,6 +6,8 @@ import { L2TransactionReceipt, getL2Network, L2ToL1MessageStatus, L2ToL1MessageW
 import { RelayerConfig } from "../relayer/RelayerConfig";
 import { constructSpokePoolClientsWithLookback } from "../relayer/RelayerClientHelper";
 import { TokensBridged } from "../interfaces";
+import MaticJs from '@maticnetwork/maticjs'
+import { Web3ClientPlugin } from '@maticnetwork/maticjs-ethers'
 
 // How to run:
 // - Set same config you'd need to run dataworker or relayer in terms of L2 node urls
@@ -25,7 +24,7 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
   await updateSpokePoolClients(spokePoolClients);
 
   // TODO: Load chain ID's from config rather than just hardcoding arbitrum here:
-  const configuredChainIds = [42161];
+  const configuredChainIds = [42161, 137];
 
   // For each chain, look up any TokensBridged events emitted by SpokePool client that we'll attempt to finalize
   // on L1.
@@ -33,8 +32,9 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
     const client = spokePoolClients[chainId];
     const tokensBridged = client.getTokensBridged();
     logger.debug({
-      at: "ArbitrumFinalizer",
+      at: "Finalizer",
       message: `Found ${tokensBridged.length} L2 transactions containing token transfers to L1`,
+      chainId,
       txnHashes: tokensBridged.map((x) => x.transactionHash),
       tokens: tokensBridged.map((x) => commonClients.hubPoolClient.getTokenInfo(chainId, x.l2TokenAddress).symbol),
       tokenAddresses: tokensBridged.map((x) => x.l2TokenAddress),
@@ -79,25 +79,66 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
     //   }
     // ]
 
-    const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner);
-    if (finalizableMessages.length > 0) {
-      for (const l2Message of finalizableMessages) {
-        const res = await l2Message.message.execute(l2Message.proofInfo);
-        const rec = await res.wait();
-        logger.info({
+    if (chainId === 42161) {
+      const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner);
+      if (finalizableMessages.length > 0) {
+        for (const l2Message of finalizableMessages) {
+          const res = await l2Message.message.execute(l2Message.proofInfo);
+          const rec = await res.wait();
+          logger.info({
+            at: "ArbitrumFinalizer",
+            message: "Executed!",
+            rec,
+          });
+        }
+      } else
+        logger.debug({
           at: "ArbitrumFinalizer",
-          message: "Executed!",
-          rec,
+          message: "No finalizable messages",
         });
-      }
-    } else
-      logger.debug({
-        at: "ArbitrumFinalizer",
-        message: "No finalizable messages",
-      });
+    } else if (chainId === 137) {
+      MaticJs.use(Web3ClientPlugin);
+      const posClient = new MaticJs.POSClient()
+      await posClient.init({
+        network: "mainnet",
+        version: "v1",
+        parent: {
+          provider: hubSigner,
+          defaultConfig: {
+            from: baseSigner.address,
+          },
+        },
+        child: {
+          provider: baseSigner.connect(getProvider(chainId)),
+          defaultConfig: {
+            from: baseSigner.address,
+          },
+        },
+      })
+      const isCheckpointed = await Promise.all(
+        tokensBridged.map((event) => posClient.exitUtil.isCheckPointed(event.transactionHash))
+      );
+      const isExited = await Promise.all(
+        tokensBridged.map((event) => {
+          const l1TokenCounterpart = commonClients.hubPoolClient.getL1TokenCounterpartAtBlock(
+            chainId.toString(),
+            event.l2TokenAddress,
+            commonClients.hubPoolClient.latestBlockNumber
+          );
+          return posClient.erc20(l1TokenCounterpart, true).isWithdrawExited(event.transactionHash)
+        })
+      );
+      const canWithdraw = tokensBridged.filter((_, i) => isCheckpointed[i] && !isExited[i])
+      console.log(isCheckpointed, isExited, canWithdraw)
+
+
+      // TODO: Call retrieve on PolygonTokenBridger
+    }
   }
 }
 
+// TODO: Replace this function with one that returns the transaction to send, which we can batch with other 
+// finalization transactions and multisend.
 export async function finalizeL2Transaction(
   logger: winston.Logger,
   event: TokensBridged,
