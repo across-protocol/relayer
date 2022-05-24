@@ -341,7 +341,9 @@ export class Dataworker {
     );
 
     if (usdThresholdToSubmitNewBundle !== undefined) {
-      // Exit early if sum of absolute values of net send amounts and running balances exceeds threshold.
+      // Exit early if volume of pool rebalance leaves exceeds USD threshold. Volume includes netSendAmounts only since
+      // that is the actual amount sent over bridges. This also mitigates the chance that a RelayerRefundLeaf is
+      // published but its refund currency isn't sent over the bridge in a PoolRebalanceLeaf.
       const totalUsdRefund = PoolRebalanceUtils.computePoolRebalanceUsdVolume(poolRebalanceRoot.leaves, this.clients);
       if (totalUsdRefund.lt(usdThresholdToSubmitNewBundle)) {
         this.logger.debug({
