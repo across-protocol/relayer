@@ -104,7 +104,7 @@ export class Monitor {
           ${getNetworkName(chainId)}`;
         this.logger.warn({
           at: "UnknownRelayer",
-          message: "Across Spoke Pool unknown relayer warning 🥷",
+          message: "Across Spoke Pool unknown relayer warning 🕺",
           mrkdwn,
           notificationPath: "across-monitor",
         });

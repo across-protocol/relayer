@@ -1,4 +1,4 @@
-import { processEndPollingLoop, winston, delay, config, startupLogLevel } from "../utils";
+import { processEndPollingLoop, winston, processCrash, config, startupLogLevel } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
@@ -7,8 +7,8 @@ let logger: winston.Logger;
 
 export async function runRelayer(_logger: winston.Logger): Promise<void> {
   logger = _logger;
+  const config = new RelayerConfig(process.env);
   try {
-    const config = new RelayerConfig(process.env);
     logger[startupLogLevel(config)]({ at: "Relayer#index", message: "Relayer started 🏃‍♂️", config });
 
     const relayerClients = await constructRelayerClients(logger, config);
@@ -27,8 +27,7 @@ export async function runRelayer(_logger: winston.Logger): Promise<void> {
       if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) break;
     }
   } catch (error) {
-    logger.error({ at: "Relayer#index", message: "There was an execution error! Re-running loop", error });
-    await delay(5);
+    if (await processCrash(logger, "Relayer", config.pollingDelay, error)) process.exit(1);
     await runRelayer(logger);
   }
 }

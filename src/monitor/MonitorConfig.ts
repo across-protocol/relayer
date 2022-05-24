@@ -5,6 +5,7 @@ import { ethers } from "../utils";
 export interface BotModes {
   utilizationEnabled: boolean; // Monitors pool utilization ratio
   unknownRootBundleCallersEnabled: boolean; // Monitors relay related events triggered by non-whitelisted addresses
+  unknownRelayerCallersEnabled: boolean;
 }
 
 export class MonitorConfig extends CommonConfig {
@@ -23,6 +24,7 @@ export class MonitorConfig extends CommonConfig {
       HUBPOOL_ENDING_BLOCK_NUMBER,
       UTILIZATION_ENABLED,
       UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED,
+      UNKNOWN_RELAYER_CALLERS_ENABLED,
       UTILIZATION_THRESHOLD,
       WHITELISTED_DATA_WORKERS,
       SPOKE_POOLS_BLOCKS,
@@ -33,6 +35,7 @@ export class MonitorConfig extends CommonConfig {
     this.botModes = {
       utilizationEnabled: UTILIZATION_ENABLED === "true",
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
+      unknownRelayerCallersEnabled: UNKNOWN_RELAYER_CALLERS_ENABLED === "true",
     };
 
     this.whitelistedDataworkers = WHITELISTED_DATA_WORKERS ? JSON.parse(WHITELISTED_DATA_WORKERS) : [];
