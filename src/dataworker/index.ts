@@ -41,45 +41,39 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       await updateDataworkerClients(clients);
 
       // Construct spoke clients used to evaluate and execute leaves from pending root bundle.
+      logger[startupLogLevel(config)]({
+        at: "Dataworker#index",
+        message: "Constructing spoke pool clients for pending root bundle",
+      });
       const spokePoolClientsForPendingRootBundle = await constructSpokePoolClientsForPendingRootBundle(
         logger,
         dataworker.chainIdListForBundleEvaluationBlockNumbers,
         clients,
         true
       );
+      logger[startupLogLevel(config)]({
+        at: "Dataworker#index",
+        message: "Constructing spoke pool clients for next root bundle",
+      });
+      const latestSpokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
+        dataworker.chainIdListForBundleEvaluationBlockNumbers,
+        clients,
+        logger,
+        clients.hubPoolClient.latestBlockNumber
+      );
 
       // Validate and dispute pending proposal before proposing a new one
-      if (config.disputerEnabled)
-        await dataworker.validatePendingRootBundle(
-          spokePoolClientsForPendingRootBundle.widestPossibleExpectedBlockRange,
-          spokePoolClientsForPendingRootBundle.hasPendingProposal,
-          spokePoolClientsForPendingRootBundle.pendingRootBundle,
-          spokePoolClientsForPendingRootBundle.blockRangesImpliedByBundleEndBlocks,
-          spokePoolClientsForPendingRootBundle.endBlockForMainnet,
-          spokePoolClientsForPendingRootBundle.spokePoolClients
-        );
+      if (config.disputerEnabled) await dataworker.validatePendingRootBundle(spokePoolClientsForPendingRootBundle);
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
 
-      if (config.proposerEnabled) await dataworker.proposeRootBundle(config.rootBundleExecutionThreshold);
+      if (config.proposerEnabled)
+        await dataworker.proposeRootBundle(latestSpokePoolClients, config.rootBundleExecutionThreshold);
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
 
       if (config.executorEnabled) {
-        await dataworker.executePoolRebalanceLeaves(
-          spokePoolClientsForPendingRootBundle.widestPossibleExpectedBlockRange,
-          spokePoolClientsForPendingRootBundle.hasPendingProposal,
-          spokePoolClientsForPendingRootBundle.pendingRootBundle,
-          spokePoolClientsForPendingRootBundle.blockRangesImpliedByBundleEndBlocks,
-          spokePoolClientsForPendingRootBundle.endBlockForMainnet,
-          spokePoolClientsForPendingRootBundle.spokePoolClients
-        );
+        await dataworker.executePoolRebalanceLeaves(spokePoolClientsForPendingRootBundle);
 
         // Execute slow relays before relayer refunds to give them priority for any L2 funds.
-        const latestSpokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-          dataworker.chainIdListForBundleEvaluationBlockNumbers,
-          clients,
-          logger,
-          clients.hubPoolClient.latestBlockNumber
-        );
         await dataworker.executeSlowRelayLeaves(latestSpokePoolClients);
         await dataworker.executeRelayerRefundLeaves(latestSpokePoolClients);
       } else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });

@@ -89,11 +89,6 @@ export async function constructSpokePoolClientsForPendingRootBundle(
         1,
         chainIdListForBundleEvaluationBlockNumbers
       )[1];
-      logger.debug({
-        at: "Dataworker#validate",
-        message: `Constructing spoke pool clients for end mainnet block in bundle range`,
-        endBlockForMainnet,
-      });
       if (constructSpokeClients)
         spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
           chainIdListForBundleEvaluationBlockNumbers,
@@ -104,12 +99,5 @@ export async function constructSpokePoolClientsForPendingRootBundle(
     }
   }
 
-  return {
-    widestPossibleExpectedBlockRange,
-    hasPendingProposal,
-    pendingRootBundle,
-    blockRangesImpliedByBundleEndBlocks,
-    endBlockForMainnet,
-    spokePoolClients,
-  };
+  return spokePoolClients;
 }

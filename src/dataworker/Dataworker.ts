@@ -3,7 +3,7 @@ import { UnfilledDeposit, Deposit, DepositWithBlock, RootBundle } from "../inter
 import { UnfilledDepositsForOriginChain, TreeData, RunningBalances } from "../interfaces";
 import { FillWithBlock, PoolRebalanceLeaf, RelayerRefundLeaf } from "../interfaces";
 import { BigNumberForToken, FillsToRefund, RelayData } from "../interfaces";
-import { constructSpokePoolClientsForPendingRootBundle, DataworkerClients } from "./DataworkerClientHelper";
+import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
 import { assignValidFillToFillsToRefund, getFillsInRange } from "./FillUtils";
@@ -264,7 +264,10 @@ export class Dataworker {
     );
   }
 
-  async proposeRootBundle(usdThresholdToSubmitNewBundle?: BigNumber) {
+  async proposeRootBundle(
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    usdThresholdToSubmitNewBundle?: BigNumber
+  ) {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
@@ -298,17 +301,6 @@ export class Dataworker {
       1,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
-    this.logger.debug({
-      at: "Dataworker#propose",
-      message: `Constructing spoke pool clients for end mainnet block in bundle range`,
-      endBlockForMainnet,
-    });
-    const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      this.clients,
-      this.logger,
-      endBlockForMainnet
-    );
 
     // 3. Create roots
     const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this._loadData(
@@ -408,18 +400,12 @@ export class Dataworker {
     );
   }
 
-  async validatePendingRootBundle(
-    widestPossibleExpectedBlockRange: number[][],
-    hasPendingProposal: boolean,
-    pendingRootBundle: RootBundle,
-    blockRangesImpliedByBundleEndBlocks: number[][],
-    endBlockForMainnet: number,
-    spokePoolClients?: { [chainId: number]: SpokePoolClient }
-  ) {
+  async validatePendingRootBundle(spokePoolClients?: { [chainId: number]: SpokePoolClient }) {
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
     // Exit early if a bundle is not pending.
+    const { hasPendingProposal, pendingRootBundle } = this.clients.hubPoolClient.getPendingRootBundleIfAvailable();
     if (hasPendingProposal === false) {
       this.logger.debug({
         at: "Dataworker#validate",
@@ -443,46 +429,24 @@ export class Dataworker {
       return;
     }
 
+    const widestPossibleExpectedBlockRange = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.clients,
+      this.clients.hubPoolClient.latestBlockNumber
+    );
     const { valid, reason } = await this.validateRootBundle(
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
-      blockRangesImpliedByBundleEndBlocks,
-      endBlockForMainnet,
       spokePoolClients
     );
     if (!valid) this._submitDisputeWithMrkdwn(hubPoolChainId, reason);
-  }
-
-  async validatePendingRootBundleTest() {
-    // This function is used in unit tests so that we don't need to pass all the input data to
-    // validatePendingRootBundle. Note that the main difference from a production set up is that we don't
-    // construct any spoke pool clients yet, as some unit tests expect that construction to fail.
-
-    const spokePoolClientsForPendingRootBundle = await constructSpokePoolClientsForPendingRootBundle(
-      this.logger,
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      this.clients,
-      false // Don't construct spoke pool clients yet, as some unit tests will purposefully pass in bundle evaluation
-      // numbers that can't construct spoke pool clients in the happy case.
-    );
-
-    await this.validatePendingRootBundle(
-      spokePoolClientsForPendingRootBundle.widestPossibleExpectedBlockRange,
-      spokePoolClientsForPendingRootBundle.hasPendingProposal,
-      spokePoolClientsForPendingRootBundle.pendingRootBundle,
-      spokePoolClientsForPendingRootBundle.blockRangesImpliedByBundleEndBlocks,
-      spokePoolClientsForPendingRootBundle.endBlockForMainnet,
-      undefined
-    );
   }
 
   async validateRootBundle(
     hubPoolChainId: number,
     widestPossibleExpectedBlockRange: number[][],
     rootBundle: RootBundle,
-    blockRangesImpliedByBundleEndBlocks: number[][],
-    endBlockForMainnet: number,
     spokePoolClients?: { [chainId: number]: SpokePoolClient }
   ): Promise<{
     valid: boolean;
@@ -592,6 +556,14 @@ export class Dataworker {
       };
     }
 
+    // The block range that we'll use to construct roots will be the end block specified in the pending root bundle,
+    // and the block right after the last valid root bundle proposal's end block. If the proposer didn't use the same
+    // start block, then they might have missed events and the roots will be different.
+    const blockRangesImpliedByBundleEndBlocks = widestPossibleExpectedBlockRange.map((blockRange, index) => [
+      blockRange[0],
+      rootBundle.bundleEvaluationBlockNumbers[index],
+    ]);
+
     this.logger.debug({
       at: "Dataworker#validate",
       message: "Implied bundle ranges are valid",
@@ -599,6 +571,15 @@ export class Dataworker {
       chainIdListForBundleEvaluationBlockNumbers: this.chainIdListForBundleEvaluationBlockNumbers,
     });
 
+    // Construct spoke pool clients using spoke pools deployed at end of block range.
+    // We do make an assumption that the spoke pool contract was not changed during the block range. By using the
+    // spoke pool at this block instead of assuming its the currently deployed one, we can pay refunds for deposits
+    // on deprecated spoke pools.
+    const endBlockForMainnet = getBlockRangeForChain(
+      blockRangesImpliedByBundleEndBlocks,
+      1,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    )[1];
     if (spokePoolClients === undefined)
       spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
         this.chainIdListForBundleEvaluationBlockNumbers,
@@ -819,18 +800,12 @@ export class Dataworker {
     });
   }
 
-  async executePoolRebalanceLeaves(
-    widestPossibleExpectedBlockRange: number[][],
-    hasPendingProposal: boolean,
-    pendingRootBundle: RootBundle,
-    blockRangesImpliedByBundleEndBlocks: number[][],
-    endBlockForMainnet: number,
-    spokePoolClients: { [chainId: number]: SpokePoolClient }
-  ) {
+  async executePoolRebalanceLeaves(spokePoolClients?: { [chainId: number]: SpokePoolClient }) {
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
     // Exit early if a bundle is not pending.
+    const { hasPendingProposal, pendingRootBundle } = this.clients.hubPoolClient.getPendingRootBundleIfAvailable();
     if (!hasPendingProposal) {
       this.logger.debug({
         at: "Dataworker#executePoolRebalanceLeaves",
@@ -854,12 +829,15 @@ export class Dataworker {
       return;
     }
 
+    const widestPossibleExpectedBlockRange = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.clients,
+      this.clients.hubPoolClient.latestBlockNumber
+    );
     const { valid, reason, expectedTrees } = await this.validateRootBundle(
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
-      blockRangesImpliedByBundleEndBlocks,
-      endBlockForMainnet,
       spokePoolClients
     );
 
@@ -1023,29 +1001,6 @@ export class Dataworker {
         });
       }
     });
-  }
-
-  async executePoolRebalanceLeavesTest() {
-    // This function is used in unit tests so that we don't need to pass all the input data to
-    // executePoolRebalanceLeaves. Note that the main difference from a production set up is that we don't
-    // construct any spoke pool clients yet, as some unit tests expect that construction to fail.
-
-    const spokePoolClientsForPendingRootBundle = await constructSpokePoolClientsForPendingRootBundle(
-      this.logger,
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      this.clients,
-      false // Don't construct spoke pool clients yet, as some unit tests will purposefully pass in bundle evaluation
-      // numbers that can't construct spoke pool clients in the happy case.
-    );
-
-    await this.executePoolRebalanceLeaves(
-      spokePoolClientsForPendingRootBundle.widestPossibleExpectedBlockRange,
-      spokePoolClientsForPendingRootBundle.hasPendingProposal,
-      spokePoolClientsForPendingRootBundle.pendingRootBundle,
-      spokePoolClientsForPendingRootBundle.blockRangesImpliedByBundleEndBlocks,
-      spokePoolClientsForPendingRootBundle.endBlockForMainnet,
-      undefined
-    );
   }
 
   _proposeRootBundle(

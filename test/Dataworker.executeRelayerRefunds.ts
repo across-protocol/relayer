@@ -61,7 +61,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
     await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
     await updateAllClients();
 
-    await dataworkerInstance.proposeRootBundle();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
 
     // Execute queue and check that root bundle is pending:
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
@@ -70,7 +70,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
     // Advance time and execute rebalance leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeavesTest();
+    await dataworkerInstance.executePoolRebalanceLeaves();
     await multiCallerClient.executeTransactionQueue();
 
     // TEST 3:
@@ -79,18 +79,18 @@ describe("Dataworker: Execute relayer refunds", async function () {
     // pool rebalance leaves because they should use the chain's end block from the latest fully executed proposed
     // root bundle, which should be the bundle block in expectedPoolRebalanceRoot2 + 1.
     await updateAllClients();
-    await dataworkerInstance.proposeRootBundle();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
 
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeavesTest();
+    await dataworkerInstance.executePoolRebalanceLeaves();
 
     // TEST 4:
     // Submit another fill and check that dataworker proposes another root:
     await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 1, destinationChainId);
     await updateAllClients();
-    await dataworkerInstance.proposeRootBundle();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
 
     // Execute queue and execute leaves:
     await multiCallerClient.executeTransactionQueue();
@@ -98,7 +98,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeavesTest();
+    await dataworkerInstance.executePoolRebalanceLeaves();
 
     // Should be 1 leaf since this is _only_ a second partial fill repayment and doesn't involve the deposit chain.
     await multiCallerClient.executeTransactionQueue();

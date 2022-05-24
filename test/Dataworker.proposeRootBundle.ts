@@ -60,7 +60,7 @@ describe("Dataworker: Propose root bundle", async function () {
     // TEST 1:
     // Before submitting any spoke pool transactions, check that dataworker behaves as expected with no roots.
     const latestBlock1 = await hubPool.provider.getBlockNumber();
-    await dataworkerInstance.proposeRootBundle();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
     expect(lastSpyLogIncludes(spy, "No pool rebalance leaves, cannot propose")).to.be.true;
     const loadDataResults1 = getMostRecentLog(spy, "Finished loading spoke pool data");
     expect(loadDataResults1.blockRangesForChains).to.deep.equal(CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock1]));
@@ -92,7 +92,7 @@ describe("Dataworker: Propose root bundle", async function () {
       expectedPoolRebalanceRoot2.runningBalances
     );
     const expectedSlowRelayRefundRoot2 = dataworkerInstance.buildSlowRelayRoot(blockRange2, spokePoolClients);
-    await dataworkerInstance.proposeRootBundle();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
     const loadDataResults2 = getMostRecentLog(spy, "Finished loading spoke pool data");
     expect(loadDataResults2.blockRangesForChains).to.deep.equal(blockRange2);
     expect(loadDataResults2.unfilledDepositsByDestinationChain).to.deep.equal({ [destinationChainId]: 1 });
@@ -117,7 +117,7 @@ describe("Dataworker: Propose root bundle", async function () {
     expect(hubPoolClient.hasPendingProposal()).to.equal(true);
 
     // Attempting to propose another root fails:
-    await dataworkerInstance.proposeRootBundle();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
     expect(lastSpyLogIncludes(spy, "Has pending proposal, cannot propose")).to.be.true;
 
     // Advance time and execute leaves:
@@ -141,7 +141,7 @@ describe("Dataworker: Propose root bundle", async function () {
     // pool rebalance leaves because they should use the chain's end block from the latest fully executed proposed
     // root bundle, which should be the bundle block in expectedPoolRebalanceRoot2 + 1.
     await updateAllClients();
-    await dataworkerInstance.proposeRootBundle();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
     const latestBlock3 = await hubPool.provider.getBlockNumber();
     const blockRange3 = [
       [latestBlock2 + 1, latestBlock3],
@@ -174,11 +174,11 @@ describe("Dataworker: Propose root bundle", async function () {
 
     // TEST 5:
     // Won't submit anything if the USD threshold to propose a root is set and set too high:
-    await dataworkerInstance.proposeRootBundle(toBNWei("1000000"));
+    await dataworkerInstance.proposeRootBundle(spokePoolClients, toBNWei("1000000"));
     expect(lastSpyLogIncludes(spy, "Root bundle USD volume does not exceed threshold, exiting early")).to.be.true;
 
     // TEST 4: cont.
-    await dataworkerInstance.proposeRootBundle();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
     const loadDataResults4 = getMostRecentLog(spy, "Finished loading spoke pool data");
     expect(loadDataResults4.blockRangesForChains).to.deep.equal(blockRange4);
     expect(loadDataResults4.unfilledDepositsByDestinationChain).to.deep.equal({});
