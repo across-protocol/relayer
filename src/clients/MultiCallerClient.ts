@@ -158,8 +158,10 @@ export class MultiCallerClient {
       });
       return null; // If there is a problem in the targets in the bundle return null. This will be a noop.
     }
-    const callData = transactions.map((tx) => tx.contract.interface.encodeFunctionData(tx.method, tx.args));
-    this.logger.debug({ at: "MultiCallerClient", message: "Made bundle", target: target.address, callData });
+    let callData = transactions.map((tx) => tx.contract.interface.encodeFunctionData(tx.method, tx.args));
+    // There should not be any duplicate call data blobs within this array. If there are there is likely an error.
+    callData = [...new Set(callData)];
+    this.logger.debug({ at: "MultiCallerClient", message: "Made bundle", target: getTarget(target.address), callData });
     return runTransaction(this.logger, target, "multicall", [callData]);
   }
 }

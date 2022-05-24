@@ -25,7 +25,7 @@ export async function getGasPrice(provider, priorityScaler = toBN(1.2), maxFeePe
     // maxPriorityFeePerGas to the maxFeePerGas * 5 for now as a temp workaround.
     if (chainInfo.chainId == 137) feeData.maxPriorityFeePerGas = toBN((await getPolygonPriorityFee()).fastest).mul(1e9);
     if (feeData.maxPriorityFeePerGas > feeData.maxFeePerGas)
-      feeData.maxFeePerGas = feeData.maxPriorityFeePerGas.mul(1.5);
+      feeData.maxFeePerGas = toBN(feeData.maxPriorityFeePerGas).mul(1.5);
     return {
       maxFeePerGas: feeData.maxFeePerGas.mul(priorityScaler).mul(maxFeePerGasScaler), // scale up the maxFeePerGas. Any extra paid on this is refunded.
       maxPriorityFeePerGas: feeData.maxPriorityFeePerGas.mul(priorityScaler),
