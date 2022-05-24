@@ -707,10 +707,16 @@ export class Dataworker {
       const slowFillsForChain = client.getFills().filter((fill) => fill.isSlowRelay);
       for (const rootBundleRelay of rootBundleRelays) {
         const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
-          // TODO: Consider allowing dataworker to execute relayer refund leaves from partially executed root bundles,
-          // i.e. imagine the situation where the pool rebalance leaf with a specific chain ID was executed
-          // and we want to execute its relayer refund leaves without waiting for the other chains.
-          return this.clients.hubPoolClient.isRootBundleValid(bundle, this.clients.hubPoolClient.latestBlockNumber);
+          if (bundle.slowRelayRoot !== rootBundleRelay.slowRelayRoot) return false;
+
+          const followingBlockNumber =
+            this.clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber ||
+            this.clients.hubPoolClient.latestBlockNumber;
+
+          const leaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
+
+          // Only use this bundle if it had valid leaves returned (meaning it was at least partially executed).
+          return leaves.length > 0;
         });
 
         if (!matchingRootBundle) {
@@ -906,10 +912,14 @@ export class Dataworker {
       for (const rootBundleRelay of rootBundleRelays) {
         const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
           if (bundle.relayerRefundRoot !== rootBundleRelay.relayerRefundRoot) return false;
-          // TODO: Consider allowing dataworker to execute relayer refund leaves from partially executed root bundles,
-          // i.e. imagine the situation where the pool rebalance leaf with a specific chain ID was executed
-          // and we want to execute its relayer refund leaves without waiting for the other chains.
-          return this.clients.hubPoolClient.isRootBundleValid(bundle, this.clients.hubPoolClient.latestBlockNumber);
+          const followingBlockNumber =
+            this.clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber ||
+            this.clients.hubPoolClient.latestBlockNumber;
+
+          const leaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
+
+          // Only use this bundle if it had valid leaves returned (meaning it was at least partially executed).
+          return leaves.length > 0;
         });
 
         if (!matchingRootBundle) {
