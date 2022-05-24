@@ -880,7 +880,6 @@ export class Dataworker {
           "Found valid proposal, but no trees could be generated. This probably means that the proposal was never evaluated during liveness due to an odd block range!",
         reason,
         notificationPath: "across-error",
-        ƒ,
       });
       return;
     }
