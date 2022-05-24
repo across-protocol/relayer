@@ -97,6 +97,7 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
           message: "No finalizable messages",
         });
     } else if (chainId === 137) {
+      // Following from https://maticnetwork.github.io/matic.js/docs/pos
       MaticJs.use(Web3ClientPlugin);
       const posClient = new MaticJs.POSClient()
       await posClient.init({
