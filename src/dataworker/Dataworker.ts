@@ -753,12 +753,23 @@ export class Dataworker {
 
         const { tree, leaves } = this.buildSlowRelayRoot(blockNumberRanges, spokePoolClients);
 
+        if (tree.getHexRoot() !== rootBundleRelay.slowRelayRoot) {
+          this.logger.warn({
+            at: "Dataworke#executeSlowRelayLeaves",
+            message: "Constructed a different root for the block range!",
+            chainId,
+            mainnetRootBundleBlock: matchingRootBundle.blockNumber,
+            publishedSlowRelayRoot: rootBundleRelay.slowRelayRoot,
+            constructedSlowRelayRoot: tree.getHexRoot(),
+          });
+          continue;
+        }
+
         const executableLeaves = leaves.filter((leaf) => {
           if (leaf.destinationChainId !== Number(chainId)) return false;
           const executedLeaf = slowFillsForChain.find(
             (event) => event.originChainId === leaf.originChainId && event.depositId === leaf.depositId
           );
-
           // Only return true if no leaf was found in the list of executed leaves.
           if (executedLeaf) return false;
 
@@ -780,14 +791,6 @@ export class Dataworker {
           // If no previous full fill was found, we should try to fill.
           return !fullFill;
         });
-        if (executableLeaves.length === 0) {
-          this.logger.debug({
-            at: "Dataworke#executeSlowRelayLeaves",
-            message: "All leaves executed",
-            chainId,
-          });
-          continue;
-        }
 
         if (tree.getHexRoot() !== rootBundleRelay.slowRelayRoot) {
           this.logger.warn({
