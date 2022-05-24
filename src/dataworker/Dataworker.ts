@@ -706,14 +706,7 @@ export class Dataworker {
   // TODO: this method and executeRelayerRefundLeaves have a lot of similarities, but they have some key differences
   // in both the events they search for and the comparisons they make. We should try to generalize this in the future,
   // but keeping them separate is probably the simplest for the initial implementation.
-  async executeSlowRelayLeaves() {
-    const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      this.clients,
-      this.logger,
-      this.clients.hubPoolClient.latestBlockNumber
-    );
-
+  async executeSlowRelayLeaves(spokePoolClients: { [chainId: number]: SpokePoolClient }) {
     Object.entries(spokePoolClients).forEach(([chainId, client]) => {
       let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays());
 
@@ -910,14 +903,7 @@ export class Dataworker {
     });
   }
 
-  async executeRelayerRefundLeaves() {
-    const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      this.clients,
-      this.logger,
-      this.clients.hubPoolClient.latestBlockNumber
-    );
-
+  async executeRelayerRefundLeaves(spokePoolClients: { [chainId: number]: SpokePoolClient }) {
     Object.entries(spokePoolClients).forEach(([chainId, client]) => {
       let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays());
 

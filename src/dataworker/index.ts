@@ -3,6 +3,7 @@ import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
 import { constructDataworkerClients, updateDataworkerClients } from "./DataworkerClientHelper";
+import { constructSpokePoolClientsForBlockAndUpdate } from "../common";
 config();
 let logger: winston.Logger;
 
@@ -46,9 +47,14 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
         await dataworker.executePoolRebalanceLeaves();
 
         // Execute slow relays before relayer refunds to give them priority for any L2 funds.
-        await dataworker.executeSlowRelayLeaves();
-
-        await dataworker.executeRelayerRefundLeaves();
+        const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
+          dataworker.chainIdListForBundleEvaluationBlockNumbers,
+          clients,
+          logger,
+          clients.hubPoolClient.latestBlockNumber
+        );
+        await dataworker.executeSlowRelayLeaves(spokePoolClients);
+        await dataworker.executeRelayerRefundLeaves(spokePoolClients);
       } else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
 
       await clients.multiCallerClient.executeTransactionQueue(!config.sendingTransactionsEnabled);
