@@ -1,5 +1,5 @@
 import { AugmentedTransaction } from "../clients";
-import { winston, Contract, toBN, getContractInfoFromAddress, fetch } from "../utils";
+import { winston, Contract, toBN, getContractInfoFromAddress, fetch, ethers } from "../utils";
 
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
 // of this method should be considerate of this and catch the response to deal with the error accordingly.
@@ -15,7 +15,7 @@ export async function runTransaction(logger: winston.Logger, contract: Contract,
   }
 }
 
-//TODO: add in gasPrice when the SDK has this for the given chainId. TODO: improve how we fetch prices.
+// TODO: add in gasPrice when the SDK has this for the given chainId. TODO: improve how we fetch prices.
 // For now this method will extract the provider's Fee data from the associated network and scale it by a priority
 // scaler. This works on both mainnet and L2's by the utility switching the response structure accordingly.
 export async function getGasPrice(provider, priorityScaler = toBN(1.2), maxFeePerGasScaler = 3) {
@@ -23,7 +23,7 @@ export async function getGasPrice(provider, priorityScaler = toBN(1.2), maxFeePe
   if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
     // Polygon, for some or other reason, does not correctly return an appropriate maxPriorityFeePerGas. Set the
     // maxPriorityFeePerGas to the maxFeePerGas * 5 for now as a temp workaround.
-    if (chainInfo.chainId == 137) feeData.maxPriorityFeePerGas = toBN((await getPolygonPriorityFee()).fastest).mul(1e9);
+    if (chainInfo.chainId === 137) feeData.maxPriorityFeePerGas = ethers.utils.parseUnits((await getPolygonPriorityFee()).fastest, 9);
     if (feeData.maxPriorityFeePerGas > feeData.maxFeePerGas)
       feeData.maxFeePerGas = toBN(feeData.maxPriorityFeePerGas).mul(1.5);
     return {
