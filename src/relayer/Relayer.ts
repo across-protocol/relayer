@@ -61,7 +61,6 @@ export class Relayer {
       // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
       this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.destinationToken, fillAmount);
     } catch (error) {
-      console.log("error", error);
       this.logger.error({ at: "Relayer", message: "Error creating fillRelayTx", error });
     }
   }
