@@ -57,6 +57,7 @@ export class MultiCallerClient {
                 mrkdwn: transaction.transaction.mrkdwn,
               };
             }),
+          notificationPath: "across-error",
         });
       const validTransactions: AugmentedTransaction[] = transactionsSucceed
         .filter((transaction) => transaction.succeed)
@@ -136,8 +137,9 @@ export class MultiCallerClient {
     } catch (error) {
       this.logger.error({
         at: "MultiCallerClient",
-        message: "Error executing tx bundle. There might be an RPC error on of the chains",
+        message: "Error executing bundle. There might be an RPC error",
         error,
+        notificationPath: "across-error",
       });
     }
   }
@@ -152,6 +154,7 @@ export class MultiCallerClient {
         transactions: transactions.map(({ contract, chainId }) => {
           return { target: getTarget(contract.address), chainId };
         }),
+        notificationPath: "across-error",
       });
       return null; // If there is a problem in the targets in the bundle return null. This will be a noop.
     }

@@ -868,6 +868,7 @@ export class Dataworker {
         at: "Dataworke#executePoolRebalanceLeaves",
         message: "Found invalid proposal after challenge period!",
         reason,
+        notificationPath: "across-error",
       });
       return;
     }
@@ -878,6 +879,7 @@ export class Dataworker {
         message:
           "Found valid proposal, but no trees could be generated. This probably means that the proposal was never evaluated during liveness due to an odd block range!",
         reason,
+        notificationPath: "across-error",
       });
       return;
     }
@@ -1069,7 +1071,12 @@ export class Dataworker {
         ),
       });
     } catch (error) {
-      this.logger.error({ at: "Dataworker", message: "Error creating proposeRootBundleTx", error });
+      this.logger.error({
+        at: "Dataworker",
+        message: "Error creating proposeRootBundleTx",
+        error,
+        notificationPath: "across-error",
+      });
     }
   }
 
@@ -1084,7 +1091,12 @@ export class Dataworker {
         mrkdwn,
       });
     } catch (error) {
-      this.logger.error({ at: "Dataworker", message: "Error creating disputeRootBundleTx", error });
+      this.logger.error({
+        at: "Dataworker",
+        message: "Error creating disputeRootBundleTx",
+        error,
+        notificationPath: "across-error",
+      });
     }
   }
 }

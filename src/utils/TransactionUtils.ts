@@ -9,7 +9,7 @@ export async function runTransaction(logger: winston.Logger, contract: Contract,
     logger.debug({ at: "TxUtil", message: "sending tx", target: getTarget(contract.address), method, args, gas });
     return await contract[method](...args, gas);
   } catch (error) {
-    logger.error({ at: "TxUtil", message: "Error executing tx", error });
+    logger.error({ at: "TxUtil", message: "Error executing tx", error, notificationPath: "across-error" });
     console.log(error);
     throw new Error(error.reason); // Extract the reason from the transaction error and throw it.
   }
@@ -24,7 +24,8 @@ export async function getGasPrice(provider, priorityScaler = toBN(1.2), maxFeePe
     // Polygon, for some or other reason, does not correctly return an appropriate maxPriorityFeePerGas. Set the
     // maxPriorityFeePerGas to the maxFeePerGas * 5 for now as a temp workaround.
     if (chainInfo.chainId == 137) feeData.maxPriorityFeePerGas = toBN((await getPolygonPriorityFee()).fastest).mul(1e9);
-    if (feeData.maxPriorityFeePerGas > feeData.maxFeePerGas) feeData.maxFeePerGas = feeData.maxPriorityFeePerGas;
+    if (feeData.maxPriorityFeePerGas > feeData.maxFeePerGas)
+      feeData.maxFeePerGas = feeData.maxPriorityFeePerGas.mul(1.5);
     return {
       maxFeePerGas: feeData.maxFeePerGas.mul(priorityScaler).mul(maxFeePerGasScaler), // scale up the maxFeePerGas. Any extra paid on this is refunded.
       maxPriorityFeePerGas: feeData.maxPriorityFeePerGas.mul(priorityScaler),

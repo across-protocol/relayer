@@ -20,7 +20,12 @@ if (require.main === module) {
       process.exit(0);
     })
     .catch(async (error) => {
-      logger.error({ at: "InfrastructureEntryPoint", message: "There was an error in the main entry point!", error });
+      logger.error({
+        at: "InfrastructureEntryPoint",
+        message: "There was an error in the main entry point!",
+        error,
+        notificationPath: "across-error",
+      });
       await delay(5);
       await run();
     });
