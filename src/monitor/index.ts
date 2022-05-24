@@ -23,6 +23,9 @@ export async function runMonitor(_logger: winston.Logger) {
       if (config.botModes.unknownRootBundleCallersEnabled) await acrossMonitor.checkUnknownRootBundleCallers();
       else logger.debug({ at: "AcrossMonitor", message: "UnknownRootBundleCallers monitor disabled" });
 
+      if (config.botModes.unknownRelayerCallersEnabled) await acrossMonitor.checkUnknownRelayers();
+      else logger.debug({ at: "AcrossMonitor", message: "UnknownRelayerCallers monitor disabled" });
+
       if (await processEndPollingLoop(logger, "Monitor", config.pollingDelay)) break;
     }
   } catch (error) {
