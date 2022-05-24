@@ -752,7 +752,6 @@ export class Dataworker {
         });
 
         const { tree, leaves } = this.buildSlowRelayRoot(blockNumberRanges, spokePoolClients);
-
         if (tree.getHexRoot() !== rootBundleRelay.slowRelayRoot) {
           this.logger.warn({
             at: "Dataworke#executeSlowRelayLeaves",
@@ -770,6 +769,7 @@ export class Dataworker {
           const executedLeaf = slowFillsForChain.find(
             (event) => event.originChainId === leaf.originChainId && event.depositId === leaf.depositId
           );
+
           // Only return true if no leaf was found in the list of executed leaves.
           if (executedLeaf) return false;
 
@@ -1003,29 +1003,6 @@ export class Dataworker {
           expectedPoolRebalanceRoot.runningBalances
         );
 
-        // Note: We can't exit early without reconstructing the relayer refund root because we don't know how  many
-        // such leaves were included, unlike the pool rebalance root which is published to mainnet along with the
-        // total leaf count. This means unfortunately that we can't exit gracefully if all leaves were actually
-        // executed on L2 if we can't reconstruct the root.
-        const executableLeaves = leaves.filter((leaf) => {
-          if (leaf.chainId !== Number(chainId)) return false;
-          const executedLeaf = executedLeavesForChain.find(
-            (event) => event.rootBundleId === rootBundleRelay.rootBundleId && event.leafId === leaf.leafId
-          );
-          // Only return true if no leaf was found in the list of executed leaves.
-          return !executedLeaf;
-        });
-        if (executableLeaves.length === 0) {
-          this.logger.debug({
-            at: "Dataworke#executeRelayerRefundLeaves",
-            message: "All leaves executed in bundle",
-            mainnetRootBundleBlock: matchingRootBundle.blockNumber,
-            chainId,
-            rootBundleId: rootBundleRelay.rootBundleId,
-          });
-          continue;
-        }
-
         if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {
           this.logger.warn({
             at: "Dataworke#executeRelayerRefundLeaves",
@@ -1037,6 +1014,15 @@ export class Dataworker {
           });
           continue;
         }
+
+        const executableLeaves = leaves.filter((leaf) => {
+          if (leaf.chainId !== Number(chainId)) return false;
+          const executedLeaf = executedLeavesForChain.find(
+            (event) => event.rootBundleId === rootBundleRelay.rootBundleId && event.leafId === leaf.leafId
+          );
+          // Only return true if no leaf was found in the list of executed leaves.
+          return !executedLeaf;
+        });
 
         executableLeaves.forEach((leaf) => {
           this.clients.multiCallerClient.enqueueTransaction({
