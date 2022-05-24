@@ -727,7 +727,7 @@ export class Dataworker {
           // TODO: Consider allowing dataworker to execute relayer refund leaves from partially executed root bundles,
           // i.e. imagine the situation where the pool rebalance leaf with a specific chain ID was executed
           // and we want to execute its relayer refund leaves without waiting for the other chains.
-          return this.clients.hubPoolClient.isRootBundleValid(bundle, this.clients.hubPoolClient.latestBlockNumber)
+          return this.clients.hubPoolClient.isRootBundleValid(bundle, this.clients.hubPoolClient.latestBlockNumber);
         });
 
         if (!matchingRootBundle) {
@@ -932,7 +932,7 @@ export class Dataworker {
           // TODO: Consider allowing dataworker to execute relayer refund leaves from partially executed root bundles,
           // i.e. imagine the situation where the pool rebalance leaf with a specific chain ID was executed
           // and we want to execute its relayer refund leaves without waiting for the other chains.
-          return this.clients.hubPoolClient.isRootBundleValid(bundle, this.clients.hubPoolClient.latestBlockNumber)
+          return this.clients.hubPoolClient.isRootBundleValid(bundle, this.clients.hubPoolClient.latestBlockNumber);
         });
 
         if (!matchingRootBundle) {
