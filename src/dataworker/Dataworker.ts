@@ -724,16 +724,10 @@ export class Dataworker {
       const slowFillsForChain = client.getFills().filter((fill) => fill.isSlowRelay);
       for (const rootBundleRelay of rootBundleRelays) {
         const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
-          if (bundle.slowRelayRoot !== rootBundleRelay.slowRelayRoot) return false;
-
-          const followingBlockNumber =
-            this.clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber ||
-            this.clients.hubPoolClient.latestBlockNumber;
-
-          const leaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
-
-          // Only use this bundle if it had valid leaves returned (meaning it was at least partially executed).
-          return leaves.length > 0;
+          // TODO: Consider allowing dataworker to execute relayer refund leaves from partially executed root bundles,
+          // i.e. imagine the situation where the pool rebalance leaf with a specific chain ID was executed
+          // and we want to execute its relayer refund leaves without waiting for the other chains.
+          return this.clients.hubPoolClient.isRootBundleValid(bundle, this.clients.hubPoolClient.latestBlockNumber)
         });
 
         if (!matchingRootBundle) {
@@ -758,17 +752,6 @@ export class Dataworker {
         });
 
         const { tree, leaves } = this.buildSlowRelayRoot(blockNumberRanges, spokePoolClients);
-        if (tree.getHexRoot() !== rootBundleRelay.slowRelayRoot) {
-          this.logger.warn({
-            at: "Dataworke#executeSlowRelayLeaves",
-            message: "Constructed a different root for the block range!",
-            chainId,
-            mainnetRootBundleBlock: matchingRootBundle.blockNumber,
-            publishedSlowRelayRoot: rootBundleRelay.slowRelayRoot,
-            constructedSlowRelayRoot: tree.getHexRoot(),
-          });
-          continue;
-        }
 
         const executableLeaves = leaves.filter((leaf) => {
           if (leaf.destinationChainId !== Number(chainId)) return false;
@@ -797,6 +780,26 @@ export class Dataworker {
           // If no previous full fill was found, we should try to fill.
           return !fullFill;
         });
+        if (executableLeaves.length === 0) {
+          this.logger.debug({
+            at: "Dataworke#executeSlowRelayLeaves",
+            message: "All leaves executed",
+            chainId,
+          });
+          continue;
+        }
+
+        if (tree.getHexRoot() !== rootBundleRelay.slowRelayRoot) {
+          this.logger.warn({
+            at: "Dataworke#executeSlowRelayLeaves",
+            message: "Constructed a different root for the block range!",
+            chainId,
+            mainnetRootBundleBlock: matchingRootBundle.blockNumber,
+            publishedSlowRelayRoot: rootBundleRelay.slowRelayRoot,
+            constructedSlowRelayRoot: tree.getHexRoot(),
+          });
+          continue;
+        }
 
         executableLeaves.forEach((leaf) => {
           this.clients.multiCallerClient.enqueueTransaction({
@@ -855,7 +858,7 @@ export class Dataworker {
     const widestPossibleExpectedBlockRange = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
       this.clients,
-      this.clients.hubPoolClient.latestBlockNumber
+      pendingRootBundle.proposalBlockNumber
     );
     const { valid, reason, expectedTrees } = await this.validateRootBundle(
       hubPoolChainId,
@@ -935,15 +938,10 @@ export class Dataworker {
       for (const rootBundleRelay of rootBundleRelays) {
         const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
           if (bundle.relayerRefundRoot !== rootBundleRelay.relayerRefundRoot) return false;
-
-          const followingBlockNumber =
-            this.clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber ||
-            this.clients.hubPoolClient.latestBlockNumber;
-
-          const leaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
-
-          // Only use this bundle if it had valid leaves returned (meaning it was at least partially executed).
-          return leaves.length > 0;
+          // TODO: Consider allowing dataworker to execute relayer refund leaves from partially executed root bundles,
+          // i.e. imagine the situation where the pool rebalance leaf with a specific chain ID was executed
+          // and we want to execute its relayer refund leaves without waiting for the other chains.
+          return this.clients.hubPoolClient.isRootBundleValid(bundle, this.clients.hubPoolClient.latestBlockNumber)
         });
 
         if (!matchingRootBundle) {
@@ -1002,6 +1000,29 @@ export class Dataworker {
           expectedPoolRebalanceRoot.runningBalances
         );
 
+        // Note: We can't exit early without reconstructing the relayer refund root because we don't know how  many
+        // such leaves were included, unlike the pool rebalance root which is published to mainnet along with the
+        // total leaf count. This means unfortunately that we can't exit gracefully if all leaves were actually
+        // executed on L2 if we can't reconstruct the root.
+        const executableLeaves = leaves.filter((leaf) => {
+          if (leaf.chainId !== Number(chainId)) return false;
+          const executedLeaf = executedLeavesForChain.find(
+            (event) => event.rootBundleId === rootBundleRelay.rootBundleId && event.leafId === leaf.leafId
+          );
+          // Only return true if no leaf was found in the list of executed leaves.
+          return !executedLeaf;
+        });
+        if (executableLeaves.length === 0) {
+          this.logger.debug({
+            at: "Dataworke#executeRelayerRefundLeaves",
+            message: "All leaves executed in bundle",
+            mainnetRootBundleBlock: matchingRootBundle.blockNumber,
+            chainId,
+            rootBundleId: rootBundleRelay.rootBundleId,
+          });
+          continue;
+        }
+
         if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {
           this.logger.warn({
             at: "Dataworke#executeRelayerRefundLeaves",
@@ -1013,15 +1034,6 @@ export class Dataworker {
           });
           continue;
         }
-
-        const executableLeaves = leaves.filter((leaf) => {
-          if (leaf.chainId !== Number(chainId)) return false;
-          const executedLeaf = executedLeavesForChain.find(
-            (event) => event.rootBundleId === rootBundleRelay.rootBundleId && event.leafId === leaf.leafId
-          );
-          // Only return true if no leaf was found in the list of executed leaves.
-          return !executedLeaf;
-        });
 
         executableLeaves.forEach((leaf) => {
           this.clients.multiCallerClient.enqueueTransaction({
