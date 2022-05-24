@@ -90,12 +90,15 @@ export class Monitor {
     this.logger.debug({ at: "AcrossMonitor#UnknownRelayers", message: "Checking for unknown relayers" });
 
     for (const chainId of Object.keys(this.clients.spokePools)) {
+      console.log("chainId", chainId);
+      console.log("RANGE", this.spokePoolsBlocks[chainId].startingBlock, this.spokePoolsBlocks[chainId].endingBlock);
       const relayEvents: EventInfo[] = await this.relayerProcessor.getRelayedEventsInfo(
         this.clients.spokePools[chainId],
         this.spokePoolsBlocks[chainId].startingBlock,
         this.spokePoolsBlocks[chainId].endingBlock
       );
       for (const event of relayEvents) {
+        console.log("event", event);
         // Skip notifications for known relay caller addresses.
         if (this.monitorConfig.whitelistedRelayers.includes(event.caller)) {
           continue;
