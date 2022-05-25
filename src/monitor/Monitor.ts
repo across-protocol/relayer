@@ -72,15 +72,15 @@ export class Monitor {
 
       const mrkdwn =
         `An unknown EOA ${etherscanLink(event.caller, 1)} has proposed a bundle on ${getNetworkName(1)}` +
-        `\ntx: ${etherscanLink(event.transactionHash, 1)}!`;
+        `\ntx: ${etherscanLink(event.transactionHash, 1)}`;
       this.logger.error({ at: "Monitor", message: "Unknown bundle proposer 🥷", mrkdwn });
     }
   }
 
   async checkUnknownRelayers(): Promise<void> {
-    this.logger.debug({ at: "AcrossMonitor#UnknownRelayers", message: "Checking for unknown relayers" });
-
-    for (const chainId of Object.keys(this.clients.spokePools)) {
+    const chainIds = Object.keys(this.clients.spokePools);
+    this.logger.debug({ at: "AcrossMonitor#UnknownRelayers", message: "Checking for unknown relayers", chainIds });
+    for (const chainId of chainIds) {
       const relayEvents: any = await this.relayerProcessor.getRelayedEventsInfo(
         this.clients.spokePools[chainId],
         this.spokePoolsBlocks[chainId].startingBlock,
@@ -92,7 +92,7 @@ export class Monitor {
 
         const mrkdwn =
           `An unknown relayer ${etherscanLink(event.relayer, chainId)}` +
-          `filled a deposit on ${getNetworkName(chainId)}\ntx: ${etherscanLink(event.transactionHash, chainId)}`;
+          ` filled a deposit on ${getNetworkName(chainId)}\ntx: ${etherscanLink(event.transactionHash, chainId)}`;
         this.logger.error({ at: "Monitor", message: "Unknown relayer 😱", mrkdwn });
       }
     }
