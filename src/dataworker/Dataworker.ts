@@ -806,7 +806,7 @@ export class Dataworker {
               tree.getHexProof(leaf),
             ],
             message: "Executed SlowRelayLeaf 🌿!",
-            mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nslowRelayRoot: ${rootBundleRelay.slowRelayRoot}\nOrigin chain: ${leaf.originChainId}\nDestination chain:${leaf.destinationChainId}\nDeposit Id: ${leaf.depositId}\namount: ${leaf.amountToReturn.toString()}`, // Just a placeholder
+            mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nslowRelayRoot: ${rootBundleRelay.slowRelayRoot}\nOrigin chain: ${leaf.originChainId}\nDestination chain:${leaf.destinationChainId}\nDeposit Id: ${leaf.depositId}\namount: ${leaf.amount.toString()}`, // Just a placeholder
           });
         });
       }
