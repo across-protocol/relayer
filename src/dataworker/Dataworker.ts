@@ -837,7 +837,18 @@ export class Dataworker {
                   client.spokePool.address,
                   amountRequired
                 );
-                console.log(success);
+
+                if (!success) {
+                  this.logger.debug({
+                    at: "Dataworker#executeSlowRelayLeaves",
+                    message: "Not executing slow relay leaf due to lack of funds in SpokePool",
+                    root: rootBundleRelay.slowRelayRoot,
+                    depositId: leaf.depositId,
+                    fromChain: leaf.originChainId,
+                    chainId: leaf.destinationChainId,
+                  });
+                }
+
                 return success ? leaf : undefined;
               })
             )
@@ -961,7 +972,22 @@ export class Dataworker {
             holder: this.clients.hubPoolClient.hubPool.address,
             chainId,
           }));
-          return (await balanceAllocator.requestMultipleTokens(requests)) ? leaf : undefined;
+
+          const success = await balanceAllocator.requestMultipleTokens(requests);
+
+          if (!success) {
+            // Note: this is an error because the HubPool should generally not run out of funds to put into
+            // netSendAmounts. This means that no new bundles can be proposed until this leaf is funded.
+            this.logger.error({
+              at: "Dataworker#executePoolRebalanceLeaves",
+              message: "Not executing pool rebalance leaf on HubPool due to lack of funds to send.",
+              root: expectedTrees.poolRebalanceTree.tree.getHexRoot(),
+              leafId: leaf.leafId,
+              rebalanceChain: leaf.chainId,
+              chainId: hubPoolChainId
+            });
+          }
+          return success ? leaf : undefined;
         })
       )
     ).filter((element) => element !== undefined);
@@ -1109,6 +1135,17 @@ export class Dataworker {
                   client.spokePool.address,
                   totalSent
                 );
+
+                if (!success) {
+                  this.logger.debug({
+                    at: "Dataworker#executeRelayerRefundLeaves",
+                    message: "Not executing relayer refund leaf on SpokePool due to lack of funds.",
+                    root: rootBundleRelay.relayerRefundRoot,
+                    leafId: leaf.leafId,
+                    chainId: leaf.chainId,
+                  });
+                }
+
                 return success ? leaf : undefined;
               })
             )
