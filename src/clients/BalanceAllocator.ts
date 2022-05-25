@@ -56,7 +56,6 @@ export class BalanceAllocator {
 
   getUsed(chainId: number, token: string, holder: string) {
     if (!this.used?.[chainId]?.[token]?.[holder]) {
-
       // Note: cannot use assign because it breaks the BigNumber object.
       if (!this.used[chainId]) this.used[chainId] = {};
       if (!this.used[chainId][token]) this.used[chainId][token] = {};

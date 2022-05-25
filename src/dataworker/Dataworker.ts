@@ -984,7 +984,7 @@ export class Dataworker {
               root: expectedTrees.poolRebalanceTree.tree.getHexRoot(),
               leafId: leaf.leafId,
               rebalanceChain: leaf.chainId,
-              chainId: hubPoolChainId
+              chainId: hubPoolChainId,
             });
           }
           return success ? leaf : undefined;

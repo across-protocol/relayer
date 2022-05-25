@@ -6,7 +6,7 @@ import {
   constructDataworkerClients,
   constructSpokePoolClientsForPendingRootBundle,
   updateDataworkerClients,
-  spokePoolClientsToProviders
+  spokePoolClientsToProviders,
 } from "./DataworkerClientHelper";
 import { constructSpokePoolClientsForBlockAndUpdate } from "../common";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
