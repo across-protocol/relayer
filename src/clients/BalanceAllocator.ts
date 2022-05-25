@@ -25,7 +25,6 @@ export class BalanceAllocator {
     // Determine if the entire group will be successful.
     const success = requestsWithbalances.every(({ chainId, token, holder, amount, balance }) => {
       const used = this.getUsed(chainId, token, holder);
-      console.log(balance.toString(), used.toString(), amount.toString());
       return balance.gte(used.add(amount));
     });
 
