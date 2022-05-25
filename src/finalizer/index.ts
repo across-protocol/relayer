@@ -1,4 +1,4 @@
-import { processCrash, processEndPollingLoop, startupLogLevel, Wallet } from "../utils";
+import { groupObjectCountsByTwoProps, processCrash, processEndPollingLoop, startupLogLevel, Wallet } from "../utils";
 import { getProvider, getSigner, winston } from "../utils";
 import { constructRelayerClients, RelayerClients, updateRelayerClients } from "../relayer/RelayerClientHelper";
 import {
@@ -9,6 +9,10 @@ import {
   getL2TokensToFinalize,
   getPosClient,
   retrieveTokenFromMainnetTokenBridger,
+  getOptimismClient,
+  getCrossChainMessages,
+  getMessageStatuses,
+  getOptimismFinalizableMessages,
 } from "./utils";
 import { FinalizerConfig } from "./FinalizerConfig";
 let logger: winston.Logger;
@@ -57,6 +61,32 @@ export async function run(
       }
       for (const l2Token of getL2TokensToFinalize(tokensBridged)) {
         await retrieveTokenFromMainnetTokenBridger(logger, l2Token, hubSigner, relayerClients.hubPoolClient);
+      }
+    } else if (chainId === 10) {
+      logger.debug({
+        at: "OptimismFinalizer",
+        message: "Looking for finalizable bridge events",
+      });
+      const crossChainMessenger = getOptimismClient(hubSigner);
+      const crossChainMessages = await getCrossChainMessages(
+        tokensBridged,
+        relayerClients.hubPoolClient,
+        crossChainMessenger
+      );
+      const messageStatuses = await getMessageStatuses(crossChainMessages, crossChainMessenger);
+      logger.debug({
+        at: "OptimismFinalizer",
+        message: "Queried message stuses",
+        statusesGrouped: groupObjectCountsByTwoProps(messageStatuses, "status", (message) => message["token"]),
+      });
+      const finalizable = getOptimismFinalizableMessages(messageStatuses);
+      if (finalizable.length === 0)
+        logger.debug({
+          at: "OptimismFinalizer",
+          message: "No finalizable messages",
+        });
+      for (const message of finalizable) {
+        await crossChainMessenger.finalizeMessage(message.message);
       }
     }
   }
