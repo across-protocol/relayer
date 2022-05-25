@@ -6,8 +6,10 @@ import {
   constructDataworkerClients,
   constructSpokePoolClientsForPendingRootBundle,
   updateDataworkerClients,
+  spokePoolClientsToProviders
 } from "./DataworkerClientHelper";
 import { constructSpokePoolClientsForBlockAndUpdate } from "../common";
+import { BalanceAllocator } from "../clients/BalanceAllocator";
 config();
 let logger: winston.Logger;
 
@@ -73,11 +75,13 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
 
       if (config.executorEnabled) {
-        await dataworker.executePoolRebalanceLeaves(spokePoolClientsForPendingRootBundle);
+        const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(latestSpokePoolClients));
+
+        await dataworker.executePoolRebalanceLeaves(spokePoolClientsForPendingRootBundle, balanceAllocator);
 
         // Execute slow relays before relayer refunds to give them priority for any L2 funds.
-        await dataworker.executeSlowRelayLeaves(latestSpokePoolClients);
-        await dataworker.executeRelayerRefundLeaves(latestSpokePoolClients);
+        await dataworker.executeSlowRelayLeaves(latestSpokePoolClients, balanceAllocator);
+        await dataworker.executeRelayerRefundLeaves(latestSpokePoolClients, balanceAllocator);
       } else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
 
       await clients.multiCallerClient.executeTransactionQueue(!config.sendingTransactionsEnabled);

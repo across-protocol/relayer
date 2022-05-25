@@ -8,6 +8,8 @@ import { MAX_UINT_VAL } from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
+import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
+import { BalanceAllocator } from "../src/clients/BalanceAllocator";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, hubPool: Contract;
@@ -61,6 +63,11 @@ describe("Dataworker: Execute relayer refunds", async function () {
     await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
     await updateAllClients();
 
+    const providers = {
+      ...spokePoolClientsToProviders(spokePoolClients),
+      [(await hubPool.provider.getNetwork()).chainId]: hubPool.provider,
+    };
+
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
 
     // Execute queue and check that root bundle is pending:
@@ -70,7 +77,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
     // Advance time and execute rebalance leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves();
+    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
     await multiCallerClient.executeTransactionQueue();
 
     // TEST 3:
@@ -84,7 +91,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves();
+    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
 
     // TEST 4:
     // Submit another fill and check that dataworker proposes another root:
@@ -98,17 +105,28 @@ describe("Dataworker: Execute relayer refunds", async function () {
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves();
+    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
 
     // Should be 1 leaf since this is _only_ a second partial fill repayment and doesn't involve the deposit chain.
     await multiCallerClient.executeTransactionQueue();
 
     await updateAllClients();
-    await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients);
-    expect(multiCallerClient.transactionCount()).to.equal(3);
+    await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients, new BalanceAllocator(providers));
+
+    // Note: without sending tokens, only one of the leaves will be executable.
+    // This is the leaf with the deposit that is being pulled back to the hub pool.
+    expect(multiCallerClient.transactionCount()).to.equal(1);
+    await multiCallerClient.executeTransactionQueue();
+
+    await updateAllClients();
 
     // Note: we need to manually supply the tokens since the L1 tokens won't be recognized in the spoke pool.
     await erc20_2.mint(spokePool_2.address, amountToDeposit);
+    await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients, new BalanceAllocator(providers));
+
+    // The other two transactions should now be enqueued.
+    expect(multiCallerClient.transactionCount()).to.equal(2);
+
     await multiCallerClient.executeTransactionQueue();
   });
 });
