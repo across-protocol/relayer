@@ -62,7 +62,7 @@ async function getPolygonPriorityFee(): Promise<{
   blockTime: number;
   blockNumber: number;
 }> {
-  let res = await fetch("https://gasstation-mainnet.matic.network");
+  const res = await fetch("https://gasstation-mainnet.matic.network");
   return await res.json();
 }
 
