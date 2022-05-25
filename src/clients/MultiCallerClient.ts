@@ -63,7 +63,7 @@ export class MultiCallerClient {
         .filter((transaction) => transaction.succeed)
         .map((transaction) => transaction.transaction);
 
-      if (validTransactions.length == 0) {
+      if (validTransactions.length === 0) {
         this.logger.debug({ at: "MultiCallerClient", message: "No valid transactions in the queue" });
         return;
       }
@@ -120,7 +120,7 @@ export class MultiCallerClient {
       const transactionHashes = [];
       Object.keys(groupedTransactions).forEach((chainId, chainIndex) => {
         mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
-        if ((transactionReceipts[chainIndex] as any).status == "rejected") {
+        if (transactionReceipts[chainIndex].status === "rejected") {
           mrkdwn += ` ⚠️ Transactions sent on ${getNetworkName(chainId)} failed to execute due to exceeding timeout.\n`;
         } else {
           groupedTransactions[chainId].forEach((transaction, groupTxIndex) => {

@@ -14,6 +14,7 @@ import { _buildPoolRebalanceRoot, _buildRelayerRefundRoot, _buildSlowRelayRoot }
 import { flattenAndFilterUnfilledDepositsByOriginChain } from "./DepositUtils";
 import { updateUnfilledDepositsWithMatchedDeposit, getUniqueDepositsInRange } from "./DepositUtils";
 import { constructSpokePoolClientsForBlockAndUpdate } from "../common/ClientHelper";
+import { BalanceAllocator } from "../clients/BalanceAllocator";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -696,7 +697,10 @@ export class Dataworker {
   // TODO: this method and executeRelayerRefundLeaves have a lot of similarities, but they have some key differences
   // in both the events they search for and the comparisons they make. We should try to generalize this in the future,
   // but keeping them separate is probably the simplest for the initial implementation.
-  async executeSlowRelayLeaves(spokePoolClients: { [chainId: number]: SpokePoolClient }) {
+  async executeSlowRelayLeaves(
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClients)
+  ) {
     this.logger.debug({
       at: "Dataworker#executeSlowRelayLeaves",
       message: "Executing slow relay leaves",
@@ -811,7 +815,10 @@ export class Dataworker {
     });
   }
 
-  async executePoolRebalanceLeaves(spokePoolClients?: { [chainId: number]: SpokePoolClient }) {
+  async executePoolRebalanceLeaves(
+    spokePoolClients?: { [chainId: number]: SpokePoolClient },
+    balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClients)
+  ) {
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
       message: "Executing pool rebalance leaves",
@@ -889,7 +896,22 @@ export class Dataworker {
     );
 
     const chainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
-    unexecutedLeaves.forEach((leaf) => {
+
+    const fundedLeaves = (
+      await Promise.all(
+        unexecutedLeaves.map(async (leaf) => {
+          const requests = leaf.netSendAmounts.map((amount, i) => ({
+            amount: amount.gte(0) ? amount : BigNumber.from(0),
+            token: leaf.l1Tokens[i],
+            holder: this.clients.hubPoolClient.hubPool.address,
+            chainId,
+          }));
+          return (await balanceAllocator.requestMultipleTokens(requests)) ? leaf : undefined;
+        })
+      )
+    ).filter((element) => element !== undefined);
+
+    fundedLeaves.forEach((leaf) => {
       const proof = expectedTrees.poolRebalanceTree.tree.getHexProof(leaf);
 
       this.clients.multiCallerClient.enqueueTransaction({
@@ -912,7 +934,10 @@ export class Dataworker {
     });
   }
 
-  async executeRelayerRefundLeaves(spokePoolClients: { [chainId: number]: SpokePoolClient }) {
+  async executeRelayerRefundLeaves(
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClients)
+  ) {
     this.logger.debug({
       at: "Dataworker#executeRelayerRefundLeaves",
       message: "Executing relayer refund leaves",
@@ -1015,6 +1040,16 @@ export class Dataworker {
           // Only return true if no leaf was found in the list of executed leaves.
           return !executedLeaf;
         });
+
+        const fundedLeaves = (
+          await Promise.all(
+            executableLeaves.map(async (leaf) => {
+              const refundSum = leaf.refundAmounts.reduce((acc, curr) => acc.add(curr), BigNumber.from(0));
+              const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
+              return (await balanceAllocator.requestMultipleTokens(requests)) ? leaf : undefined;
+            })
+          )
+        ).filter((element) => element !== undefined);
 
         executableLeaves.forEach((leaf) => {
           this.clients.multiCallerClient.enqueueTransaction({
