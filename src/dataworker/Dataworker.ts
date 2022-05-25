@@ -1083,8 +1083,8 @@ export class Dataworker {
     this.logger.error({
       at: "Dataworker",
       message: "Submitting dispute 🤏🏼",
-      mrkdwn
-    })
+      mrkdwn,
+    });
     try {
       this.clients.multiCallerClient.enqueueTransaction({
         contract: this.clients.hubPoolClient.hubPool, // target contract
