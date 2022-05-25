@@ -806,7 +806,7 @@ export class Dataworker {
               tree.getHexProof(leaf),
             ],
             message: "Executed SlowRelayLeaf 🌿!",
-            mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nslowRelayRoot: ${rootBundleRelay.slowRelayRoot}\nOrigin chain: ${leaf.originChainId}\nDestination chain:${leaf.destinationChainId}\nDeposit Id: ${leaf.depositId}\n`, // Just a placeholder
+            mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nslowRelayRoot: ${rootBundleRelay.slowRelayRoot}\nOrigin chain: ${leaf.originChainId}\nDestination chain:${leaf.destinationChainId}\nDeposit Id: ${leaf.depositId}\namount: ${leaf.amountToReturn.toString()}`, // Just a placeholder
           });
         });
       }
@@ -909,7 +909,7 @@ export class Dataworker {
           proof,
         ],
         message: "Executed PoolRebalanceLeaf 🌿!",
-        mrkdwn: `Root hash: ${expectedTrees.poolRebalanceTree.tree.getHexRoot()}\nLeaf: ${leaf.leafId}`, // Just a placeholder
+        mrkdwn: `Root hash: ${expectedTrees.poolRebalanceTree.tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${leaf.chainId}`, // Just a placeholder
       });
     });
   }
@@ -1025,7 +1025,7 @@ export class Dataworker {
             method: "executeRelayerRefundLeaf",
             args: [rootBundleRelay.rootBundleId, leaf, tree.getHexProof(leaf)],
             message: "Executed RelayerRefundLeaf 🌿!",
-            mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nrelayerRefundRoot: ${rootBundleRelay.relayerRefundRoot}\nLeaf: ${leaf.leafId}\nchainId: ${chainId}\ntoken: ${leaf.l2TokenAddress}`, // Just a placeholder
+            mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nrelayerRefundRoot: ${rootBundleRelay.relayerRefundRoot}\nLeaf: ${leaf.leafId}\nchainId: ${chainId}\ntoken: ${leaf.l2TokenAddress}\namount: ${leaf.amountToReturn.toString()}`, // Just a placeholder
           });
         });
       }
