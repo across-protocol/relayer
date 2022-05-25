@@ -143,11 +143,13 @@ export function addSlowFillsToRunningBalances(
   });
 }
 
+// TODO: Is summing up absolute values really the best way to compute a root bundle's "volume"? Said another way,
+// how do we measure a root bundle's "impact" or importance?
 export function computePoolRebalanceUsdVolume(leaves: PoolRebalanceLeaf[], clients: DataworkerClients): BigNumber {
   return leaves.reduce((result: BigNumber, poolRebalanceLeaf) => {
     return poolRebalanceLeaf.l1Tokens.reduce((sum: BigNumber, l1Token: string, index: number) => {
       const netSendAmount = poolRebalanceLeaf.netSendAmounts[index];
-      const volume = netSendAmount;
+      const volume = netSendAmount.abs();
       const tokenPriceInUsd = clients.profitClient.getPriceOfToken(l1Token);
       const volumeInUsd = volume.mul(tokenPriceInUsd).div(toBNWei(1));
       const l1TokenInfo = clients.hubPoolClient.getTokenInfoForL1Token(l1Token);
