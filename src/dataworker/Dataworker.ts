@@ -346,7 +346,13 @@ export class Dataworker {
           leaves: poolRebalanceRoot.leaves,
         });
         return;
-      }
+      } else
+        this.logger.debug({
+          at: "Dataworker",
+          message: `Root bundle USD volume exceeds threshold! 💚`,
+          usdThresholdToSubmitNewBundle,
+          totalUsdRefund,
+        });
     }
 
     this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForProposal });

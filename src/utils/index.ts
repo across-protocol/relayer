@@ -36,7 +36,7 @@ export {
   HubPool__factory as HubPool,
   SpokePool__factory as SpokePool,
   AcrossConfigStore__factory as AcrossConfigStore,
-  PolygonTokenBridger__factory as PolygonTokenBridger
+  PolygonTokenBridger__factory as PolygonTokenBridger,
 } from "@across-protocol/contracts-v2";
 
 export { getDeployedAddress, getDeployedBlockNumber, getContractInfoFromAddress } from "@across-protocol/contracts-v2";
