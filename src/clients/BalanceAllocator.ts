@@ -1,17 +1,22 @@
-import { BigNumber, assign, ERC20, ethers } from "../utils";
+import { BigNumber, ERC20, ethers } from "../utils";
+
+// This type is used to map used and current balances of different users.
+interface BalanceMap {
+  [chainId: number]: {
+    [token: string]: {
+      [holder: string]: BigNumber;
+    };
+  };
+}
 
 export class BalanceAllocator {
-  public balances: {
-    [chainId: number]: { [token: string]: { [holder: string]: BigNumber } };
-  } = {};
+  public balances: BalanceMap = {};
 
-  public used: {
-    [chainId: number]: { [token: string]: { [holder: string]: BigNumber } };
-  } = {};
+  public used: BalanceMap = {};
 
   constructor(readonly providers: { [chainId: number]: ethers.providers.Provider }) {}
 
-  async requestMultipleTokens(
+  async requestBalanceAllocations(
     requests: { chainId: number; token: string; holder: string; amount: BigNumber }[]
   ): Promise<boolean> {
     // Do all async work up-front to avoid atomicity problems with updating used.
@@ -38,8 +43,8 @@ export class BalanceAllocator {
     return success;
   }
 
-  async requestTokens(chainId: number, token: string, holder: string, amount: BigNumber): Promise<boolean> {
-    return this.requestMultipleTokens([{ chainId, token, holder, amount }]);
+  async requestBalanceAllocation(chainId: number, token: string, holder: string, amount: BigNumber): Promise<boolean> {
+    return this.requestBalanceAllocations([{ chainId, token, holder, amount }]);
   }
 
   async getBalance(chainId: number, token: string, holder: string) {

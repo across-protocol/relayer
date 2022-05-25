@@ -833,7 +833,7 @@ export class Dataworker {
                 // Note: the getRefund function just happens to perform the same math we need.
                 // A refund is the total fill amount minus LP fees, which is the same as the payout for a slow relay!
                 const amountRequired = getRefund(leaf.amount.sub(amountFilled), leaf.realizedLpFeePct);
-                const success = await balanceAllocator.requestTokens(
+                const success = await balanceAllocator.requestBalanceAllocation(
                   leaf.destinationChainId,
                   leaf.destinationToken,
                   client.spokePool.address,
@@ -975,7 +975,7 @@ export class Dataworker {
             chainId,
           }));
 
-          const success = await balanceAllocator.requestMultipleTokens(requests);
+          const success = await balanceAllocator.requestBalanceAllocations(requests);
 
           if (!success) {
             // Note: this is an error because the HubPool should generally not run out of funds to put into
@@ -1131,7 +1131,7 @@ export class Dataworker {
               executableLeaves.map(async (leaf) => {
                 const refundSum = leaf.refundAmounts.reduce((acc, curr) => acc.add(curr), BigNumber.from(0));
                 const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
-                const success = await balanceAllocator.requestTokens(
+                const success = await balanceAllocator.requestBalanceAllocation(
                   leaf.chainId,
                   leaf.l2TokenAddress,
                   client.spokePool.address,
