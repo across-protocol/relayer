@@ -6,8 +6,8 @@ import { L2TransactionReceipt, getL2Network, L2ToL1MessageStatus, L2ToL1MessageW
 import { RelayerConfig } from "../relayer/RelayerConfig";
 import { constructSpokePoolClientsWithLookback } from "../relayer/RelayerClientHelper";
 import { TokensBridged } from "../interfaces";
-import MaticJs from '@maticnetwork/maticjs'
-import { Web3ClientPlugin } from '@maticnetwork/maticjs-ethers'
+import MaticJs from "@maticnetwork/maticjs";
+import { Web3ClientPlugin } from "@maticnetwork/maticjs-ethers";
 
 // How to run:
 // - Set same config you'd need to run dataworker or relayer in terms of L2 node urls
@@ -24,7 +24,7 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
   await updateSpokePoolClients(spokePoolClients);
 
   // TODO: Load chain ID's from config rather than just hardcoding arbitrum here:
-  const configuredChainIds = [137];
+  const configuredChainIds = [137, 42161];
 
   // For each chain, look up any TokensBridged events emitted by SpokePool client that we'll attempt to finalize
   // on L1.
@@ -99,7 +99,7 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
     } else if (chainId === 137) {
       // Following from https://maticnetwork.github.io/matic.js/docs/pos
       MaticJs.use(Web3ClientPlugin);
-      const posClient = new MaticJs.POSClient()
+      const posClient = new MaticJs.POSClient();
       await posClient.init({
         network: "mainnet",
         version: "v1",
@@ -115,7 +115,7 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
             from: baseSigner.address,
           },
         },
-      })
+      });
       const isCheckpointed = await Promise.all(
         tokensBridged.map((event) => posClient.exitUtil.isCheckPointed(event.transactionHash))
       );
@@ -127,10 +127,10 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
             event.l2TokenAddress,
             commonClients.hubPoolClient.latestBlockNumber
           );
-          return !posClient.erc20(l1TokenCounterpart, true).isWithdrawExited(event.transactionHash)
+          return !posClient.erc20(l1TokenCounterpart, true).isWithdrawExited(event.transactionHash);
         })
       );
-      const canWithdraw = tokensBridged.filter((_, i) => canExit[i])
+      const canWithdraw = tokensBridged.filter((_, i) => canExit[i]);
       if (canWithdraw.length === 0)
         logger.debug({
           at: "PolygonFinalizer",
@@ -138,28 +138,29 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
         });
 
       canWithdraw.forEach((e) => {
-        console.log(`Can finalize ${e.transactionHash} at https://withdraw.polygon.technology/`)
-      })
-
+        console.log(`Can finalize ${e.transactionHash} at https://withdraw.polygon.technology/`);
+      });
 
       // TODO: Call retrieve on PolygonTokenBridger
     }
   }
 }
 
-// TODO: Replace this function with one that returns the transaction to send, which we can batch with other 
+// TODO: Replace this function with one that returns the transaction to send, which we can batch with other
 // finalization transactions and multisend.
 export async function finalizeL2Transaction(
   logger: winston.Logger,
   event: TokensBridged,
   l1Signer: Wallet
-): Promise<{
-  message: L2ToL1MessageWriter;
-  proofInfo: any; // MessageBatchProofInfo not exported by arbitrum/sdk so just use type any for now
-  status: string;
-  chainId: number;
-  token: string;
-}[]> {
+): Promise<
+  {
+    message: L2ToL1MessageWriter;
+    proofInfo: any; // MessageBatchProofInfo not exported by arbitrum/sdk so just use type any for now
+    status: string;
+    chainId: number;
+    token: string;
+  }[]
+> {
   logger.debug({
     at: "ArbitrumFinalizer",
     message: "Finalizing L2 transaction",
@@ -180,8 +181,7 @@ export async function finalizeL2Transaction(
     const error = new Error(`No outgoing messages found in transaction:${event.transactionHash}`);
     logger.error({
       at: "ArbitrumFinalizer",
-      message:
-        "Transaction that emitted TokensBridged event unexpectedly contains 0 L2-to-L1 messages 🤢!",
+      message: "Transaction that emitted TokensBridged event unexpectedly contains 0 L2-to-L1 messages 🤢!",
       txnHash: event.transactionHash,
       error,
       notificationPath: "across-error",
@@ -195,7 +195,7 @@ export async function finalizeL2Transaction(
     throw error;
   }
 
-  const messagesToExecute = []
+  const messagesToExecute = [];
   for (const l2Message of l2ToL1Messages) {
     // Now fetch the proof info we'll need in order to execute or check execution status.
     const proofInfo = await l2Message.tryGetProof(l2Provider);
@@ -212,8 +212,8 @@ export async function finalizeL2Transaction(
         proofInfo: undefined,
         status: L2ToL1MessageStatus[L2ToL1MessageStatus.EXECUTED],
         chain: event.chainId,
-        token: event.l2TokenAddress
-      })
+        token: event.l2TokenAddress,
+      });
     }
     const outboxMessageExecutionStatus = await l2Message.status(proofInfo);
     if (outboxMessageExecutionStatus !== L2ToL1MessageStatus.CONFIRMED) {
@@ -227,8 +227,8 @@ export async function finalizeL2Transaction(
         proofInfo: undefined,
         status: L2ToL1MessageStatus[L2ToL1MessageStatus.UNCONFIRMED],
         chain: event.chainId,
-        token: event.l2TokenAddress
-      })
+        token: event.l2TokenAddress,
+      });
     }
 
     // Now that its confirmed and not executed, we can use the Merkle proof data to execute our
@@ -238,20 +238,19 @@ export async function finalizeL2Transaction(
       proofInfo,
       status: L2ToL1MessageStatus[outboxMessageExecutionStatus],
       chain: event.chainId,
-      token: event.l2TokenAddress
-    })
+      token: event.l2TokenAddress,
+    });
   }
-  return messagesToExecute
+  return messagesToExecute;
 }
 
 export async function getFinalizableMessages(logger: winston.Logger, tokensBridged: TokensBridged[], l1Signer: Wallet) {
   const l2MessagesToExecute = (
     await Promise.all(tokensBridged.map((event) => finalizeL2Transaction(logger, event, l1Signer)))
-  )
-    .reduce((result, messages) => {
-      result.push(...messages);
-      return result;
-    }, [])
+  ).reduce((result, messages) => {
+    result.push(...messages);
+    return result;
+  }, []);
   const statusesGrouped = groupObjectCountsByThreeProps(l2MessagesToExecute, "status", "chain", "token");
   logger.debug({
     at: "ArbitrumFinalizer",
