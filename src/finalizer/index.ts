@@ -33,7 +33,7 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
     const tokensBridged = client.getTokensBridged();
     logger.debug({
       at: "Finalizer",
-      message: `Found ${tokensBridged.length} L2 transactions containing token transfers to L1`,
+      message: `Found ${tokensBridged.length} L2 token bridges to L1`,
       chainId,
       txnHashes: tokensBridged.map((x) => x.transactionHash),
       tokens: tokensBridged.map((x) => commonClients.hubPoolClient.getTokenInfo(chainId, x.l2TokenAddress).symbol),
@@ -119,18 +119,18 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
       const isCheckpointed = await Promise.all(
         tokensBridged.map((event) => posClient.exitUtil.isCheckPointed(event.transactionHash))
       );
-      const canExit = await Promise.all(
+      const withdrawExitedOrIsNotCheckpointed = await Promise.all(
         tokensBridged.map((event, i) => {
-          if (!isCheckpointed[i]) return new Promise((resolve) => resolve(false));
+          if (!isCheckpointed[i]) return new Promise((resolve) => resolve(true));
           const l1TokenCounterpart = commonClients.hubPoolClient.getL1TokenCounterpartAtBlock(
             chainId.toString(),
             event.l2TokenAddress,
             commonClients.hubPoolClient.latestBlockNumber
           );
-          return !posClient.erc20(l1TokenCounterpart, true).isWithdrawExited(event.transactionHash);
+          return posClient.erc20(l1TokenCounterpart, true).isWithdrawExited(event.transactionHash);
         })
       );
-      const canWithdraw = tokensBridged.filter((_, i) => canExit[i]);
+      const canWithdraw = tokensBridged.filter((_, i) => !withdrawExitedOrIsNotCheckpointed[i]);
       if (canWithdraw.length === 0)
         logger.debug({
           at: "PolygonFinalizer",
@@ -151,15 +151,14 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
 export async function finalizeL2Transaction(
   logger: winston.Logger,
   event: TokensBridged,
-  l1Signer: Wallet
+  l1Signer: Wallet,
+  logIndex: number
 ): Promise<
   {
     message: L2ToL1MessageWriter;
     proofInfo: any; // MessageBatchProofInfo not exported by arbitrum/sdk so just use type any for now
     status: string;
-    chainId: number;
-    token: string;
-  }[]
+  }
 > {
   logger.debug({
     at: "ArbitrumFinalizer",
@@ -177,11 +176,13 @@ export async function finalizeL2Transaction(
   // any number of outgoing messages; the common case will be there's only one. In the context of Across V2,
   // there should only ever be one.
   const l2ToL1Messages = await l2Receipt.getL2ToL1Messages(l1Signer, await getL2Network(l2Provider));
-  if (l2ToL1Messages.length === 0) {
+  if (l2ToL1Messages.length === 0 || l2ToL1Messages.length-1 < logIndex) {
     const error = new Error(`No outgoing messages found in transaction:${event.transactionHash}`);
     logger.error({
       at: "ArbitrumFinalizer",
       message: "Transaction that emitted TokensBridged event unexpectedly contains 0 L2-to-L1 messages 🤢!",
+      logIndex,
+      l2ToL1Messages: l2ToL1Messages.length,
       txnHash: event.transactionHash,
       error,
       notificationPath: "across-error",
@@ -195,8 +196,8 @@ export async function finalizeL2Transaction(
     throw error;
   }
 
-  const messagesToExecute = [];
-  for (const l2Message of l2ToL1Messages) {
+  const l2Message = l2ToL1Messages[logIndex]
+
     // Now fetch the proof info we'll need in order to execute or check execution status.
     const proofInfo = await l2Message.tryGetProof(l2Provider);
 
@@ -207,13 +208,11 @@ export async function finalizeL2Transaction(
         at: "ArbitrumFinalizer",
         message: "Message already executed, nothing to do.",
       });
-      messagesToExecute.push({
+      return {
         message: l2Message,
         proofInfo: undefined,
         status: L2ToL1MessageStatus[L2ToL1MessageStatus.EXECUTED],
-        chain: event.chainId,
-        token: event.l2TokenAddress,
-      });
+      };
     }
     const outboxMessageExecutionStatus = await l2Message.status(proofInfo);
     if (outboxMessageExecutionStatus !== L2ToL1MessageStatus.CONFIRMED) {
@@ -222,35 +221,36 @@ export async function finalizeL2Transaction(
         message: "Message is unconfirmed, nothing to do.",
         outboxMessageExecutionStatus: L2ToL1MessageStatus[outboxMessageExecutionStatus],
       });
-      messagesToExecute.push({
+      return {
         message: l2Message,
         proofInfo: undefined,
         status: L2ToL1MessageStatus[L2ToL1MessageStatus.UNCONFIRMED],
-        chain: event.chainId,
-        token: event.l2TokenAddress,
-      });
+      };
     }
 
     // Now that its confirmed and not executed, we can use the Merkle proof data to execute our
     // message in its outbox entry.
-    messagesToExecute.push({
+    return {
       message: l2Message,
       proofInfo,
       status: L2ToL1MessageStatus[outboxMessageExecutionStatus],
-      chain: event.chainId,
-      token: event.l2TokenAddress,
-    });
-  }
-  return messagesToExecute;
+    };
 }
 
 export async function getFinalizableMessages(logger: winston.Logger, tokensBridged: TokensBridged[], l1Signer: Wallet) {
-  const l2MessagesToExecute = (
-    await Promise.all(tokensBridged.map((event) => finalizeL2Transaction(logger, event, l1Signer)))
-  ).reduce((result, messages) => {
-    result.push(...messages);
-    return result;
-  }, []);
+  const uniqueTokenhashes = {};
+  const l2MessagesToExecute = []
+  for (const event of tokensBridged) {
+    uniqueTokenhashes[event.transactionHash] = uniqueTokenhashes[event.transactionHash] ?? 0;
+    const logIndex = uniqueTokenhashes[event.transactionHash];
+    uniqueTokenhashes[event.transactionHash] += 1;
+    l2MessagesToExecute.push({
+      ...await finalizeL2Transaction(logger, event, l1Signer, logIndex),
+      chain: event.chainId,
+      token: event.l2TokenAddress
+    });
+  }
+
   const statusesGrouped = groupObjectCountsByThreeProps(l2MessagesToExecute, "status", "chain", "token");
   logger.debug({
     at: "ArbitrumFinalizer",
