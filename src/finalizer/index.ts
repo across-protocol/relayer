@@ -1,5 +1,15 @@
 // NOTE: The "finalizers/" directory structure is just a strawman and is expected to change.
-import { Contract, convertFromWei, delay, groupObjectCountsByThreeProps, Logger, Wallet } from "../utils";
+import {
+  Contract,
+  convertFromWei,
+  delay,
+  ERC20,
+  groupObjectCountsByThreeProps,
+  Logger,
+  Wallet,
+  ethers,
+  toBN,
+} from "../utils";
 import { getProvider, getSigner, winston, PolygonTokenBridger } from "../utils";
 import { constructClients, updateClients, updateSpokePoolClients } from "../common";
 import { L2TransactionReceipt, getL2Network, L2ToL1MessageStatus, L2ToL1MessageWriter } from "@arbitrum/sdk";
@@ -10,7 +20,7 @@ import MaticJs, { setProofApi } from "@maticnetwork/maticjs";
 import { Web3ClientPlugin } from "@maticnetwork/maticjs-ethers";
 
 // How to run:
-// - Set same config you'd need to run dataworker or relayer in terms of L2 node urls
+// - Set same config you'd need to relayer in terms of L2 node urls
 // - ts-node ./src/finalizer/index.ts --wallet mnemonic
 
 export async function run(logger: winston.Logger, config: RelayerConfig): Promise<void> {
@@ -23,66 +33,42 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
   await updateClients(commonClients);
   await updateSpokePoolClients(spokePoolClients);
 
-  // TODO: Load chain ID's from config rather than just hardcoding arbitrum here:
-  const configuredChainIds = [137];
+  // TODO: Load chain ID's from config
+  const configuredChainIds = [137, 42161];
 
   // For each chain, look up any TokensBridged events emitted by SpokePool client that we'll attempt to finalize
   // on L1.
   for (const chainId of configuredChainIds) {
     const client = spokePoolClients[chainId];
     const tokensBridged = client.getTokensBridged();
-    logger.debug({
-      at: "Finalizer",
-      message: `Found ${tokensBridged.length} L2 token bridges to L1`,
-      chainId,
-      txnHashes: tokensBridged.map((x) => x.transactionHash),
-      tokens: tokensBridged.map((x) => commonClients.hubPoolClient.getTokenInfo(chainId, x.l2TokenAddress).symbol),
-      tokenAddresses: tokensBridged.map((x) => x.l2TokenAddress),
-      amountsToReturn: tokensBridged.map((x) =>
-        convertFromWei(
-          x.amountToReturn.toString(),
-          commonClients.hubPoolClient.getTokenInfo(chainId, x.l2TokenAddress).decimals
-        )
-      ),
-    });
-
-    // Example test cases:
-    //   // const tokenBridgedEventHashes = [
-    //   //   "0x1d35b2fd1330ec331c74c9475115361d648f98014929471bdbee9fabe2c0b9da", // 3 USDC bridged on 05/17/22, can't be finalized until 05/24/22
-    //   //   "0x92f9a0115830b037908c58e0ac4ff32619be09b17ceee6a5114c8d62c84c9a54", // 0.003 WETH bridged on 05/17/22, can't be finalized until 05/24/22
-    //   //   "0x884c57cf97897a5c2b1af2c9197d5130961d06ef20e7d8d93265b3338b49d962", // 2.7mil USDC bridged on 05/12/22, finalized in 0x6e44001f4297646db2f7e99d32b72312d0c2bc9f3d6653cd21c129af947987f3
-    //   // ]
-    // const mockTokensBridged: TokensBridged[] = [
-    //   {
-    //     amountToReturn: toBN("3000000"),
-    //     chainId: 42161,
-    //     leafId: 0,
-    //     l2TokenAddress: "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8",
-    //     caller: "0x9a8f92a830a5cb89a3816e3d267cb7791c16b04d",
-    //     transactionHash: "0x1d35b2fd1330ec331c74c9475115361d648f98014929471bdbee9fabe2c0b9da",
-    //   },
-    //   {
-    //     amountToReturn: toBNWei("0.003"),
-    //     chainId: 42161,
-    //     leafId: 0,
-    //     l2TokenAddress: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-    //     caller: "0x9a8f92a830a5cb89a3816e3d267cb7791c16b04d",
-    //     transactionHash: "0x92f9a0115830b037908c58e0ac4ff32619be09b17ceee6a5114c8d62c84c9a54",
-    //   },
-    //   {
-    //     amountToReturn: toBN("2700000000000"),
-    //     chainId: 42161,
-    //     leafId: 0,
-    //     l2TokenAddress: "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8",
-    //     caller: "0x9a8f92a830a5cb89a3816e3d267cb7791c16b04d",
-    //     transactionHash: "0x884c57cf97897a5c2b1af2c9197d5130961d06ef20e7d8d93265b3338b49d962",
-    //   }
-    // ]
 
     if (chainId === 42161) {
       const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner);
       if (finalizableMessages.length > 0) {
+        logger.debug({
+          at: "Finalizer",
+          message: `Found ${finalizableMessages.length} L2 token bridges to L1 that are confirmed and can be finalized`,
+          bridges: finalizableMessages.map((x) => {
+            const copy: any = { ...x.info };
+            const l1TokenCounterpart = commonClients.hubPoolClient.getL1TokenCounterpartAtBlock(
+              x.chain.toString(),
+              x.info.l2TokenAddress,
+              commonClients.hubPoolClient.latestBlockNumber
+            );
+            const l1TokenInfo = commonClients.hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
+            copy.token = l1TokenInfo.symbol;
+            copy.amountToReturn = convertFromWei(copy.amountToReturn.toString(), l1TokenInfo.decimals);
+            delete copy.l2TokenAddress;
+            return copy;
+          }),
+        });
         for (const l2Message of finalizableMessages) {
+          logger.debug({
+            at: "ArbitrumFinalizer",
+            message: "Finalizing message",
+            chain: l2Message.chain,
+            token: l2Message.token,
+          });
           const res = await l2Message.message.execute(l2Message.proofInfo);
           const rec = await res.wait();
           logger.info({
@@ -135,43 +121,70 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
       if (canWithdraw.length === 0)
         logger.debug({
           at: "PolygonFinalizer",
-          message: "No finalizable messages",
+          message: "No finalizable messages, will check for retrievals from token bridge",
         });
-
       for (const event of canWithdraw) {
-        logger.debug({
-          at: "PolygonFinalizer",
-          message: "Finalizable token bridge",
-          event
-        });
         const l1TokenCounterpart = commonClients.hubPoolClient.getL1TokenCounterpartAtBlock(
           chainId.toString(),
           event.l2TokenAddress,
           commonClients.hubPoolClient.latestBlockNumber
         );
-        const result = await posClient.erc20(l1TokenCounterpart, true).withdrawExitFaster(event.transactionHash)
-        const txHash = await result.getTransactionHash();
-        const txReceipt = await result.getReceipt();
+        logger.debug({
+          at: "PolygonFinalizer",
+          message: "Finalizable token bridge, submitting exit transaction",
+          l1TokenCounterpart,
+          event,
+        });
+        const result = await posClient.erc20(l1TokenCounterpart, true).withdrawExitFaster(event.transactionHash);
+        const receipt = await result.getReceipt(); // Wait for confirmation.
         logger.info({
           at: "ArbitrumFinalizer",
-          message: "Executed, now need to retrieve from token bridger!",
-          txHash,
-          txReceipt
+          message: "Executed",
+          receipt,
         });
+      }
 
-        // TODO: Call retrieve on PolygonTokenBridger
-        const mainnetTokenBridger = new Contract(
-          "0x0330e9b4d0325ccff515e81dfbc7754f2a02ac57",
-          PolygonTokenBridger.abi,
-          hubSigner
+      // Batch retrieve any ERC20 in token bridge events from PolygonTokenBridger
+      const mainnetTokenBridger = new Contract(
+        "0x0330e9b4d0325ccff515e81dfbc7754f2a02ac57", // TODO: Read dynamically like we do with spoke pools
+        PolygonTokenBridger.abi,
+        hubSigner
+      );
+      const l1TokensSeen = [];
+      for (const l2Token of tokensBridged.map((e) => e.l2TokenAddress)) {
+        const l1TokenCounterpart = commonClients.hubPoolClient.getL1TokenCounterpartAtBlock(
+          chainId.toString(),
+          l2Token,
+          commonClients.hubPoolClient.latestBlockNumber
         );
-        const retrieveTxn = await mainnetTokenBridger.retrieve(l1TokenCounterpart);
-        logger.info({
-          at: "ArbitrumFinalizer",
-          message: "Retrieved",
-          txHash: retrieveTxn.hash,
-          mainnetTokenBridger: mainnetTokenBridger.address,
-        });
+        if (l1TokensSeen.includes(l1TokenCounterpart)) continue;
+        l1TokensSeen.push(l1TokenCounterpart);
+        const l1TokenInfo = commonClients.hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
+        const l1Token = new Contract(l1TokenCounterpart, ERC20.abi, hubSigner);
+        const balance = await l1Token.balanceOf(mainnetTokenBridger.address);
+        if (balance.eq(toBN(0))) {
+          logger.debug({
+            at: "PolygonFinalizer",
+            message: `No ${l1TokenInfo.symbol} balance to withdraw, skipping`,
+          });
+          continue;
+        } else {
+          logger.debug({
+            at: "PolygonFinalizer",
+            message: `Retrieving ${balance.toString()} ${l1TokenInfo.symbol}`,
+          });
+          const txn = await mainnetTokenBridger.retrieve(l1TokenCounterpart);
+          const receipt = await txn.wait(); // Wait for confirmation.
+          logger.info({
+            at: "PolygonFinalizer",
+            message: `Retrieved ${ethers.utils.formatUnits(balance.toString(), l1TokenInfo.decimals)} ${
+              l1TokenInfo.symbol
+            } from PolygonTokenBridger 🏧!`,
+            transaction: receipt.transactionHash,
+            l1Token: l1TokenCounterpart,
+            amount: balance.toString(),
+          });
+        }
       }
     }
   }
@@ -189,14 +202,6 @@ export async function finalizeL2Transaction(
   proofInfo: any; // MessageBatchProofInfo not exported by arbitrum/sdk so just use type any for now
   status: string;
 }> {
-  logger.debug({
-    at: "ArbitrumFinalizer",
-    message: "Finalizing L2 transaction",
-    chainId: event.chainId,
-    txnHash: event.transactionHash,
-    currency: event.l2TokenAddress,
-    amountToReturn: event.amountToReturn.toString(),
-  });
   const l2Provider = getProvider(event.chainId);
   const receipt = await l2Provider.getTransactionReceipt(event.transactionHash);
   const l2Receipt = new L2TransactionReceipt(receipt);
@@ -233,10 +238,6 @@ export async function finalizeL2Transaction(
   // Check if already executed or unconfirmed (i.e. not yet available to be executed on L1 following dispute
   // window)
   if (await l2Message.hasExecuted(proofInfo)) {
-    logger.debug({
-      at: "ArbitrumFinalizer",
-      message: "Message already executed, nothing to do.",
-    });
     return {
       message: l2Message,
       proofInfo: undefined,
@@ -245,11 +246,6 @@ export async function finalizeL2Transaction(
   }
   const outboxMessageExecutionStatus = await l2Message.status(proofInfo);
   if (outboxMessageExecutionStatus !== L2ToL1MessageStatus.CONFIRMED) {
-    logger.debug({
-      at: "ArbitrumFinalizer",
-      message: "Message is unconfirmed, nothing to do.",
-      outboxMessageExecutionStatus: L2ToL1MessageStatus[outboxMessageExecutionStatus],
-    });
     return {
       message: l2Message,
       proofInfo: undefined,
@@ -278,7 +274,12 @@ export async function getFinalizableMessages(logger: winston.Logger, tokensBridg
   const l2MessagesToExecute = (
     await Promise.all(tokensBridged.map((e, i) => finalizeL2Transaction(logger, e, l1Signer, logIndexesForMessage[i])))
   ).map((result, i) => {
-    return { ...result, chain: tokensBridged[i].chainId, token: tokensBridged[i].l2TokenAddress };
+    return {
+      ...result,
+      chain: tokensBridged[i].chainId,
+      token: tokensBridged[i].l2TokenAddress,
+      info: tokensBridged[i],
+    };
   });
 
   const statusesGrouped = groupObjectCountsByThreeProps(l2MessagesToExecute, "status", "chain", "token");
