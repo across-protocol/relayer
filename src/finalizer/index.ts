@@ -153,13 +153,11 @@ export async function finalizeL2Transaction(
   event: TokensBridged,
   l1Signer: Wallet,
   logIndex: number
-): Promise<
-  {
-    message: L2ToL1MessageWriter;
-    proofInfo: any; // MessageBatchProofInfo not exported by arbitrum/sdk so just use type any for now
-    status: string;
-  }
-> {
+): Promise<{
+  message: L2ToL1MessageWriter;
+  proofInfo: any; // MessageBatchProofInfo not exported by arbitrum/sdk so just use type any for now
+  status: string;
+}> {
   logger.debug({
     at: "ArbitrumFinalizer",
     message: "Finalizing L2 transaction",
@@ -176,7 +174,7 @@ export async function finalizeL2Transaction(
   // any number of outgoing messages; the common case will be there's only one. In the context of Across V2,
   // there should only ever be one.
   const l2ToL1Messages = await l2Receipt.getL2ToL1Messages(l1Signer, await getL2Network(l2Provider));
-  if (l2ToL1Messages.length === 0 || l2ToL1Messages.length-1 < logIndex) {
+  if (l2ToL1Messages.length === 0 || l2ToL1Messages.length - 1 < logIndex) {
     const error = new Error(`No outgoing messages found in transaction:${event.transactionHash}`);
     logger.error({
       at: "ArbitrumFinalizer",
@@ -196,60 +194,61 @@ export async function finalizeL2Transaction(
     throw error;
   }
 
-  const l2Message = l2ToL1Messages[logIndex]
+  const l2Message = l2ToL1Messages[logIndex];
 
-    // Now fetch the proof info we'll need in order to execute or check execution status.
-    const proofInfo = await l2Message.tryGetProof(l2Provider);
+  // Now fetch the proof info we'll need in order to execute or check execution status.
+  const proofInfo = await l2Message.tryGetProof(l2Provider);
 
-    // Check if already executed or unconfirmed (i.e. not yet available to be executed on L1 following dispute
-    // window)
-    if (await l2Message.hasExecuted(proofInfo)) {
-      logger.debug({
-        at: "ArbitrumFinalizer",
-        message: "Message already executed, nothing to do.",
-      });
-      return {
-        message: l2Message,
-        proofInfo: undefined,
-        status: L2ToL1MessageStatus[L2ToL1MessageStatus.EXECUTED],
-      };
-    }
-    const outboxMessageExecutionStatus = await l2Message.status(proofInfo);
-    if (outboxMessageExecutionStatus !== L2ToL1MessageStatus.CONFIRMED) {
-      logger.debug({
-        at: "ArbitrumFinalizer",
-        message: "Message is unconfirmed, nothing to do.",
-        outboxMessageExecutionStatus: L2ToL1MessageStatus[outboxMessageExecutionStatus],
-      });
-      return {
-        message: l2Message,
-        proofInfo: undefined,
-        status: L2ToL1MessageStatus[L2ToL1MessageStatus.UNCONFIRMED],
-      };
-    }
-
-    // Now that its confirmed and not executed, we can use the Merkle proof data to execute our
-    // message in its outbox entry.
+  // Check if already executed or unconfirmed (i.e. not yet available to be executed on L1 following dispute
+  // window)
+  if (await l2Message.hasExecuted(proofInfo)) {
+    logger.debug({
+      at: "ArbitrumFinalizer",
+      message: "Message already executed, nothing to do.",
+    });
     return {
       message: l2Message,
-      proofInfo,
-      status: L2ToL1MessageStatus[outboxMessageExecutionStatus],
+      proofInfo: undefined,
+      status: L2ToL1MessageStatus[L2ToL1MessageStatus.EXECUTED],
     };
+  }
+  const outboxMessageExecutionStatus = await l2Message.status(proofInfo);
+  if (outboxMessageExecutionStatus !== L2ToL1MessageStatus.CONFIRMED) {
+    logger.debug({
+      at: "ArbitrumFinalizer",
+      message: "Message is unconfirmed, nothing to do.",
+      outboxMessageExecutionStatus: L2ToL1MessageStatus[outboxMessageExecutionStatus],
+    });
+    return {
+      message: l2Message,
+      proofInfo: undefined,
+      status: L2ToL1MessageStatus[L2ToL1MessageStatus.UNCONFIRMED],
+    };
+  }
+
+  // Now that its confirmed and not executed, we can use the Merkle proof data to execute our
+  // message in its outbox entry.
+  return {
+    message: l2Message,
+    proofInfo,
+    status: L2ToL1MessageStatus[outboxMessageExecutionStatus],
+  };
 }
 
 export async function getFinalizableMessages(logger: winston.Logger, tokensBridged: TokensBridged[], l1Signer: Wallet) {
   const uniqueTokenhashes = {};
-  const l2MessagesToExecute = []
+  const logIndexesForMessage = [];
   for (const event of tokensBridged) {
     uniqueTokenhashes[event.transactionHash] = uniqueTokenhashes[event.transactionHash] ?? 0;
     const logIndex = uniqueTokenhashes[event.transactionHash];
+    logIndexesForMessage.push(logIndex);
     uniqueTokenhashes[event.transactionHash] += 1;
-    l2MessagesToExecute.push({
-      ...await finalizeL2Transaction(logger, event, l1Signer, logIndex),
-      chain: event.chainId,
-      token: event.l2TokenAddress
-    });
   }
+  const l2MessagesToExecute = (
+    await Promise.all(tokensBridged.map((e, i) => finalizeL2Transaction(logger, e, l1Signer, logIndexesForMessage[i])))
+  ).map((result, i) => {
+    return { ...result, chain: tokensBridged[i].chainId, token: tokensBridged[i].l2TokenAddress };
+  });
 
   const statusesGrouped = groupObjectCountsByThreeProps(l2MessagesToExecute, "status", "chain", "token");
   logger.debug({
