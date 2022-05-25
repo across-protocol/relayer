@@ -30,6 +30,8 @@ export async function run(
     const client = spokePoolClients[chainId];
     const tokensBridged = client.getTokensBridged();
 
+    // TODO: Refactor following code to produce list of transaction call data we can submit together in a single
+    // batch to a DS proxy or multi call contract.
     if (chainId === 42161) {
       logger.debug({
         at: "ArbitrumFinalizer",
