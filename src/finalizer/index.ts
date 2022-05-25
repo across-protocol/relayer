@@ -1,6 +1,6 @@
 // NOTE: The "finalizers/" directory structure is just a strawman and is expected to change.
-import { convertFromWei, delay, groupObjectCountsByThreeProps, Logger, Wallet } from "../utils";
-import { getProvider, getSigner, winston } from "../utils";
+import { Contract, convertFromWei, delay, groupObjectCountsByThreeProps, Logger, Wallet } from "../utils";
+import { getProvider, getSigner, winston, PolygonTokenBridger } from "../utils";
 import { constructClients, updateClients, updateSpokePoolClients } from "../common";
 import { L2TransactionReceipt, getL2Network, L2ToL1MessageStatus, L2ToL1MessageWriter } from "@arbitrum/sdk";
 import { RelayerConfig } from "../relayer/RelayerConfig";
@@ -24,7 +24,7 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
   await updateSpokePoolClients(spokePoolClients);
 
   // TODO: Load chain ID's from config rather than just hardcoding arbitrum here:
-  const configuredChainIds = [137, 42161];
+  const configuredChainIds = [137];
 
   // For each chain, look up any TokensBridged events emitted by SpokePool client that we'll attempt to finalize
   // on L1.
@@ -137,11 +137,41 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
           message: "No finalizable messages",
         });
 
-      canWithdraw.forEach((e) => {
-        console.log(`Can finalize ${e.transactionHash} at https://withdraw.polygon.technology/`);
-      });
+      for (const event of canWithdraw) {
+        logger.debug({
+          at: "PolygonFinalizer",
+          message: "Finalizable token bridge",
+          event
+        });
+        const l1TokenCounterpart = commonClients.hubPoolClient.getL1TokenCounterpartAtBlock(
+          chainId.toString(),
+          event.l2TokenAddress,
+          commonClients.hubPoolClient.latestBlockNumber
+        );
+        const result = await posClient.erc20(l1TokenCounterpart, true).withdrawExitFaster(event.transactionHash)
+        const txHash = await result.getTransactionHash();
+        const txReceipt = await result.getReceipt();
+        logger.info({
+          at: "ArbitrumFinalizer",
+          message: "Executed, now need to retrieve from token bridger!",
+          txHash,
+          txReceipt
+        });
 
-      // TODO: Call retrieve on PolygonTokenBridger
+        // TODO: Call retrieve on PolygonTokenBridger
+        const mainnetTokenBridger = new Contract(
+          "0x0330e9b4d0325ccff515e81dfbc7754f2a02ac57",
+          PolygonTokenBridger.abi,
+          hubSigner
+        );
+        const retrieveTxn = await mainnetTokenBridger.retrieve(l1TokenCounterpart);
+        logger.info({
+          at: "ArbitrumFinalizer",
+          message: "Retrieved",
+          txHash: retrieveTxn.hash,
+          mainnetTokenBridger: mainnetTokenBridger.address,
+        });
+      }
     }
   }
 }
