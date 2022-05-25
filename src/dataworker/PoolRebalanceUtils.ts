@@ -147,8 +147,7 @@ export function computePoolRebalanceUsdVolume(leaves: PoolRebalanceLeaf[], clien
   return leaves.reduce((result: BigNumber, poolRebalanceLeaf) => {
     return poolRebalanceLeaf.l1Tokens.reduce((sum: BigNumber, l1Token: string, index: number) => {
       const netSendAmount = poolRebalanceLeaf.netSendAmounts[index];
-      const runningBalance = poolRebalanceLeaf.runningBalances[index];
-      const volume = netSendAmount.abs().add(runningBalance.abs());
+      const volume = netSendAmount.abs();
       const tokenPriceInUsd = clients.profitClient.getPriceOfToken(l1Token);
       const volumeInUsd = volume.mul(tokenPriceInUsd).div(toBNWei(1));
       const l1TokenInfo = clients.hubPoolClient.getTokenInfoForL1Token(l1Token);
