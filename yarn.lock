@@ -402,7 +402,7 @@
   dependencies:
     node-fetch "^2.6.1"
 
-"@eth-optimism/sdk@^1.1.4":
+"@eth-optimism/sdk@^1.1.4", "@eth-optimism/sdk@^1.1.5":
   version "1.1.5"
   resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-1.1.5.tgz#403e931a8b78cacbabe795612a0839930099868a"
   integrity sha512-Lxkc2QAF2W1XWBl7c4dEwGP8l88THowZ9knc4omJCEmRUIIHUiS28dllFDM5kS/r52xPTzlQnF5uWzvlin3Shg==

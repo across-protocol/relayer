@@ -1,4 +1,11 @@
-import { getProvider, groupObjectCountsByThreeProps, Wallet, winston, convertFromWei } from "../../utils";
+import {
+  getProvider,
+  groupObjectCountsByThreeProps,
+  Wallet,
+  winston,
+  convertFromWei,
+  groupObjectCountsByTwoProps,
+} from "../../utils";
 import { L2ToL1MessageWriter, L2ToL1MessageStatus, L2TransactionReceipt, getL2Network } from "@arbitrum/sdk";
 import { MessageBatchProofInfo } from "@arbitrum/sdk/dist/lib/message/L2ToL1Message";
 import { TokensBridged } from "../../interfaces";
@@ -31,7 +38,7 @@ export async function getFinalizableMessages(
   hubPoolClient: HubPoolClient
 ) {
   const allMessagesWithStatuses = await getAllMessageStatuses(tokensBridged, logger, l1Signer);
-  const statusesGrouped = groupObjectCountsByThreeProps(allMessagesWithStatuses, "status", "chain", "token");
+  const statusesGrouped = groupObjectCountsByTwoProps(allMessagesWithStatuses, "status", (message) => message["token"]);
   logger.debug({
     at: "ArbitrumFinalizer",
     message: "Queried outbox statuses for messages",
@@ -47,7 +54,7 @@ export async function getFinalizableMessages(
       bridges: finalizableMessages.map((x) => {
         const copy: any = { ...x.info };
         const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-          x.chain.toString(),
+          "42161",
           x.info.l2TokenAddress,
           hubPoolClient.latestBlockNumber
         );
@@ -88,7 +95,6 @@ export async function getAllMessageStatuses(
   ).map((result, i) => {
     return {
       ...result,
-      chain: tokensBridged[i].chainId,
       token: tokensBridged[i].l2TokenAddress,
       info: tokensBridged[i],
     };
