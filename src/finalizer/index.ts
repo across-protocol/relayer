@@ -6,7 +6,7 @@ import { L2TransactionReceipt, getL2Network, L2ToL1MessageStatus, L2ToL1MessageW
 import { RelayerConfig } from "../relayer/RelayerConfig";
 import { constructSpokePoolClientsWithLookback } from "../relayer/RelayerClientHelper";
 import { TokensBridged } from "../interfaces";
-import MaticJs from "@maticnetwork/maticjs";
+import MaticJs, { setProofApi } from "@maticnetwork/maticjs";
 import { Web3ClientPlugin } from "@maticnetwork/maticjs-ethers";
 
 // How to run:
@@ -99,6 +99,7 @@ export async function run(logger: winston.Logger, config: RelayerConfig): Promis
     } else if (chainId === 137) {
       // Following from https://maticnetwork.github.io/matic.js/docs/pos
       MaticJs.use(Web3ClientPlugin);
+      setProofApi("https://apis.matic.network/");
       const posClient = new MaticJs.POSClient();
       await posClient.init({
         network: "mainnet",
