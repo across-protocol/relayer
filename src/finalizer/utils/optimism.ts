@@ -49,9 +49,9 @@ export async function getCrossChainMessages(
 }
 
 export interface CrossChainMessageStatus {
-    status: string;
-    message: optimismSDK.MessageLike;
-    token: string;
+  status: string;
+  message: optimismSDK.MessageLike;
+  token: string;
 }
 export async function getMessageStatuses(
   crossChainMessages: { message: optimismSDK.MessageLike; tokenInfo: any }[],
