@@ -1,6 +1,6 @@
 import { BigNumber, winston, toBNWei, toBN, EventSearchConfig, assign } from "../../utils";
 import { HubPoolClient, TokenClient } from "..";
-import { InventorySettings } from "../../interfaces";
+import { InventoryConfig } from "../../interfaces";
 import { SpokePoolClient } from "../";
 import { AdapterManager } from "./AdapterManager";
 
@@ -13,7 +13,7 @@ export class InventoryClient {
 
   constructor(
     readonly logger: winston.Logger,
-    readonly inventorySettings: InventorySettings,
+    readonly inventoryConfig: InventoryConfig,
     readonly tokenClient: TokenClient,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient,
@@ -54,12 +54,12 @@ export class InventoryClient {
   }
 
   getEnabledChains(): number[] {
-    return [10, 288, 42161];
+    return [10, 137, 288, 42161];
     // return Object.keys(this.spokePoolClients).map((chainId) => parseInt(chainId));
   }
 
   getL1Tokens(): string[] {
-    return this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address);
+    return this.inventoryConfig.managedL1Tokens || this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address);
   }
 
   async rebalanceInventoryIfNeeded() {
@@ -70,14 +70,18 @@ export class InventoryClient {
     await this.update();
 
     console.log("SEND");
-    const tx = await this.adapterManager.sendTokenCrossChain(
-      288,
-      "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-      toBN(690000)
-    );
     await this.adapterManager.checkTokenApprovals(this.getL1Tokens());
+    const tokens = ["0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599"];
+    const chainIds = [137, 288, 42161];
+    for (const token of tokens) {
+      for (const chainId of chainIds) {
+        console.log("SENDING", token, chainId);
+        const tx = await this.adapterManager.sendTokenCrossChain(chainId, token, toBN(1));
+        console.log("https://etherscan.io/tx/" + tx.transactionHash);
+      }
+    }
+
     // const tx = this.adapterManager.wrapEthIfAboveThreshold();
-    console.log(tx);
   }
   async update() {
     this.logger.debug({ at: "InventoryClient", message: "Updating client", monitoredChains: this.getEnabledChains() });

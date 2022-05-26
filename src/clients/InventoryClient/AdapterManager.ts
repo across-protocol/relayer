@@ -1,12 +1,11 @@
 import { BigNumber, winston, toWei, toBN, assign } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
-import { OptimismAdapter, ArbitrumAdapter } from "./";
-import * as PolygonAdapter from "./PolygonAdapter";
-
+import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter } from "./";
 export class AdapterManager {
   private optimismAdapter: OptimismAdapter;
   private bobaAdapter: OptimismAdapter;
   private arbitrumAdapter: ArbitrumAdapter;
+  private polygonAdapter: PolygonAdapter;
 
   constructor(
     readonly logger: winston.Logger,
@@ -17,6 +16,7 @@ export class AdapterManager {
     this.optimismAdapter = new OptimismAdapter(logger, spokePoolClients, relayerAddress, true);
     this.bobaAdapter = new OptimismAdapter(logger, spokePoolClients, relayerAddress, false);
     this.arbitrumAdapter = new ArbitrumAdapter(logger, spokePoolClients, relayerAddress);
+    this.polygonAdapter = new PolygonAdapter(logger, spokePoolClients, relayerAddress);
   }
 
   async getOutstandingCrossChainTokenTransferAmount(
@@ -24,24 +24,15 @@ export class AdapterManager {
     l1Tokens: string[]
   ): Promise<{ [l1Token: string]: BigNumber }> {
     this.logger.debug({ at: "AdapterManager", message: "Getting outstandingCrossChainTransfers", chainId, l1Tokens });
-
-    // Note the call below is SEQUENTIAL AND BLOCKING. This is by design. if you fire off multiple calls to the same
-    // chain looking for each cross-chain transfer for a given token the providers start getting unhappy and throwing
-    // timeout errors. This is not simple to paginate within the EventUtils as there are multiple inbound calls to
-    // the even processing logic all happening at a similar time. Not that inbound calls to this method CAN happen
-    // in parallel as these queries are going to separate chains and so there is no node overloading.
     switch (chainId) {
       case 10:
         return await this.optimismAdapter.getOutstandingCrossChainTransfers(l1Tokens);
       case 137:
-        // outstandingTransfers = await this.getOutstandingPolygonTransfers(l1Tokens);
-        break;
+        return await this.polygonAdapter.getOutstandingCrossChainTransfers(l1Tokens);
       case 288:
         return await this.bobaAdapter.getOutstandingCrossChainTransfers(l1Tokens);
       case 42161:
         return await this.arbitrumAdapter.getOutstandingCrossChainTransfers(l1Tokens);
-      default:
-        break;
     }
   }
 
@@ -50,12 +41,16 @@ export class AdapterManager {
     let tx;
     switch (chainId) {
       case 10:
-        tx = await this.optimismAdapter.sendTokenToTargetChain(l1Token, this.getL2TokenForL1Token(l1Token, 10), amount);
+        tx = await this.optimismAdapter.sendTokenToTargetChain(l1Token, this.l2TokenForL1Token(l1Token, 10), amount);
+        break;
+      case 137:
+        tx = await this.polygonAdapter.sendTokenToTargetChain(l1Token, this.l2TokenForL1Token(l1Token, 137), amount);
         break;
       case 288:
-        tx = await this.bobaAdapter.sendTokenToTargetChain(l1Token, this.getL2TokenForL1Token(l1Token, 10), amount);
-
-      default:
+        tx = await this.bobaAdapter.sendTokenToTargetChain(l1Token, this.l2TokenForL1Token(l1Token, 288), amount);
+        break;
+      case 42161:
+        tx = await this.arbitrumAdapter.sendTokenToTargetChain(l1Token, this.l2TokenForL1Token(l1Token, 42161), amount);
         break;
     }
     return await tx.wait();
@@ -84,9 +79,21 @@ export class AdapterManager {
     return this.spokePoolClients[chainId].eventSearchConfig;
   }
 
-  getL2TokenForL1Token(l1Token: string, chainId: number): string {
-    console.log("getL1TokensToDestinationTokens", this.hubPoolClient.getL1TokensToDestinationTokens());
-    return this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId);
+  l2TokenForL1Token(l1Token: string, chainId: number): string {
+    // the try catch below is a safety hatch. If you try fetch an L2 token that is not within the hubPoolClient for a
+    // given L1Token and chainId combo then you are likely trying to send a token to a chain that does not support it.
+    try {
+      return this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId);
+    } catch (error) {
+      this.logger.error({
+        at: "AdapterManager",
+        message: "Implementor atempted to get an l2 token address for an L1 token that does not exist in the routings!",
+        l1Token,
+        chainId,
+        error,
+      });
+      throw error;
+    }
   }
 
   getAdapterConstructors(
@@ -128,10 +135,15 @@ export class AdapterManager {
   async checkTokenApprovals(l1Tokens: string[]) {
     console.log("Checking approvals");
     await Promise.all([
-      this.optimismAdapter.checkTokenApprovals(l1Tokens),
-      this.bobaAdapter.checkTokenApprovals(l1Tokens),
-      this.arbitrumAdapter.checkTokenApprovals(l1Tokens),
+      this.optimismAdapter.checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 10))),
+      this.polygonAdapter.checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 137))),
+      this.bobaAdapter.checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 288))),
+      this.arbitrumAdapter.checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 42161))),
     ]);
+  }
+
+  l2TokenExistForL1Token(l1Token: string, l2ChainId: number): boolean {
+    return this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, l2ChainId);
   }
 
   async update() {}

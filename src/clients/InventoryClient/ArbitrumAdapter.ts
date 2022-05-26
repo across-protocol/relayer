@@ -3,8 +3,9 @@ import { toBN, toWei, Event, winston, paginatedEventQuery, Promise } from "../..
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
 import { arbitrumL2Erc20GatewayInterface, arbitrumL1Erc20GatewayInterface } from "./ContractInterfaces";
+import { InventoryConfig } from "../../interfaces";
 
-const l1GatewayAddresses = {
+const l1Gateways = {
   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "0xcEe284F754E854890e311e3280b767F80797180d", // USDC
   "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "0xd92023E9d9911199a6711321D1277285e6d4e2db", // WETH
   "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0xd3b5b60020504bc3489d6949d545893982ba3011", // DAI
@@ -13,9 +14,9 @@ const l1GatewayAddresses = {
 
 const l1GatewayRouter = "0x72ce9c846789fdb6fc1f34ac4ad25dd9ef7031ef";
 
-const firstBlockToSearch = 12640865;
+const firstL1BlockToSearch = 12640865;
 
-const l2GatewayAddresses = {
+const l2Gateways = {
   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "0x096760F208390250649E3e8763348E783AEF5562", // USDC
   "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "0x6c411aD3E74De3E7Bd422b94A27770f5B86C623B", // WETH
   "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0x467194771dae2967aef3ecbedd3bf9a310c76c65", // DAI
@@ -37,18 +38,15 @@ export class ArbitrumAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly relayerAddress: string
   ) {
-    super(spokePoolClients);
-    this.chainId = 42161;
-    this.l1SearchConfig = { ...this.getSearchConfig(1), fromBlock: firstBlockToSearch };
-    this.l2SearchConfig = { ...this.getSearchConfig(this.chainId), fromBlock: 0 };
+    super(spokePoolClients, 42161, firstL1BlockToSearch);
   }
   async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
     await this.updateFromBlockSearchConfig();
-    this.logger.debug({ at: "ArbitrumAdapter", message: "Fetching outstanding transfers", l1Tokens });
+    this.log("Fetching outstanding transfers", { l1Tokens });
 
     let promises = [];
     for (const l1Token of l1Tokens) {
-      if (l1GatewayAddresses[l1Token] === undefined || l2GatewayAddresses[l1Token] === null) continue;
+      if (l1Gateways[l1Token] === undefined || l2Gateways[l1Token] === null) continue;
 
       const l1Bridge = this.getL1Bridge(l1Token);
       const l2Bridge = this.getL2Bridge(l1Token);
@@ -59,7 +57,7 @@ export class ArbitrumAdapter extends BaseAdapter {
       );
     }
 
-    const results = await Promise.all(promises, { concurrency: 1 });
+    const results = await Promise.all(promises, { concurrency: 4 });
     results.forEach((result, index) => {
       const l1Token = l1Tokens[Math.floor(index / 2)];
       const storageName = index % 2 === 0 ? "l1DepositInitiatedEvents" : "l2DepositFinalizedEvents";
@@ -69,16 +67,19 @@ export class ArbitrumAdapter extends BaseAdapter {
     let outstandingTransfers = {};
     for (const l1Token of l1Tokens) {
       const totalDepositsInitiated = this.l1DepositInitiatedEvents[l1Token]
-        .filter((event: any) => event?.args?.l1Token.toLowerCase() == l1Token.toLowerCase())
-        .map((event: Event) => event.args._amount)
-        .reduce((acc, curr) => acc.add(curr), toBN(0));
+        ? this.l1DepositInitiatedEvents[l1Token]
+            .filter((event: any) => event?.args?.l1Token.toLowerCase() == l1Token.toLowerCase())
+            .map((event: Event) => event.args._amount)
+            .reduce((acc, curr) => acc.add(curr), toBN(0))
+        : toBN(0);
 
       const totalDepositsFinalized = this.l2DepositFinalizedEvents[l1Token]
-        .filter((event: any) => event?.args?.l1Token.toLowerCase() == l1Token.toLowerCase())
-        .map((event: Event) => event.args.amount)
-        .reduce((acc, curr) => acc.add(curr), toBN(0));
+        ? this.l2DepositFinalizedEvents[l1Token]
+            .filter((event: any) => event?.args?.l1Token.toLowerCase() == l1Token.toLowerCase())
+            .map((event: Event) => event.args.amount)
+            .reduce((acc, curr) => acc.add(curr), toBN(0))
+        : toBN(0);
       outstandingTransfers[l1Token] = totalDepositsInitiated.sub(totalDepositsFinalized);
-      console.log("Aribtrum totals", l1Token, totalDepositsInitiated.toString(), totalDepositsFinalized.toString());
     }
 
     return outstandingTransfers;
@@ -86,26 +87,37 @@ export class ArbitrumAdapter extends BaseAdapter {
 
   async checkTokenApprovals(l1Tokens: string[]) {
     // Note we send the approvals to the L1 Bridge but actually send outbound transfers to the L1 Gateway Router.
-    const associatedL1Bridges = l1Tokens.map((l1Token) => this.getL1Bridge(l1Token).address);
+    // Note that if the token trying to be approved is not configured in this client (i.e. not in the l1Gateways object)
+    // then this will pass null into the checkAndSendTokenApprovals. This method gracefully deals with this case.
+    const associatedL1Bridges = l1Tokens.map((l1Token) => this.getL1Bridge(l1Token)?.address);
     await this.checkAndSendTokenApprovals(l1Tokens, associatedL1Bridges);
   }
 
   async sendTokenToTargetChain(l1Token, l2Token, amount) {
-    this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
+    this.log("Bridging tokens", { l1Token, l2Token, amount });
     const args = [l1Token, this.relayerAddress, amount, l2GasLimit, l2GasPrice, transactionSubmissionData];
-    const tx = await runTransaction(this.logger, this.getL1GatewayRouter(), "outboundTransfer", args, l1SubmitValue);
-    return await tx.wait();
+    return await runTransaction(this.logger, this.getL1GatewayRouter(), "outboundTransfer", args, l1SubmitValue);
   }
 
   getL1Bridge(l1Token: string) {
-    return new Contract(l1GatewayAddresses[l1Token], arbitrumL1Erc20GatewayInterface, this.getProvider(1));
+    try {
+      return new Contract(l1Gateways[l1Token], arbitrumL1Erc20GatewayInterface, this.getSigner(1));
+    } catch (error) {
+      this.log("Could not construct l1Bridge. Likely misconfiguration", { l1Token, error, l1Gateways }, "error");
+      return null;
+    }
   }
 
   getL1GatewayRouter() {
-    return new Contract(l1GatewayRouter, arbitrumL1Erc20GatewayInterface, this.getProvider(1));
+    return new Contract(l1GatewayRouter, arbitrumL1Erc20GatewayInterface, this.getSigner(1));
   }
 
   getL2Bridge(l1Token: string) {
-    return new Contract(l2GatewayAddresses[l1Token], arbitrumL2Erc20GatewayInterface, this.getProvider(this.chainId));
+    try {
+      return new Contract(l2Gateways[l1Token], arbitrumL2Erc20GatewayInterface, this.getSigner(this.chainId));
+    } catch (error) {
+      this.log("Could not construct l2Bridge. Likely misconfiguration", { l1Token, error, l2Gateways }, "error");
+      return null;
+    }
   }
 }

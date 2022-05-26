@@ -2,6 +2,7 @@ import { Contract, BigNumber, toBN, Event, ZERO_ADDRESS, paginatedEventQuery, ru
 import { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL, assign, Promise, ERC20, etherscanLink, getNetworkName } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { weth9Abi, optimismL1BridgeInterface, optimismL2BridgeInterface } from "./ContractInterfaces";
+import { InventoryConfig } from "../../interfaces";
 
 import { BaseAdapter } from "./BaseAdapter";
 
@@ -32,10 +33,7 @@ export class OptimismAdapter extends BaseAdapter {
     readonly relayerAddress: string,
     readonly isOptimism: boolean
   ) {
-    super(spokePoolClients);
-    this.chainId = isOptimism ? 10 : 288;
-    this.l1SearchConfig = { ...this.getSearchConfig(1), fromBlock: isOptimism ? firstL1BlockOvm : firstL1BlockBoba };
-    this.l2SearchConfig = { ...this.getSearchConfig(this.chainId), fromBlock: 0 };
+    super(spokePoolClients, isOptimism ? 10 : 288, isOptimism ? firstL1BlockOvm : firstL1BlockBoba);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
@@ -57,7 +55,7 @@ export class OptimismAdapter extends BaseAdapter {
       );
     }
 
-    const results = await Promise.all(promises, { concurrency: 1 });
+    const results = await Promise.all(promises, { concurrency: 4 });
     results.forEach((result, index) => {
       const l1Token = l1Tokens[Math.floor(index / 2)];
       const storageName = index % 2 === 0 ? "l1DepositInitiatedEvents" : "l2DepositFinalizedEvents";
@@ -67,12 +65,16 @@ export class OptimismAdapter extends BaseAdapter {
     let outstandingTransfers = {};
     for (const l1Token of l1Tokens) {
       const totalDepositsInitiated = this.l1DepositInitiatedEvents[l1Token]
-        .map((event: Event) => event.args._amount)
-        .reduce((acc, curr) => acc.add(curr), toBN(0));
+        ? this.l1DepositInitiatedEvents[l1Token]
+            .map((event: Event) => event.args._amount)
+            .reduce((acc, curr) => acc.add(curr), toBN(0))
+        : toBN(0);
 
       const totalDepositsFinalized = this.l2DepositFinalizedEvents[l1Token]
-        .map((event: Event) => event.args._amount)
-        .reduce((acc, curr) => acc.add(curr), toBN(0));
+        ? this.l2DepositFinalizedEvents[l1Token]
+            .map((event: Event) => event.args._amount)
+            .reduce((acc, curr) => acc.add(curr), toBN(0))
+        : toBN(0);
 
       outstandingTransfers[l1Token] = totalDepositsInitiated.sub(totalDepositsFinalized);
     }
@@ -124,7 +126,7 @@ export class OptimismAdapter extends BaseAdapter {
         ? customL1BridgeAddresses[l1Token]
         : l1StandardBridgeAddressOvm
       : l1StandardBridgeAddressBoba;
-    return new Contract(l1BridgeAddress, optimismL1BridgeInterface, this.getProvider(1));
+    return new Contract(l1BridgeAddress, optimismL1BridgeInterface, this.getSigner(1));
   }
 
   getL2Bridge(l1Token: string) {
@@ -133,10 +135,6 @@ export class OptimismAdapter extends BaseAdapter {
         ? customOvmBridgeAddresses[l1Token]
         : ovmL2StandardBridgeAddress
       : ovmL2StandardBridgeAddress;
-    return new Contract(l2BridgeAddress, optimismL2BridgeInterface, this.getProvider(this.chainId));
-  }
-
-  isWeth(l1Token: string) {
-    return l1Token == "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+    return new Contract(l2BridgeAddress, optimismL2BridgeInterface, this.getSigner(this.chainId));
   }
 }

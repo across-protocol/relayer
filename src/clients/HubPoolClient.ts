@@ -108,6 +108,10 @@ export class HubPoolClient {
     return this.l1TokensToDestinationTokens[l1Token][destinationChainId];
   }
 
+  l2TokenEnabledForL1Token(l1Token: string, destinationChainId: number) {
+    return this.l1TokensToDestinationTokens[l1Token][destinationChainId] != undefined;
+  }
+
   async getCurrentPoolUtilization(l1Token: string) {
     return await this.hubPool.callStatic.liquidityUtilizationCurrent(l1Token);
   }
@@ -269,7 +273,7 @@ export class HubPoolClient {
 
     const [
       poolRebalanceRouteEvents,
-      l1TokensLPEvents,
+      l1TokensLpEvents,
       proposeRootBundleEvents,
       executedRootBundleEvents,
       crossChainContractsSetEvents,
@@ -322,8 +326,11 @@ export class HubPoolClient {
 
     // For each enabled Lp token fetch the token symbol and decimals from the token contract. Note this logic will
     // only run iff a new token has been enabled. Will only append iff the info is not there already.
+    // Filter out any duplicate addresses. This might happen due to enabling, disabling and re-enabling a token.
     const tokenInfo: L1Token[] = await Promise.all(
-      l1TokensLPEvents.map((event) => this.fetchTokenInfoFromContract(spreadEvent(event).l1Token))
+      [...new Set(l1TokensLpEvents.map((event) => spreadEvent(event).l1Token))].map((l1Token: string) =>
+        this.fetchTokenInfoFromContract(l1Token)
+      )
     );
     for (const info of tokenInfo) if (!this.l1Tokens.includes(info)) this.l1Tokens.push(info);
 

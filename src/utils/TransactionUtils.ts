@@ -1,5 +1,15 @@
 import { AugmentedTransaction } from "../clients";
-import { winston, Contract, getContractInfoFromAddress, fetch, ethers, toBNWei, BigNumber, toBN } from "../utils";
+import {
+  winston,
+  Contract,
+  getContractInfoFromAddress,
+  fetch,
+  ethers,
+  toBNWei,
+  BigNumber,
+  toBN,
+  toGWei,
+} from "../utils";
 
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
 // of this method should be considerate of this and catch the response to deal with the error accordingly.
@@ -12,7 +22,7 @@ export async function runTransaction(
 ) {
   try {
     const gas = await getGasPrice(contract.provider);
-    logger.debug({ at: "TxUtil", message: "sending tx", target: getTarget(contract.address), method, args, gas });
+    logger.debug({ at: "TxUtil", message: "Send tx", target: getTarget(contract.address), method, args, value, gas });
     return await contract[method](...args, { ...gas, value });
   } catch (error) {
     logger.error({ at: "TxUtil", message: "Error executing tx", error, notificationPath: "across-error" });
@@ -30,8 +40,8 @@ export async function getGasPrice(provider: ethers.providers.Provider, priorityS
     // Polygon, for some or other reason, does not correctly return an appropriate maxPriorityFeePerGas. Set the
     // maxPriorityFeePerGas to the maxFeePerGas * 5 for now as a temp workaround.
     if (chainInfo.chainId === 137)
-      feeData.maxPriorityFeePerGas = ethers.utils.parseUnits((await getPolygonPriorityFee()).fastest.toString(), 9);
-    if (feeData.maxPriorityFeePerGas > feeData.maxFeePerGas)
+      feeData.maxPriorityFeePerGas = toGWei((await getPolygonPriorityFee()).fastest.toString());
+    if (feeData.maxPriorityFeePerGas.gt(feeData.maxFeePerGas))
       feeData.maxFeePerGas = scaleByNumber(feeData.maxPriorityFeePerGas, 1.5);
     return {
       maxFeePerGas: scaleByNumber(feeData.maxFeePerGas, priorityScaler * maxFeePerGasScaler), // scale up the maxFeePerGas. Any extra paid on this is refunded.

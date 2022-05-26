@@ -1,6 +1,7 @@
 import { SpokePoolClient } from "../../clients";
 import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20 } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
+import { InventoryConfig } from "../../interfaces";
 export class BaseAdapter {
   chainId: number;
   l1SearchConfig;
@@ -10,7 +11,15 @@ export class BaseAdapter {
 
   l1DepositInitiatedEvents: { [l1Token: string]: any[] } = {};
   l2DepositFinalizedEvents: { [l1Token: string]: any[] } = {};
-  constructor(readonly spokePoolClients: { [chainId: number]: SpokePoolClient }) {}
+  constructor(
+    readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
+    _chainId: number,
+    readonly l1FromBlock: number
+  ) {
+    this.chainId = _chainId;
+    this.l1SearchConfig = { ...this.getSearchConfig(1), fromBlock: l1FromBlock };
+    this.l2SearchConfig = { ...this.getSearchConfig(this.chainId), fromBlock: 0 };
+  }
 
   getSigner(chainId: number) {
     return this.spokePoolClients[chainId].spokePool.signer;
@@ -39,18 +48,23 @@ export class BaseAdapter {
     const tokensToApprove: { l1Token: any; targetContract: string }[] = [];
     const l1TokenContracts = l1Tokens.map((l1Token) => new Contract(l1Token, ERC20.abi, this.getSigner(1)));
     const allowances = await Promise.all(
-      l1TokenContracts.map((l1TokenContract, index) =>
-        l1TokenContract.allowance(this.relayerAddress, associatedL1Bridges[index])
-      )
+      l1TokenContracts.map((l1TokenContract, index) => {
+        // If there is not both a l1TokenContract and associatedL1Bridges[index] then return a number that wont send
+        // an approval transaction. For example not every chain has a bridge contract for every token. In this case
+        // we clearly dont want to send any approval transactions.
+        if (l1TokenContract && associatedL1Bridges[index])
+          return l1TokenContract.allowance(this.relayerAddress, associatedL1Bridges[index]);
+        else return null;
+      })
     );
 
     allowances.forEach((allowance, index) => {
-      if (allowance.lt(toBN(MAX_SAFE_ALLOWANCE)))
+      if (allowance && allowance.lt(toBN(MAX_SAFE_ALLOWANCE)))
         tokensToApprove.push({ l1Token: l1TokenContracts[index], targetContract: associatedL1Bridges[index] });
     });
 
     if (tokensToApprove.length == 0) {
-      this.log("No Approvals needed", l1Tokens);
+      this.log("No token bridge approvals needed", { l1Tokens });
       return;
     }
 
@@ -72,5 +86,9 @@ export class BaseAdapter {
 
   getName() {
     return `${getNetworkName(this.chainId)}Adapter`;
+  }
+
+  isWeth(l1Token: string) {
+    return l1Token == "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
   }
 }

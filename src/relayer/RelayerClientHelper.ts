@@ -76,7 +76,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
 
   const inventoryClient = new InventoryClient(
     logger,
-    config.inventorySettings,
+    config.inventoryConfig,
     tokenClient,
     spokePoolClients,
     commonClients.hubPoolClient,
