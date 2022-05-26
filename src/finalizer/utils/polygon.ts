@@ -69,7 +69,7 @@ export async function finalizePolygon(
   const result = await posClient.erc20(l1TokenCounterpart, true).withdrawExitFaster(event.transactionHash);
   const receipt = await result.getReceipt(); // Wait for confirmation.
   logger.info({
-    at: "ArbitrumFinalizer",
+    at: "PolygonFinalizer",
     message: "Executed",
     receipt,
   });
@@ -90,7 +90,11 @@ export async function retrieveTokenFromMainnetTokenBridger(
   const token = new Contract(l1Token, ERC20.abi, mainnetSigner);
   const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1Token);
   const balance = await token.balanceOf(mainnetTokenBridger.address);
-  if (balance.eq(toBN(0))) {
+
+  // WETH is sent to token bridger contract as ETH.
+  const ethBalance = await mainnetTokenBridger.provider.getBalance(mainnetTokenBridger.address)
+  const balanceToRetrieve = l1TokenInfo.symbol === "WETH" ? ethBalance : balance;
+  if (balanceToRetrieve.eq(toBN(0))) {
     logger.debug({
       at: "PolygonFinalizer",
       message: `No ${l1TokenInfo.symbol} balance to withdraw, skipping`,
@@ -99,18 +103,18 @@ export async function retrieveTokenFromMainnetTokenBridger(
   } else {
     logger.debug({
       at: "PolygonFinalizer",
-      message: `Retrieving ${balance.toString()} ${l1TokenInfo.symbol}`,
+      message: `Retrieving ${balanceToRetrieve.toString()} ${l1TokenInfo.symbol}`,
     });
     const txn = await mainnetTokenBridger.retrieve(l1Token);
     const receipt = await txn.wait(); // Wait for confirmation.
     logger.info({
       at: "PolygonFinalizer",
-      message: `Retrieved ${ethers.utils.formatUnits(balance.toString(), l1TokenInfo.decimals)} ${
+      message: `Retrieved ${ethers.utils.formatUnits(balanceToRetrieve.toString(), l1TokenInfo.decimals)} ${
         l1TokenInfo.symbol
       } from PolygonTokenBridger 🏧!`,
       transaction: receipt.transactionHash,
       l1Token,
-      amount: balance.toString(),
+      amount: balanceToRetrieve.toString(),
     });
   }
 }
