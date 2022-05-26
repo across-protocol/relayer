@@ -99,12 +99,6 @@ export class Dataworker {
     const allInvalidFills: FillWithBlock[] = [];
 
     const allChainIds = Object.keys(this.clients.spokePoolSigners);
-    this.logger.debug({
-      at: "Dataworker",
-      message: `Loading deposit and fill data`,
-      chainIds: allChainIds,
-      blockRangesForChains,
-    });
 
     for (const originChainId of allChainIds) {
       const originClient = spokePoolClients[originChainId];
@@ -222,8 +216,6 @@ export class Dataworker {
   }
 
   buildSlowRelayRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
-    this.logger.debug({ at: "Dataworker", message: `Building slow relay root`, blockRangesForChains });
-
     const { unfilledDeposits } = this._loadData(blockRangesForChains, spokePoolClients);
     return _buildSlowRelayRoot(unfilledDeposits);
   }
@@ -234,7 +226,6 @@ export class Dataworker {
     poolRebalanceLeaves: PoolRebalanceLeaf[],
     runningBalances: RunningBalances
   ) {
-    this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForChains });
     const endBlockForMainnet = getBlockRangeForChain(
       blockRangesForChains,
       1,
@@ -257,8 +248,6 @@ export class Dataworker {
   }
 
   buildPoolRebalanceRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
-    this.logger.debug({ at: "Dataworker", message: `Building pool rebalance root`, blockRangesForChains });
-
     const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this._loadData(
       blockRangesForChains,
       spokePoolClients
