@@ -7,7 +7,7 @@ import {
   getSpokePoolSigners,
   updateClients,
 } from "../common";
-import { EventSearchConfig, getDeploymentBlockNumber, getSigner, Wallet } from "../utils";
+import { EventSearchConfig, getDeploymentBlockNumber, getSigner, Wallet, ethers } from "../utils";
 import { SpokePoolClient, TokenClient } from "../clients";
 import { getWidestPossibleExpectedBlockRange } from "./PoolRebalanceUtils";
 import { getBlockRangeForChain } from "./DataworkerUtils";
@@ -98,4 +98,12 @@ export async function constructSpokePoolClientsForPendingRootBundle(
   }
 
   return spokePoolClients;
+}
+
+export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number]: SpokePoolClient }): {
+  [chainId: number]: ethers.providers.Provider;
+} {
+  return Object.fromEntries(
+    Object.entries(spokePoolClients).map(([chainId, client]) => [Number(chainId), client.spokePool.signer.provider!])
+  );
 }

@@ -9,6 +9,8 @@ import { MAX_UINT_VAL } from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
+import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
+import { BalanceAllocator } from "../src/clients/BalanceAllocator";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract;
 let l1Token_1: Contract, hubPool: Contract;
@@ -61,6 +63,13 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
     await updateAllClients();
 
+    const providers = {
+      ...spokePoolClientsToProviders(spokePoolClients),
+      [(await hubPool.provider.getNetwork()).chainId]: hubPool.provider,
+    };
+
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
 
     // Execute queue and check that root bundle is pending:
@@ -70,7 +79,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves();
+    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
 
     // Should be 2 transactions: 1 for the to chain and 1 for the from chain.
     expect(multiCallerClient.transactionCount()).to.equal(2);
@@ -87,7 +96,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves();
+    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
     expect(multiCallerClient.transactionCount()).to.equal(0);
 
     // TEST 4:
@@ -102,7 +111,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves();
+    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
 
     // Should be 1 leaf since this is _only_ a second partial fill repayment and doesn't involve the deposit chain.
     expect(multiCallerClient.transactionCount()).to.equal(1);

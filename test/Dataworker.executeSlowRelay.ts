@@ -5,6 +5,8 @@ import { amountToDeposit, destinationChainId } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { MAX_UINT_VAL } from "../src/utils";
+import { BalanceAllocator } from "../src/clients/BalanceAllocator";
+import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
@@ -61,6 +63,11 @@ describe("Dataworker: Execute slow relays", async function () {
     await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
     await updateAllClients();
 
+    const providers = {
+      ...spokePoolClientsToProviders(spokePoolClients),
+      [(await hubPool.provider.getNetwork()).chainId]: hubPool.provider,
+    };
+
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
 
     // Execute queue and check that root bundle is pending:
@@ -70,7 +77,7 @@ describe("Dataworker: Execute slow relays", async function () {
     // Advance time and execute rebalance leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves();
+    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
     await multiCallerClient.executeTransactionQueue();
 
     // TEST 3:
@@ -84,7 +91,7 @@ describe("Dataworker: Execute slow relays", async function () {
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves();
+    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
 
     // TEST 4:
     // Submit a new root with no additional actions taken to make sure that this doesn't break anything.
@@ -97,20 +104,25 @@ describe("Dataworker: Execute slow relays", async function () {
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves();
+    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
 
     // Should be 1 leaf since this is _only_ a second partial fill repayment and doesn't involve the deposit chain.
     await multiCallerClient.executeTransactionQueue();
 
-    await updateAllClients();
-    await dataworkerInstance.executeSlowRelayLeaves(spokePoolClients);
+    await dataworkerInstance.executeSlowRelayLeaves(spokePoolClients, new BalanceAllocator(providers));
 
-    // There should be one slow relay to execute.
-    expect(multiCallerClient.transactionCount()).to.equal(1);
+    // There should be no slow relays to execute because the spoke doesn't have enough funds.
+    expect(multiCallerClient.transactionCount()).to.equal(0);
 
     // Note: we need to manually supply the tokens since the L1 tokens won't be recognized in the spoke pool.
     // It should only require ~1/2 of the amount because there was a prev fill that provided the other half.
     await erc20_2.mint(spokePool_2.address, amountToDeposit.div(2).sub(1));
+
+    await updateAllClients();
+    await dataworkerInstance.executeSlowRelayLeaves(spokePoolClients, new BalanceAllocator(providers));
+
+    // There should be a slow relays to execute because the spoke doesn't has funds.
+    expect(multiCallerClient.transactionCount()).to.equal(1);
     await multiCallerClient.executeTransactionQueue();
   });
 });
