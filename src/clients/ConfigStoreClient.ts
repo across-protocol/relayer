@@ -44,6 +44,7 @@ export class AcrossConfigStoreClient {
     const rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
 
     // There is one deposit on optimism that is right at the margin of when liquidity was first added.
+    if (quoteBlock === 14830339) quoteBlock = 14830390;
     if (quoteBlock > 14718100 && quoteBlock < 14718107) quoteBlock = 14718107;
 
     const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, quoteBlock, deposit.amount);

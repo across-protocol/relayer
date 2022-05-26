@@ -47,7 +47,7 @@ export class InventoryClient {
   }
 
   getEnabledChains(): number[] {
-    return [10, 288,42161];
+    return [10, 288, 42161];
     // return Object.keys(this.spokePoolClients).map((chainId) => parseInt(chainId));
   }
 
@@ -57,18 +57,19 @@ export class InventoryClient {
 
   async rebalanceInventoryIfNeeded() {
     const distributionPerL1Token = this.getTokenDistributionPerL1Token();
+    console.log("distributionPerL1Token", distributionPerL1Token);
     console.log("GETTING CROSS CHAIN BALANCES");
     await this.update();
 
     console.log("SEND");
-    // const tx = await this.adapterManager.sendTokenCrossChain(
-    //   288,
-    //   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    //   toBN(690000)
-    // );
+    const tx = await this.adapterManager.sendTokenCrossChain(
+      288,
+      "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      toBN(690000)
+    );
     await this.adapterManager.checkTokenApprovals(this.getL1Tokens());
     // const tx = this.adapterManager.wrapEthIfAboveThreshold();
-    // console.log(tx);
+    console.log(tx);
   }
   async update() {
     this.logger.debug({ at: "InventoryClient", message: "Updating client", monitoredChains: this.getEnabledChains() });

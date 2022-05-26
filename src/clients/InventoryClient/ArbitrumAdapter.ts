@@ -1,15 +1,17 @@
-import { spreadEvent, assign, Contract, BigNumber, EventSearchConfig } from "../../utils";
-import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, Promise } from "../../utils";
+import { spreadEvent, assign, Contract, runTransaction, EventSearchConfig } from "../../utils";
+import { toBN, toWei, Event, winston, paginatedEventQuery, Promise } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
 import { arbitrumL2Erc20GatewayInterface, arbitrumL1Erc20GatewayInterface } from "./ContractInterfaces";
 
-const arbitrumL1GatewayAddresses = {
+const l1GatewayAddresses = {
   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "0xcEe284F754E854890e311e3280b767F80797180d", // USDC
   "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "0xd92023E9d9911199a6711321D1277285e6d4e2db", // WETH
   "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0xd3b5b60020504bc3489d6949d545893982ba3011", // DAI
   "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "0xa3a7b6f88361f48403514059f1f16c8e78d60eec", // WBTC
 };
+
+const l1GatewayRouter = "0x72ce9c846789fdb6fc1f34ac4ad25dd9ef7031ef";
 
 const firstBlockToSearch = 12640865;
 
@@ -19,6 +21,15 @@ const l2GatewayAddresses = {
   "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0x467194771dae2967aef3ecbedd3bf9a310c76c65", // DAI
   "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "0x09e9222e96e7b4ae2a407b98d48e330053351eee", // WBTC
 };
+
+// TODO: replace these numbers using the arbitrum SDK. these are bad values that mean we will over pay but transactions
+// wont get stuck. These are the same params we are using in the smart contracts.
+const l2GasPrice = toBN(5e9);
+const l2GasLimit = toBN(2000000);
+// abi.encodeing of the maxL2Submission cost. of 0.01e18
+const transactionSubmissionData =
+  "0x000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000";
+const l1SubmitValue = toWei(0.02);
 
 export class ArbitrumAdapter extends BaseAdapter {
   constructor(
@@ -72,13 +83,24 @@ export class ArbitrumAdapter extends BaseAdapter {
   }
 
   async checkTokenApprovals(l1Tokens: string[]) {
-    // We dont need to do approvals for weth as optimism sends ETH over the bridge.
+    // Note we send the approvals to the L1 Bridge but actually send outbound transfers to the L1 Gateway Router.
     const associatedL1Bridges = l1Tokens.map((l1Token) => this.getL1Bridge(l1Token).address);
     await this.checkAndSendTokenApprovals(l1Tokens, associatedL1Bridges);
   }
 
+  async sendTokenToTargetChain(l1Token, l2Token, amount) {
+    this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
+    const args = [l1Token, this.relayerAddress, amount, l2GasLimit, l2GasPrice, transactionSubmissionData];
+    const tx = await runTransaction(this.logger, this.getL1GatewayRouter(), "outboundTransfer", args, l1SubmitValue);
+    return await tx.wait();
+  }
+
   getL1Bridge(l1Token: string) {
-    return new Contract(arbitrumL1GatewayAddresses[l1Token], arbitrumL1Erc20GatewayInterface, this.getProvider(1));
+    return new Contract(l1GatewayAddresses[l1Token], arbitrumL1Erc20GatewayInterface, this.getProvider(1));
+  }
+
+  getL1GatewayRouter() {
+    return new Contract(l1GatewayRouter, arbitrumL1Erc20GatewayInterface, this.getProvider(1));
   }
 
   getL2Bridge(l1Token: string) {

@@ -67,6 +67,10 @@ export class BaseAdapter {
   }
 
   log(message: string, data?: any, level: string = "debug") {
-    this.logger[level]({ at: `${getNetworkName(this.chainId)}Adapter`, message, ...data });
+    this.logger[level]({ at: this.getName(), message, ...data });
+  }
+
+  getName() {
+    return `${getNetworkName(this.chainId)}Adapter`;
   }
 }

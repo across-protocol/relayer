@@ -120,12 +120,9 @@ export class OptimismAdapter extends BaseAdapter {
     }
     return null;
   }
-  getName() {
-    return this.isOptimism ? "OptimismAdapter" : "BobaAdapter";
-  }
 
   async checkTokenApprovals(l1Tokens: string[]) {
-    // We dont need to do approvals for weth as optimism sends ETH over the bridge.
+    // We dont need to do approvals for WETH as optimism sends ETH over the bridge.
     l1Tokens = l1Tokens.filter((l1Token) => tokenToEvent[l1Token] != "ETHDepositInitiated");
     const associatedL1Bridges = l1Tokens.map((l1Token) => this.getL1Bridge(l1Token).address);
     await this.checkAndSendTokenApprovals(l1Tokens, associatedL1Bridges);
