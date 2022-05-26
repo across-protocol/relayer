@@ -24,6 +24,7 @@ import { BlockFinder } from "@uma/sdk";
 import { RootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
+import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
 
 config();
 let logger: winston.Logger;
@@ -67,7 +68,8 @@ export async function validate(_logger: winston.Logger) {
   };
 
   const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
-    Constants.CHAIN_ID_LIST_INDICES,
+    dataworker.chainIdListForBundleEvaluationBlockNumbers,
+    getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
     clients,
     priceRequestBlock
   );

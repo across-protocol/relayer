@@ -10,6 +10,7 @@ import {
 } from "./DataworkerClientHelper";
 import { constructSpokePoolClientsForBlockAndUpdate } from "../common";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
+import { getEndBlockBuffers } from "./DataworkerUtils";
 config();
 let logger: winston.Logger;
 
@@ -53,6 +54,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       const spokePoolClientsForPendingRootBundle = await constructSpokePoolClientsForPendingRootBundle(
         logger,
         dataworker.chainIdListForBundleEvaluationBlockNumbers,
+        getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
         clients
       );
       logger[startupLogLevel(config)]({

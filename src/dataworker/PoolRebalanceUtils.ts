@@ -1,3 +1,4 @@
+import { assert } from "console";
 import { AcrossConfigStoreClient, HubPoolClient, ProfitClient } from "../clients";
 import * as interfaces from "../interfaces";
 import {
@@ -299,12 +300,19 @@ export function getRunningBalanceForL1Token(transferThreshold: BigNumber, runnin
 // greater of 0 and the latest bundle end block for an executed root bundle proposal + 1.
 export async function getWidestPossibleExpectedBlockRange(
   chainIdListForBundleEvaluationBlockNumbers: number[],
+  endBlockBuffers: number[],
   clients: DataworkerClients,
   latestMainnetBlock: number
 ): Promise<number[][]> {
   const latestBlockNumbers = await Promise.all(
-    chainIdListForBundleEvaluationBlockNumbers.map((chainId: number) =>
-      clients.spokePoolSigners[chainId].provider.getBlockNumber()
+    chainIdListForBundleEvaluationBlockNumbers.map(
+      async (chainId: number, index) =>
+        Math.max(0, (await clients.spokePoolSigners[chainId].provider.getBlockNumber()) - endBlockBuffers[index])
+      // We subtract a buffer from the end blocks to reduce the chance that network providers
+      // for different bot runs produce different contract state because of variability near the HEAD of the network.
+      // Reducing the latest block that we query also gives partially filled deposits slightly more buffer for relayers
+      // to fully fill the deposit and reduces the chance that the data worker includes a slow fill payment that gets
+      // filled during the challenge period.
     )
   );
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => [
