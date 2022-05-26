@@ -25,7 +25,7 @@ export async function getGasPrice(provider: ethers.providers.Provider, priorityS
     // maxPriorityFeePerGas to the maxFeePerGas * 5 for now as a temp workaround.
     if (chainInfo.chainId === 137)
       feeData.maxPriorityFeePerGas = ethers.utils.parseUnits((await getPolygonPriorityFee()).fastest.toString(), 9);
-    if (feeData.maxPriorityFeePerGas > feeData.maxFeePerGas)
+    if (feeData.maxPriorityFeePerGas.gt(feeData.maxFeePerGas))
       feeData.maxFeePerGas = scaleByNumber(feeData.maxPriorityFeePerGas, 1.5);
     return {
       maxFeePerGas: scaleByNumber(feeData.maxFeePerGas, priorityScaler * maxFeePerGasScaler), // scale up the maxFeePerGas. Any extra paid on this is refunded.
