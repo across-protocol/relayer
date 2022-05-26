@@ -15,6 +15,7 @@ import { amountToLp, destinationChainId, originChainId, CHAIN_ID_TEST_LIST, repa
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { TokenClient } from "../../src/clients";
 import { toBNWei } from "../../src/utils";
+import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
 
 // Sets up all contracts neccessary to build and execute leaves in dataworker merkle roots: relayer refund, slow relay,
 // and pool rebalance roots.
@@ -47,6 +48,7 @@ export async function setupDataworker(
   depositor: SignerWithAddress;
   relayer: SignerWithAddress;
   dataworker: SignerWithAddress;
+  dataworkerClients: DataworkerClients;
   updateAllClients: () => Promise<void>;
 }> {
   const [owner, depositor, relayer, dataworker] = await ethers.getSigners();
@@ -142,19 +144,20 @@ export async function setupDataworker(
   const tokenClient = new TokenClient(spyLogger, relayer.address, {}, hubPoolClient);
 
   const defaultEventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 };
+  const dataworkerClients: DataworkerClients = {
+    tokenClient,
+    spokePoolSigners: Object.fromEntries(CHAIN_ID_TEST_LIST.map((chainId) => [chainId, owner])),
+    spokePoolClientSearchSettings: Object.fromEntries(
+      CHAIN_ID_TEST_LIST.map((chainId) => [chainId, defaultEventSearchConfig])
+    ),
+    hubPoolClient,
+    multiCallerClient,
+    configStoreClient,
+    profitClient,
+  };
   const dataworkerInstance = new Dataworker(
     spyLogger,
-    {
-      tokenClient,
-      spokePoolSigners: Object.fromEntries(CHAIN_ID_TEST_LIST.map((chainId) => [chainId, owner])),
-      spokePoolClientSearchSettings: Object.fromEntries(
-        CHAIN_ID_TEST_LIST.map((chainId) => [chainId, defaultEventSearchConfig])
-      ),
-      hubPoolClient,
-      multiCallerClient,
-      configStoreClient,
-      profitClient,
-    },
+    dataworkerClients,
     CHAIN_ID_TEST_LIST,
     maxRefundPerRelayerRefundLeaf,
     maxL1TokensPerPoolRebalanceLeaf,
@@ -214,6 +217,7 @@ export async function setupDataworker(
     depositor,
     relayer,
     dataworker,
+    dataworkerClients,
     updateAllClients: async () => {
       await hubPoolClient.update();
       await configStoreClient.update();

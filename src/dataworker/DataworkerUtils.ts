@@ -13,6 +13,24 @@ import { subtractExcessFromPreviousSlowFillsFromRunningBalances } from "./PoolRe
 import { getAmountToReturnForRelayerRefundLeaf } from "./RelayerRefundUtils";
 import { sortRefundAddresses, sortRelayerRefundLeaves } from "./RelayerRefundUtils";
 
+export function getEndBlockBuffers(
+  chainIdListForBundleEvaluationBlockNumbers: number[],
+  blockRangeEndBlockBuffer: { [chainId: number]: number }
+): number[] {
+  // These buffers can be configured by the bot runner. They have two use cases:
+  // 1) Validate the end blocks specified in the pending root bundle. If the end block is greater than the latest
+  // block for its chain, then we should dispute the bundle because we can't look up events in the future for that
+  // chain. However, there are some cases where the proposer's node for that chain is returning a higher HEAD block
+  // than the bot-runner is seeing, so we can use this buffer to allow the proposer some margin of error. If
+  // the bundle end block is less than HEAD but within this buffer, then we won't dispute and we'll just exit
+  // early from this function.
+  // 2) Subtract from the latest block in a new root bundle proposal. This can be used to reduce the chance that
+  // bot runs using different providers see different contract state close to the HEAD block for a chain.
+  // Reducing the latest block that we query also gives partially filled deposits slightly more buffer for relayers
+  // to fully fill the deposit and reduces the chance that the data worker includes a slow fill payment that gets
+  // filled during the challenge period.
+  return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number) => blockRangeEndBlockBuffer[chainId] ?? 0);
+}
 export function getBlockRangeForChain(
   blockRange: number[][],
   chain: number,

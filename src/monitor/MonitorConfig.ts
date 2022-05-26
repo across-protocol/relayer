@@ -20,6 +20,8 @@ export class MonitorConfig extends CommonConfig {
   readonly botModes: BotModes;
 
   constructor(env: ProcessEnv) {
+    super(env);
+
     const {
       STARTING_BLOCK_NUMBER,
       ENDING_BLOCK_NUMBER,
@@ -30,7 +32,6 @@ export class MonitorConfig extends CommonConfig {
       WHITELISTED_DATA_WORKERS,
       WHITELISTED_RELAYERS,
     } = env;
-    super(env);
 
     this.botModes = {
       utilizationEnabled: UTILIZATION_ENABLED === "true",

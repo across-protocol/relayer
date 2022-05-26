@@ -57,10 +57,12 @@ export async function updateDataworkerClients(clients: DataworkerClients) {
 export async function constructSpokePoolClientsForPendingRootBundle(
   logger: winston.Logger,
   chainIdListForBundleEvaluationBlockNumbers: number[],
+  endBlockBuffers: number[],
   clients: DataworkerClients
 ) {
   const widestPossibleExpectedBlockRange = await getWidestPossibleExpectedBlockRange(
     chainIdListForBundleEvaluationBlockNumbers,
+    endBlockBuffers,
     clients,
     clients.hubPoolClient.latestBlockNumber
   );

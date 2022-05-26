@@ -26,6 +26,7 @@ import {
 } from "./FillUtils";
 import {
   getBlockRangeForChain,
+  getEndBlockBuffers,
   prettyPrintSpokePoolEvents,
   _buildPoolRebalanceRoot,
   _buildRelayerRefundRoot,
@@ -98,12 +99,6 @@ export class Dataworker {
     const allInvalidFills: FillWithBlock[] = [];
 
     const allChainIds = Object.keys(this.clients.spokePoolSigners);
-    this.logger.debug({
-      at: "Dataworker",
-      message: `Loading deposit and fill data`,
-      chainIds: allChainIds,
-      blockRangesForChains,
-    });
 
     for (const originChainId of allChainIds) {
       const originClient = spokePoolClients[originChainId];
@@ -221,8 +216,6 @@ export class Dataworker {
   }
 
   buildSlowRelayRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
-    this.logger.debug({ at: "Dataworker", message: `Building slow relay root`, blockRangesForChains });
-
     const { unfilledDeposits } = this._loadData(blockRangesForChains, spokePoolClients);
     return _buildSlowRelayRoot(unfilledDeposits);
   }
@@ -233,7 +226,6 @@ export class Dataworker {
     poolRebalanceLeaves: PoolRebalanceLeaf[],
     runningBalances: RunningBalances
   ) {
-    this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForChains });
     const endBlockForMainnet = getBlockRangeForChain(
       blockRangesForChains,
       1,
@@ -256,8 +248,6 @@ export class Dataworker {
   }
 
   buildPoolRebalanceRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
-    this.logger.debug({ at: "Dataworker", message: `Building pool rebalance root`, blockRangesForChains });
-
     const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this._loadData(
       blockRangesForChains,
       spokePoolClients
@@ -312,6 +302,7 @@ export class Dataworker {
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
     const blockRangesForProposal = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
+      getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
       this.clients.hubPoolClient.latestBlockNumber
     );
@@ -463,6 +454,7 @@ export class Dataworker {
 
     const widestPossibleExpectedBlockRange = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
+      getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
       this.clients.hubPoolClient.latestBlockNumber
     );
@@ -516,14 +508,9 @@ export class Dataworker {
       };
     }
 
-    // These buffers can be configured by the bot runner. These are used to validate the end blocks specified in the
-    // pending root bundle. If the end block is greater than the latest block for its chain, then we should dispute the
-    // bundle because we can't look up events in the future for that chain. However, there are some cases where the
-    // proposer's node for that chain is returning a higher HEAD block than the bot-runner is seeing, so we can
-    // use this buffer to allow the proposer some margin of error. If the bundle end block is less than HEAD but within
-    // this buffer, then we won't dispute and we'll just exit early from this function.
-    const endBlockBuffers = this.chainIdListForBundleEvaluationBlockNumbers.map(
-      (chainId: number) => this.blockRangeEndBlockBuffer[chainId] ?? 0
+    const endBlockBuffers = getEndBlockBuffers(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.blockRangeEndBlockBuffer
     );
 
     // Make sure that all end blocks are >= expected start blocks.
@@ -931,6 +918,7 @@ export class Dataworker {
 
     const widestPossibleExpectedBlockRange = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
+      getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
       this.clients.hubPoolClient.latestBlockNumber
     );
