@@ -160,7 +160,9 @@ describe("Dataworker: Validate pending root bundle", async function () {
     );
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle();
-    expect(lastSpyLogIncludes(spy, "A bundle end block is < expected start block, submitting dispute")).to.be.true;
+    expect(spy.getCall(-2).lastArg.message).to.equal(
+      "A bundle end block is < expected start block, submitting dispute"
+    );
     await multiCallerClient.executeTransactionQueue();
 
     // Bundle range end blocks are above latest block but within buffer, should skip.
@@ -192,8 +194,9 @@ describe("Dataworker: Validate pending root bundle", async function () {
     );
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle();
-    expect(lastSpyLogIncludes(spy, "A bundle end block is > latest block + buffer for its chain, submitting dispute"))
-      .to.be.true;
+    expect(spy.getCall(-2).lastArg.message).to.equal(
+      "A bundle end block is > latest block + buffer for its chain, submitting dispute"
+    );
     await multiCallerClient.executeTransactionQueue();
 
     // Bundle range length doesn't match expected chain ID list.
@@ -207,7 +210,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     );
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle();
-    expect(lastSpyLogIncludes(spy, "Unexpected bundle block range length, disputing")).to.be.true;
+    expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected bundle block range length, disputing");
     await multiCallerClient.executeTransactionQueue();
 
     // PoolRebalance root is empty
@@ -221,7 +224,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     );
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle();
-    expect(lastSpyLogIncludes(spy, "Empty pool rebalance root, submitting dispute")).to.be.true;
+    expect(spy.getCall(-2).lastArg.message).to.equal("Empty pool rebalance root, submitting dispute");
     await multiCallerClient.executeTransactionQueue();
 
     // PoolRebalance leaf count is off
@@ -235,7 +238,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     );
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle();
-    expect(lastSpyLogIncludes(spy, "Unexpected pool rebalance root, submitting dispute")).to.be.true;
+    expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected pool rebalance root, submitting dispute");
     await multiCallerClient.executeTransactionQueue();
 
     // PoolRebalance root is off
@@ -249,7 +252,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     );
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle();
-    expect(lastSpyLogIncludes(spy, "Unexpected pool rebalance root, submitting dispute")).to.be.true;
+    expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected pool rebalance root, submitting dispute");
     await multiCallerClient.executeTransactionQueue();
 
     // RelayerRefund root is off
@@ -263,7 +266,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     );
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle();
-    expect(lastSpyLogIncludes(spy, "Unexpected relayer refund root, submitting dispute")).to.be.true;
+    expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected relayer refund root, submitting dispute");
     await multiCallerClient.executeTransactionQueue();
 
     // SlowRelay root is off
@@ -277,7 +280,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     );
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle();
-    expect(lastSpyLogIncludes(spy, "Unexpected slow relay root, submitting dispute")).to.be.true;
+    expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected slow relay root, submitting dispute");
     await multiCallerClient.executeTransactionQueue();
   });
 });

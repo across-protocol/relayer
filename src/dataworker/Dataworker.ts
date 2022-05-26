@@ -346,7 +346,13 @@ export class Dataworker {
           leaves: poolRebalanceRoot.leaves,
         });
         return;
-      }
+      } else
+        this.logger.debug({
+          at: "Dataworker",
+          message: `Root bundle USD volume exceeds threshold! 💚`,
+          usdThresholdToSubmitNewBundle,
+          totalUsdRefund,
+        });
     }
 
     this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForProposal });
@@ -1074,6 +1080,11 @@ export class Dataworker {
   }
 
   _submitDisputeWithMrkdwn(hubPoolChainId: number, mrkdwn: string) {
+    this.logger.error({
+      at: "Dataworker",
+      message: "Submitting dispute 🤏🏼",
+      mrkdwn,
+    });
     try {
       this.clients.multiCallerClient.enqueueTransaction({
         contract: this.clients.hubPoolClient.hubPool, // target contract
