@@ -9,14 +9,6 @@
 //    NODE_URL_42161=https://arb-mainnet.g.alchemy.com/v2/KEY
 // 2. REQUEST_TIME=1652832060 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
 
-// For devs:
-//     Test cases:
-//         REQUEST_TIME=1652832060 # Time right after a known valid proposed root bundle
-//         REQUEST_TIME=1652301947 # Time right after a known invalid proposed root bundle missing some refunds
-//         REQUEST_TIME=1652408987 # Invalid bundle block range, too high
-//         REQUEST_TIME=1652385167 # Empty pool rebalance root
-//         REQUEST_TIME=1652394287 # Invalid bundle block range length, assuming a valid chain ID list of 5
-
 import { winston, config, startupLogLevel, Logger, delay } from "../utils";
 import * as Constants from "../common";
 import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
