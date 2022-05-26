@@ -4,6 +4,8 @@ import { InventorySettings } from "../../interfaces";
 import { SpokePoolClient } from "../";
 import { AdapterManager } from "./AdapterManager";
 
+const scalar = toBN(10).pow(18);
+
 export class InventoryClient {
   adapterManager: AdapterManager;
 
@@ -27,20 +29,25 @@ export class InventoryClient {
   }
 
   getBalanceOnChainForL1Token(chainId: number, l1Token: string): BigNumber {
-    return this.tokenClient.getBalance(chainId, this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId));
+    return (
+      this.tokenClient.getBalance(chainId, this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId)) ||
+      toBN(0) // If the chain does not have this token (EG BOBA on Optimism) then return.
+    );
   }
 
   getChainDistribution(l1Token: string): { [chainId: number]: BigNumber } {
+    console.log("getting", l1Token);
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
     const distribution = {};
     this.getEnabledChains().forEach((chainId) => {
-      const scalar = toBN(10).pow(18);
-      distribution[chainId] = this.getBalanceOnChainForL1Token(chainId, l1Token).mul(scalar).div(cumulativeBalance);
+      if (cumulativeBalance.gt(0))
+        distribution[chainId] = this.getBalanceOnChainForL1Token(chainId, l1Token).mul(scalar).div(cumulativeBalance);
     });
     return distribution;
   }
 
   getTokenDistributionPerL1Token() {
+    console.log("GETTING", this.getL1Tokens());
     const distributionPerL1Token = {};
     this.getL1Tokens().forEach((l1Token) => (distributionPerL1Token[l1Token] = this.getChainDistribution(l1Token)));
     return distributionPerL1Token;
@@ -56,6 +63,7 @@ export class InventoryClient {
   }
 
   async rebalanceInventoryIfNeeded() {
+    console.log("GETTING");
     const distributionPerL1Token = this.getTokenDistributionPerL1Token();
     console.log("distributionPerL1Token", distributionPerL1Token);
     console.log("GETTING CROSS CHAIN BALANCES");

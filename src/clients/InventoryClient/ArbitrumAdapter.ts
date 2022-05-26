@@ -48,6 +48,8 @@ export class ArbitrumAdapter extends BaseAdapter {
 
     let promises = [];
     for (const l1Token of l1Tokens) {
+      if (l1GatewayAddresses[l1Token] === undefined || l2GatewayAddresses[l1Token] === null) continue;
+
       const l1Bridge = this.getL1Bridge(l1Token);
       const l2Bridge = this.getL2Bridge(l1Token);
       const searchFilter = [undefined, this.relayerAddress];

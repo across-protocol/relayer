@@ -15,13 +15,6 @@ const l1StandardBridgeAddressBoba = "0xdc1664458d2f0B6090bEa60A8793A4E66c2F1c00"
 const firstL1BlockOvm = 13352477;
 const firstL1BlockBoba = 13012048;
 
-const tokenToEvent = {
-  "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "ERC20DepositInitiated", // USDC
-  "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "ETHDepositInitiated", // WETH
-  "0x6B175474E89094C44Da98b954EedeAC495271d0F": "ERC20DepositInitiated", // DAI
-  "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "ERC20DepositInitiated", // WBTC
-};
-
 const ovmL2StandardBridgeAddress = "0x4200000000000000000000000000000000000010";
 const customOvmBridgeAddresses = {
   "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0x467194771dae2967aef3ecbedd3bf9a310c76c65", // DAI
@@ -51,12 +44,11 @@ export class OptimismAdapter extends BaseAdapter {
 
     let promises = [];
     for (const l1Token of l1Tokens) {
-      const l1Method = tokenToEvent[l1Token];
-      const isErc20Token = l1Method == "ERC20DepositInitiated";
-      const l1SearchFilter = isErc20Token ? [l1Token, undefined, this.relayerAddress] : [this.relayerAddress];
-      const l2SearchFilter = isErc20Token
-        ? [l1Token, undefined, this.relayerAddress]
-        : [ZERO_ADDRESS, undefined, this.relayerAddress];
+      const l1Method = this.isWeth(l1Token) ? "ETHDepositInitiated" : "ERC20DepositInitiated";
+      const l1SearchFilter = this.isWeth(l1Token) ? [this.relayerAddress] : [l1Token, undefined, this.relayerAddress];
+      const l2SearchFilter = this.isWeth(l1Token)
+        ? [ZERO_ADDRESS, undefined, this.relayerAddress]
+        : [l1Token, undefined, this.relayerAddress];
       const l1Bridge = this.getL1Bridge(l1Token);
       const l2Bridge = this.getL2Bridge(l1Token);
       promises.push(
@@ -98,9 +90,7 @@ export class OptimismAdapter extends BaseAdapter {
     let args = [l1Token, l2Token, amount, l2Gas, "0x"];
 
     // If this token is WETH(the tokenToEvent maps to the ETH method) then we modify the params to deposit ETH.
-    const isEth = tokenToEvent[l1Token] == "ETHDepositInitiated";
-
-    if (isEth) {
+    if (this.isWeth(l1Token)) {
       value = amount;
       method = "depositETH";
       args = [l2Gas, "0x"];
@@ -123,7 +113,7 @@ export class OptimismAdapter extends BaseAdapter {
 
   async checkTokenApprovals(l1Tokens: string[]) {
     // We dont need to do approvals for WETH as optimism sends ETH over the bridge.
-    l1Tokens = l1Tokens.filter((l1Token) => tokenToEvent[l1Token] != "ETHDepositInitiated");
+    l1Tokens = l1Tokens.filter((l1Token) => !this.isWeth(l1Token));
     const associatedL1Bridges = l1Tokens.map((l1Token) => this.getL1Bridge(l1Token).address);
     await this.checkAndSendTokenApprovals(l1Tokens, associatedL1Bridges);
   }
@@ -144,5 +134,9 @@ export class OptimismAdapter extends BaseAdapter {
         : ovmL2StandardBridgeAddress
       : ovmL2StandardBridgeAddress;
     return new Contract(l2BridgeAddress, optimismL2BridgeInterface, this.getProvider(this.chainId));
+  }
+
+  isWeth(l1Token: string) {
+    return l1Token == "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
   }
 }

@@ -27,6 +27,7 @@ export class TokenClient {
   }
 
   getBalance(chainId: number | string, token: string) {
+    console.log("getBalance", chainId, token);
     if (!this._hasTokenPairData(chainId, token)) return toBN(0);
     return this.tokenData[chainId][token].balance;
   }
