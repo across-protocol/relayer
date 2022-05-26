@@ -71,7 +71,7 @@ export async function finalizePolygon(
   logger.info({
     at: "PolygonFinalizer",
     message: "Executed",
-    receipt,
+    transaction: receipt.transactionHash,
   });
 }
 
