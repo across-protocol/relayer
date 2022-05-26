@@ -92,7 +92,7 @@ export async function retrieveTokenFromMainnetTokenBridger(
   const balance = await token.balanceOf(mainnetTokenBridger.address);
 
   // WETH is sent to token bridger contract as ETH.
-  const ethBalance = await mainnetTokenBridger.provider.getBalance(mainnetTokenBridger.address)
+  const ethBalance = await mainnetTokenBridger.provider.getBalance(mainnetTokenBridger.address);
   const balanceToRetrieve = l1TokenInfo.symbol === "WETH" ? ethBalance : balance;
   if (balanceToRetrieve.eq(toBN(0))) {
     logger.debug({
