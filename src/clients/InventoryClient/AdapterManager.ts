@@ -110,18 +110,19 @@ export class AdapterManager {
   }
 
   async getOutstandingPolygonTransfers(l1Tokens: string[], l1ChainId = 1, l2ChainId = 137): Promise<BigNumber[]> {
-    return await Promise.all(
-      l1Tokens.map((l1Token) =>
-        PolygonAdapter.getOutstandingCrossChainTransfers(
-          this.getProvider(l1ChainId),
-          this.getProvider(l2ChainId),
-          this.relayerAddress,
-          l1Token,
-          this.spokePoolClients[l1ChainId].searchConfig,
-          this.spokePoolClients[l2ChainId].searchConfig
-        )
-      )
-    );
+    return null;
+    // return await Promise.all(
+    //   l1Tokens.map((l1Token) =>
+    //     PolygonAdapter.getOutstandingCrossChainTransfers(
+    //       this.getProvider(l1ChainId),
+    //       this.getProvider(l2ChainId),
+    //       this.relayerAddress,
+    //       l1Token,
+    //       this.spokePoolClients[l1ChainId].searchConfig,
+    //       this.spokePoolClients[l2ChainId].searchConfig
+    //     )
+    //   )
+    // );
   }
 
   async checkTokenApprovals(l1Tokens: string[]) {

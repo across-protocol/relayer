@@ -69,8 +69,9 @@ export interface RootBundle {
   poolRebalanceRoot: string;
   relayerRefundRoot: string;
   slowRelayRoot: string;
-  claimedBitMap: BigNumber;
   proposer: string;
   unclaimedPoolRebalanceLeafCount: number;
   challengePeriodEndTimestamp: number;
+  bundleEvaluationBlockNumbers?: number[];
+  proposalBlockNumber?: number;
 }

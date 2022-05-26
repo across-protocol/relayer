@@ -1,4 +1,4 @@
-import { BigNumber } from "ethers";
+import { BigNumber } from "../utils";
 import { SortableEvent } from "./Common";
 
 export interface Deposit {
@@ -61,6 +61,27 @@ export interface SlowFill {
   recipient: string;
 }
 
+export interface RootBundleRelay {
+  rootBundleId: number;
+  relayerRefundRoot: string;
+  slowRelayRoot: string;
+}
+
+export interface RootBundleRelayWithBlock extends RootBundleRelay, SortableEvent {}
+
+export interface RelayerRefundExecution {
+  amountToReturn: BigNumber;
+  chainId: number;
+  refundAmounts: BigNumber[];
+  rootBundleId: number;
+  leafId: number;
+  l2TokenAddress: string;
+  refundAddresses: string[];
+  caller: string;
+}
+
+export interface RelayerRefundExecutionWithBlock extends RelayerRefundExecution, SortableEvent {}
+
 // Used in pool by spokePool to execute a slow relay.
 export interface RelayData {
   depositor: string;
@@ -79,11 +100,19 @@ export interface UnfilledDeposit {
   unfilledAmount: BigNumber;
   hasFirstPartialFill?: boolean;
 }
+
+export interface UnfilledDepositsForOriginChain {
+  [originChainIdPlusDepositId: string]: UnfilledDeposit[];
+}
+
+export interface Refund {
+  [refundAddress: string]: BigNumber;
+}
 export interface FillsToRefund {
   [repaymentChainId: number]: {
     [l2TokenAddress: string]: {
       fills: Fill[];
-      refunds?: { [refundAddress: string]: BigNumber };
+      refunds?: Refund;
       totalRefundAmount: BigNumber;
       realizedLpFees: BigNumber;
     };
@@ -94,4 +123,13 @@ export interface RunningBalances {
   [repaymentChainId: number]: {
     [l1TokenAddress: string]: BigNumber;
   };
+}
+
+export interface TokensBridged {
+  amountToReturn: BigNumber;
+  chainId: number;
+  leafId: number;
+  l2TokenAddress: string;
+  caller: string;
+  transactionHash: string;
 }

@@ -14,6 +14,7 @@ import { amountToLp, destinationChainId, originChainId, CHAIN_ID_TEST_LIST, repa
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { TokenClient } from "../../src/clients";
+import { toBNWei } from "../../src/utils";
 
 // Sets up all contracts neccessary to build and execute leaves in dataworker merkle roots: relayer refund, slow relay,
 // and pool rebalance roots.
@@ -21,7 +22,8 @@ export async function setupDataworker(
   ethers: any,
   maxRefundPerRelayerRefundLeaf: number,
   maxL1TokensPerPoolRebalanceLeaf: number,
-  defaultPoolRebalanceTokenTransferThreshold: BigNumber
+  defaultPoolRebalanceTokenTransferThreshold: BigNumber,
+  defaultEndBlockBuffer: number
 ): Promise<{
   hubPool: Contract;
   spokePool_1: Contract;
@@ -112,6 +114,7 @@ export async function setupDataworker(
   const configStoreClient = new clients.AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
 
   const multiCallerClient = new clients.MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
+  const profitClient = new clients.ProfitClient(spyLogger, hubPoolClient, toBNWei(1)); // Set relayer discount to 100%.
 
   const spokePoolClient_1 = new clients.SpokePoolClient(
     spyLogger,
@@ -150,8 +153,13 @@ export async function setupDataworker(
       hubPoolClient,
       multiCallerClient,
       configStoreClient,
+      profitClient,
     },
-    CHAIN_ID_TEST_LIST
+    CHAIN_ID_TEST_LIST,
+    maxRefundPerRelayerRefundLeaf,
+    maxL1TokensPerPoolRebalanceLeaf,
+    Object.fromEntries(CHAIN_ID_TEST_LIST.map((chainId) => [chainId, defaultPoolRebalanceTokenTransferThreshold])),
+    Object.fromEntries(CHAIN_ID_TEST_LIST.map((chainId) => [chainId, defaultEndBlockBuffer]))
   );
 
   // This client dictionary can be conveniently passed in root builder functions that expect mapping of clients to

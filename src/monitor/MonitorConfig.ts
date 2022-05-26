@@ -1,14 +1,16 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { BigNumber, toBNWei, ethers } from "../utils";
+import { ethers } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
   utilizationEnabled: boolean; // Monitors pool utilization ratio
   unknownRootBundleCallersEnabled: boolean; // Monitors relay related events triggered by non-whitelisted addresses
+  unknownRelayerCallersEnabled: boolean;
 }
 
 export class MonitorConfig extends CommonConfig {
-  readonly spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }>;
+  readonly spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> =
+    {};
 
   readonly utilizationThreshold: number;
   readonly hubPoolStartingBlock: number | undefined;
@@ -19,13 +21,13 @@ export class MonitorConfig extends CommonConfig {
 
   constructor(env: ProcessEnv) {
     const {
-      HUBPOOL_STARTING_BLOCK_NUMBER,
-      HUBPOOL_ENDING_BLOCK_NUMBER,
+      STARTING_BLOCK_NUMBER,
+      ENDING_BLOCK_NUMBER,
       UTILIZATION_ENABLED,
       UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED,
+      UNKNOWN_RELAYER_CALLERS_ENABLED,
       UTILIZATION_THRESHOLD,
       WHITELISTED_DATA_WORKERS,
-      SPOKE_POOLS_BLOCKS,
       WHITELISTED_RELAYERS,
     } = env;
     super(env);
@@ -33,6 +35,7 @@ export class MonitorConfig extends CommonConfig {
     this.botModes = {
       utilizationEnabled: UTILIZATION_ENABLED === "true",
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
+      unknownRelayerCallersEnabled: UNKNOWN_RELAYER_CALLERS_ENABLED === "true",
     };
 
     this.whitelistedDataworkers = WHITELISTED_DATA_WORKERS ? JSON.parse(WHITELISTED_DATA_WORKERS) : [];
@@ -52,9 +55,19 @@ export class MonitorConfig extends CommonConfig {
     if (this.utilizationThreshold < 0) throw new Error("UTILIZATION_THRESHOLD must be >= 0");
 
     // In serverless mode use block range from environment to fetch for latest events.
-    this.hubPoolStartingBlock = HUBPOOL_STARTING_BLOCK_NUMBER ? Number(HUBPOOL_STARTING_BLOCK_NUMBER) : undefined;
-    this.hubPoolEndingBlock = HUBPOOL_ENDING_BLOCK_NUMBER ? Number(HUBPOOL_ENDING_BLOCK_NUMBER) : undefined;
+    this.hubPoolStartingBlock = STARTING_BLOCK_NUMBER ? Number(STARTING_BLOCK_NUMBER) : undefined;
+    this.hubPoolEndingBlock = ENDING_BLOCK_NUMBER ? Number(ENDING_BLOCK_NUMBER) : undefined;
 
-    this.spokePoolsBlocks = SPOKE_POOLS_BLOCKS ? JSON.parse(SPOKE_POOLS_BLOCKS) : {};
+    if (UNKNOWN_RELAYER_CALLERS_ENABLED)
+      this.spokePoolChains.forEach((chainId) => {
+        this.spokePoolsBlocks[chainId] = {
+          startingBlock: process.env[`STARTING_BLOCK_NUMBER_${chainId}`]
+            ? Number(process.env[`STARTING_BLOCK_NUMBER_${chainId}`])
+            : undefined,
+          endingBlock: process.env[`ENDING_BLOCK_NUMBER_${chainId}`]
+            ? Number(process.env[`ENDING_BLOCK_NUMBER_${chainId}`])
+            : undefined,
+        };
+      });
   }
 }

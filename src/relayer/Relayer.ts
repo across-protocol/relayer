@@ -1,5 +1,5 @@
 import { BigNumber, winston, buildFillRelayProps, getNetworkName } from "../utils";
-import { createFormatFunction, etherscanLink } from "../utils";
+import { createFormatFunction, etherscanLink, toBN } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 
 import { Deposit } from "../interfaces/SpokePool";
@@ -20,11 +20,12 @@ export class Relayer {
     //   this.logger.debug({ at: "Relayer", message: "Filling deposits", number: unfilledDeposits.length });
     // else this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
 
-    // // Iterate over all unfilled deposits. For each unfilled deposit: a) check that the token balance client has enough
-    // // balance to fill the unfilled amount. b) the fill is profitable. If both hold true then fill the unfilled amount.
-    // // If not enough ballance add the shortfall to the shortfall tracker to produce an appropriate log. If unprofitable
-    // // then add the unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
-    // for (const { deposit, unfilledAmount } of unfilledDeposits) {
+    // Iterate over all unfilled deposits. For each unfilled deposit: a) check that the token balance client has enough
+    // balance to fill the unfilled amount. b) the fill is profitable. If both hold true then fill the unfilled amount.
+    // If not enough ballance add the shortfall to the shortfall tracker to produce an appropriate log. If the deposit
+    // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
+    // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
+    // for (const { deposit, unfilledAmount, fillCount } of unfilledDeposits) {
     //   if (this.clients.tokenClient.hasSufficientBalanceForFill(deposit, unfilledAmount)) {
     //     if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount)) {
     //       this.fillRelay(deposit, unfilledAmount);
@@ -33,7 +34,9 @@ export class Relayer {
     //     }
     //   } else {
     //     this.clients.tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
-    //     // TODO: this should also execute a 0 sized fill.
+    //     // If we dont have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
+    //     // 0 sized fill to ensure that the deposit is slow relayed. This only needs to be done once.
+    //     if (fillCount === 0) this.zeroFillDeposit(deposit);
     //   }
     // }
 
@@ -45,7 +48,7 @@ export class Relayer {
   fillRelay(deposit: Deposit, fillAmount: BigNumber) {
     this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain: this.repaymentChainId });
     try {
-      // Att the fill transaction to the multiCallerClient so it will be executed with the next batch.
+      // Add the fill transaction to the multiCallerClient so it will be executed with the next batch.
       this.clients.multiCallerClient.enqueueTransaction({
         contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
         chainId: deposit.destinationChainId,
@@ -58,13 +61,41 @@ export class Relayer {
       // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
       this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.destinationToken, fillAmount);
     } catch (error) {
-      this.logger.error({ at: "Relayer", message: "Error creating fillRelayTx", error });
+      console.log("error", error);
+      this.logger.error({
+        at: "Relayer",
+        message: "Error creating fillRelayTx",
+        error,
+        notificationPath: "across-error",
+      });
+    }
+  }
+
+  zeroFillDeposit(deposit: Deposit) {
+    this.logger.debug({ at: "Relayer", message: "Zero filling", deposit, repaymentChain: this.repaymentChainId });
+    try {
+      // Add the zero fill fill transaction to the multiCallerClient so it will be executed with the next batch.
+      this.clients.multiCallerClient.enqueueTransaction({
+        contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
+        chainId: deposit.destinationChainId,
+        method: "fillRelay", // method called.
+        args: buildFillRelayProps(deposit, this.repaymentChainId, toBN(1)), // props sent with function call.
+        message: "Zero size relay sent 🐌", // message sent to logger.
+        mrkdwn: this.constructZeroSizeFilledMrkdwn(deposit), // message details mrkdwn
+      });
+    } catch (error) {
+      this.logger.error({
+        at: "Relayer",
+        message: "Error creating zeroFillRelayTx",
+        error,
+        notificationPath: "across-error",
+      });
     }
   }
 
   // Returns all unfilled deposits over all spokePoolClients. Return values include the amount of the unfilled deposit.
-  getUnfilledDeposits(): { deposit: Deposit; unfilledAmount: BigNumber }[] {
-    let unfilledDeposits: { deposit: Deposit; unfilledAmount: BigNumber }[] = [];
+  getUnfilledDeposits(): { deposit: Deposit; unfilledAmount: BigNumber; fillCount: number }[] {
+    let unfilledDeposits: { deposit: Deposit; unfilledAmount: BigNumber; fillCount: number }[] = [];
     // Iterate over each chainId and check for unfilled deposits.
     const chainIds = Object.keys(this.clients.spokePoolClients);
     for (const originChain of chainIds) {
@@ -77,7 +108,7 @@ export class Relayer {
         const destinationClient = this.clients.spokePoolClients[destinationChain];
         const depositsForDestinationChain = originClient.getDepositsForDestinationChain(destinationChain);
         const unfilledDepositsForDestinationChain = depositsForDestinationChain.map((deposit) => {
-          return { unfilledAmount: destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit };
+          return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit };
         });
         // Remove any deposits that have no unfilled amount and append the remaining deposits to unfilledDeposits array.
         unfilledDeposits.push(...unfilledDepositsForDestinationChain.filter((deposit) => deposit.unfilledAmount.gt(0)));
@@ -141,6 +172,19 @@ export class Relayer {
   }
 
   private constructRelayFilledMrkdwn(deposit: Deposit, repaymentChainId: number, fillAmount: BigNumber): string {
+    return (
+      this.constructBaseFillMarkdown(deposit, fillAmount) + `Relayer repayment: ${getNetworkName(repaymentChainId)}.`
+    );
+  }
+
+  private constructZeroSizeFilledMrkdwn(deposit: Deposit): string {
+    return (
+      this.constructBaseFillMarkdown(deposit, toBN(0)) +
+      `Has been relayed with 0 size due to a token shortfall! This will initiate a slow relay for this deposit.`
+    );
+  }
+
+  private constructBaseFillMarkdown(deposit: Deposit, fillAmount: BigNumber): string {
     const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
     return (
       `Relayed depositId ${deposit.depositId} from ${getNetworkName(deposit.originChainId)} ` +
@@ -148,9 +192,8 @@ export class Relayer {
       `${createFormatFunction(2, 4, false, decimals)(deposit.amount.toString())} ${symbol}. ` +
       `with depositor ${etherscanLink(deposit.depositor, deposit.originChainId)}. ` +
       `Fill amount of ${createFormatFunction(2, 4, false, decimals)(fillAmount.toString())} ${symbol} with ` +
-      `relayerFee ${createFormatFunction(2, 4, false, 18)(deposit.relayerFeePct.toString())}% & ` +
-      `realizedLpFee ${createFormatFunction(2, 4, false, 18)(deposit.realizedLpFeePct.toString())}%. ` +
-      `Relayer repayment: ${getNetworkName(repaymentChainId)}.`
+      `relayerFee ${createFormatFunction(2, 4, false, 18)(toBN(deposit.relayerFeePct).mul(100).toString())}% & ` +
+      `realizedLpFee ${createFormatFunction(2, 4, false, 18)(toBN(deposit.realizedLpFeePct).mul(100).toString())}%. `
     );
   }
 }

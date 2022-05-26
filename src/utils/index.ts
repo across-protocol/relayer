@@ -1,7 +1,8 @@
 // Utils from other packages.
 import winston from "winston";
 import assert from "assert";
-export { winston, assert };
+import fetch from "node-fetch";
+export { winston, assert, fetch };
 export { delay, Logger } from "@uma/financial-templates-lib";
 
 export { BigNumber, Signer, Contract, ContractFactory, Transaction } from "ethers";
@@ -35,6 +36,7 @@ export {
   HubPool__factory as HubPool,
   SpokePool__factory as SpokePool,
   AcrossConfigStore__factory as AcrossConfigStore,
+  PolygonTokenBridger__factory as PolygonTokenBridger,
 } from "@across-protocol/contracts-v2";
 
 export { getDeployedAddress, getDeployedBlockNumber, getContractInfoFromAddress } from "@across-protocol/contracts-v2";

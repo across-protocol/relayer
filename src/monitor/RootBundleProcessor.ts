@@ -19,18 +19,11 @@ export interface EventInfo {
 export class RootBundleProcessor {
   private eventActions: { [key: string]: string } = {
     ProposeRootBundle: "proposed",
-    RootBundleExecuted: "executed",
     RootBundleDisputed: "disputed",
     RootBundleCanceled: "canceled",
   };
 
-  private hubPoolClient: HubPoolClient;
-  private logger: winston.Logger;
-
-  constructor(hubPoolClient: HubPoolClient, logger: winston.Logger) {
-    this.hubPoolClient = hubPoolClient;
-    this.logger = logger;
-  }
+  constructor(readonly logger: winston.Logger, readonly hubPoolClient: HubPoolClient) {}
 
   async getRootBundleEventsInfo(
     startingBlock: number | undefined,
@@ -42,33 +35,24 @@ export class RootBundleProcessor {
       return;
     }
 
-    const [proposeRootBundleEvents, rootBundleExecutedEvents, rootBundleDisputedEvents, rootBundleCanceledEvents] =
-      await Promise.all([
-        this.hubPoolClient.hubPool.queryFilter(
-          this.hubPoolClient.hubPool.filters.ProposeRootBundleEvent(),
-          startingBlock,
-          endingBlock
-        ),
-        this.hubPoolClient.hubPool.queryFilter(
-          this.hubPoolClient.hubPool.filters.RootBundleExecutedEvent(),
-          startingBlock,
-          endingBlock
-        ),
-        this.hubPoolClient.hubPool.queryFilter(
-          this.hubPoolClient.hubPool.filters.RootBundleDisputedEvent(),
-          startingBlock,
-          endingBlock
-        ),
-        this.hubPoolClient.hubPool.queryFilter(
-          this.hubPoolClient.hubPool.filters.RootBundleCanceledEvent(),
-          startingBlock,
-          endingBlock
-        ),
-      ]);
-    const allEvents = proposeRootBundleEvents
-      .concat(rootBundleExecutedEvents)
-      .concat(rootBundleDisputedEvents)
-      .concat(rootBundleCanceledEvents);
+    const [proposeRootBundleEvents, rootBundleDisputedEvents, rootBundleCanceledEvents] = await Promise.all([
+      this.hubPoolClient.hubPool.queryFilter(
+        this.hubPoolClient.hubPool.filters.ProposeRootBundle(),
+        startingBlock,
+        endingBlock
+      ),
+      this.hubPoolClient.hubPool.queryFilter(
+        this.hubPoolClient.hubPool.filters.RootBundleDisputed(),
+        startingBlock,
+        endingBlock
+      ),
+      this.hubPoolClient.hubPool.queryFilter(
+        this.hubPoolClient.hubPool.filters.RootBundleCanceled(),
+        startingBlock,
+        endingBlock
+      ),
+    ]);
+    const allEvents = proposeRootBundleEvents.concat(rootBundleDisputedEvents).concat(rootBundleCanceledEvents);
 
     for (const event of allEvents) {
       let caller: string;
@@ -76,9 +60,6 @@ export class RootBundleProcessor {
       switch (event.event) {
         case "ProposeRootBundle":
           caller = (event as ProposeRootBundleEvent).args.proposer;
-          break;
-        case "RootBundleExecuted":
-          caller = (event as RootBundleExecutedEvent).args.caller;
           break;
         case "RootBundleDisputed":
           caller = (event as RootBundleDisputedEvent).args.disputer;

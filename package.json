@@ -10,9 +10,13 @@
     "node": ">=8.3.0"
   },
   "dependencies": {
-    "@across-protocol/contracts-v2": "^0.0.55",
+    "@across-protocol/contracts-v2": "^1.0.0",
     "@across-protocol/sdk-v2": "^0.1.1",
+    "@arbitrum/sdk": "^1.1.4",
     "@defi-wonderland/smock": "^2.0.7",
+    "@eth-optimism/sdk": "^1.1.5",
+    "@maticnetwork/maticjs": "^3.3.0",
+    "@maticnetwork/maticjs-ethers": "^1.0.2",
     "@uma/common": "^2.19.0",
     "@uma/contracts-node": "^0.3.1",
     "@uma/financial-templates-lib": "2.26.0",

@@ -98,7 +98,6 @@ export class TokenClient {
     const tokensToApprove: { chainId: string; token: string }[] = [];
     Object.keys(this.tokenData).forEach((chainId) => {
       Object.keys(this.tokenData[chainId]).forEach((token) => {
-        if (token === "0x4200000000000000000000000000000000000006") return; // Skip if WETH on optimism. This does not require approvals.
         if (this.tokenData[chainId][token].allowance.lt(toBN(MAX_SAFE_ALLOWANCE)))
           tokensToApprove.push({ chainId, token });
       });

@@ -1,21 +1,24 @@
-import { spreadEvent, assign, Contract, BigNumber, EventSearchConfig } from "../utils";
+import { spreadEvent, assign, Contract, BigNumber, EventSearchConfig, Promise } from "../utils";
 import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
 import { AcrossConfigStoreClient } from "./ConfigStoreClient";
-import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock } from "../interfaces/SpokePool";
+import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock, TokensBridged } from "../interfaces/SpokePool";
+import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
 
 export class SpokePoolClient {
   private deposits: { [DestinationChainId: number]: Deposit[] } = {};
   private fills: Fill[] = [];
   private speedUps: { [depositorAddress: string]: { [depositId: number]: SpeedUp[] } } = {};
   private depositRoutes: { [originToken: string]: { [DestinationChainId: number]: boolean } } = {};
+  private tokensBridged: TokensBridged[] = [];
+  private rootBundleRelays: RootBundleRelayWithBlock[] = [];
+  private relayerRefundExecutions: RelayerRefundExecutionWithBlock[] = [];
   public isUpdated: boolean = false;
 
   public firstBlockToSearch: number;
   public latestBlockNumber: number;
   public fillsWithBlockNumbers: FillWithBlock[] = [];
   public depositsWithBlockNumbers: { [DestinationChainId: number]: DepositWithBlock[] } = {};
-  public searchConfig: EventSearchConfig;
 
   constructor(
     readonly logger: winston.Logger,
@@ -42,6 +45,10 @@ export class SpokePoolClient {
 
   getFills(): Fill[] {
     return this.fills;
+  }
+
+  getTokensBridged(): TokensBridged[] {
+    return this.tokensBridged;
   }
 
   getDepositRoutes(): { [originToken: string]: { [DestinationChainId: number]: Boolean } } {
@@ -72,6 +79,14 @@ export class SpokePoolClient {
     return this.fills.filter((fill: Fill) => fill.relayer === relayer);
   }
 
+  getRootBundleRelays() {
+    return this.rootBundleRelays;
+  }
+
+  getRelayerRefundExecutions() {
+    return this.relayerRefundExecutions;
+  }
+
   appendMaxSpeedUpSignatureToDeposit(deposit: Deposit) {
     const maxSpeedUp = this.speedUps[deposit.depositor]?.[deposit.depositId].reduce((prev, current) =>
       prev.newRelayerFeePct.gt(current.newRelayerFeePct) ? prev : current
@@ -89,12 +104,12 @@ export class SpokePoolClient {
     );
   }
 
-  getValidUnfilledAmountForDeposit(deposit: Deposit): BigNumber {
+  getValidUnfilledAmountForDeposit(deposit: Deposit): { unfilledAmount: BigNumber; fillCount: number } {
     const fills = this.getFillsForOriginChain(deposit.originChainId)
       .filter((fill) => fill.depositId === deposit.depositId) // Only select the associated fill for the deposit.
       .filter((fill) => this.validateFillForDeposit(fill, deposit)); // Validate that the fill was valid for the deposit.
 
-    if (fills.length === 0) return toBN(deposit.amount); // If no fills then the full amount is remaining.
+    if (fills.length === 0) return { unfilledAmount: toBN(deposit.amount), fillCount: 0 }; // If no fills then the full amount is remaining.
 
     // Order fills by totalFilledAmount and then return the first fill's full deposit amount minus total filled amount.
     const fillsOrderedByTotalFilledAmount = fills.sort((fillA, fillB) =>
@@ -105,7 +120,7 @@ export class SpokePoolClient {
         : 0
     );
     const lastFill = fillsOrderedByTotalFilledAmount[0];
-    return toBN(lastFill.amount.sub(lastFill.totalFilledAmount));
+    return { unfilledAmount: toBN(lastFill.amount.sub(lastFill.totalFilledAmount)), fillCount: fills.length };
   }
 
   // Ensure that each deposit element is included with the same value in the fill. This includes all elements defined
@@ -122,7 +137,7 @@ export class SpokePoolClient {
     if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
 
     this.latestBlockNumber = await this.spokePool.provider.getBlockNumber();
-    this.searchConfig = {
+    const searchConfig = {
       fromBlock: this.firstBlockToSearch,
       toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
@@ -131,29 +146,45 @@ export class SpokePoolClient {
     // Deposit route search config should always go from the deployment block to ensure we fetch all routes. If this is
     // the first run then set the from block to the deployment block of the spoke pool. Else, use the same config as the
     // other event queries to not double search over the same event ranges.
-    const depositRouteSearchConfig = { ...this.searchConfig }; // shallow copy.
+    const depositRouteSearchConfig = { ...searchConfig }; // shallow copy.
     if (!this.isUpdated) depositRouteSearchConfig.fromBlock = this.spokePoolDeploymentBlock;
 
-    this.log("debug", "Updating client", {
-      searchConfig: this.searchConfig,
-      depositRouteSearchConfig,
-      spokePool: this.spokePool.address,
-    });
-    if (this.searchConfig.fromBlock > this.searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
+    this.log("debug", "Updating client", { searchConfig, depositRouteSearchConfig, spokePool: this.spokePool.address });
+    if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
-    const [depositEvents, speedUpEvents, fillEvents, enableDepositsEvents] = await Promise.all([
-      paginatedEventQuery(this.spokePool, this.spokePool.filters.FundsDeposited(), this.searchConfig),
-      paginatedEventQuery(this.spokePool, this.spokePool.filters.RequestedSpeedUpDeposit(), this.searchConfig),
-      paginatedEventQuery(this.spokePool, this.spokePool.filters.FilledRelay(), this.searchConfig),
-      paginatedEventQuery(this.spokePool, this.spokePool.filters.EnabledDepositRoute(), depositRouteSearchConfig),
-    ]);
+    const [
+      depositEvents,
+      speedUpEvents,
+      fillEvents,
+      enableDepositsEvents,
+      tokensBridgedEvents,
+      relayedRootBundleEvents,
+      executedRelayerRefundRootEvents,
+    ] = await Promise.all(
+      [
+        paginatedEventQuery(this.spokePool, this.spokePool.filters.FundsDeposited(), searchConfig),
+        paginatedEventQuery(this.spokePool, this.spokePool.filters.RequestedSpeedUpDeposit(), searchConfig),
+        paginatedEventQuery(this.spokePool, this.spokePool.filters.FilledRelay(), searchConfig),
+        paginatedEventQuery(this.spokePool, this.spokePool.filters.EnabledDepositRoute(), depositRouteSearchConfig),
+        paginatedEventQuery(this.spokePool, this.spokePool.filters.TokensBridged(), depositRouteSearchConfig),
+        paginatedEventQuery(this.spokePool, this.spokePool.filters.RelayedRootBundle(), searchConfig),
+        paginatedEventQuery(this.spokePool, this.spokePool.filters.ExecutedRelayerRefundRoot(), searchConfig),
+      ],
+      { concurrency: 2 }
+    );
+
+    for (const event of tokensBridgedEvents) {
+      this.tokensBridged.push({ ...spreadEvent(event), transactionHash: event.transactionHash });
+    }
 
     // For each depositEvent, compute the realizedLpFeePct. Note this means that we are only finding this value on the
     // new deposits that were found in the searchConfig (new from the previous run). This is important as this operation
     // is heavy as there is a fair bit of block number lookups that need to happen. Note this call REQUIRES that the
     // hubPoolClient is updated on the first before this call as this needed the the L1 token mapping to each L2 token.
     if (depositEvents.length > 0) this.log("debug", "Fetching realizedLpFeePct", { numDeposits: depositEvents.length });
-    const dataForQuoteTime = await Promise.all(depositEvents.map((event) => this.computeRealizedLpFeePct(event)));
+    const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number }[] = await Promise.all(
+      depositEvents.map((event) => this.computeRealizedLpFeePct(event))
+    );
 
     for (const [index, event] of depositEvents.entries()) {
       // Append the realizedLpFeePct.
@@ -189,11 +220,21 @@ export class SpokePoolClient {
       const enableDeposit = spreadEvent(event);
       assign(this.depositRoutes, [enableDeposit.originToken, enableDeposit.destinationChainId], enableDeposit.enabled);
     }
-    this.firstBlockToSearch = this.searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
+
+    for (const event of relayedRootBundleEvents) {
+      this.rootBundleRelays.push(spreadEvent(event));
+    }
+
+    for (const event of executedRelayerRefundRootEvents) {
+      this.relayerRefundExecutions.push(spreadEvent(event));
+    }
+
+    this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.isUpdated = true;
     this.log("debug", "Client updated!");
   }
+
   public hubPoolClient() {
     return this.configStoreClient.hubPoolClient;
   }

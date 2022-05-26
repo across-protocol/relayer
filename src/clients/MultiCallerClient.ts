@@ -52,17 +52,19 @@ export class MultiCallerClient {
             .map((transaction) => {
               return {
                 target: getTarget(transaction.transaction.contract.address),
+                args: transaction.transaction.args,
                 reason: transaction.reason,
                 message: transaction.transaction.message,
                 mrkdwn: transaction.transaction.mrkdwn,
               };
             }),
+          notificationPath: "across-error",
         });
       const validTransactions: AugmentedTransaction[] = transactionsSucceed
         .filter((transaction) => transaction.succeed)
         .map((transaction) => transaction.transaction);
 
-      if (validTransactions.length == 0) {
+      if (validTransactions.length === 0) {
         this.logger.debug({ at: "MultiCallerClient", message: "No valid transactions in the queue" });
         return;
       }
@@ -119,7 +121,7 @@ export class MultiCallerClient {
       const transactionHashes = [];
       Object.keys(groupedTransactions).forEach((chainId, chainIndex) => {
         mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
-        if ((transactionReceipts[chainIndex] as any).status == "rejected") {
+        if (transactionReceipts[chainIndex].status === "rejected") {
           mrkdwn += ` ⚠️ Transactions sent on ${getNetworkName(chainId)} failed to execute due to exceeding timeout.\n`;
         } else {
           groupedTransactions[chainId].forEach((transaction, groupTxIndex) => {
@@ -136,8 +138,9 @@ export class MultiCallerClient {
     } catch (error) {
       this.logger.error({
         at: "MultiCallerClient",
-        message: "Error executing tx bundle. There might be an RPC error on of the chains",
+        message: "Error executing bundle. There might be an RPC error",
         error,
+        notificationPath: "across-error",
       });
     }
   }
@@ -145,18 +148,21 @@ export class MultiCallerClient {
   buildMultiCallBundle(transactions: AugmentedTransaction[]) {
     // Validate all transactions in the batch have the same target contract.
     const target = transactions[0].contract;
-    if (transactions.every((tx) => tx.contract.address != target.address)) {
+    if (transactions.every((tx) => tx.contract.address !== target.address)) {
       this.logger.error({
         at: "MultiCallerClient",
         message: "some transactions in the bundle contain different targets",
         transactions: transactions.map(({ contract, chainId }) => {
           return { target: getTarget(contract.address), chainId };
         }),
+        notificationPath: "across-error",
       });
       return null; // If there is a problem in the targets in the bundle return null. This will be a noop.
     }
-    const callData = transactions.map((tx) => tx.contract.interface.encodeFunctionData(tx.method, tx.args));
-    this.logger.debug({ at: "MultiCallerClient", message: "Made bundle", target: target.address, callData });
+    let callData = transactions.map((tx) => tx.contract.interface.encodeFunctionData(tx.method, tx.args));
+    // There should not be any duplicate call data blobs within this array. If there are there is likely an error.
+    callData = [...new Set(callData)];
+    this.logger.debug({ at: "MultiCallerClient", message: "Made bundle", target: getTarget(target.address), callData });
     return runTransaction(this.logger, target, "multicall", [callData]);
   }
 }

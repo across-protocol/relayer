@@ -14,6 +14,8 @@ export const MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF = 3;
 // balances to transfer tokens to the spoke pool.
 export const DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD = toWei(1000);
 
+export const BUNDLE_END_BLOCK_BUFFER = 5;
+
 // DAI's Rate model.
 export const sampleRateModel = {
   UBar: toWei(0.8).toString(),

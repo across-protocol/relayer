@@ -1,12 +1,15 @@
 import winston from "winston";
-import { getProvider, getSigner, getDeployedContract, getDeploymentBlockNumber, Wallet } from "../utils";
-import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient } from "../clients";
+import { getProvider, getSigner, getDeployedContract, getDeploymentBlockNumber } from "../utils";
+import { Wallet, SpokePool, Contract } from "../utils";
+import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient, ProfitClient } from "../clients";
 import { CommonConfig } from "./Config";
+import { DataworkerClients } from "../dataworker/DataworkerClientHelper";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
   configStoreClient: AcrossConfigStoreClient;
   multiCallerClient: MultiCallerClient;
+  profitClient: ProfitClient;
 }
 
 export function getSpokePoolSigners(baseSigner: Wallet, config: CommonConfig): { [chainId: number]: Wallet } {
@@ -15,6 +18,38 @@ export function getSpokePoolSigners(baseSigner: Wallet, config: CommonConfig): {
       return [chainId, baseSigner.connect(getProvider(chainId, config.nodeQuorumThreshold))];
     })
   );
+}
+
+export async function constructSpokePoolClientsForBlockAndUpdate(
+  chainIdListForBundleEvaluationBlockNumbers: number[],
+  clients: DataworkerClients,
+  logger: winston.Logger,
+  latestMainnetBlock: number
+): Promise<{ [chainId: number]: SpokePoolClient }> {
+  const spokePoolClients = Object.fromEntries(
+    chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
+      const spokePoolContract = new Contract(
+        clients.hubPoolClient.getSpokePoolForBlock(latestMainnetBlock, Number(chainId)),
+        SpokePool.abi,
+        clients.spokePoolSigners[chainId]
+      );
+      const client = new SpokePoolClient(
+        logger,
+        spokePoolContract,
+        clients.configStoreClient,
+        Number(chainId),
+        clients.spokePoolClientSearchSettings[chainId],
+        clients.spokePoolClientSearchSettings[chainId].fromBlock
+      );
+      return [chainId, client];
+    })
+  );
+  await updateSpokePoolClients(spokePoolClients);
+  return spokePoolClients;
+}
+
+export async function updateSpokePoolClients(spokePoolClients: { [chainId: number]: SpokePoolClient }) {
+  await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update()));
 }
 
 export async function constructClients(logger: winston.Logger, config: CommonConfig): Promise<Clients> {
@@ -30,7 +65,8 @@ export async function constructClients(logger: winston.Logger, config: CommonCon
 
   const hubPoolClientSearchSettings = {
     fromBlock: Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId)),
-    toBlock: null,
+    toBlock: null, // Important that we set this to `null` to always look up latest HubPool events such as
+    // ProposeRootBundle in order to match a bundle block evaluation block range with a pending root bundle.
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
   const hubPoolClient = new HubPoolClient(logger, hubPool, hubPoolClientSearchSettings);
@@ -50,9 +86,13 @@ export async function constructClients(logger: winston.Logger, config: CommonCon
   // const gasEstimator = new GasEstimator() // todo when this is implemented in the SDK.
   const multiCallerClient = new MultiCallerClient(logger, null, config.maxTxWait);
 
-  return { hubPoolClient, configStoreClient, multiCallerClient };
+  const profitClient = new ProfitClient(logger, hubPoolClient);
+
+  return { hubPoolClient, configStoreClient, multiCallerClient, profitClient };
 }
 
 export async function updateClients(clients: Clients) {
-  await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
+  await clients.hubPoolClient.update();
+  await clients.configStoreClient.update();
+  await clients.profitClient.update();
 }

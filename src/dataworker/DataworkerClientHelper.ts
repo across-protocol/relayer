@@ -1,8 +1,16 @@
 import winston from "winston";
 import { DataworkerConfig } from "./DataworkerConfig";
-import { Clients, constructClients, getSpokePoolSigners, updateClients } from "../common";
-import { EventSearchConfig, getDeploymentBlockNumber, getSigner, Wallet } from "../utils";
-import { TokenClient } from "../clients";
+import {
+  Clients,
+  constructClients,
+  constructSpokePoolClientsForBlockAndUpdate,
+  getSpokePoolSigners,
+  updateClients,
+} from "../common";
+import { EventSearchConfig, getDeploymentBlockNumber, getSigner, Wallet, ethers } from "../utils";
+import { SpokePoolClient, TokenClient } from "../clients";
+import { getWidestPossibleExpectedBlockRange } from "./PoolRebalanceUtils";
+import { getBlockRangeForChain } from "./DataworkerUtils";
 
 export interface DataworkerClients extends Clients {
   tokenClient: TokenClient;
@@ -44,4 +52,58 @@ export async function updateDataworkerClients(clients: DataworkerClients) {
 
   // Run approval on hub pool.
   await clients.tokenClient.setBondTokenAllowance();
+}
+
+export async function constructSpokePoolClientsForPendingRootBundle(
+  logger: winston.Logger,
+  chainIdListForBundleEvaluationBlockNumbers: number[],
+  clients: DataworkerClients
+) {
+  const widestPossibleExpectedBlockRange = await getWidestPossibleExpectedBlockRange(
+    chainIdListForBundleEvaluationBlockNumbers,
+    clients,
+    clients.hubPoolClient.latestBlockNumber
+  );
+  const { hasPendingProposal, pendingRootBundle } = clients.hubPoolClient.getPendingRootBundleIfAvailable();
+  let blockRangesImpliedByBundleEndBlocks: number[][];
+  let endBlockForMainnet: number;
+  let spokePoolClients: { [chainId: number]: SpokePoolClient };
+  if (hasPendingProposal) {
+    // The block range that we'll use to reconstruct the pending roots will be the end block specified in the
+    // pending root bundle, and the block right after the last valid root bundle proposal's end block.
+    // If the proposer didn't use the same start block, then they might have missed events and the roots will
+    // be different. We'll need to reconstruct these block ranges for the validator and executor.
+    if (pendingRootBundle.bundleEvaluationBlockNumbers)
+      blockRangesImpliedByBundleEndBlocks = widestPossibleExpectedBlockRange.map((blockRange, index) => [
+        blockRange[0],
+        pendingRootBundle.bundleEvaluationBlockNumbers[index],
+      ]);
+    // Construct spoke pool clients using spoke pools deployed at end of block range.
+    // We do make an assumption that the spoke pool contract was not changed during the block range. By using the
+    // spoke pool at this block instead of assuming its the currently deployed one, we can pay refunds for deposits
+    // on deprecated spoke pools.
+    if (blockRangesImpliedByBundleEndBlocks) {
+      endBlockForMainnet = getBlockRangeForChain(
+        blockRangesImpliedByBundleEndBlocks,
+        1,
+        chainIdListForBundleEvaluationBlockNumbers
+      )[1];
+      spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
+        chainIdListForBundleEvaluationBlockNumbers,
+        clients,
+        logger,
+        endBlockForMainnet
+      );
+    }
+  }
+
+  return spokePoolClients;
+}
+
+export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number]: SpokePoolClient }): {
+  [chainId: number]: ethers.providers.Provider;
+} {
+  return Object.fromEntries(
+    Object.entries(spokePoolClients).map(([chainId, client]) => [Number(chainId), client.spokePool.signer.provider!])
+  );
 }

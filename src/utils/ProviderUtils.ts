@@ -1,6 +1,23 @@
 import { ethers, providers } from "ethers";
 
-const stallTimeout = 10000;
+const stallTimeout = 15 * 1000;
+
+function delay(s: number): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(resolve, s * 1000));
+}
+
+class RetryProvider extends ethers.providers.JsonRpcProvider {
+  send(method: string, params: Array<any>): Promise<any> {
+    const delayS = 2;
+    const retries = 2;
+    let promise = super.send(method, params);
+    for (let i = 0; i < retries; i++) {
+      promise = promise.catch(() => delay(delayS).then(() => super.send(method, params)));
+    }
+
+    return promise;
+  }
+}
 
 export function getProvider(networkId: number, nodeQuorumThreshold: number = 1) {
   if (process.env[`RETRY_CONFIG_${networkId}`]) return getFallbackProvider(networkId, nodeQuorumThreshold);
@@ -29,5 +46,5 @@ export function getFallbackProvider(networkId: number, nodeQuorumThreshold: numb
 export function getStandardProvider(networkId: number) {
   const nodeUrl = process.env[`NODE_URL_${networkId}`];
   if (!nodeUrl) throw new Error(`No NODE_URL_ for network ${networkId}`);
-  return new ethers.providers.JsonRpcProvider({ url: nodeUrl, timeout: stallTimeout });
+  return new RetryProvider({ url: nodeUrl, timeout: stallTimeout });
 }
