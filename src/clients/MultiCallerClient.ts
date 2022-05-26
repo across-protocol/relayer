@@ -52,6 +52,7 @@ export class MultiCallerClient {
             .map((transaction) => {
               return {
                 target: getTarget(transaction.transaction.contract.address),
+                args: transaction.transaction.args,
                 reason: transaction.reason,
                 message: transaction.transaction.message,
                 mrkdwn: transaction.transaction.mrkdwn,

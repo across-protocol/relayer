@@ -370,7 +370,13 @@ export class Dataworker {
           leaves: poolRebalanceRoot.leaves,
         });
         return;
-      }
+      } else
+        this.logger.debug({
+          at: "Dataworker",
+          message: `Root bundle USD volume exceeds threshold! 💚`,
+          usdThresholdToSubmitNewBundle,
+          totalUsdRefund,
+        });
     }
 
     this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForProposal });
@@ -874,7 +880,11 @@ export class Dataworker {
                 tree.getHexProof(leaf),
               ],
               message: "Executed SlowRelayLeaf 🌿!",
-              mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nslowRelayRoot: ${rootBundleRelay.slowRelayRoot}\nOrigin chain: ${leaf.originChainId}\nDestination chain:${leaf.destinationChainId}\nDeposit Id: ${leaf.depositId}\n`, // Just a placeholder
+              mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nslowRelayRoot: ${
+                rootBundleRelay.slowRelayRoot
+              }\nOrigin chain: ${leaf.originChainId}\nDestination chain:${leaf.destinationChainId}\nDeposit Id: ${
+                leaf.depositId
+              }\namount: ${leaf.amount.toString()}`, // Just a placeholder
             });
           });
         }
@@ -1012,7 +1022,9 @@ export class Dataworker {
           proof,
         ],
         message: "Executed PoolRebalanceLeaf 🌿!",
-        mrkdwn: `Root hash: ${expectedTrees.poolRebalanceTree.tree.getHexRoot()}\nLeaf: ${leaf.leafId}`, // Just a placeholder
+        mrkdwn: `Root hash: ${expectedTrees.poolRebalanceTree.tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${
+          leaf.chainId
+        }`, // Just a placeholder
       });
     });
   }
@@ -1160,7 +1172,11 @@ export class Dataworker {
               method: "executeRelayerRefundLeaf",
               args: [rootBundleRelay.rootBundleId, leaf, tree.getHexProof(leaf)],
               message: "Executed RelayerRefundLeaf 🌿!",
-              mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nrelayerRefundRoot: ${rootBundleRelay.relayerRefundRoot}\nLeaf: ${leaf.leafId}\nchainId: ${chainId}\ntoken: ${leaf.l2TokenAddress}`, // Just a placeholder
+              mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nrelayerRefundRoot: ${
+                rootBundleRelay.relayerRefundRoot
+              }\nLeaf: ${leaf.leafId}\nchainId: ${chainId}\ntoken: ${
+                leaf.l2TokenAddress
+              }\namount: ${leaf.amountToReturn.toString()}`, // Just a placeholder
             });
           });
         }
@@ -1210,6 +1226,11 @@ export class Dataworker {
   }
 
   _submitDisputeWithMrkdwn(hubPoolChainId: number, mrkdwn: string) {
+    this.logger.error({
+      at: "Dataworker",
+      message: "Submitting dispute 🤏🏼",
+      mrkdwn,
+    });
     try {
       this.clients.multiCallerClient.enqueueTransaction({
         contract: this.clients.hubPoolClient.hubPool, // target contract

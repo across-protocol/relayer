@@ -10,7 +10,6 @@ export class DataworkerConfig extends CommonConfig {
   readonly disputerEnabled: boolean;
   readonly proposerEnabled: boolean;
   readonly executorEnabled: boolean;
-  readonly sendingTransactionsEnabled: boolean;
 
   constructor(env: ProcessEnv) {
     const {
@@ -22,7 +21,6 @@ export class DataworkerConfig extends CommonConfig {
       DISPUTER_ENABLED,
       PROPOSER_ENABLED,
       EXECUTOR_ENABLED,
-      SEND_TRANSACTIONS,
     } = env;
     super(env);
 
@@ -49,7 +47,6 @@ export class DataworkerConfig extends CommonConfig {
     this.disputerEnabled = DISPUTER_ENABLED === "true";
     this.proposerEnabled = PROPOSER_ENABLED === "true";
     this.executorEnabled = EXECUTOR_ENABLED === "true";
-    this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
     if (Object.keys(this.blockRangeEndBlockBuffer).length > 0)
       for (const chainId of this.spokePoolChains)
         assert(
