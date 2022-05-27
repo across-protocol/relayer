@@ -456,6 +456,7 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworke#validater",
         message: "Challenge period passed, cannot dispute",
+        expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
       });
       return;
     }
@@ -934,7 +935,8 @@ export class Dataworker {
     if (this.clients.hubPoolClient.currentTime <= pendingRootBundle.challengePeriodEndTimestamp) {
       this.logger.debug({
         at: "Dataworke#executePoolRebalanceLeaves",
-        message: "Challenge period not passed, cannot execute",
+        message: `Challenge period not passed, cannot execute until ${pendingRootBundle.challengePeriodEndTimestamp}`,
+        expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
       });
       return;
     }

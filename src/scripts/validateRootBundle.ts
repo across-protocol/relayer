@@ -53,6 +53,12 @@ export async function validate(_logger: winston.Logger) {
     proposalBlockNumber: precedingProposeRootBundleEvent.blockNumber,
   };
 
+  logger[startupLogLevel(config)]({
+    at: "RootBundleValidator",
+    message: `Found preceding root bundle`,
+    transactionHash: precedingProposeRootBundleEvent.transactionHash,
+  });
+
   const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
     dataworker.chainIdListForBundleEvaluationBlockNumbers,
     getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
