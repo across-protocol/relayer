@@ -95,15 +95,11 @@ export async function retrieveTokenFromMainnetTokenBridger(
   const ethBalance = await mainnetTokenBridger.provider.getBalance(mainnetTokenBridger.address);
   const balanceToRetrieve = l1TokenInfo.symbol === "WETH" ? ethBalance : balance;
   if (balanceToRetrieve.eq(toBN(0))) {
-    logger.debug({
-      at: "PolygonFinalizer",
-      message: `No ${l1TokenInfo.symbol} balance to withdraw, skipping`,
-    });
     return false;
   } else {
     logger.debug({
       at: "PolygonFinalizer",
-      message: `Retrieving ${balanceToRetrieve.toString()} ${l1TokenInfo.symbol}`,
+      message: `Retrieving ${balanceToRetrieve.toString()} ${l1TokenInfo.symbol} from PolygonTokenBridger`,
     });
     const txn = await mainnetTokenBridger.retrieve(l1Token);
     const receipt = await txn.wait(); // Wait for confirmation.

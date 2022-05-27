@@ -149,7 +149,7 @@ export class SpokePoolClient {
     const depositRouteSearchConfig = { ...searchConfig }; // shallow copy.
     if (!this.isUpdated) depositRouteSearchConfig.fromBlock = this.spokePoolDeploymentBlock;
 
-    this.log("debug", "Updating client", { searchConfig, depositRouteSearchConfig, spokePool: this.spokePool.address });
+    this.log("debug", `Updating SpokePool client for chain ${this.chainId}`, { searchConfig, depositRouteSearchConfig, spokePool: this.spokePool.address });
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
     const [
@@ -181,7 +181,7 @@ export class SpokePoolClient {
     // new deposits that were found in the searchConfig (new from the previous run). This is important as this operation
     // is heavy as there is a fair bit of block number lookups that need to happen. Note this call REQUIRES that the
     // hubPoolClient is updated on the first before this call as this needed the the L1 token mapping to each L2 token.
-    if (depositEvents.length > 0) this.log("debug", "Fetching realizedLpFeePct", { numDeposits: depositEvents.length });
+    if (depositEvents.length > 0) this.log("debug", `Fetching realizedLpFeePct for ${depositEvents.length} deposits on chain ${this.chainId}`, { numDeposits: depositEvents.length });
     const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number }[] = await Promise.all(
       depositEvents.map((event) => this.computeRealizedLpFeePct(event))
     );
@@ -232,7 +232,7 @@ export class SpokePoolClient {
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.isUpdated = true;
-    this.log("debug", "Client updated!");
+    this.log("debug", `SpokePool client for chain ${this.chainId} updated!`);
   }
 
   public hubPoolClient() {

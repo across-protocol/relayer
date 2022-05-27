@@ -196,9 +196,10 @@ export class Dataworker {
       unfilledDeposits,
       allInvalidFills
     );
+    const mainnetRange = getBlockRangeForChain(blockRangesForChains, 1, this.chainIdListForBundleEvaluationBlockNumbers)
     this.logger.debug({
       at: "Dataworker",
-      message: `Finished loading spoke pool data`,
+      message: `Finished loading spoke pool data for the equivalent of mainnet range: [${mainnetRange[0]}, ${mainnetRange[1]}]`,
       blockRangesForChains,
       ...spokeEventsReadable,
     });
@@ -726,7 +727,14 @@ export class Dataworker {
 
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([chainId, client]) => {
-        let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays());
+        let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
+          (rootBundle) => rootBundle.slowRelayRoot !== EMPTY_MERKLE_ROOT
+        );
+        this.logger.debug({
+          at: "Dataworker#executeSlowRelayLeaves",
+          message: `Found ${rootBundleRelays.length} historical non-empty slow relay root bundles on chain ${chainId}`,
+        });
+
 
         // Only grab the most recent n roots that have been sent if configured to do so.
         if (this.spokeRootsLookbackCount !== 0)
@@ -752,9 +760,10 @@ export class Dataworker {
           if (!matchingRootBundle) {
             this.logger.warn({
               at: "Dataworke#executeSlowRelayLeaves",
-              message: "Couldn't find a mainnet root bundle for a slowRelayRoot on L2!",
+              message: "Couldn't find a matching mainnet root bundle for a slowRelayRoot on L2!",
               chainId,
               slowRelayRoot: rootBundleRelay.slowRelayRoot,
+              rootBundleId: rootBundleRelay.rootBundleId
             });
             continue;
           }
@@ -783,8 +792,15 @@ export class Dataworker {
             continue;
           }
 
-          const unexecutedLeaves = leaves.filter((leaf) => {
-            if (leaf.destinationChainId !== Number(chainId)) return false;
+          const leavesForChain = leaves.filter((leaf) => leaf.destinationChainId === Number(chainId))
+          if (leavesForChain.length === 0) { 
+            this.logger.debug({
+              at: "Dataworke#executeSlowRelayLeaves",
+              message: `No slow relay leaves in bundle ${rootBundleRelay.rootBundleId} with destination chain ${chainId}`
+            });
+            continue;
+          }
+          const unexecutedLeaves = leavesForChain.filter((leaf) => {
             const executedLeaf = slowFillsForChain.find(
               (event) => event.originChainId === leaf.originChainId && event.depositId === leaf.depositId
             );
@@ -792,6 +808,13 @@ export class Dataworker {
             // Only return true if no leaf was found in the list of executed leaves.
             return !executedLeaf;
           });
+          if (unexecutedLeaves.length === 0) {
+            this.logger.debug({
+              at: "Dataworke#executeSlowRelayLeaves",
+              message: `All ${leavesForChain.length} slow relay leaves in bundle ${rootBundleRelay.rootBundleId} executed for chain ${chainId}`
+            });
+            continue;
+          }
 
           const leavesWithLatestFills = unexecutedLeaves.map((leaf) => {
             const fill = sortedFills.find((fill) => {
@@ -810,6 +833,21 @@ export class Dataworker {
 
             return { ...leaf, fill };
           });
+          const unexecutableLeaves = leavesWithLatestFills.filter((leaf) => leaf.fill && leaf.fill.totalFilledAmount.eq(leaf.fill.amount))
+          if (unexecutableLeaves.length > 0) {
+            if (unexecutableLeaves.length === unexecutedLeaves.length) {
+              this.logger.debug({
+                at: "Dataworke#executeSlowRelayLeaves",
+                message: `All ${unexecutableLeaves.length} unexecuted slow relay leaves in bundle ${rootBundleRelay.rootBundleId} for chain ${chainId} have already been filled`
+              });
+              continue;
+            }
+            else
+              this.logger.debug({
+                at: "Dataworke#executeSlowRelayLeaves",
+                message: `${unexecutableLeaves.length} unexecutable slow relay leaves in bundle ${rootBundleRelay.rootBundleId} for chain ${chainId} that have already been filled`
+              });
+          }
 
           // Filter for leaves where the contract has the funding to send the required tokens.
           const fundedLeaves = (
@@ -838,9 +876,12 @@ export class Dataworker {
                     at: "Dataworker#executeSlowRelayLeaves",
                     message: "Not executing slow relay leaf due to lack of funds in SpokePool",
                     root: rootBundleRelay.slowRelayRoot,
+                    bundle: rootBundleRelay.rootBundleId,
                     depositId: leaf.depositId,
                     fromChain: leaf.originChainId,
                     chainId: leaf.destinationChainId,
+                    token: leaf.destinationToken,
+                    amount: leaf.amount
                   });
                 }
 
@@ -985,6 +1026,8 @@ export class Dataworker {
               leafId: leaf.leafId,
               rebalanceChain: leaf.chainId,
               chainId: hubPoolChainId,
+              token: leaf.l1Tokens,
+              netSendAmounts: leaf.netSendAmounts
             });
           }
           return success ? leaf : undefined;
@@ -1028,7 +1071,13 @@ export class Dataworker {
 
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([chainId, client]) => {
-        let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays());
+        let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
+          (rootBundle) => rootBundle.relayerRefundRoot !== EMPTY_MERKLE_ROOT
+        );
+        this.logger.debug({
+          at: "Dataworker#executeRelayerRefundLeaves",
+          message: `Found ${rootBundleRelays.length} historical non-empty relayer refund root bundles on chain ${chainId}`,
+        });
 
         // Only grab the most recent n roots that have been sent if configured to do so.
         if (this.spokeRootsLookbackCount !== 0)
@@ -1051,9 +1100,10 @@ export class Dataworker {
           if (!matchingRootBundle) {
             this.logger.warn({
               at: "Dataworke#executeRelayerRefundLeaves",
-              message: "Couldn't find a mainnet root bundle for a relayerRefundRoot on L2!",
+              message: "Couldn't find a matching mainnet root bundle for a relayerRefundRoot on L2!",
               chainId,
               relayerRefundRoot: rootBundleRelay.relayerRefundRoot,
+              rootBundleId: rootBundleRelay.rootBundleId
             });
             continue;
           }
@@ -1097,11 +1147,17 @@ export class Dataworker {
             this.tokenTransferThreshold
           );
 
-          const { tree, leaves } = this.buildRelayerRefundRoot(
-            blockNumberRanges,
-            spokePoolClients,
+          const maxRefundCount = this.maxRefundCountOverride
+            ? this.maxRefundCountOverride
+            : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
+          const { tree, leaves } = _buildRelayerRefundRoot(
+            endBlockForMainnet,
+            fillsToRefund,
             expectedPoolRebalanceRoot.leaves,
-            expectedPoolRebalanceRoot.runningBalances
+            expectedPoolRebalanceRoot.runningBalances,
+            this.clients,
+            maxRefundCount,
+            this.tokenTransferThreshold
           );
 
           if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {
@@ -1116,19 +1172,33 @@ export class Dataworker {
             continue;
           }
 
-          const executableLeaves = leaves.filter((leaf) => {
-            if (leaf.chainId !== Number(chainId)) return false;
+          const leavesForChain = leaves.filter((leaf) => leaf.chainId === Number(chainId))
+          if (leavesForChain.length === 0) { 
+            this.logger.debug({
+              at: "Dataworke#executeRelayerRefundLeaves",
+              message: `No refund leaves in bundle ${rootBundleRelay.rootBundleId} with chain ${chainId}`
+            });
+            continue;
+          }
+          const unexecutedLeaves = leavesForChain.filter((leaf) => {
             const executedLeaf = executedLeavesForChain.find(
               (event) => event.rootBundleId === rootBundleRelay.rootBundleId && event.leafId === leaf.leafId
             );
             // Only return true if no leaf was found in the list of executed leaves.
             return !executedLeaf;
           });
+          if (unexecutedLeaves.length === 0) {
+            this.logger.debug({
+              at: "Dataworke#executeRelayerRefundLeaves",
+              message: `All ${leavesForChain.length} refund leaves in bundle ${rootBundleRelay.rootBundleId} executed for chain ${chainId}`
+            });
+            continue;
+          }
 
           // Filter for leaves where the contract has the funding to send the required tokens.
           const fundedLeaves = (
             await Promise.all(
-              executableLeaves.map(async (leaf) => {
+              unexecutedLeaves.map(async (leaf) => {
                 const refundSum = leaf.refundAmounts.reduce((acc, curr) => acc.add(curr), BigNumber.from(0));
                 const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
                 const success = await balanceAllocator.requestBalanceAllocation(
@@ -1143,8 +1213,12 @@ export class Dataworker {
                     at: "Dataworker#executeRelayerRefundLeaves",
                     message: "Not executing relayer refund leaf on SpokePool due to lack of funds.",
                     root: rootBundleRelay.relayerRefundRoot,
+                    bundle: rootBundleRelay.rootBundleId,
                     leafId: leaf.leafId,
+                    token: leaf.l2TokenAddress,
                     chainId: leaf.chainId,
+                    amountToReturn: leaf.amountToReturn,
+                    refunds: leaf.refundAmounts
                   });
                 }
 

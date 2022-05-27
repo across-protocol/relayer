@@ -31,7 +31,7 @@ export async function finalizeArbitrum(
 
   logger.debug({
     at: "ArbitrumFinalizer",
-    message: "Finalizing message",
+    message: "Finalizing Arbitrum message",
     l1Token: l1TokenInfo.symbol,
     amount,
   });
@@ -39,7 +39,7 @@ export async function finalizeArbitrum(
   const rec = await res.wait();
   logger.info({
     at: "ArbitrumFinalizer",
-    message: `Executed withdrawal if ${amount} ${l1TokenInfo.symbol} from outbox!`,
+    message: `Executed Arbitrum withdrawal if ${amount} ${l1TokenInfo.symbol} from outbox!`,
     transaction: rec.transactionHash,
     l1Token: l1TokenInfo.symbol,
     amount,
@@ -56,7 +56,7 @@ export async function getFinalizableMessages(
   const statusesGrouped = groupObjectCountsByTwoProps(allMessagesWithStatuses, "status", (message) => message["token"]);
   logger.debug({
     at: "ArbitrumFinalizer",
-    message: "Queried outbox statuses for messages",
+    message: "Arbitrum outbox message statuses",
     statusesGrouped,
   });
   const finalizableMessages = allMessagesWithStatuses.filter(
@@ -65,7 +65,7 @@ export async function getFinalizableMessages(
   if (finalizableMessages.length > 0) {
     logger.debug({
       at: "ArbitrumFinalizer",
-      message: `Found ${finalizableMessages.length} L2 token bridges to L1 that are confirmed and can be finalized`,
+      message: `Found ${finalizableMessages.length} Arbitrum token bridges to L1 that are confirmed and can be finalized`,
       bridges: finalizableMessages.map((x) => {
         const copy: any = { ...x.info };
         const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
@@ -83,7 +83,7 @@ export async function getFinalizableMessages(
   } else
     logger.debug({
       at: "ArbitrumFinalizer",
-      message: "No finalizable messages",
+      message: "No Arbitrum finalizable messages",
     });
   return finalizableMessages;
 }
@@ -137,7 +137,7 @@ export async function getMessageOutboxStatusAndProof(
     const error = new Error(`No outgoing messages found in transaction:${event.transactionHash}`);
     logger.error({
       at: "ArbitrumFinalizer",
-      message: "Transaction that emitted TokensBridged event unexpectedly contains 0 L2-to-L1 messages 🤢!",
+      message: "Arbitrum transaction that emitted TokensBridged event unexpectedly contains 0 L2-to-L1 messages 🤢!",
       logIndex,
       l2ToL1Messages: l2ToL1Messages.length,
       txnHash: event.transactionHash,

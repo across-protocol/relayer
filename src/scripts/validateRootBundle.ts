@@ -11,7 +11,6 @@
 // 2. Example of valid bundle:   REQUEST_TIME=1653516226 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
 
 import { winston, config, startupLogLevel, Logger, delay } from "../utils";
-import * as Constants from "../common";
 import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { BlockFinder } from "@uma/sdk";
 import { RootBundle } from "../interfaces";
@@ -31,7 +30,7 @@ export async function validate(_logger: winston.Logger) {
   const { clients, config, dataworker } = await createDataworker(logger);
   logger[startupLogLevel(config)]({
     at: "RootBundleValidator",
-    message: "Validating most recently proposed root bundle for request time",
+    message: `Validating most recently proposed root bundle before request time ${priceRequestTime}`,
     priceRequestTime,
     config,
   });
@@ -43,12 +42,6 @@ export async function validate(_logger: winston.Logger) {
   const priceRequestBlock = (await blockFinder.getBlockForTimestamp(priceRequestTime)).number;
   await updateDataworkerClients(clients);
   const precedingProposeRootBundleEvent = clients.hubPoolClient.getMostRecentProposedRootBundle(priceRequestBlock);
-  logger.debug({
-    at: "RootBundleValidator",
-    message: "Found latest ProposeRootBundle event before dispute time",
-    priceRequestTime,
-    priceRequestBlock,
-  });
   const rootBundle: RootBundle = {
     poolRebalanceRoot: precedingProposeRootBundleEvent.poolRebalanceRoot,
     relayerRefundRoot: precedingProposeRootBundleEvent.relayerRefundRoot,
@@ -66,22 +59,8 @@ export async function validate(_logger: winston.Logger) {
     clients,
     priceRequestBlock
   );
-  logger.debug({
-    at: "RootBundleValidator",
-    message: "Root bundle end block numbers must be less than latest L2 blocks",
-    rootBundleEvaluationBlockNumbers: precedingProposeRootBundleEvent.bundleEvaluationBlockNumbers.map((x) =>
-      x.toNumber()
-    ),
-    latestBlocks: widestPossibleBlockRanges.map((range) => range[1]),
-    impliedStartBlocks: widestPossibleBlockRanges.map((range) => range[0]),
-  });
 
   // Validate the event:
-  logger.debug({
-    at: "RootBundleValidator",
-    message: "Validating root bundle",
-    rootBundle,
-  });
   const { valid, reason } = await dataworker.validateRootBundle(
     config.hubPoolChainId,
     widestPossibleBlockRanges,
