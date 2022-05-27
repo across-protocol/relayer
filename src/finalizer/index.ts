@@ -92,11 +92,13 @@ export async function run(
           message: "Finalizing Optimism message",
           l1Token: message.token,
         });
-        await crossChainMessenger.finalizeMessage(message.message);
+        const txn = await crossChainMessenger.finalizeMessage(message.message);
+        const receipt = await txn.wait();
         logger.info({
           at: "OptimismFinalizer",
           message: "Finalized Optimism message!",
           l1Token: message.token,
+          transaction: receipt.transactionHash
           // TODO: Add amount log
         });
       }
