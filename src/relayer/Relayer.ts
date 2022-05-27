@@ -26,18 +26,18 @@ export class Relayer {
     // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
     // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
     for (const { deposit, unfilledAmount, fillCount } of unfilledDeposits) {
-      if (this.clients.tokenClient.hasSufficientBalanceForFill(deposit, unfilledAmount)) {
-        if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount)) {
-          this.fillRelay(deposit, unfilledAmount);
-        } else {
-          this.clients.profitClient.captureUnprofitableFill(deposit, unfilledAmount);
-        }
-      } else {
-        this.clients.tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
+      // if (this.clients.tokenClient.hasSufficientBalanceForFill(deposit, unfilledAmount)) {
+      //   if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount)) {
+      //     this.fillRelay(deposit, unfilledAmount);
+      //   } else {
+      //     this.clients.profitClient.captureUnprofitableFill(deposit, unfilledAmount);
+      //   }
+      // } else {
+      //   this.clients.tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
         // If we dont have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
         // 0 sized fill to ensure that the deposit is slow relayed. This only needs to be done once.
         if (fillCount === 0) this.zeroFillDeposit(deposit);
-      }
+      // }
     }
 
     // If during the execution run we had shortfalls or unprofitable fills then handel it by producing associated logs.
