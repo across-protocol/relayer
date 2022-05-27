@@ -159,7 +159,11 @@ export class TokenClient {
   async fetchTokenData(spokePoolClient: SpokePoolClient) {
     const tokens = spokePoolClient
       .getAllOriginTokens()
-      .map((address) => new Contract(address, ERC20.abi, spokePoolClient.spokePool.signer));
+      // In Canary test system, we accidentally enabled the deposit route for the wrong WETH on Boba, 
+      // so we need to explicitly ignore it here. You couldn't even call approve() on it because 
+      // it has been disabled by admins.
+      .filter((address) => !(address === "0x4200000000000000000000000000000000000006" && spokePoolClient.chainId === 288))
+      .map((address) => new Contract(address, ERC20.abi, spokePoolClient.spokePool.signer))
 
     const [balances, allowances] = await Promise.all([
       Promise.all(tokens.map((token) => token.balanceOf(this.relayerAddress))),
