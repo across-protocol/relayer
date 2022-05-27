@@ -196,7 +196,11 @@ export class Dataworker {
       unfilledDeposits,
       allInvalidFills
     );
-    const mainnetRange = getBlockRangeForChain(blockRangesForChains, 1, this.chainIdListForBundleEvaluationBlockNumbers)
+    const mainnetRange = getBlockRangeForChain(
+      blockRangesForChains,
+      1,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
     this.logger.debug({
       at: "Dataworker",
       message: `Finished loading spoke pool data for the equivalent of mainnet range: [${mainnetRange[0]}, ${mainnetRange[1]}]`,
@@ -735,7 +739,6 @@ export class Dataworker {
           message: `Found ${rootBundleRelays.length} historical non-empty slow relay root bundles on chain ${chainId}`,
         });
 
-
         // Only grab the most recent n roots that have been sent if configured to do so.
         if (this.spokeRootsLookbackCount !== 0)
           rootBundleRelays = rootBundleRelays.slice(0, this.spokeRootsLookbackCount);
@@ -763,7 +766,7 @@ export class Dataworker {
               message: "Couldn't find a matching mainnet root bundle for a slowRelayRoot on L2!",
               chainId,
               slowRelayRoot: rootBundleRelay.slowRelayRoot,
-              rootBundleId: rootBundleRelay.rootBundleId
+              rootBundleId: rootBundleRelay.rootBundleId,
             });
             continue;
           }
@@ -792,11 +795,11 @@ export class Dataworker {
             continue;
           }
 
-          const leavesForChain = leaves.filter((leaf) => leaf.destinationChainId === Number(chainId))
-          if (leavesForChain.length === 0) { 
+          const leavesForChain = leaves.filter((leaf) => leaf.destinationChainId === Number(chainId));
+          if (leavesForChain.length === 0) {
             this.logger.debug({
               at: "Dataworke#executeSlowRelayLeaves",
-              message: `No slow relay leaves in bundle ${rootBundleRelay.rootBundleId} with destination chain ${chainId}`
+              message: `No slow relay leaves in bundle ${rootBundleRelay.rootBundleId} with destination chain ${chainId}`,
             });
             continue;
           }
@@ -811,7 +814,7 @@ export class Dataworker {
           if (unexecutedLeaves.length === 0) {
             this.logger.debug({
               at: "Dataworke#executeSlowRelayLeaves",
-              message: `All ${leavesForChain.length} slow relay leaves in bundle ${rootBundleRelay.rootBundleId} executed for chain ${chainId}`
+              message: `All ${leavesForChain.length} slow relay leaves in bundle ${rootBundleRelay.rootBundleId} executed for chain ${chainId}`,
             });
             continue;
           }
@@ -833,19 +836,20 @@ export class Dataworker {
 
             return { ...leaf, fill };
           });
-          const unexecutableLeaves = leavesWithLatestFills.filter((leaf) => leaf.fill && leaf.fill.totalFilledAmount.eq(leaf.fill.amount))
+          const unexecutableLeaves = leavesWithLatestFills.filter(
+            (leaf) => leaf.fill && leaf.fill.totalFilledAmount.eq(leaf.fill.amount)
+          );
           if (unexecutableLeaves.length > 0) {
             if (unexecutableLeaves.length === unexecutedLeaves.length) {
               this.logger.debug({
                 at: "Dataworke#executeSlowRelayLeaves",
-                message: `All ${unexecutableLeaves.length} unexecuted slow relay leaves in bundle ${rootBundleRelay.rootBundleId} for chain ${chainId} have already been filled`
+                message: `All ${unexecutableLeaves.length} slow relay leaves in bundle ${rootBundleRelay.rootBundleId} for chain ${chainId} have already been filled and are unexecutable`,
               });
               continue;
-            }
-            else
+            } else
               this.logger.debug({
                 at: "Dataworke#executeSlowRelayLeaves",
-                message: `${unexecutableLeaves.length} unexecutable slow relay leaves in bundle ${rootBundleRelay.rootBundleId} for chain ${chainId} that have already been filled`
+                message: `${unexecutableLeaves.length} unexecutable slow relay leaves in bundle ${rootBundleRelay.rootBundleId} for chain ${chainId} that have already been filled`,
               });
           }
 
@@ -881,7 +885,7 @@ export class Dataworker {
                     fromChain: leaf.originChainId,
                     chainId: leaf.destinationChainId,
                     token: leaf.destinationToken,
-                    amount: leaf.amount
+                    amount: leaf.amount,
                   });
                 }
 
@@ -1027,7 +1031,7 @@ export class Dataworker {
               rebalanceChain: leaf.chainId,
               chainId: hubPoolChainId,
               token: leaf.l1Tokens,
-              netSendAmounts: leaf.netSendAmounts
+              netSendAmounts: leaf.netSendAmounts,
             });
           }
           return success ? leaf : undefined;
@@ -1103,7 +1107,7 @@ export class Dataworker {
               message: "Couldn't find a matching mainnet root bundle for a relayerRefundRoot on L2!",
               chainId,
               relayerRefundRoot: rootBundleRelay.relayerRefundRoot,
-              rootBundleId: rootBundleRelay.rootBundleId
+              rootBundleId: rootBundleRelay.rootBundleId,
             });
             continue;
           }
@@ -1172,11 +1176,11 @@ export class Dataworker {
             continue;
           }
 
-          const leavesForChain = leaves.filter((leaf) => leaf.chainId === Number(chainId))
-          if (leavesForChain.length === 0) { 
+          const leavesForChain = leaves.filter((leaf) => leaf.chainId === Number(chainId));
+          if (leavesForChain.length === 0) {
             this.logger.debug({
               at: "Dataworke#executeRelayerRefundLeaves",
-              message: `No refund leaves in bundle ${rootBundleRelay.rootBundleId} with chain ${chainId}`
+              message: `No refund leaves in bundle ${rootBundleRelay.rootBundleId} with chain ${chainId}`,
             });
             continue;
           }
@@ -1190,7 +1194,7 @@ export class Dataworker {
           if (unexecutedLeaves.length === 0) {
             this.logger.debug({
               at: "Dataworke#executeRelayerRefundLeaves",
-              message: `All ${leavesForChain.length} refund leaves in bundle ${rootBundleRelay.rootBundleId} executed for chain ${chainId}`
+              message: `All ${leavesForChain.length} refund leaves in bundle ${rootBundleRelay.rootBundleId} executed for chain ${chainId}`,
             });
             continue;
           }
@@ -1218,7 +1222,7 @@ export class Dataworker {
                     token: leaf.l2TokenAddress,
                     chainId: leaf.chainId,
                     amountToReturn: leaf.amountToReturn,
-                    refunds: leaf.refundAmounts
+                    refunds: leaf.refundAmounts,
                   });
                 }
 
