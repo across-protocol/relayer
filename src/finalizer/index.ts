@@ -98,7 +98,7 @@ export async function run(
           message: "Finalized Optimism message!",
           l1Token: message.token,
           // TODO: Add amount log
-        })
+        });
       }
     }
   }

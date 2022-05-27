@@ -76,7 +76,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
 export async function updateRelayerClients(clients: RelayerClients) {
   await updateClients(clients);
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
-  await updateSpokePoolClients(clients.spokePoolClients)
+  await updateSpokePoolClients(clients.spokePoolClients);
   // Token client requires up to date spokePool clients to fetch token routes.
   await clients.tokenClient.update();
 

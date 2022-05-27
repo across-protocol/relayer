@@ -20,14 +20,13 @@ export async function finalizeArbitrum(
   messageInfo: TokensBridged,
   hubPoolClient: HubPoolClient
 ) {
-
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-      "42161",
-      l2Token,
-      hubPoolClient.latestBlockNumber
-  );  
+    "42161",
+    l2Token,
+    hubPoolClient.latestBlockNumber
+  );
   const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
-  const amount = ethers.utils.formatUnits(messageInfo.amountToReturn.toString(), l1TokenInfo.decimals)
+  const amount = ethers.utils.formatUnits(messageInfo.amountToReturn.toString(), l1TokenInfo.decimals);
 
   logger.debug({
     at: "ArbitrumFinalizer",
