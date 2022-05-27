@@ -39,14 +39,14 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk-v2@^0.1.1":
-  version "0.1.1"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.1.1.tgz#71e60660fce04cde47eb9661e1a1c196913fa835"
-  integrity sha512-T8NYHPlBw+ylAsocL7XPM9G5VrAG3RPe5z/Oag5rI0CB7Ct5zBZsi/4ehPagPB37Ge10Jd9HzgT7rLTqm1TrnA==
+"@across-protocol/sdk-v2@^0.1.10":
+  version "0.1.10"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.1.10.tgz#278f007b13ef36845bf4f5835c93a55e2ff928ff"
+  integrity sha512-2IvzxvDBQCelittSuCz7ZLTTOF61riB1Z3eUUVq+wEROqNJ7S2c7S7xf+RhVMEDXE5rpn+6wqm1GoT1S/WI2qA==
   dependencies:
     "@across-protocol/contracts-v2" "^0.0.50"
     "@eth-optimism/sdk" "^1.1.4"
-    "@uma/sdk" "^0.22.1"
+    "@uma/sdk" "^0.23.4"
     axios "^0.27.2"
     decimal.js "^10.3.1"
     ethers "^5.6.1"
@@ -3323,6 +3323,11 @@
   resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.3.2.tgz#97b187d017f8c2dc6f66924ad31cdea5a3dc5aa0"
   integrity sha512-WwTrmF+11EKT6Um+JfrqZOajeGNExdiOXZO4iIolUpTG4xBYI0D1KAGzUc2BNvkWAxD6ZdNuRqnQIvCX7+ySvQ==
 
+"@uma/contracts-frontend@^0.3.7":
+  version "0.3.7"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.3.7.tgz#a959490bcf5e6b0cd1d941a60be86f8ff659dd54"
+  integrity sha512-we/ZSf91HQPtYSbGyPAnZmHJCU+hREXWJW4Ee2Ics+/dytTx5M4ecqlwgOq9bXJNHpUMMeq4WdwuxLYJjrW19A==
+
 "@uma/contracts-node@^0.2.0":
   version "0.2.1"
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.2.1.tgz#29ebba6b2ecba7f0d2dc9b484bc34f0abbdefdaa"
@@ -3332,6 +3337,11 @@
   version "0.3.2"
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.2.tgz#884b00b2c6bf983c9f136d5f8a0749c5ff4e08cd"
   integrity sha512-Ncl7Kv2nxuY/wV5oczH2Nf6XCS7dJLad9DlzMI3jwPMPU98YT8ChHydcDe6ZiL0SAVTg7FgpIyh7lX0B7nV9Aw==
+
+"@uma/contracts-node@^0.3.7":
+  version "0.3.7"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.7.tgz#d2a1afefc021c70b6565558b24cf5fd082b493fd"
+  integrity sha512-mzI7sv+W91Cm7TBjkMioKg0pvHEOgT8QMlCNPmuQtkxUNqMnNJCj6MLzzotF4c6i3YzHsmA+PbiSsh2jVbhftw==
 
 "@uma/core@^2.18.0", "@uma/core@^2.24.0":
   version "2.26.0"
@@ -3373,7 +3383,7 @@
     winston "^3.2.1"
     winston-transport "^4.3.0"
 
-"@uma/sdk@^0.22.1", "@uma/sdk@^0.22.2":
+"@uma/sdk@^0.22.2":
   version "0.22.2"
   resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.22.2.tgz#260ca268ae54084d0bae45e38affc2043c79b902"
   integrity sha512-mgfRW8ZH4WuzoYgiEB5JWWEQjzYgaD5hCdY/mleq2r0GS17RpHslWy0y/xfCoDpAhVlsidMWn2QknmSeQc/z9Q==
@@ -3382,6 +3392,22 @@
     "@types/lodash-es" "^4.17.5"
     "@uma/contracts-frontend" "^0.3.2"
     "@uma/contracts-node" "^0.3.2"
+    axios "^0.24.0"
+    bn.js "^4.11.9"
+    decimal.js "^10.3.1"
+    highland "^2.13.5"
+    immer "^9.0.7"
+    lodash-es "^4.17.21"
+
+"@uma/sdk@^0.23.4":
+  version "0.23.4"
+  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.23.4.tgz#d27d9d24a45387f983e6a5edb0251925f40db62a"
+  integrity sha512-Sl5droihArcEspdHPz4sbJvcjymUMBGYZOLy87JAgXkC52mn6JHuGzI+7ljTjAAOT2vPhsfxNFEFcVIZHPEg+g==
+  dependencies:
+    "@google-cloud/datastore" "^6.6.0"
+    "@types/lodash-es" "^4.17.5"
+    "@uma/contracts-frontend" "^0.3.7"
+    "@uma/contracts-node" "^0.3.7"
     axios "^0.24.0"
     bn.js "^4.11.9"
     decimal.js "^10.3.1"
