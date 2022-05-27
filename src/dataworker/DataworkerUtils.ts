@@ -1,7 +1,7 @@
 import { BigNumberForToken, DepositWithBlock, FillsToRefund, FillWithBlock, PoolRebalanceLeaf } from "../interfaces";
 import { RelayData, RelayerRefundLeaf } from "../interfaces";
 import { RelayerRefundLeafWithGroup, RunningBalances, UnfilledDeposit } from "../interfaces";
-import { buildPoolRebalanceLeafTree, buildRelayerRefundTree, buildSlowRelayTree, winston } from "../utils";
+import { buildPoolRebalanceLeafTree, buildRelayerRefundTree, buildSlowRelayTree } from "../utils";
 import { groupObjectCountsByProp, groupObjectCountsByTwoProps, toBN } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { getDepositPath } from "./DepositUtils";
@@ -83,7 +83,6 @@ export function prettyPrintSpokePoolEvents(
       unfilledDeposits,
       (unfilledDeposit) => unfilledDeposit.deposit.destinationChainId
     ),
-    allValidFillsByDestinationChain: groupObjectCountsByProp(allValidFills, (fill) => fill.destinationChainId),
     allInvalidFillsInRangeByDestinationChain: groupObjectCountsByTwoProps(
       allInvalidFillsInRange,
       "destinationChainId",

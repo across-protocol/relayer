@@ -74,7 +74,8 @@ export class Dataworker {
   // on deprecated spoke pools.
   _loadData(
     blockRangesForChains: number[][],
-    spokePoolClients: { [chainId: number]: SpokePoolClient }
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    logData = true
   ): {
     unfilledDeposits: UnfilledDeposit[];
     fillsToRefund: FillsToRefund;
@@ -196,17 +197,19 @@ export class Dataworker {
       unfilledDeposits,
       allInvalidFills
     );
-    const mainnetRange = getBlockRangeForChain(
-      blockRangesForChains,
-      1,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    );
-    this.logger.debug({
-      at: "Dataworker",
-      message: `Finished loading spoke pool data for the equivalent of mainnet range: [${mainnetRange[0]}, ${mainnetRange[1]}]`,
-      blockRangesForChains,
-      ...spokeEventsReadable,
-    });
+    if (logData) {
+      const mainnetRange = getBlockRangeForChain(
+        blockRangesForChains,
+        1,
+        this.chainIdListForBundleEvaluationBlockNumbers
+      );
+      this.logger.debug({
+        at: "Dataworker",
+        message: `Finished loading spoke pool data for the equivalent of mainnet range: [${mainnetRange[0]}, ${mainnetRange[1]}]`,
+        blockRangesForChains,
+        ...spokeEventsReadable,
+      });
+    }
 
     if (Object.keys(spokeEventsReadable.allInvalidFillsInRangeByDestinationChain).length > 0)
       this.logger.debug({
@@ -736,7 +739,7 @@ export class Dataworker {
         );
         this.logger.debug({
           at: "Dataworker#executeSlowRelayLeaves",
-          message: `Found ${rootBundleRelays.length} historical non-empty slow relay root bundles on chain ${chainId}`,
+          message: `Evaluating ${rootBundleRelays.length} historical non-empty slow roots relayed to chain ${chainId}`,
         });
 
         // Only grab the most recent n roots that have been sent if configured to do so.
@@ -782,7 +785,12 @@ export class Dataworker {
             return [fromBlock, endBlock.toNumber()];
           });
 
-          const { tree, leaves } = this.buildSlowRelayRoot(blockNumberRanges, spokePoolClients);
+          const { unfilledDeposits } = this._loadData(
+            blockNumberRanges,
+            spokePoolClients,
+            false // Don't log this function's result since we're calling it once per chain per root bundle
+          );
+          const { tree, leaves } = _buildSlowRelayRoot(unfilledDeposits);
           if (tree.getHexRoot() !== rootBundleRelay.slowRelayRoot) {
             this.logger.warn({
               at: "Dataworke#executeSlowRelayLeaves",
@@ -796,13 +804,6 @@ export class Dataworker {
           }
 
           const leavesForChain = leaves.filter((leaf) => leaf.destinationChainId === Number(chainId));
-          if (leavesForChain.length === 0) {
-            this.logger.debug({
-              at: "Dataworke#executeSlowRelayLeaves",
-              message: `No slow relay leaves in bundle ${rootBundleRelay.rootBundleId} with destination chain ${chainId}`,
-            });
-            continue;
-          }
           const unexecutedLeaves = leavesForChain.filter((leaf) => {
             const executedLeaf = slowFillsForChain.find(
               (event) => event.originChainId === leaf.originChainId && event.depositId === leaf.depositId
@@ -811,13 +812,6 @@ export class Dataworker {
             // Only return true if no leaf was found in the list of executed leaves.
             return !executedLeaf;
           });
-          if (unexecutedLeaves.length === 0) {
-            this.logger.debug({
-              at: "Dataworke#executeSlowRelayLeaves",
-              message: `All ${leavesForChain.length} slow relay leaves in bundle ${rootBundleRelay.rootBundleId} executed for chain ${chainId}`,
-            });
-            continue;
-          }
 
           const leavesWithLatestFills = unexecutedLeaves.map((leaf) => {
             const fill = sortedFills.find((fill) => {
@@ -836,22 +830,6 @@ export class Dataworker {
 
             return { ...leaf, fill };
           });
-          const unexecutableLeaves = leavesWithLatestFills.filter(
-            (leaf) => leaf.fill && leaf.fill.totalFilledAmount.eq(leaf.fill.amount)
-          );
-          if (unexecutableLeaves.length > 0) {
-            if (unexecutableLeaves.length === unexecutedLeaves.length) {
-              this.logger.debug({
-                at: "Dataworke#executeSlowRelayLeaves",
-                message: `All ${unexecutableLeaves.length} slow relay leaves in bundle ${rootBundleRelay.rootBundleId} for chain ${chainId} have already been filled and are unexecutable`,
-              });
-              continue;
-            } else
-              this.logger.debug({
-                at: "Dataworke#executeSlowRelayLeaves",
-                message: `${unexecutableLeaves.length} unexecutable slow relay leaves in bundle ${rootBundleRelay.rootBundleId} for chain ${chainId} that have already been filled`,
-              });
-          }
 
           // Filter for leaves where the contract has the funding to send the required tokens.
           const fundedLeaves = (
@@ -1080,7 +1058,7 @@ export class Dataworker {
         );
         this.logger.debug({
           at: "Dataworker#executeRelayerRefundLeaves",
-          message: `Found ${rootBundleRelays.length} historical non-empty relayer refund root bundles on chain ${chainId}`,
+          message: `Evaluating ${rootBundleRelays.length} historical non-empty relayer refund root bundles on chain ${chainId}`,
         });
 
         // Only grab the most recent n roots that have been sent if configured to do so.
@@ -1125,7 +1103,8 @@ export class Dataworker {
 
           const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this._loadData(
             blockNumberRanges,
-            spokePoolClients
+            spokePoolClients,
+            false // Don't log this function's result since we're calling it once per chain per root bundle
           );
 
           const endBlockForMainnet = getBlockRangeForChain(
@@ -1177,13 +1156,6 @@ export class Dataworker {
           }
 
           const leavesForChain = leaves.filter((leaf) => leaf.chainId === Number(chainId));
-          if (leavesForChain.length === 0) {
-            this.logger.debug({
-              at: "Dataworke#executeRelayerRefundLeaves",
-              message: `No refund leaves in bundle ${rootBundleRelay.rootBundleId} with chain ${chainId}`,
-            });
-            continue;
-          }
           const unexecutedLeaves = leavesForChain.filter((leaf) => {
             const executedLeaf = executedLeavesForChain.find(
               (event) => event.rootBundleId === rootBundleRelay.rootBundleId && event.leafId === leaf.leafId
@@ -1191,13 +1163,6 @@ export class Dataworker {
             // Only return true if no leaf was found in the list of executed leaves.
             return !executedLeaf;
           });
-          if (unexecutedLeaves.length === 0) {
-            this.logger.debug({
-              at: "Dataworke#executeRelayerRefundLeaves",
-              message: `All ${leavesForChain.length} refund leaves in bundle ${rootBundleRelay.rootBundleId} executed for chain ${chainId}`,
-            });
-            continue;
-          }
 
           // Filter for leaves where the contract has the funding to send the required tokens.
           const fundedLeaves = (
