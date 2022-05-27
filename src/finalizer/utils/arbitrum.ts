@@ -5,6 +5,7 @@ import {
   winston,
   convertFromWei,
   groupObjectCountsByTwoProps,
+  ethers,
 } from "../../utils";
 import { L2ToL1MessageWriter, L2ToL1MessageStatus, L2TransactionReceipt, getL2Network } from "@arbitrum/sdk";
 import { MessageBatchProofInfo } from "@arbitrum/sdk/dist/lib/message/L2ToL1Message";
@@ -14,20 +15,34 @@ import { HubPoolClient } from "../../clients";
 export async function finalizeArbitrum(
   logger: winston.Logger,
   message: L2ToL1MessageWriter,
-  token: string,
-  proofInfo: MessageBatchProofInfo
+  l2Token: string,
+  proofInfo: MessageBatchProofInfo,
+  messageInfo: TokensBridged,
+  hubPoolClient: HubPoolClient
 ) {
+
+  const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
+      "42161",
+      l2Token,
+      hubPoolClient.latestBlockNumber
+  );  
+  const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
+  const amount = ethers.utils.formatUnits(messageInfo.amountToReturn.toString(), l1TokenInfo.decimals)
+
   logger.debug({
     at: "ArbitrumFinalizer",
     message: "Finalizing message",
-    token,
+    l1Token: l1TokenInfo.symbol,
+    amount,
   });
   const res = await message.execute(proofInfo);
   const rec = await res.wait();
   logger.info({
     at: "ArbitrumFinalizer",
-    message: "Executed!",
-    rec,
+    message: `Executed withdrawal if ${amount} ${l1TokenInfo.symbol} from outbox!`,
+    transaction: rec.transactionHash,
+    l1Token: l1TokenInfo.symbol,
+    amount,
   });
 }
 

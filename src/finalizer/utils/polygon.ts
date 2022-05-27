@@ -68,9 +68,9 @@ export async function finalizePolygon(
   });
   const result = await posClient.erc20(l1TokenCounterpart, true).withdrawExitFaster(event.transactionHash);
   const receipt = await result.getReceipt(); // Wait for confirmation.
-  logger.info({
+  logger.debug({
     at: "PolygonFinalizer",
-    message: "Executed",
+    message: "Executed exit!",
     transaction: receipt.transactionHash,
   });
 }
@@ -113,8 +113,8 @@ export async function retrieveTokenFromMainnetTokenBridger(
         l1TokenInfo.symbol
       } from PolygonTokenBridger 🏧!`,
       transaction: receipt.transactionHash,
-      l1Token,
-      amount: balanceToRetrieve.toString(),
+      l1Token: l1TokenInfo.symbol,
+      amount: ethers.utils.formatUnits(balanceToRetrieve.toString(), l1TokenInfo.decimals),
     });
   }
 }

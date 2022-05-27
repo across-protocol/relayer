@@ -44,7 +44,14 @@ export async function run(
         relayerClients.hubPoolClient
       );
       for (const l2Message of finalizableMessages) {
-        await finalizeArbitrum(logger, l2Message.message, l2Message.token, l2Message.proofInfo);
+        await finalizeArbitrum(
+          logger,
+          l2Message.message,
+          l2Message.token,
+          l2Message.proofInfo,
+          l2Message.info,
+          relayerClients.hubPoolClient
+        );
       }
     } else if (chainId === 137) {
       logger.debug({
@@ -88,7 +95,18 @@ export async function run(
           message: "No finalizable messages",
         });
       for (const message of finalizable) {
+        logger.debug({
+          at: "OptimismFinalizer",
+          message: "Finalizing message",
+          l1Token: message.token,
+        });
         await crossChainMessenger.finalizeMessage(message.message);
+        logger.info({
+          at: "OptimismFinalizer",
+          message: "Finalized message!",
+          l1Token: message.token,
+          // TODO: Add amount log
+        })
       }
     }
   }
