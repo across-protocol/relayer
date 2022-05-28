@@ -28,6 +28,7 @@ export interface ProposedRootBundle extends SortableEvent {
   relayerRefundRoot: string;
   slowRelayRoot: string;
   proposer: string;
+  transactionHash?: string;
 }
 
 export interface ExecutedRootBundle extends SortableEvent {

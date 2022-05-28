@@ -68,9 +68,9 @@ export async function finalizePolygon(
   });
   const result = await posClient.erc20(l1TokenCounterpart, true).withdrawExitFaster(event.transactionHash);
   const receipt = await result.getReceipt(); // Wait for confirmation.
-  logger.info({
+  logger.debug({
     at: "PolygonFinalizer",
-    message: "Executed",
+    message: "Executed exit!",
     transaction: receipt.transactionHash,
   });
 }
@@ -95,15 +95,11 @@ export async function retrieveTokenFromMainnetTokenBridger(
   const ethBalance = await mainnetTokenBridger.provider.getBalance(mainnetTokenBridger.address);
   const balanceToRetrieve = l1TokenInfo.symbol === "WETH" ? ethBalance : balance;
   if (balanceToRetrieve.eq(toBN(0))) {
-    logger.debug({
-      at: "PolygonFinalizer",
-      message: `No ${l1TokenInfo.symbol} balance to withdraw, skipping`,
-    });
     return false;
   } else {
     logger.debug({
       at: "PolygonFinalizer",
-      message: `Retrieving ${balanceToRetrieve.toString()} ${l1TokenInfo.symbol}`,
+      message: `Retrieving ${balanceToRetrieve.toString()} ${l1TokenInfo.symbol} from PolygonTokenBridger`,
     });
     const txn = await mainnetTokenBridger.retrieve(l1Token);
     const receipt = await txn.wait(); // Wait for confirmation.
@@ -113,8 +109,8 @@ export async function retrieveTokenFromMainnetTokenBridger(
         l1TokenInfo.symbol
       } from PolygonTokenBridger 🏧!`,
       transaction: receipt.transactionHash,
-      l1Token,
-      amount: balanceToRetrieve.toString(),
+      l1Token: l1TokenInfo.symbol,
+      amount: ethers.utils.formatUnits(balanceToRetrieve.toString(), l1TokenInfo.decimals),
     });
   }
 }

@@ -5,6 +5,7 @@ import {
   winston,
   convertFromWei,
   groupObjectCountsByTwoProps,
+  ethers,
 } from "../../utils";
 import { L2ToL1MessageWriter, L2ToL1MessageStatus, L2TransactionReceipt, getL2Network } from "@arbitrum/sdk";
 import { MessageBatchProofInfo } from "@arbitrum/sdk/dist/lib/message/L2ToL1Message";
@@ -14,20 +15,33 @@ import { HubPoolClient } from "../../clients";
 export async function finalizeArbitrum(
   logger: winston.Logger,
   message: L2ToL1MessageWriter,
-  token: string,
-  proofInfo: MessageBatchProofInfo
+  l2Token: string,
+  proofInfo: MessageBatchProofInfo,
+  messageInfo: TokensBridged,
+  hubPoolClient: HubPoolClient
 ) {
+  const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
+    "42161",
+    l2Token,
+    hubPoolClient.latestBlockNumber
+  );
+  const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
+  const amount = ethers.utils.formatUnits(messageInfo.amountToReturn.toString(), l1TokenInfo.decimals);
+
   logger.debug({
     at: "ArbitrumFinalizer",
-    message: "Finalizing message",
-    token,
+    message: "Finalizing Arbitrum message",
+    l1Token: l1TokenInfo.symbol,
+    amount,
   });
   const res = await message.execute(proofInfo);
   const rec = await res.wait();
   logger.info({
     at: "ArbitrumFinalizer",
-    message: "Executed!",
-    rec,
+    message: `Executed Arbitrum withdrawal if ${amount} ${l1TokenInfo.symbol} from outbox!`,
+    transaction: rec.transactionHash,
+    l1Token: l1TokenInfo.symbol,
+    amount,
   });
 }
 
@@ -41,7 +55,7 @@ export async function getFinalizableMessages(
   const statusesGrouped = groupObjectCountsByTwoProps(allMessagesWithStatuses, "status", (message) => message["token"]);
   logger.debug({
     at: "ArbitrumFinalizer",
-    message: "Queried outbox statuses for messages",
+    message: "Arbitrum outbox message statuses",
     statusesGrouped,
   });
   const finalizableMessages = allMessagesWithStatuses.filter(
@@ -50,7 +64,7 @@ export async function getFinalizableMessages(
   if (finalizableMessages.length > 0) {
     logger.debug({
       at: "ArbitrumFinalizer",
-      message: `Found ${finalizableMessages.length} L2 token bridges to L1 that are confirmed and can be finalized`,
+      message: `Found ${finalizableMessages.length} Arbitrum token bridges to L1 that are confirmed and can be finalized`,
       bridges: finalizableMessages.map((x) => {
         const copy: any = { ...x.info };
         const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
@@ -68,7 +82,7 @@ export async function getFinalizableMessages(
   } else
     logger.debug({
       at: "ArbitrumFinalizer",
-      message: "No finalizable messages",
+      message: "No Arbitrum finalizable messages",
     });
   return finalizableMessages;
 }
@@ -122,7 +136,7 @@ export async function getMessageOutboxStatusAndProof(
     const error = new Error(`No outgoing messages found in transaction:${event.transactionHash}`);
     logger.error({
       at: "ArbitrumFinalizer",
-      message: "Transaction that emitted TokensBridged event unexpectedly contains 0 L2-to-L1 messages 🤢!",
+      message: "Arbitrum transaction that emitted TokensBridged event unexpectedly contains 0 L2-to-L1 messages 🤢!",
       logIndex,
       l2ToL1Messages: l2ToL1Messages.length,
       txnHash: event.transactionHash,

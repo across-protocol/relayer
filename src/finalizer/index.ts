@@ -30,13 +30,13 @@ export async function run(
     const client = spokePoolClients[chainId];
     const tokensBridged = client.getTokensBridged();
 
+    logger.debug({
+      at: "Finalizer",
+      message: `Looking for finalizable bridge events for chain ${chainId}`,
+    });
     // TODO: Refactor following code to produce list of transaction call data we can submit together in a single
     // batch to a DS proxy or multi call contract.
     if (chainId === 42161) {
-      logger.debug({
-        at: "ArbitrumFinalizer",
-        message: "Looking for finalizable bridge events",
-      });
       const finalizableMessages = await getFinalizableMessages(
         logger,
         tokensBridged,
@@ -44,19 +44,22 @@ export async function run(
         relayerClients.hubPoolClient
       );
       for (const l2Message of finalizableMessages) {
-        await finalizeArbitrum(logger, l2Message.message, l2Message.token, l2Message.proofInfo);
+        await finalizeArbitrum(
+          logger,
+          l2Message.message,
+          l2Message.token,
+          l2Message.proofInfo,
+          l2Message.info,
+          relayerClients.hubPoolClient
+        );
       }
     } else if (chainId === 137) {
-      logger.debug({
-        at: "PolygonFinalizer",
-        message: "Looking for finalizable bridge events",
-      });
       const posClient = await getPosClient(hubSigner);
       const canWithdraw = await getFinalizableTransactions(tokensBridged, posClient, relayerClients.hubPoolClient);
       if (canWithdraw.length === 0)
         logger.debug({
           at: "PolygonFinalizer",
-          message: "No finalizable messages, will check for retrievals from token bridge",
+          message: `No Polygon finalizable messages, will check for retrievals from token bridge`,
         });
       for (const event of canWithdraw) {
         await finalizePolygon(posClient, relayerClients.hubPoolClient, event, logger);
@@ -65,10 +68,6 @@ export async function run(
         await retrieveTokenFromMainnetTokenBridger(logger, l2Token, hubSigner, relayerClients.hubPoolClient);
       }
     } else if (chainId === 10) {
-      logger.debug({
-        at: "OptimismFinalizer",
-        message: "Looking for finalizable bridge events",
-      });
       const crossChainMessenger = getOptimismClient(hubSigner);
       const crossChainMessages = await getCrossChainMessages(
         tokensBridged,
@@ -78,17 +77,30 @@ export async function run(
       const messageStatuses = await getMessageStatuses(crossChainMessages, crossChainMessenger);
       logger.debug({
         at: "OptimismFinalizer",
-        message: "Queried message stuses",
+        message: "Optimism message statuses",
         statusesGrouped: groupObjectCountsByTwoProps(messageStatuses, "status", (message) => message["token"]),
       });
       const finalizable = getOptimismFinalizableMessages(messageStatuses);
       if (finalizable.length === 0)
         logger.debug({
           at: "OptimismFinalizer",
-          message: "No finalizable messages",
+          message: "No Optimism finalizable messages",
         });
       for (const message of finalizable) {
-        await crossChainMessenger.finalizeMessage(message.message);
+        logger.debug({
+          at: "OptimismFinalizer",
+          message: "Finalizing Optimism message",
+          l1Token: message.token,
+        });
+        const txn = await crossChainMessenger.finalizeMessage(message.message);
+        const receipt = await txn.wait();
+        logger.info({
+          at: "OptimismFinalizer",
+          message: "Finalized Optimism message!",
+          l1Token: message.token,
+          transaction: receipt.transactionHash,
+          // TODO: Add amount log
+        });
       }
     }
   }
@@ -103,8 +115,6 @@ export async function runFinalizer(_logger: winston.Logger) {
   const relayerClients = await constructRelayerClients(logger, config);
 
   try {
-    await updateRelayerClients(relayerClients);
-
     logger[startupLogLevel(config)]({ at: "Finalizer#index", message: "Finalizer started ⚰️", config });
 
     for (;;) {

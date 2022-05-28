@@ -10,6 +10,7 @@ import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT } from "../src/utils";
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { getDepositPath } from "../src/dataworker/DepositUtils";
+import { FillWithBlock } from "../src/interfaces";
 
 let spy: sinon.SinonSpy;
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -102,7 +103,6 @@ describe("Dataworker: Propose root bundle", async function () {
     expect(loadDataResults2.fillsToRefundInRangeByRepaymentChain).to.deep.equal({
       [destinationChainId]: { [erc20_2.address]: 1 },
     });
-    expect(loadDataResults2.allValidFillsByDestinationChain).to.deep.equal({ [destinationChainId]: 1 });
 
     // Should have enqueued a new transaction:
     expect(lastSpyLogIncludes(spy, "Enqueing new root bundle proposal txn")).to.be.true;
@@ -186,20 +186,23 @@ describe("Dataworker: Propose root bundle", async function () {
     expect(loadDataResults4.fillsToRefundInRangeByRepaymentChain).to.deep.equal({
       [destinationChainId]: { [erc20_2.address]: 1 },
     });
-    // Should be 2 valid fills since we don't discriminate by block range for this list. Its important that refunds
-    // stays 1 though since there is only one fill in this block range. This test is actually really important because
-    // `allValidFillsByDestinationChain` should not constrain by block range otherwise the pool rebalance root
-    // can fail to be built in cases where a fill in the block range matches a deposit with a fill in a previous
-    // root bundle. This would be a case where there is excess slow fill payment sent to the spoke pool and we need
-    // to send some back to the hub pool, because of this fill in the current block range that came after the slow
-    // fill was sent.
-    expect(loadDataResults4.allValidFillsByDestinationChain).to.deep.equal({ [destinationChainId]: 2 });
-
     // Should have enqueued a new transaction:
     expect(lastSpyLogIncludes(spy, "Enqueing new root bundle proposal txn")).to.be.true;
     expect(spy.getCall(-1).lastArg.poolRebalanceRoot).to.equal(expectedPoolRebalanceRoot4.tree.getHexRoot());
     expect(spy.getCall(-1).lastArg.relayerRefundRoot).to.equal(expectedRelayerRefundRoot4.tree.getHexRoot());
     expect(spy.getCall(-1).lastArg.slowRelayRoot).to.equal(EMPTY_MERKLE_ROOT);
+
+    // Should be able to look up 2 historical valid fills, even though there is 1 refund in the range.
+    // This test is really important because `allValidFills` should not constrain by block range otherwise the pool
+    // rebalance root can fail to be built in cases where a fill in the block range matches a deposit with a fill
+    // in a previous root bundle. This would be a case where there is excess slow fill payment sent to the spoke
+    // pool and we need to send some back to the hub pool, because of this fill in the current block range that
+    // came after the slow fill was sent.
+    const { allValidFills } = dataworkerInstance._loadData(loadDataResults4.blockRangesForChains, spokePoolClients);
+    const allValidFillsByDestinationChain = allValidFills.filter(
+      (fill: FillWithBlock) => fill.destinationChainId === destinationChainId
+    );
+    expect(allValidFillsByDestinationChain.length).to.equal(2);
 
     // Execute queue and check that root bundle is pending:
     await multiCallerClient.executeTransactionQueue();
