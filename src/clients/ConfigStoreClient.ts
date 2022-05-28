@@ -96,7 +96,7 @@ export class AcrossConfigStoreClient {
     };
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than
 
-    this.logger.debug({ at: "RateModelClient", message: "Updating client", searchConfig });
+    this.logger.debug({ at: "ConfigStore", message: "Updating ConfigStore client", searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
     const [updatedTokenConfigEvents, updatedGlobalConfigEvents] = await Promise.all([
       paginatedEventQuery(this.configStore, this.configStore.filters.UpdatedTokenConfig(), searchConfig),
@@ -157,6 +157,6 @@ export class AcrossConfigStoreClient {
     this.isUpdated = true;
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
-    this.logger.debug({ at: "RateModelClient", message: "Client updated!" });
+    this.logger.debug({ at: "ConfigStore", message: "ConfigStore client updated!" });
   }
 }

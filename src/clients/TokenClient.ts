@@ -141,7 +141,7 @@ export class TokenClient {
   }
 
   async update() {
-    this.logger.debug({ at: "TokenBalanceClient", message: "Updating client" });
+    this.logger.debug({ at: "TokenBalanceClient", message: "Updating TokenBalance client" });
 
     const [balanceInfo, bondToken] = await Promise.all([
       Promise.all(Object.values(this.spokePoolClients).map((spokePoolClient) => this.fetchTokenData(spokePoolClient))),
@@ -153,7 +153,7 @@ export class TokenClient {
     for (const { chainId, tokenData } of balanceInfo)
       for (const token of Object.keys(tokenData)) assign(this.tokenData, [chainId, token], tokenData[token]);
 
-    this.logger.debug({ at: "TokenBalanceClient", message: "Client updated!" });
+    this.logger.debug({ at: "TokenBalanceClient", message: "TokenBalance client updated!" });
   }
 
   async fetchTokenData(spokePoolClient: SpokePoolClient) {

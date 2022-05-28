@@ -99,7 +99,7 @@ export class ProfitClient {
 
   async update() {
     const l1Tokens = this.hubPoolClient.getL1Tokens();
-    this.logger.debug({ at: "ProfitClient", message: "Updating client", l1Tokens });
+    this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", l1Tokens });
     const prices = await Promise.allSettled(l1Tokens.map((l1Token: L1Token) => this.coingeckoPrice(l1Token.address)));
 
     let errors = [];
@@ -114,7 +114,7 @@ export class ProfitClient {
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
     }
-    this.logger.debug({ at: "ProfitClient", message: "Updated client", tokenPrices: this.tokenPrices });
+    this.logger.debug({ at: "ProfitClient", message: "Updated Profit client", tokenPrices: this.tokenPrices });
   }
 
   private async coingeckoPrice(token: string) {

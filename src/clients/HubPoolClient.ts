@@ -264,7 +264,7 @@ export class HubPoolClient {
       toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
-    this.logger.debug({ at: "HubPoolClient", message: "Updating client", searchConfig });
+    this.logger.debug({ at: "HubPoolClient", message: "Updating HubPool client", searchConfig });
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
     const [
@@ -328,7 +328,9 @@ export class HubPoolClient {
     for (const info of tokenInfo) if (!this.l1Tokens.includes(info)) this.l1Tokens.push(info);
 
     this.proposedRootBundles.push(
-      ...proposeRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as ProposedRootBundle)
+      ...proposeRootBundleEvents.map((event) => {
+        return { ...spreadEventWithBlockNumber(event), transactionHash: event.transactionHash } as ProposedRootBundle;
+      })
     );
     this.executedRootBundles.push(
       ...executedRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as ExecutedRootBundle)
@@ -368,7 +370,7 @@ export class HubPoolClient {
     this.isUpdated = true;
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
-    this.logger.debug({ at: "HubPoolClient", message: "Client updated!" });
+    this.logger.debug({ at: "HubPoolClient", message: "HubPool client updated!" });
   }
 
   private async fetchTokenInfoFromContract(address: string): Promise<L1Token> {

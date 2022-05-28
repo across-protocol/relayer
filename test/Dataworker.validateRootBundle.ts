@@ -236,11 +236,12 @@ describe("Dataworker: Validate pending root bundle", async function () {
     expect(spy.getCall(-2).lastArg.message).to.equal("Empty pool rebalance root, submitting dispute");
     await multiCallerClient.executeTransactionQueue();
 
-    // PoolRebalance leaf count is off
+    // PoolRebalance leaf count is too high
     await updateAllClients();
     await hubPool.proposeRootBundle(
       blockRange4.map((range) => range[1]),
-      expectedPoolRebalanceRoot4.leaves.length + 1, // Wrong leaf count
+      expectedPoolRebalanceRoot4.leaves.length + 1, // Dataworker expects 1 fewer leaf than actually pending, meaning
+      // that the unclaimed leaf count can never drop to 0.
       expectedPoolRebalanceRoot4.tree.getHexRoot(),
       expectedRelayerRefundRoot4.tree.getHexRoot(),
       expectedSlowRelayRefundRoot4.tree.getHexRoot()

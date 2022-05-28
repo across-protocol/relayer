@@ -75,9 +75,9 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
 
 export async function updateRelayerClients(clients: RelayerClients) {
   await updateClients(clients);
-  // Profit and SpokePoolClient client requires up to date HubPoolClient and rateModelClient.
+  // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
+  await updateSpokePoolClients(clients.spokePoolClients);
   // Token client requires up to date spokePool clients to fetch token routes.
-  await Promise.all([clients.profitClient.update(), updateSpokePoolClients(clients.spokePoolClients)]);
   await clients.tokenClient.update();
 
   // Run approval check last as needs up to date route info. If no new then returns with no async calls.
