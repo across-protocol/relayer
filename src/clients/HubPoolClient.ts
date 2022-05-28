@@ -328,8 +328,8 @@ export class HubPoolClient {
     for (const info of tokenInfo) if (!this.l1Tokens.includes(info)) this.l1Tokens.push(info);
 
     this.proposedRootBundles.push(
-      ...proposeRootBundleEvents.map((event) => { 
-        return { ...spreadEventWithBlockNumber(event), transactionHash: event.transactionHash } as ProposedRootBundle
+      ...proposeRootBundleEvents.map((event) => {
+        return { ...spreadEventWithBlockNumber(event), transactionHash: event.transactionHash } as ProposedRootBundle;
       })
     );
     this.executedRootBundles.push(
@@ -344,7 +344,7 @@ export class HubPoolClient {
       unclaimedPoolRebalanceLeafCount: pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount,
       challengePeriodEndTimestamp: pendingRootBundleProposal.challengePeriodEndTimestamp,
       bundleEvaluationBlockNumbers: undefined,
-      proposalBlockNumber: undefined
+      proposalBlockNumber: undefined,
     };
     // If pending proposal is active, even if it passed the liveness period, then we can load the following root
     // bundle properties: `bundleEvaluationBlockNumbers` and `proposalBlockNumber`, otherwise they are not relevant.

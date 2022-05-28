@@ -98,7 +98,7 @@ export async function run(
           at: "OptimismFinalizer",
           message: "Finalized Optimism message!",
           l1Token: message.token,
-          transaction: receipt.transactionHash
+          transaction: receipt.transactionHash,
           // TODO: Add amount log
         });
       }
