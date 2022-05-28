@@ -26,7 +26,7 @@ export const utf8ToHex = (input: string) => ethers.utils.formatBytes32String(inp
 
 export const hexToUtf8 = (input: string) => ethers.utils.toUtf8String(input);
 
-export const bnToHex = (input: BigNumber) => ethers.utils.hexZeroPad(ethers.utils.hexlify(input), 32);
+export const bnToHex = (input: BigNumber) => ethers.utils.hexZeroPad(ethers.utils.hexlify(toBN(input)), 32);
 
 export const convertFromWei = (weiVal: string, decimals: number) => {
   const formatFunction = createFormatFunction(2, 4, false, decimals);

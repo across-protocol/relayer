@@ -92,7 +92,9 @@ export async function constructClients(logger: winston.Logger, config: CommonCon
 }
 
 export async function updateClients(clients: Clients) {
-  await clients.hubPoolClient.update();
-  await clients.configStoreClient.update();
-  await clients.profitClient.update();
+  await Promise.all([
+    clients.hubPoolClient.update(),
+    clients.configStoreClient.update(),
+    clients.profitClient.update(),
+  ]);
 }

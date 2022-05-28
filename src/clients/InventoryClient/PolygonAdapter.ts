@@ -58,6 +58,8 @@ const tokenToBridge = {
   }, // MATIC
 };
 
+const;
+
 export class PolygonAdapter extends BaseAdapter {
   constructor(
     readonly logger: any,
@@ -89,7 +91,10 @@ export class PolygonAdapter extends BaseAdapter {
       if (l2Method == "TokenDeposited") l2SearchFilter = [l1MaticAddress, ZERO_ADDRESS, this.relayerAddress];
 
       this.l1SearchConfig = { ...this.l1SearchConfig, fromBlock: tokenToBridge[l1Token].firstBlockToSearch };
-      this.l2SearchConfig.fromBlock = this.l2SearchConfig.toBlock - 10000;
+
+      // Configure the lookback duration as a function of this chains block time. Try fetch ~last days events.
+      this.l1SearchConfig.fromBlock = this.l1SearchConfig.toBlock - this.maximumDepositEvaluationTime / 15;
+      this.l2SearchConfig.fromBlock = this.l2SearchConfig.toBlock - this.maximumDepositEvaluationTime / 2;
 
       promises.push(
         paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), this.l1SearchConfig),
@@ -105,18 +110,16 @@ export class PolygonAdapter extends BaseAdapter {
 
     let outstandingTransfers = {};
     for (const l1Token of l1Tokens) {
-      if (
-        this.l1DepositInitiatedEvents[l1Token].length == 0 ||
-        this.l1DepositInitiatedEvents[l1Token][0].blockNumber < this.l1SearchConfig.toBlock - 1000
-      ) {
-        outstandingTransfers[l1Token] = toBN(0);
-        continue;
-      }
-      let l1EventsToConsider = this.l1DepositInitiatedEvents[l1Token].slice(
-        this.l2DepositFinalizedEvents[l1Token].length * -1
-      );
-      if (this.l2DepositFinalizedEvents[l1Token].length == 0)
-        l1EventsToConsider = this.l1DepositInitiatedEvents[l1Token].slice(-1);
+      const numL1Events = this.l1DepositInitiatedEvents[l1Token].length;
+      const numL2Events = this.l2DepositFinalizedEvents[l1Token].length;
+      const l1EventsToConsider = this.l1DepositInitiatedEvents[l1Token].filter((l1Event) => {
+        let found = false;
+        this.l2DepositFinalizedEvents[l1Token].forEach(
+          (l2Event) =>
+            (found =
+              l2Event.args[tokenToBridge[l1Token].l1AmountProp] == l1Event.args[tokenToBridge[l1Token].l2AmountProp])
+        );
+      });
 
       const totalDepositsInitiated = l1EventsToConsider
         ? l1EventsToConsider
@@ -139,7 +142,7 @@ export class PolygonAdapter extends BaseAdapter {
     return outstandingTransfers;
   }
 
-  async sendTokenToTargetChain(l1Token, l2Token, amount) {
+  async sendTokenToTargetChain(l1Token: string, l2Token: string, amount: BigNumber) {
     let value = toBN(0);
     let method = "depositFor";
     // note that the amount is the bytes 32 encoding of the amount.

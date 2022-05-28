@@ -1,4 +1,4 @@
-import { BigNumber, winston, toWei, toBN, assign } from "../../utils";
+import { BigNumber, winston, toWei, toBN, createFormatFunction, etherscanLink } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter } from "./";
 export class AdapterManager {
@@ -36,10 +36,10 @@ export class AdapterManager {
     }
   }
 
-  async sendTokenCrossChain(chainId: number, l1Token: string, amount: BigNumber) {
-    this.logger.debug({ at: "AdapterManager", message: "Getting outstandingCrossChainTransfers", chainId, l1Token });
+  async sendTokenCrossChain(chainId: number | string, l1Token: string, amount: BigNumber) {
+    this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
     let tx;
-    switch (chainId) {
+    switch (Number(chainId)) {
       case 10:
         tx = await this.optimismAdapter.sendTokenToTargetChain(l1Token, this.l2TokenForL1Token(l1Token, 10), amount);
         break;
@@ -56,15 +56,25 @@ export class AdapterManager {
     return await tx.wait();
   }
 
-  async wrapEthIfAboveThreshold() {
-    console.log("WRAPPING");
-    // const [optimismWrapTx, bobaWrapTx] = await Promise.all([
-    //   OptimismAdapter.wrapEthIfAboveThreshold(this.logger, this.getSigner(10), toWei(0.1), true),
-    //   OptimismAdapter.wrapEthIfAboveThreshold(this.logger, this.getSigner(288), toWei(0.05), false),
-    // ]);
+  async wrapEthIfAboveThreshold(wrapThreshold: BigNumber) {
+    const [optimismWrapTx, bobaWrapTx] = await Promise.all([
+      this.optimismAdapter.wrapEthIfAboveThreshold(wrapThreshold),
+      this.bobaAdapter.wrapEthIfAboveThreshold(wrapThreshold),
+    ]);
 
-    // const [receipts1, receipt2] = await Promise.all([optimismWrapTx.wait(), bobaWrapTx.wait()]);
-    // console.log("receipts1, receipt2", receipts1, receipt2);
+    const [optimismReceipt, bobaReceipt] = await Promise.all([
+      optimismWrapTx?.wait() ?? null,
+      bobaWrapTx?.wait() ?? null,
+    ]);
+    if (optimismReceipt || bobaReceipt) {
+      let mrkdwn =
+        `Ether on ${optimismReceipt ? "Optimism" : ""} ${optimismReceipt && bobaReceipt ? "and" : ""} ` +
+        `${bobaReceipt ? "Boba" : ""} was wrapped due to being over the threshold of ` +
+        `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.\n` +
+        `${optimismReceipt ? `\nOptimism tx: ${etherscanLink(optimismReceipt.transactionHash, 10)} ` : ""}` +
+        `${bobaReceipt ? `Boba tx: ${etherscanLink(bobaReceipt.transactionHash, 288)}` : ""}`;
+      this.logger.info({ at: "AdapterManager", message: "Eth wrapped on target chain 🎁", mrkdwn });
+    }
   }
 
   getProvider(chainId: number) {
@@ -87,7 +97,7 @@ export class AdapterManager {
     } catch (error) {
       this.logger.error({
         at: "AdapterManager",
-        message: "Implementor atempted to get an l2 token address for an L1 token that does not exist in the routings!",
+        message: "Implementor attempted to get a l2 token address for an L1 token that does not exist in the routings!",
         l1Token,
         chainId,
         error,
@@ -116,24 +126,7 @@ export class AdapterManager {
     ];
   }
 
-  async getOutstandingPolygonTransfers(l1Tokens: string[], l1ChainId = 1, l2ChainId = 137): Promise<BigNumber[]> {
-    return null;
-    // return await Promise.all(
-    //   l1Tokens.map((l1Token) =>
-    //     PolygonAdapter.getOutstandingCrossChainTransfers(
-    //       this.getProvider(l1ChainId),
-    //       this.getProvider(l2ChainId),
-    //       this.relayerAddress,
-    //       l1Token,
-    //       this.spokePoolClients[l1ChainId].searchConfig,
-    //       this.spokePoolClients[l2ChainId].searchConfig
-    //     )
-    //   )
-    // );
-  }
-
-  async checkTokenApprovals(l1Tokens: string[]) {
-    console.log("Checking approvals");
+  async setL1TokenApprovals(l1Tokens: string[]) {
     await Promise.all([
       this.optimismAdapter.checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 10))),
       this.polygonAdapter.checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 137))),

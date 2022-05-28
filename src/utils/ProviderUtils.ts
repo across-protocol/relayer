@@ -9,7 +9,7 @@ function delay(s: number): Promise<void> {
 class RetryProvider extends ethers.providers.JsonRpcProvider {
   send(method: string, params: Array<any>): Promise<any> {
     const delayS = 2;
-    const retries = 0;
+    const retries = 3;
     let promise = super.send(method, params);
     for (let i = 0; i < retries; i++) {
       promise = promise.catch(() => delay(delayS).then(() => super.send(method, params)));

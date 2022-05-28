@@ -11,6 +11,10 @@ export class BaseAdapter {
 
   l1DepositInitiatedEvents: { [l1Token: string]: any[] } = {};
   l2DepositFinalizedEvents: { [l1Token: string]: any[] } = {};
+
+  // In worst case deposits MUST conclude within 24 hours. Used to optimize how many event queries we need to do on
+  // some L2s that restrict large loobacks.
+  maximumDepositEvaluationTime = 24 * 60 * 60;
   constructor(
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     _chainId: number,
@@ -34,6 +38,7 @@ export class BaseAdapter {
   }
 
   async updateFromBlockSearchConfig() {
+    //todo: swap this to pulling spokePoolClient.latestBlockNumber.
     const [l1BlockNumber, l2BlockNumber] = await Promise.all([
       this.getProvider(1).getBlockNumber(),
       this.getProvider(this.chainId).getBlockNumber(),
@@ -73,7 +78,7 @@ export class BaseAdapter {
       const tx = await runTransaction(this.logger, l1Token, "approve", [targetContract, MAX_UINT_VAL]);
       const receipt = await tx.wait();
       mrkdwn +=
-        ` - Approved Canonical token bridge ${etherscanLink(targetContract, 1)} ` +
+        ` - Approved Canonical ${getNetworkName(this.chainId)} token bridge ${etherscanLink(targetContract, 1)} ` +
         `to spend ${await l1Token.symbol()} ${etherscanLink(l1Token.address, 1)} on ${getNetworkName(1)}. ` +
         `tx: ${etherscanLink(receipt.transactionHash, 1)}\n`;
     }

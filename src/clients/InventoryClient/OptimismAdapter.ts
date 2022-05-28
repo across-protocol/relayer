@@ -33,6 +33,8 @@ export class OptimismAdapter extends BaseAdapter {
     readonly relayerAddress: string,
     readonly isOptimism: boolean
   ) {
+    // Note based on if this isOptimism or not we switch the chainId and starting L1 blocks. This is critical. If done
+    // wrong funds WILL be deleted in the canonical bridge (eg sending funds to Optimism with a boba L2 token).
     super(spokePoolClients, isOptimism ? 10 : 288, isOptimism ? firstL1BlockOvm : firstL1BlockBoba);
   }
 
@@ -101,8 +103,8 @@ export class OptimismAdapter extends BaseAdapter {
     return await runTransaction(this.logger, l1Bridge, method, args, value);
   }
 
-  async wrapEthIfAboveThreshold(threshold) {
-    const ethBalance = await this.getSigner(1).getBalance();
+  async wrapEthIfAboveThreshold(threshold: BigNumber) {
+    const ethBalance = await this.getSigner(this.chainId).getBalance();
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(this.chainId);
       const l2Weth = new Contract(this.isOptimism ? wethOptimismAddress : wethBobaAddress, weth9Abi, l2Signer);

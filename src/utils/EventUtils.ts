@@ -37,7 +37,7 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
   let numberOfQueries = 1;
   if (!searchConfig.maxBlockLookBack) searchConfig.maxBlockLookBack = searchConfig.toBlock - searchConfig.fromBlock;
   else numberOfQueries = Math.ceil((searchConfig.toBlock - searchConfig.fromBlock) / searchConfig.maxBlockLookBack);
-  console.log("numberOfQueries", numberOfQueries, searchConfig);
+
   const promises = [];
   for (let i = 0; i < numberOfQueries; i++) {
     const fromBlock = searchConfig.fromBlock + i * searchConfig.maxBlockLookBack;
