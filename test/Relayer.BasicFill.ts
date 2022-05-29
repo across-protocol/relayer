@@ -7,7 +7,6 @@ import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerCli
 import { TokenClient, ProfitClient } from "../src/clients";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
-import { assert } from "console";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
