@@ -5,9 +5,17 @@ import { RelayerClients } from "./RelayerClientHelper";
 import { Deposit } from "../interfaces/SpokePool";
 
 export class Relayer {
-  private repaymentChainId = 1; // Set to 1 for now. In future can be dynamically set to adjust bots capital allocation.
+  private defaultRepaymentChain = 1;
+  constructor(
+    readonly logger: winston.Logger,
+    readonly clients: RelayerClients,
+    readonly repaymentChainIdForToken: { [l1Token: string]: number } = {}
+  ) {}
 
-  constructor(readonly logger: winston.Logger, readonly clients: RelayerClients) {}
+  getRepaymentChainForToken(l1Token: string): number {
+    return this.repaymentChainIdForToken[l1Token] ?? this.defaultRepaymentChain;
+  }
+
   async checkForUnfilledDepositsAndFill() {
     // Fetch all unfilled deposits, order by total earnable fee.
     // TODO: Note this does not consider the price of the token which will be added once the profitability module is
@@ -46,16 +54,24 @@ export class Relayer {
   }
 
   fillRelay(deposit: Deposit, fillAmount: BigNumber) {
-    this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain: this.repaymentChainId });
+    const l1Token = this.clients.hubPoolClient.getL1TokenForDeposit(deposit);
+    const l1TokenInfo = this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token);
+    this.logger.debug({
+      at: "Relayer",
+      message: `Filling deposit for ${l1TokenInfo.symbol}`,
+      deposit,
+      repaymentChain: this.getRepaymentChainForToken(l1Token),
+      l1Token: l1TokenInfo.symbol,
+    });
     try {
       // Add the fill transaction to the multiCallerClient so it will be executed with the next batch.
       this.clients.multiCallerClient.enqueueTransaction({
         contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
         chainId: deposit.destinationChainId,
         method: "fillRelay", // method called.
-        args: buildFillRelayProps(deposit, this.repaymentChainId, fillAmount), // props sent with function call.
-        message: "Relay instantly sent 🚀", // message sent to logger.
-        mrkdwn: this.constructRelayFilledMrkdwn(deposit, this.repaymentChainId, fillAmount), // message details mrkdwn
+        args: buildFillRelayProps(deposit, this.getRepaymentChainForToken(l1Token), fillAmount), // props sent with function call.
+        message: `Relay instantly sent for ${l1TokenInfo.symbol} 🚀`, // message sent to logger.
+        mrkdwn: this.constructRelayFilledMrkdwn(deposit, this.getRepaymentChainForToken(l1Token), fillAmount), // message details mrkdwn
       });
 
       // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
@@ -72,15 +88,23 @@ export class Relayer {
   }
 
   zeroFillDeposit(deposit: Deposit) {
-    this.logger.debug({ at: "Relayer", message: "Zero filling", deposit, repaymentChain: this.repaymentChainId });
+    const l1Token = this.clients.hubPoolClient.getL1TokenForDeposit(deposit);
+    const l1TokenInfo = this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token);
+    this.logger.debug({
+      at: "Relayer",
+      message: `Zero filling deposit for ${l1TokenInfo.symbol}`,
+      deposit,
+      repaymentChain: this.getRepaymentChainForToken(l1Token),
+      l1Token: l1TokenInfo.symbol,
+    });
     try {
       // Add the zero fill fill transaction to the multiCallerClient so it will be executed with the next batch.
       this.clients.multiCallerClient.enqueueTransaction({
         contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
         chainId: deposit.destinationChainId,
         method: "fillRelay", // method called.
-        args: buildFillRelayProps(deposit, this.repaymentChainId, toBN(1)), // props sent with function call.
-        message: "Zero size relay sent 🐌", // message sent to logger.
+        args: buildFillRelayProps(deposit, this.getRepaymentChainForToken(l1Token), toBN(1)), // props sent with function call.
+        message: `Zero size relay sent ${l1TokenInfo.symbol} 🐌`, // message sent to logger.
         mrkdwn: this.constructZeroSizeFilledMrkdwn(deposit), // message details mrkdwn
       });
     } catch (error) {

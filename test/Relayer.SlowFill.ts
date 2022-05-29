@@ -70,7 +70,31 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
 
     await updateAllClients();
   });
-
+  it("Can override repayment chain ID", async function () {
+    const repaymentChainIdOverride = { [l1Token.address]: destinationChainId };
+    const newRelayer = new Relayer(
+      spyLogger,
+      {
+        spokePoolClients: { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
+        hubPoolClient,
+        configStoreClient,
+        tokenClient,
+        profitClient,
+        multiCallerClient,
+      },
+      repaymentChainIdOverride
+    );
+    const balance = await erc20_1.balanceOf(relayer.address);
+    await erc20_1.connect(relayer).transfer(owner.address, balance.sub(amountToDeposit));
+    await erc20_2.connect(relayer).transfer(owner.address, balance.sub(amountToDeposit));
+    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
+    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId, amountToDeposit.mul(2));
+    await updateAllClients();
+    await newRelayer.checkForUnfilledDepositsAndFill();
+    await multiCallerClient.executeTransactionQueue();
+    const fillEvents2 = await spokePool_2.queryFilter(spokePool_2.filters.FilledRelay());
+    expect(fillEvents2[0].args.repaymentChainId).to.equal(destinationChainId);
+  });
   it("Correctly sends 1wei sized fill if insufficient token balance", async function () {
     // Transfer away a lot of the relayers funds to simulate the relayer having insufficient funds.
     const balance = await erc20_1.balanceOf(relayer.address);
@@ -102,6 +126,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     expect(fillEvents2[0].args.amount).to.equal(deposit1.amount);
     expect(fillEvents2[0].args.fillAmount).to.equal(1); // 1wei fill size
     expect(fillEvents2[0].args.destinationChainId).to.equal(Number(deposit1.destinationChainId));
+    expect(fillEvents2[0].args.repaymentChainId).to.equal(1);
     expect(fillEvents2[0].args.originChainId).to.equal(Number(deposit1.originChainId));
     expect(fillEvents2[0].args.relayerFeePct).to.equal(deposit1.relayerFeePct);
     expect(fillEvents2[0].args.depositor).to.equal(deposit1.depositor);

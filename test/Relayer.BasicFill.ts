@@ -7,6 +7,7 @@ import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerCli
 import { TokenClient, ProfitClient } from "../src/clients";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
+import { assert } from "console";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -71,6 +72,29 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await updateAllClients();
   });
 
+  it("Can override repayment chain ID", async function () {
+    const repaymentChainIdOverride = { [l1Token.address]: destinationChainId };
+    const newRelayer = new Relayer(
+      spyLogger,
+      {
+        spokePoolClients: { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
+        hubPoolClient,
+        configStoreClient,
+        tokenClient,
+        profitClient,
+        multiCallerClient,
+      },
+      repaymentChainIdOverride
+    );
+
+    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
+    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await updateAllClients();
+    await newRelayer.checkForUnfilledDepositsAndFill();
+    await multiCallerClient.executeTransactionQueue();
+    const fillEvents2 = await spokePool_2.queryFilter(spokePool_2.filters.FilledRelay());
+    expect(fillEvents2[0].args.repaymentChainId).to.equal(destinationChainId);
+  });
   it("Correctly fetches single unfilled deposit and fills it", async function () {
     // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
     // "reasonable" block number based off the block time when looking at quote timestamps.
@@ -91,6 +115,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     expect(fillEvents2.length).to.equal(1);
     expect(fillEvents2[0].args.depositId).to.equal(deposit1.depositId);
     expect(fillEvents2[0].args.amount).to.equal(deposit1.amount);
+    expect(fillEvents2[0].args.repaymentChainId).to.equal(1);
     expect(fillEvents2[0].args.destinationChainId).to.equal(Number(deposit1.destinationChainId));
     expect(fillEvents2[0].args.originChainId).to.equal(Number(deposit1.originChainId));
     expect(fillEvents2[0].args.relayerFeePct).to.equal(deposit1.relayerFeePct);
