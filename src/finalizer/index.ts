@@ -21,7 +21,8 @@ export async function run(
   logger: winston.Logger,
   hubSigner: Wallet,
   relayerClients: RelayerClients,
-  configuredChainIds: number[]
+  configuredChainIds: number[],
+  executeTransactions: boolean
 ): Promise<void> {
   const spokePoolClients = relayerClients.spokePoolClients;
   // For each chain, look up any TokensBridged events emitted by SpokePool client that we'll attempt to finalize
@@ -43,6 +44,14 @@ export async function run(
         hubSigner,
         relayerClients.hubPoolClient
       );
+      if (!executeTransactions) {
+        logger.debug({
+          at: "Finalizer",
+          message: `Simulation mode, exiting early. Skipping execution of ${finalizableMessages.length} messages`,
+          finalizableMessages
+        });
+        continue;
+      }
       for (const l2Message of finalizableMessages) {
         await finalizeArbitrum(
           logger,
@@ -61,6 +70,14 @@ export async function run(
           at: "PolygonFinalizer",
           message: `No Polygon finalizable messages, will check for retrievals from token bridge`,
         });
+      if (!executeTransactions) {
+        logger.debug({
+          at: "Finalizer",
+          message: `Simulation mode, exiting early. Skipping execution of ${canWithdraw.length} messages`,
+          finalizableMessages: canWithdraw
+        });
+        continue;
+      }
       for (const event of canWithdraw) {
         await finalizePolygon(posClient, relayerClients.hubPoolClient, event, logger);
       }
@@ -86,6 +103,14 @@ export async function run(
           at: "OptimismFinalizer",
           message: "No Optimism finalizable messages",
         });
+      if (!executeTransactions) {
+        logger.debug({
+          at: "Finalizer",
+          message: `Simulation mode, exiting early. Skipping execution of ${finalizable.length} messages`,
+          finalizableMessages: finalizable
+        });
+        continue;
+      }
       for (const message of finalizable) {
         logger.debug({
           at: "OptimismFinalizer",
@@ -121,7 +146,7 @@ export async function runFinalizer(_logger: winston.Logger) {
       await updateRelayerClients(relayerClients);
 
       // Validate and dispute pending proposal before proposing a new one
-      if (config.finalizerEnabled) await run(logger, hubSigner, relayerClients, config.finalizerChains);
+      if (config.finalizerEnabled) await run(logger, hubSigner, relayerClients, config.finalizerChains, config.sendingTransactionsEnabled);
       else logger[startupLogLevel(config)]({ at: "Finalizer#index", message: "Finalizer disabled" });
 
       if (await processEndPollingLoop(logger, "Finalizer", config.pollingDelay)) break;
