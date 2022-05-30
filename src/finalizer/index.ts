@@ -31,10 +31,6 @@ export async function run(
     const client = spokePoolClients[chainId];
     const tokensBridged = client.getTokensBridged();
 
-    logger.debug({
-      at: "Finalizer",
-      message: `Looking for finalizable bridge events for chain ${chainId}`,
-    });
     // TODO: Refactor following code to produce list of transaction call data we can submit together in a single
     // batch to a DS proxy or multi call contract.
     if (chainId === 42161) {
@@ -46,9 +42,9 @@ export async function run(
       );
       if (!executeTransactions) {
         logger.debug({
-          at: "Finalizer",
+          at: "ArbitrumFinalizer",
           message: `Simulation mode, exiting early. Skipping execution of ${finalizableMessages.length} messages`,
-          finalizableMessages
+          finalizableMessages,
         });
         continue;
       }
@@ -65,16 +61,11 @@ export async function run(
     } else if (chainId === 137) {
       const posClient = await getPosClient(hubSigner);
       const canWithdraw = await getFinalizableTransactions(tokensBridged, posClient, relayerClients.hubPoolClient);
-      if (canWithdraw.length === 0)
-        logger.debug({
-          at: "PolygonFinalizer",
-          message: `No Polygon finalizable messages, will check for retrievals from token bridge`,
-        });
       if (!executeTransactions) {
         logger.debug({
-          at: "Finalizer",
+          at: "PolygonFinalizer",
           message: `Simulation mode, exiting early. Skipping execution of ${canWithdraw.length} messages`,
-          finalizableMessages: canWithdraw
+          finalizableMessages: canWithdraw,
         });
         continue;
       }
@@ -98,16 +89,11 @@ export async function run(
         statusesGrouped: groupObjectCountsByTwoProps(messageStatuses, "status", (message) => message["token"]),
       });
       const finalizable = getOptimismFinalizableMessages(messageStatuses);
-      if (finalizable.length === 0)
-        logger.debug({
-          at: "OptimismFinalizer",
-          message: "No Optimism finalizable messages",
-        });
       if (!executeTransactions) {
         logger.debug({
-          at: "Finalizer",
+          at: "OptimismFinalizer",
           message: `Simulation mode, exiting early. Skipping execution of ${finalizable.length} messages`,
-          finalizableMessages: finalizable
+          finalizableMessages: finalizable,
         });
         continue;
       }
@@ -146,7 +132,8 @@ export async function runFinalizer(_logger: winston.Logger) {
       await updateRelayerClients(relayerClients);
 
       // Validate and dispute pending proposal before proposing a new one
-      if (config.finalizerEnabled) await run(logger, hubSigner, relayerClients, config.finalizerChains, config.sendingTransactionsEnabled);
+      if (config.finalizerEnabled)
+        await run(logger, hubSigner, relayerClients, config.finalizerChains, config.sendingTransactionsEnabled);
       else logger[startupLogLevel(config)]({ at: "Finalizer#index", message: "Finalizer disabled" });
 
       if (await processEndPollingLoop(logger, "Finalizer", config.pollingDelay)) break;
