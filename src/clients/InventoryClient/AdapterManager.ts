@@ -85,7 +85,6 @@ export class AdapterManager {
     return this.spokePoolClients[chainId].spokePool.signer;
   }
   getChainSearchConfig(chainId: number) {
-    console.log("GETTER", this.spokePoolClients[chainId].eventSearchConfig);
     return this.spokePoolClients[chainId].eventSearchConfig;
   }
 

@@ -1,4 +1,4 @@
-import { spreadEvent, assign, Contract, runTransaction, EventSearchConfig } from "../../utils";
+import { spreadEvent, assign, Contract, runTransaction, spreadEventWithBlockNumber } from "../../utils";
 import { toBN, toWei, Event, winston, paginatedEventQuery, Promise } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
@@ -41,8 +41,8 @@ export class ArbitrumAdapter extends BaseAdapter {
     super(spokePoolClients, 42161, firstL1BlockToSearch);
   }
   async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
-    await this.updateFromBlockSearchConfig();
-    this.log("Fetching outstanding transfers", { l1Tokens });
+    await this.updateBlockSearchConfig();
+    this.log("Getting cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
 
     let promises = [];
     for (const l1Token of l1Tokens) {
@@ -60,29 +60,18 @@ export class ArbitrumAdapter extends BaseAdapter {
     const results = await Promise.all(promises, { concurrency: 4 });
     results.forEach((result, index) => {
       const l1Token = l1Tokens[Math.floor(index / 2)];
+      const events = result.map((event) => {
+        const eventSpread = spreadEventWithBlockNumber(event);
+        return { amount: eventSpread[index % 2 === 0 ? "_amount" : "amount"], blockNumber: eventSpread["blockNumber"] };
+      });
       const storageName = index % 2 === 0 ? "l1DepositInitiatedEvents" : "l2DepositFinalizedEvents";
-      assign(this[storageName], [l1Token], result);
+      assign(this[storageName], [l1Token], events);
     });
 
-    let outstandingTransfers = {};
-    for (const l1Token of l1Tokens) {
-      const totalDepositsInitiated = this.l1DepositInitiatedEvents[l1Token]
-        ? this.l1DepositInitiatedEvents[l1Token]
-            .filter((event: any) => event?.args?.l1Token.toLowerCase() == l1Token.toLowerCase())
-            .map((event: Event) => event.args._amount)
-            .reduce((acc, curr) => acc.add(curr), toBN(0))
-        : toBN(0);
+    this.l1SearchConfig.fromBlock = this.l1SearchConfig.toBlock + 1;
+    this.l2SearchConfig.fromBlock = this.l2SearchConfig.toBlock + 1;
 
-      const totalDepositsFinalized = this.l2DepositFinalizedEvents[l1Token]
-        ? this.l2DepositFinalizedEvents[l1Token]
-            .filter((event: any) => event?.args?.l1Token.toLowerCase() == l1Token.toLowerCase())
-            .map((event: Event) => event.args.amount)
-            .reduce((acc, curr) => acc.add(curr), toBN(0))
-        : toBN(0);
-      outstandingTransfers[l1Token] = totalDepositsInitiated.sub(totalDepositsFinalized);
-    }
-
-    return outstandingTransfers;
+    return this.computeOutstandingCrossChainTransfers(l1Tokens);
   }
 
   async checkTokenApprovals(l1Tokens: string[]) {

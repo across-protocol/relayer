@@ -30,23 +30,7 @@ export const weth9Abi = [
 ];
 
 // Optimism
-export const optimismL2BridgeInterface = [
-  {
-    anonymous: false,
-    inputs: [
-      { indexed: true, internalType: "address", name: "_l1Token", type: "address" },
-      { indexed: true, internalType: "address", name: "_l2Token", type: "address" },
-      { indexed: true, internalType: "address", name: "_from", type: "address" },
-      { indexed: false, internalType: "address", name: "_to", type: "address" },
-      { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
-      { indexed: false, internalType: "bytes", name: "_data", type: "bytes" },
-    ],
-    name: "DepositFinalized",
-    type: "event",
-  },
-];
-
-export const optimismL1BridgeInterface = [
+export const ovmL1BridgeInterface = [
   {
     anonymous: false,
     inputs: [
@@ -96,20 +80,23 @@ export const optimismL1BridgeInterface = [
   },
 ];
 
-// Arbitrum
-export const arbitrumL2Erc20GatewayInterface = [
+export const ovmL2BridgeInterface = [
   {
     anonymous: false,
     inputs: [
-      { indexed: true, internalType: "address", name: "l1Token", type: "address" },
-      { indexed: true, internalType: "address", name: "from", type: "address" },
-      { indexed: true, internalType: "address", name: "to", type: "address" },
-      { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
+      { indexed: true, internalType: "address", name: "_l1Token", type: "address" },
+      { indexed: true, internalType: "address", name: "_l2Token", type: "address" },
+      { indexed: true, internalType: "address", name: "_from", type: "address" },
+      { indexed: false, internalType: "address", name: "_to", type: "address" },
+      { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
+      { indexed: false, internalType: "bytes", name: "_data", type: "bytes" },
     ],
     name: "DepositFinalized",
     type: "event",
   },
 ];
+
+// Arbitrum
 
 export const arbitrumL1Erc20GatewayInterface = [
   {
@@ -136,6 +123,19 @@ export const arbitrumL1Erc20GatewayInterface = [
       { indexed: false, internalType: "uint256", name: "_amount", type: "uint256" },
     ],
     name: "DepositInitiated",
+    type: "event",
+  },
+];
+export const arbitrumL2Erc20GatewayInterface = [
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "address", name: "l1Token", type: "address" },
+      { indexed: true, internalType: "address", name: "from", type: "address" },
+      { indexed: true, internalType: "address", name: "to", type: "address" },
+      { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "DepositFinalized",
     type: "event",
   },
 ];
@@ -220,4 +220,33 @@ export const polygonL2BridgeInterface = [
     name: "TokenDeposited",
     type: "event",
   },
+];
+
+// Optimism, Boba and polygon cant deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
+// bridges ETH other the canonical bridge.
+export const atomicDepositorInterface = [
+  { stateMutability: "payable", type: "fallback" },
+  {
+    inputs: [
+      { internalType: "address", name: "to", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+      { internalType: "uint32", name: "l2Gas", type: "uint32" },
+      { internalType: "uint256", name: "chainId", type: "uint256" },
+    ],
+    name: "bridgeWethToOvm",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "to", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "bridgeWethToPolygon",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  { stateMutability: "payable", type: "receive" },
 ];

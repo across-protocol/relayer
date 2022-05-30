@@ -12,37 +12,34 @@ export class Relayer {
     // Fetch all unfilled deposits, order by total earnable fee.
     // TODO: Note this does not consider the price of the token which will be added once the profitability module is
     // added to this bot.
-    // const unfilledDeposits = this.getUnfilledDeposits().sort((a, b) =>
-    //   a.unfilledAmount.mul(a.deposit.relayerFeePct).lt(b.unfilledAmount.mul(b.deposit.relayerFeePct)) ? 1 : -1
-    // );
-
-    // if (unfilledDeposits.length > 0)
-    //   this.logger.debug({ at: "Relayer", message: "Filling deposits", number: unfilledDeposits.length });
-    // else this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
-
+    const unfilledDeposits = this.getUnfilledDeposits().sort((a, b) =>
+      a.unfilledAmount.mul(a.deposit.relayerFeePct).lt(b.unfilledAmount.mul(b.deposit.relayerFeePct)) ? 1 : -1
+    );
+    if (unfilledDeposits.length > 0)
+      this.logger.debug({ at: "Relayer", message: "Filling deposits", number: unfilledDeposits.length });
+    else this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
     // Iterate over all unfilled deposits. For each unfilled deposit: a) check that the token balance client has enough
     // balance to fill the unfilled amount. b) the fill is profitable. If both hold true then fill the unfilled amount.
     // If not enough ballance add the shortfall to the shortfall tracker to produce an appropriate log. If the deposit
     // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
     // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
-    // for (const { deposit, unfilledAmount, fillCount } of unfilledDeposits) {
-    //   if (this.clients.tokenClient.hasSufficientBalanceForFill(deposit, unfilledAmount)) {
-    //     if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount)) {
-    //       this.fillRelay(deposit, unfilledAmount);
-    //     } else {
-    //       this.clients.profitClient.captureUnprofitableFill(deposit, unfilledAmount);
-    //     }
-    //   } else {
-    //     this.clients.tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
-    //     // If we dont have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
-    //     // 0 sized fill to ensure that the deposit is slow relayed. This only needs to be done once.
-    //     if (fillCount === 0) this.zeroFillDeposit(deposit);
-    //   }
-    // }
-
-    // // If during the execution run we had shortfalls or unprofitable fills then handel it by producing associated logs.
-    // if (this.clients.tokenClient.anyCapturedShortFallFills()) this.handleTokenShortfall();
-    // if (this.clients.profitClient.anyCapturedUnprofitableFills()) this.handleUnprofitableFill();
+    for (const { deposit, unfilledAmount, fillCount } of unfilledDeposits) {
+      if (this.clients.tokenClient.hasSufficientBalanceForFill(deposit, unfilledAmount)) {
+        if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount)) {
+          this.fillRelay(deposit, unfilledAmount);
+        } else {
+          this.clients.profitClient.captureUnprofitableFill(deposit, unfilledAmount);
+        }
+      } else {
+        this.clients.tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
+        // If we dont have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
+        // 0 sized fill to ensure that the deposit is slow relayed. This only needs to be done once.
+        if (fillCount === 0) this.zeroFillDeposit(deposit);
+      }
+    }
+    // If during the execution run we had shortfalls or unprofitable fills then handel it by producing associated logs.
+    if (this.clients.tokenClient.anyCapturedShortFallFills()) this.handleTokenShortfall();
+    if (this.clients.profitClient.anyCapturedUnprofitableFills()) this.handleUnprofitableFill();
   }
 
   fillRelay(deposit: Deposit, fillAmount: BigNumber) {
@@ -140,8 +137,6 @@ export class Relayer {
     });
 
     this.logger.warn({ at: "Relayer", message: "Insufficient balance to fill all deposits 💸!", mrkdwn });
-
-    this.clients.tokenClient.clearTokenShortfall();
   }
 
   private handleUnprofitableFill() {

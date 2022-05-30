@@ -11,10 +11,13 @@ export class BaseAdapter {
 
   l1DepositInitiatedEvents: { [l1Token: string]: any[] } = {};
   l2DepositFinalizedEvents: { [l1Token: string]: any[] } = {};
+  l2DepositFinalizedEvents_DepositAdapter: { [l1Token: string]: any[] } = {};
 
   // In worst case deposits MUST conclude within 24 hours. Used to optimize how many event queries we need to do on
   // some L2s that restrict large loobacks.
-  maximumDepositEvaluationTime = 24 * 60 * 60;
+  depositEvalTime = 24 * 60 * 60;
+
+  firstEvaluatedL1BlockNumber: number;
   constructor(
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     _chainId: number,
@@ -37,7 +40,7 @@ export class BaseAdapter {
     return this.spokePoolClients[chainId].eventSearchConfig;
   }
 
-  async updateFromBlockSearchConfig() {
+  async updateBlockSearchConfig() {
     //todo: swap this to pulling spokePoolClient.latestBlockNumber.
     const [l1BlockNumber, l2BlockNumber] = await Promise.all([
       this.getProvider(1).getBlockNumber(),
@@ -46,6 +49,8 @@ export class BaseAdapter {
 
     this.l1SearchConfig.toBlock = l1BlockNumber;
     this.l2SearchConfig.toBlock = l2BlockNumber;
+
+    this.l2SearchConfig.fromBlock = this.l2SearchConfig.toBlock - this.depositEvalTime / this.avgBlockTime();
   }
 
   async checkAndSendTokenApprovals(l1Tokens: string[], associatedL1Bridges: string[]) {
@@ -85,6 +90,44 @@ export class BaseAdapter {
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
   }
 
+  computeOutstandingCrossChainTransfers(l1Tokens: string[]) {
+    let outstandingTransfers = {};
+    for (const l1Token of l1Tokens) {
+      let l2FinalizationSet = this.l2DepositFinalizedEvents[l1Token];
+      if (this.isWeth(l1Token) && this.l2DepositFinalizedEvents_DepositAdapter?.[l1Token]?.length > 0)
+        l2FinalizationSet = [
+          ...l2FinalizationSet,
+          ...this.l2DepositFinalizedEvents_DepositAdapter[l1Token].filter((event) => event.to === this.relayerAddress),
+        ].sort((a, b) => a.blockNumber - b.blockNumber);
+
+        
+        const newestFinalizedAmount = l2FinalizationSet[l2FinalizationSet.length - 1];
+      const newestDeposit = this.l1DepositInitiatedEvents[l1Token][this.l1DepositInitiatedEvents[l1Token].length - 1];
+      if (
+        !newestFinalizedAmount &&
+        newestDeposit.blockNumber < this.l1SearchConfig.toBlock - this.depositEvalTime / this.avgBlockTime(1)
+      ) {
+        outstandingTransfers[l1Token] = toBN(0);
+        continue;
+      }
+
+      let associatedL1DepositIndex = -1;
+      if (newestFinalizedAmount)
+        this.l1DepositInitiatedEvents[l1Token].forEach((l1Event, index) => {
+          if (l1Event.amount.eq(newestFinalizedAmount.amount)) {
+            associatedL1DepositIndex = index;
+            return;
+          }
+        });
+
+      const l1EventsToConsider = this.l1DepositInitiatedEvents[l1Token].slice(associatedL1DepositIndex + 1);
+      const totalDepositsOutstanding = l1EventsToConsider.reduce((acc, curr) => acc.add(curr.amount), toBN(0));
+      outstandingTransfers[l1Token] = totalDepositsOutstanding;
+    }
+
+    return outstandingTransfers;
+  }
+
   log(message: string, data?: any, level: string = "debug") {
     this.logger[level]({ at: this.getName(), message, ...data });
   }
@@ -95,5 +138,13 @@ export class BaseAdapter {
 
   isWeth(l1Token: string) {
     return l1Token == "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+  }
+
+  avgBlockTime(chainId: number = this.chainId) {
+    if (chainId == 1) return 15;
+    if (chainId == 10) return 0.1;
+    if (chainId == 137) return 1;
+    if (chainId == 288) return 0.1;
+    if (chainId == 42161) return 0.1;
   }
 }

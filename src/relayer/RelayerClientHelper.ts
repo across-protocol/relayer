@@ -99,8 +99,10 @@ export async function updateRelayerClients(clients: RelayerClients) {
   // We can update the inventory client at the same time as checking for eth wrapping as these do not depend on each other.
   await Promise.all([
     clients.inventoryClient.update(),
-    clients.inventoryClient.wrapL2EthIfAboveThreshold(),
-    clients.inventoryClient.setL1TokenApprovals(),
+    // clients.inventoryClient.wrapL2EthIfAboveThreshold(),
+    // clients.inventoryClient.setL1TokenApprovals(),
+
+    
   ]);
 
   // Update the token client after the inventory client has done its wrapping of L2 ETH to ensure latest WETH ballance.

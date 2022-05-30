@@ -38,7 +38,6 @@ export class InventoryClient {
   }
 
   getChainDistribution(l1Token: string): { [chainId: number]: BigNumber } {
-    console.log("getting", l1Token);
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
     const distribution = {};
     this.getEnabledChains().forEach((chainId) => {
@@ -52,6 +51,16 @@ export class InventoryClient {
     const distributionPerL1Token = {};
     this.getL1Tokens().forEach((l1Token) => (distributionPerL1Token[l1Token] = this.getChainDistribution(l1Token)));
     return distributionPerL1Token;
+  }
+
+  getCurrentAllocationPctConsideringShortfall(l1Token: string, chainId: number): BigNumber {
+    const currentAllocationPct = this.getTokenDistributionPerL1Token()[l1Token][chainId];
+    const shortfall = this.tokenClient.getTokensNeededToCoverShortfall(
+      chainId,
+      this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId)
+    );
+    const shortfallPct = shortfall.mul(scalar).div(this.getCumulativeBalance(l1Token));
+    return currentAllocationPct.sub(shortfallPct);
   }
 
   getEnabledChains(): number[] {
@@ -76,12 +85,11 @@ export class InventoryClient {
     for (const l1Token of Object.keys(tokenDistributionPerL1Token)) {
       const cumulativeBalance = this.getCumulativeBalance(l1Token);
       for (const chainId of this.getEnabledL2Chains()) {
-        const currentAllocationPct = toBN(tokenDistributionPerL1Token[l1Token][chainId]);
+        const currentAllocationPct = this.getCurrentAllocationPctConsideringShortfall(l1Token, chainId);
         const targetAllocationPct = toBN(this.inventoryConfig.targetL2PctOfTotal[chainId]);
         if (currentAllocationPct.lt(targetAllocationPct)) {
           if (!rebalancesRequired[chainId]) rebalancesRequired[chainId] = {};
           const deltaPct = targetAllocationPct.add(this.inventoryConfig.rebalanceOvershoot).sub(currentAllocationPct);
-          // const tokenDecimalScalar = toBN(10).pow(this.hubPoolClient.getTokenInfoForL1Token(l1Token).decimals);
           rebalancesRequired[chainId][l1Token] = deltaPct.mul(cumulativeBalance).div(scalar);
         }
       }
@@ -92,7 +100,6 @@ export class InventoryClient {
     }
 
     // Next, evaluate if we have enough tokens on L1 to actually do these rebalances.
-    // Todo: consider adding a reserve threshold wherein we keep some amount on L1.
     const possibleRebalances: { [chainId: number]: { [l1Token: string]: BigNumber } } = {};
     for (const chainId of Object.keys(rebalancesRequired)) {
       for (const l1Token of Object.keys(rebalancesRequired[chainId])) {
@@ -117,12 +124,15 @@ export class InventoryClient {
     const executedTransactions: { [chainId: number]: { [l1Token: string]: string } } = {};
     for (const chainId of Object.keys(possibleRebalances)) {
       for (const l1Token of Object.keys(possibleRebalances[chainId])) {
-        console.log("SENDING", l1Token, chainId, possibleRebalances[chainId][l1Token]);
-        // const receipt = await this.sendTokenCrossChain(chainId, l1Token, possibleRebalances[chainId][l1Token]);
-        // if (!executedTransactions[chainId]) executedTransactions[chainId] = {};
-        // executedTransactions[chainId][l1Token] = receipt.transactionHash;
+        const receipt = await this.sendTokenCrossChain(chainId, l1Token, possibleRebalances[chainId][l1Token]);
+        if (!executedTransactions[chainId]) executedTransactions[chainId] = {};
+        executedTransactions[chainId][l1Token] = receipt.transactionHash;
       }
     }
+
+    // Construct logs on the cross-chain actions executed.
+    // if (rebalancesRequired != possibleRebalances)
+
     console.log("Executed rebalances", { executedTransactions });
   }
 

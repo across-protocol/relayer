@@ -24,6 +24,8 @@ export async function runRelayer(_logger: winston.Logger): Promise<void> {
 
       await relayerClients.multiCallerClient.executeTransactionQueue();
 
+      await relayerClients.inventoryClient.rebalanceInventoryIfNeeded();
+
       if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) break;
     }
   } catch (error) {

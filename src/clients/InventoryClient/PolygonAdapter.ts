@@ -1,8 +1,8 @@
 import { runTransaction, assign, Contract, BigNumber, bnToHex } from "../../utils";
-import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, Promise } from "../../utils";
+import { toBN, Event, ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery, Promise } from "../../utils";
 import { SpokePoolClient } from "../../clients";
-import { BaseAdapter, polygonL1BridgeInterface, polygonL2BridgeInterface, polygonL1RootChainManager } from "./";
-import { InventoryConfig } from "../../interfaces";
+import { BaseAdapter, polygonL1BridgeInterface, polygonL2BridgeInterface } from "./";
+import { polygonL1RootChainManager, atomicDepositorInterface } from "./";
 
 // ether bridge = 0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30
 // erc20 bridfge = 0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf
@@ -22,7 +22,6 @@ const tokenToBridge = {
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
-    firstBlockToSearch: 10735445,
   }, // USDC
   "0x6B175474E89094C44Da98b954EedeAC495271d0F": {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
@@ -30,7 +29,6 @@ const tokenToBridge = {
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
-    firstBlockToSearch: 10735445,
   }, // DAI
   "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
@@ -38,7 +36,6 @@ const tokenToBridge = {
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
-    firstBlockToSearch: 10735445,
   }, // WBTC
   "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": {
     l1BridgeAddress: "0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30",
@@ -46,7 +43,6 @@ const tokenToBridge = {
     l1Method: "LockedEther",
     l1AmountProp: "amount",
     l2AmountProp: "value",
-    firstBlockToSearch: 10735538,
   }, // WETH
   [l1MaticAddress]: {
     l1BridgeAddress: "0x401f6c983ea34274ec46f84d70b31c151321188b",
@@ -54,11 +50,12 @@ const tokenToBridge = {
     l1Method: "NewDepositBlock",
     l1AmountProp: "amountOrNFTId",
     l2AmountProp: "amount",
-    firstBlockToSearch: 10167767,
   }, // MATIC
 };
 
-const;
+const firstL1BlockToSearch = 10167767;
+
+const atomicDepositorAddress = "0x26eaf37ee5daf49174637bdcd2f7759a25206c34";
 
 export class PolygonAdapter extends BaseAdapter {
   constructor(
@@ -66,13 +63,13 @@ export class PolygonAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly relayerAddress: string
   ) {
-    super(spokePoolClients, 137, 0); // Note we pass in l1FromBlock as 0. This is overriden in the polygon case.
+    super(spokePoolClients, 137, firstL1BlockToSearch);
   }
 
   // On polygon a bridge transaction looks like a transfer from address(0) to the target.
   async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
-    await this.updateFromBlockSearchConfig();
-    this.log("Fetching outstanding transfers", { l1Tokens });
+    await this.updateBlockSearchConfig();
+    this.log("Getting cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
 
     let promises = [];
     for (const l1Token of l1Tokens) {
@@ -82,19 +79,13 @@ export class PolygonAdapter extends BaseAdapter {
       const l1Method = tokenToBridge[l1Token].l1Method;
       let l1SearchFilter = [];
       if (l1Method == "LockedERC20") l1SearchFilter = [this.relayerAddress, undefined, l1Token];
-      if (l1Method == "LockedEther") l1SearchFilter = [this.relayerAddress];
+      if (l1Method == "LockedEther") l1SearchFilter = [undefined, this.relayerAddress];
       if (l1Method == "NewDepositBlock") l1SearchFilter = [this.relayerAddress, l1MaticAddress];
 
       const l2Method = l1Token == l1MaticAddress ? "TokenDeposited" : "Transfer";
       let l2SearchFilter = [];
       if (l2Method == "Transfer") l2SearchFilter = [ZERO_ADDRESS, this.relayerAddress];
       if (l2Method == "TokenDeposited") l2SearchFilter = [l1MaticAddress, ZERO_ADDRESS, this.relayerAddress];
-
-      this.l1SearchConfig = { ...this.l1SearchConfig, fromBlock: tokenToBridge[l1Token].firstBlockToSearch };
-
-      // Configure the lookback duration as a function of this chains block time. Try fetch ~last days events.
-      this.l1SearchConfig.fromBlock = this.l1SearchConfig.toBlock - this.maximumDepositEvaluationTime / 15;
-      this.l2SearchConfig.fromBlock = this.l2SearchConfig.toBlock - this.maximumDepositEvaluationTime / 2;
 
       promises.push(
         paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), this.l1SearchConfig),
@@ -104,64 +95,41 @@ export class PolygonAdapter extends BaseAdapter {
     const results = await Promise.all(promises, { concurrency: 2 });
     results.forEach((result, index) => {
       const l1Token = l1Tokens[Math.floor(index / 2)];
-      const storageName = index % 2 === 0 ? "l1DepositInitiatedEvents" : "l2DepositFinalizedEvents";
-      assign(this[storageName], [l1Token], result);
-    });
-
-    let outstandingTransfers = {};
-    for (const l1Token of l1Tokens) {
-      const numL1Events = this.l1DepositInitiatedEvents[l1Token].length;
-      const numL2Events = this.l2DepositFinalizedEvents[l1Token].length;
-      const l1EventsToConsider = this.l1DepositInitiatedEvents[l1Token].filter((l1Event) => {
-        let found = false;
-        this.l2DepositFinalizedEvents[l1Token].forEach(
-          (l2Event) =>
-            (found =
-              l2Event.args[tokenToBridge[l1Token].l1AmountProp] == l1Event.args[tokenToBridge[l1Token].l2AmountProp])
-        );
+      const amountProp = index % 2 === 0 ? tokenToBridge[l1Token].l1AmountProp : tokenToBridge[l1Token].l2AmountProp;
+      const events = result.map((event) => {
+        const eventSpread = spreadEventWithBlockNumber(event);
+        return {
+          amount: eventSpread[amountProp],
+          to: eventSpread["depositReceiver"],
+          blockNumber: eventSpread["blockNumber"],
+        };
       });
-
-      const totalDepositsInitiated = l1EventsToConsider
-        ? l1EventsToConsider
-            .map((event: Event) => event.args[tokenToBridge[l1Token].l1AmountProp])
-            .reduce((acc, curr) => acc.add(curr), toBN(0))
-        : toBN(0);
-
-      const totalDepositsFinalized = this.l2DepositFinalizedEvents[l1Token]
-        ? this.l2DepositFinalizedEvents[l1Token]
-            .map((event: Event) => event.args[tokenToBridge[l1Token].l2AmountProp])
-            .reduce((acc, curr) => acc.add(curr), toBN(0))
-        : toBN(0);
-
-      outstandingTransfers[l1Token] = totalDepositsInitiated.sub(totalDepositsFinalized);
-    }
+      const storageName = index % 2 === 0 ? "l1DepositInitiatedEvents" : "l2DepositFinalizedEvents";
+      assign(this[storageName], [l1Token], events);
+    });
 
     this.l1SearchConfig.fromBlock = this.l1SearchConfig.toBlock + 1;
     this.l2SearchConfig.fromBlock = this.l2SearchConfig.toBlock + 1;
 
-    return outstandingTransfers;
+    return this.computeOutstandingCrossChainTransfers(l1Tokens);
   }
 
   async sendTokenToTargetChain(l1Token: string, l2Token: string, amount: BigNumber) {
-    let value = toBN(0);
     let method = "depositFor";
     // note that the amount is the bytes 32 encoding of the amount.
     let args = [this.relayerAddress, l1Token, bnToHex(amount)];
 
     // If this token is WETH(the tokenToEvent maps to the ETH method) then we modify the params to deposit ETH.
     if (this.isWeth(l1Token)) {
-      value = amount;
-      method = "depositEtherFor";
-      args = [this.relayerAddress];
+      method = "bridgeWethToPolygon";
+      args = [this.relayerAddress, amount.toString()];
     }
     this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
-    return await runTransaction(this.logger, this.getL1RootChainManager(l1Token), method, args, value);
+    return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args);
   }
 
   async checkTokenApprovals(l1Tokens: string[]) {
-    // We dont need to do approvals for WETH as Arbitrum sends ETH over the bridge.
-    l1Tokens = l1Tokens.filter((l1Token) => !this.isWeth(l1Token));
-    const associatedL1Bridges = l1Tokens.map((l1Token) => this.getL1Bridge(l1Token)?.address);
+    const associatedL1Bridges = l1Tokens.map((l1Token) => this.getL1TokenGateway(l1Token)?.address);
     await this.checkAndSendTokenApprovals(l1Tokens, associatedL1Bridges);
   }
 
@@ -174,13 +142,15 @@ export class PolygonAdapter extends BaseAdapter {
     }
   }
 
-  getL1RootChainManager(l1Token: string) {
-    try {
-      return new Contract(l1RootChainManager, polygonL1RootChainManager, this.getSigner(1));
-    } catch (error) {
-      this.log("Could not construct l1Bridge. Likely misconfiguration", { l1Token, error, tokenToBridge }, "error");
-      return null;
-    }
+  getL1TokenGateway(l1Token: string) {
+    if (this.isWeth(l1Token)) return new Contract(atomicDepositorAddress, atomicDepositorInterface, this.getSigner(1));
+    else
+      try {
+        return new Contract(l1RootChainManager, polygonL1RootChainManager, this.getSigner(1));
+      } catch (error) {
+        this.log("Could not construct l1Bridge. Likely misconfiguration", { l1Token, error, tokenToBridge }, "error");
+        return null;
+      }
   }
 
   // Note that on polygon we dont query events on the L2 bridge. rather, we look for mint events on the L2 token.

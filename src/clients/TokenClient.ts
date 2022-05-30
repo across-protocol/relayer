@@ -44,6 +44,10 @@ export class TokenClient {
     return this.tokenShortfall?.[chainId]?.[token]?.totalRequirement || toBN(0);
   }
 
+  getTokensNeededToCoverShortfall(chainId: number | string, token: string) {
+    return this.getShortfallTotalRequirement(chainId, token).sub(this.getBalance(chainId, token));
+  }
+
   getShortfallDeposits(chainId: number | string, token: string) {
     return this.tokenShortfall?.[chainId]?.[token]?.deposits || [];
   }
@@ -77,7 +81,7 @@ export class TokenClient {
         assign(tokenShortfall, [chainId, token], {
           balance: this.getBalance(chainId, token),
           needed: this.getShortfallTotalRequirement(chainId, token),
-          shortfall: this.getShortfallTotalRequirement(chainId, token).sub(this.getBalance(chainId, token)),
+          shortfall: this.getTokensNeededToCoverShortfall(chainId, token),
           deposits: this.getShortfallDeposits(chainId, token),
         })
       )
