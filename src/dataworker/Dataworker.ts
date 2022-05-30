@@ -151,7 +151,7 @@ export class Dataworker {
               return;
 
             // Now create a copy of fill with block data removed, and use its data to update the fills to refund obj.
-            const { blockNumber, transactionIndex, logIndex, ...fill } = fillWithBlock;
+            const { blockNumber, transactionIndex, transactionHash, logIndex, ...fill } = fillWithBlock;
             const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
               fill,
               this.clients.hubPoolClient,

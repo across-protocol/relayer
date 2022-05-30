@@ -1,7 +1,15 @@
 import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, EventSearchConfig } from "../utils";
 import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
 import { EMPTY_MERKLE_ROOT } from "../utils";
-import { Deposit, L1Token, ProposedRootBundle, ExecutedRootBundle, RootBundle } from "../interfaces";
+import {
+  Deposit,
+  L1Token,
+  ProposedRootBundle,
+  CancelledRootBundle,
+  DisputedRootBundle,
+  ExecutedRootBundle,
+  RootBundle,
+} from "../interfaces";
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
 
 export class HubPoolClient {
@@ -9,6 +17,8 @@ export class HubPoolClient {
   private l1TokensToDestinationTokens: { [l1Token: string]: { [destinationChainId: number]: string } } = {};
   private l1Tokens: L1Token[] = []; // L1Tokens and their associated info.
   private proposedRootBundles: ProposedRootBundle[] = [];
+  private canceledRootBundles: CancelledRootBundle[] = [];
+  private disputedRootBundles: DisputedRootBundle[] = [];
   private executedRootBundles: ExecutedRootBundle[] = [];
   private crossChainContracts: { [l2ChainId: number]: CrossChainContractsSet[] } = {};
   private l1TokensToDestinationTokensWithBlock: {
@@ -48,6 +58,14 @@ export class HubPoolClient {
 
   getProposedRootBundles() {
     return this.proposedRootBundles;
+  }
+
+  getCancelledRootBundles() {
+    return this.canceledRootBundles;
+  }
+
+  getDisputedRootBundles() {
+    return this.disputedRootBundles;
   }
 
   getSpokePoolForBlock(block: number, chain: number): string {
@@ -177,6 +195,24 @@ export class HubPoolClient {
     return endingBlockNumber;
   }
 
+  getProposedRootBundlesInBlockRange(startingBlock: number, endingBlock: number) {
+    return sortEventsDescending(this.proposedRootBundles).filter(
+      (bundle: ProposedRootBundle) => bundle.blockNumber >= startingBlock && bundle.blockNumber <= endingBlock
+    );
+  }
+
+  getCancelledRootBundlesInBlockRange(startingBlock: number, endingBlock: number) {
+    return sortEventsDescending(this.canceledRootBundles).filter(
+      (bundle: CancelledRootBundle) => bundle.blockNumber >= startingBlock && bundle.blockNumber <= endingBlock
+    );
+  }
+
+  getDisputedRootBundlesInBlockRange(startingBlock: number, endingBlock: number) {
+    return sortEventsDescending(this.disputedRootBundles).filter(
+      (bundle: DisputedRootBundle) => bundle.blockNumber >= startingBlock && bundle.blockNumber <= endingBlock
+    );
+  }
+
   getMostRecentProposedRootBundle(latestBlockToSearch: number) {
     return sortEventsDescending(this.proposedRootBundles).find(
       (proposedRootBundle: ProposedRootBundle) => proposedRootBundle.blockNumber <= latestBlockToSearch
@@ -271,6 +307,8 @@ export class HubPoolClient {
       poolRebalanceRouteEvents,
       l1TokensLPEvents,
       proposeRootBundleEvents,
+      canceledRootBundleEvents,
+      disputedRootBundleEvents,
       executedRootBundleEvents,
       crossChainContractsSetEvents,
       pendingRootBundleProposal,
@@ -279,6 +317,8 @@ export class HubPoolClient {
       paginatedEventQuery(this.hubPool, this.hubPool.filters.SetPoolRebalanceRoute(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.ProposeRootBundle(), searchConfig),
+      paginatedEventQuery(this.hubPool, this.hubPool.filters.RootBundleCanceled(), searchConfig),
+      paginatedEventQuery(this.hubPool, this.hubPool.filters.RootBundleDisputed(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.RootBundleExecuted(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.CrossChainContractsSet(), searchConfig),
       this.hubPool.rootBundleProposal(),
@@ -331,6 +371,12 @@ export class HubPoolClient {
       ...proposeRootBundleEvents.map((event) => {
         return { ...spreadEventWithBlockNumber(event), transactionHash: event.transactionHash } as ProposedRootBundle;
       })
+    );
+    this.canceledRootBundles.push(
+      ...canceledRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as CancelledRootBundle)
+    );
+    this.disputedRootBundles.push(
+      ...disputedRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as DisputedRootBundle)
     );
     this.executedRootBundles.push(
       ...executedRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as ExecutedRootBundle)

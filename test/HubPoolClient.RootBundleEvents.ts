@@ -38,6 +38,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
     ));
     hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
   });
+
   it("gets ProposeRootBundle event containing correct bundle block eval number", async function () {
     const { tree, leaves } = await constructSimpleTree(toBNWei(100));
 
@@ -98,6 +99,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
       hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(await hubPool.provider.getBlockNumber(), 22, 2, [1])
     ).to.equal(undefined);
   });
+
   it("Returns validated root bundle", async function () {
     const { tree, leaves } = await constructSimpleTree(toBNWei(100));
 
@@ -122,6 +124,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
       blockNumber: (await txn.wait()).blockNumber,
       transactionIndex: 0,
       logIndex: 0,
+      transactionHash: "",
     };
     expect(hubPoolClient.isRootBundleValid(rootBundle, hubPoolClient.latestBlockNumber)).to.equal(false);
 
@@ -141,6 +144,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
     // Only searches for executed leaves up to input latest mainnet block to search
     expect(hubPoolClient.isRootBundleValid(rootBundle, blockNumberBeforeAllLeavesExecuted)).to.equal(false);
   });
+
   it("gets most recent RootBundleExecuted event for chainID and L1 token", async function () {
     const { tree: tree1, leaves: leaves1 } = await constructSimpleTree(toBNWei(100));
     const { tree: tree2, leaves: leaves2 } = await constructSimpleTree(toBNWei(200));
@@ -230,6 +234,30 @@ describe("HubPoolClient: RootBundle Events", async function () {
       )
     ).to.equal(toBNWei(100)); // Grabs first running balance
   });
+
+  it("returns proposed and disputed bundles", async function () {
+    const { tree: tree1, leaves: leaves1 } = await constructSimpleTree(toBNWei(100));
+    const { tree: tree2, leaves: leaves2 } = await constructSimpleTree(toBNWei(100));
+
+    await hubPoolClient.update();
+
+    // Propose one root bundle with a chain ID list length of 1
+    const bundleBlockEvalNumbers = [11];
+    const firstChainIdList = [leaves1[0].chainId.toNumber()];
+    await hubPool
+      .connect(dataworker)
+      .proposeRootBundle(bundleBlockEvalNumbers, 1, tree1.getHexRoot(), constants.mockTreeRoot, constants.mockTreeRoot);
+    const proposalBlockNumber = await hubPool.provider.getBlockNumber();
+
+    await hubPoolClient.update();
+    expect(hubPoolClient.getProposedRootBundles()[0].proposer).to.equal(dataworker.address);
+    expect(hubPoolClient.getDisputedRootBundles().length).to.equal(0);
+
+    await hubPool.connect(dataworker).disputeRootBundle();
+    await hubPoolClient.update();
+    expect(hubPoolClient.getDisputedRootBundles()[0].disputer).to.equal(dataworker.address);
+  });
+
   it("returns next root bundle start block", async function () {
     const { tree: tree1, leaves: leaves1 } = await constructSimpleTree(toBNWei(100));
     const { tree: tree2, leaves: leaves2 } = await constructSimpleTree(toBNWei(100));
@@ -324,6 +352,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
     // No ProposeRootBundle events before block.
     expect(hubPoolClient.getNextBundleStartBlockNumber(secondChainIdList, 0, secondChainIdList[0])).to.equal(0);
   });
+
   it("gets most recent CrossChainContractsSet event for chainID", async function () {
     const adapter = randomAddress();
     const spokePool1 = randomAddress();

@@ -28,7 +28,26 @@ export interface ProposedRootBundle extends SortableEvent {
   relayerRefundRoot: string;
   slowRelayRoot: string;
   proposer: string;
-  transactionHash?: string;
+}
+
+export interface CancelledRootBundle extends SortableEvent {
+  chainId: number;
+  bundleLpFees: BigNumber[];
+  netSendAmounts: BigNumber[];
+  runningBalances: BigNumber[];
+  leafId: number;
+  l1Tokens: string[];
+  proof: string[];
+}
+
+export interface CancelledRootBundle extends SortableEvent {
+  disputer: string;
+  requestTime: number;
+}
+
+export interface DisputedRootBundle extends SortableEvent {
+  disputer: string;
+  requestTime: number;
 }
 
 export interface ExecutedRootBundle extends SortableEvent {
