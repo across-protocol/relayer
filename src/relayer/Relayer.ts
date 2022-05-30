@@ -5,15 +5,14 @@ import { RelayerClients } from "./RelayerClientHelper";
 import { Deposit } from "../interfaces/SpokePool";
 
 export class Relayer {
-  private defaultRepaymentChain = 1;
   constructor(
     readonly logger: winston.Logger,
     readonly clients: RelayerClients,
     readonly repaymentChainIdForToken: { [l1Token: string]: number } = {}
   ) {}
 
-  getRepaymentChainForToken(l1Token: string): number {
-    return this.repaymentChainIdForToken[l1Token] ?? this.defaultRepaymentChain;
+  getRepaymentChainForToken(l1Token: string, defaultChainId: number): number {
+    return this.repaymentChainIdForToken[l1Token] ?? defaultChainId;
   }
 
   async checkForUnfilledDepositsAndFill() {
@@ -60,7 +59,7 @@ export class Relayer {
       at: "Relayer",
       message: `Filling deposit for ${l1TokenInfo.symbol}`,
       deposit,
-      repaymentChain: this.getRepaymentChainForToken(l1Token),
+      repaymentChain: this.getRepaymentChainForToken(l1Token, deposit.destinationChainId),
       l1Token: l1TokenInfo.symbol,
     });
     try {
@@ -69,9 +68,17 @@ export class Relayer {
         contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
         chainId: deposit.destinationChainId,
         method: "fillRelay", // method called.
-        args: buildFillRelayProps(deposit, this.getRepaymentChainForToken(l1Token), fillAmount), // props sent with function call.
+        args: buildFillRelayProps(
+          deposit,
+          this.getRepaymentChainForToken(l1Token, deposit.destinationChainId),
+          fillAmount
+        ), // props sent with function call.
         message: `Relay instantly sent for ${l1TokenInfo.symbol} 🚀`, // message sent to logger.
-        mrkdwn: this.constructRelayFilledMrkdwn(deposit, this.getRepaymentChainForToken(l1Token), fillAmount), // message details mrkdwn
+        mrkdwn: this.constructRelayFilledMrkdwn(
+          deposit,
+          this.getRepaymentChainForToken(l1Token, deposit.destinationChainId),
+          fillAmount
+        ), // message details mrkdwn
       });
 
       // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
@@ -94,7 +101,7 @@ export class Relayer {
       at: "Relayer",
       message: `Zero filling deposit for ${l1TokenInfo.symbol}`,
       deposit,
-      repaymentChain: this.getRepaymentChainForToken(l1Token),
+      repaymentChain: this.getRepaymentChainForToken(l1Token, deposit.destinationChainId),
       l1Token: l1TokenInfo.symbol,
     });
     try {
@@ -103,7 +110,11 @@ export class Relayer {
         contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
         chainId: deposit.destinationChainId,
         method: "fillRelay", // method called.
-        args: buildFillRelayProps(deposit, this.getRepaymentChainForToken(l1Token), toBN(1)), // props sent with function call.
+        args: buildFillRelayProps(
+          deposit,
+          this.getRepaymentChainForToken(l1Token, deposit.destinationChainId),
+          toBN(1)
+        ), // props sent with function call.
         message: `Zero size relay sent ${l1TokenInfo.symbol} 🐌`, // message sent to logger.
         mrkdwn: this.constructZeroSizeFilledMrkdwn(deposit), // message details mrkdwn
       });

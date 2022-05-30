@@ -2,7 +2,7 @@ import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWal
 import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfigureHubPool, winston } from "./utils";
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId } from "./utils";
 import { originChainId, sinon, toBNWei } from "./utils";
-import { amountToLp, defaultTokenConfig } from "./constants";
+import { amountToLp, defaultTokenConfig, repaymentChainId } from "./constants";
 import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
 import { TokenClient, ProfitClient } from "../src/clients";
 
@@ -49,14 +49,18 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new ProfitClient(spyLogger, hubPoolClient, toBNWei(1)); // Set relayer discount to 100%.
-    relayerInstance = new Relayer(spyLogger, {
-      spokePoolClients,
-      hubPoolClient,
-      configStoreClient,
-      tokenClient,
-      profitClient,
-      multiCallerClient,
-    });
+    relayerInstance = new Relayer(
+      spyLogger,
+      {
+        spokePoolClients,
+        hubPoolClient,
+        configStoreClient,
+        tokenClient,
+        profitClient,
+        multiCallerClient,
+      },
+      { [l1Token.address]: 1 }
+    );
 
     await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // Seed owner to LP.
     await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);
@@ -71,8 +75,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await updateAllClients();
   });
 
-  it("Can override repayment chain ID", async function () {
-    const repaymentChainIdOverride = { [l1Token.address]: destinationChainId };
+  it("Defaults repayment to destination chain", async function () {
     const newRelayer = new Relayer(
       spyLogger,
       {
@@ -82,8 +85,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         tokenClient,
         profitClient,
         multiCallerClient,
-      },
-      repaymentChainIdOverride
+      } // missing override
     );
 
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));

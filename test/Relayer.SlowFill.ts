@@ -49,14 +49,18 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new ProfitClient(spyLogger, hubPoolClient, toBNWei(1)); // Set relayer discount to 100%.
-    relayerInstance = new Relayer(spyLogger, {
-      spokePoolClients,
-      hubPoolClient,
-      configStoreClient,
-      tokenClient,
-      profitClient,
-      multiCallerClient,
-    });
+    relayerInstance = new Relayer(
+      spyLogger,
+      {
+        spokePoolClients,
+        hubPoolClient,
+        configStoreClient,
+        tokenClient,
+        profitClient,
+        multiCallerClient,
+      },
+      { [l1Token.address]: 1 }
+    );
 
     await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // Seed owner to LP.
     await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);
@@ -70,8 +74,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
 
     await updateAllClients();
   });
-  it("Can override repayment chain ID", async function () {
-    const repaymentChainIdOverride = { [l1Token.address]: destinationChainId };
+  it("Defaults repayment to destination chain", async function () {
     const newRelayer = new Relayer(
       spyLogger,
       {
@@ -81,8 +84,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
         tokenClient,
         profitClient,
         multiCallerClient,
-      },
-      repaymentChainIdOverride
+      } // No repayment override
     );
     const balance = await erc20_1.balanceOf(relayer.address);
     await erc20_1.connect(relayer).transfer(owner.address, balance.sub(amountToDeposit));
