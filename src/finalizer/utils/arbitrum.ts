@@ -1,55 +1,46 @@
-import {
-  getProvider,
-  Wallet,
-  winston,
-  convertFromWei,
-  groupObjectCountsByTwoProps,
-  ethers,
-  Contract,
-} from "../../utils";
+import { getProvider, Wallet, winston, convertFromWei, ethers, Contract, groupObjectCountsByProp } from "../../utils";
 import { L2ToL1MessageWriter, L2ToL1MessageStatus, L2TransactionReceipt, getL2Network } from "@arbitrum/sdk";
 import { MessageBatchProofInfo } from "@arbitrum/sdk/dist/lib/message/L2ToL1Message";
 import Outbox__factory_1 from "@arbitrum/sdk/dist/lib/abi/factories/Outbox__factory";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, MultiCallerClient } from "../../clients";
 
+const CHAIN_ID = 42161;
+
+export function getOutboxContract(hubPoolClient: HubPoolClient) {
+  return new Contract(
+    "0x760723CD2e632826c38Fef8CD438A4CC7E7E1A40",
+    Outbox__factory_1.Outbox__factory.abi,
+    hubPoolClient.hubPool.signer
+  );
+}
 export async function finalizeArbitrum(
   logger: winston.Logger,
   message: L2ToL1MessageWriter,
-  l2Token: string,
   proofInfo: MessageBatchProofInfo,
   messageInfo: TokensBridged,
   hubPoolClient: HubPoolClient,
   multiCallerClient: MultiCallerClient
 ) {
-  const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-    "42161",
-    l2Token,
-    hubPoolClient.latestBlockNumber
-  );
-  const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
+  const l1TokenInfo = hubPoolClient.getL1TokenInfoForL2Token(messageInfo.l2TokenAddress, CHAIN_ID);
   const amount = ethers.utils.formatUnits(messageInfo.amountToReturn.toString(), l1TokenInfo.decimals);
-  const outbox = new Contract(
-    "0x760723CD2e632826c38Fef8CD438A4CC7E7E1A40",
-    Outbox__factory_1.Outbox__factory.abi,
-    hubPoolClient.hubPool.signer
-  );
+  const outbox = getOutboxContract(hubPoolClient);
   try {
     multiCallerClient.enqueueTransaction({
-      contract: outbox.C,
+      contract: outbox,
       chainId: 1,
       method: "executeTransaction",
       args: [
         message.batchNumber, // uint256 batchNum
-        proofInfo.proof,
-        proofInfo.path,
-        proofInfo.l2Sender,
-        proofInfo.l1Dest,
-        proofInfo.l2Block,
-        proofInfo.l1Block,
-        proofInfo.timestamp,
-        proofInfo.amount,
-        proofInfo.calldataForL1,
+        proofInfo.proof, // bytes32[] proof
+        proofInfo.path, // uint256 index
+        proofInfo.l2Sender, // address l2Sender
+        proofInfo.l1Dest, // address destAddress
+        proofInfo.l2Block, // uint256 l2Block
+        proofInfo.l1Block, // uint256 l1Block
+        proofInfo.timestamp, // uin256 l2Timestamp
+        proofInfo.amount, //  uint256 amount
+        proofInfo.calldataForL1, // bytes calldataForL1
       ],
       message: `Finalized arbitrum withdrawal for ${amount} of ${l1TokenInfo.symbol}`,
       mrkdwn: `Finalized arbitrum withdrawal for ${amount} of ${l1TokenInfo.symbol}`,
@@ -71,7 +62,10 @@ export async function getFinalizableMessages(
   hubPoolClient: HubPoolClient
 ) {
   const allMessagesWithStatuses = await getAllMessageStatuses(tokensBridged, logger, l1Signer);
-  const statusesGrouped = groupObjectCountsByTwoProps(allMessagesWithStatuses, "status", (message) => message["token"]);
+  const statusesGrouped = groupObjectCountsByProp(
+    allMessagesWithStatuses,
+    (message: { status: string }) => message.status
+  );
   logger.debug({
     at: "ArbitrumFinalizer",
     message: "Arbitrum outbox message statuses",
@@ -87,7 +81,7 @@ export async function getFinalizableMessages(
       bridges: finalizableMessages.map((x) => {
         const copy: any = { ...x.info };
         const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-          "42161",
+          CHAIN_ID.toString(),
           x.info.l2TokenAddress,
           hubPoolClient.latestBlockNumber
         );
@@ -130,7 +124,6 @@ export async function getAllMessageStatuses(
     .map((result, i) => {
       return {
         ...result,
-        token: tokensBridged[i].l2TokenAddress,
         info: tokensBridged[i],
       };
     });

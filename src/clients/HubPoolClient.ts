@@ -129,6 +129,11 @@ export class HubPoolClient {
     return this.l1Tokens.find((token) => token.address === l1Token);
   }
 
+  getL1TokenInfoForL2Token(l2Token: string, chainId: number | string): L1Token {
+    const l1TokenCounterpart = this.getL1TokenCounterpartAtBlock(chainId as string, l2Token, this.latestBlockNumber);
+    return this.getTokenInfoForL1Token(l1TokenCounterpart);
+  }
+
   getTokenInfoForDeposit(deposit: Deposit): L1Token {
     return this.getTokenInfoForL1Token(this.getL1TokenForDeposit(deposit));
   }

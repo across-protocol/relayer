@@ -1,6 +1,5 @@
-import { processCrash, processEndPollingLoop, startupLogLevel, Wallet } from "../utils";
+import { groupObjectCountsByProp, processCrash, processEndPollingLoop, startupLogLevel, Wallet } from "../utils";
 import { getProvider, getSigner, winston } from "../utils";
-import { constructRelayerClients, RelayerClients, updateRelayerClients } from "../relayer/RelayerClientHelper";
 import {
   finalizeArbitrum,
   finalizePolygon,
@@ -12,18 +11,20 @@ import {
   getOptimismClient,
   getOptimismFinalizableMessages,
   finalizeOptimismMessage,
+  CrossChainMessageWithStatus,
 } from "./utils";
 import { FinalizerConfig } from "./FinalizerConfig";
+import { constructFinalizerClients, FinalizerClients, updateFinalizerClients } from "./FinalizerClientHelper";
 let logger: winston.Logger;
 
 export async function run(
   logger: winston.Logger,
   hubSigner: Wallet,
-  relayerClients: RelayerClients,
+  clients: FinalizerClients,
   configuredChainIds: number[],
   sendingTransactionsEnabled: boolean
 ): Promise<void> {
-  const spokePoolClients = relayerClients.spokePoolClients;
+  const spokePoolClients = clients.spokePoolClients;
   // For each chain, look up any TokensBridged events emitted by SpokePool client that we'll attempt to finalize
   // on L1.
   for (const chainId of configuredChainIds) {
@@ -31,65 +32,42 @@ export async function run(
     const tokensBridged = client.getTokensBridged();
 
     if (chainId === 42161) {
-      const finalizableMessages = await getFinalizableMessages(
-        logger,
-        tokensBridged,
-        hubSigner,
-        relayerClients.hubPoolClient
-      );
-      logger.debug({
-        at: "ArbitrumFinalizer",
-        message: `Found ${finalizableMessages.length} finalizable messages from chain ${chainId}`,
-      });
+      const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner, clients.hubPoolClient);
       for (const l2Message of finalizableMessages) {
         await finalizeArbitrum(
           logger,
           l2Message.message,
-          l2Message.token,
           l2Message.proofInfo,
           l2Message.info,
-          relayerClients.hubPoolClient,
-          relayerClients.multiCallerClient
+          clients.hubPoolClient,
+          clients.multiCallerClient
         );
       }
     } else if (chainId === 137) {
       const posClient = await getPosClient(hubSigner);
-      const canWithdraw = await getFinalizableTransactions(tokensBridged, posClient, relayerClients.hubPoolClient);
-      logger.debug({
-        at: "PolygonFinalizer",
-        message: `Found ${canWithdraw.length} finalizable messages from chain ${chainId}`,
-      });
+      const canWithdraw = await getFinalizableTransactions(logger, tokensBridged, posClient, clients.hubPoolClient);
       for (const event of canWithdraw) {
-        await finalizePolygon(posClient, relayerClients.hubPoolClient, event, logger, relayerClients.multiCallerClient);
+        await finalizePolygon(posClient, clients.hubPoolClient, event, logger, clients.multiCallerClient);
       }
       for (const l2Token of getL2TokensToFinalize(tokensBridged)) {
         await retrieveTokenFromMainnetTokenBridger(
           logger,
           l2Token,
           hubSigner,
-          relayerClients.hubPoolClient,
-          relayerClients.multiCallerClient
+          clients.hubPoolClient,
+          clients.multiCallerClient
         );
       }
     } else if (chainId === 10) {
       const crossChainMessenger = getOptimismClient(hubSigner);
-      const finalizableMessages = await getOptimismFinalizableMessages(
-        logger,
-        tokensBridged,
-        relayerClients.hubPoolClient,
-        crossChainMessenger
-      );
-      logger.debug({
-        at: "OptimismFinalizer",
-        message: `Found ${finalizableMessages.length} finalizable messages from chain ${chainId}`,
-      });
+      const finalizableMessages = await getOptimismFinalizableMessages(logger, tokensBridged, crossChainMessenger);
       for (const message of finalizableMessages) {
-        finalizeOptimismMessage(relayerClients.multiCallerClient, crossChainMessenger, message, logger);
+        finalizeOptimismMessage(clients.hubPoolClient, clients.multiCallerClient, crossChainMessenger, message, logger);
       }
     }
   }
 
-  await relayerClients.multiCallerClient.executeTransactionQueue(!sendingTransactionsEnabled);
+  await clients.multiCallerClient.executeTransactionQueue(!sendingTransactionsEnabled);
 }
 
 export async function runFinalizer(_logger: winston.Logger) {
@@ -98,17 +76,17 @@ export async function runFinalizer(_logger: winston.Logger) {
   const config = new FinalizerConfig(process.env);
   const baseSigner = await getSigner();
   const hubSigner = baseSigner.connect(getProvider(config.hubPoolChainId));
-  const relayerClients = await constructRelayerClients(logger, config);
+  const clients = await constructFinalizerClients(logger, config);
 
   try {
     logger[startupLogLevel(config)]({ at: "Finalizer#index", message: "Finalizer started ⚰️", config });
 
     for (;;) {
-      await updateRelayerClients(relayerClients);
+      await updateFinalizerClients(clients);
 
       // Validate and dispute pending proposal before proposing a new one
       if (config.finalizerEnabled)
-        await run(logger, hubSigner, relayerClients, config.finalizerChains, config.sendingTransactionsEnabled);
+        await run(logger, hubSigner, clients, config.finalizerChains, config.sendingTransactionsEnabled);
       else logger[startupLogLevel(config)]({ at: "Finalizer#index", message: "Finalizer disabled" });
 
       if (await processEndPollingLoop(logger, "Finalizer", config.pollingDelay)) break;

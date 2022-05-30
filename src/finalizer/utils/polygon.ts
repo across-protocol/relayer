@@ -1,8 +1,26 @@
-import { setProofApi, use, POSClient, RootChainManager, RootChain } from "@maticnetwork/maticjs";
+import { setProofApi, use, POSClient } from "@maticnetwork/maticjs";
 import { Web3ClientPlugin } from "@maticnetwork/maticjs-ethers";
-import { Contract, ERC20, ethers, getDeployedContract, getProvider, toBN, Wallet, winston } from "../../utils";
+import {
+  Contract,
+  ERC20,
+  ethers,
+  getDeployedContract,
+  getProvider,
+  groupObjectCountsByProp,
+  toBN,
+  Wallet,
+  winston,
+} from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, MultiCallerClient } from "../../clients";
+
+const CHAIN_ID = 137;
+const POLYGON_MESSAGE_SENT_EVENT_SIG = "0x8c5261668696ce22758910d05bab8f186d6eb247ceac2af2e82c7dc17669b036";
+enum POLYGON_MESSAGE_STATUS {
+  NOT_CHECKPOINTED = "NOT_CHECKPOINTED",
+  ALREADY_EXITED = "ALREADY_EXITED",
+  CAN_EXIT = "CAN_EXIT",
+}
 
 export async function getPosClient(mainnetSigner: Wallet) {
   // Following from https://maticnetwork.github.io/matic.js/docs/pos
@@ -19,7 +37,7 @@ export async function getPosClient(mainnetSigner: Wallet) {
       },
     },
     child: {
-      provider: mainnetSigner.connect(getProvider(137)),
+      provider: mainnetSigner.connect(getProvider(CHAIN_ID)),
       defaultConfig: {
         from: mainnetSigner.address,
       },
@@ -28,6 +46,7 @@ export async function getPosClient(mainnetSigner: Wallet) {
 }
 
 export async function getFinalizableTransactions(
+  logger: winston.Logger,
   tokensBridged: TokensBridged[],
   posClient: POSClient,
   hubPoolClient: HubPoolClient
@@ -35,18 +54,26 @@ export async function getFinalizableTransactions(
   const isCheckpointed = await Promise.all(
     tokensBridged.map((event) => posClient.exitUtil.isCheckPointed(event.transactionHash))
   );
-  const withdrawExitedOrIsNotCheckpointed = await Promise.all(
+  const exitStatus = await Promise.all(
     tokensBridged.map((event, i) => {
-      if (!isCheckpointed[i]) return new Promise((resolve) => resolve(true));
+      if (!isCheckpointed[i])
+        return new Promise((resolve) => resolve({ status: POLYGON_MESSAGE_STATUS.NOT_CHECKPOINTED }));
       const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-        "137",
+        CHAIN_ID.toString(),
         event.l2TokenAddress,
         hubPoolClient.latestBlockNumber
       );
-      return posClient.erc20(l1TokenCounterpart, true).isWithdrawExited(event.transactionHash);
+      return posClient.erc20(l1TokenCounterpart, true).isWithdrawExited(event.transactionHash)
+        ? new Promise((resolve) => resolve({ status: POLYGON_MESSAGE_STATUS.ALREADY_EXITED }))
+        : new Promise((resolve) => resolve({ status: POLYGON_MESSAGE_STATUS.CAN_EXIT }));
     })
   );
-  return tokensBridged.filter((_, i) => !withdrawExitedOrIsNotCheckpointed[i]);
+  logger.debug({
+    at: "PolygonFinalizer",
+    message: `Polygon message statuses`,
+    statusesGrouped: groupObjectCountsByProp(exitStatus, (message: { status: string }) => message.status),
+  });
+  return tokensBridged.filter((_, i) => exitStatus[i] === POLYGON_MESSAGE_STATUS.CAN_EXIT);
 }
 
 export async function finalizePolygon(
@@ -57,7 +84,7 @@ export async function finalizePolygon(
   multicallerClient: MultiCallerClient
 ) {
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-    "137",
+    CHAIN_ID.toString(),
     event.l2TokenAddress,
     hubPoolClient.latestBlockNumber
   );
@@ -67,7 +94,6 @@ export async function finalizePolygon(
     l1TokenCounterpart,
     event,
   });
-  const POLYGON_MESSAGE_SENT_EVENT_SIG = "0x8c5261668696ce22758910d05bab8f186d6eb247ceac2af2e82c7dc17669b036";
   const exitPayload = await posClient.exitUtil.buildPayloadForExit(
     event.transactionHash,
     POLYGON_MESSAGE_SENT_EVENT_SIG,
@@ -110,7 +136,11 @@ export async function retrieveTokenFromMainnetTokenBridger(
   hubPoolClient: HubPoolClient,
   multicallerClient: MultiCallerClient
 ): Promise<boolean> {
-  const l1Token = hubPoolClient.getL1TokenCounterpartAtBlock("137", l2Token, hubPoolClient.latestBlockNumber);
+  const l1Token = hubPoolClient.getL1TokenCounterpartAtBlock(
+    CHAIN_ID.toString(),
+    l2Token,
+    hubPoolClient.latestBlockNumber
+  );
   const mainnetTokenBridger = getMainnetTokenBridger(mainnetSigner);
   const token = new Contract(l1Token, ERC20.abi, mainnetSigner);
   const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1Token);
