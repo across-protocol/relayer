@@ -1,8 +1,8 @@
-import { setProofApi, use, POSClient } from "@maticnetwork/maticjs";
+import { setProofApi, use, POSClient, RootChainManager, RootChain } from "@maticnetwork/maticjs";
 import { Web3ClientPlugin } from "@maticnetwork/maticjs-ethers";
 import { Contract, ERC20, ethers, getDeployedContract, getProvider, toBN, Wallet, winston } from "../../utils";
 import { TokensBridged } from "../../interfaces";
-import { HubPoolClient } from "../../clients";
+import { HubPoolClient, MultiCallerClient } from "../../clients";
 
 export async function getPosClient(mainnetSigner: Wallet) {
   // Following from https://maticnetwork.github.io/matic.js/docs/pos
@@ -53,7 +53,8 @@ export async function finalizePolygon(
   posClient: POSClient,
   hubPoolClient: HubPoolClient,
   event: TokensBridged,
-  logger: winston.Logger
+  logger: winston.Logger,
+  multicallerClient: MultiCallerClient
 ) {
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
     "137",
@@ -66,13 +67,36 @@ export async function finalizePolygon(
     l1TokenCounterpart,
     event,
   });
-  const result = await posClient.erc20(l1TokenCounterpart, true).withdrawExitFaster(event.transactionHash);
-  const receipt = await result.getReceipt(); // Wait for confirmation.
-  logger.debug({
-    at: "PolygonFinalizer",
-    message: "Executed exit!",
-    transaction: receipt.transactionHash,
-  });
+  const POLYGON_MESSAGE_SENT_EVENT_SIG = "0x8c5261668696ce22758910d05bab8f186d6eb247ceac2af2e82c7dc17669b036";
+  const exitPayload = await posClient.exitUtil.buildPayloadForExit(
+    event.transactionHash,
+    POLYGON_MESSAGE_SENT_EVENT_SIG,
+    false
+  );
+  const rootchainManager = new Contract(
+    "0x6abb753c1893194de4a83c6e8b4eadfc105fd5f5",
+    minimumRootChainAbi,
+    hubPoolClient.hubPool.signer
+  );
+  const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
+  const amountFromWei = ethers.utils.formatUnits(event.amountToReturn.toString(), l1TokenInfo.decimals);
+  try {
+    multicallerClient.enqueueTransaction({
+      contract: rootchainManager,
+      chainId: 1,
+      method: "exit",
+      args: [exitPayload],
+      message: `Finalized polygon withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol}`,
+      mrkdwn: `Finalized polygon withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol}`,
+    });
+  } catch (error) {
+    logger.error({
+      at: "PolygonFinalizer",
+      message: "Error creating exitTx",
+      error,
+      notificationPath: "across-error",
+    });
+  }
 }
 
 export function getMainnetTokenBridger(mainnetSigner: Wallet) {
@@ -83,7 +107,8 @@ export async function retrieveTokenFromMainnetTokenBridger(
   logger: winston.Logger,
   l2Token: string,
   mainnetSigner: Wallet,
-  hubPoolClient: HubPoolClient
+  hubPoolClient: HubPoolClient,
+  multicallerClient: MultiCallerClient
 ): Promise<boolean> {
   const l1Token = hubPoolClient.getL1TokenCounterpartAtBlock("137", l2Token, hubPoolClient.latestBlockNumber);
   const mainnetTokenBridger = getMainnetTokenBridger(mainnetSigner);
@@ -94,6 +119,7 @@ export async function retrieveTokenFromMainnetTokenBridger(
   // WETH is sent to token bridger contract as ETH.
   const ethBalance = await mainnetTokenBridger.provider.getBalance(mainnetTokenBridger.address);
   const balanceToRetrieve = l1TokenInfo.symbol === "WETH" ? ethBalance : balance;
+  const balanceFromWei = ethers.utils.formatUnits(balanceToRetrieve.toString(), l1TokenInfo.decimals);
   if (balanceToRetrieve.eq(toBN(0))) {
     return false;
   } else {
@@ -101,17 +127,23 @@ export async function retrieveTokenFromMainnetTokenBridger(
       at: "PolygonFinalizer",
       message: `Retrieving ${balanceToRetrieve.toString()} ${l1TokenInfo.symbol} from PolygonTokenBridger`,
     });
-    const txn = await mainnetTokenBridger.retrieve(l1Token);
-    const receipt = await txn.wait(); // Wait for confirmation.
-    logger.info({
-      at: "PolygonFinalizer",
-      message: `Retrieved ${ethers.utils.formatUnits(balanceToRetrieve.toString(), l1TokenInfo.decimals)} ${
-        l1TokenInfo.symbol
-      } from PolygonTokenBridger 🏧!`,
-      transaction: receipt.transactionHash,
-      l1Token: l1TokenInfo.symbol,
-      amount: ethers.utils.formatUnits(balanceToRetrieve.toString(), l1TokenInfo.decimals),
-    });
+    try {
+      multicallerClient.enqueueTransaction({
+        contract: mainnetTokenBridger,
+        chainId: 1,
+        method: "retrieve",
+        args: [l1Token],
+        message: `Finalized polygon retrieval for ${balanceFromWei} of ${l1TokenInfo.symbol}`,
+        mrkdwn: `Finalized polygon retrieval for ${balanceFromWei} of ${l1TokenInfo.symbol}`,
+      });
+    } catch (error) {
+      logger.error({
+        at: "PolygonFinalizer",
+        message: "Error creating retrieveTx",
+        error,
+        notificationPath: "across-error",
+      });
+    }
   }
 }
 
@@ -122,3 +154,13 @@ export function getL2TokensToFinalize(events: TokensBridged[]) {
   }, {});
   return Object.keys(l2TokenCountInBridgeEvents).filter((token) => l2TokenCountInBridgeEvents[token] === true);
 }
+
+export const minimumRootChainAbi = [
+  {
+    inputs: [{ internalType: "bytes", name: "inputData", type: "bytes" }],
+    name: "exit",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+];

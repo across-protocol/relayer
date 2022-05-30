@@ -1,8 +1,7 @@
 import * as optimismSDK from "@eth-optimism/sdk";
-import { string } from "hardhat/internal/core/params/argumentTypes";
-import { HubPoolClient } from "../../clients";
+import { HubPoolClient, MultiCallerClient } from "../../clients";
 import { TokensBridged } from "../../interfaces";
-import { getProvider, Wallet } from "../../utils";
+import { ethers, getProvider, groupObjectCountsByTwoProps, Wallet, winston } from "../../utils";
 
 export function getOptimismClient(mainnetSigner: Wallet) {
   return new optimismSDK.CrossChainMessenger({
@@ -34,6 +33,7 @@ export async function getCrossChainMessages(
         return {
           messages: await crossChainMessenger.getMessagesByTransaction(event.transactionHash),
           tokenInfo,
+          amount: ethers.utils.formatUnits(event.amountToReturn.toString(), tokenInfo.decimals),
         };
       })
     )
@@ -42,6 +42,7 @@ export async function getCrossChainMessages(
       flattenedMessages.push({
         message,
         tokenInfo: messagesInTransaction.tokenInfo,
+        amount: messagesInTransaction.amount,
       });
     }
     return flattenedMessages;
@@ -52,11 +53,12 @@ export interface CrossChainMessageStatus {
   status: string;
   message: optimismSDK.MessageLike;
   token: string;
+  amount: string;
 }
 export async function getMessageStatuses(
-  crossChainMessages: { message: optimismSDK.MessageLike; tokenInfo: any }[],
+  crossChainMessages: { message: optimismSDK.MessageLike; tokenInfo: any; amount: string }[],
   crossChainMessenger: optimismSDK.CrossChainMessenger
-) {
+): Promise<CrossChainMessageStatus[]> {
   const statuses = await Promise.all(
     crossChainMessages.map((message) => {
       return crossChainMessenger.getMessageStatus(message.message);
@@ -67,12 +69,51 @@ export async function getMessageStatuses(
       status: optimismSDK.MessageStatus[status],
       message: crossChainMessages[i].message,
       token: crossChainMessages[i].tokenInfo.symbol,
+      amount: crossChainMessages[i].amount,
     };
   });
 }
 
-export function getOptimismFinalizableMessages(messageStatuses: CrossChainMessageStatus[]) {
+export async function getOptimismFinalizableMessages(
+  logger: winston.Logger,
+  tokensBridged: TokensBridged[],
+  hubPoolClient: HubPoolClient,
+  crossChainMessenger: optimismSDK.CrossChainMessenger
+) {
+  const crossChainMessages = await getCrossChainMessages(tokensBridged, hubPoolClient, crossChainMessenger);
+  const messageStatuses = await getMessageStatuses(crossChainMessages, crossChainMessenger);
+  logger.debug({
+    at: "OptimismFinalizer",
+    message: "Optimism message statuses",
+    statusesGrouped: groupObjectCountsByTwoProps(messageStatuses, "status", (message) => message.token),
+  });
   return messageStatuses.filter(
     (message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]
   );
+}
+
+export function finalizeOptimismMessage(
+  multiCallerClient: MultiCallerClient,
+  crossChainMessenger: optimismSDK.CrossChainMessenger,
+  message: CrossChainMessageStatus,
+  logger: winston.Logger
+) {
+  console.log(message);
+  try {
+    multiCallerClient.enqueueTransaction({
+      contract: crossChainMessenger.contracts.l1.L1CrossDomainMessenger,
+      chainId: 1,
+      method: "relayMessage",
+      args: crossChainMessenger.populateTransaction.finalizeMessage(message.message),
+      message: `Finalized optimism withdrawal for ${message.amount} of ${message.token}`,
+      mrkdwn: `Finalized optimism withdrawal for ${message.amount} of ${message.token}`,
+    });
+  } catch (error) {
+    logger.error({
+      at: "OptimismFinalizer",
+      message: "Error creating relayMessageTx",
+      error,
+      notificationPath: "across-error",
+    });
+  }
 }

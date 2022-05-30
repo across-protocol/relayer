@@ -1,16 +1,17 @@
 import {
   getProvider,
-  groupObjectCountsByThreeProps,
   Wallet,
   winston,
   convertFromWei,
   groupObjectCountsByTwoProps,
   ethers,
+  Contract,
 } from "../../utils";
 import { L2ToL1MessageWriter, L2ToL1MessageStatus, L2TransactionReceipt, getL2Network } from "@arbitrum/sdk";
 import { MessageBatchProofInfo } from "@arbitrum/sdk/dist/lib/message/L2ToL1Message";
+import Outbox__factory_1 from "@arbitrum/sdk/dist/lib/abi/factories/Outbox__factory";
 import { TokensBridged } from "../../interfaces";
-import { HubPoolClient } from "../../clients";
+import { HubPoolClient, MultiCallerClient } from "../../clients";
 
 export async function finalizeArbitrum(
   logger: winston.Logger,
@@ -18,7 +19,8 @@ export async function finalizeArbitrum(
   l2Token: string,
   proofInfo: MessageBatchProofInfo,
   messageInfo: TokensBridged,
-  hubPoolClient: HubPoolClient
+  hubPoolClient: HubPoolClient,
+  multiCallerClient: MultiCallerClient
 ) {
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
     "42161",
@@ -27,22 +29,39 @@ export async function finalizeArbitrum(
   );
   const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
   const amount = ethers.utils.formatUnits(messageInfo.amountToReturn.toString(), l1TokenInfo.decimals);
-
-  logger.debug({
-    at: "ArbitrumFinalizer",
-    message: "Finalizing Arbitrum message",
-    l1Token: l1TokenInfo.symbol,
-    amount,
-  });
-  const res = await message.execute(proofInfo);
-  const rec = await res.wait();
-  logger.info({
-    at: "ArbitrumFinalizer",
-    message: `Executed Arbitrum withdrawal if ${amount} ${l1TokenInfo.symbol} from outbox!`,
-    transaction: rec.transactionHash,
-    l1Token: l1TokenInfo.symbol,
-    amount,
-  });
+  const outbox = new Contract(
+    "0x760723CD2e632826c38Fef8CD438A4CC7E7E1A40",
+    Outbox__factory_1.Outbox__factory.abi,
+    hubPoolClient.hubPool.signer
+  );
+  try {
+    multiCallerClient.enqueueTransaction({
+      contract: outbox.C,
+      chainId: 1,
+      method: "executeTransaction",
+      args: [
+        message.batchNumber, // uint256 batchNum
+        proofInfo.proof,
+        proofInfo.path,
+        proofInfo.l2Sender,
+        proofInfo.l1Dest,
+        proofInfo.l2Block,
+        proofInfo.l1Block,
+        proofInfo.timestamp,
+        proofInfo.amount,
+        proofInfo.calldataForL1,
+      ],
+      message: `Finalized arbitrum withdrawal for ${amount} of ${l1TokenInfo.symbol}`,
+      mrkdwn: `Finalized arbitrum withdrawal for ${amount} of ${l1TokenInfo.symbol}`,
+    });
+  } catch (error) {
+    logger.error({
+      at: "ArbitrumFinalizer",
+      message: "Error creating executeTransactionTx",
+      error,
+      notificationPath: "across-error",
+    });
+  }
 }
 
 export async function getFinalizableMessages(
@@ -106,13 +125,15 @@ export async function getAllMessageStatuses(
     await Promise.all(
       tokensBridged.map((e, i) => getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i]))
     )
-  ).map((result, i) => {
-    return {
-      ...result,
-      token: tokensBridged[i].l2TokenAddress,
-      info: tokensBridged[i],
-    };
-  });
+  )
+    .filter((result) => result.message !== undefined)
+    .map((result, i) => {
+      return {
+        ...result,
+        token: tokensBridged[i].l2TokenAddress,
+        info: tokensBridged[i],
+      };
+    });
 }
 export async function getMessageOutboxStatusAndProof(
   logger: winston.Logger,
@@ -128,52 +149,60 @@ export async function getMessageOutboxStatusAndProof(
   const receipt = await l2Provider.getTransactionReceipt(event.transactionHash);
   const l2Receipt = new L2TransactionReceipt(receipt);
 
-  // Get L2-to-L1 message objects contained in transaction. In principle, a single transaction could trigger
-  // any number of outgoing messages; the common case will be there's only one. In the context of Across V2,
-  // there should only ever be one.
-  const l2ToL1Messages = await l2Receipt.getL2ToL1Messages(l1Signer, await getL2Network(l2Provider));
-  if (l2ToL1Messages.length === 0 || l2ToL1Messages.length - 1 < logIndex) {
-    const error = new Error(`No outgoing messages found in transaction:${event.transactionHash}`);
-    logger.error({
-      at: "ArbitrumFinalizer",
-      message: "Arbitrum transaction that emitted TokensBridged event unexpectedly contains 0 L2-to-L1 messages 🤢!",
-      logIndex,
-      l2ToL1Messages: l2ToL1Messages.length,
-      txnHash: event.transactionHash,
-      error,
-      notificationPath: "across-error",
-    });
-    throw error;
-  }
+  try {
+    // Get L2-to-L1 message objects contained in transaction. In principle, a single transaction could trigger
+    // any number of outgoing messages; the common case will be there's only one. In the context of Across V2,
+    // there should only ever be one.
+    const l2ToL1Messages = await l2Receipt.getL2ToL1Messages(l1Signer, await getL2Network(l2Provider));
+    if (l2ToL1Messages.length === 0 || l2ToL1Messages.length - 1 < logIndex) {
+      const error = new Error(`No outgoing messages found in transaction:${event.transactionHash}`);
+      logger.error({
+        at: "ArbitrumFinalizer",
+        message: "Arbitrum transaction that emitted TokensBridged event unexpectedly contains 0 L2-to-L1 messages 🤢!",
+        logIndex,
+        l2ToL1Messages: l2ToL1Messages.length,
+        txnHash: event.transactionHash,
+        error,
+        notificationPath: "across-error",
+      });
+      throw error;
+    }
+    const l2Message = l2ToL1Messages[logIndex];
 
-  const l2Message = l2ToL1Messages[logIndex];
+    // Now fetch the proof info we'll need in order to execute or check execution status.
+    const proofInfo = await l2Message.tryGetProof(l2Provider);
 
-  // Now fetch the proof info we'll need in order to execute or check execution status.
-  const proofInfo = await l2Message.tryGetProof(l2Provider);
+    // Check if already executed or unconfirmed (i.e. not yet available to be executed on L1 following dispute
+    // window)
+    if (await l2Message.hasExecuted(proofInfo)) {
+      return {
+        message: l2Message,
+        proofInfo: undefined,
+        status: L2ToL1MessageStatus[L2ToL1MessageStatus.EXECUTED],
+      };
+    }
+    const outboxMessageExecutionStatus = await l2Message.status(proofInfo);
+    if (outboxMessageExecutionStatus !== L2ToL1MessageStatus.CONFIRMED) {
+      return {
+        message: l2Message,
+        proofInfo: undefined,
+        status: L2ToL1MessageStatus[L2ToL1MessageStatus.UNCONFIRMED],
+      };
+    }
 
-  // Check if already executed or unconfirmed (i.e. not yet available to be executed on L1 following dispute
-  // window)
-  if (await l2Message.hasExecuted(proofInfo)) {
+    // Now that its confirmed and not executed, we can use the Merkle proof data to execute our
+    // message in its outbox entry.
     return {
       message: l2Message,
-      proofInfo: undefined,
-      status: L2ToL1MessageStatus[L2ToL1MessageStatus.EXECUTED],
+      proofInfo,
+      status: L2ToL1MessageStatus[outboxMessageExecutionStatus],
     };
-  }
-  const outboxMessageExecutionStatus = await l2Message.status(proofInfo);
-  if (outboxMessageExecutionStatus !== L2ToL1MessageStatus.CONFIRMED) {
+  } catch (err) {
+    // Likely L1 message hasn't been included in an arbitrum batch yet, so ignore it for now.
     return {
-      message: l2Message,
+      message: undefined,
       proofInfo: undefined,
       status: L2ToL1MessageStatus[L2ToL1MessageStatus.UNCONFIRMED],
     };
   }
-
-  // Now that its confirmed and not executed, we can use the Merkle proof data to execute our
-  // message in its outbox entry.
-  return {
-    message: l2Message,
-    proofInfo,
-    status: L2ToL1MessageStatus[outboxMessageExecutionStatus],
-  };
 }

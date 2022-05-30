@@ -1,4 +1,4 @@
-import { groupObjectCountsByTwoProps, processCrash, processEndPollingLoop, startupLogLevel, Wallet } from "../utils";
+import { processCrash, processEndPollingLoop, startupLogLevel, Wallet } from "../utils";
 import { getProvider, getSigner, winston } from "../utils";
 import { constructRelayerClients, RelayerClients, updateRelayerClients } from "../relayer/RelayerClientHelper";
 import {
@@ -10,9 +10,8 @@ import {
   getPosClient,
   retrieveTokenFromMainnetTokenBridger,
   getOptimismClient,
-  getCrossChainMessages,
-  getMessageStatuses,
   getOptimismFinalizableMessages,
+  finalizeOptimismMessage,
 } from "./utils";
 import { FinalizerConfig } from "./FinalizerConfig";
 let logger: winston.Logger;
@@ -22,7 +21,7 @@ export async function run(
   hubSigner: Wallet,
   relayerClients: RelayerClients,
   configuredChainIds: number[],
-  executeTransactions: boolean
+  sendingTransactionsEnabled: boolean
 ): Promise<void> {
   const spokePoolClients = relayerClients.spokePoolClients;
   // For each chain, look up any TokensBridged events emitted by SpokePool client that we'll attempt to finalize
@@ -31,8 +30,6 @@ export async function run(
     const client = spokePoolClients[chainId];
     const tokensBridged = client.getTokensBridged();
 
-    // TODO: Refactor following code to produce list of transaction call data we can submit together in a single
-    // batch to a DS proxy or multi call contract.
     if (chainId === 42161) {
       const finalizableMessages = await getFinalizableMessages(
         logger,
@@ -40,14 +37,10 @@ export async function run(
         hubSigner,
         relayerClients.hubPoolClient
       );
-      if (!executeTransactions) {
-        logger.debug({
-          at: "ArbitrumFinalizer",
-          message: `Simulation mode, exiting early. Skipping execution of ${finalizableMessages.length} messages`,
-          finalizableMessages,
-        });
-        continue;
-      }
+      logger.debug({
+        at: "ArbitrumFinalizer",
+        message: `Found ${finalizableMessages.length} finalizable messages from chain ${chainId}`,
+      });
       for (const l2Message of finalizableMessages) {
         await finalizeArbitrum(
           logger,
@@ -55,66 +48,48 @@ export async function run(
           l2Message.token,
           l2Message.proofInfo,
           l2Message.info,
-          relayerClients.hubPoolClient
+          relayerClients.hubPoolClient,
+          relayerClients.multiCallerClient
         );
       }
     } else if (chainId === 137) {
       const posClient = await getPosClient(hubSigner);
       const canWithdraw = await getFinalizableTransactions(tokensBridged, posClient, relayerClients.hubPoolClient);
-      if (!executeTransactions) {
-        logger.debug({
-          at: "PolygonFinalizer",
-          message: `Simulation mode, exiting early. Skipping execution of ${canWithdraw.length} messages`,
-          finalizableMessages: canWithdraw,
-        });
-        continue;
-      }
+      logger.debug({
+        at: "PolygonFinalizer",
+        message: `Found ${canWithdraw.length} finalizable messages from chain ${chainId}`,
+      });
       for (const event of canWithdraw) {
-        await finalizePolygon(posClient, relayerClients.hubPoolClient, event, logger);
+        await finalizePolygon(posClient, relayerClients.hubPoolClient, event, logger, relayerClients.multiCallerClient);
       }
       for (const l2Token of getL2TokensToFinalize(tokensBridged)) {
-        await retrieveTokenFromMainnetTokenBridger(logger, l2Token, hubSigner, relayerClients.hubPoolClient);
+        await retrieveTokenFromMainnetTokenBridger(
+          logger,
+          l2Token,
+          hubSigner,
+          relayerClients.hubPoolClient,
+          relayerClients.multiCallerClient
+        );
       }
     } else if (chainId === 10) {
       const crossChainMessenger = getOptimismClient(hubSigner);
-      const crossChainMessages = await getCrossChainMessages(
+      const finalizableMessages = await getOptimismFinalizableMessages(
+        logger,
         tokensBridged,
         relayerClients.hubPoolClient,
         crossChainMessenger
       );
-      const messageStatuses = await getMessageStatuses(crossChainMessages, crossChainMessenger);
       logger.debug({
         at: "OptimismFinalizer",
-        message: "Optimism message statuses",
-        statusesGrouped: groupObjectCountsByTwoProps(messageStatuses, "status", (message) => message["token"]),
+        message: `Found ${finalizableMessages.length} finalizable messages from chain ${chainId}`,
       });
-      const finalizable = getOptimismFinalizableMessages(messageStatuses);
-      if (!executeTransactions) {
-        logger.debug({
-          at: "OptimismFinalizer",
-          message: `Simulation mode, exiting early. Skipping execution of ${finalizable.length} messages`,
-          finalizableMessages: finalizable,
-        });
-        continue;
-      }
-      for (const message of finalizable) {
-        logger.debug({
-          at: "OptimismFinalizer",
-          message: "Finalizing Optimism message",
-          l1Token: message.token,
-        });
-        const txn = await crossChainMessenger.finalizeMessage(message.message);
-        const receipt = await txn.wait();
-        logger.info({
-          at: "OptimismFinalizer",
-          message: "Finalized Optimism message!",
-          l1Token: message.token,
-          transaction: receipt.transactionHash,
-          // TODO: Add amount log
-        });
+      for (const message of finalizableMessages) {
+        finalizeOptimismMessage(relayerClients.multiCallerClient, crossChainMessenger, message, logger);
       }
     }
   }
+
+  await relayerClients.multiCallerClient.executeTransactionQueue(!sendingTransactionsEnabled);
 }
 
 export async function runFinalizer(_logger: winston.Logger) {
