@@ -24,8 +24,7 @@ export async function constructSpokePoolClientsForBlockAndUpdate(
   chainIdListForBundleEvaluationBlockNumbers: number[],
   clients: DataworkerClients,
   logger: winston.Logger,
-  latestMainnetBlock: number,
-  endBlockBuffers: { [chainId: number]: number }
+  latestMainnetBlock: number
 ): Promise<{ [chainId: number]: SpokePoolClient }> {
   const spokePoolClients = Object.fromEntries(
     chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
@@ -40,8 +39,7 @@ export async function constructSpokePoolClientsForBlockAndUpdate(
         clients.configStoreClient,
         Number(chainId),
         clients.spokePoolClientSearchSettings[chainId],
-        clients.spokePoolClientSearchSettings[chainId].fromBlock,
-        endBlockBuffers[chainId]
+        clients.spokePoolClientSearchSettings[chainId].fromBlock
       );
       return [chainId, client];
     })
@@ -71,12 +69,7 @@ export async function constructClients(logger: winston.Logger, config: CommonCon
     // ProposeRootBundle in order to match a bundle block evaluation block range with a pending root bundle.
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
-  const hubPoolClient = new HubPoolClient(
-    logger,
-    hubPool,
-    hubPoolClientSearchSettings,
-    config.blockRangeEndBlockBuffer[config.hubPoolChainId]
-  );
+  const hubPoolClient = new HubPoolClient(logger, hubPool, hubPoolClientSearchSettings);
 
   const rateModelClientSearchSettings = {
     fromBlock: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),

@@ -613,8 +613,7 @@ export class Dataworker {
         this.chainIdListForBundleEvaluationBlockNumbers,
         this.clients,
         this.logger,
-        endBlockForMainnet,
-        this.blockRangeEndBlockBuffer
+        endBlockForMainnet
       );
 
     // Compare roots with expected. The roots will be different if the block range start blocks were different

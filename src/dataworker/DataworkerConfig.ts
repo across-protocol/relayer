@@ -1,10 +1,11 @@
-import { CommonConfig, ProcessEnv } from "../common";
+import { CommonConfig, ProcessEnv, BUNDLE_END_BLOCK_BUFFERS } from "../common";
 import { BigNumber, assert, toBNWei } from "../utils";
 
 export class DataworkerConfig extends CommonConfig {
   readonly maxPoolRebalanceLeafSizeOverride: number;
   readonly maxRelayerRepaymentLeafSizeOverride: number;
   readonly tokenTransferThresholdOverride: { [l1TokenAddress: string]: BigNumber };
+  readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
   readonly rootBundleExecutionThreshold: BigNumber;
   readonly disputerEnabled: boolean;
   readonly proposerEnabled: boolean;
@@ -16,6 +17,7 @@ export class DataworkerConfig extends CommonConfig {
       TOKEN_TRANSFER_THRESHOLD_OVERRIDE,
       MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE,
       MAX_RELAYER_REPAYMENT_LEAF_SIZE_OVERRIDE,
+      BLOCK_RANGE_END_BLOCK_BUFFER,
       DISPUTER_ENABLED,
       PROPOSER_ENABLED,
       EXECUTOR_ENABLED,
@@ -39,6 +41,9 @@ export class DataworkerConfig extends CommonConfig {
     this.rootBundleExecutionThreshold = ROOT_BUNDLE_EXECUTION_THRESHOLD
       ? toBNWei(ROOT_BUNDLE_EXECUTION_THRESHOLD)
       : toBNWei("500000");
+    this.blockRangeEndBlockBuffer = BLOCK_RANGE_END_BLOCK_BUFFER
+      ? JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER)
+      : BUNDLE_END_BLOCK_BUFFERS;
     this.disputerEnabled = DISPUTER_ENABLED === "true";
     this.proposerEnabled = PROPOSER_ENABLED === "true";
     this.executorEnabled = EXECUTOR_ENABLED === "true";

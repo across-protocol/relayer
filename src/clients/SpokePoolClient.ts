@@ -26,8 +26,7 @@ export class SpokePoolClient {
     readonly configStoreClient: AcrossConfigStoreClient | null, // Can be excluded. This disables some deposit validation.
     readonly chainId: number,
     readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
-    readonly spokePoolDeploymentBlock: number = 0,
-    readonly endBlockBuffer: number = 0
+    readonly spokePoolDeploymentBlock: number = 0
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
@@ -140,7 +139,7 @@ export class SpokePoolClient {
     this.latestBlockNumber = await this.spokePool.provider.getBlockNumber();
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
-      toBlock: (this.eventSearchConfig.toBlock || this.latestBlockNumber) - this.endBlockBuffer,
+      toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
 
