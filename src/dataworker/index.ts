@@ -7,7 +7,7 @@ import {
   updateDataworkerClients,
   spokePoolClientsToProviders,
 } from "./DataworkerClientHelper";
-import { constructSpokePoolClientsForBlockAndUpdate } from "../common";
+import { constructSpokePoolClientsForBlockAndUpdate, updateSpokePoolClients } from "../common";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
 import { SpokePoolClientsByChain } from "../relayer/RelayerClientHelper";
 config();
@@ -49,6 +49,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
           logger,
           clients.hubPoolClient.latestBlockNumber
         );
+      else await updateSpokePoolClients(spokePoolClients)
 
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled) await dataworker.validatePendingRootBundle(spokePoolClients);
