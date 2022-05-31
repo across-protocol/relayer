@@ -87,7 +87,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       }
     }
   });
-  it("Correctly decides when to execute rebalances", async function () {
+  it("Correctly decides when to execute rebalances: allocation too low", async function () {
     // As each chain is at the expected amounts there should be no rebalance.
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
@@ -96,6 +96,42 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // Now, simulate the re-allocation of funds. Say that the USDC on arbitrum is half used up. This will leave arbitrum
     // with 500 USDC, giving a percentage of 500/14000 = 0.035. This is below the threshold of 0.5 so we should see
     // a re-balance executed in size of the target allocation + overshoot percentage.
+    expect(tokenClient.getBalance(42161, l2TokensForUsdc[42161])).to.equal(toMegaWei(1000));
+    const withdrawAmount = toMegaWei(500);
+    tokenClient.decrementLocalBalance(42161, l2TokensForUsdc[42161], withdrawAmount);
+    expect(tokenClient.getBalance(42161, l2TokensForUsdc[42161])).to.equal(withdrawAmount);
+
+    // The allocation of this should now be below the threshold of 5% so the inventory client should instruct a rebalance.
+    const expectedAlloc = withdrawAmount.mul(toWei(1)).div(initialUsdcTotal.sub(withdrawAmount));
+    expect(inventoryClient.getCurrentAllocationPctConsideringShortfall(mainnetUsdc, 42161)).to.equal(expectedAlloc);
+
+    // Execute rebalance. Check logs and enqueued transaction in Adapter manager. Given the total amount over all chains
+    // and the amount still on arbitrum we would expect the module to instruct the relayer to send over:
+    // (0.05 + 0.02) * (14000 - 500) - 500 = 445. Note the -500 component is there as arbitrum already has 500. our left
+    // post previous relay.
+    const expectedBridgedAmount = toMegaWei(445);
+    await inventoryClient.update();
+    await inventoryClient.rebalanceInventoryIfNeeded();
+    expect(lastSpyLogIncludes(spy, `Executed Inventory rebalances`)).to.be.true;
+    expect(lastSpyLogIncludes(spy, `Rebalances sent to Arbitrum`)).to.be.true;
+    expect(lastSpyLogIncludes(spy, `445.00 USDC rebalanced`)).to.be.true; // cast to formatting expected by client.
+    expect(lastSpyLogIncludes(spy, `This represents the target allocation of 5.00%`)).to.be.true; // config from client.
+
+    // The mock adapter manager should have been called with the expected transaction.
+    expect(adapterManager.tokensSentCrossChain[42161][mainnetUsdc].amount).to.equal(expectedBridgedAmount);
+
+    // Now, mock these funds having entered the canonical bridge.
+    adapterManager.setMockedOutstandingCrossChainTransfers(42161, mainnetUsdc, expectedBridgedAmount);
+
+    // Now that funds are "in the bridge" re-running the rebalance should not execute any transactions.
+    await inventoryClient.update();
+    await inventoryClient.rebalanceInventoryIfNeeded();
+    expect(lastSpyLogIncludes(spy, `No rebalances required`)).to.be.true;
+    expect(spyLogIncludes(spy, -2, "Zero filling")).to.be.true;
+  });
+
+  it("Correctly decides when to execute rebalances: token shortfall", async function () {
+    // Construct
     expect(tokenClient.getBalance(42161, l2TokensForUsdc[42161])).to.equal(toMegaWei(1000));
     const withdrawAmount = toMegaWei(500);
     tokenClient.decrementLocalBalance(42161, l2TokensForUsdc[42161], withdrawAmount);
