@@ -1,4 +1,4 @@
-import { groupObjectCountsByProp, processCrash, processEndPollingLoop, startupLogLevel, Wallet } from "../utils";
+import { processCrash, processEndPollingLoop, startupLogLevel, Wallet } from "../utils";
 import { getProvider, getSigner, winston } from "../utils";
 import {
   finalizeArbitrum,
@@ -11,7 +11,6 @@ import {
   getOptimismClient,
   getOptimismFinalizableMessages,
   finalizeOptimismMessage,
-  CrossChainMessageWithStatus,
 } from "./utils";
 import { FinalizerConfig } from "./FinalizerConfig";
 import { constructFinalizerClients, FinalizerClients, updateFinalizerClients } from "./FinalizerClientHelper";
@@ -87,7 +86,7 @@ export async function runFinalizer(_logger: winston.Logger) {
       // Validate and dispute pending proposal before proposing a new one
       if (config.finalizerEnabled)
         await run(logger, hubSigner, clients, config.finalizerChains, config.sendingTransactionsEnabled);
-      else logger[startupLogLevel(config)]({ at: "Finalizer#index", message: "Finalizer disabled" });
+      else logger.debug({ at: "Finalizer#index", message: "Finalizer disabled" });
 
       if (await processEndPollingLoop(logger, "Finalizer", config.pollingDelay)) break;
     }

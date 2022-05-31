@@ -47,7 +47,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       // Since we're updating all clients once per severless run, we can precompute all spoke pool clients safely
       // here and then recompute block ranges in the dataworker methods without any risk that the spoke pool client
       // and the hub pool clients reference different block ranges.
-      logger[startupLogLevel(config)]({
+      logger.debug({
         at: "Dataworker#index",
         message: "Constructing spoke pool clients for pending root bundle",
       });
@@ -57,7 +57,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
         getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
         clients
       );
-      logger[startupLogLevel(config)]({
+      logger.debug({
         at: "Dataworker#index",
         message: "Constructing spoke pool clients for next root bundle",
       });
@@ -70,11 +70,11 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
 
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled) await dataworker.validatePendingRootBundle(spokePoolClientsForPendingRootBundle);
-      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
+      else logger.debug({ at: "Dataworker#index", message: "Disputer disabled" });
 
       if (config.proposerEnabled)
         await dataworker.proposeRootBundle(latestSpokePoolClients, config.rootBundleExecutionThreshold);
-      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
+      else logger.debug({ at: "Dataworker#index", message: "Proposer disabled" });
 
       if (config.executorEnabled) {
         const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(latestSpokePoolClients));
@@ -84,7 +84,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
         // Execute slow relays before relayer refunds to give them priority for any L2 funds.
         await dataworker.executeSlowRelayLeaves(latestSpokePoolClients, balanceAllocator);
         await dataworker.executeRelayerRefundLeaves(latestSpokePoolClients, balanceAllocator);
-      } else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
+      } else logger.debug({ at: "Dataworker#index", message: "Executor disabled" });
 
       await clients.multiCallerClient.executeTransactionQueue(!config.sendingTransactionsEnabled);
 
