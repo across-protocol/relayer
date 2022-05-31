@@ -11,6 +11,7 @@ import {
 import { constructSpokePoolClientsForBlockAndUpdate } from "../common";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
 import { getEndBlockBuffers } from "./DataworkerUtils";
+import { SpokePoolClientsByChain } from "../relayer/RelayerClientHelper";
 config();
 let logger: winston.Logger;
 
@@ -37,53 +38,36 @@ export async function createDataworker(_logger: winston.Logger) {
 export async function runDataworker(_logger: winston.Logger): Promise<void> {
   logger = _logger;
   const { clients, config, dataworker } = await createDataworker(logger);
+  let spokePoolClients: SpokePoolClientsByChain;
   try {
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
 
     for (;;) {
       await updateDataworkerClients(clients);
-
-      // Construct spoke clients used to evaluate and execute leaves from pending root bundle.
-      // Since we're updating all clients once per severless run, we can precompute all spoke pool clients safely
-      // here and then recompute block ranges in the dataworker methods without any risk that the spoke pool client
-      // and the hub pool clients reference different block ranges.
-      logger[startupLogLevel(config)]({
-        at: "Dataworker#index",
-        message: "Constructing spoke pool clients for pending root bundle",
-      });
-      const spokePoolClientsForPendingRootBundle = await constructSpokePoolClientsForPendingRootBundle(
-        logger,
-        dataworker.chainIdListForBundleEvaluationBlockNumbers,
-        getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
-        clients
-      );
-      logger[startupLogLevel(config)]({
-        at: "Dataworker#index",
-        message: "Constructing spoke pool clients for next root bundle",
-      });
-      const latestSpokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-        dataworker.chainIdListForBundleEvaluationBlockNumbers,
-        clients,
-        logger,
-        clients.hubPoolClient.latestBlockNumber
-      );
+      if (spokePoolClients === undefined)
+        spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
+          dataworker.chainIdListForBundleEvaluationBlockNumbers,
+          clients,
+          logger,
+          clients.hubPoolClient.latestBlockNumber
+        );
 
       // Validate and dispute pending proposal before proposing a new one
-      if (config.disputerEnabled) await dataworker.validatePendingRootBundle(spokePoolClientsForPendingRootBundle);
+      if (config.disputerEnabled) await dataworker.validatePendingRootBundle(spokePoolClients);
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
 
       if (config.proposerEnabled)
-        await dataworker.proposeRootBundle(latestSpokePoolClients, config.rootBundleExecutionThreshold);
+        await dataworker.proposeRootBundle(spokePoolClients, config.rootBundleExecutionThreshold);
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
 
       if (config.executorEnabled) {
-        const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(latestSpokePoolClients));
+        const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
 
-        await dataworker.executePoolRebalanceLeaves(spokePoolClientsForPendingRootBundle, balanceAllocator);
+        await dataworker.executePoolRebalanceLeaves(spokePoolClients, balanceAllocator);
 
         // Execute slow relays before relayer refunds to give them priority for any L2 funds.
-        await dataworker.executeSlowRelayLeaves(latestSpokePoolClients, balanceAllocator);
-        await dataworker.executeRelayerRefundLeaves(latestSpokePoolClients, balanceAllocator);
+        await dataworker.executeSlowRelayLeaves(spokePoolClients, balanceAllocator);
+        await dataworker.executeRelayerRefundLeaves(spokePoolClients, balanceAllocator);
       } else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
 
       await clients.multiCallerClient.executeTransactionQueue(!config.sendingTransactionsEnabled);
