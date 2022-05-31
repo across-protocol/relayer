@@ -72,6 +72,12 @@ export class SpokePoolClient {
     return this.fillsWithBlockNumbers.filter((fill: Fill) => fill.originChainId === originChainId);
   }
 
+  getFillsWithBlockInRange(startingBlock: number, endingBlock: number): FillWithBlock[] {
+    return this.fillsWithBlockNumbers.filter(
+      (fill) => fill.blockNumber >= startingBlock && fill.blockNumber <= endingBlock
+    );
+  }
+
   getFillsForRepaymentChain(repaymentChainId: number) {
     return this.fills.filter((fill: Fill) => fill.repaymentChainId === repaymentChainId);
   }

@@ -1,7 +1,6 @@
-import { MonitorClients } from "../clients/MonitorClientHelper";
+import { MonitorClients } from "./MonitorClientHelper";
 import { etherscanLink, toBN, toWei, winston, createFormatFunction, getNetworkName, providers } from "../utils";
 import { MonitorConfig } from "./MonitorConfig";
-import { RelayerProcessor } from "./RelayerProcessor";
 
 enum BundleAction {
   PROPOSED = "proposed",
@@ -14,17 +13,15 @@ export class Monitor {
   private hubPoolStartingBlock: number | undefined = undefined;
   private hubPoolEndingBlock: number | undefined = undefined;
   private spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
-  private relayerProcessor: RelayerProcessor;
 
   public constructor(
     readonly logger: winston.Logger,
     readonly monitorConfig: MonitorConfig,
     readonly clients: MonitorClients
   ) {
-    for (const chainId of Object.keys(clients.spokePools)) {
+    for (const chainId of Object.keys(clients.spokePoolClients)) {
       this.spokePoolsBlocks[chainId] = { startingBlock: undefined, endingBlock: undefined };
     }
-    this.relayerProcessor = new RelayerProcessor(logger);
   }
 
   public async update() {
@@ -88,22 +85,21 @@ export class Monitor {
   }
 
   async checkUnknownRelayers(): Promise<void> {
-    const chainIds = Object.keys(this.clients.spokePools);
+    const chainIds = Object.keys(this.clients.spokePoolClients);
     this.logger.debug({ at: "AcrossMonitor#UnknownRelayers", message: "Checking for unknown relayers", chainIds });
     for (const chainId of chainIds) {
-      const relayEvents: any = await this.relayerProcessor.getRelayedEventsInfo(
-        this.clients.spokePools[chainId],
+      const fills = await this.clients.spokePoolClients[chainId].getFillsWithBlockInRange(
         this.spokePoolsBlocks[chainId].startingBlock,
         this.spokePoolsBlocks[chainId].endingBlock
       );
-      for (const event of relayEvents) {
+      for (const fill of fills) {
         // Skip notifications for known relay caller addresses.
-        if (this.monitorConfig.whitelistedRelayers.includes(event.relayer)) continue;
+        if (this.monitorConfig.whitelistedRelayers.includes(fill.relayer)) continue;
 
         const mrkdwn =
-          `An unknown relayer ${etherscanLink(event.relayer, chainId)}` +
-          ` filled a deposit on ${getNetworkName(chainId)}\ntx: ${etherscanLink(event.transactionHash, chainId)}`;
-        this.logger.error({ at: "Monitor", message: "Unknown relayer 😱", mrkdwn });
+          `An unknown relayer ${etherscanLink(fill.relayer, chainId)}` +
+          ` filled a deposit on ${getNetworkName(chainId)}\ntx: ${etherscanLink(fill.transactionHash, chainId)}`;
+        this.logger.error({ at: "Monitor", message: "Unknown relayer 🛺", mrkdwn });
       }
     }
   }
@@ -143,9 +139,9 @@ export class Monitor {
   }
 
   private async computeSpokePoolsBlocks() {
-    for (const chainId of Object.keys(this.clients.spokePools)) {
+    for (const chainId of Object.keys(this.clients.spokePoolClients)) {
       const { startingBlock, endingBlock } = await this.computeStartingAndEndingBlock(
-        this.clients.spokePools[chainId].provider,
+        this.clients.spokePoolClients[chainId].spokePool.provider,
         this.monitorConfig.spokePoolsBlocks[chainId]?.startingBlock,
         this.monitorConfig.spokePoolsBlocks[chainId]?.endingBlock
       );

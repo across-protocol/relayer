@@ -12,7 +12,7 @@ import {
   getOptimismFinalizableMessages,
   finalizeOptimismMessage,
 } from "./utils";
-import { SpokePoolClientsByChain } from "../relayer/RelayerClientHelper";
+import { SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient } from "../clients";
 
 export async function finalize(

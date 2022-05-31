@@ -9,7 +9,7 @@ import {
 } from "./DataworkerClientHelper";
 import { constructSpokePoolClientsForBlockAndUpdate, updateSpokePoolClients } from "../common";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
-import { SpokePoolClientsByChain } from "../relayer/RelayerClientHelper";
+import { SpokePoolClientsByChain } from "../interfaces";
 import { finalize } from "../finalizer";
 config();
 let logger: winston.Logger;
