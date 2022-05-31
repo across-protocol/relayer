@@ -39,7 +39,7 @@ export async function run(): Promise<void> {
   else {
     const erc20 = new ethers.Contract(token, ERC20.abi, connectedSigner);
     const decimals = Number(await erc20.decimals());
-    const symbol = Number(await erc20.symbol());
+    const symbol = await erc20.symbol();
     const amountFromWei = ethers.utils.formatUnits(args.amount, decimals);
     // Check the user is ok with the info provided. else abort.
     console.log(`Send ${symbol} with amount ${amountFromWei} tokens to ${recipient} on chain ${args.chainId}`);
