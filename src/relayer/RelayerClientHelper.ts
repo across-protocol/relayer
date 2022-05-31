@@ -3,14 +3,11 @@ import { Contract, getDeployedContract, getDeploymentBlockNumber, getSigner, Wal
 import { TokenClient, SpokePoolClient } from "../clients";
 import { RelayerConfig } from "./RelayerConfig";
 import { Clients, constructClients, updateClients, getSpokePoolSigners, updateSpokePoolClients } from "../common";
+import { SpokePoolClientsByChain } from "../interfaces";
 
 export interface RelayerClients extends Clients {
-  spokePoolClients: { [chainId: number]: SpokePoolClient };
+  spokePoolClients: SpokePoolClientsByChain;
   tokenClient: TokenClient;
-}
-
-export interface SpokePoolClientsByChain {
-  [chainId: number]: SpokePoolClient;
 }
 
 export async function constructSpokePoolClientsWithLookback(

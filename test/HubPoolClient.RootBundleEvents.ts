@@ -122,6 +122,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
       blockNumber: (await txn.wait()).blockNumber,
       transactionIndex: 0,
       logIndex: 0,
+      transactionHash: "",
     };
     expect(hubPoolClient.isRootBundleValid(rootBundle, hubPoolClient.latestBlockNumber)).to.equal(false);
 

@@ -1,12 +1,14 @@
 import { SpokePool } from "@across-protocol/contracts-v2";
 import { MonitorConfig } from "../monitor/MonitorConfig";
-import { getDeployedContract, winston, getSigner } from "../utils";
-import { HubPoolClient } from "./HubPoolClient";
+import { getDeployedContract, getDeploymentBlockNumber, getSigner, winston } from "../utils";
+import { HubPoolClient, SpokePoolClient } from "../clients";
 import { constructClients, getSpokePoolSigners } from "../common";
+import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
+import { SpokePoolClientsByChain } from "../interfaces";
 
 export interface MonitorClients {
   hubPoolClient: HubPoolClient;
-  spokePools: { [chainId: number]: SpokePool };
+  spokePoolClients: SpokePoolClientsByChain;
 }
 
 export async function constructMonitorClients(config: MonitorConfig, logger: winston.Logger): Promise<MonitorClients> {
@@ -15,12 +17,27 @@ export async function constructMonitorClients(config: MonitorConfig, logger: win
   const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
 
   const commonClients = await constructClients(logger, config);
-  const spokePools = config.spokePoolChains.reduce((acc, chainId) => {
+  const spokePoolClients = config.spokePoolChains.reduce((acc, chainId) => {
+    const spokePool = getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) as SpokePool;
+    const startingBlock = Number(getDeploymentBlockNumber("SpokePool", chainId));
+    const spokePoolClient = new SpokePoolClient(
+      logger,
+      spokePool,
+      commonClients.configStoreClient,
+      Number(chainId),
+      {
+        fromBlock: startingBlock,
+        toBlock: null,
+        maxBlockLookBack: CHAIN_MAX_BLOCK_LOOKBACK[chainId],
+      },
+      startingBlock
+    );
+
     return {
       ...acc,
-      [chainId]: getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) as SpokePool,
+      [chainId]: spokePoolClient,
     };
-  }, {} as Record<number, SpokePool>);
+  }, {} as Record<number, SpokePoolClient>);
 
-  return { ...commonClients, spokePools };
+  return { ...commonClients, spokePoolClients };
 }
