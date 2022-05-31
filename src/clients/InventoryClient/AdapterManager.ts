@@ -13,10 +13,12 @@ export class AdapterManager {
     readonly hubPoolClient: HubPoolClient,
     readonly relayerAddress: string
   ) {
-    this.optimismAdapter = new OptimismAdapter(logger, spokePoolClients, relayerAddress, true);
-    this.bobaAdapter = new OptimismAdapter(logger, spokePoolClients, relayerAddress, false);
-    this.arbitrumAdapter = new ArbitrumAdapter(logger, spokePoolClients, relayerAddress);
-    this.polygonAdapter = new PolygonAdapter(logger, spokePoolClients, relayerAddress);
+    if (spokePoolClients) {
+      this.optimismAdapter = new OptimismAdapter(logger, spokePoolClients, relayerAddress, true);
+      this.polygonAdapter = new PolygonAdapter(logger, spokePoolClients, relayerAddress);
+      this.bobaAdapter = new OptimismAdapter(logger, spokePoolClients, relayerAddress, false);
+      this.arbitrumAdapter = new ArbitrumAdapter(logger, spokePoolClients, relayerAddress);
+    }
   }
 
   async getOutstandingCrossChainTokenTransferAmount(
@@ -92,7 +94,10 @@ export class AdapterManager {
     // the try catch below is a safety hatch. If you try fetch an L2 token that is not within the hubPoolClient for a
     // given L1Token and chainId combo then you are likely trying to send a token to a chain that does not support it.
     try {
-      return this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId);
+      const l2TokenForL1Token = this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId);
+      if (!l2TokenForL1Token) throw new Error("No L2 token found for L1 token");
+      if (l2TokenForL1Token == l1Token) throw new Error("Mismatch tokens!");
+      return l2TokenForL1Token;
     } catch (error) {
       this.logger.error({
         at: "AdapterManager",
@@ -126,12 +131,14 @@ export class AdapterManager {
   }
 
   async setL1TokenApprovals(l1Tokens: string[]) {
-    await Promise.all([
-      this.optimismAdapter.checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 10))),
-      this.polygonAdapter.checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 137))),
-      this.bobaAdapter.checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 288))),
-      this.arbitrumAdapter.checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 42161))),
-    ]);
+    // Each of these calls must happen sequentially or we'll have collisions within the TransactionUtil. This should
+    // be refactored in a follow on PR to separate out by nonce increment by making the transaction util stateful.
+    await this.optimismAdapter.checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 10)));
+    await this.polygonAdapter.checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 137)));
+    await this.bobaAdapter.checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 288)));
+    await this.arbitrumAdapter.checkTokenApprovals(
+      l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 42161))
+    );
   }
 
   l2TokenExistForL1Token(l1Token: string, l2ChainId: number): boolean {

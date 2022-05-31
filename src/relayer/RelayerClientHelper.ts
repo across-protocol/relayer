@@ -1,6 +1,6 @@
 import winston from "winston";
 import { Contract, getDeployedContract, getDeploymentBlockNumber, getSigner, Wallet } from "../utils";
-import { TokenClient, ProfitClient, SpokePoolClient, InventoryClient } from "../clients";
+import { TokenClient, ProfitClient, SpokePoolClient, InventoryClient, AdapterManager } from "../clients";
 import { RelayerConfig } from "./RelayerConfig";
 import { Clients, constructClients, updateClients, getSpokePoolSigners, updateSpokePoolClients } from "../common";
 
@@ -9,6 +9,7 @@ export interface RelayerClients extends Clients {
   tokenClient: TokenClient;
   profitClient: ProfitClient;
   inventoryClient: InventoryClient;
+  adapterManager: AdapterManager;
 }
 
 export interface SpokePoolClientsByChain {
@@ -74,16 +75,18 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
 
   const profitClient = new ProfitClient(logger, commonClients.hubPoolClient, config.relayerDiscount);
 
+  const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, baseSigner.address);
+
   const inventoryClient = new InventoryClient(
     logger,
     config.inventoryConfig,
     tokenClient,
-    spokePoolClients,
+    config.spokePoolChains,
     commonClients.hubPoolClient,
-    baseSigner.address
+    adapterManager
   );
 
-  return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient };
+  return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient, adapterManager };
 }
 
 export async function updateRelayerClients(clients: RelayerClients) {
@@ -96,19 +99,17 @@ export async function updateRelayerClients(clients: RelayerClients) {
   // https://github.com/across-protocol/relayer-v2/pull/37/files#r883371256 as a reference.
   await updateSpokePoolClients(clients.spokePoolClients);
 
+  // Update the token client first so that inventory client has latest balances.
+  await clients.tokenClient.update();
+
   // We can update the inventory client at the same time as checking for eth wrapping as these do not depend on each other.
   await Promise.all([
     clients.inventoryClient.update(),
-    // clients.inventoryClient.wrapL2EthIfAboveThreshold(),
-    // clients.inventoryClient.setL1TokenApprovals(),
-
-    
+    clients.inventoryClient.wrapL2EthIfAboveThreshold(),
+    clients.inventoryClient.setL1TokenApprovals(),
   ]);
 
   // Update the token client after the inventory client has done its wrapping of L2 ETH to ensure latest WETH ballance.
   await clients.tokenClient.update();
   await clients.tokenClient.setOriginTokenApprovals(); // Run approval check  after updating token clients as needs route data.
-
-  // Run inventory rebalance last as needs up to date info from all other clients.
-  await clients.inventoryClient.rebalanceInventoryIfNeeded();
 }

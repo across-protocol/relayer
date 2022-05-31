@@ -23,7 +23,7 @@ export async function runTransaction(
   try {
     const gas = await getGasPrice(contract.provider);
     logger.debug({ at: "TxUtil", message: "Send tx", target: getTarget(contract.address), method, args, value, gas });
-    return await contract[method](...args, { ...gas, value, gasLimit: 300000 });
+    return await contract[method](...args, { ...gas, value });
   } catch (error) {
     logger.error({ at: "TxUtil", message: "Error executing tx", error, notificationPath: "across-error" });
     console.log(error);

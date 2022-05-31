@@ -4,11 +4,11 @@ import { HubPoolClient, SpokePoolClient } from ".";
 import { Deposit } from "../interfaces";
 
 export class TokenClient {
-  private tokenData: { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } } = {};
-  private tokenShortfall: {
+  tokenData: { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } } = {};
+  tokenShortfall: {
     [chainId: number]: { [token: string]: { deposits: number[]; totalRequirement: BigNumber } };
   } = {};
-  private bondToken: Contract;
+  bondToken: Contract;
 
   constructor(
     readonly logger: winston.Logger,
