@@ -75,16 +75,15 @@ export async function constructSpokePoolClientsForPendingRootBundle(
     // pending root bundle, and the block right after the last valid root bundle proposal's end block.
     // If the proposer didn't use the same start block, then they might have missed events and the roots will
     // be different. We'll need to reconstruct these block ranges for the validator and executor.
-    if (pendingRootBundle.bundleEvaluationBlockNumbers)
+    if (pendingRootBundle.bundleEvaluationBlockNumbers) {
       blockRangesImpliedByBundleEndBlocks = widestPossibleExpectedBlockRange.map((blockRange, index) => [
         blockRange[0],
         pendingRootBundle.bundleEvaluationBlockNumbers[index],
       ]);
-    // Construct spoke pool clients using spoke pools deployed at end of block range.
-    // We do make an assumption that the spoke pool contract was not changed during the block range. By using the
-    // spoke pool at this block instead of assuming its the currently deployed one, we can pay refunds for deposits
-    // on deprecated spoke pools.
-    if (blockRangesImpliedByBundleEndBlocks) {
+      // Construct spoke pool clients using spoke pools deployed at end of block range.
+      // We do make an assumption that the spoke pool contract was not changed during the block range. By using the
+      // spoke pool at this block instead of assuming its the currently deployed one, we can pay refunds for deposits
+      // on deprecated spoke pools.
       endBlockForMainnet = getBlockRangeForChain(
         blockRangesImpliedByBundleEndBlocks,
         1,
