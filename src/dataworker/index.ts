@@ -49,7 +49,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
           logger,
           clients.hubPoolClient.latestBlockNumber
         );
-      else await updateSpokePoolClients(spokePoolClients)
+      else await updateSpokePoolClients(spokePoolClients);
 
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled) await dataworker.validatePendingRootBundle(spokePoolClients);
