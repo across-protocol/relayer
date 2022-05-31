@@ -4,13 +4,11 @@ import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
 import {
   constructDataworkerClients,
-  constructSpokePoolClientsForPendingRootBundle,
   updateDataworkerClients,
   spokePoolClientsToProviders,
 } from "./DataworkerClientHelper";
 import { constructSpokePoolClientsForBlockAndUpdate } from "../common";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
-import { getEndBlockBuffers } from "./DataworkerUtils";
 import { SpokePoolClientsByChain } from "../relayer/RelayerClientHelper";
 config();
 let logger: winston.Logger;
