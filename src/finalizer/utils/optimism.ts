@@ -105,7 +105,7 @@ export async function finalizeOptimismMessage(
       message: `Finalized Optimism withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
       transactionhash: receipt.transactionHash,
     });
-    await delay(30)
+    await delay(30);
   } catch (error) {
     logger.error({
       at: "OptimismFinalizer",
