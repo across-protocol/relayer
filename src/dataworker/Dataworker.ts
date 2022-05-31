@@ -436,7 +436,7 @@ export class Dataworker {
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
     // Exit early if a bundle is not pending.
-    const { hasPendingProposal, pendingRootBundle } = this.clients.hubPoolClient.getPendingRootBundleIfAvailable();
+    const { hasPendingProposal, pendingRootBundle } = this.clients.hubPoolClient.getPendingRootBundle();
     if (hasPendingProposal === false) {
       this.logger.debug({
         at: "Dataworker#validate",
@@ -919,7 +919,7 @@ export class Dataworker {
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
     // Exit early if a bundle is not pending.
-    const { hasPendingProposal, pendingRootBundle } = this.clients.hubPoolClient.getPendingRootBundleIfAvailable();
+    const { hasPendingProposal, pendingRootBundle } = this.clients.hubPoolClient.getPendingRootBundle();
     if (!hasPendingProposal) {
       this.logger.debug({
         at: "Dataworker#executePoolRebalanceLeaves",

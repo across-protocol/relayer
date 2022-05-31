@@ -29,20 +29,18 @@ export class HubPoolClient {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
 
-  getPendingRootBundleProposal() {
+  _getPendingRootBundleProposal() {
     return this.pendingRootBundle;
   }
 
   hasPendingProposal() {
-    return this.pendingRootBundle !== undefined && this.pendingRootBundle.unclaimedPoolRebalanceLeafCount > 0;
+    return this.pendingRootBundle !== undefined;
   }
 
-  getPendingRootBundleIfAvailable() {
-    const hasPendingProposal = this.hasPendingProposal();
-    const pendingRootBundle = hasPendingProposal ? this.getPendingRootBundleProposal() : undefined;
+  getPendingRootBundle() {
     return {
-      hasPendingProposal,
-      pendingRootBundle,
+      hasPendingProposal: this.hasPendingProposal(),
+      pendingRootBundle: this._getPendingRootBundleProposal(),
     };
   }
 
@@ -336,35 +334,27 @@ export class HubPoolClient {
       ...executedRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as ExecutedRootBundle)
     );
 
-    this.pendingRootBundle = {
-      poolRebalanceRoot: pendingRootBundleProposal.poolRebalanceRoot,
-      relayerRefundRoot: pendingRootBundleProposal.relayerRefundRoot,
-      slowRelayRoot: pendingRootBundleProposal.slowRelayRoot,
-      proposer: pendingRootBundleProposal.proposer,
-      unclaimedPoolRebalanceLeafCount: pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount,
-      challengePeriodEndTimestamp: pendingRootBundleProposal.challengePeriodEndTimestamp,
-      bundleEvaluationBlockNumbers: undefined,
-      proposalBlockNumber: undefined,
-    };
-    // If pending proposal is active, even if it passed the liveness period, then we can load the following root
-    // bundle properties: `bundleEvaluationBlockNumbers` and `proposalBlockNumber`, otherwise they are not relevant.
-    // We can assume that the pool rebalance root is never empty if there is a pending root on-chain, regardless
-    // if the root is disputable.
-    if (this.pendingRootBundle.poolRebalanceRoot !== EMPTY_MERKLE_ROOT) {
-      // Throw an error if this client is configured in such a way that the most recent event does not match
-      // the pending root bundle. We should handle this case eventually, but for now loudly error so we don't dispute
-      // the wrong pending bundle.
+    // If the contract's current rootBundleProposal() value has an unclaimedPoolRebalanceLeafCount > 0, then
+    // it means that either the root bundle proposal is in the challenge period and can be disputed, or it has
+    // passed the challenge period and pool rebalance leaves can be executed. Once all leaves are executed, the
+    // unclaimed count will drop to 0 and at that point there is nothing more that we can do with this root bundle
+    // besides proposing another one.
+    if (pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount > 0) {
       const mostRecentProposedRootBundle = sortEventsDescending(this.proposedRootBundles)[0];
-      if (
-        mostRecentProposedRootBundle.poolRebalanceRoot !== this.pendingRootBundle.poolRebalanceRoot &&
-        mostRecentProposedRootBundle.relayerRefundRoot !== this.pendingRootBundle.relayerRefundRoot &&
-        mostRecentProposedRootBundle.slowRelayRoot !== this.pendingRootBundle.slowRelayRoot
-      )
-        throw new Error("Latest root bundle queried by client does not match pending root bundle");
-
-      this.pendingRootBundle.bundleEvaluationBlockNumbers =
-        mostRecentProposedRootBundle.bundleEvaluationBlockNumbers.map((block: BigNumber) => block.toNumber());
-      this.pendingRootBundle.proposalBlockNumber = mostRecentProposedRootBundle.blockNumber;
+      this.pendingRootBundle = {
+        poolRebalanceRoot: pendingRootBundleProposal.poolRebalanceRoot,
+        relayerRefundRoot: pendingRootBundleProposal.relayerRefundRoot,
+        slowRelayRoot: pendingRootBundleProposal.slowRelayRoot,
+        proposer: pendingRootBundleProposal.proposer,
+        unclaimedPoolRebalanceLeafCount: pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount,
+        challengePeriodEndTimestamp: pendingRootBundleProposal.challengePeriodEndTimestamp,
+        bundleEvaluationBlockNumbers: mostRecentProposedRootBundle.bundleEvaluationBlockNumbers.map(
+          (block: BigNumber) => block.toNumber()
+        ),
+        proposalBlockNumber: mostRecentProposedRootBundle.blockNumber,
+      };
+    } else {
+      this.pendingRootBundle = undefined;
     }
 
     this.isUpdated = true;
