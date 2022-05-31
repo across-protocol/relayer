@@ -106,15 +106,15 @@ export async function finalizePolygon(
     hubPoolClient.hubPool.signer
   );
   const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
-  const amountFromWei = convertFromWei(event.amountToReturn.toString(), l1TokenInfo.decimals)
+  const amountFromWei = convertFromWei(event.amountToReturn.toString(), l1TokenInfo.decimals);
   try {
     multicallerClient.enqueueTransaction({
       contract: rootchainManager,
       chainId: 1,
       method: "exit",
       args: [exitPayload],
-      message: `Finalized polygon withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
-      mrkdwn: `Finalized polygon withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
+      message: `Finalized Polygon withdrawal 🪃`,
+      mrkdwn: `Received ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
     });
   } catch (error) {
     logger.error({

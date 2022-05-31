@@ -23,7 +23,7 @@ export async function finalizeArbitrum(
   multiCallerClient: MultiCallerClient
 ) {
   const l1TokenInfo = hubPoolClient.getL1TokenInfoForL2Token(messageInfo.l2TokenAddress, CHAIN_ID);
-  const amountFromWei = convertFromWei(messageInfo.amountToReturn.toString(), l1TokenInfo.decimals)
+  const amountFromWei = convertFromWei(messageInfo.amountToReturn.toString(), l1TokenInfo.decimals);
   const outbox = getOutboxContract(hubPoolClient);
   try {
     multiCallerClient.enqueueTransaction({
@@ -42,8 +42,8 @@ export async function finalizeArbitrum(
         proofInfo.amount, //  uint256 amount
         proofInfo.calldataForL1, // bytes calldataForL1
       ],
-      message: `Finalized arbitrum withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
-      mrkdwn: `Finalized arbitrum withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
+      message: `Finalized Arbitrum withdrawal 🪃`,
+      mrkdwn: `Received ${amountFromWei} of ${l1TokenInfo.symbol}`,
     });
   } catch (error) {
     logger.error({
