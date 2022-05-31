@@ -61,7 +61,13 @@ export async function run(
       const crossChainMessenger = getOptimismClient(hubSigner);
       const finalizableMessages = await getOptimismFinalizableMessages(logger, tokensBridged, crossChainMessenger);
       for (const message of finalizableMessages) {
-        finalizeOptimismMessage(clients.hubPoolClient, clients.multiCallerClient, crossChainMessenger, message, logger);
+        await finalizeOptimismMessage(
+          clients.hubPoolClient,
+          clients.multiCallerClient,
+          crossChainMessenger,
+          message,
+          logger
+        );
       }
     }
   }

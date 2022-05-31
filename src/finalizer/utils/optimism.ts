@@ -1,7 +1,7 @@
 import * as optimismSDK from "@eth-optimism/sdk";
 import { HubPoolClient, MultiCallerClient } from "../../clients";
 import { TokensBridged } from "../../interfaces";
-import { ethers, getProvider, groupObjectCountsByProp, Wallet, winston } from "../../utils";
+import { convertFromWei, ethers, getProvider, groupObjectCountsByProp, Wallet, winston } from "../../utils";
 
 const CHAIN_ID = 10;
 
@@ -88,7 +88,7 @@ export function getL1TokenInfoForOptimismToken(hubPoolClient: HubPoolClient, l2T
   );
 }
 
-export function finalizeOptimismMessage(
+export async function finalizeOptimismMessage(
   hubPoolClient: HubPoolClient,
   multiCallerClient: MultiCallerClient,
   crossChainMessenger: optimismSDK.CrossChainMessenger,
@@ -97,15 +97,17 @@ export function finalizeOptimismMessage(
 ) {
   // Need to handle special case where WETH is bridged as ETH and the contract address changes.
   const l1TokenInfo = getL1TokenInfoForOptimismToken(hubPoolClient, message.event.l2TokenAddress);
-  const amountFromWei = ethers.utils.formatUnits(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
+  const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals)
   try {
+    const proof = await crossChainMessenger.getMessageProof(message.message);
+    const resolved = message.message as optimismSDK.CrossChainMessage;  
     multiCallerClient.enqueueTransaction({
       contract: crossChainMessenger.contracts.l1.L1CrossDomainMessenger,
       chainId: 1,
       method: "relayMessage",
-      args: crossChainMessenger.populateTransaction.finalizeMessage(message.message),
-      message: `Finalized optimism withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol}`,
-      mrkdwn: `Finalized optimism withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol}`,
+      args: [resolved.target, resolved.sender, resolved.message, resolved.messageNonce, proof],
+      message: `Finalized optimism withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
+      mrkdwn: `Finalized optimism withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
     });
   } catch (error) {
     logger.error({
