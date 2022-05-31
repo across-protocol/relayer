@@ -3,6 +3,7 @@ import { Web3ClientPlugin } from "@maticnetwork/maticjs-ethers";
 import {
   Contract,
   convertFromWei,
+  delay,
   ERC20,
   ethers,
   getDeployedContract,
@@ -108,6 +109,7 @@ export async function finalizePolygon(
       message: `Finalized Polygon withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
       transactionhash: receipt.transactionHash,
     });
+    await delay(30)
   } catch (error) {
     logger.error({
       at: "PolygonFinalizer",

@@ -1,4 +1,4 @@
-import { getProvider, Wallet, winston, convertFromWei, ethers, Contract, groupObjectCountsByProp } from "../../utils";
+import { getProvider, Wallet, winston, convertFromWei, ethers, Contract, groupObjectCountsByProp, delay } from "../../utils";
 import { L2ToL1MessageWriter, L2ToL1MessageStatus, L2TransactionReceipt, getL2Network } from "@arbitrum/sdk";
 import { MessageBatchProofInfo } from "@arbitrum/sdk/dist/lib/message/L2ToL1Message";
 import Outbox__factory_1 from "@arbitrum/sdk/dist/lib/abi/factories/Outbox__factory";
@@ -31,6 +31,7 @@ export async function finalizeArbitrum(
       message: `Finalized Arbitrum withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
       transactionhash: receipt.transactionHash,
     });
+    await delay(30)
   } catch (error) {
     logger.error({
       at: "ArbitrumFinalizer",
