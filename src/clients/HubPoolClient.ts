@@ -1,7 +1,6 @@
 import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, EventSearchConfig } from "../utils";
 import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
-import { EMPTY_MERKLE_ROOT } from "../utils";
-import { Deposit, L1Token, ProposedRootBundle, ExecutedRootBundle, RootBundle } from "../interfaces";
+import { Deposit, L1Token, ProposedRootBundle, ExecutedRootBundle, PendingRootBundle } from "../interfaces";
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
 
 export class HubPoolClient {
@@ -14,7 +13,7 @@ export class HubPoolClient {
   private l1TokensToDestinationTokensWithBlock: {
     [l1Token: string]: { [destinationChainId: number]: DestinationTokenWithBlock[] };
   } = {};
-  private pendingRootBundle: RootBundle;
+  private pendingRootBundle: PendingRootBundle;
 
   public isUpdated: boolean = false;
   public firstBlockToSearch: number;
@@ -142,7 +141,7 @@ export class HubPoolClient {
       rootBundle,
       nextRootBundle ? Math.min(nextRootBundle.blockNumber, latestMainnetBlock) : latestMainnetBlock
     );
-    return rootBundle.poolRebalanceLeafCount > 0 && executedLeafCount.length === rootBundle.poolRebalanceLeafCount;
+    return executedLeafCount.length === rootBundle.poolRebalanceLeafCount;
   }
 
   // This should find the ProposeRootBundle event whose bundle block number for `chain` is closest to the `block`

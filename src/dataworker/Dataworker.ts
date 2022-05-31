@@ -3,7 +3,7 @@ import {
   UnfilledDeposit,
   Deposit,
   DepositWithBlock,
-  RootBundle,
+  PendingRootBundle,
   UnfilledDepositsForOriginChain,
   TreeData,
   RunningBalances,
@@ -479,7 +479,7 @@ export class Dataworker {
   async validateRootBundle(
     hubPoolChainId: number,
     widestPossibleExpectedBlockRange: number[][],
-    rootBundle: RootBundle,
+    rootBundle: PendingRootBundle,
     spokePoolClients?: { [chainId: number]: SpokePoolClient }
   ): Promise<{
     valid: boolean;
