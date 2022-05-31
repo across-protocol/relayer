@@ -31,11 +31,11 @@ export async function run(): Promise<void> {
     console.log(`Send ETH with amount ${amountFromWei} tokens to ${recipient} on chain ${args.chainId}`);
     if (!(await askYesNoQuestion("\nConfirm that you want to execute this transaction?"))) process.exit(0);
     console.log("sending...");
-    const tx = await connectedSigner.sendTransaction({ to: recipient, value: toBN(args.amount) })
+    const tx = await connectedSigner.sendTransaction({ to: recipient, value: toBN(args.amount) });
     const receipt = await tx.wait();
-    console.log("Transaction hash:", receipt.transactionHash);  
+    console.log("Transaction hash:", receipt.transactionHash);
   }
-  // Send ERC20 
+  // Send ERC20
   else {
     const erc20 = new ethers.Contract(token, ERC20.abi, connectedSigner);
     const decimals = Number(await erc20.decimals());
@@ -47,7 +47,7 @@ export async function run(): Promise<void> {
     console.log("sending...");
     const tx = await erc20.transfer(recipient, args.amount);
     const receipt = await tx.wait();
-    console.log("Transaction hash:", receipt.transactionHash);  
+    console.log("Transaction hash:", receipt.transactionHash);
   }
 }
 
