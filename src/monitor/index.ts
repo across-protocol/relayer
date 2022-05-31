@@ -26,6 +26,9 @@ export async function runMonitor(_logger: winston.Logger) {
       if (config.botModes.unknownRelayerCallersEnabled) await acrossMonitor.checkUnknownRelayers();
       else logger.debug({ at: "AcrossMonitor", message: "UnknownRelayerCallers monitor disabled" });
 
+      if (config.botModes.reportEnabled) await acrossMonitor.reportRelayerBalances();
+      else logger.debug({ at: "AcrossMonitor", message: "RelayerBalances monitor disabled" });
+
       if (await processEndPollingLoop(logger, "Monitor", config.pollingDelay)) break;
     }
   } catch (error) {

@@ -44,6 +44,7 @@ export async function setupDataworker(
   spyLogger: winston.Logger;
   spy: sinon.SinonSpy;
   multiCallerClient: clients.MultiCallerClient;
+  profitClient: clients.ProfitClient;
   owner: SignerWithAddress;
   depositor: SignerWithAddress;
   relayer: SignerWithAddress;
@@ -213,6 +214,7 @@ export async function setupDataworker(
     spyLogger,
     spy,
     multiCallerClient,
+    profitClient,
     owner,
     depositor,
     relayer,

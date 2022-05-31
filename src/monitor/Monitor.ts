@@ -1,6 +1,11 @@
-import { MonitorClients } from "./MonitorClientHelper";
-import { etherscanLink, toBN, toWei, winston, createFormatFunction, getNetworkName, providers } from "../utils";
+import { getCurrentTime } from "../utils/TimeUtils";
+import { Contract, ERC20, assign, etherscanLink } from "../utils";
+import { convertFromWei, toBN, toWei, winston, createFormatFunction, getNetworkName, providers } from "../utils";
+
+import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
+
+import { L1Token } from "../interfaces";
 
 enum BundleAction {
   PROPOSED = "proposed",
@@ -13,19 +18,22 @@ export class Monitor {
   private hubPoolStartingBlock: number | undefined = undefined;
   private hubPoolEndingBlock: number | undefined = undefined;
   private spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
+  private cachedTokenInfo: {
+    [chainId: string]: { [tokenAddress: number]: L1Token };
+  } = {};
 
   public constructor(
     readonly logger: winston.Logger,
     readonly monitorConfig: MonitorConfig,
     readonly clients: MonitorClients
   ) {
-    for (const chainId of Object.keys(clients.spokePoolClients)) {
+    for (const chainId of monitorConfig.spokePoolChains) {
       this.spokePoolsBlocks[chainId] = { startingBlock: undefined, endingBlock: undefined };
     }
   }
 
   public async update() {
-    await this.clients.hubPoolClient.update();
+    await updateMonitorClients(this.clients);
     await this.computeHubPoolBlocks();
     await this.computeSpokePoolsBlocks();
   }
@@ -85,7 +93,7 @@ export class Monitor {
   }
 
   async checkUnknownRelayers(): Promise<void> {
-    const chainIds = Object.keys(this.clients.spokePoolClients);
+    const chainIds = this.monitorConfig.spokePoolChains;
     this.logger.debug({ at: "AcrossMonitor#UnknownRelayers", message: "Checking for unknown relayers", chainIds });
     for (const chainId of chainIds) {
       const fills = await this.clients.spokePoolClients[chainId].getFillsWithBlockInRange(
@@ -100,6 +108,38 @@ export class Monitor {
           `An unknown relayer ${etherscanLink(fill.relayer, chainId)}` +
           ` filled a deposit on ${getNetworkName(chainId)}\ntx: ${etherscanLink(fill.transactionHash, chainId)}`;
         this.logger.error({ at: "Monitor", message: "Unknown relayer 🛺", mrkdwn });
+      }
+    }
+  }
+
+  // Report balances of all tokens on each supported chain for each relayer.
+  async reportRelayerBalances(): Promise<void> {
+    const relayers = this.monitorConfig.monitoredRelayers;
+    for (const relayer of relayers) {
+      for (const chainId of this.monitorConfig.spokePoolChains) {
+        const tokenAddresses = this.clients.hubPoolClient.getDestinationTokensForChainId(chainId);
+
+        // Use the provider from the spoke pool to send requests to the right provider.
+        const spokePoolClient = this.clients.spokePoolClients[chainId];
+        const tokenBalances = await Promise.all(
+          tokenAddresses.map((tokenAddress) =>
+            new Contract(tokenAddress, ERC20.abi, spokePoolClient.spokePool.signer).balanceOf(relayer)
+          )
+        );
+
+        let mrkdwn = "";
+        for (let i = 0; i < tokenAddresses.length; i++) {
+          const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddresses[i], chainId);
+          // Convert to number of tokens for readability.
+          const balance = convertFromWei(tokenBalances[i], tokenInfo.decimals);
+          mrkdwn += `*${tokenInfo.symbol}: ${balance}*\n`;
+        }
+
+        this.logger.info({
+          at: "Monitor",
+          message: `Relayer (${relayer})'s token balances for chain ${chainId} 🚀`,
+          mrkdwn,
+        });
       }
     }
   }
@@ -139,7 +179,7 @@ export class Monitor {
   }
 
   private async computeSpokePoolsBlocks() {
-    for (const chainId of Object.keys(this.clients.spokePoolClients)) {
+    for (const chainId of this.monitorConfig.spokePoolChains) {
       const { startingBlock, endingBlock } = await this.computeStartingAndEndingBlock(
         this.clients.spokePoolClients[chainId].spokePool.provider,
         this.monitorConfig.spokePoolsBlocks[chainId]?.startingBlock,

@@ -109,6 +109,12 @@ export class HubPoolClient {
     return this.l1TokensToDestinationTokens[l1Token][destinationChainId];
   }
 
+  getDestinationTokensForChainId(chainId: number) {
+    return this.l1Tokens
+      .map((l1Token) => this.getDestinationTokenForL1TokenDestinationChainId(l1Token.address, chainId))
+      .filter((token) => token !== undefined);
+  }
+
   async getCurrentPoolUtilization(l1Token: string) {
     return await this.hubPool.callStatic.liquidityUtilizationCurrent(l1Token);
   }
