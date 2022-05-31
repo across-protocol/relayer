@@ -24,7 +24,8 @@ export class HubPoolClient {
   constructor(
     readonly logger: winston.Logger,
     readonly hubPool: Contract,
-    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
+    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
+    readonly endBlockBuffer: number = 0
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
@@ -34,7 +35,13 @@ export class HubPoolClient {
   }
 
   hasPendingProposal() {
-    return this.pendingRootBundle !== undefined && this.pendingRootBundle.unclaimedPoolRebalanceLeafCount > 0;
+    return (
+      this.pendingRootBundle !== undefined &&
+      this.pendingRootBundle.unclaimedPoolRebalanceLeafCount > 0 &&
+      this.pendingRootBundle.bundleEvaluationBlockNumbers !== undefined
+      // This will fail if the other two conditions pass
+      // if the client has seen all events up to HEAD and the root bundle was recently proposed
+    );
   }
 
   getPendingRootBundleIfAvailable() {
@@ -261,7 +268,7 @@ export class HubPoolClient {
     this.latestBlockNumber = await this.hubPool.provider.getBlockNumber();
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
-      toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
+      toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber - this.endBlockBuffer,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
     this.logger.debug({ at: "HubPoolClient", message: "Updating HubPool client", searchConfig });
@@ -351,20 +358,23 @@ export class HubPoolClient {
     // We can assume that the pool rebalance root is never empty if there is a pending root on-chain, regardless
     // if the root is disputable.
     if (this.pendingRootBundle.poolRebalanceRoot !== EMPTY_MERKLE_ROOT) {
-      // Throw an error if this client is configured in such a way that the most recent event does not match
-      // the pending root bundle. We should handle this case eventually, but for now loudly error so we don't dispute
-      // the wrong pending bundle.
+      // If pending root bundle exists but doesn't match with latest ProposedRootBundle event, then we'll just ignore
+      // it for now. Likely this means that the client has not caught up to HEAD yet.
       const mostRecentProposedRootBundle = sortEventsDescending(this.proposedRootBundles)[0];
       if (
         mostRecentProposedRootBundle.poolRebalanceRoot !== this.pendingRootBundle.poolRebalanceRoot &&
         mostRecentProposedRootBundle.relayerRefundRoot !== this.pendingRootBundle.relayerRefundRoot &&
         mostRecentProposedRootBundle.slowRelayRoot !== this.pendingRootBundle.slowRelayRoot
-      )
-        throw new Error("Latest root bundle queried by client does not match pending root bundle");
-
-      this.pendingRootBundle.bundleEvaluationBlockNumbers =
-        mostRecentProposedRootBundle.bundleEvaluationBlockNumbers.map((block: BigNumber) => block.toNumber());
-      this.pendingRootBundle.proposalBlockNumber = mostRecentProposedRootBundle.blockNumber;
+      ) {
+        this.logger.debug({
+          at: "HubPoolClient",
+          message: "Latest ProposedRootBundle event found in client does not match pending root bundle",
+        });
+      } else {
+        this.pendingRootBundle.bundleEvaluationBlockNumbers =
+          mostRecentProposedRootBundle.bundleEvaluationBlockNumbers.map((block: BigNumber) => block.toNumber());
+        this.pendingRootBundle.proposalBlockNumber = mostRecentProposedRootBundle.blockNumber;
+      }
     }
 
     this.isUpdated = true;

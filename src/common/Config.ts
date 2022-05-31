@@ -14,6 +14,7 @@ export class CommonConfig {
   readonly maxTxWait: number;
   readonly relayerDiscount: BigNumber;
   readonly sendingTransactionsEnabled: boolean;
+  readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
 
   constructor(env: ProcessEnv) {
     const {
@@ -25,6 +26,7 @@ export class CommonConfig {
       MAX_TX_WAIT_DURATION,
       RELAYER_DISCOUNT,
       SEND_TRANSACTIONS,
+      BLOCK_RANGE_END_BLOCK_BUFFER,
     } = env;
     this.hubPoolChainId = HUB_CHAIN_ID ? Number(HUB_CHAIN_ID) : 1;
     this.spokePoolChains = CONFIGURED_NETWORKS ? JSON.parse(CONFIGURED_NETWORKS) : Constants.CHAIN_ID_LIST_INDICES;
@@ -34,6 +36,9 @@ export class CommonConfig {
       for (const chainId of this.spokePoolChains)
         assert(Object.keys(this.maxBlockLookBack).includes(chainId.toString()), "MAX_BLOCK_LOOK_BACK missing networks");
     else this.maxBlockLookBack = Constants.CHAIN_MAX_BLOCK_LOOKBACK;
+    this.blockRangeEndBlockBuffer = BLOCK_RANGE_END_BLOCK_BUFFER
+      ? JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER)
+      : Constants.BUNDLE_END_BLOCK_BUFFERS;
     this.nodeQuorumThreshold = NODE_QUORUM_THRESHOLD ? Number(NODE_QUORUM_THRESHOLD) : 1;
     this.maxTxWait = MAX_TX_WAIT_DURATION ? Number(MAX_TX_WAIT_DURATION) : 180; // 3 minutes
     this.relayerDiscount = RELAYER_DISCOUNT ? toBNWei(RELAYER_DISCOUNT) : toBNWei(0);

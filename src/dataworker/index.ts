@@ -42,12 +42,17 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
 
     for (;;) {
       await updateDataworkerClients(clients);
+
+      // We assume that the latest spoke pools deployed at the start of this bot run will not change during the lifetime
+      // of this run. This is a reasonable assumption while running in serverless mode, but in looping mode, its the
+      // responsibility of the bot-runner to reset this bot if the spoke pools are upgraded.
       if (spokePoolClients === undefined)
         spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
           dataworker.chainIdListForBundleEvaluationBlockNumbers,
           clients,
           logger,
-          clients.hubPoolClient.latestBlockNumber
+          clients.hubPoolClient.latestBlockNumber,
+          config.blockRangeEndBlockBuffer
         );
 
       // Validate and dispute pending proposal before proposing a new one
