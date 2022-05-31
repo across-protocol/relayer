@@ -144,7 +144,7 @@ export class HubPoolClient {
       rootBundle,
       nextRootBundle ? Math.min(nextRootBundle.blockNumber, latestMainnetBlock) : latestMainnetBlock
     );
-    return executedLeafCount.length === rootBundle.poolRebalanceLeafCount;
+    return rootBundle.poolRebalanceLeafCount > 0 && executedLeafCount.length === rootBundle.poolRebalanceLeafCount;
   }
 
   // This should find the ProposeRootBundle event whose bundle block number for `chain` is closest to the `block`
