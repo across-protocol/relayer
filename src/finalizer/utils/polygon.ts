@@ -15,8 +15,10 @@ import {
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, MultiCallerClient } from "../../clients";
 
+// Note!!: This client will only work for PoS tokens. Matic also has Plasma tokens which have a different finalization
+// process entirely.
+
 const CHAIN_ID = 137;
-const POLYGON_MESSAGE_SENT_EVENT_SIG = "0x8c5261668696ce22758910d05bab8f186d6eb247ceac2af2e82c7dc17669b036";
 enum POLYGON_MESSAGE_STATUS {
   NOT_CHECKPOINTED = "NOT_CHECKPOINTED",
   ALREADY_EXITED = "ALREADY_EXITED",
@@ -56,17 +58,19 @@ export async function getFinalizableTransactions(
     tokensBridged.map((event) => posClient.exitUtil.isCheckPointed(event.transactionHash))
   );
   const exitStatus = await Promise.all(
-    tokensBridged.map((event, i) => {
-      if (!isCheckpointed[i])
-        return new Promise((resolve) => resolve({ status: POLYGON_MESSAGE_STATUS.NOT_CHECKPOINTED }));
+    tokensBridged.map(async (event, i) => {
+      if (!isCheckpointed[i]) return { status: POLYGON_MESSAGE_STATUS.NOT_CHECKPOINTED };
       const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
         CHAIN_ID.toString(),
         event.l2TokenAddress,
         hubPoolClient.latestBlockNumber
       );
-      return posClient.erc20(l1TokenCounterpart, true).isWithdrawExited(event.transactionHash)
-        ? new Promise((resolve) => resolve({ status: POLYGON_MESSAGE_STATUS.ALREADY_EXITED }))
-        : new Promise((resolve) => resolve({ status: POLYGON_MESSAGE_STATUS.CAN_EXIT }));
+      return posClient
+        .erc20(l1TokenCounterpart, true)
+        .isWithdrawExited(event.transactionHash)
+        .then((result) =>
+          result ? { status: POLYGON_MESSAGE_STATUS.ALREADY_EXITED } : { status: POLYGON_MESSAGE_STATUS.CAN_EXIT }
+        );
     })
   );
   logger.debug({
@@ -74,15 +78,14 @@ export async function getFinalizableTransactions(
     message: `Polygon message statuses`,
     statusesGrouped: groupObjectCountsByProp(exitStatus, (message: { status: string }) => message.status),
   });
-  return tokensBridged.filter((_, i) => exitStatus[i] === POLYGON_MESSAGE_STATUS.CAN_EXIT);
+  return tokensBridged.filter((_, i) => exitStatus[i].status === POLYGON_MESSAGE_STATUS.CAN_EXIT);
 }
 
 export async function finalizePolygon(
   posClient: POSClient,
   hubPoolClient: HubPoolClient,
   event: TokensBridged,
-  logger: winston.Logger,
-  multicallerClient: MultiCallerClient
+  logger: winston.Logger
 ) {
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
     CHAIN_ID.toString(),
@@ -95,26 +98,15 @@ export async function finalizePolygon(
     l1TokenCounterpart,
     event,
   });
-  const exitPayload = await posClient.exitUtil.buildPayloadForExit(
-    event.transactionHash,
-    POLYGON_MESSAGE_SENT_EVENT_SIG,
-    false
-  );
-  const rootchainManager = new Contract(
-    "0x6abb753c1893194de4a83c6e8b4eadfc105fd5f5",
-    minimumRootChainAbi,
-    hubPoolClient.hubPool.signer
-  );
   const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
   const amountFromWei = convertFromWei(event.amountToReturn.toString(), l1TokenInfo.decimals);
   try {
-    multicallerClient.enqueueTransaction({
-      contract: rootchainManager,
-      chainId: 1,
-      method: "exit",
-      args: [exitPayload],
-      message: `Finalized Polygon withdrawal 🪃`,
-      mrkdwn: `Received ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
+    const txn = await posClient.erc20(l1TokenCounterpart, true).withdrawExitFaster(event.transactionHash);
+    const receipt = await txn.getReceipt();
+    logger.info({
+      at: "PolygonFinalizer",
+      message: `Finalized Polygon withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
+      transactionhash: receipt.transactionHash,
     });
   } catch (error) {
     logger.error({

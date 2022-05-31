@@ -90,7 +90,6 @@ export function getL1TokenInfoForOptimismToken(hubPoolClient: HubPoolClient, l2T
 
 export async function finalizeOptimismMessage(
   hubPoolClient: HubPoolClient,
-  multiCallerClient: MultiCallerClient,
   crossChainMessenger: optimismSDK.CrossChainMessenger,
   message: CrossChainMessageWithStatus,
   logger: winston.Logger
@@ -99,15 +98,12 @@ export async function finalizeOptimismMessage(
   const l1TokenInfo = getL1TokenInfoForOptimismToken(hubPoolClient, message.event.l2TokenAddress);
   const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
   try {
-    const proof = await crossChainMessenger.getMessageProof(message.message);
-    const resolved = message.message as optimismSDK.CrossChainMessage;
-    multiCallerClient.enqueueTransaction({
-      contract: crossChainMessenger.contracts.l1.L1CrossDomainMessenger,
-      chainId: 1,
-      method: "relayMessage",
-      args: [resolved.target, resolved.sender, resolved.message, resolved.messageNonce, proof],
-      message: `Finalized Optimism withdrawal 🪃`,
-      mrkdwn: `Received ${amountFromWei} of ${l1TokenInfo.symbol}`,
+    const txn = await crossChainMessenger.finalizeMessage(message.message);
+    const receipt = await txn.wait();
+    logger.info({
+      at: "OptimismFinalizer",
+      message: `Finalized Optimism withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
+      transactionhash: receipt.transactionHash,
     });
   } catch (error) {
     logger.error({

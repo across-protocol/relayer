@@ -20,8 +20,7 @@ export async function run(
   logger: winston.Logger,
   hubSigner: Wallet,
   clients: FinalizerClients,
-  configuredChainIds: number[],
-  sendingTransactionsEnabled: boolean
+  configuredChainIds: number[]
 ): Promise<void> {
   const spokePoolClients = clients.spokePoolClients;
   // For each chain, look up any TokensBridged events emitted by SpokePool client that we'll attempt to finalize
@@ -33,20 +32,13 @@ export async function run(
     if (chainId === 42161) {
       const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner, clients.hubPoolClient);
       for (const l2Message of finalizableMessages) {
-        await finalizeArbitrum(
-          logger,
-          l2Message.message,
-          l2Message.proofInfo,
-          l2Message.info,
-          clients.hubPoolClient,
-          clients.multiCallerClient
-        );
+        await finalizeArbitrum(logger, l2Message.message, l2Message.proofInfo, l2Message.info, clients.hubPoolClient);
       }
     } else if (chainId === 137) {
       const posClient = await getPosClient(hubSigner);
       const canWithdraw = await getFinalizableTransactions(logger, tokensBridged, posClient, clients.hubPoolClient);
       for (const event of canWithdraw) {
-        await finalizePolygon(posClient, clients.hubPoolClient, event, logger, clients.multiCallerClient);
+        await finalizePolygon(posClient, clients.hubPoolClient, event, logger);
       }
       for (const l2Token of getL2TokensToFinalize(tokensBridged)) {
         await retrieveTokenFromMainnetTokenBridger(
@@ -61,18 +53,10 @@ export async function run(
       const crossChainMessenger = getOptimismClient(hubSigner);
       const finalizableMessages = await getOptimismFinalizableMessages(logger, tokensBridged, crossChainMessenger);
       for (const message of finalizableMessages) {
-        await finalizeOptimismMessage(
-          clients.hubPoolClient,
-          clients.multiCallerClient,
-          crossChainMessenger,
-          message,
-          logger
-        );
+        await finalizeOptimismMessage(clients.hubPoolClient, crossChainMessenger, message, logger);
       }
     }
   }
-
-  await clients.multiCallerClient.executeTransactionQueue(!sendingTransactionsEnabled);
 }
 
 export async function runFinalizer(_logger: winston.Logger) {
@@ -90,8 +74,7 @@ export async function runFinalizer(_logger: winston.Logger) {
       await updateFinalizerClients(clients);
 
       // Validate and dispute pending proposal before proposing a new one
-      if (config.finalizerEnabled)
-        await run(logger, hubSigner, clients, config.finalizerChains, config.sendingTransactionsEnabled);
+      if (config.finalizerEnabled) await run(logger, hubSigner, clients, config.finalizerChains);
       else logger.debug({ at: "Finalizer#index", message: "Finalizer disabled" });
 
       if (await processEndPollingLoop(logger, "Finalizer", config.pollingDelay)) break;
