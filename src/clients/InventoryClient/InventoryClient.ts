@@ -1,9 +1,8 @@
 import { BigNumber, winston, assign, toBN, getNetworkName, createFormatFunction } from "../../utils";
 import { HubPoolClient, TokenClient } from "..";
 import { InventoryConfig } from "../../interfaces";
-import { SpokePoolClient } from "../";
 import { AdapterManager } from "./AdapterManager";
-import { string } from "hardhat/internal/core/params/argumentTypes";
+import { Deposit } from "../../interfaces/SpokePool";
 
 const scalar = toBN(10).pow(18);
 const formatWei = createFormatFunction(2, 4, false, 18);
@@ -21,12 +20,14 @@ export class InventoryClient {
     readonly adapterManager: AdapterManager
   ) {}
 
+  // Get the total balance across all chains, considering any outstanding cross chain transfers as a virtual balance on that chain.
   getCumulativeBalance(l1Token: string): BigNumber {
     return this.getEnabledChains()
       .map((chainId) => this.getBalanceOnChainForL1Token(chainId, l1Token))
       .reduce((acc, curr) => acc.add(curr), toBN(0));
   }
 
+  // Get the balance of a given l1 token on a target chain, considering any outstanding cross chain transfers as a virtual balance on that chain.
   getBalanceOnChainForL1Token(chainId: number | string, l1Token: string): BigNumber {
     chainId = Number(chainId);
     const balance =
@@ -37,10 +38,12 @@ export class InventoryClient {
     return balance.add(this.getOutstandingCrossChainTransferAmount(chainId, l1Token));
   }
 
+  // Get any funds currently in the canonical bridge.
   getOutstandingCrossChainTransferAmount(chainId: number | string, l1Token: string) {
     return this.outstandingCrossChainTransfers[chainId.toString()]?.[l1Token] || toBN(0);
   }
 
+  // Get the fraction of funds allocated on each chain.
   getChainDistribution(l1Token: string): { [chainId: number]: BigNumber } {
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
     const distribution = {};
@@ -51,20 +54,33 @@ export class InventoryClient {
     return distribution;
   }
 
+  // Get the distribution of all tokens, spread over all chains.
   getTokenDistributionPerL1Token(): { [l1Token: string]: { [chainId: number]: BigNumber } } {
     const distributionPerL1Token = {};
     this.getL1Tokens().forEach((l1Token) => (distributionPerL1Token[l1Token] = this.getChainDistribution(l1Token)));
     return distributionPerL1Token;
   }
 
+  // Get the allocation of a given token, considering the shortfall. This number will be negative if there is a shortfall!
+  // A shortfall, by definition, is the amount of tokens that are needed to to fill a given outstanding relay that the
+  // relayer could not fill. For example of the relayer has 10 WETH and needs to fill a relay of size 18 WETH then the
+  // shortfall will be 18. If there are 140 WETH across the whole ecosystem then this method will return (10-18)/140=-0.057
+  // This number is then used to inform how many tokens need to be sent to the chain to: a) cover the shortfall and
+  // b bring the balance back over the defined target.
   getCurrentAllocationPctConsideringShortfall(l1Token: string, chainId: number): BigNumber {
-    const currentAllocationPct = this.getTokenDistributionPerL1Token()[l1Token][chainId];
-    const shortfall = this.tokenClient.getTokensNeededToCoverShortfall(
+    const currentBalanceConsideringTransfers = this.getBalanceOnChainForL1Token(chainId, l1Token);
+    const shortfall = this.getTokenShortFall(l1Token, chainId) || toBN(0);
+    const cumulativeBalance = this.getCumulativeBalance(l1Token);
+    const numerator = currentBalanceConsideringTransfers.sub(shortfall).mul(scalar);
+    return numerator.div(cumulativeBalance);
+  }
+
+  // Find how short a given chain is for a desired L1Token.
+  getTokenShortFall(l1Token: string, chainId: number | string): BigNumber {
+    return this.tokenClient.getShortfallTotalRequirement(
       chainId,
-      this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId)
+      this.hubPoolClient.getDestinationTokenForL1Token(l1Token, Number(chainId))
     );
-    const shortfallPct = shortfall.mul(scalar).div(this.getCumulativeBalance(l1Token));
-    return currentAllocationPct.sub(shortfallPct);
   }
 
   getEnabledChains(): number[] {
@@ -79,7 +95,36 @@ export class InventoryClient {
     return this.inventoryConfig.managedL1Tokens || this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address);
   }
 
-  determineRefundChainId(deposit) {}
+  // Decrement Tokens Balance And Increment Cross Chain Transfer
+  trackCrossChainTransfer(l1Token: string, rebalance: BigNumber, chainId: number | string) {
+    this.tokenClient.decrementLocalBalance(1, l1Token, rebalance);
+    if (!this.outstandingCrossChainTransfers[chainId]) this.outstandingCrossChainTransfers[chainId] = {};
+    const bal = this.outstandingCrossChainTransfers[chainId][l1Token];
+    this.outstandingCrossChainTransfers[chainId][l1Token] = toBN(bal).gt(toBN(0))
+      ? toBN(bal).sub(rebalance)
+      : rebalance;
+  }
+
+  // Work out where a relay should be refunded to optimally manage the bots inventory. Use the following algorithm:
+  // a) Compute the virtual balance o the destination chain. This is current liquidity + any pending cross-chain transfers.
+  // b) Compute the virtual balance post relay. i.e a - the size of the relay in question.
+  // c) find the post relay virtual allocation by taking b and deviling it by the cumulative virtual balance. This number
+  // d) represents the share of the total liquidity if the current transfers conclude and the relay is filled (i.e forward looking)
+  // e) if this number of more than the target for the designation chain + the rebalance overshoot then refund on L1.
+  // d) else, the post fill amount is within the target, so refund on the destination chain.
+  determineRefundChainId(deposit: Deposit): number {
+    const l1Token = this.hubPoolClient.getL1TokenForDeposit(deposit);
+    const chainVirtualBalance = this.getBalanceOnChainForL1Token(deposit.destinationChainId, l1Token);
+    const chainVirtualBalancePostRelay = chainVirtualBalance.sub(deposit.amount);
+    const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
+    const cumulativeVirtualBalancePostRelay = cumulativeVirtualBalance.sub(deposit.amount);
+    const expectedPostRelayAllocation = chainVirtualBalancePostRelay.div(cumulativeVirtualBalancePostRelay);
+    const allocationThreshold = this.inventoryConfig.targetL2PctOfTotal[deposit.originChainId].add(
+      this.inventoryConfig.rebalanceOvershoot
+    );
+    if (expectedPostRelayAllocation.gt(allocationThreshold)) return 1;
+    else return deposit.destinationChainId;
+  }
 
   async rebalanceInventoryIfNeeded() {
     if (!this.isfInventoryManagementEnabled()) return;
@@ -96,6 +141,7 @@ export class InventoryClient {
         if (currentAllocationPct.lt(targetAllocationPct)) {
           if (!rebalancesRequired[chainId]) rebalancesRequired[chainId] = {};
           const deltaPct = targetAllocationPct.add(this.inventoryConfig.rebalanceOvershoot).sub(currentAllocationPct);
+
           rebalancesRequired[chainId][l1Token] = deltaPct.mul(cumulativeBalance).div(scalar);
         }
       }
@@ -116,11 +162,14 @@ export class InventoryClient {
         if (requiredRebalance.lt(this.tokenClient.getBalance(1, l1Token))) {
           if (!possibleRebalances[chainId]) possibleRebalances[chainId] = {};
           possibleRebalances[chainId][l1Token] = requiredRebalance;
-          this.tokenClient.decrementLocalBalance(1, l1Token, requiredRebalance);
+
+          // Decrement token balance in client for this chain and increment cross chain counter.
+          this.trackCrossChainTransfer(l1Token, requiredRebalance, chainId);
         }
       }
     }
 
+    // Extract unexcusable rebalances for logging.
     const unexecutedRebalances: { [chainId: number]: { [l1Token: string]: BigNumber } } = {};
     for (const chainId of Object.keys(rebalancesRequired)) {
       for (const l1Token of Object.keys(rebalancesRequired[chainId])) {
@@ -197,10 +246,17 @@ export class InventoryClient {
       tokenDistribution[symbol]["cumulativeBalance"] = formatter(this.getCumulativeBalance(l1Token).toString());
       Object.keys(tokenDistributionPerL1Token[l1Token]).forEach((chainId) => {
         if (!tokenDistribution[symbol][chainId]) tokenDistribution[symbol][chainId] = {};
+
         tokenDistribution[symbol][chainId] = {
-          balanceOnChain: formatter(this.getBalanceOnChainForL1Token(chainId, l1Token).toString()),
+          actualBalanceOnChain: formatter(
+            this.getBalanceOnChainForL1Token(chainId, l1Token)
+              .sub(this.getOutstandingCrossChainTransferAmount(chainId, l1Token))
+              .toString()
+          ),
+          virtualBalanceOnChain: formatter(this.getBalanceOnChainForL1Token(chainId, l1Token).toString()),
+          outstandingTransfers: formatter(this.getOutstandingCrossChainTransferAmount(chainId, l1Token)).toString(),
+          tokenShortFalls: formatter(this.getTokenShortFall(l1Token, chainId).toString()),
           proRataShare: formatWei(tokenDistributionPerL1Token[l1Token][chainId].mul(100).toString()) + "%",
-          inflightTokens: formatter(this.getOutstandingCrossChainTransferAmount(l1Token, chainId)).toString(),
         };
       });
     });
