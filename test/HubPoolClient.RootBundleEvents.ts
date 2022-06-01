@@ -3,7 +3,7 @@ import { SignerWithAddress, expect, ethers, Contract, toBNWei, toBN, BigNumber, 
 import { HubPoolClient } from "../src/clients";
 import * as constants from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import { ProposedRootBundle, RootBundle } from "../src/interfaces";
+import { ProposedRootBundle, PendingRootBundle } from "../src/interfaces";
 
 let hubPool: Contract, timer: Contract;
 let l1Token_1: Contract, l1Token_2: Contract;
@@ -57,7 +57,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
     ).to.equal(undefined);
     await hubPoolClient.update();
 
-    expect(hubPoolClient.getPendingRootBundleProposal()).to.deep.equal({
+    expect(hubPoolClient.getPendingRootBundle()).to.deep.equal({
       poolRebalanceRoot: tree.getHexRoot(),
       relayerRefundRoot: constants.mockTreeRoot,
       slowRelayRoot: constants.mockTreeRoot,

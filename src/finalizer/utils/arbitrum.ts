@@ -1,18 +1,9 @@
-import {
-  getProvider,
-  Wallet,
-  winston,
-  convertFromWei,
-  ethers,
-  Contract,
-  groupObjectCountsByProp,
-  delay,
-} from "../../utils";
+import { getProvider, Wallet, winston, convertFromWei, Contract } from "../../utils";
 import { L2ToL1MessageWriter, L2ToL1MessageStatus, L2TransactionReceipt, getL2Network } from "@arbitrum/sdk";
 import { MessageBatchProofInfo } from "@arbitrum/sdk/dist/lib/message/L2ToL1Message";
 import Outbox__factory_1 from "@arbitrum/sdk/dist/lib/abi/factories/Outbox__factory";
 import { TokensBridged } from "../../interfaces";
-import { HubPoolClient, MultiCallerClient } from "../../clients";
+import { HubPoolClient } from "../../clients";
 
 const CHAIN_ID = 42161;
 
