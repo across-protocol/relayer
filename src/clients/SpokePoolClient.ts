@@ -239,7 +239,7 @@ export class SpokePoolClient {
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.isUpdated = true;
-    this.log("debug", `SpokePool client for chain ${this.chainId} updated!`);
+    this.log("debug", `SpokePool client for chain ${this.chainId} updated!`, searchConfig);
   }
 
   public hubPoolClient() {

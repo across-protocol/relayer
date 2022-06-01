@@ -70,8 +70,6 @@ describe("Dataworker: Execute pool rebalances", async function () {
 
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
 
-    await dataworkerInstance.proposeRootBundle(spokePoolClients);
-
     // Execute queue and check that root bundle is pending:
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
     await multiCallerClient.executeTransactionQueue();
@@ -104,8 +102,6 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 1, destinationChainId);
     await updateAllClients();
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
-
-    // Execute queue and execute leaves:
     await multiCallerClient.executeTransactionQueue();
 
     // Advance time and execute leaves:
