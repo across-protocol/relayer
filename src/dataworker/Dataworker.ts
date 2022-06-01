@@ -463,7 +463,8 @@ export class Dataworker {
 
     const widestPossibleExpectedBlockRange = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
-      getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
+      Array(this.chainIdListForBundleEvaluationBlockNumbers.length).fill(0), // Use 0 buffer when validating
+      // past bundles
       this.clients,
       this.clients.hubPoolClient.latestBlockNumber
     );
@@ -947,7 +948,8 @@ export class Dataworker {
 
     const widestPossibleExpectedBlockRange = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
-      getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
+      Array(this.chainIdListForBundleEvaluationBlockNumbers.length).fill(0), // Use 0 buffer when validating
+      // past bundles
       this.clients,
       this.clients.hubPoolClient.latestBlockNumber
     );
