@@ -10,6 +10,7 @@ export class DataworkerConfig extends CommonConfig {
   readonly disputerEnabled: boolean;
   readonly proposerEnabled: boolean;
   readonly executorEnabled: boolean;
+  readonly spokeRootsLookbackCount: number; // Consider making this configurable per chain ID.
 
   constructor(env: ProcessEnv) {
     const {
@@ -21,6 +22,7 @@ export class DataworkerConfig extends CommonConfig {
       DISPUTER_ENABLED,
       PROPOSER_ENABLED,
       EXECUTOR_ENABLED,
+      SPOKE_ROOTS_LOOKBACK_COUNT,
     } = env;
     super(env);
 
@@ -28,6 +30,7 @@ export class DataworkerConfig extends CommonConfig {
     this.maxPoolRebalanceLeafSizeOverride = MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE
       ? Number(MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE)
       : undefined;
+    this.spokeRootsLookbackCount = SPOKE_ROOTS_LOOKBACK_COUNT ? Number(SPOKE_ROOTS_LOOKBACK_COUNT) : undefined;
     if (this.maxPoolRebalanceLeafSizeOverride !== undefined)
       assert(this.maxPoolRebalanceLeafSizeOverride > 0, "Max leaf count set to 0");
     this.maxRelayerRepaymentLeafSizeOverride = MAX_RELAYER_REPAYMENT_LEAF_SIZE_OVERRIDE

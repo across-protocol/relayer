@@ -1,8 +1,9 @@
 import * as optimismSDK from "@eth-optimism/sdk";
-import { string } from "hardhat/internal/core/params/argumentTypes";
 import { HubPoolClient } from "../../clients";
 import { TokensBridged } from "../../interfaces";
-import { getProvider, Wallet } from "../../utils";
+import { convertFromWei, delay, getProvider, groupObjectCountsByProp, Wallet, winston } from "../../utils";
+
+const CHAIN_ID = 10;
 
 export function getOptimismClient(mainnetSigner: Wallet) {
   return new optimismSDK.CrossChainMessenger({
@@ -12,28 +13,20 @@ export function getOptimismClient(mainnetSigner: Wallet) {
   });
 }
 
+export interface CrossChainMessageWithEvent {
+  event: TokensBridged;
+  message: optimismSDK.MessageLike;
+}
 export async function getCrossChainMessages(
   tokensBridged: TokensBridged[],
-  hubPoolClient: HubPoolClient,
   crossChainMessenger: optimismSDK.CrossChainMessenger
-) {
+): Promise<CrossChainMessageWithEvent[]> {
   return (
     await Promise.all(
       tokensBridged.map(async (event) => {
-        const tokenInfo = hubPoolClient.getTokenInfo(
-          1,
-          hubPoolClient.getL1TokenCounterpartAtBlock(
-            "10",
-            event.l2TokenAddress.toLowerCase() === "0xdeaddeaddeaddeaddeaddeaddeaddeaddead0000" // Need to handle special case where
-              ? // WETH is bridged as ETH and the contract address changes.
-                "0x4200000000000000000000000000000000000006"
-              : event.l2TokenAddress,
-            hubPoolClient.latestBlockNumber
-          )
-        );
         return {
           messages: await crossChainMessenger.getMessagesByTransaction(event.transactionHash),
-          tokenInfo,
+          event,
         };
       })
     )
@@ -41,22 +34,20 @@ export async function getCrossChainMessages(
     for (const message of messagesInTransaction.messages) {
       flattenedMessages.push({
         message,
-        tokenInfo: messagesInTransaction.tokenInfo,
+        event: messagesInTransaction.event,
       });
     }
     return flattenedMessages;
   }, []);
 }
 
-export interface CrossChainMessageStatus {
+export interface CrossChainMessageWithStatus extends CrossChainMessageWithEvent {
   status: string;
-  message: optimismSDK.MessageLike;
-  token: string;
 }
 export async function getMessageStatuses(
-  crossChainMessages: { message: optimismSDK.MessageLike; tokenInfo: any }[],
+  crossChainMessages: CrossChainMessageWithEvent[],
   crossChainMessenger: optimismSDK.CrossChainMessenger
-) {
+): Promise<CrossChainMessageWithStatus[]> {
   const statuses = await Promise.all(
     crossChainMessages.map((message) => {
       return crossChainMessenger.getMessageStatus(message.message);
@@ -66,13 +57,61 @@ export async function getMessageStatuses(
     return {
       status: optimismSDK.MessageStatus[status],
       message: crossChainMessages[i].message,
-      token: crossChainMessages[i].tokenInfo.symbol,
+      event: crossChainMessages[i].event,
     };
   });
 }
 
-export function getOptimismFinalizableMessages(messageStatuses: CrossChainMessageStatus[]) {
+export async function getOptimismFinalizableMessages(
+  logger: winston.Logger,
+  tokensBridged: TokensBridged[],
+  crossChainMessenger: optimismSDK.CrossChainMessenger
+) {
+  const crossChainMessages = await getCrossChainMessages(tokensBridged, crossChainMessenger);
+  const messageStatuses = await getMessageStatuses(crossChainMessages, crossChainMessenger);
+  logger.debug({
+    at: "OptimismFinalizer",
+    message: "Optimism message statuses",
+    statusesGrouped: groupObjectCountsByProp(messageStatuses, (message: CrossChainMessageWithStatus) => message.status),
+  });
   return messageStatuses.filter(
     (message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]
   );
+}
+
+export function getL1TokenInfoForOptimismToken(hubPoolClient: HubPoolClient, l2Token: string) {
+  return hubPoolClient.getL1TokenInfoForL2Token(
+    l2Token.toLowerCase() === "0xdeaddeaddeaddeaddeaddeaddeaddeaddead0000"
+      ? "0x4200000000000000000000000000000000000006"
+      : l2Token,
+    CHAIN_ID
+  );
+}
+
+export async function finalizeOptimismMessage(
+  hubPoolClient: HubPoolClient,
+  crossChainMessenger: optimismSDK.CrossChainMessenger,
+  message: CrossChainMessageWithStatus,
+  logger: winston.Logger
+) {
+  // Need to handle special case where WETH is bridged as ETH and the contract address changes.
+  const l1TokenInfo = getL1TokenInfoForOptimismToken(hubPoolClient, message.event.l2TokenAddress);
+  const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
+  try {
+    const txn = await crossChainMessenger.finalizeMessage(message.message);
+    const receipt = await txn.wait();
+    logger.info({
+      at: "OptimismFinalizer",
+      message: `Finalized Optimism withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
+      transactionhash: receipt.transactionHash,
+    });
+    await delay(30);
+  } catch (error) {
+    logger.warn({
+      at: "OptimismFinalizer",
+      message: "Error creating relayMessageTx",
+      error,
+      notificationPath: "across-error",
+    });
+  }
 }
