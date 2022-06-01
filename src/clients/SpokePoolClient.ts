@@ -229,7 +229,7 @@ export class SpokePoolClient {
     }
 
     for (const event of relayedRootBundleEvents) {
-      this.rootBundleRelays.push(spreadEvent(event));
+      this.rootBundleRelays.push(spreadEventWithBlockNumber(event) as RootBundleRelayWithBlock);
     }
 
     for (const event of executedRelayerRefundRootEvents) {

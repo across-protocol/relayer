@@ -1,4 +1,4 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, processCrash } from "../utils";
+import { processEndPollingLoop, winston, config, startupLogLevel, processCrash, getSigner } from "../utils";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -7,9 +7,8 @@ import {
   updateDataworkerClients,
   spokePoolClientsToProviders,
 } from "./DataworkerClientHelper";
-import { constructSpokePoolClientsForBlockAndUpdate, updateSpokePoolClients } from "../common";
+import { updateSpokePoolClients, constructSpokePoolClientsWithLookback, SpokePoolClientsByChain } from "../common";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
-import { SpokePoolClientsByChain } from "../relayer/RelayerClientHelper";
 config();
 let logger: winston.Logger;
 
@@ -34,9 +33,13 @@ export async function createDataworker(_logger: winston.Logger) {
     dataworker,
   };
 }
+
+// Should refactor most of this file + DataworkerClientHelper to reuse more code from ClientHelper and
+// RelayerClientHelper
 export async function runDataworker(_logger: winston.Logger): Promise<void> {
   logger = _logger;
   const { clients, config, dataworker } = await createDataworker(logger);
+  const baseSigner = await getSigner();
   let spokePoolClients: SpokePoolClientsByChain;
   try {
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
@@ -44,13 +47,8 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
     for (;;) {
       await updateDataworkerClients(clients);
       if (spokePoolClients === undefined)
-        spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-          dataworker.chainIdListForBundleEvaluationBlockNumbers,
-          clients,
-          logger,
-          clients.hubPoolClient.latestBlockNumber
-        );
-      else await updateSpokePoolClients(spokePoolClients);
+        spokePoolClients = await constructSpokePoolClientsWithLookback(logger, clients, config, baseSigner);
+      await updateSpokePoolClients(spokePoolClients);
 
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled) await dataworker.validatePendingRootBundle(spokePoolClients);

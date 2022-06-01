@@ -1,15 +1,18 @@
 import winston from "winston";
 import { getProvider, getSigner, getDeployedContract, getDeploymentBlockNumber } from "../utils";
-import { Wallet, SpokePool, Contract } from "../utils";
+import { Wallet, Contract } from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient, ProfitClient } from "../clients";
 import { CommonConfig } from "./Config";
-import { DataworkerClients } from "../dataworker/DataworkerClientHelper";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
   configStoreClient: AcrossConfigStoreClient;
   multiCallerClient: MultiCallerClient;
   profitClient: ProfitClient;
+}
+
+export interface SpokePoolClientsByChain {
+  [chainId: number]: SpokePoolClient;
 }
 
 export function getSpokePoolSigners(baseSigner: Wallet, config: CommonConfig): { [chainId: number]: Wallet } {
@@ -20,31 +23,51 @@ export function getSpokePoolSigners(baseSigner: Wallet, config: CommonConfig): {
   );
 }
 
-export async function constructSpokePoolClientsForBlockAndUpdate(
-  chainIdListForBundleEvaluationBlockNumbers: number[],
-  clients: DataworkerClients,
+export async function constructSpokePoolClientsWithLookback(
   logger: winston.Logger,
-  latestMainnetBlock: number
-): Promise<{ [chainId: number]: SpokePoolClient }> {
-  const spokePoolClients = Object.fromEntries(
-    chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
-      const spokePoolContract = new Contract(
-        clients.hubPoolClient.getSpokePoolForBlock(latestMainnetBlock, Number(chainId)),
-        SpokePool.abi,
-        clients.spokePoolSigners[chainId]
-      );
-      const client = new SpokePoolClient(
-        logger,
-        spokePoolContract,
-        clients.configStoreClient,
-        Number(chainId),
-        clients.spokePoolClientSearchSettings[chainId],
-        clients.spokePoolClientSearchSettings[chainId].fromBlock
-      );
-      return [chainId, client];
-    })
+  clients: Clients,
+  config: CommonConfig,
+  baseSigner: Wallet
+): Promise<SpokePoolClientsByChain> {
+  const spokePoolClients: SpokePoolClientsByChain = {};
+
+  // Set up Spoke signers and connect them to spoke pool contract objects:
+  const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
+  const spokePools = config.spokePoolChains.map((networkId) => {
+    return { networkId, contract: getDeployedContract("SpokePool", networkId, spokePoolSigners[networkId]) };
+  });
+
+  // For each spoke chain, look up its latest block and adjust by lookback configuration to determine
+  // fromBlock. If no lookback is set, fromBlock will be set to spoke pool's deployment block.
+  const fromBlocks = {};
+  const l2BlockNumbers = await Promise.all(
+    spokePools.map((obj: { contract: Contract }) => obj.contract.provider.getBlockNumber())
   );
-  await updateSpokePoolClients(spokePoolClients);
+  spokePools.forEach((obj: { networkId: number; contract: Contract }, index) => {
+    if (config.maxSpokeClientLookBack[obj.networkId])
+      fromBlocks[obj.networkId] = l2BlockNumbers[index] - config.maxSpokeClientLookBack[obj.networkId];
+  });
+
+  // Create client for each spoke pool.
+  spokePools.forEach((obj: { networkId: number; contract: Contract }) => {
+    const spokePoolDeploymentBlock = getDeploymentBlockNumber("SpokePool", obj.networkId);
+    const spokePoolClientSearchSettings = {
+      fromBlock: fromBlocks[obj.networkId]
+        ? Math.max(fromBlocks[obj.networkId], spokePoolDeploymentBlock)
+        : spokePoolDeploymentBlock,
+      toBlock: null,
+      maxBlockLookBack: config.maxBlockLookBack[obj.networkId],
+    };
+    spokePoolClients[obj.networkId] = new SpokePoolClient(
+      logger,
+      obj.contract,
+      clients.configStoreClient,
+      obj.networkId,
+      spokePoolClientSearchSettings,
+      spokePoolDeploymentBlock
+    );
+  });
+
   return spokePoolClients;
 }
 

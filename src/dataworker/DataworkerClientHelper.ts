@@ -1,21 +1,42 @@
 import winston from "winston";
 import { DataworkerConfig } from "./DataworkerConfig";
-import {
-  Clients,
-  constructClients,
-  constructSpokePoolClientsForBlockAndUpdate,
-  getSpokePoolSigners,
-  updateClients,
-} from "../common";
-import { EventSearchConfig, getDeploymentBlockNumber, getSigner, Wallet, ethers } from "../utils";
+import { Clients, constructClients, getSpokePoolSigners, updateClients, updateSpokePoolClients } from "../common";
+import { EventSearchConfig, getDeploymentBlockNumber, getSigner, Wallet, ethers, SpokePool, Contract } from "../utils";
 import { SpokePoolClient, TokenClient } from "../clients";
-import { getWidestPossibleExpectedBlockRange } from "./PoolRebalanceUtils";
-import { getBlockRangeForChain } from "./DataworkerUtils";
 
 export interface DataworkerClients extends Clients {
   tokenClient: TokenClient;
   spokePoolSigners: { [chainId: number]: Wallet };
   spokePoolClientSearchSettings: { [chainId: number]: EventSearchConfig };
+}
+
+// TODO: Deprecate this function in favor of constructSpokePoolClientsWithLookback() in common/
+export async function constructSpokePoolClientsForBlockAndUpdate(
+  chainIdListForBundleEvaluationBlockNumbers: number[],
+  clients: DataworkerClients,
+  logger: winston.Logger,
+  latestMainnetBlock: number
+): Promise<{ [chainId: number]: SpokePoolClient }> {
+  const spokePoolClients = Object.fromEntries(
+    chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
+      const spokePoolContract = new Contract(
+        clients.hubPoolClient.getSpokePoolForBlock(latestMainnetBlock, Number(chainId)),
+        SpokePool.abi,
+        clients.spokePoolSigners[chainId]
+      );
+      const client = new SpokePoolClient(
+        logger,
+        spokePoolContract,
+        clients.configStoreClient,
+        Number(chainId),
+        clients.spokePoolClientSearchSettings[chainId],
+        clients.spokePoolClientSearchSettings[chainId].fromBlock
+      );
+      return [chainId, client];
+    })
+  );
+  await updateSpokePoolClients(spokePoolClients);
+  return spokePoolClients;
 }
 
 export async function constructDataworkerClients(

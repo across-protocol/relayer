@@ -37,7 +37,7 @@ import {
   updateUnfilledDepositsWithMatchedDeposit,
   getUniqueDepositsInRange,
 } from "./DepositUtils";
-import { constructSpokePoolClientsForBlockAndUpdate } from "../common/ClientHelper";
+import { constructSpokePoolClientsForBlockAndUpdate } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients

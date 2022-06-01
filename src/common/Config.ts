@@ -15,6 +15,15 @@ export class CommonConfig {
   readonly relayerDiscount: BigNumber;
   readonly sendingTransactionsEnabled: boolean;
 
+  // Note: maxSpokeClientLookBack is a very dangerous config variable to set because it can unexpectedly produce invalid
+  // root bundles if it misses older events. This should only be used in Relayer functions, or carefully in Dataworker
+  // functions. For example, if you want to limit the amount of blocks looked back when trying to execute root bundles,
+  // then you should also limit the amount of root bundles that you look back by setting the SPOKE_ROOTS_LOOKBACK_COUNT
+  // variable to something small. A reasonable setting would be to look back ~48 hours per chain and only 1-2 root
+  // bundles per chain, since it is very unlikely that the 2 most recent root bundles will contain events from more
+  // than 48 hours into the past.
+  readonly maxSpokeClientLookBack: { [chainId: number]: number };
+
   constructor(env: ProcessEnv) {
     const {
       CONFIGURED_NETWORKS,
@@ -25,6 +34,7 @@ export class CommonConfig {
       MAX_TX_WAIT_DURATION,
       RELAYER_DISCOUNT,
       SEND_TRANSACTIONS,
+      MAX_SPOKE_CLIENT_LOOK_BACK,
     } = env;
     this.hubPoolChainId = HUB_CHAIN_ID ? Number(HUB_CHAIN_ID) : 1;
     this.spokePoolChains = CONFIGURED_NETWORKS ? JSON.parse(CONFIGURED_NETWORKS) : Constants.CHAIN_ID_LIST_INDICES;
@@ -38,5 +48,6 @@ export class CommonConfig {
     this.maxTxWait = MAX_TX_WAIT_DURATION ? Number(MAX_TX_WAIT_DURATION) : 180; // 3 minutes
     this.relayerDiscount = RELAYER_DISCOUNT ? toBNWei(RELAYER_DISCOUNT) : toBNWei(0);
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
+    this.maxSpokeClientLookBack = MAX_SPOKE_CLIENT_LOOK_BACK ? JSON.parse(MAX_SPOKE_CLIENT_LOOK_BACK) : {};
   }
 }
