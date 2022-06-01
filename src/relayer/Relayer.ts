@@ -43,16 +43,17 @@ export class Relayer {
   }
 
   fillRelay(deposit: Deposit, fillAmount: BigNumber) {
-    this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain: this.repaymentChainId });
     try {
+      const repaymentChain = this.clients.inventoryClient.determineRefundChainId(deposit);
+      this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain });
       // Add the fill transaction to the multiCallerClient so it will be executed with the next batch.
       this.clients.multiCallerClient.enqueueTransaction({
         contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
         chainId: deposit.destinationChainId,
         method: "fillRelay", // method called.
-        args: buildFillRelayProps(deposit, this.repaymentChainId, fillAmount), // props sent with function call.
+        args: buildFillRelayProps(deposit, repaymentChain, fillAmount), // props sent with function call.
         message: "Relay instantly sent 🚀", // message sent to logger.
-        mrkdwn: this.constructRelayFilledMrkdwn(deposit, this.repaymentChainId, fillAmount), // message details mrkdwn
+        mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChain, fillAmount), // message details mrkdwn
       });
 
       // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.

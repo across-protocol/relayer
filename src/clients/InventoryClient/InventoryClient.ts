@@ -30,9 +30,9 @@ export class InventoryClient {
   // Get the balance of a given l1 token on a target chain, considering any outstanding cross chain transfers as a virtual balance on that chain.
   getBalanceOnChainForL1Token(chainId: number | string, l1Token: string): BigNumber {
     chainId = Number(chainId);
+    // If the chain does not have this token (EG BOBA on Optimism) then 0.
     const balance =
-      this.tokenClient.getBalance(chainId, this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId)) ||
-      toBN(0); // If the chain does not have this token (EG BOBA on Optimism) then 0.
+      this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Token, chainId)) || toBN(0);
 
     // Consider any L1->L2 transfers that are currently pending in the canonical bridge.
     return balance.add(this.getOutstandingCrossChainTransferAmount(chainId, l1Token));
@@ -77,10 +77,11 @@ export class InventoryClient {
 
   // Find how short a given chain is for a desired L1Token.
   getTokenShortFall(l1Token: string, chainId: number | string): BigNumber {
-    return this.tokenClient.getShortfallTotalRequirement(
-      chainId,
-      this.hubPoolClient.getDestinationTokenForL1Token(l1Token, Number(chainId))
-    );
+    return this.tokenClient.getShortfallTotalRequirement(chainId, this.getDestinationTokenForL1Token(l1Token, chainId));
+  }
+
+  getDestinationTokenForL1Token(l1Token: string, chainId: number | string): string {
+    return this.hubPoolClient.getDestinationTokenForL1Token(l1Token, Number(chainId));
   }
 
   getEnabledChains(): number[] {
@@ -117,10 +118,19 @@ export class InventoryClient {
     const chainVirtualBalancePostRelay = chainVirtualBalance.sub(deposit.amount);
     const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
     const cumulativeVirtualBalancePostRelay = cumulativeVirtualBalance.sub(deposit.amount);
-    const expectedPostRelayAllocation = chainVirtualBalancePostRelay.div(cumulativeVirtualBalancePostRelay);
-    const allocationThreshold = this.inventoryConfig.targetL2PctOfTotal[deposit.originChainId].add(
+    // Compute what the balance will be on the target chain, considering this relay and the finalization of the
+    // transfers that are currently flowing through the canonical bridge.
+    const expectedPostRelayAllocation = chainVirtualBalancePostRelay.mul(scalar).div(cumulativeVirtualBalancePostRelay);
+
+    // The allocation threshold that we care about is the target allocation + the rebalance overshoot. if the
+    const allocationThreshold = this.inventoryConfig.targetL2PctOfTotal[deposit.destinationChainId].add(
       this.inventoryConfig.rebalanceOvershoot
     );
+    this.log("Evaluated refund Chain", {
+      expectedPostRelayAllocation,
+      allocationThreshold,
+      cumulativeVirtualBalancePostRelay,
+    });
     if (expectedPostRelayAllocation.gt(allocationThreshold)) return 1;
     else return deposit.destinationChainId;
   }

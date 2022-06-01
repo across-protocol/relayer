@@ -27,7 +27,7 @@ enabledChainIds.slice(1).forEach((chainId) => {
 // Configure target percentages as 80% mainnet, 10% optimism, 5% polygon and 5% Arbitrum.
 const inventoryConfig: InventoryConfig = {
   managedL1Tokens: [mainnetWeth, mainnetUsdc],
-  targetL2PctOfTotal: { "1": toWei(0.8), "10": toWei(0.01), "137": toWei(0.05), "42161": toWei(0.05) },
+  targetL2PctOfTotal: { "1": toWei(0.8), "10": toWei(0.1), "137": toWei(0.05), "42161": toWei(0.05) },
   rebalanceOvershoot: toWei(0.02),
   wrapEtherThreshold: toWei(1),
 };
