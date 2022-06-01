@@ -43,6 +43,15 @@ import { BalanceAllocator } from "../clients/BalanceAllocator";
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
 export class Dataworker {
+  private loadDataCache: {
+    [key: string]: {
+      unfilledDeposits: UnfilledDeposit[];
+      fillsToRefund: FillsToRefund;
+      allValidFills: FillWithBlock[];
+      deposits: DepositWithBlock[];
+    };
+  } = {};
+
   // eslint-disable-next-line no-useless-constructor
   constructor(
     readonly logger: winston.Logger,
@@ -69,6 +78,12 @@ export class Dataworker {
       });
   }
 
+  // This should be called whenever it's possible that the loadData information for a block range could have changed.
+  // For instance, if the spoke or hub clients have been updated, it probably makes sense to clear this to be safe.
+  clearCache() {
+    this.loadDataCache = {};
+  }
+
   // Common data re-formatting logic shared across all data worker public functions.
   // User must pass in spoke pool to search event data against. This allows the user to refund relays and fill deposits
   // on deprecated spoke pools.
@@ -82,6 +97,12 @@ export class Dataworker {
     allValidFills: FillWithBlock[];
     deposits: DepositWithBlock[];
   } {
+    const key = JSON.stringify(blockRangesForChains);
+
+    if (this.loadDataCache[key]) {
+      return this.loadDataCache[key];
+    }
+
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
     if (!this.clients.configStoreClient.isUpdated) throw new Error(`ConfigStoreClient not updated`);
     this.chainIdListForBundleEvaluationBlockNumbers.forEach((chainId) => {
@@ -219,8 +240,8 @@ export class Dataworker {
         allInvalidFillsInRangeByDestinationChain: spokeEventsReadable.allInvalidFillsInRangeByDestinationChain,
       });
 
-    // Remove deposits that have been fully filled from unfilled deposit array
-    return { fillsToRefund, deposits, unfilledDeposits, allValidFills };
+    this.loadDataCache[key] = { fillsToRefund, deposits, unfilledDeposits, allValidFills };
+    return this.loadDataCache[key];
   }
 
   buildSlowRelayRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
