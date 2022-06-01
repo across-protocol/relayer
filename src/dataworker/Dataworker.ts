@@ -3,7 +3,7 @@ import {
   UnfilledDeposit,
   Deposit,
   DepositWithBlock,
-  RootBundle,
+  PendingRootBundle,
   UnfilledDepositsForOriginChain,
   TreeData,
   RunningBalances,
@@ -436,8 +436,7 @@ export class Dataworker {
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
     // Exit early if a bundle is not pending.
-    const { hasPendingProposal, pendingRootBundle } = this.clients.hubPoolClient.getPendingRootBundleIfAvailable();
-    if (hasPendingProposal === false) {
+    if (this.clients.hubPoolClient.hasPendingProposal() === false) {
       this.logger.debug({
         at: "Dataworker#validate",
         message: "No pending proposal, nothing to validate",
@@ -445,6 +444,7 @@ export class Dataworker {
       return;
     }
 
+    const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundle();
     this.logger.debug({
       at: "Dataworker#validate",
       message: "Found pending proposal",
@@ -479,7 +479,7 @@ export class Dataworker {
   async validateRootBundle(
     hubPoolChainId: number,
     widestPossibleExpectedBlockRange: number[][],
-    rootBundle: RootBundle,
+    rootBundle: PendingRootBundle,
     spokePoolClients?: { [chainId: number]: SpokePoolClient }
   ): Promise<{
     valid: boolean;
@@ -741,14 +741,15 @@ export class Dataworker {
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
           (rootBundle) => rootBundle.slowRelayRoot !== EMPTY_MERKLE_ROOT
         );
-        this.logger.debug({
-          at: "Dataworker#executeSlowRelayLeaves",
-          message: `Evaluating ${rootBundleRelays.length} historical non-empty slow roots relayed to chain ${chainId}`,
-        });
 
         // Only grab the most recent n roots that have been sent if configured to do so.
         if (this.spokeRootsLookbackCount !== 0)
           rootBundleRelays = rootBundleRelays.slice(0, this.spokeRootsLookbackCount);
+
+        this.logger.debug({
+          at: "Dataworker#executeSlowRelayLeaves",
+          message: `Evaluating ${rootBundleRelays.length} historical non-empty slow roots relayed to chain ${chainId}`,
+        });
 
         const sortedFills = sortEventsDescending(client.fillsWithBlockNumbers);
 
@@ -919,8 +920,7 @@ export class Dataworker {
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
     // Exit early if a bundle is not pending.
-    const { hasPendingProposal, pendingRootBundle } = this.clients.hubPoolClient.getPendingRootBundleIfAvailable();
-    if (!hasPendingProposal) {
+    if (!this.clients.hubPoolClient.hasPendingProposal()) {
       this.logger.debug({
         at: "Dataworker#executePoolRebalanceLeaves",
         message: "No pending proposal, nothing to execute",
@@ -928,6 +928,7 @@ export class Dataworker {
       return;
     }
 
+    const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundle();
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
       message: "Found pending proposal",
@@ -1061,14 +1062,15 @@ export class Dataworker {
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
           (rootBundle) => rootBundle.relayerRefundRoot !== EMPTY_MERKLE_ROOT
         );
-        this.logger.debug({
-          at: "Dataworker#executeRelayerRefundLeaves",
-          message: `Evaluating ${rootBundleRelays.length} historical non-empty relayer refund root bundles on chain ${chainId}`,
-        });
 
         // Only grab the most recent n roots that have been sent if configured to do so.
         if (this.spokeRootsLookbackCount !== 0)
           rootBundleRelays = rootBundleRelays.slice(0, this.spokeRootsLookbackCount);
+
+        this.logger.debug({
+          at: "Dataworker#executeRelayerRefundLeaves",
+          message: `Evaluating ${rootBundleRelays.length} historical non-empty relayer refund root bundles on chain ${chainId}`,
+        });
 
         const executedLeavesForChain = client.getRelayerRefundExecutions();
         for (const rootBundleRelay of rootBundleRelays) {

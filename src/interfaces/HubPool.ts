@@ -85,7 +85,7 @@ export interface SetPoolRebalanceRoot extends SortableEvent {
   destinationToken: string;
 }
 
-export interface RootBundle {
+export interface PendingRootBundle {
   poolRebalanceRoot: string;
   relayerRefundRoot: string;
   slowRelayRoot: string;

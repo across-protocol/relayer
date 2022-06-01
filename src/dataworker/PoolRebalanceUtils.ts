@@ -1,12 +1,11 @@
-import { assert } from "console";
-import { AcrossConfigStoreClient, HubPoolClient, ProfitClient } from "../clients";
+import { AcrossConfigStoreClient, HubPoolClient } from "../clients";
 import * as interfaces from "../interfaces";
 import {
   BigNumberForToken,
   PoolRebalanceLeaf,
   RelayData,
   RelayerRefundLeaf,
-  RootBundle,
+  PendingRootBundle,
   RunningBalances,
   UnfilledDeposit,
 } from "../interfaces";
@@ -23,7 +22,6 @@ import {
   toBNWei,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
-import { getBlockRangeForChain } from "./DataworkerUtils";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "./FillUtils";
 
 export function updateRunningBalance(
@@ -327,7 +325,7 @@ export async function getWidestPossibleExpectedBlockRange(
 
 export function generateMarkdownForDisputeInvalidBundleBlocks(
   chainIdListForBundleEvaluationBlockNumbers: number[],
-  pendingRootBundle: RootBundle,
+  pendingRootBundle: PendingRootBundle,
   widestExpectedBlockRange: number[][],
   buffers: number[]
 ) {
@@ -346,7 +344,7 @@ export function generateMarkdownForDisputeInvalidBundleBlocks(
   );
 }
 
-export function generateMarkdownForDispute(pendingRootBundle: RootBundle) {
+export function generateMarkdownForDispute(pendingRootBundle: PendingRootBundle) {
   return (
     `Disputed pending root bundle:` +
     `\n\tPoolRebalance leaf count: ${pendingRootBundle.unclaimedPoolRebalanceLeafCount}` +
