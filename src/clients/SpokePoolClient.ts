@@ -99,9 +99,10 @@ export class SpokePoolClient {
 
   getDepositForFill(fill: Fill): Deposit | undefined {
     const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill.
-    return this.getDepositsForDestinationChain(fillCopy.destinationChainId).find((deposit) =>
-      this.validateFillForDeposit(fillCopy, deposit)
-    );
+    return this.getDepositsForDestinationChain(fillCopy.destinationChainId).find((deposit) => {
+      if (fillCopy.depositId !== deposit.depositId) return false;
+      return this.validateFillForDeposit(fillCopy, deposit);
+    });
   }
 
   getValidUnfilledAmountForDeposit(deposit: Deposit): { unfilledAmount: BigNumber; fillCount: number } {
