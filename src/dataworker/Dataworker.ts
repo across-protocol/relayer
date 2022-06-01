@@ -741,15 +741,16 @@ export class Dataworker {
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
           (rootBundle) => rootBundle.slowRelayRoot !== EMPTY_MERKLE_ROOT
         );
-        this.logger.debug({
-          at: "Dataworker#executeSlowRelayLeaves",
-          message: `Evaluating ${rootBundleRelays.length} historical non-empty slow roots relayed to chain ${chainId}`,
-        });
 
         // Only grab the most recent n roots that have been sent if configured to do so.
         if (this.spokeRootsLookbackCount !== 0)
           rootBundleRelays = rootBundleRelays.slice(0, this.spokeRootsLookbackCount);
 
+        this.logger.debug({
+          at: "Dataworker#executeSlowRelayLeaves",
+          message: `Evaluating ${rootBundleRelays.length} historical non-empty slow roots relayed to chain ${chainId}`,
+        });
+  
         const sortedFills = sortEventsDescending(client.fillsWithBlockNumbers);
 
         const slowFillsForChain = client.getFills().filter((fill) => fill.isSlowRelay);
@@ -1061,15 +1062,16 @@ export class Dataworker {
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
           (rootBundle) => rootBundle.relayerRefundRoot !== EMPTY_MERKLE_ROOT
         );
-        this.logger.debug({
-          at: "Dataworker#executeRelayerRefundLeaves",
-          message: `Evaluating ${rootBundleRelays.length} historical non-empty relayer refund root bundles on chain ${chainId}`,
-        });
 
         // Only grab the most recent n roots that have been sent if configured to do so.
         if (this.spokeRootsLookbackCount !== 0)
           rootBundleRelays = rootBundleRelays.slice(0, this.spokeRootsLookbackCount);
 
+        this.logger.debug({
+          at: "Dataworker#executeRelayerRefundLeaves",
+          message: `Evaluating ${rootBundleRelays.length} historical non-empty relayer refund root bundles on chain ${chainId}`,
+        });
+  
         const executedLeavesForChain = client.getRelayerRefundExecutions();
         for (const rootBundleRelay of rootBundleRelays) {
           const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
