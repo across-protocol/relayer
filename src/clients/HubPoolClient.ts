@@ -28,19 +28,12 @@ export class HubPoolClient {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
 
-  _getPendingRootBundleProposal() {
-    return this.pendingRootBundle;
-  }
-
   hasPendingProposal() {
     return this.pendingRootBundle !== undefined;
   }
 
   getPendingRootBundle() {
-    return {
-      hasPendingProposal: this.hasPendingProposal(),
-      pendingRootBundle: this._getPendingRootBundleProposal(),
-    };
+    return this.pendingRootBundle;
   }
 
   getProposedRootBundles() {

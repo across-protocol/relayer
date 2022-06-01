@@ -436,8 +436,7 @@ export class Dataworker {
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
     // Exit early if a bundle is not pending.
-    const { hasPendingProposal, pendingRootBundle } = this.clients.hubPoolClient.getPendingRootBundle();
-    if (hasPendingProposal === false) {
+    if (this.clients.hubPoolClient.hasPendingProposal() === false) {
       this.logger.debug({
         at: "Dataworker#validate",
         message: "No pending proposal, nothing to validate",
@@ -445,6 +444,7 @@ export class Dataworker {
       return;
     }
 
+    const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundle();
     this.logger.debug({
       at: "Dataworker#validate",
       message: "Found pending proposal",
@@ -919,8 +919,7 @@ export class Dataworker {
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
     // Exit early if a bundle is not pending.
-    const { hasPendingProposal, pendingRootBundle } = this.clients.hubPoolClient.getPendingRootBundle();
-    if (!hasPendingProposal) {
+    if (!this.clients.hubPoolClient.hasPendingProposal()) {
       this.logger.debug({
         at: "Dataworker#executePoolRebalanceLeaves",
         message: "No pending proposal, nothing to execute",
@@ -928,6 +927,7 @@ export class Dataworker {
       return;
     }
 
+    const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundle();
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
       message: "Found pending proposal",

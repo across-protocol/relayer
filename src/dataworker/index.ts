@@ -24,7 +24,8 @@ export async function createDataworker(_logger: winston.Logger) {
     config.maxRelayerRepaymentLeafSizeOverride,
     config.maxPoolRebalanceLeafSizeOverride,
     config.tokenTransferThresholdOverride,
-    config.blockRangeEndBlockBuffer
+    config.blockRangeEndBlockBuffer,
+    config.spokeRootsLookbackCount
   );
 
   return {

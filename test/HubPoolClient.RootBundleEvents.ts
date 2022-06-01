@@ -57,7 +57,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
     ).to.equal(undefined);
     await hubPoolClient.update();
 
-    expect(hubPoolClient.getPendingRootBundle().pendingRootBundle).to.deep.equal({
+    expect(hubPoolClient.getPendingRootBundle()).to.deep.equal({
       poolRebalanceRoot: tree.getHexRoot(),
       relayerRefundRoot: constants.mockTreeRoot,
       slowRelayRoot: constants.mockTreeRoot,

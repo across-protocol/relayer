@@ -1,6 +1,5 @@
 import {
   getProvider,
-  groupObjectCountsByThreeProps,
   Wallet,
   winston,
   convertFromWei,
