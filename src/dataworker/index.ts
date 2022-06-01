@@ -42,6 +42,8 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
 
     for (;;) {
+      // Clear cache so results can be updated with new data.
+      dataworker.clearCache();
       await updateDataworkerClients(clients);
       if (spokePoolClients === undefined)
         spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
