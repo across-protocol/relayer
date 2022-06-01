@@ -1,7 +1,7 @@
 import * as optimismSDK from "@eth-optimism/sdk";
-import { HubPoolClient, MultiCallerClient } from "../../clients";
+import { HubPoolClient } from "../../clients";
 import { TokensBridged } from "../../interfaces";
-import { convertFromWei, delay, ethers, getProvider, groupObjectCountsByProp, Wallet, winston } from "../../utils";
+import { convertFromWei, delay, getProvider, groupObjectCountsByProp, Wallet, winston } from "../../utils";
 
 const CHAIN_ID = 10;
 
@@ -107,7 +107,7 @@ export async function finalizeOptimismMessage(
     });
     await delay(30);
   } catch (error) {
-    logger.error({
+    logger.warn({
       at: "OptimismFinalizer",
       message: "Error creating relayMessageTx",
       error,

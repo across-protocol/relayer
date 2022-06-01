@@ -1,4 +1,4 @@
-import { getProvider, Wallet, winston, convertFromWei, Contract } from "../../utils";
+import { getProvider, Wallet, winston, convertFromWei, Contract, groupObjectCountsByProp, delay } from "../../utils";
 import { L2ToL1MessageWriter, L2ToL1MessageStatus, L2TransactionReceipt, getL2Network } from "@arbitrum/sdk";
 import { MessageBatchProofInfo } from "@arbitrum/sdk/dist/lib/message/L2ToL1Message";
 import Outbox__factory_1 from "@arbitrum/sdk/dist/lib/abi/factories/Outbox__factory";
@@ -33,7 +33,7 @@ export async function finalizeArbitrum(
     });
     await delay(30);
   } catch (error) {
-    logger.error({
+    logger.warn({
       at: "ArbitrumFinalizer",
       message: "Error creating executeTransactionTx",
       error,
@@ -133,7 +133,7 @@ export async function getMessageOutboxStatusAndProof(
     const l2ToL1Messages = await l2Receipt.getL2ToL1Messages(l1Signer, await getL2Network(l2Provider));
     if (l2ToL1Messages.length === 0 || l2ToL1Messages.length - 1 < logIndex) {
       const error = new Error(`No outgoing messages found in transaction:${event.transactionHash}`);
-      logger.error({
+      logger.warn({
         at: "ArbitrumFinalizer",
         message: "Arbitrum transaction that emitted TokensBridged event unexpectedly contains 0 L2-to-L1 messages 🤢!",
         logIndex,

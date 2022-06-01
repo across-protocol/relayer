@@ -111,7 +111,7 @@ export async function finalizePolygon(
     });
     await delay(30);
   } catch (error) {
-    logger.error({
+    logger.warn({
       at: "PolygonFinalizer",
       message: "Error creating exitTx",
       error,
@@ -162,7 +162,7 @@ export async function retrieveTokenFromMainnetTokenBridger(
         mrkdwn: `Finalized polygon retrieval for ${balanceFromWei} of ${l1TokenInfo.symbol}`,
       });
     } catch (error) {
-      logger.error({
+      logger.warn({
         at: "PolygonFinalizer",
         message: "Error creating retrieveTx",
         error,
