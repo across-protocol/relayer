@@ -104,7 +104,7 @@ export async function finalizePolygon(
   try {
     const txn = await posClient.erc20(l1TokenCounterpart, true).withdrawExitFaster(event.transactionHash);
     const receipt = await txn.getReceipt();
-    logger.info({
+    logger.debug({
       at: "PolygonFinalizer",
       message: `Finalized Polygon withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
       transactionhash: receipt.transactionHash,
@@ -128,8 +128,7 @@ export async function retrieveTokenFromMainnetTokenBridger(
   logger: winston.Logger,
   l2Token: string,
   mainnetSigner: Wallet,
-  hubPoolClient: HubPoolClient,
-  multicallerClient: MultiCallerClient
+  hubPoolClient: HubPoolClient
 ): Promise<boolean> {
   const l1Token = hubPoolClient.getL1TokenCounterpartAtBlock(
     CHAIN_ID.toString(),
@@ -153,14 +152,14 @@ export async function retrieveTokenFromMainnetTokenBridger(
       message: `Retrieving ${balanceToRetrieve.toString()} ${l1TokenInfo.symbol} from PolygonTokenBridger`,
     });
     try {
-      multicallerClient.enqueueTransaction({
-        contract: mainnetTokenBridger,
-        chainId: 1,
-        method: "retrieve",
-        args: [l1Token],
-        message: `Finalized polygon retrieval for ${balanceFromWei} of ${l1TokenInfo.symbol}`,
-        mrkdwn: `Finalized polygon retrieval for ${balanceFromWei} of ${l1TokenInfo.symbol}`,
+      const txn = await mainnetTokenBridger.retrieve(l1Token);
+      const receipt = await txn.wait();
+      logger.info({
+        at: "PolygonFinalizer",
+        message: `Retrieved ${balanceFromWei} of ${l1TokenInfo.symbol} from PolygonTokenBridger 🪃`,
+        transactionhash: receipt.transactionHash,
       });
+      await delay(30);
     } catch (error) {
       logger.warn({
         at: "PolygonFinalizer",

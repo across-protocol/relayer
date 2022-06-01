@@ -41,13 +41,7 @@ export async function run(
         await finalizePolygon(posClient, clients.hubPoolClient, event, logger);
       }
       for (const l2Token of getL2TokensToFinalize(tokensBridged)) {
-        await retrieveTokenFromMainnetTokenBridger(
-          logger,
-          l2Token,
-          hubSigner,
-          clients.hubPoolClient,
-          clients.multiCallerClient
-        );
+        await retrieveTokenFromMainnetTokenBridger(logger, l2Token, hubSigner, clients.hubPoolClient);
       }
     } else if (chainId === 10) {
       const crossChainMessenger = getOptimismClient(hubSigner);
