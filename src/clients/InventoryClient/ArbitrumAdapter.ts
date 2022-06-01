@@ -27,7 +27,7 @@ const l2Gateways = {
 // wont get stuck. These are the same params we are using in the smart contracts.
 const l2GasPrice = toBN(5e9);
 const l2GasLimit = toBN(2000000);
-// abi.encodeing of the maxL2Submission cost. of 0.01e18
+// abi.encoding of the maxL2Submission cost. of 0.01e18
 const transactionSubmissionData =
   "0x000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000";
 const l1SubmitValue = toWei(0.02);
