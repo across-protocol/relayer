@@ -31,8 +31,15 @@ export class DataworkerConfig extends CommonConfig {
       ? Number(MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE)
       : undefined;
     this.spokeRootsLookbackCount = SPOKE_ROOTS_LOOKBACK_COUNT ? Number(SPOKE_ROOTS_LOOKBACK_COUNT) : undefined;
-    if (this.maxPoolRebalanceLeafSizeOverride !== undefined)
-      assert(this.maxPoolRebalanceLeafSizeOverride > 0, "Max leaf count set to 0");
+    // See note in CommonConfig why out of an abundance of caution we require that spokeRootsLookbackCount is set
+    // if `maxSpokeClientLookBack` is set.
+    assert(
+      !(this.spokeRootsLookbackCount === undefined && this.maxSpokeClientLookBack === {}),
+      "Must set a spokeRootsLookbackCount if maxSpokeClientLookBack is set to mitigate risk of building invalid roots"
+    );
+    if (this.spokeRootsLookbackCount === undefined && this.maxSpokeClientLookBack === {})
+      if (this.maxPoolRebalanceLeafSizeOverride !== undefined)
+        assert(this.maxPoolRebalanceLeafSizeOverride > 0, "Max leaf count set to 0");
     this.maxRelayerRepaymentLeafSizeOverride = MAX_RELAYER_REPAYMENT_LEAF_SIZE_OVERRIDE
       ? Number(MAX_RELAYER_REPAYMENT_LEAF_SIZE_OVERRIDE)
       : undefined;
