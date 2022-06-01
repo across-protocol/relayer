@@ -32,9 +32,9 @@ export class SpokePoolClient {
   }
 
   getDepositsForDestinationChain(destinationChainId: number, withBlock = false): Deposit[] | DepositWithBlock[] {
-    return (
-      withBlock ? this.depositsWithBlockNumbers[destinationChainId] || [] : this.deposits[destinationChainId] || []
-    ).sort((depositA: Deposit, depositB: Deposit) => depositB.depositId - depositA.depositId);
+    return withBlock
+      ? this.depositsWithBlockNumbers[destinationChainId] || []
+      : this.deposits[destinationChainId] || [];
   }
 
   getDepositsFromDepositor(depositor: string): Deposit[] {
@@ -68,9 +68,7 @@ export class SpokePoolClient {
   }
 
   getFillsWithBlockForOriginChain(originChainId: number): FillWithBlock[] {
-    return this.fillsWithBlockNumbers
-      .filter((fill: Fill) => fill.originChainId === originChainId)
-      .sort((fillA: Fill, fillB: Fill) => fillB.depositId - fillA.depositId);
+    return this.fillsWithBlockNumbers.filter((fill: Fill) => fill.originChainId === originChainId);
   }
 
   getFillsForRepaymentChain(repaymentChainId: number) {
