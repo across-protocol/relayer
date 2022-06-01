@@ -32,9 +32,9 @@ export class SpokePoolClient {
   }
 
   getDepositsForDestinationChain(destinationChainId: number, withBlock = false): Deposit[] | DepositWithBlock[] {
-    return withBlock
-      ? this.depositsWithBlockNumbers[destinationChainId] || []
-      : this.deposits[destinationChainId] || [];
+    return (
+      withBlock ? this.depositsWithBlockNumbers[destinationChainId] || [] : this.deposits[destinationChainId] || []
+    ).sort((depositA: Deposit, depositB: Deposit) => depositB.depositId - depositA.depositId);
   }
 
   getDepositsFromDepositor(depositor: string): Deposit[] {
@@ -68,7 +68,9 @@ export class SpokePoolClient {
   }
 
   getFillsWithBlockForOriginChain(originChainId: number): FillWithBlock[] {
-    return this.fillsWithBlockNumbers.filter((fill: Fill) => fill.originChainId === originChainId);
+    return this.fillsWithBlockNumbers
+      .filter((fill: Fill) => fill.originChainId === originChainId)
+      .sort((fillA: Fill, fillB: Fill) => fillB.depositId - fillA.depositId);
   }
 
   getFillsForRepaymentChain(repaymentChainId: number) {
@@ -99,9 +101,10 @@ export class SpokePoolClient {
 
   getDepositForFill(fill: Fill): Deposit | undefined {
     const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill.
-    return this.getDepositsForDestinationChain(fillCopy.destinationChainId).find((deposit) =>
-      this.validateFillForDeposit(fillCopy, deposit)
-    );
+    return this.getDepositsForDestinationChain(fillCopy.destinationChainId).find((deposit) => {
+      if (fillCopy.depositId !== deposit.depositId) return false;
+      return this.validateFillForDeposit(fillCopy, deposit)
+    });
   }
 
   getValidUnfilledAmountForDeposit(deposit: Deposit): { unfilledAmount: BigNumber; fillCount: number } {

@@ -129,14 +129,14 @@ export class Dataworker {
           )
         );
 
+        const blockRangeForChain = getBlockRangeForChain(
+          blockRangesForChains,
+          Number(destinationChainId),
+          this.chainIdListForBundleEvaluationBlockNumbers
+        );
+
         // Find all valid fills matching a deposit on the origin chain and sent on the destination chain.
         destinationClient.getFillsWithBlockForOriginChain(Number(originChainId)).forEach((fillWithBlock) => {
-          const blockRangeForChain = getBlockRangeForChain(
-            blockRangesForChains,
-            Number(destinationChainId),
-            this.chainIdListForBundleEvaluationBlockNumbers
-          );
-
           // If fill matches with a deposit, then its a valid fill.
           const matchedDeposit: Deposit = originClient.getDepositForFill(fillWithBlock);
           if (matchedDeposit) {
