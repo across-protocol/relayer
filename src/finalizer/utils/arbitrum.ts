@@ -1,11 +1,4 @@
-import {
-  getProvider,
-  Wallet,
-  winston,
-  convertFromWei,
-  groupObjectCountsByTwoProps,
-  ethers,
-} from "../../utils";
+import { getProvider, Wallet, winston, convertFromWei, groupObjectCountsByTwoProps, ethers } from "../../utils";
 import { L2ToL1MessageWriter, L2ToL1MessageStatus, L2TransactionReceipt, getL2Network } from "@arbitrum/sdk";
 import { MessageBatchProofInfo } from "@arbitrum/sdk/dist/lib/message/L2ToL1Message";
 import { TokensBridged } from "../../interfaces";

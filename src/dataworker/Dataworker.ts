@@ -750,7 +750,7 @@ export class Dataworker {
           at: "Dataworker#executeSlowRelayLeaves",
           message: `Evaluating ${rootBundleRelays.length} historical non-empty slow roots relayed to chain ${chainId}`,
         });
-  
+
         const sortedFills = sortEventsDescending(client.fillsWithBlockNumbers);
 
         const slowFillsForChain = client.getFills().filter((fill) => fill.isSlowRelay);
@@ -1071,7 +1071,7 @@ export class Dataworker {
           at: "Dataworker#executeRelayerRefundLeaves",
           message: `Evaluating ${rootBundleRelays.length} historical non-empty relayer refund root bundles on chain ${chainId}`,
         });
-  
+
         const executedLeavesForChain = client.getRelayerRefundExecutions();
         for (const rootBundleRelay of rootBundleRelays) {
           const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
