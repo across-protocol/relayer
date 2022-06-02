@@ -1049,7 +1049,7 @@ export class Dataworker {
 
       this.clients.multiCallerClient.enqueueTransaction({
         contract: this.clients.hubPoolClient.hubPool,
-        chainId,
+        chainId: hubPoolChainId,
         method: "executeRootBundle",
         args: [
           leaf.chainId,
