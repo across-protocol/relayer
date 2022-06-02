@@ -1012,8 +1012,6 @@ export class Dataworker {
     );
     if (unexecutedLeaves.length === 0) return;
 
-    const chainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
-
     // Filter for leaves where the contract has the funding to send the required tokens.
     const fundedLeaves = (
       await Promise.all(
