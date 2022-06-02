@@ -503,9 +503,8 @@ export class Dataworker {
         message: "Submitting dispute 🤏🏼",
         mrkdwn: reason,
       });
-      if (submitDisputes)
-        this._submitDisputeWithMrkdwn(hubPoolChainId, reason);
-    };
+      if (submitDisputes) this._submitDisputeWithMrkdwn(hubPoolChainId, reason);
+    }
   }
 
   async validateRootBundle(
