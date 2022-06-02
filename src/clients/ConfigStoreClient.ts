@@ -15,7 +15,7 @@ import { L1TokenTransferThreshold, Deposit, TokenConfig, GlobalConfigUpdate } fr
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
 import { HubPoolClient } from "./HubPoolClient";
-import { createClient } from "redis";
+import { createClient } from "redis4";
 
 export const GLOBAL_CONFIG_STORE_KEYS = {
   MAX_RELAYER_REPAYMENT_LEAF_SIZE: "MAX_RELAYER_REPAYMENT_LEAF_SIZE",

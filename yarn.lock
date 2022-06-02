@@ -13135,7 +13135,7 @@ recursive-readdir@^2.2.2:
   dependencies:
     minimatch "3.0.4"
 
-redis@^4.1.0:
+"redis4@npm:redis@^4.1.0":
   version "4.1.0"
   resolved "https://registry.yarnpkg.com/redis/-/redis-4.1.0.tgz#6e400e8edf219e39281afe95e66a3d5f7dcf7289"
   integrity sha512-5hvJ8wbzpCCiuN1ges6tx2SAh2XXCY0ayresBmu40/SGusWHFW86TAlIPpbimMX2DFHOX7RN34G2XlPA1Z43zg==
