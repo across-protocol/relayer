@@ -11,7 +11,7 @@ import {
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient, ProfitClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { DataworkerClients } from "../dataworker/DataworkerClientHelper";
-import { createClient } from "redis";
+import { createClient } from "redis4";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
