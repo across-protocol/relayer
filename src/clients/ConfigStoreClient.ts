@@ -8,6 +8,7 @@ import {
   paginatedEventQuery,
   EventSearchConfig,
   utf8ToHex,
+  getCurrentTime
 } from "../utils";
 import { L1TokenTransferThreshold, Deposit, TokenConfig, GlobalConfigUpdate } from "../interfaces";
 
@@ -41,7 +42,7 @@ export class AcrossConfigStoreClient {
     readonly configStore: Contract, // TODO: Rename to ConfigStore
     readonly hubPoolClient: HubPoolClient,
     readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
-    readonly redisClient: ReturnType<typeof createClient> | undefined
+    readonly redisClient?: ReturnType<typeof createClient>
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
     this.blockFinder = new BlockFinder(this.configStore.provider.getBlock.bind(this.configStore.provider));
@@ -176,26 +177,32 @@ export class AcrossConfigStoreClient {
     if (!this.redisClient) return (await this.blockFinder.getBlockForTimestamp(timestamp)).number;
     const key = `block_number_${timestamp}`;
     const result = await this.redisClient.get(key);
-    if (result === null || result === "null") {
+    if (result === null) {
       const blockNumber = (await this.blockFinder.getBlockForTimestamp(timestamp)).number;
-      await this.redisClient.set(key, blockNumber.toString());
+      if (this.shouldCache(timestamp)) await this.redisClient.set(key, blockNumber.toString());
       return blockNumber;
     } else {
       return parseInt(result);
     }
   }
 
-  private async getUtilization(l1Token: string, blockNumber: number, amount: BigNumber) {
+  private async getUtilization(l1Token: string, blockNumber: number, amount: BigNumber, timestamp: number) {
     if (!this.redisClient) return await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, blockNumber, amount);
     const key = `utilization_${l1Token}_${blockNumber}_${amount.toString()}`;
     const result = await this.redisClient.get(key);
-    if (result === null || result === "null") {
+    if (result === null) {
       const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, blockNumber, amount);
-      await this.redisClient.set(key, `${current.toString()},${post.toString()}`);
+      if (this.shouldCache(timestamp)) await this.redisClient.set(key, `${current.toString()},${post.toString()}`);
       return { current, post };
     } else {
       const [current, post] = result.split(",").map(BigNumber.from);
       return { current, post };
     }
+  }
+
+  // Avoid caching calls that are recent enough to be affected by things like reorgs.
+  private shouldCache(eventTimestamp: number) {
+    // Current time must be > 5 minutes past the event timestamp for it to be stable enough to cache.
+    return getCurrentTime() - eventTimestamp > 300;
   }
 }
