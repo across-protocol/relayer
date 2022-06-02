@@ -1020,7 +1020,7 @@ export class Dataworker {
             amount: amount.gte(0) ? amount : BigNumber.from(0),
             token: leaf.l1Tokens[i],
             holder: this.clients.hubPoolClient.hubPool.address,
-            chainId,
+            chainId: hubPoolChainId,
           }));
 
           const success = await balanceAllocator.requestBalanceAllocations(requests);
