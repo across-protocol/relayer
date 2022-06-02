@@ -66,7 +66,7 @@ export class AcrossConfigStoreClient {
     // There is one deposit on optimism that is right at the margin of when liquidity was first added.
     if (quoteBlock > 14718100 && quoteBlock < 14718107) quoteBlock = 14718107;
 
-    const { current, post } = await this.getUtilization(l1Token, quoteBlock, deposit.amount);
+    const { current, post } = await this.getUtilization(l1Token, quoteBlock, deposit.amount, deposit.quoteTimestamp);
     const realizedLpFeePct = lpFeeCalculator.calculateRealizedLpFeePct(rateModel, current, post);
 
     return { realizedLpFeePct, quoteBlock };
