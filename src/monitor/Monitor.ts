@@ -2,15 +2,18 @@ import { MonitorClients } from "../clients/MonitorClientHelper";
 import { etherscanLink, toBN, toWei, winston, createFormatFunction, getNetworkName, providers } from "../utils";
 import { MonitorConfig } from "./MonitorConfig";
 import { RelayerProcessor } from "./RelayerProcessor";
-import { EventInfo, RootBundleProcessor } from "./RootBundleProcessor";
+
+enum BundleAction {
+  PROPOSED = "proposed",
+  DISPUTED = "disputed",
+  CANCELED = "canceled",
+}
 
 export class Monitor {
   // Block range to search is only defined on calling update().
   private hubPoolStartingBlock: number | undefined = undefined;
   private hubPoolEndingBlock: number | undefined = undefined;
   private spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
-  // relayEventProcessor Module used to fetch and process relay events.
-  private rootBundleProcessor: RootBundleProcessor;
   private relayerProcessor: RelayerProcessor;
 
   public constructor(
@@ -18,7 +21,6 @@ export class Monitor {
     readonly monitorConfig: MonitorConfig,
     readonly clients: MonitorClients
   ) {
-    this.rootBundleProcessor = new RootBundleProcessor(logger, clients.hubPoolClient);
     for (const chainId of Object.keys(clients.spokePools)) {
       this.spokePoolsBlocks[chainId] = { startingBlock: undefined, endingBlock: undefined };
     }
@@ -61,19 +63,27 @@ export class Monitor {
   async checkUnknownRootBundleCallers(): Promise<void> {
     this.logger.debug({ at: "AcrossMonitor#RootBundleCallers", message: "Checking for unknown root bundle callers" });
 
-    const rootBundleEvents: EventInfo[] = await this.rootBundleProcessor.getRootBundleEventsInfo(
+    const proposedBundles = this.clients.hubPoolClient.getProposedRootBundlesInBlockRange(
       this.hubPoolStartingBlock,
       this.hubPoolEndingBlock
     );
-    for (const event of rootBundleEvents) {
-      if (this.monitorConfig.whitelistedDataworkers.includes(event.caller)) {
-        continue;
-      }
+    const cancelledBundles = this.clients.hubPoolClient.getCancelledRootBundlesInBlockRange(
+      this.hubPoolStartingBlock,
+      this.hubPoolEndingBlock
+    );
+    const disputedBundles = this.clients.hubPoolClient.getDisputedRootBundlesInBlockRange(
+      this.hubPoolStartingBlock,
+      this.hubPoolEndingBlock
+    );
 
-      const mrkdwn =
-        `An unknown EOA ${etherscanLink(event.caller, 1)} has proposed a bundle on ${getNetworkName(1)}` +
-        `\ntx: ${etherscanLink(event.transactionHash, 1)}`;
-      this.logger.error({ at: "Monitor", message: "Unknown bundle proposer 🥷", mrkdwn });
+    for (const event of proposedBundles) {
+      this.notifyIfUnknownCaller(event.proposer, BundleAction.PROPOSED, event.transactionHash);
+    }
+    for (const event of cancelledBundles) {
+      this.notifyIfUnknownCaller(event.disputer, BundleAction.CANCELED, event.transactionHash);
+    }
+    for (const event of disputedBundles) {
+      this.notifyIfUnknownCaller(event.disputer, BundleAction.DISPUTED, event.transactionHash);
     }
   }
 
@@ -96,6 +106,30 @@ export class Monitor {
         this.logger.error({ at: "Monitor", message: "Unknown relayer 😱", mrkdwn });
       }
     }
+  }
+
+  private notifyIfUnknownCaller(caller: string, action: BundleAction, transactionHash: string) {
+    if (this.monitorConfig.whitelistedDataworkers.includes(caller)) {
+      return;
+    }
+
+    let emoji = "";
+    switch (action) {
+      case BundleAction.PROPOSED:
+        emoji = "🥸";
+        break;
+      case BundleAction.DISPUTED:
+        emoji = "🧨";
+        break;
+      case BundleAction.CANCELED:
+        emoji = "🪓";
+        break;
+    }
+
+    const mrkdwn =
+      `An unknown EOA ${etherscanLink(caller, 1)} has ${action} a bundle on ${getNetworkName(1)}` +
+      `\ntx: ${etherscanLink(transactionHash, 1)}`;
+    this.logger.error({ at: "Monitor", message: `Unknown bundle caller (${action}) ${emoji}`, mrkdwn });
   }
 
   private async computeHubPoolBlocks() {
