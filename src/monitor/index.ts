@@ -1,7 +1,7 @@
 import { winston, processEndPollingLoop, processCrash, config, startupLogLevel } from "../utils";
 import { Monitor } from "./Monitor";
 import { MonitorConfig } from "./MonitorConfig";
-import { constructMonitorClients } from "../clients/MonitorClientHelper";
+import { constructMonitorClients } from "./MonitorClientHelper";
 config();
 let logger: winston.Logger;
 

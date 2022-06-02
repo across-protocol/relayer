@@ -1,5 +1,6 @@
 import { BigNumber } from "../utils";
 import { SortableEvent } from "./Common";
+import { SpokePoolClient } from "../clients";
 
 export interface Deposit {
   depositId: number;
@@ -132,4 +133,8 @@ export interface TokensBridged {
   l2TokenAddress: string;
   caller: string;
   transactionHash: string;
+}
+
+export interface SpokePoolClientsByChain {
+  [chainId: number]: SpokePoolClient;
 }
