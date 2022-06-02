@@ -838,6 +838,7 @@ export class Dataworker {
             // Only return true if no leaf was found in the list of executed leaves.
             return !executedLeaf;
           });
+          if (unexecutedLeaves.length === 0) return;
 
           const leavesWithLatestFills = unexecutedLeaves.map((leaf) => {
             const fill = sortedFills.find((fill) => {
@@ -1009,8 +1010,7 @@ export class Dataworker {
     const unexecutedLeaves = expectedTrees.poolRebalanceTree.leaves.filter((leaf) =>
       executedLeaves.every(({ leafId }) => leafId !== leaf.leafId)
     );
-
-    const chainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
+    if (unexecutedLeaves.length === 0) return;
 
     // Filter for leaves where the contract has the funding to send the required tokens.
     const fundedLeaves = (
@@ -1020,7 +1020,7 @@ export class Dataworker {
             amount: amount.gte(0) ? amount : BigNumber.from(0),
             token: leaf.l1Tokens[i],
             holder: this.clients.hubPoolClient.hubPool.address,
-            chainId,
+            chainId: hubPoolChainId,
           }));
 
           const success = await balanceAllocator.requestBalanceAllocations(requests);
@@ -1049,7 +1049,7 @@ export class Dataworker {
 
       this.clients.multiCallerClient.enqueueTransaction({
         contract: this.clients.hubPoolClient.hubPool,
-        chainId,
+        chainId: hubPoolChainId,
         method: "executeRootBundle",
         args: [
           leaf.chainId,
@@ -1191,6 +1191,7 @@ export class Dataworker {
             // Only return true if no leaf was found in the list of executed leaves.
             return !executedLeaf;
           });
+          if (unexecutedLeaves.length === 0) return;
 
           // Filter for leaves where the contract has the funding to send the required tokens.
           const fundedLeaves = (
