@@ -12,6 +12,7 @@ export class DataworkerConfig extends CommonConfig {
   readonly executorEnabled: boolean;
   readonly spokeRootsLookbackCount: number; // Consider making this configurable per chain ID.
   readonly sendingDisputesEnabled: boolean;
+  readonly sendingProposalsEnabled: boolean;
   readonly finalizerChains: number[];
   readonly finalizerEnabled: boolean;
 
@@ -27,6 +28,7 @@ export class DataworkerConfig extends CommonConfig {
       EXECUTOR_ENABLED,
       SPOKE_ROOTS_LOOKBACK_COUNT,
       SEND_DISPUTES,
+      SEND_PROPOSALS,
       FINALIZER_CHAINS,
       FINALIZER_ENABLED,
     } = env;
@@ -63,6 +65,7 @@ export class DataworkerConfig extends CommonConfig {
           "BLOCK_RANGE_END_BLOCK_BUFFER missing networks"
         );
     this.sendingDisputesEnabled = SEND_DISPUTES === "true";
+    this.sendingProposalsEnabled = SEND_PROPOSALS === "true";
     this.finalizerChains = FINALIZER_CHAINS ? JSON.parse(FINALIZER_CHAINS) : CHAIN_ID_LIST_INDICES;
     this.finalizerEnabled = FINALIZER_ENABLED === "true";
   }

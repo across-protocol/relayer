@@ -61,7 +61,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
 
       if (config.proposerEnabled)
-        await dataworker.proposeRootBundle(spokePoolClients, config.rootBundleExecutionThreshold);
+        await dataworker.proposeRootBundle(spokePoolClients, config.rootBundleExecutionThreshold, config.sendingProposalsEnabled);
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
 
       if (config.executorEnabled) {

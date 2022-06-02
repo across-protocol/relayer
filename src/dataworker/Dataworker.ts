@@ -309,7 +309,8 @@ export class Dataworker {
 
   async proposeRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
-    usdThresholdToSubmitNewBundle?: BigNumber
+    usdThresholdToSubmitNewBundle?: BigNumber,
+    submitProposals: boolean = true
   ) {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
@@ -440,16 +441,17 @@ export class Dataworker {
       relayerRefundRoot: relayerRefundRoot.tree.getHexRoot(),
       slowRelayRoot: slowRelayRoot.tree.getHexRoot(),
     });
-    this._proposeRootBundle(
-      hubPoolChainId,
-      blockRangesForProposal,
-      poolRebalanceRoot.leaves,
-      poolRebalanceRoot.tree.getHexRoot(),
-      relayerRefundRoot.leaves,
-      relayerRefundRoot.tree.getHexRoot(),
-      slowRelayRoot.leaves,
-      slowRelayRoot.tree.getHexRoot()
-    );
+    if (submitProposals)
+      this._proposeRootBundle(
+        hubPoolChainId,
+        blockRangesForProposal,
+        poolRebalanceRoot.leaves,
+        poolRebalanceRoot.tree.getHexRoot(),
+        relayerRefundRoot.leaves,
+        relayerRefundRoot.tree.getHexRoot(),
+        slowRelayRoot.leaves,
+        slowRelayRoot.tree.getHexRoot()
+      );
   }
 
   async validatePendingRootBundle(
