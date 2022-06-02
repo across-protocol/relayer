@@ -452,7 +452,10 @@ export class Dataworker {
     );
   }
 
-  async validatePendingRootBundle(spokePoolClients?: { [chainId: number]: SpokePoolClient }) {
+  async validatePendingRootBundle(
+    spokePoolClients?: { [chainId: number]: SpokePoolClient },
+    submitDisputes: boolean = true
+  ) {
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
@@ -494,7 +497,15 @@ export class Dataworker {
       pendingRootBundle,
       spokePoolClients
     );
-    if (!valid) this._submitDisputeWithMrkdwn(hubPoolChainId, reason);
+    if (!valid) {
+      this.logger.error({
+        at: "Dataworker",
+        message: "Submitting dispute 🤏🏼",
+        mrkdwn: reason,
+      });
+      if (submitDisputes)
+        this._submitDisputeWithMrkdwn(hubPoolChainId, reason);
+    };
   }
 
   async validateRootBundle(
@@ -1020,7 +1031,7 @@ export class Dataworker {
             amount: amount.gte(0) ? amount : BigNumber.from(0),
             token: leaf.l1Tokens[i],
             holder: this.clients.hubPoolClient.hubPool.address,
-            chainId,
+            chainId: hubPoolChainId,
           }));
 
           const success = await balanceAllocator.requestBalanceAllocations(requests);
@@ -1286,11 +1297,6 @@ export class Dataworker {
   }
 
   _submitDisputeWithMrkdwn(hubPoolChainId: number, mrkdwn: string) {
-    this.logger.error({
-      at: "Dataworker",
-      message: "Submitting dispute 🤏🏼",
-      mrkdwn,
-    });
     try {
       this.clients.multiCallerClient.enqueueTransaction({
         contract: this.clients.hubPoolClient.hubPool, // target contract

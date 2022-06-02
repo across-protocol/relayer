@@ -1,4 +1,4 @@
-import { CommonConfig, ProcessEnv, BUNDLE_END_BLOCK_BUFFERS } from "../common";
+import { CommonConfig, ProcessEnv, BUNDLE_END_BLOCK_BUFFERS, CHAIN_ID_LIST_INDICES } from "../common";
 import { BigNumber, assert, toBNWei } from "../utils";
 
 export class DataworkerConfig extends CommonConfig {
@@ -11,6 +11,9 @@ export class DataworkerConfig extends CommonConfig {
   readonly proposerEnabled: boolean;
   readonly executorEnabled: boolean;
   readonly spokeRootsLookbackCount: number; // Consider making this configurable per chain ID.
+  readonly sendingDisputesEnabled: boolean;
+  readonly finalizerChains: number[];
+  readonly finalizerEnabled: boolean;
 
   constructor(env: ProcessEnv) {
     const {
@@ -23,6 +26,9 @@ export class DataworkerConfig extends CommonConfig {
       PROPOSER_ENABLED,
       EXECUTOR_ENABLED,
       SPOKE_ROOTS_LOOKBACK_COUNT,
+      SEND_DISPUTES,
+      FINALIZER_CHAINS,
+      FINALIZER_ENABLED,
     } = env;
     super(env);
 
@@ -56,5 +62,8 @@ export class DataworkerConfig extends CommonConfig {
           Object.keys(this.blockRangeEndBlockBuffer).includes(chainId.toString()),
           "BLOCK_RANGE_END_BLOCK_BUFFER missing networks"
         );
+    this.sendingDisputesEnabled = SEND_DISPUTES === "true";
+    this.finalizerChains = FINALIZER_CHAINS ? JSON.parse(FINALIZER_CHAINS) : CHAIN_ID_LIST_INDICES;
+    this.finalizerEnabled = FINALIZER_ENABLED === "true";
   }
 }

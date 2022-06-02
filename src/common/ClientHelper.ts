@@ -10,6 +10,7 @@ export interface Clients {
   configStoreClient: AcrossConfigStoreClient;
   multiCallerClient: MultiCallerClient;
   profitClient: ProfitClient;
+  hubSigner?: Wallet;
 }
 
 export function getSpokePoolSigners(baseSigner: Wallet, config: CommonConfig): { [chainId: number]: Wallet } {
@@ -88,7 +89,7 @@ export async function constructClients(logger: winston.Logger, config: CommonCon
 
   const profitClient = new ProfitClient(logger, hubPoolClient, config.relayerDiscount);
 
-  return { hubPoolClient, configStoreClient, multiCallerClient, profitClient };
+  return { hubPoolClient, configStoreClient, multiCallerClient, profitClient, hubSigner };
 }
 
 export async function updateClients(clients: Clients) {
