@@ -2,7 +2,7 @@ import winston from "winston";
 import { getSigner } from "../utils";
 import { SpokePoolClient } from "../clients";
 import { Clients, constructClients, updateClients, updateSpokePoolClients } from "../common";
-import { constructSpokePoolClientsWithLookback } from "../relayer/RelayerClientHelper";
+import { constructSpokePoolClientsWithLookback } from "../common/ClientHelper";
 import { FinalizerConfig } from "./FinalizerConfig";
 
 export interface FinalizerClients extends Clients {
