@@ -8,7 +8,7 @@ import {
   paginatedEventQuery,
   EventSearchConfig,
   utf8ToHex,
-  getCurrentTime
+  getCurrentTime,
 } from "../utils";
 import { L1TokenTransferThreshold, Deposit, TokenConfig, GlobalConfigUpdate } from "../interfaces";
 
