@@ -14,6 +14,7 @@ export class CommonConfig {
   readonly maxTxWait: number;
   readonly relayerDiscount: BigNumber;
   readonly sendingTransactionsEnabled: boolean;
+  readonly redisUrl: string | undefined;
 
   constructor(env: ProcessEnv) {
     const {
@@ -25,6 +26,7 @@ export class CommonConfig {
       MAX_TX_WAIT_DURATION,
       RELAYER_DISCOUNT,
       SEND_TRANSACTIONS,
+      REDIS_URL,
     } = env;
     this.hubPoolChainId = HUB_CHAIN_ID ? Number(HUB_CHAIN_ID) : 1;
     this.spokePoolChains = CONFIGURED_NETWORKS ? JSON.parse(CONFIGURED_NETWORKS) : Constants.CHAIN_ID_LIST_INDICES;
@@ -38,5 +40,6 @@ export class CommonConfig {
     this.maxTxWait = MAX_TX_WAIT_DURATION ? Number(MAX_TX_WAIT_DURATION) : 180; // 3 minutes
     this.relayerDiscount = RELAYER_DISCOUNT ? toBNWei(RELAYER_DISCOUNT) : toBNWei(0);
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
+    this.redisUrl = REDIS_URL;
   }
 }

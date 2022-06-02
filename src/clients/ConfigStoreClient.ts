@@ -1,11 +1,20 @@
-import { spreadEvent, winston, Contract, BigNumber, sortEventsDescending, spreadEventWithBlockNumber } from "../utils";
-import { paginatedEventQuery, EventSearchConfig, utf8ToHex } from "../utils";
-import { L1TokenTransferThreshold, Deposit, TokenConfig } from "../interfaces";
-import { GlobalConfigUpdate } from "../interfaces";
+import {
+  spreadEvent,
+  winston,
+  Contract,
+  BigNumber,
+  sortEventsDescending,
+  spreadEventWithBlockNumber,
+  paginatedEventQuery,
+  EventSearchConfig,
+  utf8ToHex,
+} from "../utils";
+import { L1TokenTransferThreshold, Deposit, TokenConfig, GlobalConfigUpdate } from "../interfaces";
 
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
 import { HubPoolClient } from "./HubPoolClient";
+import { createClient } from "redis";
 
 export const GLOBAL_CONFIG_STORE_KEYS = {
   MAX_RELAYER_REPAYMENT_LEAF_SIZE: "MAX_RELAYER_REPAYMENT_LEAF_SIZE",
@@ -25,11 +34,14 @@ export class AcrossConfigStoreClient {
 
   public isUpdated: boolean = false;
 
+  public client: ReturnType<typeof createClient>;
+
   constructor(
     readonly logger: winston.Logger,
     readonly configStore: Contract, // TODO: Rename to ConfigStore
     readonly hubPoolClient: HubPoolClient,
-    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
+    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
+    readonly redisClient: ReturnType<typeof createClient> | undefined
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
     this.blockFinder = new BlockFinder(this.configStore.provider.getBlock.bind(this.configStore.provider));
@@ -40,7 +52,7 @@ export class AcrossConfigStoreClient {
     deposit: Deposit,
     l1Token: string
   ): Promise<{ realizedLpFeePct: BigNumber; quoteBlock: number }> {
-    let quoteBlock = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
+    let quoteBlock = await this.getBlockNumber(deposit.quoteTimestamp);
 
     // There is one deposit on optimism for DAI that is right before the DAI rate model was added.
     if (quoteBlock === 14830339) quoteBlock = 14830390;
@@ -53,7 +65,7 @@ export class AcrossConfigStoreClient {
     // There is one deposit on optimism that is right at the margin of when liquidity was first added.
     if (quoteBlock > 14718100 && quoteBlock < 14718107) quoteBlock = 14718107;
 
-    const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, quoteBlock, deposit.amount);
+    const { current, post } = await this.getUtilization(l1Token, quoteBlock, deposit.amount);
     const realizedLpFeePct = lpFeeCalculator.calculateRealizedLpFeePct(rateModel, current, post);
 
     return { realizedLpFeePct, quoteBlock };
@@ -158,5 +170,32 @@ export class AcrossConfigStoreClient {
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.logger.debug({ at: "ConfigStore", message: "ConfigStore client updated!" });
+  }
+
+  private async getBlockNumber(timestamp: number) {
+    if (!this.redisClient) return (await this.blockFinder.getBlockForTimestamp(timestamp)).number;
+    const key = `block_number_${timestamp}`;
+    const result = await this.redisClient.get(key);
+    if (result === null || result === "null") {
+      const blockNumber = (await this.blockFinder.getBlockForTimestamp(timestamp)).number;
+      await this.redisClient.set(key, blockNumber.toString());
+      return blockNumber;
+    } else {
+      return parseInt(result);
+    }
+  }
+
+  private async getUtilization(l1Token: string, blockNumber: number, amount: BigNumber) {
+    if (!this.redisClient) return await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, blockNumber, amount);
+    const key = `utilization_${l1Token}_${blockNumber}_${amount.toString()}`;
+    const result = await this.redisClient.get(key);
+    if (result === null || result === "null") {
+      const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, blockNumber, amount);
+      await this.redisClient.set(key, `${current.toString()},${post.toString()}`);
+      return { current, post };
+    } else {
+      const [current, post] = result.split(",").map(BigNumber.from);
+      return { current, post };
+    }
   }
 }
