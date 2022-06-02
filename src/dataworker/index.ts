@@ -1,4 +1,4 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, processCrash } from "../utils";
+import { processEndPollingLoop, winston, config, startupLogLevel, processCrash, getSigner } from "../utils";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -10,6 +10,7 @@ import {
 import { constructSpokePoolClientsForBlockAndUpdate, updateSpokePoolClients } from "../common";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
 import { SpokePoolClientsByChain } from "../relayer/RelayerClientHelper";
+import { finalize } from "../finalizer";
 config();
 let logger: winston.Logger;
 
@@ -55,24 +56,41 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       else await updateSpokePoolClients(spokePoolClients);
 
       // Validate and dispute pending proposal before proposing a new one
-      if (config.disputerEnabled) await dataworker.validatePendingRootBundle(spokePoolClients);
+      if (config.disputerEnabled)
+        await dataworker.validatePendingRootBundle(spokePoolClients, config.sendingDisputesEnabled);
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
 
       if (config.proposerEnabled)
-        await dataworker.proposeRootBundle(spokePoolClients, config.rootBundleExecutionThreshold);
+        await dataworker.proposeRootBundle(
+          spokePoolClients,
+          config.rootBundleExecutionThreshold,
+          config.sendingProposalsEnabled
+        );
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
 
       if (config.executorEnabled) {
         const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
 
-        await dataworker.executePoolRebalanceLeaves(spokePoolClients, balanceAllocator);
+        await dataworker.executePoolRebalanceLeaves(
+          spokePoolClients,
+          balanceAllocator,
+          config.sendingExecutionsEnabled
+        );
 
         // Execute slow relays before relayer refunds to give them priority for any L2 funds.
-        await dataworker.executeSlowRelayLeaves(spokePoolClients, balanceAllocator);
-        await dataworker.executeRelayerRefundLeaves(spokePoolClients, balanceAllocator);
+        await dataworker.executeSlowRelayLeaves(spokePoolClients, balanceAllocator, config.sendingExecutionsEnabled);
+        await dataworker.executeRelayerRefundLeaves(
+          spokePoolClients,
+          balanceAllocator,
+          config.sendingExecutionsEnabled
+        );
       } else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
 
-      await clients.multiCallerClient.executeTransactionQueue(!config.sendingTransactionsEnabled);
+      await clients.multiCallerClient.executeTransactionQueue();
+
+      if (config.finalizerEnabled)
+        await finalize(logger, clients.hubSigner, clients.hubPoolClient, spokePoolClients, config.finalizerChains);
+      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }
