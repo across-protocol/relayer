@@ -1,8 +1,8 @@
 import { runTransaction, assign, Contract, BigNumber, bnToHex } from "../../utils";
-import { toBN, Event, ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery, Promise } from "../../utils";
+import { ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery, Promise } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter, polygonL1BridgeInterface, polygonL2BridgeInterface } from "./";
-import { polygonL1RootChainManager, atomicDepositorInterface } from "./";
+import { polygonL1RootChainManagerInterface, atomicDepositorInterface } from "./";
 
 // ether bridge = 0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30
 // erc20 bridfge = 0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf
@@ -146,7 +146,7 @@ export class PolygonAdapter extends BaseAdapter {
     if (this.isWeth(l1Token)) return new Contract(atomicDepositorAddress, atomicDepositorInterface, this.getSigner(1));
     else
       try {
-        return new Contract(l1RootChainManager, polygonL1RootChainManager, this.getSigner(1));
+        return new Contract(l1RootChainManager, polygonL1RootChainManagerInterface, this.getSigner(1));
       } catch (error) {
         this.log("Could not construct l1Bridge. Likely misconfiguration", { l1Token, error, tokenToBridge }, "error");
         return null;

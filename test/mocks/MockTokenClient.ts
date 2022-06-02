@@ -8,7 +8,7 @@ export class MockTokenClient extends TokenClient {
     [chainId: number]: { [token: string]: { deposits: number[]; totalRequirement: BigNumber } };
   } = {};
 
-  setTokenData(chainId: number, token: string, balance: BigNumber, allowance: BigNumber) {
+  setTokenData(chainId: number, token: string, balance: BigNumber, allowance: BigNumber = toBN(0)) {
     if (!this.tokenData[chainId]) this.tokenData[chainId] = {};
     this.tokenData[chainId][token] = { balance, allowance };
   }

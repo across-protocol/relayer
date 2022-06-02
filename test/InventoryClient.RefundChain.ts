@@ -41,10 +41,6 @@ const initialAllocation = {
   42161: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) }, // seed 10 WETH and 1000 USDC on Arbitrum
 };
 
-const initialWethTotal = toWei(140); // Sum over all 4 chains is 140
-const initialUsdcTotal = toMegaWei(14000); // Sum over all 4 chains is 14000
-const initialTotals = { [mainnetWeth]: initialWethTotal, [mainnetUsdc]: initialUsdcTotal };
-
 describe("InventoryClient: Refund chain selection", async function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
@@ -83,19 +79,26 @@ describe("InventoryClient: Refund chain selection", async function () {
 
   it("Correctly decides when to refund based on relay size", async function () {
     // To start with, consider a simple case where the relayer is filling small relays. The current allocation on the
-    // target chain of Optimism for WETH is 20/140=14.2%. This is above the sum of targetL2Pct and rebalanceOvershoot(12%).
+    // target chain of Optimism for WETH is 20/140=14.2%. This is above the sum of targetL2Pct of 10%.
     // Construct a small mock deposit of side 1 WETH. Post relay Optimism should have (20-1)/(140-1)=13.6%. This is still
     // above the threshold and so the bot should choose to be refunded on L1.
-
     sampleDepositData.amount = toWei(1);
-
     expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
+    expect(lastSpyLogIncludes(spy, `expectedPostRelayAllocation":"136690647482014388"`)).to.be.true; // (20-1)/(140-1)=0.136
 
     // Now consider a case where the relayer is filling a marginally larger relay of size 5 WETH. Now the post relay
-    // allocation on optimism would be (20-2)/(140-2)=11%. This is now below the sum of the threshold and overshoot
-    // (10+2=12%) and so the bot should choose to be refunded on the source chain.
+    // allocation on optimism would be (20-5)/(140-5)=11%. This is still above the target threshold of 10% and so the
+    // bot should choose to be refunded on L1.
     sampleDepositData.amount = toWei(5);
+    expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
+    expect(lastSpyLogIncludes(spy, `expectedPostRelayAllocation":"111111111111111111"`)).to.be.true; // (20-5)/(140-5)=0.11
+
+    // Now consider a bigger relay that should force refunds on the L2 chain. Set the relay size to 10 WETH. now post
+    // relay allocation would be (20-10)/(140-10)=0.076. This is below the target threshold of 10% and so the bot should
+    // set the refund on L2.
+    sampleDepositData.amount = toWei(10);
     expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
+    expect(lastSpyLogIncludes(spy, `expectedPostRelayAllocation":"76923076923076923"`)).to.be.true; // (20-10)/(140-10)=0.076
   });
 
   it("Correctly factors in cross chain transfers when deciding where to refund", async function () {
@@ -104,20 +107,61 @@ describe("InventoryClient: Refund chain selection", async function () {
     // has 10 WETH in it.
     const largeRelayAmount = toWei(15);
     tokenClient.setTokenShortFallData(42161, l2TokensForWeth[42161], [6969], largeRelayAmount); // Mock the shortfall.
-    // The expected cross chain transfer amount is (0.05+0.02-(10-15)/140)*140=14.8
-    adapterManager.setMockedOutstandingCrossChainTransfers(42161, mainnetUsdc, toWei(14.8)); // Mock the cross-chain transfer.
+    // The expected cross chain transfer amount is (0.05+0.02-(10-15)/140)*140=14.8 // Mock the cross-chain transfer
+    // leaving L1 to go to arbitrum by adding it to the mock cross chain transfers and removing from l1 balance.
+    const bridgedAmount = toWei(14.8);
+    adapterManager.setMockedOutstandingCrossChainTransfers(42161, mainnetWeth, bridgedAmount);
+    await inventoryClient.update();
+    tokenClient.setTokenData(1, mainnetWeth, initialAllocation[1][mainnetWeth].sub(bridgedAmount));
 
-    // Now, consider that the bot is run while these funds for the above deposit are in the canonical bridge (cant)
-    // be filled yet. When it runs it picks up a relay that it can do, of size 1.69 WETH. Considering the funds on the
-    // target chain we have a balance of 10 WETH, with an amount of 14.8 that is currently coming over the bridge. This
-    // totals a "virtual" balance of (10+14.8)=24.8. With this the effective allocation after this relay would be:
-    // (24.8-15-1.69)/140=0.057. i.e factoring in the funds in the bridge and the current shortfall, considering the
-    // current relay that is outstanding we have a utilization of 5.7%. This is above the minimum allocation threshold(5%)
-    // so the relayer would not send more funds but it is below the refund threshold of minimum+overshoot(7%). Therefore
-    // the bot should choose to get a refund on Arbitrum.
+    // Now, consider that the bot is run while these funds for the above deposit are in the canonical bridge and cant
+    // be filled yet. When it runs it picks up a relay that it can do, of size 1.69 WETH. Each part of the computation
+    // is broken down to explain how the bot chooses where to allocate funds:
+    // 1. chainVirtualBalance: Considering the funds on the target chain we have a balance of 10 WETH, with an amount of
+    //    14.8 that is currently coming over the bridge. This totals a "virtual" balance of (10+14.8)=24.8.
+    // 2. chainVirtualBalanceWithShortfall: this is the virtual balance minus the shortfall. 24.9-15=9.8.
+    // 3. chainVirtualBalanceWithShortfallPostRelay: virtual balance with shortfall minus the relay amount. 9.8-1.69=8.11.
+    // 4. cumulativeVirtualBalance: total balance across all chains considering fund movement. funds moving over the bridge
+    //    does not impact the balance; they are just "moving" so it should be 140-15+15=140
+    // 5. cumulativeVirtualBalanceWithShortfall: cumulative virtual balance minus the shortfall. 140-15+15=140-15=125.
+    // 6. cumulativeVirtualBalanceWithShortfallPostRelay: cumulative virtual balance with shortfall minus the relay amount
+    //    125-1.69=124.31. This is total funds considering the shortfall and the relay amount that is to be executed.
+    // 7. expectedPostRelayAllocation: the expected post relay allocation is the chainVirtualBalanceWithShortfallPostRelay
+    //    divided by the cumulativeVirtualBalanceWithShortfallPostRelay. 8.11/123.31 = 0.0657.
+    // This number is then used to decide on where funds should be allocated! If this number is above the threshold then
+    // refund on L1. if it is below the threshold then refund on the target chain. As this number is above the threshold
+    // of 0.05 we should refund on L1.
+
     sampleDepositData.destinationChainId = 42161;
     sampleDepositData.amount = toWei(1.69);
+    expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
+    expect(lastSpyLogIncludes(spy, `chainShortfall":"15000000000000000000"`)).to.be.true;
+    expect(lastSpyLogIncludes(spy, `chainVirtualBalance":"24800000000000000000"`)).to.be.true; // (10+14.8)=24.8
+    expect(lastSpyLogIncludes(spy, `chainVirtualBalanceWithShortfall":"9800000000000000000"`)).to.be.true; // 24.8-15=9.8
+    expect(lastSpyLogIncludes(spy, `chainVirtualBalanceWithShortfallPostRelay":"8110000000000000000"`)).to.be.true; // 9.8-1.69=8.11
+    expect(lastSpyLogIncludes(spy, `cumulativeVirtualBalance":"140000000000000000000`)).to.be.true; // 140-15+15=140
+    expect(lastSpyLogIncludes(spy, `cumulativeVirtualBalanceWithShortfall":"125000000000000000000"`)).to.be.true; // 140-15=125
+    expect(lastSpyLogIncludes(spy, `cumulativeVirtualBalanceWithShortfallPostRelay":"123310000000000000000"`)).to.be
+      .true; // 125-1.69=123.31
+    expect(lastSpyLogIncludes(spy, `expectedPostRelayAllocation":"65769199578298597`)).to.be.true; // 8.11/123.31 = 0.0657
+
+    // Now consider if this small relay was larger to the point that we should be refunding on the L2. set it to 5 WETH.
+    // Numerically we can shortcut some of the computations above to the following: chain virtual balance with shortfall
+    // post relay is 9.8 - 5 = 4.8. cumulative virtual balance with shortfall post relay is 125 - 5 = 120. Expected post
+    // relay allocation is 4.8/120 = 0.04. This is below the threshold of 0.05 so the bot should refund on the target.
+    sampleDepositData.amount = toWei(5);
     expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(42161);
+    // Check only the final step in the computation.
+    expect(lastSpyLogIncludes(spy, `expectedPostRelayAllocation":"40000000000000000"`)).to.be.true; // 4.8/120 = 0.04
+
+    // Consider that we manually send the relayer som funds while it's large transfer is currently in the bridge. This
+    // is to validate that the module considers funds in transit correctly + dropping funds indirectly onto the L2 wallet.
+    // Say we magically give the bot 10 WETH on Arbitrum and try to repeat the previous example. Now, we should a
+    // chain virtual balance with shortfall post relay is 9.8 - 5 + 10 = 14.8. cumulative virtual balance with shortfall
+    // post relay is 125 - 5 + 10 = 130. Expected post relay allocation is 14.8/130 = 0.11. This is above the threshold
+    // of 0.05 so the bot should refund on L1.
+    tokenClient.setTokenData(42161, l2TokensForWeth[42161], initialAllocation[42161][mainnetWeth].add(toWei(10)));
+    expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
   });
 });
 
@@ -127,8 +171,8 @@ function seedMocks(seedBalances: { [chainId: string]: { [token: string]: BigNumb
   enabledChainIds.forEach((chainId) => {
     adapterManager.setMockedOutstandingCrossChainTransfers(chainId, mainnetWeth, toBN(0));
     adapterManager.setMockedOutstandingCrossChainTransfers(chainId, mainnetUsdc, toBN(0));
-    tokenClient.setTokenData(chainId, l2TokensForWeth[chainId], seedBalances[chainId][mainnetWeth], toBN(0));
-    tokenClient.setTokenData(chainId, l2TokensForUsdc[chainId], seedBalances[chainId][mainnetUsdc], toBN(0));
+    tokenClient.setTokenData(chainId, l2TokensForWeth[chainId], seedBalances[chainId][mainnetWeth]);
+    tokenClient.setTokenData(chainId, l2TokensForUsdc[chainId], seedBalances[chainId][mainnetUsdc]);
   });
 
   hubPoolClient.setL1TokensToDestinationTokens({ [mainnetWeth]: l2TokensForWeth, [mainnetUsdc]: l2TokensForUsdc });

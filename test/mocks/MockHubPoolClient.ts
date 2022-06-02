@@ -1,6 +1,5 @@
-import { L1Token } from "../../src/interfaces";
+import { L1Token, Deposit } from "../../src/interfaces";
 import { HubPoolClient } from "../../src/clients";
-import { Deposit } from "../../src/interfaces";
 
 export class MockHubPoolClient extends HubPoolClient {
   private l1TokensMock: L1Token[] = []; // L1Tokens and their associated info.

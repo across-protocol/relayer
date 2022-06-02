@@ -3,6 +3,7 @@ import { deploySpokePoolWithToken, destinationChainId, deployConfigStore, getLas
 import { simpleDeposit, fillRelay, ethers, Contract, SignerWithAddress, setupTokensForWallet, winston } from "./utils";
 import { amountToLp, originChainId, amountToRelay } from "./constants";
 import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient } from "../src/clients";
+import { MockInventoryClient } from "./mocks";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 
@@ -42,6 +43,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       profitClient: null,
       tokenClient: null,
       multiCallerClient: null,
+      inventoryClient: new MockInventoryClient(),
     });
 
     await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // seed the owner to LP.

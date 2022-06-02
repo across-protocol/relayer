@@ -9,7 +9,6 @@ export interface RelayerClients extends Clients {
   tokenClient: TokenClient;
   profitClient: ProfitClient;
   inventoryClient: InventoryClient;
-  adapterManager: AdapterManager;
 }
 
 export interface SpokePoolClientsByChain {
@@ -86,7 +85,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
     adapterManager
   );
 
-  return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient, adapterManager };
+  return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient };
 }
 
 export async function updateRelayerClients(clients: RelayerClients) {

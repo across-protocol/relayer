@@ -1,9 +1,8 @@
-import { spreadEvent, assign, Contract, runTransaction, spreadEventWithBlockNumber } from "../../utils";
-import { toBN, toWei, Event, winston, paginatedEventQuery, Promise } from "../../utils";
+import { assign, Contract, runTransaction, spreadEventWithBlockNumber } from "../../utils";
+import { toBN, toWei, paginatedEventQuery, Promise } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
 import { arbitrumL2Erc20GatewayInterface, arbitrumL1Erc20GatewayInterface } from "./ContractInterfaces";
-import { InventoryConfig } from "../../interfaces";
 
 const l1Gateways = {
   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "0xcEe284F754E854890e311e3280b767F80797180d", // USDC
@@ -25,14 +24,14 @@ const l2Gateways = {
 
 // TODO: replace these numbers using the arbitrum SDK. these are bad values that mean we will over pay but transactions
 // wont get stuck. These are the same params we are using in the smart contracts.
-const l2GasPrice = toBN(5e9);
-const l2GasLimit = toBN(2000000);
-// abi.encodeing of the maxL2Submission cost. of 0.01e18
-const transactionSubmissionData =
-  "0x000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000";
-const l1SubmitValue = toWei(0.02);
 
 export class ArbitrumAdapter extends BaseAdapter {
+  l2GasPrice = toBN(5e9);
+  l2GasLimit = toBN(2000000);
+  // abi.encodeing of the maxL2Submission cost. of 0.01e18
+  transactionSubmissionData =
+    "0x000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000";
+  l1SubmitValue = toWei(0.02);
   constructor(
     readonly logger: any,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
@@ -84,8 +83,15 @@ export class ArbitrumAdapter extends BaseAdapter {
 
   async sendTokenToTargetChain(l1Token, l2Token, amount) {
     this.log("Bridging tokens", { l1Token, l2Token, amount });
-    const args = [l1Token, this.relayerAddress, amount, l2GasLimit, l2GasPrice, transactionSubmissionData];
-    return await runTransaction(this.logger, this.getL1GatewayRouter(), "outboundTransfer", args, l1SubmitValue);
+    const args = [
+      l1Token, // token
+      this.relayerAddress, // to
+      amount, // amount
+      this.l2GasLimit, // maxGas
+      this.l2GasPrice, // gasPriceBid
+      this.transactionSubmissionData, // data
+    ];
+    return await runTransaction(this.logger, this.getL1GatewayRouter(), "outboundTransfer", args, this.l1SubmitValue);
   }
 
   getL1Bridge(l1Token: string) {

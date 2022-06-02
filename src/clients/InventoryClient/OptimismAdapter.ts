@@ -1,13 +1,5 @@
-import { Contract, BigNumber, toBN, Event, ZERO_ADDRESS, paginatedEventQuery, runTransaction } from "../../utils";
-import {
-  spreadEventWithBlockNumber,
-  MAX_UINT_VAL,
-  assign,
-  Promise,
-  ERC20,
-  etherscanLink,
-  getNetworkName,
-} from "../../utils";
+import { Contract, BigNumber,  ZERO_ADDRESS, paginatedEventQuery, runTransaction } from "../../utils";
+import { spreadEventWithBlockNumber,  assign, Promise } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter, weth9Abi, ovmL1BridgeInterface, ovmL2BridgeInterface, atomicDepositorInterface } from "./";
 
@@ -32,7 +24,7 @@ const wethBobaAddress = "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000";
 const atomicDepositorAddress = "0x26eaf37ee5daf49174637bdcd2f7759a25206c34";
 
 export class OptimismAdapter extends BaseAdapter {
-  l2Gas: number;
+  public l2Gas: number;
   constructor(
     readonly logger: any,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },

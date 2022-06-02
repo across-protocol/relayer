@@ -176,7 +176,7 @@ export const polygonL1BridgeInterface = [
   },
 ];
 
-export const polygonL1RootChainManager = [
+export const polygonL1RootChainManagerInterface = [
   {
     inputs: [
       { internalType: "address", name: "user", type: "address" },

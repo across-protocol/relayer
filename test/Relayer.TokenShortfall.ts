@@ -2,15 +2,10 @@ import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, or
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
 import { lastSpyLogIncludes, toBNWei, createSpyLogger, deployConfigStore } from "./utils";
 import { deployAndConfigureHubPool, winston } from "./utils";
-import { amountToLp, l1TokenTransferThreshold, sampleRateModel, defaultTokenConfig } from "./constants";
-import {
-  SpokePoolClient,
-  HubPoolClient,
-  AcrossConfigStoreClient,
-  MultiCallerClient,
-  ProfitClient,
-} from "../src/clients";
-import { TokenClient } from "../src/clients";
+import { amountToLp, defaultTokenConfig } from "./constants";
+import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
+import { TokenClient, ProfitClient } from "../src/clients";
+import { MockInventoryClient } from "./mocks";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 
@@ -60,6 +55,7 @@ describe("Relayer: Token balance shortfall", async function () {
       tokenClient,
       profitClient,
       multiCallerClient,
+      inventoryClient: new MockInventoryClient(),
     });
 
     // Seed Owner and depositor wallets but dont seed relayer to test how the relayer handles being out of funds.

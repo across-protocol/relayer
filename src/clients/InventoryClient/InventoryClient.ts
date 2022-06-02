@@ -107,30 +107,40 @@ export class InventoryClient {
   }
 
   // Work out where a relay should be refunded to optimally manage the bots inventory. Use the following algorithm:
-  // a) Compute the virtual balance o the destination chain. This is current liquidity + any pending cross-chain transfers.
+  // a) Compute the virtual balance on the destination chain. This is current liquidity + any pending cross-chain transfers.
   // b) Compute the virtual balance post relay on destination chain. i.e a - the size of the relay in question.
   // c) Find the post relay virtual allocation by taking b and deviling it by the cumulative virtual balance. This number
   // represents the share of the total liquidity if the current transfers conclude and the relay is filled (i.e forward looking)
   // e) Decide on what chain to repay on: If this number of more than the target for the designation chain + the rebalance overshoot // then refund on L1. Else, the post fill amount is within the target, so refund on the destination chain.
   determineRefundChainId(deposit: Deposit): number {
     const l1Token = this.hubPoolClient.getL1TokenForDeposit(deposit);
+    const chainShortfall = this.getTokenShortFall(l1Token, deposit.destinationChainId);
     const chainVirtualBalance = this.getBalanceOnChainForL1Token(deposit.destinationChainId, l1Token);
-    const chainVirtualBalancePostRelay = chainVirtualBalance.sub(deposit.amount);
+    const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
+    const chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfall.sub(deposit.amount);
     const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
-    const cumulativeVirtualBalancePostRelay = cumulativeVirtualBalance.sub(deposit.amount);
+    const cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
+
+    const cumulativeVirtualBalanceWithShortfallPostRelay = cumulativeVirtualBalanceWithShortfall.sub(deposit.amount);
     // Compute what the balance will be on the target chain, considering this relay and the finalization of the
     // transfers that are currently flowing through the canonical bridge.
-    const expectedPostRelayAllocation = chainVirtualBalancePostRelay.mul(scalar).div(cumulativeVirtualBalancePostRelay);
+    const expectedPostRelayAllocation = chainVirtualBalanceWithShortfallPostRelay
+      .mul(scalar)
+      .div(cumulativeVirtualBalanceWithShortfallPostRelay);
 
-    // The allocation threshold that we care about is the target allocation + the rebalance overshoot. if the
-    const allocationThreshold = this.inventoryConfig.targetL2PctOfTotal[deposit.destinationChainId].add(
-      this.inventoryConfig.rebalanceOvershoot
-    );
+    const allocationThreshold = this.inventoryConfig.targetL2PctOfTotal[deposit.destinationChainId];
     this.log("Evaluated refund Chain", {
-      expectedPostRelayAllocation,
+      chainShortfall,
+      chainVirtualBalance,
+      chainVirtualBalanceWithShortfall,
+      chainVirtualBalanceWithShortfallPostRelay,
+      cumulativeVirtualBalance,
+      cumulativeVirtualBalanceWithShortfall,
+      cumulativeVirtualBalanceWithShortfallPostRelay,
       allocationThreshold,
-      cumulativeVirtualBalancePostRelay,
+      expectedPostRelayAllocation,
     });
+    // If the allocation is greater than the target then refund on L1. Else, refund on destination chain.
     if (expectedPostRelayAllocation.gt(allocationThreshold)) return 1;
     else return deposit.destinationChainId;
   }

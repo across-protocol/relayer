@@ -1,7 +1,7 @@
 import { SpokePoolClient } from "../../clients";
 import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20 } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
-import { InventoryConfig } from "../../interfaces";
+
 export class BaseAdapter {
   chainId: number;
   l1SearchConfig;
@@ -100,8 +100,7 @@ export class BaseAdapter {
           ...this.l2DepositFinalizedEvents_DepositAdapter[l1Token].filter((event) => event.to === this.relayerAddress),
         ].sort((a, b) => a.blockNumber - b.blockNumber);
 
-        
-        const newestFinalizedAmount = l2FinalizationSet[l2FinalizationSet.length - 1];
+      const newestFinalizedAmount = l2FinalizationSet[l2FinalizationSet.length - 1];
       const newestDeposit = this.l1DepositInitiatedEvents[l1Token][this.l1DepositInitiatedEvents[l1Token].length - 1];
       if (
         !newestFinalizedAmount &&
