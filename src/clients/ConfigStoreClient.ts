@@ -45,6 +45,9 @@ export class AcrossConfigStoreClient {
     // There is one deposit on optimism for DAI that is right before the DAI rate model was added.
     if (quoteBlock === 14830339) quoteBlock = 14830390;
 
+    // Test SNX deposit was before the rate model update for SNX.
+    if (quoteBlock === 14856066) quoteBlock = 14856211;
+
     const rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
 
     // There is one deposit on optimism that is right at the margin of when liquidity was first added.

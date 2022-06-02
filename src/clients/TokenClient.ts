@@ -64,7 +64,7 @@ export class TokenClient {
   }
 
   captureTokenShortfallForFill(deposit: Deposit, unfilledAmount: BigNumber) {
-    this.logger.debug({ at: "TokenClient", message: "Handling token shortfall", deposit, unfilledAmount });
+    this.logger.debug({ at: "TokenBalanceClient", message: "Handling token shortfall", deposit, unfilledAmount });
     this.captureTokenShortfall(deposit.destinationChainId, deposit.destinationToken, deposit.depositId, unfilledAmount);
   }
 
@@ -102,7 +102,7 @@ export class TokenClient {
       });
     });
     if (tokensToApprove.length === 0) {
-      this.logger.debug({ at: "tokenClient", message: `All token approvals set` });
+      this.logger.debug({ at: "TokenBalanceClient", message: `All token approvals set` });
       return;
     }
 
@@ -117,7 +117,7 @@ export class TokenClient {
         `to spend ${await contract.symbol()} ${etherscanLink(token, chainId)} on ${getNetworkName(chainId)}. ` +
         `tx: ${etherscanLink(receipt.transactionHash, chainId)}\n`;
     }
-    this.logger.info({ at: "tokenClient", message: `Approved whitelisted tokens! 💰`, mrkdwn });
+    this.logger.info({ at: "TokenBalanceClient", message: `Approved whitelisted tokens! 💰`, mrkdwn });
   }
 
   async setBondTokenAllowance() {
@@ -178,7 +178,8 @@ export class TokenClient {
     if (this.tokenData === {}) hasData = false;
     else if (!this.tokenData[chainId]) hasData = false;
     else if (!this.tokenData[chainId][token]) hasData = false;
-    if (!hasData) this.logger.warn({ at: "TokenClient", message: `No data on ${getNetworkName(chainId)} -> ${token}` });
+    if (!hasData)
+      this.logger.warn({ at: "TokenBalanceClient", message: `No data on ${getNetworkName(chainId)} -> ${token}` });
     return hasData;
   }
 }
