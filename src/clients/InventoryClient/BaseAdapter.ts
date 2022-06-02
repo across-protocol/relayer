@@ -1,5 +1,5 @@
 import { SpokePoolClient } from "../../clients";
-import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20 } from "../../utils";
+import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20, BigNumber } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 
 export class BaseAdapter {
@@ -90,7 +90,7 @@ export class BaseAdapter {
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
   }
 
-  computeOutstandingCrossChainTransfers(l1Tokens: string[]) {
+  computeOutstandingCrossChainTransfers(l1Tokens: string[]): { [l1Token: string]: BigNumber } {
     let outstandingTransfers = {};
     for (const l1Token of l1Tokens) {
       let l2FinalizationSet = this.l2DepositFinalizedEvents[l1Token];

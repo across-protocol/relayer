@@ -108,8 +108,8 @@ export class InventoryClient {
 
   // Work out where a relay should be refunded to optimally manage the bots inventory. Use the following algorithm:
   // a) Compute the virtual balance on the destination chain. This is current liquidity + any pending cross-chain transfers.
-  // b) Compute the virtual balance post relay on destination chain. i.e a - the size of the relay in question.
-  // c) Find the post relay virtual allocation by taking b and deviling it by the cumulative virtual balance. This number
+  // b) Compute the virtual balance post relay on destination chain. i.e the size of the relay in question.
+  // c) Find the post relay virtual allocation by taking b and dividing it by the cumulative virtual balance. This number
   // represents the share of the total liquidity if the current transfers conclude and the relay is filled (i.e forward looking)
   // e) Decide on what chain to repay on: If this number of more than the target for the designation chain + the rebalance overshoot // then refund on L1. Else, the post fill amount is within the target, so refund on the destination chain.
   determineRefundChainId(deposit: Deposit): number {

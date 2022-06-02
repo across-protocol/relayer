@@ -2,10 +2,7 @@ import { BigNumber, winston, toWei, toBN, createFormatFunction, etherscanLink } 
 import { SpokePoolClient, HubPoolClient } from "../";
 import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter } from "./";
 export class AdapterManager {
-  public optimismAdapter: OptimismAdapter;
-  public bobaAdapter: OptimismAdapter;
-  public arbitrumAdapter: ArbitrumAdapter;
-  public polygonAdapter: PolygonAdapter;
+  public adapters: { [chainId: number]: OptimismAdapter | ArbitrumAdapter | PolygonAdapter } = {};
 
   constructor(
     readonly logger: winston.Logger,
@@ -14,10 +11,10 @@ export class AdapterManager {
     readonly relayerAddress: string
   ) {
     if (spokePoolClients) {
-      this.optimismAdapter = new OptimismAdapter(logger, spokePoolClients, relayerAddress, true);
-      this.polygonAdapter = new PolygonAdapter(logger, spokePoolClients, relayerAddress);
-      this.bobaAdapter = new OptimismAdapter(logger, spokePoolClients, relayerAddress, false);
-      this.arbitrumAdapter = new ArbitrumAdapter(logger, spokePoolClients, relayerAddress);
+      this.adapters[10] = new OptimismAdapter(logger, spokePoolClients, relayerAddress, true);
+      this.adapters[137] = new PolygonAdapter(logger, spokePoolClients, relayerAddress);
+      this.adapters[288] = new OptimismAdapter(logger, spokePoolClients, relayerAddress, false);
+      this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, relayerAddress);
     }
   }
 
@@ -26,42 +23,20 @@ export class AdapterManager {
     l1Tokens: string[]
   ): Promise<{ [l1Token: string]: BigNumber }> {
     this.logger.debug({ at: "AdapterManager", message: "Getting outstandingCrossChainTransfers", chainId, l1Tokens });
-    switch (chainId) {
-      case 10:
-        return await this.optimismAdapter.getOutstandingCrossChainTransfers(l1Tokens);
-      case 137:
-        return await this.polygonAdapter.getOutstandingCrossChainTransfers(l1Tokens);
-      case 288:
-        return await this.bobaAdapter.getOutstandingCrossChainTransfers(l1Tokens);
-      case 42161:
-        return await this.arbitrumAdapter.getOutstandingCrossChainTransfers(l1Tokens);
-    }
+    return await this.adapters[chainId].getOutstandingCrossChainTransfers(l1Tokens);
   }
 
   async sendTokenCrossChain(chainId: number | string, l1Token: string, amount: BigNumber) {
     this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
-    let tx;
-    switch (Number(chainId)) {
-      case 10:
-        tx = await this.optimismAdapter.sendTokenToTargetChain(l1Token, this.l2TokenForL1Token(l1Token, 10), amount);
-        break;
-      case 137:
-        tx = await this.polygonAdapter.sendTokenToTargetChain(l1Token, this.l2TokenForL1Token(l1Token, 137), amount);
-        break;
-      case 288:
-        tx = await this.bobaAdapter.sendTokenToTargetChain(l1Token, this.l2TokenForL1Token(l1Token, 288), amount);
-        break;
-      case 42161:
-        tx = await this.arbitrumAdapter.sendTokenToTargetChain(l1Token, this.l2TokenForL1Token(l1Token, 42161), amount);
-        break;
-    }
+    const l2Token = this.l2TokenForL1Token(l1Token, Number(chainId));
+    const tx = await this.adapters[chainId].sendTokenToTargetChain(l1Token, l2Token, amount);
     return await tx.wait();
   }
 
   async wrapEthIfAboveThreshold(wrapThreshold: BigNumber) {
     const [optimismWrapTx, bobaWrapTx] = await Promise.all([
-      this.optimismAdapter.wrapEthIfAboveThreshold(wrapThreshold),
-      this.bobaAdapter.wrapEthIfAboveThreshold(wrapThreshold),
+      (this.adapters[10] as OptimismAdapter).wrapEthIfAboveThreshold(wrapThreshold),
+      (this.adapters[288] as OptimismAdapter).wrapEthIfAboveThreshold(wrapThreshold),
     ]);
 
     const [optimismReceipt, bobaReceipt] = await Promise.all([
@@ -113,33 +88,13 @@ export class AdapterManager {
     }
   }
 
-  getAdapterConstructors(
-    l2ChainId: number
-  ): [
-    l1Provider: any,
-    l2Provider: any,
-    l1Signer: any,
-    l2Signer: any,
-    initialL1SearchConfig: any,
-    initialL2SearchConfig: any
-  ] {
-    return [
-      this.getProvider(1),
-      this.getProvider(l2ChainId),
-      this.getSigner(1),
-      this.getSigner(l2ChainId),
-      this.getChainSearchConfig(1),
-      this.getChainSearchConfig(l2ChainId),
-    ];
-  }
-
   async setL1TokenApprovals(l1Tokens: string[]) {
     // Each of these calls must happen sequentially or we'll have collisions within the TransactionUtil. This should
     // be refactored in a follow on PR to separate out by nonce increment by making the transaction util stateful.
-    await this.optimismAdapter.checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 10)));
-    await this.polygonAdapter.checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 137)));
-    await this.bobaAdapter.checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 288)));
-    await this.arbitrumAdapter.checkTokenApprovals(
+    await this.adapters[10].checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 10)));
+    await this.adapters[137].checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 137)));
+    await this.adapters[288].checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 288)));
+    await this.adapters[42161].checkTokenApprovals(
       l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 42161))
     );
   }

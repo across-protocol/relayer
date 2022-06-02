@@ -1,4 +1,4 @@
-import { runTransaction, assign, Contract, BigNumber, bnToHex } from "../../utils";
+import { runTransaction, assign, Contract, BigNumber, bnToHex, winston } from "../../utils";
 import { ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery, Promise } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter, polygonL1BridgeInterface, polygonL2BridgeInterface } from "./";
@@ -59,7 +59,7 @@ const atomicDepositorAddress = "0x26eaf37ee5daf49174637bdcd2f7759a25206c34";
 
 export class PolygonAdapter extends BaseAdapter {
   constructor(
-    readonly logger: any,
+    readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly relayerAddress: string
   ) {
@@ -133,7 +133,7 @@ export class PolygonAdapter extends BaseAdapter {
     await this.checkAndSendTokenApprovals(l1Tokens, associatedL1Bridges);
   }
 
-  getL1Bridge(l1Token: string) {
+  getL1Bridge(l1Token: string): Contract | null {
     try {
       return new Contract(tokenToBridge[l1Token].l1BridgeAddress, polygonL1BridgeInterface, this.getSigner(1));
     } catch (error) {
@@ -142,7 +142,7 @@ export class PolygonAdapter extends BaseAdapter {
     }
   }
 
-  getL1TokenGateway(l1Token: string) {
+  getL1TokenGateway(l1Token: string): Contract | null {
     if (this.isWeth(l1Token)) return new Contract(atomicDepositorAddress, atomicDepositorInterface, this.getSigner(1));
     else
       try {
@@ -154,7 +154,7 @@ export class PolygonAdapter extends BaseAdapter {
   }
 
   // Note that on polygon we dont query events on the L2 bridge. rather, we look for mint events on the L2 token.
-  getL2Token(l1Token: string) {
+  getL2Token(l1Token: string): Contract | null {
     try {
       return new Contract(
         tokenToBridge[l1Token].l2TokenAddress,

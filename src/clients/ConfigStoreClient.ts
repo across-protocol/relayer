@@ -42,9 +42,6 @@ export class AcrossConfigStoreClient {
   ): Promise<{ realizedLpFeePct: BigNumber; quoteBlock: number }> {
     let quoteBlock = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
 
-    // There is one deposit on optimism for DAI that is right before the DAI rate model was added.
-    if (quoteBlock === 14830339) quoteBlock = 14830390;
-
     const rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
 
     // There is one deposit on optimism that is right at the margin of when liquidity was first added.

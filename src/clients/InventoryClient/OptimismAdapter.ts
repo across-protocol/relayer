@@ -1,5 +1,5 @@
-import { Contract, BigNumber,  ZERO_ADDRESS, paginatedEventQuery, runTransaction } from "../../utils";
-import { spreadEventWithBlockNumber,  assign, Promise } from "../../utils";
+import { Contract, BigNumber, ZERO_ADDRESS, paginatedEventQuery, runTransaction } from "../../utils";
+import { spreadEventWithBlockNumber, assign, Promise, winston } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter, weth9Abi, ovmL1BridgeInterface, ovmL2BridgeInterface, atomicDepositorInterface } from "./";
 
@@ -26,7 +26,7 @@ const atomicDepositorAddress = "0x26eaf37ee5daf49174637bdcd2f7759a25206c34";
 export class OptimismAdapter extends BaseAdapter {
   public l2Gas: number;
   constructor(
-    readonly logger: any,
+    readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly relayerAddress: string,
     readonly isOptimism: boolean
