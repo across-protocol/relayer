@@ -96,7 +96,7 @@ export async function constructClients(logger: winston.Logger, config: CommonCon
       at: "Dataworker#ClientHelper",
       message: `Connected to redis server at ${config.redisUrl} successfully!`,
       dbSize: await redisClient.dbSize(),
-    })
+    });
   }
 
   const configStoreClient = new AcrossConfigStoreClient(
