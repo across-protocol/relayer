@@ -28,7 +28,7 @@ const l2Gateways = {
 export class ArbitrumAdapter extends BaseAdapter {
   l2GasPrice = toBN(5e9);
   l2GasLimit = toBN(2000000);
-  // abi.encodeing of the maxL2Submission cost. of 0.01e18
+  // abi.encoding of the maxL2Submission cost. of 0.01e18
   transactionSubmissionData =
     "0x000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000";
   l1SubmitValue = toWei(0.02);
