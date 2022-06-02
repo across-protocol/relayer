@@ -838,6 +838,7 @@ export class Dataworker {
             // Only return true if no leaf was found in the list of executed leaves.
             return !executedLeaf;
           });
+          if (unexecutedLeaves.length === 0) return;
 
           const leavesWithLatestFills = unexecutedLeaves.map((leaf) => {
             const fill = sortedFills.find((fill) => {
@@ -1009,6 +1010,7 @@ export class Dataworker {
     const unexecutedLeaves = expectedTrees.poolRebalanceTree.leaves.filter((leaf) =>
       executedLeaves.every(({ leafId }) => leafId !== leaf.leafId)
     );
+    if (unexecutedLeaves.length === 0) return;
 
     const chainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
@@ -1191,6 +1193,7 @@ export class Dataworker {
             // Only return true if no leaf was found in the list of executed leaves.
             return !executedLeaf;
           });
+          if (unexecutedLeaves.length === 0) return;
 
           // Filter for leaves where the contract has the funding to send the required tokens.
           const fundedLeaves = (
