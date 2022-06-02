@@ -22,6 +22,7 @@
     "@uma/financial-templates-lib": "^2.27.4",
     "bluebird": "^3.7.2",
     "hardhat": "^2.9.0",
+    "redis": "^4.1.0",
     "ts-node": "^10.1.0"
   },
   "files": [

@@ -1,9 +1,17 @@
 import winston from "winston";
-import { getProvider, getSigner, getDeployedContract, getDeploymentBlockNumber } from "../utils";
-import { Wallet, SpokePool, Contract } from "../utils";
+import {
+  getProvider,
+  getSigner,
+  getDeployedContract,
+  getDeploymentBlockNumber,
+  Wallet,
+  SpokePool,
+  Contract,
+} from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient, ProfitClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { DataworkerClients } from "../dataworker/DataworkerClientHelper";
+import { createClient } from "redis";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -76,11 +84,21 @@ export async function constructClients(logger: winston.Logger, config: CommonCon
     toBlock: null,
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
+
+  let redisClient: ReturnType<typeof createClient> | undefined;
+  if (config.redisUrl) {
+    redisClient = createClient({
+      url: config.redisUrl,
+    });
+    await redisClient.connect();
+  }
+
   const configStoreClient = new AcrossConfigStoreClient(
     logger,
     configStore,
     hubPoolClient,
-    rateModelClientSearchSettings
+    rateModelClientSearchSettings,
+    redisClient
   );
 
   // const gasEstimator = new GasEstimator() // todo when this is implemented in the SDK.
