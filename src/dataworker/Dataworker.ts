@@ -851,7 +851,7 @@ export class Dataworker {
             // Only return true if no leaf was found in the list of executed leaves.
             return !executedLeaf;
           });
-          if (unexecutedLeaves.length === 0) return;
+          if (unexecutedLeaves.length === 0) continue;
 
           const leavesWithLatestFills = unexecutedLeaves.map((leaf) => {
             const fill = sortedFills.find((fill) => {
@@ -1211,7 +1211,7 @@ export class Dataworker {
             // Only return true if no leaf was found in the list of executed leaves.
             return !executedLeaf;
           });
-          if (unexecutedLeaves.length === 0) return;
+          if (unexecutedLeaves.length === 0) continue;
 
           // Filter for leaves where the contract has the funding to send the required tokens.
           const fundedLeaves = (
