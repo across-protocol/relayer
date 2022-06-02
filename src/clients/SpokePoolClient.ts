@@ -4,6 +4,7 @@ import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWit
 import { AcrossConfigStoreClient } from "./ConfigStoreClient";
 import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock, TokensBridged } from "../interfaces/SpokePool";
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
+import { RootBundleExecutedEvent } from "@across-protocol/contracts-v2/dist/typechain/HubPool";
 
 export class SpokePoolClient {
   private deposits: { [DestinationChainId: number]: Deposit[] } = {};
@@ -230,11 +231,11 @@ export class SpokePoolClient {
     }
 
     for (const event of relayedRootBundleEvents) {
-      this.rootBundleRelays.push(spreadEvent(event));
+      this.rootBundleRelays.push(spreadEventWithBlockNumber(event) as RootBundleRelayWithBlock);
     }
 
     for (const event of executedRelayerRefundRootEvents) {
-      this.relayerRefundExecutions.push(spreadEvent(event));
+      this.relayerRefundExecutions.push(spreadEventWithBlockNumber(event) as RelayerRefundExecutionWithBlock);
     }
 
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
