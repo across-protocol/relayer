@@ -762,7 +762,8 @@ export class Dataworker {
   // but keeping them separate is probably the simplest for the initial implementation.
   async executeSlowRelayLeaves(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
-    balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients))
+    balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
+    submitExecution: boolean = true
   ) {
     this.logger.debug({
       at: "Dataworker#executeSlowRelayLeaves",
@@ -912,29 +913,32 @@ export class Dataworker {
           ).filter((element) => element !== undefined);
 
           fundedLeaves.forEach((leaf) => {
-            this.clients.multiCallerClient.enqueueTransaction({
-              contract: client.spokePool,
-              chainId: Number(chainId),
-              method: "executeSlowRelayLeaf",
-              args: [
-                leaf.depositor,
-                leaf.recipient,
-                leaf.destinationToken,
-                leaf.amount,
-                leaf.originChainId,
-                leaf.realizedLpFeePct,
-                leaf.relayerFeePct,
-                leaf.depositId,
-                rootBundleRelay.rootBundleId,
-                tree.getHexProof(leaf),
-              ],
-              message: "Executed SlowRelayLeaf 🌿!",
-              mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nslowRelayRoot: ${
-                rootBundleRelay.slowRelayRoot
-              }\nOrigin chain: ${leaf.originChainId}\nDestination chain:${leaf.destinationChainId}\nDeposit Id: ${
-                leaf.depositId
-              }\namount: ${leaf.amount.toString()}`, // Just a placeholder
-            });
+            const mrkdwn = `rootBundleId: ${rootBundleRelay.rootBundleId}\nslowRelayRoot: ${
+              rootBundleRelay.slowRelayRoot
+            }\nOrigin chain: ${leaf.originChainId}\nDestination chain:${leaf.destinationChainId}\nDeposit Id: ${
+              leaf.depositId
+            }\namount: ${leaf.amount.toString()}`;
+            if (submitExecution)
+              this.clients.multiCallerClient.enqueueTransaction({
+                contract: client.spokePool,
+                chainId: Number(chainId),
+                method: "executeSlowRelayLeaf",
+                args: [
+                  leaf.depositor,
+                  leaf.recipient,
+                  leaf.destinationToken,
+                  leaf.amount,
+                  leaf.originChainId,
+                  leaf.realizedLpFeePct,
+                  leaf.relayerFeePct,
+                  leaf.depositId,
+                  rootBundleRelay.rootBundleId,
+                  tree.getHexProof(leaf),
+                ],
+                message: "Executed SlowRelayLeaf 🌿!",
+                mrkdwn,
+              });
+            else this.logger.debug({ at: "Dataworker#executeSlowRelayLeaves", message: mrkdwn });
           });
         }
       })
@@ -943,7 +947,8 @@ export class Dataworker {
 
   async executePoolRebalanceLeaves(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
-    balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients))
+    balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
+    submitExecution: boolean = true
   ) {
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
@@ -1058,32 +1063,35 @@ export class Dataworker {
 
     fundedLeaves.forEach((leaf) => {
       const proof = expectedTrees.poolRebalanceTree.tree.getHexProof(leaf);
-
-      this.clients.multiCallerClient.enqueueTransaction({
-        contract: this.clients.hubPoolClient.hubPool,
-        chainId: hubPoolChainId,
-        method: "executeRootBundle",
-        args: [
-          leaf.chainId,
-          leaf.groupIndex,
-          leaf.bundleLpFees,
-          leaf.netSendAmounts,
-          leaf.runningBalances,
-          leaf.leafId,
-          leaf.l1Tokens,
-          proof,
-        ],
-        message: "Executed PoolRebalanceLeaf 🌿!",
-        mrkdwn: `Root hash: ${expectedTrees.poolRebalanceTree.tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${
-          leaf.chainId
-        }`, // Just a placeholder
-      });
+      const mrkdwn = `Root hash: ${expectedTrees.poolRebalanceTree.tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${
+        leaf.chainId
+      }`;
+      if (submitExecution)
+        this.clients.multiCallerClient.enqueueTransaction({
+          contract: this.clients.hubPoolClient.hubPool,
+          chainId: hubPoolChainId,
+          method: "executeRootBundle",
+          args: [
+            leaf.chainId,
+            leaf.groupIndex,
+            leaf.bundleLpFees,
+            leaf.netSendAmounts,
+            leaf.runningBalances,
+            leaf.leafId,
+            leaf.l1Tokens,
+            proof,
+          ],
+          message: "Executed PoolRebalanceLeaf 🌿!",
+          mrkdwn,
+        });
+      else this.logger.debug({ at: "Dataworker#executePoolRebalanceLeaves", message: mrkdwn });
     });
   }
 
   async executeRelayerRefundLeaves(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
-    balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients))
+    balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
+    submitExecution: boolean = true
   ) {
     this.logger.debug({
       at: "Dataworker#executeRelayerRefundLeaves",
@@ -1238,18 +1246,21 @@ export class Dataworker {
           ).filter((element) => element !== undefined);
 
           fundedLeaves.forEach((leaf) => {
-            this.clients.multiCallerClient.enqueueTransaction({
-              contract: client.spokePool,
-              chainId: Number(chainId),
-              method: "executeRelayerRefundLeaf",
-              args: [rootBundleRelay.rootBundleId, leaf, tree.getHexProof(leaf)],
-              message: "Executed RelayerRefundLeaf 🌿!",
-              mrkdwn: `rootBundleId: ${rootBundleRelay.rootBundleId}\nrelayerRefundRoot: ${
-                rootBundleRelay.relayerRefundRoot
-              }\nLeaf: ${leaf.leafId}\nchainId: ${chainId}\ntoken: ${
-                leaf.l2TokenAddress
-              }\namount: ${leaf.amountToReturn.toString()}`, // Just a placeholder
-            });
+            const mrkdwn = `rootBundleId: ${rootBundleRelay.rootBundleId}\nrelayerRefundRoot: ${
+              rootBundleRelay.relayerRefundRoot
+            }\nLeaf: ${leaf.leafId}\nchainId: ${chainId}\ntoken: ${
+              leaf.l2TokenAddress
+            }\namount: ${leaf.amountToReturn.toString()}`;
+            if (submitExecution)
+              this.clients.multiCallerClient.enqueueTransaction({
+                contract: client.spokePool,
+                chainId: Number(chainId),
+                method: "executeRelayerRefundLeaf",
+                args: [rootBundleRelay.rootBundleId, leaf, tree.getHexProof(leaf)],
+                message: "Executed RelayerRefundLeaf 🌿!",
+                mrkdwn,
+              });
+            else this.logger.debug({ at: "Dataworker#executeRelayerRefundLeaves", message: mrkdwn });
           });
         }
       })

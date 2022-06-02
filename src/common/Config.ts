@@ -13,7 +13,6 @@ export class CommonConfig {
   readonly nodeQuorumThreshold: number;
   readonly maxTxWait: number;
   readonly relayerDiscount: BigNumber;
-  readonly sendingTransactionsEnabled: boolean;
   readonly redisUrl: string | undefined;
 
   constructor(env: ProcessEnv) {
@@ -25,7 +24,6 @@ export class CommonConfig {
       NODE_QUORUM_THRESHOLD,
       MAX_TX_WAIT_DURATION,
       RELAYER_DISCOUNT,
-      SEND_TRANSACTIONS,
       REDIS_URL,
     } = env;
     this.hubPoolChainId = HUB_CHAIN_ID ? Number(HUB_CHAIN_ID) : 1;
@@ -39,7 +37,6 @@ export class CommonConfig {
     this.nodeQuorumThreshold = NODE_QUORUM_THRESHOLD ? Number(NODE_QUORUM_THRESHOLD) : 1;
     this.maxTxWait = MAX_TX_WAIT_DURATION ? Number(MAX_TX_WAIT_DURATION) : 180; // 3 minutes
     this.relayerDiscount = RELAYER_DISCOUNT ? toBNWei(RELAYER_DISCOUNT) : toBNWei(0);
-    this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
     this.redisUrl = REDIS_URL;
   }
 }

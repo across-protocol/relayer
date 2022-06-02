@@ -61,20 +61,32 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
 
       if (config.proposerEnabled)
-        await dataworker.proposeRootBundle(spokePoolClients, config.rootBundleExecutionThreshold, config.sendingProposalsEnabled);
+        await dataworker.proposeRootBundle(
+          spokePoolClients,
+          config.rootBundleExecutionThreshold,
+          config.sendingProposalsEnabled
+        );
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
 
       if (config.executorEnabled) {
         const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
 
-        await dataworker.executePoolRebalanceLeaves(spokePoolClients, balanceAllocator);
+        await dataworker.executePoolRebalanceLeaves(
+          spokePoolClients,
+          balanceAllocator,
+          config.sendingExecutionsEnabled
+        );
 
         // Execute slow relays before relayer refunds to give them priority for any L2 funds.
-        await dataworker.executeSlowRelayLeaves(spokePoolClients, balanceAllocator);
-        await dataworker.executeRelayerRefundLeaves(spokePoolClients, balanceAllocator);
+        await dataworker.executeSlowRelayLeaves(spokePoolClients, balanceAllocator, config.sendingExecutionsEnabled);
+        await dataworker.executeRelayerRefundLeaves(
+          spokePoolClients,
+          balanceAllocator,
+          config.sendingExecutionsEnabled
+        );
       } else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
 
-      await clients.multiCallerClient.executeTransactionQueue(!config.sendingTransactionsEnabled);
+      await clients.multiCallerClient.executeTransactionQueue();
 
       if (config.finalizerEnabled)
         await finalize(logger, clients.hubSigner, clients.hubPoolClient, spokePoolClients, config.finalizerChains);

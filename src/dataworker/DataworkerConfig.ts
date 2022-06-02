@@ -7,14 +7,22 @@ export class DataworkerConfig extends CommonConfig {
   readonly tokenTransferThresholdOverride: { [l1TokenAddress: string]: BigNumber };
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
   readonly rootBundleExecutionThreshold: BigNumber;
+  readonly spokeRootsLookbackCount: number; // Consider making this configurable per chain ID.
+  readonly finalizerChains: number[];
+
+  // These variables can be toggled to choose whether the bot will go through the dataworker logic.
   readonly disputerEnabled: boolean;
   readonly proposerEnabled: boolean;
   readonly executorEnabled: boolean;
-  readonly spokeRootsLookbackCount: number; // Consider making this configurable per chain ID.
+  readonly finalizerEnabled: boolean;
+
+  // These variables can be toggled to choose whether the bot will submit transactions created
+  // by each function. For example, setting `sendingDisputesEnabled=false` but `disputerEnabled=true`
+  // means that the disputer logic will be run but won't send disputes on-chain.
+  // If you set `disputerEnabled=false`, then `sendinDisputesEnabled` doesn't change the code path.
   readonly sendingDisputesEnabled: boolean;
   readonly sendingProposalsEnabled: boolean;
-  readonly finalizerChains: number[];
-  readonly finalizerEnabled: boolean;
+  readonly sendingExecutionsEnabled: boolean;
 
   constructor(env: ProcessEnv) {
     const {
@@ -29,6 +37,7 @@ export class DataworkerConfig extends CommonConfig {
       SPOKE_ROOTS_LOOKBACK_COUNT,
       SEND_DISPUTES,
       SEND_PROPOSALS,
+      SEND_EXECUTIONS,
       FINALIZER_CHAINS,
       FINALIZER_ENABLED,
     } = env;
@@ -66,6 +75,7 @@ export class DataworkerConfig extends CommonConfig {
         );
     this.sendingDisputesEnabled = SEND_DISPUTES === "true";
     this.sendingProposalsEnabled = SEND_PROPOSALS === "true";
+    this.sendingExecutionsEnabled = SEND_EXECUTIONS === "true";
     this.finalizerChains = FINALIZER_CHAINS ? JSON.parse(FINALIZER_CHAINS) : CHAIN_ID_LIST_INDICES;
     this.finalizerEnabled = FINALIZER_ENABLED === "true";
   }
