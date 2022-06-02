@@ -188,7 +188,7 @@ export class InventoryClient {
       }
     }
 
-    // Extract unexcusable rebalances for logging.
+    // Extract unexecutable rebalances for logging.
     const unexecutedRebalances: { [chainId: number]: { [l1Token: string]: BigNumber } } = {};
     for (const chainId of Object.keys(rebalancesRequired)) {
       for (const l1Token of Object.keys(rebalancesRequired[chainId])) {

@@ -5,8 +5,6 @@ import { RelayerClients } from "./RelayerClientHelper";
 import { Deposit } from "../interfaces/SpokePool";
 
 export class Relayer {
-  private repaymentChainId = 1; // Set to 1 for now. In future can be dynamically set to adjust bots capital allocation.
-
   constructor(readonly logger: winston.Logger, readonly clients: RelayerClients) {}
   async checkForUnfilledDepositsAndFill() {
     // Fetch all unfilled deposits, order by total earnable fee.
@@ -70,14 +68,15 @@ export class Relayer {
   }
 
   zeroFillDeposit(deposit: Deposit) {
-    this.logger.debug({ at: "Relayer", message: "Zero filling", deposit, repaymentChain: this.repaymentChainId });
+    const repaymentChainId = 1; // Always refund zero fills on L1 to not send dust over the chain unnecessarily.
+    this.logger.debug({ at: "Relayer", message: "Zero filling", deposit, repaymentChain: repaymentChainId });
     try {
       // Add the zero fill fill transaction to the multiCallerClient so it will be executed with the next batch.
       this.clients.multiCallerClient.enqueueTransaction({
         contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
         chainId: deposit.destinationChainId,
         method: "fillRelay", // method called.
-        args: buildFillRelayProps(deposit, this.repaymentChainId, toBN(1)), // props sent with function call.
+        args: buildFillRelayProps(deposit, repaymentChainId, toBN(1)), // props sent with function call.
         message: "Zero size relay sent 🐌", // message sent to logger.
         mrkdwn: this.constructZeroSizeFilledMrkdwn(deposit), // message details mrkdwn
       });
@@ -159,12 +158,6 @@ export class Relayer {
     });
 
     this.logger.warn({ at: "Relayer", message: "Not relaying unprofitable deposits 🙅‍♂️!", mrkdwn });
-
-    this.clients.profitClient.clearUnprofitableFills();
-
-    // Note that this implementation right now will result in each run of the bot logging for insufficient token balance.
-    // Storing these logs and only emmitting them once will be done in a subsequent PR.
-    this.clients.tokenClient.clearTokenShortfall();
   }
 
   private constructRelayFilledMrkdwn(deposit: Deposit, repaymentChainId: number, fillAmount: BigNumber): string {

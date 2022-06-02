@@ -53,6 +53,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     amountToSend = toBN(42069);
   });
 
+  it("Correctly sends tokens to chain: Optimism", async function () {})
   it("Correctly sends tokens to chain: Optimism", async function () {
     const chainId = 10; // Optimism ChainId
     //  ERC20 tokens:

@@ -26,6 +26,10 @@ export async function runRelayer(_logger: winston.Logger): Promise<void> {
 
       await relayerClients.inventoryClient.rebalanceInventoryIfNeeded();
 
+      // Clear state from profit and token clients. These are updated on every iteration and should start fresh.
+      relayerClients.profitClient.clearUnprofitableFills();
+      relayerClients.tokenClient.clearTokenShortfall();
+
       if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) break;
     }
   } catch (error) {
