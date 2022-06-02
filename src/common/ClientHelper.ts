@@ -76,6 +76,20 @@ export async function constructClients(logger: winston.Logger, config: CommonCon
     toBlock: null,
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
+
+  let redisClient: ReturnType<typeof createClient> | undefined;
+  if (config.redisUrl) {
+    redisClient = createClient({
+      url: config.redisUrl,
+    });
+    await redisClient.connect();
+    logger.debug({
+      at: "Dataworker#ClientHelper",
+      message: `Connected to redis server at ${config.redisUrl} successfully!`,
+      dbSize: await redisClient.dbSize(),
+    })
+  }
+
   const configStoreClient = new AcrossConfigStoreClient(
     logger,
     configStore,
