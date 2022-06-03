@@ -21,24 +21,31 @@ export async function getCrossChainMessages(
   tokensBridged: TokensBridged[],
   crossChainMessenger: optimismSDK.CrossChainMessenger
 ): Promise<CrossChainMessageWithEvent[]> {
+  // For each token bridge event, store a unique log index for the event within the optimism transaction hash.
+  // This is important for bridge transactions containing multiple events.
+  const uniqueTokenhashes = {};
+  const logIndexesForMessage = [];
+  for (const event of tokensBridged) {
+    uniqueTokenhashes[event.transactionHash] = uniqueTokenhashes[event.transactionHash] ?? 0;
+    const logIndex = uniqueTokenhashes[event.transactionHash];
+    logIndexesForMessage.push(logIndex);
+    uniqueTokenhashes[event.transactionHash] += 1;
+  }
   return (
     await Promise.all(
-      tokensBridged.map(async (event) => {
-        return {
-          messages: await crossChainMessenger.getMessagesByTransaction(event.transactionHash),
-          event,
-        };
-      })
+      tokensBridged.map(
+        async (l2Event, i) =>
+          (
+            await crossChainMessenger.getMessagesByTransaction(l2Event.transactionHash)
+          )[logIndexesForMessage[i]]
+      )
     )
-  ).reduce((flattenedMessages, messagesInTransaction) => {
-    for (const message of messagesInTransaction.messages) {
-      flattenedMessages.push({
-        message,
-        event: messagesInTransaction.event,
-      });
-    }
-    return flattenedMessages;
-  }, []);
+  ).map((message, i) => {
+    return {
+      message,
+      event: tokensBridged[i],
+    };
+  });
 }
 
 export interface CrossChainMessageWithStatus extends CrossChainMessageWithEvent {
