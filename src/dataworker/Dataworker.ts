@@ -39,6 +39,7 @@ import {
 } from "./DepositUtils";
 import { constructSpokePoolClientsForBlockAndUpdate } from "../common/ClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
+import _ from "lodash";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -91,6 +92,7 @@ export class Dataworker {
   // For instance, if the spoke or hub clients have been updated, it probably makes sense to clear this to be safe.
   clearCache() {
     this.loadDataCache = {};
+    this.rootCache = {};
   }
 
   // Common data re-formatting logic shared across all data worker public functions.
@@ -1335,7 +1337,7 @@ export class Dataworker {
     unfilledDeposits: UnfilledDeposit[]
   ) {
     const key = JSON.stringify(blockRangesForChains);
-    if (!this.rootCache[key])
+    if (!this.rootCache[key]) {
       this.rootCache[key] = _buildPoolRebalanceRoot(
         endBlockForMainnet,
         fillsToRefund,
@@ -1348,7 +1350,8 @@ export class Dataworker {
         this.maxL1TokenCountOverride,
         this.tokenTransferThreshold
       );
+    }
 
-    return this.rootCache[key];
+    return _.cloneDeep(this.rootCache[key]);
   }
 }
