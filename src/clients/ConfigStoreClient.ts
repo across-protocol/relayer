@@ -42,10 +42,12 @@ export class AcrossConfigStoreClient {
   ): Promise<{ realizedLpFeePct: BigNumber; quoteBlock: number }> {
     let quoteBlock = (await this.blockFinder.getBlockForTimestamp(deposit.quoteTimestamp)).number;
 
+    // There is one deposit on optimism for DAI that is right before the DAI rate model was added.
+    if (quoteBlock === 14830339) quoteBlock = 14830390;
+
     const rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
 
     // There is one deposit on optimism that is right at the margin of when liquidity was first added.
-    if (quoteBlock === 14830339) quoteBlock = 14830390;
     if (quoteBlock > 14718100 && quoteBlock < 14718107) quoteBlock = 14718107;
 
     const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, quoteBlock, deposit.amount);
@@ -91,7 +93,7 @@ export class AcrossConfigStoreClient {
     };
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than
 
-    this.logger.debug({ at: "RateModelClient", message: "Updating client", searchConfig });
+    this.logger.debug({ at: "ConfigStore", message: "Updating ConfigStore client", searchConfig });
     if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
     const [updatedTokenConfigEvents, updatedGlobalConfigEvents] = await Promise.all([
       paginatedEventQuery(this.configStore, this.configStore.filters.UpdatedTokenConfig(), searchConfig),
@@ -152,6 +154,6 @@ export class AcrossConfigStoreClient {
     this.isUpdated = true;
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
-    this.logger.debug({ at: "RateModelClient", message: "Client updated!" });
+    this.logger.debug({ at: "ConfigStore", message: "ConfigStore client updated!" });
   }
 }
