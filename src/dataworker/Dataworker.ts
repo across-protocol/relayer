@@ -1,4 +1,4 @@
-import { winston, EMPTY_MERKLE_ROOT, sortEventsDescending, BigNumber, getRefund } from "../utils";
+import { winston, EMPTY_MERKLE_ROOT, sortEventsDescending, BigNumber, getRefund, MerkleTree } from "../utils";
 import {
   UnfilledDeposit,
   Deposit,
@@ -49,6 +49,15 @@ export class Dataworker {
       fillsToRefund: FillsToRefund;
       allValidFills: FillWithBlock[];
       deposits: DepositWithBlock[];
+    };
+  } = {};
+
+  private rootCache: {
+    [key: string]: {
+      runningBalances: RunningBalances;
+      realizedLpFees: RunningBalances;
+      leaves: PoolRebalanceLeaf[];
+      tree: MerkleTree<PoolRebalanceLeaf>;
     };
   } = {};
 
@@ -293,17 +302,14 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     );
 
-    return _buildPoolRebalanceRoot(
+    return this._getPoolRebalanceRoot(
+      blockRangesForChains,
       endBlockForMainnet,
       fillsToRefund,
       deposits,
       allValidFills,
       allValidFillsInRange,
-      unfilledDeposits,
-      this.clients,
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      this.maxL1TokenCountOverride,
-      this.tokenTransferThreshold
+      unfilledDeposits
     );
   }
 
@@ -358,17 +364,14 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     );
     this.logger.debug({ at: "Dataworker", message: `Building pool rebalance root`, blockRangesForProposal });
-    const poolRebalanceRoot = _buildPoolRebalanceRoot(
+    const poolRebalanceRoot = this._getPoolRebalanceRoot(
+      blockRangesForProposal,
       endBlockForMainnet,
       fillsToRefund,
       deposits,
       allValidFills,
       allValidFillsInRange,
-      unfilledDeposits,
-      this.clients,
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      this.maxL1TokenCountOverride,
-      this.tokenTransferThreshold
+      unfilledDeposits
     );
     PoolRebalanceUtils.prettyPrintLeaves(
       this.logger,
@@ -661,17 +664,14 @@ export class Dataworker {
       blockRangesImpliedByBundleEndBlocks,
       this.chainIdListForBundleEvaluationBlockNumbers
     );
-    const expectedPoolRebalanceRoot = _buildPoolRebalanceRoot(
+    const expectedPoolRebalanceRoot = this._getPoolRebalanceRoot(
+      blockRangesImpliedByBundleEndBlocks,
       endBlockForMainnet,
       fillsToRefund,
       deposits,
       allValidFills,
       allValidFillsInRange,
-      unfilledDeposits,
-      this.clients,
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      this.maxL1TokenCountOverride,
-      this.tokenTransferThreshold
+      unfilledDeposits
     );
     const expectedRelayerRefundRoot = _buildRelayerRefundRoot(
       endBlockForMainnet,
@@ -1165,17 +1165,14 @@ export class Dataworker {
             blockNumberRanges,
             this.chainIdListForBundleEvaluationBlockNumbers
           );
-          const expectedPoolRebalanceRoot = _buildPoolRebalanceRoot(
+          const expectedPoolRebalanceRoot = this._getPoolRebalanceRoot(
+            blockNumberRanges,
             endBlockForMainnet,
             fillsToRefund,
             deposits,
             allValidFills,
             allValidFillsInRange,
-            unfilledDeposits,
-            this.clients,
-            this.chainIdListForBundleEvaluationBlockNumbers,
-            this.maxL1TokenCountOverride,
-            this.tokenTransferThreshold
+            unfilledDeposits
           );
 
           const maxRefundCount = this.maxRefundCountOverride
@@ -1326,5 +1323,32 @@ export class Dataworker {
         notificationPath: "across-error",
       });
     }
+  }
+
+  _getPoolRebalanceRoot(
+    blockRangesForChains: number[][],
+    endBlockForMainnet: number,
+    fillsToRefund: FillsToRefund,
+    deposits: DepositWithBlock[],
+    allValidFills: FillWithBlock[],
+    allValidFillsInRange: FillWithBlock[],
+    unfilledDeposits: UnfilledDeposit[]
+  ) {
+    const key = JSON.stringify(blockRangesForChains);
+    if (!this.rootCache[key])
+      this.rootCache[key] = _buildPoolRebalanceRoot(
+        endBlockForMainnet,
+        fillsToRefund,
+        deposits,
+        allValidFills,
+        allValidFillsInRange,
+        unfilledDeposits,
+        this.clients,
+        this.chainIdListForBundleEvaluationBlockNumbers,
+        this.maxL1TokenCountOverride,
+        this.tokenTransferThreshold
+      );
+
+    return this.rootCache[key];
   }
 }
