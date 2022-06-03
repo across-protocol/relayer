@@ -1,15 +1,6 @@
 import { AugmentedTransaction } from "../clients";
-import {
-  winston,
-  Contract,
-  getContractInfoFromAddress,
-  fetch,
-  ethers,
-  toBNWei,
-  BigNumber,
-  toBN,
-  toGWei,
-} from "../utils";
+import { winston, Contract, getContractInfoFromAddress, fetch, ethers } from "../utils";
+import { toBNWei, BigNumber, toBN, toGWei } from "../utils";
 
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
 // of this method should be considerate of this and catch the response to deal with the error accordingly.

@@ -1,4 +1,4 @@
-import { CommonConfig, ProcessEnv, BUNDLE_END_BLOCK_BUFFERS } from "../common";
+import { CommonConfig, ProcessEnv, BUNDLE_END_BLOCK_BUFFERS, CHAIN_ID_LIST_INDICES } from "../common";
 import { BigNumber, assert, toBNWei } from "../utils";
 
 export class DataworkerConfig extends CommonConfig {
@@ -7,9 +7,22 @@ export class DataworkerConfig extends CommonConfig {
   readonly tokenTransferThresholdOverride: { [l1TokenAddress: string]: BigNumber };
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
   readonly rootBundleExecutionThreshold: BigNumber;
+  readonly spokeRootsLookbackCount: number; // Consider making this configurable per chain ID.
+  readonly finalizerChains: number[];
+
+  // These variables can be toggled to choose whether the bot will go through the dataworker logic.
   readonly disputerEnabled: boolean;
   readonly proposerEnabled: boolean;
   readonly executorEnabled: boolean;
+  readonly finalizerEnabled: boolean;
+
+  // These variables can be toggled to choose whether the bot will submit transactions created
+  // by each function. For example, setting `sendingDisputesEnabled=false` but `disputerEnabled=true`
+  // means that the disputer logic will be run but won't send disputes on-chain.
+  // If you set `disputerEnabled=false`, then `sendinDisputesEnabled` doesn't change the code path.
+  readonly sendingDisputesEnabled: boolean;
+  readonly sendingProposalsEnabled: boolean;
+  readonly sendingExecutionsEnabled: boolean;
 
   constructor(env: ProcessEnv) {
     const {
@@ -21,6 +34,12 @@ export class DataworkerConfig extends CommonConfig {
       DISPUTER_ENABLED,
       PROPOSER_ENABLED,
       EXECUTOR_ENABLED,
+      SPOKE_ROOTS_LOOKBACK_COUNT,
+      SEND_DISPUTES,
+      SEND_PROPOSALS,
+      SEND_EXECUTIONS,
+      FINALIZER_CHAINS,
+      FINALIZER_ENABLED,
     } = env;
     super(env);
 
@@ -28,6 +47,7 @@ export class DataworkerConfig extends CommonConfig {
     this.maxPoolRebalanceLeafSizeOverride = MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE
       ? Number(MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE)
       : undefined;
+    this.spokeRootsLookbackCount = SPOKE_ROOTS_LOOKBACK_COUNT ? Number(SPOKE_ROOTS_LOOKBACK_COUNT) : undefined;
     if (this.maxPoolRebalanceLeafSizeOverride !== undefined)
       assert(this.maxPoolRebalanceLeafSizeOverride > 0, "Max leaf count set to 0");
     this.maxRelayerRepaymentLeafSizeOverride = MAX_RELAYER_REPAYMENT_LEAF_SIZE_OVERRIDE
@@ -53,5 +73,10 @@ export class DataworkerConfig extends CommonConfig {
           Object.keys(this.blockRangeEndBlockBuffer).includes(chainId.toString()),
           "BLOCK_RANGE_END_BLOCK_BUFFER missing networks"
         );
+    this.sendingDisputesEnabled = SEND_DISPUTES === "true";
+    this.sendingProposalsEnabled = SEND_PROPOSALS === "true";
+    this.sendingExecutionsEnabled = SEND_EXECUTIONS === "true";
+    this.finalizerChains = FINALIZER_CHAINS ? JSON.parse(FINALIZER_CHAINS) : CHAIN_ID_LIST_INDICES;
+    this.finalizerEnabled = FINALIZER_ENABLED === "true";
   }
 }

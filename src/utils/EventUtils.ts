@@ -68,6 +68,7 @@ export function spreadEventWithBlockNumber(event: Event): SortableEvent {
     blockNumber: event.blockNumber,
     transactionIndex: event.transactionIndex,
     logIndex: event.logIndex,
+    transactionHash: event.transactionHash,
   };
 }
 

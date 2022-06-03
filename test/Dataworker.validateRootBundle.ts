@@ -1,4 +1,4 @@
-import { buildFillForRepaymentChain, lastSpyLogIncludes } from "./utils";
+import { buildFillForRepaymentChain, lastSpyLogIncludes, hre } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit } from "./utils";
 import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, BUNDLE_END_BLOCK_BUFFER } from "./constants";
@@ -11,7 +11,7 @@ import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT, utf8ToHex } from "../src/utils";
 import { Dataworker } from "../src/dataworker/Dataworker";
 
 let spy: sinon.SinonSpy;
-let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
+let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract;
 let l1Token_1: Contract, hubPool: Contract;
 let depositor: SignerWithAddress;
 
@@ -28,7 +28,6 @@ describe("Dataworker: Validate pending root bundle", async function () {
       spokePool_1,
       erc20_1,
       spokePool_2,
-      erc20_2,
       configStoreClient,
       hubPoolClient,
       l1Token_1,
@@ -62,6 +61,8 @@ describe("Dataworker: Validate pending root bundle", async function () {
     );
     await updateAllClients();
     await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
+    // Mine blocks so event blocks are less than HEAD minus buffer.
+    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) await hre.network.provider.send("evm_mine");
     await updateAllClients();
     const latestBlock2 = await hubPool.provider.getBlockNumber();
     const blockRange2 = CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock2]);
@@ -79,7 +80,8 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
     await multiCallerClient.executeTransactionQueue();
 
-    // Exit early if no pending bundle
+    // Exit early if no pending bundle. There shouldn't be a bundle seen yet because we haven't passed enough blocks
+    // beyond the block buffer.
     await dataworkerInstance.validatePendingRootBundle();
     expect(lastSpyLogIncludes(spy, "No pending proposal, nothing to validate")).to.be.true;
 
@@ -112,6 +114,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
         expectedPoolRebalanceRoot2.tree.getHexProof(leaf)
       );
     }
+    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) await hre.network.provider.send("evm_mine");
     await updateAllClients();
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     await multiCallerClient.executeTransactionQueue();
@@ -144,6 +147,8 @@ describe("Dataworker: Validate pending root bundle", async function () {
       expectedRelayerRefundRoot4.tree.getHexRoot(),
       expectedSlowRelayRefundRoot4.tree.getHexRoot()
     );
+    // Mine blocks so root bundle end blocks are not within HEAD - buffer range
+    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) await hre.network.provider.send("evm_mine");
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle();
     expect(lastSpyLogIncludes(spy, "Pending root bundle matches with expected")).to.be.true;
@@ -168,7 +173,9 @@ describe("Dataworker: Validate pending root bundle", async function () {
     // Bundle range end blocks are above latest block but within buffer, should skip.
     await updateAllClients();
     await hubPool.proposeRootBundle(
-      Array(CHAIN_ID_TEST_LIST.length).fill(Number(await hubPool.provider.getBlockNumber()) + BUNDLE_END_BLOCK_BUFFER),
+      // Since the dataworker sets the end block to HEAD minus buffer, setting the bundle end blocks to HEAD
+      // should fall within buffer.
+      Array(CHAIN_ID_TEST_LIST.length).fill(Number(await hubPool.provider.getBlockNumber())),
       expectedPoolRebalanceRoot4.leaves.length,
       expectedPoolRebalanceRoot4.tree.getHexRoot(),
       expectedRelayerRefundRoot4.tree.getHexRoot(),
@@ -185,7 +192,9 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await updateAllClients();
     await hubPool.proposeRootBundle(
       Array(CHAIN_ID_TEST_LIST.length).fill(
-        Number(await hubPool.provider.getBlockNumber()) + BUNDLE_END_BLOCK_BUFFER * 2
+        // As shown in previous test, HEAD is the last block after the latest toBlock (set to HEAD - buffer)
+        // to be within the buffer. So, if we blocks to HEAD, we'll be past the buffer window.
+        Number(await hubPool.provider.getBlockNumber()) + 3
       ),
       expectedPoolRebalanceRoot4.leaves.length,
       expectedPoolRebalanceRoot4.tree.getHexRoot(),
@@ -227,11 +236,12 @@ describe("Dataworker: Validate pending root bundle", async function () {
     expect(spy.getCall(-2).lastArg.message).to.equal("Empty pool rebalance root, submitting dispute");
     await multiCallerClient.executeTransactionQueue();
 
-    // PoolRebalance leaf count is off
+    // PoolRebalance leaf count is too high
     await updateAllClients();
     await hubPool.proposeRootBundle(
       blockRange4.map((range) => range[1]),
-      expectedPoolRebalanceRoot4.leaves.length + 1, // Wrong leaf count
+      expectedPoolRebalanceRoot4.leaves.length + 1, // Dataworker expects 1 fewer leaf than actually pending, meaning
+      // that the unclaimed leaf count can never drop to 0.
       expectedPoolRebalanceRoot4.tree.getHexRoot(),
       expectedRelayerRefundRoot4.tree.getHexRoot(),
       expectedSlowRelayRefundRoot4.tree.getHexRoot()

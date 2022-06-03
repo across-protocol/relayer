@@ -1,15 +1,16 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, processCrash } from "../utils";
+import { processEndPollingLoop, winston, config, startupLogLevel, processCrash, getSigner } from "../utils";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
 import {
   constructDataworkerClients,
-  constructSpokePoolClientsForPendingRootBundle,
   updateDataworkerClients,
   spokePoolClientsToProviders,
 } from "./DataworkerClientHelper";
-import { constructSpokePoolClientsForBlockAndUpdate } from "../common";
+import { constructSpokePoolClientsForBlockAndUpdate, updateSpokePoolClients } from "../common";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
+import { SpokePoolClientsByChain } from "../interfaces";
+import { finalize } from "../finalizer";
 config();
 let logger: winston.Logger;
 
@@ -24,7 +25,8 @@ export async function createDataworker(_logger: winston.Logger) {
     config.maxRelayerRepaymentLeafSizeOverride,
     config.maxPoolRebalanceLeafSizeOverride,
     config.tokenTransferThresholdOverride,
-    config.blockRangeEndBlockBuffer
+    config.blockRangeEndBlockBuffer,
+    config.spokeRootsLookbackCount
   );
 
   return {
@@ -36,55 +38,59 @@ export async function createDataworker(_logger: winston.Logger) {
 export async function runDataworker(_logger: winston.Logger): Promise<void> {
   logger = _logger;
   const { clients, config, dataworker } = await createDataworker(logger);
+  let spokePoolClients: SpokePoolClientsByChain;
   try {
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
 
     for (;;) {
+      // Clear cache so results can be updated with new data.
+      dataworker.clearCache();
       await updateDataworkerClients(clients);
-
-      // Construct spoke clients used to evaluate and execute leaves from pending root bundle.
-      // Since we're updating all clients once per severless run, we can precompute all spoke pool clients safely
-      // here and then recompute block ranges in the dataworker methods without any risk that the spoke pool client
-      // and the hub pool clients reference different block ranges.
-      logger[startupLogLevel(config)]({
-        at: "Dataworker#index",
-        message: "Constructing spoke pool clients for pending root bundle",
-      });
-      const spokePoolClientsForPendingRootBundle = await constructSpokePoolClientsForPendingRootBundle(
-        logger,
-        dataworker.chainIdListForBundleEvaluationBlockNumbers,
-        clients
-      );
-      logger[startupLogLevel(config)]({
-        at: "Dataworker#index",
-        message: "Constructing spoke pool clients for next root bundle",
-      });
-      const latestSpokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-        dataworker.chainIdListForBundleEvaluationBlockNumbers,
-        clients,
-        logger,
-        clients.hubPoolClient.latestBlockNumber
-      );
+      if (spokePoolClients === undefined)
+        spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
+          dataworker.chainIdListForBundleEvaluationBlockNumbers,
+          clients,
+          logger,
+          clients.hubPoolClient.latestBlockNumber
+        );
+      else await updateSpokePoolClients(spokePoolClients);
 
       // Validate and dispute pending proposal before proposing a new one
-      if (config.disputerEnabled) await dataworker.validatePendingRootBundle(spokePoolClientsForPendingRootBundle);
+      if (config.disputerEnabled)
+        await dataworker.validatePendingRootBundle(spokePoolClients, config.sendingDisputesEnabled);
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
 
       if (config.proposerEnabled)
-        await dataworker.proposeRootBundle(latestSpokePoolClients, config.rootBundleExecutionThreshold);
+        await dataworker.proposeRootBundle(
+          spokePoolClients,
+          config.rootBundleExecutionThreshold,
+          config.sendingProposalsEnabled
+        );
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
 
       if (config.executorEnabled) {
-        const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(latestSpokePoolClients));
+        const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
 
-        await dataworker.executePoolRebalanceLeaves(spokePoolClientsForPendingRootBundle, balanceAllocator);
+        await dataworker.executePoolRebalanceLeaves(
+          spokePoolClients,
+          balanceAllocator,
+          config.sendingExecutionsEnabled
+        );
 
         // Execute slow relays before relayer refunds to give them priority for any L2 funds.
-        await dataworker.executeSlowRelayLeaves(latestSpokePoolClients, balanceAllocator);
-        await dataworker.executeRelayerRefundLeaves(latestSpokePoolClients, balanceAllocator);
+        await dataworker.executeSlowRelayLeaves(spokePoolClients, balanceAllocator, config.sendingExecutionsEnabled);
+        await dataworker.executeRelayerRefundLeaves(
+          spokePoolClients,
+          balanceAllocator,
+          config.sendingExecutionsEnabled
+        );
       } else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
 
-      await clients.multiCallerClient.executeTransactionQueue(!config.sendingTransactionsEnabled);
+      await clients.multiCallerClient.executeTransactionQueue();
+
+      if (config.finalizerEnabled)
+        await finalize(logger, clients.hubSigner, clients.hubPoolClient, spokePoolClients, config.finalizerChains);
+      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }

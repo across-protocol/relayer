@@ -6,9 +6,10 @@ export class RelayerConfig extends CommonConfig {
   readonly maxRelayerLookBack: { [chainId: number]: number };
   readonly inventoryConfig: InventoryConfig;
   readonly relayerDiscount: BigNumber;
+  readonly sendingRelaysEnabled: Boolean;
 
   constructor(env: ProcessEnv) {
-    const { RELAYER_DISCOUNT, MAX_RELAYER_DEPOSIT_LOOK_BACK, RELAYER_INVENTORY_CONFIG } = env;
+    const { RELAYER_DISCOUNT, MAX_RELAYER_DEPOSIT_LOOK_BACK, RELAYER_INVENTORY_CONFIG, SEND_RELAYS } = env;
     super(env);
     this.maxRelayerLookBack = MAX_RELAYER_DEPOSIT_LOOK_BACK ? JSON.parse(MAX_RELAYER_DEPOSIT_LOOK_BACK) : {};
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
@@ -34,7 +35,7 @@ export class RelayerConfig extends CommonConfig {
         utils.getAddress(l1Token)
       );
     }
-
     this.relayerDiscount = RELAYER_DISCOUNT ? toWei(RELAYER_DISCOUNT) : toWei(0);
+    this.sendingRelaysEnabled = SEND_RELAYS === "true";
   }
 }

@@ -1,7 +1,7 @@
 import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, EventSearchConfig } from "../utils";
 import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
-import { EMPTY_MERKLE_ROOT } from "../utils";
-import { Deposit, L1Token, ProposedRootBundle, ExecutedRootBundle, RootBundle } from "../interfaces";
+import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle } from "../interfaces";
+import { ExecutedRootBundle, PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
 
 export class HubPoolClient {
@@ -9,12 +9,14 @@ export class HubPoolClient {
   private l1TokensToDestinationTokens: { [l1Token: string]: { [destinationChainId: number]: string } } = {};
   private l1Tokens: L1Token[] = []; // L1Tokens and their associated info.
   private proposedRootBundles: ProposedRootBundle[] = [];
+  private canceledRootBundles: CancelledRootBundle[] = [];
+  private disputedRootBundles: DisputedRootBundle[] = [];
   private executedRootBundles: ExecutedRootBundle[] = [];
   private crossChainContracts: { [l2ChainId: number]: CrossChainContractsSet[] } = {};
   private l1TokensToDestinationTokensWithBlock: {
     [l1Token: string]: { [destinationChainId: number]: DestinationTokenWithBlock[] };
   } = {};
-  private pendingRootBundle: RootBundle;
+  private pendingRootBundle: PendingRootBundle;
 
   public isUpdated: boolean = false;
   public firstBlockToSearch: number;
@@ -29,25 +31,24 @@ export class HubPoolClient {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
 
-  getPendingRootBundleProposal() {
-    return this.pendingRootBundle;
-  }
-
   hasPendingProposal() {
-    return this.pendingRootBundle !== undefined && this.pendingRootBundle.unclaimedPoolRebalanceLeafCount > 0;
+    return this.pendingRootBundle !== undefined;
   }
 
-  getPendingRootBundleIfAvailable() {
-    const hasPendingProposal = this.hasPendingProposal();
-    const pendingRootBundle = hasPendingProposal ? this.getPendingRootBundleProposal() : undefined;
-    return {
-      hasPendingProposal,
-      pendingRootBundle,
-    };
+  getPendingRootBundle() {
+    return this.pendingRootBundle;
   }
 
   getProposedRootBundles() {
     return this.proposedRootBundles;
+  }
+
+  getCancelledRootBundles() {
+    return this.canceledRootBundles;
+  }
+
+  getDisputedRootBundles() {
+    return this.disputedRootBundles;
   }
 
   getSpokePoolForBlock(block: number, chain: number): string {
@@ -133,6 +134,11 @@ export class HubPoolClient {
     return this.l1Tokens.find((token) => token.address === l1Token);
   }
 
+  getL1TokenInfoForL2Token(l2Token: string, chainId: number | string): L1Token {
+    const l1TokenCounterpart = this.getL1TokenCounterpartAtBlock(chainId as string, l2Token, this.latestBlockNumber);
+    return this.getTokenInfoForL1Token(l1TokenCounterpart);
+  }
+
   getTokenInfoForDeposit(deposit: Deposit): L1Token {
     return this.getTokenInfoForL1Token(this.getL1TokenForDeposit(deposit));
   }
@@ -179,6 +185,24 @@ export class HubPoolClient {
       }
     }
     return endingBlockNumber;
+  }
+
+  getProposedRootBundlesInBlockRange(startingBlock: number, endingBlock: number) {
+    return sortEventsDescending(this.proposedRootBundles).filter(
+      (bundle: ProposedRootBundle) => bundle.blockNumber >= startingBlock && bundle.blockNumber <= endingBlock
+    );
+  }
+
+  getCancelledRootBundlesInBlockRange(startingBlock: number, endingBlock: number) {
+    return sortEventsDescending(this.canceledRootBundles).filter(
+      (bundle: CancelledRootBundle) => bundle.blockNumber >= startingBlock && bundle.blockNumber <= endingBlock
+    );
+  }
+
+  getDisputedRootBundlesInBlockRange(startingBlock: number, endingBlock: number) {
+    return sortEventsDescending(this.disputedRootBundles).filter(
+      (bundle: DisputedRootBundle) => bundle.blockNumber >= startingBlock && bundle.blockNumber <= endingBlock
+    );
   }
 
   getMostRecentProposedRootBundle(latestBlockToSearch: number) {
@@ -268,13 +292,15 @@ export class HubPoolClient {
       toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
-    this.logger.debug({ at: "HubPoolClient", message: "Updating client", searchConfig });
+    this.logger.debug({ at: "HubPoolClient", message: "Updating HubPool client", searchConfig });
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
     const [
       poolRebalanceRouteEvents,
       l1TokensLpEvents,
       proposeRootBundleEvents,
+      canceledRootBundleEvents,
+      disputedRootBundleEvents,
       executedRootBundleEvents,
       crossChainContractsSetEvents,
       pendingRootBundleProposal,
@@ -283,6 +309,8 @@ export class HubPoolClient {
       paginatedEventQuery(this.hubPool, this.hubPool.filters.SetPoolRebalanceRoute(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.ProposeRootBundle(), searchConfig),
+      paginatedEventQuery(this.hubPool, this.hubPool.filters.RootBundleCanceled(), searchConfig),
+      paginatedEventQuery(this.hubPool, this.hubPool.filters.RootBundleDisputed(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.RootBundleExecuted(), searchConfig),
       paginatedEventQuery(this.hubPool, this.hubPool.filters.CrossChainContractsSet(), searchConfig),
       this.hubPool.rootBundleProposal(),
@@ -335,47 +363,47 @@ export class HubPoolClient {
     for (const info of tokenInfo) if (!this.l1Tokens.includes(info)) this.l1Tokens.push(info);
 
     this.proposedRootBundles.push(
-      ...proposeRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as ProposedRootBundle)
+      ...proposeRootBundleEvents.map((event) => {
+        return { ...spreadEventWithBlockNumber(event), transactionHash: event.transactionHash } as ProposedRootBundle;
+      })
+    );
+    this.canceledRootBundles.push(
+      ...canceledRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as CancelledRootBundle)
+    );
+    this.disputedRootBundles.push(
+      ...disputedRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as DisputedRootBundle)
     );
     this.executedRootBundles.push(
       ...executedRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as ExecutedRootBundle)
     );
 
-    this.pendingRootBundle = {
-      poolRebalanceRoot: pendingRootBundleProposal.poolRebalanceRoot,
-      relayerRefundRoot: pendingRootBundleProposal.relayerRefundRoot,
-      slowRelayRoot: pendingRootBundleProposal.slowRelayRoot,
-      proposer: pendingRootBundleProposal.proposer,
-      unclaimedPoolRebalanceLeafCount: pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount,
-      challengePeriodEndTimestamp: pendingRootBundleProposal.challengePeriodEndTimestamp,
-      bundleEvaluationBlockNumbers: undefined,
-      proposalBlockNumber: undefined,
-    };
-    // If pending proposal is active, even if it passed the liveness period, then we can load the following root
-    // bundle properties: `bundleEvaluationBlockNumbers` and `proposalBlockNumber`, otherwise they are not relevant.
-    // We can assume that the pool rebalance root is never empty if there is a pending root on-chain, regardless
-    // if the root is disputable.
-    if (this.pendingRootBundle.poolRebalanceRoot !== EMPTY_MERKLE_ROOT) {
-      // Throw an error if this client is configured in such a way that the most recent event does not match
-      // the pending root bundle. We should handle this case eventually, but for now loudly error so we don't dispute
-      // the wrong pending bundle.
+    // If the contract's current rootBundleProposal() value has an unclaimedPoolRebalanceLeafCount > 0, then
+    // it means that either the root bundle proposal is in the challenge period and can be disputed, or it has
+    // passed the challenge period and pool rebalance leaves can be executed. Once all leaves are executed, the
+    // unclaimed count will drop to 0 and at that point there is nothing more that we can do with this root bundle
+    // besides proposing another one.
+    if (pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount > 0) {
       const mostRecentProposedRootBundle = sortEventsDescending(this.proposedRootBundles)[0];
-      if (
-        mostRecentProposedRootBundle.poolRebalanceRoot !== this.pendingRootBundle.poolRebalanceRoot &&
-        mostRecentProposedRootBundle.relayerRefundRoot !== this.pendingRootBundle.relayerRefundRoot &&
-        mostRecentProposedRootBundle.slowRelayRoot !== this.pendingRootBundle.slowRelayRoot
-      )
-        throw new Error("Latest root bundle queried by client does not match pending root bundle");
-
-      this.pendingRootBundle.bundleEvaluationBlockNumbers =
-        mostRecentProposedRootBundle.bundleEvaluationBlockNumbers.map((block: BigNumber) => block.toNumber());
-      this.pendingRootBundle.proposalBlockNumber = mostRecentProposedRootBundle.blockNumber;
+      this.pendingRootBundle = {
+        poolRebalanceRoot: pendingRootBundleProposal.poolRebalanceRoot,
+        relayerRefundRoot: pendingRootBundleProposal.relayerRefundRoot,
+        slowRelayRoot: pendingRootBundleProposal.slowRelayRoot,
+        proposer: pendingRootBundleProposal.proposer,
+        unclaimedPoolRebalanceLeafCount: pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount,
+        challengePeriodEndTimestamp: pendingRootBundleProposal.challengePeriodEndTimestamp,
+        bundleEvaluationBlockNumbers: mostRecentProposedRootBundle.bundleEvaluationBlockNumbers.map(
+          (block: BigNumber) => block.toNumber()
+        ),
+        proposalBlockNumber: mostRecentProposedRootBundle.blockNumber,
+      };
+    } else {
+      this.pendingRootBundle = undefined;
     }
 
     this.isUpdated = true;
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
-    this.logger.debug({ at: "HubPoolClient", message: "Client updated!" });
+    this.logger.debug({ at: "HubPoolClient", message: "HubPool client updated!" });
   }
 
   private async fetchTokenInfoFromContract(address: string): Promise<L1Token> {

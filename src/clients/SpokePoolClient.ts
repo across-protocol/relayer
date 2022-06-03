@@ -4,6 +4,7 @@ import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWit
 import { AcrossConfigStoreClient } from "./ConfigStoreClient";
 import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock, TokensBridged } from "../interfaces/SpokePool";
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
+import { RootBundleExecutedEvent } from "@across-protocol/contracts-v2/dist/typechain/HubPool";
 
 export class SpokePoolClient {
   private deposits: { [DestinationChainId: number]: Deposit[] } = {};
@@ -71,6 +72,12 @@ export class SpokePoolClient {
     return this.fillsWithBlockNumbers.filter((fill: Fill) => fill.originChainId === originChainId);
   }
 
+  getFillsWithBlockInRange(startingBlock: number, endingBlock: number): FillWithBlock[] {
+    return this.fillsWithBlockNumbers.filter(
+      (fill) => fill.blockNumber >= startingBlock && fill.blockNumber <= endingBlock
+    );
+  }
+
   getFillsForRepaymentChain(repaymentChainId: number) {
     return this.fills.filter((fill: Fill) => fill.repaymentChainId === repaymentChainId);
   }
@@ -99,9 +106,10 @@ export class SpokePoolClient {
 
   getDepositForFill(fill: Fill): Deposit | undefined {
     const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill.
-    return this.getDepositsForDestinationChain(fillCopy.destinationChainId).find((deposit) =>
-      this.validateFillForDeposit(fillCopy, deposit)
-    );
+    return this.getDepositsForDestinationChain(fillCopy.destinationChainId).find((deposit) => {
+      if (fillCopy.depositId !== deposit.depositId) return false;
+      return this.validateFillForDeposit(fillCopy, deposit);
+    });
   }
 
   getValidUnfilledAmountForDeposit(deposit: Deposit): { unfilledAmount: BigNumber; fillCount: number } {
@@ -149,7 +157,11 @@ export class SpokePoolClient {
     const depositRouteSearchConfig = { ...searchConfig }; // shallow copy.
     if (!this.isUpdated) depositRouteSearchConfig.fromBlock = this.spokePoolDeploymentBlock;
 
-    this.log("debug", "Updating client", { searchConfig, depositRouteSearchConfig, spokePool: this.spokePool.address });
+    this.log("debug", `Updating SpokePool client for chain ${this.chainId}`, {
+      searchConfig,
+      depositRouteSearchConfig,
+      spokePool: this.spokePool.address,
+    });
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
     const [
@@ -181,7 +193,10 @@ export class SpokePoolClient {
     // new deposits that were found in the searchConfig (new from the previous run). This is important as this operation
     // is heavy as there is a fair bit of block number lookups that need to happen. Note this call REQUIRES that the
     // hubPoolClient is updated on the first before this call as this needed the the L1 token mapping to each L2 token.
-    if (depositEvents.length > 0) this.log("debug", "Fetching realizedLpFeePct", { numDeposits: depositEvents.length });
+    if (depositEvents.length > 0)
+      this.log("debug", `Fetching realizedLpFeePct for ${depositEvents.length} deposits on chain ${this.chainId}`, {
+        numDeposits: depositEvents.length,
+      });
     const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number }[] = await Promise.all(
       depositEvents.map((event) => this.computeRealizedLpFeePct(event))
     );
@@ -222,17 +237,17 @@ export class SpokePoolClient {
     }
 
     for (const event of relayedRootBundleEvents) {
-      this.rootBundleRelays.push(spreadEvent(event));
+      this.rootBundleRelays.push(spreadEventWithBlockNumber(event) as RootBundleRelayWithBlock);
     }
 
     for (const event of executedRelayerRefundRootEvents) {
-      this.relayerRefundExecutions.push(spreadEvent(event));
+      this.relayerRefundExecutions.push(spreadEventWithBlockNumber(event) as RelayerRefundExecutionWithBlock);
     }
 
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.isUpdated = true;
-    this.log("debug", "Client updated!");
+    this.log("debug", `SpokePool client for chain ${this.chainId} updated!`, searchConfig);
   }
 
   public hubPoolClient() {

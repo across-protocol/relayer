@@ -1,8 +1,12 @@
 import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 import { TokenRolesEnum } from "@uma/common";
 export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "@uma/common";
-import { SpyTransport } from "@uma/financial-templates-lib";
-import { sampleRateModel, DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "../constants";
+import { SpyTransport, bigNumberFormatter } from "@uma/financial-templates-lib";
+import {
+  sampleRateModel,
+  DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
+  DEFAULT_BLOCK_RANGE_FOR_CHAIN,
+} from "../constants";
 import { amountToDeposit, depositRelayerFeePct, l1TokenTransferThreshold, zeroAddress } from "../constants";
 import { MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF } from "../constants";
 import { HubPoolClient, AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
@@ -53,16 +57,6 @@ export function createSpyLogger() {
   });
 
   return { spy, spyLogger };
-}
-
-// TODO: remove this when we've accessed it from UMA protocol FPL: https://github.com/UMAprotocol/protocol/pull/3878
-export function bigNumberFormatter(logEntry: any) {
-  try {
-    iterativelyReplaceBigNumbers(logEntry);
-  } catch (_) {
-    return logEntry;
-  }
-  return logEntry;
 }
 
 const iterativelyReplaceBigNumbers = (obj: any) => {
@@ -618,4 +612,8 @@ export async function buildSlowFill(
     isSlowRelay: true,
     relayer: relayer.address, // Set to caller of `executeSlowRelayLeaf`
   };
+}
+
+export function getDefaultBlockRange(toBlockOffset: number) {
+  return DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) => [range[0], range[1] + toBlockOffset]);
 }

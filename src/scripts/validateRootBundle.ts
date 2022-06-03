@@ -7,23 +7,16 @@
 //    NODE_URL_137=https://polygon-mainnet.infura.io/v3/KEY
 //    NODE_URL_288=https://mainnet.boba.network/
 //    NODE_URL_42161=https://arb-mainnet.g.alchemy.com/v2/KEY
-// 2. REQUEST_TIME=1652832060 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
-
-// For devs:
-//     Test cases:
-//         REQUEST_TIME=1652832060 # Time right after a known valid proposed root bundle
-//         REQUEST_TIME=1652301947 # Time right after a known invalid proposed root bundle missing some refunds
-//         REQUEST_TIME=1652408987 # Invalid bundle block range, too high
-//         REQUEST_TIME=1652385167 # Empty pool rebalance root
-//         REQUEST_TIME=1652394287 # Invalid bundle block range length, assuming a valid chain ID list of 5
+// 2. Example of invalid bundle: REQUEST_TIME=1653594774 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
+// 2. Example of valid bundle:   REQUEST_TIME=1653516226 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
 
 import { winston, config, startupLogLevel, Logger, delay } from "../utils";
-import * as Constants from "../common";
 import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { BlockFinder } from "@uma/sdk";
-import { RootBundle } from "../interfaces";
+import { PendingRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
+import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
 
 config();
 let logger: winston.Logger;
@@ -37,7 +30,7 @@ export async function validate(_logger: winston.Logger) {
   const { clients, config, dataworker } = await createDataworker(logger);
   logger[startupLogLevel(config)]({
     at: "RootBundleValidator",
-    message: "Validating most recently proposed root bundle for request time",
+    message: `Validating most recently proposed root bundle before request time ${priceRequestTime}`,
     priceRequestTime,
     config,
   });
@@ -49,13 +42,7 @@ export async function validate(_logger: winston.Logger) {
   const priceRequestBlock = (await blockFinder.getBlockForTimestamp(priceRequestTime)).number;
   await updateDataworkerClients(clients);
   const precedingProposeRootBundleEvent = clients.hubPoolClient.getMostRecentProposedRootBundle(priceRequestBlock);
-  logger.debug({
-    at: "RootBundleValidator",
-    message: "Found latest ProposeRootBundle event before dispute time",
-    priceRequestTime,
-    priceRequestBlock,
-  });
-  const rootBundle: RootBundle = {
+  const rootBundle: PendingRootBundle = {
     poolRebalanceRoot: precedingProposeRootBundleEvent.poolRebalanceRoot,
     relayerRefundRoot: precedingProposeRootBundleEvent.relayerRefundRoot,
     slowRelayRoot: precedingProposeRootBundleEvent.slowRelayRoot,
@@ -66,27 +53,20 @@ export async function validate(_logger: winston.Logger) {
     proposalBlockNumber: precedingProposeRootBundleEvent.blockNumber,
   };
 
+  logger[startupLogLevel(config)]({
+    at: "RootBundleValidator",
+    message: `Found preceding root bundle`,
+    transactionHash: precedingProposeRootBundleEvent.transactionHash,
+  });
+
   const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
-    Constants.CHAIN_ID_LIST_INDICES,
+    dataworker.chainIdListForBundleEvaluationBlockNumbers,
+    getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
     clients,
     priceRequestBlock
   );
-  logger.debug({
-    at: "RootBundleValidator",
-    message: "Root bundle end block numbers must be less than latest L2 blocks",
-    rootBundleEvaluationBlockNumbers: precedingProposeRootBundleEvent.bundleEvaluationBlockNumbers.map((x) =>
-      x.toNumber()
-    ),
-    latestBlocks: widestPossibleBlockRanges.map((range) => range[1]),
-    impliedStartBlocks: widestPossibleBlockRanges.map((range) => range[0]),
-  });
 
   // Validate the event:
-  logger.debug({
-    at: "RootBundleValidator",
-    message: "Validating root bundle",
-    rootBundle,
-  });
   const { valid, reason } = await dataworker.validateRootBundle(
     config.hubPoolChainId,
     widestPossibleBlockRanges,

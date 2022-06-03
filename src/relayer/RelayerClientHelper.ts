@@ -3,16 +3,13 @@ import { Contract, getDeployedContract, getDeploymentBlockNumber, getSigner, Wal
 import { TokenClient, ProfitClient, SpokePoolClient, InventoryClient, AdapterManager } from "../clients";
 import { RelayerConfig } from "./RelayerConfig";
 import { Clients, constructClients, updateClients, getSpokePoolSigners, updateSpokePoolClients } from "../common";
+import { SpokePoolClientsByChain } from "../interfaces";
 
 export interface RelayerClients extends Clients {
-  spokePoolClients: { [chainId: number]: SpokePoolClient };
+  spokePoolClients: SpokePoolClientsByChain;
   tokenClient: TokenClient;
   profitClient: ProfitClient;
   inventoryClient: InventoryClient;
-}
-
-export interface SpokePoolClientsByChain {
-  [chainId: number]: SpokePoolClient;
 }
 
 export async function constructSpokePoolClientsWithLookback(
@@ -90,8 +87,10 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
 
 export async function updateRelayerClients(clients: RelayerClients) {
   await updateClients(clients);
-  // Profit and SpokePoolClient client requires up to date HubPoolClient and rateModelClient.
+  // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
+  await updateSpokePoolClients(clients.spokePoolClients);
   // Token client requires up to date spokePool clients to fetch token routes.
+<<<<<<< HEAD
   // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
   // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
   // having a "first run" update and then a "normal" update that considers this. see previous implementation here
@@ -99,6 +98,8 @@ export async function updateRelayerClients(clients: RelayerClients) {
   await updateSpokePoolClients(clients.spokePoolClients);
 
   // Update the token client first so that inventory client has latest balances.
+=======
+>>>>>>> master
   await clients.tokenClient.update();
 
   // We can update the inventory client at the same time as checking for eth wrapping as these do not depend on each other.
