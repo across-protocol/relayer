@@ -29,7 +29,7 @@ export async function finalize(
     const tokensBridged = client.getTokensBridged();
 
     if (chainId === 42161) {
-      const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner, hubPoolClient);
+      const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner);
       for (const l2Message of finalizableMessages) {
         await finalizeArbitrum(logger, l2Message.message, l2Message.proofInfo, l2Message.info, hubPoolClient);
       }

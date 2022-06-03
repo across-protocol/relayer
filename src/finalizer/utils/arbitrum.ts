@@ -42,12 +42,7 @@ export async function finalizeArbitrum(
   }
 }
 
-export async function getFinalizableMessages(
-  logger: winston.Logger,
-  tokensBridged: TokensBridged[],
-  l1Signer: Wallet,
-  hubPoolClient: HubPoolClient
-) {
+export async function getFinalizableMessages(logger: winston.Logger, tokensBridged: TokensBridged[], l1Signer: Wallet) {
   const allMessagesWithStatuses = await getAllMessageStatuses(tokensBridged, logger, l1Signer);
   const statusesGrouped = groupObjectCountsByProp(
     allMessagesWithStatuses,
@@ -58,33 +53,7 @@ export async function getFinalizableMessages(
     message: "Arbitrum outbox message statuses",
     statusesGrouped,
   });
-  const finalizableMessages = allMessagesWithStatuses.filter(
-    (x) => x.status === L2ToL1MessageStatus[L2ToL1MessageStatus.CONFIRMED]
-  );
-  if (finalizableMessages.length > 0) {
-    logger.debug({
-      at: "ArbitrumFinalizer",
-      message: `Found ${finalizableMessages.length} Arbitrum token bridges to L1 that are confirmed and can be finalized`,
-      bridges: finalizableMessages.map((x) => {
-        const copy: any = { ...x.info };
-        const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-          CHAIN_ID.toString(),
-          x.info.l2TokenAddress,
-          hubPoolClient.latestBlockNumber
-        );
-        const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
-        copy.token = l1TokenInfo.symbol;
-        copy.amountToReturn = convertFromWei(copy.amountToReturn.toString(), l1TokenInfo.decimals);
-        delete copy.l2TokenAddress;
-        return copy;
-      }),
-    });
-  } else
-    logger.debug({
-      at: "ArbitrumFinalizer",
-      message: "No Arbitrum finalizable messages",
-    });
-  return finalizableMessages;
+  return allMessagesWithStatuses.filter((x) => x.status === L2ToL1MessageStatus[L2ToL1MessageStatus.CONFIRMED]);
 }
 
 export async function getAllMessageStatuses(
