@@ -1,4 +1,4 @@
-import { assign, Contract, runTransaction, spreadEventWithBlockNumber,winston } from "../../utils";
+import { assign, Contract, runTransaction, spreadEventWithBlockNumber, winston } from "../../utils";
 import { toBN, toWei, paginatedEventQuery, Promise } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
@@ -33,7 +33,7 @@ export class ArbitrumAdapter extends BaseAdapter {
     "0x000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000";
   l1SubmitValue = toWei(0.02);
   constructor(
-    readonly logger:  winston.Logger,
+    readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly relayerAddress: string
   ) {
@@ -45,7 +45,8 @@ export class ArbitrumAdapter extends BaseAdapter {
 
     let promises = [];
     for (const l1Token of l1Tokens) {
-      if (l1Gateways[l1Token] === undefined || l2Gateways[l1Token] === null) continue;
+      if (l1Gateways[l1Token] === undefined || l2Gateways[l1Token] === null)
+        throw new Error(`Token not configured ${l1Token}`);
 
       const l1Bridge = this.getL1Bridge(l1Token);
       const l2Bridge = this.getL2Bridge(l1Token);

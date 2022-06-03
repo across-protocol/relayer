@@ -1,4 +1,4 @@
-import { Contract, BigNumber, ZERO_ADDRESS, paginatedEventQuery, runTransaction } from "../../utils";
+import { Contract, BigNumber, ZERO_ADDRESS, paginatedEventQuery, runTransaction, toBN } from "../../utils";
 import { spreadEventWithBlockNumber, assign, Promise, winston } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter, weth9Abi, ovmL1BridgeInterface, ovmL2BridgeInterface, atomicDepositorInterface } from "./";
@@ -93,7 +93,12 @@ export class OptimismAdapter extends BaseAdapter {
       args = [this.relayerAddress, amount, this.l2Gas, this.chainId];
     }
     this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
-    return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args);
+
+    // For some reason ethers will often underestimate the amount of gas Boba bridge needs for a deposit. If this
+    // OptimismAdapter is connected to Boba then manually set the gasLimit to 250k which works consistently.
+    if (this.chainId === 288)
+      return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args, toBN(0), toBN(250000));
+    else return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args);
   }
 
   async wrapEthIfAboveThreshold(threshold: BigNumber) {

@@ -18,12 +18,17 @@ export async function runTransaction(
   contract: Contract,
   method: string,
   args: any,
-  value: BigNumber = toBN(0)
-) {
+  value: BigNumber = toBN(0),
+  gasLimit: BigNumber | null = null
+): Promise<any> {
   try {
     const gas = await getGasPrice(contract.provider);
     logger.debug({ at: "TxUtil", message: "Send tx", target: getTarget(contract.address), method, args, value, gas });
-    return await contract[method](...args, { ...gas, value });
+    // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
+    // operation below deletes any null/undefined elements from this object. If the gasLimit is not specified, for example,
+    // then leave this up to ethers to compute.
+    const txConfig = Object.entries({ ...gas, value, gasLimit }).reduce((a, [k, v]) => (v ? ((a[k] = v), a) : a), {});
+    return await contract[method](...args, txConfig);
   } catch (error) {
     logger.error({ at: "TxUtil", message: "Error executing tx", error, notificationPath: "across-error" });
     console.log(error);

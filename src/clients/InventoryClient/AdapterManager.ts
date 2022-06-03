@@ -45,7 +45,7 @@ export class AdapterManager {
     ]);
     if (optimismReceipt || bobaReceipt) {
       let mrkdwn =
-        `Ether on ${optimismReceipt ? "Optimism" : ""} ${optimismReceipt && bobaReceipt ? "and" : ""} ` +
+        `Ether on ${optimismReceipt ? "Optimism" : ""}${optimismReceipt && bobaReceipt ? " and " : ""}` +
         `${bobaReceipt ? "Boba" : ""} was wrapped due to being over the threshold of ` +
         `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.\n` +
         `${optimismReceipt ? `\nOptimism tx: ${etherscanLink(optimismReceipt.transactionHash, 10)} ` : ""}` +
@@ -71,7 +71,6 @@ export class AdapterManager {
     try {
       // No that the line below is critical. if the hubpool returns the wrong destination token for the L1 token then
       // the bot can irrecoverably send the wrong token to the chain and loose money.
-      console.log("LOOKING", l1Token, chainId);
       const l2TokenForL1Token = this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId);
       if (!l2TokenForL1Token) throw new Error("No L2 token found for L1 token");
       if (l2TokenForL1Token != l2TokensToL1TokenValidation[l1Token][chainId]) throw new Error("Mismatch tokens!");
@@ -132,7 +131,7 @@ export const l2TokensToL1TokenValidation = {
   }, // DAI
   "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": {
     10: "0x68f180fcCe6836688e9084f035309E29Bf0A2095",
-    137: "0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6",
+    137: "0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6",
     288: "0xdc0486f8bf31DF57a952bcd3c1d3e166e3d9eC8b",
     42161: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f",
   }, // WBTC

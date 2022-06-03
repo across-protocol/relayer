@@ -53,7 +53,32 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     amountToSend = toBN(42069);
   });
 
-  it("Errors on misparameterization", async function () {});
+  it("Errors on misparameterization", async function () {
+    // Throws error if the chainID is wrong
+    // (note I could not mocha and chai to assert on throws for async methods).
+    let thrown1 = false;
+    try {
+      await adapterManager.sendTokenCrossChain(42069, mainnetTokens["usdc"], amountToSend);
+    } catch (error) {
+      thrown1 = true;
+    }
+    expect(thrown1).to.be.equal(true);
+
+    // Throws if there is a misconfiguration between L1 tokens and L2 tokens. This checks that the bot will error out
+    // if it tries to delete money in the bridge. configure hubpool to return the wrong token for Optimism
+
+    hubPoolClient.setL1TokensToDestinationTokens({
+      // bad config. map USDC on L1 to boba on L2. This is WRONG for chainID 10 and should error.
+      "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": { 10: "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8" },
+    });
+    let thrown2 = false;
+    try {
+      await adapterManager.sendTokenCrossChain(10, mainnetTokens["usdc"], amountToSend);
+    } catch (error) {
+      thrown2 = true;
+    }
+    expect(thrown2).to.be.equal(true);
+  });
   it("Correctly sends tokens to chain: Optimism", async function () {
     const chainId = 10; // Optimism ChainId
     //  ERC20 tokens:
@@ -62,7 +87,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens["usdc"], // l1 token
       l2TokensToL1TokenValidation[mainnetTokens["usdc"]][chainId], // l2 token
       amountToSend, // amount
-      adapterManager.optimismAdapter.l2Gas, // l2Gas
+      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -71,7 +96,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens["wbtc"], // l1 token
       l2TokensToL1TokenValidation[mainnetTokens["wbtc"]][chainId], // l2 token
       amountToSend, // amount
-      adapterManager.optimismAdapter.l2Gas, // l2Gas
+      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -82,7 +107,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens["dai"], // l1 token
       l2TokensToL1TokenValidation[mainnetTokens["dai"]][chainId], // l2 token
       amountToSend, // amount
-      adapterManager.optimismAdapter.l2Gas, // l2Gas
+      (adapterManager.adapters[chainId] as any)?.l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -91,7 +116,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     expect(l1AtomicDepositor.bridgeWethToOvm).to.have.been.calledWith(
       relayer.address, // to
       amountToSend, // amount
-      adapterManager.optimismAdapter.l2Gas, // l2Gas
+      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
       chainId // chainId
     );
   });
@@ -135,7 +160,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens["usdc"], // l1 token
       l2TokensToL1TokenValidation[mainnetTokens["usdc"]][chainId], // l2 token
       amountToSend, // amount
-      adapterManager.bobaAdapter.l2Gas, // l2Gas
+      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -144,7 +169,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens["wbtc"], // l1 token
       l2TokensToL1TokenValidation[mainnetTokens["wbtc"]][chainId], // l2 token
       amountToSend, // amount
-      adapterManager.bobaAdapter.l2Gas, // l2Gas
+      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -154,7 +179,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens["dai"], // l1 token
       l2TokensToL1TokenValidation[mainnetTokens["dai"]][chainId], // l2 token
       amountToSend, // amount
-      adapterManager.bobaAdapter.l2Gas, // l2Gas
+      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
       "0x" // data
     );
 
@@ -163,7 +188,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     expect(l1AtomicDepositor.bridgeWethToOvm).to.have.been.calledWith(
       relayer.address, // to
       amountToSend, // amount
-      adapterManager.bobaAdapter.l2Gas, // l2Gas
+      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
       chainId // chainId
     );
   });
@@ -176,27 +201,27 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens["usdc"], // token
       relayer.address, // to
       amountToSend, // amount
-      adapterManager.arbitrumAdapter.l2GasLimit, // maxGas
-      adapterManager.arbitrumAdapter.l2GasPrice, // gasPriceBid
-      adapterManager.arbitrumAdapter.transactionSubmissionData // data
+      (adapterManager.adapters[chainId] as any).l2GasLimit, // maxGas
+      (adapterManager.adapters[chainId] as any).l2GasPrice, // gasPriceBid
+      (adapterManager.adapters[chainId] as any).transactionSubmissionData // data
     );
     await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["wbtc"], amountToSend);
     expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
       mainnetTokens["wbtc"], // token
       relayer.address, // to
       amountToSend, // amount
-      adapterManager.arbitrumAdapter.l2GasLimit, // maxGas
-      adapterManager.arbitrumAdapter.l2GasPrice, // gasPriceBid
-      adapterManager.arbitrumAdapter.transactionSubmissionData // data
+      (adapterManager.adapters[chainId] as any).l2GasLimit, // maxGas
+      (adapterManager.adapters[chainId] as any).l2GasPrice, // gasPriceBid
+      (adapterManager.adapters[chainId] as any).transactionSubmissionData // data
     );
     await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["dai"], amountToSend);
     expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
       mainnetTokens["dai"], // token
       relayer.address, // to
       amountToSend, // amount
-      adapterManager.arbitrumAdapter.l2GasLimit, // maxGas
-      adapterManager.arbitrumAdapter.l2GasPrice, // gasPriceBid
-      adapterManager.arbitrumAdapter.transactionSubmissionData // data
+      (adapterManager.adapters[chainId] as any).l2GasLimit, // maxGas
+      (adapterManager.adapters[chainId] as any).l2GasPrice, // gasPriceBid
+      (adapterManager.adapters[chainId] as any).transactionSubmissionData // data
     );
     // Weth can be bridged like a standard ERC20 token to arbitrum.
     await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["weth"], amountToSend);
@@ -204,9 +229,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       mainnetTokens["weth"], // token
       relayer.address, // to
       amountToSend, // amount
-      adapterManager.arbitrumAdapter.l2GasLimit, // maxGas
-      adapterManager.arbitrumAdapter.l2GasPrice, // gasPriceBid
-      adapterManager.arbitrumAdapter.transactionSubmissionData // data
+      (adapterManager.adapters[chainId] as any).l2GasLimit, // maxGas
+      (adapterManager.adapters[chainId] as any).l2GasPrice, // gasPriceBid
+      (adapterManager.adapters[chainId] as any).transactionSubmissionData // data
     );
   });
 });
