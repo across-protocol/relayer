@@ -88,9 +88,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
 export async function updateRelayerClients(clients: RelayerClients) {
   await updateClients(clients);
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
-  await updateSpokePoolClients(clients.spokePoolClients);
-  // Token client requires up to date spokePool clients to fetch token routes.
-<<<<<<< HEAD
+
   // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
   // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
   // having a "first run" update and then a "normal" update that considers this. see previous implementation here
@@ -98,8 +96,7 @@ export async function updateRelayerClients(clients: RelayerClients) {
   await updateSpokePoolClients(clients.spokePoolClients);
 
   // Update the token client first so that inventory client has latest balances.
-=======
->>>>>>> master
+
   await clients.tokenClient.update();
 
   // We can update the inventory client at the same time as checking for eth wrapping as these do not depend on each other.
