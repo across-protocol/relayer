@@ -1336,7 +1336,15 @@ export class Dataworker {
     allValidFillsInRange: FillWithBlock[],
     unfilledDeposits: UnfilledDeposit[]
   ) {
-    const key = JSON.stringify(blockRangesForChains);
+    const key = JSON.stringify({
+      blockRangesForChains,
+      endBlockForMainnet,
+      fillsToRefund,
+      deposits,
+      allValidFills,
+      allValidFillsInRange,
+      unfilledDeposits,
+    });
     if (!this.rootCache[key]) {
       this.rootCache[key] = _buildPoolRebalanceRoot(
         endBlockForMainnet,
