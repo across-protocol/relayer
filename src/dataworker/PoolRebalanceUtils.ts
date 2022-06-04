@@ -268,7 +268,7 @@ export function constructPoolRebalanceLeaves(
           else return toBN(0);
         });
         const leafRunningBalances = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
-          if (runningBalances[chainId] && runningBalances[chainId][l1Token])
+          if (runningBalances[chainId]?.[l1Token])
             return getRunningBalanceForL1Token(transferThresholds[index], runningBalances[chainId][l1Token]);
           else return toBN(0);
         });
