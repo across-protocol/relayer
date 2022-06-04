@@ -259,7 +259,7 @@ export function constructPoolRebalanceLeaves(
         // Build leaves using running balances and realized lp fees data for l1Token + chain, or default to
         // zero if undefined.
         const leafBundleLpFees = l1TokensToIncludeInThisLeaf.map((l1Token) => {
-          if (realizedLpFees[chainId] && realizedLpFees[chainId][l1Token]) return realizedLpFees[chainId][l1Token];
+          if (realizedLpFees[chainId]?.[l1Token]) return realizedLpFees[chainId][l1Token];
           else return toBN(0);
         });
         const leafNetSendAmounts = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
