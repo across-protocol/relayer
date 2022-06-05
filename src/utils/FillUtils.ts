@@ -1,7 +1,7 @@
 import { HubPoolClient } from "../clients";
 import { Fill, FillsToRefund, FillWithBlock } from "../interfaces";
-import { assign, getRealizedLpFeeForFills, getRefundForFills, sortEventsDescending, toBN } from "../utils";
-import { getBlockRangeForChain } from "./DataworkerUtils";
+import { assign, getRealizedLpFeeForFills, getRefundForFills, sortEventsDescending, toBN } from "./";
+import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
 export function getRefundInformationFromFill(
   fill: Fill,

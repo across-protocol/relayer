@@ -1,3 +1,5 @@
+export * from "./BalanceAllocator";
+export * from "./BundleDataClient";
 export * from "./HubPoolClient";
 export * from "./SpokePoolClient";
 export * from "./ConfigStoreClient";

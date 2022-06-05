@@ -9,7 +9,7 @@ import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT } from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
-import { getDepositPath } from "../src/dataworker/DepositUtils";
+import { getDepositPath } from "../src/utils";
 import { FillWithBlock } from "../src/interfaces";
 
 let spy: sinon.SinonSpy;
@@ -198,7 +198,10 @@ describe("Dataworker: Propose root bundle", async function () {
     // in a previous root bundle. This would be a case where there is excess slow fill payment sent to the spoke
     // pool and we need to send some back to the hub pool, because of this fill in the current block range that
     // came after the slow fill was sent.
-    const { allValidFills } = dataworkerInstance._loadData(loadDataResults4.blockRangesForChains, spokePoolClients);
+    const { allValidFills } = dataworkerInstance.bundleDataClient.loadData(
+      loadDataResults4.blockRangesForChains,
+      spokePoolClients
+    );
     const allValidFillsByDestinationChain = allValidFills.filter(
       (fill: FillWithBlock) => fill.destinationChainId === destinationChainId
     );

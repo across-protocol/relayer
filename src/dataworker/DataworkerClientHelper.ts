@@ -1,16 +1,8 @@
 import winston from "winston";
 import { DataworkerConfig } from "./DataworkerConfig";
-import {
-  Clients,
-  constructClients,
-  constructSpokePoolClientsForBlockAndUpdate,
-  getSpokePoolSigners,
-  updateClients,
-} from "../common";
+import { Clients, constructClients, getSpokePoolSigners, updateClients } from "../common";
 import { EventSearchConfig, getDeploymentBlockNumber, getSigner, Wallet, ethers } from "../utils";
 import { SpokePoolClient, TokenClient } from "../clients";
-import { getWidestPossibleExpectedBlockRange } from "./PoolRebalanceUtils";
-import { getBlockRangeForChain } from "./DataworkerUtils";
 
 export interface DataworkerClients extends Clients {
   tokenClient: TokenClient;

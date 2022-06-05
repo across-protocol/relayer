@@ -37,6 +37,8 @@ export async function setupDataworker(
   timer: Contract;
   spokePoolClient_1: clients.SpokePoolClient;
   spokePoolClient_2: clients.SpokePoolClient;
+  spokePoolClient_3: clients.SpokePoolClient;
+  spokePoolClient_4: clients.SpokePoolClient;
   spokePoolClients: { [chainId: number]: clients.SpokePoolClient };
   configStoreClient: clients.AcrossConfigStoreClient;
   hubPoolClient: clients.HubPoolClient;
@@ -207,6 +209,8 @@ export async function setupDataworker(
     timer: umaEcosystem.timer,
     spokePoolClient_1,
     spokePoolClient_2,
+    spokePoolClient_3,
+    spokePoolClient_4,
     spokePoolClients,
     configStoreClient,
     hubPoolClient,
