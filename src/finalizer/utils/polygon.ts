@@ -14,7 +14,7 @@ import {
   winston,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
-import { HubPoolClient, MultiCallerClient } from "../../clients";
+import { HubPoolClient } from "../../clients";
 
 // Note!!: This client will only work for PoS tokens. Matic also has Plasma tokens which have a different finalization
 // process entirely.
