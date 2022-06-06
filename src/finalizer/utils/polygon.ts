@@ -6,6 +6,7 @@ import {
   delay,
   ERC20,
   ethers,
+  etherscanLink,
   getDeployedContract,
   getProvider,
   groupObjectCountsByProp,
@@ -157,7 +158,7 @@ export async function retrieveTokenFromMainnetTokenBridger(
       logger.info({
         at: "PolygonFinalizer",
         message: `Retrieved ${balanceFromWei} of ${l1TokenInfo.symbol} from PolygonTokenBridger 🪃`,
-        transactionhash: receipt.transactionHash,
+        transactionhash: etherscanLink(receipt.transactionHash, 1),
       });
       await delay(30);
     } catch (error) {
