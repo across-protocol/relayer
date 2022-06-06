@@ -21,5 +21,8 @@ jobs:
       - name: Install deps and build (with cache)
         uses: bahmutov/npm-install@v1
 
+      - name: Compile
+        run: tsc -b
+
       - name: Test
         run: yarn test
