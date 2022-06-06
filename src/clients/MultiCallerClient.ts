@@ -121,8 +121,11 @@ export class MultiCallerClient {
       const transactionHashes = [];
       Object.keys(groupedTransactions).forEach((chainId, chainIndex) => {
         mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
+        
         if (transactionReceipts[chainIndex].status === "rejected") {
           mrkdwn += ` ⚠️ Transactions sent on ${getNetworkName(chainId)} failed to execute due to exceeding timeout.\n`;
+        } else if (!(transactionReceipts[chainIndex] as any).value) {
+          mrkdwn += ` ⚠️ Transactions sent on ${getNetworkName(chainId)} failed unexpectedly.\n`;
         } else {
           groupedTransactions[chainId].forEach((transaction, groupTxIndex) => {
             mrkdwn += `  ${groupTxIndex + 1}. ${transaction.message || ""}: ` + `${transaction.mrkdwn || ""}\n`;
