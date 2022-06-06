@@ -13,7 +13,7 @@
 import { winston, config, startupLogLevel, Logger, delay } from "../utils";
 import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { BlockFinder } from "@uma/sdk";
-import { RootBundle } from "../interfaces";
+import { PendingRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
 import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
