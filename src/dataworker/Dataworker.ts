@@ -21,15 +21,13 @@ import {
   _buildSlowRelayRoot,
 } from "./DataworkerUtils";
 import { constructSpokePoolClientsForBlockAndUpdate } from "../common/ClientHelper";
-import { BundleDataClient, BalanceAllocator } from "../clients";
+import { BalanceAllocator } from "../clients";
 import _ from "lodash";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
 export class Dataworker {
-  bundleDataClient: BundleDataClient;
-
-  private rootCache: {
+  rootCache: {
     [key: string]: {
       runningBalances: RunningBalances;
       realizedLpFees: RunningBalances;
@@ -49,8 +47,6 @@ export class Dataworker {
     readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {},
     readonly spokeRootsLookbackCount = 0
   ) {
-    this.bundleDataClient = new BundleDataClient(logger, clients, chainIdListForBundleEvaluationBlockNumbers);
-
     if (
       maxRefundCountOverride !== undefined ||
       maxL1TokenCountOverride !== undefined ||
@@ -69,12 +65,12 @@ export class Dataworker {
   // This should be called whenever it's possible that the loadData information for a block range could have changed.
   // For instance, if the spoke or hub clients have been updated, it probably makes sense to clear this to be safe.
   clearCache() {
-    this.bundleDataClient.clearCache();
+    this.clients.bundleDataClient.clearCache();
     this.rootCache = {};
   }
 
   buildSlowRelayRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
-    const { unfilledDeposits } = this.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
+    const { unfilledDeposits } = this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
     return _buildSlowRelayRoot(unfilledDeposits);
   }
 
@@ -90,7 +86,7 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
 
-    const { fillsToRefund } = this.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
+    const { fillsToRefund } = this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
     const maxRefundCount = this.maxRefundCountOverride
       ? this.maxRefundCountOverride
       : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
@@ -106,7 +102,7 @@ export class Dataworker {
   }
 
   buildPoolRebalanceRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
-    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this.bundleDataClient.loadData(
+    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this.clients.bundleDataClient.loadData(
       blockRangesForChains,
       spokePoolClients
     );
@@ -174,7 +170,7 @@ export class Dataworker {
     )[1];
 
     // 3. Create roots
-    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this.bundleDataClient.loadData(
+    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this.clients.bundleDataClient.loadData(
       blockRangesForProposal,
       spokePoolClients
     );
@@ -475,7 +471,7 @@ export class Dataworker {
     // Compare roots with expected. The roots will be different if the block range start blocks were different
     // than the ones we constructed above when the original proposer submitted their proposal. The roots will also
     // be different if the events on any of the contracts were different.
-    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this.bundleDataClient.loadData(
+    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this.clients.bundleDataClient.loadData(
       blockRangesImpliedByBundleEndBlocks,
       spokePoolClients
     );
@@ -644,7 +640,7 @@ export class Dataworker {
             return [fromBlock, endBlock.toNumber()];
           });
 
-          const { unfilledDeposits } = this.bundleDataClient.loadData(
+          const { unfilledDeposits } = this.clients.bundleDataClient.loadData(
             blockNumberRanges,
             spokePoolClients,
             false // Don't log this function's result since we're calling it once per chain per root bundle
@@ -969,7 +965,7 @@ export class Dataworker {
             return [fromBlock, endBlock.toNumber()];
           });
 
-          const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this.bundleDataClient.loadData(
+          const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this.clients.bundleDataClient.loadData(
             blockNumberRanges,
             spokePoolClients,
             false // Don't log this function's result since we're calling it once per chain per root bundle

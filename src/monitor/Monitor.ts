@@ -1,31 +1,34 @@
-import { Contract, ERC20, assign, etherscanLink, getCurrentTime } from "../utils";
-import { convertFromWei, toBN, toWei, winston, createFormatFunction, getNetworkName, providers } from "../utils";
+import { FillsToRefund } from "../interfaces";
+import { BundleAction, BalanceType, L1Token, RelayerBalanceTable, RelayerBalanceReport } from "../interfaces";
+import { BigNumber, Contract, ERC20, assign, etherscanLink } from "../utils";
+import {
+  convertFromWei,
+  toBN,
+  toWei,
+  winston,
+  createFormatFunction,
+  getNetworkName,
+  getUnfilledDeposits,
+  providers,
+} from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 
-import { FillsToRefund, L1Token } from "../interfaces";
-import { BundleDataClient } from "../clients";
-
-enum BundleAction {
-  PROPOSED = "proposed",
-  DISPUTED = "disputed",
-  CANCELED = "canceled",
-}
+const ALL_CHAINS_NAME = "All chains";
+const ALL_BALANCE_TYPES = [BalanceType.CURRENT, BalanceType.PENDING, BalanceType.NEXT, BalanceType.TOTAL];
 
 export class Monitor {
   // Block range to search is only defined on calling update().
   private hubPoolStartingBlock: number | undefined = undefined;
   private hubPoolEndingBlock: number | undefined = undefined;
   private spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
-  private bundleDataClient: BundleDataClient;
 
   public constructor(
     readonly logger: winston.Logger,
     readonly monitorConfig: MonitorConfig,
     readonly clients: MonitorClients
   ) {
-    this.bundleDataClient = new BundleDataClient(logger, clients, monitorConfig.spokePoolChains);
     for (const chainId of monitorConfig.spokePoolChains) {
       this.spokePoolsBlocks[chainId] = { startingBlock: undefined, endingBlock: undefined };
     }
@@ -95,7 +98,7 @@ export class Monitor {
     const chainIds = this.monitorConfig.spokePoolChains;
     this.logger.debug({ at: "AcrossMonitor#UnknownRelayers", message: "Checking for unknown relayers", chainIds });
     for (const chainId of chainIds) {
-      const fills = await this.clients.spokePoolClients[chainId].getFillsWithBlockInRange(
+      const fills = this.clients.spokePoolClients[chainId].getFillsWithBlockInRange(
         this.spokePoolsBlocks[chainId].startingBlock,
         this.spokePoolsBlocks[chainId].endingBlock
       );
@@ -111,39 +114,102 @@ export class Monitor {
     }
   }
 
-  // Report balances of all tokens on each supported chain for each relayer.
+  async reportUnfilledDeposits() {
+    const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients);
+
+    // Group unfilled amounts by chain id and token id.
+    const unfilledAmountByChainAndToken: { [chainId: number]: { [tokenAddress: string]: BigNumber } } = {};
+    for (const deposit of unfilledDeposits) {
+      const chainId = deposit.deposit.originChainId;
+      const tokenAddress = deposit.deposit.originToken;
+      if (!unfilledAmountByChainAndToken[chainId] || !unfilledAmountByChainAndToken[chainId][tokenAddress]) {
+        assign(unfilledAmountByChainAndToken, [chainId, tokenAddress], BigNumber.from(0));
+      }
+      unfilledAmountByChainAndToken[chainId][tokenAddress] = unfilledAmountByChainAndToken[chainId][tokenAddress].add(
+        deposit.unfilledAmount
+      );
+    }
+
+    let mrkdwn = "";
+    for (const [chainIdStr, amountByToken] of Object.entries(unfilledAmountByChainAndToken)) {
+      // Skipping chains with no unfilled deposits.
+      if (!amountByToken) continue;
+
+      const chainId = parseInt(chainIdStr);
+      mrkdwn += `*Chain ${chainId}*\n`;
+      for (const tokenAddress of Object.keys(amountByToken)) {
+        const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
+        // Convert to number of tokens for readability.
+        const unfilledAmount = convertFromWei(amountByToken[tokenAddress].toString(), tokenInfo.decimals);
+        mrkdwn += `${tokenInfo.symbol}: ${unfilledAmount}\n`;
+      }
+    }
+
+    if (mrkdwn) {
+      this.logger.info({ at: "Monitor", message: "Unfilled deposits ⏱", mrkdwn });
+    }
+  }
+
   async reportRelayerBalances() {
     const relayers = this.monitorConfig.monitoredRelayers;
+    const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
+    const chainIds = this.monitorConfig.spokePoolChains;
+    const allChainNames = chainIds.map(getNetworkName).concat([ALL_CHAINS_NAME]);
+    const reports = this.initializeBalanceReports(relayers, allL1Tokens, allChainNames);
+
+    await this.updateCurrentRelayerBalances(reports);
+    this.updatePendingAndFutureRelayerRefunds(reports);
+
     for (const relayer of relayers) {
+      const report = reports[relayer];
+      let mrkdwn = "Token amounts: current, in liveness, next bundle, total\n";
+      for (const token of allL1Tokens) {
+        mrkdwn += `*[${token.symbol}]*\n`;
+        for (const chainName of allChainNames) {
+          const balances = Object.values(report[token.symbol][chainName]).map((balance) =>
+            convertFromWei(balance.toString(), token.decimals)
+          );
+          mrkdwn += `${chainName}: ${balances.join(", ")}\n`;
+        }
+      }
+      this.logger.info({
+        at: "Monitor",
+        message: `Balance report for ${relayer} 📖`,
+        mrkdwn,
+      });
+    }
+  }
+
+  // Update current balances of all tokens on each supported chain for each relayer.
+  async updateCurrentRelayerBalances(relayerBalanceReport: RelayerBalanceReport) {
+    for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const chainId of this.monitorConfig.spokePoolChains) {
-        const tokenAddresses = this.clients.hubPoolClient.getDestinationTokensForChainId(chainId);
+        const l2ToL1Tokens = this.clients.hubPoolClient.getDestinationTokensToL1TokensForChainId(chainId);
 
         // Use the provider from the spoke pool to send requests to the right provider.
         const spokePoolClient = this.clients.spokePoolClients[chainId];
+        const l2TokenAddresses = Object.keys(l2ToL1Tokens);
         const tokenBalances = await Promise.all(
-          tokenAddresses.map((tokenAddress) =>
-            new Contract(tokenAddress, ERC20.abi, spokePoolClient.spokePool.signer).balanceOf(relayer)
+          l2TokenAddresses.map((l2TokenAddress) =>
+            new Contract(l2TokenAddress, ERC20.abi, spokePoolClient.spokePool.signer).balanceOf(relayer)
           )
         );
 
-        let mrkdwn = "";
-        for (let i = 0; i < tokenAddresses.length; i++) {
-          const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddresses[i], chainId);
-          // Convert to number of tokens for readability.
-          const balance = convertFromWei(tokenBalances[i], tokenInfo.decimals);
-          mrkdwn += `*${tokenInfo.symbol}: ${balance}*\n`;
+        for (let i = 0; i < l2TokenAddresses.length; i++) {
+          const tokenInfo = l2ToL1Tokens[l2TokenAddresses[i]];
+          this.updateRelayerBalanceTable(
+            relayerBalanceReport[relayer],
+            tokenInfo.symbol,
+            getNetworkName(chainId),
+            BalanceType.CURRENT,
+            tokenBalances[i]
+          );
         }
-
-        this.logger.info({
-          at: "Monitor",
-          message: `Relayer (${relayer})'s token balances for chain ${chainId} 🚀`,
-          mrkdwn,
-        });
       }
     }
   }
 
-  async reportPendingRelayerRefunds() {
+  updatePendingAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport) {
     const hubPoolClient = this.clients.hubPoolClient;
     const latestBlockNumber = hubPoolClient.latestBlockNumber;
     const latestBundle = hubPoolClient.getMostRecentProposedRootBundle(latestBlockNumber);
@@ -152,7 +218,6 @@ export class Monitor {
     // Refunds that will be processed in the current bundle still pending liveness (if any).
     let pendingFillsToRefundPerChain: FillsToRefund | undefined = undefined;
 
-    let remainingLivenessMins = 0;
     // If latest proposed bundle has not been executed yet, we have a bundle pending liveness.
     if (hubPoolClient.getExecutedLeavesForRootBundle(latestBundle, latestBlockNumber).length == 0) {
       // Use the same block range as the current pending bundle to ensure we look at the right refunds.
@@ -162,86 +227,112 @@ export class Monitor {
           endBlock.toNumber(),
         ]
       );
-      const { fillsToRefund } = this.bundleDataClient.loadData(
+      const { fillsToRefund } = this.clients.bundleDataClient.loadData(
         pendingBundleEvaluationBlockRanges,
         this.clients.spokePoolClients,
         false
       );
       pendingFillsToRefundPerChain = fillsToRefund;
-
-      // Calculate remaining time in liveness.
-      remainingLivenessMins = Math.floor((latestBundle.challengePeriodEndTimestamp - getCurrentTime()) / 60);
     }
 
     // The future bundle covers block range from the ending of the last proposed bundle (might still be pending liveness)
     // to the latest block.
-    const futureBundleEvaluationBlockRanges: number[][] = [];
-    for (const endingBlock of latestBundle.bundleEvaluationBlockNumbers.values()) {
-      futureBundleEvaluationBlockRanges.push([endingBlock.toNumber() + 1, latestBlockNumber]);
-    }
+    const futureBundleEvaluationBlockRanges: number[][] = latestBundle.bundleEvaluationBlockNumbers.map(
+      (endingBlock) => [endingBlock.toNumber() + 1, latestBlockNumber]
+    );
     // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
     // (if any) has been fully executed.
-    const { fillsToRefund: futureFillsToRefundPerChain } = this.bundleDataClient.loadData(
+    const { fillsToRefund: futureFillsToRefundPerChain } = this.clients.bundleDataClient.loadData(
       futureBundleEvaluationBlockRanges,
       this.clients.spokePoolClients,
       false
     );
 
     // Calculate which fills have not yet been refunded for each monitored relayer.
-    const relayers = this.monitorConfig.monitoredRelayers;
-    for (const relayer of relayers) {
-      if (pendingFillsToRefundPerChain !== undefined) {
-        const pendingRefundsMessage = `Relayer (${relayer})'s refunds included in current pending bundle 👑`;
-        const noPendingRefundsMessage = `No refunds for relayer (${relayer}) in current pending bundle 😵‍💫`;
-        await this.notifyRelayerRefunds(
-          pendingFillsToRefundPerChain,
-          relayer,
-          pendingRefundsMessage,
-          noPendingRefundsMessage,
-          remainingLivenessMins
-        );
-      }
-
-      const futureRefundsMessage = `Relayer (${relayer})'s refunds to be included in the next bundle ⌛`;
-      const noFutureRefundsMessage = `No refunds for relayer (${relayer}) in next bundle yet 🪄`;
-      await this.notifyRelayerRefunds(
-        futureFillsToRefundPerChain,
+    for (const relayer of this.monitorConfig.monitoredRelayers) {
+      this.updateRelayerRefunds(
+        pendingFillsToRefundPerChain,
+        relayerBalanceReport[relayer],
         relayer,
-        futureRefundsMessage,
-        noFutureRefundsMessage
+        BalanceType.PENDING
       );
+
+      this.updateRelayerRefunds(futureFillsToRefundPerChain, relayerBalanceReport[relayer], relayer, BalanceType.NEXT);
     }
   }
 
-  private async notifyRelayerRefunds(
-    fillsToRefundPerChain: FillsToRefund,
-    relayer: string,
-    refundsMsg: string,
-    noRefundMsg: string,
-    timeToRefunds?: number
-  ) {
-    let mrkdwn = timeToRefunds !== undefined ? `Refund ETA: ~${timeToRefunds} mins\n` : "";
-    let foundAnyRefunds = false;
-    for (const chainIdString of Object.keys(fillsToRefundPerChain)) {
-      mrkdwn += `*Chain ${chainIdString}*\n`;
+  initializeBalanceReports(relayers: string[], allL1Tokens: L1Token[], allChainNames: string[]) {
+    const reports: RelayerBalanceReport = {};
+    for (const relayer of relayers) {
+      reports[relayer] = {};
+      for (const token of allL1Tokens) {
+        reports[relayer][token.symbol] = {};
+        for (const chainName of allChainNames) {
+          reports[relayer][token.symbol][chainName] = {};
+          for (const balanceType of ALL_BALANCE_TYPES) {
+            reports[relayer][token.symbol][chainName][balanceType] = BigNumber.from(0);
+          }
+        }
+      }
+    }
+    return reports;
+  }
 
-      let chainId = parseInt(chainIdString);
+  private updateRelayerRefunds(
+    fillsToRefundPerChain: FillsToRefund,
+    relayerBalanceTable: RelayerBalanceTable,
+    relayer: string,
+    balanceType: BalanceType
+  ) {
+    // Short-circuit if there are no refunds to process.
+    if (!fillsToRefundPerChain) return;
+
+    for (const chainId of this.monitorConfig.spokePoolChains) {
       const fillsToRefund = fillsToRefundPerChain[chainId];
+      // Skip chains that don't have any refunds.
+      if (!fillsToRefund) continue;
+
       for (const tokenAddress of Object.keys(fillsToRefund)) {
         const totalRefundAmount = fillsToRefund[tokenAddress].refunds[relayer];
         const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
-        // Convert to number of tokens for readability.
-        const refund = convertFromWei(totalRefundAmount.toString(), tokenInfo.decimals);
-        mrkdwn += `${tokenInfo.symbol}: ${refund}\n`;
-        foundAnyRefunds = true;
+        let amount = totalRefundAmount ? totalRefundAmount : BigNumber.from(0);
+        this.updateRelayerBalanceTable(
+          relayerBalanceTable,
+          tokenInfo.symbol,
+          getNetworkName(chainId),
+          balanceType,
+          amount
+        );
       }
     }
+  }
 
-    if (foundAnyRefunds) {
-      this.logger.info({ at: "Monitor", message: refundsMsg, mrkdwn });
-    } else {
-      this.logger.info({ at: "Monitor", message: noRefundMsg, mrkdwn: "" });
-    }
+  private updateRelayerBalanceTable(
+    relayerBalanceTable: RelayerBalanceTable,
+    tokenSymbol: string,
+    chainName: string,
+    balanceType: BalanceType,
+    amount: BigNumber
+  ) {
+    this.incrementBalance(relayerBalanceTable, tokenSymbol, chainName, balanceType, amount);
+
+    // We want to update the total balance when there are changes to each individual balance.
+    this.incrementBalance(relayerBalanceTable, tokenSymbol, chainName, BalanceType.TOTAL, amount);
+
+    // We want to update the all chains column for any changes to each chain's column.
+    this.incrementBalance(relayerBalanceTable, tokenSymbol, ALL_CHAINS_NAME, balanceType, amount);
+    this.incrementBalance(relayerBalanceTable, tokenSymbol, ALL_CHAINS_NAME, BalanceType.TOTAL, amount);
+  }
+
+  private incrementBalance(
+    relayerBalanceTable: RelayerBalanceTable,
+    tokenSymbol: string,
+    chainName: string,
+    balanceType: BalanceType,
+    amount: BigNumber
+  ) {
+    relayerBalanceTable[tokenSymbol][chainName][balanceType] =
+      relayerBalanceTable[tokenSymbol][chainName][balanceType].add(amount);
   }
 
   private notifyIfUnknownCaller(caller: string, action: BundleAction, transactionHash: string) {

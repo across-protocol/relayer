@@ -13,7 +13,7 @@ import * as clients from "../../src/clients";
 import { amountToLp, destinationChainId, originChainId, CHAIN_ID_TEST_LIST, repaymentChainId } from "../constants";
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
-import { TokenClient } from "../../src/clients";
+import { BundleDataClient, TokenClient } from "../../src/clients";
 import { toBNWei } from "../../src/utils";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
 
@@ -146,8 +146,20 @@ export async function setupDataworker(
 
   const tokenClient = new TokenClient(spyLogger, relayer.address, {}, hubPoolClient);
 
+  const bundleDataClient = new BundleDataClient(
+    spyLogger,
+    {
+      configStoreClient,
+      multiCallerClient,
+      profitClient,
+      hubPoolClient,
+    },
+    CHAIN_ID_TEST_LIST
+  );
+
   const defaultEventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 };
   const dataworkerClients: DataworkerClients = {
+    bundleDataClient,
     tokenClient,
     spokePoolSigners: Object.fromEntries(CHAIN_ID_TEST_LIST.map((chainId) => [chainId, owner])),
     spokePoolClientSearchSettings: Object.fromEntries(

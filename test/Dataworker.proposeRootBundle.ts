@@ -48,6 +48,7 @@ describe("Dataworker: Propose root bundle", async function () {
       0
     ));
   });
+
   it("Simple lifecycle", async function () {
     await updateAllClients();
 
@@ -198,7 +199,7 @@ describe("Dataworker: Propose root bundle", async function () {
     // in a previous root bundle. This would be a case where there is excess slow fill payment sent to the spoke
     // pool and we need to send some back to the hub pool, because of this fill in the current block range that
     // came after the slow fill was sent.
-    const { allValidFills } = dataworkerInstance.bundleDataClient.loadData(
+    const { allValidFills } = dataworkerInstance.clients.bundleDataClient.loadData(
       loadDataResults4.blockRangesForChains,
       spokePoolClients
     );
@@ -211,5 +212,10 @@ describe("Dataworker: Propose root bundle", async function () {
     await multiCallerClient.executeTransactionQueue();
     await updateAllClients();
     expect(hubPoolClient.hasPendingProposal()).to.equal(true);
+
+    // Check that the cache is cleared.
+    expect(dataworkerInstance.rootCache).to.not.deep.equal({});
+    dataworkerInstance.clearCache();
+    expect(dataworkerInstance.rootCache).to.deep.equal({});
   });
 });

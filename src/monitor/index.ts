@@ -28,7 +28,7 @@ export async function runMonitor(_logger: winston.Logger) {
 
       if (config.botModes.reportEnabled) {
         await acrossMonitor.reportRelayerBalances();
-        await acrossMonitor.reportPendingRelayerRefunds();
+        await acrossMonitor.reportUnfilledDeposits();
       } else {
         logger.debug({ at: "AcrossMonitor", message: "Report disabled" });
       }

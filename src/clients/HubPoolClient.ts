@@ -109,10 +109,12 @@ export class HubPoolClient {
     return this.l1TokensToDestinationTokens[l1Token][destinationChainId];
   }
 
-  getDestinationTokensForChainId(chainId: number) {
-    return this.l1Tokens
-      .map((l1Token) => this.getDestinationTokenForL1TokenDestinationChainId(l1Token.address, chainId))
-      .filter((token) => token !== undefined);
+  getDestinationTokensToL1TokensForChainId(chainId: number) {
+    return Object.fromEntries(
+      this.l1Tokens
+        .map((l1Token) => [this.getDestinationTokenForL1TokenDestinationChainId(l1Token.address, chainId), l1Token])
+        .filter((entry) => entry[0] !== undefined)
+    );
   }
 
   async getCurrentPoolUtilization(l1Token: string) {
@@ -359,7 +361,9 @@ export class HubPoolClient {
     const tokenInfo: L1Token[] = await Promise.all(
       l1TokensLPEvents.map((event) => this.fetchTokenInfoFromContract(spreadEvent(event).l1Token))
     );
-    for (const info of tokenInfo) if (!this.l1Tokens.includes(info)) this.l1Tokens.push(info);
+    for (const info of tokenInfo) {
+      if (!this.l1Tokens.find((token) => token.symbol === info.symbol)) this.l1Tokens.push(info);
+    }
 
     this.proposedRootBundles.push(
       ...proposeRootBundleEvents.map((event) => {

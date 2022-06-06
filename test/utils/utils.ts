@@ -14,12 +14,10 @@ import { SpokePoolClient } from "../../src/clients";
 import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber } from "./index";
 import { Deposit, Fill, RunningBalances } from "../../src/interfaces";
 import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
-import { expect } from "./";
 
 import winston from "winston";
 import sinon from "sinon";
 import chai from "chai";
-import Sinon from "sinon";
 export { winston, sinon };
 
 const assert = chai.assert;
@@ -59,11 +57,6 @@ export function createSpyLogger() {
   });
 
   return { spy, spyLogger };
-}
-
-export function expectLogsToContain(spy: Sinon.SinonSpy, message: string) {
-  const log = spy.getCalls().find((log) => log.lastArg.message === message);
-  expect(log).to.not.be.undefined;
 }
 
 const iterativelyReplaceBigNumbers = (obj: any) => {
