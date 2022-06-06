@@ -6,7 +6,7 @@ import { Deposit } from "../interfaces/SpokePool";
 
 export class Relayer {
   constructor(readonly logger: winston.Logger, readonly clients: RelayerClients) {}
-  async checkForUnfilledDepositsAndFill(sendSlowRelays: Boolean) {
+  async checkForUnfilledDepositsAndFill(sendSlowRelays: Boolean = true) {
     // Fetch all unfilled deposits, order by total earnable fee.
     // TODO: Note this does not consider the price of the token which will be added once the profitability module is
     // added to this bot.
