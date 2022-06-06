@@ -52,8 +52,12 @@ export class TokenClient {
     return this.tokenShortfall?.[chainId]?.[token]?.deposits || [];
   }
 
-  hasSufficientBalanceForFill(deposit: Deposit, fillAmount: BigNumber) {
+  hasBalanceForFill(deposit: Deposit, fillAmount: BigNumber) {
     return this.getBalance(deposit.destinationChainId, deposit.destinationToken).gte(fillAmount);
+  }
+
+  hasBalanceForZeroFill(deposit: Deposit) {
+    return this.getBalance(deposit.destinationChainId, deposit.destinationToken).gte(toBN(1));
   }
 
   // If the relayer tries to execute a relay but does not have enough tokens to fully fill it it will capture the

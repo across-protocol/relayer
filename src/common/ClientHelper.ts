@@ -117,7 +117,7 @@ export async function constructClients(logger: winston.Logger, config: CommonCon
 
 export async function updateClients(clients: Clients) {
   await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
-  // Must come after hubPoolClient. // TODO: this should be refactored to check if the hubpool client has had one 
+  // Must come after hubPoolClient. // TODO: this should be refactored to check if the hubpool client has had one
   // previous update run such that it has l1 tokens within it.If it has we dont need to make it sequential like this.
   await clients.profitClient.update();
 }

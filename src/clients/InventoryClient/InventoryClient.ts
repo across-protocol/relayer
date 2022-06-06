@@ -113,7 +113,7 @@ export class InventoryClient {
   // will the balances be on the target chain and the overall cumulative balance).
   // d) use c to compute what the post relay post current in-flight transactions allocation would be. Compare this
   // number to the target threshold and:
-  //     If this number of more than the target for the designation chain then refund on L1.
+  //     If this number of more than the target for the designation chain + rebalance overshoot then refund on L1.
   //     Else, the post fill amount is within the target, so refund on the destination chain.
   determineRefundChainId(deposit: Deposit): number {
     const l1Token = this.hubPoolClient.getL1TokenForDeposit(deposit);
@@ -131,7 +131,13 @@ export class InventoryClient {
       .mul(scalar)
       .div(cumulativeVirtualBalanceWithShortfallPostRelay);
 
-    const allocationThreshold = this.inventoryConfig.targetL2PctOfTotal[deposit.destinationChainId];
+    // If the post relay allocation, considering funds in transit, is larger than the target threshold + overshoot then
+    // refund on L1. Else, refund on destination chian to keep funds within the target.
+    const allocationThreshold = toBN(this.inventoryConfig.targetL2PctOfTotal[deposit.destinationChainId]).add(
+      toBN(this.inventoryConfig.rebalanceOvershoot)
+    );
+    const refundChainId = expectedPostRelayAllocation.gt(allocationThreshold) ? 1 : deposit.destinationChainId;
+
     this.log("Evaluated refund Chain", {
       chainShortfall,
       chainVirtualBalance,
@@ -142,10 +148,10 @@ export class InventoryClient {
       cumulativeVirtualBalanceWithShortfallPostRelay,
       allocationThreshold,
       expectedPostRelayAllocation,
+      refundChainId,
     });
     // If the allocation is greater than the target then refund on L1. Else, refund on destination chain.
-    if (expectedPostRelayAllocation.gt(allocationThreshold)) return 1;
-    else return deposit.destinationChainId;
+    return refundChainId;
   }
 
   async rebalanceInventoryIfNeeded() {
@@ -253,8 +259,8 @@ export class InventoryClient {
               `${getNetworkName(chainId)} which is ` +
               `${formatWei(tokenDistributionPerL1Token[l1Token][chainId].mul(100))}% of the total ` +
               `${formatter(this.getCumulativeBalance(l1Token).toString())} ${symbol}.` +
-              ` This chains pending L1->L2 transfer amount is ` +
-              `${this.getOutstandingCrossChainTransferAmount(chainId, l1Token).toString()}.\n`;
+              ` This chain's pending L1->L2 transfer amount is ` +
+              `${formatter(this.getOutstandingCrossChainTransferAmount(chainId, l1Token).toString())}.\n`;
           }
         }
       }

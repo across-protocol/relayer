@@ -22,17 +22,19 @@ export class Relayer {
     // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
     // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
     for (const { deposit, unfilledAmount, fillCount } of unfilledDeposits) {
-      if (this.clients.tokenClient.hasSufficientBalanceForFill(deposit, unfilledAmount)) {
+      if (this.clients.tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
         if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount)) {
           this.fillRelay(deposit, unfilledAmount);
         } else {
           this.clients.profitClient.captureUnprofitableFill(deposit, unfilledAmount);
         }
       } else {
+        // TODO: this line right now will capture any token shortfalls, even if you have 0 of the token. The bot should
+        // be updated to ignore non-whitelisted (zero balance) tokens from this token shortfall log.
         this.clients.tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
         // If we dont have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
-        // 0 sized fill to ensure that the deposit is slow relayed. This only needs to be done once.
-        if (fillCount === 0) this.zeroFillDeposit(deposit);
+        // 1 wei sized fill to ensure that the deposit is slow relayed. This only needs to be done once.
+        if (this.clients.tokenClient.hasBalanceForZeroFill(deposit) && fillCount === 0) this.zeroFillDeposit(deposit);
       }
     }
     // If during the execution run we had shortfalls or unprofitable fills then handel it by producing associated logs.
@@ -69,6 +71,7 @@ export class Relayer {
 
   zeroFillDeposit(deposit: Deposit) {
     const repaymentChainId = 1; // Always refund zero fills on L1 to not send dust over the chain unnecessarily.
+    const fillAmount = toBN(1); // 1 wei; smallest fill size possible.
     this.logger.debug({ at: "Relayer", message: "Zero filling", deposit, repaymentChain: repaymentChainId });
     try {
       // Add the zero fill fill transaction to the multiCallerClient so it will be executed with the next batch.
@@ -76,10 +79,11 @@ export class Relayer {
         contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
         chainId: deposit.destinationChainId,
         method: "fillRelay", // method called.
-        args: buildFillRelayProps(deposit, repaymentChainId, toBN(1)), // props sent with function call.
+        args: buildFillRelayProps(deposit, repaymentChainId, fillAmount), // props sent with function call.
         message: "Zero size relay sent 🐌", // message sent to logger.
         mrkdwn: this.constructZeroSizeFilledMrkdwn(deposit), // message details mrkdwn
       });
+      this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.destinationToken, fillAmount);
     } catch (error) {
       this.logger.error({
         at: "Relayer",

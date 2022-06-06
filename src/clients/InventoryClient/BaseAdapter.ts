@@ -13,9 +13,8 @@ export class BaseAdapter {
   l2DepositFinalizedEvents: { [l1Token: string]: any[] } = {};
   l2DepositFinalizedEvents_DepositAdapter: { [l1Token: string]: any[] } = {};
 
-  // Consider all deposit finalization events over the last 1 day.
-  depositEvalTime = 24 * 60 * 60;
-  l2LooBackSafetyMargin = 5;
+  depositEvalTime = 24 * 60 * 60; // Consider all deposit finalization events over the last 1 day.
+  l2LooBackSafetyMargin = 10; // The pending transfers util can accomidate up to this multipler
 
   firstEvaluatedL1BlockNumber: number;
   constructor(
@@ -53,7 +52,6 @@ export class BaseAdapter {
     this.l2SearchConfig.fromBlock = Math.floor(
       this.l2SearchConfig.toBlock - (this.depositEvalTime / this.avgBlockTime()) * this.l2LooBackSafetyMargin
     );
-    console.log("this.l2SearchConfig.fromBlock", this.l2SearchConfig.fromBlock);
   }
 
   async checkAndSendTokenApprovals(l1Tokens: string[], associatedL1Bridges: string[]) {
@@ -97,17 +95,15 @@ export class BaseAdapter {
     let outstandingTransfers = {};
     for (const l1Token of l1Tokens) {
       let l2FinalizationSet = this.l2DepositFinalizedEvents[l1Token];
-      if (this.chainId == 288 && l1Token == "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
-        console.log("l2FinalizationSetA", l2FinalizationSet);
-      // If this is WETH and there are atomic depositor events then consider the union as the ful set of finalization
-      // events. We do this as the output event on L2 will show the Atomic depositor as the sender, not the relayer.
+
       if (this.isWeth(l1Token) && this.l2DepositFinalizedEvents_DepositAdapter?.[l1Token]?.length > 0)
+        // If this is WETH and there are atomic depositor events then consider the union as the ful set of finalization
+        // events. We do this as the output event on L2 will show the Atomic depositor as the sender, not the relayer.
         l2FinalizationSet = [
           ...l2FinalizationSet,
           ...this.l2DepositFinalizedEvents_DepositAdapter[l1Token].filter((event) => event.to === this.relayerAddress),
         ].sort((a, b) => a.blockNumber - b.blockNumber);
-      if (this.chainId == 288 && l1Token == "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
-        console.log("l2FinalizationSetB", l2FinalizationSet);
+
       // Find the most recent L2 finalization event and most recent deposit event.
       const newestFinalizedDeposit = l2FinalizationSet[l2FinalizationSet.length - 1];
       const newestInitializedDeposit =
@@ -119,9 +115,13 @@ export class BaseAdapter {
       // the time over which the L2 blocks are search is greater the l1 period (~5 days > ~1 day) then the check below
       // will correctly return 0 for no outstanding transfers in the last period. In the event blocks are produced
       // much faster on L2 this check can fail! this is why we have the l2LooBackSafetyMargin to accommodate variations
-      // in the L2 block time. Note that if this does not hold true the logic will incorrectly deem old
-      const approxOneDayAgoL1 = this.l1SearchConfig.toBlock - this.depositEvalTime / this.avgBlockTime(1);
-      if (!newestFinalizedDeposit && newestInitializedDeposit.blockNumber < approxOneDayAgoL1) {
+      // in the L2 block time. Note that if this does not hold true the logic will incorrectly determine the cross-chain
+      // transfer amount. Alternatively, if there no newestInitializedDeposit then we have never made a L1 deposit.
+      const approx12HourAgoL1 = this.l1SearchConfig.toBlock - this.depositEvalTime / this.avgBlockTime(1) / 2;
+      if (
+        (!newestFinalizedDeposit && newestInitializedDeposit?.blockNumber < approx12HourAgoL1) ||
+        !newestInitializedDeposit // If there has never been any finalized deposits.
+      ) {
         outstandingTransfers[l1Token] = toBN(0);
         continue;
       }
@@ -159,25 +159,10 @@ export class BaseAdapter {
       // are older than 1 day ago they are invalid as they would have finalized in this period of time and must have
       // matched onto the newest event in the l2FinalizationSet and so they should be disregarded.
       if (!newestFinalizedDeposit)
-        l1EventsToConsider = l1EventsToConsider.filter((l1Event) => l1Event.blockNumber > approxOneDayAgoL1);
+        l1EventsToConsider = l1EventsToConsider.filter((l1Event) => l1Event.blockNumber > approx12HourAgoL1);
 
       const totalDepositsOutstanding = l1EventsToConsider.reduce((acc, curr) => acc.add(curr.amount), toBN(0));
       outstandingTransfers[l1Token] = totalDepositsOutstanding;
-
-      if (this.chainId == 10) {
-        console.log("TOKEN", l1Token);
-        console.log("l2FinalizationSet", l2FinalizationSet);
-        console.log("newestFinalizedDeposit", newestFinalizedDeposit);
-        console.log("newestInitalizedDeposit", newestInitializedDeposit);
-        console.log("newestInitalizedDeposit.blockNumber", newestInitializedDeposit.blockNumber);
-        console.log(
-          "this.l1SearchConfig.toBlock - this.depositEvalTime / this.avgBlockTime(1)",
-          this.l1SearchConfig.toBlock - this.depositEvalTime / this.avgBlockTime(1)
-        );
-        console.log("associatedL1DepositIndex", associatedL1DepositIndex);
-        console.log("l1EventsToConsider", l1EventsToConsider);
-        console.log("totalDepositsOutstanding", totalDepositsOutstanding);
-      }
     }
 
     return outstandingTransfers;
