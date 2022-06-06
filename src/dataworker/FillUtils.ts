@@ -24,10 +24,7 @@ export function getRefundInformationFromFill(
     fill.destinationToken,
     endBlockForMainnet
   );
-  const repaymentToken = hubPoolClient.getDestinationTokenForL1Token(
-    l1TokenCounterpart,
-    chainToSendRefundTo
-  );
+  const repaymentToken = hubPoolClient.getDestinationTokenForL1Token(l1TokenCounterpart, chainToSendRefundTo);
   return {
     chainToSendRefundTo,
     repaymentToken,

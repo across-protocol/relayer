@@ -106,7 +106,8 @@ export class InventoryClient {
       : rebalance;
   }
 
-  // Work out where a relay should be refunded to optimally manage the bots inventory. Use the following algorithm:
+  // Work out where a relay should be refunded to optimally manage the bots inventory. If the inventory management logic
+  // not enabled then return funds on the chain the deposit was filled on Else, use the following algorithm:
   // a) Find the chain virtual balance (current balance + pending relays) minus the current shortfall.
   // b) find the cumulative virtual balance minus the current shortfall.
   // c) consider the size of a and b post relay (i.e after the relay is paid and all current transfers are settled what
@@ -116,6 +117,7 @@ export class InventoryClient {
   //     If this number of more than the target for the designation chain + rebalance overshoot then refund on L1.
   //     Else, the post fill amount is within the target, so refund on the destination chain.
   determineRefundChainId(deposit: Deposit): number {
+    if (!this.isfInventoryManagementEnabled()) return deposit.destinationChainId;
     const l1Token = this.hubPoolClient.getL1TokenForDeposit(deposit);
     const chainShortfall = this.getTokenShortFall(l1Token, deposit.destinationChainId);
     const chainVirtualBalance = this.getBalanceOnChainForL1Token(deposit.destinationChainId, l1Token);

@@ -20,7 +20,7 @@ export async function runRelayer(_logger: winston.Logger): Promise<void> {
     for (;;) {
       await updateRelayerClients(relayerClients);
 
-      await relayer.checkForUnfilledDepositsAndFill();
+      await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled);
 
       await relayerClients.multiCallerClient.executeTransactionQueue(!config.sendingRelaysEnabled);
 

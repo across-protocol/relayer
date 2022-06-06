@@ -6,7 +6,7 @@ import { Deposit } from "../interfaces/SpokePool";
 
 export class Relayer {
   constructor(readonly logger: winston.Logger, readonly clients: RelayerClients) {}
-  async checkForUnfilledDepositsAndFill() {
+  async checkForUnfilledDepositsAndFill(sendSlowRelays: Boolean) {
     // Fetch all unfilled deposits, order by total earnable fee.
     // TODO: Note this does not consider the price of the token which will be added once the profitability module is
     // added to this bot.
@@ -34,7 +34,8 @@ export class Relayer {
         this.clients.tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
         // If we dont have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
         // 1 wei sized fill to ensure that the deposit is slow relayed. This only needs to be done once.
-        if (this.clients.tokenClient.hasBalanceForZeroFill(deposit) && fillCount === 0) this.zeroFillDeposit(deposit);
+        if (sendSlowRelays && this.clients.tokenClient.hasBalanceForZeroFill(deposit) && fillCount === 0)
+          this.zeroFillDeposit(deposit);
       }
     }
     // If during the execution run we had shortfalls or unprofitable fills then handel it by producing associated logs.
