@@ -1,7 +1,15 @@
 import * as optimismSDK from "@eth-optimism/sdk";
 import { HubPoolClient } from "../../clients";
 import { TokensBridged } from "../../interfaces";
-import { convertFromWei, delay, etherscanLink, getProvider, groupObjectCountsByProp, Wallet, winston } from "../../utils";
+import {
+  convertFromWei,
+  delay,
+  etherscanLink,
+  getProvider,
+  groupObjectCountsByProp,
+  Wallet,
+  winston,
+} from "../../utils";
 
 const CHAIN_ID = 10;
 
