@@ -1,7 +1,7 @@
 import * as optimismSDK from "@eth-optimism/sdk";
 import { HubPoolClient } from "../../clients";
 import { TokensBridged } from "../../interfaces";
-import { convertFromWei, delay, getProvider, groupObjectCountsByProp, Wallet, winston } from "../../utils";
+import { convertFromWei, delay, etherscanLink, getProvider, groupObjectCountsByProp, Wallet, winston } from "../../utils";
 
 const CHAIN_ID = 10;
 
@@ -110,7 +110,7 @@ export async function finalizeOptimismMessage(
     logger.info({
       at: "OptimismFinalizer",
       message: `Finalized Optimism withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
-      transactionhash: receipt.transactionHash,
+      transactionhash: etherscanLink(receipt.transactionHash, 1),
     });
     await delay(30);
   } catch (error) {
