@@ -79,18 +79,18 @@ describe("InventoryClient: Refund chain selection", async function () {
 
   it("Correctly decides when to refund based on relay size", async function () {
     // To start with, consider a simple case where the relayer is filling small relays. The current allocation on the
-    // target chain of Optimism for WETH is 20/140=14.2%. This is above the sum of targetL2Pct of 10%.
+    // target chain of Optimism for WETH is 20/140=14.2%. This is above the sum of targetL2Pct of 10% plus 2% buffer.
     // Construct a small mock deposit of side 1 WETH. Post relay Optimism should have (20-1)/(140-1)=13.6%. This is still
-    // above the threshold and so the bot should choose to be refunded on L1.
+    // above the threshold of 12 and so the bot should choose to be refunded on L1.
     sampleDepositData.amount = toWei(1);
     expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
     expect(lastSpyLogIncludes(spy, `expectedPostRelayAllocation":"136690647482014388"`)).to.be.true; // (20-1)/(140-1)=0.136
 
     // Now consider a case where the relayer is filling a marginally larger relay of size 5 WETH. Now the post relay
-    // allocation on optimism would be (20-5)/(140-5)=11%. This is still above the target threshold of 10% and so the
-    // bot should choose to be refunded on L1.
+    // allocation on optimism would be (20-5)/(140-5)=11%. This now below the target plus buffer of 12%. Relayer should
+    // choose to refund on the L2.
     sampleDepositData.amount = toWei(5);
-    expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
+    expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
     expect(lastSpyLogIncludes(spy, `expectedPostRelayAllocation":"111111111111111111"`)).to.be.true; // (20-5)/(140-5)=0.11
 
     // Now consider a bigger relay that should force refunds on the L2 chain. Set the relay size to 10 WETH. now post
@@ -128,13 +128,13 @@ describe("InventoryClient: Refund chain selection", async function () {
     //    125-1.69=124.31. This is total funds considering the shortfall and the relay amount that is to be executed.
     // 7. expectedPostRelayAllocation: the expected post relay allocation is the chainVirtualBalanceWithShortfallPostRelay
     //    divided by the cumulativeVirtualBalanceWithShortfallPostRelay. 8.11/123.31 = 0.0657.
-    // This number is then used to decide on where funds should be allocated! If this number is above the threshold then
-    // refund on L1. if it is below the threshold then refund on the target chain. As this number is above the threshold
-    // of 0.05 we should refund on L1.
+    // This number is then used to decide on where funds should be allocated! If this number is above the threshold plus
+    // the buffer then refund on L1. if it is below the threshold then refund on the target chain. As this number is
+    // is below the buffer plus the threshold then the bot should refund on L2.
 
     sampleDepositData.destinationChainId = 42161;
     sampleDepositData.amount = toWei(1.69);
-    expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
+    expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(42161);
     expect(lastSpyLogIncludes(spy, `chainShortfall":"15000000000000000000"`)).to.be.true;
     expect(lastSpyLogIncludes(spy, `chainVirtualBalance":"24800000000000000000"`)).to.be.true; // (10+14.8)=24.8
     expect(lastSpyLogIncludes(spy, `chainVirtualBalanceWithShortfall":"9800000000000000000"`)).to.be.true; // 24.8-15=9.8

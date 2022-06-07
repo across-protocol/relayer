@@ -117,7 +117,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(lastSpyLogIncludes(spy, `Executed Inventory rebalances`)).to.be.true;
     expect(lastSpyLogIncludes(spy, `Rebalances sent to Arbitrum`)).to.be.true;
     expect(lastSpyLogIncludes(spy, `445.00 USDC rebalanced`)).to.be.true; // cast to formatting expected by client.
-    expect(lastSpyLogIncludes(spy, `This represents the target allocation of 5.00%`)).to.be.true; // config from client.
+    expect(lastSpyLogIncludes(spy, `This meets target allocation of 5.00%`)).to.be.true; // config from client.
 
     // The mock adapter manager should have been called with the expected transaction.
     expect(adapterManager.tokensSentCrossChain[42161][mainnetUsdc].amount).to.equal(expectedBridgedAmount);
@@ -175,7 +175,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(lastSpyLogIncludes(spy, `Executed Inventory rebalances`)).to.be.true;
     expect(lastSpyLogIncludes(spy, `Rebalances sent to Polygon-matic`)).to.be.true;
     expect(lastSpyLogIncludes(spy, `17.79 WETH rebalanced`)).to.be.true; // expected bridge amount rounded for logs.
-    expect(lastSpyLogIncludes(spy, `This represents the target allocation of 5.00%`)).to.be.true; // config from client.
+    expect(lastSpyLogIncludes(spy, `This meets target allocation of 5.00%`)).to.be.true; // config from client.
 
     //Note that there should be some additional state updates that we should check. In particular the token balance
     // on L1 should have been decremented by the amount sent over the bridge and the Inventory client should be tracking
