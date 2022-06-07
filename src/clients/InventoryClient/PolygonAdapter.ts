@@ -129,7 +129,10 @@ export class PolygonAdapter extends BaseAdapter {
   }
 
   async checkTokenApprovals(l1Tokens: string[]) {
-    const associatedL1Bridges = l1Tokens.map((l1Token) => this.getL1TokenGateway(l1Token)?.address);
+    const associatedL1Bridges = l1Tokens.map((l1Token) => {
+      if (this.isWeth(l1Token)) return this.getL1TokenGateway(l1Token)?.address;
+      return this.getL1Bridge(l1Token)?.address;
+    });
     await this.checkAndSendTokenApprovals(l1Tokens, associatedL1Bridges);
   }
 
