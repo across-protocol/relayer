@@ -136,4 +136,5 @@ async function updateAllClients() {
   await tokenClient.update();
   await spokePoolClient_1.update();
   await spokePoolClient_2.update();
+  tokenClient.clearTokenShortfall();
 }
