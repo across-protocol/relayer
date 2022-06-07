@@ -129,14 +129,14 @@ export class MultiCallerClient {
         mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
         if (transactionReceipts[chainIndex].status === "rejected") {
           const rejectionError = (transactionReceipts[chainIndex] as PromiseRejectedResult).reason;
-          mrkdwn += ` ⚠️ Transaction #${chainIndex} sent on ${getNetworkName(
+          mrkdwn += ` ⚠️ Transaction sent on ${getNetworkName(
             chainId
           )} failed or bot timed out waiting for transaction to mine, check logs for more details.\n`;
           // If the `transactionReceipt` was rejected because of a timeout, there won't be an error log sent to
           // winston, but it will show up as this debug log that the developer can look up.
           this.logger.debug({
             at: "MultiCallerClient",
-            message: `Transaction #${chainIndex} on chain ${chainId} failed or bot timed out waiting for it to mine`,
+            message: `Batch transaction sent on chain ${chainId} failed or bot timed out waiting for it to mine`,
             error: rejectionError,
           });
         } else {
