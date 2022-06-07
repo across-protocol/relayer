@@ -117,7 +117,7 @@ export class MultiCallerClient {
             return Promise.race([
               rejectAfterDelay(this.maxTxWait), // limit the maximum time to wait for a transaction receipt to mine.
               (transaction as any).value.wait(),
-            ]); 
+            ]);
           } else return new Promise((_resolve, _reject) => _reject(transaction.reason));
         })
       );
@@ -128,16 +128,16 @@ export class MultiCallerClient {
       Object.keys(groupedTransactions).forEach((chainId, chainIndex) => {
         mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
         if (transactionReceipts[chainIndex].status === "rejected") {
-          const rejectionError = (transactionReceipts[chainIndex] as PromiseRejectedResult).reason
+          const rejectionError = (transactionReceipts[chainIndex] as PromiseRejectedResult).reason;
           mrkdwn += ` ⚠️ Transaction #${chainIndex} sent on ${getNetworkName(
             chainId
           )} failed or bot timed out waiting for transaction to mine, check logs for more details.\n`;
-          // If the `transactionReceipt` was rejected because of a timeout, there won't be an error log sent to 
+          // If the `transactionReceipt` was rejected because of a timeout, there won't be an error log sent to
           // winston, but it will show up as this debug log that the developer can look up.
           this.logger.debug({
             at: "MultiCallerClient",
             message: `Transaction #${chainIndex} on chain ${chainId} failed or bot timed out waiting for it to mine`,
-            error: rejectionError
+            error: rejectionError,
           });
         } else {
           groupedTransactions[chainId].forEach((transaction, groupTxIndex) => {
@@ -163,33 +163,30 @@ export class MultiCallerClient {
   }
 
   buildMultiCallBundle(transactions: AugmentedTransaction[]) {
-      // Validate all transactions in the batch have the same target contract.
-      const target = transactions[0].contract;
-      if (transactions.every((tx) => tx.contract.address !== target.address)) {
-        this.logger.error({
-          at: "MultiCallerClient",
-          message: "some transactions in the bundle contain different targets",
-          transactions: transactions.map(({ contract, chainId }) => {
-            return { target: getTarget(contract.address), chainId };
-          }),
-          notificationPath: "across-error",
-        });
-        return new Promise((_resolve, _reject) =>
-          _reject("some transactions in the bundle contain different targets")
-        )
-      }
-      let callData = transactions.map((tx) => tx.contract.interface.encodeFunctionData(tx.method, tx.args));
-      // There should not be any duplicate call data blobs within this array. If there are there is likely an error.
-      callData = [...new Set(callData)];
-      this.logger.debug({
+    // Validate all transactions in the batch have the same target contract.
+    const target = transactions[0].contract;
+    if (transactions.every((tx) => tx.contract.address !== target.address)) {
+      this.logger.error({
         at: "MultiCallerClient",
-        message: "Made bundle",
-        target: getTarget(target.address),
-        callData,
-      })
-      
-      // This will either succeed and return the the transaction or throw an error.
-      return runTransaction(this.logger, target, "multicall", [callData]);
+        message: "some transactions in the bundle contain different targets",
+        transactions: transactions.map(({ contract, chainId }) => {
+          return { target: getTarget(contract.address), chainId };
+        }),
+        notificationPath: "across-error",
+      });
+      return new Promise((_resolve, _reject) => _reject("some transactions in the bundle contain different targets"));
+    }
+    let callData = transactions.map((tx) => tx.contract.interface.encodeFunctionData(tx.method, tx.args));
+    // There should not be any duplicate call data blobs within this array. If there are there is likely an error.
+    callData = [...new Set(callData)];
+    this.logger.debug({
+      at: "MultiCallerClient",
+      message: "Made bundle",
+      target: getTarget(target.address),
+      callData,
+    });
 
+    // This will either succeed and return the the transaction or throw an error.
+    return runTransaction(this.logger, target, "multicall", [callData]);
   }
 }
