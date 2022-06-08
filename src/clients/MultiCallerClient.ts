@@ -174,7 +174,7 @@ export class MultiCallerClient {
         }),
         notificationPath: "across-error",
       });
-      return new Promise((_resolve, _reject) => _reject("some transactions in the bundle contain different targets"));
+      return Promise.reject("some transactions in the bundle contain different targets");
     }
     let callData = transactions.map((tx) => tx.contract.interface.encodeFunctionData(tx.method, tx.args));
     // There should not be any duplicate call data blobs within this array. If there are there is likely an error.
