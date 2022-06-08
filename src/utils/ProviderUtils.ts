@@ -4,7 +4,14 @@ import deepEqual from "deep-equal";
 const defaultTimeout = 15 * 1000;
 
 function delay(s: number): Promise<void> {
-  return new Promise<void>((resolve) => setTimeout(resolve, s * 1000));
+  return new Promise<void>((resolve) => setTimeout(resolve, Math.round(s * 1000)));
+}
+
+async function waitUntil(checkFn: () => boolean, pollTimeS = 0.5) {
+  while (true) {
+    if (checkFn()) return;
+    await delay(pollTimeS);
+  }
 }
 
 function isPromiseFulfulled<T>(
@@ -21,11 +28,12 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
   readonly providers: ethers.providers.JsonRpcProvider[];
   constructor(
     params: ConstructorParameters<typeof ethers.providers.JsonRpcProvider>[],
+    chainId: number,
     readonly nodeQuorumThreshold: number,
     readonly retries: number,
     readonly delay: number
   ) {
-    super();
+    super(undefined, chainId);
     this.providers = params.map((inputs) => new ethers.providers.JsonRpcProvider(...inputs));
     if (this.nodeQuorumThreshold < 1 || !Number.isInteger(this.nodeQuorumThreshold))
       throw new Error(
@@ -126,9 +134,9 @@ export function getProvider(chainId: number) {
 
   const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
 
-  const constructorArgumentLists = getNodeUrlList(chainId).map((nodeUrl): [{ url: string; timeout: number }] => [
-    { url: nodeUrl, timeout },
-  ]);
+  const constructorArgumentLists = getNodeUrlList(chainId).map(
+    (nodeUrl): [{ url: string; timeout: number }, number] => [{ url: nodeUrl, timeout }, chainId]
+  );
 
   // Default to 2 retries.
   const retries = Number(process.env[`NODE_RETRIES_${chainId}`] || NODE_RETRIES || "2");
@@ -139,7 +147,7 @@ export function getProvider(chainId: number) {
   // Default to a node quorum of 1 node.
   const nodeQuorumThreshold = Number(process.env[`NODE_QUORUM_${chainId}`] || NODE_QUORUM || "1");
 
-  return new RetryProvider(constructorArgumentLists, nodeQuorumThreshold, retries, retryDelay)
+  return new RetryProvider(constructorArgumentLists, chainId, nodeQuorumThreshold, retries, retryDelay);
 }
 
 export function getNodeUrlList(chainId: number): string[] {
