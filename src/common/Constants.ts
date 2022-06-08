@@ -10,9 +10,9 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   42161: 99990,
 };
 export const BUNDLE_END_BLOCK_BUFFERS = {
-  1: 20, // At 15s/block, 20 blocks = 5 mins
-  10: 150, // At a conservative 0.5 TPS, 300 seconds = 150 transactions. And 1 block per txn.
-  137: 150, // At 2s/block, 300 seconds = 150 blocks
-  288: 10, // At 30s/block, 10 blocks = 5 mins
-  42161: 150, // At a conservative 0.5 TPS, 300 seconds = 150 transactions. And 1 block per txn.
+  1: 100, // At 15s/block, 100 blocks = 20 mins
+  10: 3000, // At a conservative 10 TPS, 300 seconds = 3000 transactions. And 1 block per txn.
+  137: 1500, // At 1s/block, 25 mins seconds = 1500 blocks
+  288: 50, // At 30s/block, 50 blocks = 25 mins
+  42161: 3000, // At a conservative 10 TPS, 300 seconds = 3000 transactions. And 1 block per txn.
 };

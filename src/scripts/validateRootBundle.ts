@@ -13,7 +13,7 @@
 import { winston, config, startupLogLevel, Logger, delay } from "../utils";
 import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { BlockFinder } from "@uma/sdk";
-import { RootBundle } from "../interfaces";
+import { PendingRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
 import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
@@ -42,7 +42,7 @@ export async function validate(_logger: winston.Logger) {
   const priceRequestBlock = (await blockFinder.getBlockForTimestamp(priceRequestTime)).number;
   await updateDataworkerClients(clients);
   const precedingProposeRootBundleEvent = clients.hubPoolClient.getMostRecentProposedRootBundle(priceRequestBlock);
-  const rootBundle: RootBundle = {
+  const rootBundle: PendingRootBundle = {
     poolRebalanceRoot: precedingProposeRootBundleEvent.poolRebalanceRoot,
     relayerRefundRoot: precedingProposeRootBundleEvent.relayerRefundRoot,
     slowRelayRoot: precedingProposeRootBundleEvent.slowRelayRoot,

@@ -1,12 +1,11 @@
-import { assert } from "console";
-import { AcrossConfigStoreClient, HubPoolClient, ProfitClient } from "../clients";
+import { AcrossConfigStoreClient, HubPoolClient } from "../clients";
 import * as interfaces from "../interfaces";
 import {
   BigNumberForToken,
   PoolRebalanceLeaf,
   RelayData,
   RelayerRefundLeaf,
-  RootBundle,
+  PendingRootBundle,
   RunningBalances,
   UnfilledDeposit,
 } from "../interfaces";
@@ -23,7 +22,6 @@ import {
   toBNWei,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
-import { getBlockRangeForChain } from "./DataworkerUtils";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "./FillUtils";
 
 export function updateRunningBalance(
@@ -258,21 +256,28 @@ export function constructPoolRebalanceLeaves(
             configStoreClient.getTokenTransferThresholdForBlock(l1Token, latestMainnetBlock)
         );
 
+        // Build leaves using running balances and realized lp fees data for l1Token + chain, or default to
+        // zero if undefined.
+        const leafBundleLpFees = l1TokensToIncludeInThisLeaf.map((l1Token) => {
+          if (realizedLpFees[chainId]?.[l1Token]) return realizedLpFees[chainId][l1Token];
+          else return toBN(0);
+        });
+        const leafNetSendAmounts = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
+          if (runningBalances[chainId] && runningBalances[chainId][l1Token])
+            return getNetSendAmountForL1Token(transferThresholds[index], runningBalances[chainId][l1Token]);
+          else return toBN(0);
+        });
+        const leafRunningBalances = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
+          if (runningBalances[chainId]?.[l1Token])
+            return getRunningBalanceForL1Token(transferThresholds[index], runningBalances[chainId][l1Token]);
+          else return toBN(0);
+        });
+
         leaves.push({
           chainId: Number(chainId),
-          bundleLpFees: realizedLpFees[chainId]
-            ? l1TokensToIncludeInThisLeaf.map((l1Token) => realizedLpFees[chainId][l1Token])
-            : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
-          netSendAmounts: runningBalances[chainId]
-            ? l1TokensToIncludeInThisLeaf.map((l1Token, index) =>
-                getNetSendAmountForL1Token(transferThresholds[index], runningBalances[chainId][l1Token])
-              )
-            : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
-          runningBalances: runningBalances[chainId]
-            ? l1TokensToIncludeInThisLeaf.map((l1Token, index) =>
-                getRunningBalanceForL1Token(transferThresholds[index], runningBalances[chainId][l1Token])
-              )
-            : Array(l1TokensToIncludeInThisLeaf.length).fill(toBN(0)),
+          bundleLpFees: leafBundleLpFees,
+          netSendAmounts: leafNetSendAmounts,
+          runningBalances: leafRunningBalances,
           groupIndex: groupIndexForChainId++,
           leafId: leaves.length,
           l1Tokens: l1TokensToIncludeInThisLeaf,
@@ -327,7 +332,7 @@ export async function getWidestPossibleExpectedBlockRange(
 
 export function generateMarkdownForDisputeInvalidBundleBlocks(
   chainIdListForBundleEvaluationBlockNumbers: number[],
-  pendingRootBundle: RootBundle,
+  pendingRootBundle: PendingRootBundle,
   widestExpectedBlockRange: number[][],
   buffers: number[]
 ) {
@@ -346,7 +351,7 @@ export function generateMarkdownForDisputeInvalidBundleBlocks(
   );
 }
 
-export function generateMarkdownForDispute(pendingRootBundle: RootBundle) {
+export function generateMarkdownForDispute(pendingRootBundle: PendingRootBundle) {
   return (
     `Disputed pending root bundle:` +
     `\n\tPoolRebalance leaf count: ${pendingRootBundle.unclaimedPoolRebalanceLeafCount}` +

@@ -1,15 +1,24 @@
 import winston from "winston";
-import { getProvider, getSigner, getDeployedContract, getDeploymentBlockNumber } from "../utils";
-import { Wallet, SpokePool, Contract } from "../utils";
+import {
+  getProvider,
+  getSigner,
+  getDeployedContract,
+  getDeploymentBlockNumber,
+  Wallet,
+  SpokePool,
+  Contract,
+} from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient, ProfitClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { DataworkerClients } from "../dataworker/DataworkerClientHelper";
+import { createClient } from "redis4";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
   configStoreClient: AcrossConfigStoreClient;
   multiCallerClient: MultiCallerClient;
   profitClient: ProfitClient;
+  hubSigner?: Wallet;
 }
 
 export function getSpokePoolSigners(baseSigner: Wallet, config: CommonConfig): { [chainId: number]: Wallet } {
@@ -76,11 +85,26 @@ export async function constructClients(logger: winston.Logger, config: CommonCon
     toBlock: null,
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
+
+  let redisClient: ReturnType<typeof createClient> | undefined;
+  if (config.redisUrl) {
+    redisClient = createClient({
+      url: config.redisUrl,
+    });
+    await redisClient.connect();
+    logger.debug({
+      at: "Dataworker#ClientHelper",
+      message: `Connected to redis server at ${config.redisUrl} successfully!`,
+      dbSize: await redisClient.dbSize(),
+    });
+  }
+
   const configStoreClient = new AcrossConfigStoreClient(
     logger,
     configStore,
     hubPoolClient,
-    rateModelClientSearchSettings
+    rateModelClientSearchSettings,
+    redisClient
   );
 
   // const gasEstimator = new GasEstimator() // todo when this is implemented in the SDK.
@@ -88,7 +112,7 @@ export async function constructClients(logger: winston.Logger, config: CommonCon
 
   const profitClient = new ProfitClient(logger, hubPoolClient, config.relayerDiscount);
 
-  return { hubPoolClient, configStoreClient, multiCallerClient, profitClient };
+  return { hubPoolClient, configStoreClient, multiCallerClient, profitClient, hubSigner };
 }
 
 export async function updateClients(clients: Clients) {
