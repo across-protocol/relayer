@@ -118,7 +118,7 @@ export class MultiCallerClient {
               rejectAfterDelay(this.maxTxWait), // limit the maximum time to wait for a transaction receipt to mine.
               (transaction as any).value.wait(),
             ]);
-          } else return new Promise((_resolve, _reject) => _reject(transaction.reason));
+          } else return Promise.reject(transaction.reason);
         })
       );
 
