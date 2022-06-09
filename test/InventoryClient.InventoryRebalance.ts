@@ -26,9 +26,19 @@ enabledChainIds.slice(1).forEach((chainId) => {
 
 // Configure target percentages as 80% mainnet, 10% optimism, 5% polygon and 5% Arbitrum.
 const inventoryConfig: InventoryConfig = {
-  managedL1Tokens: [mainnetWeth, mainnetUsdc],
-  targetL2PctOfTotal: { "1": toWei(0.8), "10": toWei(0.1), "137": toWei(0.05), "42161": toWei(0.05) },
-  rebalanceOvershoot: toWei(0.02),
+  tokenConfig: {
+    [mainnetWeth]: {
+      10: { targetPct: toWei(0.12), thresholdPct: toWei(0.1) },
+      137: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
+      42161: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
+    },
+
+    [mainnetUsdc]: {
+      10: { targetPct: toWei(0.12), thresholdPct: toWei(0.1) },
+      137: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
+      42161: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
+    },
+  },
   wrapEtherThreshold: toWei(1),
 };
 
@@ -67,7 +77,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
   it("Accessors work as expected", async function () {
     expect(inventoryClient.getEnabledChains()).to.deep.equal(enabledChainIds);
-    expect(inventoryClient.getL1Tokens()).to.deep.equal(inventoryConfig.managedL1Tokens);
+    expect(inventoryClient.getL1Tokens()).to.deep.equal(Object.keys(inventoryConfig.tokenConfig));
     expect(inventoryClient.getEnabledL2Chains()).to.deep.equal([10, 137, 42161]);
 
     expect(inventoryClient.getCumulativeBalance(mainnetWeth)).to.equal(initialWethTotal);
@@ -76,7 +86,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // Check the allocation matches to what is expected in the seed state of the mock. Check more complex matchers.
     const tokenDistribution = inventoryClient.getTokenDistributionPerL1Token();
     for (const chainId of enabledChainIds) {
-      for (const l1Token of inventoryConfig.managedL1Tokens) {
+      for (const l1Token of inventoryClient.getL1Tokens()) {
         expect(inventoryClient.getBalanceOnChainForL1Token(chainId, l1Token)).to.equal(
           initialAllocation[chainId][l1Token]
         );
@@ -117,7 +127,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(lastSpyLogIncludes(spy, `Executed Inventory rebalances`)).to.be.true;
     expect(lastSpyLogIncludes(spy, `Rebalances sent to Arbitrum`)).to.be.true;
     expect(lastSpyLogIncludes(spy, `445.00 USDC rebalanced`)).to.be.true; // cast to formatting expected by client.
-    expect(lastSpyLogIncludes(spy, `This meets target allocation of 5.00%`)).to.be.true; // config from client.
+    expect(lastSpyLogIncludes(spy, `This meets target allocation of 7.00%`)).to.be.true; // config from client.
 
     // The mock adapter manager should have been called with the expected transaction.
     expect(adapterManager.tokensSentCrossChain[42161][mainnetUsdc].amount).to.equal(expectedBridgedAmount);
@@ -175,7 +185,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(lastSpyLogIncludes(spy, `Executed Inventory rebalances`)).to.be.true;
     expect(lastSpyLogIncludes(spy, `Rebalances sent to Polygon-matic`)).to.be.true;
     expect(lastSpyLogIncludes(spy, `17.79 WETH rebalanced`)).to.be.true; // expected bridge amount rounded for logs.
-    expect(lastSpyLogIncludes(spy, `This meets target allocation of 5.00%`)).to.be.true; // config from client.
+    expect(lastSpyLogIncludes(spy, `This meets target allocation of 7.00%`)).to.be.true; // config from client.
 
     //Note that there should be some additional state updates that we should check. In particular the token balance
     // on L1 should have been decremented by the amount sent over the bridge and the Inventory client should be tracking

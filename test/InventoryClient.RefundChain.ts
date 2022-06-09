@@ -25,11 +25,21 @@ enabledChainIds.slice(1).forEach((chainId) => {
   l2TokensForUsdc[chainId] = randomAddress();
 });
 
-// Configure target percentages as 80% mainnet, 10% optimism, 5% polygon and 5% Arbitrum.
+// Configure thresholds percentages as 10% optimism, 5% polygon and 5% Arbitrum with a target being threshold +2%.
 const inventoryConfig: InventoryConfig = {
-  managedL1Tokens: [mainnetWeth, mainnetUsdc],
-  targetL2PctOfTotal: { "1": toWei(0.8), "10": toWei(0.1), "137": toWei(0.05), "42161": toWei(0.05) },
-  rebalanceOvershoot: toWei(0.02),
+  tokenConfig: {
+    [mainnetWeth]: {
+      10: { targetPct: toWei(0.12), thresholdPct: toWei(0.1) },
+      137: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
+      42161: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
+    },
+
+    [mainnetUsdc]: {
+      10: { targetPct: toWei(0.12), thresholdPct: toWei(0.1) },
+      137: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
+      42161: { targetPct: toWei(0.07), thresholdPct: toWei(0.05) },
+    },
+  },
   wrapEtherThreshold: toWei(1),
 };
 

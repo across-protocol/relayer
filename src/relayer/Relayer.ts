@@ -45,7 +45,11 @@ export class Relayer {
 
   fillRelay(deposit: Deposit, fillAmount: BigNumber) {
     try {
+      // Fetch the repayment chain from the inventory client. Sanity check that it is one of the known chainIds.
       const repaymentChain = this.clients.inventoryClient.determineRefundChainId(deposit);
+      if (!Object.keys(this.clients.spokePoolClients).includes(deposit.destinationChainId.toString()))
+        throw new Error("Fatal error! Repayment chain set to a chain that is not part of the defined sets of chains!");
+
       this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain });
       // Add the fill transaction to the multiCallerClient so it will be executed with the next batch.
       this.clients.multiCallerClient.enqueueTransaction({
@@ -120,24 +124,30 @@ export class Relayer {
     return unfilledDeposits;
   }
 
-  // TODO: that the implementations below for both methods will produce logs on each iteration of the bot. This should
-  // be refactored to only log ONCE on the first time seeing each log. This will be left for a later PR.
-
   private handleTokenShortfall() {
     const tokenShortfall = this.clients.tokenClient.getTokenShortfall();
+    
 
     let mrkdwn = "";
     Object.keys(tokenShortfall).forEach((chainId) => {
       mrkdwn += `*Shortfall on ${getNetworkName(chainId)}:*\n`;
       Object.keys(tokenShortfall[chainId]).forEach((token) => {
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfo(chainId, token);
-        const formatFunction = createFormatFunction(2, 4, false, decimals);
+        const formatter = createFormatFunction(2, 4, false, decimals);
+        let crossChainLog = "";
+        if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== "1") {
+          const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(token, chainId);
+          crossChainLog =
+            `There is ` +
+            formatter(this.clients.inventoryClient.getOutstandingCrossChainTransferAmount(chainId, l1Token.address)) +
+            ` inbound L1->L2 ${symbol} transfers. `;
+        }
         mrkdwn +=
           ` - ${symbol} cumulative shortfall of ` +
-          `${formatFunction(tokenShortfall[chainId][token].shortfall)} ` +
-          `(have ${formatFunction(tokenShortfall[chainId][token].balance)} but need ` +
-          `${formatFunction(tokenShortfall[chainId][token].needed)}). ` +
-          `This is blocking deposits: ${tokenShortfall[chainId][token].deposits}\n`;
+          `${formatter(tokenShortfall[chainId][token].shortfall)} ` +
+          `(have ${formatter(tokenShortfall[chainId][token].balance)} but need ` +
+          `${formatter(tokenShortfall[chainId][token].needed)}). ${crossChainLog}` +
+          `This is blocking deposits: ${tokenShortfall[chainId][token].deposits}.\n`;
       });
     });
 

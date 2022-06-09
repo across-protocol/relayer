@@ -68,9 +68,10 @@ export class InventoryClient {
   // This number is then used to inform how many tokens need to be sent to the chain to: a) cover the shortfall and
   // b bring the balance back over the defined target.
   getCurrentAllocationPctConsideringShortfall(l1Token: string, chainId: number): BigNumber {
+    const cumulativeBalance = this.getCumulativeBalance(l1Token); // If there is nothing over all chains, return early.
+    if (cumulativeBalance.eq(0)) return toBN(0);
     const currentBalanceConsideringTransfers = this.getBalanceOnChainForL1Token(chainId, l1Token);
     const shortfall = this.getTokenShortFall(l1Token, chainId) || toBN(0);
-    const cumulativeBalance = this.getCumulativeBalance(l1Token);
     const numerator = currentBalanceConsideringTransfers.sub(shortfall).mul(scalar);
     return numerator.div(cumulativeBalance);
   }
@@ -93,7 +94,10 @@ export class InventoryClient {
   }
 
   getL1Tokens(): string[] {
-    return this.inventoryConfig.managedL1Tokens || this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address);
+    return (
+      Object.keys(this.inventoryConfig.tokenConfig) ||
+      this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address)
+    );
   }
 
   // Decrement Tokens Balance And Increment Cross Chain Transfer
@@ -117,7 +121,8 @@ export class InventoryClient {
   //     If this number of more than the target for the designation chain + rebalance overshoot then refund on L1.
   //     Else, the post fill amount is within the target, so refund on the destination chain.
   determineRefundChainId(deposit: Deposit): number {
-    if (!this.isfInventoryManagementEnabled()) return deposit.destinationChainId;
+    if (!this.isInventoryManagementEnabled()) return deposit.destinationChainId;
+    if (deposit.destinationChainId === 1) return 1; // Always refund on L1 if the transfer is to L1.
     const l1Token = this.hubPoolClient.getL1TokenForDeposit(deposit);
     const chainShortfall = this.getTokenShortFall(l1Token, deposit.destinationChainId);
     const chainVirtualBalance = this.getBalanceOnChainForL1Token(deposit.destinationChainId, l1Token);
@@ -133,12 +138,10 @@ export class InventoryClient {
       .mul(scalar)
       .div(cumulativeVirtualBalanceWithShortfallPostRelay);
 
-    // If the post relay allocation, considering funds in transit, is larger than the target threshold + overshoot then
-    // refund on L1. Else, refund on destination chian to keep funds within the target.
-    const allocationThreshold = toBN(this.inventoryConfig.targetL2PctOfTotal[deposit.destinationChainId]).add(
-      toBN(this.inventoryConfig.rebalanceOvershoot)
-    );
-    const refundChainId = expectedPostRelayAllocation.gt(allocationThreshold) ? 1 : deposit.destinationChainId;
+    // If the post relay allocation, considering funds in transit, is larger than the target threshold then refund on L1
+    // Else, refund on destination chian to keep funds within the target.
+    const targetPct = toBN(this.inventoryConfig.tokenConfig[l1Token][deposit.destinationChainId].targetPct);
+    const refundChainId = expectedPostRelayAllocation.gt(targetPct) ? 1 : deposit.destinationChainId;
 
     this.log("Evaluated refund Chain", {
       chainShortfall,
@@ -148,7 +151,7 @@ export class InventoryClient {
       cumulativeVirtualBalance,
       cumulativeVirtualBalanceWithShortfall,
       cumulativeVirtualBalanceWithShortfallPostRelay,
-      allocationThreshold,
+      targetPct,
       expectedPostRelayAllocation,
       refundChainId,
     });
@@ -162,7 +165,7 @@ export class InventoryClient {
     const unexecutedRebalances: { [chainId: number]: { [l1Token: string]: BigNumber } } = {};
     const executedTransactions: { [chainId: number]: { [l1Token: string]: string } } = {};
     try {
-      if (!this.isfInventoryManagementEnabled()) return;
+      if (!this.isInventoryManagementEnabled()) return;
       const tokenDistributionPerL1Token = this.getTokenDistributionPerL1Token();
       this.constructConsideringRebalanceDebugLog(tokenDistributionPerL1Token);
 
@@ -170,13 +173,13 @@ export class InventoryClient {
       for (const l1Token of Object.keys(tokenDistributionPerL1Token)) {
         const cumulativeBalance = this.getCumulativeBalance(l1Token);
         for (const chainId of this.getEnabledL2Chains()) {
-          const currentAllocationPct = this.getCurrentAllocationPctConsideringShortfall(l1Token, chainId);
-          const targetAllocationPct = toBN(this.inventoryConfig.targetL2PctOfTotal[chainId]);
-          if (currentAllocationPct.lt(targetAllocationPct)) {
-            if (!rebalancesRequired[chainId]) rebalancesRequired[chainId] = {};
-            const deltaPct = targetAllocationPct.add(this.inventoryConfig.rebalanceOvershoot).sub(currentAllocationPct);
-
-            rebalancesRequired[chainId][l1Token] = deltaPct.mul(cumulativeBalance).div(scalar);
+          const currentAllocPct = this.getCurrentAllocationPctConsideringShortfall(l1Token, chainId);
+          const thresholdPct = toBN(this.inventoryConfig.tokenConfig[l1Token][chainId].thresholdPct);
+          if (currentAllocPct.lt(thresholdPct)) {
+            // if (!rebalancesRequired[chainId]) rebalancesRequired[chainId] = {};
+            const deltaPct = toBN(this.inventoryConfig.tokenConfig[l1Token][chainId].targetPct).sub(currentAllocPct);
+            assign(rebalancesRequired, [chainId, l1Token], deltaPct.mul(cumulativeBalance).div(scalar));
+            // rebalancesRequired[chainId][l1Token] = deltaPct.mul(cumulativeBalance).div(scalar);
           }
         }
       }
@@ -194,8 +197,9 @@ export class InventoryClient {
           // the rebalance to this particular chain. Note that if the sum of all rebalances required exceeds the l1
           // balance then this logic ensures that we only fill the first n number of chains where we can.
           if (requiredRebalance.lt(this.tokenClient.getBalance(1, l1Token))) {
-            if (!possibleRebalances[chainId]) possibleRebalances[chainId] = {};
-            possibleRebalances[chainId][l1Token] = requiredRebalance;
+            // if (!possibleRebalances[chainId]) possibleRebalances[chainId] = {};
+            assign(possibleRebalances, [chainId, l1Token], requiredRebalance);
+            // possibleRebalances[chainId][l1Token] = requiredRebalance;
 
             // Decrement token balance in client for this chain and increment cross chain counter.
             this.trackCrossChainTransfer(l1Token, requiredRebalance, chainId);
@@ -207,11 +211,13 @@ export class InventoryClient {
       for (const chainId of Object.keys(rebalancesRequired)) {
         for (const l1Token of Object.keys(rebalancesRequired[chainId])) {
           if (!possibleRebalances[chainId] || !possibleRebalances[chainId][l1Token]) {
-            if (!unexecutedRebalances[chainId]) unexecutedRebalances[chainId] = {};
-            unexecutedRebalances[chainId][l1Token] = rebalancesRequired[chainId][l1Token];
+            // if (!unexecutedRebalances[chainId]) unexecutedRebalances[chainId] = {};
+            // unexecutedRebalances[chainId][l1Token] = rebalancesRequired[chainId][l1Token];
+            assign(unexecutedRebalances, [chainId, l1Token], rebalancesRequired[chainId][l1Token]);
           }
         }
       }
+      this.log("Considered inventory rebalances", { rebalancesRequired, possibleRebalances });
 
       // Finally, execute the rebalances.
       // TODO: The logic below is slow as it waits for each transaction to be included before sending the next one. This
@@ -221,13 +227,13 @@ export class InventoryClient {
       for (const chainId of Object.keys(possibleRebalances)) {
         for (const l1Token of Object.keys(possibleRebalances[chainId])) {
           const receipt = await this.sendTokenCrossChain(chainId, l1Token, possibleRebalances[chainId][l1Token]);
-          if (!executedTransactions[chainId]) executedTransactions[chainId] = {};
-          executedTransactions[chainId][l1Token] = receipt.transactionHash;
+          // if (!executedTransactions[chainId]) executedTransactions[chainId] = {};
+          // executedTransactions[chainId][l1Token] = receipt.transactionHash;
+          assign(executedTransactions, [chainId, l1Token], receipt.transactionHash);
         }
       }
 
       // Construct logs on the cross-chain actions executed.
-      this.log("Considered inventory rebalances", { rebalancesRequired, possibleRebalances });
       let mrkdwn = "";
 
       if (possibleRebalances != {}) {
@@ -235,14 +241,18 @@ export class InventoryClient {
           mrkdwn += `*Rebalances sent to ${getNetworkName(chainId)}:*\n`;
           for (const l1Token of Object.keys(possibleRebalances[chainId])) {
             const { symbol, decimals } = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
+            const { targetPct, thresholdPct } = this.inventoryConfig.tokenConfig[l1Token][chainId];
             const formatter = createFormatFunction(2, 4, false, decimals);
             mrkdwn +=
               ` - ${formatter(
                 possibleRebalances[chainId][l1Token]
-              )} ${symbol} rebalanced. This meets target allocation ` +
-              `of ${formatWei(toBN(this.inventoryConfig.targetL2PctOfTotal[chainId]).mul(100).toString())}% ` +
-              `(plus overshoot of ${formatWei(toBN(this.inventoryConfig.rebalanceOvershoot).mul(100).toString())}%) ` +
-              `of the total ${formatter(this.getCumulativeBalance(l1Token).toString())} ${symbol} over all chains. ` +
+              )} ${symbol} rebalanced. This meets target allocation of ` +
+              `${formatWei(toBN(targetPct).mul(100).toString())}% (trigger of ` +
+              `${formatWei(toBN(thresholdPct).mul(100).toString())}%) of the total ` +
+              `${formatter(
+                this.getCumulativeBalance(l1Token).toString()
+              )} ${symbol} over all chains (ignoring hubpool repayments). This chain has a shortfall of ` +
+              `${formatter(this.getTokenShortFall(l1Token, chainId).toString())} ${symbol} ` +
               `tx: ${etherscanLink(executedTransactions[chainId][l1Token], 1)}\n`;
           }
         }
@@ -303,20 +313,7 @@ export class InventoryClient {
       });
     });
 
-    let prettyConfig = { managedL1Tokens: [], targetL2PctOfTotal: {} };
-    this.inventoryConfig.managedL1Tokens.forEach((l1Token) => {
-      const { symbol } = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
-      prettyConfig.managedL1Tokens.push(symbol);
-    });
-    Object.keys(this.inventoryConfig.targetL2PctOfTotal).forEach((chainId) => {
-      prettyConfig.targetL2PctOfTotal[chainId] =
-        formatWei(toBN(this.inventoryConfig.targetL2PctOfTotal[chainId]).mul(100).toString()) + "%";
-    });
-    prettyConfig["rebalanceOvershoot"] =
-      formatWei(toBN(this.inventoryConfig.rebalanceOvershoot).mul(100).toString()) + "%";
-    prettyConfig["wrapEtherThreshold"] = formatWei(this.inventoryConfig.wrapEtherThreshold.toString()).toString();
-
-    this.log("Considering rebalance", { tokenDistribution, inventoryConfig: prettyConfig });
+    this.log("Considering rebalance", { tokenDistribution, inventoryConfig: this.inventoryConfig });
   }
 
   async sendTokenCrossChain(chainId: number | string, l1Token: string, amount: BigNumber) {
@@ -324,20 +321,20 @@ export class InventoryClient {
   }
 
   async setL1TokenApprovals() {
-    if (!this.isfInventoryManagementEnabled()) return;
+    if (!this.isInventoryManagementEnabled()) return;
     const l1Tokens = this.getL1Tokens();
     this.log("Checking token approvals", { l1Tokens });
     await this.adapterManager.setL1TokenApprovals(l1Tokens);
   }
 
   async wrapL2EthIfAboveThreshold() {
-    if (!this.isfInventoryManagementEnabled()) return;
+    if (!this.isInventoryManagementEnabled()) return;
     this.log("Checking ETH->WETH Wrap status");
     await this.adapterManager.wrapEthIfAboveThreshold(this.inventoryConfig.wrapEtherThreshold);
   }
 
   async update() {
-    if (!this.isfInventoryManagementEnabled()) return;
+    if (!this.isInventoryManagementEnabled()) return;
     const monitoredChains = this.getEnabledL2Chains(); // Use all chainIds except L1.
     this.log("Updating inventory information", { monitoredChains });
 
@@ -353,10 +350,10 @@ export class InventoryClient {
     this.log("Updated inventory information", { outstandingCrossChainTransfers: this.outstandingCrossChainTransfers });
   }
 
-  isfInventoryManagementEnabled() {
-    if (this.inventoryConfig.managedL1Tokens) return true;
+  isInventoryManagementEnabled() {
+    if (this.inventoryConfig.tokenConfig) return true;
     // Use logDisabledManagement to avoid spamming the logs on every check if this module is enabled.
-    else if ((this.logDisabledManagement = false)) this.log("Inventory Management Disabled");
+    else if (this.logDisabledManagement == false) this.log("Inventory Management Disabled");
     this.logDisabledManagement = true;
     return false;
   }

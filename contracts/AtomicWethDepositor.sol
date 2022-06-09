@@ -11,7 +11,7 @@ interface Weth {
     ) external;
 }
 
-interface ovmL1Bridge {
+interface OvmL1Bridge {
     function depositETHTo(
         address _to,
         uint32 _l2Gas,
@@ -29,10 +29,10 @@ interface PolygonL1Bridge {
  */
 
 contract AtomicWethDepositor {
-    Weth weth = Weth(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
-    ovmL1Bridge optimismL1Bridge = ovmL1Bridge(0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1);
-    ovmL1Bridge bobaL1Bridge = ovmL1Bridge(0xdc1664458d2f0B6090bEa60A8793A4E66c2F1c00);
-    PolygonL1Bridge polygonL1Bridge = PolygonL1Bridge(0xA0c68C638235ee32657e8f720a23ceC1bFc77C77);
+    Weth public immutable weth = Weth(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
+    OvmL1Bridge public immutable optimismL1Bridge = OvmL1Bridge(0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1);
+    OvmL1Bridge public immutable bobaL1Bridge = OvmL1Bridge(0xdc1664458d2f0B6090bEa60A8793A4E66c2F1c00);
+    PolygonL1Bridge public immutable polygonL1Bridge = PolygonL1Bridge(0xA0c68C638235ee32657e8f720a23ceC1bFc77C77);
 
     function bridgeWethToOvm(
         address to,
@@ -53,6 +53,4 @@ contract AtomicWethDepositor {
     }
 
     fallback() external payable {}
-
-    receive() external payable {}
 }

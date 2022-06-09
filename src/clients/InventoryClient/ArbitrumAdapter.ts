@@ -58,6 +58,8 @@ export class ArbitrumAdapter extends BaseAdapter {
     }
 
     const results = await Promise.all(promises, { concurrency: 4 });
+    // The logic below takes the results from the promises and spreads them into the l1DepositInitiatedEvents and 
+    // l2DepositFinalizedEvents state from the BaseAdapter. 
     results.forEach((result, index) => {
       const l1Token = l1Tokens[Math.floor(index / 2)];
       const events = result.map((event) => {

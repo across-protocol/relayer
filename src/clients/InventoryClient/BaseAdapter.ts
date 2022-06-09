@@ -14,7 +14,7 @@ export class BaseAdapter {
   l2DepositFinalizedEvents_DepositAdapter: { [l1Token: string]: any[] } = {};
 
   depositEvalTime = 24 * 60 * 60; // Consider all deposit finalization events over the last 1 day.
-  l2LooBackSafetyMargin = 10; // The pending transfers util can accomidate up to this multipler
+  l2LooBackSafetyMargin = 5; // The pending transfers util can accomidate up to this multipler
 
   firstEvaluatedL1BlockNumber: number;
   constructor(
@@ -177,15 +177,15 @@ export class BaseAdapter {
   }
 
   isWeth(l1Token: string) {
-    return l1Token == "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+    return l1Token.toLowerCase() === "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
   }
 
   // Define some very rough heuristics for the average block time per chain.
   avgBlockTime(chainId: number = this.chainId) {
     if (chainId == 1) return 14; // 1 block every 13.5 seconds.
-    if (chainId == 10) return 0.5; // 2 blocks every second.
-    if (chainId == 137) return 2; // one block every 2 seconds.
+    if (chainId == 10) return 0.1; // assume worst case of 10 blocks every second.
+    if (chainId == 137) return 1; // one block every 2 seconds.
     if (chainId == 288) return 30; // one block every 30 seconds.
-    if (chainId == 42161) return 1; // one block per second.
+    if (chainId == 42161) return 0.1; // assume worst case of 10 blocks every second.
   }
 }
