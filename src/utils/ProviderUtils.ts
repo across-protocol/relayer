@@ -39,8 +39,9 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
   }
 
   async send(method: string, params: Array<any>): Promise<any> {
-    const requiredProviders = this.providers.slice(0, this.nodeQuorumThreshold);
-    const fallbackProviders = this.providers.slice(this.nodeQuorumThreshold);
+    const quorumThreshold = this._getQuorum(method, params);
+    const requiredProviders = this.providers.slice(0, quorumThreshold);
+    const fallbackProviders = this.providers.slice(quorumThreshold);
     const errors: [ethers.providers.JsonRpcProvider, string][] = [];
 
     // This function is used to try to send with a provider and if it fails pop an element off the fallback list to try
@@ -100,24 +101,51 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
       );
     };
 
-    // At this point, the required providers failed to reach quorum, so we need to use the fallback providers.
-    // Iteratively add results until we have enough matching to return. We go through fallbacks iteratively instead
-    // of in parallel because there is a chance that we don't need to use all of the fallbacks.
-    while (true) {
-      if (fallbackProviders.length === 0) throwQuorumError();
+    // Exit early if there are no fallback providers left.
+    if (fallbackProviders.length === 0) throwQuorumError();
 
-      // Grab a new result from our fallback providers.
-      // If we run out of fallback providers, throw a useful error listing all of the successful and failed providers.
-      const [provider, newOutput] = await tryWithFallback(fallbackProviders.shift()).catch(throwQuorumError);
+    // Try each fallback provider in parallel.
+    const fallbackResults = await Promise.allSettled(
+      fallbackProviders.map((provider) =>
+        this._trySend(provider, method, params)
+          .then((result): [ethers.providers.JsonRpcProvider, any] => [provider, result])
+          .catch((err) => {
+            errors.push([provider, err?.stack || err?.toString()]);
+            throw new Error("No fallbacks during quorum search");
+          })
+      )
+    );
 
-      // Filter only the elements that match the new element. If it meets quorum, return.
-      const matchingElements = values.filter(([, output]) => lodash.isEqual(output, newOutput));
-      const totalMatching = matchingElements.length + 1;
-      if (totalMatching >= this.nodeQuorumThreshold) return newOutput;
+    // This filters only the fallbacks that succeeded.
+    const fallbackValues = fallbackResults.filter(isPromiseFulfulled).map((promise) => promise.value);
 
-      // If we didn't return, append the new value to the array and loop back around.
-      values.push([provider, newOutput]);
+    // Group the results by the count of that result.
+    const counts = [...values, ...fallbackValues].reduce(
+      (acc, curr) => {
+        const [, result] = curr;
+
+        // Find the first result that matches the return value.
+        const existingMatch = acc.find(([existingResult]) => lodash.isEqual(existingResult, result));
+        if (existingMatch) existingMatch[1]++;
+        else acc.push([result, 1]);
+        return acc;
+      },
+      [[undefined, 0]] as [any, number][] // Initialize with [undefined, 0] as the first element so something is always returned.
+    );
+
+    // Sort so the result with the highest count is first.
+    counts.sort(([, a], [, b]) => b - a);
+
+    // Extract the result by grabbing the first element.
+    const [quorumResult, count] = counts[0];
+
+    // If this count is less than we need for quorum, throw the quorum error.
+    if (count < quorumThreshold) {
+      console.log(JSON.stringify(counts));
+      throwQuorumError();
     }
+
+    return quorumResult;
   }
 
   _trySend(provider: ethers.providers.JsonRpcProvider, method: string, params: Array<any>): Promise<any> {
@@ -126,6 +154,22 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
       promise = promise.catch(() => delay(this.delay).then(() => super.send(method, params)));
     }
     return promise;
+  }
+
+  _getQuorum(method: string, params: Array<any>): number {
+    // Only use quorum if this is a historical query that doesn't depend on the current block number.
+
+    // All logs queries should use quorum.
+    if (method === "eth_getLogs") return this.nodeQuorumThreshold;
+
+    // getBlockByNumber should only use the quorum if it's not asking for the latest block.
+    if (method === "eth_getBlockByNumber" && params[0] !== "latest") return this.nodeQuorumThreshold;
+
+    // eth_call should only use quorum for queries at a specific past block.
+    if (method === "eth_call" && params[1] !== "latest") return this.nodeQuorumThreshold;
+
+    // All other calls should use quorum 1 to avoid errors due to sync differences.
+    return 1;
   }
 }
 
@@ -151,7 +195,7 @@ export function getProvider(chainId: number) {
 }
 
 export function getNodeUrlList(chainId: number): string[] {
-  const retryConfigKey = `RETRY_CONFIG_${chainId}`;
+  const retryConfigKey = `NODE_URLS_${chainId}`;
   if (process.env[retryConfigKey]) {
     const nodeUrls = JSON.parse(process.env[retryConfigKey]) || [];
     if (nodeUrls?.length === 0)
