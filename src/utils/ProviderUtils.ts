@@ -100,9 +100,9 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
       );
     };
 
-    // At this point, the required providers failed to reach quorum, so we need to use the fallback providers. 
+    // At this point, the required providers failed to reach quorum, so we need to use the fallback providers.
     // Iteratively add results until we have enough matching to return. We go through fallbacks iteratively instead
-    // of in parallel because there is a chance that we don't need to use all of the fallbacks
+    // of in parallel because there is a chance that we don't need to use all of the fallbacks.
     while (true) {
       if (fallbackProviders.length === 0) throwQuorumError();
 
