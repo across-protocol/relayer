@@ -22,7 +22,7 @@ import {
   toBNWei,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
-import { getFillDataForSlowFillFromPreviousRootBundle } from "./FillUtils";
+import { getFillDataForSlowFillFromPreviousRootBundle } from "../utils";
 
 export function updateRunningBalance(
   runningBalances: interfaces.RunningBalances,

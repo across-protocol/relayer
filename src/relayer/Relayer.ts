@@ -1,4 +1,4 @@
-import { BigNumber, winston, buildFillRelayProps, getNetworkName } from "../utils";
+import { BigNumber, winston, buildFillRelayProps, getNetworkName, getUnfilledDeposits } from "../utils";
 import { createFormatFunction, etherscanLink, toBN } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 
@@ -12,7 +12,7 @@ export class Relayer {
     // Fetch all unfilled deposits, order by total earnable fee.
     // TODO: Note this does not consider the price of the token which will be added once the profitability module is
     // added to this bot.
-    const unfilledDeposits = this.getUnfilledDeposits().sort((a, b) =>
+    const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients).sort((a, b) =>
       a.unfilledAmount.mul(a.deposit.relayerFeePct).lt(b.unfilledAmount.mul(b.deposit.relayerFeePct)) ? 1 : -1
     );
 
@@ -91,31 +91,6 @@ export class Relayer {
         notificationPath: "across-error",
       });
     }
-  }
-
-  // Returns all unfilled deposits over all spokePoolClients. Return values include the amount of the unfilled deposit.
-  getUnfilledDeposits(): { deposit: Deposit; unfilledAmount: BigNumber; fillCount: number }[] {
-    let unfilledDeposits: { deposit: Deposit; unfilledAmount: BigNumber; fillCount: number }[] = [];
-    // Iterate over each chainId and check for unfilled deposits.
-    const chainIds = Object.keys(this.clients.spokePoolClients);
-    for (const originChain of chainIds) {
-      const originClient = this.clients.spokePoolClients[originChain];
-      for (const destinationChain of chainIds) {
-        if (originChain === destinationChain) continue;
-        // Find all unfilled deposits for the current loops originChain -> destinationChain. Note that this also
-        // validates that the deposit is filled "correctly" for the given deposit information. This includes validation
-        // of the all deposit -> relay props, the realizedLpFeePct and the origin->destination token mapping.
-        const destinationClient = this.clients.spokePoolClients[destinationChain];
-        const depositsForDestinationChain = originClient.getDepositsForDestinationChain(destinationChain);
-        const unfilledDepositsForDestinationChain = depositsForDestinationChain.map((deposit) => {
-          return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit };
-        });
-        // Remove any deposits that have no unfilled amount and append the remaining deposits to unfilledDeposits array.
-        unfilledDeposits.push(...unfilledDepositsForDestinationChain.filter((deposit) => deposit.unfilledAmount.gt(0)));
-      }
-    }
-
-    return unfilledDeposits;
   }
 
   // TODO: that the implementations below for both methods will produce logs on each iteration of the bot. This should
