@@ -89,7 +89,9 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
     // If _all_ values are equal, we have hit quorum, so return.
     if (values.slice(1).every(([, output]) => deepEqual(values[0][1], output))) return values[0][1];
 
-    // Iteratively add results until we have enough matching to return.
+    // At this point, the required providers failed to reach quorum, so we need to use the fallback providers. 
+    // Iteratively add results until we have enough matching to return. We go through fallbacks iteratively instead
+    // of in parallel because there is a chance that we don't need to use all of the fallbacks
     while (true) {
       // Grab a new result from our fallback providers.
       // If we run out of fallback providers, throw a useful error listing all of the successful and failed providers.
