@@ -126,8 +126,12 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
 
         // Find the first result that matches the return value.
         const existingMatch = acc.find(([existingResult]) => lodash.isEqual(existingResult, result));
+
+        // Increment the count if a match is found, else add a new element to the match array with a count of 1.
         if (existingMatch) existingMatch[1]++;
         else acc.push([result, 1]);
+
+        // Return the same acc object because it was modified in place.
         return acc;
       },
       [[undefined, 0]] as [any, number][] // Initialize with [undefined, 0] as the first element so something is always returned.
