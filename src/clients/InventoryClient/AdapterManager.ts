@@ -34,7 +34,7 @@ export class AdapterManager {
     return await tx.wait();
   }
 
-  // Check how much eth is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
+  // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
   // needs to e done on Boba and Optimism as only these two chains require ETH to be sent over the canonical bridge.
   async wrapEthIfAboveThreshold(wrapThreshold: BigNumber) {
     const [optimismWrapTx, bobaWrapTx] = await Promise.all([

@@ -1,6 +1,6 @@
 import { ethers, providers } from "ethers";
 
-const stallTimeout = 10 * 1000;
+const stallTimeout = 15 * 1000;
 
 function delay(s: number): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, s * 1000));
