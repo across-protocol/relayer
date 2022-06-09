@@ -140,10 +140,7 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
     const [quorumResult, count] = counts[0];
 
     // If this count is less than we need for quorum, throw the quorum error.
-    if (count < quorumThreshold) {
-      console.log(JSON.stringify(counts));
-      throwQuorumError();
-    }
+    if (count < quorumThreshold) throwQuorumError();
 
     return quorumResult;
   }
