@@ -38,7 +38,7 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
       );
   }
 
-  async send(method: string, params: Array<any>): Promise<any> {
+  override async send(method: string, params: Array<any>): Promise<any> {
     const quorumThreshold = this._getQuorum(method, params);
     const requiredProviders = this.providers.slice(0, quorumThreshold);
     const fallbackProviders = this.providers.slice(quorumThreshold);
@@ -152,7 +152,7 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
   _trySend(provider: ethers.providers.JsonRpcProvider, method: string, params: Array<any>): Promise<any> {
     let promise = provider.send(method, params);
     for (let i = 0; i < this.retries; i++) {
-      promise = promise.catch(() => delay(this.delay).then(() => super.send(method, params)));
+      promise = promise.catch(() => delay(this.delay).then(() => provider.send(method, params)));
     }
     return promise;
   }
