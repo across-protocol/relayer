@@ -1,16 +1,11 @@
 import { ethers } from "ethers";
 import lodash from "lodash";
+import { isPromiseFulfulled } from "./TypeGuards";
 
 const defaultTimeout = 15 * 1000;
 
 function delay(s: number): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, Math.round(s * 1000)));
-}
-
-function isPromiseFulfulled<T>(
-  promiseSettledResult: PromiseSettledResult<T>
-): promiseSettledResult is PromiseFulfilledResult<T> {
-  return promiseSettledResult.status === "fulfilled";
 }
 
 function formatProviderError(provider: ethers.providers.JsonRpcProvider, rawErrorText: string) {

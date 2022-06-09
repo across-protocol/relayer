@@ -28,6 +28,7 @@ export * from "./AddressUtils";
 export * from "./FillMathUtils";
 export * from "./GckmsUtils";
 export * from "./TimeUtils";
+export * from "./TypeGuards";
 
 export { ZERO_ADDRESS, MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "@uma/common";
 
