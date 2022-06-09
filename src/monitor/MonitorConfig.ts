@@ -6,6 +6,7 @@ export interface BotModes {
   utilizationEnabled: boolean; // Monitors pool utilization ratio
   unknownRootBundleCallersEnabled: boolean; // Monitors relay related events triggered by non-whitelisted addresses
   unknownRelayerCallersEnabled: boolean;
+  reportEnabled: boolean;
 }
 
 export class MonitorConfig extends CommonConfig {
@@ -15,6 +16,8 @@ export class MonitorConfig extends CommonConfig {
   readonly utilizationThreshold: number;
   readonly hubPoolStartingBlock: number | undefined;
   readonly hubPoolEndingBlock: number | undefined;
+  readonly monitorReportInterval: number;
+  readonly monitoredRelayers: string[];
   readonly whitelistedDataworkers: string[];
   readonly whitelistedRelayers: string[];
   readonly botModes: BotModes;
@@ -25,6 +28,8 @@ export class MonitorConfig extends CommonConfig {
     const {
       STARTING_BLOCK_NUMBER,
       ENDING_BLOCK_NUMBER,
+      MONITORED_RELAYERS,
+      MONITOR_REPORT_ENABLED,
       UTILIZATION_ENABLED,
       UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED,
       UNKNOWN_RELAYER_CALLERS_ENABLED,
@@ -37,17 +42,15 @@ export class MonitorConfig extends CommonConfig {
       utilizationEnabled: UTILIZATION_ENABLED === "true",
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       unknownRelayerCallersEnabled: UNKNOWN_RELAYER_CALLERS_ENABLED === "true",
+      reportEnabled: MONITOR_REPORT_ENABLED === "true",
     };
 
-    this.whitelistedDataworkers = WHITELISTED_DATA_WORKERS ? JSON.parse(WHITELISTED_DATA_WORKERS) : [];
-    for (let i = 0; i < this.whitelistedDataworkers.length; i++) {
-      this.whitelistedDataworkers[i] = ethers.utils.getAddress(this.whitelistedDataworkers[i]);
-    }
+    // Used to monitor activities not from whitelisted data workers or relayers.
+    this.whitelistedDataworkers = parseAddressesOptional(WHITELISTED_DATA_WORKERS);
+    this.whitelistedRelayers = parseAddressesOptional(WHITELISTED_RELAYERS);
 
-    this.whitelistedRelayers = WHITELISTED_RELAYERS ? JSON.parse(WHITELISTED_RELAYERS) : [];
-    for (let i = 0; i < this.whitelistedRelayers.length; i++) {
-      this.whitelistedRelayers[i] = ethers.utils.getAddress(this.whitelistedRelayers[i]);
-    }
+    // Used to monitor balances, activities, etc. from the specified relayers.
+    this.monitoredRelayers = parseAddressesOptional(MONITORED_RELAYERS);
 
     // Default pool utilization threshold at 90%.
     this.utilizationThreshold = UTILIZATION_THRESHOLD ? Number(UTILIZATION_THRESHOLD) : 90;
@@ -72,3 +75,8 @@ export class MonitorConfig extends CommonConfig {
       });
   }
 }
+
+const parseAddressesOptional = (addressJson?: string): string[] => {
+  const rawAddresses: string[] = addressJson ? JSON.parse(addressJson) : [];
+  return rawAddresses.map((address) => ethers.utils.getAddress(address));
+};

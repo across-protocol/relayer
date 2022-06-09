@@ -15,7 +15,9 @@ export { Promise } from "bluebird";
 // Utils specifically for this bot.
 export * from "./ProviderUtils";
 export * from "./SignerUtils";
+export * from "./DepositUtils";
 export * from "./EventUtils";
+export * from "./FillUtils";
 export * from "./ObjectUtils";
 export * from "./FormattingUtils";
 export * from "./TransactionPropBuilder";

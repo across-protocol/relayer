@@ -112,6 +112,13 @@ export class HubPoolClient {
   l2TokenEnabledForL1Token(l1Token: string, destinationChainId: number) {
     return this.l1TokensToDestinationTokens[l1Token][destinationChainId] != undefined;
   }
+  getDestinationTokensToL1TokensForChainId(chainId: number) {
+    return Object.fromEntries(
+      this.l1Tokens
+        .map((l1Token) => [this.getDestinationTokenForL1Token(l1Token.address, chainId), l1Token])
+        .filter((entry) => entry[0] !== undefined)
+    );
+  }
 
   async getCurrentPoolUtilization(l1Token: string) {
     return await this.hubPool.callStatic.liquidityUtilizationCurrent(l1Token);
@@ -360,7 +367,9 @@ export class HubPoolClient {
         this.fetchTokenInfoFromContract(l1Token)
       )
     );
-    for (const info of tokenInfo) if (!this.l1Tokens.includes(info)) this.l1Tokens.push(info);
+    for (const info of tokenInfo) {
+      if (!this.l1Tokens.find((token) => token.symbol === info.symbol)) this.l1Tokens.push(info);
+    }
 
     this.proposedRootBundles.push(
       ...proposeRootBundleEvents.map((event) => {

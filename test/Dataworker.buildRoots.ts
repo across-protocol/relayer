@@ -859,6 +859,77 @@ describe("Dataworker: Build merkle roots", async function () {
         dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(1), spokePoolClients).tree.getHexRoot()
       ).to.equal(expectedMerkleRoot.getHexRoot());
     });
+    it("Two L1 tokens, one repayment", async function () {
+      // This test checks that the dataworker can handle the case where there are multiple L1 tokens on a chain but
+      // at least one of the L1 tokens doesn't have any `bundleLpFees`. Failing this test suggests that the dataworker
+      // is incorrectly assuming that all repayments occur on the same chain.
+      const { l1Token: l1TokenNew, l2Token: l2TokenNew } = await deployNewTokenMapping(
+        depositor,
+        relayer,
+        spokePool_1,
+        spokePool_2,
+        configStore,
+        hubPool,
+        amountToDeposit.mul(toBN(100))
+      );
+      await updateAllClients(); // Update client to be aware of new token mapping so we can build deposit correctly.
+
+      const depositA = await buildDeposit(
+        configStoreClient,
+        hubPoolClient,
+        spokePool_1,
+        l2TokenNew,
+        l1TokenNew,
+        depositor,
+        destinationChainId,
+        amountToDeposit
+      );
+
+      // Send a second deposit on the same origin chain so that the pool rebalance leaf for the origin chain has
+      // running balances and bundle LP fees for two L1 tokens. This allows us to create the situation where one of
+      // the bundle LP fees and running balances is zero for an L1 token.
+      const depositB = await buildDeposit(
+        configStoreClient,
+        hubPoolClient,
+        spokePool_1,
+        erc20_1,
+        l1Token_1,
+        depositor,
+        destinationChainId,
+        amountToDeposit
+      );
+
+      // Submit fill linked to new L1 token with repayment chain set to the origin chain. Since the deposits in this
+      // test were submitted on the origin chain, we want to be refunded on the same chain to force the dataworker
+      // to construct a leaf with multiple L1 tokens, only one of which has bundleLpFees.
+      const fillA = await buildFillForRepaymentChain(spokePool_2, depositor, depositA, 1, originChainId);
+
+      await updateAllClients();
+      const merkleRoot1 = dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(0), spokePoolClients);
+      const orderedL1Tokens = [l1Token_1.address, l1TokenNew.address].sort((addressA, addressB) =>
+        compareAddresses(addressA, addressB)
+      );
+      const expectedLeaf = {
+        groupIndex: 0,
+        chainId: originChainId,
+        bundleLpFees: [
+          orderedL1Tokens[0] === l1Token_1.address ? toBN(0) : getRealizedLpFeeForFills([fillA]),
+          orderedL1Tokens[0] === l1TokenNew.address ? toBN(0) : getRealizedLpFeeForFills([fillA]),
+        ],
+        netSendAmounts: [toBN(0), toBN(0)],
+        runningBalances: [
+          orderedL1Tokens[0] === l1Token_1.address
+            ? depositB.amount.mul(toBN(-1))
+            : depositA.amount.sub(getRefundForFills([fillA])).mul(toBN(-1)),
+          orderedL1Tokens[0] === l1TokenNew.address
+            ? depositB.amount.mul(toBN(-1))
+            : depositA.amount.sub(getRefundForFills([fillA])).mul(toBN(-1)),
+        ],
+        l1Tokens: orderedL1Tokens,
+        leafId: 0,
+      };
+      expect(merkleRoot1.leaves).to.deep.equal([expectedLeaf]);
+    });
     it("Token transfer exceeeds threshold", async function () {
       await updateAllClients();
       const deposit = await buildDeposit(

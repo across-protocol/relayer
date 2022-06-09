@@ -22,8 +22,7 @@ export async function runTransaction(
     return await contract[method](...args, txConfig);
   } catch (error) {
     logger.error({ at: "TxUtil", message: "Error executing tx", error, notificationPath: "across-error" });
-    console.log(error);
-    throw new Error(error.reason); // Extract the reason from the transaction error and throw it.
+    throw error;
   }
 }
 

@@ -1,21 +1,14 @@
 import winston from "winston";
 import { DataworkerConfig } from "./DataworkerConfig";
-import {
-  Clients,
-  constructClients,
-  constructSpokePoolClientsForBlockAndUpdate,
-  getSpokePoolSigners,
-  updateClients,
-} from "../common";
+import { CHAIN_ID_LIST_INDICES, Clients, constructClients, getSpokePoolSigners, updateClients } from "../common";
 import { EventSearchConfig, getDeploymentBlockNumber, getSigner, Wallet, ethers } from "../utils";
-import { SpokePoolClient, TokenClient } from "../clients";
-import { getWidestPossibleExpectedBlockRange } from "./PoolRebalanceUtils";
-import { getBlockRangeForChain } from "./DataworkerUtils";
+import { BundleDataClient, SpokePoolClient, TokenClient } from "../clients";
 
 export interface DataworkerClients extends Clients {
   tokenClient: TokenClient;
   spokePoolSigners: { [chainId: number]: Wallet };
   spokePoolClientSearchSettings: { [chainId: number]: EventSearchConfig };
+  bundleDataClient: BundleDataClient;
 }
 
 export async function constructDataworkerClients(
@@ -40,8 +33,8 @@ export async function constructDataworkerClients(
       ];
     })
   );
-
-  return { ...commonClients, tokenClient, spokePoolSigners, spokePoolClientSearchSettings };
+  const bundleDataClient = new BundleDataClient(logger, commonClients, CHAIN_ID_LIST_INDICES);
+  return { ...commonClients, bundleDataClient, tokenClient, spokePoolSigners, spokePoolClientSearchSettings };
 }
 
 export async function updateDataworkerClients(clients: DataworkerClients) {

@@ -13,7 +13,7 @@ import * as clients from "../../src/clients";
 import { amountToLp, destinationChainId, originChainId, CHAIN_ID_TEST_LIST, repaymentChainId } from "../constants";
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
-import { TokenClient } from "../../src/clients";
+import { BundleDataClient, TokenClient } from "../../src/clients";
 import { toBNWei } from "../../src/utils";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
 
@@ -37,6 +37,8 @@ export async function setupDataworker(
   timer: Contract;
   spokePoolClient_1: clients.SpokePoolClient;
   spokePoolClient_2: clients.SpokePoolClient;
+  spokePoolClient_3: clients.SpokePoolClient;
+  spokePoolClient_4: clients.SpokePoolClient;
   spokePoolClients: { [chainId: number]: clients.SpokePoolClient };
   configStoreClient: clients.AcrossConfigStoreClient;
   hubPoolClient: clients.HubPoolClient;
@@ -44,6 +46,7 @@ export async function setupDataworker(
   spyLogger: winston.Logger;
   spy: sinon.SinonSpy;
   multiCallerClient: clients.MultiCallerClient;
+  profitClient: clients.ProfitClient;
   owner: SignerWithAddress;
   depositor: SignerWithAddress;
   relayer: SignerWithAddress;
@@ -143,8 +146,20 @@ export async function setupDataworker(
 
   const tokenClient = new TokenClient(spyLogger, relayer.address, {}, hubPoolClient);
 
+  const bundleDataClient = new BundleDataClient(
+    spyLogger,
+    {
+      configStoreClient,
+      multiCallerClient,
+      profitClient,
+      hubPoolClient,
+    },
+    CHAIN_ID_TEST_LIST
+  );
+
   const defaultEventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 };
   const dataworkerClients: DataworkerClients = {
+    bundleDataClient,
     tokenClient,
     spokePoolSigners: Object.fromEntries(CHAIN_ID_TEST_LIST.map((chainId) => [chainId, owner])),
     spokePoolClientSearchSettings: Object.fromEntries(
@@ -206,6 +221,8 @@ export async function setupDataworker(
     timer: umaEcosystem.timer,
     spokePoolClient_1,
     spokePoolClient_2,
+    spokePoolClient_3,
+    spokePoolClient_4,
     spokePoolClients,
     configStoreClient,
     hubPoolClient,
@@ -213,6 +230,7 @@ export async function setupDataworker(
     spyLogger,
     spy,
     multiCallerClient,
+    profitClient,
     owner,
     depositor,
     relayer,

@@ -1,4 +1,4 @@
-import { BigNumber, winston, buildFillRelayProps, getNetworkName } from "../utils";
+import { BigNumber, winston, buildFillRelayProps, getNetworkName, getUnfilledDeposits } from "../utils";
 import { createFormatFunction, etherscanLink, toBN } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 
@@ -10,7 +10,7 @@ export class Relayer {
     // Fetch all unfilled deposits, order by total earnable fee.
     // TODO: Note this does not consider the price of the token which will be added once the profitability module is
     // added to this bot.
-    const unfilledDeposits = this.getUnfilledDeposits().sort((a, b) =>
+    const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients).sort((a, b) =>
       a.unfilledAmount.mul(a.deposit.relayerFeePct).lt(b.unfilledAmount.mul(b.deposit.relayerFeePct)) ? 1 : -1
     );
     if (unfilledDeposits.length > 0)
@@ -126,7 +126,6 @@ export class Relayer {
 
   private handleTokenShortfall() {
     const tokenShortfall = this.clients.tokenClient.getTokenShortfall();
-    
 
     let mrkdwn = "";
     Object.keys(tokenShortfall).forEach((chainId) => {
