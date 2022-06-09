@@ -1,5 +1,5 @@
-import { ethers, providers } from "ethers";
-import deepEqual from "deep-equal";
+import { ethers } from "ethers";
+import lodash from "lodash";
 
 const defaultTimeout = 15 * 1000;
 
@@ -32,7 +32,7 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
     this.providers = params.map((inputs) => new ethers.providers.JsonRpcProvider(...inputs));
     if (this.nodeQuorumThreshold < 1 || !Number.isInteger(this.nodeQuorumThreshold))
       throw new Error(
-        `nodeQuorumThreshold cannot be < 1 and must be an integer. Currently set to ${this.nodeQuorumThreshold}`
+        `nodeQuorum,Threshold cannot be < 1 and must be an integer. Currently set to ${this.nodeQuorumThreshold}`
       );
     if (this.retries < 0 || !Number.isInteger(this.retries))
       throw new Error(`retries cannot be < 0 and must be an integer. Currently set to ${this.retries}`);
@@ -48,6 +48,10 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
     const fallbackProviders = this.providers.slice(this.nodeQuorumThreshold);
     const errors: [ethers.providers.JsonRpcProvider, string][] = [];
 
+    // This function is used to try to send with a provider and if it fails pop an element off the fallback list to try
+    // with that one. Once the fallback provider list is empty, the method throws. Because the fallback providers are
+    // removed, we ensure that no provider is used more than once because we care about quorum, making sure all
+    // considered responses come from unique providers.
     const tryWithFallback = (
       provider: ethers.providers.JsonRpcProvider
     ): Promise<[ethers.providers.JsonRpcProvider, any]> => {
@@ -87,28 +91,32 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
 
     // Start at element 1 and begin comparing.
     // If _all_ values are equal, we have hit quorum, so return.
-    if (values.slice(1).every(([, output]) => deepEqual(values[0][1], output))) return values[0][1];
+    if (values.slice(1).every(([, output]) => lodash.isEqual(values[0][1], output))) return values[0][1];
+
+    const throwQuorumError = () => {
+      const errorTexts = errors.map(([provider, errorText]) => formatProviderError(provider, errorText));
+      const successfulProviderUrls = values.map(([provider]) => provider.connection.url);
+      throw new Error(
+        "Not enough providers agreed to meet quorum.\n" +
+          "Providers that errored:\n" +
+          `${errorTexts.join("\n")}\n` +
+          "Providers that succeeded, but some failed to match:\n" +
+          successfulProviderUrls.join("\n")
+      );
+    };
 
     // At this point, the required providers failed to reach quorum, so we need to use the fallback providers. 
     // Iteratively add results until we have enough matching to return. We go through fallbacks iteratively instead
     // of in parallel because there is a chance that we don't need to use all of the fallbacks
     while (true) {
+      if (fallbackProviders.length === 0) throwQuorumError();
+
       // Grab a new result from our fallback providers.
       // If we run out of fallback providers, throw a useful error listing all of the successful and failed providers.
-      const [provider, newOutput] = await tryWithFallback(fallbackProviders.shift()).catch(() => {
-        const errorTexts = errors.map(([provider, errorText]) => formatProviderError(provider, errorText));
-        const successfulProviderUrls = values.map(([provider]) => provider.connection.url);
-        throw new Error(
-          "Not enough providers agreed to meet quorum.\n" +
-            "Providers that errored:\n" +
-            `${errorTexts.join("\n")}\n` +
-            "Providers that succeeded, but some failed to match:\n" +
-            successfulProviderUrls.join("\n")
-        );
-      });
+      const [provider, newOutput] = await tryWithFallback(fallbackProviders.shift()).catch(throwQuorumError);
 
       // Filter only the elements that match the new element. If it meets quorum, return.
-      const matchingElements = values.filter(([, output]) => deepEqual(output, newOutput));
+      const matchingElements = values.filter(([, output]) => lodash.isEqual(output, newOutput));
       const totalMatching = matchingElements.length + 1;
       if (totalMatching >= this.nodeQuorumThreshold) return newOutput;
 
