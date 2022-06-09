@@ -61,7 +61,7 @@ export class OptimismAdapter extends BaseAdapter {
     }
 
     const results = await Promise.all(promises, { concurrency: 4 });
-    // The logic below takes the results from the promises and spreads them into the l1DepositInitiatedEvents,  
+    // The logic below takes the results from the promises and spreads them into the l1DepositInitiatedEvents,
     // l2DepositFinalizedEvents and l2DepositFinalizedEvents_DepositAdapter state from the BaseAdapter.
     results.forEach((result, index) => {
       const l1Token = l1Tokens[Math.floor(index / 3)];

@@ -19,11 +19,10 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   42161: 3000, // At a conservative 10 TPS, 300 seconds = 3000 transactions. And 1 block per txn.
 };
 
-
 // The most critical failure mode that can happen in the inventory management module is a miss-mapping between L1 token
-//  and the associated L2 token. If this is wrong the bot WILL delete money. The mapping below is used to enforce that 
+//  and the associated L2 token. If this is wrong the bot WILL delete money. The mapping below is used to enforce that
 // what the hubpool thinks is the correct L2 token for a given L1 token is actually the correct L2 token. It is simply a
-//  sanity check: if for whatever reason this does not line up the bot show fail loudly and stop execution as something 
+//  sanity check: if for whatever reason this does not line up the bot show fail loudly and stop execution as something
 // is broken and funds are not safe to be sent over the canonical L2 bridges.
 export const l2TokensToL1TokenValidation = {
   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": {
