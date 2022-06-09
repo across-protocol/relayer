@@ -7,13 +7,6 @@ function delay(s: number): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, Math.round(s * 1000)));
 }
 
-async function waitUntil(checkFn: () => boolean, pollTimeS = 0.5) {
-  while (true) {
-    if (checkFn()) return;
-    await delay(pollTimeS);
-  }
-}
-
 function isPromiseFulfulled<T>(
   promiseSettledResult: PromiseSettledResult<T>
 ): promiseSettledResult is PromiseFulfilledResult<T> {
@@ -33,6 +26,8 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
     readonly retries: number,
     readonly delay: number
   ) {
+    // Initialize the super just with the chainId, which stops it from trying to immediately send out a .send before
+    // this derived class is initialized.
     super(undefined, chainId);
     this.providers = params.map((inputs) => new ethers.providers.JsonRpcProvider(...inputs));
     if (this.nodeQuorumThreshold < 1 || !Number.isInteger(this.nodeQuorumThreshold))
@@ -49,8 +44,8 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
   }
 
   async send(method: string, params: Array<any>): Promise<any> {
-    const requiredProviders = this.providers.slice(0, this.nodeQuorumThreshold - 1);
-    const fallbackProviders = this.providers.slice(this.nodeQuorumThreshold - 1);
+    const requiredProviders = this.providers.slice(0, this.nodeQuorumThreshold);
+    const fallbackProviders = this.providers.slice(this.nodeQuorumThreshold);
     const errors: [ethers.providers.JsonRpcProvider, string][] = [];
 
     const tryWithFallback = (
