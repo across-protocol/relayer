@@ -40,6 +40,7 @@ export {
   SpokePool__factory as SpokePool,
   AcrossConfigStore__factory as AcrossConfigStore,
   PolygonTokenBridger__factory as PolygonTokenBridger,
+  WETH9__factory as WETH9,
 } from "@across-protocol/contracts-v2";
 
 export { getDeployedAddress, getDeployedBlockNumber, getContractInfoFromAddress } from "@across-protocol/contracts-v2";
