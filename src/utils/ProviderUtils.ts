@@ -32,7 +32,7 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
     this.providers = params.map((inputs) => new ethers.providers.JsonRpcProvider(...inputs));
     if (this.nodeQuorumThreshold < 1 || !Number.isInteger(this.nodeQuorumThreshold))
       throw new Error(
-        `nodeQuorunThreshold cannot be < 1 and must be an integer. Currently set to ${this.nodeQuorumThreshold}`
+        `nodeQuorumThreshold cannot be < 1 and must be an integer. Currently set to ${this.nodeQuorumThreshold}`
       );
     if (this.retries < 0 || !Number.isInteger(this.retries))
       throw new Error(`retries cannot be < 0 and must be an integer. Currently set to ${this.retries}`);
