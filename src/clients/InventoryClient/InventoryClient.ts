@@ -220,8 +220,8 @@ export class InventoryClient {
       // is already complex logic and most of the time we'll not be sending batches of rebalance transactions.
       for (const chainId of Object.keys(possibleRebalances)) {
         for (const l1Token of Object.keys(possibleRebalances[chainId])) {
-          // const receipt = await this.sendTokenCrossChain(chainId, l1Token, possibleRebalances[chainId][l1Token]);
-          assign(executedTransactions, [chainId, l1Token], "XXXX");
+          const receipt = await this.sendTokenCrossChain(chainId, l1Token, possibleRebalances[chainId][l1Token]);
+          assign(executedTransactions, [chainId, l1Token], receipt.transactionHash);
         }
       }
 
