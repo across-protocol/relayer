@@ -100,6 +100,7 @@ export class Relayer {
   }
 
   zeroFillDeposit(deposit: Deposit) {
+    const fillAmount = toBN(1); // 1 wei; smallest fill size possible.
     const l1Token = this.clients.hubPoolClient.getL1TokenForDeposit(deposit);
     const l1TokenInfo = this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token);
     this.logger.debug({
@@ -118,7 +119,7 @@ export class Relayer {
         args: buildFillRelayProps(
           deposit,
           this.getRepaymentChainForToken(l1Token, deposit.destinationChainId),
-          toBN(1) // 1 wei; smallest fill size possible.
+          fillAmount
         ), // props sent with function call.
         message: `Zero size relay sent ${l1TokenInfo.symbol} 🐌`, // message sent to logger.
         mrkdwn: this.constructZeroSizeFilledMrkdwn(deposit), // message details mrkdwn

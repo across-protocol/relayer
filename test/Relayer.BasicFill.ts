@@ -87,6 +87,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         tokenClient,
         profitClient,
         multiCallerClient,
+        inventoryClient: new MockInventoryClient(),
       } // missing override
     );
 

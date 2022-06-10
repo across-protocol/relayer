@@ -86,6 +86,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
         tokenClient,
         profitClient,
         multiCallerClient,
+        inventoryClient: new MockInventoryClient(),
       } // No repayment override
     );
     const balance = await erc20_1.balanceOf(relayer.address);
