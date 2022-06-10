@@ -63,7 +63,7 @@ export class HubPoolClient {
 
   getDestinationTokenForDeposit(deposit: Deposit) {
     const l1Token = this.getL1TokenForDeposit(deposit);
-    const destinationToken = this.getDestinationTokenForL1TokenDestinationChainId(l1Token, deposit.destinationChainId);
+    const destinationToken = this.getDestinationTokenForL1Token(l1Token, deposit.destinationChainId);
     if (!destinationToken)
       this.logger.error({
         at: "HubPoolClient",
@@ -105,14 +105,17 @@ export class HubPoolClient {
     return l1Token;
   }
 
-  getDestinationTokenForL1TokenDestinationChainId(l1Token: string, destinationChainId: number) {
+  getDestinationTokenForL1Token(l1Token: string, destinationChainId: number) {
     return this.l1TokensToDestinationTokens[l1Token][destinationChainId];
   }
 
+  l2TokenEnabledForL1Token(l1Token: string, destinationChainId: number) {
+    return this.l1TokensToDestinationTokens[l1Token][destinationChainId] != undefined;
+  }
   getDestinationTokensToL1TokensForChainId(chainId: number) {
     return Object.fromEntries(
       this.l1Tokens
-        .map((l1Token) => [this.getDestinationTokenForL1TokenDestinationChainId(l1Token.address, chainId), l1Token])
+        .map((l1Token) => [this.getDestinationTokenForL1Token(l1Token.address, chainId), l1Token])
         .filter((entry) => entry[0] !== undefined)
     );
   }
@@ -301,7 +304,7 @@ export class HubPoolClient {
 
     const [
       poolRebalanceRouteEvents,
-      l1TokensLPEvents,
+      l1TokensLpEvents,
       proposeRootBundleEvents,
       canceledRootBundleEvents,
       disputedRootBundleEvents,
@@ -358,8 +361,11 @@ export class HubPoolClient {
 
     // For each enabled Lp token fetch the token symbol and decimals from the token contract. Note this logic will
     // only run iff a new token has been enabled. Will only append iff the info is not there already.
+    // Filter out any duplicate addresses. This might happen due to enabling, disabling and re-enabling a token.
     const tokenInfo: L1Token[] = await Promise.all(
-      l1TokensLPEvents.map((event) => this.fetchTokenInfoFromContract(spreadEvent(event).l1Token))
+      [...new Set(l1TokensLpEvents.map((event) => spreadEvent(event).l1Token))].map((l1Token: string) =>
+        this.fetchTokenInfoFromContract(l1Token)
+      )
     );
     for (const info of tokenInfo) {
       if (!this.l1Tokens.find((token) => token.symbol === info.symbol)) this.l1Tokens.push(info);

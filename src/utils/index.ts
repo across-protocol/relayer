@@ -31,7 +31,7 @@ export * from "./FillMathUtils";
 export * from "./GckmsUtils";
 export * from "./TimeUtils";
 
-export { ZERO_ADDRESS, MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "@uma/common";
+export { ZERO_ADDRESS, MAX_SAFE_ALLOWANCE, MAX_UINT_VAL, replaceAddressCase } from "@uma/common";
 
 // TypeChain exports used in the bot.
 export {

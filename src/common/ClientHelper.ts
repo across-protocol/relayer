@@ -161,13 +161,14 @@ export async function constructClients(logger: winston.Logger, config: CommonCon
   // const gasEstimator = new GasEstimator() // todo when this is implemented in the SDK.
   const multiCallerClient = new MultiCallerClient(logger, null, config.maxTxWait);
 
-  const profitClient = new ProfitClient(logger, hubPoolClient, config.relayerDiscount);
+  const profitClient = new ProfitClient(logger, hubPoolClient);
 
   return { hubPoolClient, configStoreClient, multiCallerClient, profitClient, hubSigner };
 }
 
 export async function updateClients(clients: Clients) {
-  await clients.hubPoolClient.update();
-  await clients.configStoreClient.update();
+  await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
+  // Must come after hubPoolClient. // TODO: this should be refactored to check if the hubpool client has had one
+  // previous update run such that it has l1 tokens within it.If it has we dont need to make it sequential like this.
   await clients.profitClient.update();
 }

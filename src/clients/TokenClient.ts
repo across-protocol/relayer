@@ -4,11 +4,11 @@ import { HubPoolClient, SpokePoolClient } from ".";
 import { Deposit } from "../interfaces";
 
 export class TokenClient {
-  private tokenData: { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } } = {};
-  private tokenShortfall: {
+  tokenData: { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } } = {};
+  tokenShortfall: {
     [chainId: number]: { [token: string]: { deposits: number[]; totalRequirement: BigNumber } };
   } = {};
-  private bondToken: Contract;
+  bondToken: Contract;
 
   constructor(
     readonly logger: winston.Logger,
@@ -44,16 +44,24 @@ export class TokenClient {
     return this.tokenShortfall?.[chainId]?.[token]?.totalRequirement || toBN(0);
   }
 
+  getTokensNeededToCoverShortfall(chainId: number | string, token: string) {
+    return this.getShortfallTotalRequirement(chainId, token).sub(this.getBalance(chainId, token));
+  }
+
   getShortfallDeposits(chainId: number | string, token: string) {
     return this.tokenShortfall?.[chainId]?.[token]?.deposits || [];
   }
 
-  hasSufficientBalanceForFill(deposit: Deposit, fillAmount: BigNumber) {
+  hasBalanceForFill(deposit: Deposit, fillAmount: BigNumber) {
     return this.getBalance(deposit.destinationChainId, deposit.destinationToken).gte(fillAmount);
   }
 
+  hasBalanceForZeroFill(deposit: Deposit) {
+    return this.getBalance(deposit.destinationChainId, deposit.destinationToken).gte(toBN(1));
+  }
+
   // If the relayer tries to execute a relay but does not have enough tokens to fully fill it it will capture the
-  // shortfall by calling this method. This will simply track the information for logging purposes.
+  // shortfall by calling this method. This will track the information for logging purposes and use in other clients.
   captureTokenShortfall(chainId: number, token: string, depositId: number, unfilledAmount: BigNumber) {
     // Shortfall is the previous shortfall + the current unfilledAmount from this deposit.
     const totalRequirement = this.getShortfallTotalRequirement(chainId, token).add(unfilledAmount);
@@ -77,7 +85,7 @@ export class TokenClient {
         assign(tokenShortfall, [chainId, token], {
           balance: this.getBalance(chainId, token),
           needed: this.getShortfallTotalRequirement(chainId, token),
-          shortfall: this.getShortfallTotalRequirement(chainId, token).sub(this.getBalance(chainId, token)),
+          shortfall: this.getTokensNeededToCoverShortfall(chainId, token),
           deposits: this.getShortfallDeposits(chainId, token),
         })
       )

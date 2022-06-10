@@ -6,3 +6,4 @@ export * from "./ConfigStoreClient";
 export * from "./MultiCallerClient";
 export * from "./ProfitClient";
 export * from "./TokenClient";
+export * from "./InventoryClient";
