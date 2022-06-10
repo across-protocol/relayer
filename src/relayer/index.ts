@@ -20,9 +20,15 @@ export async function runRelayer(_logger: winston.Logger): Promise<void> {
     for (;;) {
       await updateRelayerClients(relayerClients);
 
-      await relayer.checkForUnfilledDepositsAndFill();
+      await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled);
 
       await relayerClients.multiCallerClient.executeTransactionQueue(!config.sendingRelaysEnabled);
+
+      await relayerClients.inventoryClient.rebalanceInventoryIfNeeded();
+
+      // Clear state from profit and token clients. These are updated on every iteration and should start fresh.
+      relayerClients.profitClient.clearUnprofitableFills();
+      relayerClients.tokenClient.clearTokenShortfall();
 
       if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) break;
     }

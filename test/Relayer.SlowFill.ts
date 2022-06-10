@@ -5,6 +5,7 @@ import { originChainId, sinon, toBNWei } from "./utils";
 import { amountToLp, defaultTokenConfig, amountToDeposit } from "./constants";
 import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
 import { TokenClient, ProfitClient } from "../src/clients";
+import { MockInventoryClient } from "./mocks";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 
@@ -49,18 +50,15 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new ProfitClient(spyLogger, hubPoolClient, toBNWei(1)); // Set relayer discount to 100%.
-    relayerInstance = new Relayer(
-      spyLogger,
-      {
-        spokePoolClients,
-        hubPoolClient,
-        configStoreClient,
-        tokenClient,
-        profitClient,
-        multiCallerClient,
-      },
-      { [l1Token.address]: 1 }
-    );
+    relayerInstance = new Relayer(spyLogger, {
+      spokePoolClients,
+      hubPoolClient,
+      configStoreClient,
+      tokenClient,
+      profitClient,
+      multiCallerClient,
+      inventoryClient: new MockInventoryClient(),
+    }, { [l1Token.address]: 1 });
 
     await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // Seed owner to LP.
     await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);

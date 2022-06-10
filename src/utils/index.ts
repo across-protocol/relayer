@@ -15,7 +15,9 @@ export { Promise } from "bluebird";
 // Utils specifically for this bot.
 export * from "./ProviderUtils";
 export * from "./SignerUtils";
+export * from "./DepositUtils";
 export * from "./EventUtils";
+export * from "./FillUtils";
 export * from "./ObjectUtils";
 export * from "./FormattingUtils";
 export * from "./TransactionPropBuilder";
@@ -29,7 +31,7 @@ export * from "./FillMathUtils";
 export * from "./GckmsUtils";
 export * from "./TimeUtils";
 
-export { ZERO_ADDRESS, MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "@uma/common";
+export { ZERO_ADDRESS, MAX_SAFE_ALLOWANCE, MAX_UINT_VAL, replaceAddressCase } from "@uma/common";
 
 // TypeChain exports used in the bot.
 export {

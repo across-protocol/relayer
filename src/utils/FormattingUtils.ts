@@ -5,6 +5,8 @@ export const toWei = (num: string | number | BigNumber) => ethers.utils.parseEth
 
 export const toBNWei = (num: string | number | BigNumber) => BigNumber.from(toWei(num));
 
+export const toGWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 9);
+
 export const fromWei = (num: string | number | BigNumber) => ethers.utils.formatUnits(num.toString());
 
 export const toBN = (num: string | number | BigNumber) => {
@@ -23,6 +25,8 @@ export const etherscanLink = (txHashOrAddress: string, chainId: number | string)
 export const utf8ToHex = (input: string) => ethers.utils.formatBytes32String(input);
 
 export const hexToUtf8 = (input: string) => ethers.utils.toUtf8String(input);
+
+export const bnToHex = (input: BigNumber) => ethers.utils.hexZeroPad(ethers.utils.hexlify(toBN(input)), 32);
 
 export const convertFromWei = (weiVal: string, decimals: number) => {
   const formatFunction = createFormatFunction(2, 4, false, decimals);

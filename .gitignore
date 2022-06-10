@@ -4,6 +4,7 @@ coverage
 coverage.json
 typechain
 .DS_Store
+dump.rdb
 
 #Hardhat files
 cache

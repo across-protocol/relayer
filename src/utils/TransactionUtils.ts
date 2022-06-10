@@ -1,17 +1,28 @@
 import { AugmentedTransaction } from "../clients";
-import { winston, Contract, getContractInfoFromAddress, fetch, ethers, toBNWei } from "../utils";
+import { winston, Contract, getContractInfoFromAddress, fetch, ethers } from "../utils";
+import { toBNWei, BigNumber, toBN, toGWei } from "../utils";
 
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
 // of this method should be considerate of this and catch the response to deal with the error accordingly.
-export async function runTransaction(logger: winston.Logger, contract: Contract, method: string, args: any) {
+export async function runTransaction(
+  logger: winston.Logger,
+  contract: Contract,
+  method: string,
+  args: any,
+  value: BigNumber = toBN(0),
+  gasLimit: BigNumber | null = null
+): Promise<any> {
   try {
     const gas = await getGasPrice(contract.provider);
-    logger.debug({ at: "TxUtil", message: "sending tx", target: getTarget(contract.address), method, args, gas });
-    return await contract[method](...args, gas);
+    logger.debug({ at: "TxUtil", message: "Send tx", target: getTarget(contract.address), method, args, value, gas });
+    // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
+    // operation below deletes any null/undefined elements from this object. If the gasLimit is not specified, for example,
+    // then leave this up to ethers to compute.
+    const txConfig = Object.entries({ ...gas, value, gasLimit }).reduce((a, [k, v]) => (v ? ((a[k] = v), a) : a), {});
+    return await contract[method](...args, txConfig);
   } catch (error) {
     logger.error({ at: "TxUtil", message: "Error executing tx", error, notificationPath: "across-error" });
-    console.log(error);
-    throw new Error(error.reason); // Extract the reason from the transaction error and throw it.
+    throw error;
   }
 }
 
@@ -24,7 +35,7 @@ export async function getGasPrice(provider: ethers.providers.Provider, priorityS
     // Polygon, for some or other reason, does not correctly return an appropriate maxPriorityFeePerGas. Set the
     // maxPriorityFeePerGas to the maxFeePerGas * 5 for now as a temp workaround.
     if (chainInfo.chainId === 137)
-      feeData.maxPriorityFeePerGas = ethers.utils.parseUnits((await getPolygonPriorityFee()).fastest.toString(), 9);
+      feeData.maxPriorityFeePerGas = toGWei((await getPolygonPriorityFee()).fastest.toString());
     if (feeData.maxPriorityFeePerGas.gt(feeData.maxFeePerGas))
       feeData.maxFeePerGas = scaleByNumber(feeData.maxPriorityFeePerGas, 1.5);
     return {
