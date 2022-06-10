@@ -172,14 +172,13 @@ export class InventoryClient {
       // First, compute the rebalances that we would do assuming we have sufficient tokens on L1.
       for (const l1Token of Object.keys(tokenDistributionPerL1Token)) {
         const cumulativeBalance = this.getCumulativeBalance(l1Token);
+        if (cumulativeBalance.eq(0)) continue;
         for (const chainId of this.getEnabledL2Chains()) {
           const currentAllocPct = this.getCurrentAllocationPctConsideringShortfall(l1Token, chainId);
           const thresholdPct = toBN(this.inventoryConfig.tokenConfig[l1Token][chainId].thresholdPct);
           if (currentAllocPct.lt(thresholdPct)) {
-            // if (!rebalancesRequired[chainId]) rebalancesRequired[chainId] = {};
             const deltaPct = toBN(this.inventoryConfig.tokenConfig[l1Token][chainId].targetPct).sub(currentAllocPct);
             assign(rebalancesRequired, [chainId, l1Token], deltaPct.mul(cumulativeBalance).div(scalar));
-            // rebalancesRequired[chainId][l1Token] = deltaPct.mul(cumulativeBalance).div(scalar);
           }
         }
       }
@@ -197,10 +196,7 @@ export class InventoryClient {
           // the rebalance to this particular chain. Note that if the sum of all rebalances required exceeds the l1
           // balance then this logic ensures that we only fill the first n number of chains where we can.
           if (requiredRebalance.lt(this.tokenClient.getBalance(1, l1Token))) {
-            // if (!possibleRebalances[chainId]) possibleRebalances[chainId] = {};
             assign(possibleRebalances, [chainId, l1Token], requiredRebalance);
-            // possibleRebalances[chainId][l1Token] = requiredRebalance;
-
             // Decrement token balance in client for this chain and increment cross chain counter.
             this.trackCrossChainTransfer(l1Token, requiredRebalance, chainId);
           }
@@ -211,8 +207,6 @@ export class InventoryClient {
       for (const chainId of Object.keys(rebalancesRequired)) {
         for (const l1Token of Object.keys(rebalancesRequired[chainId])) {
           if (!possibleRebalances[chainId] || !possibleRebalances[chainId][l1Token]) {
-            // if (!unexecutedRebalances[chainId]) unexecutedRebalances[chainId] = {};
-            // unexecutedRebalances[chainId][l1Token] = rebalancesRequired[chainId][l1Token];
             assign(unexecutedRebalances, [chainId, l1Token], rebalancesRequired[chainId][l1Token]);
           }
         }
@@ -226,10 +220,8 @@ export class InventoryClient {
       // is already complex logic and most of the time we'll not be sending batches of rebalance transactions.
       for (const chainId of Object.keys(possibleRebalances)) {
         for (const l1Token of Object.keys(possibleRebalances[chainId])) {
-          const receipt = await this.sendTokenCrossChain(chainId, l1Token, possibleRebalances[chainId][l1Token]);
-          // if (!executedTransactions[chainId]) executedTransactions[chainId] = {};
-          // executedTransactions[chainId][l1Token] = receipt.transactionHash;
-          assign(executedTransactions, [chainId, l1Token], receipt.transactionHash);
+          // const receipt = await this.sendTokenCrossChain(chainId, l1Token, possibleRebalances[chainId][l1Token]);
+          assign(executedTransactions, [chainId, l1Token], "XXXX");
         }
       }
 
@@ -351,7 +343,7 @@ export class InventoryClient {
   }
 
   isInventoryManagementEnabled() {
-    if (this.inventoryConfig.tokenConfig) return true;
+    if (this?.inventoryConfig?.tokenConfig) return true;
     // Use logDisabledManagement to avoid spamming the logs on every check if this module is enabled.
     else if (this.logDisabledManagement == false) this.log("Inventory Management Disabled");
     this.logDisabledManagement = true;
@@ -359,6 +351,6 @@ export class InventoryClient {
   }
 
   log(message: string, data?: any, level: string = "debug") {
-    this.logger[level]({ at: "InventoryClient", message, ...data });
+    if (this.logger) this.logger[level]({ at: "InventoryClient", message, ...data });
   }
 }
