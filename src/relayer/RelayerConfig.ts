@@ -23,7 +23,7 @@ export class RelayerConfig extends CommonConfig {
     this.maxRelayerLookBack = MAX_RELAYER_DEPOSIT_LOOK_BACK ? JSON.parse(MAX_RELAYER_DEPOSIT_LOOK_BACK) : {};
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
     this.repaymentChainIdForToken = REPAYMENT_CHAIN_FOR_TOKEN ? JSON.parse(REPAYMENT_CHAIN_FOR_TOKEN) : {};
-    
+
     if (Object.keys(this.inventoryConfig).length > 0) {
       this.inventoryConfig = replaceAddressCase(this.inventoryConfig); // Cast any non-address case addresses.
       this.inventoryConfig.wrapEtherThreshold = this.inventoryConfig.wrapEtherThreshold
