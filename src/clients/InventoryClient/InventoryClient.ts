@@ -124,6 +124,13 @@ export class InventoryClient {
     if (!this.isInventoryManagementEnabled()) return deposit.destinationChainId;
     if (deposit.destinationChainId === 1) return 1; // Always refund on L1 if the transfer is to L1.
     const l1Token = this.hubPoolClient.getL1TokenForDeposit(deposit);
+
+    // If there is no inventory config for this token or this token and destination chain the return the destination chain.
+    if (
+      this.inventoryConfig.tokenConfig[l1Token] == undefined ||
+      this.inventoryConfig.tokenConfig?.[l1Token]?.[deposit.destinationChainId] == undefined
+    )
+      return deposit.destinationChainId;
     const chainShortfall = this.getTokenShortFall(l1Token, deposit.destinationChainId);
     const chainVirtualBalance = this.getBalanceOnChainForL1Token(deposit.destinationChainId, l1Token);
     const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
