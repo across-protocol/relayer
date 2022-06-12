@@ -33,7 +33,10 @@ export async function constructDataworkerClients(
       ];
     })
   );
-  const bundleDataClient = new BundleDataClient(logger, commonClients, CHAIN_ID_LIST_INDICES);
+
+  // Dataworker does not yet have to depend on SpokePoolClients so we don't need to construct them for now.
+  const spokePoolClients = {};
+  const bundleDataClient = new BundleDataClient(logger, commonClients, spokePoolClients, CHAIN_ID_LIST_INDICES);
   return { ...commonClients, bundleDataClient, tokenClient, spokePoolSigners, spokePoolClientSearchSettings };
 }
 

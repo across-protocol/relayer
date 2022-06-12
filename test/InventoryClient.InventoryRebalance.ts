@@ -2,12 +2,13 @@ import { expect, ethers, SignerWithAddress, createSpyLogger, winston, BigNumber,
 import { toBN, toWei, randomAddress, spyLogIncludes } from "./utils";
 
 import { InventoryConfig } from "../src/interfaces";
-import { MockHubPoolClient, MockAdapterManager, MockTokenClient } from "./mocks/";
+import { MockBundleDataClient, MockHubPoolClient, MockAdapterManager, MockTokenClient } from "./mocks/";
 import { InventoryClient } from "../src/clients"; // Tested
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
 
 let hubPoolClient: MockHubPoolClient, adapterManager: MockAdapterManager, tokenClient: MockTokenClient;
+let bundleDataClient: MockBundleDataClient;
 let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let inventoryClient: InventoryClient; // tested
 
@@ -62,13 +63,16 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     hubPoolClient = new MockHubPoolClient(null, null);
     adapterManager = new MockAdapterManager(null, null, null, null);
     tokenClient = new MockTokenClient(null, null, null, null);
+    bundleDataClient = new MockBundleDataClient(null, null, null, null);
 
     inventoryClient = new InventoryClient(
+      owner.address,
       spyLogger,
       inventoryConfig,
       tokenClient,
       enabledChainIds,
       hubPoolClient,
+      bundleDataClient,
       adapterManager
     );
 
