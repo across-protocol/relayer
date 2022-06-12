@@ -1,6 +1,6 @@
-import { FillsToRefund } from "../interfaces";
+import { FillsToRefund, TokenTransfer } from "../interfaces";
 import { BundleAction, BalanceType, L1Token, RelayerBalanceTable, RelayerBalanceReport } from "../interfaces";
-import { BigNumber, Contract, ERC20, assign, etherscanLink } from "../utils";
+import { BigNumber, Contract, ERC20, assign, etherscanLink, etherscanLinks, getTransactionHashes } from "../utils";
 import {
   convertFromWei,
   toBN,
@@ -11,12 +11,21 @@ import {
   getUnfilledDeposits,
   providers,
 } from "../utils";
+import { TransfersByChain, TransfersByTokens } from "../interfaces";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 
-const ALL_CHAINS_NAME = "All chains";
+export const ALL_CHAINS_NAME = "All chains";
+export const UNKNOWN_TRANSFERS_NAME = "Unknown transfers (incoming, outgoing, net)";
 const ALL_BALANCE_TYPES = [BalanceType.CURRENT, BalanceType.PENDING, BalanceType.NEXT, BalanceType.TOTAL];
+
+interface CategorizedTransfers {
+  all: TokenTransfer[];
+  bond: TokenTransfer[];
+  v1: TokenTransfer[];
+  other: TokenTransfer[];
+}
 
 export class Monitor {
   // Block range to search is only defined on calling update().
@@ -38,6 +47,24 @@ export class Monitor {
     await updateMonitorClients(this.clients);
     await this.computeHubPoolBlocks();
     await this.computeSpokePoolsBlocks();
+
+    const searchConfigs = Object.fromEntries(
+      Object.entries(this.spokePoolsBlocks).map(([chainId, config]) => [
+        chainId,
+        {
+          fromBlock: config.startingBlock,
+          toBlock: config.endingBlock,
+          maxBlockLookBack: 0,
+        },
+      ])
+    );
+    const tokensPerChain = Object.fromEntries(
+      this.monitorConfig.spokePoolChains.map((chainId) => {
+        const l2Tokens = this.clients.hubPoolClient.getDestinationTokensToL1TokensForChainId(chainId);
+        return [chainId, Object.keys(l2Tokens)];
+      })
+    );
+    await this.clients.tokenTransferClient.update(searchConfigs, tokensPerChain);
   }
 
   async checkUtilization() {
@@ -154,11 +181,12 @@ export class Monitor {
     const relayers = this.monitorConfig.monitoredRelayers;
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
     const chainIds = this.monitorConfig.spokePoolChains;
-    const allChainNames = chainIds.map(getNetworkName).concat([ALL_CHAINS_NAME]);
+    const allChainNames = chainIds.map(getNetworkName).concat([ALL_CHAINS_NAME, UNKNOWN_TRANSFERS_NAME]);
     const reports = this.initializeBalanceReports(relayers, allL1Tokens, allChainNames);
 
     await this.updateCurrentRelayerBalances(reports);
     this.updatePendingAndFutureRelayerRefunds(reports);
+    this.updateUnknownTransfers(reports);
 
     for (const relayer of relayers) {
       const report = reports[relayer];
@@ -259,6 +287,154 @@ export class Monitor {
 
       this.updateRelayerRefunds(futureFillsToRefundPerChain, relayerBalanceReport[relayer], relayer, BalanceType.NEXT);
     }
+  }
+
+  updateUnknownTransfers(relayerBalanceReport: RelayerBalanceReport) {
+    const hubPoolClient = this.clients.hubPoolClient;
+
+    for (const relayer of this.monitorConfig.monitoredRelayers) {
+      const report = relayerBalanceReport[relayer];
+      const transfersPerChain: TransfersByChain = this.clients.tokenTransferClient.getTokenTransfers(relayer);
+
+      let mrkdwn = "";
+      for (const chainId of this.monitorConfig.spokePoolChains) {
+        const spokePoolClient = this.clients.spokePoolClients[chainId];
+        const transfersPerToken: TransfersByTokens = transfersPerChain[chainId];
+        const l2ToL1Tokens = hubPoolClient.getDestinationTokensToL1TokensForChainId(chainId);
+
+        let currentChainMrkdwn = "";
+        for (const l2Token of Object.keys(l2ToL1Tokens)) {
+          let currentTokenMrkdwn = "";
+
+          const tokenInfo = hubPoolClient.getL1TokenInfoForL2Token(l2Token, chainId);
+          const transfers = transfersPerToken[l2Token];
+          // Skip if there has been no transfers of this token.
+          if (!transfers) continue;
+
+          let totalOutgoingAmount = BigNumber.from(0);
+          // Filter v2 fills and bond payments from outgoing transfers.
+          const fillTransactionHashes = spokePoolClient
+            .getFillsWithBlockForDestinationChainAndRelayer(chainId, relayer)
+            .map((fill) => fill.transactionHash);
+          const outgoingTransfers = this.categorizeUnknownTransfers(transfers.outgoing, fillTransactionHashes);
+          if (outgoingTransfers.all.length > 0) {
+            currentTokenMrkdwn += "Outgoing:\n";
+            totalOutgoingAmount = totalOutgoingAmount.add(this.getTotalTransferAmount(outgoingTransfers.all));
+            currentTokenMrkdwn += this.formatCategorizedTransfers(outgoingTransfers, tokenInfo.decimals, chainId);
+          }
+
+          let totalIncomingAmount = BigNumber.from(0);
+          // Filter v2 refunds and bond repayments from incoming transfers.
+          const refundTransactionHashes = spokePoolClient
+            .getRelayerRefundExecutions()
+            .map((refund) => refund.transactionHash);
+          const incomingTransfers = this.categorizeUnknownTransfers(transfers.incoming, refundTransactionHashes);
+          if (incomingTransfers.all.length > 0) {
+            currentTokenMrkdwn += "Incoming:\n";
+            totalIncomingAmount = totalIncomingAmount.add(this.getTotalTransferAmount(incomingTransfers.all));
+            currentTokenMrkdwn += this.formatCategorizedTransfers(incomingTransfers, tokenInfo.decimals, chainId);
+          }
+
+          // Record if there are net outgoing transfers.
+          const netTransfersAmount = totalIncomingAmount.sub(totalOutgoingAmount);
+          if (!netTransfersAmount.eq(BigNumber.from(0))) {
+            const netAmount = convertFromWei(netTransfersAmount.toString(), tokenInfo.decimals);
+            currentTokenMrkdwn = `*${tokenInfo.symbol}: Net ${netAmount}*\n` + currentTokenMrkdwn;
+            currentChainMrkdwn += currentTokenMrkdwn;
+
+            // Report (incoming, outgoing, net) amounts.
+            this.incrementBalance(
+              report,
+              tokenInfo.symbol,
+              UNKNOWN_TRANSFERS_NAME,
+              BalanceType.CURRENT,
+              totalIncomingAmount
+            );
+            this.incrementBalance(
+              report,
+              tokenInfo.symbol,
+              UNKNOWN_TRANSFERS_NAME,
+              BalanceType.PENDING,
+              totalOutgoingAmount.mul(BigNumber.from(-1))
+            );
+            this.incrementBalance(
+              report,
+              tokenInfo.symbol,
+              UNKNOWN_TRANSFERS_NAME,
+              BalanceType.NEXT,
+              netTransfersAmount
+            );
+          }
+        }
+
+        // We only add to the markdown message if there was any unknown transfer for any token on this current chain.
+        if (currentChainMrkdwn) {
+          currentChainMrkdwn = `*[${getNetworkName(chainId)}]*\n` + currentChainMrkdwn;
+          mrkdwn += currentChainMrkdwn + "\n\n";
+        }
+      }
+
+      if (mrkdwn) {
+        this.logger.info({
+          at: "Monitor",
+          message: `There are non-v2 transfers for relayer ${relayer} 🦨`,
+          mrkdwn,
+        });
+      }
+    }
+  }
+
+  categorizeUnknownTransfers(transfers: TokenTransfer[], excludeTransactionHashes: string[]): CategorizedTransfers {
+    // Exclude specified transaction hashes.
+    const allUnknownOutgoingTransfers = transfers.filter((transfer) => {
+      return !excludeTransactionHashes.includes(transfer.transactionHash);
+    });
+
+    const hubPoolAddress = this.clients.hubPoolClient.hubPool.address;
+    const v1 = [];
+    const other = [];
+    const bond = [];
+    const v1Addresses = this.monitorConfig.knownV1Addresses;
+    for (const transfer of allUnknownOutgoingTransfers) {
+      if (transfer.from === hubPoolAddress || transfer.to === hubPoolAddress) {
+        bond.push(transfer);
+      } else if (v1Addresses.includes(transfer.from) || v1Addresses.includes(transfer.to)) {
+        v1.push(transfer);
+      } else {
+        other.push(transfer);
+      }
+    }
+    return { bond, v1, other, all: allUnknownOutgoingTransfers };
+  }
+
+  formatCategorizedTransfers(transfers: CategorizedTransfers, decimals: number, chainId: number) {
+    let mrkdwn = this.formatKnownTransfers(transfers.bond, decimals, "bond");
+    mrkdwn += this.formatKnownTransfers(transfers.v1, decimals, "v1");
+    mrkdwn += this.formatOtherTransfers(transfers.other, decimals, chainId);
+    return mrkdwn + "\n";
+  }
+
+  formatKnownTransfers(transfers: TokenTransfer[], decimals: number, transferType: String) {
+    if (transfers.length == 0) return "";
+
+    const totalAmount = this.getTotalTransferAmount(transfers);
+    return `${transferType}: ${convertFromWei(totalAmount.toString(), decimals)}\n`;
+  }
+
+  formatOtherTransfers(transfers: TokenTransfer[], decimals: number, chainId: number) {
+    if (transfers.length == 0) return "";
+
+    const totalAmount = this.getTotalTransferAmount(transfers);
+    let mrkdwn = `other: ${convertFromWei(totalAmount.toString(), decimals)}\n`;
+    mrkdwn += etherscanLinks(
+      transfers.map((transfer) => transfer.transactionHash),
+      chainId
+    );
+    return mrkdwn;
+  }
+
+  getTotalTransferAmount(transfers: TokenTransfer[]) {
+    return transfers.map((transfer) => transfer.value).reduce((a, b) => a.add(b));
   }
 
   initializeBalanceReports(relayers: string[], allL1Tokens: L1Token[], allChainNames: string[]) {

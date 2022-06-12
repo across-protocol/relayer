@@ -68,7 +68,13 @@ export class SpokePoolClient {
   }
 
   getFillsWithBlockForOriginChain(originChainId: number): FillWithBlock[] {
-    return this.fillsWithBlockNumbers.filter((fill: Fill) => fill.originChainId === originChainId);
+    return this.fillsWithBlockNumbers.filter((fill: FillWithBlock) => fill.originChainId === originChainId);
+  }
+
+  getFillsWithBlockForDestinationChainAndRelayer(chainId: number, relayer: string): FillWithBlock[] {
+    return this.fillsWithBlockNumbers.filter(
+      (fill: FillWithBlock) => fill.relayer === relayer && fill.destinationChainId === chainId
+    );
   }
 
   getFillsWithBlockInRange(startingBlock: number, endingBlock: number): FillWithBlock[] {
