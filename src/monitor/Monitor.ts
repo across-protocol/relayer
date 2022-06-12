@@ -190,16 +190,38 @@ export class Monitor {
 
     for (const relayer of relayers) {
       const report = reports[relayer];
+      let summaryMrkdwn = "*[Summary]*\n";
       let mrkdwn = "Token amounts: current, in liveness, next bundle, total\n";
       for (const token of allL1Tokens) {
-        mrkdwn += `*[${token.symbol}]*\n`;
+        let tokenMrkdwn = "";
+        let totalBalance = BigNumber.from(0);
         for (const chainName of allChainNames) {
-          const balances = Object.values(report[token.symbol][chainName]).map((balance) =>
-            convertFromWei(balance.toString(), token.decimals)
-          );
-          mrkdwn += `${chainName}: ${balances.join(", ")}\n`;
+          const balancesBN = Object.values(report[token.symbol][chainName]);
+          if (balancesBN.find((b) => b.gt(BigNumber.from(0)))) {
+            // Human-readable balances
+            const balances = balancesBN.map((balance) =>
+              balance.gt(BigNumber.from(0)) ? convertFromWei(balance.toString(), token.decimals) : "0"
+            );
+            tokenMrkdwn += `${chainName}: ${balances.join(", ")}\n`;
+
+            // Add the current's chain total.
+            totalBalance = totalBalance.add(balancesBN[balances.length - 1]);
+          } else {
+            // Shorten balances in the report if everything is 0.
+            tokenMrkdwn += `${chainName}: 0\n`;
+          }
+        }
+
+        // Update corresponding summary session for current token.
+        if (totalBalance.gt(BigNumber.from(0))) {
+          mrkdwn += `*[${token.symbol}]*\n` + tokenMrkdwn;
+          summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
+        } else {
+          summaryMrkdwn += `${token.symbol}: 0\n`;
         }
       }
+
+      mrkdwn += summaryMrkdwn;
       this.logger.info({
         at: "Monitor",
         message: `Balance report for ${relayer} 📖`,
