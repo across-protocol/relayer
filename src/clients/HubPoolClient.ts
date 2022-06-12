@@ -93,6 +93,9 @@ export class HubPoolClient {
 
   getL1TokenCounterpartAtBlock(l2ChainId: string, l2Token: string, block: number) {
     const l1Token = Object.keys(this.l1TokensToDestinationTokensWithBlock).find((_l1Token) => {
+      // If this token doesn't exist on this L2, return false.
+      if (this.l1TokensToDestinationTokensWithBlock[_l1Token][l2ChainId] === undefined) return false;
+
       // Find the last mapping published before the target block.
       return sortEventsDescending(this.l1TokensToDestinationTokensWithBlock[_l1Token][l2ChainId]).find(
         (mapping: DestinationTokenWithBlock) => mapping.l2Token === l2Token && mapping.blockNumber <= block
