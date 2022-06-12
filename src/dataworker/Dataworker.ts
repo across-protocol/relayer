@@ -877,6 +877,28 @@ export class Dataworker {
       )
     ).filter((element) => element !== undefined);
 
+    // Call `exchangeRateCurrent` on the HubPool before accumulating fees from the executed bundle leaves. This is to
+    // address the situation where `addLiquidity` and `removeLiquidity` have not been called for an L1 token for a
+    // while, which are the other methods that trigger an internal call to `_exchangeRateCurrent()`. Calling
+    // this method triggers a recompounding of fees before new fees come in.
+    const compoundedFeesForL1Token = [];
+    fundedLeaves.forEach((leaf) => {
+      leaf.l1Tokens.forEach((l1Token) => {
+        if (compoundedFeesForL1Token.includes(l1Token)) return;
+        else compoundedFeesForL1Token.push(l1Token);
+        if (submitExecution) {
+          this.clients.multiCallerClient.enqueueTransaction({
+            contract: this.clients.hubPoolClient.hubPool,
+            chainId: hubPoolChainId,
+            method: "exchangeRateCurrent",
+            args: ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"],
+            message: `Updated exchange rate ♻️!`,
+            mrkdwn: `Updated exchange rate for l1 token: ${"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"}`,
+          });
+        }
+      });
+    });
+
     fundedLeaves.forEach((leaf) => {
       const proof = expectedTrees.poolRebalanceTree.tree.getHexProof(leaf);
       const mrkdwn = `Root hash: ${expectedTrees.poolRebalanceTree.tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${
