@@ -891,9 +891,9 @@ export class Dataworker {
             contract: this.clients.hubPoolClient.hubPool,
             chainId: hubPoolChainId,
             method: "exchangeRateCurrent",
-            args: ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"],
+            args: [l1Token],
             message: `Updated exchange rate ♻️!`,
-            mrkdwn: `Updated exchange rate for l1 token: ${"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"}`,
+            mrkdwn: `Updated exchange rate for l1 token: ${l1Token}`,
           });
         }
       });
