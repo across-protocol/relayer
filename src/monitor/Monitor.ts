@@ -147,8 +147,8 @@ export class Monitor {
     // Group unfilled amounts by chain id and token id.
     const unfilledAmountByChainAndToken: { [chainId: number]: { [tokenAddress: string]: BigNumber } } = {};
     for (const deposit of unfilledDeposits) {
-      const chainId = deposit.deposit.originChainId;
-      const tokenAddress = deposit.deposit.originToken;
+      const chainId = deposit.deposit.destinationChainId;
+      const tokenAddress = deposit.deposit.destinationToken;
       if (!unfilledAmountByChainAndToken[chainId] || !unfilledAmountByChainAndToken[chainId][tokenAddress]) {
         assign(unfilledAmountByChainAndToken, [chainId, tokenAddress], BigNumber.from(0));
       }
@@ -163,7 +163,7 @@ export class Monitor {
       if (!amountByToken) continue;
 
       const chainId = parseInt(chainIdStr);
-      mrkdwn += `*Chain ${chainId}*\n`;
+      mrkdwn += `*Destination: ${getNetworkName(chainId)}*\n`;
       for (const tokenAddress of Object.keys(amountByToken)) {
         const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
         // Convert to number of tokens for readability.
