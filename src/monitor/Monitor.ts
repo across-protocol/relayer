@@ -238,7 +238,7 @@ export class Monitor {
     // The future bundle covers block range from the ending of the last proposed bundle (might still be pending liveness)
     // to the latest block.
     const futureBundleEvaluationBlockRanges: number[][] = latestBundle.bundleEvaluationBlockNumbers.map(
-      (endingBlock) => [endingBlock.toNumber() + 1, latestBlockNumber]
+      (endingBlock, i) => [endingBlock.toNumber() + 1, this.clients.spokePoolClients[chainIds[i]].latestBlockNumber]
     );
     // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
     // (if any) has been fully executed.
