@@ -884,8 +884,15 @@ export class Dataworker {
     const compoundedFeesForL1Token = [];
     fundedLeaves.forEach((leaf) => {
       leaf.l1Tokens.forEach((l1Token) => {
+        // Exit early if we already compounded fees for this l1 token on this loop
         if (compoundedFeesForL1Token.includes(l1Token)) return;
         else compoundedFeesForL1Token.push(l1Token);
+
+        // Exit early if we recently compounded fees
+        const lastestFeesCompoundedTime =
+          this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.lastLpFeeUpdate ?? 0;
+        if (this.clients.hubPoolClient.currentTime - lastestFeesCompoundedTime <= 86400) return;
+
         if (submitExecution) {
           this.clients.multiCallerClient.enqueueTransaction({
             contract: this.clients.hubPoolClient.hubPool,
