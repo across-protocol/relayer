@@ -194,7 +194,6 @@ export class Monitor {
       let mrkdwn = "Token amounts: current, in liveness, next bundle, total\n";
       for (const token of allL1Tokens) {
         let tokenMrkdwn = "";
-        let totalBalance = BigNumber.from(0);
         for (const chainName of allChainNames) {
           const balancesBN = Object.values(report[token.symbol][chainName]);
           if (balancesBN.find((b) => b.gt(BigNumber.from(0)))) {
@@ -203,16 +202,14 @@ export class Monitor {
               balance.gt(BigNumber.from(0)) ? convertFromWei(balance.toString(), token.decimals) : "0"
             );
             tokenMrkdwn += `${chainName}: ${balances.join(", ")}\n`;
-
-            // Add the current's chain total.
-            totalBalance = totalBalance.add(balancesBN[balances.length - 1]);
           } else {
             // Shorten balances in the report if everything is 0.
             tokenMrkdwn += `${chainName}: 0\n`;
           }
         }
 
-        // Update corresponding summary session for current token.
+        const totalBalance = report[token.symbol][ALL_CHAINS_NAME][BalanceType.TOTAL];
+        // Update corresponding summary section for current token.
         if (totalBalance.gt(BigNumber.from(0))) {
           mrkdwn += `*[${token.symbol}]*\n` + tokenMrkdwn;
           summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
