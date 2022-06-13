@@ -1,4 +1,4 @@
-import { FillsToRefund, TokenTransfer } from "../interfaces";
+import { FillsToRefund, ProposedRootBundle, TokenTransfer } from "../interfaces";
 import { BundleAction, BalanceType, L1Token, RelayerBalanceTable, RelayerBalanceReport } from "../interfaces";
 import { BigNumber, Contract, ERC20, assign, etherscanLink, etherscanLinks, getTransactionHashes } from "../utils";
 import {
@@ -262,25 +262,21 @@ export class Monitor {
     const latestBundle = hubPoolClient.getMostRecentProposedRootBundle(latestBlockNumber);
     const chainIds = this.monitorConfig.spokePoolChains;
 
-    // Refunds that will be processed in the current bundle still pending liveness (if any).
-    let pendingFillsToRefundPerChain: FillsToRefund | undefined = undefined;
-
-    // If latest proposed bundle has not been executed yet, we have a bundle pending liveness.
-    if (hubPoolClient.getExecutedLeavesForRootBundle(latestBundle, latestBlockNumber).length == 0) {
-      // Use the same block range as the current pending bundle to ensure we look at the right refunds.
-      const pendingBundleEvaluationBlockRanges: number[][] = latestBundle.bundleEvaluationBlockNumbers.map(
-        (endBlock, i) => [
-          hubPoolClient.getNextBundleStartBlockNumber(chainIds, latestBlockNumber, chainIds[i]),
-          endBlock.toNumber(),
-        ]
-      );
-      const { fillsToRefund } = this.clients.bundleDataClient.loadData(
-        pendingBundleEvaluationBlockRanges,
-        this.clients.spokePoolClients,
-        false
-      );
-      pendingFillsToRefundPerChain = fillsToRefund;
-    }
+    // Use the same block range as the current pending bundle to ensure we look at the right refunds.
+    const pendingBundleEvaluationBlockRanges: number[][] = latestBundle.bundleEvaluationBlockNumbers.map(
+      (endBlock, i) => [
+        hubPoolClient.getNextBundleStartBlockNumber(chainIds, latestBlockNumber, chainIds[i]),
+        endBlock.toNumber(),
+      ]
+    );
+    const { fillsToRefund: pendingFillsToRefundPerChain } = this.clients.bundleDataClient.loadData(
+      pendingBundleEvaluationBlockRanges,
+      this.clients.spokePoolClients,
+      false
+    );
+    // The latest proposed bundle's refund leaves might have already been partially or entirely executed.
+    // We have to deduct the executed amounts from the total refund amounts.
+    this.deductExecutedRefunds(pendingFillsToRefundPerChain, latestBundle);
 
     // The future bundle covers block range from the ending of the last proposed bundle (might still be pending liveness)
     // to the latest block.
@@ -473,15 +469,37 @@ export class Monitor {
     return reports;
   }
 
+  private deductExecutedRefunds(allRefunds: FillsToRefund, latestBundle: ProposedRootBundle) {
+    for (const chainIdStr of Object.keys(allRefunds)) {
+      const chainId = Number(chainIdStr);
+      const executedRefunds = this.clients.spokePoolClients[chainId].getExecutedRefunds(latestBundle.relayerRefundRoot);
+
+      for (const tokenAddress of Object.keys(allRefunds[chainId])) {
+        if (executedRefunds[tokenAddress] === undefined || allRefunds[chainId][tokenAddress].refunds === undefined)
+          continue;
+
+        const refunds = allRefunds[chainId][tokenAddress].refunds;
+        for (const relayer of Object.keys(refunds)) {
+          const executedAmount = executedRefunds[tokenAddress][relayer];
+          if (executedAmount === undefined) continue;
+
+          if (executedAmount.gt(refunds[relayer])) {
+            throw new Error(
+              `Unexpected state: Executed refund amount ${executedAmount} is larger than remaining refund amount from bundle ${refunds[relayer]}`
+            );
+          }
+          refunds[relayer] = refunds[relayer].sub(executedAmount);
+        }
+      }
+    }
+  }
+
   private updateRelayerRefunds(
     fillsToRefundPerChain: FillsToRefund,
     relayerBalanceTable: RelayerBalanceTable,
     relayer: string,
     balanceType: BalanceType
   ) {
-    // Short-circuit if there are no refunds to process.
-    if (!fillsToRefundPerChain) return;
-
     for (const chainId of this.monitorConfig.spokePoolChains) {
       const fillsToRefund = fillsToRefundPerChain[chainId];
       // Skip chains that don't have any refunds.
