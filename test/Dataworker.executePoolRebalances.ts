@@ -79,8 +79,8 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await updateAllClients();
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
 
-    // Should be 2 transactions: 1 for the to chain and 1 for the from chain.
-    expect(multiCallerClient.transactionCount()).to.equal(2);
+    // Should be 3 transactions: 1 for updating exchangeRateCurrent, 1 for the to chain and 1 for the from chain.
+    expect(multiCallerClient.transactionCount()).to.equal(3);
     await multiCallerClient.executeTransactionQueue();
 
     // TEST 3:
