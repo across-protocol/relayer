@@ -257,50 +257,13 @@ export class Monitor {
   }
 
   updatePendingAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport) {
-    const hubPoolClient = this.clients.hubPoolClient;
-    const latestBlockNumber = hubPoolClient.latestBlockNumber;
-    const latestBundle = hubPoolClient.getMostRecentProposedRootBundle(latestBlockNumber);
-    const chainIds = this.monitorConfig.spokePoolChains;
-
-    // Use the same block range as the current pending bundle to ensure we look at the right refunds.
-    const pendingBundleEvaluationBlockRanges: number[][] = latestBundle.bundleEvaluationBlockNumbers.map(
-      (endBlock, i) => [
-        hubPoolClient.getNextBundleStartBlockNumber(chainIds, latestBlockNumber, chainIds[i]),
-        endBlock.toNumber(),
-      ]
-    );
-    const { fillsToRefund: pendingFillsToRefundPerChain } = this.clients.bundleDataClient.loadData(
-      pendingBundleEvaluationBlockRanges,
-      this.clients.spokePoolClients,
-      false
-    );
-    // The latest proposed bundle's refund leaves might have already been partially or entirely executed.
-    // We have to deduct the executed amounts from the total refund amounts.
-    this.deductExecutedRefunds(pendingFillsToRefundPerChain, latestBundle);
-
-    // The future bundle covers block range from the ending of the last proposed bundle (might still be pending liveness)
-    // to the latest block.
-    const futureBundleEvaluationBlockRanges: number[][] = latestBundle.bundleEvaluationBlockNumbers.map(
-      (endingBlock, i) => [endingBlock.toNumber() + 1, this.clients.spokePoolClients[chainIds[i]].latestBlockNumber]
-    );
-    // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
-    // (if any) has been fully executed.
-    const { fillsToRefund: futureFillsToRefundPerChain } = this.clients.bundleDataClient.loadData(
-      futureBundleEvaluationBlockRanges,
-      this.clients.spokePoolClients,
-      false
-    );
+    let pendingBundleRefunds = this.clients.bundleDataClient.getPendingBundleRefunds();
+    let nextBundleRefunds = this.clients.bundleDataClient.getNextBundleRefunds();
 
     // Calculate which fills have not yet been refunded for each monitored relayer.
     for (const relayer of this.monitorConfig.monitoredRelayers) {
-      this.updateRelayerRefunds(
-        pendingFillsToRefundPerChain,
-        relayerBalanceReport[relayer],
-        relayer,
-        BalanceType.PENDING
-      );
-
-      this.updateRelayerRefunds(futureFillsToRefundPerChain, relayerBalanceReport[relayer], relayer, BalanceType.NEXT);
+      this.updateRelayerRefunds(pendingBundleRefunds, relayerBalanceReport[relayer], relayer, BalanceType.PENDING);
+      this.updateRelayerRefunds(nextBundleRefunds, relayerBalanceReport[relayer], relayer, BalanceType.NEXT);
     }
   }
 
@@ -467,31 +430,6 @@ export class Monitor {
       }
     }
     return reports;
-  }
-
-  private deductExecutedRefunds(allRefunds: FillsToRefund, latestBundle: ProposedRootBundle) {
-    for (const chainIdStr of Object.keys(allRefunds)) {
-      const chainId = Number(chainIdStr);
-      const executedRefunds = this.clients.spokePoolClients[chainId].getExecutedRefunds(latestBundle.relayerRefundRoot);
-
-      for (const tokenAddress of Object.keys(allRefunds[chainId])) {
-        if (executedRefunds[tokenAddress] === undefined || allRefunds[chainId][tokenAddress].refunds === undefined)
-          continue;
-
-        const refunds = allRefunds[chainId][tokenAddress].refunds;
-        for (const relayer of Object.keys(refunds)) {
-          const executedAmount = executedRefunds[tokenAddress][relayer];
-          if (executedAmount === undefined) continue;
-
-          if (executedAmount.gt(refunds[relayer])) {
-            throw new Error(
-              `Unexpected state: Executed refund amount ${executedAmount} is larger than remaining refund amount from bundle ${refunds[relayer]}`
-            );
-          }
-          refunds[relayer] = refunds[relayer].sub(executedAmount);
-        }
-      }
-    }
   }
 
   private updateRelayerRefunds(

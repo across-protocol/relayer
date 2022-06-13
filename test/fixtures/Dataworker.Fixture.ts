@@ -146,6 +146,15 @@ export async function setupDataworker(
 
   const tokenClient = new TokenClient(spyLogger, relayer.address, {}, hubPoolClient);
 
+  // This client dictionary can be conveniently passed in root builder functions that expect mapping of clients to
+  // load events from. Dataworker needs a client mapped to every chain ID set in CHAIN_ID_TEST_LIST.
+  const spokePoolClients = {
+    [originChainId]: spokePoolClient_1,
+    [destinationChainId]: spokePoolClient_2,
+    [repaymentChainId]: spokePoolClient_3,
+    1: spokePoolClient_4,
+  };
+
   const bundleDataClient = new BundleDataClient(
     spyLogger,
     {
@@ -154,6 +163,7 @@ export async function setupDataworker(
       profitClient,
       hubPoolClient,
     },
+    spokePoolClients,
     CHAIN_ID_TEST_LIST
   );
 
@@ -179,15 +189,6 @@ export async function setupDataworker(
     Object.fromEntries(CHAIN_ID_TEST_LIST.map((chainId) => [chainId, defaultPoolRebalanceTokenTransferThreshold])),
     Object.fromEntries(CHAIN_ID_TEST_LIST.map((chainId) => [chainId, defaultEndBlockBuffer]))
   );
-
-  // This client dictionary can be conveniently passed in root builder functions that expect mapping of clients to
-  // load events from. Dataworker needs a client mapped to every chain ID set in CHAIN_ID_TEST_LIST.
-  const spokePoolClients = {
-    [originChainId]: spokePoolClient_1,
-    [destinationChainId]: spokePoolClient_2,
-    [repaymentChainId]: spokePoolClient_3,
-    1: spokePoolClient_4,
-  };
 
   // Give owner tokens to LP on HubPool with.
   await setupTokensForWallet(spokePool_1, owner, [l1Token_1, l1Token_2], null, 100); // Seed owner to LP.

@@ -26,7 +26,7 @@ export async function constructMonitorClients(config: MonitorConfig, logger: win
     config,
     baseSigner
   );
-  const bundleDataClient = new BundleDataClient(logger, commonClients, config.spokePoolChains);
+  const bundleDataClient = new BundleDataClient(logger, commonClients, spokePoolClients, config.spokePoolChains);
 
   // Need to update HubPoolClient to get latest tokens.
   const providerPerChain = Object.fromEntries(

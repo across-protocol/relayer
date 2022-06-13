@@ -92,6 +92,7 @@ describe("Monitor", async function () {
         profitClient,
         hubPoolClient,
       },
+      spokePoolClients,
       [1, repaymentChainId, originChainId, destinationChainId]
     );
 

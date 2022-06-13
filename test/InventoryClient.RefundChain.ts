@@ -2,12 +2,13 @@ import { expect, ethers, SignerWithAddress, createSpyLogger, winston, BigNumber,
 import { toBN, toWei, randomAddress, spyLogIncludes } from "./utils";
 
 import { InventoryConfig, Deposit } from "../src/interfaces";
-import { MockHubPoolClient, MockAdapterManager, MockTokenClient } from "./mocks";
+import { MockBundleDataClient, MockHubPoolClient, MockAdapterManager, MockTokenClient } from "./mocks";
 import { InventoryClient } from "../src/clients"; // Tested
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
 
 let hubPoolClient: MockHubPoolClient, adapterManager: MockAdapterManager, tokenClient: MockTokenClient;
+let bundleDataClient: MockBundleDataClient;
 let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let inventoryClient: InventoryClient; // tested
 let sampleDepositData: Deposit;
@@ -59,13 +60,16 @@ describe("InventoryClient: Refund chain selection", async function () {
     hubPoolClient = new MockHubPoolClient(null, null);
     adapterManager = new MockAdapterManager(null, null, null, null);
     tokenClient = new MockTokenClient(null, null, null, null);
+    bundleDataClient = new MockBundleDataClient(null, null, null, null);
 
     inventoryClient = new InventoryClient(
+      owner.address,
       spyLogger,
       inventoryConfig,
       tokenClient,
       enabledChainIds,
       hubPoolClient,
+      bundleDataClient,
       adapterManager
     );
 
@@ -173,6 +177,24 @@ describe("InventoryClient: Refund chain selection", async function () {
     tokenClient.setTokenData(42161, l2TokensForWeth[42161], initialAllocation[42161][mainnetWeth].add(toWei(10)));
     expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
   });
+
+  it("Correctly decides where to refund based on upcoming refunds", async function () {
+    // Consider a case where the relayer is filling a marginally larger relay of size 5 WETH. Without refunds, the post relay
+    // allocation on optimism would be (15-5)/(140-5)=7.4%. This would be below the target plus buffer of 12%. However, if we now
+    // factor in 10 WETH in refunds (5 from pending and 5 from next bundle) that are coming to L2 and 5 more WETH refunds coming to L1,
+    // the allocation should actually be (15-5+10)/(140-5+5+10)=~13.3%, which is above L2 target.
+    // Therefore, the bot should choose refund on L1 instead of L2.
+    sampleDepositData.amount = toWei(5);
+    bundleDataClient.setReturnedPendingBundleRefunds({
+      1: createRefunds(5, mainnetWeth),
+      10: createRefunds(5, l2TokensForWeth[10]),
+    });
+    bundleDataClient.setReturnedNextBundleRefunds({
+      10: createRefunds(5, l2TokensForWeth[10]),
+    });
+    expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
+    expect(lastSpyLogIncludes(spy, `expectedPostRelayAllocation":"166666666666666666"`)).to.be.true; // (20-5)/(140-5)=0.11
+  });
 });
 
 function seedMocks(seedBalances: { [chainId: string]: { [token: string]: BigNumber } }) {
@@ -186,4 +208,15 @@ function seedMocks(seedBalances: { [chainId: string]: { [token: string]: BigNumb
   });
 
   hubPoolClient.setL1TokensToDestinationTokens({ [mainnetWeth]: l2TokensForWeth, [mainnetUsdc]: l2TokensForUsdc });
+}
+
+function createRefunds(refundAmount: number, token: string) {
+  return {
+    [token]: {
+      refunds: { [owner.address]: BigNumber.from(toWei(refundAmount)) },
+      fills: [],
+      totalRefundAmount: BigNumber.from(0),
+      realizedLpFees: BigNumber.from(0),
+    },
+  };
 }
