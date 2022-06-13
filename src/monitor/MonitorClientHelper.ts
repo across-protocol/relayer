@@ -1,6 +1,6 @@
 import { MonitorConfig } from "./MonitorConfig";
 import { getSigner, winston } from "../utils";
-import { BundleDataClient, HubPoolClient } from "../clients";
+import { BundleDataClient, HubPoolClient, TokenTransferClient } from "../clients";
 import {
   Clients,
   updateClients,
@@ -14,6 +14,7 @@ export interface MonitorClients extends Clients {
   bundleDataClient: BundleDataClient;
   hubPoolClient: HubPoolClient;
   spokePoolClients: SpokePoolClientsByChain;
+  tokenTransferClient: TokenTransferClient;
 }
 
 export async function constructMonitorClients(config: MonitorConfig, logger: winston.Logger): Promise<MonitorClients> {
@@ -27,7 +28,13 @@ export async function constructMonitorClients(config: MonitorConfig, logger: win
   );
   const bundleDataClient = new BundleDataClient(logger, commonClients, config.spokePoolChains);
 
-  return { ...commonClients, bundleDataClient, spokePoolClients };
+  // Need to update HubPoolClient to get latest tokens.
+  const providerPerChain = Object.fromEntries(
+    config.spokePoolChains.map((chainId) => [chainId, spokePoolClients[chainId].spokePool.provider])
+  );
+  const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
+
+  return { ...commonClients, bundleDataClient, spokePoolClients, tokenTransferClient };
 }
 
 export async function updateMonitorClients(clients: MonitorClients) {

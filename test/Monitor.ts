@@ -7,14 +7,15 @@ import {
   SpokePoolClient,
   MultiCallerClient,
   ProfitClient,
+  TokenTransferClient,
 } from "../src/clients";
-import { Monitor } from "../src/monitor/Monitor";
+import { Monitor, ALL_CHAINS_NAME, UNKNOWN_TRANSFERS_NAME } from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
 import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repaymentChainId } from "./constants";
 import * as constants from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { Dataworker } from "../src/dataworker/Dataworker";
-import { MAX_UINT_VAL, getNetworkName } from "../src/utils";
+import { MAX_UINT_VAL } from "../src/utils";
 
 let l1Token: Contract, l2Token: Contract;
 let hubPool: Contract, spokePool_1: Contract, spokePool_2: Contract;
@@ -23,6 +24,7 @@ let dataworkerInstance: Dataworker;
 let bundleDataClient: BundleDataClient;
 let configStoreClient: AcrossConfigStoreClient;
 let hubPoolClient: HubPoolClient, multiCallerClient: MultiCallerClient, profitClient: ProfitClient;
+let tokenTransferClient: TokenTransferClient;
 let monitorInstance: Monitor;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let spokePoolClient_3: SpokePoolClient, spokePoolClient_4: SpokePoolClient;
@@ -31,7 +33,7 @@ let updateAllClients: () => Promise<void>;
 
 const { spy, spyLogger } = createSpyLogger();
 
-const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "Unknown", "All chains"];
+const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "Unknown", ALL_CHAINS_NAME];
 
 describe("Monitor", async function () {
   beforeEach(async function () {
@@ -93,6 +95,11 @@ describe("Monitor", async function () {
       [1, repaymentChainId, originChainId, destinationChainId]
     );
 
+    const providers = Object.fromEntries(
+      Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.spokePool.provider])
+    );
+    tokenTransferClient = new TokenTransferClient(spyLogger, providers, [depositor.address]);
+
     monitorInstance = new Monitor(spyLogger, monitorConfig, {
       bundleDataClient,
       configStoreClient,
@@ -100,6 +107,7 @@ describe("Monitor", async function () {
       profitClient,
       hubPoolClient,
       spokePoolClients,
+      tokenTransferClient,
     });
   });
 
@@ -161,7 +169,9 @@ describe("Monitor", async function () {
     );
     await monitorInstance.updateCurrentRelayerBalances(reports);
 
-    expect(reports[depositor.address]["L1"]["All chains"]["current"].toString()).to.be.equal("60000000000000000000000");
+    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME]["current"].toString()).to.be.equal(
+      "60000000000000000000000"
+    );
   });
 
   it("Monitor should get relayer refunds", async function () {
@@ -195,7 +205,7 @@ describe("Monitor", async function () {
     );
     monitorInstance.updatePendingAndFutureRelayerRefunds(reports);
 
-    expect(reports[depositor.address]["L1"]["All chains"]["pending"].toString()).to.be.equal("49958233892200285050");
+    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME]["pending"].toString()).to.be.equal("49958233892200285050");
   });
 
   it("Monitor should report unfilled deposits", async function () {
@@ -217,5 +227,19 @@ describe("Monitor", async function () {
     expect(lastSpyLogIncludes(spy, "Unfilled deposits ⏱")).to.be.true;
     const log = spy.lastCall;
     expect(log.lastArg.mrkdwn).to.contains("100.00");
+  });
+
+  it("Monitor should report unknown transfers", async function () {
+    await l2Token.connect(depositor).transfer(dataworker.address, 1);
+
+    await monitorInstance.update();
+    const reports = monitorInstance.initializeBalanceReports(
+      monitorInstance.monitorConfig.monitoredRelayers,
+      monitorInstance.clients.hubPoolClient.getL1Tokens(),
+      [UNKNOWN_TRANSFERS_NAME]
+    );
+    await monitorInstance.updateUnknownTransfers(reports);
+
+    expect(lastSpyLogIncludes(spy, `There are non-v2 transfers for relayer ${depositor.address} 🦨`)).to.be.true;
   });
 });

@@ -20,6 +20,7 @@ export class MonitorConfig extends CommonConfig {
   readonly monitoredRelayers: string[];
   readonly whitelistedDataworkers: string[];
   readonly whitelistedRelayers: string[];
+  readonly knownV1Addresses: string[];
   readonly botModes: BotModes;
 
   constructor(env: ProcessEnv) {
@@ -36,6 +37,7 @@ export class MonitorConfig extends CommonConfig {
       UTILIZATION_THRESHOLD,
       WHITELISTED_DATA_WORKERS,
       WHITELISTED_RELAYERS,
+      KNOWN_V1_ADDRESSES,
     } = env;
 
     this.botModes = {
@@ -51,6 +53,7 @@ export class MonitorConfig extends CommonConfig {
 
     // Used to monitor balances, activities, etc. from the specified relayers.
     this.monitoredRelayers = parseAddressesOptional(MONITORED_RELAYERS);
+    this.knownV1Addresses = parseAddressesOptional(KNOWN_V1_ADDRESSES);
 
     // Default pool utilization threshold at 90%.
     this.utilizationThreshold = UTILIZATION_THRESHOLD ? Number(UTILIZATION_THRESHOLD) : 90;

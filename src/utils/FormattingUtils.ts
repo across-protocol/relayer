@@ -22,6 +22,10 @@ import { createEtherscanLinkMarkdown } from "@uma/common";
 export const etherscanLink = (txHashOrAddress: string, chainId: number | string) =>
   createEtherscanLinkMarkdown(txHashOrAddress, Number(chainId));
 
+export const etherscanLinks = (txHashesOrAddresses: string[], chainId: number | string) => {
+  return txHashesOrAddresses.map((hash) => `${etherscanLink(hash, chainId)}\n`).join("");
+};
+
 export const utf8ToHex = (input: string) => ethers.utils.formatBytes32String(input);
 
 export const hexToUtf8 = (input: string) => ethers.utils.toUtf8String(input);

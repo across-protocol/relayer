@@ -87,3 +87,7 @@ export function sortEventsDescending<T extends SortableEvent>(events: T[]): T[] 
     return ey.logIndex - ex.logIndex;
   });
 }
+
+export function getTransactionHashes(events: SortableEvent[]) {
+  return [...new Set(events.map((e) => e.transactionHash))];
+}
