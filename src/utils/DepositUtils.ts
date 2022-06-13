@@ -1,8 +1,7 @@
 import { SpokePoolClient } from "../clients";
 import { Deposit, DepositWithBlock, Fill, UnfilledDeposit, UnfilledDepositsForOriginChain } from "../interfaces";
-import { assign, toBN } from "../utils";
-import { getBlockRangeForChain } from "./DataworkerUtils";
-import { isFirstFillForDeposit } from "./FillUtils";
+import { assign, toBN, isFirstFillForDeposit } from "./";
+import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
 export function getDepositPath(deposit: Deposit): string {
   return `${deposit.originToken}-->${deposit.destinationChainId}`;

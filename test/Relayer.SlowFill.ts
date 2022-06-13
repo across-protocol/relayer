@@ -5,6 +5,7 @@ import { originChainId, sinon, toBNWei } from "./utils";
 import { amountToLp, defaultTokenConfig, amountToDeposit } from "./constants";
 import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
 import { TokenClient, ProfitClient } from "../src/clients";
+import { MockInventoryClient } from "./mocks";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 
@@ -56,6 +57,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
       tokenClient,
       profitClient,
       multiCallerClient,
+      inventoryClient: new MockInventoryClient(),
     });
 
     await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // Seed owner to LP.

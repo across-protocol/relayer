@@ -4,7 +4,6 @@ import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWit
 import { AcrossConfigStoreClient } from "./ConfigStoreClient";
 import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock, TokensBridged } from "../interfaces/SpokePool";
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
-import { RootBundleExecutedEvent } from "@across-protocol/contracts-v2/dist/typechain/HubPool";
 
 export class SpokePoolClient {
   private deposits: { [DestinationChainId: number]: Deposit[] } = {};
@@ -69,7 +68,13 @@ export class SpokePoolClient {
   }
 
   getFillsWithBlockForOriginChain(originChainId: number): FillWithBlock[] {
-    return this.fillsWithBlockNumbers.filter((fill: Fill) => fill.originChainId === originChainId);
+    return this.fillsWithBlockNumbers.filter((fill: FillWithBlock) => fill.originChainId === originChainId);
+  }
+
+  getFillsWithBlockForDestinationChainAndRelayer(chainId: number, relayer: string): FillWithBlock[] {
+    return this.fillsWithBlockNumbers.filter(
+      (fill: FillWithBlock) => fill.relayer === relayer && fill.destinationChainId === chainId
+    );
   }
 
   getFillsWithBlockInRange(startingBlock: number, endingBlock: number): FillWithBlock[] {

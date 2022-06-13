@@ -21,6 +21,7 @@ export async function run(): Promise<void> {
   if (!Object.keys(args).includes("chainId")) throw new Error("Define `chainId` as the chain you want to connect on");
   const baseSigner = await getSigner();
   const connectedSigner = baseSigner.connect(getProvider(Number(args.chainId)));
+  console.log("Connected to account", connectedSigner.address);
   const recipient = args.to;
   const token = args.token;
   if (!ethers.utils.isAddress(recipient)) throw new Error("invalid addresses");
@@ -45,7 +46,7 @@ export async function run(): Promise<void> {
     console.log(`Send ${symbol} with amount ${amountFromWei} tokens to ${recipient} on chain ${args.chainId}`);
     if (!(await askYesNoQuestion("\nConfirm that you want to execute this transaction?"))) process.exit(0);
     console.log("sending...");
-    const tx = await erc20.transfer(recipient, args.amount);
+    const tx = await erc20.transfer(recipient, args.amount, { gasLimit: 100000 });
     const receipt = await tx.wait();
     console.log("Transaction hash:", receipt.transactionHash);
   }

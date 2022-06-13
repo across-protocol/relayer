@@ -2,10 +2,8 @@ import { BigNumberForToken, DepositWithBlock, FillsToRefund, FillWithBlock, Pool
 import { RelayData, RelayerRefundLeaf } from "../interfaces";
 import { RelayerRefundLeafWithGroup, RunningBalances, UnfilledDeposit } from "../interfaces";
 import { buildPoolRebalanceLeafTree, buildRelayerRefundTree, buildSlowRelayTree } from "../utils";
-import { groupObjectCountsByProp, groupObjectCountsByTwoProps, toBN } from "../utils";
+import { getDepositPath, getFillsInRange, groupObjectCountsByProp, groupObjectCountsByTwoProps, toBN } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
-import { getDepositPath } from "./DepositUtils";
-import { getFillsInRange } from "./FillUtils";
 import { addSlowFillsToRunningBalances, initializeRunningBalancesFromRelayerRepayments } from "./PoolRebalanceUtils";
 import { addLastRunningBalance, constructPoolRebalanceLeaves } from "./PoolRebalanceUtils";
 import { updateRunningBalanceForDeposit } from "./PoolRebalanceUtils";
@@ -31,6 +29,7 @@ export function getEndBlockBuffers(
   // filled during the challenge period.
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number) => blockRangeEndBlockBuffer[chainId] ?? 0);
 }
+
 export function getBlockRangeForChain(
   blockRange: number[][],
   chain: number,
@@ -175,7 +174,7 @@ export function _buildRelayerRefundRoot(
     leaf.netSendAmounts.forEach((netSendAmount, index) => {
       if (netSendAmount.gte(toBN(0))) return;
 
-      const l2TokenCounterpart = clients.hubPoolClient.getDestinationTokenForL1TokenDestinationChainId(
+      const l2TokenCounterpart = clients.hubPoolClient.getDestinationTokenForL1Token(
         leaf.l1Tokens[index],
         leaf.chainId
       );

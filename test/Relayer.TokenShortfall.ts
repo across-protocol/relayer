@@ -2,15 +2,10 @@ import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, or
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
 import { lastSpyLogIncludes, toBNWei, createSpyLogger, deployConfigStore } from "./utils";
 import { deployAndConfigureHubPool, winston } from "./utils";
-import { amountToLp, l1TokenTransferThreshold, sampleRateModel, defaultTokenConfig } from "./constants";
-import {
-  SpokePoolClient,
-  HubPoolClient,
-  AcrossConfigStoreClient,
-  MultiCallerClient,
-  ProfitClient,
-} from "../src/clients";
-import { TokenClient } from "../src/clients";
+import { amountToLp, defaultTokenConfig } from "./constants";
+import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
+import { TokenClient, ProfitClient } from "../src/clients";
+import { MockInventoryClient } from "./mocks";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 
@@ -60,6 +55,7 @@ describe("Relayer: Token balance shortfall", async function () {
       tokenClient,
       profitClient,
       multiCallerClient,
+      inventoryClient: new MockInventoryClient(),
     });
 
     // Seed Owner and depositor wallets but dont seed relayer to test how the relayer handles being out of funds.
@@ -94,9 +90,6 @@ describe("Relayer: Token balance shortfall", async function () {
     expect(lastSpyLogIncludes(spy, "Shortfall on Hardhat2:")).to.be.true;
     expect(lastSpyLogIncludes(spy, `${await l1Token.symbol()} cumulative shortfall of 150.00`)).to.be.true;
     expect(lastSpyLogIncludes(spy, "blocking deposits: 1,0")).to.be.true;
-
-    // At the end of the execution the tokenClient should have correctly flushed.
-    expect(tokenClient.anyCapturedShortFallFills()).to.be.false;
 
     // Submitting another relay should increment the shortfall and log accordingly. Total shortfall of 250 now.
     await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
@@ -143,4 +136,5 @@ async function updateAllClients() {
   await tokenClient.update();
   await spokePoolClient_1.update();
   await spokePoolClient_2.update();
+  tokenClient.clearTokenShortfall();
 }

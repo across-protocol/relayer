@@ -1,43 +1,44 @@
-import { SpokePool } from "@across-protocol/contracts-v2";
 import { MonitorConfig } from "./MonitorConfig";
-import { getDeployedContract, getDeploymentBlockNumber, getSigner, winston } from "../utils";
-import { HubPoolClient, SpokePoolClient } from "../clients";
-import { constructClients, getSpokePoolSigners } from "../common";
+import { getSigner, winston } from "../utils";
+import { BundleDataClient, HubPoolClient, TokenTransferClient } from "../clients";
+import {
+  Clients,
+  updateClients,
+  updateSpokePoolClients,
+  constructClients,
+  constructSpokePoolClientsWithLookback,
+} from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
 
-export interface MonitorClients {
+export interface MonitorClients extends Clients {
+  bundleDataClient: BundleDataClient;
   hubPoolClient: HubPoolClient;
   spokePoolClients: SpokePoolClientsByChain;
+  tokenTransferClient: TokenTransferClient;
 }
 
 export async function constructMonitorClients(config: MonitorConfig, logger: winston.Logger): Promise<MonitorClients> {
   const baseSigner = await getSigner(); // todo: add getVoidSigner
-
-  const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
-
   const commonClients = await constructClients(logger, config);
-  const spokePoolClients = config.spokePoolChains.reduce((acc, chainId) => {
-    const spokePool = getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) as SpokePool;
-    const startingBlock = Number(getDeploymentBlockNumber("SpokePool", chainId));
-    const spokePoolClient = new SpokePoolClient(
-      logger,
-      spokePool,
-      commonClients.configStoreClient,
-      Number(chainId),
-      {
-        fromBlock: startingBlock,
-        toBlock: null,
-        // Lookback will limit how many blocks we'll actually look at on the first run.
-        maxBlockLookBack: config.maxBlockLookBack[chainId],
-      },
-      startingBlock
-    );
+  const spokePoolClients = await constructSpokePoolClientsWithLookback(
+    logger,
+    commonClients.configStoreClient,
+    config,
+    baseSigner
+  );
+  const bundleDataClient = new BundleDataClient(logger, commonClients, config.spokePoolChains);
 
-    return {
-      ...acc,
-      [chainId]: spokePoolClient,
-    };
-  }, {} as Record<number, SpokePoolClient>);
+  // Need to update HubPoolClient to get latest tokens.
+  const providerPerChain = Object.fromEntries(
+    config.spokePoolChains.map((chainId) => [chainId, spokePoolClients[chainId].spokePool.provider])
+  );
+  const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
 
-  return { ...commonClients, spokePoolClients };
+  return { ...commonClients, bundleDataClient, spokePoolClients, tokenTransferClient };
+}
+
+export async function updateMonitorClients(clients: MonitorClients) {
+  await updateClients(clients);
+  // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
+  await updateSpokePoolClients(clients.spokePoolClients);
 }

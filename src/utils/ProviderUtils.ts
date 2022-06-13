@@ -184,7 +184,7 @@ export function getProvider(chainId: number) {
   );
 
   // Default to 2 retries.
-  const retries = Number(process.env[`NODE_RETRIES_${chainId}`] || NODE_RETRIES || "2");
+  const retries = Number(process.env[`NODE_RETRIES_${chainId}`] || NODE_RETRIES || "3");
 
   // Default to a delay of 1 second between retries.
   const retryDelay = Number(process.env[`NODE_RETRY_DELAY_${chainId}`] || NODE_RETRY_DELAY || "1");

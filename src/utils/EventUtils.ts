@@ -37,6 +37,7 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
   let numberOfQueries = 1;
   if (!searchConfig.maxBlockLookBack) searchConfig.maxBlockLookBack = searchConfig.toBlock - searchConfig.fromBlock;
   else numberOfQueries = Math.ceil((searchConfig.toBlock - searchConfig.fromBlock) / searchConfig.maxBlockLookBack);
+
   const promises = [];
   for (let i = 0; i < numberOfQueries; i++) {
     const fromBlock = searchConfig.fromBlock + i * searchConfig.maxBlockLookBack;
@@ -85,4 +86,8 @@ export function sortEventsDescending<T extends SortableEvent>(events: T[]): T[] 
     if (ex.transactionIndex !== ey.transactionIndex) return ey.transactionIndex - ex.transactionIndex;
     return ey.logIndex - ex.logIndex;
   });
+}
+
+export function getTransactionHashes(events: SortableEvent[]) {
+  return [...new Set(events.map((e) => e.transactionHash))];
 }
