@@ -1,4 +1,4 @@
-import { winston, EMPTY_MERKLE_ROOT, sortEventsDescending, BigNumber, getRefund, MerkleTree } from "../utils";
+import { winston, EMPTY_MERKLE_ROOT, sortEventsDescending, BigNumber, getRefund, MerkleTree, toBN } from "../utils";
 import { DepositWithBlock, FillsToRefund, FillWithBlock, UnfilledDeposit } from "../interfaces";
 import {
   PendingRootBundle,
@@ -883,7 +883,10 @@ export class Dataworker {
     // this method triggers a recompounding of fees before new fees come in.
     const compoundedFeesForL1Token = [];
     fundedLeaves.forEach((leaf) => {
-      leaf.l1Tokens.forEach((l1Token) => {
+      leaf.l1Tokens.forEach((l1Token, i) => {
+        // Exit early if lp fees are 0
+        if (leaf.bundleLpFees[i].eq(toBN(0))) return;
+
         // Exit early if we already compounded fees for this l1 token on this loop
         if (compoundedFeesForL1Token.includes(l1Token)) return;
         else compoundedFeesForL1Token.push(l1Token);
