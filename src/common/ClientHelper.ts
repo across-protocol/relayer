@@ -25,7 +25,7 @@ export interface Clients {
 export function getSpokePoolSigners(baseSigner: Wallet, config: CommonConfig): { [chainId: number]: Wallet } {
   return Object.fromEntries(
     config.spokePoolChains.map((chainId) => {
-      return [chainId, baseSigner.connect(getProvider(chainId, config.nodeQuorumThreshold))];
+      return [chainId, baseSigner.connect(getProvider(chainId))];
     })
   );
 }
