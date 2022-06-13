@@ -1,5 +1,5 @@
 import { buildDeposit, buildFillForRepaymentChain, createSpyLogger, lastSpyLogIncludes } from "./utils";
-import { Contract, SignerWithAddress, ethers, expect } from "./utils";
+import { BigNumber, Contract, SignerWithAddress, ethers, expect } from "./utils";
 import {
   AcrossConfigStoreClient,
   BundleDataClient,
@@ -198,14 +198,34 @@ describe("Monitor", async function () {
 
     // While the new bundle is still pending, get pending refunds.
     await monitorInstance.update();
-    const reports = monitorInstance.initializeBalanceReports(
+    let reports = monitorInstance.initializeBalanceReports(
       monitorInstance.monitorConfig.monitoredRelayers,
       monitorInstance.clients.hubPoolClient.getL1Tokens(),
       TEST_NETWORK_NAMES
     );
     monitorInstance.updatePendingAndFutureRelayerRefunds(reports);
-
     expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME]["pending"].toString()).to.be.equal("49958233892200285050");
+
+    reports = monitorInstance.initializeBalanceReports(
+      monitorInstance.monitorConfig.monitoredRelayers,
+      monitorInstance.clients.hubPoolClient.getL1Tokens(),
+      TEST_NETWORK_NAMES
+    );
+    // A small hack to change the executed leaves in SpokePoolClient without having to actually execute any leaves.
+    spokePoolClient_2.getRelayerRefundExecutions().push({
+      rootBundleId: 1,
+      chainId: originChainId,
+      refundAddresses: [depositor.address],
+      refundAmounts: [BigNumber.from("39958233892200285050")],
+      l2TokenAddress: hubPoolClient.getDestinationTokenForL1Token(l1Token.address, destinationChainId),
+    } as any);
+    spokePoolClient_2.getRootBundleRelays().push({
+      rootBundleId: 1,
+      relayerRefundRoot: hubPoolClient.getMostRecentProposedRootBundle(hubPoolClient.latestBlockNumber)
+        .relayerRefundRoot,
+    } as any);
+    monitorInstance.updatePendingAndFutureRelayerRefunds(reports);
+    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME]["pending"].toString()).to.be.equal("10000000000000000000");
   });
 
   it("Monitor should report unfilled deposits", async function () {
