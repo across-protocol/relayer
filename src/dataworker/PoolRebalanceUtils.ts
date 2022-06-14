@@ -66,6 +66,24 @@ export function updateRunningBalanceForDeposit(
   updateRunningBalance(runningBalances, deposit.originChainId, l1TokenCounterpart, updateAmount);
 }
 
+export function addStartingRunningBalance(
+  latestMainnetBlock: number,
+  runningBalances: interfaces.RunningBalances,
+  configClient: AcrossConfigStoreClient
+) {
+  Object.keys(runningBalances).forEach((repaymentChainId) => {
+    Object.keys(runningBalances[repaymentChainId]).forEach((l1TokenAddress) => {
+      const startingRunningBalance = configClient.getStartingRunningBalanceForBlock(
+        Number(repaymentChainId),
+        l1TokenAddress,
+        latestMainnetBlock
+      );
+      if (!toBN(startingRunningBalance).eq(toBN(0)))
+        updateRunningBalance(runningBalances, Number(repaymentChainId), l1TokenAddress, startingRunningBalance);
+    });
+  });
+}
+
 export function addLastRunningBalance(
   latestMainnetBlock: number,
   runningBalances: interfaces.RunningBalances,

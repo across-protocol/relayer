@@ -10,6 +10,7 @@ import {
   originChainId,
   mockTreeRoot,
   buildPoolRebalanceLeaves,
+  DEFAULT_STARTING_RUNNING_BALANCE,
 } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { refundProposalLiveness, CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
@@ -1063,6 +1064,85 @@ describe("Dataworker: Build merkle roots", async function () {
           groupIndex: 0,
           leafId: 1,
           l1Tokens: [l1Token_1.address],
+        },
+      ]);
+    });
+    it("Adds starting running balances", async function () {
+      await updateAllClients();
+
+      // Update token config with a starting running balance for one l1 token on the origin chain, where
+      // the deposit is going to take place.
+      await configStore.updateTokenConfig(
+        l1Token_1.address,
+        JSON.stringify({
+          rateModel: sampleRateModel,
+          transferThreshold: "0",
+          startingRunningBalance: { [originChainId]: DEFAULT_STARTING_RUNNING_BALANCE.toString() },
+        })
+      );
+      await updateAllClients();
+
+      // Enable a second L1 token so we can test that starting running balance is only applied to token with the config
+      // set. Set this token config without a starting running balance value.
+      const { l1Token, l2Token } = await deployNewTokenMapping(
+        depositor,
+        relayer,
+        spokePool_1,
+        spokePool_2,
+        configStore,
+        hubPool,
+        amountToDeposit.mul(toBN(100))
+      );
+      await configStore.updateTokenConfig(
+        l1Token.address,
+        JSON.stringify({
+          rateModel: sampleRateModel,
+          transferThreshold: "0",
+        })
+      );
+      const sortedL1Tokens = [l1Token_1.address, l1Token.address].sort((x, y) => compareAddresses(x, y));
+      await updateAllClients();
+
+      // Submit two deposits to create two running balances
+      const deposit1 = await buildDeposit(
+        configStoreClient,
+        hubPoolClient,
+        spokePool_1,
+        erc20_1,
+        l1Token_1,
+        depositor,
+        destinationChainId,
+        amountToDeposit
+      );
+      const deposit2 = await buildDeposit(
+        configStoreClient,
+        hubPoolClient,
+        spokePool_1,
+        l2Token,
+        l1Token,
+        depositor,
+        destinationChainId,
+        amountToDeposit
+      );
+      await updateAllClients();
+
+      // Should have 1 running balance leaf with two l1 tokens, and one with an increased running balance.
+      const depositAmountsMapped = {
+        [l1Token_1.address]: deposit1.amount.mul(toBN(-1)).add(DEFAULT_STARTING_RUNNING_BALANCE),
+        [l1Token.address]: deposit2.amount.mul(toBN(-1)),
+      };
+      console.log((await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(0), spokePoolClients)).leaves);
+      expect(
+        (await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(0), spokePoolClients)).leaves
+      ).to.deep.equal([
+        {
+          chainId: originChainId,
+          bundleLpFees: [toBN(0), toBN(0)],
+          netSendAmounts: sortedL1Tokens.map((token) => depositAmountsMapped[token]),
+          runningBalances: [toBN(0), toBN(0)], // Transfer thresholds are set to 0 to all running balances should be zero.
+          groupIndex: 0,
+          leafId: 0,
+          l1Tokens: sortedL1Tokens,
         },
       ]);
     });

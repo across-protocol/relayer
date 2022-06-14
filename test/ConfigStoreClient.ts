@@ -2,7 +2,13 @@ import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolReb
 import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
 import { toBNWei, toWei, buildPoolRebalanceLeafTree, createSpyLogger } from "./utils";
 import { getContractFactory, hubPoolFixture, toBN, utf8ToHex } from "./utils";
-import { amountToLp, mockTreeRoot, refundProposalLiveness, totalBond } from "./constants";
+import {
+  amountToLp,
+  DEFAULT_STARTING_RUNNING_BALANCE,
+  mockTreeRoot,
+  refundProposalLiveness,
+  totalBond,
+} from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
 import { HubPoolClient, AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
@@ -25,6 +31,12 @@ const sampleRateModel = {
 const tokenConfigToUpdate = JSON.stringify({
   rateModel: sampleRateModel,
   transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
+});
+
+const tokenConfigWithStartingRunningBalance = JSON.stringify({
+  rateModel: sampleRateModel,
+  transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
+  startingRunningBalance: { [repaymentChainId]: DEFAULT_STARTING_RUNNING_BALANCE },
 });
 
 describe("AcrossConfigStoreClient", async function () {
@@ -207,12 +219,65 @@ describe("AcrossConfigStoreClient", async function () {
       // Block number when there is no config
       expect(() =>
         configStoreClient.getTokenTransferThresholdForBlock(l1Token.address, initialUpdate.blockNumber - 1)
-      ).to.throw(/Could not find TransferThreshold/);
+      ).to.throw(/Could not find TokenConfig/);
 
       // L1 token where there is no config
       expect(() =>
         configStoreClient.getTokenTransferThresholdForBlock(l2Token.address, initialUpdate.blockNumber)
-      ).to.throw(/Could not find TransferThreshold/);
+      ).to.throw(/Could not find TokenConfig/);
+    });
+    it("Get starting running balance for block", async function () {
+      // Initially update with no starting running balance value, check that it defaults to 0 in client.
+      await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
+      await updateAllClients();
+      const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[0];
+      expect(
+        configStoreClient.getStartingRunningBalanceForBlock(
+          repaymentChainId,
+          l1Token.address,
+          initialUpdate.blockNumber
+        )
+      ).to.equal(toBN(0));
+
+      // Now add in a starting running balance:
+      await configStore.updateTokenConfig(l1Token.address, tokenConfigWithStartingRunningBalance);
+      await updateAllClients();
+      const secondUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[1];
+      expect(
+        configStoreClient.getStartingRunningBalanceForBlock(repaymentChainId, l1Token.address, secondUpdate.blockNumber)
+      ).to.equal(DEFAULT_STARTING_RUNNING_BALANCE);
+
+      // Returns zero if chain for starting running balance is diff:
+      expect(
+        configStoreClient.getStartingRunningBalanceForBlock(
+          repaymentChainId + 7,
+          l1Token.address,
+          secondUpdate.blockNumber
+        )
+      ).to.equal(toBN(0));
+
+      // Returns zero if block is before the token config update including the starting running balance value:
+      expect(
+        configStoreClient.getStartingRunningBalanceForBlock(
+          repaymentChainId,
+          l1Token.address,
+          initialUpdate.blockNumber
+        )
+      ).to.equal(toBN(0));
+
+      // Block number when there is no config
+      expect(() =>
+        configStoreClient.getStartingRunningBalanceForBlock(
+          repaymentChainId,
+          l1Token.address,
+          initialUpdate.blockNumber - 1
+        )
+      ).to.throw(/Could not find TokenConfig/);
+
+      // L1 token where there is no config
+      expect(() =>
+        configStoreClient.getStartingRunningBalanceForBlock(repaymentChainId, l2Token.address, secondUpdate.blockNumber)
+      ).to.throw(/Could not find TokenConfig/);
     });
   });
   describe("GlobalConfig", function () {

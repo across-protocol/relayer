@@ -5,6 +5,11 @@ export interface L1TokenTransferThreshold extends SortableEvent {
   l1Token: string;
 }
 
+export interface L1TokenStartingRunningBalance extends SortableEvent {
+  startingRunningBalance: { [chainId: number]: BigNumber };
+  l1Token: string;
+}
+
 export interface TokenConfig extends SortableEvent {
   key: string;
   value: string;

@@ -9,13 +9,21 @@ import {
   EventSearchConfig,
   utf8ToHex,
   getCurrentTime,
+  toBN,
 } from "../utils";
-import { L1TokenTransferThreshold, Deposit, TokenConfig, GlobalConfigUpdate } from "../interfaces";
+import {
+  L1TokenTransferThreshold,
+  Deposit,
+  TokenConfig,
+  GlobalConfigUpdate,
+  L1TokenStartingRunningBalance,
+} from "../interfaces";
 
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
 import { HubPoolClient } from "./HubPoolClient";
 import { createClient } from "redis4";
+import { toNumber } from "@eth-optimism/sdk";
 
 export const GLOBAL_CONFIG_STORE_KEYS = {
   MAX_RELAYER_REPAYMENT_LEAF_SIZE: "MAX_RELAYER_REPAYMENT_LEAF_SIZE",
@@ -27,6 +35,7 @@ export class AcrossConfigStoreClient {
 
   public cumulativeRateModelUpdates: across.rateModel.RateModelEvent[] = [];
   public cumulativeTokenTransferUpdates: L1TokenTransferThreshold[] = [];
+  public cumulativeStartingRunningBalanceUpdates: L1TokenStartingRunningBalance[] = [];
   public cumulativeMaxRefundCountUpdates: GlobalConfigUpdate[] = [];
   public cumulativeMaxL1TokenCountUpdates: GlobalConfigUpdate[] = [];
 
@@ -80,9 +89,20 @@ export class AcrossConfigStoreClient {
     const config = (sortEventsDescending(this.cumulativeTokenTransferUpdates) as L1TokenTransferThreshold[]).find(
       (config) => config.blockNumber <= blockNumber && config.l1Token === l1Token
     );
-    if (!config)
-      throw new Error(`Could not find TransferThreshold for L1 token ${l1Token} before block ${blockNumber}`);
+    if (!config) throw new Error(`Could not find TokenConfig for L1 token ${l1Token} before block ${blockNumber}`);
     return config.transferThreshold;
+  }
+
+  getStartingRunningBalanceForBlock(
+    chainId: number,
+    l1Token: string,
+    blockNumber: number = Number.MAX_SAFE_INTEGER
+  ): BigNumber {
+    const config = (
+      sortEventsDescending(this.cumulativeStartingRunningBalanceUpdates) as L1TokenStartingRunningBalance[]
+    ).find((config) => config.blockNumber <= blockNumber && config.l1Token === l1Token);
+    if (!config) throw new Error(`Could not find TokenConfig for L1 token ${l1Token} before block ${blockNumber}`);
+    return config?.startingRunningBalance[chainId] ? config?.startingRunningBalance[chainId] : toBN(0);
   }
 
   getMaxRefundCountForRelayerRefundLeafForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number {
@@ -123,6 +143,7 @@ export class AcrossConfigStoreClient {
       };
 
       try {
+        // Required props:
         const rateModelForToken = JSON.stringify(JSON.parse(args.value).rateModel);
         const transferThresholdForToken = JSON.parse(args.value).transferThreshold;
 
@@ -130,6 +151,9 @@ export class AcrossConfigStoreClient {
         if (!(rateModelForToken && transferThresholdForToken)) {
           continue;
         }
+
+        // Optional props:
+        const startingRunningBalance = JSON.parse(args.value).startingRunningBalance ?? {};
 
         // Store RateModel:
         // TODO: Temporarily reformat the shape of the event that we pass into the sdk.rateModel class to make it fit
@@ -142,6 +166,8 @@ export class AcrossConfigStoreClient {
 
         // Store transferThreshold
         this.cumulativeTokenTransferUpdates.push({ ...args, transferThreshold: transferThresholdForToken, l1Token });
+
+        this.cumulativeStartingRunningBalanceUpdates.push({ ...args, startingRunningBalance, l1Token });
       } catch (err) {
         continue;
       }
