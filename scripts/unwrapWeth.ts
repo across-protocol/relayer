@@ -34,7 +34,7 @@ export async function run(): Promise<void> {
 
   const wrapping = args.wrap;
   if (wrapping) {
-    console.log("Wrapping WETH 🎁")
+    console.log("Wrapping WETH 🎁");
     const currentBalance = ethers.utils.formatUnits(
       await connectedSigner.provider.getBalance(baseSigner.address),
       decimals
@@ -51,9 +51,8 @@ export async function run(): Promise<void> {
     const tx = await weth.deposit({ value: args.amount });
     const receipt = await tx.wait();
     console.log("Transaction hash:", receipt.transactionHash);
-
   } else {
-    console.log("Unwrapping WETH 🎊")
+    console.log("Unwrapping WETH 🎊");
     const currentBalance = ethers.utils.formatUnits(await weth.balanceOf(baseSigner.address), decimals);
     console.log(`Current WETH balance for account ${baseSigner.address} on Mainnet: ${currentBalance}`);
     if ((await weth.balanceOf(baseSigner.address)).lt(toBN(args.amount))) {
@@ -68,7 +67,6 @@ export async function run(): Promise<void> {
     const receipt = await tx.wait();
     console.log("Transaction hash:", receipt.transactionHash);
   }
-
 }
 
 if (require.main === module) {
