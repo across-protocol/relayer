@@ -11,12 +11,21 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   42161: 99990,
 };
 
+export const AVG_BLOCK_TIME_S = {
+  1: 14,
+  10: 0.1,
+  137: 1,
+  288: 30,
+  42161: 0.1,
+};
+
+const TWENTY_MINS_S = 20 * 60;
 export const BUNDLE_END_BLOCK_BUFFERS = {
-  1: 100, // At 15s/block, 100 blocks = 20 mins
-  10: 3000, // At a conservative 10 TPS, 300 seconds = 3000 transactions. And 1 block per txn.
-  137: 1500, // At 1s/block, 25 mins seconds = 1500 blocks
-  288: 50, // At 30s/block, 50 blocks = 25 mins
-  42161: 3000, // At a conservative 10 TPS, 300 seconds = 3000 transactions. And 1 block per txn.
+  1: TWENTY_MINS_S / AVG_BLOCK_TIME_S[1],
+  10: TWENTY_MINS_S / AVG_BLOCK_TIME_S[10],
+  137: TWENTY_MINS_S / AVG_BLOCK_TIME_S[137],
+  288: TWENTY_MINS_S / AVG_BLOCK_TIME_S[288],
+  42161: TWENTY_MINS_S / AVG_BLOCK_TIME_S[42161],
 };
 
 // The most critical failure mode that can happen in the inventory management module is a miss-mapping between L1 token

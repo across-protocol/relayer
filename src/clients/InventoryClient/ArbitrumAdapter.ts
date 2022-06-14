@@ -40,7 +40,7 @@ export class ArbitrumAdapter extends BaseAdapter {
     super(spokePoolClients, 42161, firstL1BlockToSearch);
   }
   async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
-    await this.updateBlockSearchConfig();
+    this.updateBlockSearchConfig();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
 
     let promises = [];

@@ -1,5 +1,5 @@
 import { SpokePoolClient } from "../../clients";
-import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20, BigNumber } from "../../utils";
+import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20, BigNumber, AVG_BLOCK_TIME_S } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 
 export class BaseAdapter {
@@ -39,12 +39,9 @@ export class BaseAdapter {
     return this.spokePoolClients[chainId].eventSearchConfig;
   }
 
-  async updateBlockSearchConfig() {
-    //todo: swap this to pulling spokePoolClient.latestBlockNumber.
-    const [l1BlockNumber, l2BlockNumber] = await Promise.all([
-      this.getProvider(1).getBlockNumber(),
-      this.getProvider(this.chainId).getBlockNumber(),
-    ]);
+  updateBlockSearchConfig() {
+    const l1BlockNumber = this.spokePoolClients[1].latestBlockNumber;
+    const l2BlockNumber = this.spokePoolClients[this.chainId].latestBlockNumber;
 
     this.l1SearchConfig.toBlock = l1BlockNumber;
     this.l2SearchConfig.toBlock = l2BlockNumber;
@@ -60,6 +57,8 @@ export class BaseAdapter {
     const l1TokenContracts = l1Tokens.map((l1Token) => new Contract(l1Token, ERC20.abi, this.getSigner(1)));
     const allowances = await Promise.all(
       l1TokenContracts.map((l1TokenContract, index) => {
+        // TODO: Should we check for token balance and if == 0 skip?
+
         // If there is not both a l1TokenContract and associatedL1Bridges[index] then return a number that wont send
         // an approval transaction. For example not every chain has a bridge contract for every token. In this case
         // we clearly dont want to send any approval transactions.
@@ -141,7 +140,6 @@ export class BaseAdapter {
         this.l1DepositInitiatedEvents[l1Token].forEach((l1Event, index) => {
           if (l1Event.amount.eq(newestFinalizedDeposit.amount)) {
             associatedL1DepositIndex = index;
-            return;
           }
         });
 
@@ -180,12 +178,7 @@ export class BaseAdapter {
     return l1Token.toLowerCase() === "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
   }
 
-  // Define some very rough heuristics for the average block time per chain.
   avgBlockTime(chainId: number = this.chainId) {
-    if (chainId == 1) return 14; // 1 block every 13.5 seconds.
-    if (chainId == 10) return 0.1; // assume worst case of 10 blocks every second.
-    if (chainId == 137) return 1; // one block every 2 seconds.
-    if (chainId == 288) return 30; // one block every 30 seconds.
-    if (chainId == 42161) return 0.1; // assume worst case of 10 blocks every second.
+    return AVG_BLOCK_TIME_S[chainId];
   }
 }
