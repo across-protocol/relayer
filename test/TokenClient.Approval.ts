@@ -47,7 +47,18 @@ describe("TokenClient: Origin token approval", async function () {
   it("Executes expected L2 token approvals and produces logs", async function () {
     await updateAllClients();
 
+    // Token client will not set allowances for tokens with zero balance.
     await tokenClient.setOriginTokenApprovals();
+    expect(lastSpyLogIncludes(spy, "All token approvals set for non-zero balances")).to.be.true;
+
+    // Mint token client account some tokens and check that approvals are sent
+    await erc20_1.connect(owner).mint(owner.address, "1")
+    await erc20_2.connect(owner).mint(owner.address, "1")
+    await weth_1.connect(owner).deposit({ value: "1" })
+    await weth_2.connect(owner).deposit({ value: "1" })
+    await updateAllClients();
+    await tokenClient.setOriginTokenApprovals();
+
     // logs should contain expected text and the addresses of all 4 tokens approved.
     expect(lastSpyLogIncludes(spy, "Approval transactions")).to.be.true;
     expect(lastSpyLogIncludes(spy, erc20_1.address)).to.be.true;

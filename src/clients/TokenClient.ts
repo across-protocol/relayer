@@ -105,12 +105,15 @@ export class TokenClient {
     const tokensToApprove: { chainId: string; token: string }[] = [];
     Object.keys(this.tokenData).forEach((chainId) => {
       Object.keys(this.tokenData[chainId]).forEach((token) => {
-        if (this.tokenData[chainId][token].allowance.lt(toBN(MAX_SAFE_ALLOWANCE)))
+        if (
+          this.tokenData[chainId][token].balance.gt(toBN(0)) &&
+          this.tokenData[chainId][token].allowance.lt(toBN(MAX_SAFE_ALLOWANCE))
+        )
           tokensToApprove.push({ chainId, token });
       });
     });
     if (tokensToApprove.length === 0) {
-      this.logger.debug({ at: "TokenBalanceClient", message: `All token approvals set` });
+      this.logger.debug({ at: "TokenBalanceClient", message: `All token approvals set for non-zero balances` });
       return;
     }
 
