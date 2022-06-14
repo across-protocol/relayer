@@ -1,6 +1,6 @@
 import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, EventSearchConfig } from "../utils";
 import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
-import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle } from "../interfaces";
+import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle, LpToken } from "../interfaces";
 import { ExecutedRootBundle, PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
 
@@ -8,6 +8,7 @@ export class HubPoolClient {
   // L1Token -> destinationChainId -> destinationToken
   private l1TokensToDestinationTokens: { [l1Token: string]: { [destinationChainId: number]: string } } = {};
   private l1Tokens: L1Token[] = []; // L1Tokens and their associated info.
+  private lpTokens: { [token: string]: LpToken } = {};
   private proposedRootBundles: ProposedRootBundle[] = [];
   private canceledRootBundles: CancelledRootBundle[] = [];
   private disputedRootBundles: DisputedRootBundle[] = [];
@@ -142,6 +143,10 @@ export class HubPoolClient {
 
   getTokenInfoForL1Token(l1Token: string): L1Token {
     return this.l1Tokens.find((token) => token.address === l1Token);
+  }
+
+  getLpTokenInfoForL1Token(l1Token: string): LpToken {
+    return this.lpTokens[l1Token];
   }
 
   getL1TokenInfoForL2Token(l2Token: string, chainId: number | string): L1Token {
@@ -365,14 +370,18 @@ export class HubPoolClient {
     // For each enabled Lp token fetch the token symbol and decimals from the token contract. Note this logic will
     // only run iff a new token has been enabled. Will only append iff the info is not there already.
     // Filter out any duplicate addresses. This might happen due to enabling, disabling and re-enabling a token.
-    const tokenInfo: L1Token[] = await Promise.all(
-      [...new Set(l1TokensLpEvents.map((event) => spreadEvent(event).l1Token))].map((l1Token: string) =>
-        this.fetchTokenInfoFromContract(l1Token)
-      )
-    );
+    const uniqueL1Tokens = [...new Set(l1TokensLpEvents.map((event) => spreadEvent(event).l1Token))];
+    const [tokenInfo, lpTokenInfo] = await Promise.all([
+      Promise.all(uniqueL1Tokens.map((l1Token: string) => this.fetchTokenInfoFromContract(l1Token))),
+      Promise.all(uniqueL1Tokens.map(async (l1Token: string) => await this.hubPool.pooledTokens(l1Token))),
+    ]);
     for (const info of tokenInfo) {
       if (!this.l1Tokens.find((token) => token.symbol === info.symbol)) this.l1Tokens.push(info);
     }
+
+    uniqueL1Tokens.forEach((token: string, i) => {
+      this.lpTokens[token] = { lastLpFeeUpdate: lpTokenInfo[i].lastLpFeeUpdate };
+    });
 
     this.proposedRootBundles.push(
       ...proposeRootBundleEvents.map((event) => {

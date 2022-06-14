@@ -1,4 +1,4 @@
-import { winston, EMPTY_MERKLE_ROOT, sortEventsDescending, BigNumber, getRefund, MerkleTree } from "../utils";
+import { winston, EMPTY_MERKLE_ROOT, sortEventsDescending, BigNumber, getRefund, MerkleTree, toBN } from "../utils";
 import { DepositWithBlock, FillsToRefund, FillWithBlock, UnfilledDeposit } from "../interfaces";
 import {
   PendingRootBundle,
@@ -876,6 +876,38 @@ export class Dataworker {
         })
       )
     ).filter((element) => element !== undefined);
+
+    // Call `exchangeRateCurrent` on the HubPool before accumulating fees from the executed bundle leaves. This is to
+    // address the situation where `addLiquidity` and `removeLiquidity` have not been called for an L1 token for a
+    // while, which are the other methods that trigger an internal call to `_exchangeRateCurrent()`. Calling
+    // this method triggers a recompounding of fees before new fees come in.
+    const compoundedFeesForL1Token = [];
+    fundedLeaves.forEach((leaf) => {
+      leaf.l1Tokens.forEach((l1Token, i) => {
+        // Exit early if lp fees are 0
+        if (leaf.bundleLpFees[i].eq(toBN(0))) return;
+
+        // Exit early if we already compounded fees for this l1 token on this loop
+        if (compoundedFeesForL1Token.includes(l1Token)) return;
+        else compoundedFeesForL1Token.push(l1Token);
+
+        // Exit early if we recently compounded fees
+        const lastestFeesCompoundedTime =
+          this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.lastLpFeeUpdate ?? 0;
+        if (this.clients.hubPoolClient.currentTime - lastestFeesCompoundedTime <= 86400) return;
+
+        if (submitExecution) {
+          this.clients.multiCallerClient.enqueueTransaction({
+            contract: this.clients.hubPoolClient.hubPool,
+            chainId: hubPoolChainId,
+            method: "exchangeRateCurrent",
+            args: [l1Token],
+            message: `Updated exchange rate ♻️!`,
+            mrkdwn: `Updated exchange rate for l1 token: ${l1Token}`,
+          });
+        }
+      });
+    });
 
     fundedLeaves.forEach((leaf) => {
       const proof = expectedTrees.poolRebalanceTree.tree.getHexProof(leaf);
