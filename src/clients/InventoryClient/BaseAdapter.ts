@@ -1,5 +1,6 @@
 import { SpokePoolClient } from "../../clients";
-import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20, BigNumber, AVG_BLOCK_TIME_S } from "../../utils";
+import { AVG_BLOCK_TIME_S } from "../../common/Constants"
+import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20, BigNumber } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 
 export class BaseAdapter {
