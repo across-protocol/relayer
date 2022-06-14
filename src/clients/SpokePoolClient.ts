@@ -5,8 +5,6 @@ import { AcrossConfigStoreClient } from "./ConfigStoreClient";
 import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock, TokensBridged } from "../interfaces/SpokePool";
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
 
-import bluebird from "bluebird";
-
 export class SpokePoolClient {
   private deposits: { [DestinationChainId: number]: Deposit[] } = {};
   private fills: Fill[] = [];
@@ -204,10 +202,8 @@ export class SpokePoolClient {
       this.log("debug", `Fetching realizedLpFeePct for ${depositEvents.length} deposits on chain ${this.chainId}`, {
         numDeposits: depositEvents.length,
       });
-    const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number }[] = await bluebird.map(
-      depositEvents,
-      (event) => this.computeRealizedLpFeePct(event),
-      { concurrency: 100 }
+    const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number }[] = await Promise.all(
+      depositEvents.map((event) => this.computeRealizedLpFeePct(event))
     );
 
     for (const [index, event] of depositEvents.entries()) {
