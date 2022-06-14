@@ -30,7 +30,8 @@ class RateLimitedProvider extends ethers.providers.JsonRpcProvider {
     super(...jsonRpcConstructorParams);
 
     // This sets up the queue. Each task is executed by calling the superclass's send method, which fires off the
-    // request. The maxConcurrency is configured here.
+    // request. This queue sends out requests concurrently, but stops once the concurrency limit is reached. The
+    // maxConcurrency is configured here.
     this.queue = createQueue(async ({ sendArgs, resolve, reject }: RateLimitTask) => {
       await super
         .send(...sendArgs)
@@ -243,7 +244,7 @@ export function getProvider(chainId: number) {
   // Default to a node quorum of 1 node.
   const nodeQuorumThreshold = Number(process.env[`NODE_QUORUM_${chainId}`] || NODE_QUORUM || "1");
 
-  // Default to a max concurrency of 50 requests per node.
+  // Default to a max concurrency of 1000 requests per node.
   const nodeMaxConcurrency = Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "1000");
 
   return new RetryProvider(
