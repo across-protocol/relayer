@@ -20,6 +20,7 @@
     "@uma/common": "^2.19.0",
     "@uma/contracts-node": "^0.3.1",
     "@uma/financial-templates-lib": "^2.27.4",
+    "async": "^3.2.4",
     "bluebird": "^3.7.2",
     "hardhat": "^2.9.0",
     "lodash": "^4.17.21",
