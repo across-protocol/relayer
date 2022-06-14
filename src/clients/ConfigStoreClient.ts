@@ -67,7 +67,7 @@ export class AcrossConfigStoreClient {
     if (quoteBlock > 14718100 && quoteBlock < 14718107) quoteBlock = 14718107;
 
     const { current, post } = await this.getUtilization(l1Token, quoteBlock, deposit.amount, deposit.quoteTimestamp);
-    
+
     // The UMIP was updated at time X to enforce that realized LP fee %'s only need to be exact up to 6 decimals of
     // precision. This change was made to reduce the risk for an honest relayer to use a slightly incorrect realized
     // LP fee % due to low-level system differences. We can only enforce this decimal truncation after a certain
