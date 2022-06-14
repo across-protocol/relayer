@@ -67,7 +67,16 @@ export class AcrossConfigStoreClient {
     if (quoteBlock > 14718100 && quoteBlock < 14718107) quoteBlock = 14718107;
 
     const { current, post } = await this.getUtilization(l1Token, quoteBlock, deposit.amount, deposit.quoteTimestamp);
-    const realizedLpFeePct = lpFeeCalculator.calculateRealizedLpFeePct(rateModel, current, post);
+    
+    // The UMIP was updated at time X to enforce that realized LP fee %'s only need to be exact up to 6 decimals of
+    // precision. This change was made to reduce the risk for an honest relayer to use a slightly incorrect realized
+    // LP fee % due to low-level system differences. We can only enforce this decimal truncation after a certain
+    // timestamp otherwise all root bundles proposed and passed before this UMIP change will contain seemingly
+    // invalid relays.
+    const truncateDecimals = deposit.quoteTimestamp >= 2000000000; // TODO: This is set to some impossibly large number,
+    // so to activate this truncation feature in prod, set to the actual quote timestamp after which you want to
+    // to start enforcing truncation.
+    const realizedLpFeePct = lpFeeCalculator.calculateRealizedLpFeePct(rateModel, current, post, truncateDecimals);
 
     return { realizedLpFeePct, quoteBlock };
   }

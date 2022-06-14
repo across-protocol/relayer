@@ -146,6 +146,16 @@ describe("AcrossConfigStoreClient", async function () {
         toBNWei("0.000117987509354032")
       );
 
+      // If quote timestamp of deposit data is past 2000000000, then should truncate decimals.
+      expect(
+        (
+          await configStoreClient.computeRealizedLpFeePct(
+            { ...depositData, quoteTimestamp: 2000000000 },
+            l1Token.address
+          )
+        ).realizedLpFeePct
+      ).to.equal(toBNWei("0.000117"));
+
       // Next, let's increase the pool utilization from 0% to 60% by sending 60% of the pool's liquidity to
       // another chain.
       const leaves = buildPoolRebalanceLeaves(
