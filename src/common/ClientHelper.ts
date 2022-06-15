@@ -19,7 +19,7 @@ export interface Clients {
   configStoreClient: AcrossConfigStoreClient;
   multiCallerClient: MultiCallerClient;
   profitClient: ProfitClient;
-  hubSigner?: Wallet;
+  hubSigner: Wallet;
 }
 
 export function getSpokePoolSigners(baseSigner: Wallet, config: CommonConfig): { [chainId: number]: Wallet } {

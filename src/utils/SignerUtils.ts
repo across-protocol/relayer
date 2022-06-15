@@ -3,9 +3,9 @@ const args = require("minimist")(process.argv.slice(2));
 
 export async function getSigner(): Promise<Wallet> {
   if (!Object.keys(args).includes("wallet")) throw new Error("Must define mnemonic, privatekey or gckms for wallet");
-  if (args.wallet == "mnemonic") return getMnemonicSigner();
-  if (args.wallet == "privateKey") return getPrivateKeySigner();
-  if (args.wallet == "gckms") return await getGckmsSigner();
+  if (args.wallet === "mnemonic") return getMnemonicSigner();
+  if (args.wallet === "privateKey") return getPrivateKeySigner();
+  if (args.wallet === "gckms") return await getGckmsSigner();
 }
 
 function getPrivateKeySigner() {

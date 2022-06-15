@@ -8,7 +8,7 @@ export { delay, Logger } from "@uma/financial-templates-lib";
 export { BigNumber, Signer, Contract, ContractFactory, Transaction } from "ethers";
 export { utils, EventFilter, BaseContract, Event, Wallet } from "ethers";
 export { ethers, providers } from "ethers";
-export type { Block } from "@ethersproject/abstract-provider";
+export type { Block, TransactionResponse, TransactionReceipt } from "@ethersproject/abstract-provider";
 export { config } from "dotenv";
 export { Promise } from "bluebird";
 

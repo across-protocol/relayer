@@ -1,5 +1,16 @@
-import { winston, getNetworkName, assign, Contract, runTransaction, rejectAfterDelay, getTarget } from "../utils";
-import { willSucceed, etherscanLink } from "../utils";
+import {
+  winston,
+  getNetworkName,
+  assign,
+  Contract,
+  runTransaction,
+  rejectAfterDelay,
+  getTarget,
+  BigNumber,
+  willSucceed,
+  etherscanLink,
+  TransactionReceipt,
+} from "../utils";
 export interface AugmentedTransaction {
   contract: Contract;
   chainId: number;
@@ -7,6 +18,7 @@ export interface AugmentedTransaction {
   args: any;
   message: string;
   mrkdwn: string;
+  value?: BigNumber;
 }
 
 export class MultiCallerClient {
@@ -70,11 +82,16 @@ export class MultiCallerClient {
         return;
       }
 
+      const valueTransactions = validTransactions.filter((transaction) => transaction.value && transaction.value.gt(0));
+      const nonValueTransactions = validTransactions.filter(
+        (transaction) => !transaction.value || transaction.value.eq(0)
+      );
+
       // Group by target chain. Note that there is NO grouping by target contract. The relayer will only ever use this
       // MultiCallerClient to send multiple transactions to one target contract on a given target chain and so we dont
       // need to group by target contract. This can be further refactored with another group by if this is needed.
       const groupedTransactions: { [networkId: number]: AugmentedTransaction[] } = {};
-      for (const transaction of validTransactions) {
+      for (const transaction of nonValueTransactions) {
         assign(groupedTransactions, [transaction.chainId], [transaction]);
       }
 
@@ -84,6 +101,10 @@ export class MultiCallerClient {
           message: "All transactions will succeed! Logging markdown messages.",
         });
         let mrkdwn = "";
+        valueTransactions.forEach((transaction, i) => {
+          mrkdwn += `*Transaction excluded from batches because it contained value:*\n`;
+          mrkdwn += `  ${i + 1}. ${transaction.message || "0 message"}: ` + `${transaction.mrkdwn || "0 mrkdwn"}\n`;
+        });
         Object.keys(groupedTransactions).forEach((chainId) => {
           mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
           groupedTransactions[chainId].forEach((transaction, groupTxIndex) => {
@@ -96,6 +117,26 @@ export class MultiCallerClient {
         this.clearTransactionQueue();
         return;
       }
+
+      this.logger.debug({
+        at: "MultiCallerClient",
+        message: "Executing transactions excluded from batches by target chain",
+        txs: Object.keys(groupedTransactions).map((chainId) => ({ chainId, num: groupedTransactions[chainId].length })),
+      });
+
+      // Construct multiCall transaction for each target chain.
+      const valueTransactionsResult = await Promise.allSettled(
+        valueTransactions.map(async (transaction): Promise<TransactionReceipt> => {
+          const result = await runTransaction(
+            this.logger,
+            transaction.contract,
+            "multicall",
+            transaction.args,
+            transaction.value
+          );
+          return await Promise.race([rejectAfterDelay(this.maxTxWait), result.wait()]);
+        })
+      );
 
       this.logger.debug({
         at: "MultiCallerClient",
@@ -125,6 +166,14 @@ export class MultiCallerClient {
       // Each element in the bundle of receipts relates back to each set within the groupedTransactions. Produce log.
       let mrkdwn = "";
       const transactionHashes = [];
+      valueTransactionsResult.forEach((result, i) => {
+        mrkdwn += `*Transaction excluded from batches because it contained value:*\n`;
+        if (result.status === "rejected")
+          mrkdwn += ` ⚠️ Transaction sent on ${getNetworkName(
+            valueTransactions[i].chainId
+          )} failed or bot timed out waiting for transaction to mine, check logs for more details.\n`;
+        else mrkdwn += `  ${result.value.message || "0 message"}: ` + `${result.value.mrkdwn || "0 mrkdwn"}\n`;
+      });
       Object.keys(groupedTransactions).forEach((chainId, chainIndex) => {
         mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
         if (transactionReceipts[chainIndex].status === "rejected") {

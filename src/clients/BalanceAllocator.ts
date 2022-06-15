@@ -1,4 +1,4 @@
-import { BigNumber, ERC20, ethers } from "../utils";
+import { BigNumber, ERC20, ethers, ZERO_ADDRESS } from "../utils";
 
 // This type is used to map used and current balances of different users.
 interface BalanceMap {
@@ -49,7 +49,10 @@ export class BalanceAllocator {
 
   async getBalance(chainId: number, token: string, holder: string) {
     if (!this.balances?.[chainId]?.[token]?.[holder]) {
-      const balance = await ERC20.connect(token, this.providers[chainId]).balanceOf(holder);
+      const balance =
+        token === ZERO_ADDRESS
+          ? await this.providers[chainId].getBalance(holder)
+          : await ERC20.connect(token, this.providers[chainId]).balanceOf(holder);
 
       // Note: cannot use assign because it breaks the BigNumber object.
       if (!this.balances[chainId]) this.balances[chainId] = {};
