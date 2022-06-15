@@ -1,6 +1,57 @@
 import { ethers } from "ethers";
 import lodash from "lodash";
 import { isPromiseFulfulled } from "./TypeGuards";
+import createQueue, { QueueObject } from "async/queue";
+
+// The async/queue library has a task-based interface for building a concurrent queue.
+// This is the type we pass to define a request "task".
+interface RateLimitTask {
+  // These are the arguments to be passed to super.send().
+  sendArgs: [string, Array<any>];
+
+  // These are the promise callbacks that will cause the initial send call made by the user to either return a result
+  // or fail.
+  resolve: (result: any) => void;
+  reject: (err: any) => void;
+}
+
+// This provider is a very small addition to the JsonRpcProvider that ensures that no more than `maxConcurrency`
+// requests are ever in flight. It uses the async/queue library to manage this.
+class RateLimitedProvider extends ethers.providers.JsonRpcProvider {
+  // The queue object that manages the tasks.
+  private queue: QueueObject;
+
+  // Takes the same arguments as the JsonRpcProvider, but it has an additional maxConcurrency value at the beginning
+  // of the list.
+  constructor(
+    maxConcurrency: number,
+    ...jsonRpcConstructorParams: ConstructorParameters<typeof ethers.providers.JsonRpcProvider>
+  ) {
+    super(...jsonRpcConstructorParams);
+
+    // This sets up the queue. Each task is executed by calling the superclass's send method, which fires off the
+    // request. This queue sends out requests concurrently, but stops once the concurrency limit is reached. The
+    // maxConcurrency is configured here.
+    this.queue = createQueue(async ({ sendArgs, resolve, reject }: RateLimitTask) => {
+      await super
+        .send(...sendArgs)
+        .then(resolve)
+        .catch(reject);
+    }, maxConcurrency);
+  }
+
+  override async send(method: string, params: Array<any>): Promise<any> {
+    // This simply creates a promise and adds the arguments and resolve and reject handlers to the task.
+    return new Promise<any>((resolve, reject) => {
+      const task: RateLimitTask = {
+        sendArgs: [method, params],
+        resolve,
+        reject,
+      };
+      this.queue.push(task);
+    });
+  }
+}
 
 const defaultTimeout = 15 * 1000;
 
@@ -19,12 +70,13 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
     chainId: number,
     readonly nodeQuorumThreshold: number,
     readonly retries: number,
-    readonly delay: number
+    readonly delay: number,
+    readonly maxConcurrency: number
   ) {
     // Initialize the super just with the chainId, which stops it from trying to immediately send out a .send before
     // this derived class is initialized.
     super(undefined, chainId);
-    this.providers = params.map((inputs) => new ethers.providers.JsonRpcProvider(...inputs));
+    this.providers = params.map((inputs) => new RateLimitedProvider(maxConcurrency, ...inputs));
     if (this.nodeQuorumThreshold < 1 || !Number.isInteger(this.nodeQuorumThreshold))
       throw new Error(
         `nodeQuorum,Threshold cannot be < 1 and must be an integer. Currently set to ${this.nodeQuorumThreshold}`
@@ -175,7 +227,7 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
 }
 
 export function getProvider(chainId: number) {
-  const { NODE_RETRIES, NODE_RETRY_DELAY, NODE_QUORUM, NODE_TIMEOUT } = process.env;
+  const { NODE_RETRIES, NODE_RETRY_DELAY, NODE_QUORUM, NODE_TIMEOUT, NODE_MAX_CONCURRENCY } = process.env;
 
   const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
 
@@ -192,7 +244,17 @@ export function getProvider(chainId: number) {
   // Default to a node quorum of 1 node.
   const nodeQuorumThreshold = Number(process.env[`NODE_QUORUM_${chainId}`] || NODE_QUORUM || "1");
 
-  return new RetryProvider(constructorArgumentLists, chainId, nodeQuorumThreshold, retries, retryDelay);
+  // Default to a max concurrency of 1000 requests per node.
+  const nodeMaxConcurrency = Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "1000");
+
+  return new RetryProvider(
+    constructorArgumentLists,
+    chainId,
+    nodeQuorumThreshold,
+    retries,
+    retryDelay,
+    nodeMaxConcurrency
+  );
 }
 
 export function getNodeUrlList(chainId: number): string[] {
