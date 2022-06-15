@@ -31,16 +31,6 @@ export interface ProposedRootBundle extends SortableEvent {
 }
 
 export interface CancelledRootBundle extends SortableEvent {
-  chainId: number;
-  bundleLpFees: BigNumber[];
-  netSendAmounts: BigNumber[];
-  runningBalances: BigNumber[];
-  leafId: number;
-  l1Tokens: string[];
-  proof: string[];
-}
-
-export interface CancelledRootBundle extends SortableEvent {
   disputer: string;
   requestTime: number;
 }
@@ -68,6 +58,10 @@ export interface L1Token {
   address: string;
   symbol: string;
   decimals: number;
+}
+
+export interface LpToken {
+  lastLpFeeUpdate: number;
 }
 
 export interface CrossChainContractsSet extends SortableEvent {

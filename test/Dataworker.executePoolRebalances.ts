@@ -79,7 +79,8 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await updateAllClients();
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
 
-    // Should be 2 transactions: 1 for the to chain and 1 for the from chain.
+    // Should be 2 transactions: 1 for the to chain and 1 for the from chain. Should NOT be 3 since not enough time has
+    // passed since the last lp fee update.
     expect(multiCallerClient.transactionCount()).to.equal(2);
     await multiCallerClient.executeTransactionQueue();
 

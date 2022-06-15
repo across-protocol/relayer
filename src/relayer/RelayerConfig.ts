@@ -22,7 +22,6 @@ export class RelayerConfig extends CommonConfig {
         ? toBNWei(this.inventoryConfig.wrapEtherThreshold)
         : toBNWei(1); // default to keeping 2 Eth on the target chains and wrapping the rest to WETH.
 
-      this;
       Object.keys(this.inventoryConfig.tokenConfig).forEach((l1Token) => {
         Object.keys(this.inventoryConfig.tokenConfig[l1Token]).forEach((chainId) => {
           const { targetPct, thresholdPct } = this.inventoryConfig.tokenConfig[l1Token][chainId];

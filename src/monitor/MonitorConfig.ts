@@ -65,17 +65,16 @@ export class MonitorConfig extends CommonConfig {
     this.hubPoolStartingBlock = STARTING_BLOCK_NUMBER ? Number(STARTING_BLOCK_NUMBER) : undefined;
     this.hubPoolEndingBlock = ENDING_BLOCK_NUMBER ? Number(ENDING_BLOCK_NUMBER) : undefined;
 
-    if (UNKNOWN_RELAYER_CALLERS_ENABLED)
-      this.spokePoolChains.forEach((chainId) => {
-        this.spokePoolsBlocks[chainId] = {
-          startingBlock: process.env[`STARTING_BLOCK_NUMBER_${chainId}`]
-            ? Number(process.env[`STARTING_BLOCK_NUMBER_${chainId}`])
-            : undefined,
-          endingBlock: process.env[`ENDING_BLOCK_NUMBER_${chainId}`]
-            ? Number(process.env[`ENDING_BLOCK_NUMBER_${chainId}`])
-            : undefined,
-        };
-      });
+    this.spokePoolChains.forEach((chainId) => {
+      this.spokePoolsBlocks[chainId] = {
+        startingBlock: process.env[`STARTING_BLOCK_NUMBER_${chainId}`]
+          ? Number(process.env[`STARTING_BLOCK_NUMBER_${chainId}`])
+          : undefined,
+        endingBlock: process.env[`ENDING_BLOCK_NUMBER_${chainId}`]
+          ? Number(process.env[`ENDING_BLOCK_NUMBER_${chainId}`])
+          : undefined,
+      };
+    });
   }
 }
 

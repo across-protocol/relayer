@@ -1,9 +1,10 @@
-import { winston } from "../utils";
+import { winston, BigNumber } from "../utils";
 import {
   Deposit,
   DepositWithBlock,
   FillsToRefund,
   FillWithBlock,
+  ProposedRootBundle,
   UnfilledDeposit,
   UnfilledDepositsForOriginChain,
 } from "../interfaces";
@@ -37,6 +38,7 @@ export class BundleDataClient {
   constructor(
     readonly logger: winston.Logger,
     readonly clients: Clients,
+    readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly chainIdListForBundleEvaluationBlockNumbers: number[]
   ) {}
 
@@ -44,6 +46,81 @@ export class BundleDataClient {
   // For instance, if the spoke or hub clients have been updated, it probably makes sense to clear this to be safe.
   clearCache() {
     this.loadDataCache = {};
+  }
+
+  // Return refunds from a pending bundle if any.
+  getPendingBundleRefunds(): FillsToRefund {
+    const chainIds = Object.keys(this.spokePoolClients).map(Number);
+
+    // If latest proposed bundle has not been executed yet, we have a bundle pending liveness.
+    const hubPoolClient = this.clients.hubPoolClient;
+    const latestBlockNumber = hubPoolClient.latestBlockNumber;
+    const latestBundle = hubPoolClient.getMostRecentProposedRootBundle(latestBlockNumber);
+
+    // Use the same block range as the current pending bundle to ensure we look at the right refunds.
+    const pendingBundleEvaluationBlockRanges: number[][] = latestBundle.bundleEvaluationBlockNumbers.map(
+      (endBlock, i) => [
+        hubPoolClient.getNextBundleStartBlockNumber(chainIds, latestBlockNumber, chainIds[i]),
+        endBlock.toNumber(),
+      ]
+    );
+    const { fillsToRefund: pendingBundleRefunds } = this.loadData(
+      pendingBundleEvaluationBlockRanges,
+      this.spokePoolClients,
+      false
+    );
+
+    // The latest proposed bundle's refund leaves might have already been partially or entirely executed.
+    // We have to deduct the executed amounts from the total refund amounts.
+    this.deductExecutedRefunds(pendingBundleRefunds, latestBundle);
+    return pendingBundleRefunds;
+  }
+
+  // Return refunds from the next bundle.
+  getNextBundleRefunds(): FillsToRefund {
+    const latestProposedBundle = this.clients.hubPoolClient.getMostRecentProposedRootBundle(
+      this.clients.hubPoolClient.latestBlockNumber
+    );
+    // The future bundle covers block range from the ending of the last proposed bundle (might still be pending liveness)
+    // to the latest block on that chain.
+    const chainIds = Object.keys(this.spokePoolClients).map(Number);
+    const futureBundleEvaluationBlockRanges: number[][] = latestProposedBundle.bundleEvaluationBlockNumbers.map(
+      (endingBlock, i) => [endingBlock.toNumber() + 1, this.spokePoolClients[chainIds[i]].latestBlockNumber]
+    );
+    // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
+    // (if any) has been fully executed.
+    return this.loadData(futureBundleEvaluationBlockRanges, this.spokePoolClients, false).fillsToRefund;
+  }
+
+  deductExecutedRefunds(allRefunds: FillsToRefund, latestBundle: ProposedRootBundle) {
+    for (const chainIdStr of Object.keys(allRefunds)) {
+      const chainId = Number(chainIdStr);
+      const executedRefunds = this.spokePoolClients[chainId].getExecutedRefunds(latestBundle.relayerRefundRoot);
+
+      for (const tokenAddress of Object.keys(allRefunds[chainId])) {
+        if (executedRefunds[tokenAddress] === undefined || allRefunds[chainId][tokenAddress].refunds === undefined)
+          continue;
+
+        const refunds = allRefunds[chainId][tokenAddress].refunds;
+        for (const relayer of Object.keys(refunds)) {
+          const executedAmount = executedRefunds[tokenAddress][relayer];
+          if (executedAmount === undefined) continue;
+
+          if (executedAmount.gt(refunds[relayer])) {
+            throw new Error(
+              `Unexpected state: Executed refund amount ${executedAmount} is larger than remaining refund amount from bundle ${refunds[relayer]}`
+            );
+          }
+          refunds[relayer] = refunds[relayer].sub(executedAmount);
+        }
+      }
+    }
+  }
+
+  getRefundsFor(bundleRefunds: FillsToRefund, relayer: string, chainId: number, token: string) {
+    if (!bundleRefunds[chainId] || !bundleRefunds[chainId][token]) return BigNumber.from(0);
+    const allRefunds = bundleRefunds[chainId][token].refunds;
+    return allRefunds && allRefunds[relayer] ? allRefunds[relayer] : BigNumber.from(0);
   }
 
   // Common data re-formatting logic shared across all data worker public functions.

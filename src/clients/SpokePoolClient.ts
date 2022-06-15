@@ -99,6 +99,31 @@ export class SpokePoolClient {
     return this.relayerRefundExecutions;
   }
 
+  getExecutedRefunds(relayerRefundRoot: string) {
+    const bundle = this.getRootBundleRelays().find((bundle) => bundle.relayerRefundRoot === relayerRefundRoot);
+    if (bundle === undefined) {
+      return {};
+    }
+
+    const executedRefundLeaves = this.getRelayerRefundExecutions().filter(
+      (leaf) => leaf.rootBundleId === bundle.rootBundleId
+    );
+    const executedRefunds: { [tokenAddress: string]: { [relayer: string]: BigNumber } } = {};
+    for (const refundLeaf of executedRefundLeaves) {
+      const tokenAddress = refundLeaf.l2TokenAddress;
+      if (executedRefunds[tokenAddress] === undefined) executedRefunds[tokenAddress] = {};
+      const executedTokenRefunds = executedRefunds[tokenAddress];
+
+      for (let i = 0; i < refundLeaf.refundAddresses.length; i++) {
+        const relayer = refundLeaf.refundAddresses[i];
+        const refundAmount = refundLeaf.refundAmounts[i];
+        if (executedTokenRefunds[relayer] === undefined) executedTokenRefunds[relayer] = BigNumber.from(0);
+        executedTokenRefunds[relayer] = executedTokenRefunds[relayer].add(refundAmount);
+      }
+    }
+    return executedRefunds;
+  }
+
   appendMaxSpeedUpSignatureToDeposit(deposit: Deposit) {
     const maxSpeedUp = this.speedUps[deposit.depositor]?.[deposit.depositId].reduce((prev, current) =>
       prev.newRelayerFeePct.gt(current.newRelayerFeePct) ? prev : current
