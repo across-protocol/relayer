@@ -72,7 +72,8 @@ export class MonitorConfig extends CommonConfig {
 
     if (MONITORED_BALANCES) {
       this.monitoredBalances = JSON.parse(MONITORED_BALANCES).map(({ threshold, account, token, chainId }) => {
-        if (Number.isNaN(Number(threshold))) throw new Error(`amount value: ${threshold} cannot be converted to a number`);
+        if (Number.isNaN(Number(threshold)))
+          throw new Error(`amount value: ${threshold} cannot be converted to a number`);
         if (Number.isNaN(parseInt(chainId)))
           throw new Error(`chainId value: ${chainId} cannot be converted to an integer`);
         const isNativeToken = !token || token === "0x0" || token === ZERO_ADDRESS;

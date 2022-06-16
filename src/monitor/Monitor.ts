@@ -10,7 +10,13 @@ import {
   TransfersByChain,
   TransfersByTokens,
 } from "../interfaces";
-import { BigNumber, Contract, ERC20, assign, etherscanLink, etherscanLinks, getTransactionHashes ,
+import {
+  BigNumber,
+  Contract,
+  ERC20,
+  assign,
+  etherscanLink,
+  etherscanLinks,
   convertFromWei,
   toBN,
   toWei,
@@ -19,7 +25,8 @@ import { BigNumber, Contract, ERC20, assign, etherscanLink, etherscanLinks, getT
   getNetworkName,
   getUnfilledDeposits,
   providers,
-  ethers } from "../utils";
+  ethers,
+} from "../utils";
 import { ZERO_ADDRESS } from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
@@ -274,16 +281,25 @@ export class Monitor {
     const { monitoredBalances } = this.monitorConfig;
     const balances = await this._getBalances(monitoredBalances);
     const decimalValues = await this._getDecimals(monitoredBalances);
-    const alertText = (await Promise.all(
-      this.monitorConfig.monitoredBalances.map(async ({ chainId, token, account, threshold }, i) => {
-        const balance = balances[i];
-        const decimals = decimalValues[i];
-        if (balance.lt(ethers.utils.parseUnits(threshold.toString(), decimals))) {
-          const symbol = await new Contract(token, ERC20.abi, this.clients.spokePoolClients[chainId].spokePool.provider).symbol();
-          return `  ${getNetworkName(chainId)} ${symbol} balance for ${etherscanLink(account, chainId)} is ${ethers.utils.formatUnits(balance, decimals)}. Threshold: ${threshold}`;
-        }
-      })
-    )).filter(text => text !== undefined);
+    const alertText = (
+      await Promise.all(
+        this.monitorConfig.monitoredBalances.map(async ({ chainId, token, account, threshold }, i) => {
+          const balance = balances[i];
+          const decimals = decimalValues[i];
+          if (balance.lt(ethers.utils.parseUnits(threshold.toString(), decimals))) {
+            const symbol = await new Contract(
+              token,
+              ERC20.abi,
+              this.clients.spokePoolClients[chainId].spokePool.provider
+            ).symbol();
+            return `  ${getNetworkName(chainId)} ${symbol} balance for ${etherscanLink(
+              account,
+              chainId
+            )} is ${ethers.utils.formatUnits(balance, decimals)}. Threshold: ${threshold}`;
+          }
+        })
+      )
+    ).filter((text) => text !== undefined);
     if (alertText.length > 0) {
       const mrkdwn = "Some balance(s) are below the configured threshold!\n" + alertText.join("\n");
       this.logger.error({ at: "Monitor", message: "Balance(s) below threshold", mrkdwn: mrkdwn });
