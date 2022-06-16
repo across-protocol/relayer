@@ -1,5 +1,5 @@
 import { winston, EMPTY_MERKLE_ROOT, sortEventsDescending, BigNumber, getRefund, MerkleTree, toBN } from "../utils";
-import { toBNWei, getFillsInRange } from "../utils";
+import { toBNWei, getFillsInRange, ZERO_ADDRESS } from "../utils";
 import { DepositWithBlock, FillsToRefund, FillWithBlock, UnfilledDeposit } from "../interfaces";
 import {
   PendingRootBundle,
