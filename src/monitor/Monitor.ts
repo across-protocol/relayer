@@ -1,6 +1,5 @@
 import {
   FillsToRefund,
-  ProposedRootBundle,
   TokenTransfer,
   BundleAction,
   BalanceType,
