@@ -1,5 +1,5 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { ethers } from "../utils";
+import { ethers, BigNumber, ZERO_ADDRESS } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
@@ -7,6 +7,7 @@ export interface BotModes {
   unknownRootBundleCallersEnabled: boolean; // Monitors relay related events triggered by non-whitelisted addresses
   unknownRelayerCallersEnabled: boolean;
   reportEnabled: boolean;
+  balancesEnabled: boolean;
 }
 
 export class MonitorConfig extends CommonConfig {
@@ -22,6 +23,7 @@ export class MonitorConfig extends CommonConfig {
   readonly whitelistedRelayers: string[];
   readonly knownV1Addresses: string[];
   readonly botModes: BotModes;
+  readonly monitoredBalances: { chainId: number; threshold: number; account: string; token: string }[] = [];
 
   constructor(env: ProcessEnv) {
     super(env);
@@ -38,6 +40,8 @@ export class MonitorConfig extends CommonConfig {
       WHITELISTED_DATA_WORKERS,
       WHITELISTED_RELAYERS,
       KNOWN_V1_ADDRESSES,
+      BALANCES_ENABLED,
+      MONITORED_BALANCES,
     } = env;
 
     this.botModes = {
@@ -45,6 +49,7 @@ export class MonitorConfig extends CommonConfig {
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       unknownRelayerCallersEnabled: UNKNOWN_RELAYER_CALLERS_ENABLED === "true",
       reportEnabled: MONITOR_REPORT_ENABLED === "true",
+      balancesEnabled: BALANCES_ENABLED === "true",
     };
 
     // Used to monitor activities not from whitelisted data workers or relayers.
@@ -64,6 +69,22 @@ export class MonitorConfig extends CommonConfig {
     // In serverless mode use block range from environment to fetch for latest events.
     this.hubPoolStartingBlock = STARTING_BLOCK_NUMBER ? Number(STARTING_BLOCK_NUMBER) : undefined;
     this.hubPoolEndingBlock = ENDING_BLOCK_NUMBER ? Number(ENDING_BLOCK_NUMBER) : undefined;
+
+    if (MONITORED_BALANCES) {
+      this.monitoredBalances = JSON.parse(MONITORED_BALANCES).map(({ threshold, account, token, chainId }) => {
+        if (Number.isNaN(Number(threshold)))
+          throw new Error(`amount value: ${threshold} cannot be converted to a number`);
+        if (Number.isNaN(parseInt(chainId)))
+          throw new Error(`chainId value: ${chainId} cannot be converted to an integer`);
+        const isNativeToken = !token || token === "0x0" || token === ZERO_ADDRESS;
+        return {
+          token: isNativeToken ? ZERO_ADDRESS : token,
+          amount: Number(threshold),
+          account: ethers.utils.getAddress(account),
+          chainId: parseInt(chainId),
+        };
+      });
+    }
 
     this.spokePoolChains.forEach((chainId) => {
       this.spokePoolsBlocks[chainId] = {
