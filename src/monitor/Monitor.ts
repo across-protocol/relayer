@@ -26,7 +26,7 @@ import {
   providers,
   ethers,
 } from "../utils";
-import { ZERO_ADDRESS } from "../utils";
+import { ZERO_ADDRESS, getNativeTokenSymbol } from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -286,11 +286,14 @@ export class Monitor {
           const balance = balances[i];
           const decimals = decimalValues[i];
           if (balance.lt(ethers.utils.parseUnits(threshold.toString(), decimals))) {
-            const symbol = await new Contract(
-              token,
-              ERC20.abi,
-              this.clients.spokePoolClients[chainId].spokePool.provider
-            ).symbol();
+            const symbol =
+              token === ZERO_ADDRESS
+                ? getNativeTokenSymbol(chainId)
+                : await new Contract(
+                    token,
+                    ERC20.abi,
+                    this.clients.spokePoolClients[chainId].spokePool.provider
+                  ).symbol();
             return `  ${getNetworkName(chainId)} ${symbol} balance for ${etherscanLink(
               account,
               chainId
