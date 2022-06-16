@@ -167,12 +167,23 @@ export class MultiCallerClient {
       let mrkdwn = "";
       const transactionHashes = [];
       valueTransactionsResult.forEach((result, i) => {
+        const { chainId } = valueTransactions[i];
         mrkdwn += `*Transaction excluded from batches because it contained value:*\n`;
-        if (result.status === "rejected")
+        if (result.status === "rejected") {
           mrkdwn += ` ⚠️ Transaction sent on ${getNetworkName(
-            valueTransactions[i].chainId
+            chainId
           )} failed or bot timed out waiting for transaction to mine, check logs for more details.\n`;
-        else mrkdwn += `  ${result.value.message || "0 message"}: ` + `${result.value.mrkdwn || "0 mrkdwn"}\n`;
+          this.logger.debug({
+            at: "MultiCallerClient",
+            message: `Batch transaction sent on chain ${chainId} failed or bot timed out waiting for it to mine`,
+            error: result.reason,
+          });
+        } else {
+          mrkdwn += `  ${i + 1}.${valueTransactions[i].message || ""}: ` + `${valueTransactions[i].mrkdwn || ""}\n`;
+          const transactionHash = result.value.transactionHash;
+          mrkdwn += "tx: " + etherscanLink(transactionHash, chainId) + "\n";
+          transactionHashes.push(transactionHash);
+        }
       });
       Object.keys(groupedTransactions).forEach((chainId, chainIndex) => {
         mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
