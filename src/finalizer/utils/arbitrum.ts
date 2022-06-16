@@ -153,13 +153,6 @@ export async function getMessageOutboxStatusAndProof(
       status: L2ToL1MessageStatus[outboxMessageExecutionStatus],
     };
   } catch (error) {
-    logger.debug({
-      at: "ArbitrumFinalizer",
-      message:
-        "Failed to get L2toL1 message from transaction hash, likely message is not included in a batch on mainnet",
-      transactionHash: event.transactionHash,
-      error,
-    });
     // Likely L1 message hasn't been included in an arbitrum batch yet, so ignore it for now.
     return {
       message: undefined,
