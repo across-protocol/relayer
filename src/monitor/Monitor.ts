@@ -1,7 +1,16 @@
-import { FillsToRefund, ProposedRootBundle, TokenTransfer } from "../interfaces";
-import { BundleAction, BalanceType, L1Token, RelayerBalanceTable, RelayerBalanceReport } from "../interfaces";
-import { BigNumber, Contract, ERC20, assign, etherscanLink, etherscanLinks, getTransactionHashes } from "../utils";
 import {
+  FillsToRefund,
+  ProposedRootBundle,
+  TokenTransfer,
+  BundleAction,
+  BalanceType,
+  L1Token,
+  RelayerBalanceTable,
+  RelayerBalanceReport,
+  TransfersByChain,
+  TransfersByTokens,
+} from "../interfaces";
+import { BigNumber, Contract, ERC20, assign, etherscanLink, etherscanLinks, getTransactionHashes ,
   convertFromWei,
   toBN,
   toWei,
@@ -10,8 +19,7 @@ import {
   getNetworkName,
   getUnfilledDeposits,
   providers,
-} from "../utils";
-import { TransfersByChain, TransfersByTokens } from "../interfaces";
+, ethers } from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -32,6 +40,8 @@ export class Monitor {
   private hubPoolStartingBlock: number | undefined = undefined;
   private hubPoolEndingBlock: number | undefined = undefined;
   private spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
+  private balanceCache: { [chainId: number]: { [token: string]: { [account: string]: BigNumber } } } = {};
+  private decimals: { [chainId: number]: { [token: string]: number } } = {};
 
   public constructor(
     readonly logger: winston.Logger,
@@ -44,6 +54,9 @@ export class Monitor {
   }
 
   public async update() {
+    // Clear balance cache at the start of each update.
+    // Note: decimals don't need to be cleared because they shouldn't ever change.
+    this.balanceCache = {};
     await updateMonitorClients(this.clients);
     await this.computeHubPoolBlocks();
     await this.computeSpokePoolsBlocks();
@@ -233,13 +246,13 @@ export class Monitor {
       for (const chainId of this.monitorConfig.spokePoolChains) {
         const l2ToL1Tokens = this.clients.hubPoolClient.getDestinationTokensToL1TokensForChainId(chainId);
 
-        // Use the provider from the spoke pool to send requests to the right provider.
-        const spokePoolClient = this.clients.spokePoolClients[chainId];
         const l2TokenAddresses = Object.keys(l2ToL1Tokens);
-        const tokenBalances = await Promise.all(
-          l2TokenAddresses.map((l2TokenAddress) =>
-            new Contract(l2TokenAddress, ERC20.abi, spokePoolClient.spokePool.signer).balanceOf(relayer)
-          )
+        const tokenBalances = await this._getBalances(
+          l2TokenAddresses.map((address) => ({
+            token: address,
+            chainId: chainId,
+            account: relayer,
+          }))
         );
 
         for (let i = 0; i < l2TokenAddresses.length; i++) {
@@ -256,9 +269,29 @@ export class Monitor {
     }
   }
 
+  async checkBalances() {
+    const { monitoredBalances } = this.monitorConfig;
+    const balances = await this._getBalances(monitoredBalances);
+    const decimalValues = await this._getDecimals(monitoredBalances);
+    const alertText = (await Promise.all(
+      this.monitorConfig.monitoredBalances.map(async ({ chainId, token, account, threshold }, i) => {
+        const balance = balances[i];
+        const decimals = decimalValues[i];
+        if (balance.lt(ethers.utils.parseUnits(threshold.toString(), decimals))) {
+          const symbol = await new Contract(token, ERC20.abi, this.clients.spokePoolClients[chainId].spokePool.provider).symbol();
+          return `  ${getNetworkName(chainId)} ${symbol} balance for ${etherscanLink(account, chainId)} is ${ethers.utils.formatUnits(balance, decimals)}. Threshold: ${threshold}`;
+        }
+      })
+    )).filter(text => text !== undefined);
+    if (alertText.length > 0) {
+      const mrkdwn = "Some balance(s) are below the configured threshold!\n" + alertText.join("\n");
+      this.logger.error({ at: "Monitor", message: "Balance(s) below threshold", mrkdwn: mrkdwn });
+    }
+  }
+
   updatePendingAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport) {
-    let pendingBundleRefunds = this.clients.bundleDataClient.getPendingBundleRefunds();
-    let nextBundleRefunds = this.clients.bundleDataClient.getNextBundleRefunds();
+    const pendingBundleRefunds = this.clients.bundleDataClient.getPendingBundleRefunds();
+    const nextBundleRefunds = this.clients.bundleDataClient.getNextBundleRefunds();
 
     // Calculate which fills have not yet been refunded for each monitored relayer.
     for (const relayer of this.monitorConfig.monitoredRelayers) {
@@ -393,14 +426,14 @@ export class Monitor {
   }
 
   formatKnownTransfers(transfers: TokenTransfer[], decimals: number, transferType: String) {
-    if (transfers.length == 0) return "";
+    if (transfers.length === 0) return "";
 
     const totalAmount = this.getTotalTransferAmount(transfers);
     return `${transferType}: ${convertFromWei(totalAmount.toString(), decimals)}\n`;
   }
 
   formatOtherTransfers(transfers: TokenTransfer[], decimals: number, chainId: number) {
-    if (transfers.length == 0) return "";
+    if (transfers.length === 0) return "";
 
     const totalAmount = this.getTotalTransferAmount(transfers);
     let mrkdwn = `other: ${convertFromWei(totalAmount.toString(), decimals)}\n`;
@@ -446,7 +479,7 @@ export class Monitor {
       for (const tokenAddress of Object.keys(fillsToRefund)) {
         const totalRefundAmount = fillsToRefund[tokenAddress].refunds[relayer];
         const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
-        let amount = totalRefundAmount ? totalRefundAmount : BigNumber.from(0);
+        const amount = totalRefundAmount || BigNumber.from(0);
         this.updateRelayerBalanceTable(
           relayerBalanceTable,
           tokenInfo.symbol,
@@ -562,5 +595,43 @@ export class Monitor {
       startingBlock: finalStartingBlock,
       endingBlock: finalEndingBlock,
     };
+  }
+
+  private async _getBalances(
+    balanceRequests: { chainId: number; token?: string; account: string }[]
+  ): Promise<BigNumber[]> {
+    return await Promise.all(
+      balanceRequests.map(async ({ chainId, token, account }) => {
+        if (!token) token = "native";
+        if (this.balanceCache[chainId]?.[token]?.[account]) return this.balanceCache[chainId][token][account];
+        const balance =
+          token === "native"
+            ? await this.clients.spokePoolClients[chainId].spokePool.provider.getBalance(account)
+            : await new Contract(token, ERC20.abi, this.clients.spokePoolClients[chainId].spokePool.provider).balanceOf(
+                account
+              );
+        if (!this.balanceCache[chainId]) this.balanceCache[chainId] = {};
+        if (!this.balanceCache[chainId][token]) this.balanceCache[chainId][token] = {};
+        this.balanceCache[chainId][token][account] = balance;
+        return balance;
+      })
+    );
+  }
+
+  private async _getDecimals(decimalrequests: { chainId: number; token?: string }[]): Promise<number[]> {
+    return await Promise.all(
+      decimalrequests.map(async ({ chainId, token }) => {
+        if (!token) return 18; // Assume all EVM chains have 18 decimal native tokens.
+        if (this.decimals[chainId]?.[token]) return this.decimals[chainId][token];
+        const decimals = await new Contract(
+          token,
+          ERC20.abi,
+          this.clients.spokePoolClients[chainId].spokePool.provider
+        ).decimals();
+        if (!this.decimals[chainId]) this.decimals[chainId] = {};
+        if (!this.decimals[chainId][token]) this.decimals[chainId][token] = decimals.toNumber();
+        return decimals.toNumber();
+      })
+    );
   }
 }
