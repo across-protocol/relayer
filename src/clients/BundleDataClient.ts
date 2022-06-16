@@ -60,7 +60,7 @@ export class BundleDataClient {
     // Use the same block range as the current pending bundle to ensure we look at the right refunds.
     const pendingBundleEvaluationBlockRanges: number[][] = latestBundle.bundleEvaluationBlockNumbers.map(
       (endBlock, i) => [
-        hubPoolClient.getNextBundleStartBlockNumber(chainIds, latestBlockNumber, chainIds[i]),
+        hubPoolClient.getNextBundleStartBlockNumber(chainIds, endBlock.toNumber(), chainIds[i]),
         endBlock.toNumber(),
       ]
     );
