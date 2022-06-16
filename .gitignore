@@ -7,7 +7,7 @@ typechain
 dump.rdb
 .idea
 
-#Hardhat files
+# Hardhat files
 cache
 artifacts
 dist
