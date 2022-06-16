@@ -10,3 +10,8 @@ export function getNetworkName(networkId: number | string): string {
     return "unknown";
   }
 }
+
+export function getNativeTokenSymbol(chainId: number | string): string {
+  if (chainId.toString() === "137" || chainId.toString() === "80001") return "MATIC";
+  return "ETH";
+}
