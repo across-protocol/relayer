@@ -1,6 +1,6 @@
 import { BigNumber, winston, assign, toBN, getNetworkName, createFormatFunction, etherscanLink } from "../../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from "..";
-import { FillsToRefund, InventoryConfig } from "../../interfaces";
+import { InventoryConfig } from "../../interfaces";
 import { AdapterManager } from "./AdapterManager";
 import { Deposit } from "../../interfaces/SpokePool";
 
@@ -63,19 +63,17 @@ export class InventoryClient {
     return distributionPerL1Token;
   }
 
-  // Get the allocation of a given token, considering the shortfall. This number will be negative if there is a shortfall!
-  // A shortfall, by definition, is the amount of tokens that are needed to to fill a given outstanding relay that the
-  // relayer could not fill. For example of the relayer has 10 WETH and needs to fill a relay of size 18 WETH then the
-  // shortfall will be 18. If there are 140 WETH across the whole ecosystem then this method will return (10-18)/140=-0.057
-  // This number is then used to inform how many tokens need to be sent to the chain to: a) cover the shortfall and
-  // b bring the balance back over the defined target.
-  getCurrentAllocationPctConsideringShortfall(l1Token: string, chainId: number): BigNumber {
-    const cumulativeBalance = this.getCumulativeBalance(l1Token); // If there is nothing over all chains, return early.
+  // Get the balance of a given token on a given chain, including any pending cross chain transfers and upcoming refunds
+  getCurrentAllocationPctConsideringRefunds(l1Token: string, chainId: number): BigNumber {
+    const totalRefundsPerChain = this.getBundleRefunds(l1Token);
+    const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), toBN(0));
+    // If there is nothing over all chains, return early.
+    const cumulativeBalance = this.getCumulativeBalance(l1Token).add(cumulativeRefunds);
     if (cumulativeBalance.eq(0)) return toBN(0);
-    const currentBalanceConsideringTransfers = this.getBalanceOnChainForL1Token(chainId, l1Token);
-    const shortfall = this.getTokenShortFall(l1Token, chainId) || toBN(0);
-    const numerator = currentBalanceConsideringTransfers.sub(shortfall).mul(scalar);
-    return numerator.div(cumulativeBalance);
+
+    const currentBalanceWithTransfersAndRefunds = this.getBalanceOnChainForL1Token(chainId, l1Token).add(totalRefundsPerChain[chainId]);
+    // Multiply by scalar to avoid rounding errors.
+    return currentBalanceWithTransfersAndRefunds.mul(scalar).div(cumulativeBalance);
   }
 
   // Find how short a given chain is for a desired L1Token.
@@ -112,39 +110,11 @@ export class InventoryClient {
       : rebalance;
   }
 
-  // Work out where a relay should be refunded to optimally manage the bots inventory. If the inventory management logic
-  // not enabled then return funds on the chain the deposit was filled on Else, use the following algorithm:
-  // a) Find the chain virtual balance (current balance + pending relays) minus the current shortfall.
-  // b) find the cumulative virtual balance minus the current shortfall.
-  // c) consider the size of a and b post relay (i.e after the relay is paid and all current transfers are settled what
-  // will the balances be on the target chain and the overall cumulative balance).
-  // d) use c to compute what the post relay post current in-flight transactions allocation would be. Compare this
-  // number to the target threshold and:
-  //     If this number of more than the target for the designation chain + rebalance overshoot then refund on L1.
-  //     Else, the post fill amount is within the target, so refund on the destination chain.
-  determineRefundChainId(deposit: Deposit): number {
-    const destinationChainId = deposit.destinationChainId;
-    if (!this.isInventoryManagementEnabled()) return destinationChainId;
-    if (destinationChainId === 1) return 1; // Always refund on L1 if the transfer is to L1.
-    const l1Token = this.hubPoolClient.getL1TokenForDeposit(deposit);
-
-    // If there is no inventory config for this token or this token and destination chain the return the destination chain.
-    if (
-      this.inventoryConfig.tokenConfig[l1Token] == undefined ||
-      this.inventoryConfig.tokenConfig?.[l1Token]?.[destinationChainId] == undefined
-    )
-      return destinationChainId;
-    const chainShortfall = this.getTokenShortFall(l1Token, destinationChainId);
-    const chainVirtualBalance = this.getBalanceOnChainForL1Token(destinationChainId, l1Token);
-    const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
-    let chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfall.sub(deposit.amount);
-    const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
-    let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
-
-    // Consider any refunds from both current pending bundle (if any) and the next bundle.
-    let pendingBundleRefunds = this.bundleDataClient.getPendingBundleRefunds();
-    let nextBundleRefunds = this.bundleDataClient.getNextBundleRefunds();
-    const totalRefundsPerChain = Object.fromEntries(
+  // Return the upcoming refunds (in pending and next bundles) on each chain.
+  getBundleRefunds(l1Token: string) {
+    const pendingBundleRefunds = this.bundleDataClient.getPendingBundleRefunds();
+    const nextBundleRefunds = this.bundleDataClient.getNextBundleRefunds();
+    return Object.fromEntries(
       this.getEnabledChains()
         .map((chainId) => [this.getDestinationTokenForL1Token(l1Token, chainId), chainId])
         .map(([tokenId, chainId]) => [
@@ -156,6 +126,39 @@ export class InventoryClient {
             ),
         ])
     );
+  }
+
+  // Work out where a relay should be refunded to optimally manage the bots inventory. If the inventory management logic
+  // not enabled then return funds on the chain the deposit was filled on Else, use the following algorithm:
+  // a) Find the chain virtual balance (current balance + pending relays + pending refunds) minus current shortfall.
+  // b) Find the cumulative virtual balance, including the total refunds on all chains and excluding current shortfall.
+  // c) Consider the size of a and b post relay (i.e after the relay is paid and all current transfers are settled what
+  // will the balances be on the target chain and the overall cumulative balance).
+  // d) Use c to compute what the post relay post current in-flight transactions allocation would be. Compare this
+  // number to the target threshold and:
+  //     If this number of more than the target for the designation chain + rebalance overshoot then refund on L1.
+  //     Else, the post fill amount is within the target, so refund on the destination chain.
+  determineRefundChainId(deposit: Deposit): number {
+    const destinationChainId = deposit.destinationChainId;
+    if (!this.isInventoryManagementEnabled()) return destinationChainId;
+    if (destinationChainId === 1) return 1; // Always refund on L1 if the transfer is to L1.
+    const l1Token = this.hubPoolClient.getL1TokenForDeposit(deposit);
+
+    // If there is no inventory config for this token or this token and destination chain the return the destination chain.
+    if (
+      this.inventoryConfig.tokenConfig[l1Token] === undefined ||
+      this.inventoryConfig.tokenConfig?.[l1Token]?.[destinationChainId] === undefined
+    )
+      return destinationChainId;
+    const chainShortfall = this.getTokenShortFall(l1Token, destinationChainId);
+    const chainVirtualBalance = this.getBalanceOnChainForL1Token(destinationChainId, l1Token);
+    const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
+    let chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfall.sub(deposit.amount);
+    const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
+    let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
+
+    // Consider any refunds from both current pending bundle (if any) and the next bundle.
+    const totalRefundsPerChain = this.getBundleRefunds(l1Token);
 
     // Add upcoming refunds going to this destination chain.
     chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
@@ -194,6 +197,13 @@ export class InventoryClient {
     return refundChainId;
   }
 
+  // A rebalance is triggered in the follow 2 cases:
+  // 1. The allocation is not below target when considering upcoming refunds, but there's a shortfall. We'll send the
+  // entire shortfall amount to cover the deposit in timely manner. This amount likely will get refunded on L1 later on.
+  // Example: Current balance on Polygon is 5 WETH, there's an unfilled deposit (shortfall) of 10 WETH. We'll send
+  // 10 WETH from L1 over to cover the shortfall. This 10 WETH later will get refunded on L1 directly.
+  // 2. Allocation is below target. This in theory should almost never happen unless we manually move funds away from
+  // the L2 chain or if we increase the allocation targets.
   async rebalanceInventoryIfNeeded() {
     const rebalancesRequired: { [chainId: number]: { [l1Token: string]: BigNumber } } = {};
     const possibleRebalances: { [chainId: number]: { [l1Token: string]: BigNumber } } = {};
@@ -208,12 +218,20 @@ export class InventoryClient {
       for (const l1Token of Object.keys(tokenDistributionPerL1Token)) {
         const cumulativeBalance = this.getCumulativeBalance(l1Token);
         if (cumulativeBalance.eq(0)) continue;
+
         for (const chainId of this.getEnabledL2Chains()) {
-          const currentAllocPct = this.getCurrentAllocationPctConsideringShortfall(l1Token, chainId);
-          const thresholdPct = toBN(this.inventoryConfig.tokenConfig[l1Token][chainId].thresholdPct);
-          if (currentAllocPct.lt(thresholdPct)) {
-            const deltaPct = toBN(this.inventoryConfig.tokenConfig[l1Token][chainId].targetPct).sub(currentAllocPct);
-            assign(rebalancesRequired, [chainId, l1Token], deltaPct.mul(cumulativeBalance).div(scalar));
+          const shortfall = this.getTokenShortFall(l1Token, chainId) || toBN(0);
+          // Rebalance if there's a shortfall (for good UX) or if allocation is below target.
+          if (shortfall.gt(toBN(0))) {
+            assign(rebalancesRequired, [chainId, l1Token], shortfall);
+          } else {
+            const currentAllocPct = this.getCurrentAllocationPctConsideringRefunds(l1Token, chainId);
+            const thresholdPct = toBN(this.inventoryConfig.tokenConfig[l1Token][chainId].thresholdPct);
+            if (currentAllocPct.lt(thresholdPct)) {
+              const deltaPct = toBN(this.inventoryConfig.tokenConfig[l1Token][chainId].targetPct).sub(currentAllocPct);
+              // Divide by scalar because allocation percent was multiplied by it to avoid rounding errors.
+              assign(rebalancesRequired, [chainId, l1Token], deltaPct.mul(cumulativeBalance).div(scalar));
+            }
           }
         }
       }
@@ -314,12 +332,12 @@ export class InventoryClient {
   constructConsideringRebalanceDebugLog(tokenDistributionPerL1Token: {
     [l1Token: string]: { [chainId: number]: BigNumber };
   }) {
-    let tokenDistribution = {};
+    const tokenDistribution = {};
     Object.keys(tokenDistributionPerL1Token).forEach((l1Token) => {
       const { symbol, decimals } = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
       if (!tokenDistribution[symbol]) tokenDistribution[symbol] = {};
       const formatter = createFormatFunction(2, 4, false, decimals);
-      tokenDistribution[symbol]["cumulativeBalance"] = formatter(this.getCumulativeBalance(l1Token).toString());
+      tokenDistribution[symbol].cumulativeBalance = formatter(this.getCumulativeBalance(l1Token).toString());
       Object.keys(tokenDistributionPerL1Token[l1Token]).forEach((chainId) => {
         if (!tokenDistribution[symbol][chainId]) tokenDistribution[symbol][chainId] = {};
 

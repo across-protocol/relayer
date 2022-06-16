@@ -21,11 +21,6 @@ export class TokenClient {
     return this.tokenData;
   }
 
-  getDataForToken(chainId: number, token: string) {
-    if (!this._hasTokenPairData(chainId, token)) return {};
-    return this.tokenData[chainId][token];
-  }
-
   getBalance(chainId: number | string, token: string) {
     if (!this._hasTokenPairData(chainId, token)) return toBN(0);
     return this.tokenData[chainId][token].balance;

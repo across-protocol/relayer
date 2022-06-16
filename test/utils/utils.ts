@@ -11,7 +11,7 @@ import { amountToDeposit, depositRelayerFeePct, l1TokenTransferThreshold, zeroAd
 import { MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF } from "../constants";
 import { HubPoolClient, AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
 import { SpokePoolClient } from "../../src/clients";
-import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber } from "./index";
+import {deposit, Contract, SignerWithAddress, fillRelay, BigNumber, toWei} from "./index";
 import { Deposit, Fill, RunningBalances } from "../../src/interfaces";
 import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
 
@@ -616,4 +616,15 @@ export async function buildSlowFill(
 
 export function getDefaultBlockRange(toBlockOffset: number) {
   return DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) => [range[0], range[1] + toBlockOffset]);
+}
+
+export function createRefunds(address: string, refundAmount: number, token: string) {
+  return {
+    [token]: {
+      refunds: { [address]: BigNumber.from(toWei(refundAmount)) },
+      fills: [],
+      totalRefundAmount: BigNumber.from(0),
+      realizedLpFees: BigNumber.from(0),
+    },
+  };
 }
