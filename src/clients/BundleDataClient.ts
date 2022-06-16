@@ -50,19 +50,22 @@ export class BundleDataClient {
 
   // Return refunds from a pending bundle if any.
   getPendingBundleRefunds(): FillsToRefund {
-    const chainIds = Object.keys(this.spokePoolClients).map(Number);
-
     // If latest proposed bundle has not been executed yet, we have a bundle pending liveness.
     const hubPoolClient = this.clients.hubPoolClient;
     const latestBlockNumber = hubPoolClient.latestBlockNumber;
     const latestBundle = hubPoolClient.getMostRecentProposedRootBundle(latestBlockNumber);
+    // Look for the latest fully executed root bundle before the current last bundle.
+    // This ensures that we skip over any disputed (invalid) bundles.
+    const previousValidBundle = hubPoolClient.getLatestFullyExecutedRootBundle(latestBundle.blockNumber);
 
     // Use the same block range as the current pending bundle to ensure we look at the right refunds.
     const pendingBundleEvaluationBlockRanges: number[][] = latestBundle.bundleEvaluationBlockNumbers.map(
-      (endBlock, i) => [
-        hubPoolClient.getNextBundleStartBlockNumber(chainIds, endBlock.toNumber(), chainIds[i]),
-        endBlock.toNumber(),
-      ]
+      (endBlock, i) => {
+        const fromBlock = previousValidBundle?.bundleEvaluationBlockNumbers?.[i]
+          ? previousValidBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
+          : 0;
+        return [fromBlock, endBlock.toNumber()];
+      }
     );
     const { fillsToRefund: pendingBundleRefunds } = this.loadData(
       pendingBundleEvaluationBlockRanges,
