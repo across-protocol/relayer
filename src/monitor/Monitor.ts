@@ -19,7 +19,8 @@ import { BigNumber, Contract, ERC20, assign, etherscanLink, etherscanLinks, getT
   getNetworkName,
   getUnfilledDeposits,
   providers,
-, ethers } from "../utils";
+  ethers } from "../utils";
+import { ZERO_ADDRESS } from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -598,14 +599,13 @@ export class Monitor {
   }
 
   private async _getBalances(
-    balanceRequests: { chainId: number; token?: string; account: string }[]
+    balanceRequests: { chainId: number; token: string; account: string }[]
   ): Promise<BigNumber[]> {
     return await Promise.all(
       balanceRequests.map(async ({ chainId, token, account }) => {
-        if (!token) token = "native";
         if (this.balanceCache[chainId]?.[token]?.[account]) return this.balanceCache[chainId][token][account];
         const balance =
-          token === "native"
+          token === ZERO_ADDRESS
             ? await this.clients.spokePoolClients[chainId].spokePool.provider.getBalance(account)
             : await new Contract(token, ERC20.abi, this.clients.spokePoolClients[chainId].spokePool.provider).balanceOf(
                 account
@@ -618,10 +618,10 @@ export class Monitor {
     );
   }
 
-  private async _getDecimals(decimalrequests: { chainId: number; token?: string }[]): Promise<number[]> {
+  private async _getDecimals(decimalrequests: { chainId: number; token: string }[]): Promise<number[]> {
     return await Promise.all(
       decimalrequests.map(async ({ chainId, token }) => {
-        if (!token) return 18; // Assume all EVM chains have 18 decimal native tokens.
+        if (token === ZERO_ADDRESS) return 18; // Assume all EVM chains have 18 decimal native tokens.
         if (this.decimals[chainId]?.[token]) return this.decimals[chainId][token];
         const decimals = await new Contract(
           token,

@@ -23,7 +23,7 @@ export class MonitorConfig extends CommonConfig {
   readonly whitelistedRelayers: string[];
   readonly knownV1Addresses: string[];
   readonly botModes: BotModes;
-  readonly monitoredBalances: { chainId: number; threshold: number; account: string; token?: string }[] = [];
+  readonly monitoredBalances: { chainId: number; threshold: number; account: string; token: string }[] = [];
 
   constructor(env: ProcessEnv) {
     super(env);
@@ -77,7 +77,7 @@ export class MonitorConfig extends CommonConfig {
           throw new Error(`chainId value: ${chainId} cannot be converted to an integer`);
         const isNativeToken = !token || token === "0x0" || token === ZERO_ADDRESS;
         return {
-          token: isNativeToken ? undefined : token,
+          token: isNativeToken ? ZERO_ADDRESS : token,
           amount: Number(threshold),
           account: ethers.utils.getAddress(account),
           chainId: parseInt(chainId),
