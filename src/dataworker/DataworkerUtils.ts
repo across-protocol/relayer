@@ -6,10 +6,10 @@ import { getDepositPath, getFillsInRange, groupObjectCountsByProp, groupObjectCo
 import { DataworkerClients } from "./DataworkerClientHelper";
 import {
   addSlowFillsToRunningBalances,
-  addStartingRunningBalance,
+  addToRunningBalance,
   initializeRunningBalancesFromRelayerRepayments,
 } from "./PoolRebalanceUtils";
-import { addLastRunningBalance, constructPoolRebalanceLeaves } from "./PoolRebalanceUtils";
+import { constructPoolRebalanceLeaves } from "./PoolRebalanceUtils";
 import { updateRunningBalanceForDeposit } from "./PoolRebalanceUtils";
 import { subtractExcessFromPreviousSlowFillsFromRunningBalances } from "./PoolRebalanceUtils";
 import { getAmountToReturnForRelayerRefundLeaf } from "./RelayerRefundUtils";
@@ -271,14 +271,8 @@ export function _buildPoolRebalanceRoot(
   });
 
   // Add to the running balance value from the last valid root bundle proposal for {chainId, l1Token}
-  // combination if found.
-  addLastRunningBalance(endBlockForMainnet, runningBalances, clients.hubPoolClient);
-
-  // Add a configurable starting running balance for each L1 token. The user can set this value to have a
-  // bias towards keeping more funds on the L2s. Negative starting values are discouraged since often times
-  // there won't be enough funds on the spoke pools to return to mainnet until more deposits come in,
-  // resulting in temporarily frozen funds.
-  addStartingRunningBalance(endBlockForMainnet, runningBalances, clients.configStoreClient);
+  // combination if found. This will add a configurable bias value if there is no prior running balance.
+  addToRunningBalance(endBlockForMainnet, runningBalances, clients.hubPoolClient, clients.configStoreClient);
 
   const leaves: PoolRebalanceLeaf[] = constructPoolRebalanceLeaves(
     endBlockForMainnet,

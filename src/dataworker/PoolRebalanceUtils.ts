@@ -66,31 +66,16 @@ export function updateRunningBalanceForDeposit(
   updateRunningBalance(runningBalances, deposit.originChainId, l1TokenCounterpart, updateAmount);
 }
 
-export function addStartingRunningBalance(
+export function addToRunningBalance(
   latestMainnetBlock: number,
   runningBalances: interfaces.RunningBalances,
-  configClient: AcrossConfigStoreClient
+  hubPoolClient: HubPoolClient,
+  configStoreClient: AcrossConfigStoreClient
 ) {
   Object.keys(runningBalances).forEach((repaymentChainId) => {
     Object.keys(runningBalances[repaymentChainId]).forEach((l1TokenAddress) => {
-      const startingRunningBalance = configClient.getStartingRunningBalanceForBlock(
-        Number(repaymentChainId),
-        l1TokenAddress,
-        latestMainnetBlock
-      );
-      if (!toBN(startingRunningBalance).eq(toBN(0)))
-        updateRunningBalance(runningBalances, Number(repaymentChainId), l1TokenAddress, startingRunningBalance);
-    });
-  });
-}
-
-export function addLastRunningBalance(
-  latestMainnetBlock: number,
-  runningBalances: interfaces.RunningBalances,
-  hubPoolClient: HubPoolClient
-) {
-  Object.keys(runningBalances).forEach((repaymentChainId) => {
-    Object.keys(runningBalances[repaymentChainId]).forEach((l1TokenAddress) => {
+      // If there was a leftover non-zero running balance, add it to the current one. If there was no leftover one,
+      // then optionally add a starting bias to the running balance.
       const lastRunningBalance = hubPoolClient.getRunningBalanceBeforeBlockForChain(
         latestMainnetBlock,
         Number(repaymentChainId),
@@ -98,6 +83,21 @@ export function addLastRunningBalance(
       );
       if (!lastRunningBalance.eq(toBN(0)))
         updateRunningBalance(runningBalances, Number(repaymentChainId), l1TokenAddress, lastRunningBalance);
+      else {
+        // Add a configurable starting running balance. The user can set this value to have a
+        // bias towards keeping more funds on the L2s. Negative starting values are discouraged since often times
+        // there won't be enough funds on the spoke pools to return to mainnet until more deposits come in,
+        // resulting in temporarily frozen funds. This should only be applied if there is no prior running
+        // balance. If there is a prior running balance, then we can assume that this bias was addeed to the prior one
+        // and therefore will be included in the prior value.
+        const startingRunningBalance = configStoreClient.getStartingRunningBalanceForBlock(
+          Number(repaymentChainId),
+          l1TokenAddress,
+          latestMainnetBlock
+        );
+        if (!toBN(startingRunningBalance).eq(toBN(0)))
+          updateRunningBalance(runningBalances, Number(repaymentChainId), l1TokenAddress, startingRunningBalance);
+      }
     });
   });
 }
