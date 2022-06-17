@@ -151,15 +151,16 @@ export class InventoryClient {
     const nextBundleRefunds = this.bundleDataClient.getNextBundleRefunds();
     const totalRefundsPerChain = Object.fromEntries(
       this.getEnabledChains()
-        .map((chainId) => [this.getDestinationTokenForL1Token(l1Token, chainId), chainId])
-        .map(([tokenId, chainId]) => [
+        .map((chainId) => {
+        const destinationToken = this.getDestinationTokenForL1Token(l1Token, chainId);
+        return [
           chainId,
           this.bundleDataClient
-            .getRefundsFor(latestBundleRefunds, this.relayer, Number(chainId), String(tokenId))
+            .getRefundsFor(latestBundleRefunds, this.relayer, Number(chainId), destinationToken)
             .add(
-              this.bundleDataClient.getRefundsFor(nextBundleRefunds, this.relayer, Number(chainId), String(tokenId))
+              this.bundleDataClient.getRefundsFor(nextBundleRefunds, this.relayer, Number(chainId), destinationToken)
             ),
-        ])
+        ]})
     );
 
     // Add upcoming refunds going to this destination chain.

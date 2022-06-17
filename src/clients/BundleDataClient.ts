@@ -86,16 +86,19 @@ export class BundleDataClient {
     // The future bundle covers block range from the ending of the last proposed bundle (might still be pending liveness)
     // to the latest block on that chain.
     const chainIds = Object.keys(this.spokePoolClients).map(Number);
-    const futureBundleEvaluationBlockRanges: number[][] = latestProposedBundle.bundleEvaluationBlockNumbers.map(
-      (endingBlock, i) => [endingBlock.toNumber() + 1, this.spokePoolClients[chainIds[i]].latestBlockNumber]
-    );
+    const latestProposalEndBlocks = latestProposedBundle
+      ? latestProposedBundle.bundleEvaluationBlockNumbers.map((block) => block.toNumber() + 1)
+      : Array(chainIds.length).fill(0);
+    const futureBundleEvaluationBlockRanges: number[][] = latestProposalEndBlocks.map((endingBlock, i) => [
+      endingBlock,
+      this.spokePoolClients[chainIds[i]].latestBlockNumber,
+    ]);
     // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
     // (if any) has been fully executed.
     return this.loadData(futureBundleEvaluationBlockRanges, this.spokePoolClients, false).fillsToRefund;
   }
 
-  deductExecutedRefunds(_allRefunds: FillsToRefund, bundleContainingRefunds: ProposedRootBundle): FillsToRefund {
-    const allRefunds = _.cloneDeep(_allRefunds);
+  deductExecutedRefunds(allRefunds: FillsToRefund, bundleContainingRefunds: ProposedRootBundle): FillsToRefund {
     for (const chainIdStr of Object.keys(allRefunds)) {
       const chainId = Number(chainIdStr);
       const executedRefunds = this.spokePoolClients[chainId].getExecutedRefunds(
@@ -113,7 +116,7 @@ export class BundleDataClient {
 
           if (executedAmount.gt(refunds[relayer])) {
             throw new Error(
-              `Unexpected state: Executed refund amount ${executedAmount} is larger than remaining refund amount from bundle ${refunds[relayer]}`
+              `Unexpected state: Executed refund amount ${executedAmount} is larger than remaining refund amount from bundle: ${refunds[relayer]}`
             );
           }
           refunds[relayer] = refunds[relayer].sub(executedAmount);
@@ -145,7 +148,9 @@ export class BundleDataClient {
     const key = JSON.stringify(blockRangesForChains);
 
     if (this.loadDataCache[key]) {
-      return this.loadDataCache[key];
+      // Always return a deep cloned copy of object stored in cache. Since JS passes by reference instead of value, we
+      // want to minimize the risk that the programmer accidentally mutates data in the cache.
+      return _.cloneDeep(this.loadDataCache[key]);
     }
 
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
@@ -286,6 +291,9 @@ export class BundleDataClient {
       });
 
     this.loadDataCache[key] = { fillsToRefund, deposits, unfilledDeposits, allValidFills };
-    return this.loadDataCache[key];
+
+    // Always return a deep cloned copy of object stored in cache. Since JS passes by reference instead of value, we
+    // want to minimize the risk that the programmer accidentally mutates data in the cache.
+    return _.cloneDeep(this.loadDataCache[key]);
   }
 }
