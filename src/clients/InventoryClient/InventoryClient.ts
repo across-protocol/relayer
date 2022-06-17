@@ -141,7 +141,7 @@ export class InventoryClient {
     const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
     let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
 
-    // Consider any refunds from both latest bundle (even if its pending liveness) and the next bundle.
+    // Consider any refunds from both latest bundle (regardless if its excecuted or pending) and the next bundle.
     // TODO: This will not count any refunds older than the latest bundle that are unexecuted on the spoke pools,
     // so a future implementation should add in this feature as an option, to look back at refunds up to X bundles
     // old. The downside to ignoring these potentially older unexecuted refunds is that the virtual balance will be
