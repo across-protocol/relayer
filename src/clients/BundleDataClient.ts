@@ -49,6 +49,12 @@ export class BundleDataClient {
     this.loadDataCache = {};
   }
 
+  loadDataFromCache(key: string) {
+    // Always return a deep cloned copy of object stored in cache. Since JS passes by reference instead of value, we
+    // want to minimize the risk that the programmer accidentally mutates data in the cache.
+    return _.cloneDeep(this.loadDataCache[key]);
+  }
+
   // Return refunds from latest bundle
   getPendingRefundsFromLatestBundle(): FillsToRefund {
     const hubPoolClient = this.clients.hubPoolClient;
@@ -148,9 +154,7 @@ export class BundleDataClient {
     const key = JSON.stringify(blockRangesForChains);
 
     if (this.loadDataCache[key]) {
-      // Always return a deep cloned copy of object stored in cache. Since JS passes by reference instead of value, we
-      // want to minimize the risk that the programmer accidentally mutates data in the cache.
-      return _.cloneDeep(this.loadDataCache[key]);
+      return this.loadDataFromCache(key);
     }
 
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
@@ -292,8 +296,6 @@ export class BundleDataClient {
 
     this.loadDataCache[key] = { fillsToRefund, deposits, unfilledDeposits, allValidFills };
 
-    // Always return a deep cloned copy of object stored in cache. Since JS passes by reference instead of value, we
-    // want to minimize the risk that the programmer accidentally mutates data in the cache.
-    return _.cloneDeep(this.loadDataCache[key]);
+    return this.loadDataFromCache(key);
   }
 }
