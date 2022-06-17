@@ -1,25 +1,37 @@
-import { expect, ethers, Contract, deployNewToken, getDefaultBlockRange } from "./utils";
+import { expect, ethers, Contract, deployNewToken, getDefaultBlockRange, buildFillForRepaymentChain } from "./utils";
 import { SignerWithAddress, buildSlowRelayTree, enableRoutesOnHubPool } from "./utils";
 import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, buildSlowFill } from "./utils";
-import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient } from "../src/clients";
-import { amountToDeposit, repaymentChainId, destinationChainId, originChainId } from "./constants";
+import {
+  SpokePoolClient,
+  HubPoolClient,
+  AcrossConfigStoreClient,
+  BundleDataClient,
+  MultiCallerClient,
+  BalanceAllocator,
+} from "../src/clients";
+import { amountToDeposit, repaymentChainId, destinationChainId, originChainId, CHAIN_ID_TEST_LIST } from "./constants";
 import { IMPOSSIBLE_BLOCK_RANGE } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { toBN, getRefundForFills, getRealizedLpFeeForFills } from "../src/utils";
+import { toBN, getRefundForFills, getRealizedLpFeeForFills, MAX_UINT_VAL } from "../src/utils";
+import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, l1Token_2: Contract, hubPool: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress;
 
-let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
+let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient, bundleDataClient: BundleDataClient;
 let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
+let multiCallerClient: MultiCallerClient;
 let dataworkerInstance: Dataworker;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
+let spy: sinon.SinonSpy;
+
 let updateAllClients: () => Promise<void>;
 
+// TODO: Rename this file to BundleDataClient
 describe("Dataworker: Load data used in all functions", async function () {
   beforeEach(async function () {
     ({
@@ -40,38 +52,142 @@ describe("Dataworker: Load data used in all functions", async function () {
       spokePoolClients,
       configStoreClient,
       updateAllClients,
+      spy,
     } = await setupDataworker(ethers, 25, 25, toBN(0), 0));
+    bundleDataClient = dataworkerInstance.clients.bundleDataClient;
+    multiCallerClient = dataworkerInstance.clients.multiCallerClient;
   });
 
   it("Default conditions", async function () {
     // Throws error if hub pool client is not updated.
-    expect(() =>
-      dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients)
-    ).to.throw(/HubPoolClient not updated/);
+    expect(() => bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients)).to.throw(
+      /HubPoolClient not updated/
+    );
     await hubPoolClient.update();
 
     // Throws error if config store client not updated.
-    expect(() =>
-      dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients)
-    ).to.throw(/ConfigStoreClient not updated/);
+    expect(() => bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients)).to.throw(
+      /ConfigStoreClient not updated/
+    );
     await configStoreClient.update();
 
     // Throws error if spoke pool clients not updated
-    expect(() =>
-      dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients)
-    ).to.throw(/origin SpokePoolClient/);
+    expect(() => bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients)).to.throw(
+      /origin SpokePoolClient/
+    );
     await spokePoolClient_1.update();
     await spokePoolClient_2.update();
 
     // Before any deposits, returns empty dictionaries.
     await updateAllClients();
-    expect(
-      dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(1), spokePoolClients)
-    ).to.deep.equal({
+    expect(bundleDataClient.loadData(getDefaultBlockRange(1), spokePoolClients)).to.deep.equal({
       unfilledDeposits: [],
       deposits: [],
       fillsToRefund: {},
       allValidFills: [],
+    });
+  });
+  describe("Deducting pending refunds in root bundle", function () {
+    let fill1, deposit1;
+    beforeEach(async function () {
+      await updateAllClients();
+
+      deposit1 = await buildDeposit(
+        configStoreClient,
+        hubPoolClient,
+        spokePool_1,
+        erc20_1,
+        l1Token_1,
+        depositor,
+        destinationChainId,
+        amountToDeposit
+      );
+
+      await updateAllClients();
+
+      // Submit a valid fill.
+      fill1 = await buildFillForRepaymentChain(
+        spokePool_2,
+        relayer,
+        deposit1,
+        0.5,
+        destinationChainId,
+        erc20_2.address
+      );
+      await updateAllClients();
+
+      // Propose a bundle:
+      await dataworkerInstance.proposeRootBundle(spokePoolClients);
+      await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
+      await multiCallerClient.executeTransactionQueue();
+      await updateAllClients();
+    });
+    it("Latest bundle is pending", async function () {
+      const refunds = await bundleDataClient.getPendingRefundsFromLatestBundle(hubPoolClient.latestBlockNumber);
+      expect(bundleDataClient.getRefundsFor(refunds, relayer.address, destinationChainId, erc20_2.address)).to.equal(
+        getRefundForFills([fill1])
+      );
+
+      // Test edge cases of `getRefundsFor` that should return BN(0)
+      expect(bundleDataClient.getRefundsFor(refunds, relayer.address, repaymentChainId, erc20_2.address)).to.equal(
+        toBN(0)
+      );
+      expect(bundleDataClient.getRefundsFor(refunds, relayer.address, destinationChainId, erc20_1.address)).to.equal(
+        toBN(0)
+      );
+      expect(bundleDataClient.getRefundsFor(refunds, hubPool.address, destinationChainId, erc20_2.address)).to.equal(
+        toBN(0)
+      );
+
+      // Calling deductExecutedRefunds directly should produce same output.
+      const bundle = hubPoolClient.getMostRecentProposedRootBundle(hubPoolClient.latestBlockNumber);
+      const deductedRefunds = bundleDataClient.deductExecutedRefunds(refunds, bundle);
+      expect(
+        bundleDataClient.getRefundsFor(deductedRefunds, relayer.address, destinationChainId, erc20_2.address)
+      ).to.equal(getRefundForFills([fill1]));
+    });
+    it("Latest bundle is executed", async function () {
+      const latestBlock = await hubPool.provider.getBlockNumber();
+      const blockRange = CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
+      const expectedPoolRebalanceRoot = dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
+      await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
+      for (const leaf of expectedPoolRebalanceRoot.leaves) {
+        await hubPool.executeRootBundle(
+          leaf.chainId,
+          leaf.groupIndex,
+          leaf.bundleLpFees,
+          leaf.netSendAmounts,
+          leaf.runningBalances,
+          leaf.leafId,
+          leaf.l1Tokens,
+          expectedPoolRebalanceRoot.tree.getHexProof(leaf)
+        );
+      }
+
+      // Before relayer refund leaves are executed, should have pending refunds:
+      await updateAllClients();
+      const refunds = await bundleDataClient.getPendingRefundsFromLatestBundle(hubPoolClient.latestBlockNumber);
+      expect(bundleDataClient.getRefundsFor(refunds, relayer.address, destinationChainId, erc20_2.address)).to.equal(
+        getRefundForFills([fill1])
+      );
+
+      // Execute relayer refund leaves. Send funds to spoke pools to execute the leaves.
+      await erc20_2.mint(spokePool_2.address, getRefundForFills([fill1]));
+      const providers = {
+        ...spokePoolClientsToProviders(spokePoolClients),
+        [(await hubPool.provider.getNetwork()).chainId]: hubPool.provider,
+      };
+      await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients, new BalanceAllocator(providers));
+      await multiCallerClient.executeTransactionQueue();
+
+      // Should now have zero pending refunds
+      await updateAllClients();
+      const postExecutionRefunds = await bundleDataClient.getPendingRefundsFromLatestBundle(
+        hubPoolClient.latestBlockNumber
+      );
+      expect(
+        bundleDataClient.getRefundsFor(postExecutionRefunds, relayer.address, destinationChainId, erc20_2.address)
+      ).to.equal(toBN(0));
     });
   });
   it("Returns unfilled deposits", async function () {

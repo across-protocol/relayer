@@ -204,7 +204,7 @@ describe("Monitor", async function () {
       monitorInstance.clients.hubPoolClient.getL1Tokens(),
       TEST_NETWORK_NAMES
     );
-    monitorInstance.updatePendingAndFutureRelayerRefunds(reports);
+    monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
     expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME]["pending"].toString()).to.be.equal("49958233892200285050");
 
     reports = monitorInstance.initializeBalanceReports(
@@ -225,7 +225,7 @@ describe("Monitor", async function () {
       relayerRefundRoot: hubPoolClient.getMostRecentProposedRootBundle(hubPoolClient.latestBlockNumber)
         .relayerRefundRoot,
     } as any);
-    monitorInstance.updatePendingAndFutureRelayerRefunds(reports);
+    monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
     expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME]["pending"].toString()).to.be.equal("10000000000000000000");
   });
 
