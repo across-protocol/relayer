@@ -148,7 +148,6 @@ export class InventoryClient {
     // lower than it should be, meaning that we'll send more refunds to the spoke pool. However, these unexecuted refunds
     // should be rare in practice since leaves are usually executed immediately.
     const latestBundleRefunds = this.bundleDataClient.getPendingRefundsFromLatestBundle(
-      this.hubPoolClient.latestBlockNumber
     );
     const nextBundleRefunds = this.bundleDataClient.getNextBundleRefunds();
     const totalRefundsPerChain = Object.fromEntries(

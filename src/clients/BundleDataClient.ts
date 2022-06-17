@@ -50,9 +50,10 @@ export class BundleDataClient {
   }
 
   // Return refunds from latest bundle
-  getPendingRefundsFromLatestBundle(latestMainnetBlock: number): FillsToRefund {
+  getPendingRefundsFromLatestBundle(): FillsToRefund {
     const hubPoolClient = this.clients.hubPoolClient;
-    const latestBundle = hubPoolClient.getMostRecentProposedRootBundle(latestMainnetBlock);
+    const latestBlockNumber = hubPoolClient.latestBlockNumber;
+    const latestBundle = hubPoolClient.getMostRecentProposedRootBundle(latestBlockNumber);
     // Look for the latest fully executed root bundle before the current last bundle.
     // This ensures that we skip over any disputed (invalid) bundles.
     const previousValidBundle = hubPoolClient.getLatestFullyExecutedRootBundle(latestBundle.blockNumber);
