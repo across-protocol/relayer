@@ -1,4 +1,5 @@
 import { winston, BigNumber } from "../utils";
+import * as _ from "lodash";
 import {
   Deposit,
   DepositWithBlock,
@@ -48,9 +49,14 @@ export class BundleDataClient {
     this.loadDataCache = {};
   }
 
-  // Return refunds from a pending bundle if any.
-  getPendingBundleRefunds(): FillsToRefund {
-    // If latest proposed bundle has not been executed yet, we have a bundle pending liveness.
+  loadDataFromCache(key: string) {
+    // Always return a deep cloned copy of object stored in cache. Since JS passes by reference instead of value, we
+    // want to minimize the risk that the programmer accidentally mutates data in the cache.
+    return _.cloneDeep(this.loadDataCache[key]);
+  }
+
+  // Return refunds from latest bundle
+  getPendingRefundsFromLatestBundle(): FillsToRefund {
     const hubPoolClient = this.clients.hubPoolClient;
     const latestBlockNumber = hubPoolClient.latestBlockNumber;
     const latestBundle = hubPoolClient.getMostRecentProposedRootBundle(latestBlockNumber);
@@ -58,8 +64,8 @@ export class BundleDataClient {
     // This ensures that we skip over any disputed (invalid) bundles.
     const previousValidBundle = hubPoolClient.getLatestFullyExecutedRootBundle(latestBundle.blockNumber);
 
-    // Use the same block range as the current pending bundle to ensure we look at the right refunds.
-    const pendingBundleEvaluationBlockRanges: number[][] = latestBundle.bundleEvaluationBlockNumbers.map(
+    // Reconstruct latest bundle block range.
+    const latestBundleEvaluationBlockRanges: number[][] = latestBundle.bundleEvaluationBlockNumbers.map(
       (endBlock, i) => {
         const fromBlock = previousValidBundle?.bundleEvaluationBlockNumbers?.[i]
           ? previousValidBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
@@ -67,16 +73,15 @@ export class BundleDataClient {
         return [fromBlock, endBlock.toNumber()];
       }
     );
-    const { fillsToRefund: pendingBundleRefunds } = this.loadData(
-      pendingBundleEvaluationBlockRanges,
+    const { fillsToRefund: latestFillsToRefund } = this.loadData(
+      latestBundleEvaluationBlockRanges,
       this.spokePoolClients,
       false
     );
 
     // The latest proposed bundle's refund leaves might have already been partially or entirely executed.
     // We have to deduct the executed amounts from the total refund amounts.
-    this.deductExecutedRefunds(pendingBundleRefunds, latestBundle);
-    return pendingBundleRefunds;
+    return this.deductExecutedRefunds(latestFillsToRefund, latestBundle);
   }
 
   // Return refunds from the next bundle.
@@ -87,18 +92,24 @@ export class BundleDataClient {
     // The future bundle covers block range from the ending of the last proposed bundle (might still be pending liveness)
     // to the latest block on that chain.
     const chainIds = Object.keys(this.spokePoolClients).map(Number);
-    const futureBundleEvaluationBlockRanges: number[][] = latestProposedBundle.bundleEvaluationBlockNumbers.map(
-      (endingBlock, i) => [endingBlock.toNumber() + 1, this.spokePoolClients[chainIds[i]].latestBlockNumber]
-    );
+    const latestProposalEndBlocks = latestProposedBundle
+      ? latestProposedBundle.bundleEvaluationBlockNumbers.map((block) => block.toNumber() + 1)
+      : Array(chainIds.length).fill(0);
+    const futureBundleEvaluationBlockRanges: number[][] = latestProposalEndBlocks.map((endingBlock, i) => [
+      endingBlock,
+      this.spokePoolClients[chainIds[i]].latestBlockNumber,
+    ]);
     // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
     // (if any) has been fully executed.
     return this.loadData(futureBundleEvaluationBlockRanges, this.spokePoolClients, false).fillsToRefund;
   }
 
-  deductExecutedRefunds(allRefunds: FillsToRefund, latestBundle: ProposedRootBundle) {
+  deductExecutedRefunds(allRefunds: FillsToRefund, bundleContainingRefunds: ProposedRootBundle): FillsToRefund {
     for (const chainIdStr of Object.keys(allRefunds)) {
       const chainId = Number(chainIdStr);
-      const executedRefunds = this.spokePoolClients[chainId].getExecutedRefunds(latestBundle.relayerRefundRoot);
+      const executedRefunds = this.spokePoolClients[chainId].getExecutedRefunds(
+        bundleContainingRefunds.relayerRefundRoot
+      );
 
       for (const tokenAddress of Object.keys(allRefunds[chainId])) {
         if (executedRefunds[tokenAddress] === undefined || allRefunds[chainId][tokenAddress].refunds === undefined)
@@ -111,13 +122,14 @@ export class BundleDataClient {
 
           if (executedAmount.gt(refunds[relayer])) {
             throw new Error(
-              `Unexpected state: Executed refund amount ${executedAmount} is larger than remaining refund amount from bundle ${refunds[relayer]}`
+              `Unexpected state: Executed refund amount ${executedAmount} is larger than remaining refund amount from bundle: ${refunds[relayer]}`
             );
           }
           refunds[relayer] = refunds[relayer].sub(executedAmount);
         }
       }
     }
+    return allRefunds;
   }
 
   getRefundsFor(bundleRefunds: FillsToRefund, relayer: string, chainId: number, token: string) {
@@ -142,7 +154,7 @@ export class BundleDataClient {
     const key = JSON.stringify(blockRangesForChains);
 
     if (this.loadDataCache[key]) {
-      return this.loadDataCache[key];
+      return this.loadDataFromCache(key);
     }
 
     if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
@@ -283,6 +295,7 @@ export class BundleDataClient {
       });
 
     this.loadDataCache[key] = { fillsToRefund, deposits, unfilledDeposits, allValidFills };
-    return this.loadDataCache[key];
+
+    return this.loadDataFromCache(key);
   }
 }

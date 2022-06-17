@@ -170,7 +170,7 @@ export class Monitor {
       const chainId = deposit.deposit.destinationChainId;
       const tokenAddress = deposit.deposit.destinationToken;
       if (!unfilledAmountByChainAndToken[chainId] || !unfilledAmountByChainAndToken[chainId][tokenAddress]) {
-        assign(unfilledAmountByChainAndToken, [chainId, tokenAddress], BigNumber.from(0));
+        assign(unfilledAmountByChainAndToken, [chainId, tokenAddress], toBN(0));
       }
       unfilledAmountByChainAndToken[chainId][tokenAddress] = unfilledAmountByChainAndToken[chainId][tokenAddress].add(
         deposit.unfilledAmount
@@ -205,21 +205,21 @@ export class Monitor {
     const reports = this.initializeBalanceReports(relayers, allL1Tokens, allChainNames);
 
     await this.updateCurrentRelayerBalances(reports);
-    this.updatePendingAndFutureRelayerRefunds(reports);
+    this.updateLatestAndFutureRelayerRefunds(reports);
     this.updateUnknownTransfers(reports);
 
     for (const relayer of relayers) {
       const report = reports[relayer];
       let summaryMrkdwn = "*[Summary]*\n";
-      let mrkdwn = "Token amounts: current, in liveness, next bundle, total\n";
+      let mrkdwn = "Token amounts: current, latest bundle, next bundle, total\n";
       for (const token of allL1Tokens) {
         let tokenMrkdwn = "";
         for (const chainName of allChainNames) {
           const balancesBN = Object.values(report[token.symbol][chainName]);
-          if (balancesBN.find((b) => b.gt(BigNumber.from(0)))) {
+          if (balancesBN.find((b) => b.gt(toBN(0)))) {
             // Human-readable balances
             const balances = balancesBN.map((balance) =>
-              balance.gt(BigNumber.from(0)) ? convertFromWei(balance.toString(), token.decimals) : "0"
+              balance.gt(toBN(0)) ? convertFromWei(balance.toString(), token.decimals) : "0"
             );
             tokenMrkdwn += `${chainName}: ${balances.join(", ")}\n`;
           } else {
@@ -230,7 +230,7 @@ export class Monitor {
 
         const totalBalance = report[token.symbol][ALL_CHAINS_NAME][BalanceType.TOTAL];
         // Update corresponding summary section for current token.
-        if (totalBalance.gt(BigNumber.from(0))) {
+        if (totalBalance.gt(toBN(0))) {
           mrkdwn += `*[${token.symbol}]*\n` + tokenMrkdwn;
           summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
         } else {
@@ -308,13 +308,13 @@ export class Monitor {
     }
   }
 
-  updatePendingAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport) {
-    const pendingBundleRefunds = this.clients.bundleDataClient.getPendingBundleRefunds();
+  updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport) {
+    const latestBundleRefunds = this.clients.bundleDataClient.getPendingRefundsFromLatestBundle();
     const nextBundleRefunds = this.clients.bundleDataClient.getNextBundleRefunds();
 
     // Calculate which fills have not yet been refunded for each monitored relayer.
     for (const relayer of this.monitorConfig.monitoredRelayers) {
-      this.updateRelayerRefunds(pendingBundleRefunds, relayerBalanceReport[relayer], relayer, BalanceType.PENDING);
+      this.updateRelayerRefunds(latestBundleRefunds, relayerBalanceReport[relayer], relayer, BalanceType.PENDING);
       this.updateRelayerRefunds(nextBundleRefunds, relayerBalanceReport[relayer], relayer, BalanceType.NEXT);
     }
   }
@@ -341,7 +341,7 @@ export class Monitor {
           // Skip if there has been no transfers of this token.
           if (!transfers) continue;
 
-          let totalOutgoingAmount = BigNumber.from(0);
+          let totalOutgoingAmount = toBN(0);
           // Filter v2 fills and bond payments from outgoing transfers.
           const fillTransactionHashes = spokePoolClient
             .getFillsWithBlockForDestinationChainAndRelayer(chainId, relayer)
@@ -353,7 +353,7 @@ export class Monitor {
             currentTokenMrkdwn += this.formatCategorizedTransfers(outgoingTransfers, tokenInfo.decimals, chainId);
           }
 
-          let totalIncomingAmount = BigNumber.from(0);
+          let totalIncomingAmount = toBN(0);
           // Filter v2 refunds and bond repayments from incoming transfers.
           const refundTransactionHashes = spokePoolClient
             .getRelayerRefundExecutions()
@@ -367,7 +367,7 @@ export class Monitor {
 
           // Record if there are net outgoing transfers.
           const netTransfersAmount = totalIncomingAmount.sub(totalOutgoingAmount);
-          if (!netTransfersAmount.eq(BigNumber.from(0))) {
+          if (!netTransfersAmount.eq(toBN(0))) {
             const netAmount = convertFromWei(netTransfersAmount.toString(), tokenInfo.decimals);
             currentTokenMrkdwn = `*${tokenInfo.symbol}: Net ${netAmount}*\n` + currentTokenMrkdwn;
             currentChainMrkdwn += currentTokenMrkdwn;
@@ -385,7 +385,7 @@ export class Monitor {
               tokenInfo.symbol,
               UNKNOWN_TRANSFERS_NAME,
               BalanceType.PENDING,
-              totalOutgoingAmount.mul(BigNumber.from(-1))
+              totalOutgoingAmount.mul(toBN(-1))
             );
             this.incrementBalance(
               report,
@@ -476,7 +476,7 @@ export class Monitor {
         for (const chainName of allChainNames) {
           reports[relayer][token.symbol][chainName] = {};
           for (const balanceType of ALL_BALANCE_TYPES) {
-            reports[relayer][token.symbol][chainName][balanceType] = BigNumber.from(0);
+            reports[relayer][token.symbol][chainName][balanceType] = toBN(0);
           }
         }
       }
@@ -498,7 +498,7 @@ export class Monitor {
       for (const tokenAddress of Object.keys(fillsToRefund)) {
         const totalRefundAmount = fillsToRefund[tokenAddress].refunds[relayer];
         const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
-        const amount = totalRefundAmount || BigNumber.from(0);
+        const amount = totalRefundAmount || toBN(0);
         this.updateRelayerBalanceTable(
           relayerBalanceTable,
           tokenInfo.symbol,
