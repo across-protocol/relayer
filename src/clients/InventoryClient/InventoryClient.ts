@@ -141,16 +141,23 @@ export class InventoryClient {
     const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
     let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
 
-    // Consider any refunds from both current pending bundle (if any) and the next bundle.
-    let pendingBundleRefunds = this.bundleDataClient.getPendingBundleRefunds();
-    let nextBundleRefunds = this.bundleDataClient.getNextBundleRefunds();
+    // Consider any refunds from both latest bundle (even if its pending liveness) and the next bundle.
+    // TODO: This will not count any refunds older than the latest bundle that are unexecuted on the spoke pools,
+    // so a future implementation should add in this feature as an option, to look back at refunds up to X bundles
+    // old. The downside to ignoring these potentially older unexecuted refunds is that the virtual balance will be
+    // lower than it should be, meaning that we'll send more refunds to the spoke pool. However, these unexecuted refunds
+    // should be rare in practice since leaves are usually executed immediately.
+    const latestBundleRefunds = this.bundleDataClient.getPendingRefundsFromLatestBundle(
+      this.hubPoolClient.latestBlockNumber
+    );
+    const nextBundleRefunds = this.bundleDataClient.getNextBundleRefunds();
     const totalRefundsPerChain = Object.fromEntries(
       this.getEnabledChains()
         .map((chainId) => [this.getDestinationTokenForL1Token(l1Token, chainId), chainId])
         .map(([tokenId, chainId]) => [
           chainId,
           this.bundleDataClient
-            .getRefundsFor(pendingBundleRefunds, this.relayer, Number(chainId), String(tokenId))
+            .getRefundsFor(latestBundleRefunds, this.relayer, Number(chainId), String(tokenId))
             .add(
               this.bundleDataClient.getRefundsFor(nextBundleRefunds, this.relayer, Number(chainId), String(tokenId))
             ),
