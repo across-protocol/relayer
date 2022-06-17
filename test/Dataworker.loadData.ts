@@ -119,7 +119,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
       await multiCallerClient.executeTransactionQueue();
       await updateAllClients();
-      
+
       const refunds = await bundleDataClient.getPendingRefundsFromLatestBundle();
       expect(bundleDataClient.getRefundsFor(refunds, relayer.address, destinationChainId, erc20_2.address)).to.equal(
         getRefundForFills([fill1])
@@ -149,7 +149,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
       await multiCallerClient.executeTransactionQueue();
       await updateAllClients();
-      
+
       const latestBlock = await hubPool.provider.getBlockNumber();
       const blockRange = CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
       const expectedPoolRebalanceRoot = dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
@@ -185,17 +185,17 @@ describe("Dataworker: Load data used in all functions", async function () {
 
       // Should now have zero pending refunds
       await updateAllClients();
-      // If we call `getPendingRefundsFromLatestBundle` multiple times, there should be no error. If there is an error, 
-      // then it means that `getPendingRefundsFromLatestBundle` is mutating the return value of `.loadData` which is 
-      // stored in the bundle data client's cache. `getPendingRefundsFromLatestBundle` should instead be using a 
+      // If we call `getPendingRefundsFromLatestBundle` multiple times, there should be no error. If there is an error,
+      // then it means that `getPendingRefundsFromLatestBundle` is mutating the return value of `.loadData` which is
+      // stored in the bundle data client's cache. `getPendingRefundsFromLatestBundle` should instead be using a
       // deep cloned copy of `.loadData`'s output.
-      await bundleDataClient.getPendingRefundsFromLatestBundle()
+      await bundleDataClient.getPendingRefundsFromLatestBundle();
       const postExecutionRefunds = await bundleDataClient.getPendingRefundsFromLatestBundle();
       expect(
         bundleDataClient.getRefundsFor(postExecutionRefunds, relayer.address, destinationChainId, erc20_2.address)
       ).to.equal(toBN(0));
     });
-    it("Refunds in next bundle", async function() {
+    it("Refunds in next bundle", async function () {
       // When this is the first root bundle:
       const refunds = bundleDataClient.getNextBundleRefunds();
       expect(bundleDataClient.getRefundsFor(refunds, relayer.address, destinationChainId, erc20_2.address)).to.equal(
@@ -235,11 +235,15 @@ describe("Dataworker: Load data used in all functions", async function () {
         erc20_2.address
       );
       await updateAllClients();
-      expect(bundleDataClient.getRefundsFor(bundleDataClient.getNextBundleRefunds(), relayer.address, destinationChainId, erc20_2.address)).to.equal(
-        getRefundForFills([fill2])
-      );
-
-    })
+      expect(
+        bundleDataClient.getRefundsFor(
+          bundleDataClient.getNextBundleRefunds(),
+          relayer.address,
+          destinationChainId,
+          erc20_2.address
+        )
+      ).to.equal(getRefundForFills([fill2]));
+    });
   });
   it("Returns unfilled deposits", async function () {
     await updateAllClients();
