@@ -141,24 +141,21 @@ export class InventoryClient {
     const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
     let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
 
-    // Consider any refunds from both latest bundle (regardless if its excecuted or pending) and the next bundle.
-    // TODO: This will not count any refunds older than the latest bundle that are unexecuted on the spoke pools,
-    // so a future implementation should add in this feature as an option, to look back at refunds up to X bundles
-    // old. The downside to ignoring these potentially older unexecuted refunds is that the virtual balance will be
-    // lower than it should be, meaning that we'll send more refunds to the spoke pool. However, these unexecuted refunds
-    // should be rare in practice since leaves are usually executed immediately.
-    const latestBundleRefunds = this.bundleDataClient.getPendingRefundsFromLatestBundle();
+    // Increase virtual balance by pending relayer refunds from the latest valid bundles.
+    // TODO: Allow caller to set how many bundles to look back for refunds. For now its set to 2 which means
+    // we'll look back only at the two latest valid bundle.
+    const refundsToConsider: FillsToRefund[] = this.bundleDataClient.getPendingRefundsFromValidBundles(2);
+
+    // Consider refunds from next bundle to be proposed:
     const nextBundleRefunds = this.bundleDataClient.getNextBundleRefunds();
+    refundsToConsider.push(nextBundleRefunds);
+
     const totalRefundsPerChain = Object.fromEntries(
       this.getEnabledChains().map((chainId) => {
         const destinationToken = this.getDestinationTokenForL1Token(l1Token, chainId);
         return [
           chainId,
-          this.bundleDataClient
-            .getRefundsFor(latestBundleRefunds, this.relayer, Number(chainId), destinationToken)
-            .add(
-              this.bundleDataClient.getRefundsFor(nextBundleRefunds, this.relayer, Number(chainId), destinationToken)
-            ),
+          this.bundleDataClient.getTotalRefund(refundsToConsider, this.relayer, Number(chainId), destinationToken),
         ];
       })
     );

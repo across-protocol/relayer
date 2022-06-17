@@ -16,6 +16,7 @@ import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { toBN, getRefundForFills, getRealizedLpFeeForFills, MAX_UINT_VAL } from "../src/utils";
 import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
+import { Fill } from "../src/interfaces";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, l1Token_2: Contract, hubPool: Contract;
@@ -84,8 +85,8 @@ describe("Dataworker: Load data used in all functions", async function () {
       allValidFills: [],
     });
   });
-  describe("Computing refunds for bundle", function () {
-    let fill1, deposit1;
+  describe("Computing refunds for bundles", function () {
+    let fill1: Fill, deposit1;
     beforeEach(async function () {
       await updateAllClients();
 
@@ -113,37 +114,20 @@ describe("Dataworker: Load data used in all functions", async function () {
       );
       await updateAllClients();
     });
-    it("Refunds in latest bundle when latest is pending", async function () {
+    it("No validated bundle refunds", async function () {
       // Propose a bundle:
       await dataworkerInstance.proposeRootBundle(spokePoolClients);
       await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
       await multiCallerClient.executeTransactionQueue();
       await updateAllClients();
 
-      const refunds = await bundleDataClient.getPendingRefundsFromLatestBundle();
-      expect(bundleDataClient.getRefundsFor(refunds, relayer.address, destinationChainId, erc20_2.address)).to.equal(
-        getRefundForFills([fill1])
-      );
-
-      // Test edge cases of `getRefundsFor` that should return BN(0)
-      expect(bundleDataClient.getRefundsFor(refunds, relayer.address, repaymentChainId, erc20_2.address)).to.equal(
+      // No bundle is validated so no refunds.
+      const refunds = await bundleDataClient.getPendingRefundsFromValidBundles(2);
+      expect(bundleDataClient.getTotalRefund(refunds, relayer.address, destinationChainId, erc20_2.address)).to.equal(
         toBN(0)
       );
-      expect(bundleDataClient.getRefundsFor(refunds, relayer.address, destinationChainId, erc20_1.address)).to.equal(
-        toBN(0)
-      );
-      expect(bundleDataClient.getRefundsFor(refunds, hubPool.address, destinationChainId, erc20_2.address)).to.equal(
-        toBN(0)
-      );
-
-      // Calling deductExecutedRefunds directly should produce same output.
-      const bundle = hubPoolClient.getMostRecentProposedRootBundle(hubPoolClient.latestBlockNumber);
-      const deductedRefunds = bundleDataClient.deductExecutedRefunds(refunds, bundle);
-      expect(
-        bundleDataClient.getRefundsFor(deductedRefunds, relayer.address, destinationChainId, erc20_2.address)
-      ).to.equal(getRefundForFills([fill1]));
     });
-    it("Refunds in latest bundle when latest is executed", async function () {
+    it("1 validated bundle with refunds", async function () {
       // Propose a bundle:
       await dataworkerInstance.proposeRootBundle(spokePoolClients);
       await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
@@ -169,9 +153,20 @@ describe("Dataworker: Load data used in all functions", async function () {
 
       // Before relayer refund leaves are executed, should have pending refunds:
       await updateAllClients();
-      const refunds = await bundleDataClient.getPendingRefundsFromLatestBundle();
-      expect(bundleDataClient.getRefundsFor(refunds, relayer.address, destinationChainId, erc20_2.address)).to.equal(
+      const refunds = await bundleDataClient.getPendingRefundsFromValidBundles(2);
+      expect(bundleDataClient.getTotalRefund(refunds, relayer.address, destinationChainId, erc20_2.address)).to.equal(
         getRefundForFills([fill1])
+      );
+
+      // Test edge cases of `getTotalRefund` that should return BN(0)
+      expect(bundleDataClient.getTotalRefund(refunds, relayer.address, repaymentChainId, erc20_2.address)).to.equal(
+        toBN(0)
+      );
+      expect(bundleDataClient.getTotalRefund(refunds, relayer.address, destinationChainId, erc20_1.address)).to.equal(
+        toBN(0)
+      );
+      expect(bundleDataClient.getTotalRefund(refunds, hubPool.address, destinationChainId, erc20_2.address)).to.equal(
+        toBN(0)
       );
 
       // Execute relayer refund leaves. Send funds to spoke pools to execute the leaves.
@@ -189,14 +184,100 @@ describe("Dataworker: Load data used in all functions", async function () {
       // then it means that `getPendingRefundsFromLatestBundle` is mutating the return value of `.loadData` which is
       // stored in the bundle data client's cache. `getPendingRefundsFromLatestBundle` should instead be using a
       // deep cloned copy of `.loadData`'s output.
-      await bundleDataClient.getPendingRefundsFromLatestBundle();
-      const postExecutionRefunds = await bundleDataClient.getPendingRefundsFromLatestBundle();
+      await bundleDataClient.getPendingRefundsFromValidBundles(2);
+      const postExecutionRefunds = await bundleDataClient.getPendingRefundsFromValidBundles(2);
       expect(
-        bundleDataClient.getRefundsFor(postExecutionRefunds, relayer.address, destinationChainId, erc20_2.address)
+        bundleDataClient.getTotalRefund(postExecutionRefunds, relayer.address, destinationChainId, erc20_2.address)
+      ).to.equal(toBN(0));
+    });
+    it("2 validated bundles with refunds", async function () {
+      // Propose and execute bundle containing fill1:
+      await dataworkerInstance.proposeRootBundle(spokePoolClients);
+      await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
+      await multiCallerClient.executeTransactionQueue();
+      await updateAllClients();
+
+      const latestBlock = await hubPool.provider.getBlockNumber();
+      const blockRange = CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
+      const expectedPoolRebalanceRoot = dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
+      await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
+      for (const leaf of expectedPoolRebalanceRoot.leaves) {
+        await hubPool.executeRootBundle(
+          leaf.chainId,
+          leaf.groupIndex,
+          leaf.bundleLpFees,
+          leaf.netSendAmounts,
+          leaf.runningBalances,
+          leaf.leafId,
+          leaf.l1Tokens,
+          expectedPoolRebalanceRoot.tree.getHexProof(leaf)
+        );
+      }
+
+      // Submit fill2 and propose another bundle:
+      const fill2 = await buildFillForRepaymentChain(
+        spokePool_2,
+        relayer,
+        deposit1,
+        0.2,
+        destinationChainId,
+        erc20_2.address
+      );
+      await updateAllClients();
+
+      // Propose another bundle:
+      await dataworkerInstance.proposeRootBundle(spokePoolClients);
+      await multiCallerClient.executeTransactionQueue();
+      await updateAllClients();
+
+      // Check that pending refunds include both fills after pool leaves are executed
+      await bundleDataClient.getPendingRefundsFromValidBundles(2);
+      expect(
+        bundleDataClient.getTotalRefund(
+          await bundleDataClient.getPendingRefundsFromValidBundles(2),
+          relayer.address,
+          destinationChainId,
+          erc20_2.address
+        )
+      ).to.equal(getRefundForFills([fill1]));
+      const latestBlock2 = await hubPool.provider.getBlockNumber();
+      const blockRange2 = CHAIN_ID_TEST_LIST.map((_) => [latestBlock + 1, latestBlock2]);
+      const expectedPoolRebalanceRoot2 = dataworkerInstance.buildPoolRebalanceRoot(blockRange2, spokePoolClients);
+      await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
+      for (const leaf of expectedPoolRebalanceRoot2.leaves) {
+        await hubPool.executeRootBundle(
+          leaf.chainId,
+          leaf.groupIndex,
+          leaf.bundleLpFees,
+          leaf.netSendAmounts,
+          leaf.runningBalances,
+          leaf.leafId,
+          leaf.l1Tokens,
+          expectedPoolRebalanceRoot2.tree.getHexProof(leaf)
+        );
+      }
+      await updateAllClients();
+      const postSecondProposalRefunds = await bundleDataClient.getPendingRefundsFromValidBundles(2);
+      expect(
+        bundleDataClient.getTotalRefund(postSecondProposalRefunds, relayer.address, destinationChainId, erc20_2.address)
+      ).to.equal(getRefundForFills([fill1, fill2]));
+
+      // Execute refunds and test that pending refund amounts are decreasing.
+      await erc20_2.mint(spokePool_2.address, getRefundForFills([fill1, fill2]));
+      const providers = {
+        ...spokePoolClientsToProviders(spokePoolClients),
+        [(await hubPool.provider.getNetwork()).chainId]: hubPool.provider,
+      };
+      await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients, new BalanceAllocator(providers));
+      await multiCallerClient.executeTransactionQueue();
+      await updateAllClients();
+      const postExecutedRefunds = await bundleDataClient.getPendingRefundsFromValidBundles(2);
+      expect(
+        bundleDataClient.getTotalRefund(postExecutedRefunds, relayer.address, destinationChainId, erc20_2.address)
       ).to.equal(toBN(0));
     });
     it("Refunds in next bundle", async function () {
-      // When this is the first root bundle:
+      // When there is no history of proposed root bundles:
       const refunds = bundleDataClient.getNextBundleRefunds();
       expect(bundleDataClient.getRefundsFor(refunds, relayer.address, destinationChainId, erc20_2.address)).to.equal(
         getRefundForFills([fill1])
@@ -226,6 +307,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         );
       }
 
+      // Next bundle should include fill2.
       const fill2 = await buildFillForRepaymentChain(
         spokePool_2,
         relayer,
@@ -234,6 +316,23 @@ describe("Dataworker: Load data used in all functions", async function () {
         destinationChainId,
         erc20_2.address
       );
+      await updateAllClients();
+      expect(
+        bundleDataClient.getRefundsFor(
+          bundleDataClient.getNextBundleRefunds(),
+          relayer.address,
+          destinationChainId,
+          erc20_2.address
+        )
+      ).to.equal(getRefundForFills([fill2]));
+
+      // If we now propose a bundle including fill2, then next bundle will still fill2
+      // because the bundle hasn't been fully executed yet. So its conceivable that this latest bundle is disputed,
+      // so we still want to capture fill2 in the potential "next bundle" category.
+      await updateAllClients();
+      await dataworkerInstance.proposeRootBundle(spokePoolClients);
+      await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
+      await multiCallerClient.executeTransactionQueue();
       await updateAllClients();
       expect(
         bundleDataClient.getRefundsFor(

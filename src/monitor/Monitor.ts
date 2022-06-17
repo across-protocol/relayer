@@ -309,12 +309,16 @@ export class Monitor {
   }
 
   updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport) {
-    const latestBundleRefunds = this.clients.bundleDataClient.getPendingRefundsFromLatestBundle();
+    const validatedBundleRefunds: FillsToRefund[] = this.clients.bundleDataClient.getPendingRefundsFromValidBundles(2);
     const nextBundleRefunds = this.clients.bundleDataClient.getNextBundleRefunds();
 
     // Calculate which fills have not yet been refunded for each monitored relayer.
+    for (const refunds of validatedBundleRefunds) {
+      for (const relayer of this.monitorConfig.monitoredRelayers) {
+        this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer], relayer, BalanceType.PENDING);
+      }
+    }
     for (const relayer of this.monitorConfig.monitoredRelayers) {
-      this.updateRelayerRefunds(latestBundleRefunds, relayerBalanceReport[relayer], relayer, BalanceType.PENDING);
       this.updateRelayerRefunds(nextBundleRefunds, relayerBalanceReport[relayer], relayer, BalanceType.NEXT);
     }
   }
