@@ -147,8 +147,7 @@ export class InventoryClient {
     // old. The downside to ignoring these potentially older unexecuted refunds is that the virtual balance will be
     // lower than it should be, meaning that we'll send more refunds to the spoke pool. However, these unexecuted refunds
     // should be rare in practice since leaves are usually executed immediately.
-    const latestBundleRefunds = this.bundleDataClient.getPendingRefundsFromLatestBundle(
-    );
+    const latestBundleRefunds = this.bundleDataClient.getPendingRefundsFromLatestBundle();
     const nextBundleRefunds = this.bundleDataClient.getNextBundleRefunds();
     const totalRefundsPerChain = Object.fromEntries(
       this.getEnabledChains()
