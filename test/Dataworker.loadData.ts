@@ -123,7 +123,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       await updateAllClients();
     });
     it("Latest bundle is pending", async function () {
-      const refunds = await bundleDataClient.getPendingRefundsFromLatestBundle(hubPoolClient.latestBlockNumber);
+      const refunds = await bundleDataClient.getPendingRefundsFromLatestBundle();
       expect(bundleDataClient.getRefundsFor(refunds, relayer.address, destinationChainId, erc20_2.address)).to.equal(
         getRefundForFills([fill1])
       );
@@ -166,7 +166,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
       // Before relayer refund leaves are executed, should have pending refunds:
       await updateAllClients();
-      const refunds = await bundleDataClient.getPendingRefundsFromLatestBundle(hubPoolClient.latestBlockNumber);
+      const refunds = await bundleDataClient.getPendingRefundsFromLatestBundle();
       expect(bundleDataClient.getRefundsFor(refunds, relayer.address, destinationChainId, erc20_2.address)).to.equal(
         getRefundForFills([fill1])
       );
@@ -182,9 +182,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
       // Should now have zero pending refunds
       await updateAllClients();
-      const postExecutionRefunds = await bundleDataClient.getPendingRefundsFromLatestBundle(
-        hubPoolClient.latestBlockNumber
-      );
+      const postExecutionRefunds = await bundleDataClient.getPendingRefundsFromLatestBundle();
       expect(
         bundleDataClient.getRefundsFor(postExecutionRefunds, relayer.address, destinationChainId, erc20_2.address)
       ).to.equal(toBN(0));
