@@ -309,7 +309,9 @@ export class Monitor {
   }
 
   updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport) {
-    const validatedBundleRefunds: FillsToRefund[] = this.clients.bundleDataClient.getPendingRefundsFromValidBundles(2);
+    const validatedBundleRefunds: FillsToRefund[] = this.clients.bundleDataClient.getPendingRefundsFromValidBundles(
+      this.monitorConfig.bundleRefundLookback
+    );
     const nextBundleRefunds = this.clients.bundleDataClient.getNextBundleRefunds();
 
     // Calculate which fills have not yet been refunded for each monitored relayer.

@@ -61,7 +61,8 @@ export class BundleDataClient {
     let latestBlock = this.clients.hubPoolClient.latestBlockNumber;
     for (let i = 0; i < bundleLookback; i++) {
       const bundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(latestBlock);
-      if (bundle === undefined) {
+      if (bundle !== undefined) {
+        // Update latest block so next iteration can get the next oldest bundle:
         latestBlock = bundle.blockNumber;
         refunds.push(this.getPendingRefundsFromBundle(bundle));
       } else break; // No more valid bundles in history!

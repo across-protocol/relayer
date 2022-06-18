@@ -19,7 +19,8 @@ export class InventoryClient {
     readonly chainIdList: number[],
     readonly hubPoolClient: HubPoolClient,
     readonly bundleDataClient: BundleDataClient,
-    readonly adapterManager: AdapterManager
+    readonly adapterManager: AdapterManager,
+    readonly bundleRefundLookback = 2
   ) {}
 
   // Get the total balance across all chains, considering any outstanding cross chain transfers as a virtual balance on that chain.
@@ -142,9 +143,11 @@ export class InventoryClient {
     let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
 
     // Increase virtual balance by pending relayer refunds from the latest valid bundles.
-    // TODO: Allow caller to set how many bundles to look back for refunds. For now its set to 2 which means
-    // we'll look back only at the two latest valid bundle.
-    const refundsToConsider: FillsToRefund[] = this.bundleDataClient.getPendingRefundsFromValidBundles(2);
+    // Allow caller to set how many bundles to look back for refunds. The default is set to 2 which means
+    // we'll look back only at the two latest valid bundle unless the caller overrides.
+    const refundsToConsider: FillsToRefund[] = this.bundleDataClient.getPendingRefundsFromValidBundles(
+      this.bundleRefundLookback
+    );
 
     // Consider refunds from next bundle to be proposed:
     const nextBundleRefunds = this.bundleDataClient.getNextBundleRefunds();

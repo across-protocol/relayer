@@ -14,6 +14,7 @@ export class CommonConfig {
   readonly maxTxWait: number;
   readonly sendingTransactionsEnabled: boolean;
   readonly redisUrl: string | undefined;
+  readonly bundleRefundLookback: number;
 
   constructor(env: ProcessEnv) {
     const {
@@ -25,6 +26,7 @@ export class CommonConfig {
       MAX_TX_WAIT_DURATION,
       SEND_TRANSACTIONS,
       REDIS_URL,
+      BUNDLE_REFUND_LOOKBACK,
     } = env;
     this.hubPoolChainId = HUB_CHAIN_ID ? Number(HUB_CHAIN_ID) : 1;
     this.spokePoolChains = CONFIGURED_NETWORKS ? JSON.parse(CONFIGURED_NETWORKS) : Constants.CHAIN_ID_LIST_INDICES;
@@ -38,5 +40,6 @@ export class CommonConfig {
     this.maxTxWait = MAX_TX_WAIT_DURATION ? Number(MAX_TX_WAIT_DURATION) : 180; // 3 minutes
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
     this.redisUrl = REDIS_URL;
+    this.bundleRefundLookback = BUNDLE_REFUND_LOOKBACK ? Number(BUNDLE_REFUND_LOOKBACK) : 2;
   }
 }
