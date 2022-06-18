@@ -99,7 +99,7 @@ export class SpokePoolClient {
     return this.relayerRefundExecutions;
   }
 
-  getExecutedRefunds(relayerRefundRoot: string, chainId: number) {
+  getExecutedRefunds(relayerRefundRoot: string) {
     const bundle = this.getRootBundleRelays().find((bundle) => bundle.relayerRefundRoot === relayerRefundRoot);
     if (bundle === undefined) {
       return {};
@@ -288,7 +288,9 @@ export class SpokePoolClient {
   static getExecutedRefundLeafL2Token(chainId: number, eventL2Token: string) {
     // If execution of WETH refund leaf occurred on an OVM spoke pool, then we'll convert its l2Token from the native
     // token address to the wrapped token address. This is because the OVM_SpokePool modifies the l2TokenAddress prop
-    // in _bridgeTokensToHubPool before emitting the ExecutedRelayerRefundLeaf event
+    // in _bridgeTokensToHubPool before emitting the ExecutedRelayerRefundLeaf event.
+    // Here is the contract code referenced:
+    // - https://github.com/across-protocol/contracts-v2/blob/954528a4620863d1c868e54a370fd8556d5ed05c/contracts/Ovm_SpokePool.sol#L142
     if (chainId === 10 && eventL2Token.toLowerCase() === "0xdeaddeaddeaddeaddeaddeaddeaddeaddead0000")
       return "0x4200000000000000000000000000000000000006";
     else if (chainId === 288 && eventL2Token.toLowerCase() === "0x4200000000000000000000000000000000000006")
