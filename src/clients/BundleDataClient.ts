@@ -61,10 +61,9 @@ export class BundleDataClient {
     let latestBlock = this.clients.hubPoolClient.latestBlockNumber;
     for (let i = 0; i < bundleLookback; i++) {
       const bundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(latestBlock);
-      if (bundle) {
+      if (bundle === undefined) {
         latestBlock = bundle.blockNumber;
-        const bundleRefunds = this.getPendingRefundsFromBundle(bundle);
-        refunds.push(bundleRefunds);
+        refunds.push(this.getPendingRefundsFromBundle(bundle));
       } else break; // No more valid bundles in history!
     }
     return refunds;
@@ -91,7 +90,11 @@ export class BundleDataClient {
     return this.deductExecutedRefunds(fillsToRefund, bundle);
   }
 
-  // Return refunds from the next bundle.
+  // Return refunds from the next valid bundle. This will contain any refunds that have been sent but are not included
+  // in a valid bundle with all of its leaves executed. This contains refunds from:
+  // - Bundles that passed liveness but have not had all of their pool rebalance leaves executed.
+  // - Bundles that are pending liveness
+  // - Not yet proposed bundles
   getNextBundleRefunds(): FillsToRefund {
     const chainIds = Object.keys(this.spokePoolClients).map(Number);
     const futureBundleEvaluationBlockRanges: number[][] = chainIds.map((chainId, i) => [
