@@ -1,5 +1,5 @@
 import * as optimismSDK from "@eth-optimism/sdk";
-import { HubPoolClient } from "../../clients";
+import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { TokensBridged } from "../../interfaces";
 import {
   convertFromWei,
@@ -95,12 +95,7 @@ export async function getOptimismFinalizableMessages(
 }
 
 export function getL1TokenInfoForOptimismToken(hubPoolClient: HubPoolClient, l2Token: string) {
-  return hubPoolClient.getL1TokenInfoForL2Token(
-    l2Token.toLowerCase() === "0xdeaddeaddeaddeaddeaddeaddeaddeaddead0000"
-      ? "0x4200000000000000000000000000000000000006"
-      : l2Token,
-    CHAIN_ID
-  );
+  return hubPoolClient.getL1TokenInfoForL2Token(SpokePoolClient.getExecutedRefundLeafL2Token(10, l2Token), CHAIN_ID);
 }
 
 export async function finalizeOptimismMessage(
