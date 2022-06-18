@@ -41,7 +41,8 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
     config.spokePoolChains,
     commonClients.hubPoolClient,
     bundleDataClient,
-    adapterManager
+    adapterManager,
+    config.bundleRefundLookback
   );
 
   return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient };

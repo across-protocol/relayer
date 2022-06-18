@@ -1,4 +1,4 @@
-import { winston, BigNumber } from "../utils";
+import { winston, BigNumber, toBN } from "../utils";
 import * as _ from "lodash";
 import {
   Deposit,
@@ -55,48 +55,55 @@ export class BundleDataClient {
     return _.cloneDeep(this.loadDataCache[key]);
   }
 
-  // Return refunds from latest bundle
-  getPendingRefundsFromLatestBundle(): FillsToRefund {
+  getPendingRefundsFromValidBundles(bundleLookback: number): FillsToRefund[] {
+    const refunds = [];
+
+    let latestBlock = this.clients.hubPoolClient.latestBlockNumber;
+    for (let i = 0; i < bundleLookback; i++) {
+      const bundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(latestBlock);
+      if (bundle !== undefined) {
+        // Update latest block so next iteration can get the next oldest bundle:
+        latestBlock = bundle.blockNumber;
+        refunds.push(this.getPendingRefundsFromBundle(bundle));
+      } else break; // No more valid bundles in history!
+    }
+    return refunds;
+  }
+
+  // Return refunds from input bundle.
+  getPendingRefundsFromBundle(bundle: ProposedRootBundle): FillsToRefund {
     const hubPoolClient = this.clients.hubPoolClient;
-    const latestBlockNumber = hubPoolClient.latestBlockNumber;
-    const latestBundle = hubPoolClient.getMostRecentProposedRootBundle(latestBlockNumber);
-    // Look for the latest fully executed root bundle before the current last bundle.
+    // Look for the latest fully executed root bundle before the input bundle.
     // This ensures that we skip over any disputed (invalid) bundles.
-    const previousValidBundle = hubPoolClient.getLatestFullyExecutedRootBundle(latestBundle.blockNumber);
+    const previousValidBundle = hubPoolClient.getLatestFullyExecutedRootBundle(bundle.blockNumber);
 
     // Reconstruct latest bundle block range.
-    const latestBundleEvaluationBlockRanges: number[][] = latestBundle.bundleEvaluationBlockNumbers.map(
-      (endBlock, i) => {
-        const fromBlock = previousValidBundle?.bundleEvaluationBlockNumbers?.[i]
-          ? previousValidBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
-          : 0;
-        return [fromBlock, endBlock.toNumber()];
-      }
-    );
-    const { fillsToRefund: latestFillsToRefund } = this.loadData(
-      latestBundleEvaluationBlockRanges,
-      this.spokePoolClients,
-      false
-    );
+    const bundleEvaluationBlockRanges: number[][] = bundle.bundleEvaluationBlockNumbers.map((endBlock, i) => {
+      const fromBlock = previousValidBundle?.bundleEvaluationBlockNumbers?.[i]
+        ? previousValidBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
+        : 0;
+      return [fromBlock, endBlock.toNumber()];
+    });
+    const { fillsToRefund } = this.loadData(bundleEvaluationBlockRanges, this.spokePoolClients, false);
 
     // The latest proposed bundle's refund leaves might have already been partially or entirely executed.
     // We have to deduct the executed amounts from the total refund amounts.
-    return this.deductExecutedRefunds(latestFillsToRefund, latestBundle);
+    return this.deductExecutedRefunds(fillsToRefund, bundle);
   }
 
-  // Return refunds from the next bundle.
+  // Return refunds from the next valid bundle. This will contain any refunds that have been sent but are not included
+  // in a valid bundle with all of its leaves executed. This contains refunds from:
+  // - Bundles that passed liveness but have not had all of their pool rebalance leaves executed.
+  // - Bundles that are pending liveness
+  // - Not yet proposed bundles
   getNextBundleRefunds(): FillsToRefund {
-    const latestProposedBundle = this.clients.hubPoolClient.getMostRecentProposedRootBundle(
-      this.clients.hubPoolClient.latestBlockNumber
-    );
-    // The future bundle covers block range from the ending of the last proposed bundle (might still be pending liveness)
-    // to the latest block on that chain.
     const chainIds = Object.keys(this.spokePoolClients).map(Number);
-    const latestProposalEndBlocks = latestProposedBundle
-      ? latestProposedBundle.bundleEvaluationBlockNumbers.map((block) => block.toNumber() + 1)
-      : Array(chainIds.length).fill(0);
-    const futureBundleEvaluationBlockRanges: number[][] = latestProposalEndBlocks.map((endingBlock, i) => [
-      endingBlock,
+    const futureBundleEvaluationBlockRanges: number[][] = chainIds.map((chainId, i) => [
+      this.clients.hubPoolClient.getNextBundleStartBlockNumber(
+        this.chainIdListForBundleEvaluationBlockNumbers,
+        this.clients.hubPoolClient.latestBlockNumber,
+        chainId
+      ),
       this.spokePoolClients[chainIds[i]].latestBlockNumber,
     ]);
     // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
@@ -136,6 +143,12 @@ export class BundleDataClient {
     if (!bundleRefunds[chainId] || !bundleRefunds[chainId][token]) return BigNumber.from(0);
     const allRefunds = bundleRefunds[chainId][token].refunds;
     return allRefunds && allRefunds[relayer] ? allRefunds[relayer] : BigNumber.from(0);
+  }
+
+  getTotalRefund(refunds: FillsToRefund[], relayer: string, chainId: number, refundToken: string): BigNumber {
+    return refunds.reduce((totalRefund, refunds) => {
+      return totalRefund.add(this.getRefundsFor(refunds, relayer, chainId, refundToken));
+    }, toBN(0));
   }
 
   // Common data re-formatting logic shared across all data worker public functions.
