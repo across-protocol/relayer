@@ -456,10 +456,8 @@ export class Monitor {
 
     const totalAmount = this.getTotalTransferAmount(transfers);
     let mrkdwn = `other: ${convertFromWei(totalAmount.toString(), decimals)}\n`;
-    mrkdwn += etherscanLinks(
-      transfers.map((transfer) => transfer.transactionHash),
-      chainId
-    );
+    const transactionHashes = [...new Set(transfers.map((transfer) => transfer.transactionHash))];
+    mrkdwn += etherscanLinks(transactionHashes, chainId);
     return mrkdwn;
   }
 
