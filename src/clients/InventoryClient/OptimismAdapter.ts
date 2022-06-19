@@ -103,22 +103,28 @@ export class OptimismAdapter extends BaseAdapter {
     else return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args);
   }
 
-  async wrapEthIfAboveThreshold(threshold: BigNumber) {
+  async wrapEthIfAboveThreshold(threshold: BigNumber, isDryRun: boolean) {
     const ethBalance = await this.getSigner(this.chainId).getBalance();
     if (ethBalance.gt(threshold)) {
-      const l2Signer = this.getSigner(this.chainId);
-      const l2Weth = new Contract(this.isOptimism ? wethOptimismAddress : wethBobaAddress, weth9Abi, l2Signer);
       const amountToDeposit = ethBalance.sub(threshold);
       this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, amountToDeposit, ethBalance });
-      return await runTransaction(this.logger, l2Weth, "deposit", [], amountToDeposit);
+
+      // Don't send the actual transactions when in dry run (simulation) mode.
+      if (isDryRun) {
+        return null;
+      } else {
+        const l2Signer = this.getSigner(this.chainId);
+        const l2Weth = new Contract(this.isOptimism ? wethOptimismAddress : wethBobaAddress, weth9Abi, l2Signer);
+        return await runTransaction(this.logger, l2Weth, "deposit", [], amountToDeposit);
+      }
     }
     return null;
   }
 
-  async checkTokenApprovals(l1Tokens: string[]) {
+  async checkTokenApprovals(l1Tokens: string[], isDryRun: boolean) {
     // We need to approve the Atomic depositor to bridge WETH to optimism via the ETH route.
     const associatedL1Bridges = l1Tokens.map((l1Token) => this.getL1TokenGateway(l1Token).address);
-    await this.checkAndSendTokenApprovals(l1Tokens, associatedL1Bridges);
+    await this.checkAndSendTokenApprovals(l1Tokens, associatedL1Bridges, isDryRun);
   }
 
   getL1Bridge(l1Token: string) {

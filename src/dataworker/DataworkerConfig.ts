@@ -73,9 +73,9 @@ export class DataworkerConfig extends CommonConfig {
           Object.keys(this.blockRangeEndBlockBuffer).includes(chainId.toString()),
           "BLOCK_RANGE_END_BLOCK_BUFFER missing networks"
         );
-    this.sendingDisputesEnabled = SEND_DISPUTES === "true";
-    this.sendingProposalsEnabled = SEND_PROPOSALS === "true";
-    this.sendingExecutionsEnabled = SEND_EXECUTIONS === "true";
+    this.sendingDisputesEnabled = !this.isDryRun && SEND_DISPUTES === "true";
+    this.sendingProposalsEnabled = !this.isDryRun && SEND_PROPOSALS === "true";
+    this.sendingExecutionsEnabled = !this.isDryRun && SEND_EXECUTIONS === "true";
     this.finalizerChains = FINALIZER_CHAINS ? JSON.parse(FINALIZER_CHAINS) : CHAIN_ID_LIST_INDICES;
     this.finalizerEnabled = FINALIZER_ENABLED === "true";
   }

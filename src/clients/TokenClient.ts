@@ -101,7 +101,7 @@ export class TokenClient {
     this.tokenShortfall = {};
   }
 
-  async setOriginTokenApprovals() {
+  async setOriginTokenApprovals(isDryRun = false) {
     const tokensToApprove: { chainId: string; token: string }[] = [];
     Object.keys(this.tokenData).forEach((chainId) => {
       Object.keys(this.tokenData[chainId]).forEach((token) => {
@@ -121,32 +121,45 @@ export class TokenClient {
     for (const { token, chainId } of tokensToApprove) {
       const targetSpokePool = this.spokePoolClients[chainId].spokePool;
       const contract = new Contract(token, ERC20.abi, targetSpokePool.signer);
-      const tx = await runTransaction(this.logger, contract, "approve", [targetSpokePool.address, MAX_UINT_VAL]);
-      const receipt = await tx.wait();
-      mrkdwn +=
-        ` - Approved SpokePool ${etherscanLink(targetSpokePool.address, chainId)} ` +
-        `to spend ${await contract.symbol()} ${etherscanLink(token, chainId)} on ${getNetworkName(chainId)}. ` +
-        `tx: ${etherscanLink(receipt.transactionHash, chainId)}\n`;
+
+      // Only send transactions if not in dry run mode.
+      if (isDryRun) {
+        mrkdwn +=
+          ` - Approved SpokePool ${etherscanLink(targetSpokePool.address, chainId)} ` +
+          `to spend ${await contract.symbol()} ${etherscanLink(token, chainId)} on ${getNetworkName(chainId)}\n`;
+      } else {
+        const tx = await runTransaction(this.logger, contract, "approve", [targetSpokePool.address, MAX_UINT_VAL]);
+        const receipt = await tx.wait();
+        mrkdwn +=
+          ` - Approved SpokePool ${etherscanLink(targetSpokePool.address, chainId)} ` +
+          `to spend ${await contract.symbol()} ${etherscanLink(token, chainId)} on ${getNetworkName(chainId)}. ` +
+          `tx: ${etherscanLink(receipt.transactionHash, chainId)}\n`;
+      }
     }
     this.logger.info({ at: "TokenBalanceClient", message: `Approved whitelisted tokens! 💰`, mrkdwn });
   }
 
-  async setBondTokenAllowance() {
+  async setBondTokenAllowance(isDryRun: boolean = false) {
     const ownerAddress = await this.hubPoolClient.hubPool.signer.getAddress();
     const currentCollateralAllowance: BigNumber = await this.bondToken.allowance(
       ownerAddress,
       this.hubPoolClient.hubPool.address
     );
     if (currentCollateralAllowance.lt(toBN(MAX_SAFE_ALLOWANCE))) {
-      const tx = await runTransaction(this.logger, this.bondToken, "approve", [
-        this.hubPoolClient.hubPool.address,
-        MAX_UINT_VAL,
-      ]);
-      const receipt = await tx.wait();
-      const mrkdwn =
+      let mrkdwn =
         ` - Approved HubPool ${etherscanLink(this.hubPoolClient.hubPool.address, 1)} ` +
-        `to spend ${await this.bondToken.symbol()} ${etherscanLink(this.bondToken.address, 1)}. ` +
-        `tx ${etherscanLink(receipt.transactionHash, 1)}\n`;
+        `to spend ${await this.bondToken.symbol()} ${etherscanLink(this.bondToken.address, 1)}. `;
+
+      // Only send transactions when not in dry run mode.
+      if (!isDryRun) {
+        const tx = await runTransaction(this.logger, this.bondToken, "approve", [
+          this.hubPoolClient.hubPool.address,
+          MAX_UINT_VAL,
+        ]);
+        const receipt = await tx.wait();
+        mrkdwn += `tx ${etherscanLink(receipt.transactionHash, 1)}\n`;
+      }
+
       this.logger.info({ at: "hubPoolClient", message: `Approved bond tokens! 💰`, mrkdwn });
     } else this.logger.debug({ at: "hubPoolClient", message: `Bond token approval set` });
   }

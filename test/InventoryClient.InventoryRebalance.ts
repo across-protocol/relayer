@@ -105,7 +105,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // Test the case where the ratio on a given chain is two low and the bot needs to rebalance.
     // As each chain is at the expected amounts there should be no rebalance.
     await inventoryClient.update();
-    await inventoryClient.rebalanceInventoryIfNeeded();
+    await inventoryClient.rebalanceInventoryIfNeeded(false);
     expect(lastSpyLogIncludes(spy, `No rebalances required`)).to.be.true;
 
     // Now, simulate the re-allocation of funds. Say that the USDC on arbitrum is half used up. This will leave arbitrum
@@ -127,7 +127,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // post previous relay.
     const expectedBridgedAmount = toMegaWei(445);
     await inventoryClient.update();
-    await inventoryClient.rebalanceInventoryIfNeeded();
+    await inventoryClient.rebalanceInventoryIfNeeded(false);
     expect(lastSpyLogIncludes(spy, `Executed Inventory rebalances`)).to.be.true;
     expect(lastSpyLogIncludes(spy, `Rebalances sent to Arbitrum`)).to.be.true;
     expect(lastSpyLogIncludes(spy, `445.00 USDC rebalanced`)).to.be.true; // cast to formatting expected by client.
@@ -141,7 +141,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
     // Now that funds are "in the bridge" re-running the rebalance should not execute any transactions.
     await inventoryClient.update();
-    await inventoryClient.rebalanceInventoryIfNeeded();
+    await inventoryClient.rebalanceInventoryIfNeeded(false);
     expect(lastSpyLogIncludes(spy, `No rebalances required`)).to.be.true;
     expect(spyLogIncludes(spy, -2, `"outstandingTransfers":"445.00"`)).to.be.true;
 
@@ -152,7 +152,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     tokenClient.setTokenData(42161, l2TokensForUsdc[42161], expectedPostRelayBalance, toBN(0));
 
     await inventoryClient.update();
-    await inventoryClient.rebalanceInventoryIfNeeded();
+    await inventoryClient.rebalanceInventoryIfNeeded(false);
     expect(lastSpyLogIncludes(spy, `No rebalances required`)).to.be.true;
     // We should see a log for chain 42161 that shows the actual balance after the relay concluded and the share.
     // actual balance should be listed above at 945. share should be 945/(13500) =0.7 (initial total - withdrawAmount).
@@ -163,7 +163,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
   it("Correctly decides when to execute rebalances: token shortfall", async function () {
     // Test the case where the funds on a particular chain are too low to meet a relay (shortfall) and the bot rebalances.
     await inventoryClient.update();
-    await inventoryClient.rebalanceInventoryIfNeeded();
+    await inventoryClient.rebalanceInventoryIfNeeded(false);
 
     expect(tokenClient.getBalance(137, l2TokensForWeth[137])).to.equal(toWei(10)); // Starting balance.
 
@@ -185,7 +185,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // allocation of -5.7%. The target is, however, 5% of the total supply. factoring in the overshoot parameter we
     // should see a transfer of 5 + 2 - (-5.7)=12.714% of total inventory. This should be an amount of 0.127*140=17.79.
     const expectedBridgedAmount = toBN("17799999999999999880");
-    await inventoryClient.rebalanceInventoryIfNeeded();
+    await inventoryClient.rebalanceInventoryIfNeeded(false);
     expect(lastSpyLogIncludes(spy, `Executed Inventory rebalances`)).to.be.true;
     expect(lastSpyLogIncludes(spy, `Rebalances sent to Polygon-matic`)).to.be.true;
     expect(lastSpyLogIncludes(spy, `17.79 WETH rebalanced`)).to.be.true; // expected bridge amount rounded for logs.
@@ -206,7 +206,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // Now that funds are "in the bridge" re-running the rebalance should not execute any transactions as the util should
     // consider the funds in transit as part of the balance and therefore should not send more.
     await inventoryClient.update();
-    await inventoryClient.rebalanceInventoryIfNeeded();
+    await inventoryClient.rebalanceInventoryIfNeeded(false);
     expect(lastSpyLogIncludes(spy, `No rebalances required`)).to.be.true;
     expect(spyLogIncludes(spy, -2, `"outstandingTransfers":"17.79"`)).to.be.true;
     expect(spyLogIncludes(spy, -2, `"actualBalanceOnChain":"10.00"`)).to.be.true;
@@ -222,7 +222,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     tokenClient.decrementLocalBalance(137, l2TokensForWeth[137], shortfallAmount); // mock the relay actually filling.
 
     await inventoryClient.update();
-    await inventoryClient.rebalanceInventoryIfNeeded();
+    await inventoryClient.rebalanceInventoryIfNeeded(false);
     expect(lastSpyLogIncludes(spy, `No rebalances required`)).to.be.true;
     // We should see a log for chain 42161 that shows the actual balance after the relay concluded and the share.
     // actual balance should be listed above at 945. share should be 945/(13500) =0.7 (initial total - withdrawAmount).

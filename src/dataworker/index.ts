@@ -45,7 +45,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
     for (;;) {
       // Clear cache so results can be updated with new data.
       dataworker.clearCache();
-      await updateDataworkerClients(clients);
+      await updateDataworkerClients(clients, config);
       if (spokePoolClients === undefined)
         spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
           dataworker.chainIdListForBundleEvaluationBlockNumbers,
@@ -89,7 +89,14 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       await clients.multiCallerClient.executeTransactionQueue();
 
       if (config.finalizerEnabled)
-        await finalize(logger, clients.hubSigner, clients.hubPoolClient, spokePoolClients, config.finalizerChains);
+        await finalize(
+          logger,
+          clients.hubSigner,
+          clients.hubPoolClient,
+          spokePoolClients,
+          config.finalizerChains,
+          config.isDryRun
+        );
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;

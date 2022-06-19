@@ -102,20 +102,28 @@ export async function finalizeOptimismMessage(
   hubPoolClient: HubPoolClient,
   crossChainMessenger: optimismSDK.CrossChainMessenger,
   message: CrossChainMessageWithStatus,
-  logger: winston.Logger
+  logger: winston.Logger,
+  isDryRun: boolean
 ) {
   // Need to handle special case where WETH is bridged as ETH and the contract address changes.
   const l1TokenInfo = getL1TokenInfoForOptimismToken(hubPoolClient, message.event.l2TokenAddress);
   const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
   try {
-    const txn = await crossChainMessenger.finalizeMessage(message.message);
-    const receipt = await txn.wait();
-    logger.info({
-      at: "OptimismFinalizer",
-      message: `Finalized Optimism withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
-      transactionhash: etherscanLink(receipt.transactionHash, 1),
-    });
-    await delay(30);
+    if (isDryRun) {
+      logger.info({
+        at: "OptimismFinalizer",
+        message: `Finalized Optimism withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
+      });
+    } else {
+      const txn = await crossChainMessenger.finalizeMessage(message.message);
+      const receipt = await txn.wait();
+      logger.info({
+        at: "OptimismFinalizer",
+        message: `Finalized Optimism withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
+        transactionHash: etherscanLink(receipt.transactionHash, 1),
+      });
+      await delay(30);
+    }
   } catch (error) {
     logger.warn({
       at: "OptimismFinalizer",

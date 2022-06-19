@@ -40,7 +40,7 @@ export class RelayerConfig extends CommonConfig {
       });
     }
     this.relayerDiscount = RELAYER_DISCOUNT ? toBNWei(RELAYER_DISCOUNT) : toBNWei(0);
-    this.sendingRelaysEnabled = SEND_RELAYS === "true";
-    this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
+    this.sendingRelaysEnabled = !this.isDryRun && SEND_RELAYS === "true";
+    this.sendingSlowRelaysEnabled = !this.isDryRun && SEND_SLOW_RELAYS === "true";
   }
 }

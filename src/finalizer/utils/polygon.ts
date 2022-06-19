@@ -87,7 +87,8 @@ export async function finalizePolygon(
   posClient: POSClient,
   hubPoolClient: HubPoolClient,
   event: TokensBridged,
-  logger: winston.Logger
+  logger: winston.Logger,
+  isDryRun: boolean
 ) {
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
     CHAIN_ID.toString(),
@@ -103,14 +104,21 @@ export async function finalizePolygon(
   const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
   const amountFromWei = convertFromWei(event.amountToReturn.toString(), l1TokenInfo.decimals);
   try {
-    const txn = await posClient.erc20(l1TokenCounterpart, true).withdrawExitFaster(event.transactionHash);
-    const receipt = await txn.getReceipt();
-    logger.debug({
-      at: "PolygonFinalizer",
-      message: `Finalized Polygon withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
-      transactionhash: receipt.transactionHash,
-    });
-    await delay(30);
+    if (isDryRun) {
+      logger.info({
+        at: "PolygonFinalizer",
+        message: `Finalized Polygon withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
+      });
+    } else {
+      const txn = await posClient.erc20(l1TokenCounterpart, true).withdrawExitFaster(event.transactionHash);
+      const receipt = await txn.getReceipt();
+      logger.debug({
+        at: "PolygonFinalizer",
+        message: `Finalized Polygon withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
+        transactionhash: receipt.transactionHash,
+      });
+      await delay(30);
+    }
   } catch (error) {
     logger.warn({
       at: "PolygonFinalizer",
@@ -129,7 +137,8 @@ export async function retrieveTokenFromMainnetTokenBridger(
   logger: winston.Logger,
   l2Token: string,
   mainnetSigner: Wallet,
-  hubPoolClient: HubPoolClient
+  hubPoolClient: HubPoolClient,
+  isDryRun: boolean
 ): Promise<boolean> {
   const l1Token = hubPoolClient.getL1TokenCounterpartAtBlock(
     CHAIN_ID.toString(),
@@ -152,22 +161,25 @@ export async function retrieveTokenFromMainnetTokenBridger(
       at: "PolygonFinalizer",
       message: `Retrieving ${balanceToRetrieve.toString()} ${l1TokenInfo.symbol} from PolygonTokenBridger`,
     });
-    try {
-      const txn = await mainnetTokenBridger.retrieve(l1Token);
-      const receipt = await txn.wait();
-      logger.info({
-        at: "PolygonFinalizer",
-        message: `Retrieved ${balanceFromWei} of ${l1TokenInfo.symbol} from PolygonTokenBridger 🪃`,
-        transactionhash: etherscanLink(receipt.transactionHash, 1),
-      });
-      await delay(30);
-    } catch (error) {
-      logger.warn({
-        at: "PolygonFinalizer",
-        message: "Error creating retrieveTx",
-        error,
-        notificationPath: "across-error",
-      });
+
+    if (!isDryRun) {
+      try {
+        const txn = await mainnetTokenBridger.retrieve(l1Token);
+        const receipt = await txn.wait();
+        logger.info({
+          at: "PolygonFinalizer",
+          message: `Retrieved ${balanceFromWei} of ${l1TokenInfo.symbol} from PolygonTokenBridger 🪃`,
+          transactionhash: etherscanLink(receipt.transactionHash, 1),
+        });
+        await delay(30);
+      } catch (error) {
+        logger.warn({
+          at: "PolygonFinalizer",
+          message: "Error creating retrieveTx",
+          error,
+          notificationPath: "across-error",
+        });
+      }
     }
   }
 }

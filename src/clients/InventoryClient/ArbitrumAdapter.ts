@@ -76,12 +76,12 @@ export class ArbitrumAdapter extends BaseAdapter {
     return this.computeOutstandingCrossChainTransfers(l1Tokens);
   }
 
-  async checkTokenApprovals(l1Tokens: string[]) {
+  async checkTokenApprovals(l1Tokens: string[], isDryRun: boolean) {
     // Note we send the approvals to the L1 Bridge but actually send outbound transfers to the L1 Gateway Router.
     // Note that if the token trying to be approved is not configured in this client (i.e. not in the l1Gateways object)
     // then this will pass null into the checkAndSendTokenApprovals. This method gracefully deals with this case.
     const associatedL1Bridges = l1Tokens.map((l1Token) => this.getL1Bridge(l1Token)?.address);
-    await this.checkAndSendTokenApprovals(l1Tokens, associatedL1Bridges);
+    await this.checkAndSendTokenApprovals(l1Tokens, associatedL1Bridges, isDryRun);
   }
 
   async sendTokenToTargetChain(l1Token, l2Token, amount) {

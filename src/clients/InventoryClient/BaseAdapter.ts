@@ -54,7 +54,7 @@ export class BaseAdapter {
     );
   }
 
-  async checkAndSendTokenApprovals(l1Tokens: string[], associatedL1Bridges: string[]) {
+  async checkAndSendTokenApprovals(l1Tokens: string[], associatedL1Bridges: string[], isDryRun: boolean) {
     this.log("Checking and sending token approvals", { l1Tokens, associatedL1Bridges });
     const tokensToApprove: { l1Token: Contract; targetContract: string }[] = [];
     const l1TokenContracts = l1Tokens.map((l1Token) => new Contract(l1Token, ERC20.abi, this.getSigner(1)));
@@ -74,19 +74,27 @@ export class BaseAdapter {
         tokensToApprove.push({ l1Token: l1TokenContracts[index], targetContract: associatedL1Bridges[index] });
     });
 
-    if (tokensToApprove.length == 0) {
+    if (tokensToApprove.length === 0) {
       this.log("No token bridge approvals needed", { l1Tokens });
       return;
     }
 
     let mrkdwn = "*Approval transactions:* \n";
     for (const { l1Token, targetContract } of tokensToApprove) {
-      const tx = await runTransaction(this.logger, l1Token, "approve", [targetContract, MAX_UINT_VAL]);
-      const receipt = await tx.wait();
-      mrkdwn +=
-        ` - Approved Canonical ${getNetworkName(this.chainId)} token bridge ${etherscanLink(targetContract, 1)} ` +
-        `to spend ${await l1Token.symbol()} ${etherscanLink(l1Token.address, 1)} on ${getNetworkName(1)}. ` +
-        `tx: ${etherscanLink(receipt.transactionHash, 1)}\n`;
+      if (isDryRun) {
+        mrkdwn +=
+          ` - Simulation: Approved canonical ${getNetworkName(this.chainId)} token bridge ${etherscanLink(
+            targetContract,
+            1
+          )} ` + `to spend ${await l1Token.symbol()} ${etherscanLink(l1Token.address, 1)} on ${getNetworkName(1)}.\n`;
+      } else {
+        const tx = await runTransaction(this.logger, l1Token, "approve", [targetContract, MAX_UINT_VAL]);
+        const receipt = await tx.wait();
+        mrkdwn +=
+          ` - Approved Canonical ${getNetworkName(this.chainId)} token bridge ${etherscanLink(targetContract, 1)} ` +
+          `to spend ${await l1Token.symbol()} ${etherscanLink(l1Token.address, 1)} on ${getNetworkName(1)}. ` +
+          `tx: ${etherscanLink(receipt.transactionHash, 1)}\n`;
+      }
     }
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
   }

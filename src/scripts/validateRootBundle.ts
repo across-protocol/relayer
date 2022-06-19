@@ -40,7 +40,7 @@ export async function validate(_logger: winston.Logger) {
     clients.configStoreClient.configStore.provider.getBlock.bind(clients.configStoreClient.configStore.provider)
   );
   const priceRequestBlock = (await blockFinder.getBlockForTimestamp(priceRequestTime)).number;
-  await updateDataworkerClients(clients);
+  await updateDataworkerClients(clients, config);
   const precedingProposeRootBundleEvent = clients.hubPoolClient.getMostRecentProposedRootBundle(priceRequestBlock);
   const rootBundle: PendingRootBundle = {
     poolRebalanceRoot: precedingProposeRootBundleEvent.poolRebalanceRoot,

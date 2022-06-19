@@ -128,12 +128,12 @@ export class PolygonAdapter extends BaseAdapter {
     return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args);
   }
 
-  async checkTokenApprovals(l1Tokens: string[]) {
+  async checkTokenApprovals(l1Tokens: string[], isDryRun: boolean) {
     const associatedL1Bridges = l1Tokens.map((l1Token) => {
       if (this.isWeth(l1Token)) return this.getL1TokenGateway(l1Token)?.address;
       return this.getL1Bridge(l1Token)?.address;
     });
-    await this.checkAndSendTokenApprovals(l1Tokens, associatedL1Bridges);
+    await this.checkAndSendTokenApprovals(l1Tokens, associatedL1Bridges, isDryRun);
   }
 
   getL1Bridge(l1Token: string): Contract | null {

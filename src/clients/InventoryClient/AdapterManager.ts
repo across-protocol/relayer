@@ -36,10 +36,10 @@ export class AdapterManager {
 
   // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
   // needs to e done on Boba and Optimism as only these two chains require ETH to be sent over the canonical bridge.
-  async wrapEthIfAboveThreshold(wrapThreshold: BigNumber) {
+  async wrapEthIfAboveThreshold(wrapThreshold: BigNumber, isDryRun: boolean) {
     const [optimismWrapTx, bobaWrapTx] = await Promise.all([
-      (this.adapters[10] as OptimismAdapter).wrapEthIfAboveThreshold(wrapThreshold),
-      (this.adapters[288] as OptimismAdapter).wrapEthIfAboveThreshold(wrapThreshold),
+      (this.adapters[10] as OptimismAdapter).wrapEthIfAboveThreshold(wrapThreshold, isDryRun),
+      (this.adapters[288] as OptimismAdapter).wrapEthIfAboveThreshold(wrapThreshold, isDryRun),
     ]);
 
     const [optimismReceipt, bobaReceipt] = await Promise.all([
@@ -47,7 +47,7 @@ export class AdapterManager {
       bobaWrapTx?.wait() ?? null,
     ]);
     if (optimismReceipt || bobaReceipt) {
-      let mrkdwn =
+      const mrkdwn =
         `Ether on ${optimismReceipt ? "Optimism" : ""}${optimismReceipt && bobaReceipt ? " and " : ""}` +
         `${bobaReceipt ? "Boba" : ""} was wrapped due to being over the threshold of ` +
         `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.\n` +
@@ -57,15 +57,8 @@ export class AdapterManager {
     }
   }
 
-  getProvider(chainId: number) {
-    return this.spokePoolClients[chainId].spokePool.provider;
-  }
-
   getSigner(chainId: number) {
     return this.spokePoolClients[chainId].spokePool.signer;
-  }
-  getChainSearchConfig(chainId: number) {
-    return this.spokePoolClients[chainId].eventSearchConfig;
   }
 
   l2TokenForL1Token(l1Token: string, chainId: number): string {
@@ -76,7 +69,7 @@ export class AdapterManager {
       // the bot can irrecoverably send the wrong token to the chain and loose money. It should crash if this is detected.
       const l2TokenForL1Token = this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId);
       if (!l2TokenForL1Token) throw new Error("No L2 token found for L1 token");
-      if (l2TokenForL1Token != l2TokensToL1TokenValidation[l1Token][chainId]) throw new Error("Mismatch tokens!");
+      if (l2TokenForL1Token !== l2TokensToL1TokenValidation[l1Token][chainId]) throw new Error("Mismatch tokens!");
       return l2TokenForL1Token;
     } catch (error) {
       this.logger.error({
@@ -90,14 +83,24 @@ export class AdapterManager {
     }
   }
 
-  async setL1TokenApprovals(l1Tokens: string[]) {
+  async setL1TokenApprovals(l1Tokens: string[], isDryRun: boolean) {
     // Each of these calls must happen sequentially or we'll have collisions within the TransactionUtil. This should
     // be refactored in a follow on PR to separate out by nonce increment by making the transaction util stateful.
-    await this.adapters[10].checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 10)));
-    await this.adapters[137].checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 137)));
-    await this.adapters[288].checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 288)));
+    await this.adapters[10].checkTokenApprovals(
+      l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 10)),
+      isDryRun
+    );
+    await this.adapters[137].checkTokenApprovals(
+      l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 137)),
+      isDryRun
+    );
+    await this.adapters[288].checkTokenApprovals(
+      l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 288)),
+      isDryRun
+    );
     await this.adapters[42161].checkTokenApprovals(
-      l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 42161))
+      l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 42161)),
+      isDryRun
     );
   }
 

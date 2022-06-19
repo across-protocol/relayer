@@ -40,14 +40,14 @@ export async function constructDataworkerClients(
   return { ...commonClients, bundleDataClient, tokenClient, spokePoolSigners, spokePoolClientSearchSettings };
 }
 
-export async function updateDataworkerClients(clients: DataworkerClients) {
+export async function updateDataworkerClients(clients: DataworkerClients, config: DataworkerConfig) {
   await updateClients(clients);
 
   // Token client needs updated hub pool client to pull bond token data.
   await clients.tokenClient.update();
 
   // Run approval on hub pool.
-  await clients.tokenClient.setBondTokenAllowance();
+  await clients.tokenClient.setBondTokenAllowance(config.isDryRun);
 }
 
 export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number]: SpokePoolClient }): {

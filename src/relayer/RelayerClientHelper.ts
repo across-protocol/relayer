@@ -48,7 +48,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
   return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient };
 }
 
-export async function updateRelayerClients(clients: RelayerClients) {
+export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig) {
   await updateClients(clients);
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
 
@@ -65,11 +65,12 @@ export async function updateRelayerClients(clients: RelayerClients) {
   // We can update the inventory client at the same time as checking for eth wrapping as these do not depend on each other.
   await Promise.all([
     clients.inventoryClient.update(),
-    clients.inventoryClient.wrapL2EthIfAboveThreshold(),
-    clients.inventoryClient.setL1TokenApprovals(),
+    clients.inventoryClient.wrapL2EthIfAboveThreshold(config.isDryRun),
+    clients.inventoryClient.setL1TokenApprovals(config.isDryRun),
   ]);
 
   // Update the token client after the inventory client has done its wrapping of L2 ETH to ensure latest WETH ballance.
   await clients.tokenClient.update();
-  await clients.tokenClient.setOriginTokenApprovals(); // Run approval check  after updating token clients as needs route data.
+  // Run approval check  after updating token clients as needs route data.
+  await clients.tokenClient.setOriginTokenApprovals(config.isDryRun);
 }

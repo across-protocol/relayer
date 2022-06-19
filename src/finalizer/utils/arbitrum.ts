@@ -28,19 +28,27 @@ export async function finalizeArbitrum(
   message: L2ToL1MessageWriter,
   proofInfo: MessageBatchProofInfo,
   messageInfo: TokensBridged,
-  hubPoolClient: HubPoolClient
+  hubPoolClient: HubPoolClient,
+  isDryRun: boolean
 ) {
   const l1TokenInfo = hubPoolClient.getL1TokenInfoForL2Token(messageInfo.l2TokenAddress, CHAIN_ID);
   const amountFromWei = convertFromWei(messageInfo.amountToReturn.toString(), l1TokenInfo.decimals);
   try {
-    const txn = await message.execute(proofInfo);
-    const receipt = await txn.wait();
-    logger.info({
-      at: "ArbitrumFinalizer",
-      message: `Finalized Arbitrum withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
-      transactionhash: etherscanLink(receipt.transactionHash, 1),
-    });
-    await delay(30);
+    if (isDryRun) {
+      logger.info({
+        at: "ArbitrumFinalizer",
+        message: `Finalized Arbitrum withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
+      });
+    } else {
+      const txn = await message.execute(proofInfo);
+      const receipt = await txn.wait();
+      logger.info({
+        at: "ArbitrumFinalizer",
+        message: `Finalized Arbitrum withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
+        transactionHash: etherscanLink(receipt.transactionHash, 1),
+      });
+      await delay(30);
+    }
   } catch (error) {
     logger.warn({
       at: "ArbitrumFinalizer",

@@ -200,7 +200,7 @@ export class InventoryClient {
     return refundChainId;
   }
 
-  async rebalanceInventoryIfNeeded() {
+  async rebalanceInventoryIfNeeded(isDryRun: boolean) {
     const rebalancesRequired: { [chainId: number]: { [l1Token: string]: BigNumber } } = {};
     const possibleRebalances: { [chainId: number]: { [l1Token: string]: BigNumber } } = {};
     const unexecutedRebalances: { [chainId: number]: { [l1Token: string]: BigNumber } } = {};
@@ -224,7 +224,7 @@ export class InventoryClient {
         }
       }
 
-      if (Object.keys(rebalancesRequired).length == 0) {
+      if (Object.keys(rebalancesRequired).length === 0) {
         this.log("No rebalances required");
         return;
       }
@@ -259,10 +259,12 @@ export class InventoryClient {
       // should be refactored to enable us to pass an array of transaction objects to the transaction util that then
       // sends each transaction one after the other with incrementing nonce. this will be left for a follow on PR as this
       // is already complex logic and most of the time we'll not be sending batches of rebalance transactions.
-      for (const chainId of Object.keys(possibleRebalances)) {
-        for (const l1Token of Object.keys(possibleRebalances[chainId])) {
-          const receipt = await this.sendTokenCrossChain(chainId, l1Token, possibleRebalances[chainId][l1Token]);
-          assign(executedTransactions, [chainId, l1Token], receipt.transactionHash);
+      if (!isDryRun) {
+        for (const chainId of Object.keys(possibleRebalances)) {
+          for (const l1Token of Object.keys(possibleRebalances[chainId])) {
+            const receipt = await this.sendTokenCrossChain(chainId, l1Token, possibleRebalances[chainId][l1Token]);
+            assign(executedTransactions, [chainId, l1Token], receipt.transactionHash);
+          }
         }
       }
 
@@ -290,7 +292,7 @@ export class InventoryClient {
       }
 
       for (const chainId of Object.keys(unexecutedRebalances)) {
-        mrkdwn += `*Insufficientst amount to rebalance to ${getNetworkName(chainId)}:*\n`;
+        mrkdwn += `*Insufficient amount to rebalance to ${getNetworkName(chainId)}:*\n`;
         for (const l1Token of Object.keys(unexecutedRebalances[chainId])) {
           const { symbol, decimals } = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
           const formatter = createFormatFunction(2, 4, false, decimals);
@@ -320,7 +322,7 @@ export class InventoryClient {
   constructConsideringRebalanceDebugLog(tokenDistributionPerL1Token: {
     [l1Token: string]: { [chainId: number]: BigNumber };
   }) {
-    let tokenDistribution = {};
+    const tokenDistribution = {};
     Object.keys(tokenDistributionPerL1Token).forEach((l1Token) => {
       const { symbol, decimals } = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
       if (!tokenDistribution[symbol]) tokenDistribution[symbol] = {};
@@ -350,17 +352,17 @@ export class InventoryClient {
     return await this.adapterManager.sendTokenCrossChain(Number(chainId), l1Token, amount);
   }
 
-  async setL1TokenApprovals() {
+  async setL1TokenApprovals(isDryRun: boolean) {
     if (!this.isInventoryManagementEnabled()) return;
     const l1Tokens = this.getL1Tokens();
     this.log("Checking token approvals", { l1Tokens });
-    await this.adapterManager.setL1TokenApprovals(l1Tokens);
+    await this.adapterManager.setL1TokenApprovals(l1Tokens, isDryRun);
   }
 
-  async wrapL2EthIfAboveThreshold() {
+  async wrapL2EthIfAboveThreshold(isDryRun: boolean) {
     if (!this.isInventoryManagementEnabled()) return;
     this.log("Checking ETH->WETH Wrap status");
-    await this.adapterManager.wrapEthIfAboveThreshold(this.inventoryConfig.wrapEtherThreshold);
+    await this.adapterManager.wrapEthIfAboveThreshold(this.inventoryConfig.wrapEtherThreshold, isDryRun);
   }
 
   async update() {
