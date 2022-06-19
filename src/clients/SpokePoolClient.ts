@@ -273,7 +273,7 @@ export class SpokePoolClient {
     for (const event of executedRelayerRefundRootEvents) {
       const executedRefund = spreadEventWithBlockNumber(event) as RelayerRefundExecutionWithBlock;
       executedRefund.l2TokenAddress = SpokePoolClient.getExecutedRefundLeafL2Token(
-        event.chainId,
+        executedRefund.chainId,
         executedRefund.l2TokenAddress
       );
       this.relayerRefundExecutions.push(executedRefund);
@@ -294,7 +294,7 @@ export class SpokePoolClient {
     if (chainId === 10 && eventL2Token.toLowerCase() === "0xdeaddeaddeaddeaddeaddeaddeaddeaddead0000")
       return "0x4200000000000000000000000000000000000006";
     else if (chainId === 288 && eventL2Token.toLowerCase() === "0x4200000000000000000000000000000000000006")
-      return "0xdeaddeaddeaddeaddeaddeaddeaddeaddead0000";
+      return "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000";
     else return eventL2Token;
   }
 
