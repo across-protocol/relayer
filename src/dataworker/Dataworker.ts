@@ -860,7 +860,7 @@ export class Dataworker {
             requests.push({
               token: ZERO_ADDRESS,
               amount: this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf),
-              holder: await this.clients.hubSigner.getAddress(),
+              holder: await this.clients.spokePoolSigners[hubPoolChainId].getAddress(),
               chainId: hubPoolChainId,
             });
           }
