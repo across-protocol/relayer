@@ -10,7 +10,13 @@ import {
 import { SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "../utils";
 import { createSpyLogger, winston, deployAndConfigureHubPool, deployConfigStore } from "../utils";
 import * as clients from "../../src/clients";
-import { amountToLp, destinationChainId, originChainId, CHAIN_ID_TEST_LIST, repaymentChainId } from "../constants";
+import {
+  amountToLp,
+  destinationChainId as defaultDestinationChainId,
+  originChainId as defaultOriginChainid,
+  CHAIN_ID_TEST_LIST,
+  repaymentChainId,
+} from "../constants";
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { BundleDataClient, TokenClient } from "../../src/clients";
@@ -24,7 +30,9 @@ export async function setupDataworker(
   maxRefundPerRelayerRefundLeaf: number,
   maxL1TokensPerPoolRebalanceLeaf: number,
   defaultPoolRebalanceTokenTransferThreshold: BigNumber,
-  defaultEndBlockBuffer: number
+  defaultEndBlockBuffer: number,
+  destinationChainId = defaultDestinationChainId,
+  originChainId = defaultOriginChainid
 ): Promise<{
   hubPool: Contract;
   spokePool_1: Contract;
@@ -54,6 +62,18 @@ export async function setupDataworker(
   dataworkerClients: DataworkerClients;
   updateAllClients: () => Promise<void>;
 }> {
+  // Replace origin chainId and destination chain id in the chainIdList.
+  const testChainIdList = CHAIN_ID_TEST_LIST.map((chainId) => {
+    switch (chainId) {
+      case defaultDestinationChainId:
+        return destinationChainId;
+      case defaultOriginChainid:
+        return originChainId;
+      default:
+        return chainId;
+    }
+  });
+
   const [owner, depositor, relayer, dataworker] = await ethers.getSigners();
 
   const { spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId);
@@ -80,6 +100,8 @@ export async function setupDataworker(
   await enableRoutes(spokePool_1, [{ originToken: erc20_2.address, destinationChainId: destinationChainId }]);
   await enableRoutes(spokePool_2, [{ originToken: erc20_1.address, destinationChainId: originChainId }]);
 
+  const hubPoolChainId = (await hubPool.provider.getNetwork()).chainId;
+
   // For each chain, enable routes to both erc20's so that we can fill relays
   await enableRoutesOnHubPool(hubPool, [
     { destinationChainId: originChainId, l1Token: l1Token_1, destinationToken: erc20_1 },
@@ -89,7 +111,7 @@ export async function setupDataworker(
     // Need to enable L1 token route to itself on Hub Pool so that hub pool client can look up the L1 token for
     // its own chain.
     {
-      destinationChainId: (await hubPool.provider.getNetwork()).chainId,
+      destinationChainId: hubPoolChainId,
       l1Token: l1Token_1,
       destinationToken: l1Token_1,
     },
@@ -147,7 +169,7 @@ export async function setupDataworker(
   const tokenClient = new TokenClient(spyLogger, relayer.address, {}, hubPoolClient);
 
   // This client dictionary can be conveniently passed in root builder functions that expect mapping of clients to
-  // load events from. Dataworker needs a client mapped to every chain ID set in CHAIN_ID_TEST_LIST.
+  // load events from. Dataworker needs a client mapped to every chain ID set in testChainIdList.
   const spokePoolClients = {
     [originChainId]: spokePoolClient_1,
     [destinationChainId]: spokePoolClient_2,
@@ -164,16 +186,16 @@ export async function setupDataworker(
       hubPoolClient,
     },
     spokePoolClients,
-    CHAIN_ID_TEST_LIST
+    testChainIdList
   );
 
   const defaultEventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 };
   const dataworkerClients: DataworkerClients = {
     bundleDataClient,
     tokenClient,
-    spokePoolSigners: Object.fromEntries(CHAIN_ID_TEST_LIST.map((chainId) => [chainId, owner])),
+    spokePoolSigners: Object.fromEntries([hubPoolChainId, ...testChainIdList].map((chainId) => [chainId, owner])),
     spokePoolClientSearchSettings: Object.fromEntries(
-      CHAIN_ID_TEST_LIST.map((chainId) => [chainId, defaultEventSearchConfig])
+      testChainIdList.map((chainId) => [chainId, defaultEventSearchConfig])
     ),
     hubPoolClient,
     multiCallerClient,
@@ -183,11 +205,11 @@ export async function setupDataworker(
   const dataworkerInstance = new Dataworker(
     spyLogger,
     dataworkerClients,
-    CHAIN_ID_TEST_LIST,
+    testChainIdList,
     maxRefundPerRelayerRefundLeaf,
     maxL1TokensPerPoolRebalanceLeaf,
-    Object.fromEntries(CHAIN_ID_TEST_LIST.map((chainId) => [chainId, defaultPoolRebalanceTokenTransferThreshold])),
-    Object.fromEntries(CHAIN_ID_TEST_LIST.map((chainId) => [chainId, defaultEndBlockBuffer]))
+    Object.fromEntries(testChainIdList.map((chainId) => [chainId, defaultPoolRebalanceTokenTransferThreshold])),
+    Object.fromEntries(testChainIdList.map((chainId) => [chainId, defaultEndBlockBuffer]))
   );
 
   // Give owner tokens to LP on HubPool with.
