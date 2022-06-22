@@ -60,6 +60,8 @@ export class TokenClient {
     return this.getBalance(deposit.destinationChainId, deposit.destinationToken).gte(toBN(1));
   }
 
+  // TODO: this will capture any token shortfalls, even if you have 0 of the token. The bot should
+  // be updated to ignore non-whitelisted (zero balance) tokens from this token shortfall log.
   // If the relayer tries to execute a relay but does not have enough tokens to fully fill it it will capture the
   // shortfall by calling this method. This will track the information for logging purposes and use in other clients.
   captureTokenShortfall(chainId: number, token: string, depositId: number, unfilledAmount: BigNumber) {

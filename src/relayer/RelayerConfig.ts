@@ -24,9 +24,10 @@ export class RelayerConfig extends CommonConfig {
 
       Object.keys(this.inventoryConfig.tokenConfig).forEach((l1Token) => {
         Object.keys(this.inventoryConfig.tokenConfig[l1Token]).forEach((chainId) => {
-          const { targetPct, thresholdPct } = this.inventoryConfig.tokenConfig[l1Token][chainId];
+          const { targetPct, thresholdPct, partialFillAmountPct, partialFillThresholdPct } =
+            this.inventoryConfig.tokenConfig[l1Token][chainId];
           assert(
-            targetPct != undefined && thresholdPct != undefined,
+            targetPct !== undefined && thresholdPct !== undefined,
             `Bad config. Must specify targetPct, thresholdPct for ${l1Token} on ${chainId}`
           );
           assert(
@@ -36,6 +37,28 @@ export class RelayerConfig extends CommonConfig {
 
           this.inventoryConfig.tokenConfig[l1Token][chainId].targetPct = toBNWei(targetPct).div(100);
           this.inventoryConfig.tokenConfig[l1Token][chainId].thresholdPct = toBNWei(thresholdPct).div(100);
+
+          // Partial fill configs are optional:
+          if (partialFillThresholdPct) {
+            assert(
+              toBN(partialFillThresholdPct).lte(toBN(1)),
+              `Bad config. partialFillThresholdPct<=1 for ${l1Token} on ${chainId}`
+            );
+          }
+          this.inventoryConfig.tokenConfig[l1Token][chainId].partialFillThresholdPct = partialFillThresholdPct
+            ? toBNWei(partialFillThresholdPct).div(100)
+            : toBNWei("0"); // Defaulting this to 0% means that the relayer will never send partial fills because its
+          // balance allocation will always be >= 0%. Conversely, setting this to 100% means the relayer will
+          // always attempt to send partial fills.
+          if (partialFillAmountPct) {
+            assert(
+              toBN(partialFillAmountPct).lte(toBN(1)),
+              `Bad config. partialFillAmountPct<=1 for ${l1Token} on ${chainId}`
+            );
+          }
+          this.inventoryConfig.tokenConfig[l1Token][chainId].partialFillThresholdPct = partialFillAmountPct
+            ? toBNWei(partialFillAmountPct).div(100)
+            : toBNWei("0.25"); // By default, will use 25% of its balance to send partial fills.
         });
       });
     }

@@ -22,20 +22,33 @@ export class Relayer {
     // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
     // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
     for (const { deposit, unfilledAmount, fillCount } of unfilledDeposits) {
-      if (this.clients.tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
-        if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount)) {
+      const partialFillAmount = this.clients.inventoryClient.getPartialFillAmount(deposit, unfilledAmount);
+
+      // We make the core assumption: partialFillAmount <= current relayer balance.
+
+      // Deposit doesn't trigger partial fill threshold. Relayer will either send 100% or ~0% of deposit.
+      if (partialFillAmount.eq(toBN(0))) {
+        if (this.clients.tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
+          // If relayer can do it, then fill 100% of deposit.
           this.fillRelay(deposit, unfilledAmount);
         } else {
-          this.clients.profitClient.captureUnprofitableFill(deposit, unfilledAmount);
+          // Otherwise record a shortfall and 1 wei fill it.
+          this.clients.tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
+          if (sendSlowRelays && this.clients.tokenClient.hasBalanceForZeroFill(deposit) && fillCount === 0)
+            this.zeroFillDeposit(deposit);
         }
-      } else {
-        // TODO: this line right now will capture any token shortfalls, even if you have 0 of the token. The bot should
-        // be updated to ignore non-whitelisted (zero balance) tokens from this token shortfall log.
-        this.clients.tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
-        // If we dont have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
-        // 1 wei sized fill to ensure that the deposit is slow relayed. This only needs to be done once.
-        if (sendSlowRelays && this.clients.tokenClient.hasBalanceForZeroFill(deposit) && fillCount === 0)
-          this.zeroFillDeposit(deposit);
+      }
+      // Deposit triggers partial fill threshold.
+      else {
+        // If unfilled amount > partial fill amount, then there is a shortfall and we'll partially fill it.
+        if (unfilledAmount.gt(partialFillAmount)) {
+          this.clients.tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount.sub(partialFillAmount));
+          if (fillCount === 0) this.fillRelay(deposit, partialFillAmount);
+        } else {
+          // If partial fill amount is >= unfilled amount, then we can just fully fill the deposit and don't need to
+          // record a shortfall.
+          this.fillRelay(deposit, unfilledAmount);
+        }
       }
     }
     // If during the execution run we had shortfalls or unprofitable fills then handel it by producing associated logs.
@@ -46,20 +59,32 @@ export class Relayer {
   fillRelay(deposit: Deposit, fillAmount: BigNumber) {
     try {
       // Fetch the repayment chain from the inventory client. Sanity check that it is one of the known chainIds.
-      const repaymentChain = this.clients.inventoryClient.determineRefundChainId(deposit);
+      const repaymentChain = this.clients.inventoryClient.determineRefundChainId(deposit, fillAmount);
       if (!Object.keys(this.clients.spokePoolClients).includes(deposit.destinationChainId.toString()))
         throw new Error("Fatal error! Repayment chain set to a chain that is not part of the defined sets of chains!");
 
-      this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain });
-      // Add the fill transaction to the multiCallerClient so it will be executed with the next batch.
-      this.clients.multiCallerClient.enqueueTransaction({
-        contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
-        chainId: deposit.destinationChainId,
-        method: "fillRelay", // method called.
-        args: buildFillRelayProps(deposit, repaymentChain, fillAmount), // props sent with function call.
-        message: "Relay instantly sent 🚀", // message sent to logger.
-        mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChain, fillAmount), // message details mrkdwn
-      });
+      if (fillAmount.lt(deposit.amount)) {
+        this.logger.debug({ at: "Relayer", message: "Partially filling deposit", deposit, repaymentChain });
+        this.clients.multiCallerClient.enqueueTransaction({
+          contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
+          chainId: deposit.destinationChainId,
+          method: "fillRelay", // method called.
+          args: buildFillRelayProps(deposit, repaymentChain, fillAmount), // props sent with function call.
+          message: "Partial relay sent 🦦", // message sent to logger.
+          mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChain, fillAmount), // message details mrkdwn
+        });
+      } else {
+        this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain });
+        // Add the fill transaction to the multiCallerClient so it will be executed with the next batch.
+        this.clients.multiCallerClient.enqueueTransaction({
+          contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
+          chainId: deposit.destinationChainId,
+          method: "fillRelay", // method called.
+          args: buildFillRelayProps(deposit, repaymentChain, fillAmount), // props sent with function call.
+          message: "Relay instantly sent 🚀", // message sent to logger.
+          mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChain, fillAmount), // message details mrkdwn
+        });
+      }
 
       // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
       this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.destinationToken, fillAmount);
