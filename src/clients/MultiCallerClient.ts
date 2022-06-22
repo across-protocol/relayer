@@ -51,8 +51,23 @@ export class MultiCallerClient {
       });
 
       // Simulate the transaction execution for the whole queue.
-      const transactionsSucceed = await Promise.all(
+      const _transactionsSucceed = await Promise.all(
         this.transactions.map((transaction: AugmentedTransaction) => willSucceed(transaction))
+      );
+
+      // Filter out transactions that revert for expected reasons. For example, the "relay filled" error
+      // will occur frequently if there are multiple relayers running at the same time because only one relay
+      // can go through. This is a non critical error we can ignore to filter out the noise.
+      this.logger.debug({
+        at: "MultiCallerClient",
+        message: `Filtering out ${
+          _transactionsSucceed.filter((txn) => !txn.succeed && txn.reason === "relay filled").length
+        } relay transactions that will fail because the relay has already been filled`,
+        totalTransactions: _transactionsSucceed.length,
+        relayFilledReverts: _transactionsSucceed.filter((txn) => !txn.succeed && txn.reason === "relay filled").length,
+      });
+      const transactionsSucceed = _transactionsSucceed.filter(
+        (transaction) => transaction.succeed || transaction.reason !== "relay filled"
       );
 
       // If any transactions will revert then log the reason and remove them from the transaction queue.
