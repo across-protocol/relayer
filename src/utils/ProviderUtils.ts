@@ -1,6 +1,6 @@
 import { ethers } from "ethers";
 import lodash from "lodash";
-import { isPromiseFulfulled } from "./TypeGuards";
+import { isPromiseFulfulled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
 
 // The async/queue library has a task-based interface for building a concurrent queue.
@@ -63,6 +63,11 @@ function formatProviderError(provider: ethers.providers.JsonRpcProvider, rawErro
   return `Provider ${provider.connection.url} failed with error: ${rawErrorText}`;
 }
 
+function createSendErrorWithMessage(message: string, sendError: any) {
+  const error = new Error(message);
+  return { ...sendError, ...error };
+}
+
 class RetryProvider extends ethers.providers.JsonRpcProvider {
   readonly providers: ethers.providers.JsonRpcProvider[];
   constructor(
@@ -112,7 +117,7 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
           // If there are no new fallback providers to use, terminate the recursion by throwing an error.
           // Otherwise, we can try to call another provider.
           if (fallbackProviders.length === 0) {
-            throw new Error("Out of providers to fall back to.");
+            throw err;
           }
 
           // This line does two things:
@@ -129,9 +134,10 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
       // Format the error so that it's very clear which providers failed and succeeded.
       const errorTexts = errors.map(([provider, errorText]) => formatProviderError(provider, errorText));
       const successfulProviderUrls = results.filter(isPromiseFulfulled).map((result) => result.value[0].connection.url);
-      throw new Error(
+      throw createSendErrorWithMessage(
         `Not enough providers succeeded. Errors:\n${errorTexts.join("\n")}\n` +
-          `Successful Providers:\n${successfulProviderUrls.join("\n")}`
+          `Successful Providers:\n${successfulProviderUrls.join("\n")}`,
+        results.find(isPromiseRejected).reason
       );
     }
 
