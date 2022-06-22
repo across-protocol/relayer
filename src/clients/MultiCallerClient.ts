@@ -130,7 +130,7 @@ export class MultiCallerClient {
           const result = await runTransaction(
             this.logger,
             transaction.contract,
-            "multicall",
+            transaction.method,
             transaction.args,
             transaction.value
           );
