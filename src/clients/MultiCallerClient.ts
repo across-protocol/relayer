@@ -4,12 +4,11 @@ import {
   assign,
   Contract,
   runTransaction,
-  rejectAfterDelay,
   getTarget,
   BigNumber,
   willSucceed,
   etherscanLink,
-  TransactionReceipt,
+  TransactionResponse,
 } from "../utils";
 export interface AugmentedTransaction {
   contract: Contract;
@@ -133,23 +132,30 @@ export class MultiCallerClient {
         return;
       }
 
+      const groupedValueTransactions: { [networkId: number]: AugmentedTransaction[] } = {};
+      for (const transaction of valueTransactions) {
+        assign(groupedValueTransactions, [transaction.chainId], [transaction]);
+      }
+
       this.logger.debug({
         at: "MultiCallerClient",
-        message: "Executing transactions excluded from batches by target chain",
-        txs: Object.keys(groupedTransactions).map((chainId) => ({ chainId, num: groupedTransactions[chainId].length })),
+        message: "Executing transactions with msg.value excluded from batches by target chain",
+        txs: Object.keys(groupedValueTransactions).map((chainId) => ({
+          chainId,
+          num: groupedValueTransactions[chainId].length,
+        })),
       });
 
       // Construct multiCall transaction for each target chain.
       const valueTransactionsResult = await Promise.allSettled(
-        valueTransactions.map(async (transaction): Promise<TransactionReceipt> => {
-          const result = await runTransaction(
+        valueTransactions.map(async (transaction): Promise<TransactionResponse> => {
+          return await runTransaction(
             this.logger,
             transaction.contract,
-            "multicall",
+            transaction.method,
             transaction.args,
             transaction.value
           );
-          return await Promise.race([rejectAfterDelay(this.maxTxWait), result.wait()]);
         })
       );
 
@@ -162,20 +168,6 @@ export class MultiCallerClient {
       // Construct multiCall transaction for each target chain.
       const multiCallTransactionsResult = await Promise.allSettled(
         Object.keys(groupedTransactions).map((chainId) => this.buildMultiCallBundle(groupedTransactions[chainId]))
-      );
-
-      // Wait for transaction to mine or reject it after a timeout. If transaction failed to be submitted to the
-      // mempool, then pass on the error message.
-      this.logger.debug({ at: "MultiCallerClient", message: "Waiting for bundle transaction inclusion" });
-      const transactionReceipts = await Promise.allSettled(
-        multiCallTransactionsResult.map((transaction) => {
-          if (transaction.status !== "rejected") {
-            return Promise.race([
-              rejectAfterDelay(this.maxTxWait), // limit the maximum time to wait for a transaction receipt to mine.
-              (transaction as any).value.wait(),
-            ]);
-          } else return Promise.reject(transaction.reason);
-        })
       );
 
       // Each element in the bundle of receipts relates back to each set within the groupedTransactions. Produce log.
@@ -195,15 +187,15 @@ export class MultiCallerClient {
           });
         } else {
           mrkdwn += `  ${i + 1}.${valueTransactions[i].message || ""}: ` + `${valueTransactions[i].mrkdwn || ""}\n`;
-          const transactionHash = result.value.transactionHash;
+          const transactionHash = result.value.hash;
           mrkdwn += "tx: " + etherscanLink(transactionHash, chainId) + "\n";
           transactionHashes.push(transactionHash);
         }
       });
       Object.keys(groupedTransactions).forEach((chainId, chainIndex) => {
         mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
-        if (transactionReceipts[chainIndex].status === "rejected") {
-          const rejectionError = (transactionReceipts[chainIndex] as PromiseRejectedResult).reason;
+        if (multiCallTransactionsResult[chainIndex].status === "rejected") {
+          const rejectionError = (multiCallTransactionsResult[chainIndex] as PromiseRejectedResult).reason;
           mrkdwn += ` ⚠️ Transaction sent on ${getNetworkName(
             chainId
           )} failed or bot timed out waiting for transaction to mine, check logs for more details.\n`;
@@ -218,8 +210,7 @@ export class MultiCallerClient {
           groupedTransactions[chainId].forEach((transaction, groupTxIndex) => {
             mrkdwn += `  ${groupTxIndex + 1}. ${transaction.message || ""}: ` + `${transaction.mrkdwn || ""}\n`;
           });
-          const transactionHash = (transactionReceipts[chainIndex] as PromiseFulfilledResult<any>).value
-            .transactionHash;
+          const transactionHash = (multiCallTransactionsResult[chainIndex] as PromiseFulfilledResult<any>).value.hash;
           mrkdwn += "tx: " + etherscanLink(transactionHash, chainId) + "\n";
           transactionHashes.push(transactionHash);
         }
