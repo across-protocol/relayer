@@ -41,8 +41,8 @@ export class RelayerConfig extends CommonConfig {
           // Partial fill configs are optional:
           if (partialFillThresholdPct) {
             assert(
-              toBN(partialFillThresholdPct).lte(toBN(1)),
-              `Bad config. partialFillThresholdPct<=1 for ${l1Token} on ${chainId}`
+              toBN(partialFillThresholdPct).lte(toBN(100)),
+              `Bad config. partialFillThresholdPct<=100 for ${l1Token} on ${chainId}`
             );
           }
           this.inventoryConfig.tokenConfig[l1Token][chainId].partialFillThresholdPct = partialFillThresholdPct
@@ -52,11 +52,11 @@ export class RelayerConfig extends CommonConfig {
           // always attempt to send partial fills.
           if (partialFillAmountPct) {
             assert(
-              toBN(partialFillAmountPct).lte(toBN(1)),
-              `Bad config. partialFillAmountPct<=1 for ${l1Token} on ${chainId}`
+              toBN(partialFillAmountPct).lte(toBN(100)),
+              `Bad config. partialFillAmountPct<=100 for ${l1Token} on ${chainId}`
             );
           }
-          this.inventoryConfig.tokenConfig[l1Token][chainId].partialFillThresholdPct = partialFillAmountPct
+          this.inventoryConfig.tokenConfig[l1Token][chainId].partialFillAmountPct = partialFillAmountPct
             ? toBNWei(partialFillAmountPct).div(100)
             : toBNWei("0.25"); // By default, will use 25% of its balance to send partial fills.
         });
