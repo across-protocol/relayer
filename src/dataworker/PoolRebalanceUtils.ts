@@ -177,10 +177,10 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         chainIdListForBundleEvaluationBlockNumbers
       );
 
-      // Now that we have the last fill sent in a previous root bundle that also sent a slow fill, we can compute
-      // the excess that we need to decrease running balances by. This excess only exists in the case where the
-      // current fill completed a deposit. There will be an excess if (1) the slow fill was never executed, and (2)
-      // the slow fill was executed, but not before some partial fills were sent.
+    // Now that we have the last fill sent in a previous root bundle that also sent a slow fill, we can compute
+    // the excess that we need to decrease running balances by. This excess only exists in the case where the
+    // current fill completed a deposit. There will be an excess if (1) the slow fill was never executed, and (2)
+    // the slow fill was executed, but not before some partial fills were sent.
 
     // Note, if there is NO fill from a previous root bundle for the same deposit as this fill, then there has been
     // no slow fill payment sent to the spoke pool yet, so we can exit early.
