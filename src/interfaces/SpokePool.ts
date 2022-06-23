@@ -126,7 +126,7 @@ export interface RunningBalances {
   };
 }
 
-export interface TokensBridged {
+export interface TokensBridged extends SortableEvent {
   amountToReturn: BigNumber;
   chainId: number;
   leafId: number;

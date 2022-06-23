@@ -1,4 +1,4 @@
-import { Wallet } from "../utils";
+import { sortEventsDescending, Wallet } from "../utils";
 import { winston } from "../utils";
 import {
   finalizeArbitrum,
@@ -12,7 +12,7 @@ import {
   getOptimismFinalizableMessages,
   finalizeOptimismMessage,
 } from "./utils";
-import { SpokePoolClientsByChain } from "../interfaces";
+import { SpokePoolClientsByChain, TokensBridged } from "../interfaces";
 import { HubPoolClient } from "../clients";
 
 export async function finalize(
@@ -20,13 +20,20 @@ export async function finalize(
   hubSigner: Wallet,
   hubPoolClient: HubPoolClient,
   spokePoolClients: SpokePoolClientsByChain,
-  configuredChainIds: number[]
+  configuredChainIds: number[],
+  bridgeEventsToLookup = 200
 ): Promise<void> {
   // For each chain, look up any TokensBridged events emitted by SpokePool client that we'll attempt to finalize
   // on L1.
   for (const chainId of configuredChainIds) {
     const client = spokePoolClients[chainId];
-    const tokensBridged = client.getTokensBridged();
+
+    // Cap number of events we look up since each chain might make async calls to fetch data to parse each
+    // withdrawal event status.
+    const tokensBridged: TokensBridged[] = sortEventsDescending(client.getTokensBridged()).slice(
+      0,
+      bridgeEventsToLookup // TODO: Parameterize this magic number
+    );
 
     if (chainId === 42161) {
       const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner);
