@@ -172,8 +172,7 @@ export function getUnfilledDeposits(
           // If deposit is older than unfilled deposit lookback, ignore it
           const lookback = maxUnfilledDepositLookBack[deposit.originChainId];
           const latestBlockForOriginChain = originClient.latestBlockNumber;
-          if (lookback !== undefined && deposit.originBlockNumber < latestBlockForOriginChain - lookback) return false;
-          return true;
+          return lookback !== undefined || deposit.originBlockNumber >= latestBlockForOriginChain - lookback;
         })
         .map((deposit) => {
           return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit };

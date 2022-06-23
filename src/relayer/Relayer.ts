@@ -2,7 +2,7 @@ import { BigNumber, winston, buildFillRelayProps, getNetworkName, getUnfilledDep
 import { createFormatFunction, etherscanLink, toBN } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 
-import { Deposit, DepositWithBlock } from "../interfaces/SpokePool";
+import { Deposit } from "../interfaces/SpokePool";
 
 export class Relayer {
   constructor(
