@@ -23,7 +23,7 @@ export class RelayerConfig extends CommonConfig {
     // amount of time looking back on the chains, so you might produce some deposits that look like they weren't filled.
     this.maxRelayerUnfilledDepositLookBack = { ...this.maxRelayerLookBack };
     Object.keys(this.maxRelayerUnfilledDepositLookBack).forEach((chain) => {
-      this.maxRelayerUnfilledDepositLookBack[chain] = Number(this.maxRelayerLookBack[chain]) / 2; // TODO: Allow caller
+      this.maxRelayerUnfilledDepositLookBack[chain] = Number(this.maxRelayerLookBack[chain]) / 4; // TODO: Allow caller
       // to modify what we divide `maxRelayerLookBack` values by.
     });
 

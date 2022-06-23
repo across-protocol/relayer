@@ -121,20 +121,27 @@ export class Relayer {
           destinationChain,
           true
         );
+        console.log(`!!!Fetching unfilledDepositsForDestinationChain`)
         const unfilledDepositsForDestinationChain: {
           fillCount: number;
           unfilledAmount: BigNumber;
           deposit: DepositWithBlock;
-        }[] = depositsForDestinationChain.map((deposit) => {
-          return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit };
-        });
+        }[] = depositsForDestinationChain
+          .filter((deposit) => {
+            // If deposit is older than unfilled deposit lookback, ignore it
+            const lookback = this.maxUnfilledDepositLookBack[deposit.originChainId];
+            const latestBlockForOriginChain = originClient.latestBlockNumber;
+            console.log(lookback, latestBlockForOriginChain, originChain, deposit.blockNumber)
+            if (lookback && deposit.blockNumber < latestBlockForOriginChain - lookback) return false;
+            return true;
+          })
+          .map((deposit) => {
+            return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit };
+          })
+        
         // Remove any deposits that have no unfilled amount and append the remaining deposits to unfilledDeposits array.
         unfilledDeposits.push(
           ...unfilledDepositsForDestinationChain.filter((deposit) => {
-            // If deposit is older than unfilled deposit lookback, ignore it
-            const lookback = this.maxUnfilledDepositLookBack[deposit.deposit.originChainId];
-            const latestBlockForOriginChain = originClient.latestBlockNumber;
-            if (lookback && deposit.deposit.blockNumber < latestBlockForOriginChain - lookback) return false;
             return deposit.unfilledAmount.gt(0);
           })
         );
