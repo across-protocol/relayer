@@ -134,6 +134,8 @@ export function _buildRelayerRefundRoot(
   Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
     Object.keys(fillsToRefund[repaymentChainId]).forEach((l2TokenAddress: string) => {
       const refunds = fillsToRefund[repaymentChainId][l2TokenAddress].refunds;
+      if (refunds === undefined) return;
+
       // We need to sort leaves deterministically so that the same root is always produced from the same _loadData
       // return value, so sort refund addresses by refund amount (descending) and then address (ascending).
       const sortedRefundAddresses = sortRefundAddresses(refunds);
