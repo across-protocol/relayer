@@ -20,7 +20,6 @@ import {
   MerkleTree,
   winston,
   toBNWei,
-  sortEventsAscending,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "../utils";
@@ -176,7 +175,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   // This assumption depends on the rule that slow fills can only be sent after a partial fill for a non zero amount
   // of the deposit. This is why "1 wei" fills are important, otherwise we'd never know which fills originally
   // triggered a slow fill payment to be sent to the destination chain.
-  sortEventsAscending(allValidFillsInRange)
+  allValidFillsInRange
     .filter((fill) => fill.totalFilledAmount.eq(fill.amount) && !fill.fillAmount.eq(fill.amount))
     .forEach((fill: interfaces.FillWithBlock) => {
       const { lastFillBeforeSlowFillIncludedInRoot, rootBundleEndBlockContainingFirstFill } =
