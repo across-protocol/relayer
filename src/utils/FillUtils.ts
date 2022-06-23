@@ -1,14 +1,6 @@
 import { HubPoolClient } from "../clients";
 import { Deposit, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
-import {
-  BigNumber,
-  assign,
-  getRealizedLpFeeForFills,
-  getRefundForFills,
-  sortEventsDescending,
-  toBN,
-  sortEventsAscending,
-} from "./";
+import { BigNumber, assign, getRealizedLpFeeForFills, getRefundForFills, sortEventsDescending, toBN } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
 export function getRefundInformationFromFill(
@@ -113,7 +105,7 @@ export function getFillDataForSlowFillFromPreviousRootBundle(
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ) {
   // Find the first fill chronologically for matched deposit for the input fill.
-  const firstFillForSameDeposit = sortEventsAscending(allValidFills).find(
+  const firstFillForSameDeposit = allValidFills.find(
     (_fill: FillWithBlock) => filledSameDeposit(_fill, fill) && isFirstFillForDeposit(_fill as Fill)
   );
 
