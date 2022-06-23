@@ -10,6 +10,9 @@ import {
   etherscanLink,
   TransactionResponse,
 } from "../utils";
+
+import lodash from "lodash";
+
 export interface AugmentedTransaction {
   contract: Contract;
   chainId: number;
@@ -109,6 +112,10 @@ export class MultiCallerClient {
         assign(groupedTransactions, [transaction.chainId], [transaction]);
       }
 
+      const chunkedTransactions: { [networkId: number]: AugmentedTransaction[][] } = Object.fromEntries(
+        Object.entries(groupedTransactions).map(([chainId, transactions]) => [chainId, lodash.chunk(transactions, 100)])
+      );
+
       if (simulationModeOn) {
         this.logger.debug({
           at: "MultiCallerClient",
@@ -121,10 +128,12 @@ export class MultiCallerClient {
         });
         Object.keys(groupedTransactions).forEach((chainId) => {
           mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
-          groupedTransactions[chainId].forEach((transaction, groupTxIndex) => {
-            mrkdwn +=
-              `  ${groupTxIndex + 1}. ${transaction.message || "0 message"}: ` +
-              `${transaction.mrkdwn || "0 mrkdwn"}\n`;
+          groupedTransactions[chainId].forEach((transactionChunks, groupIndex) => {
+            transactionChunks.forEach((transaction, chunkTxIndex) => {
+              mrkdwn +=
+                `  ${groupIndex + 1}-${chunkTxIndex + 1}. ${transaction.message || "0 message"}: ` +
+                `${transaction.mrkdwn || "0 mrkdwn"}\n`;
+            });
           });
         });
         this.logger.info({ at: "MultiCallerClient", message: "Exiting simulation mode 🎮", mrkdwn });
@@ -167,7 +176,9 @@ export class MultiCallerClient {
 
       // Construct multiCall transaction for each target chain.
       const multiCallTransactionsResult = await Promise.allSettled(
-        Object.keys(groupedTransactions).map((chainId) => this.buildMultiCallBundle(groupedTransactions[chainId]))
+        Object.keys(chunkedTransactions)
+          .map((chainId) => chunkedTransactions[chainId].map((chunk) => this.buildMultiCallBundle(chunk)))
+          .flat()
       );
 
       // Each element in the bundle of receipts relates back to each set within the groupedTransactions. Produce log.
@@ -192,28 +203,34 @@ export class MultiCallerClient {
           transactionHashes.push(transactionHash);
         }
       });
-      Object.keys(groupedTransactions).forEach((chainId, chainIndex) => {
+      let flatIndex = 0;
+      Object.keys(chunkedTransactions).forEach((chainId, chainIndex) => {
         mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
-        if (multiCallTransactionsResult[chainIndex].status === "rejected") {
-          const rejectionError = (multiCallTransactionsResult[chainIndex] as PromiseRejectedResult).reason;
-          mrkdwn += ` ⚠️ Transaction sent on ${getNetworkName(
-            chainId
-          )} failed or bot timed out waiting for transaction to mine, check logs for more details.\n`;
-          // If the `transactionReceipt` was rejected because of a timeout, there won't be an error log sent to
-          // winston, but it will show up as this debug log that the developer can look up.
-          this.logger.debug({
-            at: "MultiCallerClient",
-            message: `Batch transaction sent on chain ${chainId} failed or bot timed out waiting for it to mine`,
-            error: rejectionError,
-          });
-        } else {
-          groupedTransactions[chainId].forEach((transaction, groupTxIndex) => {
-            mrkdwn += `  ${groupTxIndex + 1}. ${transaction.message || ""}: ` + `${transaction.mrkdwn || ""}\n`;
-          });
-          const transactionHash = (multiCallTransactionsResult[chainIndex] as PromiseFulfilledResult<any>).value.hash;
-          mrkdwn += "tx: " + etherscanLink(transactionHash, chainId) + "\n";
-          transactionHashes.push(transactionHash);
-        }
+        chunkedTransactions[chainId].forEach((chunk, chunkIndex) => {
+          const settledPromise = multiCallTransactionsResult[flatIndex++];
+          if (settledPromise.status === "rejected") {
+            const rejectionError = (settledPromise as PromiseRejectedResult).reason;
+            mrkdwn += ` ⚠️ Transaction sent on ${getNetworkName(
+              chainId
+            )} failed or bot timed out waiting for transaction to mine, check logs for more details.\n`;
+            // If the `transactionReceipt` was rejected because of a timeout, there won't be an error log sent to
+            // winston, but it will show up as this debug log that the developer can look up.
+            this.logger.debug({
+              at: "MultiCallerClient",
+              message: `Batch transaction sent on chain ${chainId} failed or bot timed out waiting for it to mine`,
+              error: rejectionError,
+            });
+          } else {
+            chunk.forEach((transaction, groupTxIndex) => {
+              mrkdwn +=
+                `  ${chunkIndex + 1}-${groupTxIndex + 1}. ${transaction.message || ""}: ` +
+                `${transaction.mrkdwn || ""}\n`;
+            });
+            const transactionHash = (settledPromise as PromiseFulfilledResult<any>).value.hash;
+            mrkdwn += "tx: " + etherscanLink(transactionHash, chainId) + "\n";
+            transactionHashes.push(transactionHash);
+          }
+        });
       });
       this.logger.info({ at: "MultiCallerClient", message: "Multicall batch sent! 🧙‍♂️", mrkdwn });
       this.clearTransactionQueue();
