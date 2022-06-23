@@ -4,6 +4,7 @@ import { InventoryConfig } from "../interfaces";
 
 export class RelayerConfig extends CommonConfig {
   readonly maxRelayerLookBack: { [chainId: number]: number };
+  readonly maxRelayerUnfilledDepositLookBack: { [chainId: number]: number };
   readonly inventoryConfig: InventoryConfig;
   readonly relayerDiscount: BigNumber;
   readonly sendingRelaysEnabled: Boolean;
@@ -13,7 +14,19 @@ export class RelayerConfig extends CommonConfig {
     const { RELAYER_DISCOUNT, MAX_RELAYER_DEPOSIT_LOOK_BACK, RELAYER_INVENTORY_CONFIG, SEND_RELAYS, SEND_SLOW_RELAYS } =
       env;
     super(env);
+
+    // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = MAX_RELAYER_DEPOSIT_LOOK_BACK ? JSON.parse(MAX_RELAYER_DEPOSIT_LOOK_BACK) : {};
+    // `maxRelayerUnfilledDepositLookBack` informs relayer to ignore any unfilled deposits older than this amount of
+    // of blocks from latest. This allows us to ignore any false positive unfilled deposits that occur because of how
+    // `maxRelayerLookBack` is set. This can happen because block lookback per chain is not exactly equal to the same
+    // amount of time looking back on the chains, so you might produce some deposits that look like they weren't filled.
+    this.maxRelayerUnfilledDepositLookBack = { ...this.maxRelayerLookBack };
+    Object.keys(this.maxRelayerUnfilledDepositLookBack).forEach((chain) => {
+      this.maxRelayerUnfilledDepositLookBack[chain] = Number(this.maxRelayerLookBack[chain]) / 4; // TODO: Allow caller
+      // to modify what we divide `maxRelayerLookBack` values by.
+    });
+
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
 
     if (Object.keys(this.inventoryConfig).length > 0) {

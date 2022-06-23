@@ -126,10 +126,10 @@ export class MultiCallerClient {
           mrkdwn += `*Transaction excluded from batches because it contained value:*\n`;
           mrkdwn += `  ${i + 1}. ${transaction.message || "0 message"}: ` + `${transaction.mrkdwn || "0 mrkdwn"}\n`;
         });
-        Object.keys(groupedTransactions).forEach((chainId) => {
+        Object.keys(chunkedTransactions).forEach((chainId) => {
           mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
-          groupedTransactions[chainId].forEach((transactionChunks, groupIndex) => {
-            transactionChunks.forEach((transaction, chunkTxIndex) => {
+          chunkedTransactions[chainId].forEach((chunk, groupIndex) => {
+            chunk.forEach((transaction, chunkTxIndex) => {
               mrkdwn +=
                 `  ${groupIndex + 1}-${chunkTxIndex + 1}. ${transaction.message || "0 message"}: ` +
                 `${transaction.mrkdwn || "0 mrkdwn"}\n`;
@@ -204,7 +204,7 @@ export class MultiCallerClient {
         }
       });
       let flatIndex = 0;
-      Object.keys(chunkedTransactions).forEach((chainId, chainIndex) => {
+      Object.keys(chunkedTransactions).forEach((chainId) => {
         mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
         chunkedTransactions[chainId].forEach((chunk, chunkIndex) => {
           const settledPromise = multiCallTransactionsResult[flatIndex++];
