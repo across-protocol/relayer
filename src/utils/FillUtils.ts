@@ -1,6 +1,14 @@
 import { HubPoolClient } from "../clients";
 import { Deposit, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
-import { BigNumber, assign, getRealizedLpFeeForFills, getRefundForFills, sortEventsDescending, toBN, sortEventsAscending } from "./";
+import {
+  BigNumber,
+  assign,
+  getRealizedLpFeeForFills,
+  getRefundForFills,
+  sortEventsDescending,
+  toBN,
+  sortEventsAscending,
+} from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
 export function getRefundInformationFromFill(
