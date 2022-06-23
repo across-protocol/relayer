@@ -77,11 +77,11 @@ export function isFirstFillForDeposit(fill: Fill): boolean {
 
 export function filledSameDeposit(fillA: Fill, fillB: Fill): boolean {
   return (
-    fillA.amount.eq(fillB.amount) &&
+    fillA.depositId === fillB.depositId &&
     fillA.originChainId === fillB.originChainId &&
+    fillA.amount.eq(fillB.amount) &&
     fillA.destinationChainId === fillB.destinationChainId &&
     fillA.relayerFeePct.eq(fillB.relayerFeePct) &&
-    fillA.depositId === fillB.depositId &&
     fillA.recipient === fillB.recipient &&
     fillA.depositor === fillB.depositor
   );
