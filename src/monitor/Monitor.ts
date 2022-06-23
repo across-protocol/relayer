@@ -497,9 +497,13 @@ export class Monitor {
     for (const chainId of this.monitorConfig.spokePoolChains) {
       const fillsToRefund = fillsToRefundPerChain[chainId];
       // Skip chains that don't have any refunds.
-      if (!fillsToRefund) continue;
+      if (fillsToRefund === undefined) continue;
 
       for (const tokenAddress of Object.keys(fillsToRefund)) {
+        // Skip token if there are no refunds (although there are valid fills).
+        // This is an edge case that shouldn't usually happen.
+        if (fillsToRefund[tokenAddress].refunds === undefined) continue;
+
         const totalRefundAmount = fillsToRefund[tokenAddress].refunds[relayer];
         const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
         const amount = totalRefundAmount || toBN(0);
