@@ -3359,10 +3359,10 @@
     truffle-deploy-registry "^0.5.1"
     web3 "^1.6.0"
 
-"@uma/common@^2.20.0":
-  version "2.20.0"
-  resolved "https://registry.yarnpkg.com/@uma/common/-/common-2.20.0.tgz#f211a00257a44880858af440d5328f026c4006ca"
-  integrity sha512-tJk9akdwudq/J4BfuZQ38XCkJFtjZdkT5fcDkmojPuR6gbtWTy5RnP3549kN01ve1QV5c+zqzgRCTHihxRlG8Q==
+"@uma/common@^2.21.0":
+  version "2.21.0"
+  resolved "https://registry.yarnpkg.com/@uma/common/-/common-2.21.0.tgz#cfdb14dc5ade167c522603591bca2059c8892c6b"
+  integrity sha512-PJSjwVnJWWkcpqsFs6WlG+B1GiCcw6+p1/WLo9jYDuXcYhEwcS9NsOOTcbu4sWqw9cJqI1Mx2r7f/7eOpwSvMQ==
   dependencies:
     "@across-protocol/contracts" "^0.1.4"
     "@eth-optimism/hardhat-ovm" "^0.2.2"
@@ -3401,6 +3401,11 @@
   resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.3.7.tgz#a959490bcf5e6b0cd1d941a60be86f8ff659dd54"
   integrity sha512-we/ZSf91HQPtYSbGyPAnZmHJCU+hREXWJW4Ee2Ics+/dytTx5M4ecqlwgOq9bXJNHpUMMeq4WdwuxLYJjrW19A==
 
+"@uma/contracts-frontend@^0.3.8":
+  version "0.3.8"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.3.8.tgz#950339e6de03d46edb928da8f11c84356dc9d9be"
+  integrity sha512-3L66+p6HvqpaYuWuguDUk5zxXlvXCOK4iKJ4kj/fJJbynBVSEPG/mp3UgyXKC2h/8pJaAq+zqb2AlbgrTwC8sQ==
+
 "@uma/contracts-node@^0.2.0":
   version "0.2.1"
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.2.1.tgz#29ebba6b2ecba7f0d2dc9b484bc34f0abbdefdaa"
@@ -3416,6 +3421,11 @@
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.7.tgz#d2a1afefc021c70b6565558b24cf5fd082b493fd"
   integrity sha512-mzI7sv+W91Cm7TBjkMioKg0pvHEOgT8QMlCNPmuQtkxUNqMnNJCj6MLzzotF4c6i3YzHsmA+PbiSsh2jVbhftw==
 
+"@uma/contracts-node@^0.3.8":
+  version "0.3.8"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.8.tgz#93159afd70fd67291c8cd8b6749c7e7d866ea572"
+  integrity sha512-/kiOV1cAALEAtJ/ojxPFlTOreLk9iE3jUerigOGS5tJ99S7P+isM5UpEH0q7A2xjH21MtJTf+Bca8LNMZ20ZTA==
+
 "@uma/core@^2.18.0", "@uma/core@^2.24.0":
   version "2.26.0"
   resolved "https://registry.yarnpkg.com/@uma/core/-/core-2.26.0.tgz#ac500ce9376fcc16b7b5de54586cbefcbf07e278"
@@ -3430,17 +3440,17 @@
     "@uniswap/v3-core" "^1.0.0-rc.2"
     "@uniswap/v3-periphery" "^1.0.0-beta.23"
 
-"@uma/financial-templates-lib@^2.27.4":
-  version "2.27.4"
-  resolved "https://registry.yarnpkg.com/@uma/financial-templates-lib/-/financial-templates-lib-2.27.4.tgz#3557d8044933af987dc817c5981e36ac0b0f378b"
-  integrity sha512-mmpW5rV8REUidwzpEgP9Cchw9TdeyVcduYDeSTnGp6q1reav/Yun5eqvVUttGy2tzXjprxUWBlh3ExIT1eQKdA==
+"@uma/financial-templates-lib@^2.28.0":
+  version "2.28.0"
+  resolved "https://registry.yarnpkg.com/@uma/financial-templates-lib/-/financial-templates-lib-2.28.0.tgz#a1f7ab58ecbe30852f64b486cbdf4737f0049e5a"
+  integrity sha512-o7l7b4k7bMYFNPdBySgZiKq++Zm3RXndzNLB1BKozgLO/EjDZKbzgxDnvb6hlLZBOKMWfIBTDGdqt/44gXZd0g==
   dependencies:
     "@ethersproject/bignumber" "^5.4.2"
     "@google-cloud/logging-winston" "^4.1.1"
     "@google-cloud/trace-agent" "^5.1.6"
-    "@uma/common" "^2.20.0"
-    "@uma/contracts-node" "^0.3.7"
-    "@uma/sdk" "^0.23.4"
+    "@uma/common" "^2.21.0"
+    "@uma/contracts-node" "^0.3.8"
+    "@uma/sdk" "^0.24.0"
     "@uniswap/sdk" "^2.0.5"
     bluebird "^3.7.2"
     bn.js "^4.11.9"
@@ -3465,6 +3475,22 @@
     "@types/lodash-es" "^4.17.5"
     "@uma/contracts-frontend" "^0.3.7"
     "@uma/contracts-node" "^0.3.7"
+    axios "^0.24.0"
+    bn.js "^4.11.9"
+    decimal.js "^10.3.1"
+    highland "^2.13.5"
+    immer "^9.0.7"
+    lodash-es "^4.17.21"
+
+"@uma/sdk@^0.24.0":
+  version "0.24.0"
+  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.24.0.tgz#d037996d6ea1f34e421b534400828dcbc2a1539f"
+  integrity sha512-IfSi7tCBPtaBkSUvC7d6h02W3WTHL5oVzHAQnl5Ne5CCA8HZPRH5tH9IJEgMHeaoD5Wsdi7aeM862/sbjHoHww==
+  dependencies:
+    "@google-cloud/datastore" "^6.6.0"
+    "@types/lodash-es" "^4.17.5"
+    "@uma/contracts-frontend" "^0.3.8"
+    "@uma/contracts-node" "^0.3.8"
     axios "^0.24.0"
     bn.js "^4.11.9"
     decimal.js "^10.3.1"
