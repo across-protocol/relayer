@@ -167,34 +167,23 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   allValidFillsInRange: interfaces.FillWithBlock[],
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ) {
-  // We need to subtract excess from any fills that might replaced a slow fill sent to the fill destination chain.
-  // This can only happen if the fill was the last fill for a deposit. Otherwise, its still possible that the slow fill 
-  // for the deposit can be executed, so we'll defer the excess calculation until the hypothetical slow fill executes.
-  // In addition to fills that are not the last fill for a deposit, we can ignore fills that completely fill a deposit
-  // as the first fill. These fills could never have triggered a deposit since there were no partial fills for it.
-  // This assumption depends on the rule that slow fills can only be sent after a partial fill for a non zero amount
-  // of the deposit. This is why "1 wei" fills are important, otherwise we'd never know which fills originally
-  // triggered a slow fill payment to be sent to the destination chain.
-  sortEventsAscending(allValidFillsInRange)
-    .filter((fill) => !fill.totalFilledAmount.eq(fill.amount) && !fill.fillAmount.eq(fill.amount))
-    .forEach((fill: interfaces.FillWithBlock) => {
-      const { lastFillBeforeSlowFillIncludedInRoot, rootBundleEndBlockContainingFirstFill } =
-        getFillDataForSlowFillFromPreviousRootBundle(
-          endBlockForMainnet,
-          fill,
-          allValidFills,
-          hubPoolClient,
-          chainIdListForBundleEvaluationBlockNumbers
-        );
+  allValidFillsInRange.forEach((fill: interfaces.FillWithBlock) => {
+    const { lastFillBeforeSlowFillIncludedInRoot, rootBundleEndBlockContainingFirstFill } =
+      getFillDataForSlowFillFromPreviousRootBundle(
+        endBlockForMainnet,
+        fill,
+        allValidFills,
+        hubPoolClient,
+        chainIdListForBundleEvaluationBlockNumbers
+      );
 
-    // Now that we have the last fill sent in a previous root bundle that also sent a slow fill, we can compute
-    // the excess that we need to decrease running balances by. This excess only exists in the case where the
-    // current fill completed a deposit. There will be an excess if (1) the slow fill was never executed, and (2)
-    // the slow fill was executed, but not before some partial fills were sent.
+      // Now that we have the last fill sent in a previous root bundle that also sent a slow fill, we can compute
+      // the excess that we need to decrease running balances by. This excess only exists in the case where the
+      // current fill completed a deposit. There will be an excess if (1) the slow fill was never executed, and (2)
+      // the slow fill was executed, but not before some partial fills were sent.
 
     // Note, if there is NO fill from a previous root bundle for the same deposit as this fill, then there has been
     // no slow fill payment sent to the spoke pool yet, so we can exit early.
-    if (lastFillBeforeSlowFillIncludedInRoot === undefined) return;
 
     if (fill.totalFilledAmount.eq(fill.amount)) {
       // If first fill for this deposit is in this epoch, then no slow fill has been sent so we can ignore this fill.
@@ -207,7 +196,10 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         fill.destinationChainId,
         chainIdListForBundleEvaluationBlockNumbers
       );
-        if (rootBundleEndBlockContainingFirstFill === rootBundleEndBlockContainingFullFill) return;
+
+      // Note: `rootBundleEndBlockContainingFirstFill` and `rootBundleEndBlockContainingFullFill` could both
+      // be undefined in the case that both fills are in this current bundle, which is a normal case.
+      if (rootBundleEndBlockContainingFirstFill === rootBundleEndBlockContainingFullFill) return;
 
       // If full fill and first fill are in different blocks, then we should always be able to find the last partial
       // fill included in the root bundle that also included the slow fill refund.
@@ -225,6 +217,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
       const excess = fill.isSlowRelay ? amountSentForSlowFill.sub(fill.fillAmount) : amountSentForSlowFill;
       if (excess.eq(toBN(0))) return;
       updateRunningBalanceForFill(endBlockForMainnet, runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
+    }
   });
 }
 
