@@ -207,7 +207,7 @@ export class MultiCallerClient {
       Object.keys(chunkedTransactions).forEach((chainId, chainIndex) => {
         mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
         chunkedTransactions[chainId].forEach((chunk, chunkIndex) => {
-          const settledPromise = transactionReceipts[flatIndex++];
+          const settledPromise = multiCallTransactionsResult[flatIndex++];
           if (settledPromise.status === "rejected") {
             const rejectionError = (settledPromise as PromiseRejectedResult).reason;
             mrkdwn += ` ⚠️ Transaction sent on ${getNetworkName(
