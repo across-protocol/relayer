@@ -34,11 +34,10 @@ export async function finalizeArbitrum(
   const amountFromWei = convertFromWei(messageInfo.amountToReturn.toString(), l1TokenInfo.decimals);
   try {
     const txn = await message.execute(proofInfo);
-    const receipt = await txn.wait();
     logger.info({
       at: "ArbitrumFinalizer",
       message: `Finalized Arbitrum withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
-      transactionhash: etherscanLink(receipt.transactionHash, 1),
+      transactionhash: etherscanLink(txn.hash, 1),
     });
     await delay(30);
   } catch (error) {
