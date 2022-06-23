@@ -2,10 +2,15 @@ import { BigNumber, winston, buildFillRelayProps, getNetworkName, getUnfilledDep
 import { createFormatFunction, etherscanLink, toBN } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 
-import { Deposit } from "../interfaces/SpokePool";
+import { Deposit, DepositWithBlock } from "../interfaces/SpokePool";
 
 export class Relayer {
-  constructor(readonly logger: winston.Logger, readonly clients: RelayerClients) {}
+  constructor(
+    readonly logger: winston.Logger,
+    readonly clients: RelayerClients,
+    readonly maxUnfilledDepositLookBack: { [chainId: number]: number } = {}
+  ) {}
+
   async checkForUnfilledDepositsAndFill(sendSlowRelays: Boolean = true) {
     // Fetch all unfilled deposits, order by total earnable fee.
     // TODO: Note this does not consider the price of the token which will be added once the profitability module is
@@ -112,12 +117,19 @@ export class Relayer {
         // validates that the deposit is filled "correctly" for the given deposit information. This includes validation
         // of the all deposit -> relay props, the realizedLpFeePct and the origin->destination token mapping.
         const destinationClient = this.clients.spokePoolClients[destinationChain];
-        const depositsForDestinationChain = originClient.getDepositsForDestinationChain(destinationChain);
-        const unfilledDepositsForDestinationChain = depositsForDestinationChain.map((deposit) => {
+        const depositsForDestinationChain: DepositWithBlock[] = originClient.getDepositsForDestinationChain(destinationChain, true);
+        const unfilledDepositsForDestinationChain: { fillCount: number; unfilledAmount: BigNumber; deposit: DepositWithBlock }[] = depositsForDestinationChain.map((deposit) => {
           return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit };
         });
         // Remove any deposits that have no unfilled amount and append the remaining deposits to unfilledDeposits array.
-        unfilledDeposits.push(...unfilledDepositsForDestinationChain.filter((deposit) => deposit.unfilledAmount.gt(0)));
+        unfilledDeposits.push(...unfilledDepositsForDestinationChain.filter((deposit) => {
+          // If deposit is older than unfilled deposit lookback, ignore it
+          const lookback = this.maxUnfilledDepositLookBack[deposit.deposit.originChainId]
+          const latestBlockForOriginChain = originClient.latestBlockNumber;
+          if (lookback && deposit.deposit.blockNumber < latestBlockForOriginChain - lookback) return false;
+          return deposit.unfilledAmount.gt(0)
+        })
+        );
       }
     }
 

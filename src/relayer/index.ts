@@ -13,7 +13,7 @@ export async function runRelayer(_logger: winston.Logger): Promise<void> {
 
     const relayerClients = await constructRelayerClients(logger, config);
 
-    const relayer = new Relayer(logger, relayerClients);
+    const relayer = new Relayer(logger, relayerClients, config.maxRelayerUnfilledDepositLookBack);
 
     logger.debug({ at: "Relayer#index", message: "Relayer components initialized. Starting execution loop" });
 
