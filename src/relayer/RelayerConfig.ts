@@ -21,7 +21,7 @@ export class RelayerConfig extends CommonConfig {
     // of blocks from latest. This allows us to ignore any false positive unfilled deposits that occur because of how
     // `maxRelayerLookBack` is set. This can happen because block lookback per chain is not exactly equal to the same
     // amount of time looking back on the chains, so you might produce some deposits that look like they weren't filled.
-    this.maxRelayerUnfilledDepositLookBack = { ...this.maxRelayerLookBack }
+    this.maxRelayerUnfilledDepositLookBack = { ...this.maxRelayerLookBack };
     Object.keys(this.maxRelayerUnfilledDepositLookBack).forEach((chain) => {
       this.maxRelayerUnfilledDepositLookBack[chain] = Number(this.maxRelayerLookBack[chain]) / 2; // TODO: Allow caller
       // to modify what we divide `maxRelayerLookBack` values by.

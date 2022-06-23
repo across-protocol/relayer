@@ -117,18 +117,26 @@ export class Relayer {
         // validates that the deposit is filled "correctly" for the given deposit information. This includes validation
         // of the all deposit -> relay props, the realizedLpFeePct and the origin->destination token mapping.
         const destinationClient = this.clients.spokePoolClients[destinationChain];
-        const depositsForDestinationChain: DepositWithBlock[] = originClient.getDepositsForDestinationChain(destinationChain, true);
-        const unfilledDepositsForDestinationChain: { fillCount: number; unfilledAmount: BigNumber; deposit: DepositWithBlock }[] = depositsForDestinationChain.map((deposit) => {
+        const depositsForDestinationChain: DepositWithBlock[] = originClient.getDepositsForDestinationChain(
+          destinationChain,
+          true
+        );
+        const unfilledDepositsForDestinationChain: {
+          fillCount: number;
+          unfilledAmount: BigNumber;
+          deposit: DepositWithBlock;
+        }[] = depositsForDestinationChain.map((deposit) => {
           return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit };
         });
         // Remove any deposits that have no unfilled amount and append the remaining deposits to unfilledDeposits array.
-        unfilledDeposits.push(...unfilledDepositsForDestinationChain.filter((deposit) => {
-          // If deposit is older than unfilled deposit lookback, ignore it
-          const lookback = this.maxUnfilledDepositLookBack[deposit.deposit.originChainId]
-          const latestBlockForOriginChain = originClient.latestBlockNumber;
-          if (lookback && deposit.deposit.blockNumber < latestBlockForOriginChain - lookback) return false;
-          return deposit.unfilledAmount.gt(0)
-        })
+        unfilledDeposits.push(
+          ...unfilledDepositsForDestinationChain.filter((deposit) => {
+            // If deposit is older than unfilled deposit lookback, ignore it
+            const lookback = this.maxUnfilledDepositLookBack[deposit.deposit.originChainId];
+            const latestBlockForOriginChain = originClient.latestBlockNumber;
+            if (lookback && deposit.deposit.blockNumber < latestBlockForOriginChain - lookback) return false;
+            return deposit.unfilledAmount.gt(0);
+          })
         );
       }
     }
