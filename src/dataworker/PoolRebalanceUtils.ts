@@ -177,7 +177,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   // of the deposit. This is why "1 wei" fills are important, otherwise we'd never know which fills originally
   // triggered a slow fill payment to be sent to the destination chain.
   sortEventsAscending(allValidFillsInRange)
-    .filter((fill) => !fill.totalFilledAmount.eq(fill.amount) && !fill.fillAmount.eq(fill.amount))
+    .filter((fill) => fill.totalFilledAmount.eq(fill.amount) && !fill.fillAmount.eq(fill.amount))
     .forEach((fill: interfaces.FillWithBlock) => {
       const { lastFillBeforeSlowFillIncludedInRoot, rootBundleEndBlockContainingFirstFill } =
         getFillDataForSlowFillFromPreviousRootBundle(
