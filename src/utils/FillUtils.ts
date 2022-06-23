@@ -106,7 +106,7 @@ export function getFillDataForSlowFillFromPreviousRootBundle(
 ) {
   // Find the first fill chronologically for matched deposit for the input fill.
   const firstFillForSameDeposit = allValidFills.find(
-    (_fill: FillWithBlock) => isFirstFillForDeposit(_fill as Fill) && filledSameDeposit(_fill, fill)
+    (_fill: FillWithBlock) => filledSameDeposit(_fill, fill) && isFirstFillForDeposit(_fill as Fill)
   );
 
   // Find ending block number for chain from ProposeRootBundle event that should have included a slow fill
