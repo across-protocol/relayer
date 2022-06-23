@@ -175,7 +175,9 @@ export function getUnfilledDeposits(
           return lookback === undefined || deposit.originBlockNumber >= latestBlockForOriginChain - lookback;
         })
         .map((deposit) => {
-          return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit };
+          // Remove block number that we don't need anymore and because function expects to return a Deposit type.
+          const { blockNumber, originBlockNumber, ...depositData } = deposit;
+          return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit: depositData };
         });
       // Remove any deposits that have no unfilled amount and append the remaining deposits to unfilledDeposits array.
       unfilledDeposits.push(...unfilledDepositsForDestinationChain.filter((deposit) => deposit.unfilledAmount.gt(0)));
