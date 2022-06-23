@@ -226,7 +226,7 @@ export class MultiCallerClient {
                 `  ${chunkIndex + 1}-${groupTxIndex + 1}. ${transaction.message || ""}: ` +
                 `${transaction.mrkdwn || ""}\n`;
             });
-            const transactionHash = (settledPromise as PromiseFulfilledResult<any>).value.transactionHash;
+            const transactionHash = (settledPromise as PromiseFulfilledResult<any>).value.hash;
             mrkdwn += "tx: " + etherscanLink(transactionHash, chainId) + "\n";
             transactionHashes.push(transactionHash);
           }
