@@ -1,5 +1,5 @@
 import { expect, ethers, SignerWithAddress, createSpyLogger, winston, BigNumber, lastSpyLogIncludes } from "./utils";
-import { toBN, toWei, randomAddress, spyLogIncludes } from "./utils";
+import { toBN, toWei, randomAddress, createRefunds } from "./utils";
 
 import { InventoryConfig, Deposit } from "../src/interfaces";
 import { MockBundleDataClient, MockHubPoolClient, MockAdapterManager, MockTokenClient } from "./mocks";
@@ -19,8 +19,8 @@ const mainnetWeth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const mainnetUsdc = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 
 // construct two mappings of chainId to token address. Set the l1 token address to the "real" token address.
-let l2TokensForWeth = { 1: mainnetWeth };
-let l2TokensForUsdc = { 1: mainnetUsdc };
+const l2TokensForWeth = { 1: mainnetWeth };
+const l2TokensForUsdc = { 1: mainnetUsdc };
 enabledChainIds.slice(1).forEach((chainId) => {
   l2TokensForWeth[chainId] = randomAddress();
   l2TokensForUsdc[chainId] = randomAddress();
@@ -186,11 +186,11 @@ describe("InventoryClient: Refund chain selection", async function () {
     // Therefore, the bot should choose refund on L1 instead of L2.
     sampleDepositData.amount = toWei(5);
     bundleDataClient.setReturnedPendingBundleRefunds({
-      1: createRefunds(5, mainnetWeth),
-      10: createRefunds(5, l2TokensForWeth[10]),
+      1: createRefunds(owner.address, toWei(5), mainnetWeth),
+      10: createRefunds(owner.address, toWei(5), l2TokensForWeth[10]),
     });
     bundleDataClient.setReturnedNextBundleRefunds({
-      10: createRefunds(5, l2TokensForWeth[10]),
+      10: createRefunds(owner.address, toWei(5), l2TokensForWeth[10]),
     });
     expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
     expect(lastSpyLogIncludes(spy, `expectedPostRelayAllocation":"166666666666666666"`)).to.be.true; // (20-5)/(140-5)=0.11
@@ -208,15 +208,4 @@ function seedMocks(seedBalances: { [chainId: string]: { [token: string]: BigNumb
   });
 
   hubPoolClient.setL1TokensToDestinationTokens({ [mainnetWeth]: l2TokensForWeth, [mainnetUsdc]: l2TokensForUsdc });
-}
-
-function createRefunds(refundAmount: number, token: string) {
-  return {
-    [token]: {
-      refunds: { [owner.address]: BigNumber.from(toWei(refundAmount)) },
-      fills: [],
-      totalRefundAmount: BigNumber.from(0),
-      realizedLpFees: BigNumber.from(0),
-    },
-  };
 }
