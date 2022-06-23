@@ -1,5 +1,5 @@
 import { HubPoolClient } from "../clients";
-import { Deposit, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
+import { Deposit, DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
 import { BigNumber, assign, getRealizedLpFeeForFills, getRefundForFills, sortEventsDescending, toBN } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
@@ -149,7 +149,8 @@ export function getFillsInRange(
 
 // Returns all unfilled deposits over all spokePoolClients. Return values include the amount of the unfilled deposit.
 export function getUnfilledDeposits(
-  spokePoolClients: SpokePoolClientsByChain
+  spokePoolClients: SpokePoolClientsByChain,
+  maxUnfilledDepositLookBack: { [chainId: number]: number } = {}
 ): { deposit: Deposit; unfilledAmount: BigNumber; fillCount: number }[] {
   let unfilledDeposits: { deposit: Deposit; unfilledAmount: BigNumber; fillCount: number }[] = [];
   // Iterate over each chainId and check for unfilled deposits.
@@ -162,10 +163,21 @@ export function getUnfilledDeposits(
       // validates that the deposit is filled "correctly" for the given deposit information. This includes validation
       // of the all deposit -> relay props, the realizedLpFeePct and the origin->destination token mapping.
       const destinationClient = spokePoolClients[destinationChain];
-      const depositsForDestinationChain = originClient.getDepositsForDestinationChain(destinationChain);
-      const unfilledDepositsForDestinationChain = depositsForDestinationChain.map((deposit) => {
-        return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit };
-      });
+      const depositsForDestinationChain: DepositWithBlock[] = originClient.getDepositsForDestinationChain(
+        destinationChain,
+        true
+      );
+      const unfilledDepositsForDestinationChain = depositsForDestinationChain
+        .filter((deposit) => {
+          // If deposit is older than unfilled deposit lookback, ignore it
+          const lookback = maxUnfilledDepositLookBack[deposit.originChainId];
+          const latestBlockForOriginChain = originClient.latestBlockNumber;
+          if (lookback !== undefined && deposit.originBlockNumber < latestBlockForOriginChain - lookback) return false;
+          return true;
+        })
+        .map((deposit) => {
+          return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit };
+        });
       // Remove any deposits that have no unfilled amount and append the remaining deposits to unfilledDeposits array.
       unfilledDeposits.push(...unfilledDepositsForDestinationChain.filter((deposit) => deposit.unfilledAmount.gt(0)));
     }
