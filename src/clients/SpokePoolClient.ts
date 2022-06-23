@@ -7,7 +7,9 @@ import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../in
 
 export class SpokePoolClient {
   private deposits: { [DestinationChainId: number]: Deposit[] } = {};
+  private depositHashes: { [depositHash: string]: Deposit } = {};
   private fills: Fill[] = [];
+  private depositHashesToFills: { [depositHash: string]: Fill[] } = {};
   private speedUps: { [depositorAddress: string]: { [depositId: number]: SpeedUp[] } } = {};
   private depositRoutes: { [originToken: string]: { [DestinationChainId: number]: boolean } } = {};
   private tokensBridged: TokensBridged[] = [];
@@ -136,18 +138,18 @@ export class SpokePoolClient {
 
   getDepositForFill(fill: Fill): Deposit | undefined {
     const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill.
-    return this.getDepositsForDestinationChain(fillCopy.destinationChainId).find((deposit) => {
-      if (fillCopy.depositId !== deposit.depositId) return false;
-      return this.validateFillForDeposit(fillCopy, deposit);
-    });
+    const depositWithMatchingDepositId = this.depositHashes[this.getDepositHash(fill)];
+    if (depositWithMatchingDepositId === undefined) return undefined;
+    return this.validateFillForDeposit(fillCopy, depositWithMatchingDepositId)
+      ? depositWithMatchingDepositId
+      : undefined;
   }
 
   getValidUnfilledAmountForDeposit(deposit: Deposit): { unfilledAmount: BigNumber; fillCount: number } {
-    const fills = this.getFillsForOriginChain(deposit.originChainId)
-      .filter((fill) => fill.depositId === deposit.depositId) // Only select the associated fill for the deposit.
-      .filter((fill) => this.validateFillForDeposit(fill, deposit)); // Validate that the fill was valid for the deposit.
-
-    if (fills.length === 0) return { unfilledAmount: toBN(deposit.amount), fillCount: 0 }; // If no fills then the full amount is remaining.
+    const fillsForDeposit = this.depositHashesToFills[this.getDepositHash(deposit)];
+    if (fillsForDeposit === undefined || fillsForDeposit === [])
+      return { unfilledAmount: toBN(deposit.amount), fillCount: 0 }; // If no fills then the full amount is remaining.
+    const fills = fillsForDeposit.filter((fill) => this.validateFillForDeposit(fill, deposit));
 
     // Order fills by totalFilledAmount and then return the first fill's full deposit amount minus total filled amount.
     const fillsOrderedByTotalFilledAmount = fills.sort((fillA, fillB) =>
@@ -169,6 +171,10 @@ export class SpokePoolClient {
       if (fill[key] !== undefined && deposit[key].toString() !== fill[key].toString()) isValid = false;
     });
     return isValid;
+  }
+
+  getDepositHash(event: Deposit | Fill) {
+    return `${event.depositId}-${event.originChainId}`;
   }
 
   async update() {
@@ -236,6 +242,7 @@ export class SpokePoolClient {
       const deposit: Deposit = { ...spreadEvent(event), realizedLpFeePct: dataForQuoteTime[index].realizedLpFeePct };
       // Append the destination token to the deposit.
       deposit.destinationToken = this.getDestinationTokenForDeposit(deposit);
+      assign(this.depositHashes, [this.getDepositHash(deposit)], deposit);
       assign(this.deposits, [deposit.destinationChainId], [deposit]);
       assign(
         this.depositsWithBlockNumbers,
@@ -259,6 +266,8 @@ export class SpokePoolClient {
     for (const event of fillEvents) {
       this.fills.push(spreadEvent(event));
       this.fillsWithBlockNumbers.push(spreadEventWithBlockNumber(event) as FillWithBlock);
+      const newFill = spreadEvent(event);
+      assign(this.depositHashesToFills, [this.getDepositHash(newFill)], [newFill]);
     }
 
     for (const event of enableDepositsEvents) {

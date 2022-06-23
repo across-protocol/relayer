@@ -116,6 +116,7 @@ export function initializeRunningBalancesFromRelayerRepayments(
             [repaymentChainId, l1TokenCounterpart],
             fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount
           );
+        else assign(runningBalances, [repaymentChainId, l1TokenCounterpart], toBN(0));
       });
     });
   }
