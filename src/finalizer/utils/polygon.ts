@@ -154,11 +154,10 @@ export async function retrieveTokenFromMainnetTokenBridger(
     });
     try {
       const txn = await mainnetTokenBridger.retrieve(l1Token);
-      const receipt = await txn.wait();
       logger.info({
         at: "PolygonFinalizer",
         message: `Retrieved ${balanceFromWei} of ${l1TokenInfo.symbol} from PolygonTokenBridger 🪃`,
-        transactionhash: etherscanLink(receipt.transactionHash, 1),
+        transactionhash: etherscanLink(txn.hash, 1),
       });
       await delay(30);
     } catch (error) {

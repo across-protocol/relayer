@@ -117,11 +117,10 @@ export class TokenClient {
       const targetSpokePool = this.spokePoolClients[chainId].spokePool;
       const contract = new Contract(token, ERC20.abi, targetSpokePool.signer);
       const tx = await runTransaction(this.logger, contract, "approve", [targetSpokePool.address, MAX_UINT_VAL]);
-      const receipt = await tx.wait();
       mrkdwn +=
         ` - Approved SpokePool ${etherscanLink(targetSpokePool.address, chainId)} ` +
         `to spend ${await contract.symbol()} ${etherscanLink(token, chainId)} on ${getNetworkName(chainId)}. ` +
-        `tx: ${etherscanLink(receipt.transactionHash, chainId)}\n`;
+        `tx: ${etherscanLink(tx.hash, chainId)}\n`;
     }
     this.logger.info({ at: "TokenBalanceClient", message: `Approved whitelisted tokens! 💰`, mrkdwn });
   }
@@ -137,11 +136,10 @@ export class TokenClient {
         this.hubPoolClient.hubPool.address,
         MAX_UINT_VAL,
       ]);
-      const receipt = await tx.wait();
       const mrkdwn =
         ` - Approved HubPool ${etherscanLink(this.hubPoolClient.hubPool.address, 1)} ` +
         `to spend ${await this.bondToken.symbol()} ${etherscanLink(this.bondToken.address, 1)}. ` +
-        `tx ${etherscanLink(receipt.transactionHash, 1)}\n`;
+        `tx ${etherscanLink(tx.hash, 1)}\n`;
       this.logger.info({ at: "hubPoolClient", message: `Approved bond tokens! 💰`, mrkdwn });
     } else this.logger.debug({ at: "hubPoolClient", message: `Bond token approval set` });
   }

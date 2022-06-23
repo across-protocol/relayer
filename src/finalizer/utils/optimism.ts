@@ -109,11 +109,10 @@ export async function finalizeOptimismMessage(
   const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
   try {
     const txn = await crossChainMessenger.finalizeMessage(message.message);
-    const receipt = await txn.wait();
     logger.info({
       at: "OptimismFinalizer",
       message: `Finalized Optimism withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
-      transactionhash: etherscanLink(receipt.transactionHash, 1),
+      transactionhash: etherscanLink(txn.hash, 1),
     });
     await delay(30);
   } catch (error) {
