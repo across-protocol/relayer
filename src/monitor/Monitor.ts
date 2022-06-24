@@ -567,7 +567,18 @@ export class Monitor {
     const mrkdwn =
       `An unknown EOA ${etherscanLink(caller, 1)} has ${action} a bundle on ${getNetworkName(1)}` +
       `\ntx: ${etherscanLink(transactionHash, 1)}`;
-    this.logger.error({ at: "Monitor", message: `Unknown bundle caller (${action}) ${emoji}`, mrkdwn });
+    this.logger.error({
+      at: "Monitor",
+      message: `Unknown bundle caller (${action}) ${emoji}${
+        action === BundleAction.PROPOSED
+          ? `. If proposer identity cannot be determined quickly, then the safe response is to call "disputeRootBundle" on the HubPool here ${etherscanLink(
+              this.clients.hubPoolClient.hubPool.address,
+              1
+            )}. Note that you will need to approve the HubPool to transfer 0.4 WETH from your wallet as a dispute bond.`
+          : ""
+      }`,
+      mrkdwn,
+    });
   }
 
   private async computeHubPoolBlocks() {
