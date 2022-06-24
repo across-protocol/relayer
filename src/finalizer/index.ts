@@ -1,4 +1,4 @@
-import { Wallet } from "../utils";
+import { Wallet, config, startupLogLevel, processEndPollingLoop, processCrash, getSigner } from "../utils";
 import { winston } from "../utils";
 import {
   finalizeArbitrum,
@@ -14,6 +14,15 @@ import {
 } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient } from "../clients";
+import { DataworkerConfig } from "../dataworker/DataworkerConfig";
+import {
+  constructClients,
+  constructSpokePoolClientsWithLookback,
+  updateClients,
+  updateSpokePoolClients,
+} from "../common";
+config();
+let logger: winston.Logger;
 
 export async function finalize(
   logger: winston.Logger,
@@ -49,5 +58,56 @@ export async function finalize(
         await finalizeOptimismMessage(hubPoolClient, crossChainMessenger, message, logger);
       }
     }
+  }
+}
+
+export async function constructFinalizerClients(_logger: winston.Logger, config) {
+  const baseSigner = await getSigner();
+
+  const commonClients = await constructClients(_logger, config);
+
+  const spokePoolClients = await constructSpokePoolClientsWithLookback(
+    logger,
+    commonClients.configStoreClient,
+    config,
+    baseSigner,
+    {} // We don't override the lookback as we want to look up all TokensBridged events.
+  );
+
+  return {
+    commonClients,
+    spokePoolClients,
+  };
+}
+
+export async function runFinalizer(_logger: winston.Logger): Promise<void> {
+  logger = _logger;
+  // Same config as Dataworker for now.
+  const config = new DataworkerConfig(process.env);
+
+  const { commonClients, spokePoolClients } = await constructFinalizerClients(logger, config);
+
+  try {
+    logger[startupLogLevel(config)]({ at: "Finalizer#index", message: "Finalizer started 🏋🏿‍♀️", config });
+
+    for (;;) {
+      await updateClients(commonClients);
+      await updateSpokePoolClients(spokePoolClients, ["TokensBridged", "EnabledDepositRoute"]);
+
+      if (config.finalizerEnabled)
+        await finalize(
+          logger,
+          commonClients.hubSigner,
+          commonClients.hubPoolClient,
+          spokePoolClients,
+          config.finalizerChains
+        );
+      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
+
+      if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
+    }
+  } catch (error) {
+    if (await processCrash(logger, "Dataworker", config.pollingDelay, error)) process.exit(1);
+    await runFinalizer(logger);
   }
 }

@@ -108,8 +108,11 @@ export async function constructSpokePoolClientsWithLookback(
   return spokePoolClients;
 }
 
-export async function updateSpokePoolClients(spokePoolClients: { [chainId: number]: SpokePoolClient }) {
-  await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update()));
+export async function updateSpokePoolClients(
+  spokePoolClients: { [chainId: number]: SpokePoolClient },
+  eventsToQuery: string[] = []
+) {
+  await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update(eventsToQuery)));
 }
 
 export async function constructClients(logger: winston.Logger, config: CommonConfig): Promise<Clients> {

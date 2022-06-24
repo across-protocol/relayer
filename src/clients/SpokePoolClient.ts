@@ -1,4 +1,4 @@
-import { spreadEvent, assign, Contract, BigNumber, EventSearchConfig, Promise } from "../utils";
+import { spreadEvent, assign, Contract, BigNumber, EventSearchConfig, Promise, EventFilter } from "../utils";
 import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
 import { AcrossConfigStoreClient } from "./ConfigStoreClient";
@@ -16,7 +16,6 @@ export class SpokePoolClient {
   private rootBundleRelays: RootBundleRelayWithBlock[] = [];
   private relayerRefundExecutions: RelayerRefundExecutionWithBlock[] = [];
   public isUpdated: boolean = false;
-
   public firstBlockToSearch: number;
   public latestBlockNumber: number;
   public fillsWithBlockNumbers: FillWithBlock[] = [];
@@ -31,6 +30,18 @@ export class SpokePoolClient {
     readonly spokePoolDeploymentBlock: number = 0
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
+  }
+
+  _queryableEventNames(): { [eventName: string]: EventFilter } {
+    return {
+      FundsDeposited: this.spokePool.filters.FundsDeposited(),
+      RequestedSpeedUpDeposit: this.spokePool.filters.RequestedSpeedUpDeposit(),
+      FilledRelay: this.spokePool.filters.FilledRelay(),
+      EnabledDepositRoute: this.spokePool.filters.EnabledDepositRoute(),
+      TokensBridged: this.spokePool.filters.TokensBridged(),
+      RelayedRootBundle: this.spokePool.filters.RelayedRootBundle(),
+      ExecutedRelayerRefundRoot: this.spokePool.filters.ExecutedRelayerRefundRoot(),
+    };
   }
 
   getDepositsForDestinationChain(destinationChainId: number, withBlock = false): Deposit[] | DepositWithBlock[] {
@@ -177,7 +188,7 @@ export class SpokePoolClient {
     return `${event.depositId}-${event.originChainId}`;
   }
 
-  async update() {
+  async update(eventsToQuery: string[] = []) {
     if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
 
     this.latestBlockNumber = await this.spokePool.provider.getBlockNumber();
@@ -200,92 +211,114 @@ export class SpokePoolClient {
     });
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
-    const [
-      depositEvents,
-      speedUpEvents,
-      fillEvents,
-      enableDepositsEvents,
-      tokensBridgedEvents,
-      relayedRootBundleEvents,
-      executedRelayerRefundRootEvents,
-    ] = await Promise.all(
-      [
-        paginatedEventQuery(this.spokePool, this.spokePool.filters.FundsDeposited(), searchConfig),
-        paginatedEventQuery(this.spokePool, this.spokePool.filters.RequestedSpeedUpDeposit(), searchConfig),
-        paginatedEventQuery(this.spokePool, this.spokePool.filters.FilledRelay(), searchConfig),
-        paginatedEventQuery(this.spokePool, this.spokePool.filters.EnabledDepositRoute(), depositRouteSearchConfig),
-        paginatedEventQuery(this.spokePool, this.spokePool.filters.TokensBridged(), depositRouteSearchConfig),
-        paginatedEventQuery(this.spokePool, this.spokePool.filters.RelayedRootBundle(), searchConfig),
-        paginatedEventQuery(this.spokePool, this.spokePool.filters.ExecutedRelayerRefundRoot(), searchConfig),
-      ],
+    // If caller specifies which events to query, then only query those. This can be used by bots to limit web3
+    // requests. Otherwise, default to looking up all events.
+    let eventFilters: EventFilter[];
+    if (eventsToQuery.length > 0) {
+      eventFilters = eventsToQuery
+        .map((eventName) => this._queryableEventNames()[eventName])
+        .filter((x) => x !== undefined);
+    } else {
+      eventsToQuery = Object.keys(this._queryableEventNames());
+      eventFilters = Object.values(this._queryableEventNames());
+    }
+
+    const queryResults = await Promise.all(
+      eventFilters.map((eventFilter) => paginatedEventQuery(this.spokePool, eventFilter, searchConfig)),
       { concurrency: 2 }
     );
 
-    for (const event of tokensBridgedEvents) {
-      this.tokensBridged.push({ ...spreadEvent(event), transactionHash: event.transactionHash });
-    }
+    if (eventsToQuery.includes("TokensBridged"))
+      for (const event of queryResults[eventsToQuery.indexOf("TokensBridged")]) {
+        this.tokensBridged.push({ ...spreadEvent(event), transactionHash: event.transactionHash });
+      }
 
     // For each depositEvent, compute the realizedLpFeePct. Note this means that we are only finding this value on the
     // new deposits that were found in the searchConfig (new from the previous run). This is important as this operation
     // is heavy as there is a fair bit of block number lookups that need to happen. Note this call REQUIRES that the
     // hubPoolClient is updated on the first before this call as this needed the the L1 token mapping to each L2 token.
-    if (depositEvents.length > 0)
-      this.log("debug", `Fetching realizedLpFeePct for ${depositEvents.length} deposits on chain ${this.chainId}`, {
-        numDeposits: depositEvents.length,
-      });
-    const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number }[] = await Promise.all(
-      depositEvents.map((event) => this.computeRealizedLpFeePct(event))
-    );
-
-    for (const [index, event] of depositEvents.entries()) {
-      // Append the realizedLpFeePct.
-      const deposit: Deposit = { ...spreadEvent(event), realizedLpFeePct: dataForQuoteTime[index].realizedLpFeePct };
-      // Append the destination token to the deposit.
-      deposit.destinationToken = this.getDestinationTokenForDeposit(deposit);
-      assign(this.depositHashes, [this.getDepositHash(deposit)], deposit);
-      assign(this.deposits, [deposit.destinationChainId], [deposit]);
-      assign(
-        this.depositsWithBlockNumbers,
-        [deposit.destinationChainId],
-        [{ ...deposit, blockNumber: dataForQuoteTime[index].quoteBlock, originBlockNumber: event.blockNumber }]
+    if (eventsToQuery.includes("FundsDeposited")) {
+      const depositEvents = queryResults[eventsToQuery.indexOf("FundsDeposited")];
+      if (depositEvents.length > 0)
+        this.log("debug", `Fetching realizedLpFeePct for ${depositEvents.length} deposits on chain ${this.chainId}`, {
+          numDeposits: depositEvents.length,
+        });
+      const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number }[] = await Promise.all(
+        depositEvents.map((event) => this.computeRealizedLpFeePct(event))
       );
+
+      for (const [index, event] of depositEvents.entries()) {
+        // Append the realizedLpFeePct.
+        const deposit: Deposit = { ...spreadEvent(event), realizedLpFeePct: dataForQuoteTime[index].realizedLpFeePct };
+        // Append the destination token to the deposit.
+        deposit.destinationToken = this.getDestinationTokenForDeposit(deposit);
+        assign(this.depositHashes, [this.getDepositHash(deposit)], deposit);
+        assign(this.deposits, [deposit.destinationChainId], [deposit]);
+        assign(
+          this.depositsWithBlockNumbers,
+          [deposit.destinationChainId],
+          [{ ...deposit, blockNumber: dataForQuoteTime[index].quoteBlock, originBlockNumber: event.blockNumber }]
+        );
+      }
     }
 
-    for (const event of speedUpEvents) {
-      const speedUp: SpeedUp = { ...spreadEvent(event), originChainId: this.chainId };
-      assign(this.speedUps, [speedUp.depositor, speedUp.depositId], [speedUp]);
-    }
+    if (eventsToQuery.includes("RequestedSpeedUpDeposit")) {
+      const speedUpEvents = queryResults[eventsToQuery.indexOf("RequestedSpeedUpDeposit")];
 
-    // Traverse all deposit events and update them with associated speedups, If they exist.
-    for (const destinationChainId of Object.keys(this.deposits))
-      for (const [index, deposit] of this.deposits[destinationChainId].entries()) {
-        const speedUpDeposit = this.appendMaxSpeedUpSignatureToDeposit(deposit);
-        if (speedUpDeposit !== deposit) this.deposits[destinationChainId][index] = speedUpDeposit;
+      for (const event of speedUpEvents) {
+        const speedUp: SpeedUp = { ...spreadEvent(event), originChainId: this.chainId };
+        assign(this.speedUps, [speedUp.depositor, speedUp.depositId], [speedUp]);
       }
 
-    for (const event of fillEvents) {
-      this.fills.push(spreadEvent(event));
-      this.fillsWithBlockNumbers.push(spreadEventWithBlockNumber(event) as FillWithBlock);
-      const newFill = spreadEvent(event);
-      assign(this.depositHashesToFills, [this.getDepositHash(newFill)], [newFill]);
+      // Traverse all deposit events and update them with associated speedups, If they exist.
+      for (const destinationChainId of Object.keys(this.deposits))
+        for (const [index, deposit] of this.deposits[destinationChainId].entries()) {
+          const speedUpDeposit = this.appendMaxSpeedUpSignatureToDeposit(deposit);
+          if (speedUpDeposit !== deposit) this.deposits[destinationChainId][index] = speedUpDeposit;
+        }
     }
 
-    for (const event of enableDepositsEvents) {
-      const enableDeposit = spreadEvent(event);
-      assign(this.depositRoutes, [enableDeposit.originToken, enableDeposit.destinationChainId], enableDeposit.enabled);
+    if (eventsToQuery.includes("FilledRelay")) {
+      const fillEvents = queryResults[eventsToQuery.indexOf("FilledRelay")];
+
+      for (const event of fillEvents) {
+        this.fills.push(spreadEvent(event));
+        this.fillsWithBlockNumbers.push(spreadEventWithBlockNumber(event) as FillWithBlock);
+        const newFill = spreadEvent(event);
+        assign(this.depositHashesToFills, [this.getDepositHash(newFill)], [newFill]);
+      }
     }
 
-    for (const event of relayedRootBundleEvents) {
-      this.rootBundleRelays.push(spreadEventWithBlockNumber(event) as RootBundleRelayWithBlock);
+    if (eventsToQuery.includes("EnabledDepositRoute")) {
+      const enableDepositsEvents = queryResults[eventsToQuery.indexOf("EnabledDepositRoute")];
+
+      for (const event of enableDepositsEvents) {
+        const enableDeposit = spreadEvent(event);
+        assign(
+          this.depositRoutes,
+          [enableDeposit.originToken, enableDeposit.destinationChainId],
+          enableDeposit.enabled
+        );
+      }
     }
 
-    for (const event of executedRelayerRefundRootEvents) {
-      const executedRefund = spreadEventWithBlockNumber(event) as RelayerRefundExecutionWithBlock;
-      executedRefund.l2TokenAddress = SpokePoolClient.getExecutedRefundLeafL2Token(
-        executedRefund.chainId,
-        executedRefund.l2TokenAddress
-      );
-      this.relayerRefundExecutions.push(executedRefund);
+    if (eventsToQuery.includes("RelayedRootBundle")) {
+      const relayedRootBundleEvents = queryResults[eventsToQuery.indexOf("RelayedRootBundle")];
+      for (const event of relayedRootBundleEvents) {
+        this.rootBundleRelays.push(spreadEventWithBlockNumber(event) as RootBundleRelayWithBlock);
+      }
+    }
+
+    if (eventsToQuery.includes("ExecutedRelayerRefundRoot")) {
+      const executedRelayerRefundRootEvents = queryResults[eventsToQuery.indexOf("ExecutedRelayerRefundRoot")];
+      for (const event of executedRelayerRefundRootEvents) {
+        const executedRefund = spreadEventWithBlockNumber(event) as RelayerRefundExecutionWithBlock;
+        executedRefund.l2TokenAddress = SpokePoolClient.getExecutedRefundLeafL2Token(
+          executedRefund.chainId,
+          executedRefund.l2TokenAddress
+        );
+        this.relayerRefundExecutions.push(executedRefund);
+      }
     }
 
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.

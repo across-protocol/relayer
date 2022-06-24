@@ -1,4 +1,4 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, processCrash, getSigner } from "../utils";
+import { processEndPollingLoop, winston, config, startupLogLevel, processCrash } from "../utils";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -53,7 +53,15 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
           logger,
           clients.hubPoolClient.latestBlockNumber
         );
-      else await updateSpokePoolClients(spokePoolClients);
+      else
+        await updateSpokePoolClients(spokePoolClients, [
+          "FundsDeposited",
+          "RequestedSpeedUpDeposit",
+          "FilledRelay",
+          "EnabledDepositRoute",
+          "RelayedRootBundle",
+          "ExecutedRelayerRefundRoot",
+        ]);
 
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled)
@@ -87,10 +95,6 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       } else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
 
       await clients.multiCallerClient.executeTransactionQueue();
-
-      if (config.finalizerEnabled)
-        await finalize(logger, clients.hubSigner, clients.hubPoolClient, spokePoolClients, config.finalizerChains);
-      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }
