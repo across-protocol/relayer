@@ -60,10 +60,9 @@ export async function constructSpokePoolClientsForBlockAndUpdate(
 
 export async function constructSpokePoolClientsWithLookback(
   logger: winston.Logger,
-  configStoreClient: AcrossConfigStoreClient,
+  clients: Clients,
   config: CommonConfig,
-  baseSigner: Wallet,
-  initialLookBackOverride: { [chainId: number]: number } = {}
+  baseSigner: Wallet
 ): Promise<SpokePoolClientsByChain> {
   const spokePoolClients: SpokePoolClientsByChain = {};
 
@@ -73,32 +72,31 @@ export async function constructSpokePoolClientsWithLookback(
     return { networkId, contract: getDeployedContract("SpokePool", networkId, spokePoolSigners[networkId]) };
   });
 
-  // For each spoke chain, look up its latest block and adjust by lookback configuration to determine
-  // fromBlock. If no lookback is set, fromBlock will be set to spoke pool's deployment block.
+  // Only look back as far as the last n fully executed bundles. N can be adjusted in the env config if a longer
+  // look back is desired.
   const fromBlocks = {};
-  const l2BlockNumbers = await Promise.all(
-    spokePools.map((obj: { contract: Contract }) => obj.contract.provider.getBlockNumber())
+  const fullyExecutedBundle = clients.hubPoolClient.getNthToLastFullyExecutedRootBundle(
+    // We use the bundle's ending block number as the starting block to fetch events so need to add 1 here to
+    // ensure we go back far enough to cover data for the desired number of bundles.
+    config.bundleLookback + 1,
+    clients.hubPoolClient.latestBlockNumber
   );
   spokePools.forEach((obj: { networkId: number; contract: Contract }, index) => {
-    if (initialLookBackOverride[obj.networkId]) {
-      fromBlocks[obj.networkId] = l2BlockNumbers[index] - initialLookBackOverride[obj.networkId];
-    }
+    fromBlocks[obj.networkId] = fullyExecutedBundle.bundleEvaluationBlockNumbers[index].toNumber();
   });
 
   // Create client for each spoke pool.
   spokePools.forEach((obj: { networkId: number; contract: Contract }) => {
     const spokePoolDeploymentBlock = getDeploymentBlockNumber("SpokePool", obj.networkId);
     const spokePoolClientSearchSettings = {
-      fromBlock: fromBlocks[obj.networkId]
-        ? Math.max(fromBlocks[obj.networkId], spokePoolDeploymentBlock)
-        : spokePoolDeploymentBlock,
+      fromBlock: Math.max(fromBlocks[obj.networkId], spokePoolDeploymentBlock),
       toBlock: null,
       maxBlockLookBack: config.maxBlockLookBack[obj.networkId],
     };
     spokePoolClients[obj.networkId] = new SpokePoolClient(
       logger,
       obj.contract,
-      configStoreClient,
+      clients.configStoreClient,
       obj.networkId,
       spokePoolClientSearchSettings,
       spokePoolDeploymentBlock

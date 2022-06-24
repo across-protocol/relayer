@@ -75,6 +75,7 @@ describe("Monitor", async function () {
       MONITOR_REPORT_INTERVAL: "10",
       MONITORED_RELAYERS: `["${depositor.address}"]`,
       CONFIGURED_NETWORKS: `[1, ${repaymentChainId}, ${originChainId}, ${destinationChainId}]`,
+      BUNDLE_LOOKBACK: "1",
     });
 
     bundleDataClient = new BundleDataClient(

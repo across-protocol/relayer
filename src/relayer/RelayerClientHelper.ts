@@ -17,14 +17,9 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
   const baseSigner = await getSigner();
 
   const commonClients = await constructClients(logger, config);
+  await commonClients.hubPoolClient.update();
 
-  const spokePoolClients = await constructSpokePoolClientsWithLookback(
-    logger,
-    commonClients.configStoreClient,
-    config,
-    baseSigner,
-    config.maxRelayerLookBack
-  );
+  const spokePoolClients = await constructSpokePoolClientsWithLookback(logger, commonClients, config, baseSigner);
 
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients, commonClients.hubPoolClient);
 
@@ -42,7 +37,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
     commonClients.hubPoolClient,
     bundleDataClient,
     adapterManager,
-    config.bundleRefundLookback
+    config.bundleLookback
   );
 
   return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient };

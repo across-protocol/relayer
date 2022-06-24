@@ -20,12 +20,8 @@ export interface MonitorClients extends Clients {
 export async function constructMonitorClients(config: MonitorConfig, logger: winston.Logger): Promise<MonitorClients> {
   const baseSigner = await getSigner(); // todo: add getVoidSigner
   const commonClients = await constructClients(logger, config);
-  const spokePoolClients = await constructSpokePoolClientsWithLookback(
-    logger,
-    commonClients.configStoreClient,
-    config,
-    baseSigner
-  );
+  await commonClients.hubPoolClient.update();
+  const spokePoolClients = await constructSpokePoolClientsWithLookback(logger, commonClients, config, baseSigner);
   const bundleDataClient = new BundleDataClient(logger, commonClients, spokePoolClients, config.spokePoolChains);
 
   // Need to update HubPoolClient to get latest tokens.

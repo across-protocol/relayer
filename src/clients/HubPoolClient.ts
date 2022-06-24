@@ -253,6 +253,16 @@ export class HubPoolClient {
     });
   }
 
+  // Return the nth fully executed bundle from the last.
+  getNthToLastFullyExecutedRootBundle(index: number, latestMainnetBlock: number): ProposedRootBundle | undefined {
+    const fullyExecutedBundles = sortEventsDescending(this.proposedRootBundles).filter(
+      (rootBundle: ProposedRootBundle) => {
+        return this.isRootBundleValid(rootBundle, latestMainnetBlock);
+      }
+    );
+    return fullyExecutedBundles[index];
+  }
+
   getNextBundleStartBlockNumber(chainIdList: number[], latestMainnetBlock: number, chainId: number): number {
     const latestFullyExecutedPoolRebalanceRoot = this.getLatestFullyExecutedRootBundle(latestMainnetBlock);
 

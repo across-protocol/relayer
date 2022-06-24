@@ -310,7 +310,7 @@ export class Monitor {
 
   updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport) {
     const validatedBundleRefunds: FillsToRefund[] = this.clients.bundleDataClient.getPendingRefundsFromValidBundles(
-      this.monitorConfig.bundleRefundLookback
+      this.monitorConfig.bundleLookback
     );
     const nextBundleRefunds = this.clients.bundleDataClient.getNextBundleRefunds();
 
