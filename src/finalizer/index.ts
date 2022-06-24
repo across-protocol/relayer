@@ -62,7 +62,7 @@ export async function finalize(
       // Unlike the rollups, withdrawals process very quickly on polygon, so we can conservatively remove any events
       // that are older than 1 day old:
       const recentTokensBridgedEvents = tokensBridged.filter(
-        (e) => e.blockNumber > client.latestBlockNumber - polygonFinalizationWindow
+        (e) => e.blockNumber >= client.latestBlockNumber - polygonFinalizationWindow
       );
       const canWithdraw = await getFinalizableTransactions(logger, recentTokensBridgedEvents, posClient, hubPoolClient);
       for (const event of canWithdraw) {
