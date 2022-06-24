@@ -15,7 +15,13 @@ import {
 import { SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient } from "../clients";
 import { DataworkerConfig } from "../dataworker/DataworkerConfig";
-import { constructClients, constructSpokePoolClientsWithLookback, updateSpokePoolClients, Clients, ProcessEnv } from "../common";
+import {
+  constructClients,
+  constructSpokePoolClientsWithLookback,
+  updateSpokePoolClients,
+  Clients,
+  ProcessEnv,
+} from "../common";
 config();
 let logger: winston.Logger;
 
