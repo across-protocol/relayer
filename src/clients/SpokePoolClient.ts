@@ -213,24 +213,27 @@ export class SpokePoolClient {
 
     // If caller specifies which events to query, then only query those. This can be used by bots to limit web3
     // requests. Otherwise, default to looking up all events.
-    let eventFilters: EventFilter[];
-    if (eventsToQuery.length > 0) {
-      eventFilters = eventsToQuery
-        .map((eventName) => this._queryableEventNames()[eventName])
-        .filter((x) => x !== undefined);
-    } else {
-      eventsToQuery = Object.keys(this._queryableEventNames());
-      eventFilters = Object.values(this._queryableEventNames());
-    }
+    if (eventsToQuery.length === 0) eventsToQuery = Object.keys(this._queryableEventNames());
+    const eventSearchConfigs = eventsToQuery
+      .map((eventName) => {
+        return {
+          filter: this._queryableEventNames()[eventName],
+          searchConfig:
+            eventName === "EnabledDepositRoute" || eventName === "TokensBridged"
+              ? depositRouteSearchConfig
+              : searchConfig,
+        };
+      })
+      .filter((x) => x.filter !== undefined);
 
     const queryResults = await Promise.all(
-      eventFilters.map((eventFilter) => paginatedEventQuery(this.spokePool, eventFilter, searchConfig)),
+      eventSearchConfigs.map((config) => paginatedEventQuery(this.spokePool, config.filter, config.searchConfig)),
       { concurrency: 2 }
     );
 
     if (eventsToQuery.includes("TokensBridged"))
       for (const event of queryResults[eventsToQuery.indexOf("TokensBridged")]) {
-        this.tokensBridged.push({ ...spreadEvent(event), transactionHash: event.transactionHash });
+        this.tokensBridged.push(spreadEventWithBlockNumber(event) as TokensBridged);
       }
 
     // For each depositEvent, compute the realizedLpFeePct. Note this means that we are only finding this value on the
