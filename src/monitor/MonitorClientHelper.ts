@@ -24,7 +24,8 @@ export async function constructMonitorClients(config: MonitorConfig, logger: win
     logger,
     commonClients.configStoreClient,
     config,
-    baseSigner
+    baseSigner,
+    config.maxRelayerLookBack
   );
   const bundleDataClient = new BundleDataClient(logger, commonClients, spokePoolClients, config.spokePoolChains);
 

@@ -1,4 +1,4 @@
-import { assert, BigNumber, toBNWei } from "../utils";
+import { assert } from "../utils";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
@@ -15,9 +15,12 @@ export class CommonConfig {
   readonly sendingTransactionsEnabled: boolean;
   readonly redisUrl: string | undefined;
   readonly bundleRefundLookback: number;
+  readonly maxRelayerLookBack: { [chainId: number]: number };
+  readonly maxRelayerUnfilledDepositLookBack: { [chainId: number]: number };
 
   constructor(env: ProcessEnv) {
     const {
+      MAX_RELAYER_DEPOSIT_LOOK_BACK,
       CONFIGURED_NETWORKS,
       HUB_CHAIN_ID,
       POLLING_DELAY,
@@ -28,6 +31,18 @@ export class CommonConfig {
       REDIS_URL,
       BUNDLE_REFUND_LOOKBACK,
     } = env;
+
+    // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
+    this.maxRelayerLookBack = MAX_RELAYER_DEPOSIT_LOOK_BACK ? JSON.parse(MAX_RELAYER_DEPOSIT_LOOK_BACK) : {};
+    // `maxRelayerUnfilledDepositLookBack` informs relayer to ignore any unfilled deposits older than this amount of
+    // of blocks from latest. This allows us to ignore any false positive unfilled deposits that occur because of how
+    // `maxRelayerLookBack` is set. This can happen because block lookback per chain is not exactly equal to the same
+    // amount of time looking back on the chains, so you might produce some deposits that look like they weren't filled.
+    this.maxRelayerUnfilledDepositLookBack = { ...this.maxRelayerLookBack };
+    Object.keys(this.maxRelayerUnfilledDepositLookBack).forEach((chain) => {
+      this.maxRelayerUnfilledDepositLookBack[chain] = Number(this.maxRelayerLookBack[chain]) / 4; // TODO: Allow caller
+      // to modify what we divide `maxRelayerLookBack` values by.
+    });
     this.hubPoolChainId = HUB_CHAIN_ID ? Number(HUB_CHAIN_ID) : 1;
     this.spokePoolChains = CONFIGURED_NETWORKS ? JSON.parse(CONFIGURED_NETWORKS) : Constants.CHAIN_ID_LIST_INDICES;
     this.pollingDelay = POLLING_DELAY ? Number(POLLING_DELAY) : 60;
