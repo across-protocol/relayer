@@ -126,13 +126,12 @@ export interface RunningBalances {
   };
 }
 
-export interface TokensBridged {
+export interface TokensBridged extends SortableEvent {
   amountToReturn: BigNumber;
   chainId: number;
   leafId: number;
   l2TokenAddress: string;
   caller: string;
-  transactionHash: string;
 }
 
 export interface SpokePoolClientsByChain {
