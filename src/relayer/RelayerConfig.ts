@@ -9,8 +9,7 @@ export class RelayerConfig extends CommonConfig {
   readonly sendingSlowRelaysEnabled: Boolean;
 
   constructor(env: ProcessEnv) {
-    const { RELAYER_DISCOUNT, RELAYER_INVENTORY_CONFIG, SEND_RELAYS, SEND_SLOW_RELAYS } =
-      env;
+    const { RELAYER_DISCOUNT, RELAYER_INVENTORY_CONFIG, SEND_RELAYS, SEND_SLOW_RELAYS } = env;
     super(env);
 
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
