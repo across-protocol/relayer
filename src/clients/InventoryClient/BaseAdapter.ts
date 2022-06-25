@@ -1,3 +1,5 @@
+import { Provider } from "@ethersproject/abstract-provider";
+import { Signer } from "@ethersproject/abstract-signer";
 import { SpokePoolClient } from "../../clients";
 import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20, BigNumber } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
@@ -27,11 +29,11 @@ export class BaseAdapter {
     this.l2SearchConfig = { ...this.getSearchConfig(this.chainId), fromBlock: 0 };
   }
 
-  getSigner(chainId: number) {
+  getSigner(chainId: number): Signer {
     return this.spokePoolClients[chainId].spokePool.signer;
   }
 
-  getProvider(chainId: number) {
+  getProvider(chainId: number): Provider {
     return this.spokePoolClients[chainId].spokePool.provider;
   }
 

@@ -2,6 +2,8 @@ import { l2TokensToL1TokenValidation } from "../../common";
 import { BigNumber, winston, toBN, createFormatFunction, etherscanLink } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter } from "./";
+import { Provider } from "@ethersproject/abstract-provider";
+import { Signer } from "@arbitrum/sdk/node_modules/@ethersproject/abstract-signer";
 export class AdapterManager {
   public adapters: { [chainId: number]: OptimismAdapter | ArbitrumAdapter | PolygonAdapter } = {};
 
@@ -57,13 +59,14 @@ export class AdapterManager {
     }
   }
 
-  getProvider(chainId: number) {
+  getProvider(chainId: number): Provider {
     return this.spokePoolClients[chainId].spokePool.provider;
   }
 
-  getSigner(chainId: number) {
+  getSigner(chainId: number): Signer {
     return this.spokePoolClients[chainId].spokePool.signer;
   }
+
   getChainSearchConfig(chainId: number) {
     return this.spokePoolClients[chainId].eventSearchConfig;
   }
