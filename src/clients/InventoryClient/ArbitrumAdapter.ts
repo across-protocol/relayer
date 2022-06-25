@@ -1,4 +1,4 @@
-import { assign, Contract, runTransaction, spreadEventWithBlockNumber, winston } from "../../utils";
+import { assign, BigNumber, Contract, runTransaction, spreadEventWithBlockNumber, winston } from "../../utils";
 import { toBN, toWei, paginatedEventQuery, Promise } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
@@ -26,12 +26,13 @@ const l2Gateways = {
 // wont get stuck. These are the same params we are using in the smart contracts.
 
 export class ArbitrumAdapter extends BaseAdapter {
-  l2GasPrice = toBN(5e9);
-  l2GasLimit = toBN(2000000);
+  l2GasPrice: BigNumber = toBN(5e9);
+  l2GasLimit: BigNumber = toBN(2000000);
   // abi.encoding of the maxL2Submission cost. of 0.01e18
   transactionSubmissionData =
     "0x000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000";
-  l1SubmitValue = toWei(0.02);
+
+  l1SubmitValue: BigNumber = toWei(0.02);
   constructor(
     readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
@@ -39,11 +40,12 @@ export class ArbitrumAdapter extends BaseAdapter {
   ) {
     super(spokePoolClients, 42161, firstL1BlockToSearch);
   }
+
   async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
     await this.updateBlockSearchConfig();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
 
-    let promises = [];
+    const promises = [];
     for (const l1Token of l1Tokens) {
       if (l1Gateways[l1Token] === undefined || l2Gateways[l1Token] === null)
         throw new Error(`Token not configured ${l1Token}`);
