@@ -40,5 +40,12 @@ export async function constructMonitorClients(config: MonitorConfig, logger: win
 export async function updateMonitorClients(clients: MonitorClients) {
   await updateClients(clients);
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
-  await updateSpokePoolClients(clients.spokePoolClients);
+  await updateSpokePoolClients(clients.spokePoolClients, [
+    "FundsDeposited",
+    "RequestedSpeedUpDeposit",
+    "FilledRelay",
+    "EnabledDepositRoute",
+    "RelayedRootBundle",
+    "ExecutedRelayerRefundRoot",
+  ]);
 }

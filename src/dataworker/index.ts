@@ -51,7 +51,15 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
           dataworker.chainIdListForBundleEvaluationBlockNumbers,
           clients,
           logger,
-          clients.hubPoolClient.latestBlockNumber
+          clients.hubPoolClient.latestBlockNumber,
+          [
+            "FundsDeposited",
+            "RequestedSpeedUpDeposit",
+            "FilledRelay",
+            "EnabledDepositRoute",
+            "RelayedRootBundle",
+            "ExecutedRelayerRefundRoot",
+          ]
         );
       else
         await updateSpokePoolClients(spokePoolClients, [

@@ -34,7 +34,8 @@ export async function constructSpokePoolClientsForBlockAndUpdate(
   chainIdListForBundleEvaluationBlockNumbers: number[],
   clients: DataworkerClients,
   logger: winston.Logger,
-  latestMainnetBlock: number
+  latestMainnetBlock: number,
+  eventsToQuery?: string[]
 ): Promise<{ [chainId: number]: SpokePoolClient }> {
   const spokePoolClients = Object.fromEntries(
     chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
@@ -54,7 +55,7 @@ export async function constructSpokePoolClientsForBlockAndUpdate(
       return [chainId, client];
     })
   );
-  await updateSpokePoolClients(spokePoolClients);
+  await updateSpokePoolClients(spokePoolClients, eventsToQuery);
   return spokePoolClients;
 }
 
@@ -110,7 +111,7 @@ export async function constructSpokePoolClientsWithLookback(
 
 export async function updateSpokePoolClients(
   spokePoolClients: { [chainId: number]: SpokePoolClient },
-  eventsToQuery: string[] = []
+  eventsToQuery?: string[]
 ) {
   await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update(eventsToQuery)));
 }

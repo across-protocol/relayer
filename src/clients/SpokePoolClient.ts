@@ -188,7 +188,7 @@ export class SpokePoolClient {
     return `${event.depositId}-${event.originChainId}`;
   }
 
-  async update(eventsToQuery: string[] = []) {
+  async update(eventsToQuery?: string[]) {
     if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
 
     this.latestBlockNumber = await this.spokePool.provider.getBlockNumber();
@@ -213,18 +213,18 @@ export class SpokePoolClient {
 
     // If caller specifies which events to query, then only query those. This can be used by bots to limit web3
     // requests. Otherwise, default to looking up all events.
-    if (eventsToQuery.length === 0) eventsToQuery = Object.keys(this._queryableEventNames());
-    const eventSearchConfigs = eventsToQuery
-      .map((eventName) => {
-        return {
-          filter: this._queryableEventNames()[eventName],
-          searchConfig:
-            eventName === "EnabledDepositRoute" || eventName === "TokensBridged"
-              ? depositRouteSearchConfig
-              : searchConfig,
-        };
-      })
-      .filter((x) => x.filter !== undefined);
+    if (eventsToQuery === undefined) eventsToQuery = Object.keys(this._queryableEventNames());
+    const eventSearchConfigs = eventsToQuery.map((eventName) => {
+      if (!Object.keys(this._queryableEventNames()).includes(eventName))
+        throw new Error("Unknown event to query in SpokePoolClient");
+      return {
+        filter: this._queryableEventNames()[eventName],
+        searchConfig:
+          eventName === "EnabledDepositRoute" || eventName === "TokensBridged"
+            ? depositRouteSearchConfig
+            : searchConfig,
+      };
+    });
 
     const queryResults = await Promise.all(
       eventSearchConfigs.map((config) => paginatedEventQuery(this.spokePool, config.filter, config.searchConfig)),
