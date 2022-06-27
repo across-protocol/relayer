@@ -932,7 +932,7 @@ export class Dataworker {
               chainId: hubPoolChainId,
               method: "loadEthForL2Calls",
               args: [],
-              message: "Executed PoolRebalanceLeaf 🌿!",
+              message: "Loading ETH for arbitrum L1-->L2 relay 🛸!",
               mrkdwn,
               value: amount,
             });

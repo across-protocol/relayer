@@ -32,8 +32,7 @@ export class AdapterManager {
   async sendTokenCrossChain(chainId: number | string, l1Token: string, amount: BigNumber) {
     this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
     const l2Token = this.l2TokenForL1Token(l1Token, Number(chainId));
-    const tx = await this.adapters[chainId].sendTokenToTargetChain(l1Token, l2Token, amount);
-    return await tx.wait();
+    return await this.adapters[chainId].sendTokenToTargetChain(l1Token, l2Token, amount);
   }
 
   // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
@@ -44,17 +43,13 @@ export class AdapterManager {
       (this.adapters[288] as OptimismAdapter).wrapEthIfAboveThreshold(wrapThreshold),
     ]);
 
-    const [optimismReceipt, bobaReceipt] = await Promise.all([
-      optimismWrapTx?.wait() ?? null,
-      bobaWrapTx?.wait() ?? null,
-    ]);
-    if (optimismReceipt || bobaReceipt) {
+    if (optimismWrapTx || bobaWrapTx) {
       let mrkdwn =
-        `Ether on ${optimismReceipt ? "Optimism" : ""}${optimismReceipt && bobaReceipt ? " and " : ""}` +
-        `${bobaReceipt ? "Boba" : ""} was wrapped due to being over the threshold of ` +
+        `Ether on ${optimismWrapTx ? "Optimism" : ""}${optimismWrapTx && bobaWrapTx ? " and " : ""}` +
+        `${bobaWrapTx ? "Boba" : ""} was wrapped due to being over the threshold of ` +
         `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.\n` +
-        `${optimismReceipt ? `\nOptimism tx: ${etherscanLink(optimismReceipt.transactionHash, 10)} ` : ""}` +
-        `${bobaReceipt ? `Boba tx: ${etherscanLink(bobaReceipt.transactionHash, 288)}` : ""}`;
+        `${optimismWrapTx ? `\nOptimism tx: ${etherscanLink(optimismWrapTx.hash, 10)} ` : ""}` +
+        `${bobaWrapTx ? `Boba tx: ${etherscanLink(bobaWrapTx.hash, 288)}` : ""}`;
       this.logger.info({ at: "AdapterManager", message: "Eth wrapped on target chain 🎁", mrkdwn });
     }
   }
