@@ -1,4 +1,14 @@
-import { BigNumber, winston, assign, toBN, getNetworkName, createFormatFunction, etherscanLink, Contract, runTransaction } from "../../utils";
+import {
+  BigNumber,
+  winston,
+  assign,
+  toBN,
+  getNetworkName,
+  createFormatFunction,
+  etherscanLink,
+  Contract,
+  runTransaction,
+} from "../../utils";
 import { HubPoolClient, TokenClient, BundleDataClient, weth9Abi } from "..";
 import { FillsToRefund, InventoryConfig } from "../../interfaces";
 import { AdapterManager } from "./AdapterManager";
@@ -351,42 +361,33 @@ export class InventoryClient {
     try {
       if (!this.isInventoryManagementEnabled()) return;
       const l1Weth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
-    
+
       // Ignore chains that don't use ETH as native gas token.
       const chainsToCheckNativeBalance = this.getEnabledChains().filter(
-        (chain) => chain !== 137 && this.inventoryConfig[l1Weth][chain].unwrapWethThreshold !== undefined
+        (chain) =>
+          chain !== 137 && this.inventoryConfig.tokenConfig[l1Weth][chain.toString()].unwrapWethThreshold !== undefined
       );
-      const nativeBalances = Object.fromEntries(await Promise.all(
+      const nativeBalances = Object.fromEntries(
+        await Promise.all(
           chainsToCheckNativeBalance.map(async (chainId) => [
             chainId,
             await this.tokenClient.spokePoolClients[chainId].spokePool.provider.getBalance(this.relayer),
           ])
-      ));
-      this.log("Checking WETH unwrap thresholds for chains with thresholds set", nativeBalances);
+        )
+      );
+      this.log("Checking WETH unwrap thresholds for chains with thresholds set", { nativeBalances });
 
-      for (const l2NativeBalance of nativeBalances) {
+      for (const chainId of Object.keys(nativeBalances)) {
         const l2WethBalance =
-          this.tokenClient.getBalance(
-            l2NativeBalance[0],
-            this.getDestinationTokenForL1Token(l1Weth, l2NativeBalance[0])
-          ) || toBN(0);
-  
-        if (
-          l2NativeBalance[1].lt(this.inventoryConfig[l1Weth][l2NativeBalance[0]].unwrapWethThreshold)
-        ) {
-          if (l2WethBalance.gte(this.inventoryConfig[l1Weth][l2NativeBalance[0]].unwrapWethTarget))
-            assign(
-              unwrapsRequired,
-              [l2NativeBalance[0]],
-              this.inventoryConfig[l1Weth][l2NativeBalance[0]].unwrapWethTarget
-            );
+          this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Weth, chainId)) || toBN(0);
+
+        if (toBN(nativeBalances[chainId]).lt(this.inventoryConfig.tokenConfig[l1Weth][chainId].unwrapWethThreshold)) {
+          const amountToUnwrap = toBN(this.inventoryConfig.tokenConfig[l1Weth][chainId].unwrapWethTarget).sub(
+            toBN(nativeBalances[chainId])
+          );
+          if (l2WethBalance.gte(amountToUnwrap)) assign(unwrapsRequired, [chainId], amountToUnwrap);
           // Extract unexecutable rebalances for logging.
-          else
-            assign(
-              unexecutedUnwraps,
-              [l2NativeBalance[0]],
-              this.inventoryConfig[l1Weth][l2NativeBalance[0]].unwrapWethTarget
-            );
+          else assign(unexecutedUnwraps, [chainId], amountToUnwrap);
         }
       }
       this.log("Considered WETH unwraps", { unwrapsRequired, unexecutedUnwraps });
@@ -403,8 +404,9 @@ export class InventoryClient {
       // is already complex logic and most of the time we'll not be sending batches of rebalance transactions.
       for (const chainId of Object.keys(unwrapsRequired)) {
         const l2Weth = this.getDestinationTokenForL1Token(l1Weth, chainId);
-          const receipt = await this._unwrapWeth(chainId, l2Weth, unwrapsRequired[chainId][l1Weth]);
-          assign(executedTransactions, [chainId], receipt.hash);
+        this.tokenClient.decrementLocalBalance(Number(chainId), l2Weth, unwrapsRequired[chainId]);
+        const receipt = await this._unwrapWeth(chainId, l2Weth, unwrapsRequired[chainId]);
+        assign(executedTransactions, [chainId], receipt.hash);
       }
 
       // Construct logs on the cross-chain actions executed.
@@ -412,33 +414,31 @@ export class InventoryClient {
 
       for (const chainId of Object.keys(unwrapsRequired)) {
         mrkdwn += `*Unwraps sent to ${getNetworkName(chainId)}:*\n`;
-          const { unwrapWethTarget, unwrapWethThreshold } = this.inventoryConfig.tokenConfig[l1Weth][chainId];
-          const formatter = createFormatFunction(2, 4, false, 18);
-          mrkdwn +=
-            ` - ${formatter(
-              unwrapsRequired[chainId]
-            )} WETH rebalanced. This meets target ETH balance of ` +
-            `${formatWei(unwrapWethTarget.toString())} (trigger of ` +
-            `${formatWei(unwrapWethThreshold.toString())} ETH) ` +
-            `tx: ${etherscanLink(executedTransactions[chainId], 1)}\n`;
+        const { unwrapWethTarget, unwrapWethThreshold } = this.inventoryConfig.tokenConfig[l1Weth][chainId];
+        const formatter = createFormatFunction(2, 4, false, 18);
+        mrkdwn +=
+          ` - ${formatter(unwrapsRequired[chainId])} WETH rebalanced. This meets target ETH balance of ` +
+          `${formatWei(unwrapWethTarget.toString())} (trigger of ` +
+          `${formatWei(unwrapWethThreshold.toString())} ETH), ` +
+          `current balance of ${formatWei(nativeBalances[chainId])} ` +
+          `tx: ${etherscanLink(executedTransactions[chainId], chainId)}\n`;
       }
 
       for (const chainId of Object.keys(unexecutedUnwraps)) {
         mrkdwn += `*Insufficient amount to unwrap WETH on ${getNetworkName(chainId)}:*\n`;
-          const formatter = createFormatFunction(2, 4, false, 18);
-          mrkdwn +=
-            `- WETH unwrap blocked. Required to send ` +
-            `${formatter(unexecutedUnwraps[chainId])} but relayer has ` +
-            `${formatter(this.tokenClient.getBalance(
-              chainId,
-              this.getDestinationTokenForL1Token(l1Weth, chainId)
-            ))} WETH balance.\n`;
+        const formatter = createFormatFunction(2, 4, false, 18);
+        mrkdwn +=
+          `- WETH unwrap blocked. Required to send ` +
+          `${formatter(unexecutedUnwraps[chainId])} but relayer has ` +
+          `${formatter(
+            this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Weth, chainId))
+          )} WETH balance.\n`;
       }
 
       if (mrkdwn) this.log("Executed WETH unwraps 🎁", { mrkdwn }, "info");
     } catch (error) {
       this.log(
-        "Something errored during inventory rebalance",
+        "Something errored during WETH unwrapping",
         { error, unwrapsRequired, unexecutedUnwraps, executedTransactions }, // include all info to help debugging.
         "error"
       );
@@ -481,7 +481,7 @@ export class InventoryClient {
   async _unwrapWeth(chainId: number | string, _l2Weth: string, amount: BigNumber) {
     const l2Signer = this.tokenClient.spokePoolClients[chainId].spokePool.signer;
     const l2Weth = new Contract(_l2Weth, weth9Abi, l2Signer);
-    this.log("Unwrapping WETH", amount);
+    this.log("Unwrapping WETH", { amount: amount.toString() });
     return await runTransaction(this.logger, l2Weth, "withdraw", [amount]);
   }
 

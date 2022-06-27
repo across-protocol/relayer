@@ -22,7 +22,8 @@ export class RelayerConfig extends CommonConfig {
 
       Object.keys(this.inventoryConfig.tokenConfig).forEach((l1Token) => {
         Object.keys(this.inventoryConfig.tokenConfig[l1Token]).forEach((chainId) => {
-          const { targetPct, thresholdPct, unwrapWethThreshold, unwrapWethTarget } = this.inventoryConfig.tokenConfig[l1Token][chainId];
+          const { targetPct, thresholdPct, unwrapWethThreshold, unwrapWethTarget } =
+            this.inventoryConfig.tokenConfig[l1Token][chainId];
           assert(
             targetPct !== undefined && thresholdPct !== undefined,
             `Bad config. Must specify targetPct, thresholdPct for ${l1Token} on ${chainId}`
@@ -31,13 +32,12 @@ export class RelayerConfig extends CommonConfig {
             toBN(thresholdPct).lte(toBN(targetPct)),
             `Bad config. thresholdPct<=targetPct for ${l1Token} on ${chainId}`
           );
-
           this.inventoryConfig.tokenConfig[l1Token][chainId].targetPct = toBNWei(targetPct).div(100);
           this.inventoryConfig.tokenConfig[l1Token][chainId].thresholdPct = toBNWei(thresholdPct).div(100);
           if (unwrapWethThreshold !== undefined)
             this.inventoryConfig.tokenConfig[l1Token][chainId].unwrapWethThreshold = toBNWei(unwrapWethThreshold);
           this.inventoryConfig.tokenConfig[l1Token][chainId].unwrapWethTarget = unwrapWethTarget
-            ? toBNWei(unwrapWethThreshold)
+            ? toBNWei(unwrapWethTarget)
             : toBNWei(2);
         });
       });
