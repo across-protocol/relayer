@@ -283,31 +283,48 @@ export class Monitor {
     const { monitoredBalances } = this.monitorConfig;
     const balances = await this._getBalances(monitoredBalances);
     const decimalValues = await this._getDecimals(monitoredBalances);
-    const alertText = (
+    const alerts = (
       await Promise.all(
-        this.monitorConfig.monitoredBalances.map(async ({ chainId, token, account, threshold }, i) => {
-          const balance = balances[i];
-          const decimals = decimalValues[i];
-          if (balance.lt(ethers.utils.parseUnits(threshold.toString(), decimals))) {
-            const symbol =
-              token === ZERO_ADDRESS
-                ? getNativeTokenSymbol(chainId)
-                : await new Contract(
-                    token,
-                    ERC20.abi,
-                    this.clients.spokePoolClients[chainId].spokePool.provider
-                  ).symbol();
-            return `  ${getNetworkName(chainId)} ${symbol} balance for ${etherscanLink(
-              account,
-              chainId
-            )} is ${ethers.utils.formatUnits(balance, decimals)}. Threshold: ${threshold}`;
+        this.monitorConfig.monitoredBalances.map(
+          async (
+            { chainId, token, account, warnThreshold, errorThreshold },
+            i
+          ): Promise<undefined | { level: "warn" | "error"; text: string }> => {
+            const balance = balances[i];
+            const decimals = decimalValues[i];
+            let trippedThreshold: { level: "warn" | "error"; threshold: number } | null = null;
+
+            if (warnThreshold !== null && balance.lt(ethers.utils.parseUnits(warnThreshold.toString(), decimals)))
+              trippedThreshold = { level: "warn", threshold: warnThreshold };
+            if (errorThreshold !== null && balance.lt(ethers.utils.parseUnits(errorThreshold.toString(), decimals)))
+              trippedThreshold = { level: "error", threshold: errorThreshold };
+            if (trippedThreshold !== null) {
+              const symbol =
+                token === ZERO_ADDRESS
+                  ? getNativeTokenSymbol(chainId)
+                  : await new Contract(
+                      token,
+                      ERC20.abi,
+                      this.clients.spokePoolClients[chainId].spokePool.provider
+                    ).symbol();
+              return {
+                level: trippedThreshold.level,
+                text: `  ${getNetworkName(chainId)} ${symbol} balance for ${etherscanLink(
+                  account,
+                  chainId
+                )} is ${ethers.utils.formatUnits(balance, decimals)}. Threshold: ${trippedThreshold.threshold}`,
+              };
+            }
           }
-        })
+        )
       )
     ).filter((text) => text !== undefined);
-    if (alertText.length > 0) {
-      const mrkdwn = "Some balance(s) are below the configured threshold!\n" + alertText.join("\n");
-      this.logger.error({ at: "Monitor", message: "Balance(s) below threshold", mrkdwn: mrkdwn });
+    if (alerts.length > 0) {
+      // Just send out the maximum alert level rather than splitting into warnings and errors.
+      const maxAlertlevel = alerts.some((alert) => alert.level === "error") ? "error" : "warn";
+      const mrkdwn =
+        "Some balance(s) are below the configured threshold!\n" + alerts.map(({ text }) => text).join("\n");
+      this.logger[maxAlertlevel]({ at: "Monitor", message: "Balance(s) below threshold", mrkdwn: mrkdwn });
     }
   }
 

@@ -23,7 +23,13 @@ export class MonitorConfig extends CommonConfig {
   readonly whitelistedRelayers: string[];
   readonly knownV1Addresses: string[];
   readonly botModes: BotModes;
-  readonly monitoredBalances: { chainId: number; threshold: number; account: string; token: string }[] = [];
+  readonly monitoredBalances: {
+    chainId: number;
+    warnThreshold: number | null;
+    errorThreshold: number | null;
+    account: string;
+    token: string;
+  }[] = [];
 
   constructor(env: ProcessEnv) {
     super(env);
@@ -71,19 +77,35 @@ export class MonitorConfig extends CommonConfig {
     this.hubPoolEndingBlock = ENDING_BLOCK_NUMBER ? Number(ENDING_BLOCK_NUMBER) : undefined;
 
     if (MONITORED_BALANCES) {
-      this.monitoredBalances = JSON.parse(MONITORED_BALANCES).map(({ threshold, account, token, chainId }) => {
-        if (Number.isNaN(Number(threshold)))
-          throw new Error(`threshold value: ${threshold} cannot be converted to a number`);
-        if (Number.isNaN(parseInt(chainId)))
-          throw new Error(`chainId value: ${chainId} cannot be converted to an integer`);
-        const isNativeToken = !token || token === "0x0" || token === ZERO_ADDRESS;
-        return {
-          token: isNativeToken ? ZERO_ADDRESS : token,
-          threshold: Number(threshold),
-          account: ethers.utils.getAddress(account),
-          chainId: parseInt(chainId),
-        };
-      });
+      this.monitoredBalances = JSON.parse(MONITORED_BALANCES).map(
+        ({ errorThreshold, warnThreshold, account, token, chainId }) => {
+          if (!errorThreshold && !warnThreshold)
+            throw new Error("Must provide either an errorThreshold or a warnThreshold");
+
+          let parsedErrorThreshold: number | null = null;
+          if (errorThreshold) {
+            if (Number.isNaN(Number(errorThreshold)))
+              throw new Error(`errorThreshold value: ${errorThreshold} cannot be converted to a number`);
+            parsedErrorThreshold = Number(errorThreshold);
+          }
+
+          let parsedWarnThreshold: number | null = null;
+          if (warnThreshold) {
+            if (Number.isNaN(Number(errorThreshold)))
+              throw new Error(`warnThreshold value: ${warnThreshold} cannot be converted to a number`);
+            parsedWarnThreshold = Number(warnThreshold);
+          }
+
+          const isNativeToken = !token || token === "0x0" || token === ZERO_ADDRESS;
+          return {
+            token: isNativeToken ? ZERO_ADDRESS : token,
+            errorThreshold: parsedErrorThreshold,
+            warnThreshold: parsedWarnThreshold,
+            account: ethers.utils.getAddress(account),
+            chainId: parseInt(chainId),
+          };
+        }
+      );
     }
 
     this.spokePoolChains.forEach((chainId) => {
