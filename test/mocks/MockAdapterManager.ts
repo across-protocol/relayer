@@ -5,15 +5,15 @@ import { createRandomBytes32 } from "../utils";
 
 export class MockAdapterManager extends AdapterManager {
   public tokensSentCrossChain: {
-    [chainId: number]: { [l1Token: string]: { amount: BigNumber; transactionHash: string } };
+    [chainId: number]: { [l1Token: string]: { amount: BigNumber; hash: string } };
   } = {};
 
   public mockedOutstandingCrossChainTransfers: { [chainId: number]: { [l1Token: string]: BigNumber } } = {};
   async sendTokenCrossChain(chainId: number, l1Token: string, amount: BigNumber) {
     if (!this.tokensSentCrossChain[chainId]) this.tokensSentCrossChain[chainId] = {};
-    const transactionHash = createRandomBytes32();
-    this.tokensSentCrossChain[chainId][l1Token] = { amount, transactionHash };
-    return { transactionHash };
+    const hash = createRandomBytes32();
+    this.tokensSentCrossChain[chainId][l1Token] = { amount, hash };
+    return { hash };
   }
 
   override async getOutstandingCrossChainTokenTransferAmount(
