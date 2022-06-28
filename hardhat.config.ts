@@ -1,6 +1,6 @@
 import * as dotenv from "dotenv";
 
-import { HardhatUserConfig } from "hardhat/config";
+import { HardhatUserConfig } from "hardhat/types";
 import { getNodeUrl, getMnemonic } from "@uma/common";
 
 import "@nomiclabs/hardhat-etherscan";
