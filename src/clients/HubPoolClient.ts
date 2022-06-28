@@ -185,7 +185,8 @@ export class HubPoolClient {
     let endingBlockNumber: number;
     for (const rootBundle of sortEventsAscending(this.proposedRootBundles)) {
       const nextRootBundle = this.getFollowingRootBundle(rootBundle);
-      if (!this.isRootBundleValid(rootBundle, nextRootBundle ? nextRootBundle.blockNumber : latestMainnetBlock)) continue;
+      if (!this.isRootBundleValid(rootBundle, nextRootBundle ? nextRootBundle.blockNumber : latestMainnetBlock))
+        continue;
 
       const bundleEvalBlockNumber = this.getBundleEndBlockForChain(
         rootBundle as ProposedRootBundle,
