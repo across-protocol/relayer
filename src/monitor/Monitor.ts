@@ -109,7 +109,7 @@ export class Monitor {
           ${etherscanLink(l1TokenUtilization.l1Token, l1TokenUtilization.chainId)} on \
           ${getNetworkName(l1TokenUtilization.chainId)} is at \
           ${createFormatFunction(0, 2)(utilizationString)}% utilization!"`;
-        this.logger.warn({ at: "UtilizationMonitor", message: "High pool utilization warning 🏊", mrkdwn });
+        this.logger.info({ at: "UtilizationMonitor", message: "High pool utilization warning 🏊", mrkdwn });
       }
     }
   }
