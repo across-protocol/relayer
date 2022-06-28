@@ -252,10 +252,7 @@ export function _buildPoolRebalanceRoot(
   // balances because the prior partial fill would have triggered a refund to be sent to the spoke pool to refund
   // a slow fill.
   subtractExcessFromPreviousSlowFillsFromRunningBalances(
-    // Add a buffer to the mainnet end block since this number is used to look up executed pool rebalance leaves
-    // to validate root bundles. The usage of the buffer here is obscured from this function and should be refactored
-    // accordingly so this is just a temporary fix.
-    endBlockForMainnet + 100,
+    endBlockForMainnet,
     runningBalances,
     clients.hubPoolClient,
     allValidFills,
