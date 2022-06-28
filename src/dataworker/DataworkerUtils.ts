@@ -225,7 +225,8 @@ export function _buildPoolRebalanceRoot(
   clients: DataworkerClients,
   chainIdListForBundleEvaluationBlockNumbers: number[],
   maxL1TokenCountOverride: number,
-  tokenTransferThreshold: BigNumberForToken
+  tokenTransferThreshold: BigNumberForToken,
+  blockRangeEndBlockBuffer: { [chainId: number]: number } = {}
 ) {
   // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
   // slow relay refunds. They are decreased by the amount of funds already held by the SpokePool. Balances are keyed
@@ -252,7 +253,10 @@ export function _buildPoolRebalanceRoot(
   // balances because the prior partial fill would have triggered a refund to be sent to the spoke pool to refund
   // a slow fill.
   subtractExcessFromPreviousSlowFillsFromRunningBalances(
-    endBlockForMainnet,
+    // Add a buffer to the mainnet end block since this number is used to look up executed pool rebalance leaves
+    // to validate root bundles. The usage of the buffer here is obscured from this function and should be refactored
+    // accordingly so this is just a temporary fix.
+    endBlockForMainnet + blockRangeEndBlockBuffer[1] ?? 0,
     runningBalances,
     clients.hubPoolClient,
     allValidFills,

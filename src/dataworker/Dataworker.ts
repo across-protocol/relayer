@@ -1216,7 +1216,8 @@ export class Dataworker {
         this.clients,
         this.chainIdListForBundleEvaluationBlockNumbers,
         this.maxL1TokenCountOverride,
-        this.tokenTransferThreshold
+        this.tokenTransferThreshold,
+        this.blockRangeEndBlockBuffer
       );
     }
 
