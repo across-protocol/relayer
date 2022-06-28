@@ -64,19 +64,14 @@ export class InventoryClient {
     return distributionPerL1Token;
   }
 
-  // Get the balance of a given token on a given chain, including shortfalls, any pending cross chain transfers and
-  // upcoming refunds.
+  // Get the balance of a given token on a given chain, including shortfalls and any pending cross chain transfers.
   getCurrentAllocationPct(l1Token: string, chainId: number): BigNumber {
-    const totalRefundsPerChain = this.getBundleRefunds(l1Token);
-    const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), toBN(0));
     // If there is nothing over all chains, return early.
-    const cumulativeBalance = this.getCumulativeBalance(l1Token).add(cumulativeRefunds);
+    const cumulativeBalance = this.getCumulativeBalance(l1Token);
     if (cumulativeBalance.eq(0)) return toBN(0);
 
     const shortfall = this.getTokenShortFall(l1Token, chainId) || toBN(0);
-    const currentBalance = this.getBalanceOnChainForL1Token(chainId, l1Token)
-      .add(totalRefundsPerChain[chainId])
-      .sub(shortfall);
+    const currentBalance = this.getBalanceOnChainForL1Token(chainId, l1Token).sub(shortfall);
     // Multiply by scalar to avoid rounding errors.
     return currentBalance.mul(scalar).div(cumulativeBalance);
   }
@@ -208,14 +203,8 @@ export class InventoryClient {
     return refundChainId;
   }
 
-  // A rebalance is triggered in the following 2 cases:
-  // 1. There's a shortfall. We'll send the entire shortfall amount to cover the deposit in timely manner.
-  // This amount likely will get refunded on L1 later on as determineRefundChainId already considers upcoming refunds
-  // and would see this amount as not needed to meet the target allocation.
-  // Example: Current balance on Polygon is 5 WETH, there's an unfilled deposit (shortfall) of 10 WETH. We'll send
-  // 10 WETH from L1 over to cover the shortfall. This 10 WETH later will get refunded on L1 directly.
-  // 2. If there's no shortfall, but allocation is below target. This in theory should almost never happen unless we
-  // manually move funds away from the L2 chain or if we increase the allocation targets.
+  // Trigger a rebalance if the current balance on any L2 chain, including shortfalls, is less than the threshold
+  // allocation.
   async rebalanceInventoryIfNeeded() {
     const rebalancesRequired: { [chainId: number]: { [l1Token: string]: BigNumber } } = {};
     const possibleRebalances: { [chainId: number]: { [l1Token: string]: BigNumber } } = {};
@@ -232,20 +221,12 @@ export class InventoryClient {
         if (cumulativeBalance.eq(0)) continue;
 
         for (const chainId of this.getEnabledL2Chains()) {
-          const currentBalanceConsideringTransfers = this.getBalanceOnChainForL1Token(chainId, l1Token);
-          const shortfall = this.getTokenShortFall(l1Token, chainId) || toBN(0);
-          // Rebalance if there's a shortfall (current balance + transfers cannot cover) or if allocation is below
-          // target.
-          if (currentBalanceConsideringTransfers.lt(shortfall)) {
-            assign(rebalancesRequired, [chainId, l1Token], shortfall);
-          } else {
-            const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId);
-            const thresholdPct = toBN(this.inventoryConfig.tokenConfig[l1Token][chainId].thresholdPct);
-            if (currentAllocPct.lt(thresholdPct)) {
-              const deltaPct = toBN(this.inventoryConfig.tokenConfig[l1Token][chainId].targetPct).sub(currentAllocPct);
-              // Divide by scalar because allocation percent was multiplied by it to avoid rounding errors.
-              assign(rebalancesRequired, [chainId, l1Token], deltaPct.mul(cumulativeBalance).div(scalar));
-            }
+          const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId);
+          const thresholdPct = toBN(this.inventoryConfig.tokenConfig[l1Token][chainId].thresholdPct);
+          if (currentAllocPct.lt(thresholdPct)) {
+            const deltaPct = toBN(this.inventoryConfig.tokenConfig[l1Token][chainId].targetPct).sub(currentAllocPct);
+            // Divide by scalar because allocation percent was multiplied by it to avoid rounding errors.
+            assign(rebalancesRequired, [chainId, l1Token], deltaPct.mul(cumulativeBalance).div(scalar));
           }
         }
       }
