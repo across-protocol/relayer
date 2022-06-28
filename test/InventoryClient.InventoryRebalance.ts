@@ -182,13 +182,14 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     tokenClient.setTokenShortFallData(137, l2TokensForWeth[137], [6969], shortfallAmount);
     await inventoryClient.update();
 
-    // The rebalance should send over 18 WETH to cover the shortfall exactly. In practice, this 18 WETH would be
-    // likely be refunded on L1, so it effectively goes back to whether it comes from.
-    const expectedBridgedAmount = toWei(18);
+    // If we now consider how much should be sent over the bridge. The spoke pool, considering the shortfall, has an
+    // allocation of -5.7%. The target is, however, 5% of the total supply. factoring in the overshoot parameter we
+    // should see a transfer of 5 + 2 - (-5.7)=12.714% of total inventory. This should be an amount of 0.127*140=17.79.
+    const expectedBridgedAmount = toBN("17799999999999999880");
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, `Executed Inventory rebalances`)).to.be.true;
     expect(lastSpyLogIncludes(spy, `Rebalances sent to Polygon-matic`)).to.be.true;
-    expect(lastSpyLogIncludes(spy, `18.00 WETH rebalanced`)).to.be.true; // expected bridge amount rounded for logs.
+    expect(lastSpyLogIncludes(spy, `17.79 WETH rebalanced`)).to.be.true; // expected bridge amount rounded for logs.
     expect(lastSpyLogIncludes(spy, `This meets target allocation of 7.00%`)).to.be.true; // config from client.
 
     // Note that there should be some additional state updates that we should check. In particular the token balance
@@ -208,9 +209,9 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, `No rebalances required`)).to.be.true;
-    expect(spyLogIncludes(spy, -2, `"outstandingTransfers":"18.00"`)).to.be.true;
+    expect(spyLogIncludes(spy, -2, `"outstandingTransfers":"17.79"`)).to.be.true;
     expect(spyLogIncludes(spy, -2, `"actualBalanceOnChain":"10.00"`)).to.be.true;
-    expect(spyLogIncludes(spy, -2, `"virtualBalanceOnChain":"28.00"`)).to.be.true;
+    expect(spyLogIncludes(spy, -2, `"virtualBalanceOnChain":"27.79"`)).to.be.true;
 
     // Now mock that funds have finished coming over the bridge and check behavior is as expected.
     // Zero the transfer. mock conclusion.
@@ -229,27 +230,6 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // actual balance should be listed above at 945. share should be 945/(13500) =0.7 (initial total - withdrawAmount).
     // expect(spyLogIncludes(spy, -2, `"42161":{"actualBalanceOnChain":"945.00"`)).to.be.true;
     // expect(spyLogIncludes(spy, -2, `"proRataShare":"7.00%"`)).to.be.true;
-  });
-
-  it("Correctly decides when to execute rebalances: allocation not low with refunds", async function () {
-    const initialBalance = initialAllocation[42161][mainnetUsdc];
-    expect(tokenClient.getBalance(42161, l2TokensForUsdc[42161])).to.equal(initialBalance);
-    const withdrawAmount = toMegaWei(500);
-    bundleDataClient.setReturnedPendingBundleRefunds({
-      42161: createRefunds(owner.address, withdrawAmount, l2TokensForUsdc[42161]),
-    });
-    tokenClient.decrementLocalBalance(42161, l2TokensForUsdc[42161], withdrawAmount);
-    expect(tokenClient.getBalance(42161, l2TokensForUsdc[42161])).to.equal(withdrawAmount);
-
-    // Now, simulate coming refunds from both current pending and next bundle. This means that Arbitrum would have
-    // 0 (current remaining balance) + 500 (refunds) + 500 (coming transfers) = 1000. Alloc % = 1000 / (14000 - 500)
-    // = ~7.4% which is above 5% so no rebalance should happen.
-    const expectedAlloc = toMegaWei(1000).mul(toWei(1)).div(initialUsdcTotal);
-    expect(inventoryClient.getCurrentAllocationPct(mainnetUsdc, 42161)).to.equal(expectedAlloc);
-
-    await inventoryClient.update();
-    await inventoryClient.rebalanceInventoryIfNeeded();
-    expect(lastSpyLogIncludes(spy, `No rebalances required`)).to.be.true;
   });
 });
 
