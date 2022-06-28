@@ -397,7 +397,7 @@ export class InventoryClient {
         return;
       }
 
-      // Finally, execute the rebalances.
+      // Finally, execute the unwraps.
       // TODO: The logic below is slow as it waits for each transaction to be included before sending the next one. This
       // should be refactored to enable us to pass an array of transaction objects to the transaction util that then
       // sends each transaction one after the other with incrementing nonce. this will be left for a follow on PR as this
