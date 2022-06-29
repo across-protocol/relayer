@@ -214,7 +214,7 @@ export class Monitor {
     for (const relayer of relayers) {
       const report = reports[relayer];
       let summaryMrkdwn = "*[Summary]*\n";
-      let mrkdwn = "Token amounts: current, latest bundle, next bundle, total\n";
+      let mrkdwn = "Token amounts: current, pending execution, future, total\n";
       for (const token of allL1Tokens) {
         let tokenMrkdwn = "";
         for (const chainName of allChainNames) {
@@ -433,7 +433,7 @@ export class Monitor {
       if (mrkdwn) {
         this.logger.info({
           at: "Monitor",
-          message: `There are non-v2 transfers for relayer ${relayer} 🦨`,
+          message: `Transfers that are not fills for relayer ${relayer} 🦨`,
           mrkdwn,
         });
       }
