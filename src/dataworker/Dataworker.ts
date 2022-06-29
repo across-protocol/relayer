@@ -916,7 +916,7 @@ export class Dataworker {
             method: "exchangeRateCurrent",
             args: [l1Token],
             message: `Updated exchange rate ♻️!`,
-            mrkdwn: `Updated exchange rate for l1 token: ${l1Token}`,
+            mrkdwn: `Updated exchange rate for l1 token: ${this.clients.hubPoolClient.getTokenInfo(1, l1Token).symbol}`,
           });
         }
       });
