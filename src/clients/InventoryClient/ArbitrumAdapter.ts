@@ -26,13 +26,13 @@ const l2Gateways = {
 // wont get stuck.
 
 export class ArbitrumAdapter extends BaseAdapter {
-  l2GasPrice: BigNumber = toBN(200e9);
-  l2GasLimit: BigNumber = toBN(250000);
+  l2GasPrice: BigNumber = toBN(20e9);
+  l2GasLimit: BigNumber = toBN(150000);
   // abi.encoding of the maxL2Submission cost. of 0.01e18
   transactionSubmissionData =
     "0x000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000";
 
-  l1SubmitValue: BigNumber = toWei(0.06);
+  l1SubmitValue: BigNumber = toWei(0.013);
   constructor(
     readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
