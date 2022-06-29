@@ -126,13 +126,11 @@ export class BundleDataClient {
         for (const relayer of Object.keys(refunds)) {
           const executedAmount = executedRefunds[tokenAddress][relayer];
           if (executedAmount === undefined) continue;
-
-          if (executedAmount.gt(refunds[relayer])) {
-            throw new Error(
-              `Unexpected state: Executed refund amount ${executedAmount} is larger than remaining refund amount from bundle: ${refunds[relayer]}`
-            );
-          }
-          refunds[relayer] = refunds[relayer].sub(executedAmount);
+          // Depending on how far we lookback when loading deposits/fills events, we might be missing some valid
+          // refunds in the bundle calculation. If relayer refund leaves are executed later and all the executions are
+          // within the lookback period but the corresponding deposits/fills are not, we can run into cases where
+          // executedAmount > refunds[relayer].
+          refunds[relayer] = executedAmount.gt(refunds[relayer]) ? toBN(0) : refunds[relayer].sub(executedAmount);
         }
       }
     }

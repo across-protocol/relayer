@@ -24,6 +24,10 @@ export async function runRelayer(_logger: winston.Logger): Promise<void> {
 
       await relayerClients.multiCallerClient.executeTransactionQueue(!config.sendingRelaysEnabled);
 
+      // Unwrap WETH after filling deposits so we don't mess up slow fill logic, but before rebalancing
+      // any tokens so rebalancing can take into account unwrapped WETH balances.
+      await relayerClients.inventoryClient.unwrapWeth();
+
       await relayerClients.inventoryClient.rebalanceInventoryIfNeeded();
 
       // Clear state from profit and token clients. These are updated on every iteration and should start fresh.
