@@ -23,16 +23,16 @@ const l2Gateways = {
 };
 
 // TODO: replace these numbers using the arbitrum SDK. these are bad values that mean we will over pay but transactions
-// wont get stuck. These are the same params we are using in the smart contracts.
+// wont get stuck.
 
 export class ArbitrumAdapter extends BaseAdapter {
   l2GasPrice: BigNumber = toBN(200e9);
-  l2GasLimit: BigNumber = toBN(150000);
+  l2GasLimit: BigNumber = toBN(250000);
   // abi.encoding of the maxL2Submission cost. of 0.01e18
   transactionSubmissionData =
     "0x000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000";
 
-  l1SubmitValue: BigNumber = toWei(0.04);
+  l1SubmitValue: BigNumber = toWei(0.06);
   constructor(
     readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
