@@ -1230,11 +1230,11 @@ export class Dataworker {
     //    signified by groupIndex === 0.
     // 2. Any netSendAmount > 0 triggers an L1 -> L2 token send, which costs 0.02 ETH.
     let requiredAmount = leaf.netSendAmounts.reduce(
-      (acc, curr) => (curr.gt(0) ? acc.add(toBNWei("0.02")) : acc),
+      (acc, curr) => (curr.gt(0) ? acc.add(toBNWei("0.06")) : acc),
       BigNumber.from(0)
     );
 
-    if (leaf.groupIndex === 0) requiredAmount = requiredAmount.add(toBNWei("0.02"));
+    if (leaf.groupIndex === 0) requiredAmount = requiredAmount.add(toBNWei("0.06"));
     return requiredAmount;
   }
 }
