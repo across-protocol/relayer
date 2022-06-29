@@ -346,7 +346,7 @@ export class InventoryClient {
       // Ignore chains that don't use ETH as native gas token.
       const chainsToCheckNativeBalance = this.getEnabledChains().filter(
         (chain) =>
-          chain !== 137 && this.inventoryConfig.tokenConfig[l1Weth][chain.toString()].unwrapWethThreshold !== undefined
+          chain !== 137 && this.inventoryConfig.tokenConfig[l1Weth][chain.toString()]?.unwrapWethThreshold !== undefined
       );
       const nativeBalances = Object.fromEntries(
         await Promise.all(
