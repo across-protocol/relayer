@@ -1,6 +1,13 @@
 import winston from "winston";
 import { getSigner } from "../utils";
-import { TokenClient, ProfitClient, BundleDataClient, InventoryClient, AdapterManager } from "../clients";
+import {
+  TokenClient,
+  ProfitClient,
+  BundleDataClient,
+  InventoryClient,
+  AdapterManager,
+  CrossChainTransferClient,
+} from "../clients";
 import { RelayerConfig } from "./RelayerConfig";
 import { Clients, constructClients, updateClients, updateSpokePoolClients } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
@@ -33,6 +40,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
   const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, baseSigner.address);
 
   const bundleDataClient = new BundleDataClient(logger, commonClients, spokePoolClients, config.spokePoolChains);
+  const crossChainTransferClient = new CrossChainTransferClient(logger, config.spokePoolChains, adapterManager);
   const inventoryClient = new InventoryClient(
     baseSigner.address,
     logger,
@@ -42,6 +50,7 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
     commonClients.hubPoolClient,
     bundleDataClient,
     adapterManager,
+    crossChainTransferClient,
     config.bundleRefundLookback
   );
 

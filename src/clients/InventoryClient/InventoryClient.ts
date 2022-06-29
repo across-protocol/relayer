@@ -10,15 +10,14 @@ import {
   runTransaction,
 } from "../../utils";
 import { HubPoolClient, TokenClient, BundleDataClient, weth9Abi } from "..";
-import { FillsToRefund, InventoryConfig } from "../../interfaces";
+import { CrossChainTransferClient } from ".";
+import { Deposit, FillsToRefund, InventoryConfig } from "../../interfaces";
 import { AdapterManager } from "./AdapterManager";
-import { Deposit } from "../../interfaces/SpokePool";
 
 const scalar = toBN(10).pow(18);
 const formatWei = createFormatFunction(2, 4, false, 18);
 
 export class InventoryClient {
-  private outstandingCrossChainTransfers: { [chainId: number]: { [l1Token: string]: BigNumber } } = {};
   private logDisabledManagement = false;
 
   constructor(
@@ -30,6 +29,7 @@ export class InventoryClient {
     readonly hubPoolClient: HubPoolClient,
     readonly bundleDataClient: BundleDataClient,
     readonly adapterManager: AdapterManager,
+    readonly crossChainTransferClient: CrossChainTransferClient,
     readonly bundleRefundLookback = 2
   ) {}
 
@@ -48,12 +48,7 @@ export class InventoryClient {
       this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Token, chainId)) || toBN(0);
 
     // Consider any L1->L2 transfers that are currently pending in the canonical bridge.
-    return balance.add(this.getOutstandingCrossChainTransferAmount(chainId, l1Token));
-  }
-
-  // Get any funds currently in the canonical bridge.
-  getOutstandingCrossChainTransferAmount(chainId: number | string, l1Token: string) {
-    return this.outstandingCrossChainTransfers[chainId.toString()]?.[l1Token] || toBN(0);
+    return balance.add(this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(chainId, l1Token));
   }
 
   // Get the fraction of funds allocated on each chain.
@@ -113,11 +108,7 @@ export class InventoryClient {
   // Decrement Tokens Balance And Increment Cross Chain Transfer
   trackCrossChainTransfer(l1Token: string, rebalance: BigNumber, chainId: number | string) {
     this.tokenClient.decrementLocalBalance(1, l1Token, rebalance);
-    if (!this.outstandingCrossChainTransfers[chainId]) this.outstandingCrossChainTransfers[chainId] = {};
-    const bal = this.outstandingCrossChainTransfers[chainId][l1Token];
-    this.outstandingCrossChainTransfers[chainId][l1Token] = toBN(bal).gt(toBN(0))
-      ? toBN(bal).sub(rebalance)
-      : rebalance;
+    this.crossChainTransferClient.increaseOutstandingTransfer(l1Token, rebalance, Number(chainId));
   }
 
   // Return the upcoming refunds (in pending and next bundles) on each chain.
@@ -320,7 +311,9 @@ export class InventoryClient {
             `${formatWei(tokenDistributionPerL1Token[l1Token][chainId].mul(100))}% of the total ` +
             `${formatter(this.getCumulativeBalance(l1Token).toString())} ${symbol}.` +
             ` This chain's pending L1->L2 transfer amount is ` +
-            `${formatter(this.getOutstandingCrossChainTransferAmount(chainId, l1Token).toString())}.\n`;
+            `${formatter(
+              this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(chainId, l1Token).toString()
+            )}.\n`;
         }
       }
 
@@ -443,11 +436,13 @@ export class InventoryClient {
         tokenDistribution[symbol][chainId] = {
           actualBalanceOnChain: formatter(
             this.getBalanceOnChainForL1Token(chainId, l1Token)
-              .sub(this.getOutstandingCrossChainTransferAmount(chainId, l1Token))
+              .sub(this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(chainId, l1Token))
               .toString()
           ),
           virtualBalanceOnChain: formatter(this.getBalanceOnChainForL1Token(chainId, l1Token).toString()),
-          outstandingTransfers: formatter(this.getOutstandingCrossChainTransferAmount(chainId, l1Token)).toString(),
+          outstandingTransfers: formatter(
+            this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(chainId, l1Token).toString()
+          ),
           tokenShortFalls: formatter(this.getTokenShortFall(l1Token, chainId).toString()),
           proRataShare: formatWei(tokenDistributionPerL1Token[l1Token][chainId].mul(100).toString()) + "%",
         };
@@ -483,19 +478,7 @@ export class InventoryClient {
 
   async update() {
     if (!this.isInventoryManagementEnabled()) return;
-    const monitoredChains = this.getEnabledL2Chains(); // Use all chainIds except L1.
-    this.log("Updating inventory information", { monitoredChains });
-
-    const outstandingTransfersPerChain = await Promise.all(
-      monitoredChains.map((chainId) =>
-        this.adapterManager.getOutstandingCrossChainTokenTransferAmount(chainId, this.getL1Tokens())
-      )
-    );
-    outstandingTransfersPerChain.forEach((outstandingTransfers, index) => {
-      assign(this.outstandingCrossChainTransfers, [monitoredChains[index]], outstandingTransfers);
-    });
-
-    this.log("Updated inventory information", { outstandingCrossChainTransfers: this.outstandingCrossChainTransfers });
+    await this.crossChainTransferClient.update(this.getL1Tokens());
   }
 
   isInventoryManagementEnabled() {

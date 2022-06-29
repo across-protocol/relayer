@@ -9,6 +9,8 @@ import {
   ProfitClient,
   TokenTransferClient,
   BalanceAllocator,
+  CrossChainTransferClient,
+  AdapterManager,
 } from "../src/clients";
 import { Monitor, ALL_CHAINS_NAME, UNKNOWN_TRANSFERS_NAME } from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
@@ -16,8 +18,10 @@ import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repay
 import * as constants from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { Dataworker } from "../src/dataworker/Dataworker";
-import { getRefundForFills, MAX_UINT_VAL, toBN } from "../src/utils";
+import { getNetworkName, getRefundForFills, MAX_UINT_VAL, toBN } from "../src/utils";
 import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
+import { MockAdapterManager } from "./mocks";
+import { BalanceType } from "../src/interfaces";
 
 let l1Token: Contract, l2Token: Contract, erc20_2: Contract;
 let hubPool: Contract, spokePool_1: Contract, spokePool_2: Contract;
@@ -29,6 +33,8 @@ let hubPoolClient: HubPoolClient, multiCallerClient: MultiCallerClient, profitCl
 let tokenTransferClient: TokenTransferClient;
 let monitorInstance: Monitor;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
+let crossChainTransferClient: CrossChainTransferClient;
+let adapterManager: MockAdapterManager;
 let updateAllClients: () => Promise<void>;
 
 const { spy, spyLogger } = createSpyLogger();
@@ -60,7 +66,6 @@ describe("Monitor", async function () {
       constants.DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
       0
     ));
-    // hubPoolClient = new HubPoolClient(spyLogger, hubPool);
 
     const monitorConfig = new MonitorConfig({
       STARTING_BLOCK_NUMBER: "0",
@@ -77,6 +82,7 @@ describe("Monitor", async function () {
       CONFIGURED_NETWORKS: `[1, ${repaymentChainId}, ${originChainId}, ${destinationChainId}]`,
     });
 
+    const chainIds = [1, repaymentChainId, originChainId, destinationChainId];
     bundleDataClient = new BundleDataClient(
       spyLogger,
       {
@@ -86,7 +92,7 @@ describe("Monitor", async function () {
         hubPoolClient,
       },
       spokePoolClients,
-      [1, repaymentChainId, originChainId, destinationChainId]
+      chainIds
     );
 
     const providers = Object.fromEntries(
@@ -94,6 +100,8 @@ describe("Monitor", async function () {
     );
     tokenTransferClient = new TokenTransferClient(spyLogger, providers, [depositor.address]);
 
+    adapterManager = new MockAdapterManager(null, null, null, null);
+    crossChainTransferClient = new CrossChainTransferClient(spyLogger, chainIds, adapterManager);
     monitorInstance = new Monitor(spyLogger, monitorConfig, {
       bundleDataClient,
       configStoreClient,
@@ -102,6 +110,7 @@ describe("Monitor", async function () {
       hubPoolClient,
       spokePoolClients,
       tokenTransferClient,
+      crossChainTransferClient,
     });
   });
 
@@ -163,7 +172,7 @@ describe("Monitor", async function () {
     );
     await monitorInstance.updateCurrentRelayerBalances(reports);
 
-    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME]["current"].toString()).to.be.equal(
+    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.CURRENT].toString()).to.be.equal(
       "60000000000000000000000"
     );
   });
@@ -198,8 +207,8 @@ describe("Monitor", async function () {
       TEST_NETWORK_NAMES
     );
     monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
-    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME]["pending"]).to.be.equal(toBN(0));
-    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME]["next"]).to.be.equal(getRefundForFills([fill1]));
+    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
+    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(getRefundForFills([fill1]));
 
     // Execute pool rebalance leaves.
     const latestBlock = await hubPool.provider.getBlockNumber();
@@ -227,8 +236,10 @@ describe("Monitor", async function () {
       TEST_NETWORK_NAMES
     );
     monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
-    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME]["next"]).to.be.equal(toBN(0));
-    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME]["pending"]).to.be.equal(getRefundForFills([fill1]));
+    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
+    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(
+      getRefundForFills([fill1])
+    );
 
     // Execute relayer refund leaves. Send funds to spoke pools to execute the leaves.
     await erc20_2.mint(spokePool_2.address, getRefundForFills([fill1]));
@@ -248,8 +259,15 @@ describe("Monitor", async function () {
       TEST_NETWORK_NAMES
     );
     monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
-    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME]["next"]).to.be.equal(toBN(0));
-    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME]["pending"]).to.be.equal(toBN(0));
+    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
+    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
+
+    // Simulate some pending cross chain transfers.
+    crossChainTransferClient.increaseOutstandingTransfer(l1Token.address, toBN(5), destinationChainId);
+    monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
+    expect(
+      reports[depositor.address]["L1"][getNetworkName(destinationChainId)][BalanceType.PENDING_TRANSFERS]
+    ).to.be.equal(toBN(5));
   });
 
   it("Monitor should report unfilled deposits", async function () {

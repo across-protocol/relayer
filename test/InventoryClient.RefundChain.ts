@@ -3,7 +3,7 @@ import { toBN, toWei, randomAddress, createRefunds } from "./utils";
 
 import { InventoryConfig, Deposit } from "../src/interfaces";
 import { MockBundleDataClient, MockHubPoolClient, MockAdapterManager, MockTokenClient } from "./mocks";
-import { InventoryClient } from "../src/clients"; // Tested
+import { CrossChainTransferClient, InventoryClient } from "../src/clients"; // Tested
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
 
@@ -12,6 +12,7 @@ let bundleDataClient: MockBundleDataClient;
 let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let inventoryClient: InventoryClient; // tested
 let sampleDepositData: Deposit;
+let crossChainTransferClient: CrossChainTransferClient;
 
 const enabledChainIds = [1, 10, 137, 42161];
 
@@ -62,6 +63,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     tokenClient = new MockTokenClient(null, null, null, null);
     bundleDataClient = new MockBundleDataClient(null, null, null, null);
 
+    crossChainTransferClient = new CrossChainTransferClient(spyLogger, enabledChainIds, adapterManager);
     inventoryClient = new InventoryClient(
       owner.address,
       spyLogger,
@@ -70,7 +72,8 @@ describe("InventoryClient: Refund chain selection", async function () {
       enabledChainIds,
       hubPoolClient,
       bundleDataClient,
-      adapterManager
+      adapterManager,
+      crossChainTransferClient
     );
 
     seedMocks(initialAllocation);

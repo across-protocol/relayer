@@ -13,6 +13,8 @@ export enum BalanceType {
   PENDING = "pending",
   // Balance from next bundle's refunds.
   NEXT = "next",
+  // Balance from pending cross chain transfers.
+  PENDING_TRANSFERS = "pending transfers",
   // Total balance across current, pending, next.
   TOTAL = "total",
 }

@@ -46,9 +46,12 @@ export class ArbitrumAdapter extends BaseAdapter {
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
 
     const promises = [];
+    const validTokens = [];
     for (const l1Token of l1Tokens) {
-      if (l1Gateways[l1Token] === undefined || l2Gateways[l1Token] === null)
-        throw new Error(`Token not configured ${l1Token}`);
+      // Skip the token if we can't find the corresponding bridge.
+      // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
+      // rather than maintaining a list of native bridge-supported tokens.
+      if (l1Gateways[l1Token] === undefined || l2Gateways[l1Token] === null) continue;
 
       const l1Bridge = this.getL1Bridge(l1Token);
       const l2Bridge = this.getL2Bridge(l1Token);
@@ -57,13 +60,14 @@ export class ArbitrumAdapter extends BaseAdapter {
         paginatedEventQuery(l1Bridge, l1Bridge.filters.DepositInitiated(...searchFilter), this.l1SearchConfig),
         paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...searchFilter), this.l2SearchConfig)
       );
+      validTokens.push(l1Token);
     }
 
     const results = await Promise.all(promises, { concurrency: 4 });
     // The logic below takes the results from the promises and spreads them into the l1DepositInitiatedEvents and
     // l2DepositFinalizedEvents state from the BaseAdapter.
     results.forEach((result, index) => {
-      const l1Token = l1Tokens[Math.floor(index / 2)];
+      const l1Token = validTokens[Math.floor(index / 2)];
       const events = result.map((event) => {
         const eventSpread = spreadEventWithBlockNumber(event);
         return { amount: eventSpread[index % 2 === 0 ? "_amount" : "amount"], blockNumber: eventSpread["blockNumber"] };
@@ -75,7 +79,7 @@ export class ArbitrumAdapter extends BaseAdapter {
     this.l1SearchConfig.fromBlock = this.l1SearchConfig.toBlock + 1;
     this.l2SearchConfig.fromBlock = this.l2SearchConfig.toBlock + 1;
 
-    return this.computeOutstandingCrossChainTransfers(l1Tokens);
+    return this.computeOutstandingCrossChainTransfers(validTokens);
   }
 
   async checkTokenApprovals(l1Tokens: string[]) {
@@ -99,7 +103,7 @@ export class ArbitrumAdapter extends BaseAdapter {
     return await runTransaction(this.logger, this.getL1GatewayRouter(), "outboundTransfer", args, this.l1SubmitValue);
   }
 
-  getL1Bridge(l1Token: string) {
+  getL1Bridge(l1Token: string): Contract | null {
     try {
       return new Contract(l1Gateways[l1Token], arbitrumL1Erc20GatewayInterface, this.getSigner(1));
     } catch (error) {

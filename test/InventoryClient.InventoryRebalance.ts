@@ -1,18 +1,9 @@
-import {
-  expect,
-  ethers,
-  SignerWithAddress,
-  createSpyLogger,
-  winston,
-  BigNumber,
-  lastSpyLogIncludes,
-  createRefunds,
-} from "./utils";
+import { expect, ethers, SignerWithAddress, createSpyLogger, winston, BigNumber, lastSpyLogIncludes } from "./utils";
 import { toBN, toWei, randomAddress, spyLogIncludes } from "./utils";
 
 import { InventoryConfig } from "../src/interfaces";
 import { MockBundleDataClient, MockHubPoolClient, MockAdapterManager, MockTokenClient } from "./mocks/";
-import { InventoryClient } from "../src/clients"; // Tested
+import { CrossChainTransferClient, InventoryClient } from "../src/clients"; // Tested
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
 
@@ -20,6 +11,7 @@ let hubPoolClient: MockHubPoolClient, adapterManager: MockAdapterManager, tokenC
 let bundleDataClient: MockBundleDataClient;
 let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let inventoryClient: InventoryClient; // tested
+let crossChainTransferClient: CrossChainTransferClient;
 
 const enabledChainIds = [1, 10, 137, 42161];
 
@@ -74,6 +66,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     tokenClient = new MockTokenClient(null, null, null, null);
     bundleDataClient = new MockBundleDataClient(null, null, null, null);
 
+    crossChainTransferClient = new CrossChainTransferClient(spyLogger, enabledChainIds, adapterManager);
     inventoryClient = new InventoryClient(
       owner.address,
       spyLogger,
@@ -82,7 +75,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       enabledChainIds,
       hubPoolClient,
       bundleDataClient,
-      adapterManager
+      adapterManager,
+      crossChainTransferClient
     );
 
     seedMocks(initialAllocation);
@@ -103,7 +97,9 @@ describe("InventoryClient: Rebalancing inventory", async function () {
         expect(inventoryClient.getBalanceOnChainForL1Token(chainId, l1Token)).to.equal(
           initialAllocation[chainId][l1Token]
         );
-        expect(inventoryClient.getOutstandingCrossChainTransferAmount(chainId, l1Token)).to.equal(toBN(0)); // For now no cross-chain transfers
+        expect(
+          inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(chainId, l1Token)
+        ).to.equal(toBN(0)); // For now no cross-chain transfers
 
         const expectedShare = initialAllocation[chainId][l1Token].mul(toWei(1)).div(initialTotals[l1Token]);
         expect(tokenDistribution[l1Token][chainId]).to.equal(expectedShare);
@@ -196,7 +192,9 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // on L1 should have been decremented by the amount sent over the bridge and the Inventory client should be tracking
     // the cross-chain transfers.
     expect(tokenClient.getBalance(1, mainnetWeth)).to.equal(toWei(100).sub(expectedBridgedAmount));
-    expect(inventoryClient.getOutstandingCrossChainTransferAmount(137, mainnetWeth)).to.equal(expectedBridgedAmount);
+    expect(inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(137, mainnetWeth)).to.equal(
+      expectedBridgedAmount
+    );
 
     // The mock adapter manager should have been called with the expected transaction.
     expect(adapterManager.tokensSentCrossChain[137][mainnetWeth].amount).to.equal(expectedBridgedAmount);
