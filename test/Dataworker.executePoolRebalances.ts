@@ -114,8 +114,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
 
     // Should be 1 leaf since this is _only_ a second partial fill repayment and doesn't involve the deposit chain.
-    // This sends 2 transactions, 1 to add ETH to the hub and a second to send the transaction to mocked arbitrum.
-    expect(multiCallerClient.transactionCount()).to.equal(2);
+    expect(multiCallerClient.transactionCount()).to.equal(1);
     await multiCallerClient.executeTransactionQueue();
   });
 });
