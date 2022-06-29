@@ -857,12 +857,16 @@ export class Dataworker {
           }));
 
           if (leaf.chainId === 42161) {
-            requests.push({
-              token: ZERO_ADDRESS,
-              amount: this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf),
-              holder: await this.clients.spokePoolSigners[hubPoolChainId].getAddress(),
-              chainId: hubPoolChainId,
-            });
+            const hubPoolBalance = await this.clients.hubPoolClient.hubPool.provider.getBalance(
+              this.clients.hubPoolClient.hubPool.address
+            );
+            if (hubPoolBalance.lt(this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf)))
+              requests.push({
+                token: ZERO_ADDRESS,
+                amount: this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf),
+                holder: await this.clients.spokePoolSigners[hubPoolChainId].getAddress(),
+                chainId: hubPoolChainId,
+              });
           }
 
           const success = await balanceAllocator.requestBalanceAllocations(requests);
@@ -918,24 +922,25 @@ export class Dataworker {
       });
     });
 
+    const hubPoolBalance = await this.clients.hubPoolClient.hubPool.provider.getBalance(
+      this.clients.hubPoolClient.hubPool.address
+    );
     fundedLeaves.forEach((leaf) => {
       const proof = expectedTrees.poolRebalanceTree.tree.getHexProof(leaf);
       const mrkdwn = `Root hash: ${expectedTrees.poolRebalanceTree.tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${
         leaf.chainId
       }`;
       if (submitExecution) {
-        if (leaf.chainId === 42161) {
-          const amount = this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf);
-          if (amount.gt(0))
-            this.clients.multiCallerClient.enqueueTransaction({
-              contract: this.clients.hubPoolClient.hubPool,
-              chainId: hubPoolChainId,
-              method: "loadEthForL2Calls",
-              args: [],
-              message: "Loading ETH for arbitrum L1-->L2 relay 🛸!",
-              mrkdwn,
-              value: amount,
-            });
+        if (leaf.chainId === 42161 && hubPoolBalance.lt(this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf))) {
+          this.clients.multiCallerClient.enqueueTransaction({
+            contract: this.clients.hubPoolClient.hubPool,
+            chainId: hubPoolChainId,
+            method: "loadEthForL2Calls",
+            args: [],
+            message: "Loaded ETH for message to Arbitrum 📨!",
+            mrkdwn,
+            value: this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf),
+          });
         }
         this.clients.multiCallerClient.enqueueTransaction({
           contract: this.clients.hubPoolClient.hubPool,
@@ -1230,11 +1235,11 @@ export class Dataworker {
     //    signified by groupIndex === 0.
     // 2. Any netSendAmount > 0 triggers an L1 -> L2 token send, which costs 0.02 ETH.
     let requiredAmount = leaf.netSendAmounts.reduce(
-      (acc, curr) => (curr.gt(0) ? acc.add(toBNWei("0.02")) : acc),
+      (acc, curr) => (curr.gt(0) ? acc.add(toBNWei("0.034")) : acc),
       BigNumber.from(0)
     );
 
-    if (leaf.groupIndex === 0) requiredAmount = requiredAmount.add(toBNWei("0.02"));
+    if (leaf.groupIndex === 0) requiredAmount = requiredAmount.add(toBNWei("0.034"));
     return requiredAmount;
   }
 }
