@@ -1,39 +1,46 @@
 import {
-  FillsToRefund,
-  TokenTransfer,
-  BundleAction,
   BalanceType,
+  BundleAction,
+  FillsToRefund,
   L1Token,
-  RelayerBalanceTable,
   RelayerBalanceReport,
+  RelayerBalanceTable,
+  TokenTransfer,
   TransfersByChain,
   TransfersByTokens,
 } from "../interfaces";
 import {
+  assign,
   BigNumber,
   Contract,
+  convertFromWei,
+  createFormatFunction,
   ERC20,
-  assign,
+  ethers,
   etherscanLink,
   etherscanLinks,
-  convertFromWei,
-  toBN,
-  toWei,
-  winston,
-  createFormatFunction,
+  getNativeTokenSymbol,
   getNetworkName,
   getUnfilledDeposits,
   providers,
-  ethers,
+  toBN,
+  toWei,
+  winston,
+  ZERO_ADDRESS,
 } from "../utils";
-import { ZERO_ADDRESS, getNativeTokenSymbol } from "../utils";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 
 export const ALL_CHAINS_NAME = "All chains";
 export const UNKNOWN_TRANSFERS_NAME = "Unknown transfers (incoming, outgoing, net)";
-const ALL_BALANCE_TYPES = [BalanceType.CURRENT, BalanceType.PENDING, BalanceType.NEXT, BalanceType.TOTAL];
+const ALL_BALANCE_TYPES = [
+  BalanceType.CURRENT,
+  BalanceType.PENDING,
+  BalanceType.NEXT,
+  BalanceType.PENDING_TRANSFERS,
+  BalanceType.TOTAL,
+];
 
 interface CategorizedTransfers {
   all: TokenTransfer[];
@@ -214,7 +221,7 @@ export class Monitor {
     for (const relayer of relayers) {
       const report = reports[relayer];
       let summaryMrkdwn = "*[Summary]*\n";
-      let mrkdwn = "Token amounts: current, pending execution, future, total\n";
+      let mrkdwn = "Token amounts: current, pending execution, future, cross-chain transfers, total\n";
       for (const token of allL1Tokens) {
         let tokenMrkdwn = "";
         for (const chainName of allChainNames) {
@@ -342,6 +349,29 @@ export class Monitor {
     }
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       this.updateRelayerRefunds(nextBundleRefunds, relayerBalanceReport[relayer], relayer, BalanceType.NEXT);
+      this.updateCrossChainTransfers(relayerBalanceReport[relayer]);
+    }
+  }
+
+  updateCrossChainTransfers(relayerBalanceTable: RelayerBalanceTable) {
+    const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
+    for (const chainId of this.monitorConfig.spokePoolChains) {
+      for (const l1Token of allL1Tokens) {
+        const transferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+          chainId,
+          l1Token.address
+        );
+
+        if (transferBalance.gt(toBN(0))) {
+          this.updateRelayerBalanceTable(
+            relayerBalanceTable,
+            l1Token.symbol,
+            getNetworkName(chainId),
+            BalanceType.PENDING_TRANSFERS,
+            transferBalance
+          );
+        }
+      }
     }
   }
 

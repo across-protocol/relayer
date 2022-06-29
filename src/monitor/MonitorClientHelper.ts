@@ -1,6 +1,12 @@
 import { MonitorConfig } from "./MonitorConfig";
 import { getSigner, winston } from "../utils";
-import { BundleDataClient, HubPoolClient, TokenTransferClient } from "../clients";
+import {
+  AdapterManager,
+  BundleDataClient,
+  CrossChainTransferClient,
+  HubPoolClient,
+  TokenTransferClient,
+} from "../clients";
 import {
   Clients,
   updateClients,
@@ -12,6 +18,7 @@ import { SpokePoolClientsByChain } from "../interfaces";
 
 export interface MonitorClients extends Clients {
   bundleDataClient: BundleDataClient;
+  crossChainTransferClient: CrossChainTransferClient;
   hubPoolClient: HubPoolClient;
   spokePoolClients: SpokePoolClientsByChain;
   tokenTransferClient: TokenTransferClient;
@@ -35,7 +42,10 @@ export async function constructMonitorClients(config: MonitorConfig, logger: win
   );
   const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
 
-  return { ...commonClients, bundleDataClient, spokePoolClients, tokenTransferClient };
+  const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, baseSigner.address);
+  const crossChainTransferClient = new CrossChainTransferClient(logger, config.spokePoolChains, adapterManager);
+
+  return { ...commonClients, bundleDataClient, crossChainTransferClient, spokePoolClients, tokenTransferClient };
 }
 
 export async function updateMonitorClients(clients: MonitorClients) {
@@ -49,4 +59,6 @@ export async function updateMonitorClients(clients: MonitorClients) {
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
   ]);
+  const allL1Tokens = clients.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address);
+  await clients.crossChainTransferClient.update(allL1Tokens);
 }

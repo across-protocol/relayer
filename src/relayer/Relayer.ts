@@ -119,7 +119,11 @@ export class Relayer {
           const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(token, chainId);
           crossChainLog =
             `There is ` +
-            formatter(this.clients.inventoryClient.getOutstandingCrossChainTransferAmount(chainId, l1Token.address)) +
+            formatter(
+              this.clients.inventoryClient.crossChainTransferClient
+                .getOutstandingCrossChainTransferAmount(chainId, l1Token.address)
+                .toString()
+            ) +
             ` inbound L1->L2 ${symbol} transfers. `;
         }
         mrkdwn +=

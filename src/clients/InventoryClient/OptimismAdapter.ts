@@ -41,7 +41,7 @@ export class OptimismAdapter extends BaseAdapter {
     await this.updateBlockSearchConfig();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
 
-    let promises = [];
+    const promises = [];
     for (const l1Token of l1Tokens) {
       const l1Method = this.isWeth(l1Token) ? "ETHDepositInitiated" : "ERC20DepositInitiated";
       let l1SearchFilter = [l1Token, undefined, this.relayerAddress];
@@ -122,7 +122,7 @@ export class OptimismAdapter extends BaseAdapter {
   }
 
   getL1Bridge(l1Token: string) {
-    let l1BridgeAddress = this.isOptimism
+    const l1BridgeAddress = this.isOptimism
       ? Object.keys(customL1OptimismBridgeAddresses).includes(l1Token)
         ? customL1OptimismBridgeAddresses[l1Token]
         : l1StandardBridgeAddressOvm

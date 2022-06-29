@@ -71,30 +71,37 @@ export class PolygonAdapter extends BaseAdapter {
     await this.updateBlockSearchConfig();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
 
-    let promises = [];
+    const promises = [];
+    const validTokens = [];
     for (const l1Token of l1Tokens) {
       const l1Bridge = this.getL1Bridge(l1Token);
+      // Skip the token if we can't find the corresponding bridge.
+      // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
+      // rather than maintaining a list of native bridge-supported tokens.
+      if (l1Bridge === null) continue;
+
       const l2Token = this.getL2Token(l1Token);
 
       const l1Method = tokenToBridge[l1Token].l1Method;
       let l1SearchFilter = [];
-      if (l1Method == "LockedERC20") l1SearchFilter = [this.relayerAddress, undefined, l1Token];
-      if (l1Method == "LockedEther") l1SearchFilter = [undefined, this.relayerAddress];
-      if (l1Method == "NewDepositBlock") l1SearchFilter = [this.relayerAddress, l1MaticAddress];
+      if (l1Method === "LockedERC20") l1SearchFilter = [this.relayerAddress, undefined, l1Token];
+      if (l1Method === "LockedEther") l1SearchFilter = [undefined, this.relayerAddress];
+      if (l1Method === "NewDepositBlock") l1SearchFilter = [this.relayerAddress, l1MaticAddress];
 
-      const l2Method = l1Token == l1MaticAddress ? "TokenDeposited" : "Transfer";
+      const l2Method = l1Token === l1MaticAddress ? "TokenDeposited" : "Transfer";
       let l2SearchFilter = [];
-      if (l2Method == "Transfer") l2SearchFilter = [ZERO_ADDRESS, this.relayerAddress];
-      if (l2Method == "TokenDeposited") l2SearchFilter = [l1MaticAddress, ZERO_ADDRESS, this.relayerAddress];
+      if (l2Method === "Transfer") l2SearchFilter = [ZERO_ADDRESS, this.relayerAddress];
+      if (l2Method === "TokenDeposited") l2SearchFilter = [l1MaticAddress, ZERO_ADDRESS, this.relayerAddress];
 
       promises.push(
         paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), this.l1SearchConfig),
         paginatedEventQuery(l2Token, l2Token.filters[l2Method](...l2SearchFilter), this.l2SearchConfig)
       );
+      validTokens.push(l1Token);
     }
     const results = await Promise.all(promises, { concurrency: 2 });
     results.forEach((result, index) => {
-      const l1Token = l1Tokens[Math.floor(index / 2)];
+      const l1Token = validTokens[Math.floor(index / 2)];
       const amountProp = index % 2 === 0 ? tokenToBridge[l1Token].l1AmountProp : tokenToBridge[l1Token].l2AmountProp;
       const events = result.map((event) => {
         const eventSpread = spreadEventWithBlockNumber(event);
@@ -111,7 +118,7 @@ export class PolygonAdapter extends BaseAdapter {
     this.l1SearchConfig.fromBlock = this.l1SearchConfig.toBlock + 1;
     this.l2SearchConfig.fromBlock = this.l2SearchConfig.toBlock + 1;
 
-    return this.computeOutstandingCrossChainTransfers(l1Tokens);
+    return this.computeOutstandingCrossChainTransfers(validTokens);
   }
 
   async sendTokenToTargetChain(l1Token: string, l2Token: string, amount: BigNumber) {
@@ -137,6 +144,8 @@ export class PolygonAdapter extends BaseAdapter {
   }
 
   getL1Bridge(l1Token: string): Contract | null {
+    if (tokenToBridge[l1Token] === undefined) return null;
+
     try {
       return new Contract(tokenToBridge[l1Token].l1BridgeAddress, polygonL1BridgeInterface, this.getSigner(1));
     } catch (error) {

@@ -94,7 +94,7 @@ export class BaseAdapter {
   }
 
   computeOutstandingCrossChainTransfers(l1Tokens: string[]): { [l1Token: string]: BigNumber } {
-    let outstandingTransfers = {};
+    const outstandingTransfers = {};
     for (const l1Token of l1Tokens) {
       let l2FinalizationSet = this.l2DepositFinalizedEvents[l1Token];
 
