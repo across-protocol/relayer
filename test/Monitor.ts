@@ -284,6 +284,6 @@ describe("Monitor", async function () {
     );
     await monitorInstance.updateUnknownTransfers(reports);
 
-    expect(lastSpyLogIncludes(spy, `There are non-v2 transfers for relayer ${depositor.address} 🦨`)).to.be.true;
+    expect(lastSpyLogIncludes(spy, `Transfers that are not fills for relayer ${depositor.address} 🦨`)).to.be.true;
   });
 });
