@@ -17,6 +17,7 @@ import { PendingRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
 import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
+import { constructSpokePoolClientsForBlockAndUpdate } from "../common";
 
 config();
 let logger: winston.Logger;
@@ -59,9 +60,25 @@ export async function validate(_logger: winston.Logger) {
     transactionHash: precedingProposeRootBundleEvent.transactionHash,
   });
 
+  const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
+    dataworker.chainIdListForBundleEvaluationBlockNumbers,
+    clients,
+    logger,
+    clients.hubPoolClient.latestBlockNumber,
+    [
+      "FundsDeposited",
+      "RequestedSpeedUpDeposit",
+      "FilledRelay",
+      "EnabledDepositRoute",
+      "RelayedRootBundle",
+      "ExecutedRelayerRefundRoot",
+    ],
+    config.blockRangeEndBlockBuffer
+  );
+
   const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
     dataworker.chainIdListForBundleEvaluationBlockNumbers,
-    getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
+    spokePoolClients,
     clients,
     priceRequestBlock
   );
