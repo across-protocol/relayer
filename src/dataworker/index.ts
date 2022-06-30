@@ -60,7 +60,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
             "RelayedRootBundle",
             "ExecutedRelayerRefundRoot",
           ],
-          config.spokePoolClientFollowDistance
+          config.blockRangeEndBlockBuffer
         );
       else
         await updateSpokePoolClients(spokePoolClients, [

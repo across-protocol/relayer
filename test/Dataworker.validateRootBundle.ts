@@ -61,7 +61,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     );
     await updateAllClients();
     await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
-    // Mine blocks so event blocks are less than HEAD minus buffer.
+    // Mine blocks so event blocks are less than latest minus buffer.
     for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) await hre.network.provider.send("evm_mine");
     await updateAllClients();
     const latestBlock2 = await hubPool.provider.getBlockNumber();
@@ -147,7 +147,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       expectedRelayerRefundRoot4.tree.getHexRoot(),
       expectedSlowRelayRefundRoot4.tree.getHexRoot()
     );
-    // Mine blocks so root bundle end blocks are not within HEAD - buffer range
+    // Mine blocks so root bundle end blocks are not within latest - buffer range
     for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) await hre.network.provider.send("evm_mine");
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
@@ -173,35 +173,34 @@ describe("Dataworker: Validate pending root bundle", async function () {
     // Bundle range end blocks are above latest block but within buffer, should skip.
     await updateAllClients();
     await hubPool.proposeRootBundle(
-      // Since the dataworker sets the end block to HEAD minus buffer, setting the bundle end blocks to HEAD
+      // Since the dataworker sets the end block to latest minus buffer, setting the bundle end blocks to HEAD
       // should fall within buffer.
-      Array(CHAIN_ID_TEST_LIST.length).fill(Number(await hubPool.provider.getBlockNumber())),
+      Object.keys(spokePoolClients).map((chainId) => spokePoolClients[chainId].latestBlockNumber + 1),
       expectedPoolRebalanceRoot4.leaves.length,
       expectedPoolRebalanceRoot4.tree.getHexRoot(),
       expectedRelayerRefundRoot4.tree.getHexRoot(),
       expectedSlowRelayRefundRoot4.tree.getHexRoot()
     );
-    await updateAllClients();
+    await hubPoolClient.update(); // Update only HubPool client, not spoke pool clients so we can simulate them
+    // "lagging" and their latest block is behind the proposed bundle end blocks.
     await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(lastSpyLogIncludes(spy, "A bundle end block is > latest block but within buffer, skipping")).to.be.true;
     await updateAllClients();
     expect(hubPoolClient.hasPendingProposal()).to.equal(true);
 
-    // Bundle range end blocks are too high.
+    // Bundle range end blocks are too high, more than the buffer past latest.
     await hubPool.emergencyDeleteProposal();
     await updateAllClients();
     await hubPool.proposeRootBundle(
-      Array(CHAIN_ID_TEST_LIST.length).fill(
-        // As shown in previous test, HEAD is the last block after the latest toBlock (set to HEAD - buffer)
-        // to be within the buffer. So, if we blocks to HEAD, we'll be past the buffer window.
-        Number(await hubPool.provider.getBlockNumber()) + 3
+      Object.keys(spokePoolClients).map(
+        (chainId) => spokePoolClients[chainId].latestBlockNumber + BUNDLE_END_BLOCK_BUFFER + 1
       ),
       expectedPoolRebalanceRoot4.leaves.length,
       expectedPoolRebalanceRoot4.tree.getHexRoot(),
       expectedRelayerRefundRoot4.tree.getHexRoot(),
       expectedSlowRelayRefundRoot4.tree.getHexRoot()
     );
-    await updateAllClients();
+    await hubPoolClient.update();
     await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(spy.getCall(-2).lastArg.message).to.equal(
       "A bundle end block is > latest block + buffer for its chain, submitting dispute"

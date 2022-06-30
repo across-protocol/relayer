@@ -6,7 +6,6 @@ export class DataworkerConfig extends CommonConfig {
   readonly maxRelayerRepaymentLeafSizeOverride: number;
   readonly tokenTransferThresholdOverride: { [l1TokenAddress: string]: BigNumber };
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
-  readonly spokePoolClientFollowDistance: { [chainId: number]: number };
   readonly rootBundleExecutionThreshold: BigNumber;
   readonly spokeRootsLookbackCount: number; // Consider making this configurable per chain ID.
   readonly finalizerChains: number[];
@@ -32,7 +31,6 @@ export class DataworkerConfig extends CommonConfig {
       MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE,
       MAX_RELAYER_REPAYMENT_LEAF_SIZE_OVERRIDE,
       BLOCK_RANGE_END_BLOCK_BUFFER,
-      SPOKE_POOL_CLIENT_FOLLOW_DISTANCE,
       DISPUTER_ENABLED,
       PROPOSER_ENABLED,
       EXECUTOR_ENABLED,
@@ -65,14 +63,6 @@ export class DataworkerConfig extends CommonConfig {
       : toBNWei("500000");
     this.blockRangeEndBlockBuffer = BLOCK_RANGE_END_BLOCK_BUFFER
       ? JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER)
-      : BUNDLE_END_BLOCK_BUFFERS;
-
-    // Default follow distance to the block range end buffer. The block range end buffer is already configured
-    // to not count any events that are too close to HEAD (~20 mins within HEAD for example), so we can conservatively
-    // set the follow distance equal to the buffer. This means that events won't be included in root bundles until
-    // they are more than (follow distance + block range end buffer) older than HEAD, so 20+20=40 mins in this example.
-    this.spokePoolClientFollowDistance = SPOKE_POOL_CLIENT_FOLLOW_DISTANCE
-      ? JSON.parse(SPOKE_POOL_CLIENT_FOLLOW_DISTANCE)
       : BUNDLE_END_BLOCK_BUFFERS;
     this.disputerEnabled = DISPUTER_ENABLED === "true";
     this.proposerEnabled = PROPOSER_ENABLED === "true";
