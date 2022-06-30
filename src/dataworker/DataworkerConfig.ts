@@ -73,9 +73,7 @@ export class DataworkerConfig extends CommonConfig {
     // they are more than (follow distance + block range end buffer) older than HEAD, so 20+20=40 mins in this example.
     this.spokePoolClientFollowDistance = SPOKE_POOL_CLIENT_FOLLOW_DISTANCE
       ? JSON.parse(SPOKE_POOL_CLIENT_FOLLOW_DISTANCE)
-      : Object.fromEntries(
-          Object.keys(BUNDLE_END_BLOCK_BUFFERS).map((chain) => [chain, Math.floor(BUNDLE_END_BLOCK_BUFFERS[chain] / 2)])
-        );
+      : BUNDLE_END_BLOCK_BUFFERS;
     this.disputerEnabled = DISPUTER_ENABLED === "true";
     this.proposerEnabled = PROPOSER_ENABLED === "true";
     this.executorEnabled = EXECUTOR_ENABLED === "true";
