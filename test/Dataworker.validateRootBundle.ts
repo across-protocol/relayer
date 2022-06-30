@@ -121,7 +121,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
 
     // Constructs same roots as proposed root bundle
     await updateAllClients();
-    await dataworkerInstance.validatePendingRootBundle();
+    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(lastSpyLogIncludes(spy, "Pending root bundle matches with expected")).to.be.true;
 
     // Now let's test with some invalid root bundles:
@@ -150,7 +150,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     // Mine blocks so root bundle end blocks are not within HEAD - buffer range
     for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) await hre.network.provider.send("evm_mine");
     await updateAllClients();
-    await dataworkerInstance.validatePendingRootBundle();
+    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(lastSpyLogIncludes(spy, "Pending root bundle matches with expected")).to.be.true;
 
     // Bundle range end blocks are too low.
@@ -164,7 +164,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       expectedSlowRelayRefundRoot4.tree.getHexRoot()
     );
     await updateAllClients();
-    await dataworkerInstance.validatePendingRootBundle();
+    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(spy.getCall(-2).lastArg.message).to.equal(
       "A bundle end block is < expected start block, submitting dispute"
     );
@@ -182,7 +182,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       expectedSlowRelayRefundRoot4.tree.getHexRoot()
     );
     await updateAllClients();
-    await dataworkerInstance.validatePendingRootBundle();
+    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(lastSpyLogIncludes(spy, "A bundle end block is > latest block but within buffer, skipping")).to.be.true;
     await updateAllClients();
     expect(hubPoolClient.hasPendingProposal()).to.equal(true);
@@ -202,7 +202,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       expectedSlowRelayRefundRoot4.tree.getHexRoot()
     );
     await updateAllClients();
-    await dataworkerInstance.validatePendingRootBundle();
+    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(spy.getCall(-2).lastArg.message).to.equal(
       "A bundle end block is > latest block + buffer for its chain, submitting dispute"
     );
@@ -218,7 +218,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       expectedSlowRelayRefundRoot4.tree.getHexRoot()
     );
     await updateAllClients();
-    await dataworkerInstance.validatePendingRootBundle();
+    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected bundle block range length, disputing");
     await multiCallerClient.executeTransactionQueue();
 
@@ -232,7 +232,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       expectedSlowRelayRefundRoot4.tree.getHexRoot()
     );
     await updateAllClients();
-    await dataworkerInstance.validatePendingRootBundle();
+    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(spy.getCall(-2).lastArg.message).to.equal("Empty pool rebalance root, submitting dispute");
     await multiCallerClient.executeTransactionQueue();
 
@@ -247,7 +247,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       expectedSlowRelayRefundRoot4.tree.getHexRoot()
     );
     await updateAllClients();
-    await dataworkerInstance.validatePendingRootBundle();
+    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected pool rebalance root, submitting dispute");
     await multiCallerClient.executeTransactionQueue();
 
@@ -261,7 +261,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       expectedSlowRelayRefundRoot4.tree.getHexRoot()
     );
     await updateAllClients();
-    await dataworkerInstance.validatePendingRootBundle();
+    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected pool rebalance root, submitting dispute");
     await multiCallerClient.executeTransactionQueue();
 
@@ -275,7 +275,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       expectedSlowRelayRefundRoot4.tree.getHexRoot()
     );
     await updateAllClients();
-    await dataworkerInstance.validatePendingRootBundle();
+    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected relayer refund root, submitting dispute");
     await multiCallerClient.executeTransactionQueue();
 
@@ -289,7 +289,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       utf8ToHex("BogusRoot")
     );
     await updateAllClients();
-    await dataworkerInstance.validatePendingRootBundle();
+    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected slow relay root, submitting dispute");
     await multiCallerClient.executeTransactionQueue();
   });
