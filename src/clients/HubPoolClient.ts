@@ -163,6 +163,8 @@ export class HubPoolClient {
     return this.getTokenInfoForDeposit(deposit);
   }
 
+  // Root bundles are valid if all of their pool rebalance leaves have been executed before the next bundle, or the
+  // latest mainnet block to search. Whichever comes first.
   isRootBundleValid(rootBundle: ProposedRootBundle, latestMainnetBlock: number): boolean {
     const nextRootBundle = this.getFollowingRootBundle(rootBundle);
     const executedLeafCount = this.getExecutedLeavesForRootBundle(
@@ -182,7 +184,9 @@ export class HubPoolClient {
   ): number | undefined {
     let endingBlockNumber: number;
     for (const rootBundle of sortEventsAscending(this.proposedRootBundles)) {
-      if (!this.isRootBundleValid(rootBundle, latestMainnetBlock)) continue;
+      const nextRootBundle = this.getFollowingRootBundle(rootBundle);
+      if (!this.isRootBundleValid(rootBundle, nextRootBundle ? nextRootBundle.blockNumber : latestMainnetBlock))
+        continue;
 
       const bundleEvalBlockNumber = this.getBundleEndBlockForChain(
         rootBundle as ProposedRootBundle,
