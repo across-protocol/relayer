@@ -201,7 +201,7 @@ export class SpokePoolClient {
     this.latestBlockNumber = (await this.spokePool.provider.getBlockNumber()) - this.followDistance;
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
-      toBlock: Math.max(this.eventSearchConfig.toBlock || this.latestBlockNumber, this.firstBlockToSearch),
+      toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
 
