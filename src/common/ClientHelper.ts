@@ -35,7 +35,8 @@ export async function constructSpokePoolClientsForBlockAndUpdate(
   clients: DataworkerClients,
   logger: winston.Logger,
   latestMainnetBlock: number,
-  eventsToQuery?: string[]
+  eventsToQuery?: string[],
+  followDistances?: { [chainId: number]: number }
 ): Promise<{ [chainId: number]: SpokePoolClient }> {
   const spokePoolClients = Object.fromEntries(
     chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
@@ -50,7 +51,8 @@ export async function constructSpokePoolClientsForBlockAndUpdate(
         clients.configStoreClient,
         Number(chainId),
         clients.spokePoolClientSearchSettings[chainId],
-        clients.spokePoolClientSearchSettings[chainId].fromBlock
+        clients.spokePoolClientSearchSettings[chainId].fromBlock,
+        followDistances[chainId]
       );
       return [chainId, client];
     })

@@ -27,7 +27,8 @@ export class SpokePoolClient {
     readonly configStoreClient: AcrossConfigStoreClient | null, // Can be excluded. This disables some deposit validation.
     readonly chainId: number,
     readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
-    readonly spokePoolDeploymentBlock: number = 0
+    readonly spokePoolDeploymentBlock: number = 0,
+    readonly followDistance: number = 0
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
@@ -191,10 +192,16 @@ export class SpokePoolClient {
   async update(eventsToQuery?: string[]) {
     if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
 
-    this.latestBlockNumber = await this.spokePool.provider.getBlockNumber();
+    // If follow distance exists, then look up events only until HEAD-follow. This can be
+    // used specifically in looping mode to avoid any issues where this client sees incorrect events
+    // near HEAD, but can't re-load them since the Dataworker is running in looping mode. This could ultimately
+    // cause the dataworker to propose an incorrect root bundle. Even worst, the same looping instance will never
+    // consider this root bundle invalid. So, to mitigate this, use a follow distance in spoke clients
+    // specifically in the dataworker when loading spoke pool events.
+    this.latestBlockNumber = (await this.spokePool.provider.getBlockNumber()) - this.followDistance;
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
-      toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
+      toBlock: Math.max(this.eventSearchConfig.toBlock || this.latestBlockNumber, this.firstBlockToSearch),
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
 

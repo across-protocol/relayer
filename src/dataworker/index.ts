@@ -59,7 +59,8 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
             "EnabledDepositRoute",
             "RelayedRootBundle",
             "ExecutedRelayerRefundRoot",
-          ]
+          ],
+          config.spokePoolClientFollowDistance
         );
       else
         await updateSpokePoolClients(spokePoolClients, [
