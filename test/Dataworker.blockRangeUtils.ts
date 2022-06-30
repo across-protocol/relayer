@@ -50,6 +50,7 @@ describe("Dataworker block range-related utility methods", async function () {
     const latestMainnetBlock = hubPoolClient.latestBlockNumber;
     const startingWidestBlocks = await getWidestPossibleExpectedBlockRange(
       chainIdListForBundleEvaluationBlockNumbers,
+      spokePoolClients,
       defaultEndBlockBuffers,
       dataworkerClients,
       latestMainnetBlock
@@ -60,6 +61,7 @@ describe("Dataworker block range-related utility methods", async function () {
     const largeBuffers = Array(chainIdListForBundleEvaluationBlockNumbers.length).fill(1000);
     const zeroRange = await getWidestPossibleExpectedBlockRange(
       chainIdListForBundleEvaluationBlockNumbers,
+      spokePoolClients,
       largeBuffers,
       dataworkerClients,
       latestMainnetBlock
