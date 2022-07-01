@@ -594,7 +594,7 @@ export class Dataworker {
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
           (rootBundle) =>
             rootBundle.slowRelayRoot !== EMPTY_MERKLE_ROOT &&
-            !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
+            (IGNORED_SPOKE_BUNDLES[chainId] ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId) : true)
         );
 
         // Only grab the most recent n roots that have been sent if configured to do so.
@@ -984,7 +984,7 @@ export class Dataworker {
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
           (rootBundle) =>
             rootBundle.relayerRefundRoot !== EMPTY_MERKLE_ROOT &&
-            !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
+            (IGNORED_SPOKE_BUNDLES[chainId] ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId) : true)
         );
 
         // Only grab the most recent n roots that have been sent if configured to do so.
