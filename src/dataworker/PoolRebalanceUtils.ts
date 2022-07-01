@@ -312,8 +312,8 @@ export async function getWidestPossibleExpectedBlockRange(
   clients: DataworkerClients,
   latestMainnetBlock: number
 ): Promise<number[][]> {
-  const latestBlockNumbers = chainIdListForBundleEvaluationBlockNumbers.map(
-    (chainId: number, index) => spokeClients[chainId].latestBlockNumber - endBlockBuffers[index]
+  const latestBlockNumbers = chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) =>
+    Math.max(spokeClients[chainId].latestBlockNumber - endBlockBuffers[index], 0)
   );
   // We subtract a buffer from the end blocks to reduce the chance that network providers
   // for different bot runs produce different contract state because of variability near the HEAD of the network.
