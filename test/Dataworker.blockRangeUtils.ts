@@ -36,34 +36,18 @@ describe("Dataworker block range-related utility methods", async function () {
     expect(getEndBlockBuffers([2, 4], defaultBuffer)).to.deep.equal([2, 0]);
   });
   it("PoolRebalanceUtils.getWidestPossibleExpectedBlockRange", async function () {
-    // End blocks equal to HEAD block minus buffer, start block for first bundle equal to 0:
+    // End blocks equal to latest spoke client block, start block for first bundle equal to 0:
     const chainIdListForBundleEvaluationBlockNumbers = CHAIN_ID_TEST_LIST;
-    const defaultEndBlockBuffers = Array(chainIdListForBundleEvaluationBlockNumbers.length).fill(1);
-    const latestBlocks = await Promise.all(
-      chainIdListForBundleEvaluationBlockNumbers.map(async (chainId: number, index) =>
-        Math.max(
-          0,
-          (await spokePoolClients[chainId].spokePool.provider.getBlockNumber()) - defaultEndBlockBuffers[index]
-        )
-      )
+    const latestBlocks = chainIdListForBundleEvaluationBlockNumbers.map(
+      (chainId: number) => spokePoolClients[chainId].latestBlockNumber
     );
     const latestMainnetBlock = hubPoolClient.latestBlockNumber;
     const startingWidestBlocks = await getWidestPossibleExpectedBlockRange(
       chainIdListForBundleEvaluationBlockNumbers,
-      defaultEndBlockBuffers,
+      spokePoolClients,
       dataworkerClients,
       latestMainnetBlock
     );
     expect(startingWidestBlocks).to.deep.equal(latestBlocks.map((endBlock) => [0, endBlock]));
-
-    // End block defaults to 0 if buffer is too large
-    const largeBuffers = Array(chainIdListForBundleEvaluationBlockNumbers.length).fill(1000);
-    const zeroRange = await getWidestPossibleExpectedBlockRange(
-      chainIdListForBundleEvaluationBlockNumbers,
-      largeBuffers,
-      dataworkerClients,
-      latestMainnetBlock
-    );
-    expect(zeroRange).to.deep.equal(latestBlocks.map((endBlock) => [0, 0]));
   });
 });
