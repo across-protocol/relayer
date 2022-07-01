@@ -72,13 +72,13 @@ export async function validate(_logger: winston.Logger) {
       "EnabledDepositRoute",
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
-    ],
-    config.blockRangeEndBlockBuffer
+    ]
   );
 
   const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
     dataworker.chainIdListForBundleEvaluationBlockNumbers,
     spokePoolClients,
+    getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
     clients,
     priceRequestBlock
   );

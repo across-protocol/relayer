@@ -46,7 +46,21 @@ export class Dataworker {
     readonly tokenTransferThreshold: BigNumberForToken = {},
     readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {},
     readonly spokeRootsLookbackCount = 0
-  ) {}
+  ) {
+    if (
+      maxRefundCountOverride !== undefined ||
+      maxL1TokenCountOverride !== undefined ||
+      Object.keys(tokenTransferThreshold).length > 0 ||
+      Object.keys(blockRangeEndBlockBuffer).length > 0
+    )
+      this.logger.debug({
+        at: "Dataworker constructed with overridden config store settings",
+        maxRefundCountOverride: this.maxRefundCountOverride,
+        maxL1TokenCountOverride: this.maxL1TokenCountOverride,
+        tokenTransferThreshold: this.tokenTransferThreshold,
+        blockRangeEndBlockBuffer: this.blockRangeEndBlockBuffer,
+      });
+  }
 
   // This should be called whenever it's possible that the loadData information for a block range could have changed.
   // For instance, if the spoke or hub clients have been updated, it probably makes sense to clear this to be safe.
@@ -141,6 +155,7 @@ export class Dataworker {
     const blockRangesForProposal = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
       spokePoolClients,
+      getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
       this.clients.hubPoolClient.latestBlockNumber
     );
@@ -295,6 +310,7 @@ export class Dataworker {
     const widestPossibleExpectedBlockRange = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
       spokePoolClients,
+      getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
       this.clients.hubPoolClient.latestBlockNumber
     );
@@ -381,8 +397,8 @@ export class Dataworker {
       };
     }
 
-    // If the bundle end block is less than latest spoke client block but within the allowable margin of error into
-    // future, then we won't dispute and we'll just exit early from this function.
+    // If the bundle end block is less than HEAD but within the allowable margin of error into future,
+    // then we won't dispute and we'll just exit early from this function.
     if (
       rootBundle.bundleEvaluationBlockNumbers.some((block, index) => block > widestPossibleExpectedBlockRange[index][1])
     ) {
@@ -451,16 +467,7 @@ export class Dataworker {
         this.chainIdListForBundleEvaluationBlockNumbers,
         this.clients,
         this.logger,
-        endBlockForMainnet,
-        [
-          "FundsDeposited",
-          "RequestedSpeedUpDeposit",
-          "FilledRelay",
-          "EnabledDepositRoute",
-          "RelayedRootBundle",
-          "ExecutedRelayerRefundRoot",
-        ],
-        this.blockRangeEndBlockBuffer
+        endBlockForMainnet
       );
 
     // Compare roots with expected. The roots will be different if the block range start blocks were different
@@ -798,6 +805,7 @@ export class Dataworker {
     const widestPossibleExpectedBlockRange = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
       spokePoolClients,
+      getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
       this.clients.hubPoolClient.latestBlockNumber
     );
