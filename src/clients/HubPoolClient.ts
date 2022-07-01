@@ -1,5 +1,6 @@
 import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, EventSearchConfig } from "../utils";
 import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
+import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common"
 import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle, LpToken } from "../interfaces";
 import { ExecutedRootBundle, PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
@@ -388,9 +389,11 @@ export class HubPoolClient {
     });
 
     this.proposedRootBundles.push(
-      ...proposeRootBundleEvents.map((event) => {
-        return { ...spreadEventWithBlockNumber(event), transactionHash: event.transactionHash } as ProposedRootBundle;
-      })
+      ...proposeRootBundleEvents
+        .filter((event) => !IGNORED_HUB_PROPOSED_BUNDLES.includes(event.blockNumber))
+        .map((event) => {
+          return { ...spreadEventWithBlockNumber(event), transactionHash: event.transactionHash } as ProposedRootBundle;
+        })
     );
     this.canceledRootBundles.push(
       ...canceledRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as CancelledRootBundle)
@@ -399,7 +402,9 @@ export class HubPoolClient {
       ...disputedRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as DisputedRootBundle)
     );
     this.executedRootBundles.push(
-      ...executedRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as ExecutedRootBundle)
+      ...executedRootBundleEvents
+        .filter((event) => !IGNORED_HUB_EXECUTED_BUNDLES.includes(event.blockNumber))
+        .map((event) => spreadEventWithBlockNumber(event) as ExecutedRootBundle)
     );
 
     // If the contract's current rootBundleProposal() value has an unclaimedPoolRebalanceLeafCount > 0, then

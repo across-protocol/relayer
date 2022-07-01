@@ -23,6 +23,7 @@ import {
 import { constructSpokePoolClientsForBlockAndUpdate } from "../common/ClientHelper";
 import { BalanceAllocator } from "../clients";
 import _ from "lodash";
+import { IGNORED_SPOKE_BUNDLES } from "../common";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -591,7 +592,9 @@ export class Dataworker {
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([chainId, client]) => {
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
-          (rootBundle) => rootBundle.slowRelayRoot !== EMPTY_MERKLE_ROOT
+          (rootBundle) => 
+          rootBundle.slowRelayRoot !== EMPTY_MERKLE_ROOT &&
+          !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
         );
 
         // Only grab the most recent n roots that have been sent if configured to do so.
@@ -979,7 +982,9 @@ export class Dataworker {
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([chainId, client]) => {
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
-          (rootBundle) => rootBundle.relayerRefundRoot !== EMPTY_MERKLE_ROOT
+          (rootBundle) =>
+            rootBundle.relayerRefundRoot !== EMPTY_MERKLE_ROOT &&
+            !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
         );
 
         // Only grab the most recent n roots that have been sent if configured to do so.
