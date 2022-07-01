@@ -592,9 +592,9 @@ export class Dataworker {
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([chainId, client]) => {
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
-          (rootBundle) => 
-          rootBundle.slowRelayRoot !== EMPTY_MERKLE_ROOT &&
-          !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
+          (rootBundle) =>
+            rootBundle.slowRelayRoot !== EMPTY_MERKLE_ROOT &&
+            !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
         );
 
         // Only grab the most recent n roots that have been sent if configured to do so.
