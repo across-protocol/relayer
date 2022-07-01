@@ -154,6 +154,7 @@ export class Dataworker {
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
     const blockRangesForProposal = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
+      getWidestPossibleExpectedBlockRange,
       getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
       this.clients.hubPoolClient.latestBlockNumber
@@ -308,6 +309,7 @@ export class Dataworker {
 
     const widestPossibleExpectedBlockRange = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
+      getWidestPossibleExpectedBlockRange,
       getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
       this.clients.hubPoolClient.latestBlockNumber
@@ -802,6 +804,7 @@ export class Dataworker {
 
     const widestPossibleExpectedBlockRange = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
+      spokePoolClients,
       getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
       this.clients.hubPoolClient.latestBlockNumber
