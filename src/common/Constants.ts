@@ -50,3 +50,21 @@ export const l2TokensToL1TokenValidation = {
     42161: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f",
   }, // WBTC
 };
+
+// Maps chain ID to root bundle ID to ignore because the roots are known to be invalid from the perspective of the
+// latest dataworker code, or there is no matching L1 root bundle, because the root bundle was relayed by an admin.
+export const IGNORED_SPOKE_BUNDLES = {
+  1: [74, 101],
+  10: [74, 101, 105],
+  137: [74, 101],
+  288: [90],
+  42161: [74, 101],
+};
+
+// List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals
+// with useless bundle block eval numbers and other data that isn't helpful for the dataworker to know. This does not
+// include any invalid bundles that got through, such as at blocks 15001113 or 15049343 which are missing
+// some events but have correct bundle eval blocks. This list specifically contains admin proposals that are sent
+// to correct the bundles such as 15049343 that missed some events.
+export const IGNORED_HUB_PROPOSED_BUNDLES = [];
+export const IGNORED_HUB_EXECUTED_BUNDLES = [];
