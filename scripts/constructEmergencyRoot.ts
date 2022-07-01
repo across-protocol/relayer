@@ -48,7 +48,12 @@ export async function run(): Promise<void> {
   ];
 
   const relayerRefundRoot: MerkleTree<RelayerRefundLeaf> = buildRelayerRefundTree(relayerRefundLeaves);
-  console.log(`relayerRefundRoot:`, prettyRelayerRefundLeaf(relayerRefundLeaves), relayerRefundRoot.getHexRoot());
+  console.log(
+    `relayerRefundRoot:`,
+    prettyRelayerRefundLeaf(relayerRefundLeaves),
+    relayerRefundRoot.getHexRoot(),
+    relayerRefundRoot.getHexProof(relayerRefundLeaves[0])
+  );
 
   // 2. Get ABI encoded function signature to relay roots to spoke pools:
   // The following address is the Optimism_SpokePool but could be any chain's SpokePool.

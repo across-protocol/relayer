@@ -55,7 +55,7 @@ export const l2TokensToL1TokenValidation = {
 // latest dataworker code, or there is no matching L1 root bundle, because the root bundle was relayed by an admin.
 export const IGNORED_SPOKE_BUNDLES = {
   1: [74, 101],
-  10: [74, 101],
+  10: [74, 101, 105],
   137: [74, 101],
   288: [90],
   42161: [74, 101],
