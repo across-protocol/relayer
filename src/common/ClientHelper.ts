@@ -13,6 +13,7 @@ import { CommonConfig } from "./Config";
 import { DataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { createClient } from "redis4";
 import { SpokePoolClientsByChain } from "../interfaces";
+import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -35,7 +36,8 @@ export async function constructSpokePoolClientsForBlockAndUpdate(
   clients: DataworkerClients,
   logger: winston.Logger,
   latestMainnetBlock: number,
-  eventsToQuery?: string[]
+  eventsToQuery?: string[],
+  latestFullyExecutedBundleEndBlocks: { [chainId: number]: number } = {}
 ): Promise<{ [chainId: number]: SpokePoolClient }> {
   const spokePoolClients = Object.fromEntries(
     chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
@@ -55,7 +57,7 @@ export async function constructSpokePoolClientsForBlockAndUpdate(
       return [chainId, client];
     })
   );
-  await updateSpokePoolClients(spokePoolClients, eventsToQuery);
+  await updateSpokePoolClients(spokePoolClients, eventsToQuery, latestFullyExecutedBundleEndBlocks);
   return spokePoolClients;
 }
 
@@ -111,9 +113,14 @@ export async function constructSpokePoolClientsWithLookback(
 
 export async function updateSpokePoolClients(
   spokePoolClients: { [chainId: number]: SpokePoolClient },
-  eventsToQuery?: string[]
+  eventsToQuery?: string[],
+  latestFullyExecutedBundleEndBlocks: { [chainId: number]: number } = {}
 ) {
-  await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update(eventsToQuery)));
+  await Promise.all(
+    Object.values(spokePoolClients).map((client: SpokePoolClient) =>
+      client.update(eventsToQuery, latestFullyExecutedBundleEndBlocks[client.chainId])
+    )
+  );
 }
 
 export async function constructClients(logger: winston.Logger, config: CommonConfig): Promise<Clients> {

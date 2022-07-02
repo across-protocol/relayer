@@ -46,6 +46,18 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       // Clear cache so results can be updated with new data.
       dataworker.clearCache();
       await updateDataworkerClients(clients);
+
+      // Grab end blocks for latest fully executed bundle. We can use this block to optimize the dataworker event
+      // search by loading partially from the cache.
+      const latestFullyExecutedBundleEndBlocks = clients.hubPoolClient.getLatestFullyExecutedRootBundle(
+        clients.hubPoolClient.latestBlockNumber
+      ).bundleEvaluationBlockNumbers;
+      const bundleEndBlockMapping = Object.fromEntries(
+        dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, index) => {
+          return [chainId, latestFullyExecutedBundleEndBlocks[index].toNumber()];
+        })
+      )
+    
       if (spokePoolClients === undefined)
         spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
           dataworker.chainIdListForBundleEvaluationBlockNumbers,
@@ -59,17 +71,22 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
             "EnabledDepositRoute",
             "RelayedRootBundle",
             "ExecutedRelayerRefundRoot",
-          ]
+          ],
+          bundleEndBlockMapping
         );
       else
-        await updateSpokePoolClients(spokePoolClients, [
-          "FundsDeposited",
-          "RequestedSpeedUpDeposit",
-          "FilledRelay",
-          "EnabledDepositRoute",
-          "RelayedRootBundle",
-          "ExecutedRelayerRefundRoot",
-        ]);
+        await updateSpokePoolClients(
+          spokePoolClients,
+          [
+            "FundsDeposited",
+            "RequestedSpeedUpDeposit",
+            "FilledRelay",
+            "EnabledDepositRoute",
+            "RelayedRootBundle",
+            "ExecutedRelayerRefundRoot",
+          ],
+          bundleEndBlockMapping
+        );
 
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled)

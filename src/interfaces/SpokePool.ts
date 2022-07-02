@@ -20,6 +20,22 @@ export interface Deposit {
 export interface DepositWithBlock extends Deposit, SortableEvent {
   originBlockNumber: number;
 }
+
+export interface DepositWithBlockInCache extends SortableEvent {
+  depositId: number;
+  depositor: string;
+  recipient: string;
+  originToken: string;
+  amount: string;
+  originChainId: number;
+  destinationChainId: number;
+  relayerFeePct: string;
+  quoteTimestamp: number;
+  realizedLpFeePct: string;
+  destinationToken: string;
+  originBlockNumber: number;
+  speedUpSignature?: string | undefined;
+}
 export interface Fill {
   amount: BigNumber;
   totalFilledAmount: BigNumber;
