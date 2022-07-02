@@ -1,8 +1,26 @@
-import { spreadEvent, assign, Contract, BigNumber, EventSearchConfig, Promise, EventFilter, sortEventsDescending, assert } from "../utils";
+import {
+  spreadEvent,
+  assign,
+  Contract,
+  BigNumber,
+  EventSearchConfig,
+  Promise,
+  EventFilter,
+  sortEventsDescending,
+  assert,
+} from "../utils";
 import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
 import { AcrossConfigStoreClient } from "./ConfigStoreClient";
-import { Deposit, DepositWithBlock, DepositWithBlockInCache, Fill, SpeedUp, FillWithBlock, TokensBridged } from "../interfaces/SpokePool";
+import {
+  Deposit,
+  DepositWithBlock,
+  DepositWithBlockInCache,
+  Fill,
+  SpeedUp,
+  FillWithBlock,
+  TokensBridged,
+} from "../interfaces/SpokePool";
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
 
 interface CachedDepositData {
@@ -234,6 +252,9 @@ export class SpokePoolClient {
       // because we'll use events from `fromBlock` until `latestCachedBlock` and fetch the rest from the RPC.
       // However, if `latestCachedBlock` < `searchConfig.fromBlock`, then there is no point in loading anything
       // from the cache since all cached events are older than the oldest block we are interested in.
+      // If `latestCachedBlock > endBlockForChainInLatestFullyExecutedBundle` then the above invariant is violated
+      // and we're storing events too close to HEAD for this chain in the cache, so we'll reset the cache and use
+      // no events from it.
       if (
         latestCachedBlock !== undefined &&
         latestCachedBlock <= endBlockForChainInLatestFullyExecutedBundle &&
@@ -244,6 +265,7 @@ export class SpokePoolClient {
         this.log("debug", `Partially loading event data from cache for chain ${this.chainId}`, {
           latestCachedBlock,
           newSearchConfigForDepositAndFillEvents: depositEventSearchConfig,
+          originalSearchConfigForDepositAndFillEvents: searchConfig,
         });
       }
     }
@@ -254,7 +276,7 @@ export class SpokePoolClient {
     const eventSearchConfigs = eventsToQuery.map((eventName) => {
       if (!Object.keys(this._queryableEventNames()).includes(eventName))
         throw new Error("Unknown event to query in SpokePoolClient");
-      let searchConfigToUse = searchConfig
+      let searchConfigToUse = searchConfig;
       if (eventName === "EnabledDepositRoute" || eventName === "TokensBridged")
         searchConfigToUse = depositRouteSearchConfig;
       else if (eventName === "FundsDeposited" /* || eventName === "FilledRelay" */)
@@ -283,9 +305,8 @@ export class SpokePoolClient {
       const depositEvents = queryResults[eventsToQuery.indexOf("FundsDeposited")];
       if (depositEvents.length > 0)
         this.log("debug", `Fetching realizedLpFeePct for ${depositEvents.length} deposits on chain ${this.chainId}`, {
-            numDeposits: depositEvents.length,
-          }
-        );
+          numDeposits: depositEvents.length,
+        });
       const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number }[] = await Promise.all(
         depositEvents.map((event) => this.computeRealizedLpFeePct(event))
       );
@@ -293,18 +314,19 @@ export class SpokePoolClient {
       // First populate deposits mapping with cached event data and then newly fetched data. We assume that cached
       // data always precedes newly fetched data. We also only want to use cached data as old as the original search
       // config's fromBlock.
-      if (cachedDepositData?.deposits !== undefined) {
+      // TODO: Can we combine the conditional or make it simpler? Are both needed?
+      if (cachedDepositData?.deposits !== undefined && depositEventSearchConfig.fromBlock > searchConfig.fromBlock) {
         for (const destinationChainId of Object.keys(cachedDepositData.deposits)) {
           console.log(
             `Loaded ${cachedDepositData.deposits[destinationChainId].length} cached deposit events for chain ${this.chainId} and destination chain ${destinationChainId}`
           );
           cachedDepositData.deposits[destinationChainId].forEach((deposit: DepositWithBlockInCache) => {
-            if (deposit.originBlockNumber < searchConfig.fromBlock) return;
+            if (deposit.originBlockNumber < searchConfig.fromBlock) return; // Is this check still needed?
             const convertedDeposit = this.convertDepositInCache(deposit);
             assign(this.depositHashes, [this.getDepositHash(convertedDeposit)], convertedDeposit);
             assign(this.deposits, [convertedDeposit.destinationChainId], [convertedDeposit]);
             assign(this.depositsWithBlockNumbers, [convertedDeposit.destinationChainId], [convertedDeposit]);
-          })
+          });
         }
       }
       for (const [index, event] of depositEvents.entries()) {
@@ -321,7 +343,6 @@ export class SpokePoolClient {
         );
       }
 
-
       // Update cache with deposit events <= bundle end block in latest fully executed bundle for this chain.
       if (endBlockForChainInLatestFullyExecutedBundle > 0) {
         const depositsToCache = Object.fromEntries(
@@ -336,8 +357,8 @@ export class SpokePoolClient {
                     amount: deposit.amount.toString(),
                     relayerFeePct: deposit.relayerFeePct.toString(),
                     realizedLpFeePct: deposit.realizedLpFeePct.toString(),
-                  } as DepositWithBlockInCache
-              }),
+                  } as DepositWithBlockInCache;
+                }),
             ];
           })
         );
@@ -356,7 +377,7 @@ export class SpokePoolClient {
         await this.setDepositDataInCache({
           latestBlock: endBlockForChainInLatestFullyExecutedBundle,
           deposits: depositsToCache,
-        })
+        });
       }
     }
 
@@ -465,7 +486,7 @@ export class SpokePoolClient {
       amount: toBN(deposit.amount),
       relayerFeePct: toBN(deposit.relayerFeePct),
       realizedLpFeePct: toBN(deposit.realizedLpFeePct),
-    }
+    };
   }
 
   private async computeRealizedLpFeePct(depositEvent: Event) {

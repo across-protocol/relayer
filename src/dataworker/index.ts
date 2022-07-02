@@ -56,8 +56,8 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
         dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, index) => {
           return [chainId, latestFullyExecutedBundleEndBlocks[index].toNumber()];
         })
-      )
-    
+      );
+
       if (spokePoolClients === undefined)
         spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
           dataworker.chainIdListForBundleEvaluationBlockNumbers,
