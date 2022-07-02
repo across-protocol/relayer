@@ -217,21 +217,20 @@ export class SpokePoolClient {
 
     // Try to reduce the number of web3 requests sent to query FundsDeposited and FilledRelay events, of which there
     // expected to be many. We will first try to load existing cached events if they exist and if they do, then
-    // we only need to search for new events after the last cached event searched.
+    // we only need to search for new events after the last cached event searched. We will then save any events
+    // older than the bundle end block for the latest validated bundle for this chain. These events by definition were
+    // included in a validated bundle so we can feel confident about them being correct.
     let cachedDepositData: CachedDepositData | undefined;
     const depositEventSearchConfig = { ...searchConfig };
     if (endBlockForChainInLatestFullyExecutedBundle > 0) {
-      cachedDepositData = await this.getDepositDataFromCache();
-      const latestCachedBlock = cachedDepositData.latestBlock ?? 0;
+      // Invariant: The cached deposit data for this chain should include all events from the SpokePool
+      // deployment block until latestCachedBlock <= endBlockForChainInLatestFullyExecutedBundle.
+      const _cachedDepositData = await this.getDepositDataFromCache();
+      const latestCachedBlock = _cachedDepositData.latestBlock;
 
-      if (latestCachedBlock > 0) {
-        // TODO: If `latestCachedBlock > endBlockForChainInLatestFullyExecutedBundle` there is a problem
-        // TODO: If `latestCachedBlock < searchConfig.fromBlock` that's also a problem
-        // We shouldn't neccessarily throw errors in these situations but just need to handle them. Can always default
-        // to loading ALL events from fromBlock.
-        assert(latestCachedBlock <= endBlockForChainInLatestFullyExecutedBundle)
-        assert(latestCachedBlock >= depositEventSearchConfig.fromBlock)
+      if (latestCachedBlock !== undefined && latestCachedBlock <= endBlockForChainInLatestFullyExecutedBundle) {
         depositEventSearchConfig.fromBlock = latestCachedBlock + 1;
+        cachedDepositData = _cachedDepositData;
         this.log("debug", `Partially loading event data from cache for chain ${this.chainId}`, {
           latestCachedBlock,
           newSearchConfigForDepositAndFillEvents: depositEventSearchConfig,
@@ -282,13 +281,15 @@ export class SpokePoolClient {
       );
 
       // First populate deposits mapping with cached event data and then newly fetched data. We assume that cached
-      // data always precedes newly fetched data.
+      // data always precedes newly fetched data. We also only want to use cached data as old as the original search
+      // config's fromBlock.
       if (cachedDepositData?.deposits !== undefined) {
         for (const destinationChainId of Object.keys(cachedDepositData.deposits)) {
           console.log(
             `Loaded ${cachedDepositData.deposits[destinationChainId].length} cached deposit events for chain ${this.chainId} and destination chain ${destinationChainId}`
           );
           cachedDepositData.deposits[destinationChainId].forEach((deposit: DepositWithBlockInCache) => {
+            if (deposit.originBlockNumber < searchConfig.fromBlock) return;
             const convertedDeposit = this.convertDepositInCache(deposit);
             assign(this.depositHashes, [this.getDepositHash(convertedDeposit)], convertedDeposit);
             assign(this.deposits, [convertedDeposit.destinationChainId], [convertedDeposit]);
