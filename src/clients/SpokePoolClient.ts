@@ -220,6 +220,8 @@ export class SpokePoolClient {
     // we only need to search for new events after the last cached event searched. We will then save any events
     // older than the bundle end block for the latest validated bundle for this chain. These events by definition were
     // included in a validated bundle so we can feel confident about them being correct.
+
+    // Invariant: cachedDepositData is undefined if we don't want to use any events from the cache.
     let cachedDepositData: CachedDepositData | undefined;
     const depositEventSearchConfig = { ...searchConfig };
     if (endBlockForChainInLatestFullyExecutedBundle > 0) {
@@ -228,7 +230,15 @@ export class SpokePoolClient {
       const _cachedDepositData = await this.getDepositDataFromCache();
       const latestCachedBlock = _cachedDepositData.latestBlock;
 
-      if (latestCachedBlock !== undefined && latestCachedBlock <= endBlockForChainInLatestFullyExecutedBundle) {
+      // Note: If `latestCachedBlock` >= `searchConfig.fromBlock` then we want to load events from the cache
+      // because we'll use events from `fromBlock` until `latestCachedBlock` and fetch the rest from the RPC.
+      // However, if `latestCachedBlock` < `searchConfig.fromBlock`, then there is no point in loading anything
+      // from the cache since all cached events are older than the oldest block we are interested in.
+      if (
+        latestCachedBlock !== undefined &&
+        latestCachedBlock <= endBlockForChainInLatestFullyExecutedBundle &&
+        latestCachedBlock >= searchConfig.fromBlock
+      ) {
         depositEventSearchConfig.fromBlock = latestCachedBlock + 1;
         cachedDepositData = _cachedDepositData;
         this.log("debug", `Partially loading event data from cache for chain ${this.chainId}`, {
