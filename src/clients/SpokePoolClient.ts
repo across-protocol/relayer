@@ -442,7 +442,7 @@ export class SpokePoolClient {
   private async setDepositDataInCache(newData: CachedDepositData) {
     if (!this.configStoreClient.redisClient) return;
     const key = `deposit_data_${this.chainId}`;
-    // await this.configStoreClient.redisClient.set(key, JSON.stringify(newData));
+    await this.configStoreClient.redisClient.set(key, JSON.stringify(newData));
   }
 
   // Neccessary to use this function because RedisDB can only store strings so we need to stringify the BN objects

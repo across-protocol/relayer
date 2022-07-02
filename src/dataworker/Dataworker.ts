@@ -1072,7 +1072,6 @@ export class Dataworker {
           );
 
           if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {
-            console.log(leaves, rootBundleRelay.rootBundleId)
             this.logger.warn({
               at: "Dataworke#executeRelayerRefundLeaves",
               message: "Constructed a different root for the block range!",
