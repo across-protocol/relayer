@@ -336,9 +336,9 @@ export class SpokePoolClient {
             return {
               destChain,
               depositsToCacheCount: depositsToCache[destChain].length,
-              depositsToCacheFirst: depositsToCache[destChain][0],
-              depositsToCacheLast: depositsToCache[destChain][depositsToCache[destChain].length - 1]
-            }
+              // depositsToCacheFirst: depositsToCache[destChain][0],
+              // depositsToCacheLast: depositsToCache[destChain][depositsToCache[destChain].length - 1]
+            };
           })
         );
         // Save new deposit cache for chain.
