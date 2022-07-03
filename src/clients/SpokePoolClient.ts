@@ -335,8 +335,7 @@ export class SpokePoolClient {
       // First populate deposits mapping with cached event data and then newly fetched data. We assume that cached
       // data always precedes newly fetched data. We also only want to use cached data as old as the original search
       // config's fromBlock.
-      // TODO: Can we combine the conditional or make it simpler? Are both needed?
-      if (cachedDepositData?.deposits !== undefined && depositEventSearchConfig.fromBlock > searchConfig.fromBlock) {
+      if (cachedDepositData?.deposits !== undefined) {
         for (const destinationChainId of Object.keys(cachedDepositData.deposits)) {
           const cachedDepositsToStore = cachedDepositData.deposits[destinationChainId].filter(
             (deposit) =>
@@ -424,7 +423,7 @@ export class SpokePoolClient {
     if (eventsToQuery.includes("FilledRelay")) {
       const fillEvents = queryResults[eventsToQuery.indexOf("FilledRelay")];
 
-      if (cachedFillData?.fills !== undefined && depositEventSearchConfig.fromBlock > searchConfig.fromBlock) {
+      if (cachedFillData?.fills !== undefined) {
         const cachedFillsToStore = cachedFillData.fills.filter(
           (fill) => fill.blockNumber >= searchConfig.fromBlock && fill.blockNumber <= searchConfig.toBlock
         );
