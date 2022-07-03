@@ -56,6 +56,24 @@ export interface Fill {
 
 export interface FillWithBlock extends Fill, SortableEvent {}
 
+export interface FillWithBlockInCache extends SortableEvent {
+  amount: string;
+  totalFilledAmount: string;
+  fillAmount: string;
+  repaymentChainId: number;
+  originChainId: number;
+  relayerFeePct: string;
+  appliedRelayerFeePct: string;
+  realizedLpFeePct: string;
+  depositId: number;
+  destinationToken: string;
+  relayer: string;
+  depositor: string;
+  recipient: string;
+  isSlowRelay: boolean;
+  destinationChainId: number;
+}
+
 export interface SpeedUp {
   depositor: string;
   depositorSignature: string;

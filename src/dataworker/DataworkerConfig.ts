@@ -24,6 +24,8 @@ export class DataworkerConfig extends CommonConfig {
   readonly sendingProposalsEnabled: boolean;
   readonly sendingExecutionsEnabled: boolean;
 
+  readonly useCacheForSpokePool: boolean;
+
   constructor(env: ProcessEnv) {
     const {
       ROOT_BUNDLE_EXECUTION_THRESHOLD,
@@ -40,6 +42,7 @@ export class DataworkerConfig extends CommonConfig {
       SEND_EXECUTIONS,
       FINALIZER_CHAINS,
       FINALIZER_ENABLED,
+      USE_CACHE_FOR_SPOKE_POOL,
     } = env;
     super(env);
 
@@ -78,5 +81,6 @@ export class DataworkerConfig extends CommonConfig {
     this.sendingExecutionsEnabled = SEND_EXECUTIONS === "true";
     this.finalizerChains = FINALIZER_CHAINS ? JSON.parse(FINALIZER_CHAINS) : CHAIN_ID_LIST_INDICES;
     this.finalizerEnabled = FINALIZER_ENABLED === "true";
+    this.useCacheForSpokePool = USE_CACHE_FOR_SPOKE_POOL === "true";
   }
 }
