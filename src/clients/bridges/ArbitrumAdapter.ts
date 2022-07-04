@@ -36,7 +36,7 @@ export class ArbitrumAdapter extends BaseAdapter {
   constructor(
     readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    readonly relayerAddress: string
+    readonly monitoredAddresses: string[]
   ) {
     super(spokePoolClients, 42161, firstL1BlockToSearch);
   }
@@ -47,34 +47,53 @@ export class ArbitrumAdapter extends BaseAdapter {
 
     const promises = [];
     const validTokens = [];
-    for (const l1Token of l1Tokens) {
-      // Skip the token if we can't find the corresponding bridge.
-      // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
-      // rather than maintaining a list of native bridge-supported tokens.
-      if (l1Gateways[l1Token] === undefined || l2Gateways[l1Token] === null) continue;
+    // Fetch bridge events for all monitored addresses.
+    for (const monitoredAddress of this.monitoredAddresses) {
+      for (const l1Token of l1Tokens) {
+        // Skip the token if we can't find the corresponding bridge.
+        // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
+        // rather than maintaining a list of native bridge-supported tokens.
+        if (l1Gateways[l1Token] === undefined || l2Gateways[l1Token] === null) continue;
 
-      const l1Bridge = this.getL1Bridge(l1Token);
-      const l2Bridge = this.getL2Bridge(l1Token);
-      const searchFilter = [undefined, this.relayerAddress];
-      promises.push(
-        paginatedEventQuery(l1Bridge, l1Bridge.filters.DepositInitiated(...searchFilter), this.l1SearchConfig),
-        paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...searchFilter), this.l2SearchConfig)
-      );
-      validTokens.push(l1Token);
+        const l1Bridge = this.getL1Bridge(l1Token);
+        const l2Bridge = this.getL2Bridge(l1Token);
+        const searchFilter = [undefined, monitoredAddress];
+        promises.push(
+          paginatedEventQuery(l1Bridge, l1Bridge.filters.DepositInitiated(...searchFilter), this.l1SearchConfig),
+          paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...searchFilter), this.l2SearchConfig)
+        );
+        validTokens.push(l1Token);
+      }
     }
 
     const results = await Promise.all(promises, { concurrency: 4 });
-    // The logic below takes the results from the promises and spreads them into the l1DepositInitiatedEvents and
-    // l2DepositFinalizedEvents state from the BaseAdapter.
-    results.forEach((result, index) => {
-      const l1Token = validTokens[Math.floor(index / 2)];
-      const events = result.map((event) => {
-        const eventSpread = spreadEventWithBlockNumber(event);
-        return { amount: eventSpread[index % 2 === 0 ? "_amount" : "amount"], blockNumber: eventSpread["blockNumber"] };
+
+    // 2 events per token.
+    const numEventsPerMonitoredAddress = 2 * validTokens.length;
+
+    // Segregate the events list by monitored address.
+    const resultsByMonitoredAddress = Object.fromEntries(
+      this.monitoredAddresses.map((monitoredAddress, index) => {
+        const start = index * numEventsPerMonitoredAddress;
+        return [monitoredAddress, results.slice(start, start + numEventsPerMonitoredAddress + 1)];
+      })
+    );
+
+    // Process events for each monitored address.
+    for (const monitoredAddress of this.monitoredAddresses) {
+      const eventsToProcess = resultsByMonitoredAddress[monitoredAddress];
+      // The logic below takes the results from the promises and spreads them into the l1DepositInitiatedEvents and
+      // l2DepositFinalizedEvents state from the BaseAdapter.
+      eventsToProcess.forEach((result, index) => {
+        const l1Token = validTokens[Math.floor(index / 2)];
+        const events = result.map((event) => {
+          const eventSpread = spreadEventWithBlockNumber(event);
+          return { amount: eventSpread[index % 2 === 0 ? "_amount" : "amount"], blockNumber: eventSpread.blockNumber };
+        });
+        const eventsStorage = index % 2 === 0 ? this.l1DepositInitiatedEvents : this.l2DepositFinalizedEvents;
+        assign(eventsStorage, [monitoredAddress, l1Token], events);
       });
-      const storageName = index % 2 === 0 ? "l1DepositInitiatedEvents" : "l2DepositFinalizedEvents";
-      assign(this[storageName], [l1Token], events);
-    });
+    }
 
     this.l1SearchConfig.fromBlock = this.l1SearchConfig.toBlock + 1;
     this.l2SearchConfig.fromBlock = this.l2SearchConfig.toBlock + 1;
@@ -82,19 +101,19 @@ export class ArbitrumAdapter extends BaseAdapter {
     return this.computeOutstandingCrossChainTransfers(validTokens);
   }
 
-  async checkTokenApprovals(l1Tokens: string[]) {
+  async checkTokenApprovals(address: string, l1Tokens: string[]) {
     // Note we send the approvals to the L1 Bridge but actually send outbound transfers to the L1 Gateway Router.
     // Note that if the token trying to be approved is not configured in this client (i.e. not in the l1Gateways object)
     // then this will pass null into the checkAndSendTokenApprovals. This method gracefully deals with this case.
     const associatedL1Bridges = l1Tokens.map((l1Token) => this.getL1Bridge(l1Token)?.address);
-    await this.checkAndSendTokenApprovals(l1Tokens, associatedL1Bridges);
+    await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
   }
 
-  async sendTokenToTargetChain(l1Token, l2Token, amount) {
+  async sendTokenToTargetChain(address: string, l1Token: string, l2Token: string, amount: BigNumber) {
     this.log("Bridging tokens", { l1Token, l2Token, amount });
     const args = [
       l1Token, // token
-      this.relayerAddress, // to
+      address, // to
       amount, // amount
       this.l2GasLimit, // maxGas
       this.l2GasPrice, // gasPriceBid

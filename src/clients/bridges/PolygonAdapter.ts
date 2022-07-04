@@ -61,7 +61,7 @@ export class PolygonAdapter extends BaseAdapter {
   constructor(
     readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    readonly relayerAddress: string
+    readonly monitoredAddresses: string[]
   ) {
     super(spokePoolClients, 137, firstL1BlockToSearch);
   }
@@ -73,47 +73,67 @@ export class PolygonAdapter extends BaseAdapter {
 
     const promises = [];
     const validTokens = [];
-    for (const l1Token of l1Tokens) {
-      const l1Bridge = this.getL1Bridge(l1Token);
-      // Skip the token if we can't find the corresponding bridge.
-      // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
-      // rather than maintaining a list of native bridge-supported tokens.
-      if (l1Bridge === null) continue;
+    // Fetch bridge events for all monitored addresses.
+    for (const monitoredAddress of this.monitoredAddresses) {
+      for (const l1Token of l1Tokens) {
+        const l1Bridge = this.getL1Bridge(l1Token);
+        // Skip the token if we can't find the corresponding bridge.
+        // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
+        // rather than maintaining a list of native bridge-supported tokens.
+        if (l1Bridge === null) continue;
 
-      const l2Token = this.getL2Token(l1Token);
+        const l2Token = this.getL2Token(l1Token);
 
-      const l1Method = tokenToBridge[l1Token].l1Method;
-      let l1SearchFilter = [];
-      if (l1Method === "LockedERC20") l1SearchFilter = [this.relayerAddress, undefined, l1Token];
-      if (l1Method === "LockedEther") l1SearchFilter = [undefined, this.relayerAddress];
-      if (l1Method === "NewDepositBlock") l1SearchFilter = [this.relayerAddress, l1MaticAddress];
+        const l1Method = tokenToBridge[l1Token].l1Method;
+        let l1SearchFilter = [];
+        if (l1Method === "LockedERC20") l1SearchFilter = [monitoredAddress, undefined, l1Token];
+        if (l1Method === "LockedEther") l1SearchFilter = [undefined, monitoredAddress];
+        if (l1Method === "NewDepositBlock") l1SearchFilter = [monitoredAddress, l1MaticAddress];
 
-      const l2Method = l1Token === l1MaticAddress ? "TokenDeposited" : "Transfer";
-      let l2SearchFilter = [];
-      if (l2Method === "Transfer") l2SearchFilter = [ZERO_ADDRESS, this.relayerAddress];
-      if (l2Method === "TokenDeposited") l2SearchFilter = [l1MaticAddress, ZERO_ADDRESS, this.relayerAddress];
+        const l2Method = l1Token === l1MaticAddress ? "TokenDeposited" : "Transfer";
+        let l2SearchFilter = [];
+        if (l2Method === "Transfer") l2SearchFilter = [ZERO_ADDRESS, monitoredAddress];
+        if (l2Method === "TokenDeposited") l2SearchFilter = [l1MaticAddress, ZERO_ADDRESS, monitoredAddress];
 
-      promises.push(
-        paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), this.l1SearchConfig),
-        paginatedEventQuery(l2Token, l2Token.filters[l2Method](...l2SearchFilter), this.l2SearchConfig)
-      );
-      validTokens.push(l1Token);
+        promises.push(
+          paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), this.l1SearchConfig),
+          paginatedEventQuery(l2Token, l2Token.filters[l2Method](...l2SearchFilter), this.l2SearchConfig)
+        );
+        validTokens.push(l1Token);
+      }
     }
+
     const results = await Promise.all(promises, { concurrency: 2 });
-    results.forEach((result, index) => {
-      const l1Token = validTokens[Math.floor(index / 2)];
-      const amountProp = index % 2 === 0 ? tokenToBridge[l1Token].l1AmountProp : tokenToBridge[l1Token].l2AmountProp;
-      const events = result.map((event) => {
-        const eventSpread = spreadEventWithBlockNumber(event);
-        return {
-          amount: eventSpread[amountProp],
-          to: eventSpread["depositReceiver"],
-          blockNumber: eventSpread["blockNumber"],
-        };
+
+    // 2 events per token.
+    const numEventsPerMonitoredAddress = 2 * validTokens.length;
+
+    // Segregate the events list by monitored address.
+    const resultsByMonitoredAddress = Object.fromEntries(
+      this.monitoredAddresses.map((monitoredAddress, index) => {
+        const start = index * numEventsPerMonitoredAddress;
+        return [monitoredAddress, results.slice(start, start + numEventsPerMonitoredAddress + 1)];
+      })
+    );
+
+    // Process events for each monitored address.
+    for (const monitoredAddress of this.monitoredAddresses) {
+      const eventsToProcess = resultsByMonitoredAddress[monitoredAddress];
+      eventsToProcess.forEach((result, index) => {
+        const l1Token = validTokens[Math.floor(index / 2)];
+        const amountProp = index % 2 === 0 ? tokenToBridge[l1Token].l1AmountProp : tokenToBridge[l1Token].l2AmountProp;
+        const events = result.map((event) => {
+          const eventSpread = spreadEventWithBlockNumber(event);
+          return {
+            amount: eventSpread[amountProp],
+            to: eventSpread["depositReceiver"],
+            blockNumber: eventSpread.blockNumber,
+          };
+        });
+        const eventsStorage = index % 2 === 0 ? this.l1DepositInitiatedEvents : this.l2DepositFinalizedEvents;
+        assign(eventsStorage, [monitoredAddress, l1Token], events);
       });
-      const storageName = index % 2 === 0 ? "l1DepositInitiatedEvents" : "l2DepositFinalizedEvents";
-      assign(this[storageName], [l1Token], events);
-    });
+    }
 
     this.l1SearchConfig.fromBlock = this.l1SearchConfig.toBlock + 1;
     this.l2SearchConfig.fromBlock = this.l2SearchConfig.toBlock + 1;
@@ -121,26 +141,26 @@ export class PolygonAdapter extends BaseAdapter {
     return this.computeOutstandingCrossChainTransfers(validTokens);
   }
 
-  async sendTokenToTargetChain(l1Token: string, l2Token: string, amount: BigNumber) {
+  async sendTokenToTargetChain(address: string, l1Token: string, l2Token: string, amount: BigNumber) {
     let method = "depositFor";
     // note that the amount is the bytes 32 encoding of the amount.
-    let args = [this.relayerAddress, l1Token, bnToHex(amount)];
+    let args = [address, l1Token, bnToHex(amount)];
 
-    // If this token is WETH(the tokenToEvent maps to the ETH method) then we modify the params to deposit ETH.
+    // If this token is WETH (the tokenToEvent maps to the ETH method) then we modify the params to deposit ETH.
     if (this.isWeth(l1Token)) {
       method = "bridgeWethToPolygon";
-      args = [this.relayerAddress, amount.toString()];
+      args = [address, amount.toString()];
     }
     this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
     return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args);
   }
 
-  async checkTokenApprovals(l1Tokens: string[]) {
+  async checkTokenApprovals(address: string, l1Tokens: string[]) {
     const associatedL1Bridges = l1Tokens.map((l1Token) => {
       if (this.isWeth(l1Token)) return this.getL1TokenGateway(l1Token)?.address;
       return this.getL1Bridge(l1Token)?.address;
     });
-    await this.checkAndSendTokenApprovals(l1Tokens, associatedL1Bridges);
+    await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
   }
 
   getL1Bridge(l1Token: string): Contract | null {

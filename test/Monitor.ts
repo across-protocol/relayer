@@ -262,7 +262,12 @@ describe("Monitor", async function () {
     expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
 
     // Simulate some pending cross chain transfers.
-    crossChainTransferClient.increaseOutstandingTransfer(l1Token.address, toBN(5), destinationChainId);
+    crossChainTransferClient.increaseOutstandingTransfer(
+      depositor.address,
+      l1Token.address,
+      toBN(5),
+      destinationChainId
+    );
     monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
     expect(
       reports[depositor.address]["L1"][getNetworkName(destinationChainId)][BalanceType.PENDING_TRANSFERS]
