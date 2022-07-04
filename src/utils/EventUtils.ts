@@ -38,10 +38,18 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
   if (!searchConfig.maxBlockLookBack) searchConfig.maxBlockLookBack = searchConfig.toBlock - searchConfig.fromBlock;
   else numberOfQueries = Math.ceil((searchConfig.toBlock - searchConfig.fromBlock) / searchConfig.maxBlockLookBack);
 
+  const chainId = (await contract.provider.getNetwork()).chainId
+  console.log(
+    `Making ${numberOfQueries} web3 requests to ${contract.address} on chain ${chainId}`
+  );
   const promises = [];
   for (let i = 0; i < numberOfQueries; i++) {
     const fromBlock = searchConfig.fromBlock + i * searchConfig.maxBlockLookBack;
-    const toBlock = Math.min(searchConfig.fromBlock + (i + 1) * searchConfig.maxBlockLookBack, searchConfig.toBlock);
+    const toBlock = Math.min(
+      searchConfig.fromBlock + (i + 1) * searchConfig.maxBlockLookBack - 1,
+      searchConfig.toBlock
+    );
+    if (chainId === 137 && filter.topics.includes("0x4a4fc49abd237bfd7f4ac82d6c7a284c69daaea5154430cff04ad7482c6c4254")) console.log(fromBlock, toBlock)
     promises.push(contract.queryFilter(filter, fromBlock, toBlock));
   }
 
