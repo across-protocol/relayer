@@ -1,4 +1,3 @@
-export * from "./InventoryClient";
 export * from "./BaseAdapter";
 export * from "./AdapterManager";
 export * from "./OptimismAdapter";

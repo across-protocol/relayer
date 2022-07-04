@@ -9,9 +9,8 @@ import {
   ProfitClient,
   TokenTransferClient,
   BalanceAllocator,
-  CrossChainTransferClient,
-  AdapterManager,
 } from "../src/clients";
+import { CrossChainTransferClient, AdapterManager } from "../src/clients/bridges";
 import { Monitor, ALL_CHAINS_NAME, UNKNOWN_TRANSFERS_NAME } from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
 import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repaymentChainId } from "./constants";

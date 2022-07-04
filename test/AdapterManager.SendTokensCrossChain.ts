@@ -2,9 +2,10 @@ import { expect, ethers, SignerWithAddress, createSpyLogger, winston } from "./u
 import { BigNumber, FakeContract, smock, toBN } from "./utils";
 import { MockHubPoolClient } from "./mocks";
 import { bnToHex } from "../src/utils";
-import { AdapterManager, SpokePoolClient } from "../src/clients"; // Tested
+import { SpokePoolClient } from "../src/clients";
+import { AdapterManager } from "../src/clients/bridges"; // Tested
 import { l2TokensToL1TokenValidation } from "../src/common";
-import * as interfaces from "../src/clients/InventoryClient/ContractInterfaces";
+import * as interfaces from "../src/clients/bridges/ContractInterfaces";
 
 let hubPoolClient: MockHubPoolClient,
   mockSpokePoolClients: {

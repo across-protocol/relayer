@@ -2,7 +2,6 @@ import { l2TokensToL1TokenValidation } from "../../common";
 import { BigNumber, winston, toBN, createFormatFunction, etherscanLink } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter } from "./";
-import { Provider } from "@ethersproject/abstract-provider";
 import { Signer } from "@arbitrum/sdk/node_modules/@ethersproject/abstract-signer";
 export class AdapterManager {
   public adapters: { [chainId: number]: OptimismAdapter | ArbitrumAdapter | PolygonAdapter } = {};
@@ -44,7 +43,7 @@ export class AdapterManager {
     ]);
 
     if (optimismWrapTx || bobaWrapTx) {
-      let mrkdwn =
+      const mrkdwn =
         `Ether on ${optimismWrapTx ? "Optimism" : ""}${optimismWrapTx && bobaWrapTx ? " and " : ""}` +
         `${bobaWrapTx ? "Boba" : ""} was wrapped due to being over the threshold of ` +
         `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.\n` +
@@ -54,16 +53,8 @@ export class AdapterManager {
     }
   }
 
-  getProvider(chainId: number): Provider {
-    return this.spokePoolClients[chainId].spokePool.provider;
-  }
-
   getSigner(chainId: number): Signer {
     return this.spokePoolClients[chainId].spokePool.signer;
-  }
-
-  getChainSearchConfig(chainId: number) {
-    return this.spokePoolClients[chainId].eventSearchConfig;
   }
 
   l2TokenForL1Token(l1Token: string, chainId: number): string {

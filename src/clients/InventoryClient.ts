@@ -8,11 +8,10 @@ import {
   etherscanLink,
   Contract,
   runTransaction,
-} from "../../utils";
-import { HubPoolClient, TokenClient, BundleDataClient, weth9Abi } from "..";
-import { CrossChainTransferClient } from ".";
-import { Deposit, FillsToRefund, InventoryConfig } from "../../interfaces";
-import { AdapterManager } from "./AdapterManager";
+} from "../utils";
+import { HubPoolClient, TokenClient, BundleDataClient } from ".";
+import { AdapterManager, CrossChainTransferClient, weth9Abi } from "./bridges";
+import { Deposit, FillsToRefund, InventoryConfig } from "../interfaces";
 
 const scalar = toBN(10).pow(18);
 const formatWei = createFormatFunction(2, 4, false, 18);
