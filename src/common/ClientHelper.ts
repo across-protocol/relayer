@@ -13,7 +13,6 @@ import { CommonConfig } from "./Config";
 import { DataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { createClient } from "redis4";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;

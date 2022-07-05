@@ -13,8 +13,6 @@ import {
   FillWithBlockInCache,
 } from "../interfaces/SpokePool";
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
-import { assert } from "console";
-
 interface CachedDepositData {
   latestBlock: number;
   deposits: { [destinationChainId: number]: DepositWithBlockInCache[] };
@@ -238,8 +236,10 @@ export class SpokePoolClient {
     // included in a validated bundle so we can feel confident about them being correct.
 
     // Invariant: cachedData is undefined if we don't want to use any events from the cache.
-    let cachedDepositData: CachedDepositData | undefined;
-    let cachedFillData: CachedFillData | undefined;
+    let cachedData: {
+      deposits: { [destinationChainId: number]: DepositWithBlockInCache[] };
+      fills: FillWithBlockInCache[];
+    };
     const depositEventSearchConfig = { ...searchConfig };
     if (endBlockForChainInLatestFullyExecutedBundle > 0) {
       // Invariant: The cached deposit data for this chain should include all events from the SpokePool
@@ -270,8 +270,10 @@ export class SpokePoolClient {
         latestCachedBlock >= searchConfig.fromBlock
       ) {
         depositEventSearchConfig.fromBlock = latestCachedBlock + 1;
-        cachedDepositData = _cachedDepositData;
-        cachedFillData = _cachedFillData;
+        cachedData = {
+          deposits: _cachedDepositData.deposits,
+          fills: _cachedFillData.fills,
+        };
         this.log("debug", `Partially loading deposit and fill event data from cache for chain ${this.chainId}`, {
           latestCachedBlock,
           newSearchConfigForDepositAndFillEvents: depositEventSearchConfig,
@@ -325,9 +327,9 @@ export class SpokePoolClient {
       // First populate deposits mapping with cached event data and then newly fetched data. We assume that cached
       // data always precedes newly fetched data. We also only want to use cached data as old as the original search
       // config's fromBlock.
-      if (cachedDepositData?.deposits !== undefined) {
-        for (const destinationChainId of Object.keys(cachedDepositData.deposits)) {
-          const cachedDepositsToStore = cachedDepositData.deposits[destinationChainId].filter(
+      if (cachedData?.deposits !== undefined) {
+        for (const destinationChainId of Object.keys(cachedData.deposits)) {
+          const cachedDepositsToStore = cachedData.deposits[destinationChainId].filter(
             (deposit) =>
               deposit.originBlockNumber >= searchConfig.fromBlock && deposit.originBlockNumber <= searchConfig.toBlock
           );
@@ -338,15 +340,13 @@ export class SpokePoolClient {
             assign(this.depositsWithBlockNumbers, [convertedDeposit.destinationChainId], [convertedDeposit]);
           });
         }
-        this.log(
-          "debug",
-          `Loaded cached deposit events for chain ${this.chainId}`,
-          Object.fromEntries(
+        this.log("debug", `Loaded cached deposit events for chain ${this.chainId}`, {
+          ...Object.fromEntries(
             Object.keys(this.depositsWithBlockNumbers).map((destinationChainId) => {
               return [destinationChainId, this.depositsWithBlockNumbers[destinationChainId].length];
             })
-          )
-        );
+          ),
+        });
       }
       for (const [index, event] of depositEvents.entries()) {
         // Append the realizedLpFeePct.
@@ -420,8 +420,8 @@ export class SpokePoolClient {
     if (eventsToQuery.includes("FilledRelay")) {
       const fillEvents = queryResults[eventsToQuery.indexOf("FilledRelay")];
 
-      if (cachedFillData?.fills !== undefined) {
-        const cachedFillsToStore = cachedFillData.fills.filter(
+      if (cachedData?.fills !== undefined) {
+        const cachedFillsToStore = cachedData.fills.filter(
           (fill) => fill.blockNumber >= searchConfig.fromBlock && fill.blockNumber <= searchConfig.toBlock
         );
         cachedFillsToStore.forEach((fill: FillWithBlockInCache) => {

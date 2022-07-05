@@ -10,7 +10,6 @@ import {
 import { constructSpokePoolClientsForBlockAndUpdate, updateSpokePoolClients } from "../common";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { finalize } from "../finalizer";
 config();
 let logger: winston.Logger;
 
@@ -72,7 +71,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
             "RelayedRootBundle",
             "ExecutedRelayerRefundRoot",
           ],
-          bundleEndBlockMapping
+          config.useCacheForSpokePool ? bundleEndBlockMapping : {}
         );
       else
         await updateSpokePoolClients(
@@ -85,7 +84,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
             "RelayedRootBundle",
             "ExecutedRelayerRefundRoot",
           ],
-          bundleEndBlockMapping
+          config.useCacheForSpokePool ? bundleEndBlockMapping : {}
         );
 
       // Validate and dispute pending proposal before proposing a new one
