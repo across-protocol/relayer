@@ -54,11 +54,11 @@ export const l2TokensToL1TokenValidation = {
 // Maps chain ID to root bundle ID to ignore because the roots are known to be invalid from the perspective of the
 // latest dataworker code, or there is no matching L1 root bundle, because the root bundle was relayed by an admin.
 export const IGNORED_SPOKE_BUNDLES = {
-  1: [74, 101],
-  10: [74, 101, 105],
-  137: [74, 101],
-  288: [90],
-  42161: [74, 101],
+  1: [104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
+  10: [105, 104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
+  137: [105, 104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
+  288: [96, 93, 90, 85, 78, 72, 68, 67, 65, 2],
+  42161: [105, 104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
 };
 
 // List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals

@@ -1076,6 +1076,7 @@ export class Dataworker {
               at: "Dataworke#executeRelayerRefundLeaves",
               message: "Constructed a different root for the block range!",
               chainId,
+              rootBundleId: rootBundleRelay.rootBundleId,
               mainnetRootBundleBlock: matchingRootBundle.blockNumber,
               publishedRelayerRefundRoot: rootBundleRelay.relayerRefundRoot,
               constructedRelayerRefundRoot: tree.getHexRoot(),
