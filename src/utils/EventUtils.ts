@@ -69,7 +69,7 @@ export function getPaginatedBlockRanges(searchConfig: EventSearchConfig): number
     if (searchConfig.maxBlockLookBack !== undefined)
       nextSearchConfig.toBlock = Math.min(
         searchConfig.toBlock,
-        nextSearchConfig.toBlock + 1 + searchConfig.maxBlockLookBack
+        nextSearchConfig.fromBlock + searchConfig.maxBlockLookBack
       );
   }
   return returnValue;
