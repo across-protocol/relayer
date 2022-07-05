@@ -402,12 +402,6 @@ export class SpokePoolClient {
           deposits: depositsToCache,
         });
       }
-
-      if (this.chainId === 137) {
-        const depositsArbitrumInNextBundle = this.depositsWithBlockNumbers[42161].filter((e) => e.originBlockNumber >= 30257541 && e.originBlockNumber <= 30295426 && e.originToken === "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174")  
-        console.log(`Deposits on Polygon for Arbitrum:`, depositsArbitrumInNextBundle.length) 
-        console.log(depositsArbitrumInNextBundle)
-      }
     }
 
     if (eventsToQuery.includes("RequestedSpeedUpDeposit")) {
@@ -468,11 +462,11 @@ export class SpokePoolClient {
           cachedFills: fillsToCache.length,
         });
 
-        // Save new deposit cache for chain.
-        // await this.setFillDataInCache({
-        //   latestBlock: endBlockForChainInLatestFullyExecutedBundle,
-        //   fills: fillsToCache,
-        // });
+        // Save new fill cache for chain.
+        await this.setFillDataInCache({
+          latestBlock: endBlockForChainInLatestFullyExecutedBundle,
+          fills: fillsToCache,
+        });
       }
     }
 
