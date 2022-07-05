@@ -43,8 +43,8 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
   // rounded up. This gives us the number of queries we need to execute to traverse the whole block range.
   const promises = [];
   const paginatedRanges = getPaginatedBlockRanges(searchConfig);
-  for (let i = 0; i < paginatedRanges.length; i++) {
-    promises.push(contract.queryFilter(filter, paginatedRanges[i][0], paginatedRanges[i][1]));
+  const promises = paginatedRanges.map(([fromBlock, toBlock]) => 
+    contract.queryFilter(filter, fromBlock, toBlock));
   }
 
   try {
