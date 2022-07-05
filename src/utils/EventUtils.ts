@@ -1,5 +1,5 @@
 import { delay } from "@uma/financial-templates-lib";
-import { SortableEvent } from "../interfaces";
+import { DepositWithBlock, FillWithBlock, SortableEvent } from "../interfaces";
 import { Contract, Event, EventFilter, Promise } from "./";
 
 const defaultConcurrency = 200;
@@ -62,6 +62,8 @@ export function getPaginatedBlockRanges(searchConfig: EventSearchConfig): number
 
   if (searchConfig.maxBlockLookBack !== undefined)
     nextSearchConfig.toBlock = Math.min(searchConfig.toBlock, searchConfig.fromBlock + searchConfig.maxBlockLookBack);
+
+  if (searchConfig.maxBlockLookBack === 0) throw new Error("Cannot set maxBlockLookBack = 0");
 
   const returnValue: number[][] = [];
   while (nextSearchConfig.fromBlock <= searchConfig.toBlock) {
