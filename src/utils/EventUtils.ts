@@ -1,5 +1,5 @@
 import { delay } from "@uma/financial-templates-lib";
-import { SortableEvent } from "../interfaces";
+import { DepositWithBlock, FillWithBlock, SortableEvent } from "../interfaces";
 import { Contract, Event, EventFilter, Promise } from "./";
 
 const defaultConcurrency = 200;
@@ -25,6 +25,13 @@ export function spreadEvent(event: Event) {
   return returnedObject;
 }
 
+export interface EventSearchConfig {
+  fromBlock: number;
+  toBlock: number | null;
+  maxBlockLookBack?: number;
+  concurrency?: number | null;
+}
+
 export async function paginatedEventQuery(contract: Contract, filter: EventFilter, searchConfig: EventSearchConfig) {
   let retryCounter = 0;
   // If the max block look back is set to 0 then we dont need to do any pagination and can query over the whole range.
@@ -34,23 +41,10 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
   // Compute the number of queries needed. If there is no maxBlockLookBack set then we can execute the whole query in
   // one go. Else, the number of queries is the range over which we are searching, divided by the maxBlockLookBack,
   // rounded up. This gives us the number of queries we need to execute to traverse the whole block range.
-  let numberOfQueries = 1;
-  if (!searchConfig.maxBlockLookBack) searchConfig.maxBlockLookBack = searchConfig.toBlock - searchConfig.fromBlock;
-  else numberOfQueries = Math.ceil((searchConfig.toBlock - searchConfig.fromBlock) / searchConfig.maxBlockLookBack);
-
-  const chainId = (await contract.provider.getNetwork()).chainId
-  console.log(
-    `Making ${numberOfQueries} web3 requests to ${contract.address} on chain ${chainId}`
-  );
   const promises = [];
-  for (let i = 0; i < numberOfQueries; i++) {
-    const fromBlock = searchConfig.fromBlock + i * searchConfig.maxBlockLookBack;
-    const toBlock = Math.min(
-      searchConfig.fromBlock + (i + 1) * searchConfig.maxBlockLookBack - 1,
-      searchConfig.toBlock
-    );
-    if (chainId === 137 && filter.topics.includes("0x4a4fc49abd237bfd7f4ac82d6c7a284c69daaea5154430cff04ad7482c6c4254")) console.log(fromBlock, toBlock)
-    promises.push(contract.queryFilter(filter, fromBlock, toBlock));
+  const paginatedRanges = getPaginatedBlockRanges(searchConfig);
+  for (let i = 0; i < paginatedRanges.length; i++) {
+    promises.push(contract.queryFilter(filter, paginatedRanges[i][0], paginatedRanges[i][1]));
   }
 
   try {
@@ -63,11 +57,25 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
   }
 }
 
-export interface EventSearchConfig {
-  fromBlock: number;
-  toBlock: number | null;
-  maxBlockLookBack: number;
-  concurrency?: number | null;
+export function getPaginatedBlockRanges(searchConfig: EventSearchConfig): number[][] {
+  const nextSearchConfig = { fromBlock: searchConfig.fromBlock, toBlock: searchConfig.toBlock };
+
+  if (searchConfig.maxBlockLookBack !== undefined)
+    nextSearchConfig.toBlock = Math.min(searchConfig.toBlock, searchConfig.fromBlock + searchConfig.maxBlockLookBack);
+
+  if (searchConfig.maxBlockLookBack === 0) throw new Error("Cannot set maxBlockLookBack = 0");
+
+  const returnValue: number[][] = [];
+  while (nextSearchConfig.fromBlock <= searchConfig.toBlock) {
+    returnValue.push([nextSearchConfig.fromBlock, nextSearchConfig.toBlock]);
+    nextSearchConfig.fromBlock = nextSearchConfig.toBlock + 1;
+    if (searchConfig.maxBlockLookBack !== null)
+      nextSearchConfig.toBlock = Math.min(
+        searchConfig.toBlock,
+        nextSearchConfig.toBlock + 1 + searchConfig.maxBlockLookBack
+      );
+  }
+  return returnValue;
 }
 
 export function spreadEventWithBlockNumber(event: Event): SortableEvent {
