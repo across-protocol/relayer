@@ -1,13 +1,7 @@
 import winston from "winston";
 import { getSigner } from "../utils";
-import {
-  TokenClient,
-  ProfitClient,
-  BundleDataClient,
-  InventoryClient,
-  AdapterManager,
-  CrossChainTransferClient,
-} from "../clients";
+import { TokenClient, ProfitClient, BundleDataClient, InventoryClient } from "../clients";
+import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import { RelayerConfig } from "./RelayerConfig";
 import { Clients, constructClients, updateClients, updateSpokePoolClients } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";

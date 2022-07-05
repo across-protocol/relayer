@@ -1,12 +1,7 @@
 import { MonitorConfig } from "./MonitorConfig";
 import { getSigner, winston } from "../utils";
-import {
-  AdapterManager,
-  BundleDataClient,
-  CrossChainTransferClient,
-  HubPoolClient,
-  TokenTransferClient,
-} from "../clients";
+import { BundleDataClient, HubPoolClient, TokenTransferClient } from "../clients";
+import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import {
   Clients,
   updateClients,

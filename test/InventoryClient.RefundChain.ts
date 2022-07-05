@@ -3,7 +3,8 @@ import { toBN, toWei, randomAddress, createRefunds } from "./utils";
 
 import { InventoryConfig, Deposit } from "../src/interfaces";
 import { MockBundleDataClient, MockHubPoolClient, MockAdapterManager, MockTokenClient } from "./mocks";
-import { CrossChainTransferClient, InventoryClient } from "../src/clients"; // Tested
+import { InventoryClient } from "../src/clients"; // Tested
+import { CrossChainTransferClient } from "../src/clients/bridges";
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
 
