@@ -41,11 +41,8 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
   // Compute the number of queries needed. If there is no maxBlockLookBack set then we can execute the whole query in
   // one go. Else, the number of queries is the range over which we are searching, divided by the maxBlockLookBack,
   // rounded up. This gives us the number of queries we need to execute to traverse the whole block range.
-  const promises = [];
   const paginatedRanges = getPaginatedBlockRanges(searchConfig);
-  const promises = paginatedRanges.map(([fromBlock, toBlock]) => 
-    contract.queryFilter(filter, fromBlock, toBlock));
-  }
+  const promises = paginatedRanges.map(([fromBlock, toBlock]) => contract.queryFilter(filter, fromBlock, toBlock));
 
   try {
     return (await Promise.all(promises, { concurrency: searchConfig.concurrency | defaultConcurrency })).flat(); // Default to 200 concurrent calls.
@@ -69,7 +66,7 @@ export function getPaginatedBlockRanges(searchConfig: EventSearchConfig): number
   while (nextSearchConfig.fromBlock <= searchConfig.toBlock) {
     returnValue.push([nextSearchConfig.fromBlock, nextSearchConfig.toBlock]);
     nextSearchConfig.fromBlock = nextSearchConfig.toBlock + 1;
-    if (searchConfig.maxBlockLookBack !== null)
+    if (searchConfig.maxBlockLookBack !== undefined)
       nextSearchConfig.toBlock = Math.min(
         searchConfig.toBlock,
         nextSearchConfig.toBlock + 1 + searchConfig.maxBlockLookBack
