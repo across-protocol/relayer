@@ -133,16 +133,17 @@ export async function finalizePolygon(
     event.l2TokenAddress,
     hubPoolClient.latestBlockNumber
   );
+  const { payload, ...otherEventData } = event;
   logger.debug({
     at: "PolygonFinalizer",
     message: "Checkpointed token bridge, submitting exit transaction",
     l1TokenCounterpart,
-    event,
+    event: otherEventData,
   });
   const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
-  const amountFromWei = convertFromWei(event.amountToReturn.toString(), l1TokenInfo.decimals);
+  const amountFromWei = convertFromWei(otherEventData.amountToReturn.toString(), l1TokenInfo.decimals);
   try {
-    const txn = await posClient.rootChainManager.exit(event.payload, {});
+    const txn = await posClient.rootChainManager.exit(payload, {});
     const receipt = await txn.getReceipt();
     logger.debug({
       at: "PolygonFinalizer",
