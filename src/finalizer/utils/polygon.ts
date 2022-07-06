@@ -62,50 +62,50 @@ export async function getFinalizableTransactions(
   tokensBridged: TokensBridged[],
   posClient: POSClient
 ) {
+  // First look up which L2 transactions were checkpointed to mainnet.
   const isCheckpointed = await Promise.all(
     tokensBridged.map((event) => posClient.exitUtil.isCheckPointed(event.transactionHash))
   );
 
-  // For each token bridge event, store a unique log index for the event within the transaction hash.
-  // This is important for bridge transactions containing multiple events.
+  // For each token bridge event that was checkpointed, store a unique log index for the event
+  // within the transaction hash. This is important for bridge transactions containing multiple events.
   const logIndexesForMessage = {};
-  const tokensBridgedWithLogIndex = tokensBridged.map((_tokensBridged, index) => {
-    if (!isCheckpointed[index]) return undefined;
-    if (logIndexesForMessage[_tokensBridged.transactionHash] === undefined)
-      logIndexesForMessage[_tokensBridged.transactionHash] = 0;
-    return {
-      logIndex: logIndexesForMessage[_tokensBridged.transactionHash]++,
-      event: _tokensBridged,
-    };
-  });
+  const checkpointedTokensBridged = tokensBridged
+    .filter((_, i) => isCheckpointed[i])
+    .map((_tokensBridged) => {
+      if (logIndexesForMessage[_tokensBridged.transactionHash] === undefined)
+        logIndexesForMessage[_tokensBridged.transactionHash] = 0;
+      return {
+        logIndex: logIndexesForMessage[_tokensBridged.transactionHash]++,
+        event: _tokensBridged,
+      };
+    });
 
+  // Construct the payload we'll need to finalize each L2 transaction that has been checkpointed to Mainnet and
+  // can potentially be finalized.
   const payloads = await Promise.all(
-    tokensBridgedWithLogIndex.map((e) => {
-      if (e === undefined) return undefined;
+    checkpointedTokensBridged.map((e) => {
       return posClient.exitUtil.buildPayloadForExit(e.event.transactionHash, e.logIndex, BURN_SIG, false);
     })
   );
 
   const finalizableMessages = [];
   const exitStatus = await Promise.all(
-    tokensBridged.map(async (_, i) => {
-      if (!isCheckpointed[i]) return { status: POLYGON_MESSAGE_STATUS.NOT_CHECKPOINTED };
-      else {
-        const payload = payloads[i];
-        try {
-          // If we can estimate gas for exit transaction call, then we can exit the burn tx, otherwise its likely
-          // been processed. Note this will capture mislabel some exit txns that fail for other reasons as "exit
-          // already processed", but in the future the maticjs SDK should improve to provide better error checking.
-          // This is just a temporary workaround because there is no method in the sdk like isExitProcessed(txn, index).
-          await (await posClient.rootChainManager.getContract()).method("exit", payload).estimateGas({});
-          finalizableMessages.push({
-            ...tokensBridged[i],
-            payload,
-          });
-          return { status: POLYGON_MESSAGE_STATUS.CAN_EXIT };
-        } catch (err) {
-          return { status: POLYGON_MESSAGE_STATUS.EXIT_ALREADY_PROCESSED };
-        }
+    checkpointedTokensBridged.map(async (_, i) => {
+      const payload = payloads[i];
+      try {
+        // If we can estimate gas for exit transaction call, then we can exit the burn tx, otherwise its likely
+        // been processed. Note this will capture mislabel some exit txns that fail for other reasons as "exit
+        // already processed", but in the future the maticjs SDK should improve to provide better error checking.
+        // This is just a temporary workaround because there is no method in the sdk like isExitProcessed(txn, index).
+        await (await posClient.rootChainManager.getContract()).method("exit", payload).estimateGas({});
+        finalizableMessages.push({
+          ...tokensBridged[i],
+          payload,
+        });
+        return { status: POLYGON_MESSAGE_STATUS.CAN_EXIT };
+      } catch (err) {
+        return { status: POLYGON_MESSAGE_STATUS.EXIT_ALREADY_PROCESSED };
       }
     })
   );
@@ -113,7 +113,10 @@ export async function getFinalizableTransactions(
   logger.debug({
     at: "PolygonFinalizer",
     message: `Polygon message statuses`,
-    statusesGrouped: groupObjectCountsByProp(exitStatus, (message: { status: string }) => message.status),
+    statusesGrouped: {
+      ...groupObjectCountsByProp(exitStatus, (message: { status: string }) => message.status),
+      NOT_CHECKPOINTED: tokensBridged.map((_, i) => !isCheckpointed[i]).filter((x) => x === true).length,
+    },
   });
 
   return finalizableMessages;
