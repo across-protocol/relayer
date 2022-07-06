@@ -341,7 +341,7 @@ export class SpokePoolClient {
           });
         }
         this.log("debug", `Loaded cached deposit events for chain ${this.chainId}`, {
-          ...Object.fromEntries(
+          cachedDeposits: Object.fromEntries(
             Object.keys(this.depositsWithBlockNumbers).map((destinationChainId) => {
               return [destinationChainId, this.depositsWithBlockNumbers[destinationChainId].length];
             })
