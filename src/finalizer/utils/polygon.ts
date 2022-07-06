@@ -26,6 +26,8 @@ enum POLYGON_MESSAGE_STATUS {
   CAN_EXIT = "CAN_EXIT",
   EXIT_ALREADY_PROCESSED = "EXIT_ALREADY_PROCESSED",
 }
+// Unique signature used to identify Polygon L2 transactions that were erc20 withdrawals from the Polygon
+// canonical bridge. Do not change.
 const BURN_SIG = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
 export interface PolygonTokensBridged extends TokensBridged {
