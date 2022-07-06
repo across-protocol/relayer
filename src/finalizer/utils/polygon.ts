@@ -23,9 +23,14 @@ import { HubPoolClient } from "../../clients";
 const CHAIN_ID = 137;
 enum POLYGON_MESSAGE_STATUS {
   NOT_CHECKPOINTED = "NOT_CHECKPOINTED",
-  CHECK_POINTED = "CHECK_POINTED",
+  CAN_EXIT = "CAN_EXIT",
+  EXIT_ALREADY_PROCESSED = "EXIT_ALREADY_PROCESSED",
 }
 const BURN_SIG = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+export interface PolygonTokensBridged extends TokensBridged {
+  payload: string;
+}
 
 export async function getPosClient(mainnetSigner: Wallet) {
   // Following from https://maticnetwork.github.io/matic.js/docs/pos
@@ -59,10 +64,47 @@ export async function getFinalizableTransactions(
     tokensBridged.map((event) => posClient.exitUtil.isCheckPointed(event.transactionHash))
   );
 
+  // For each token bridge event, store a unique log index for the event within the transaction hash.
+  // This is important for bridge transactions containing multiple events.
+  const logIndexesForMessage = {};
+  const tokensBridgedWithLogIndex = tokensBridged.map((_tokensBridged, index) => {
+    if (!isCheckpointed[index]) return undefined;
+    if (logIndexesForMessage[_tokensBridged.transactionHash] === undefined)
+      logIndexesForMessage[_tokensBridged.transactionHash] = 0;
+    return {
+      logIndex: logIndexesForMessage[_tokensBridged.transactionHash]++,
+      event: _tokensBridged,
+    };
+  });
+
+  const payloads = await Promise.all(
+    tokensBridgedWithLogIndex.map((e) => {
+      if (e === undefined) return undefined;
+      return posClient.exitUtil.buildPayloadForExit(e.event.transactionHash, e.logIndex, BURN_SIG, false);
+    })
+  );
+
+  const finalizableMessages = [];
   const exitStatus = await Promise.all(
-    tokensBridged.map((_, i) => {
+    tokensBridged.map(async (_, i) => {
       if (!isCheckpointed[i]) return { status: POLYGON_MESSAGE_STATUS.NOT_CHECKPOINTED };
-      else return { status: POLYGON_MESSAGE_STATUS.CHECK_POINTED };
+      else {
+        const payload = payloads[i];
+        try {
+          // If we can estimate gas for exit transaction call, then we can exit the burn tx, otherwise its likely
+          // been processed. Note this will capture mislabel some exit txns that fail for other reasons as "exit
+          // already processed", but in the future the maticjs SDK should improve to provide better error checking.
+          // This is just a temporary workaround because there is no method in the sdk like isExitProcessed(txn, index).
+          await (await posClient.rootChainManager.getContract()).method("exit", payload).estimateGas({});
+          finalizableMessages.push({
+            ...tokensBridged[i],
+            payload,
+          });
+          return { status: POLYGON_MESSAGE_STATUS.CAN_EXIT };
+        } catch (err) {
+          return { status: POLYGON_MESSAGE_STATUS.EXIT_ALREADY_PROCESSED };
+        }
+      }
     })
   );
 
@@ -72,31 +114,18 @@ export async function getFinalizableTransactions(
     statusesGrouped: groupObjectCountsByProp(exitStatus, (message: { status: string }) => message.status),
   });
 
-  // For each token bridge event, store a unique log index for the event within the transaction hash.
-  // This is important for bridge transactions containing multiple events.
-  const logIndexesForMessage = {};
-  return tokensBridged
-    .map((_tokensBridged, index) => {
-      if (!isCheckpointed[index]) return undefined;
-      if (logIndexesForMessage[_tokensBridged.transactionHash] === undefined)
-        logIndexesForMessage[_tokensBridged.transactionHash] = 0;
-      return {
-        logIndex: logIndexesForMessage[_tokensBridged.transactionHash]++,
-        event: _tokensBridged,
-      };
-    })
-    .filter((x) => x !== undefined);
+  return finalizableMessages;
 }
 
 export async function finalizePolygon(
   posClient: POSClient,
   hubPoolClient: HubPoolClient,
-  event: { logIndex: number; event: TokensBridged },
+  event: PolygonTokensBridged,
   logger: winston.Logger
 ) {
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
     CHAIN_ID.toString(),
-    event.event.l2TokenAddress,
+    event.l2TokenAddress,
     hubPoolClient.latestBlockNumber
   );
   logger.debug({
@@ -106,15 +135,9 @@ export async function finalizePolygon(
     event,
   });
   const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
-  const amountFromWei = convertFromWei(event.event.amountToReturn.toString(), l1TokenInfo.decimals);
+  const amountFromWei = convertFromWei(event.amountToReturn.toString(), l1TokenInfo.decimals);
   try {
-    const payload = await posClient.exitUtil.buildPayloadForExit(
-      event.event.transactionHash,
-      event.logIndex,
-      BURN_SIG,
-      false
-    );
-    const txn = await posClient.rootChainManager.exit(payload, {});
+    const txn = await posClient.rootChainManager.exit(event.payload, {});
     const receipt = await txn.getReceipt();
     logger.debug({
       at: "PolygonFinalizer",
