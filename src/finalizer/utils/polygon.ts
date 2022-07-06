@@ -58,12 +58,14 @@ export async function getFinalizableTransactions(
   const isCheckpointed = await Promise.all(
     tokensBridged.map((event) => posClient.exitUtil.isCheckPointed(event.transactionHash))
   );
+
   const exitStatus = await Promise.all(
     tokensBridged.map((_, i) => {
       if (!isCheckpointed[i]) return { status: POLYGON_MESSAGE_STATUS.NOT_CHECKPOINTED };
       else return { status: POLYGON_MESSAGE_STATUS.CHECK_POINTED };
     })
   );
+
   logger.debug({
     at: "PolygonFinalizer",
     message: `Polygon message statuses`,
@@ -119,7 +121,6 @@ export async function finalizePolygon(
       message: `Finalized Polygon withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
       transactionhash: receipt.transactionHash,
     });
-    await delay(20);
   } catch (error) {
     if (error.reason.includes("EXIT_ALREADY_PROCESSED"))
       logger.debug({
