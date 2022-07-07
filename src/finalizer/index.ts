@@ -64,7 +64,7 @@ export async function finalize(
       const recentTokensBridgedEvents = tokensBridged.filter(
         (e) => e.blockNumber >= client.latestBlockNumber - polygonFinalizationWindow
       );
-      const canWithdraw = await getFinalizableTransactions(logger, recentTokensBridgedEvents, posClient, hubPoolClient);
+      const canWithdraw = await getFinalizableTransactions(logger, recentTokensBridgedEvents, posClient);
       for (const event of canWithdraw) {
         await finalizePolygon(posClient, hubPoolClient, event, logger);
       }
