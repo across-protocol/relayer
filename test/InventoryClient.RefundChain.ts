@@ -128,7 +128,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     // The expected cross chain transfer amount is (0.05+0.02-(10-15)/140)*140=14.8 // Mock the cross-chain transfer
     // leaving L1 to go to arbitrum by adding it to the mock cross chain transfers and removing from l1 balance.
     const bridgedAmount = toWei(14.8);
-    adapterManager.setMockedOutstandingCrossChainTransfers(42161, mainnetWeth, bridgedAmount);
+    adapterManager.setMockedOutstandingCrossChainTransfers(42161, owner.address, mainnetWeth, bridgedAmount);
     await inventoryClient.update();
     tokenClient.setTokenData(1, mainnetWeth, initialAllocation[1][mainnetWeth].sub(bridgedAmount));
 
@@ -205,8 +205,8 @@ function seedMocks(seedBalances: { [chainId: string]: { [token: string]: BigNumb
   hubPoolClient.addL1Token({ address: mainnetWeth, decimals: 18, symbol: "WETH" });
   hubPoolClient.addL1Token({ address: mainnetUsdc, decimals: 6, symbol: "USDC" });
   enabledChainIds.forEach((chainId) => {
-    adapterManager.setMockedOutstandingCrossChainTransfers(chainId, mainnetWeth, toBN(0));
-    adapterManager.setMockedOutstandingCrossChainTransfers(chainId, mainnetUsdc, toBN(0));
+    adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetWeth, toBN(0));
+    adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetUsdc, toBN(0));
     tokenClient.setTokenData(chainId, l2TokensForWeth[chainId], seedBalances[chainId][mainnetWeth]);
     tokenClient.setTokenData(chainId, l2TokensForUsdc[chainId], seedBalances[chainId][mainnetUsdc]);
   });

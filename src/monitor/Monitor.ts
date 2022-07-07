@@ -349,15 +349,16 @@ export class Monitor {
     }
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       this.updateRelayerRefunds(nextBundleRefunds, relayerBalanceReport[relayer], relayer, BalanceType.NEXT);
-      this.updateCrossChainTransfers(relayerBalanceReport[relayer]);
+      this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer]);
     }
   }
 
-  updateCrossChainTransfers(relayerBalanceTable: RelayerBalanceTable) {
+  updateCrossChainTransfers(relayer: string, relayerBalanceTable: RelayerBalanceTable) {
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
     for (const chainId of this.monitorConfig.spokePoolChains) {
       for (const l1Token of allL1Tokens) {
         const transferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+          relayer,
           chainId,
           l1Token.address
         );

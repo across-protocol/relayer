@@ -2,7 +2,9 @@ import { BigNumber, winston, assign, toBN } from "../../utils";
 import { AdapterManager } from "./AdapterManager";
 
 export class CrossChainTransferClient {
-  private outstandingCrossChainTransfers: { [chainId: number]: { [l1Token: string]: BigNumber } } = {};
+  private outstandingCrossChainTransfers: {
+    [chainId: number]: { [address: string]: { [l1Token: string]: BigNumber } };
+  } = {};
 
   constructor(
     readonly logger: winston.Logger,
@@ -11,8 +13,8 @@ export class CrossChainTransferClient {
   ) {}
 
   // Get any funds currently in the canonical bridge.
-  getOutstandingCrossChainTransferAmount(chainId: number | string, l1Token: string): BigNumber {
-    const amount = this.outstandingCrossChainTransfers[Number(chainId)]?.[l1Token];
+  getOutstandingCrossChainTransferAmount(address: string, chainId: number | string, l1Token: string): BigNumber {
+    const amount = this.outstandingCrossChainTransfers[Number(chainId)]?.[address]?.[l1Token];
     return amount ? toBN(amount) : toBN(0);
   }
 
@@ -24,15 +26,16 @@ export class CrossChainTransferClient {
     return this.getEnabledChains().filter((chainId) => chainId !== 1);
   }
 
-  increaseOutstandingTransfer(l1Token: string, rebalance: BigNumber, chainId: number) {
+  increaseOutstandingTransfer(address: string, l1Token: string, rebalance: BigNumber, chainId: number) {
     if (!this.outstandingCrossChainTransfers[chainId]) {
       this.outstandingCrossChainTransfers[chainId] = {};
     }
+    const transfers = this.outstandingCrossChainTransfers[chainId];
+    if (!transfers[address]) {
+      transfers[address] = {};
+    }
 
-    this.outstandingCrossChainTransfers[chainId][l1Token] = this.getOutstandingCrossChainTransferAmount(
-      chainId,
-      l1Token
-    ).add(rebalance);
+    transfers[address][l1Token] = this.getOutstandingCrossChainTransferAmount(address, chainId, l1Token).add(rebalance);
   }
 
   async update(l1Tokens: string[]) {

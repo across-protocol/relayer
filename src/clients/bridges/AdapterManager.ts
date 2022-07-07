@@ -10,28 +10,28 @@ export class AdapterManager {
     readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient,
-    readonly relayerAddress: string
+    readonly monitoredAddresses: string[]
   ) {
     if (spokePoolClients) {
-      this.adapters[10] = new OptimismAdapter(logger, spokePoolClients, relayerAddress, true);
-      this.adapters[137] = new PolygonAdapter(logger, spokePoolClients, relayerAddress);
-      this.adapters[288] = new OptimismAdapter(logger, spokePoolClients, relayerAddress, false);
-      this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, relayerAddress);
+      this.adapters[10] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses, true);
+      this.adapters[137] = new PolygonAdapter(logger, spokePoolClients, monitoredAddresses);
+      this.adapters[288] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses, false);
+      this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, monitoredAddresses);
     }
   }
 
   async getOutstandingCrossChainTokenTransferAmount(
     chainId: number,
     l1Tokens: string[]
-  ): Promise<{ [l1Token: string]: BigNumber }> {
+  ): Promise<{ [address: string]: { [l1Token: string]: BigNumber } }> {
     this.logger.debug({ at: "AdapterManager", message: "Getting outstandingCrossChainTransfers", chainId, l1Tokens });
     return await this.adapters[chainId].getOutstandingCrossChainTransfers(l1Tokens);
   }
 
-  async sendTokenCrossChain(chainId: number | string, l1Token: string, amount: BigNumber) {
+  async sendTokenCrossChain(address: string, chainId: number | string, l1Token: string, amount: BigNumber) {
     this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
     const l2Token = this.l2TokenForL1Token(l1Token, Number(chainId));
-    return await this.adapters[chainId].sendTokenToTargetChain(l1Token, l2Token, amount);
+    return await this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount);
   }
 
   // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
@@ -65,7 +65,7 @@ export class AdapterManager {
       // the bot can irrecoverably send the wrong token to the chain and loose money. It should crash if this is detected.
       const l2TokenForL1Token = this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId);
       if (!l2TokenForL1Token) throw new Error("No L2 token found for L1 token");
-      if (l2TokenForL1Token != l2TokensToL1TokenValidation[l1Token][chainId]) throw new Error("Mismatch tokens!");
+      if (l2TokenForL1Token !== l2TokensToL1TokenValidation[l1Token][chainId]) throw new Error("Mismatch tokens!");
       return l2TokenForL1Token;
     } catch (error) {
       this.logger.error({
@@ -79,13 +79,23 @@ export class AdapterManager {
     }
   }
 
-  async setL1TokenApprovals(l1Tokens: string[]) {
+  async setL1TokenApprovals(address: string, l1Tokens: string[]) {
     // Each of these calls must happen sequentially or we'll have collisions within the TransactionUtil. This should
     // be refactored in a follow on PR to separate out by nonce increment by making the transaction util stateful.
-    await this.adapters[10].checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 10)));
-    await this.adapters[137].checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 137)));
-    await this.adapters[288].checkTokenApprovals(l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 288)));
+    await this.adapters[10].checkTokenApprovals(
+      address,
+      l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 10))
+    );
+    await this.adapters[137].checkTokenApprovals(
+      address,
+      l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 137))
+    );
+    await this.adapters[288].checkTokenApprovals(
+      address,
+      l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 288))
+    );
     await this.adapters[42161].checkTokenApprovals(
+      address,
       l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 42161))
     );
   }

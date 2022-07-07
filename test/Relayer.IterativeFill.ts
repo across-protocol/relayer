@@ -8,53 +8,54 @@ import { MockInventoryClient } from "./mocks";
 
 import { Relayer } from "../src/relayer/Relayer"; // Tested
 
-let relayer_signer: SignerWithAddress, hubPool: Contract, mockAdapter: Contract, configStore: Contract;
+let relayer: SignerWithAddress, hubPool: Contract, mockAdapter: Contract, configStore: Contract;
 let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient, tokenClient: TokenClient;
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
 let spokePools, l1TokenToL2Tokens;
-let relayer: Relayer, multiCallerClient: MultiCallerClient, profitClient: ProfitClient;
+let relayerInstance: Relayer, multiCallerClient: MultiCallerClient, profitClient: ProfitClient;
 
 describe("Relayer: Iterative fill", async function () {
   beforeEach(async function () {
-    [relayer_signer] = await ethers.getSigners(); // note we use relayer_signer as the owner as well to simplify the test.
-    ({ hubPool, mockAdapter } = await deployAndConfigureHubPool(relayer_signer, []));
+    [relayer] = await ethers.getSigners(); // note we use relayer as the owner as well to simplify the test.
+    ({ hubPool, mockAdapter } = await deployAndConfigureHubPool(relayer, []));
   });
+
   it("One token on multiple chains", async function () {
     const [, , depositor] = await ethers.getSigners();
     const numChainsToDeploySpokePoolsTo = 5;
     const numTokensToDeployPerChain = 1;
 
     ({ spy, spyLogger } = createSpyLogger());
-    ({ configStore } = await deployConfigStore(relayer_signer, []));
+    ({ configStore } = await deployConfigStore(relayer, []));
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
     configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
     multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
 
     ({ spokePools, l1TokenToL2Tokens } = await deployIterativeSpokePoolsAndToken(
       spyLogger,
-      relayer_signer,
+      relayer,
       mockAdapter,
       configStoreClient,
       numChainsToDeploySpokePoolsTo,
       numTokensToDeployPerChain
     ));
 
-    const l1Token = await contractAt("ExpandedERC20", relayer_signer, Object.keys(l1TokenToL2Tokens)[0]);
+    const l1Token = await contractAt("ExpandedERC20", relayer, Object.keys(l1TokenToL2Tokens)[0]);
 
     await configStore.updateTokenConfig(l1Token.address, defaultTokenConfig);
 
-    await addLiquidity(relayer_signer, hubPool, l1Token, amountToLp);
+    await addLiquidity(relayer, hubPool, l1Token, amountToLp);
 
     let spokePoolClients = {};
     spokePools.forEach((spokePool) => {
       spokePoolClients[spokePool.spokePoolClient.chainId] = spokePool.spokePoolClient;
     });
 
-    tokenClient = new TokenClient(spyLogger, relayer_signer.address, spokePoolClients, hubPoolClient);
+    tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new ProfitClient(spyLogger, hubPoolClient, toBNWei(1)); // Set relayer discount to 100%.
     await updateAllClients();
-    relayer = new Relayer(spyLogger, {
+    relayerInstance = new Relayer(relayer.address, spyLogger, {
       spokePoolClients,
       hubPoolClient,
       configStoreClient,
@@ -71,7 +72,7 @@ describe("Relayer: Iterative fill", async function () {
       const { spokePool, spokePoolClient } = spokePools[i];
       // Seed wallets. Note we are selecting the associated token to seed for the given spokePool. i.e the ith element
       // in the l1TokenToL2Tokens[l1Token] is the token associated with this chain
-      await setupTokensForWallet(spokePool, relayer_signer, l1TokenToL2Tokens[l1Token.address], null, 100);
+      await setupTokensForWallet(spokePool, relayer, l1TokenToL2Tokens[l1Token.address], null, 100);
       await setupTokensForWallet(spokePool, depositor, [l1TokenToL2Tokens[l1Token.address][i]], null, 10);
 
       // Execute deposits to all other chainIds. Deposit from chain i to chain j. Leave deposit amount and relayer fees default.
@@ -88,7 +89,7 @@ describe("Relayer: Iterative fill", async function () {
 
     // Update all clients and run the relayer. Relayer should fill all 20 deposits.
     await updateAllClients();
-    await relayer.checkForUnfilledDepositsAndFill();
+    await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(multiCallerClient.transactionCount()).to.equal(20); // 20 transactions, filling each relay.
     const txs = await multiCallerClient.executeTransactionQueue();
     expect(lastSpyLogIncludes(spy, "Multicall batch sent")).to.be.true;
@@ -96,7 +97,7 @@ describe("Relayer: Iterative fill", async function () {
     // Re-run the execution loop and validate that no additional relays are sent.
     multiCallerClient.clearTransactionQueue();
     await updateAllClients();
-    await relayer.checkForUnfilledDepositsAndFill();
+    await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(multiCallerClient.transactionCount()).to.equal(0); // no Transactions to send.
     expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
   });

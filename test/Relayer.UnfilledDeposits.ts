@@ -38,7 +38,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1, configStoreClient, originChainId);
     spokePoolClient_2 = new SpokePoolClient(spyLogger, spokePool_2, configStoreClient, destinationChainId);
 
-    relayerInstance = new Relayer(spyLogger, {
+    relayerInstance = new Relayer(relayer.address, spyLogger, {
       spokePoolClients: { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
       hubPoolClient,
       configStoreClient,

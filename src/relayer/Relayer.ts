@@ -6,6 +6,7 @@ import { Deposit } from "../interfaces/SpokePool";
 
 export class Relayer {
   constructor(
+    readonly relayerAddress: string,
     readonly logger: winston.Logger,
     readonly clients: RelayerClients,
     readonly maxUnfilledDepositLookBack: { [chainId: number]: number } = {}
@@ -121,7 +122,7 @@ export class Relayer {
             `There is ` +
             formatter(
               this.clients.inventoryClient.crossChainTransferClient
-                .getOutstandingCrossChainTransferAmount(chainId, l1Token.address)
+                .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token.address)
                 .toString()
             ) +
             ` inbound L1->L2 ${symbol} transfers. `;
