@@ -501,7 +501,7 @@ export class SpokePoolClient {
       // Arbitrarily fetch latestCachedBlock from cached deposit list. We make an assumption that either deposit and
       // fill event data is cached, or neither are, and they are cached up until the same end block. If they do not
       // match, then we won't fetch any data from the cache.
-      const latestCachedBlock = Number(_cachedDepositData.latestBlock);
+      const latestCachedBlock = _cachedDepositData.latestBlock ? Number(_cachedDepositData.latestBlock) : undefined;
       if (latestCachedBlock === undefined || _cachedFillData.latestBlock !== latestCachedBlock) return undefined;
 
       // If `latestCachedBlock > latestBlockToCache` then the above invariant is violated
