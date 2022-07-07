@@ -206,7 +206,7 @@ export class SpokePoolClient {
     return `${event.depositId}-${event.originChainId}`;
   }
 
-  async update(eventsToQuery?: string[], endBlockForChainInLatestFullyExecutedBundle = 0) {
+  async update(eventsToQuery?: string[], latestBlockToCache = 0) {
     if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
 
     this.latestBlockNumber = await this.spokePool.provider.getBlockNumber();
@@ -229,57 +229,25 @@ export class SpokePoolClient {
     });
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
-    // Try to reduce the number of web3 requests sent to query FundsDeposited and FilledRelay events, of which there
-    // expected to be many. We will first try to load existing cached events if they exist and if they do, then
-    // we only need to search for new events after the last cached event searched. We will then save any events
-    // older than the bundle end block for the latest validated bundle for this chain. These events by definition were
-    // included in a validated bundle so we can feel confident about them being correct.
+    // Try to reduce the number of web3 requests sent to query FundsDeposited and FilledRelay events since there are
+    // expected to be so many. We will first try to load existing cached events if they exist and if they do, then
+    // we only need to search for new events after the last cached event searched. We will then update the cache with
+    // all blocks (cached + newly fetched) older than the "latestBlockToCache".
+    const depositEventSearchConfig = { ...searchConfig };
 
     // Invariant: cachedData is undefined if we don't want to use any events from the cache.
-    let cachedData: {
+    const cachedData: {
       deposits: { [destinationChainId: number]: DepositWithBlockInCache[] };
       fills: FillWithBlockInCache[];
-    };
-    const depositEventSearchConfig = { ...searchConfig };
-    if (endBlockForChainInLatestFullyExecutedBundle > 0) {
-      // Invariant: The cached deposit data for this chain should include all events from the SpokePool
-      // deployment block until latestCachedBlock <= endBlockForChainInLatestFullyExecutedBundle.
-      const [_cachedDepositData, _cachedFillData] = await Promise.all([
-        this.getDepositDataFromCache(),
-        this.getFillDataFromCache(),
-      ]);
-
-      // Arbitrarily fetch latestCachedBlock from cached deposit list. We make an assumption that either deposit and
-      // fill event data is cached, or neither are, and they are cached up until the same end block. If they do not
-      // match, then we won't fetch any data from the cache.
-      const latestCachedBlock = _cachedDepositData.latestBlock;
-
-      // Note: If `latestCachedBlock` >= `searchConfig.fromBlock` then we want to load events from the cache
-      // because we'll use events from `fromBlock` until `latestCachedBlock` and fetch the rest from the RPC.
-      // However, if `latestCachedBlock` < `searchConfig.fromBlock`, then there is no point in loading anything
-      // from the cache since all cached events are older than the oldest block we are interested in.
-      // If `latestCachedBlock > endBlockForChainInLatestFullyExecutedBundle` then the above invariant is violated
-      // and we're storing events too close to HEAD for this chain in the cache, so we'll reset the cache and use
-      // no events from it.
-      // If `latestCachedBlock > searchConfig.toBlock` then we'll only use the cached data and the web3 requests
-      // should return 0 events.
-      if (
-        _cachedFillData.latestBlock === latestCachedBlock &&
-        latestCachedBlock !== undefined &&
-        latestCachedBlock <= endBlockForChainInLatestFullyExecutedBundle &&
-        latestCachedBlock >= searchConfig.fromBlock
-      ) {
-        depositEventSearchConfig.fromBlock = latestCachedBlock + 1;
-        cachedData = {
-          deposits: _cachedDepositData.deposits,
-          fills: _cachedFillData.fills,
-        };
-        this.log("debug", `Partially loading deposit and fill event data from cache for chain ${this.chainId}`, {
-          latestCachedBlock,
-          newSearchConfigForDepositAndFillEvents: depositEventSearchConfig,
-          originalSearchConfigForDepositAndFillEvents: searchConfig,
-        });
-      }
+      latestCachedBlock: number;
+    } = await this.getEventsFromCache(latestBlockToCache, searchConfig);
+    if (cachedData !== undefined) {
+      depositEventSearchConfig.fromBlock = cachedData.latestCachedBlock + 1;
+      this.log("debug", `Partially loading deposit and fill event data from cache for chain ${this.chainId}`, {
+        latestCachedBlock: cachedData.latestCachedBlock,
+        newSearchConfigForDepositAndFillEvents: depositEventSearchConfig,
+        originalSearchConfigForDepositAndFillEvents: searchConfig,
+      });
     }
 
     // If caller specifies which events to query, then only query those. This can be used by bots to limit web3
@@ -362,16 +330,14 @@ export class SpokePoolClient {
         );
       }
 
-      // Update cache with deposit events <= bundle end block in latest fully executed bundle for this chain. We'll
-      // update the cache even if we didn't load any events from the cache because there is a chance that the cached
-      // data is corrupted (e.g. has stored events that are too recent).
-      if (endBlockForChainInLatestFullyExecutedBundle > 0) {
+      // Update cache with deposit events <= latest block to cache.
+      if (latestBlockToCache > 0) {
         const depositsToCache = Object.fromEntries(
           Object.keys(this.depositsWithBlockNumbers).map((destinationChainId) => {
             return [
               destinationChainId,
               this.depositsWithBlockNumbers[Number(destinationChainId)]
-                .filter((e) => e.originBlockNumber <= endBlockForChainInLatestFullyExecutedBundle)
+                .filter((e) => e.originBlockNumber <= latestBlockToCache)
                 .map((deposit) => {
                   return {
                     ...deposit,
@@ -384,7 +350,7 @@ export class SpokePoolClient {
           })
         );
         this.log("debug", `Saved cached deposits for chain ${this.chainId}`, {
-          endBlockForChainInLatestFullyExecutedBundle,
+          latestBlockToCache,
           cachedDeposits: Object.keys(depositsToCache).map((destChain) => {
             return {
               destChain,
@@ -395,7 +361,7 @@ export class SpokePoolClient {
 
         // Save new deposit cache for chain.
         await this.setDepositDataInCache({
-          latestBlock: endBlockForChainInLatestFullyExecutedBundle,
+          latestBlock: latestBlockToCache,
           deposits: depositsToCache,
         });
       }
@@ -440,9 +406,9 @@ export class SpokePoolClient {
         assign(this.depositHashesToFills, [this.getDepositHash(newFill)], [newFill]);
       }
 
-      if (endBlockForChainInLatestFullyExecutedBundle > 0) {
+      if (latestBlockToCache > 0) {
         const fillsToCache = this.fillsWithBlockNumbers
-          .filter((e) => e.blockNumber <= endBlockForChainInLatestFullyExecutedBundle)
+          .filter((e) => e.blockNumber <= latestBlockToCache)
           .map((fill) => {
             return {
               ...fill,
@@ -455,13 +421,13 @@ export class SpokePoolClient {
             } as FillWithBlockInCache;
           });
         this.log("debug", `Saved cached fills for chain ${this.chainId}`, {
-          endBlockForChainInLatestFullyExecutedBundle,
+          latestBlockToCache,
           cachedFills: fillsToCache.length,
         });
 
         // Save new fill cache for chain.
         await this.setFillDataInCache({
-          latestBlock: endBlockForChainInLatestFullyExecutedBundle,
+          latestBlock: latestBlockToCache,
           fills: fillsToCache,
         });
       }
@@ -520,6 +486,43 @@ export class SpokePoolClient {
 
   public hubPoolClient() {
     return this.configStoreClient.hubPoolClient;
+  }
+
+  private async getEventsFromCache(latestBlockToCache: number, searchConfig: EventSearchConfig) {
+    if (latestBlockToCache > 0) {
+      // Invariant: The cached deposit data for this chain should include all events from searchConfig.fromBlock
+      // until latestCachedBlock, and latestCachedBlock <= latestBlockToCache. If latestCachedBlock <=
+      // searchConfig.toBlock, then we'll fetch fresh events from latestCachedBlock to searchConfig.toBlock.
+      const [_cachedDepositData, _cachedFillData] = await Promise.all([
+        this.getDepositDataFromCache(),
+        this.getFillDataFromCache(),
+      ]);
+
+      // Arbitrarily fetch latestCachedBlock from cached deposit list. We make an assumption that either deposit and
+      // fill event data is cached, or neither are, and they are cached up until the same end block. If they do not
+      // match, then we won't fetch any data from the cache.
+      const latestCachedBlock = Number(_cachedDepositData.latestBlock);
+      if (latestCachedBlock === undefined || _cachedFillData.latestBlock !== latestCachedBlock) return undefined;
+
+      // If `latestCachedBlock > latestBlockToCache` then the above invariant is violated
+      // and we're storing events too close to HEAD for this chain in the cache, so we'll reset the cache and use
+      // no events from it.
+      if (latestCachedBlock > latestBlockToCache) return undefined;
+
+      // Note: If `latestCachedBlock` >= `searchConfig.fromBlock` then we want to load events from the cache
+      // because we'll use events from `fromBlock` until `latestCachedBlock` and fetch the rest from the RPC.
+      // However, if `latestCachedBlock` < `searchConfig.fromBlock`, then there is no point in loading anything
+      // from the cache since all cached events are older than the oldest block we are interested in.
+      if (latestCachedBlock >= searchConfig.fromBlock) {
+        return {
+          deposits: _cachedDepositData.deposits,
+          fills: _cachedFillData.fills,
+          latestCachedBlock,
+        };
+      }
+    }
+
+    return undefined;
   }
 
   private getCacheKey() {
