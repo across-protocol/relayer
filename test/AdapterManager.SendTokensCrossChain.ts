@@ -29,9 +29,6 @@ let l1BobaBridge: FakeContract;
 // Arbitrum contracts
 let l1ArbitrumBridge: FakeContract;
 
-// polygon contracts
-// let l1PolygonBridge: FakeContract;
-
 const enabledChainIds = [1, 10, 137, 288, 42161];
 
 const mainnetTokens = {
@@ -48,7 +45,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     hubPoolClient = new MockHubPoolClient(null, null);
     await seedMocks();
-    adapterManager = new AdapterManager(spyLogger, mockSpokePoolClients, hubPoolClient, relayer.address);
+    adapterManager = new AdapterManager(spyLogger, mockSpokePoolClients, hubPoolClient, [relayer.address]);
 
     await constructChainSpecificFakes();
 
@@ -60,7 +57,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     // (note I could not mocha and chai to assert on throws for async methods).
     let thrown1 = false;
     try {
-      await adapterManager.sendTokenCrossChain(42069, mainnetTokens["usdc"], amountToSend);
+      await adapterManager.sendTokenCrossChain(relayer.address, 42069, mainnetTokens["usdc"], amountToSend);
     } catch (error) {
       thrown1 = true;
     }
@@ -75,7 +72,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     });
     let thrown2 = false;
     try {
-      await adapterManager.sendTokenCrossChain(10, mainnetTokens["usdc"], amountToSend);
+      await adapterManager.sendTokenCrossChain(relayer.address, 10, mainnetTokens["usdc"], amountToSend);
     } catch (error) {
       thrown2 = true;
     }
@@ -84,7 +81,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   it("Correctly sends tokens to chain: Optimism", async function () {
     const chainId = 10; // Optimism ChainId
     //  ERC20 tokens:
-    await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["usdc"], amountToSend);
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["usdc"], amountToSend);
     expect(l1OptimismBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens["usdc"], // l1 token
       l2TokensToL1TokenValidation[mainnetTokens["usdc"]][chainId], // l2 token
@@ -93,7 +90,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       "0x" // data
     );
 
-    await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["wbtc"], amountToSend);
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["wbtc"], amountToSend);
     expect(l1OptimismBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens["wbtc"], // l1 token
       l2TokensToL1TokenValidation[mainnetTokens["wbtc"]][chainId], // l2 token
@@ -103,7 +100,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     );
 
     // Non- ERC20 tokens:
-    await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["dai"], amountToSend);
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["dai"], amountToSend);
     // Note the target is the L1 dai optimism bridge.
     expect(l1OptimismDaiBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens["dai"], // l1 token
@@ -114,7 +111,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     );
 
     // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
-    await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["weth"], amountToSend);
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["weth"], amountToSend);
     expect(l1AtomicDepositor.bridgeWethToOvm).to.have.been.calledWith(
       relayer.address, // to
       amountToSend, // amount
@@ -126,21 +123,21 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   it("Correctly sends tokens to chain: Polygon", async function () {
     const chainId = 137; // Boba ChainId
     //  ERC20 tokens:
-    await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["usdc"], amountToSend);
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["usdc"], amountToSend);
     expect(l1PolygonRootChainManager.depositFor).to.have.been.calledWith(
       relayer.address, // user
       mainnetTokens["usdc"], // root token
       bnToHex(amountToSend) // deposit data. bytes encoding of the amount to send.
     );
 
-    await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["dai"], amountToSend);
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["dai"], amountToSend);
     expect(l1PolygonRootChainManager.depositFor).to.have.been.calledWith(
       relayer.address, // user
       mainnetTokens["dai"], // root token
       bnToHex(amountToSend) // deposit data. bytes encoding of the amount to send.
     );
 
-    await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["wbtc"], amountToSend);
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["wbtc"], amountToSend);
     expect(l1PolygonRootChainManager.depositFor).to.have.been.calledWith(
       relayer.address, // user
       mainnetTokens["wbtc"], // root token
@@ -148,7 +145,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     );
 
     // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
-    await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["weth"], amountToSend);
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["weth"], amountToSend);
     expect(l1AtomicDepositor.bridgeWethToPolygon).to.have.been.calledWith(
       relayer.address, // to
       amountToSend // amount
@@ -157,7 +154,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   it("Correctly sends tokens to chain: Boba", async function () {
     const chainId = 288; // Boba ChainId
     //  ERC20 tokens:
-    await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["usdc"], amountToSend);
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["usdc"], amountToSend);
     expect(l1BobaBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens["usdc"], // l1 token
       l2TokensToL1TokenValidation[mainnetTokens["usdc"]][chainId], // l2 token
@@ -166,7 +163,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       "0x" // data
     );
 
-    await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["wbtc"], amountToSend);
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["wbtc"], amountToSend);
     expect(l1BobaBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens["wbtc"], // l1 token
       l2TokensToL1TokenValidation[mainnetTokens["wbtc"]][chainId], // l2 token
@@ -176,7 +173,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     );
 
     // Note that on boba Dai is a  ERC20
-    await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["dai"], amountToSend);
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["dai"], amountToSend);
     expect(l1BobaBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens["dai"], // l1 token
       l2TokensToL1TokenValidation[mainnetTokens["dai"]][chainId], // l2 token
@@ -186,7 +183,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     );
 
     // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
-    await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["weth"], amountToSend);
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["weth"], amountToSend);
     expect(l1AtomicDepositor.bridgeWethToOvm).to.have.been.calledWith(
       relayer.address, // to
       amountToSend, // amount
@@ -198,7 +195,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   it("Correctly sends tokens to chain: Arbitrum", async function () {
     const chainId = 42161; // Boba ChainId
     //  ERC20 tokens:
-    await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["usdc"], amountToSend);
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["usdc"], amountToSend);
     expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
       mainnetTokens["usdc"], // token
       relayer.address, // to
@@ -207,7 +204,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       (adapterManager.adapters[chainId] as any).l2GasPrice, // gasPriceBid
       (adapterManager.adapters[chainId] as any).transactionSubmissionData // data
     );
-    await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["wbtc"], amountToSend);
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["wbtc"], amountToSend);
     expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
       mainnetTokens["wbtc"], // token
       relayer.address, // to
@@ -216,7 +213,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       (adapterManager.adapters[chainId] as any).l2GasPrice, // gasPriceBid
       (adapterManager.adapters[chainId] as any).transactionSubmissionData // data
     );
-    await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["dai"], amountToSend);
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["dai"], amountToSend);
     expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
       mainnetTokens["dai"], // token
       relayer.address, // to
@@ -226,7 +223,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       (adapterManager.adapters[chainId] as any).transactionSubmissionData // data
     );
     // Weth can be bridged like a standard ERC20 token to arbitrum.
-    await adapterManager.sendTokenCrossChain(chainId, mainnetTokens["weth"], amountToSend);
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["weth"], amountToSend);
     expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
       mainnetTokens["weth"], // token
       relayer.address, // to

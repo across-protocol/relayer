@@ -28,7 +28,7 @@ export class OptimismAdapter extends BaseAdapter {
   constructor(
     readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    readonly relayerAddress: string,
+    readonly monitoredAddresses: string[],
     readonly isOptimism: boolean
   ) {
     // Note based on if this isOptimism or not we switch the chainId and starting L1 blocks. This is critical. If done
@@ -42,41 +42,60 @@ export class OptimismAdapter extends BaseAdapter {
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
 
     const promises = [];
-    for (const l1Token of l1Tokens) {
-      const l1Method = this.isWeth(l1Token) ? "ETHDepositInitiated" : "ERC20DepositInitiated";
-      let l1SearchFilter = [l1Token, undefined, this.relayerAddress];
-      let l2SearchFilter = [l1Token, undefined, this.relayerAddress];
-      if (this.isWeth(l1Token)) {
-        l1SearchFilter = [undefined, this.relayerAddress];
-        l2SearchFilter = [ZERO_ADDRESS, undefined, this.relayerAddress];
+    // Fetch bridge events for all monitored addresses.
+    for (const monitoredAddress of this.monitoredAddresses) {
+      for (const l1Token of l1Tokens) {
+        const l1Method = this.isWeth(l1Token) ? "ETHDepositInitiated" : "ERC20DepositInitiated";
+        let l1SearchFilter = [l1Token, undefined, monitoredAddress];
+        let l2SearchFilter = [l1Token, undefined, monitoredAddress];
+        if (this.isWeth(l1Token)) {
+          l1SearchFilter = [undefined, monitoredAddress];
+          l2SearchFilter = [ZERO_ADDRESS, undefined, monitoredAddress];
+        }
+        const l1Bridge = this.getL1Bridge(l1Token);
+        const l2Bridge = this.getL2Bridge(l1Token);
+        const adapterSearchConfig = [ZERO_ADDRESS, undefined, atomicDepositorAddress];
+        promises.push(
+          paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), this.l1SearchConfig),
+          paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...l2SearchFilter), this.l2SearchConfig),
+          paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...adapterSearchConfig), this.l2SearchConfig)
+        );
       }
-      const l1Bridge = this.getL1Bridge(l1Token);
-      const l2Bridge = this.getL2Bridge(l1Token);
-      const adapterSearchConfig = [ZERO_ADDRESS, undefined, atomicDepositorAddress];
-      promises.push(
-        paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), this.l1SearchConfig),
-        paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...l2SearchFilter), this.l2SearchConfig),
-        paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...adapterSearchConfig), this.l2SearchConfig)
-      );
     }
 
     const results = await Promise.all(promises, { concurrency: 4 });
-    // The logic below takes the results from the promises and spreads them into the l1DepositInitiatedEvents,
-    // l2DepositFinalizedEvents and l2DepositFinalizedEvents_DepositAdapter state from the BaseAdapter.
-    results.forEach((result, index) => {
-      const l1Token = l1Tokens[Math.floor(index / 3)];
-      const events = result.map((event) => {
-        const eventSpread = spreadEventWithBlockNumber(event);
-        return { amount: eventSpread["_amount"], to: eventSpread["_to"], blockNumber: eventSpread["blockNumber"] };
-      });
-      const storageName = [
-        "l1DepositInitiatedEvents",
-        "l2DepositFinalizedEvents",
-        "l2DepositFinalizedEvents_DepositAdapter",
-      ][index % 3];
 
-      assign(this[storageName], [l1Token], events);
-    });
+    // 3 events per token.
+    const numEventsPerMonitoredAddress = 3 * l1Tokens.length;
+
+    // Segregate the events list by monitored address.
+    const resultsByMonitoredAddress = Object.fromEntries(
+      this.monitoredAddresses.map((monitoredAddress, index) => {
+        const start = index * numEventsPerMonitoredAddress;
+        return [monitoredAddress, results.slice(start, start + numEventsPerMonitoredAddress + 1)];
+      })
+    );
+
+    // Process events for each monitored address.
+    for (const monitoredAddress of this.monitoredAddresses) {
+      const eventsToProcess = resultsByMonitoredAddress[monitoredAddress];
+      // The logic below takes the results from the promises and spreads them into the l1DepositInitiatedEvents,
+      // l2DepositFinalizedEvents and l2DepositFinalizedEvents_DepositAdapter state from the BaseAdapter.
+      eventsToProcess.forEach((result, index) => {
+        const l1Token = l1Tokens[Math.floor(index / 3)];
+        const events = result.map((event) => {
+          const eventSpread = spreadEventWithBlockNumber(event);
+          return { amount: eventSpread["_amount"], to: eventSpread["_to"], blockNumber: eventSpread.blockNumber };
+        });
+        const eventsStorage = [
+          this.l1DepositInitiatedEvents,
+          this.l2DepositFinalizedEvents,
+          this.l2DepositFinalizedEvents_DepositAdapter,
+        ][index % 3];
+
+        assign(eventsStorage, [monitoredAddress, l1Token], events);
+      });
+    }
 
     this.l1SearchConfig.fromBlock = this.l1SearchConfig.toBlock + 1;
     this.l2SearchConfig.fromBlock = this.l2SearchConfig.toBlock + 1;
@@ -84,7 +103,7 @@ export class OptimismAdapter extends BaseAdapter {
     return this.computeOutstandingCrossChainTransfers(l1Tokens);
   }
 
-  async sendTokenToTargetChain(l1Token, l2Token, amount) {
+  async sendTokenToTargetChain(address: string, l1Token: string, l2Token: string, amount: BigNumber) {
     let method = "depositERC20";
     let args = [l1Token, l2Token, amount, this.l2Gas, "0x"];
 
@@ -92,7 +111,7 @@ export class OptimismAdapter extends BaseAdapter {
     // on the atomic depositor contract. Note that value is still 0 as this method will pull WETH from the caller.
     if (this.isWeth(l1Token)) {
       method = "bridgeWethToOvm";
-      args = [this.relayerAddress, amount, this.l2Gas, this.chainId];
+      args = [address, amount, this.l2Gas, this.chainId];
     }
     this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
 
@@ -115,10 +134,10 @@ export class OptimismAdapter extends BaseAdapter {
     return null;
   }
 
-  async checkTokenApprovals(l1Tokens: string[]) {
+  async checkTokenApprovals(address: string, l1Tokens: string[]) {
     // We need to approve the Atomic depositor to bridge WETH to optimism via the ETH route.
     const associatedL1Bridges = l1Tokens.map((l1Token) => this.getL1TokenGateway(l1Token).address);
-    await this.checkAndSendTokenApprovals(l1Tokens, associatedL1Bridges);
+    await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
   }
 
   getL1Bridge(l1Token: string) {

@@ -2081,10 +2081,10 @@
   dependencies:
     ethers "^5.5.1"
 
-"@maticnetwork/maticjs@^3.3.0":
-  version "3.3.0"
-  resolved "https://registry.yarnpkg.com/@maticnetwork/maticjs/-/maticjs-3.3.0.tgz#8775866d3e583377082af669f65d8236a0e3f493"
-  integrity sha512-ZU2eNoFzWBKOS/Urd9cAIY76AJUt/Ts6HCG3YDahs02YWlRQUI022IQr9v78edoxiVY2etguV6zNWmo+IPxvjQ==
+"@maticnetwork/maticjs@^3.4.0-beta.0":
+  version "3.4.0-beta.0"
+  resolved "https://registry.yarnpkg.com/@maticnetwork/maticjs/-/maticjs-3.4.0-beta.0.tgz#14e1ef06c8f5d61cd1769c307cca6bb10bcc8b9a"
+  integrity sha512-BaMhryIS79SnHldRVw5uoAkjBrdJCOxlWOBLhdNfK5jcDLXRolS+MUGSbUEXOX/wrjVBsDCZPUy0bb9ZScTdww==
   dependencies:
     "@ethereumjs/block" "^3.6.2"
     ethereumjs-util "^7.1.4"

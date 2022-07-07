@@ -47,7 +47,9 @@ export class InventoryClient {
       this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Token, chainId)) || toBN(0);
 
     // Consider any L1->L2 transfers that are currently pending in the canonical bridge.
-    return balance.add(this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(chainId, l1Token));
+    return balance.add(
+      this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
+    );
   }
 
   // Get the fraction of funds allocated on each chain.
@@ -107,7 +109,7 @@ export class InventoryClient {
   // Decrement Tokens Balance And Increment Cross Chain Transfer
   trackCrossChainTransfer(l1Token: string, rebalance: BigNumber, chainId: number | string) {
     this.tokenClient.decrementLocalBalance(1, l1Token, rebalance);
-    this.crossChainTransferClient.increaseOutstandingTransfer(l1Token, rebalance, Number(chainId));
+    this.crossChainTransferClient.increaseOutstandingTransfer(this.relayer, l1Token, rebalance, Number(chainId));
   }
 
   // Return the upcoming refunds (in pending and next bundles) on each chain.
@@ -311,7 +313,9 @@ export class InventoryClient {
             `${formatter(this.getCumulativeBalance(l1Token).toString())} ${symbol}.` +
             ` This chain's pending L1->L2 transfer amount is ` +
             `${formatter(
-              this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(chainId, l1Token).toString()
+              this.crossChainTransferClient
+                .getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
+                .toString()
             )}.\n`;
         }
       }
@@ -435,12 +439,14 @@ export class InventoryClient {
         tokenDistribution[symbol][chainId] = {
           actualBalanceOnChain: formatter(
             this.getBalanceOnChainForL1Token(chainId, l1Token)
-              .sub(this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(chainId, l1Token))
+              .sub(this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token))
               .toString()
           ),
           virtualBalanceOnChain: formatter(this.getBalanceOnChainForL1Token(chainId, l1Token).toString()),
           outstandingTransfers: formatter(
-            this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(chainId, l1Token).toString()
+            this.crossChainTransferClient
+              .getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
+              .toString()
           ),
           tokenShortFalls: formatter(this.getTokenShortFall(l1Token, chainId).toString()),
           proRataShare: formatWei(tokenDistributionPerL1Token[l1Token][chainId].mul(100).toString()) + "%",
@@ -452,7 +458,7 @@ export class InventoryClient {
   }
 
   async sendTokenCrossChain(chainId: number | string, l1Token: string, amount: BigNumber) {
-    return await this.adapterManager.sendTokenCrossChain(Number(chainId), l1Token, amount);
+    return await this.adapterManager.sendTokenCrossChain(this.relayer, Number(chainId), l1Token, amount);
   }
 
   async _unwrapWeth(chainId: number | string, _l2Weth: string, amount: BigNumber) {
@@ -466,7 +472,7 @@ export class InventoryClient {
     if (!this.isInventoryManagementEnabled()) return;
     const l1Tokens = this.getL1Tokens();
     this.log("Checking token approvals", { l1Tokens });
-    await this.adapterManager.setL1TokenApprovals(l1Tokens);
+    await this.adapterManager.setL1TokenApprovals(this.relayer, l1Tokens);
   }
 
   async wrapL2EthIfAboveThreshold() {

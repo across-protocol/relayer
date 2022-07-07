@@ -37,7 +37,9 @@ export async function constructMonitorClients(config: MonitorConfig, logger: win
   );
   const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
 
-  const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, baseSigner.address);
+  const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
+    baseSigner.address,
+  ]);
   const crossChainTransferClient = new CrossChainTransferClient(logger, config.spokePoolChains, adapterManager);
 
   return { ...commonClients, bundleDataClient, crossChainTransferClient, spokePoolClients, tokenTransferClient };

@@ -1,4 +1,4 @@
-import { processEndPollingLoop, winston, processCrash, config, startupLogLevel } from "../utils";
+import { processEndPollingLoop, winston, processCrash, config, startupLogLevel, getSigner } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
@@ -13,7 +13,8 @@ export async function runRelayer(_logger: winston.Logger): Promise<void> {
 
     const relayerClients = await constructRelayerClients(logger, config);
 
-    const relayer = new Relayer(logger, relayerClients, config.maxRelayerUnfilledDepositLookBack);
+    const baseSigner = await getSigner();
+    const relayer = new Relayer(baseSigner.address, logger, relayerClients, config.maxRelayerUnfilledDepositLookBack);
 
     logger.debug({ at: "Relayer#index", message: "Relayer components initialized. Starting execution loop" });
 

@@ -31,7 +31,9 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
 
   const profitClient = new ProfitClient(logger, commonClients.hubPoolClient, config.relayerDiscount);
 
-  const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, baseSigner.address);
+  const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
+    baseSigner.address,
+  ]);
 
   const bundleDataClient = new BundleDataClient(logger, commonClients, spokePoolClients, config.spokePoolChains);
   const crossChainTransferClient = new CrossChainTransferClient(logger, config.spokePoolChains, adapterManager);

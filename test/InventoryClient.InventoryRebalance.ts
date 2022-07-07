@@ -99,7 +99,11 @@ describe("InventoryClient: Rebalancing inventory", async function () {
           initialAllocation[chainId][l1Token]
         );
         expect(
-          inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(chainId, l1Token)
+          inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+            owner.address,
+            chainId,
+            l1Token
+          )
         ).to.equal(toBN(0)); // For now no cross-chain transfers
 
         const expectedShare = initialAllocation[chainId][l1Token].mul(toWei(1)).div(initialTotals[l1Token]);
@@ -144,7 +148,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(adapterManager.tokensSentCrossChain[42161][mainnetUsdc].amount).to.equal(expectedBridgedAmount);
 
     // Now, mock these funds having entered the canonical bridge.
-    adapterManager.setMockedOutstandingCrossChainTransfers(42161, mainnetUsdc, expectedBridgedAmount);
+    adapterManager.setMockedOutstandingCrossChainTransfers(42161, owner.address, mainnetUsdc, expectedBridgedAmount);
 
     // Now that funds are "in the bridge" re-running the rebalance should not execute any transactions.
     await inventoryClient.update();
@@ -153,7 +157,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(spyLogIncludes(spy, -2, `"outstandingTransfers":"445.00"`)).to.be.true;
 
     // Now mock that funds have finished coming over the bridge and check behavior is as expected.
-    adapterManager.setMockedOutstandingCrossChainTransfers(42161, mainnetUsdc, toBN(0)); // zero the transfer. mock conclusion.
+    adapterManager.setMockedOutstandingCrossChainTransfers(42161, owner.address, mainnetUsdc, toBN(0)); // zero the transfer. mock conclusion.
     // Balance after the relay concludes should be initial - withdrawn + bridged as 1000-500+445=945
     const expectedPostRelayBalance = initialBalance.sub(withdrawAmount).add(expectedBridgedAmount);
     tokenClient.setTokenData(42161, l2TokensForUsdc[42161], expectedPostRelayBalance, toBN(0));
@@ -193,15 +197,15 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // on L1 should have been decremented by the amount sent over the bridge and the Inventory client should be tracking
     // the cross-chain transfers.
     expect(tokenClient.getBalance(1, mainnetWeth)).to.equal(toWei(100).sub(expectedBridgedAmount));
-    expect(inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(137, mainnetWeth)).to.equal(
-      expectedBridgedAmount
-    );
+    expect(
+      inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(owner.address, 137, mainnetWeth)
+    ).to.equal(expectedBridgedAmount);
 
     // The mock adapter manager should have been called with the expected transaction.
     expect(adapterManager.tokensSentCrossChain[137][mainnetWeth].amount).to.equal(expectedBridgedAmount);
 
     // Now, mock these funds having entered the canonical bridge.
-    adapterManager.setMockedOutstandingCrossChainTransfers(137, mainnetWeth, expectedBridgedAmount);
+    adapterManager.setMockedOutstandingCrossChainTransfers(137, owner.address, mainnetWeth, expectedBridgedAmount);
 
     // Now that funds are "in the bridge" re-running the rebalance should not execute any transactions as the util
     // should consider the funds in transit as part of the balance and therefore should not send more.
@@ -214,7 +218,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
     // Now mock that funds have finished coming over the bridge and check behavior is as expected.
     // Zero the transfer. mock conclusion.
-    adapterManager.setMockedOutstandingCrossChainTransfers(137, mainnetWeth, toBN(0));
+    adapterManager.setMockedOutstandingCrossChainTransfers(137, owner.address, mainnetWeth, toBN(0));
     // Balance after the relay concludes should be initial + bridged amount as 10+17.9=27.9
     const expectedPostRelayBalance = toWei(10).add(expectedBridgedAmount);
     tokenClient.setTokenData(137, l2TokensForWeth[137], expectedPostRelayBalance, toBN(0));
@@ -236,8 +240,8 @@ function seedMocks(seedBalances: { [chainId: string]: { [token: string]: BigNumb
   hubPoolClient.addL1Token({ address: mainnetWeth, decimals: 18, symbol: "WETH" });
   hubPoolClient.addL1Token({ address: mainnetUsdc, decimals: 6, symbol: "USDC" });
   enabledChainIds.forEach((chainId) => {
-    adapterManager.setMockedOutstandingCrossChainTransfers(chainId, mainnetWeth, toBN(0));
-    adapterManager.setMockedOutstandingCrossChainTransfers(chainId, mainnetUsdc, toBN(0));
+    adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetWeth, toBN(0));
+    adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetUsdc, toBN(0));
     tokenClient.setTokenData(chainId, l2TokensForWeth[chainId], seedBalances[chainId][mainnetWeth], toBN(0));
     tokenClient.setTokenData(chainId, l2TokensForUsdc[chainId], seedBalances[chainId][mainnetUsdc], toBN(0));
   });
