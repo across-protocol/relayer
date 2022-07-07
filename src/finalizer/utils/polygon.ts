@@ -25,6 +25,7 @@ enum POLYGON_MESSAGE_STATUS {
   NOT_CHECKPOINTED = "NOT_CHECKPOINTED",
   CAN_EXIT = "CAN_EXIT",
   EXIT_ALREADY_PROCESSED = "EXIT_ALREADY_PROCESSED",
+  UNKNOWN_EXIT_FAILURE = "UNKNOWN_EXIT_FAILURE",
 }
 // Unique signature used to identify Polygon L2 transactions that were erc20 withdrawals from the Polygon
 // canonical bridge. Do not change.
@@ -105,7 +106,16 @@ export async function getFinalizableTransactions(
         });
         return { status: POLYGON_MESSAGE_STATUS.CAN_EXIT };
       } catch (err) {
-        return { status: POLYGON_MESSAGE_STATUS.EXIT_ALREADY_PROCESSED };
+        if (err.reason.includes("EXIT_ALREADY_PROCESSED"))
+          return { status: POLYGON_MESSAGE_STATUS.EXIT_ALREADY_PROCESSED };
+        else {
+          logger.debug({
+            at: "PolygonFinalizer",
+            message: `Exit will fail for unknown reason`,
+            err,
+          });
+          return { status: POLYGON_MESSAGE_STATUS.UNKNOWN_EXIT_FAILURE };
+        }
       }
     })
   );
@@ -151,18 +161,12 @@ export async function finalizePolygon(
       transactionhash: receipt.transactionHash,
     });
   } catch (error) {
-    if (error.reason.includes("EXIT_ALREADY_PROCESSED"))
-      logger.debug({
-        at: "PolygonFinalizer",
-        message: "Exit hash already processed",
-      });
-    else
-      logger.debug({
-        at: "PolygonFinalizer",
-        message: "Error creating exitTx",
-        error,
-        notificationPath: "across-error",
-      });
+    logger.warn({
+      at: "PolygonFinalizer",
+      message: "Error creating exitTx",
+      error,
+      notificationPath: "across-error",
+    });
   }
 }
 
