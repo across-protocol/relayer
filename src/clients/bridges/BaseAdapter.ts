@@ -1,13 +1,13 @@
 import { Provider } from "@ethersproject/abstract-provider";
 import { Signer } from "@ethersproject/abstract-signer";
 import { SpokePoolClient } from "../../clients";
-import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20, BigNumber } from "../../utils";
+import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20, EventSearchConfig, BigNumber } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 
 export class BaseAdapter {
   chainId: number;
-  l1SearchConfig;
-  l2SearchConfig;
+  l1SearchConfig: EventSearchConfig;
+  l2SearchConfig: EventSearchConfig;
   monitoredAddresses: string[];
   logger;
 
@@ -18,15 +18,10 @@ export class BaseAdapter {
   depositEvalTime = 24 * 60 * 60; // Consider all deposit finalization events over the last 1 day.
   l2LookBackSafetyMargin = 5; // The pending transfers util can accomidate up to this multipler
 
-  firstEvaluatedL1BlockNumber: number;
-  constructor(
-    readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    _chainId: number,
-    readonly l1FromBlock: number
-  ) {
+  constructor(readonly spokePoolClients: { [chainId: number]: SpokePoolClient }, _chainId: number) {
     this.chainId = _chainId;
-    this.l1SearchConfig = { ...this.getSearchConfig(1), fromBlock: l1FromBlock };
-    this.l2SearchConfig = { ...this.getSearchConfig(this.chainId), fromBlock: 0 };
+    this.l1SearchConfig = this.getSearchConfig(1);
+    this.l2SearchConfig = this.getSearchConfig(this.chainId);
   }
 
   getSigner(chainId: number): Signer {
@@ -38,7 +33,12 @@ export class BaseAdapter {
   }
 
   getSearchConfig(chainId: number) {
-    return this.spokePoolClients[chainId].eventSearchConfig;
+    const spokePoolConfig = this.spokePoolClients[chainId].eventSearchConfig;
+    return {
+      fromBlock: spokePoolConfig ? spokePoolConfig.fromBlock : 0,
+      toBlock: this.spokePoolClients[chainId].latestBlockNumber,
+      maxBlockLookBack: spokePoolConfig ? spokePoolConfig.maxBlockLookBack : null,
+    };
   }
 
   async updateBlockSearchConfig() {
@@ -96,9 +96,12 @@ export class BaseAdapter {
   computeOutstandingCrossChainTransfers(l1Tokens: string[]): { [address: string]: { [l1Token: string]: BigNumber } } {
     const outstandingTransfers: { [address: string]: { [l1Token: string]: BigNumber } } = {};
     for (const monitoredAddress of this.monitoredAddresses) {
+      if (outstandingTransfers[monitoredAddress] === undefined) {
+        outstandingTransfers[monitoredAddress] = {};
+      }
+
       for (const l1Token of l1Tokens) {
         let l2FinalizationSet = this.l2DepositFinalizedEvents[monitoredAddress][l1Token];
-
         if (
           this.isWeth(l1Token) &&
           this.l2DepositFinalizedEvents_DepositAdapter[monitoredAddress]?.[l1Token]?.length > 0

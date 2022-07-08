@@ -16,7 +16,7 @@ export async function processCrash(logger: winston.Logger, fileName: String, pol
   logger.error({
     at: `${fileName}#index`,
     message: `There was an execution error! ${pollingDelay != 0 ? "Re-running loop" : ""}`,
-    error,
+    error: JSON.stringify(error),
     notificationPath: "across-error",
   });
   await delay(5);

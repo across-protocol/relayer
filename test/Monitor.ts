@@ -10,8 +10,13 @@ import {
   TokenTransferClient,
   BalanceAllocator,
 } from "../src/clients";
-import { CrossChainTransferClient, AdapterManager } from "../src/clients/bridges";
-import { Monitor, ALL_CHAINS_NAME, UNKNOWN_TRANSFERS_NAME } from "../src/monitor/Monitor";
+import { CrossChainTransferClient } from "../src/clients/bridges";
+import {
+  Monitor,
+  ALL_CHAINS_NAME,
+  REBALANCE_FINALIZE_GRACE_PERIOD,
+  UNKNOWN_TRANSFERS_NAME,
+} from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
 import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repaymentChainId } from "./constants";
 import * as constants from "./constants";
@@ -210,22 +215,7 @@ describe("Monitor", async function () {
     expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(getRefundForFills([fill1]));
 
     // Execute pool rebalance leaves.
-    const latestBlock = await hubPool.provider.getBlockNumber();
-    const blockRange = constants.CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
-    const expectedPoolRebalanceRoot = dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
-    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
-    for (const leaf of expectedPoolRebalanceRoot.leaves) {
-      await hubPool.executeRootBundle(
-        leaf.chainId,
-        leaf.groupIndex,
-        leaf.bundleLpFees,
-        leaf.netSendAmounts,
-        leaf.runningBalances,
-        leaf.leafId,
-        leaf.l1Tokens,
-        expectedPoolRebalanceRoot.tree.getHexProof(leaf)
-      );
-    }
+    await executeBundle(hubPool);
 
     // Before relayer refund leaves are executed, the refund is now in the pending column
     await monitorInstance.update();
@@ -274,6 +264,51 @@ describe("Monitor", async function () {
     ).to.be.equal(toBN(5));
   });
 
+  it("Monitor should report stuck rebalances", async function () {
+    await updateAllClients();
+    await monitorInstance.update();
+    // Send a deposit and a fill so that dataworker builds simple roots.
+    const deposit = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      l2Token,
+      l1Token,
+      depositor,
+      destinationChainId,
+      amountToDeposit
+    );
+    await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
+    await monitorInstance.update();
+
+    // Have the data worker propose a new bundle.
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    await l1Token.approve(hubPool.address, MAX_UINT_VAL);
+    await multiCallerClient.executeTransactionQueue();
+
+    // Execute pool rebalance leaves.
+    await executeBundle(hubPool);
+
+    // Fast-forward by 2 hours to pass the grace period.
+    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + REBALANCE_FINALIZE_GRACE_PERIOD + 1);
+
+    // Simulate some pending cross chain transfers to SpokePools.
+    adapterManager.setMockedOutstandingCrossChainTransfers(
+      originChainId,
+      spokePool_1.address,
+      l1Token.address,
+      toBN(5)
+    );
+    await monitorInstance.update();
+    await monitorInstance.checkStuckRebalances();
+
+    expect(lastSpyLogIncludes(spy, "HubPool -> SpokePool rebalances stuck 🦴")).to.be.true;
+    const log = spy.lastCall;
+    expect(log.lastArg.mrkdwn).to.contains(
+      `Rebalances of ${await l1Token.symbol()} to ${getNetworkName(originChainId)} is stuck`
+    );
+  });
+
   it("Monitor should report unfilled deposits", async function () {
     await updateAllClients();
     await monitorInstance.update();
@@ -309,3 +344,22 @@ describe("Monitor", async function () {
     expect(lastSpyLogIncludes(spy, `Transfers that are not fills for relayer ${depositor.address} 🦨`)).to.be.true;
   });
 });
+
+const executeBundle = async (hubPool: Contract) => {
+  const latestBlock = await hubPool.provider.getBlockNumber();
+  const blockRange = constants.CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
+  const expectedPoolRebalanceRoot = dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
+  await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
+  for (const leaf of expectedPoolRebalanceRoot.leaves) {
+    await hubPool.executeRootBundle(
+      leaf.chainId,
+      leaf.groupIndex,
+      leaf.bundleLpFees,
+      leaf.netSendAmounts,
+      leaf.runningBalances,
+      leaf.leafId,
+      leaf.l1Tokens,
+      expectedPoolRebalanceRoot.tree.getHexProof(leaf)
+    );
+  }
+};

@@ -37,8 +37,10 @@ export async function constructMonitorClients(config: MonitorConfig, logger: win
   );
   const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
 
+  const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePool.address);
   const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
     baseSigner.address,
+    ...spokePoolAddresses,
   ]);
   const crossChainTransferClient = new CrossChainTransferClient(logger, config.spokePoolChains, adapterManager);
 

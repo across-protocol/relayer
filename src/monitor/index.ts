@@ -26,6 +26,9 @@ export async function runMonitor(_logger: winston.Logger) {
       if (config.botModes.unknownRelayerCallersEnabled) await acrossMonitor.checkUnknownRelayers();
       else logger.debug({ at: "AcrossMonitor", message: "UnknownRelayerCallers monitor disabled" });
 
+      if (config.botModes.stuckRebalancesEnabled) await acrossMonitor.checkStuckRebalances();
+      else logger.debug({ at: "AcrossMonitor", message: "StuckRebalances monitor disabled" });
+
       if (config.botModes.reportEnabled) {
         await acrossMonitor.reportRelayerBalances();
         await acrossMonitor.reportUnfilledDeposits();
