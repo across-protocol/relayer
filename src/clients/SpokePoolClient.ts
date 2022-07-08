@@ -15,11 +15,13 @@ import {
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
 interface CachedDepositData {
   latestBlock: number;
+  earliestBlock: number;
   deposits: { [destinationChainId: number]: DepositWithBlockInCache[] };
 }
 
 interface CachedFillData {
   latestBlock: number;
+  earliestBlock: number;
   fills: FillWithBlockInCache[];
 }
 
@@ -206,6 +208,9 @@ export class SpokePoolClient {
     return `${event.depositId}-${event.originChainId}`;
   }
 
+  // `latestBlockToCache` will inform this client which new blocks to store in the Redis cache. If this is set > 0, then
+  // this function will first load all events from the cache, and then request any blocks not covered in the cache
+  // from an RPC. The combined blocks will then be saved back into the cache up to `latestBlockToCache`.
   async update(eventsToQuery?: string[], latestBlockToCache = 0) {
     if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
 
@@ -236,15 +241,20 @@ export class SpokePoolClient {
     const depositEventSearchConfig = { ...searchConfig };
 
     // Invariant: cachedData is undefined if we don't want to use any events from the cache.
+    // Assumption: cachedData returns all events from searchConfig.fromBlock until cachedData.latestCachedBlock.
+    // In the future, we might need to fetch events between searchConfig.fromBlock until cachedData.firstCachedBlock
+    // but for the sake of simplicity if this situation is true then cachedData will be undefined.
     const cachedData: {
       deposits: { [destinationChainId: number]: DepositWithBlockInCache[] };
       fills: FillWithBlockInCache[];
       latestCachedBlock: number;
+      earliestCachedBlock: number;
     } = await this.getEventsFromCache(latestBlockToCache, searchConfig);
     if (cachedData !== undefined) {
       depositEventSearchConfig.fromBlock = cachedData.latestCachedBlock + 1;
       this.log("debug", `Partially loading deposit and fill event data from cache for chain ${this.chainId}`, {
         latestCachedBlock: cachedData.latestCachedBlock,
+        earliestCachedBlock: cachedData.earliestCachedBlock,
         newSearchConfigForDepositAndFillEvents: depositEventSearchConfig,
         originalSearchConfigForDepositAndFillEvents: searchConfig,
       });
@@ -351,6 +361,7 @@ export class SpokePoolClient {
         );
         this.log("debug", `Saved cached deposits for chain ${this.chainId}`, {
           latestBlockToCache,
+          earliestBlock: searchConfig.fromBlock,
           cachedDeposits: Object.keys(depositsToCache).map((destChain) => {
             return {
               destChain,
@@ -361,6 +372,9 @@ export class SpokePoolClient {
 
         // Save new deposit cache for chain.
         await this.setDepositDataInCache({
+          earliestBlock: searchConfig.fromBlock, // TODO: Ideally should store all cached events + new events but for
+          // now we'll store from target fromBlock until latestBlockToCache. This is OK because the intended use case
+          // of this cache for now is to set the searchConfig.fromBlock = 0.
           latestBlock: latestBlockToCache,
           deposits: depositsToCache,
         });
@@ -422,11 +436,13 @@ export class SpokePoolClient {
           });
         this.log("debug", `Saved cached fills for chain ${this.chainId}`, {
           latestBlockToCache,
+          earliestBlock: searchConfig.fromBlock,
           cachedFills: fillsToCache.length,
         });
 
         // Save new fill cache for chain.
         await this.setFillDataInCache({
+          earliestBlock: searchConfig.fromBlock,
           latestBlock: latestBlockToCache,
           fills: fillsToCache,
         });
@@ -498,28 +514,43 @@ export class SpokePoolClient {
         this.getFillDataFromCache(),
       ]);
 
-      // Arbitrarily fetch latestCachedBlock from cached deposit list. We make an assumption that either deposit and
-      // fill event data is cached, or neither are, and they are cached up until the same end block. If they do not
-      // match, then we won't fetch any data from the cache.
+      // Make sure that deposit and fill events are stored for the exact same block range.
       const latestCachedBlock = _cachedDepositData.latestBlock ? Number(_cachedDepositData.latestBlock) : undefined;
-      if (latestCachedBlock === undefined || _cachedFillData.latestBlock !== latestCachedBlock) return undefined;
+      if (latestCachedBlock === undefined || Number(_cachedFillData.latestBlock) !== latestCachedBlock)
+        return undefined;
+      const earliestCachedBlock = _cachedDepositData.earliestBlock
+        ? Number(_cachedDepositData.earliestBlock)
+        : undefined;
+      if (earliestCachedBlock === undefined || Number(_cachedFillData.earliestBlock) !== earliestCachedBlock)
+        return undefined;
+      if (earliestCachedBlock > latestCachedBlock) return undefined;
 
       // If `latestCachedBlock > latestBlockToCache` then the above invariant is violated
       // and we're storing events too close to HEAD for this chain in the cache, so we'll reset the cache and use
       // no events from it.
       if (latestCachedBlock > latestBlockToCache) return undefined;
 
-      // Note: If `latestCachedBlock` >= `searchConfig.fromBlock` then we want to load events from the cache
-      // because we'll use events from `fromBlock` until `latestCachedBlock` and fetch the rest from the RPC.
-      // However, if `latestCachedBlock` < `searchConfig.fromBlock`, then there is no point in loading anything
-      // from the cache since all cached events are older than the oldest block we are interested in.
-      if (latestCachedBlock >= searchConfig.fromBlock) {
-        return {
-          deposits: _cachedDepositData.deposits,
-          fills: _cachedFillData.fills,
-          latestCachedBlock,
-        };
-      }
+      // If searchConfig.fromBlock < earliestCachedBlock then there are missing events. Ideally we should be fetching these
+      // events but this case should be rare given that the intended use of this client is to store blocks from all
+      // time until latestBlockToCache (a number that should only increase over time) so I'll leave this as a TODO
+      // and force the client to fetch ALL events if this edge case is hit.
+      if (earliestCachedBlock > searchConfig.fromBlock) return undefined;
+
+      // At this point, since `latestCachedBlock >= earliestCachedBlock` and `earliestCachedBlock <= searchConfig.fromBlock`,
+      // we know we can load events from the cache from `searchConfig.fromBlock` until `latestCachedBlock`. Any blocks
+      // between `latestCachedBlock` until `searchConfig.toBlock` we'll get from an RPC.
+
+      // However, we need to do one last check if `latestCachedBlock` < `searchConfig.fromBlock`, which would mean
+      // that there is no point in loading anything from the cache since all cached events are older than the oldest
+      // block we are interested in.
+      if (latestCachedBlock < searchConfig.fromBlock) return undefined;
+
+      return {
+        deposits: _cachedDepositData.deposits,
+        fills: _cachedFillData.fills,
+        latestCachedBlock,
+        earliestCachedBlock,
+      };
     }
 
     return undefined;
