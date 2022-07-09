@@ -94,7 +94,7 @@ export class BaseAdapter {
   }
 
   computeOutstandingCrossChainTransfers(l1Tokens: string[]): { [address: string]: { [l1Token: string]: BigNumber } } {
-    const outstandingTransfers = {};
+    const outstandingTransfers: { [address: string]: { [l1Token: string]: BigNumber } } = {};
     for (const monitoredAddress of this.monitoredAddresses) {
       for (const l1Token of l1Tokens) {
         let l2FinalizationSet = this.l2DepositFinalizedEvents[monitoredAddress][l1Token];
@@ -132,7 +132,7 @@ export class BaseAdapter {
           (!newestFinalizedDeposit && newestInitializedDeposit?.blockNumber < approx12HourAgoL1) ||
           !newestInitializedDeposit // If there has never been any finalized deposits.
         ) {
-          outstandingTransfers[l1Token] = toBN(0);
+          outstandingTransfers[monitoredAddress][l1Token] = toBN(0);
           continue;
         }
 
@@ -151,7 +151,6 @@ export class BaseAdapter {
           this.l1DepositInitiatedEvents[monitoredAddress][l1Token].forEach((l1Event, index) => {
             if (l1Event.amount.eq(newestFinalizedDeposit.amount)) {
               associatedL1DepositIndex = index;
-              return;
             }
           });
 
@@ -173,8 +172,10 @@ export class BaseAdapter {
         if (!newestFinalizedDeposit)
           l1EventsToConsider = l1EventsToConsider.filter((l1Event) => l1Event.blockNumber > approx12HourAgoL1);
 
-        const totalDepositsOutstanding = l1EventsToConsider.reduce((acc, curr) => acc.add(curr.amount), toBN(0));
-        outstandingTransfers[l1Token] = totalDepositsOutstanding;
+        outstandingTransfers[monitoredAddress][l1Token] = l1EventsToConsider.reduce(
+          (acc, curr) => acc.add(curr.amount),
+          toBN(0)
+        );
       }
     }
 
