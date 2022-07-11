@@ -96,13 +96,17 @@ export class BaseAdapter {
   computeOutstandingCrossChainTransfers(l1Tokens: string[]): { [address: string]: { [l1Token: string]: BigNumber } } {
     const outstandingTransfers: { [address: string]: { [l1Token: string]: BigNumber } } = {};
     for (const monitoredAddress of this.monitoredAddresses) {
+      if (outstandingTransfers[monitoredAddress] === undefined) {
+        outstandingTransfers[monitoredAddress] = {};
+      }
+
       for (const l1Token of l1Tokens) {
         let l2FinalizationSet = this.l2DepositFinalizedEvents[monitoredAddress][l1Token];
 
         if (
           this.isWeth(l1Token) &&
           this.l2DepositFinalizedEvents_DepositAdapter[monitoredAddress]?.[l1Token]?.length > 0
-        )
+        ) {
           // If this is WETH and there are atomic depositor events then consider the union as the ful set of finalization
           // events. We do this as the output event on L2 will show the Atomic depositor as the sender, not the relayer.
           l2FinalizationSet = [
@@ -111,6 +115,7 @@ export class BaseAdapter {
               (event) => event.to === monitoredAddress
             ),
           ].sort((a, b) => a.blockNumber - b.blockNumber);
+        }
 
         // Find the most recent L2 finalization event and most recent deposit event.
         const newestFinalizedDeposit = l2FinalizationSet[l2FinalizationSet.length - 1];
@@ -147,12 +152,13 @@ export class BaseAdapter {
         // in the last lookback period. If this is the case the below logic will consider the newest one first and disregard
         // the older transfers. The worst case if this happens is the util under counts how much is in the bridge.
         let associatedL1DepositIndex = -1;
-        if (newestFinalizedDeposit)
+        if (newestFinalizedDeposit) {
           this.l1DepositInitiatedEvents[monitoredAddress][l1Token].forEach((l1Event, index) => {
             if (l1Event.amount.eq(newestFinalizedDeposit.amount)) {
               associatedL1DepositIndex = index;
             }
           });
+        }
 
         // We now take a subset of all L1 Events over the interval. Remember that the L1 events are sorted by block number
         // with the most recent event last. The event set contains all deposit events that have ever happened on L1 for
