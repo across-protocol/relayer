@@ -53,7 +53,7 @@ export async function finalize(
           e.blockNumber < client.latestBlockNumber - optimisticRollupFinalizationWindow &&
           e.blockNumber >= client.latestBlockNumber - 2 * optimisticRollupFinalizationWindow
       );
-      const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner);
+      const finalizableMessages = await getFinalizableMessages(logger, olderTokensBridgedEvents, hubSigner);
       for (const l2Message of finalizableMessages) {
         await finalizeArbitrum(logger, l2Message.message, l2Message.info, hubPoolClient);
       }
