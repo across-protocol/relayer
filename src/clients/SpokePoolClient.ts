@@ -227,8 +227,7 @@ export class SpokePoolClient {
     });
 
     const queryResults = await Promise.all(
-      eventSearchConfigs.map((config) => paginatedEventQuery(this.spokePool, config.filter, config.searchConfig)),
-      { concurrency: 2 }
+      eventSearchConfigs.map((config) => paginatedEventQuery(this.spokePool, config.filter, config.searchConfig))
     );
 
     if (eventsToQuery.includes("TokensBridged"))
@@ -246,8 +245,12 @@ export class SpokePoolClient {
         this.log("debug", `Fetching realizedLpFeePct for ${depositEvents.length} deposits on chain ${this.chainId}`, {
           numDeposits: depositEvents.length,
         });
-      const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number }[] = await Promise.all(
-        depositEvents.map((event) => this.computeRealizedLpFeePct(event))
+      const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number }[] = await Promise.map(
+        depositEvents,
+        async (event) => {
+          return this.computeRealizedLpFeePct(event);
+        },
+        { concurrency: 1000 }
       );
 
       for (const [index, event] of depositEvents.entries()) {
