@@ -11,20 +11,13 @@ import {
   CachedDepositData,
   CachedFillData,
   CachedData,
+  DepositWithBlockInCache,
+  FillWithBlockInCache,
 } from "../utils";
 import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
 import { AcrossConfigStoreClient } from "./ConfigStoreClient";
-import {
-  Deposit,
-  DepositWithBlock,
-  DepositWithBlockInCache,
-  Fill,
-  SpeedUp,
-  FillWithBlock,
-  TokensBridged,
-  FillWithBlockInCache,
-} from "../interfaces/SpokePool";
+import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock, TokensBridged } from "../interfaces/SpokePool";
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
 
 export class SpokePoolClient {
