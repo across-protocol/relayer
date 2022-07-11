@@ -158,7 +158,7 @@ export async function finalizePolygon(
     logger.debug({
       at: "PolygonFinalizer",
       message: `Finalized Polygon withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
-      transactionhash: receipt.transactionHash,
+      transactionHash: receipt.transactionHash,
     });
   } catch (error) {
     logger.warn({
@@ -206,7 +206,7 @@ export async function retrieveTokenFromMainnetTokenBridger(
       logger.info({
         at: "PolygonFinalizer",
         message: `Retrieved ${balanceFromWei} of ${l1TokenInfo.symbol} from PolygonTokenBridger 🪃`,
-        transactionhash: etherscanLink(txn.hash, 1),
+        transactionHash: etherscanLink(txn.hash, 1),
       });
       await delay(30);
     } catch (error) {
