@@ -46,7 +46,7 @@ export async function run(): Promise<void> {
     console.log(`Send ${symbol} with amount ${amountFromWei} tokens to ${recipient} on chain ${args.chainId}`);
     if (!(await askYesNoQuestion("\nConfirm that you want to execute this transaction?"))) process.exit(0);
     console.log("sending...");
-    const tx = await erc20.transfer(recipient, args.amount, { gasLimit: 100000 });
+    const tx = await erc20.transfer(recipient, args.amount);
     const receipt = await tx.wait();
     console.log("Transaction hash:", receipt.transactionHash);
   }
