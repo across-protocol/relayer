@@ -126,6 +126,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }
   } catch (error) {
+    // eslint-disable-next-line no-process-exit
     if (await processCrash(logger, "Dataworker", config.pollingDelay, error)) process.exit(1);
     await runDataworker(logger);
   }

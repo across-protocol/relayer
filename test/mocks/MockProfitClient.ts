@@ -6,5 +6,6 @@ export class MockProfitClient extends ProfitClient {
     this.tokenPrices = tokenPrices;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
   async update() {}
 }

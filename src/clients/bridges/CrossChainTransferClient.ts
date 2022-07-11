@@ -54,7 +54,7 @@ export class CrossChainTransferClient {
     this.log("Updated cross chain transfers", { outstandingCrossChainTransfers: this.outstandingCrossChainTransfers });
   }
 
-  log(message: string, data?: any, level: string = "debug") {
+  log(message: string, data?: any, level = "debug") {
     if (this.logger) this.logger[level]({ at: "CrossChainTransferClient", message, ...data });
   }
 }

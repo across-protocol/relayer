@@ -42,7 +42,7 @@ export class BaseAdapter {
   }
 
   async updateBlockSearchConfig() {
-    //todo: swap this to pulling spokePoolClient.latestBlockNumber.
+    // todo: swap this to pulling spokePoolClient.latestBlockNumber.
     const [l1BlockNumber, l2BlockNumber] = await Promise.all([
       this.getProvider(1).getBlockNumber(),
       this.getProvider(this.chainId).getBlockNumber(),
@@ -188,7 +188,7 @@ export class BaseAdapter {
     return outstandingTransfers;
   }
 
-  log(message: string, data?: any, level: string = "debug") {
+  log(message: string, data?: any, level = "debug") {
     this.logger[level]({ at: this.getName(), message, ...data });
   }
 

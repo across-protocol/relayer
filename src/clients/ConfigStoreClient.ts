@@ -33,7 +33,7 @@ export class AcrossConfigStoreClient {
   private rateModelDictionary: across.rateModel.RateModelDictionary;
   public firstBlockToSearch: number;
 
-  public isUpdated: boolean = false;
+  public isUpdated = false;
 
   public client: ReturnType<typeof createClient>;
 

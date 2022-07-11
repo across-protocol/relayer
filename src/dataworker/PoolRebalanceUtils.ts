@@ -344,7 +344,7 @@ export function generateMarkdownForDisputeInvalidBundleBlocks(
     return bundleBlockRangePretty;
   };
   return (
-    `Disputed pending root bundle because of invalid bundle blocks:` +
+    "Disputed pending root bundle because of invalid bundle blocks:" +
     `\n\t*Widest possible expected block range*:${getBlockRangePretty(widestExpectedBlockRange)}` +
     `\n\t*Buffers to end blocks*:${getBlockRangePretty(buffers)}` +
     `\n\t*Pending end blocks*:${getBlockRangePretty(pendingRootBundle.bundleEvaluationBlockNumbers)}`
@@ -353,7 +353,7 @@ export function generateMarkdownForDisputeInvalidBundleBlocks(
 
 export function generateMarkdownForDispute(pendingRootBundle: PendingRootBundle) {
   return (
-    `Disputed pending root bundle:` +
+    "Disputed pending root bundle:" +
     `\n\tPoolRebalance leaf count: ${pendingRootBundle.unclaimedPoolRebalanceLeafCount}` +
     `\n\tPoolRebalance root: ${shortenHexString(pendingRootBundle.poolRebalanceRoot)}` +
     `\n\tRelayerRefund root: ${shortenHexString(pendingRootBundle.relayerRefundRoot)}` +

@@ -168,8 +168,8 @@ export class BundleDataClient {
       return this.loadDataFromCache(key);
     }
 
-    if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
-    if (!this.clients.configStoreClient.isUpdated) throw new Error(`ConfigStoreClient not updated`);
+    if (!this.clients.hubPoolClient.isUpdated) throw new Error("HubPoolClient not updated");
+    if (!this.clients.configStoreClient.isUpdated) throw new Error("ConfigStoreClient not updated");
     this.chainIdListForBundleEvaluationBlockNumbers.forEach((chainId) => {
       if (!spokePoolClients[chainId]) throw new Error(`Missing spoke pool client for chain ${chainId}`);
     });
@@ -300,7 +300,7 @@ export class BundleDataClient {
     if (Object.keys(spokeEventsReadable.allInvalidFillsInRangeByDestinationChain).length > 0)
       this.logger.debug({
         at: "Dataworker",
-        message: `Finished loading spoke pool data and found some invalid fills in range`,
+        message: "Finished loading spoke pool data and found some invalid fills in range",
         blockRangesForChains,
         allInvalidFillsInRangeByDestinationChain: spokeEventsReadable.allInvalidFillsInRangeByDestinationChain,
       });

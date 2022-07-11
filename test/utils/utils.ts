@@ -11,7 +11,7 @@ import { amountToDeposit, depositRelayerFeePct, l1TokenTransferThreshold, zeroAd
 import { MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF } from "../constants";
 import { HubPoolClient, AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
 import { SpokePoolClient } from "../../src/clients";
-import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber, toWei } from "./index";
+import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber } from "./index";
 import { Deposit, Fill, RunningBalances } from "../../src/interfaces";
 import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
 
@@ -23,8 +23,8 @@ export { winston, sinon };
 const assert = chai.assert;
 export { chai, assert };
 
-export function assertPromiseError(promise: Promise<any>, errMessage?: string) {
-  promise
+export function assertPromiseError(promise: Promise<unknown>, errMessage?: string): Promise<void> {
+  return promise
     .then(() => assert.isTrue(false))
     .catch((err) => assert.isTrue(errMessage ? err.message.includes(errMessage) : true));
 }
@@ -34,7 +34,7 @@ export async function setupTokensForWallet(
   wallet: utils.SignerWithAddress,
   tokens: utils.Contract[],
   weth?: utils.Contract,
-  seedMultiplier: number = 1
+  seedMultiplier = 1
 ) {
   await utils.seedWallet(wallet, tokens, weth, utils.amountToSeedWallets.mul(seedMultiplier));
   await Promise.all(
@@ -66,11 +66,7 @@ const iterativelyReplaceBigNumbers = (obj: any) => {
   });
 };
 
-export async function deploySpokePoolWithToken(
-  fromChainId: number = 0,
-  toChainId: number = 0,
-  enableRoute: boolean = true
-) {
+export async function deploySpokePoolWithToken(fromChainId = 0, toChainId = 0, enableRoute = true) {
   const { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(utils.ethers);
 
   await spokePool.setChainId(fromChainId == 0 ? utils.originChainId : fromChainId);
@@ -88,7 +84,7 @@ export async function deployConfigStore(
   tokensToAdd: utils.Contract[],
   maxL1TokensPerPoolRebalanceLeaf: number = MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   maxRefundPerRelayerRefundLeaf: number = MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
-  rateModel: Object = sampleRateModel,
+  rateModel: unknown = sampleRateModel,
   transferThreshold: BigNumber = DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
 ) {
   const configStore = await (await utils.getContractFactory("AcrossConfigStore", signer)).deploy();
@@ -234,7 +230,7 @@ export async function deploySpokePoolForIterativeTest(
   signer: utils.SignerWithAddress,
   mockAdapter: utils.Contract,
   configStoreClient: AcrossConfigStoreClient,
-  desiredChainId: number = 0
+  desiredChainId = 0
 ) {
   const { spokePool } = await deploySpokePoolWithToken(desiredChainId, 0, false);
 
@@ -257,7 +253,7 @@ export async function deploySingleTokenAcrossSetOfChains(
   associatedL1Token: utils.Contract
 ) {
   // Deploy one token per spoke pool. This of this as deploying USDC on all chains.
-  let tokens = [];
+  const tokens = [];
   for (let i = 0; i < spokePools.length; i++) {
     const erc20 = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("Yeet Coin", "Coin", 18);
     await erc20.addMember(TokenRolesEnum.MINTER, signer.address);
@@ -295,8 +291,8 @@ export async function deployIterativeSpokePoolsAndToken(
   numSpokePools: number,
   numTokens: number
 ) {
-  let spokePools = [];
-  let l1TokenToL2Tokens = {};
+  const spokePools = [];
+  const l1TokenToL2Tokens = {};
 
   // For each count of numSpokePools deploy a new spoke pool. Set the chainId to the index in the array. Note that we
   // start at index of 1 here. spokePool with a chainId of 0 is not a good idea.
@@ -587,7 +583,7 @@ export async function buildSlowFill(
   lastFillForDeposit: Fill,
   relayer: SignerWithAddress,
   proof: string[],
-  rootBundleId: string = "0"
+  rootBundleId = "0"
 ): Promise<Fill> {
   await spokePool
     .connect(relayer)

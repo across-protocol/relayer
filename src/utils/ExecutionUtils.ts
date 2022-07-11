@@ -1,6 +1,6 @@
 import { delay, winston } from "./";
 
-export async function processEndPollingLoop(logger: winston.Logger, fileName: String, pollingDelay: number) {
+export async function processEndPollingLoop(logger: winston.Logger, fileName: string, pollingDelay: number) {
   if (pollingDelay === 0) {
     logger.debug({ at: `${fileName}#index`, message: "End of serverless execution loop - terminating process" });
     await delay(5); // Add a small delay to ensure the transports have fully flushed upstream.
@@ -12,7 +12,7 @@ export async function processEndPollingLoop(logger: winston.Logger, fileName: St
   return false;
 }
 
-export async function processCrash(logger: winston.Logger, fileName: String, pollingDelay: number, error: any) {
+export async function processCrash(logger: winston.Logger, fileName: string, pollingDelay: number, error: any) {
   logger.error({
     at: `${fileName}#index`,
     message: `There was an execution error! ${pollingDelay != 0 ? "Re-running loop" : ""}`,
@@ -29,7 +29,7 @@ export function startupLogLevel(config: { pollingDelay: number }) {
   return config.pollingDelay > 0 ? "info" : "debug";
 }
 
-export const rejectAfterDelay = (seconds: number, message: string = "") =>
+export const rejectAfterDelay = (seconds: number, message = "") =>
   new Promise<never>((_, reject) => {
     setTimeout(reject, seconds * 1000, {
       status: "timeout",

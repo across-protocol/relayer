@@ -5,8 +5,8 @@ import { InventoryConfig } from "../interfaces";
 export class RelayerConfig extends CommonConfig {
   readonly inventoryConfig: InventoryConfig;
   readonly relayerDiscount: BigNumber;
-  readonly sendingRelaysEnabled: Boolean;
-  readonly sendingSlowRelaysEnabled: Boolean;
+  readonly sendingRelaysEnabled: boolean;
+  readonly sendingSlowRelaysEnabled: boolean;
 
   constructor(env: ProcessEnv) {
     const { RELAYER_DISCOUNT, RELAYER_INVENTORY_CONFIG, SEND_RELAYS, SEND_SLOW_RELAYS } = env;

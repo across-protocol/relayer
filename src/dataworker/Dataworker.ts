@@ -133,7 +133,7 @@ export class Dataworker {
   async proposeRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     usdThresholdToSubmitNewBundle?: BigNumber,
-    submitProposals: boolean = true
+    submitProposals = true
   ) {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
@@ -141,7 +141,7 @@ export class Dataworker {
     // safe strategy but could lead to new roots failing to be proposed until ALL networks are healthy.
 
     // 0. Check if a bundle is pending.
-    if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
+    if (!this.clients.hubPoolClient.isUpdated) throw new Error("HubPoolClient not updated");
     if (this.clients.hubPoolClient.hasPendingProposal()) {
       this.logger.debug({
         at: "Dataworker#propose",
@@ -181,7 +181,7 @@ export class Dataworker {
       blockRangesForProposal,
       this.chainIdListForBundleEvaluationBlockNumbers
     );
-    this.logger.debug({ at: "Dataworker", message: `Building pool rebalance root`, blockRangesForProposal });
+    this.logger.debug({ at: "Dataworker", message: "Building pool rebalance root", blockRangesForProposal });
     const poolRebalanceRoot = this._getPoolRebalanceRoot(
       blockRangesForProposal,
       endBlockForMainnet,
@@ -206,7 +206,7 @@ export class Dataworker {
       if (totalUsdRefund.lt(usdThresholdToSubmitNewBundle)) {
         this.logger.debug({
           at: "Dataworker",
-          message: `Root bundle USD volume does not exceed threshold, exiting early 🟡`,
+          message: "Root bundle USD volume does not exceed threshold, exiting early 🟡",
           usdThresholdToSubmitNewBundle,
           totalUsdRefund,
           leaves: poolRebalanceRoot.leaves,
@@ -215,13 +215,13 @@ export class Dataworker {
       } else
         this.logger.debug({
           at: "Dataworker",
-          message: `Root bundle USD volume exceeds threshold! 💚`,
+          message: "Root bundle USD volume exceeds threshold! 💚",
           usdThresholdToSubmitNewBundle,
           totalUsdRefund,
         });
     }
 
-    this.logger.debug({ at: "Dataworker", message: `Building relayer refund root`, blockRangesForProposal });
+    this.logger.debug({ at: "Dataworker", message: "Building relayer refund root", blockRangesForProposal });
     const relayerRefundRoot = _buildRelayerRefundRoot(
       endBlockForMainnet,
       fillsToRefund,
@@ -239,7 +239,7 @@ export class Dataworker {
       relayerRefundRoot.leaves,
       "Relayer refund"
     );
-    this.logger.debug({ at: "Dataworker", message: `Building slow relay root`, blockRangesForProposal });
+    this.logger.debug({ at: "Dataworker", message: "Building slow relay root", blockRangesForProposal });
     const slowRelayRoot = _buildSlowRelayRoot(unfilledDeposits);
     PoolRebalanceUtils.prettyPrintLeaves(this.logger, slowRelayRoot.tree, slowRelayRoot.leaves, "Slow relay");
 
@@ -275,11 +275,8 @@ export class Dataworker {
       );
   }
 
-  async validatePendingRootBundle(
-    spokePoolClients?: { [chainId: number]: SpokePoolClient },
-    submitDisputes: boolean = true
-  ) {
-    if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
+  async validatePendingRootBundle(spokePoolClients?: { [chainId: number]: SpokePoolClient }, submitDisputes = true) {
+    if (!this.clients.hubPoolClient.isUpdated) throw new Error("HubPoolClient not updated");
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
     // Exit early if a bundle is not pending.
@@ -354,7 +351,7 @@ export class Dataworker {
       });
       return {
         valid: false,
-        reason: `Disputed pending root bundle with empty pool rebalance root`,
+        reason: "Disputed pending root bundle with empty pool rebalance root",
       };
     }
 
@@ -368,7 +365,7 @@ export class Dataworker {
       });
       return {
         valid: false,
-        reason: `Disputed pending root bundle with incorrect bundle block range length`,
+        reason: "Disputed pending root bundle with incorrect bundle block range length",
       };
     }
 
@@ -559,7 +556,7 @@ export class Dataworker {
       valid: false,
       reason:
         PoolRebalanceUtils.generateMarkdownForDispute(rootBundle) +
-        `\n` +
+        "\n" +
         PoolRebalanceUtils.generateMarkdownForRootBundle(
           this.clients.hubPoolClient,
           this.chainIdListForBundleEvaluationBlockNumbers,
@@ -582,7 +579,7 @@ export class Dataworker {
   async executeSlowRelayLeaves(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
-    submitExecution: boolean = true
+    submitExecution = true
   ) {
     this.logger.debug({
       at: "Dataworker#executeSlowRelayLeaves",
@@ -769,14 +766,14 @@ export class Dataworker {
   async executePoolRebalanceLeaves(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
-    submitExecution: boolean = true
+    submitExecution = true
   ) {
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
       message: "Executing pool rebalance leaves",
     });
 
-    if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
+    if (!this.clients.hubPoolClient.isUpdated) throw new Error("HubPoolClient not updated");
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
     // Exit early if a bundle is not pending.
@@ -921,7 +918,7 @@ export class Dataworker {
             chainId: hubPoolChainId,
             method: "exchangeRateCurrent",
             args: [l1Token],
-            message: `Updated exchange rate ♻️!`,
+            message: "Updated exchange rate ♻️!",
             mrkdwn: `Updated exchange rate for l1 token: ${this.clients.hubPoolClient.getTokenInfo(1, l1Token).symbol}`,
           });
         }
@@ -972,7 +969,7 @@ export class Dataworker {
   async executeRelayerRefundLeaves(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
-    submitExecution: boolean = true
+    submitExecution = true
   ) {
     this.logger.debug({
       at: "Dataworker#executeRelayerRefundLeaves",

@@ -104,5 +104,6 @@ export class AdapterManager {
     return this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, l2ChainId);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
   async update() {}
 }
