@@ -25,6 +25,13 @@ interface CachedFillData {
   fills: FillWithBlockInCache[];
 }
 
+interface ExistingCachedData {
+  deposits: { [destinationChainId: number]: DepositWithBlockInCache[] };
+  fills: FillWithBlockInCache[];
+  latestCachedBlock: number;
+  earliestCachedBlock: number;
+}
+
 export class SpokePoolClient {
   private deposits: { [DestinationChainId: number]: Deposit[] } = {};
   private depositHashes: { [depositHash: string]: Deposit } = {};
@@ -244,12 +251,7 @@ export class SpokePoolClient {
     // Assumption: cachedData returns all events from searchConfig.fromBlock until cachedData.latestCachedBlock.
     // In the future, we might need to fetch events between searchConfig.fromBlock until cachedData.firstCachedBlock
     // but for the sake of simplicity if this situation is true then cachedData will be undefined.
-    const cachedData: {
-      deposits: { [destinationChainId: number]: DepositWithBlockInCache[] };
-      fills: FillWithBlockInCache[];
-      latestCachedBlock: number;
-      earliestCachedBlock: number;
-    } = await this.getEventsFromCache(latestBlockToCache, searchConfig);
+    const cachedData: ExistingCachedData = await this.getEventsFromCache(latestBlockToCache, searchConfig);
     if (cachedData !== undefined) {
       depositEventSearchConfig.fromBlock = cachedData.latestCachedBlock + 1;
       this.log("debug", `Partially loading deposit and fill event data from cache for chain ${this.chainId}`, {
@@ -288,6 +290,12 @@ export class SpokePoolClient {
         this.tokensBridged.push(spreadEventWithBlockNumber(event) as TokensBridged);
       }
 
+    // Populate this dictionary with all events we'll update cache with.
+    const dataToCache: { deposits: { [chainId: number]: DepositWithBlock[] }; fills: FillWithBlock[] } = {
+      deposits: {},
+      fills: [],
+    };
+
     // For each depositEvent, compute the realizedLpFeePct. Note this means that we are only finding this value on the
     // new deposits that were found in the searchConfig (new from the previous run). This is important as this operation
     // is heavy as there is a fair bit of block number lookups that need to happen. Note this call REQUIRES that the
@@ -302,9 +310,6 @@ export class SpokePoolClient {
         depositEvents.map((event) => this.computeRealizedLpFeePct(event))
       );
 
-      // Populate this dictionary with all events we'll update cache with.
-      const depositsToCache: { [chainId: number]: DepositWithBlock[] } = {};
-
       // First populate deposits mapping with cached event data and then newly fetched data. We assume that cached
       // data always precedes newly fetched data. We also only want to use cached data as old as the original search
       // config's fromBlock.
@@ -312,7 +317,7 @@ export class SpokePoolClient {
         for (const destinationChainId of Object.keys(cachedData.deposits)) {
           cachedData.deposits[destinationChainId].forEach((deposit: DepositWithBlockInCache) => {
             const convertedDeposit = this.convertDepositInCache(deposit);
-            assign(depositsToCache, [convertedDeposit.destinationChainId], [convertedDeposit]);
+            assign(dataToCache.deposits, [convertedDeposit.destinationChainId], [convertedDeposit]);
 
             // If cached deposit is in search config, then save it in client's memory:
             if (
@@ -325,7 +330,7 @@ export class SpokePoolClient {
             }
           });
         }
-        this.log("debug", `Loaded cached deposit events within search config for chain ${this.chainId}`, {
+        this.log("debug", `Using cached deposit events within search config for chain ${this.chainId}`, {
           cachedDeposits: Object.fromEntries(
             Object.keys(this.depositsWithBlockNumbers).map((destinationChainId) => {
               return [destinationChainId, this.depositsWithBlockNumbers[destinationChainId].length];
@@ -348,50 +353,10 @@ export class SpokePoolClient {
           [{ ...deposit, blockNumber: dataForQuoteTime[index].quoteBlock, originBlockNumber: event.blockNumber }]
         );
         assign(
-          depositsToCache,
+          dataToCache.deposits,
           [deposit.destinationChainId],
           [{ ...deposit, blockNumber: dataForQuoteTime[index].quoteBlock, originBlockNumber: event.blockNumber }]
         );
-      }
-
-      // Update cache with deposit events <= latest block to cache.
-      if (latestBlockToCache > 0) {
-        const depositsToCacheBeforeSnapshotBlock = Object.fromEntries(
-          Object.keys(depositsToCache).map((destinationChainId) => {
-            return [
-              destinationChainId,
-              depositsToCache[Number(destinationChainId)]
-                .filter((e) => e.originBlockNumber <= latestBlockToCache)
-                .map((deposit) => {
-                  // Here we convert BigNumber objects to strings before storing into Redis cache
-                  // which only stores strings.
-                  return {
-                    ...deposit,
-                    amount: deposit.amount.toString(),
-                    relayerFeePct: deposit.relayerFeePct.toString(),
-                    realizedLpFeePct: deposit.realizedLpFeePct.toString(),
-                  } as DepositWithBlockInCache;
-                }),
-            ];
-          })
-        );
-        this.log("debug", `Saved cached deposits for chain ${this.chainId}`, {
-          latestBlockToCache,
-          earliestBlock: cachedData !== undefined ? cachedData.earliestCachedBlock : searchConfig.fromBlock,
-          cachedDeposits: Object.keys(depositsToCacheBeforeSnapshotBlock).map((destChain) => {
-            return {
-              destChain,
-              depositsToCacheCount: depositsToCacheBeforeSnapshotBlock[destChain].length,
-            };
-          }),
-        });
-
-        // Save new deposit cache for chain.
-        await this.setDepositDataInCache({
-          earliestBlock: cachedData !== undefined ? cachedData.earliestCachedBlock : searchConfig.fromBlock,
-          latestBlock: latestBlockToCache,
-          deposits: depositsToCacheBeforeSnapshotBlock,
-        });
       }
     }
 
@@ -414,13 +379,10 @@ export class SpokePoolClient {
     if (eventsToQuery.includes("FilledRelay")) {
       const fillEvents = queryResults[eventsToQuery.indexOf("FilledRelay")];
 
-      // Populate this dictionary with all events we'll update cache with.
-      const fillsToCache: FillWithBlock[] = [];
-
       if (cachedData !== undefined) {
         cachedData.fills.forEach((fill: FillWithBlockInCache) => {
           const convertedFill = this.convertFillInCache(fill);
-          fillsToCache.push(convertedFill);
+          dataToCache.fills.push(convertedFill);
 
           if (fill.blockNumber >= searchConfig.fromBlock && fill.blockNumber <= searchConfig.toBlock) {
             this.fills.push(convertedFill);
@@ -428,44 +390,27 @@ export class SpokePoolClient {
             assign(this.depositHashesToFills, [this.getDepositHash(convertedFill)], [convertedFill]);
           }
         });
-        this.log("debug", `Loaded ${cachedData.fills.length} cached fill events for chain ${this.chainId}`);
+        this.log(
+          "debug",
+          `Using ${cachedData.fills.length} cached fill events within search config for chain ${this.chainId}`
+        );
       }
 
       for (const event of fillEvents) {
         this.fills.push(spreadEvent(event));
         this.fillsWithBlockNumbers.push(spreadEventWithBlockNumber(event) as FillWithBlock);
-        fillsToCache.push(spreadEventWithBlockNumber(event) as FillWithBlock);
+        dataToCache.fills.push(spreadEventWithBlockNumber(event) as FillWithBlock);
         const newFill = spreadEvent(event);
         assign(this.depositHashesToFills, [this.getDepositHash(newFill)], [newFill]);
       }
+    }
 
-      if (latestBlockToCache > 0) {
-        const fillsToCacheBeforeSnapshot = fillsToCache
-          .filter((e) => e.blockNumber <= latestBlockToCache)
-          .map((fill) => {
-            return {
-              ...fill,
-              amount: fill.amount.toString(),
-              totalFilledAmount: fill.totalFilledAmount.toString(),
-              fillAmount: fill.fillAmount.toString(),
-              relayerFeePct: fill.relayerFeePct.toString(),
-              appliedRelayerFeePct: fill.appliedRelayerFeePct.toString(),
-              realizedLpFeePct: fill.realizedLpFeePct.toString(),
-            } as FillWithBlockInCache;
-          });
-        this.log("debug", `Saved cached fills for chain ${this.chainId}`, {
-          latestBlockToCache,
-          earliestBlock: cachedData !== undefined ? cachedData.earliestCachedBlock : searchConfig.fromBlock,
-          cachedFills: fillsToCacheBeforeSnapshot.length,
-        });
-
-        // Save new fill cache for chain.
-        await this.setFillDataInCache({
-          earliestBlock: cachedData !== undefined ? cachedData.earliestCachedBlock : searchConfig.fromBlock,
-          latestBlock: latestBlockToCache,
-          fills: fillsToCacheBeforeSnapshot,
-        });
-      }
+    // Update cache with events <= latest block to cache.
+    if (latestBlockToCache > 0) {
+      // Only reset earliest block in cache if there was no existing cached data. We assume that only the most recent
+      // events up until latestBlockToCache are added to the cache.
+      const earliestBlockToCache = cachedData !== undefined ? cachedData.earliestCachedBlock : searchConfig.fromBlock;
+      await this.setDataInCache(earliestBlockToCache, latestBlockToCache, dataToCache);
     }
 
     if (eventsToQuery.includes("EnabledDepositRoute")) {
@@ -526,12 +471,7 @@ export class SpokePoolClient {
   private async getEventsFromCache(
     latestBlockToCache: number,
     searchConfig: EventSearchConfig
-  ): Promise<{
-    deposits: { [destinationChainId: number]: DepositWithBlockInCache[] };
-    fills: FillWithBlockInCache[];
-    earliestCachedBlock: number;
-    latestBlockInCache: number;
-  }> {
+  ): Promise<ExistingCachedData> {
     if (latestBlockToCache > 0) {
       // Invariant: The cached deposit data for this chain should include all events from searchConfig.fromBlock
       // until latestCachedBlock, and latestCachedBlock <= latestBlockToCache. If latestCachedBlock <=
@@ -612,6 +552,72 @@ export class SpokePoolClient {
   private async setFillDataInCache(newData: CachedFillData) {
     if (!this.configStoreClient.redisClient) return;
     await this.configStoreClient.redisClient.set(this.getCacheKey().fills, JSON.stringify(newData));
+  }
+
+  private async setDataInCache(
+    earliestBlockToCache: number,
+    latestBlockToCache: number,
+    newCachedData: { deposits: { [chainId: string]: DepositWithBlock[] }; fills: FillWithBlock[] }
+  ) {
+    const depositsToCacheBeforeSnapshotBlock = Object.fromEntries(
+      Object.keys(newCachedData.deposits).map((destinationChainId) => {
+        return [
+          destinationChainId,
+          newCachedData.deposits[Number(destinationChainId)]
+            .filter((e) => e.originBlockNumber <= latestBlockToCache)
+            .map((deposit) => {
+              // Here we convert BigNumber objects to strings before storing into Redis cache
+              // which only stores strings.
+              return {
+                ...deposit,
+                amount: deposit.amount.toString(),
+                relayerFeePct: deposit.relayerFeePct.toString(),
+                realizedLpFeePct: deposit.realizedLpFeePct.toString(),
+              } as DepositWithBlockInCache;
+            }),
+        ];
+      })
+    );
+
+    const fillsToCacheBeforeSnapshot = newCachedData.fills
+      .filter((e) => e.blockNumber <= latestBlockToCache)
+      .map((fill) => {
+        return {
+          ...fill,
+          amount: fill.amount.toString(),
+          totalFilledAmount: fill.totalFilledAmount.toString(),
+          fillAmount: fill.fillAmount.toString(),
+          relayerFeePct: fill.relayerFeePct.toString(),
+          appliedRelayerFeePct: fill.appliedRelayerFeePct.toString(),
+          realizedLpFeePct: fill.realizedLpFeePct.toString(),
+        } as FillWithBlockInCache;
+      });
+
+    this.log("debug", `Saved cached for chain ${this.chainId}`, {
+      earliestBlock: earliestBlockToCache,
+      latestBlockToCache,
+      cachedFills: fillsToCacheBeforeSnapshot.length,
+      cachedDeposits: Object.keys(depositsToCacheBeforeSnapshotBlock).map((destChain) => {
+        return {
+          destChain,
+          depositsToCacheCount: depositsToCacheBeforeSnapshotBlock[destChain].length,
+        };
+      }),
+    });
+
+    // Save new fill cache for chain.
+    await this.setFillDataInCache({
+      earliestBlock: earliestBlockToCache,
+      latestBlock: latestBlockToCache,
+      fills: fillsToCacheBeforeSnapshot,
+    });
+
+    // Save new deposit cache for chain.
+    await this.setDepositDataInCache({
+      earliestBlock: earliestBlockToCache,
+      latestBlock: latestBlockToCache,
+      deposits: depositsToCacheBeforeSnapshotBlock,
+    });
   }
 
   // Neccessary to use this function because RedisDB can only store strings so we need to stringify the BN objects
