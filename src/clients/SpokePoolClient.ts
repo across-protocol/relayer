@@ -1,4 +1,17 @@
-import { spreadEvent, assign, Contract, BigNumber, EventSearchConfig, Promise, EventFilter } from "../utils";
+import {
+  spreadEvent,
+  assign,
+  Contract,
+  BigNumber,
+  EventSearchConfig,
+  Promise,
+  EventFilter,
+  getFromCache,
+  setInCache,
+  CachedDepositData,
+  CachedFillData,
+  CachedData,
+} from "../utils";
 import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
 import { AcrossConfigStoreClient } from "./ConfigStoreClient";
@@ -13,24 +26,6 @@ import {
   FillWithBlockInCache,
 } from "../interfaces/SpokePool";
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
-interface CachedDepositData {
-  latestBlock: number;
-  earliestBlock: number;
-  deposits: { [destinationChainId: number]: DepositWithBlockInCache[] };
-}
-
-interface CachedFillData {
-  latestBlock: number;
-  earliestBlock: number;
-  fills: FillWithBlockInCache[];
-}
-
-interface ExistingCachedData {
-  deposits: { [destinationChainId: number]: DepositWithBlockInCache[] };
-  fills: FillWithBlockInCache[];
-  latestCachedBlock: number;
-  earliestCachedBlock: number;
-}
 
 export class SpokePoolClient {
   private deposits: { [DestinationChainId: number]: Deposit[] } = {};
@@ -234,11 +229,6 @@ export class SpokePoolClient {
     const depositRouteSearchConfig = { ...searchConfig }; // shallow copy.
     if (!this.isUpdated) depositRouteSearchConfig.fromBlock = this.spokePoolDeploymentBlock;
 
-    this.log("debug", `Updating SpokePool client for chain ${this.chainId}`, {
-      searchConfig,
-      depositRouteSearchConfig,
-      spokePool: this.spokePool.address,
-    });
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
     // Try to reduce the number of web3 requests sent to query FundsDeposited and FilledRelay events since there are
@@ -247,20 +237,27 @@ export class SpokePoolClient {
     // all blocks (cached + newly fetched) older than the "latestBlockToCache".
     const depositEventSearchConfig = { ...searchConfig };
 
-    // Invariant: cachedData is undefined if we don't want to use any events from the cache.
-    // Assumption: cachedData returns all events from searchConfig.fromBlock until cachedData.latestCachedBlock.
-    // In the future, we might need to fetch events between searchConfig.fromBlock until cachedData.firstCachedBlock
-    // but for the sake of simplicity if this situation is true then cachedData will be undefined.
-    const cachedData: ExistingCachedData = await this.getEventsFromCache(latestBlockToCache, searchConfig);
+    // Invariant: cachedData is defined only if the cache contains events from searchConfig.fromBlock until up to
+    // cachedData.latestBlock. The cache might contain events older than searchConfig.fromBlock which we'll filter
+    // before loading in into this client's memory. We will fetch any blocks > cachedData.latestBlock and <= HEAD
+    // from the RPC.
+    const cachedData = await this.getEventsFromCache(latestBlockToCache, searchConfig);
     if (cachedData !== undefined) {
       depositEventSearchConfig.fromBlock = cachedData.latestCachedBlock + 1;
       this.log("debug", `Partially loading deposit and fill event data from cache for chain ${this.chainId}`, {
-        latestCachedBlock: cachedData.latestCachedBlock,
-        earliestCachedBlock: cachedData.earliestCachedBlock,
+        latestBlock: cachedData.latestCachedBlock,
+        earliestBlock: cachedData.earliestCachedBlock,
         newSearchConfigForDepositAndFillEvents: depositEventSearchConfig,
         originalSearchConfigForDepositAndFillEvents: searchConfig,
       });
     }
+
+    this.log("debug", `Updating SpokePool client for chain ${this.chainId}`, {
+      searchConfig,
+      depositRouteSearchConfig,
+      depositEventSearchConfig,
+      spokePool: this.spokePool.address,
+    });
 
     // If caller specifies which events to query, then only query those. This can be used by bots to limit web3
     // requests. Otherwise, default to looking up all events.
@@ -448,7 +445,12 @@ export class SpokePoolClient {
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.isUpdated = true;
-    this.log("debug", `SpokePool client for chain ${this.chainId} updated!`, searchConfig);
+    this.log("debug", `SpokePool client for chain ${this.chainId} updated!`, {
+      searchConfig,
+      depositRouteSearchConfig,
+      depositEventSearchConfig,
+      nextFirstBlockToSearch: this.firstBlockToSearch,
+    });
   }
 
   static getExecutedRefundLeafL2Token(chainId: number, eventL2Token: string) {
@@ -468,10 +470,7 @@ export class SpokePoolClient {
     return this.configStoreClient.hubPoolClient;
   }
 
-  private async getEventsFromCache(
-    latestBlockToCache: number,
-    searchConfig: EventSearchConfig
-  ): Promise<ExistingCachedData> {
+  private async getEventsFromCache(latestBlockToCache: number, searchConfig: EventSearchConfig): Promise<CachedData> {
     if (latestBlockToCache > 0) {
       // Invariant: The cached deposit data for this chain should include all events from searchConfig.fromBlock
       // until latestCachedBlock, and latestCachedBlock <= latestBlockToCache. If latestCachedBlock <=
@@ -492,22 +491,22 @@ export class SpokePoolClient {
         return undefined;
       if (earliestCachedBlock > latestCachedBlock) return undefined;
 
-      // If `latestCachedBlock > latestBlockToCache` then the above invariant is violated
+      // If `latestBlock > latestBlockToCache` then the above invariant is violated
       // and we're storing events too close to HEAD for this chain in the cache, so we'll reset the cache and use
       // no events from it.
       if (latestCachedBlock > latestBlockToCache) return undefined;
 
-      // If searchConfig.fromBlock < earliestCachedBlock then there are missing events. Ideally we should be fetching these
+      // If searchConfig.fromBlock < earliestBlock then there are missing events. Ideally we should be fetching these
       // events but this case should be rare given that the intended use of this client is to store blocks from all
       // time until latestBlockToCache (a number that should only increase over time) so I'll leave this as a TODO
       // and force the client to fetch ALL events if this edge case is hit.
       if (earliestCachedBlock > searchConfig.fromBlock) return undefined;
 
-      // At this point, since `latestCachedBlock >= earliestCachedBlock` and `earliestCachedBlock <= searchConfig.fromBlock`,
-      // we know we can load events from the cache from `searchConfig.fromBlock` until `latestCachedBlock`. Any blocks
-      // between `latestCachedBlock` until `searchConfig.toBlock` we'll get from an RPC.
+      // At this point, since `latestBlock >= earliestBlock` and `earliestBlock <= searchConfig.fromBlock`,
+      // we know we can load events from the cache from `searchConfig.fromBlock` until `latestBlock`. Any blocks
+      // between `latestBlock` until `searchConfig.toBlock` we'll get from an RPC.
 
-      // However, we need to do one last check if `latestCachedBlock` < `searchConfig.fromBlock`, which would mean
+      // However, we need to do one last check if `latestBlock` < `searchConfig.fromBlock`, which would mean
       // that there is no point in loading anything from the cache since all cached events are older than the oldest
       // block we are interested in.
       if (latestCachedBlock < searchConfig.fromBlock) return undefined;
@@ -531,27 +530,23 @@ export class SpokePoolClient {
   }
 
   private async getDepositDataFromCache(): Promise<CachedDepositData> {
-    if (!this.configStoreClient.redisClient) return {};
-    const result = JSON.parse(await this.configStoreClient.redisClient.get(this.getCacheKey().deposits));
+    const result = await getFromCache(this.getCacheKey().deposits, this.configStoreClient.redisClient);
     if (result === null) return {};
-    else return result;
+    else return JSON.parse(result);
   }
 
   private async getFillDataFromCache(): Promise<CachedFillData> {
-    if (!this.configStoreClient.redisClient) return {};
-    const result = JSON.parse(await this.configStoreClient.redisClient.get(this.getCacheKey().fills));
+    const result = await getFromCache(this.getCacheKey().fills, this.configStoreClient.redisClient);
     if (result === null) return {};
-    else return result;
+    else return JSON.parse(result);
   }
 
   private async setDepositDataInCache(newData: CachedDepositData) {
-    if (!this.configStoreClient.redisClient) return;
-    await this.configStoreClient.redisClient.set(this.getCacheKey().deposits, JSON.stringify(newData));
+    await setInCache(this.getCacheKey().deposits, JSON.stringify(newData), this.configStoreClient.redisClient);
   }
 
   private async setFillDataInCache(newData: CachedFillData) {
-    if (!this.configStoreClient.redisClient) return;
-    await this.configStoreClient.redisClient.set(this.getCacheKey().fills, JSON.stringify(newData));
+    await setInCache(this.getCacheKey().fills, JSON.stringify(newData), this.configStoreClient.redisClient);
   }
 
   private async setDataInCache(
@@ -595,7 +590,7 @@ export class SpokePoolClient {
 
     this.log("debug", `Saved cached for chain ${this.chainId}`, {
       earliestBlock: earliestBlockToCache,
-      latestBlockToCache,
+      latestBlock: latestBlockToCache,
       cachedFills: fillsToCacheBeforeSnapshot.length,
       cachedDeposits: Object.keys(depositsToCacheBeforeSnapshotBlock).map((destChain) => {
         return {

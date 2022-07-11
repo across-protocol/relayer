@@ -20,22 +20,6 @@ export interface Deposit {
 export interface DepositWithBlock extends Deposit, SortableEvent {
   originBlockNumber: number;
 }
-
-export interface DepositWithBlockInCache extends SortableEvent {
-  depositId: number;
-  depositor: string;
-  recipient: string;
-  originToken: string;
-  amount: string;
-  originChainId: number;
-  destinationChainId: number;
-  relayerFeePct: string;
-  quoteTimestamp: number;
-  realizedLpFeePct: string;
-  destinationToken: string;
-  originBlockNumber: number;
-  speedUpSignature?: string | undefined;
-}
 export interface Fill {
   amount: BigNumber;
   totalFilledAmount: BigNumber;
@@ -55,24 +39,6 @@ export interface Fill {
 }
 
 export interface FillWithBlock extends Fill, SortableEvent {}
-
-export interface FillWithBlockInCache extends SortableEvent {
-  amount: string;
-  totalFilledAmount: string;
-  fillAmount: string;
-  repaymentChainId: number;
-  originChainId: number;
-  relayerFeePct: string;
-  appliedRelayerFeePct: string;
-  realizedLpFeePct: string;
-  depositId: number;
-  destinationToken: string;
-  relayer: string;
-  depositor: string;
-  recipient: string;
-  isSlowRelay: boolean;
-  destinationChainId: number;
-}
 
 export interface SpeedUp {
   depositor: string;
