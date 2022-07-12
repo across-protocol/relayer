@@ -190,6 +190,11 @@ export class SpokePoolClient {
 
   async update(eventsToQuery?: string[]) {
     if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
+    const { NODE_MAX_CONCURRENCY } = process.env;
+    // Default to a max concurrency of 1000 requests per node.
+    const nodeMaxConcurrency = Number(
+      process.env[`NODE_MAX_CONCURRENCY_${this.chainId}`] || NODE_MAX_CONCURRENCY || "1000"
+    );
 
     this.latestBlockNumber = await this.spokePool.provider.getBlockNumber();
     const searchConfig = {
@@ -250,7 +255,7 @@ export class SpokePoolClient {
         async (event) => {
           return this.computeRealizedLpFeePct(event);
         },
-        { concurrency: 1000 }
+        { concurrency: nodeMaxConcurrency }
       );
 
       for (const [index, event] of depositEvents.entries()) {
