@@ -5,7 +5,7 @@ import { BaseAdapter, polygonL1BridgeInterface, polygonL2BridgeInterface } from 
 import { polygonL1RootChainManagerInterface, atomicDepositorInterface } from "./";
 
 // ether bridge = 0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30
-// erc20 bridfge = 0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf
+// erc20 bridge = 0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf
 // matic bridge = 0x401f6c983ea34274ec46f84d70b31c151321188b
 
 // When bridging ETH to Polygon we MUST send ETH which is then wrapped in the bridge to WETH. We are unable to send WETH
@@ -37,6 +37,13 @@ const tokenToBridge = {
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // WBTC
+  "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828": {
+    l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
+    l2TokenAddress: "0x3066818837c5e6ed6601bd5a91b0762877a6b731",
+    l1Method: "LockedERC20",
+    l1AmountProp: "amount",
+    l2AmountProp: "value",
+  }, // UMA
   "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": {
     l1BridgeAddress: "0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30",
     l2TokenAddress: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619",

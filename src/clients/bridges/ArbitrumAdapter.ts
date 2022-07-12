@@ -4,11 +4,13 @@ import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
 import { arbitrumL2Erc20GatewayInterface, arbitrumL1Erc20GatewayInterface } from "./ContractInterfaces";
 
+// These values are obtained from Arbitrum's gateway router contract.
 const l1Gateways = {
   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "0xcEe284F754E854890e311e3280b767F80797180d", // USDC
   "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "0xd92023E9d9911199a6711321D1277285e6d4e2db", // WETH
   "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0xd3b5b60020504bc3489d6949d545893982ba3011", // DAI
   "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "0xa3a7b6f88361f48403514059f1f16c8e78d60eec", // WBTC
+  "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828": "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // UMA
 };
 
 const l1GatewayRouter = "0x72ce9c846789fdb6fc1f34ac4ad25dd9ef7031ef";
@@ -20,6 +22,7 @@ const l2Gateways = {
   "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "0x6c411aD3E74De3E7Bd422b94A27770f5B86C623B", // WETH
   "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0x467194771dae2967aef3ecbedd3bf9a310c76c65", // DAI
   "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "0x09e9222e96e7b4ae2a407b98d48e330053351eee", // WBTC
+  "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828": "0x09e9222e96e7b4ae2a407b98d48e330053351eee", // UMA
 };
 
 // TODO: replace these numbers using the arbitrum SDK. these are bad values that mean we will over pay but transactions
