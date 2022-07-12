@@ -56,7 +56,7 @@ export async function validate(_logger: winston.Logger) {
 
   logger[startupLogLevel(config)]({
     at: "RootBundleValidator",
-    message: `Found preceding root bundle`,
+    message: "Found preceding root bundle",
     transactionHash: precedingProposeRootBundleEvent.transactionHash,
   });
 

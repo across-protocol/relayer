@@ -102,7 +102,7 @@ export class ProfitClient {
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", l1Tokens });
     const prices = await Promise.allSettled(l1Tokens.map((l1Token: L1Token) => this.coingeckoPrice(l1Token.address)));
 
-    let errors = [];
+    const errors = [];
     for (const [index, priceResponse] of prices.entries()) {
       if (priceResponse.status === "rejected") errors.push(l1Tokens[index]);
       else this.tokenPrices[l1Tokens[index].address] = toBNWei(priceResponse.value[1]);

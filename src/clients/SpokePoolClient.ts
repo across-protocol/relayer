@@ -30,7 +30,7 @@ export class SpokePoolClient {
   private tokensBridged: TokensBridged[] = [];
   private rootBundleRelays: RootBundleRelayWithBlock[] = [];
   private relayerRefundExecutions: RelayerRefundExecutionWithBlock[] = [];
-  public isUpdated: boolean = false;
+  public isUpdated = false;
   public firstBlockToSearch: number;
   public latestBlockNumber: number;
   public fillsWithBlockNumbers: FillWithBlock[] = [];
@@ -79,7 +79,7 @@ export class SpokePoolClient {
     return this.tokensBridged;
   }
 
-  getDepositRoutes(): { [originToken: string]: { [DestinationChainId: number]: Boolean } } {
+  getDepositRoutes(): { [originToken: string]: { [DestinationChainId: number]: boolean } } {
     return this.depositRoutes;
   }
 

@@ -5,15 +5,35 @@ module.exports = {
     mocha: true,
     node: true,
   },
-  plugins: ["@typescript-eslint"],
-  extends: ["standard", "plugin:prettier/recommended", "plugin:node/recommended"],
+  plugins: ["node", "prettier", "@typescript-eslint", "mocha"],
+  extends: [
+    "plugin:prettier/recommended",
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended",
+    "plugin:@typescript-eslint/eslint-recommended",
+    "plugin:node/recommended",
+  ],
   parser: "@typescript-eslint/parser",
   parserOptions: {
     ecmaVersion: 12,
   },
   rules: {
-    "node/no-unsupported-features/es-syntax": ["error", { ignores: ["modules"] }],
+    "prettier/prettier": ["warn"],
+    indent: 0, // avoid conflict with prettier's indent system
+    "linebreak-style": ["error", "unix"],
+    quotes: ["error", "double", { avoidEscape: true }],
+    semi: ["error", "always"],
+    "spaced-comment": ["error", "always", { exceptions: ["-", "+"] }],
+    "no-console": 0,
     camelcase: "off",
     "@typescript-eslint/camelcase": "off",
+    "mocha/no-exclusive-tests": "error",
+    "@typescript-eslint/no-var-requires": "off",
+    "node/no-unsupported-features/es-syntax": ["error", { ignores: ["modules"] }],
+  },
+  settings: {
+    node: {
+      tryExtensions: [".js", ".ts"],
+    },
   },
 };

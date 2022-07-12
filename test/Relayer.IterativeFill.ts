@@ -47,7 +47,7 @@ describe("Relayer: Iterative fill", async function () {
 
     await addLiquidity(relayer, hubPool, l1Token, amountToLp);
 
-    let spokePoolClients = {};
+    const spokePoolClients = {};
     spokePools.forEach((spokePool) => {
       spokePoolClients[spokePool.spokePoolClient.chainId] = spokePool.spokePoolClient;
     });

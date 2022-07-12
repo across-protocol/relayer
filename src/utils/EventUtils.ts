@@ -9,7 +9,7 @@ const retrySleepTime = 10;
 export function spreadEvent(event: Event) {
   const keys = Object.keys(event.args).filter((key: string) => isNaN(+key)); // Extract non-numeric keys.
 
-  let returnedObject: any = {};
+  const returnedObject: any = {};
   keys.forEach((key: string) => (returnedObject[key] = event.args[key]));
 
   // ID information, if included in an event, should be cast to a number rather than a BigNumber.

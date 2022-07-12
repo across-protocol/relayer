@@ -111,7 +111,7 @@ export async function getFinalizableTransactions(
         else {
           logger.debug({
             at: "PolygonFinalizer",
-            message: `Exit will fail for unknown reason`,
+            message: "Exit will fail for unknown reason",
             err,
           });
           return { status: POLYGON_MESSAGE_STATUS.UNKNOWN_EXIT_FAILURE };
@@ -122,7 +122,7 @@ export async function getFinalizableTransactions(
 
   logger.debug({
     at: "PolygonFinalizer",
-    message: `Polygon message statuses`,
+    message: "Polygon message statuses",
     statusesGrouped: {
       ...groupObjectCountsByProp(exitStatus, (message: { status: string }) => message.status),
       NOT_CHECKPOINTED: tokensBridged.map((_, i) => !isCheckpointed[i]).filter((x) => x === true).length,

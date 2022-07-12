@@ -108,7 +108,7 @@ export class TokenClient {
       });
     });
     if (tokensToApprove.length === 0) {
-      this.logger.debug({ at: "TokenBalanceClient", message: `All token approvals set for non-zero balances` });
+      this.logger.debug({ at: "TokenBalanceClient", message: "All token approvals set for non-zero balances" });
       return;
     }
 
@@ -122,7 +122,7 @@ export class TokenClient {
         `to spend ${await contract.symbol()} ${etherscanLink(token, chainId)} on ${getNetworkName(chainId)}. ` +
         `tx: ${etherscanLink(tx.hash, chainId)}\n`;
     }
-    this.logger.info({ at: "TokenBalanceClient", message: `Approved whitelisted tokens! 💰`, mrkdwn });
+    this.logger.info({ at: "TokenBalanceClient", message: "Approved whitelisted tokens! 💰", mrkdwn });
   }
 
   async setBondTokenAllowance() {
@@ -140,8 +140,8 @@ export class TokenClient {
         ` - Approved HubPool ${etherscanLink(this.hubPoolClient.hubPool.address, 1)} ` +
         `to spend ${await this.bondToken.symbol()} ${etherscanLink(this.bondToken.address, 1)}. ` +
         `tx ${etherscanLink(tx.hash, 1)}\n`;
-      this.logger.info({ at: "hubPoolClient", message: `Approved bond tokens! 💰`, mrkdwn });
-    } else this.logger.debug({ at: "hubPoolClient", message: `Bond token approval set` });
+      this.logger.info({ at: "hubPoolClient", message: "Approved bond tokens! 💰", mrkdwn });
+    } else this.logger.debug({ at: "hubPoolClient", message: "Bond token approval set" });
   }
 
   async update() {

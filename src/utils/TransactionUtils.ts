@@ -75,7 +75,14 @@ async function getPolygonPriorityFee(): Promise<{
   blockNumber: number;
 }> {
   const res = await fetch("https://gasstation-mainnet.matic.network");
-  return await res.json();
+  return (await res.json()) as {
+    safeLow: number;
+    standard: number;
+    fast: number;
+    fastest: number;
+    blockTime: number;
+    blockNumber: number;
+  };
 }
 
 function scaleByNumber(amount: ethers.BigNumber, scaling: number) {

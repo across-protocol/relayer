@@ -20,7 +20,7 @@ export class HubPoolClient {
   } = {};
   private pendingRootBundle: PendingRootBundle;
 
-  public isUpdated: boolean = false;
+  public isUpdated = false;
   public firstBlockToSearch: number;
   public latestBlockNumber: number;
   public currentTime: number;

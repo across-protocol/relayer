@@ -501,7 +501,7 @@ export class Monitor {
     return mrkdwn + "\n";
   }
 
-  formatKnownTransfers(transfers: TokenTransfer[], decimals: number, transferType: String) {
+  formatKnownTransfers(transfers: TokenTransfer[], decimals: number, transferType: string) {
     if (transfers.length === 0) return "";
 
     const totalAmount = this.getTotalTransferAmount(transfers);

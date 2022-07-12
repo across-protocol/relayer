@@ -322,7 +322,7 @@ export class InventoryClient {
             `${getNetworkName(chainId)} which is ` +
             `${formatWei(tokenDistributionPerL1Token[l1Token][chainId].mul(100))}% of the total ` +
             `${formatter(this.getCumulativeBalance(l1Token).toString())} ${symbol}.` +
-            ` This chain's pending L1->L2 transfer amount is ` +
+            " This chain's pending L1->L2 transfer amount is " +
             `${formatter(
               this.crossChainTransferClient
                 .getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
@@ -418,7 +418,7 @@ export class InventoryClient {
         mrkdwn += `*Insufficient amount to unwrap WETH on ${getNetworkName(chainId)}:*\n`;
         const formatter = createFormatFunction(2, 4, false, 18);
         mrkdwn +=
-          `- WETH unwrap blocked. Required to send ` +
+          "- WETH unwrap blocked. Required to send " +
           `${formatter(unexecutedUnwraps[chainId])} but relayer has ` +
           `${formatter(
             this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Weth, chainId))
@@ -505,7 +505,7 @@ export class InventoryClient {
     return false;
   }
 
-  log(message: string, data?: any, level: string = "debug") {
+  log(message: string, data?: any, level = "debug") {
     if (this.logger) this.logger[level]({ at: "InventoryClient", message, ...data });
   }
 }
