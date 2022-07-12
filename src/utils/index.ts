@@ -32,6 +32,7 @@ export * from "./GckmsUtils";
 export * from "./TimeUtils";
 export * from "./RedisUtils";
 export * from "./TypeGuards";
+export * from "./Help";
 
 export { ZERO_ADDRESS, MAX_SAFE_ALLOWANCE, MAX_UINT_VAL, replaceAddressCase } from "@uma/common";
 
