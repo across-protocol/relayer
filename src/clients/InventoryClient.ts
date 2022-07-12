@@ -57,6 +57,12 @@ export class InventoryClient {
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
     const distribution = {};
     this.getEnabledChains().forEach((chainId) => {
+      // Skip if there's no configuration for l1Token on chainId. This is the case for BOBA and BADGER
+      // as they're not present on all L2s.
+      if (this.inventoryConfig.tokenConfig[l1Token][chainId] === undefined) {
+        return;
+      }
+
       if (cumulativeBalance.gt(0))
         distribution[chainId] = this.getBalanceOnChainForL1Token(chainId, l1Token).mul(scalar).div(cumulativeBalance);
     });
