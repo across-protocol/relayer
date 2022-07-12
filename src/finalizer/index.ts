@@ -55,7 +55,7 @@ export async function finalize(
       );
       const finalizableMessages = await getFinalizableMessages(logger, olderTokensBridgedEvents, hubSigner);
       for (const l2Message of finalizableMessages) {
-        await finalizeArbitrum(logger, l2Message.message, l2Message.proofInfo, l2Message.info, hubPoolClient);
+        await finalizeArbitrum(logger, l2Message.message, l2Message.info, hubPoolClient);
       }
     } else if (chainId === 137) {
       const posClient = await getPosClient(hubSigner);
