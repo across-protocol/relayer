@@ -41,7 +41,7 @@ export class InventoryClient {
 
   // Get the balance of a given l1 token on a target chain, considering any outstanding cross chain transfers as a virtual balance on that chain.
   getBalanceOnChainForL1Token(chainId: number | string, l1Token: string): BigNumber {
-    if (this.inventoryConfig.tokenConfig[l1Token][Number(chainId)] === undefined) {
+    if (this.inventoryConfig.tokenConfig[l1Token][String(chainId)] === undefined) {
       return toBN(0);
     }
 
@@ -229,7 +229,7 @@ export class InventoryClient {
         for (const chainId of this.getEnabledL2Chains()) {
           // Skip if there's no configuration for l1Token on chainId. This is the case for BOBA and BADGER
           // as they're not present on all L2s.
-          if (this.inventoryConfig.tokenConfig[l1Token][Number(chainId)] === undefined) {
+          if (this.inventoryConfig.tokenConfig[l1Token][String(chainId)] === undefined) {
             continue;
           }
 
