@@ -208,6 +208,11 @@ export class SpokePoolClient {
   // from an RPC. The combined blocks will then be saved back into the cache up to `latestBlockToCache`.
   async update(eventsToQuery?: string[], latestBlockToCache = 0) {
     if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
+    const { NODE_MAX_CONCURRENCY } = process.env;
+    // Default to a max concurrency of 1000 requests per node.
+    const nodeMaxConcurrency = Number(
+      process.env[`NODE_MAX_CONCURRENCY_${this.chainId}`] || NODE_MAX_CONCURRENCY || "1000"
+    );
 
     this.latestBlockNumber = await this.spokePool.provider.getBlockNumber();
     const searchConfig = {
@@ -271,8 +276,7 @@ export class SpokePoolClient {
     });
 
     const queryResults = await Promise.all(
-      eventSearchConfigs.map((config) => paginatedEventQuery(this.spokePool, config.filter, config.searchConfig)),
-      { concurrency: 2 }
+      eventSearchConfigs.map((config) => paginatedEventQuery(this.spokePool, config.filter, config.searchConfig))
     );
 
     if (eventsToQuery.includes("TokensBridged"))
@@ -296,8 +300,12 @@ export class SpokePoolClient {
         this.log("debug", `Fetching realizedLpFeePct for ${depositEvents.length} deposits on chain ${this.chainId}`, {
           numDeposits: depositEvents.length,
         });
-      const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number }[] = await Promise.all(
-        depositEvents.map((event) => this.computeRealizedLpFeePct(event))
+      const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number }[] = await Promise.map(
+        depositEvents,
+        async (event) => {
+          return this.computeRealizedLpFeePct(event);
+        },
+        { concurrency: nodeMaxConcurrency }
       );
 
       // First populate deposits mapping with cached event data and then newly fetched data. We assume that cached
