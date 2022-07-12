@@ -41,7 +41,8 @@ export class InventoryClient {
 
   // Get the balance of a given l1 token on a target chain, considering any outstanding cross chain transfers as a virtual balance on that chain.
   getBalanceOnChainForL1Token(chainId: number | string, l1Token: string): BigNumber {
-    if (this.inventoryConfig.tokenConfig[l1Token][String(chainId)] === undefined) {
+    // We want to skip any l2 token that is not present in the inventory config.
+    if (String(chainId) !== "1" && this.inventoryConfig.tokenConfig[l1Token][String(chainId)] === undefined) {
       return toBN(0);
     }
 
