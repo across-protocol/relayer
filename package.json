@@ -31,7 +31,7 @@
     "hardhat-deploy": "^0.11.11",
     "lodash": "^4.17.21",
     "minimist": "^1.2.6",
-    "node-fetch": "2.6.6",
+    "node-fetch": "2.6.7",
     "redis4": "npm:redis@^4.1.0",
     "ts-node": "^10.1.0",
     "winston": "^3.8.1"
