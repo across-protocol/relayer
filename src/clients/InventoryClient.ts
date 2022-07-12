@@ -223,6 +223,12 @@ export class InventoryClient {
         if (cumulativeBalance.eq(0)) continue;
 
         for (const chainId of this.getEnabledL2Chains()) {
+          // Skip if there's no configuration for l1Token on chainId. This is the case for BOBA and BADGER
+          // as they're not present on all L2s.
+          if (this.inventoryConfig.tokenConfig[l1Token][chainId] === undefined) {
+            continue;
+          }
+
           const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId);
           const thresholdPct = toBN(this.inventoryConfig.tokenConfig[l1Token][chainId].thresholdPct);
           if (currentAllocPct.lt(thresholdPct)) {
