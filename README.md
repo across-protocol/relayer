@@ -25,7 +25,9 @@ redis-server
 ```
 
 When running the bot, be sure to set the following environment variable
+
 ```sh
 REDIS_URL=redis://localhost:6379
 ```
+
 Check out [this guide](https://docs.across.to/v2/developers/running-a-relayer) for detailed bot instructions!
