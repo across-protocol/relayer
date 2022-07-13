@@ -15,4 +15,17 @@ yarn test
 
 # How to run a relayer using this code
 
-Check out [this guide](https://docs.across.to/v2/developers/running-a-relayer)!
+First, be sure to [install RedisDB](https://redis.io/docs/getting-started/installation/), an in-memory storage layer that will significantly speed up bot
+runs after the first time in which it fills the database.
+
+Start the `redis` server in a separate window from the bot:
+
+```sh
+redis-server
+```
+
+When running the bot, be sure to set the following environment variable
+```sh
+REDIS_URL=redis://localhost:6379
+```
+Check out [this guide](https://docs.across.to/v2/developers/running-a-relayer) for detailed bot instructions!
