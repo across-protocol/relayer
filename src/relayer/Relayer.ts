@@ -148,12 +148,13 @@ export class Relayer {
       Object.keys(unprofitableDeposits[chainId]).forEach((depositId) => {
         const { deposit, fillAmount } = unprofitableDeposits[chainId][depositId];
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
-        const formatFunction = createFormatFunction(2, 4, false, decimals);
+        const amountFormatFunction = createFormatFunction(2, 4, false, decimals);
+        const feeFormatFunction = createFormatFunction(2, 4, false, 18);
         mrkdwn +=
-          `- DepositId ${deposit.depositId} of amount ${formatFunction(deposit.amount)} ${symbol}` +
-          ` with a relayerFeePct ${formatFunction(deposit.relayerFeePct)} being relayed from ` +
+          `- DepositId ${deposit.depositId} of amount ${amountFormatFunction(deposit.amount)} ${symbol}` +
+          ` with a relayerFeePct ${feeFormatFunction(deposit.relayerFeePct)} being relayed from ` +
           `${getNetworkName(deposit.originChainId)} to ${getNetworkName(deposit.destinationChainId)}` +
-          ` and an unfilled amount of  ${formatFunction(fillAmount)} ${symbol} is unprofitable!\n`;
+          ` and an unfilled amount of  ${amountFormatFunction(fillAmount)} ${symbol} is unprofitable!\n`;
       });
     });
 
