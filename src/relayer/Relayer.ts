@@ -1,4 +1,4 @@
-import {BigNumber, winston, buildFillRelayProps, getNetworkName, getUnfilledDeposits, getCurrentTime} from "../utils";
+import { BigNumber, winston, buildFillRelayProps, getNetworkName, getUnfilledDeposits, getCurrentTime } from "../utils";
 import { createFormatFunction, etherscanLink, toBN } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 
