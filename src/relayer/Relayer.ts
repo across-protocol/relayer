@@ -148,13 +148,12 @@ export class Relayer {
       Object.keys(unprofitableDeposits[chainId]).forEach((depositId) => {
         const { deposit, fillAmount } = unprofitableDeposits[chainId][depositId];
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
-        const amountFormatFunction = createFormatFunction(2, 4, false, decimals);
-        const feeFormatFunction = createFormatFunction(2, 4, false, 18);
+        const formatFunction = createFormatFunction(2, 4, false, decimals);
         mrkdwn +=
-          `- DepositId ${deposit.depositId} of amount ${amountFormatFunction(deposit.amount)} ${symbol}` +
-          ` with a relayerFeePct ${feeFormatFunction(deposit.relayerFeePct)} being relayed from ` +
+          `- DepositId ${deposit.depositId} of amount ${formatFunction(deposit.amount)} ${symbol}` +
+          ` with a relayerFeePct ${this.formatFeePct(deposit.relayerFeePct)} being relayed from ` +
           `${getNetworkName(deposit.originChainId)} to ${getNetworkName(deposit.destinationChainId)}` +
-          ` and an unfilled amount of  ${amountFormatFunction(fillAmount)} ${symbol} is unprofitable!\n`;
+          ` and an unfilled amount of  ${formatFunction(fillAmount)} ${symbol} is unprofitable!\n`;
       });
     });
 
@@ -183,7 +182,11 @@ export class Relayer {
       `with depositor ${etherscanLink(deposit.depositor, deposit.originChainId)}. ` +
       `Fill amount of ${createFormatFunction(2, 4, false, decimals)(fillAmount.toString())} ${symbol} with ` +
       `relayerFee ${createFormatFunction(2, 4, false, 18)(toBN(deposit.relayerFeePct).mul(100).toString())}% & ` +
-      `realizedLpFee ${createFormatFunction(2, 4, false, 18)(toBN(deposit.realizedLpFeePct).mul(100).toString())}%. `
+      `realizedLpFee ${this.formatFeePct(deposit.realizedLpFeePct)}%. `
     );
+  }
+
+  private formatFeePct(relayerFeePct: BigNumber): string {
+    return createFormatFunction(2, 4, false, 18)(toBN(relayerFeePct).mul(100).toString());
   }
 }
