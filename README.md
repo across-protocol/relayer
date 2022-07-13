@@ -5,9 +5,6 @@ This code implements [UMIP-157](https://github.com/UMAprotocol/UMIPs/blob/master
 # Installation
 
 ```sh
-# clone
-gh repo clone across-protocol/relayer-v2
-
 # build
 cd relayer-v2
 yarn
