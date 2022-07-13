@@ -1,8 +1,10 @@
-import { BigNumber, winston, buildFillRelayProps, getNetworkName, getUnfilledDeposits } from "../utils";
+import {BigNumber, winston, buildFillRelayProps, getNetworkName, getUnfilledDeposits, getCurrentTime} from "../utils";
 import { createFormatFunction, etherscanLink, toBN } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 
 import { Deposit } from "../interfaces/SpokePool";
+
+const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
 export class Relayer {
   constructor(
@@ -144,20 +146,31 @@ export class Relayer {
 
     let mrkdwn = "";
     Object.keys(unprofitableDeposits).forEach((chainId) => {
-      mrkdwn += `*Unprofitable deposits on ${getNetworkName(chainId)}:*\n`;
+      let depositMrkdwn = "";
       Object.keys(unprofitableDeposits[chainId]).forEach((depositId) => {
         const { deposit, fillAmount } = unprofitableDeposits[chainId][depositId];
+        // Skip notifying if the unprofitable fill happened too long ago to avoid spamming.
+        if (deposit.quoteTimestamp + UNPROFITABLE_DEPOSIT_NOTICE_PERIOD < getCurrentTime()) {
+          return;
+        }
+
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
         const formatFunction = createFormatFunction(2, 4, false, decimals);
-        mrkdwn +=
+        depositMrkdwn +=
           `- DepositId ${deposit.depositId} of amount ${formatFunction(deposit.amount)} ${symbol}` +
           ` with a relayerFeePct ${formatFunction(deposit.relayerFeePct)} being relayed from ` +
           `${getNetworkName(deposit.originChainId)} to ${getNetworkName(deposit.destinationChainId)}` +
           ` and an unfilled amount of  ${formatFunction(fillAmount)} ${symbol} is unprofitable!\n`;
       });
+
+      if (depositMrkdwn) {
+        mrkdwn += `*Unprofitable deposits on ${getNetworkName(chainId)}:*\n` + depositMrkdwn;
+      }
     });
 
-    this.logger.warn({ at: "Relayer", message: "Not relaying unprofitable deposits 🙅‍♂️!", mrkdwn });
+    if (mrkdwn) {
+      this.logger.warn({ at: "Relayer", message: "Not relaying unprofitable deposits 🙅‍♂️!", mrkdwn });
+    }
   }
 
   private constructRelayFilledMrkdwn(deposit: Deposit, repaymentChainId: number, fillAmount: BigNumber): string {
