@@ -38,7 +38,7 @@ export class Relayer {
       // If relayerTokens is an empty list, we'll assume that all tokens are supported.
       const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(deposit.originToken, deposit.originChainId);
       if (this.relayerTokens.length > 0 && !this.relayerTokens.includes(l1Token.address)) {
-        this.logger.debug({ at: "Relayer", message: "Skipping deposit for unwhitelisted token", deposit });
+        this.logger.debug({ at: "Relayer", message: "Skipping deposit for unwhitelisted token", deposit, l1Token });
         continue;
       }
 
