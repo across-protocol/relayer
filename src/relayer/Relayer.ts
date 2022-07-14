@@ -12,8 +12,8 @@ export class Relayer {
     readonly relayerAddress: string,
     readonly logger: winston.Logger,
     readonly clients: RelayerClients,
-    readonly relayerTokens: string[] = [],
-    readonly maxUnfilledDepositLookBack: { [chainId: number]: number } = {}
+    readonly maxUnfilledDepositLookBack: { [chainId: number]: number } = {},
+    readonly relayerTokens: string[] = []
   ) {}
 
   async checkForUnfilledDepositsAndFill(sendSlowRelays = true) {
