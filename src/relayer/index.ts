@@ -18,8 +18,8 @@ export async function runRelayer(_logger: winston.Logger): Promise<void> {
       baseSigner.address,
       logger,
       relayerClients,
-      config.relayerTokens,
-      config.maxRelayerUnfilledDepositLookBack
+      config.maxRelayerUnfilledDepositLookBack,
+      config.relayerTokens
     );
 
     logger.debug({ at: "Relayer#index", message: "Relayer components initialized. Starting execution loop" });
