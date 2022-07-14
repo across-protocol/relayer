@@ -23,9 +23,11 @@ export class Relayer {
       (a, b) =>
         a.unfilledAmount.mul(a.deposit.relayerFeePct).lt(b.unfilledAmount.mul(b.deposit.relayerFeePct)) ? 1 : -1
     );
-    if (unfilledDeposits.length > 0)
-      this.logger.debug({ at: "Relayer", message: "Filling deposits", number: unfilledDeposits.length });
-    else this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
+    if (unfilledDeposits.length > 0) {
+      this.logger.debug({ at: "Relayer", message: "Unfilled deposits found", number: unfilledDeposits.length });
+    } else {
+      this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
+    }
     // Iterate over all unfilled deposits. For each unfilled deposit: a) check that the token balance client has enough
     // balance to fill the unfilled amount. b) the fill is profitable. If both hold true then fill the unfilled amount.
     // If not enough ballance add the shortfall to the shortfall tracker to produce an appropriate log. If the deposit
@@ -36,6 +38,7 @@ export class Relayer {
       // If relayerTokens is an empty list, we'll assume that all tokens are supported.
       const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(deposit.originToken, deposit.originChainId);
       if (this.relayerTokens.length > 0 && !this.relayerTokens.includes(l1Token.address)) {
+        this.logger.debug({ at: "Relayer", message: "Skipping deposit for unwhitelisted token", deposit });
         continue;
       }
 
