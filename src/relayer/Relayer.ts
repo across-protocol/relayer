@@ -12,18 +12,17 @@ export class Relayer {
     readonly relayerAddress: string,
     readonly logger: winston.Logger,
     readonly clients: RelayerClients,
-    readonly config: RelayerConfig = undefined
+    readonly relayerTokens: string[] = [],
+    readonly maxUnfilledDepositLookBack: { [chainId: number]: number } = {}
   ) {}
 
   async checkForUnfilledDepositsAndFill(sendSlowRelays = true) {
     // Fetch all unfilled deposits, order by total earnable fee.
     // TODO: Note this does not consider the price of the token which will be added once the profitability module is
     // added to this bot.
-    const unfilledDeposits = getUnfilledDeposits(
-      this.clients.spokePoolClients,
-      this.config ? this.config.maxRelayerUnfilledDepositLookBack : {}
-    ).sort((a, b) =>
-      a.unfilledAmount.mul(a.deposit.relayerFeePct).lt(b.unfilledAmount.mul(b.deposit.relayerFeePct)) ? 1 : -1
+    const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients, this.maxUnfilledDepositLookBack).sort(
+      (a, b) =>
+        a.unfilledAmount.mul(a.deposit.relayerFeePct).lt(b.unfilledAmount.mul(b.deposit.relayerFeePct)) ? 1 : -1
     );
     if (unfilledDeposits.length > 0)
       this.logger.debug({ at: "Relayer", message: "Filling deposits", number: unfilledDeposits.length });
@@ -37,12 +36,9 @@ export class Relayer {
       // Skip any L1 tokens that are not specified in the config.
       // If relayerTokens is an empty list, we'll assume that all tokens are supported.
       const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(deposit.originToken, deposit.originChainId);
-      if (
-        this.config !== undefined &&
-        this.config.relayerTokens.length > 0 &&
-        !this.config.relayerTokens.includes(l1Token.address)
-      )
+      if (this.relayerTokens.length > 0 && !this.relayerTokens.includes(l1Token.address)) {
         continue;
+      }
 
       if (this.clients.tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
         if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount)) {
