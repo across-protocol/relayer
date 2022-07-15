@@ -7,11 +7,13 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerDiscount: BigNumber;
   readonly sendingRelaysEnabled: boolean;
   readonly sendingSlowRelaysEnabled: boolean;
+  readonly relayerTokens: string[];
 
   constructor(env: ProcessEnv) {
-    const { RELAYER_DISCOUNT, RELAYER_INVENTORY_CONFIG, SEND_RELAYS, SEND_SLOW_RELAYS } = env;
+    const { RELAYER_DISCOUNT, RELAYER_INVENTORY_CONFIG, RELAYER_TOKENS, SEND_RELAYS, SEND_SLOW_RELAYS } = env;
     super(env);
 
+    this.relayerTokens = RELAYER_TOKENS ? JSON.parse(RELAYER_TOKENS) : [];
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
 
     if (Object.keys(this.inventoryConfig).length > 0) {

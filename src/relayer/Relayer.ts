@@ -2,7 +2,7 @@ import { BigNumber, winston, buildFillRelayProps, getNetworkName, getUnfilledDep
 import { createFormatFunction, etherscanLink, toBN } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 
-import { Deposit } from "../interfaces/SpokePool";
+import { Deposit } from "../interfaces";
 
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
@@ -11,7 +11,8 @@ export class Relayer {
     readonly relayerAddress: string,
     readonly logger: winston.Logger,
     readonly clients: RelayerClients,
-    readonly maxUnfilledDepositLookBack: { [chainId: number]: number } = {}
+    readonly maxUnfilledDepositLookBack: { [chainId: number]: number } = {},
+    readonly relayerTokens: string[] = []
   ) {}
 
   async checkForUnfilledDepositsAndFill(sendSlowRelays = true) {
@@ -22,15 +23,29 @@ export class Relayer {
       (a, b) =>
         a.unfilledAmount.mul(a.deposit.relayerFeePct).lt(b.unfilledAmount.mul(b.deposit.relayerFeePct)) ? 1 : -1
     );
-    if (unfilledDeposits.length > 0)
-      this.logger.debug({ at: "Relayer", message: "Filling deposits", number: unfilledDeposits.length });
-    else this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
+    if (unfilledDeposits.length > 0) {
+      this.logger.debug({ at: "Relayer", message: "Unfilled deposits found", number: unfilledDeposits.length });
+    } else {
+      this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
+    }
     // Iterate over all unfilled deposits. For each unfilled deposit: a) check that the token balance client has enough
     // balance to fill the unfilled amount. b) the fill is profitable. If both hold true then fill the unfilled amount.
     // If not enough ballance add the shortfall to the shortfall tracker to produce an appropriate log. If the deposit
     // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
     // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
     for (const { deposit, unfilledAmount, fillCount } of unfilledDeposits) {
+      // Skip any L1 tokens that are not specified in the config.
+      // If relayerTokens is an empty list, we'll assume that all tokens are supported.
+      const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(deposit.originToken, deposit.originChainId);
+      if (
+        this.relayerTokens.length > 0 &&
+        !this.relayerTokens.includes(l1Token.address) &&
+        this.relayerTokens.includes(l1Token.address.toLowerCase())
+      ) {
+        this.logger.debug({ at: "Relayer", message: "Skipping deposit for unwhitelisted token", deposit, l1Token });
+        continue;
+      }
+
       if (this.clients.tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
         if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount)) {
           this.fillRelay(deposit, unfilledAmount);
@@ -38,10 +53,8 @@ export class Relayer {
           this.clients.profitClient.captureUnprofitableFill(deposit, unfilledAmount);
         }
       } else {
-        // TODO: this line right now will capture any token shortfalls, even if you have 0 of the token. The bot should
-        // be updated to ignore non-whitelisted (zero balance) tokens from this token shortfall log.
         this.clients.tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
-        // If we dont have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
+        // If we don't have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
         // 1 wei sized fill to ensure that the deposit is slow relayed. This only needs to be done once.
         if (sendSlowRelays && this.clients.tokenClient.hasBalanceForZeroFill(deposit) && fillCount === 0)
           this.zeroFillDeposit(deposit);
