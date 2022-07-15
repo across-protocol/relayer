@@ -55,7 +55,8 @@ export async function willSucceed(
 ): Promise<{ transaction: AugmentedTransaction; succeed: boolean; reason: string }> {
   try {
     const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
-    await transaction.contract.callStatic[transaction.method](...args);
+    const tx = await transaction.contract.callStatic[transaction.method](...args);
+    console.log("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ tx.gasUsed", tx.gasUsed);
     return { transaction, succeed: true, reason: null };
   } catch (error) {
     console.error(error);
