@@ -16,9 +16,8 @@ export class BaseAdapter {
   l2DepositFinalizedEvents_DepositAdapter: { [address: string]: { [l1Token: string]: any[] } } = {};
 
   depositEvalTime = 24 * 60 * 60; // Consider all deposit finalization events over the last 1 day.
-  l2LookBackSafetyMargin = 5; // The pending transfers util can accomidate up to this multipler
+  l2LookBackSafetyMargin = 5; // The pending transfers util can accommodate up to this multiplier
 
-  firstEvaluatedL1BlockNumber: number;
   constructor(
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     _chainId: number,
