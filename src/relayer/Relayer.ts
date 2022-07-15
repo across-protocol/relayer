@@ -41,14 +41,14 @@ export class Relayer {
       if (
         this.relayerTokens.length > 0 &&
         !this.relayerTokens.includes(l1Token.address) &&
-        this.relayerTokens.includes(l1Token.address.toLowerCase())
+        !this.relayerTokens.includes(l1Token.address.toLowerCase())
       ) {
         this.logger.debug({ at: "Relayer", message: "Skipping deposit for unwhitelisted token", deposit, l1Token });
         continue;
       }
 
       const destinationChainId = deposit.destinationChainId;
-      if (this.relayerDestinationChains.length > 0 && this.relayerDestinationChains.includes(destinationChainId)) {
+      if (this.relayerDestinationChains.length > 0 && !this.relayerDestinationChains.includes(destinationChainId)) {
         this.logger.debug({
           at: "Relayer",
           message: "Skipping deposit for unsupported destination chain",
