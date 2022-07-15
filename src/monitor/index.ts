@@ -49,7 +49,6 @@ export async function runMonitor(_logger: winston.Logger) {
       logger.debug("Disconnecting from redis server.");
       clients.configStoreClient.redisClient.disconnect();
     }
-
-    await runMonitor(logger);
+    throw error
   }
 }

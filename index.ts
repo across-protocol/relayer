@@ -1,5 +1,6 @@
 import minimist from "minimist";
-import { delay, help, Logger, usage, winston } from "./src/utils";
+import { CommonConfig } from "./src/common";
+import { config, delay, help, Logger, processCrash, usage, winston } from "./src/utils";
 import { runRelayer } from "./src/relayer";
 import { runDataworker } from "./src/dataworker";
 import { runMonitor } from "./src/monitor";
@@ -9,6 +10,8 @@ let logger: winston.Logger;
 
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {
   logger = Logger;
+
+  const config = new CommonConfig(process.env);
 
   const cmds = {
     dataworker: runDataworker,
@@ -29,11 +32,20 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
     // todo: Update usage() to provide a hint that wallet is missing/malformed.
     usage(""); // no return
   } else {
-    await cmds[cmd](logger);
+    do {
+      try {
+        await cmds[cmd](logger);
+      } catch (error) {
+        // eslint-disable-next-line no-process-exit
+        if (await processCrash(logger, cmd, config.pollingDelay, error)) process.exit(1);
+      }
+    } while (config.pollingDelay !== 0);
   }
 }
 
 if (require.main === module) {
+  config();
+
   const opts = {
     boolean: ["dataworker", "finalizer", "help", "monitor", "relayer"],
     string: ["wallet", "keys"],

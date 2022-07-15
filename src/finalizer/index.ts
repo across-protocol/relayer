@@ -162,7 +162,6 @@ export async function runFinalizer(_logger: winston.Logger): Promise<void> {
 
     // If this throws an exception, it will mask the underlying error.
     commonClients.configStoreClient.redisClient.disconnect();
-
-    await runFinalizer(logger);
+    throw error
   }
 }
