@@ -159,6 +159,10 @@ export async function runFinalizer(_logger: winston.Logger): Promise<void> {
   } catch (error) {
     // eslint-disable-next-line no-process-exit
     if (await processCrash(logger, "Dataworker", config.pollingDelay, error)) process.exit(1);
+
+    // If this throws an exception, it will mask the underlying error.
+    commonClients.configStoreClient.redisClient.disconnect();
+
     await runFinalizer(logger);
   }
 }

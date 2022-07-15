@@ -129,6 +129,11 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
   } catch (error) {
     // eslint-disable-next-line no-process-exit
     if (await processCrash(logger, "Dataworker", config.pollingDelay, error)) process.exit(1);
+
+    // todo understand why redisClient isn't GCed automagically.
+    logger.debug("Disconnecting from redis server.");
+    clients.configStoreClient.redisClient.disconnect();
+
     await runDataworker(logger);
   }
 }
