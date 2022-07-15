@@ -23,10 +23,11 @@ const MIN_REVENUE_BY_CHAIN_ID = {
 };
 
 // We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
+const WMATIC = "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270";
 const GAS_TOKEN_BY_CHAIN_ID = {
   1: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
   10: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
-  137: "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270", // WMATIC
+  137: WMATIC,
   288: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
   42161: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
 };
@@ -117,9 +118,11 @@ export class ProfitClient {
   }
 
   async update() {
-    const l1Tokens = this.hubPoolClient.getL1Tokens();
+    const l1Tokens = this.hubPoolClient.getL1Tokens().map((l1Token: L1Token) => l1Token.address);
+    // Add WMATIC for gas cost calculations.
+    l1Tokens.push(WMATIC);
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", l1Tokens });
-    const prices = await Promise.allSettled(l1Tokens.map((l1Token: L1Token) => this.coingeckoPrice(l1Token.address)));
+    const prices = await Promise.allSettled(l1Tokens.map((l1Token) => this.coingeckoPrice(l1Token)));
 
     const errors = [];
     for (const [index, priceResponse] of prices.entries()) {
