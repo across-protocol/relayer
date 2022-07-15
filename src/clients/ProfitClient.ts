@@ -139,7 +139,7 @@ export class ProfitClient {
       else this.tokenPrices[l1Tokens[index].address] = toBNWei(priceResponse.value[1]);
     }
     if (errors.length > 0) {
-      let warningMrkdwn = "The following L1 token prices could not be fetched:\n";
+      let warningMrkdwn = "";
       let debugMrkdwn = "";
       errors.forEach((token: L1Token) => {
         const lastPrice = this.getPriceOfToken(token.address);
@@ -151,6 +151,7 @@ export class ProfitClient {
       });
 
       if (warningMrkdwn) {
+        warningMrkdwn = "The following L1 token prices could not be fetched:\n" + warningMrkdwn;
         this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn: warningMrkdwn });
       } else {
         this.logger.debug({ at: "ProfitClient", message: "Could not fetch all token prices", mrkdwn: debugMrkdwn });
