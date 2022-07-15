@@ -55,12 +55,24 @@ export async function willSucceed(
 ): Promise<{ transaction: AugmentedTransaction; succeed: boolean; reason: string }> {
   try {
     const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
-    const tx = await transaction.contract.callStatic[transaction.method](...args);
-    console.log("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ tx.gasUsed", tx.gasUsed);
+    await transaction.contract.callStatic[transaction.method](...args);
     return { transaction, succeed: true, reason: null };
   } catch (error) {
     console.error(error);
     return { transaction, succeed: false, reason: error.reason };
+  }
+}
+
+export async function estimateGas(
+  transaction: AugmentedTransaction
+): Promise<{ transaction: AugmentedTransaction; succeed: boolean; reason: string; gasUsed: BigNumber }> {
+  try {
+    const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
+    const gasUsed = await transaction.contract.estimateGas[transaction.method](...args);
+    return { transaction, succeed: true, reason: null, gasUsed };
+  } catch (error) {
+    console.error(error);
+    return { transaction, succeed: false, reason: error.reason, gasUsed: toBN(0) };
   }
 }
 

@@ -6,7 +6,7 @@ import { Coingecko } from "@uma/sdk";
 // Define the minimum revenue, in USD, that a relay must yield in order to be considered "profitable". This is a short
 // term solution to enable us to avoid DOS relays that yield negative profits. In the future this should be updated
 // to actual factor in the cost of sending transactions on the associated target chains.
-const chainIdToMinRevenue = {
+const MIN_REVENUE_BY_CHAIN_ID = {
   // Mainnet and L1 testnets.
   1: toBNWei(10),
   4: toBNWei(10),
@@ -21,6 +21,17 @@ const chainIdToMinRevenue = {
   137: toBNWei(1),
   80001: toBNWei(1),
 };
+
+// We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
+const GAS_TOKEN_BY_CHAIN_ID = {
+  1: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
+  10: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
+  137: "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270", // WMATIC
+  288: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
+  42161: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
+};
+// TODO: Make this dynamic once we support chains with gas tokens that have different decimals.
+const GAS_TOKEN_DECIMALS = 18;
 
 export class ProfitClient {
   private readonly coingecko;
@@ -55,7 +66,7 @@ export class ProfitClient {
     this.unprofitableFills = {};
   }
 
-  isFillProfitable(deposit: Deposit, fillAmount: BigNumber) {
+  isFillProfitable(deposit: Deposit, fillAmount: BigNumber, gasUsed: BigNumber) {
     if (toBN(this.relayerDiscount).eq(toBNWei(1))) {
       this.logger.debug({ at: "ProfitClient", message: "Relayer discount set to 100%. Accepting relay" });
       return true;
@@ -69,10 +80,18 @@ export class ProfitClient {
     const tokenPriceInUsd = this.getPriceOfToken(l1Token);
     const fillRevenueInRelayedToken = toBN(deposit.relayerFeePct).mul(fillAmount).div(toBN(10).pow(decimals));
     const fillRevenueInUsd = fillRevenueInRelayedToken.mul(tokenPriceInUsd).div(toBNWei(1));
+
+    // Consider gas cost.
+    const gasCostInUsd = gasUsed
+      .mul(this.getPriceOfToken(GAS_TOKEN_BY_CHAIN_ID[deposit.destinationChainId]))
+      .div(toBN(10).pow(GAS_TOKEN_DECIMALS));
+
     // How much minimumAcceptableRevenue is scaled. If relayer discount is 0 then need minimumAcceptableRevenue at min.
     const revenueScalar = toBNWei(1).sub(this.relayerDiscount);
-    const minimumAcceptableRevenue = chainIdToMinRevenue[deposit.destinationChainId].mul(revenueScalar).div(toBNWei(1));
-    const fillProfitable = fillRevenueInUsd.gte(minimumAcceptableRevenue);
+    const minimumAcceptableRevenue = MIN_REVENUE_BY_CHAIN_ID[deposit.destinationChainId]
+      .mul(revenueScalar)
+      .div(toBNWei(1));
+    const fillProfitable = fillRevenueInUsd.sub(gasCostInUsd).gte(minimumAcceptableRevenue);
     this.logger.debug({
       at: "ProfitClient",
       message: "Considered fill profitability",

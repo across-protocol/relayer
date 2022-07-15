@@ -1,8 +1,17 @@
-import { BigNumber, winston, buildFillRelayProps, getNetworkName, getUnfilledDeposits, getCurrentTime } from "../utils";
+import {
+  BigNumber,
+  winston,
+  buildFillRelayProps,
+  getNetworkName,
+  getUnfilledDeposits,
+  getCurrentTime,
+  estimateGas,
+} from "../utils";
 import { createFormatFunction, etherscanLink, toBN } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 
 import { Deposit } from "../interfaces";
+import { AugmentedTransaction } from "../clients";
 
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
@@ -59,8 +68,16 @@ export class Relayer {
       }
 
       if (this.clients.tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
-        if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount)) {
-          this.fillRelay(deposit, unfilledAmount);
+        // Fetch the repayment chain from the inventory client. Sanity check that it is one of the known chainIds.
+        const repaymentChain = this.clients.inventoryClient.determineRefundChainId(deposit);
+        // Create the transaction, so we can simulate to get the gas cost for profitability calculation.
+        const fillTransaction = this.createFillTransaction(deposit, unfilledAmount, repaymentChain);
+        // TODO: Potentially skip the entire sequence if the transaction would fail. We currently handle this in
+        // fillRelay separately, so we'll need to figure out how to consolidate the logic.
+        const fillSimulation = await estimateGas(fillTransaction);
+
+        if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount, fillSimulation.gasUsed)) {
+          this.fillRelay(deposit, unfilledAmount, repaymentChain, fillTransaction);
         } else {
           this.clients.profitClient.captureUnprofitableFill(deposit, unfilledAmount);
         }
@@ -77,23 +94,25 @@ export class Relayer {
     if (this.clients.profitClient.anyCapturedUnprofitableFills()) this.handleUnprofitableFill();
   }
 
-  fillRelay(deposit: Deposit, fillAmount: BigNumber) {
+  createFillTransaction(deposit: Deposit, fillAmount: BigNumber, repaymentChain: number): AugmentedTransaction {
+    return {
+      contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
+      chainId: deposit.destinationChainId,
+      method: "fillRelay", // method called.
+      args: buildFillRelayProps(deposit, repaymentChain, fillAmount), // props sent with function call.
+      message: "Relay instantly sent 🚀", // message sent to logger.
+      mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChain, fillAmount), // message details mrkdwn
+    };
+  }
+
+  fillRelay(deposit: Deposit, fillAmount: BigNumber, repaymentChain: number, transaction: AugmentedTransaction) {
     try {
-      // Fetch the repayment chain from the inventory client. Sanity check that it is one of the known chainIds.
-      const repaymentChain = this.clients.inventoryClient.determineRefundChainId(deposit);
       if (!Object.keys(this.clients.spokePoolClients).includes(deposit.destinationChainId.toString()))
         throw new Error("Fatal error! Repayment chain set to a chain that is not part of the defined sets of chains!");
 
       this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain });
       // Add the fill transaction to the multiCallerClient so it will be executed with the next batch.
-      this.clients.multiCallerClient.enqueueTransaction({
-        contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
-        chainId: deposit.destinationChainId,
-        method: "fillRelay", // method called.
-        args: buildFillRelayProps(deposit, repaymentChain, fillAmount), // props sent with function call.
-        message: "Relay instantly sent 🚀", // message sent to logger.
-        mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChain, fillAmount), // message details mrkdwn
-      });
+      this.clients.multiCallerClient.enqueueTransaction(transaction);
 
       // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
       this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.destinationToken, fillAmount);

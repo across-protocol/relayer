@@ -140,7 +140,7 @@ export async function setupDataworker(
   const hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool);
   const configStoreClient = new clients.AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
 
-  const multiCallerClient = new clients.MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
+  const multiCallerClient = new clients.MultiCallerClient(spyLogger); // leave out the gasEstimator for now.
   const profitClient = new clients.ProfitClient(spyLogger, hubPoolClient, toBNWei(1)); // Set relayer discount to 100%.
 
   const spokePoolClient_1 = new clients.SpokePoolClient(
