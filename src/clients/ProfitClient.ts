@@ -101,6 +101,7 @@ export class ProfitClient {
       tokenPriceInUsd,
       fillRevenueInRelayedToken,
       fillRevenueInUsd,
+      gasCostInUsd,
       minimumAcceptableRevenue,
       discount: this.relayerDiscount,
       fillProfitable,
@@ -118,11 +119,15 @@ export class ProfitClient {
   }
 
   async update() {
-    const l1Tokens = this.hubPoolClient.getL1Tokens().map((l1Token: L1Token) => l1Token.address);
+    const l1Tokens = this.hubPoolClient.getL1Tokens();
     // Add WMATIC for gas cost calculations.
-    l1Tokens.push(WMATIC);
+    l1Tokens.push({
+      address: WMATIC,
+      symbol: "WMATIC",
+      decimals: 18,
+    });
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", l1Tokens });
-    const prices = await Promise.allSettled(l1Tokens.map((l1Token) => this.coingeckoPrice(l1Token)));
+    const prices = await Promise.allSettled(l1Tokens.map((l1Token: L1Token) => this.coingeckoPrice(l1Token.address)));
 
     const errors = [];
     for (const [index, priceResponse] of prices.entries()) {
