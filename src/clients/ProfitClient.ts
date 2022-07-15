@@ -120,14 +120,17 @@ export class ProfitClient {
 
   async update() {
     const l1Tokens = this.hubPoolClient.getL1Tokens();
+    this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", l1Tokens });
+    const priceFetches = l1Tokens.map((l1Token: L1Token) => this.coingeckoPrice(l1Token.address));
     // Add WMATIC for gas cost calculations.
+    priceFetches.push(this.coingeckoPrice(WMATIC, "polygon-pos"));
+    const prices = await Promise.allSettled(priceFetches);
+    // Add to l1Tokens after the fetches, so prices and l1Tokens have the same entries, for any error logging later.
     l1Tokens.push({
       address: WMATIC,
       symbol: "WMATIC",
       decimals: 18,
     });
-    this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", l1Tokens });
-    const prices = await Promise.allSettled(l1Tokens.map((l1Token: L1Token) => this.coingeckoPrice(l1Token.address)));
 
     const errors = [];
     for (const [index, priceResponse] of prices.entries()) {
@@ -144,7 +147,7 @@ export class ProfitClient {
     this.logger.debug({ at: "ProfitClient", message: "Updated Profit client", tokenPrices: this.tokenPrices });
   }
 
-  private async coingeckoPrice(token: string) {
-    return await this.coingecko.getCurrentPriceByContract(token, "usd");
+  private async coingeckoPrice(token: string, platform_id?: string) {
+    return await this.coingecko.getCurrentPriceByContract(token, "usd", platform_id);
   }
 }
