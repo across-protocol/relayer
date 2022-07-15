@@ -12,7 +12,8 @@ export class Relayer {
     readonly logger: winston.Logger,
     readonly clients: RelayerClients,
     readonly maxUnfilledDepositLookBack: { [chainId: number]: number } = {},
-    readonly relayerTokens: string[] = []
+    readonly relayerTokens: string[] = [],
+    readonly relayerDestinationChains: number[] = []
   ) {}
 
   async checkForUnfilledDepositsAndFill(sendSlowRelays = true) {
@@ -43,6 +44,17 @@ export class Relayer {
         this.relayerTokens.includes(l1Token.address.toLowerCase())
       ) {
         this.logger.debug({ at: "Relayer", message: "Skipping deposit for unwhitelisted token", deposit, l1Token });
+        continue;
+      }
+
+      const destinationChainId = deposit.destinationChainId;
+      if (this.relayerDestinationChains.length > 0 && this.relayerDestinationChains.includes(destinationChainId)) {
+        this.logger.debug({
+          at: "Relayer",
+          message: "Skipping deposit for unsupported destination chain",
+          deposit,
+          destinationChain: getNetworkName(destinationChainId),
+        });
         continue;
       }
 
