@@ -68,8 +68,12 @@ export async function estimateGas(
 ): Promise<{ transaction: AugmentedTransaction; succeed: boolean; reason: string; gasUsed: BigNumber }> {
   try {
     const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
-    const gasUsed = await transaction.contract.estimateGas[transaction.method](...args);
-    return { transaction, succeed: true, reason: null, gasUsed };
+    const [gasUsed, gasFee] = await Promise.all([
+      transaction.contract.estimateGas[transaction.method](...args),
+      transaction.contract.provider.getGasPrice(),
+    ]);
+
+    return { transaction, succeed: true, reason: null, gasUsed: gasUsed.mul(gasFee) };
   } catch (error) {
     console.error(error);
     return { transaction, succeed: false, reason: error.reason, gasUsed: toBN(0) };

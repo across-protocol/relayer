@@ -101,6 +101,7 @@ export class ProfitClient {
       tokenPriceInUsd,
       fillRevenueInRelayedToken,
       fillRevenueInUsd,
+      gasUsed,
       gasCostInUsd,
       minimumAcceptableRevenue,
       discount: this.relayerDiscount,
