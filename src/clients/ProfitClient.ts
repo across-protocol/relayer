@@ -2,6 +2,7 @@ import { BigNumber, winston, toBNWei, toBN, assign } from "../utils";
 import { HubPoolClient } from ".";
 import { Deposit, L1Token } from "../interfaces";
 import { Coingecko } from "@uma/sdk";
+import * as _ from "lodash";
 
 // Define the minimum revenue, in USD, that a relay must yield in order to be considered "profitable". This is a short
 // term solution to enable us to avoid DOS relays that yield negative profits. In the future this should be updated
@@ -122,7 +123,8 @@ export class ProfitClient {
   }
 
   async update() {
-    const l1Tokens = this.hubPoolClient.getL1Tokens();
+    // Clone because we'll be adding WMATIC to the list for logging purposes later below.
+    const l1Tokens = _.cloneDeep(this.hubPoolClient.getL1Tokens());
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", l1Tokens });
     const priceFetches = l1Tokens.map((l1Token: L1Token) => this.coingeckoPrice(l1Token.address));
     // Add WMATIC for gas cost calculations.
