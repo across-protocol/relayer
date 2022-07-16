@@ -143,7 +143,7 @@ export class ProfitClient {
       let debugMrkdwn = "";
       errors.forEach((token: L1Token) => {
         const lastPrice = this.getPriceOfToken(token.address);
-        if (lastPrice.eq(toBN(0))) {
+        if (lastPrice && lastPrice.eq(toBN(0))) {
           warningMrkdwn += `- ${token.symbol} Not found.\n`;
         } else {
           debugMrkdwn += `- ${token.symbol} Not found. Using last known price of ${debugMrkdwn}.\n`;
