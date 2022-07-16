@@ -53,7 +53,7 @@ export class ProfitClient {
 
   getPriceOfToken(token: string) {
     if (!this.tokenPrices[token]) {
-      this.logger.warn({ at: "ProfitClient", message: `Token ${token} not found in state. Using 0` });
+      this.logger.debug({ at: "ProfitClient", message: `Token ${token} not found in state. Using 0` });
       return toBN(0);
     }
     return this.tokenPrices[token];
