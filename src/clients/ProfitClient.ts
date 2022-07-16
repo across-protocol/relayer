@@ -23,7 +23,7 @@ const MIN_REVENUE_BY_CHAIN_ID = {
 };
 
 // We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
-const WMATIC = "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270";
+export const WMATIC = "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270";
 const GAS_TOKEN_BY_CHAIN_ID = {
   1: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
   10: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
@@ -92,7 +92,8 @@ export class ProfitClient {
     const minimumAcceptableRevenue = MIN_REVENUE_BY_CHAIN_ID[deposit.destinationChainId]
       .mul(revenueScalar)
       .div(toBNWei(1));
-    const fillProfitable = fillRevenueInUsd.sub(gasCostInUsd).gte(minimumAcceptableRevenue);
+    const fillProfitInUsd = fillRevenueInUsd.sub(gasCostInUsd);
+    const fillProfitable = fillProfitInUsd.gte(minimumAcceptableRevenue);
     this.logger.debug({
       at: "ProfitClient",
       message: "Considered fill profitability",
@@ -103,6 +104,7 @@ export class ProfitClient {
       fillRevenueInUsd,
       gasUsed,
       gasCostInUsd,
+      fillProfitInUsd,
       minimumAcceptableRevenue,
       discount: this.relayerDiscount,
       fillProfitable,
