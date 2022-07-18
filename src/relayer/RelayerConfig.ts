@@ -4,21 +4,13 @@ import { InventoryConfig } from "../interfaces";
 
 export class RelayerConfig extends CommonConfig {
   readonly inventoryConfig: InventoryConfig;
-  readonly relayerDiscount: BigNumber;
   readonly sendingRelaysEnabled: boolean;
   readonly sendingSlowRelaysEnabled: boolean;
   readonly relayerTokens: string[];
   readonly relayerDestinationChains: number[];
 
   constructor(env: ProcessEnv) {
-    const {
-      RELAYER_DESTINATION_CHAINS,
-      RELAYER_DISCOUNT,
-      RELAYER_INVENTORY_CONFIG,
-      RELAYER_TOKENS,
-      SEND_RELAYS,
-      SEND_SLOW_RELAYS,
-    } = env;
+    const { RELAYER_DESTINATION_CHAINS, RELAYER_INVENTORY_CONFIG, RELAYER_TOKENS, SEND_RELAYS, SEND_SLOW_RELAYS } = env;
     super(env);
 
     // Empty means all chains.
@@ -55,7 +47,6 @@ export class RelayerConfig extends CommonConfig {
         });
       });
     }
-    this.relayerDiscount = RELAYER_DISCOUNT ? toBNWei(RELAYER_DISCOUNT) : toBNWei(0);
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
   }

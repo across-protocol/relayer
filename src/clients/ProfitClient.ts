@@ -4,25 +4,6 @@ import { Deposit, L1Token } from "../interfaces";
 import { Coingecko } from "@uma/sdk";
 import * as _ from "lodash";
 
-// Define the minimum revenue, in USD, that a relay must yield in order to be considered "profitable". This is a short
-// term solution to enable us to avoid DOS relays that yield negative profits. In the future this should be updated
-// to actual factor in the cost of sending transactions on the associated target chains.
-const MIN_REVENUE_BY_CHAIN_ID = {
-  // Mainnet and L1 testnets.
-  1: toBNWei(10),
-  4: toBNWei(10),
-  5: toBNWei(10),
-  42: toBNWei(10),
-  // Rollups/L2s/sidechains & their testnets.
-  10: toBNWei(1),
-  69: toBNWei(1),
-  288: toBNWei(1),
-  28: toBNWei(1),
-  42161: toBNWei(1),
-  137: toBNWei(1),
-  80001: toBNWei(1),
-};
-
 // We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
 export const WMATIC = "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270";
 const GAS_TOKEN_BY_CHAIN_ID = {
@@ -40,11 +21,7 @@ export class ProfitClient {
   protected tokenPrices: { [l1Token: string]: BigNumber } = {};
   private unprofitableFills: { [chainId: number]: { deposit: Deposit; fillAmount: BigNumber }[] } = {};
 
-  constructor(
-    readonly logger: winston.Logger,
-    readonly hubPoolClient: HubPoolClient,
-    readonly relayerDiscount: BigNumber = toBNWei(0)
-  ) {
+  constructor(readonly logger: winston.Logger, readonly hubPoolClient: HubPoolClient) {
     this.coingecko = new Coingecko();
   }
 
@@ -69,11 +46,6 @@ export class ProfitClient {
   }
 
   isFillProfitable(deposit: Deposit, fillAmount: BigNumber, gasUsed: BigNumber) {
-    if (toBN(this.relayerDiscount).eq(toBNWei(1))) {
-      this.logger.debug({ at: "ProfitClient", message: "Relayer discount set to 100%. Accepting relay" });
-      return true;
-    }
-
     if (toBN(deposit.relayerFeePct).eq(toBN(0))) {
       this.logger.debug({ at: "ProfitClient", message: "Deposit set 0 relayerFeePct. Rejecting relay" });
       return false;
@@ -89,12 +61,8 @@ export class ProfitClient {
       .div(toBN(10).pow(GAS_TOKEN_DECIMALS));
 
     // How much minimumAcceptableRevenue is scaled. If relayer discount is 0 then need minimumAcceptableRevenue at min.
-    const revenueScalar = toBNWei(1).sub(this.relayerDiscount);
-    const minimumAcceptableRevenue = MIN_REVENUE_BY_CHAIN_ID[deposit.destinationChainId]
-      .mul(revenueScalar)
-      .div(toBNWei(1));
     const fillProfitInUsd = fillRevenueInUsd.sub(gasCostInUsd);
-    const fillProfitable = fillProfitInUsd.gte(minimumAcceptableRevenue);
+    const fillProfitable = fillProfitInUsd.gte(toBN(0));
     this.logger.debug({
       at: "ProfitClient",
       message: "Considered fill profitability",
@@ -106,8 +74,6 @@ export class ProfitClient {
       gasUsed,
       gasCostInUsd,
       fillProfitInUsd,
-      minimumAcceptableRevenue,
-      discount: this.relayerDiscount,
       fillProfitable,
     });
     return fillProfitable;
