@@ -3,12 +3,12 @@ import { createFormatFunction, etherscanLink, toBN } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 
 import { Deposit } from "../interfaces";
-import { destinationChainId } from "@across-protocol/contracts-v2/dist/test/constants";
 
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
 export class Relayer {
-  private filledDepositsByChain: { [destinationChain: number]: { [depositId: number]: boolean } } = {};
+  // Track by originChainId since depositId is issued on the origin chain.
+  private filledDepositsByChain: { [originChainId: number]: { [depositId: number]: boolean } } = {};
 
   constructor(
     readonly relayerAddress: string,
@@ -38,17 +38,6 @@ export class Relayer {
     // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
     // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
     for (const { deposit, unfilledAmount, fillCount } of unfilledDeposits) {
-      if (this.filledDepositsByChain[deposit.destinationChainId] === undefined) {
-        this.filledDepositsByChain[deposit.destinationChainId] = {};
-      }
-      // Skip deposits that this relayer has already filled to prevent double filling (which is a waste of gas as the
-      // second fill would fail).
-      // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried
-      if (this.filledDepositsByChain[deposit.destinationChainId][deposit.depositId]) {
-        continue;
-      }
-      this.filledDepositsByChain[deposit.destinationChainId][deposit.depositId] = true;
-
       // Skip any L1 tokens that are not specified in the config.
       // If relayerTokens is an empty list, we'll assume that all tokens are supported.
       const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(deposit.originToken, deposit.originChainId);
@@ -92,6 +81,18 @@ export class Relayer {
   }
 
   fillRelay(deposit: Deposit, fillAmount: BigNumber) {
+    if (this.filledDepositsByChain[deposit.originChainId] === undefined) {
+      this.filledDepositsByChain[deposit.originChainId] = {};
+    }
+    // Skip deposits that this relayer has already filled to prevent double filling (which is a waste of gas as the
+    // second fill would fail).
+    // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried
+    if (this.filledDepositsByChain[deposit.originChainId][deposit.depositId]) {
+      this.logger.debug({ at: "Relayer", message: "Skipping deposits already fill by this same relayer", deposit });
+      return;
+    }
+    this.filledDepositsByChain[deposit.originChainId][deposit.depositId] = true;
+
     try {
       // Fetch the repayment chain from the inventory client. Sanity check that it is one of the known chainIds.
       const repaymentChain = this.clients.inventoryClient.determineRefundChainId(deposit);
@@ -112,7 +113,6 @@ export class Relayer {
       // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
       this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.destinationToken, fillAmount);
     } catch (error) {
-      console.log("error", error);
       this.logger.error({
         at: "Relayer",
         message: "Error creating fillRelayTx",
