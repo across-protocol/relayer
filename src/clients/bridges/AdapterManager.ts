@@ -13,16 +13,16 @@ export class AdapterManager {
     readonly monitoredAddresses: string[]
   ) {
     if (spokePoolClients) {
-      if (10 in this.adapters) {
+      if (10 in this.spokePoolClients) {
         this.adapters[10] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses, true);
       }
-      if (137 in this.adapters) {
+      if (137 in this.spokePoolClients) {
         this.adapters[137] = new PolygonAdapter(logger, spokePoolClients, monitoredAddresses);
       }
-      if (288 in this.adapters) {
+      if (288 in this.spokePoolClients) {
         this.adapters[288] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses, false);
       }
-      if (42161 in this.adapters) {
+      if (42161 in this.spokePoolClients) {
         this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, monitoredAddresses);
       }
     }
