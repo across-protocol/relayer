@@ -53,7 +53,7 @@ describe("Relayer: Iterative fill", async function () {
     });
 
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
-    profitClient = new ProfitClient(spyLogger, hubPoolClient, toBNWei(1)); // Set relayer discount to 100%.
+    profitClient = new ProfitClient(spyLogger, hubPoolClient);
     await updateAllClients();
     relayerInstance = new Relayer(relayer.address, spyLogger, {
       spokePoolClients,

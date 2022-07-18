@@ -1,7 +1,7 @@
 import { expect, ethers, SignerWithAddress, createSpyLogger, winston, BigNumber, toBN } from "./utils";
 
-import { MockHubPoolClient } from "./mocks/MockHubPoolClient";
-import { ProfitClient } from "../src/clients"; // Tested
+import { MockHubPoolClient } from "./mocks";
+import { ProfitClient, WMATIC } from "../src/clients"; // Tested
 
 let hubPoolClient: MockHubPoolClient, owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let profitClient: ProfitClient; // tested
@@ -15,7 +15,7 @@ describe("ProfitClient: Price Retrieval", async function () {
     ({ spy, spyLogger } = createSpyLogger());
 
     hubPoolClient = new MockHubPoolClient(null, null);
-    profitClient = new ProfitClient(spyLogger, hubPoolClient, toBN(0));
+    profitClient = new ProfitClient(spyLogger, hubPoolClient);
   });
 
   it("Correctly fetches token prices", async function () {
@@ -25,7 +25,7 @@ describe("ProfitClient: Price Retrieval", async function () {
     await profitClient.update();
 
     // The client should have fetched the prices for both tokens.
-    expect(Object.keys(profitClient.getAllPrices())).to.deep.equal([mainnetWeth, mainnetUsdc]);
+    expect(Object.keys(profitClient.getAllPrices())).to.deep.equal([mainnetWeth, mainnetUsdc, WMATIC]);
     Object.values(profitClient.getAllPrices()).forEach(
       (price: BigNumber) => expect(toBN(price).gt(toBN(0))).to.be.true
     );

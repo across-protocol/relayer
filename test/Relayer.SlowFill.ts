@@ -49,7 +49,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
-    profitClient = new ProfitClient(spyLogger, hubPoolClient, toBNWei(1)); // Set relayer discount to 100%.
+    profitClient = new ProfitClient(spyLogger, hubPoolClient);
     relayerInstance = new Relayer(relayer.address, spyLogger, {
       spokePoolClients,
       hubPoolClient,
