@@ -96,12 +96,6 @@ export class Relayer {
       return;
     }
 
-    // Only track complete fills by the relayer.
-    // TODO: Revisit in the future when we implement partial fills.
-    if (toBN(deposit.amount).eq(fillAmount)) {
-      this.fullyFilledDeposits[fillKey] = true;
-    }
-
     try {
       // Fetch the repayment chain from the inventory client. Sanity check that it is one of the known chainIds.
       const repaymentChain = this.clients.inventoryClient.determineRefundChainId(deposit);
@@ -118,6 +112,9 @@ export class Relayer {
         message: "Relay instantly sent 🚀", // message sent to logger.
         mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChain, fillAmount), // message details mrkdwn
       });
+
+      // TODO: Revisit in the future when we implement partial fills.
+      this.fullyFilledDeposits[fillKey] = true;
 
       // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
       this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.destinationToken, fillAmount);
