@@ -98,7 +98,7 @@ export class Relayer {
 
     // Only track complete fills by the relayer.
     // TODO: Revisit in the future when we implement partial fills.
-    if (deposit.amount.eq(fillAmount)) {
+    if (toBN(deposit.amount).eq(fillAmount)) {
       this.fullyFilledDeposits[fillKey] = true;
     }
 
