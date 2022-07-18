@@ -238,7 +238,9 @@ export function getProvider(chainId: number) {
   const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
 
   const constructorArgumentLists = getNodeUrlList(chainId).map(
-    (nodeUrl): [{ url: string; timeout: number }, number] => [{ url: nodeUrl, timeout }, chainId]
+    (nodeUrl): [{
+      url: string; timeout: number; allowGzip: boolean
+    }, number] => [ { url: nodeUrl, timeout, allowGzip: true }, chainId ]
   );
 
   // Default to 2 retries.
