@@ -8,7 +8,8 @@ const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
 export class Relayer {
   // Track by originChainId since depositId is issued on the origin chain.
-  private filledDepositsByChain: { [originChainId: number]: { [depositId: number]: boolean } } = {};
+  // Key is in the form of "chainId-depositId".
+  private fullyFilledDeposits: { [key: string]: boolean } = {};
 
   constructor(
     readonly relayerAddress: string,
@@ -81,17 +82,25 @@ export class Relayer {
   }
 
   fillRelay(deposit: Deposit, fillAmount: BigNumber) {
-    if (this.filledDepositsByChain[deposit.originChainId] === undefined) {
-      this.filledDepositsByChain[deposit.originChainId] = {};
-    }
-    // Skip deposits that this relayer has already filled to prevent double filling (which is a waste of gas as the
-    // second fill would fail).
+    // Skip deposits that this relayer has already filled completely before to prevent double filling (which is a waste
+    // of gas as the second fill would fail).
     // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried
-    if (this.filledDepositsByChain[deposit.originChainId][deposit.depositId]) {
-      this.logger.debug({ at: "Relayer", message: "Skipping deposits already fill by this same relayer", deposit });
+    const fillKey = `${deposit.originChainId}-${deposit.depositId}`;
+    if (this.fullyFilledDeposits[fillKey]) {
+      this.logger.debug({
+        at: "Relayer",
+        message: "Skipping deposits already filled by this relayer",
+        originChainId: deposit.originChainId,
+        depositId: deposit.depositId,
+      });
       return;
     }
-    this.filledDepositsByChain[deposit.originChainId][deposit.depositId] = true;
+
+    // Only track complete fills by the relayer.
+    // TODO: Revisit in the future when we implement partial fills.
+    if (deposit.amount.eq(fillAmount)) {
+      this.fullyFilledDeposits[fillKey] = true;
+    }
 
     try {
       // Fetch the repayment chain from the inventory client. Sanity check that it is one of the known chainIds.
