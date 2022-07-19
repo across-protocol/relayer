@@ -9,7 +9,7 @@ export function usage(badInput: string = undefined) {
     \tts-node ./index.ts --help
     \tts-node ./index.ts [-h] <--monitor|--relayer>      --wallet <${walletOpts}>
     \tts-node ./index.tx [-h] <--dataworker|--finalizer> --wallet <${walletOpts}>
-  `.slice(1);
+  `.slice(1); // Skip leading newline
 
   console.log(usageStr);
 
@@ -54,7 +54,7 @@ export function help() {
     Links:
     \tRepository: ${botRepoUrl}
     \tRelayer Instructions: ${relayerDocsUrl}
-  `.slice(0, -1);
+  `.slice(0, -1); // Skip trailing newline
 
   console.log(helpStr);
   usage(); // no return
