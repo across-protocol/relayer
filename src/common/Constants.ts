@@ -3,12 +3,12 @@
 export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
 
 export const MAX_RELAYER_DEPOSIT_LOOK_BACK: { [chainId: number]: number } = {
-    1: 11500,
-    10: 350000,
-    137: 70000,
-    288: 6000,
-    42161: 35000,
-}
+  1: 11500,
+  10: 350000,
+  137: 70000,
+  288: 6000,
+  42161: 35000,
+};
 
 // Optimism, ethereum can do infinity lookbacks. boba and Arbitrum limited to 100000 on infura.
 export const CHAIN_MAX_BLOCK_LOOKBACK = {
