@@ -33,7 +33,10 @@ export class CommonConfig {
     } = env;
 
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
-    this.maxRelayerLookBack = MAX_RELAYER_DEPOSIT_LOOK_BACK ? JSON.parse(MAX_RELAYER_DEPOSIT_LOOK_BACK) : {};
+    this.maxRelayerLookBack = MAX_RELAYER_DEPOSIT_LOOK_BACK
+      ? JSON.parse(MAX_RELAYER_DEPOSIT_LOOK_BACK)
+      : Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK;
+
     // `maxRelayerUnfilledDepositLookBack` informs relayer to ignore any unfilled deposits older than this amount of
     // of blocks from latest. This allows us to ignore any false positive unfilled deposits that occur because of how
     // `maxRelayerLookBack` is set. This can happen because block lookback per chain is not exactly equal to the same
