@@ -2,12 +2,13 @@
 // in the HubPool's proposeRootBundle method should be: Mainnet, Optimism, Polygon, Boba, Arbitrum
 export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
 
+// Target ~2 days per chain. Avg. block times: { 1: 15s, 10/42161: 0.5s, 137: 2.5s, 288: 30s }
 export const MAX_RELAYER_DEPOSIT_LOOK_BACK: { [chainId: number]: number } = {
   1: 11500,
   10: 350000,
   137: 70000,
   288: 6000,
-  42161: 35000,
+  42161: 350000,
 };
 
 // Optimism, ethereum can do infinity lookbacks. boba and Arbitrum limited to 100000 on infura.
