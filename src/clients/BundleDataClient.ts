@@ -227,10 +227,10 @@ export class BundleDataClient {
           const matchedDeposit: Deposit = originClient.getDepositForFill(fillWithBlock);
           if (matchedDeposit) {
             // Fill was validated. Save it under all validated fills list with the block number so we can sort it by
-            // time. Note that its important we don't skip fills outside of the block range at this step because
+            // time. Note that its important we don't skip fills earlier than the block range at this step because
             // we use allValidFills to find the first fill in the entire history associated with a fill in the block
             // range, in order to determine if we already sent a slow fill for it.
-            allValidFills.push(fillWithBlock);
+            if (fillWithBlock.blockNumber <= blockRangeForChain[1]) allValidFills.push(fillWithBlock);
 
             // If fill is outside block range, we can skip it now since we're not going to add a refund for it.
             if (fillWithBlock.blockNumber > blockRangeForChain[1] || fillWithBlock.blockNumber < blockRangeForChain[0])
