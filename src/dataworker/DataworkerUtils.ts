@@ -1,7 +1,7 @@
 import { BigNumberForToken, DepositWithBlock, FillsToRefund, FillWithBlock, PoolRebalanceLeaf } from "../interfaces";
 import { RelayData, RelayerRefundLeaf } from "../interfaces";
 import { RelayerRefundLeafWithGroup, RunningBalances, UnfilledDeposit } from "../interfaces";
-import { buildPoolRebalanceLeafTree, buildRelayerRefundTree, buildSlowRelayTree } from "../utils";
+import { buildPoolRebalanceLeafTree, buildRelayerRefundTree, buildSlowRelayTree, toBNWei, winston } from "../utils";
 import { getDepositPath, getFillsInRange, groupObjectCountsByProp, groupObjectCountsByTwoProps, toBN } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { addSlowFillsToRunningBalances, initializeRunningBalancesFromRelayerRepayments } from "./PoolRebalanceUtils";
@@ -225,7 +225,8 @@ export function _buildPoolRebalanceRoot(
   clients: DataworkerClients,
   chainIdListForBundleEvaluationBlockNumbers: number[],
   maxL1TokenCountOverride: number,
-  tokenTransferThreshold: BigNumberForToken
+  tokenTransferThreshold: BigNumberForToken,
+  logger: winston.Logger
 ) {
   // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
   // slow relay refunds. They are decreased by the amount of funds already held by the SpokePool. Balances are keyed
@@ -251,7 +252,7 @@ export function _buildPoolRebalanceRoot(
   // For certain fills associated with another partial fill from a previous root bundle, we need to adjust running
   // balances because the prior partial fill would have triggered a refund to be sent to the spoke pool to refund
   // a slow fill.
-  subtractExcessFromPreviousSlowFillsFromRunningBalances(
+  const fillsTriggeringExcesses = subtractExcessFromPreviousSlowFillsFromRunningBalances(
     endBlockForMainnet,
     runningBalances,
     clients.hubPoolClient,
@@ -259,6 +260,11 @@ export function _buildPoolRebalanceRoot(
     allValidFillsInRange,
     chainIdListForBundleEvaluationBlockNumbers
   );
+  logger.debug({
+    at: "Dataworker#DataworkerUtils",
+    message: "Fills triggering excess returns from L2",
+    fillsTriggeringExcesses,
+  });
 
   // Map each deposit event to its L1 token and origin chain ID and subtract deposited amounts from running
   // balances. Note that we do not care if the deposit is matched with a fill for this epoch or not since all

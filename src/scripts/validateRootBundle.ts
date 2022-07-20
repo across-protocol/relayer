@@ -59,7 +59,14 @@ export async function validate(_logger: winston.Logger) {
     message: "Found preceding root bundle",
     transactionHash: precedingProposeRootBundleEvent.transactionHash,
   });
-
+  const latestFullyExecutedBundleEndBlocks = clients.hubPoolClient.getLatestFullyExecutedRootBundle(
+    clients.hubPoolClient.latestBlockNumber
+  ).bundleEvaluationBlockNumbers;
+  const bundleEndBlockMapping = Object.fromEntries(
+    dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, index) => {
+      return [chainId, latestFullyExecutedBundleEndBlocks[index].toNumber()];
+    })
+  );
   const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
     dataworker.chainIdListForBundleEvaluationBlockNumbers,
     clients,
@@ -72,7 +79,8 @@ export async function validate(_logger: winston.Logger) {
       "EnabledDepositRoute",
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
-    ]
+    ],
+    bundleEndBlockMapping
   );
 
   const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
@@ -104,6 +112,7 @@ export async function run(_logger: winston.Logger) {
   try {
     await validate(_logger);
   } catch (error) {
+    console.error(error);
     logger.error({ at: "RootBundleValidator", message: "Caught an error, retrying!", error });
     await delay(5);
     await run(Logger);
