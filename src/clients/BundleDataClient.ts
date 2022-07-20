@@ -230,8 +230,7 @@ export class BundleDataClient {
             // time. Note that its important we don't skip fills earlier than the block range at this step because
             // we use allValidFills to find the first fill in the entire history associated with a fill in the block
             // range, in order to determine if we already sent a slow fill for it.
-            if (fillWithBlock.blockNumber <= blockRangeForChain[1])
-              allValidFills.push(fillWithBlock);
+            if (fillWithBlock.blockNumber <= blockRangeForChain[1]) allValidFills.push(fillWithBlock);
 
             // If fill is outside block range, we can skip it now since we're not going to add a refund for it.
             if (fillWithBlock.blockNumber > blockRangeForChain[1] || fillWithBlock.blockNumber < blockRangeForChain[0])
