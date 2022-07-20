@@ -168,6 +168,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   allValidFillsInRange: interfaces.FillWithBlock[],
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ) {
+  const excesses = [];
   // We need to subtract excess from any fills that might replaced a slow fill sent to the fill destination chain.
   // This can only happen if the fill was the last fill for a deposit. Otherwise, its still possible that the slow fill
   // for the deposit can be executed, so we'll defer the excess calculation until the hypothetical slow fill executes.
@@ -219,8 +220,18 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
       // was never sent, so we need to send the full slow fill back.
       const excess = fill.isSlowRelay ? amountSentForSlowFill.sub(fill.fillAmount) : amountSentForSlowFill;
       if (excess.eq(toBN(0))) return;
+
+      excesses.push({
+        excess: excess.toString(),
+        lastFillBeforeSlowFillIncludedInRoot,
+        rootBundleEndBlockContainingFirstFill,
+        rootBundleEndBlockContainingFullFill,
+        finalFill: fill,
+      });
       updateRunningBalanceForFill(endBlockForMainnet, runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
     });
+
+  return excesses;
 }
 
 export function constructPoolRebalanceLeaves(
