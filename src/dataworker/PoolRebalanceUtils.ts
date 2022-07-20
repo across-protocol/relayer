@@ -168,7 +168,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   allValidFillsInRange: interfaces.FillWithBlock[],
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ) {
-  const excesses = [];
+  const excesses = {};
   // We need to subtract excess from any fills that might replaced a slow fill sent to the fill destination chain.
   // This can only happen if the fill was the last fill for a deposit. Otherwise, its still possible that the slow fill
   // for the deposit can be executed, so we'll defer the excess calculation until the hypothetical slow fill executes.
@@ -221,16 +221,29 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
       const excess = fill.isSlowRelay ? amountSentForSlowFill.sub(fill.fillAmount) : amountSentForSlowFill;
       if (excess.eq(toBN(0))) return;
 
-      excesses.push({
+      // Log excesses for debugging since this logic is so complex.
+      if (excesses[fill.destinationChainId] === undefined) excesses[fill.destinationChainId] = {};
+      if (excesses[fill.destinationChainId][fill.destinationToken] === undefined)
+        excesses[fill.destinationChainId][fill.destinationToken] = [];
+      excesses[fill.destinationChainId][fill.destinationToken].push({
         excess: excess.toString(),
         lastFillBeforeSlowFillIncludedInRoot,
         rootBundleEndBlockContainingFirstFill,
         rootBundleEndBlockContainingFullFill,
         finalFill: fill,
       });
+
       updateRunningBalanceForFill(endBlockForMainnet, runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
     });
 
+  // Sort excess entries by block number, most recent first.
+  Object.keys(excesses).forEach((chainId) => {
+    Object.keys(excesses[chainId]).forEach((token) => {
+      excesses[chainId][token] = excesses[chainId][token].sort(
+        (ex, ey) => ey.finalFill.blockNumber - ex.finalFill.blockNumber
+      );
+    });
+  });
   return excesses;
 }
 
