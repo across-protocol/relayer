@@ -222,8 +222,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
       if (excess.eq(toBN(0))) return;
 
       // Log excesses for debugging since this logic is so complex.
-      if (excesses[fill.destinationChainId] === undefined)
-        excesses[fill.destinationChainId] = {}
+      if (excesses[fill.destinationChainId] === undefined) excesses[fill.destinationChainId] = {};
       if (excesses[fill.destinationChainId][fill.destinationToken] === undefined)
         excesses[fill.destinationChainId][fill.destinationToken] = [];
       excesses[fill.destinationChainId][fill.destinationToken].push({
@@ -232,7 +231,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         rootBundleEndBlockContainingFirstFill,
         rootBundleEndBlockContainingFullFill,
         finalFill: fill,
-      })
+      });
 
       updateRunningBalanceForFill(endBlockForMainnet, runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
     });
@@ -240,9 +239,9 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   // Sort excess entries by block number, most recent first.
   Object.values(excesses).forEach((excessesForChainId) => {
     Object.values(excessesForChainId).forEach((excessesForToken) => {
-      excessesForToken.sort((ex, ey) => ey.finalFill.blockNumber - ex.finalFill.blockNumber)
-    })
-  })
+      excessesForToken.sort((ex, ey) => ey.finalFill.blockNumber - ex.finalFill.blockNumber);
+    });
+  });
   return excesses;
 }
 
