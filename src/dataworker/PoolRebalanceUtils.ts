@@ -237,9 +237,11 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
     });
 
   // Sort excess entries by block number, most recent first.
-  Object.values(excesses).forEach((excessesForChainId) => {
-    Object.values(excessesForChainId).forEach((excessesForToken) => {
-      excessesForToken.sort((ex, ey) => ey.finalFill.blockNumber - ex.finalFill.blockNumber);
+  Object.keys(excesses).forEach((chainId) => {
+    Object.keys(excesses[chainId]).forEach((token) => {
+      excesses[chainId][token] = excesses[chainId][token].sort(
+        (ex, ey) => ey.finalFill.blockNumber - ex.finalFill.blockNumber
+      );
     });
   });
   return excesses;
