@@ -126,7 +126,8 @@ export class Dataworker {
       deposits,
       allValidFills,
       allValidFillsInRange,
-      unfilledDeposits
+      unfilledDeposits,
+      true
     );
   }
 
@@ -189,7 +190,8 @@ export class Dataworker {
       deposits,
       allValidFills,
       allValidFillsInRange,
-      unfilledDeposits
+      unfilledDeposits,
+      true
     );
     PoolRebalanceUtils.prettyPrintLeaves(
       this.logger,
@@ -487,7 +489,8 @@ export class Dataworker {
       deposits,
       allValidFills,
       allValidFillsInRange,
-      unfilledDeposits
+      unfilledDeposits,
+      true
     );
     const expectedRelayerRefundRoot = _buildRelayerRefundRoot(
       endBlockForMainnet,
@@ -1052,7 +1055,8 @@ export class Dataworker {
             deposits,
             allValidFills,
             allValidFillsInRange,
-            unfilledDeposits
+            unfilledDeposits,
+            false
           );
 
           const maxRefundCount = this.maxRefundCountOverride
@@ -1213,7 +1217,8 @@ export class Dataworker {
     deposits: DepositWithBlock[],
     allValidFills: FillWithBlock[],
     allValidFillsInRange: FillWithBlock[],
-    unfilledDeposits: UnfilledDeposit[]
+    unfilledDeposits: UnfilledDeposit[],
+    logSlowFillExcessData = false
   ) {
     const key = JSON.stringify(blockRangesForChains);
     if (!this.rootCache[key]) {
@@ -1228,7 +1233,7 @@ export class Dataworker {
         this.chainIdListForBundleEvaluationBlockNumbers,
         this.maxL1TokenCountOverride,
         this.tokenTransferThreshold,
-        this.logger
+        logSlowFillExcessData ? this.logger : undefined
       );
     }
 
