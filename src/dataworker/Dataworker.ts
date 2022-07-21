@@ -236,6 +236,12 @@ export class Dataworker {
         const executedLeavesInEthereumBundle = spokePoolClients[1]
           .getRelayerRefundExecutions()
           .filter((leaf) => leaf.rootBundleId === mostRecentEthereumRootBundle.rootBundleId);
+        if (executedLeavesInEthereumBundle.length === 0)
+          return {
+            value: true,
+            latestExecutedLeaf: undefined,
+            bufferInEthBlocks: this.bufferToPropose,
+          };
         const latestExecutedLeaf = sortEventsDescending([...executedLeavesInEthereumBundle])[0];
         return {
           value: endBlockForMainnet - this.bufferToPropose < latestExecutedLeaf.blockNumber,
