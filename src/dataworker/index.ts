@@ -96,8 +96,7 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
           ],
           config.useCacheForSpokePool ? bundleEndBlockMapping : {}
         );
-      }
-      else
+      } else
         await updateSpokePoolClients(
           spokePoolClients,
           [
