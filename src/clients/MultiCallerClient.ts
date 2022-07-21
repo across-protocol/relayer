@@ -113,7 +113,7 @@ export class MultiCallerClient {
       }
 
       const chunkedTransactions: { [networkId: number]: AugmentedTransaction[][] } = Object.fromEntries(
-        Object.entries(groupedTransactions).map(([chainId, transactions]) => [chainId, lodash.chunk(transactions, 50)])
+        Object.entries(groupedTransactions).map(([chainId, transactions]) => [chainId, lodash.chunk(transactions, 75)])
       );
 
       if (simulationModeOn) {
