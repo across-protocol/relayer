@@ -241,19 +241,23 @@ export class Dataworker {
         if (executedLeavesInEthereumBundle.length === 0)
           return {
             value: true,
+            mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
+            mostRecentEthereumRootBundle: mostRecentEthereumRootBundle.rootBundleId,
             latestExecutedLeaf: undefined,
             bufferInEthBlocks: this.bufferToPropose,
           };
         const latestExecutedLeaf = sortEventsDescending([...executedLeavesInEthereumBundle])[0];
         return {
           value: endBlockForMainnet - this.bufferToPropose < latestExecutedLeaf.blockNumber,
+          mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
+          mostRecentEthereumRootBundle: mostRecentEthereumRootBundle.rootBundleId,
           latestExecutedLeaf: latestExecutedLeaf.blockNumber,
           bufferInEthBlocks: this.bufferToPropose,
         };
       } else
         return {
           value: true,
-          latestExecutedLeaf: undefined,
+          mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
           bufferInEthBlocks: this.bufferToPropose,
         }; // If root bundle hasn't been relayed to ethereum spoke yet then exit early.
       // Here we assume that there is always a RelayerRefundLeaf relayed to chain 1, which is a safe assumption.
