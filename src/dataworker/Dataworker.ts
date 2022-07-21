@@ -255,14 +255,14 @@ export class Dataworker {
     if (shouldWaitToPropose.value) {
       this.logger.debug({
         at: "Dataworker#propose",
-        message: `Waiting to propose new bundle until new bundle end block is ${shouldWaitToPropose.bufferInEthBlocks} blocks past the latest Ethereum relayer refund leaf execution`,
+        message: `Waiting to propose new bundle until new bundle end block (${endBlockForMainnet}) is ${shouldWaitToPropose.bufferInEthBlocks} blocks past the latest Ethereum relayer refund leaf execution`,
         shouldWaitToPropose,
       });
       return;
     } else
       this.logger.debug({
         at: "Dataworker#propose",
-        message: `Proceeding to propose new bundle; new bundle end block is at least ${shouldWaitToPropose.bufferInEthBlocks} blocks past the latest Ethereum relayer refund leaf execution`,
+        message: `Proceeding to propose new bundle; new bundle end block (${endBlockForMainnet}) is at least ${shouldWaitToPropose.bufferInEthBlocks} blocks past the latest Ethereum relayer refund leaf execution`,
         shouldWaitToPropose,
       });
 
