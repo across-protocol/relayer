@@ -227,8 +227,10 @@ export class Dataworker {
     // This is a temporary fix: wait some time until we propose another root bundle. Currently, there appears to be a bug where proposing a
     // root bundle immediately after executing all PoolRebalanceLeaves proposes an invalid bundle, but waiting
     // a bit, possibly for cache to populate, works.
-    const _shouldWaitToPropose = () => {
-      const mostRecentValidatedBundle = this.clients.hubPoolClient.getMostRecentProposedRootBundle(endBlockForMainnet);
+    const _shouldWaitToPropose = async () => {
+      const mostRecentValidatedBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
+        await this.clients.hubPoolClient.hubPool.provider.getBlockNumber()
+      );
       const mostRecentEthereumRootBundle = spokePoolClients[1]
         .getRootBundleRelays()
         .find((bundle) => bundle.relayerRefundRoot === mostRecentValidatedBundle.relayerRefundRoot);
@@ -236,22 +238,32 @@ export class Dataworker {
         const executedLeavesInEthereumBundle = spokePoolClients[1]
           .getRelayerRefundExecutions()
           .filter((leaf) => leaf.rootBundleId === mostRecentEthereumRootBundle.rootBundleId);
+        if (executedLeavesInEthereumBundle.length === 0)
+          return {
+            value: true,
+            mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
+            mostRecentEthereumRootBundle: mostRecentEthereumRootBundle.rootBundleId,
+            latestExecutedLeaf: undefined,
+            bufferInEthBlocks: this.bufferToPropose,
+          };
         const latestExecutedLeaf = sortEventsDescending([...executedLeavesInEthereumBundle])[0];
         return {
           value: endBlockForMainnet - this.bufferToPropose < latestExecutedLeaf.blockNumber,
+          mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
+          mostRecentEthereumRootBundle: mostRecentEthereumRootBundle.rootBundleId,
           latestExecutedLeaf: latestExecutedLeaf.blockNumber,
           bufferInEthBlocks: this.bufferToPropose,
         };
       } else
         return {
           value: true,
-          latestExecutedLeaf: undefined,
+          mostRecentValidatedBundle: mostRecentValidatedBundle?.blockNumber,
           bufferInEthBlocks: this.bufferToPropose,
         }; // If root bundle hasn't been relayed to ethereum spoke yet then exit early.
       // Here we assume that there is always a RelayerRefundLeaf relayed to chain 1, which is a safe assumption.
     };
 
-    const shouldWaitToPropose = _shouldWaitToPropose();
+    const shouldWaitToPropose = await _shouldWaitToPropose();
     if (this.bufferToPropose > 0 && shouldWaitToPropose.value) {
       this.logger.debug({
         at: "Dataworker#propose",
