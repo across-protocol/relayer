@@ -227,7 +227,7 @@ export class Dataworker {
     // root bundle immediately after executing all PoolRebalanceLeaves proposes an invalid bundle, but waiting
     // a bit, possibly for cache to populate, works.
     const _shouldWaitToPropose = () => {
-      const bufferInEthBlocks = (40 * 60) / 15; // 40 mins of blocks;
+      const bufferInEthBlocks = (20 * 60) / 15; // 20 mins of blocks;
       const mostRecentValidatedBundle = this.clients.hubPoolClient.getMostRecentProposedRootBundle(endBlockForMainnet);
       const mostRecentEthereumRootBundle = spokePoolClients[1]
         .getRootBundleRelays()
@@ -255,12 +255,16 @@ export class Dataworker {
     if (shouldWaitToPropose.value) {
       this.logger.debug({
         at: "Dataworker#propose",
-        message:
-          "Waiting to propose new bundle until new bundle end block is 160 blocks past the latest Ethereum relayer refund leaf execution",
+        message: `Waiting to propose new bundle until new bundle end block is ${shouldWaitToPropose.bufferInEthBlocks} blocks past the latest Ethereum relayer refund leaf execution`,
         shouldWaitToPropose,
       });
       return;
-    }
+    } else
+      this.logger.debug({
+        at: "Dataworker#propose",
+        message: `Proceeding to propose new bundle; new bundle end block is at least ${shouldWaitToPropose.bufferInEthBlocks} blocks past the latest Ethereum relayer refund leaf execution`,
+        shouldWaitToPropose,
+      });
 
     this.logger.debug({ at: "Dataworker", message: "Building relayer refund root", blockRangesForProposal });
     const relayerRefundRoot = _buildRelayerRefundRoot(
