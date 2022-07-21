@@ -228,7 +228,7 @@ export class Dataworker {
     // root bundle immediately after executing all PoolRebalanceLeaves proposes an invalid bundle, but waiting
     // a bit, possibly for cache to populate, works.
     const _shouldWaitToPropose = () => {
-      const mostRecentValidatedBundle = this.clients.hubPoolClient.getMostRecentProposedRootBundle(endBlockForMainnet);
+      const mostRecentValidatedBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(endBlockForMainnet);
       const mostRecentEthereumRootBundle = spokePoolClients[1]
         .getRootBundleRelays()
         .find((bundle) => bundle.relayerRefundRoot === mostRecentValidatedBundle.relayerRefundRoot);

@@ -229,7 +229,9 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         excess: excess.toString(),
         lastFillBeforeSlowFillIncludedInRoot,
         rootBundleEndBlockContainingFirstFill,
-        rootBundleEndBlockContainingFullFill,
+        rootBundleEndBlockContainingFullFill: rootBundleEndBlockContainingFullFill
+          ? rootBundleEndBlockContainingFullFill
+          : "N/A",
         finalFill: fill,
       });
 
