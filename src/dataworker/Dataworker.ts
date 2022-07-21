@@ -227,8 +227,10 @@ export class Dataworker {
     // This is a temporary fix: wait some time until we propose another root bundle. Currently, there appears to be a bug where proposing a
     // root bundle immediately after executing all PoolRebalanceLeaves proposes an invalid bundle, but waiting
     // a bit, possibly for cache to populate, works.
-    const _shouldWaitToPropose = () => {
-      const mostRecentValidatedBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(endBlockForMainnet);
+    const _shouldWaitToPropose = async () => {
+      const mostRecentValidatedBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
+        await this.clients.hubPoolClient.hubPool.provider.getBlockNumber()
+      );
       const mostRecentEthereumRootBundle = spokePoolClients[1]
         .getRootBundleRelays()
         .find((bundle) => bundle.relayerRefundRoot === mostRecentValidatedBundle.relayerRefundRoot);
@@ -257,7 +259,7 @@ export class Dataworker {
       // Here we assume that there is always a RelayerRefundLeaf relayed to chain 1, which is a safe assumption.
     };
 
-    const shouldWaitToPropose = _shouldWaitToPropose();
+    const shouldWaitToPropose = await _shouldWaitToPropose();
     if (this.bufferToPropose > 0 && shouldWaitToPropose.value) {
       this.logger.debug({
         at: "Dataworker#propose",
