@@ -25,7 +25,8 @@ export async function createDataworker(_logger: winston.Logger) {
     config.maxPoolRebalanceLeafSizeOverride,
     config.tokenTransferThresholdOverride,
     config.blockRangeEndBlockBuffer,
-    config.spokeRootsLookbackCount
+    config.spokeRootsLookbackCount,
+    config.bufferToPropose
   );
 
   return {
@@ -61,26 +62,6 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
       );
 
       if (spokePoolClients === undefined) {
-        // This is a temporary fix: update spoke clients to repopulate cache twice. This guarantees that the
-        // RedisDB cache always contains all events from block 0 to the latest bundle end block.
-        // Without this second update, the spoke client could have populated data from an "incomplete" cache that
-        // only contains events from block 0 to the N-1 bundle end block. The client should then fetch events
-        // from N-1 bundle end block until latest bundle end block, but this doesn't seem to be working right now.
-        await constructSpokePoolClientsForBlockAndUpdate(
-          dataworker.chainIdListForBundleEvaluationBlockNumbers,
-          clients,
-          logger,
-          clients.hubPoolClient.latestBlockNumber,
-          [
-            "FundsDeposited",
-            "RequestedSpeedUpDeposit",
-            "FilledRelay",
-            "EnabledDepositRoute",
-            "RelayedRootBundle",
-            "ExecutedRelayerRefundRoot",
-          ],
-          config.useCacheForSpokePool ? bundleEndBlockMapping : {}
-        );
         spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
           dataworker.chainIdListForBundleEvaluationBlockNumbers,
           clients,

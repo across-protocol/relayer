@@ -26,6 +26,8 @@ export class DataworkerConfig extends CommonConfig {
 
   readonly useCacheForSpokePool: boolean;
 
+  readonly bufferToPropose: number;
+
   constructor(env: ProcessEnv) {
     const {
       ROOT_BUNDLE_EXECUTION_THRESHOLD,
@@ -43,9 +45,11 @@ export class DataworkerConfig extends CommonConfig {
       FINALIZER_CHAINS,
       FINALIZER_ENABLED,
       USE_CACHE_FOR_SPOKE_POOL,
+      BUFFER_TO_PROPOSE,
     } = env;
     super(env);
 
+    this.bufferToPropose = BUFFER_TO_PROPOSE ? Number(BUFFER_TO_PROPOSE) : (20 * 60) / 15; // 20 mins of blocks;
     // Should we assert that the leaf count caps are > 0?
     this.maxPoolRebalanceLeafSizeOverride = MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE
       ? Number(MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE)

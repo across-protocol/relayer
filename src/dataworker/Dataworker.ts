@@ -46,7 +46,8 @@ export class Dataworker {
     readonly maxL1TokenCountOverride: number = undefined,
     readonly tokenTransferThreshold: BigNumberForToken = {},
     readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {},
-    readonly spokeRootsLookbackCount = 0
+    readonly spokeRootsLookbackCount = 0,
+    readonly bufferToPropose = 0
   ) {
     if (
       maxRefundCountOverride !== undefined ||
@@ -222,6 +223,48 @@ export class Dataworker {
           totalUsdRefund,
         });
     }
+
+    // This is a temporary fix: wait some time until we propose another root bundle. Currently, there appears to be a bug where proposing a
+    // root bundle immediately after executing all PoolRebalanceLeaves proposes an invalid bundle, but waiting
+    // a bit, possibly for cache to populate, works.
+    const _shouldWaitToPropose = () => {
+      const mostRecentValidatedBundle = this.clients.hubPoolClient.getMostRecentProposedRootBundle(endBlockForMainnet);
+      const mostRecentEthereumRootBundle = spokePoolClients[1]
+        .getRootBundleRelays()
+        .find((bundle) => bundle.relayerRefundRoot === mostRecentValidatedBundle.relayerRefundRoot);
+      if (mostRecentEthereumRootBundle !== undefined) {
+        const executedLeavesInEthereumBundle = spokePoolClients[1]
+          .getRelayerRefundExecutions()
+          .filter((leaf) => leaf.rootBundleId === mostRecentEthereumRootBundle.rootBundleId);
+        const latestExecutedLeaf = sortEventsDescending([...executedLeavesInEthereumBundle])[0];
+        return {
+          value: endBlockForMainnet - this.bufferToPropose < latestExecutedLeaf.blockNumber,
+          latestExecutedLeaf: latestExecutedLeaf.blockNumber,
+          bufferInEthBlocks: this.bufferToPropose,
+        };
+      } else
+        return {
+          value: true,
+          latestExecutedLeaf: undefined,
+          bufferInEthBlocks: this.bufferToPropose,
+        }; // If root bundle hasn't been relayed to ethereum spoke yet then exit early.
+      // Here we assume that there is always a RelayerRefundLeaf relayed to chain 1, which is a safe assumption.
+    };
+
+    const shouldWaitToPropose = _shouldWaitToPropose();
+    if (this.bufferToPropose > 0 && shouldWaitToPropose.value) {
+      this.logger.debug({
+        at: "Dataworker#propose",
+        message: `Waiting to propose new bundle until new bundle end block (${endBlockForMainnet}) is ${shouldWaitToPropose.bufferInEthBlocks} blocks past the latest Ethereum relayer refund leaf execution`,
+        shouldWaitToPropose,
+      });
+      return;
+    } else
+      this.logger.debug({
+        at: "Dataworker#propose",
+        message: `Proceeding to propose new bundle; new bundle end block (${endBlockForMainnet}) is at least ${shouldWaitToPropose.bufferInEthBlocks} blocks past the latest Ethereum relayer refund leaf execution`,
+        shouldWaitToPropose,
+      });
 
     this.logger.debug({ at: "Dataworker", message: "Building relayer refund root", blockRangesForProposal });
     const relayerRefundRoot = _buildRelayerRefundRoot(
