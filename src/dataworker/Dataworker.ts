@@ -257,7 +257,7 @@ export class Dataworker {
       } else
         return {
           value: true,
-          mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
+          mostRecentValidatedBundle: mostRecentValidatedBundle?.blockNumber,
           bufferInEthBlocks: this.bufferToPropose,
         }; // If root bundle hasn't been relayed to ethereum spoke yet then exit early.
       // Here we assume that there is always a RelayerRefundLeaf relayed to chain 1, which is a safe assumption.
