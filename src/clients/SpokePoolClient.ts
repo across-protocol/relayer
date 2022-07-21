@@ -338,6 +338,7 @@ export class SpokePoolClient {
       }
 
       // Now add any newly fetched events from RPC.
+      this.log("debug", `Using ${depositEvents.length} newly queried deposit events for chain ${this.chainId}`, { earliestEvent: depositEvents[0].blockNumber })
       for (const [index, event] of depositEvents.entries()) {
         // Append the realizedLpFeePct.
         const deposit: Deposit = { ...spreadEvent(event), realizedLpFeePct: dataForQuoteTime[index].realizedLpFeePct };
@@ -390,10 +391,11 @@ export class SpokePoolClient {
         });
         this.log(
           "debug",
-          `Using ${cachedData.fills.length} cached fill events within search config for chain ${this.chainId}`
+          `Using ${this.fillsWithBlockNumbers.length} cached fill events within search config for chain ${this.chainId}`
         );
       }
 
+      this.log("debug", `Using ${fillEvents.length} newly queried fill events for chain ${this.chainId}`, { earliestEvent: fillEvents[0].blockNumber })
       for (const event of fillEvents) {
         this.fills.push(spreadEvent(event));
         this.fillsWithBlockNumbers.push(spreadEventWithBlockNumber(event) as FillWithBlock);
