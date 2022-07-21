@@ -109,7 +109,7 @@ export class Relayer {
         chainId: deposit.destinationChainId,
         method: "fillRelay", // method called.
         args: buildFillRelayProps(deposit, repaymentChain, fillAmount), // props sent with function call.
-        message: "Relay instantly sent 🚀", // message sent to logger.
+        message: fillAmount.eq(deposit.amount) ? "Relay instantly sent 🚀" : "Instantly completed relay 📫", // message sent to logger.
         mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChain, fillAmount), // message details mrkdwn
       });
 
