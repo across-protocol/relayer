@@ -223,6 +223,45 @@ export class Dataworker {
         });
     }
 
+    // This is a temporary fix: wait some time until we propose another root bundle. Currently, there appears to be a bug where proposing a
+    // root bundle immediately after executing all PoolRebalanceLeaves proposes an invalid bundle, but waiting
+    // a bit, possibly for cache to populate, works.
+    const _shouldWaitToPropose = () => {
+      const bufferInEthBlocks = (40 * 60) / 15; // 40 mins of blocks;
+      const mostRecentValidatedBundle = this.clients.hubPoolClient.getMostRecentProposedRootBundle(endBlockForMainnet);
+      const mostRecentEthereumRootBundle = spokePoolClients[1]
+        .getRootBundleRelays()
+        .find((bundle) => bundle.relayerRefundRoot === mostRecentValidatedBundle.relayerRefundRoot);
+      if (mostRecentEthereumRootBundle !== undefined) {
+        const executedLeavesInEthereumBundle = spokePoolClients[1]
+          .getRelayerRefundExecutions()
+          .filter((leaf) => leaf.rootBundleId === mostRecentEthereumRootBundle.rootBundleId);
+        const latestExecutedLeaf = sortEventsDescending(executedLeavesInEthereumBundle)[0];
+        return {
+          value: endBlockForMainnet - bufferInEthBlocks < latestExecutedLeaf.blockNumber,
+          latestExecutedLeaf: latestExecutedLeaf.blockNumber,
+          bufferInEthBlocks,
+        };
+      } else
+        return {
+          value: true,
+          latestExecutedLeaf: undefined,
+          bufferInEthBlocks,
+        }; // If root bundle hasn't been relayed to ethereum spoke yet then exit early.
+      // Here we assume that there is always a RelayerRefundLeaf relayed to chain 1, which is a safe assumption.
+    };
+
+    const shouldWaitToPropose = _shouldWaitToPropose();
+    if (shouldWaitToPropose.value) {
+      this.logger.debug({
+        at: "Dataworker#propose",
+        message:
+          "Waiting to propose new bundle until new bundle end block is 160 blocks past the latest Ethereum relayer refund leaf execution",
+        shouldWaitToPropose,
+      });
+      return;
+    }
+
     this.logger.debug({ at: "Dataworker", message: "Building relayer refund root", blockRangesForProposal });
     const relayerRefundRoot = _buildRelayerRefundRoot(
       endBlockForMainnet,
