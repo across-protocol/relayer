@@ -1,4 +1,13 @@
-import { winston, EMPTY_MERKLE_ROOT, sortEventsDescending, BigNumber, getRefund, MerkleTree, toBN, sortEventsAscending } from "../utils";
+import {
+  winston,
+  EMPTY_MERKLE_ROOT,
+  sortEventsDescending,
+  BigNumber,
+  getRefund,
+  MerkleTree,
+  toBN,
+  sortEventsAscending,
+} from "../utils";
 import { toBNWei, getFillsInRange, ZERO_ADDRESS } from "../utils";
 import { DepositWithBlock, FillsToRefund, FillWithBlock, UnfilledDeposit } from "../interfaces";
 import {
