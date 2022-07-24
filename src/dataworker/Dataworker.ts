@@ -1,4 +1,13 @@
-import { winston, EMPTY_MERKLE_ROOT, sortEventsDescending, BigNumber, getRefund, MerkleTree, toBN } from "../utils";
+import {
+  winston,
+  EMPTY_MERKLE_ROOT,
+  sortEventsDescending,
+  BigNumber,
+  getRefund,
+  MerkleTree,
+  toBN,
+  sortEventsAscending,
+} from "../utils";
 import { toBNWei, getFillsInRange, ZERO_ADDRESS } from "../utils";
 import { DepositWithBlock, FillsToRefund, FillWithBlock, UnfilledDeposit } from "../interfaces";
 import {
@@ -664,7 +673,7 @@ export class Dataworker {
         const sortedFills = sortEventsDescending(client.fillsWithBlockNumbers);
 
         const slowFillsForChain = client.getFills().filter((fill) => fill.isSlowRelay);
-        for (const rootBundleRelay of rootBundleRelays) {
+        for (const rootBundleRelay of sortEventsAscending(rootBundleRelays)) {
           const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
             if (bundle.slowRelayRoot !== rootBundleRelay.slowRelayRoot) return false;
 
@@ -1052,7 +1061,8 @@ export class Dataworker {
         });
 
         const executedLeavesForChain = client.getRelayerRefundExecutions();
-        for (const rootBundleRelay of rootBundleRelays) {
+
+        for (const rootBundleRelay of sortEventsAscending(rootBundleRelays)) {
           const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
             if (bundle.relayerRefundRoot !== rootBundleRelay.relayerRefundRoot) return false;
             const followingBlockNumber =
