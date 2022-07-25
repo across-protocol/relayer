@@ -36,7 +36,7 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
 if (require.main === module) {
   const opts = {
     boolean: ["dataworker", "finalizer", "help", "monitor", "relayer"],
-    string: ["wallet"],
+    string: ["wallet", "keys"],
     alias: { h: "help" },
     unknown: usage,
   };
