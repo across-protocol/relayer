@@ -173,9 +173,15 @@ export class SpokePoolClient {
 
   getValidUnfilledAmountForDeposit(deposit: Deposit): { unfilledAmount: BigNumber; fillCount: number } {
     const fillsForDeposit = this.depositHashesToFills[this.getDepositHash(deposit)];
-    if (fillsForDeposit === undefined || fillsForDeposit === [])
-      return { unfilledAmount: toBN(deposit.amount), fillCount: 0 }; // If no fills then the full amount is remaining.
+    // If no fills then the full amount is remaining.
+    if (fillsForDeposit === undefined || fillsForDeposit.length === 0) {
+      return { unfilledAmount: toBN(deposit.amount), fillCount: 0 };
+    }
     const fills = fillsForDeposit.filter((fill) => this.validateFillForDeposit(fill, deposit));
+    // If all fills are invalid we can consider this unfilled.
+    if (fills.length === 0) {
+      return { unfilledAmount: toBN(deposit.amount), fillCount: 0 };
+    }
 
     // Order fills by totalFilledAmount and then return the first fill's full deposit amount minus total filled amount.
     const fillsOrderedByTotalFilledAmount = fills.sort((fillA, fillB) =>
@@ -185,6 +191,7 @@ export class SpokePoolClient {
         ? -1
         : 0
     );
+
     const lastFill = fillsOrderedByTotalFilledAmount[0];
     return { unfilledAmount: toBN(lastFill.amount.sub(lastFill.totalFilledAmount)), fillCount: fills.length };
   }
