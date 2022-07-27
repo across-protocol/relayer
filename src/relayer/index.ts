@@ -54,6 +54,6 @@ export async function runRelayer(_logger: winston.Logger): Promise<void> {
       logger.debug("Disconnecting from redis server.");
       relayerClients.configStoreClient.redisClient.disconnect();
     }
-    throw error
+    throw error;
   }
 }

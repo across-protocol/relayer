@@ -21,9 +21,8 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
     relayer: runRelayer,
   };
 
-  /* todo Make the mode of operation an operand, rather than an option.
-   * i.e. ts-node ./index.ts [options] <relayer|...>
-   */
+  // todo Make the mode of operation an operand, rather than an option.
+  // i.e. ts-node ./index.ts [options] <relayer|...>
   const cmd = Object.keys(cmds).find((_cmd) => !!args[_cmd]);
 
   if (cmd === "help") cmds[cmd](); // no return

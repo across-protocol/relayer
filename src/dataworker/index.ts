@@ -134,6 +134,6 @@ export async function runDataworker(_logger: winston.Logger): Promise<void> {
     logger.debug("Disconnecting from redis server.");
     clients.configStoreClient.redisClient.disconnect();
 
-    throw error
+    throw error;
   }
 }
