@@ -48,8 +48,7 @@ export async function finalize(
     if (chainId === 42161) {
       // Skip events that are likely not past the seven day challenge period.
       const olderTokensBridgedEvents = tokensBridged.filter(
-        (e) =>
-          e.blockNumber < client.latestBlockNumber - optimisticRollupFinalizationWindow
+        (e) => e.blockNumber < client.latestBlockNumber - optimisticRollupFinalizationWindow
       );
       const finalizableMessages = await getFinalizableMessages(logger, olderTokensBridgedEvents, hubSigner);
       for (const l2Message of finalizableMessages) {
@@ -72,8 +71,7 @@ export async function finalize(
     } else if (chainId === 10) {
       // Skip events that are likely not past the seven day challenge period.
       const olderTokensBridgedEvents = tokensBridged.filter(
-        (e) =>
-          e.blockNumber < client.latestBlockNumber - optimisticRollupFinalizationWindow
+        (e) => e.blockNumber < client.latestBlockNumber - optimisticRollupFinalizationWindow
       );
       const crossChainMessenger = getOptimismClient(hubSigner);
       const finalizableMessages = await getOptimismFinalizableMessages(
