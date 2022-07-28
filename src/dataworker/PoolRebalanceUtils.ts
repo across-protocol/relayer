@@ -161,7 +161,7 @@ export function computePoolRebalanceUsdVolume(leaves: PoolRebalanceLeaf[], clien
 }
 
 export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
-  endBlockForMainnet: number,
+  mainnetBundleEndBlock: number,
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
   allValidFills: interfaces.FillWithBlock[],
@@ -235,7 +235,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         finalFill: fill,
       });
 
-      updateRunningBalanceForFill(endBlockForMainnet, runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
+      updateRunningBalanceForFill(mainnetBundleEndBlock, runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
     });
 
   // Sort excess entries by block number, most recent first.

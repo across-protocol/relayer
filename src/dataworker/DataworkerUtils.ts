@@ -253,7 +253,7 @@ export function _buildPoolRebalanceRoot(
   // balances because the prior partial fill would have triggered a refund to be sent to the spoke pool to refund
   // a slow fill.
   const fillsTriggeringExcesses = subtractExcessFromPreviousSlowFillsFromRunningBalances(
-    clients.hubPoolClient.latestBlockNumber,
+    mainnetBundleEndBlock,
     runningBalances,
     clients.hubPoolClient,
     allValidFills,
