@@ -216,7 +216,8 @@ export function _buildRelayerRefundRoot(
 }
 
 export function _buildPoolRebalanceRoot(
-  endBlockForMainnet: number,
+  latestMainnetBlock: number,
+  mainnetBundleEndBlock: number,
   fillsToRefund: FillsToRefund,
   deposits: DepositWithBlock[],
   allValidFills: FillWithBlock[],
@@ -241,19 +242,19 @@ export function _buildPoolRebalanceRoot(
   initializeRunningBalancesFromRelayerRepayments(
     runningBalances,
     realizedLpFees,
-    endBlockForMainnet,
+    mainnetBundleEndBlock,
     clients.hubPoolClient,
     fillsToRefund
   );
 
   // Add payments to execute slow fills.
-  addSlowFillsToRunningBalances(endBlockForMainnet, runningBalances, clients.hubPoolClient, unfilledDeposits);
+  addSlowFillsToRunningBalances(mainnetBundleEndBlock, runningBalances, clients.hubPoolClient, unfilledDeposits);
 
   // For certain fills associated with another partial fill from a previous root bundle, we need to adjust running
   // balances because the prior partial fill would have triggered a refund to be sent to the spoke pool to refund
   // a slow fill.
   const fillsTriggeringExcesses = subtractExcessFromPreviousSlowFillsFromRunningBalances(
-    endBlockForMainnet,
+    latestMainnetBlock,
     runningBalances,
     clients.hubPoolClient,
     allValidFills,
@@ -277,10 +278,10 @@ export function _buildPoolRebalanceRoot(
 
   // Add to the running balance value from the last valid root bundle proposal for {chainId, l1Token}
   // combination if found.
-  addLastRunningBalance(endBlockForMainnet, runningBalances, clients.hubPoolClient);
+  addLastRunningBalance(mainnetBundleEndBlock, runningBalances, clients.hubPoolClient);
 
   const leaves: PoolRebalanceLeaf[] = constructPoolRebalanceLeaves(
-    endBlockForMainnet,
+    mainnetBundleEndBlock,
     runningBalances,
     realizedLpFees,
     clients.configStoreClient,

@@ -131,6 +131,7 @@ export class Dataworker {
 
     return this._getPoolRebalanceRoot(
       blockRangesForChains,
+      spokePoolClients[1].latestBlockNumber,
       endBlockForMainnet,
       fillsToRefund,
       deposits,
@@ -195,6 +196,7 @@ export class Dataworker {
     this.logger.debug({ at: "Dataworker", message: "Building pool rebalance root", blockRangesForProposal });
     const poolRebalanceRoot = this._getPoolRebalanceRoot(
       blockRangesForProposal,
+      spokePoolClients[1].latestBlockNumber,
       endBlockForMainnet,
       fillsToRefund,
       deposits,
@@ -548,6 +550,7 @@ export class Dataworker {
     );
     const expectedPoolRebalanceRoot = this._getPoolRebalanceRoot(
       blockRangesImpliedByBundleEndBlocks,
+      spokePoolClients[1].latestBlockNumber,
       endBlockForMainnet,
       fillsToRefund,
       deposits,
@@ -1115,6 +1118,7 @@ export class Dataworker {
           );
           const expectedPoolRebalanceRoot = this._getPoolRebalanceRoot(
             blockNumberRanges,
+            spokePoolClients[1].latestBlockNumber,
             endBlockForMainnet,
             fillsToRefund,
             deposits,
@@ -1277,7 +1281,8 @@ export class Dataworker {
 
   _getPoolRebalanceRoot(
     blockRangesForChains: number[][],
-    endBlockForMainnet: number,
+    latestMainnetBlock: number,
+    mainnetBundleEndBlock: number,
     fillsToRefund: FillsToRefund,
     deposits: DepositWithBlock[],
     allValidFills: FillWithBlock[],
@@ -1288,7 +1293,8 @@ export class Dataworker {
     const key = JSON.stringify(blockRangesForChains);
     if (!this.rootCache[key]) {
       this.rootCache[key] = _buildPoolRebalanceRoot(
-        endBlockForMainnet,
+        latestMainnetBlock,
+        mainnetBundleEndBlock,
         fillsToRefund,
         deposits,
         allValidFills,
