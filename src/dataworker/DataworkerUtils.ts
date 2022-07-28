@@ -216,7 +216,6 @@ export function _buildRelayerRefundRoot(
 }
 
 export function _buildPoolRebalanceRoot(
-  latestMainnetBlock: number,
   mainnetBundleEndBlock: number,
   fillsToRefund: FillsToRefund,
   deposits: DepositWithBlock[],
@@ -254,7 +253,7 @@ export function _buildPoolRebalanceRoot(
   // balances because the prior partial fill would have triggered a refund to be sent to the spoke pool to refund
   // a slow fill.
   const fillsTriggeringExcesses = subtractExcessFromPreviousSlowFillsFromRunningBalances(
-    latestMainnetBlock,
+    clients.hubPoolClient.latestBlockNumber,
     runningBalances,
     clients.hubPoolClient,
     allValidFills,

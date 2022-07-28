@@ -118,7 +118,7 @@ export class Dataworker {
       spokePoolClients
     );
 
-    const endBlockForMainnet = getBlockRangeForChain(
+    const mainnetBundleEndBlock = getBlockRangeForChain(
       blockRangesForChains,
       1,
       this.chainIdListForBundleEvaluationBlockNumbers
@@ -131,8 +131,7 @@ export class Dataworker {
 
     return this._getPoolRebalanceRoot(
       blockRangesForChains,
-      spokePoolClients[1].latestBlockNumber,
-      endBlockForMainnet,
+      mainnetBundleEndBlock,
       fillsToRefund,
       deposits,
       allValidFills,
@@ -177,7 +176,7 @@ export class Dataworker {
     // We do make an assumption that the spoke pool contract was not changed during the block range. By using the
     // spoke pool at this block instead of assuming its the currently deployed one, we can pay refunds for deposits
     // on deprecated spoke pools.
-    const endBlockForMainnet = getBlockRangeForChain(
+    const mainnetBundleEndBlock = getBlockRangeForChain(
       blockRangesForProposal,
       1,
       this.chainIdListForBundleEvaluationBlockNumbers
@@ -196,8 +195,7 @@ export class Dataworker {
     this.logger.debug({ at: "Dataworker", message: "Building pool rebalance root", blockRangesForProposal });
     const poolRebalanceRoot = this._getPoolRebalanceRoot(
       blockRangesForProposal,
-      spokePoolClients[1].latestBlockNumber,
-      endBlockForMainnet,
+      mainnetBundleEndBlock,
       fillsToRefund,
       deposits,
       allValidFills,
@@ -259,7 +257,7 @@ export class Dataworker {
           };
         const latestExecutedLeaf = sortEventsDescending([...executedLeavesInEthereumBundle])[0];
         return {
-          value: endBlockForMainnet - this.bufferToPropose < latestExecutedLeaf.blockNumber,
+          value: mainnetBundleEndBlock - this.bufferToPropose < latestExecutedLeaf.blockNumber,
           mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
           mostRecentEthereumRootBundle: mostRecentEthereumRootBundle.rootBundleId,
           latestExecutedLeaf: latestExecutedLeaf.blockNumber,
@@ -278,27 +276,27 @@ export class Dataworker {
     if (this.bufferToPropose > 0 && shouldWaitToPropose.value) {
       this.logger.debug({
         at: "Dataworker#propose",
-        message: `Waiting to propose new bundle until new bundle end block (${endBlockForMainnet}) is ${shouldWaitToPropose.bufferInEthBlocks} blocks past the latest Ethereum relayer refund leaf execution`,
+        message: `Waiting to propose new bundle until new bundle end block (${mainnetBundleEndBlock}) is ${shouldWaitToPropose.bufferInEthBlocks} blocks past the latest Ethereum relayer refund leaf execution`,
         shouldWaitToPropose,
       });
       return;
     } else
       this.logger.debug({
         at: "Dataworker#propose",
-        message: `Proceeding to propose new bundle; new bundle end block (${endBlockForMainnet}) is at least ${shouldWaitToPropose.bufferInEthBlocks} blocks past the latest Ethereum relayer refund leaf execution`,
+        message: `Proceeding to propose new bundle; new bundle end block (${mainnetBundleEndBlock}) is at least ${shouldWaitToPropose.bufferInEthBlocks} blocks past the latest Ethereum relayer refund leaf execution`,
         shouldWaitToPropose,
       });
 
     this.logger.debug({ at: "Dataworker", message: "Building relayer refund root", blockRangesForProposal });
     const relayerRefundRoot = _buildRelayerRefundRoot(
-      endBlockForMainnet,
+      mainnetBundleEndBlock,
       fillsToRefund,
       poolRebalanceRoot.leaves,
       poolRebalanceRoot.runningBalances,
       this.clients,
       this.maxRefundCountOverride
         ? this.maxRefundCountOverride
-        : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet),
+        : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(mainnetBundleEndBlock),
       this.tokenTransferThreshold
     );
     PoolRebalanceUtils.prettyPrintLeaves(
@@ -550,7 +548,6 @@ export class Dataworker {
     );
     const expectedPoolRebalanceRoot = this._getPoolRebalanceRoot(
       blockRangesImpliedByBundleEndBlocks,
-      spokePoolClients[1].latestBlockNumber,
       endBlockForMainnet,
       fillsToRefund,
       deposits,
@@ -1118,7 +1115,6 @@ export class Dataworker {
           );
           const expectedPoolRebalanceRoot = this._getPoolRebalanceRoot(
             blockNumberRanges,
-            spokePoolClients[1].latestBlockNumber,
             endBlockForMainnet,
             fillsToRefund,
             deposits,
@@ -1281,7 +1277,6 @@ export class Dataworker {
 
   _getPoolRebalanceRoot(
     blockRangesForChains: number[][],
-    latestMainnetBlock: number,
     mainnetBundleEndBlock: number,
     fillsToRefund: FillsToRefund,
     deposits: DepositWithBlock[],
@@ -1293,7 +1288,6 @@ export class Dataworker {
     const key = JSON.stringify(blockRangesForChains);
     if (!this.rootCache[key]) {
       this.rootCache[key] = _buildPoolRebalanceRoot(
-        latestMainnetBlock,
         mainnetBundleEndBlock,
         fillsToRefund,
         deposits,
