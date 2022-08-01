@@ -75,7 +75,7 @@ export async function findDeficitBundles(_logger: winston.Logger) {
         }
       }
 
-      let unexecutedLeaves = [];
+      const unexecutedLeaves = [];
       for (const leaf of allRefundLeaves) {
         if (leaf.chainId === chainId && !executedRefundLeaves.has(leaf.leafId)) {
           unexecutedLeaves.push(leaf);

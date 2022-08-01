@@ -87,7 +87,7 @@ export class Dataworker {
 
   buildRelayerRefundRoot(
     blockRangesForChains: number[][],
-    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    fillsToRefund: FillsToRefund,
     poolRebalanceLeaves: PoolRebalanceLeaf[],
     runningBalances: RunningBalances
   ) {
@@ -97,7 +97,6 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
 
-    const { fillsToRefund } = this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
     const maxRefundCount = this.maxRefundCountOverride
       ? this.maxRefundCountOverride
       : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
