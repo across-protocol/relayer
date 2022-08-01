@@ -63,6 +63,7 @@ export async function findDeficitBundles(_logger: winston.Logger) {
     for (const chainId of dataworker.chainIdListForBundleEvaluationBlockNumbers) {
       const spokePoolClient = spokePoolClients[chainId];
       // Bundle id is unique on each chain.
+      console.log(`Root bundle: ${relayerRefundRoot}`)
       const matchingBundle = spokePoolClient.getRootBundleRelays().find((b) => b.relayerRefundRoot === bundle.relayerRefundRoot);
       // Some bundles do not have refunds on all chains.
       if (matchingBundle === undefined) continue;
