@@ -64,6 +64,8 @@ export async function findDeficitBundles(_logger: winston.Logger) {
       const spokePoolClient = spokePoolClients[chainId];
       // Bundle id is unique on each chain.
       const matchingBundle = spokePoolClient.getRootBundleRelays().find((b) => b.relayerRefundRoot === bundle.relayerRefundRoot);
+      // Some bundles do not have refunds on all chains.
+      if (matchingBundle === undefined) continue;
       const bundleId = matchingBundle.rootBundleId;
 
       const executedRefundLeaves = new Set();
