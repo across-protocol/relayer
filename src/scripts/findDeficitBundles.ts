@@ -67,6 +67,7 @@ export async function findDeficitBundles(_logger: winston.Logger) {
       // Some bundles do not have refunds on all chains.
       if (matchingBundle === undefined) continue;
       const bundleId = matchingBundle.rootBundleId;
+      console.log(`Looking at chain ${chainId} and bundle ${bundleId}`)
 
       const executedRefundLeaves = new Set();
       for (const refundExecution of spokePoolClient.getRelayerRefundExecutions()) {
