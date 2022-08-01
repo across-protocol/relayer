@@ -60,7 +60,7 @@ export async function paginatedEventQuery(
   } catch (error) {
     if (retryCount < maxRetries) {
       await delay(retrySleepTime);
-      return await paginatedEventQuery(contract, filter, searchConfig, retryCount+1);
+      return await paginatedEventQuery(contract, filter, searchConfig, retryCount + 1);
     } else throw error;
   }
 }
