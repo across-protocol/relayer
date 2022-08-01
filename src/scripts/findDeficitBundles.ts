@@ -32,14 +32,14 @@ export async function findDeficitBundles(_logger: winston.Logger) {
       return [bundleStartBlocks[chainId], bundle.bundleEvaluationBlockNumbers[index].toNumber()];
     });
     // Reconstruct the bundle.
-    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this.clients.bundleDataClient.loadData(
+    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = clients.bundleDataClient.loadData(
       bundleBlockRanges,
       spokePoolClients
     );
     const allValidFillsInRange = getFillsInRange(
       allValidFills,
       bundleBlockRanges,
-      this.chainIdListForBundleEvaluationBlockNumbers
+      dataworker.chainIdListForBundleEvaluationBlockNumbers
     );
     const poolRebalanceRoot = dataworker._getPoolRebalanceRoot(
       bundleBlockRanges,
@@ -82,7 +82,7 @@ export async function findDeficitBundles(_logger: winston.Logger) {
         }
       }
       if (unexecutedLeaves.length > 0) {
-        this.logger.debug({
+        logger.debug({
           at: "findDeficitBundles",
           message: "Found unexecuted leaves",
           unexecutedLeaves,
