@@ -2,7 +2,7 @@ import { delay } from "@uma/financial-templates-lib";
 import { DepositWithBlock, FillWithBlock, SortableEvent } from "../interfaces";
 import { Contract, Event, EventFilter, Promise } from "./";
 
-const defaultConcurrency = 50;
+const defaultConcurrency = 200;
 const maxRetries = 3;
 const retrySleepTime = 10;
 
