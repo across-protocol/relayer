@@ -44,7 +44,7 @@ export async function runMonitor(_logger: winston.Logger) {
     // eslint-disable-next-line no-process-exit
     if (await processCrash(logger, "Monitor", config.pollingDelay, error)) process.exit(1);
 
-    if (clients !== undefined) {
+    if (clients !== undefined && clients.configStoreClient.redisClient !== undefined) {
       // todo understand why redisClient isn't GCed automagically.
       logger.debug("Disconnecting from redis server.");
       clients.configStoreClient.redisClient.disconnect();
