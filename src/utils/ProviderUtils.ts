@@ -53,7 +53,7 @@ class RateLimitedProvider extends ethers.providers.JsonRpcProvider {
   }
 }
 
-const defaultTimeout = 60 * 1000;
+const defaultTimeout = 120 * 1000;
 
 function delay(s: number): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, Math.round(s * 1000)));
