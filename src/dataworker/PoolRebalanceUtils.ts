@@ -161,7 +161,7 @@ export function computePoolRebalanceUsdVolume(leaves: PoolRebalanceLeaf[], clien
 }
 
 export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
-  endBlockForMainnet: number,
+  mainnetBundleEndBlock: number,
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
   allValidFills: interfaces.FillWithBlock[],
@@ -182,7 +182,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
     .forEach((fill: interfaces.FillWithBlock) => {
       const { lastFillBeforeSlowFillIncludedInRoot, rootBundleEndBlockContainingFirstFill } =
         getFillDataForSlowFillFromPreviousRootBundle(
-          endBlockForMainnet,
+          hubPoolClient.latestBlockNumber,
           fill,
           allValidFills,
           hubPoolClient,
@@ -203,7 +203,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
       // first fill for this deposit. If it is the same as the ProposeRootBundle event containing the
       // current fill, then the first fill is in the current bundle and we can exit early.
       const rootBundleEndBlockContainingFullFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
-        endBlockForMainnet,
+        hubPoolClient.latestBlockNumber,
         fill.blockNumber,
         fill.destinationChainId,
         chainIdListForBundleEvaluationBlockNumbers
@@ -235,7 +235,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         finalFill: fill,
       });
 
-      updateRunningBalanceForFill(endBlockForMainnet, runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
+      updateRunningBalanceForFill(mainnetBundleEndBlock, runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
     });
 
   // Sort excess entries by block number, most recent first.
