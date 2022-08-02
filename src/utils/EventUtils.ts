@@ -1,5 +1,5 @@
 import { delay } from "@uma/financial-templates-lib";
-import { DepositWithBlock, FillWithBlock, SortableEvent } from "../interfaces";
+import { SortableEvent } from "../interfaces";
 import { Contract, Event, EventFilter, Promise } from "./";
 
 const defaultConcurrency = 200;
@@ -47,7 +47,6 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
   try {
     return (await Promise.all(promises, { concurrency: searchConfig.concurrency | defaultConcurrency })).flat(); // Default to 200 concurrent calls.
   } catch (error) {
-    console.log(`Error ${JSON.stringify(error)}`);
     if (retryCounter++ < maxRetries) {
       await delay(retrySleepTime);
       return await paginatedEventQuery(contract, filter, searchConfig);

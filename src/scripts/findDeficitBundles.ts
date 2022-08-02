@@ -1,7 +1,7 @@
-import {winston, config, Logger, delay, getFillsInRange} from "../utils";
+import { winston, config, Logger, delay, getFillsInRange } from "../utils";
 import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { createDataworker } from "../dataworker";
-import {constructSpokePoolClientsForBlockAndUpdate, updateSpokePoolClients} from "../common";
+import { constructSpokePoolClientsForBlockAndUpdate, updateSpokePoolClients } from "../common";
 
 config();
 let logger: winston.Logger;
@@ -30,7 +30,9 @@ export async function findDeficitBundles(_logger: winston.Logger) {
   await updateSpokePoolClients(spokePoolClients);
 
   const latestMainnetBlock = hubPoolClient.latestBlockNumber;
-  const bundleStartBlocks = Object.fromEntries(dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => [chainId, 0]));
+  const bundleStartBlocks = Object.fromEntries(
+    dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => [chainId, 0])
+  );
   for (const bundle of hubPoolClient.getProposedRootBundles()) {
     // Skip all bundles that were not executed.
     if (!hubPoolClient.isRootBundleValid(bundle, latestMainnetBlock)) continue;
@@ -58,7 +60,7 @@ export async function findDeficitBundles(_logger: winston.Logger) {
       unfilledDeposits,
       true
     );
-    const {leaves: allRefundLeaves} = dataworker.buildRelayerRefundRoot(
+    const { leaves: allRefundLeaves } = dataworker.buildRelayerRefundRoot(
       bundleBlockRanges,
       fillsToRefund,
       poolRebalanceRoot.leaves,
@@ -70,12 +72,12 @@ export async function findDeficitBundles(_logger: winston.Logger) {
     for (const chainId of dataworker.chainIdListForBundleEvaluationBlockNumbers) {
       const spokePoolClient = spokePoolClients[chainId];
       // Bundle id is unique on each chain.
-      console.log(`Root bundle: ${bundle.relayerRefundRoot}`)
-      const matchingBundle = spokePoolClient.getRootBundleRelays().find((b) => b.relayerRefundRoot === bundle.relayerRefundRoot);
+      const matchingBundle = spokePoolClient
+        .getRootBundleRelays()
+        .find((b) => b.relayerRefundRoot === bundle.relayerRefundRoot);
       // Some bundles do not have refunds on all chains.
       if (matchingBundle === undefined) continue;
       const bundleId = matchingBundle.rootBundleId;
-      console.log(`Looking at chain ${chainId} and bundle ${bundleId}`)
 
       const executedRefundLeaves = new Set();
       for (const refundExecution of spokePoolClient.getRelayerRefundExecutions()) {
@@ -92,10 +94,17 @@ export async function findDeficitBundles(_logger: winston.Logger) {
           unexecutedLeaves.push(leaf);
         }
       }
+
+      logger.warn({
+        at: "findDeficitBundles",
+        message: "All rebalance and refund leaves",
+        allRefundLeaves,
+      });
       if (unexecutedLeaves.length > 0) {
-        logger.debug({
+        logger.warn({
           at: "findDeficitBundles",
           message: "Found unexecuted leaves",
+          poolRebalanceRoot,
           unexecutedLeaves,
         });
       }
