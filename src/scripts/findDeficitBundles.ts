@@ -18,7 +18,14 @@ export async function findDeficitBundles(_logger: winston.Logger) {
     clients,
     logger,
     hubPoolClient.latestBlockNumber,
-    ["ExecutedRelayerRefundRoot"]
+    [
+      "FundsDeposited",
+      "RequestedSpeedUpDeposit",
+      "FilledRelay",
+      "EnabledDepositRoute",
+      "RelayedRootBundle",
+      "ExecutedRelayerRefundRoot",
+    ]
   );
   await updateSpokePoolClients(spokePoolClients);
 
@@ -31,7 +38,7 @@ export async function findDeficitBundles(_logger: winston.Logger) {
     const bundleBlockRanges = dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, index) => {
       return [bundleStartBlocks[chainId], bundle.bundleEvaluationBlockNumbers[index].toNumber()];
     });
-    // Reconstruct the bundle.
+    // Reconstruct the bundle, so we can figure out if any refund leaves were not executed in time.
     const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = clients.bundleDataClient.loadData(
       bundleBlockRanges,
       spokePoolClients
