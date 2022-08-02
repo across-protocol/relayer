@@ -157,9 +157,6 @@ export async function runFinalizer(_logger: winston.Logger): Promise<void> {
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }
   } catch (error) {
-    // eslint-disable-next-line no-process-exit
-    if (await processCrash(logger, "Dataworker", config.pollingDelay, error)) process.exit(1);
-
     if (commonClients.configStoreClient.redisClient !== undefined) {
       // If this throws an exception, it will mask the underlying error.
       logger.debug("Disconnecting from redis server.");

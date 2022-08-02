@@ -46,9 +46,6 @@ export async function runRelayer(_logger: winston.Logger): Promise<void> {
       if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) break;
     }
   } catch (error) {
-    // eslint-disable-next-line no-process-exit
-    if (await processCrash(logger, "Relayer", config.pollingDelay, error)) process.exit(1);
-
     if (relayerClients !== undefined && relayerClients.configStoreClient.redisClient !== undefined) {
       // todo understand why redisClient isn't GCed automagically.
       logger.debug("Disconnecting from redis server.");
