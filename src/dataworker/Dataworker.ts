@@ -252,15 +252,15 @@ export class Dataworker {
             value: true,
             mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
             mostRecentEthereumRootBundle: mostRecentEthereumRootBundle.rootBundleId,
-            latestExecutedLeaf: undefined,
+            earliestExecutedLeaf: undefined,
             bufferInEthBlocks: this.bufferToPropose,
           };
-        const latestExecutedLeaf = sortEventsDescending([...executedLeavesInEthereumBundle])[0];
+        const earliestExecutedLeaf = sortEventsAscending([...executedLeavesInEthereumBundle])[0];
         return {
-          value: mainnetBundleEndBlock - this.bufferToPropose < latestExecutedLeaf.blockNumber,
+          value: mainnetBundleEndBlock - this.bufferToPropose < earliestExecutedLeaf.blockNumber,
           mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
           mostRecentEthereumRootBundle: mostRecentEthereumRootBundle.rootBundleId,
-          latestExecutedLeaf: latestExecutedLeaf.blockNumber,
+          earliestExecutedLeaf: earliestExecutedLeaf.blockNumber,
           bufferInEthBlocks: this.bufferToPropose,
         };
       } else
