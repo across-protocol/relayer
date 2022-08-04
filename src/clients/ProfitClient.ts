@@ -40,11 +40,12 @@ export class ProfitClient {
   }
 
   getPriceOfToken(token: string) {
-    if (!this.tokenPrices[token]) {
+    const _token: string = token.toLowerCase();
+    if (!this.tokenPrices[_token]) {
       this.logger.warn({ at: "ProfitClient", message: `Token ${token} not found in state. Using 0` });
       return toBN(0);
     }
-    return this.tokenPrices[token];
+    return this.tokenPrices[_token];
   }
 
   getUnprofitableFills() {
@@ -98,26 +99,51 @@ export class ProfitClient {
   }
 
   async update() {
-    const l1Tokens = this.hubPoolClient.getL1Tokens();
-    this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", l1Tokens });
-    const prices = await Promise.allSettled(l1Tokens.map((l1Token: L1Token) => this.coingeckoPrice(l1Token.address)));
+    const l1Tokens = Object.fromEntries(
+      this.hubPoolClient.getL1Tokens().map((token) => [token["address"].toLowerCase(), { symbol: token["symbol"] }])
+    );
 
-    const errors = [];
-    for (const [index, priceResponse] of prices.entries()) {
-      if (priceResponse.status === "rejected") errors.push(l1Tokens[index]);
-      else this.tokenPrices[l1Tokens[index].address] = toBNWei(priceResponse.value[1]);
-    }
+    this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", l1Tokens });
+    let cgRetries = 2;
+    let errors: Array<{ [k: string]: string }>;
+    do {
+      errors = [];
+      try {
+        const cgPrices: Array<any> = await this.coingeckoPrices(Object.keys(l1Tokens));
+        cgPrices.forEach((priceFeed) => {
+          const address: string = priceFeed["address"].toLowerCase();
+          const price: number = priceFeed["price"];
+
+          // todo: Any additional validation to perform?
+          //       Ensure that timestamps are always moving forwards?
+          if (typeof price !== "number") {
+            this.logger.debug({
+              message: "Unexpected CoinGecko price response.",
+              priceFeed,
+            });
+            errors.push({ address: address, symbol: priceFeed["symbol"] });
+          } else this.tokenPrices[address] = toBN(price);
+        });
+      } catch (err) {
+        this.logger.debug({
+          message: `Failed to retrieve CoinGecko prices (${cgRetries} tries left).`,
+          err,
+          l1Tokens,
+        });
+      }
+    } while (errors.length === 0 && cgRetries--);
+
     if (errors.length > 0) {
       let mrkdwn = "The following L1 token prices could not be fetched:\n";
-      errors.forEach((token: L1Token) => {
-        mrkdwn += `- ${token.symbol} Not found. Using last known price of ${this.getPriceOfToken(token.address)}.\n`;
+      errors.forEach((token: { [k: string]: string }) => {
+        mrkdwn += `- ${token["symbol"]} Not found. Using last known price of ${this.getPriceOfToken(token.address)}.\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
     }
     this.logger.debug({ at: "ProfitClient", message: "Updated Profit client", tokenPrices: this.tokenPrices });
   }
 
-  private async coingeckoPrice(token: string) {
-    return await this.coingecko.getCurrentPriceByContract(token, "usd");
+  private async coingeckoPrices(tokens: Array<string>) {
+    return await this.coingecko.getContractPrices(tokens, "usd");
   }
 }
