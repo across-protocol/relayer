@@ -3,6 +3,13 @@ import { HubPoolClient } from ".";
 import { Deposit, L1Token } from "../interfaces";
 import { Coingecko } from "@uma/sdk";
 
+// Copied from @uma/sdk/coingecko. Propose to export export it upstream in the sdk.
+type CoinGeckoPrice = {
+  address: string;
+  timestamp: number;
+  price: number;
+};
+
 // Define the minimum revenue, in USD, that a relay must yield in order to be considered "profitable". This is a short
 // term solution to enable us to avoid DOS relays that yield negative profits. In the future this should be updated
 // to actual factor in the cost of sending transactions on the associated target chains.
@@ -40,12 +47,11 @@ export class ProfitClient {
   }
 
   getPriceOfToken(token: string) {
-    const _token: string = token.toLowerCase();
-    if (!this.tokenPrices[_token]) {
+    if (!this.tokenPrices[token]) {
       this.logger.warn({ at: "ProfitClient", message: `Token ${token} not found in state. Using 0` });
       return toBN(0);
     }
-    return this.tokenPrices[_token];
+    return this.tokenPrices[token];
   }
 
   getUnprofitableFills() {
@@ -99,44 +105,39 @@ export class ProfitClient {
   }
 
   async update() {
-    const l1Tokens = Object.fromEntries(
-      this.hubPoolClient.getL1Tokens().map((token) => [token["address"].toLowerCase(), { symbol: token["symbol"] }])
+    const l1Tokens: { [k: string]: L1Token } = Object.fromEntries(
+      this.hubPoolClient.getL1Tokens().map((token) => [token["address"], token])
     );
 
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", l1Tokens });
-    let cgRetries = 2;
-    let errors: Array<{ [k: string]: string }>;
-    do {
-      errors = [];
-      try {
-        const cgPrices: Array<any> = await this.coingeckoPrices(Object.keys(l1Tokens));
-        cgPrices.forEach((priceFeed) => {
-          const address: string = priceFeed["address"].toLowerCase();
-          const price: number = priceFeed["price"];
+    let cgPrices: Array<CoinGeckoPrice> = [];
+    try {
+      cgPrices = await this.coingeckoPrices(Object.keys(l1Tokens));
+    } catch (err) {
+      this.logger.warn({
+        message: "Failed to retrieve prices.",
+        err,
+        l1Tokens,
+      });
+    }
 
-          // todo: Any additional validation to perform?
-          //       Ensure that timestamps are always moving forwards?
-          if (typeof price !== "number") {
-            this.logger.debug({
-              message: "Unexpected CoinGecko price response.",
-              priceFeed,
-            });
-            errors.push({ address: address, symbol: priceFeed["symbol"] });
-          } else this.tokenPrices[address] = toBN(price);
-        });
-      } catch (err) {
-        this.logger.debug({
-          message: `Failed to retrieve CoinGecko prices (${cgRetries} tries left).`,
-          err,
-          l1Tokens,
-        });
-      }
-    } while (errors.length === 0 && cgRetries--);
+    const errors: Array<{ [k: string]: string }> = [];
+    for (const address of Object.keys(l1Tokens)) {
+      const tokenPrice: CoinGeckoPrice = cgPrices.find((price) => address.toLowerCase() === price.address);
+
+      // todo: Any additional validation to do? Ensure that timestamps are always moving forwards?
+      if (tokenPrice === undefined || typeof tokenPrice.price !== "number") {
+        const symbol = l1Tokens[address].symbol;
+        const errmsg = tokenPrice ? "Unexpected price response." : `Missing price for ${symbol}.`;
+        this.logger.warn({ message: errmsg, tokenPrice });
+        errors.push({ address: address, symbol: symbol });
+      } else this.tokenPrices[address] = toBNWei(tokenPrice.price);
+    }
 
     if (errors.length > 0) {
       let mrkdwn = "The following L1 token prices could not be fetched:\n";
-      errors.forEach((token: { [k: string]: string }) => {
-        mrkdwn += `- ${token["symbol"]} Not found. Using last known price of ${this.getPriceOfToken(token.address)}.\n`;
+      errors.forEach((token) => {
+        mrkdwn += `- ${token.symbol} Not found. Using last known price of ${this.getPriceOfToken(token.address)}.\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
     }
