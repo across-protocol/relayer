@@ -82,7 +82,6 @@ export class PolygonAdapter extends BaseAdapter {
 
   // On polygon a bridge transaction looks like a transfer from address(0) to the target.
   async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
-    await this.updateBlockSearchConfig();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
 
     const promises = [];

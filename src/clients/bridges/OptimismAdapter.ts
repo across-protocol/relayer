@@ -38,7 +38,6 @@ export class OptimismAdapter extends BaseAdapter {
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
-    await this.updateBlockSearchConfig();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
 
     const promises = [];
