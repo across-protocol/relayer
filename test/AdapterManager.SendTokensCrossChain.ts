@@ -7,10 +7,10 @@ import { AdapterManager } from "../src/clients/bridges"; // Tested
 import { l2TokensToL1TokenValidation } from "../src/common";
 import * as interfaces from "../src/clients/bridges/ContractInterfaces";
 
-let hubPoolClient: MockHubPoolClient,
-  mockSpokePoolClients: {
-    [chainId: number]: SpokePoolClient;
-  } = {};
+let hubPoolClient: MockHubPoolClient;
+const mockSpokePoolClients: {
+  [chainId: number]: SpokePoolClient;
+} = {};
 let relayer: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger, amountToSend: BigNumber;
 let adapterManager: AdapterManager; // tested
 

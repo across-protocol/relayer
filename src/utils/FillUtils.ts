@@ -152,7 +152,7 @@ export function getUnfilledDeposits(
   spokePoolClients: SpokePoolClientsByChain,
   maxUnfilledDepositLookBack: { [chainId: number]: number } = {}
 ): { deposit: Deposit; unfilledAmount: BigNumber; fillCount: number }[] {
-  let unfilledDeposits: { deposit: Deposit; unfilledAmount: BigNumber; fillCount: number }[] = [];
+  const unfilledDeposits: { deposit: Deposit; unfilledAmount: BigNumber; fillCount: number }[] = [];
   // Iterate over each chainId and check for unfilled deposits.
   const chainIds = Object.keys(spokePoolClients);
   for (const originChain of chainIds) {

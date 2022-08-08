@@ -15,6 +15,7 @@ let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithA
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
+let spokePoolClients: { [chainId: number]: SpokePoolClient };
 let configStoreClient: AcrossConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
 let relayerInstance: Relayer;
 let multiCallerClient: MultiCallerClient, profitClient: ProfitClient;
@@ -47,7 +48,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       configStoreClient,
       destinationChainId
     );
-    const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
+    spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new ProfitClient(spyLogger, hubPoolClient, toBNWei(1)); // Set relayer discount to 100%.
     relayerInstance = new Relayer(relayer.address, spyLogger, {
@@ -108,6 +109,52 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(multiCallerClient.transactionCount()).to.equal(0); // no Transactions to send.
     expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
+  });
+
+  it("Shouldn't double fill a deposit", async function () {
+    // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
+    // "reasonable" block number based off the block time when looking at quote timestamps.
+    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
+    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+
+    await updateAllClients();
+    await relayerInstance.checkForUnfilledDepositsAndFill();
+    expect(lastSpyLogIncludes(spy, "Filling deposit")).to.be.true;
+    expect(multiCallerClient.transactionCount()).to.equal(1); // One transaction, filling the one deposit.
+
+    // The first fill is still pending but if we rerun the relayer loop, it shouldn't try to fill a second time.
+    await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
+    await relayerInstance.checkForUnfilledDepositsAndFill();
+    // Only still 1 transaction.
+    expect(multiCallerClient.transactionCount()).to.equal(1); // no Transactions to send.
+  });
+
+  it("Skip unwhitelisted chains", async function () {
+    relayerInstance = new Relayer(
+      relayer.address,
+      spyLogger,
+      {
+        spokePoolClients,
+        hubPoolClient,
+        configStoreClient,
+        tokenClient,
+        profitClient,
+        multiCallerClient,
+        inventoryClient: new MockInventoryClient(),
+      },
+      {},
+      [],
+      [originChainId]
+    );
+
+    // Deposit is not on a whitelisted destination chain so relayer shouldn't fill it.
+    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
+    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+
+    // Check that no transaction was sent.
+    await updateAllClients();
+    await relayerInstance.checkForUnfilledDepositsAndFill();
+    expect(lastSpyLogIncludes(spy, "Skipping deposit for unsupported destination chain")).to.be.true;
   });
 });
 

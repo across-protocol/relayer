@@ -112,7 +112,7 @@ export async function finalizeOptimismMessage(
     logger.info({
       at: "OptimismFinalizer",
       message: `Finalized Optimism withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
-      transactionhash: etherscanLink(txn.hash, 1),
+      transactionHash: etherscanLink(txn.hash, 1),
     });
     await delay(30);
   } catch (error) {

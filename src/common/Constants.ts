@@ -2,6 +2,15 @@
 // in the HubPool's proposeRootBundle method should be: Mainnet, Optimism, Polygon, Boba, Arbitrum
 export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
 
+// Target ~2 days per chain. Avg. block times: { 1: 15s, 10/42161: 0.5s, 137: 2.5s, 288: 30s }
+export const MAX_RELAYER_DEPOSIT_LOOK_BACK: { [chainId: number]: number } = {
+  1: 11500,
+  10: 350000,
+  137: 70000,
+  288: 6000,
+  42161: 350000,
+};
+
 // Optimism, ethereum can do infinity lookbacks. boba and Arbitrum limited to 100000 on infura.
 export const CHAIN_MAX_BLOCK_LOOKBACK = {
   1: 0, // Note: 0 gets defaulted to infinity lookback
@@ -49,6 +58,19 @@ export const l2TokensToL1TokenValidation = {
     288: "0xdc0486f8bf31DF57a952bcd3c1d3e166e3d9eC8b",
     42161: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f",
   }, // WBTC
+  "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828": {
+    10: "0xE7798f023fC62146e8Aa1b36Da45fb70855a77Ea",
+    137: "0x3066818837c5e6eD6601bd5a91B0762877A6B731",
+    288: "0x780f33Ad21314d9A1Ffb6867Fe53d48a76Ec0D16",
+    42161: "0xd693Ec944A85eeca4247eC1c3b130DCa9B0C3b22",
+  }, // UMA
+  "0x42bBFa2e77757C645eeaAd1655E0911a7553Efbc": {
+    288: "0xa18bF3994C0Cc6E3b63ac420308E5383f53120D7",
+  }, // BOBA
+  "0x3472A5A71965499acd81997a54BBA8D852C6E53d": {
+    137: "0x1FcbE5937B0cc2adf69772D228fA4205aCF4D9b2",
+    42161: "0xBfa641051Ba0a0Ad1b0AcF549a89536A0D76472E",
+  }, // BADGER
 };
 
 // Maps chain ID to root bundle ID to ignore because the roots are known to be invalid from the perspective of the

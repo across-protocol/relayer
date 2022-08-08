@@ -111,7 +111,7 @@ export async function getFinalizableTransactions(
         else {
           logger.debug({
             at: "PolygonFinalizer",
-            message: `Exit will fail for unknown reason`,
+            message: "Exit will fail for unknown reason",
             err,
           });
           return { status: POLYGON_MESSAGE_STATUS.UNKNOWN_EXIT_FAILURE };
@@ -122,7 +122,7 @@ export async function getFinalizableTransactions(
 
   logger.debug({
     at: "PolygonFinalizer",
-    message: `Polygon message statuses`,
+    message: "Polygon message statuses",
     statusesGrouped: {
       ...groupObjectCountsByProp(exitStatus, (message: { status: string }) => message.status),
       NOT_CHECKPOINTED: tokensBridged.map((_, i) => !isCheckpointed[i]).filter((x) => x === true).length,
@@ -158,7 +158,7 @@ export async function finalizePolygon(
     logger.debug({
       at: "PolygonFinalizer",
       message: `Finalized Polygon withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
-      transactionhash: receipt.transactionHash,
+      transactionHash: receipt.transactionHash,
     });
   } catch (error) {
     logger.warn({
@@ -206,7 +206,7 @@ export async function retrieveTokenFromMainnetTokenBridger(
       logger.info({
         at: "PolygonFinalizer",
         message: `Retrieved ${balanceFromWei} of ${l1TokenInfo.symbol} from PolygonTokenBridger 🪃`,
-        transactionhash: etherscanLink(txn.hash, 1),
+        transactionHash: etherscanLink(txn.hash, 1),
       });
       await delay(30);
     } catch (error) {

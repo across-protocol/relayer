@@ -1,3 +1,4 @@
+/* eslint-disable no-process-exit */
 import { PoolRebalanceLeaf } from "../src/interfaces";
 import {
   ethers,
@@ -49,7 +50,7 @@ export async function run(): Promise<void> {
 
   const relayerRefundRoot: MerkleTree<RelayerRefundLeaf> = buildRelayerRefundTree(relayerRefundLeaves);
   console.log(
-    `relayerRefundRoot:`,
+    "relayerRefundRoot:",
     prettyRelayerRefundLeaf(relayerRefundLeaves),
     relayerRefundRoot.getHexRoot(),
     relayerRefundRoot.getHexProof(relayerRefundLeaves[0])
@@ -62,7 +63,7 @@ export async function run(): Promise<void> {
     relayerRefundRoot.getHexRoot(),
     EMPTY_MERKLE_ROOT,
   ]);
-  console.log(`abiEncodedFunctionData`, abiEncodedFunctionData);
+  console.log("abiEncodedFunctionData", abiEncodedFunctionData);
 
   // 3. Construct pool rebalance leaves
   const poolRebalanceLeaves: PoolRebalanceLeaf[] = [
@@ -89,8 +90,8 @@ export async function run(): Promise<void> {
   const poolRebalanceRoot: MerkleTree<PoolRebalanceLeaf> = buildPoolRebalanceLeafTree(poolRebalanceLeaves);
 
   const relayerRefundRoot2: MerkleTree<RelayerRefundLeaf> = buildRelayerRefundTree(relayerRefundLeaves2);
-  console.log(`relayerRefundRoot2:`, prettyRelayerRefundLeaf(relayerRefundLeaves2), relayerRefundRoot2.getHexRoot());
-  console.log(`poolRebalanceRoot:`, prettyPoolRebalanceLeaf(poolRebalanceLeaves), poolRebalanceRoot.getHexRoot());
+  console.log("relayerRefundRoot2:", prettyRelayerRefundLeaf(relayerRefundLeaves2), relayerRefundRoot2.getHexRoot());
+  console.log("poolRebalanceRoot:", prettyPoolRebalanceLeaf(poolRebalanceLeaves), poolRebalanceRoot.getHexRoot());
 }
 
 if (require.main === module) {

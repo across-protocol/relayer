@@ -21,7 +21,12 @@ export async function runTransaction(
     const txConfig = Object.entries({ ...gas, value, gasLimit }).reduce((a, [k, v]) => (v ? ((a[k] = v), a) : a), {});
     return await contract[method](...args, txConfig);
   } catch (error) {
-    logger.error({ at: "TxUtil", message: "Error executing tx", error, notificationPath: "across-error" });
+    logger.error({
+      at: "TxUtil",
+      message: "Error executing tx",
+      error: JSON.stringify(error),
+      notificationPath: "across-error",
+    });
     throw error;
   }
 }
@@ -75,7 +80,14 @@ async function getPolygonPriorityFee(): Promise<{
   blockNumber: number;
 }> {
   const res = await fetch("https://gasstation-mainnet.matic.network");
-  return await res.json();
+  return (await res.json()) as {
+    safeLow: number;
+    standard: number;
+    fast: number;
+    fastest: number;
+    blockTime: number;
+    blockNumber: number;
+  };
 }
 
 function scaleByNumber(amount: ethers.BigNumber, scaling: number) {

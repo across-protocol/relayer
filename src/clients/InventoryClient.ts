@@ -41,6 +41,11 @@ export class InventoryClient {
 
   // Get the balance of a given l1 token on a target chain, considering any outstanding cross chain transfers as a virtual balance on that chain.
   getBalanceOnChainForL1Token(chainId: number | string, l1Token: string): BigNumber {
+    // We want to skip any l2 token that is not present in the inventory config.
+    if (String(chainId) !== "1" && this.inventoryConfig.tokenConfig[l1Token][String(chainId)] === undefined) {
+      return toBN(0);
+    }
+
     chainId = Number(chainId);
     // If the chain does not have this token (EG BOBA on Optimism) then 0.
     const balance =
@@ -223,6 +228,12 @@ export class InventoryClient {
         if (cumulativeBalance.eq(0)) continue;
 
         for (const chainId of this.getEnabledL2Chains()) {
+          // Skip if there's no configuration for l1Token on chainId. This is the case for BOBA and BADGER
+          // as they're not present on all L2s.
+          if (this.inventoryConfig.tokenConfig[l1Token][String(chainId)] === undefined) {
+            continue;
+          }
+
           const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId);
           const thresholdPct = toBN(this.inventoryConfig.tokenConfig[l1Token][chainId].thresholdPct);
           if (currentAllocPct.lt(thresholdPct)) {
@@ -311,7 +322,7 @@ export class InventoryClient {
             `${getNetworkName(chainId)} which is ` +
             `${formatWei(tokenDistributionPerL1Token[l1Token][chainId].mul(100))}% of the total ` +
             `${formatter(this.getCumulativeBalance(l1Token).toString())} ${symbol}.` +
-            ` This chain's pending L1->L2 transfer amount is ` +
+            " This chain's pending L1->L2 transfer amount is " +
             `${formatter(
               this.crossChainTransferClient
                 .getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
@@ -407,7 +418,7 @@ export class InventoryClient {
         mrkdwn += `*Insufficient amount to unwrap WETH on ${getNetworkName(chainId)}:*\n`;
         const formatter = createFormatFunction(2, 4, false, 18);
         mrkdwn +=
-          `- WETH unwrap blocked. Required to send ` +
+          "- WETH unwrap blocked. Required to send " +
           `${formatter(unexecutedUnwraps[chainId])} but relayer has ` +
           `${formatter(
             this.tokenClient.getBalance(chainId, this.getDestinationTokenForL1Token(l1Weth, chainId))
@@ -494,7 +505,7 @@ export class InventoryClient {
     return false;
   }
 
-  log(message: string, data?: any, level: string = "debug") {
+  log(message: string, data?: any, level = "debug") {
     if (this.logger) this.logger[level]({ at: "InventoryClient", message, ...data });
   }
 }

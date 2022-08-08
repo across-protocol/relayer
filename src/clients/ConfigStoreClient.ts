@@ -33,7 +33,7 @@ export class AcrossConfigStoreClient {
   private rateModelDictionary: across.rateModel.RateModelDictionary;
   public firstBlockToSearch: number;
 
-  public isUpdated: boolean = false;
+  public isUpdated = false;
 
   public client: ReturnType<typeof createClient>;
 
@@ -202,7 +202,7 @@ export class AcrossConfigStoreClient {
 
   // Avoid caching calls that are recent enough to be affected by things like reorgs.
   private shouldCache(eventTimestamp: number) {
-    // Current time must be > 5 minutes past the event timestamp for it to be stable enough to cache.
-    return getCurrentTime() - eventTimestamp > 300;
+    // Current time must be >= 5 minutes past the event timestamp for it to be stable enough to cache.
+    return getCurrentTime() - eventTimestamp >= 300;
   }
 }

@@ -161,13 +161,14 @@ export function computePoolRebalanceUsdVolume(leaves: PoolRebalanceLeaf[], clien
 }
 
 export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
-  endBlockForMainnet: number,
+  mainnetBundleEndBlock: number,
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
   allValidFills: interfaces.FillWithBlock[],
   allValidFillsInRange: interfaces.FillWithBlock[],
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ) {
+  const excesses = {};
   // We need to subtract excess from any fills that might replaced a slow fill sent to the fill destination chain.
   // This can only happen if the fill was the last fill for a deposit. Otherwise, its still possible that the slow fill
   // for the deposit can be executed, so we'll defer the excess calculation until the hypothetical slow fill executes.
@@ -181,7 +182,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
     .forEach((fill: interfaces.FillWithBlock) => {
       const { lastFillBeforeSlowFillIncludedInRoot, rootBundleEndBlockContainingFirstFill } =
         getFillDataForSlowFillFromPreviousRootBundle(
-          endBlockForMainnet,
+          hubPoolClient.latestBlockNumber,
           fill,
           allValidFills,
           hubPoolClient,
@@ -202,7 +203,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
       // first fill for this deposit. If it is the same as the ProposeRootBundle event containing the
       // current fill, then the first fill is in the current bundle and we can exit early.
       const rootBundleEndBlockContainingFullFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
-        endBlockForMainnet,
+        hubPoolClient.latestBlockNumber,
         fill.blockNumber,
         fill.destinationChainId,
         chainIdListForBundleEvaluationBlockNumbers
@@ -219,8 +220,33 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
       // was never sent, so we need to send the full slow fill back.
       const excess = fill.isSlowRelay ? amountSentForSlowFill.sub(fill.fillAmount) : amountSentForSlowFill;
       if (excess.eq(toBN(0))) return;
-      updateRunningBalanceForFill(endBlockForMainnet, runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
+
+      // Log excesses for debugging since this logic is so complex.
+      if (excesses[fill.destinationChainId] === undefined) excesses[fill.destinationChainId] = {};
+      if (excesses[fill.destinationChainId][fill.destinationToken] === undefined)
+        excesses[fill.destinationChainId][fill.destinationToken] = [];
+      excesses[fill.destinationChainId][fill.destinationToken].push({
+        excess: excess.toString(),
+        lastFillBeforeSlowFillIncludedInRoot,
+        rootBundleEndBlockContainingFirstFill,
+        rootBundleEndBlockContainingFullFill: rootBundleEndBlockContainingFullFill
+          ? rootBundleEndBlockContainingFullFill
+          : "N/A",
+        finalFill: fill,
+      });
+
+      updateRunningBalanceForFill(mainnetBundleEndBlock, runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
     });
+
+  // Sort excess entries by block number, most recent first.
+  Object.keys(excesses).forEach((chainId) => {
+    Object.keys(excesses[chainId]).forEach((token) => {
+      excesses[chainId][token] = excesses[chainId][token].sort(
+        (ex, ey) => ey.finalFill.blockNumber - ex.finalFill.blockNumber
+      );
+    });
+  });
+  return excesses;
 }
 
 export function constructPoolRebalanceLeaves(
@@ -344,7 +370,7 @@ export function generateMarkdownForDisputeInvalidBundleBlocks(
     return bundleBlockRangePretty;
   };
   return (
-    `Disputed pending root bundle because of invalid bundle blocks:` +
+    "Disputed pending root bundle because of invalid bundle blocks:" +
     `\n\t*Widest possible expected block range*:${getBlockRangePretty(widestExpectedBlockRange)}` +
     `\n\t*Buffers to end blocks*:${getBlockRangePretty(buffers)}` +
     `\n\t*Pending end blocks*:${getBlockRangePretty(pendingRootBundle.bundleEvaluationBlockNumbers)}`
@@ -353,7 +379,7 @@ export function generateMarkdownForDisputeInvalidBundleBlocks(
 
 export function generateMarkdownForDispute(pendingRootBundle: PendingRootBundle) {
   return (
-    `Disputed pending root bundle:` +
+    "Disputed pending root bundle:" +
     `\n\tPoolRebalance leaf count: ${pendingRootBundle.unclaimedPoolRebalanceLeafCount}` +
     `\n\tPoolRebalance root: ${shortenHexString(pendingRootBundle.poolRebalanceRoot)}` +
     `\n\tRelayerRefund root: ${shortenHexString(pendingRootBundle.relayerRefundRoot)}` +

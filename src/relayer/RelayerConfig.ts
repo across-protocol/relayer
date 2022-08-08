@@ -5,13 +5,26 @@ import { InventoryConfig } from "../interfaces";
 export class RelayerConfig extends CommonConfig {
   readonly inventoryConfig: InventoryConfig;
   readonly relayerDiscount: BigNumber;
-  readonly sendingRelaysEnabled: Boolean;
-  readonly sendingSlowRelaysEnabled: Boolean;
+  readonly sendingRelaysEnabled: boolean;
+  readonly sendingSlowRelaysEnabled: boolean;
+  readonly relayerTokens: string[];
+  readonly relayerDestinationChains: number[];
 
   constructor(env: ProcessEnv) {
-    const { RELAYER_DISCOUNT, RELAYER_INVENTORY_CONFIG, SEND_RELAYS, SEND_SLOW_RELAYS } = env;
+    const {
+      RELAYER_DESTINATION_CHAINS,
+      RELAYER_DISCOUNT,
+      RELAYER_INVENTORY_CONFIG,
+      RELAYER_TOKENS,
+      SEND_RELAYS,
+      SEND_SLOW_RELAYS,
+    } = env;
     super(env);
 
+    // Empty means all chains.
+    this.relayerDestinationChains = RELAYER_DESTINATION_CHAINS ? JSON.parse(RELAYER_DESTINATION_CHAINS) : [];
+    // Empty means all tokens.
+    this.relayerTokens = RELAYER_TOKENS ? JSON.parse(RELAYER_TOKENS) : [];
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
 
     if (Object.keys(this.inventoryConfig).length > 0) {

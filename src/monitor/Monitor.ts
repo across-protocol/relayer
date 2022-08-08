@@ -544,7 +544,7 @@ export class Monitor {
     return mrkdwn + "\n";
   }
 
-  formatKnownTransfers(transfers: TokenTransfer[], decimals: number, transferType: String) {
+  formatKnownTransfers(transfers: TokenTransfer[], decimals: number, transferType: string) {
     if (transfers.length === 0) return "";
 
     const totalAmount = this.getTotalTransferAmount(transfers);
@@ -729,6 +729,7 @@ export class Monitor {
     };
   }
 
+  // Returns balances from cache or from provider if there's a cache miss.
   private async _getBalances(
     balanceRequests: { chainId: number; token: string; account: string }[]
   ): Promise<BigNumber[]> {
@@ -738,8 +739,13 @@ export class Monitor {
         const balance =
           token === ZERO_ADDRESS
             ? await this.clients.spokePoolClients[chainId].spokePool.provider.getBalance(account)
-            : await new Contract(token, ERC20.abi, this.clients.spokePoolClients[chainId].spokePool.provider).balanceOf(
-                account
+            : // Use the latest block number the SpokePoolClient is aware of to query balances.
+              // This prevents double counting when there are very recent refund leaf executions that the SpokePoolClients
+              // missed (the provider node did not see those events yet) but when the balanceOf calls are made, the node
+              // is now aware of those executions.
+              await new Contract(token, ERC20.abi, this.clients.spokePoolClients[chainId].spokePool.provider).balanceOf(
+                account,
+                { blockTag: this.clients.spokePoolClients[chainId].latestBlockNumber }
               );
         if (!this.balanceCache[chainId]) this.balanceCache[chainId] = {};
         if (!this.balanceCache[chainId][token]) this.balanceCache[chainId][token] = {};

@@ -1,4 +1,5 @@
 node_modules
 artifacts
+dist
 cache
-coverage
+typechain

@@ -168,8 +168,8 @@ export class BundleDataClient {
       return this.loadDataFromCache(key);
     }
 
-    if (!this.clients.hubPoolClient.isUpdated) throw new Error(`HubPoolClient not updated`);
-    if (!this.clients.configStoreClient.isUpdated) throw new Error(`ConfigStoreClient not updated`);
+    if (!this.clients.hubPoolClient.isUpdated) throw new Error("HubPoolClient not updated");
+    if (!this.clients.configStoreClient.isUpdated) throw new Error("ConfigStoreClient not updated");
     this.chainIdListForBundleEvaluationBlockNumbers.forEach((chainId) => {
       if (!spokePoolClients[chainId]) throw new Error(`Missing spoke pool client for chain ${chainId}`);
     });
@@ -222,51 +222,55 @@ export class BundleDataClient {
         );
 
         // Find all valid fills matching a deposit on the origin chain and sent on the destination chain.
-        destinationClient.getFillsWithBlockForOriginChain(Number(originChainId)).forEach((fillWithBlock) => {
-          // If fill matches with a deposit, then its a valid fill.
-          const matchedDeposit: Deposit = originClient.getDepositForFill(fillWithBlock);
-          if (matchedDeposit) {
-            // Fill was validated. Save it under all validated fills list with the block number so we can sort it by
-            // time. Note that its important we don't skip fills outside of the block range at this step because
-            // we use allValidFills to find the first fill in the entire history associated with a fill in the block
-            // range, in order to determine if we already sent a slow fill for it.
-            allValidFills.push(fillWithBlock);
+        // Don't include any fills past the bundle end block for the chain, otherwise the destination client will
+        // return fill events that are younger than the bundle end block.
+        destinationClient
+          .getFillsWithBlockForOriginChain(Number(originChainId))
+          .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1])
+          .forEach((fillWithBlock) => {
+            // If fill matches with a deposit, then its a valid fill.
+            const matchedDeposit: Deposit = originClient.getDepositForFill(fillWithBlock);
+            if (matchedDeposit) {
+              // Fill was validated. Save it under all validated fills list with the block number so we can sort it by
+              // time. Note that its important we don't skip fills earlier than the block range at this step because
+              // we use allValidFills to find the first fill in the entire history associated with a fill in the block
+              // range, in order to determine if we already sent a slow fill for it.
+              allValidFills.push(fillWithBlock);
 
-            // If fill is outside block range, we can skip it now since we're not going to add a refund for it.
-            if (fillWithBlock.blockNumber > blockRangeForChain[1] || fillWithBlock.blockNumber < blockRangeForChain[0])
-              return;
+              // If fill is outside block range, we can skip it now since we're not going to add a refund for it.
+              if (fillWithBlock.blockNumber < blockRangeForChain[0]) return;
 
-            // Now create a copy of fill with block data removed, and use its data to update the fills to refund obj.
-            const { blockNumber, transactionIndex, transactionHash, logIndex, ...fill } = fillWithBlock;
-            const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
-              fill,
-              this.clients.hubPoolClient,
-              blockRangesForChains,
-              this.chainIdListForBundleEvaluationBlockNumbers
-            );
+              // Now create a copy of fill with block data removed, and use its data to update the fills to refund obj.
+              const { blockNumber, transactionIndex, transactionHash, logIndex, ...fill } = fillWithBlock;
+              const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
+                fill,
+                this.clients.hubPoolClient,
+                blockRangesForChains,
+                this.chainIdListForBundleEvaluationBlockNumbers
+              );
 
-            // Fills to refund includes both slow and non-slow fills and they both should increase the
-            // total realized LP fee %.
-            assignValidFillToFillsToRefund(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
-            allRelayerRefunds.push({ repaymentToken, repaymentChain: chainToSendRefundTo });
-            updateTotalRealizedLpFeePct(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
+              // Fills to refund includes both slow and non-slow fills and they both should increase the
+              // total realized LP fee %.
+              assignValidFillToFillsToRefund(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
+              allRelayerRefunds.push({ repaymentToken, repaymentChain: chainToSendRefundTo });
+              updateTotalRealizedLpFeePct(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
 
-            // Save deposit as one that is eligible for a slow fill, since there is a fill
-            // for the deposit in this epoch. We save whether this fill is the first fill for the deposit, because
-            // if a deposit has its first fill in this block range, then we can send a slow fill payment to complete
-            // the deposit. If other fills end up completing this deposit, then we'll remove it from the unfilled
-            // deposits later.
-            updateUnfilledDepositsWithMatchedDeposit(fill, matchedDeposit, unfilledDepositsForOriginChain);
+              // Save deposit as one that is eligible for a slow fill, since there is a fill
+              // for the deposit in this epoch. We save whether this fill is the first fill for the deposit, because
+              // if a deposit has its first fill in this block range, then we can send a slow fill payment to complete
+              // the deposit. If other fills end up completing this deposit, then we'll remove it from the unfilled
+              // deposits later.
+              updateUnfilledDepositsWithMatchedDeposit(fill, matchedDeposit, unfilledDepositsForOriginChain);
 
-            // Update total refund counter for convenience when constructing relayer refund leaves
-            updateTotalRefundAmount(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
-          } else {
-            // Note: If the fill's origin chain is set incorrectly (e.g. equal to the destination chain, or
-            // set to some unexpected chain), then it won't be added to `allInvalidFills` because we wouldn't
-            // have been able to grab it from the destinationClient.getFillsWithBlockForOriginChain call.
-            allInvalidFills.push(fillWithBlock);
-          }
-        });
+              // Update total refund counter for convenience when constructing relayer refund leaves
+              updateTotalRefundAmount(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
+            } else {
+              // Note: If the fill's origin chain is set incorrectly (e.g. equal to the destination chain, or
+              // set to some unexpected chain), then it won't be added to `allInvalidFills` because we wouldn't
+              // have been able to grab it from the destinationClient.getFillsWithBlockForOriginChain call.
+              allInvalidFills.push(fillWithBlock);
+            }
+          });
       }
     }
 
@@ -300,7 +304,7 @@ export class BundleDataClient {
     if (Object.keys(spokeEventsReadable.allInvalidFillsInRangeByDestinationChain).length > 0)
       this.logger.debug({
         at: "Dataworker",
-        message: `Finished loading spoke pool data and found some invalid fills in range`,
+        message: "Finished loading spoke pool data and found some invalid fills in range",
         blockRangesForChains,
         allInvalidFillsInRangeByDestinationChain: spokeEventsReadable.allInvalidFillsInRangeByDestinationChain,
       });

@@ -8,10 +8,12 @@ let logger: winston.Logger;
 export async function runMonitor(_logger: winston.Logger) {
   logger = _logger;
   const config = new MonitorConfig(process.env);
+  let clients;
+
   try {
     logger[startupLogLevel(config)]({ at: "AcrossMonitor#index", message: "Monitor started 🔭", config });
 
-    const clients = await constructMonitorClients(config, logger);
+    clients = await constructMonitorClients(config, logger);
     const acrossMonitor = new Monitor(logger, config, clients);
 
     for (;;) {
@@ -42,7 +44,11 @@ export async function runMonitor(_logger: winston.Logger) {
       if (await processEndPollingLoop(logger, "Monitor", config.pollingDelay)) break;
     }
   } catch (error) {
-    if (await processCrash(logger, "Monitor", config.pollingDelay, error)) process.exit(1);
-    await runMonitor(logger);
+    if (clients !== undefined && clients.configStoreClient.redisClient !== undefined) {
+      // todo understand why redisClient isn't GCed automagically.
+      logger.debug("Disconnecting from redis server.");
+      clients.configStoreClient.redisClient.disconnect();
+    }
+    throw error;
   }
 }

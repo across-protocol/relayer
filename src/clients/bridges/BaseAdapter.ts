@@ -16,7 +16,7 @@ export class BaseAdapter {
   l2DepositFinalizedEvents_DepositAdapter: { [address: string]: { [l1Token: string]: any[] } } = {};
 
   depositEvalTime = 24 * 60 * 60; // Consider all deposit finalization events over the last 1 day.
-  l2LookBackSafetyMargin = 5; // The pending transfers util can accomidate up to this multipler
+  l2LookBackSafetyMargin = 5; // The pending transfers util can accommodate up to this multiplier
 
   constructor(readonly spokePoolClients: { [chainId: number]: SpokePoolClient }, _chainId: number) {
     this.chainId = _chainId;
@@ -42,7 +42,7 @@ export class BaseAdapter {
   }
 
   async updateBlockSearchConfig() {
-    //todo: swap this to pulling spokePoolClient.latestBlockNumber.
+    // todo: swap this to pulling spokePoolClient.latestBlockNumber.
     const [l1BlockNumber, l2BlockNumber] = await Promise.all([
       this.getProvider(1).getBlockNumber(),
       this.getProvider(this.chainId).getBlockNumber(),
@@ -105,7 +105,7 @@ export class BaseAdapter {
         if (
           this.isWeth(l1Token) &&
           this.l2DepositFinalizedEvents_DepositAdapter[monitoredAddress]?.[l1Token]?.length > 0
-        )
+        ) {
           // If this is WETH and there are atomic depositor events then consider the union as the ful set of finalization
           // events. We do this as the output event on L2 will show the Atomic depositor as the sender, not the relayer.
           l2FinalizationSet = [
@@ -114,6 +114,7 @@ export class BaseAdapter {
               (event) => event.to === monitoredAddress
             ),
           ].sort((a, b) => a.blockNumber - b.blockNumber);
+        }
 
         // Find the most recent L2 finalization event and most recent deposit event.
         const newestFinalizedDeposit = l2FinalizationSet[l2FinalizationSet.length - 1];
@@ -150,12 +151,13 @@ export class BaseAdapter {
         // in the last lookback period. If this is the case the below logic will consider the newest one first and disregard
         // the older transfers. The worst case if this happens is the util under counts how much is in the bridge.
         let associatedL1DepositIndex = -1;
-        if (newestFinalizedDeposit)
+        if (newestFinalizedDeposit) {
           this.l1DepositInitiatedEvents[monitoredAddress][l1Token].forEach((l1Event, index) => {
             if (l1Event.amount.eq(newestFinalizedDeposit.amount)) {
               associatedL1DepositIndex = index;
             }
           });
+        }
 
         // We now take a subset of all L1 Events over the interval. Remember that the L1 events are sorted by block number
         // with the most recent event last. The event set contains all deposit events that have ever happened on L1 for
@@ -185,7 +187,7 @@ export class BaseAdapter {
     return outstandingTransfers;
   }
 
-  log(message: string, data?: any, level: string = "debug") {
+  log(message: string, data?: any, level = "debug") {
     this.logger[level]({ at: this.getName(), message, ...data });
   }
 

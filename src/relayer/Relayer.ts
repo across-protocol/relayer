@@ -1,18 +1,26 @@
-import { BigNumber, winston, buildFillRelayProps, getNetworkName, getUnfilledDeposits } from "../utils";
+import { BigNumber, winston, buildFillRelayProps, getNetworkName, getUnfilledDeposits, getCurrentTime } from "../utils";
 import { createFormatFunction, etherscanLink, toBN } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 
-import { Deposit } from "../interfaces/SpokePool";
+import { Deposit } from "../interfaces";
+
+const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
 export class Relayer {
+  // Track by originChainId since depositId is issued on the origin chain.
+  // Key is in the form of "chainId-depositId".
+  private fullyFilledDeposits: { [key: string]: boolean } = {};
+
   constructor(
     readonly relayerAddress: string,
     readonly logger: winston.Logger,
     readonly clients: RelayerClients,
-    readonly maxUnfilledDepositLookBack: { [chainId: number]: number } = {}
+    readonly maxUnfilledDepositLookBack: { [chainId: number]: number } = {},
+    readonly relayerTokens: string[] = [],
+    readonly relayerDestinationChains: number[] = []
   ) {}
 
-  async checkForUnfilledDepositsAndFill(sendSlowRelays: Boolean = true) {
+  async checkForUnfilledDepositsAndFill(sendSlowRelays = true) {
     // Fetch all unfilled deposits, order by total earnable fee.
     // TODO: Note this does not consider the price of the token which will be added once the profitability module is
     // added to this bot.
@@ -20,15 +28,40 @@ export class Relayer {
       (a, b) =>
         a.unfilledAmount.mul(a.deposit.relayerFeePct).lt(b.unfilledAmount.mul(b.deposit.relayerFeePct)) ? 1 : -1
     );
-    if (unfilledDeposits.length > 0)
-      this.logger.debug({ at: "Relayer", message: "Filling deposits", number: unfilledDeposits.length });
-    else this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
+    if (unfilledDeposits.length > 0) {
+      this.logger.debug({ at: "Relayer", message: "Unfilled deposits found", number: unfilledDeposits.length });
+    } else {
+      this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
+    }
     // Iterate over all unfilled deposits. For each unfilled deposit: a) check that the token balance client has enough
     // balance to fill the unfilled amount. b) the fill is profitable. If both hold true then fill the unfilled amount.
     // If not enough ballance add the shortfall to the shortfall tracker to produce an appropriate log. If the deposit
     // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
     // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
     for (const { deposit, unfilledAmount, fillCount } of unfilledDeposits) {
+      // Skip any L1 tokens that are not specified in the config.
+      // If relayerTokens is an empty list, we'll assume that all tokens are supported.
+      const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(deposit.originToken, deposit.originChainId);
+      if (
+        this.relayerTokens.length > 0 &&
+        !this.relayerTokens.includes(l1Token.address) &&
+        !this.relayerTokens.includes(l1Token.address.toLowerCase())
+      ) {
+        this.logger.debug({ at: "Relayer", message: "Skipping deposit for unwhitelisted token", deposit, l1Token });
+        continue;
+      }
+
+      const destinationChainId = deposit.destinationChainId;
+      if (this.relayerDestinationChains.length > 0 && !this.relayerDestinationChains.includes(destinationChainId)) {
+        this.logger.debug({
+          at: "Relayer",
+          message: "Skipping deposit for unsupported destination chain",
+          deposit,
+          destinationChain: getNetworkName(destinationChainId),
+        });
+        continue;
+      }
+
       if (this.clients.tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
         if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount)) {
           this.fillRelay(deposit, unfilledAmount);
@@ -36,10 +69,8 @@ export class Relayer {
           this.clients.profitClient.captureUnprofitableFill(deposit, unfilledAmount);
         }
       } else {
-        // TODO: this line right now will capture any token shortfalls, even if you have 0 of the token. The bot should
-        // be updated to ignore non-whitelisted (zero balance) tokens from this token shortfall log.
         this.clients.tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
-        // If we dont have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
+        // If we don't have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
         // 1 wei sized fill to ensure that the deposit is slow relayed. This only needs to be done once.
         if (sendSlowRelays && this.clients.tokenClient.hasBalanceForZeroFill(deposit) && fillCount === 0)
           this.zeroFillDeposit(deposit);
@@ -51,6 +82,20 @@ export class Relayer {
   }
 
   fillRelay(deposit: Deposit, fillAmount: BigNumber) {
+    // Skip deposits that this relayer has already filled completely before to prevent double filling (which is a waste
+    // of gas as the second fill would fail).
+    // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried
+    const fillKey = `${deposit.originChainId}-${deposit.depositId}`;
+    if (this.fullyFilledDeposits[fillKey]) {
+      this.logger.debug({
+        at: "Relayer",
+        message: "Skipping deposits already filled by this relayer",
+        originChainId: deposit.originChainId,
+        depositId: deposit.depositId,
+      });
+      return;
+    }
+
     try {
       // Fetch the repayment chain from the inventory client. Sanity check that it is one of the known chainIds.
       const repaymentChain = this.clients.inventoryClient.determineRefundChainId(deposit);
@@ -64,14 +109,16 @@ export class Relayer {
         chainId: deposit.destinationChainId,
         method: "fillRelay", // method called.
         args: buildFillRelayProps(deposit, repaymentChain, fillAmount), // props sent with function call.
-        message: "Relay instantly sent 🚀", // message sent to logger.
+        message: fillAmount.eq(deposit.amount) ? "Relay instantly sent 🚀" : "Instantly completed relay 📫", // message sent to logger.
         mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChain, fillAmount), // message details mrkdwn
       });
+
+      // TODO: Revisit in the future when we implement partial fills.
+      this.fullyFilledDeposits[fillKey] = true;
 
       // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
       this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.destinationToken, fillAmount);
     } catch (error) {
-      console.log("error", error);
       this.logger.error({
         at: "Relayer",
         message: "Error creating fillRelayTx",
@@ -119,7 +166,7 @@ export class Relayer {
         if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== "1") {
           const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(token, chainId);
           crossChainLog =
-            `There is ` +
+            "There is " +
             formatter(
               this.clients.inventoryClient.crossChainTransferClient
                 .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token.address)
@@ -144,20 +191,31 @@ export class Relayer {
 
     let mrkdwn = "";
     Object.keys(unprofitableDeposits).forEach((chainId) => {
-      mrkdwn += `*Unprofitable deposits on ${getNetworkName(chainId)}:*\n`;
+      let depositMrkdwn = "";
       Object.keys(unprofitableDeposits[chainId]).forEach((depositId) => {
         const { deposit, fillAmount } = unprofitableDeposits[chainId][depositId];
+        // Skip notifying if the unprofitable fill happened too long ago to avoid spamming.
+        if (deposit.quoteTimestamp + UNPROFITABLE_DEPOSIT_NOTICE_PERIOD < getCurrentTime()) {
+          return;
+        }
+
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
         const formatFunction = createFormatFunction(2, 4, false, decimals);
-        mrkdwn +=
+        depositMrkdwn +=
           `- DepositId ${deposit.depositId} of amount ${formatFunction(deposit.amount)} ${symbol}` +
-          ` with a relayerFeePct ${formatFunction(deposit.relayerFeePct)} being relayed from ` +
+          ` with a relayerFeePct ${Relayer.formatFeePct(deposit.relayerFeePct)} being relayed from ` +
           `${getNetworkName(deposit.originChainId)} to ${getNetworkName(deposit.destinationChainId)}` +
           ` and an unfilled amount of  ${formatFunction(fillAmount)} ${symbol} is unprofitable!\n`;
       });
+
+      if (depositMrkdwn) {
+        mrkdwn += `*Unprofitable deposits on ${getNetworkName(chainId)}:*\n` + depositMrkdwn;
+      }
     });
 
-    this.logger.warn({ at: "Relayer", message: "Not relaying unprofitable deposits 🙅‍♂️!", mrkdwn });
+    if (mrkdwn) {
+      this.logger.warn({ at: "Relayer", message: "Not relaying unprofitable deposits 🙅‍♂️!", mrkdwn });
+    }
   }
 
   private constructRelayFilledMrkdwn(deposit: Deposit, repaymentChainId: number, fillAmount: BigNumber): string {
@@ -169,7 +227,7 @@ export class Relayer {
   private constructZeroSizeFilledMrkdwn(deposit: Deposit): string {
     return (
       this.constructBaseFillMarkdown(deposit, toBN(0)) +
-      `Has been relayed with 0 size due to a token shortfall! This will initiate a slow relay for this deposit.`
+      "Has been relayed with 0 size due to a token shortfall! This will initiate a slow relay for this deposit."
     );
   }
 
@@ -181,8 +239,12 @@ export class Relayer {
       `${createFormatFunction(2, 4, false, decimals)(deposit.amount.toString())} ${symbol}. ` +
       `with depositor ${etherscanLink(deposit.depositor, deposit.originChainId)}. ` +
       `Fill amount of ${createFormatFunction(2, 4, false, decimals)(fillAmount.toString())} ${symbol} with ` +
-      `relayerFee ${createFormatFunction(2, 4, false, 18)(toBN(deposit.relayerFeePct).mul(100).toString())}% & ` +
-      `realizedLpFee ${createFormatFunction(2, 4, false, 18)(toBN(deposit.realizedLpFeePct).mul(100).toString())}%. `
+      `relayerFee ${Relayer.formatFeePct(deposit.relayerFeePct)}% & ` +
+      `realizedLpFee ${Relayer.formatFeePct(deposit.realizedLpFeePct)}%. `
     );
+  }
+
+  private static formatFeePct(relayerFeePct: BigNumber): string {
+    return createFormatFunction(2, 4, false, 18)(toBN(relayerFeePct).mul(100).toString());
   }
 }

@@ -24,6 +24,10 @@ export class DataworkerConfig extends CommonConfig {
   readonly sendingProposalsEnabled: boolean;
   readonly sendingExecutionsEnabled: boolean;
 
+  readonly useCacheForSpokePool: boolean;
+
+  readonly bufferToPropose: number;
+
   constructor(env: ProcessEnv) {
     const {
       ROOT_BUNDLE_EXECUTION_THRESHOLD,
@@ -40,9 +44,12 @@ export class DataworkerConfig extends CommonConfig {
       SEND_EXECUTIONS,
       FINALIZER_CHAINS,
       FINALIZER_ENABLED,
+      USE_CACHE_FOR_SPOKE_POOL,
+      BUFFER_TO_PROPOSE,
     } = env;
     super(env);
 
+    this.bufferToPropose = BUFFER_TO_PROPOSE ? Number(BUFFER_TO_PROPOSE) : (20 * 60) / 15; // 20 mins of blocks;
     // Should we assert that the leaf count caps are > 0?
     this.maxPoolRebalanceLeafSizeOverride = MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE
       ? Number(MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE)
@@ -78,5 +85,6 @@ export class DataworkerConfig extends CommonConfig {
     this.sendingExecutionsEnabled = SEND_EXECUTIONS === "true";
     this.finalizerChains = FINALIZER_CHAINS ? JSON.parse(FINALIZER_CHAINS) : CHAIN_ID_LIST_INDICES;
     this.finalizerEnabled = FINALIZER_ENABLED === "true";
+    this.useCacheForSpokePool = USE_CACHE_FOR_SPOKE_POOL === "true";
   }
 }

@@ -123,7 +123,7 @@ export class MultiCallerClient {
         });
         let mrkdwn = "";
         valueTransactions.forEach((transaction, i) => {
-          mrkdwn += `*Transaction excluded from batches because it contained value:*\n`;
+          mrkdwn += "*Transaction excluded from batches because it contained value:*\n";
           mrkdwn += `  ${i + 1}. ${transaction.message || "0 message"}: ` + `${transaction.mrkdwn || "0 mrkdwn"}\n`;
         });
         Object.keys(chunkedTransactions).forEach((chainId) => {
@@ -186,7 +186,7 @@ export class MultiCallerClient {
       const transactionHashes = [];
       valueTransactionsResult.forEach((result, i) => {
         const { chainId } = valueTransactions[i];
-        mrkdwn += `*Transaction excluded from batches because it contained value:*\n`;
+        mrkdwn += "*Transaction excluded from batches because it contained value:*\n";
         if (result.status === "rejected") {
           mrkdwn += ` ⚠️ Transaction sent on ${getNetworkName(
             chainId
