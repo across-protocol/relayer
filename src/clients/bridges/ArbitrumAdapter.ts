@@ -16,8 +16,6 @@ const l1Gateways = {
 
 const l1GatewayRouter = "0x72ce9c846789fdb6fc1f34ac4ad25dd9ef7031ef";
 
-const firstL1BlockToSearch = 12640865;
-
 const l2Gateways = {
   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "0x096760F208390250649E3e8763348E783AEF5562", // USDC
   "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "0x6c411aD3E74De3E7Bd422b94A27770f5B86C623B", // WETH
@@ -43,7 +41,7 @@ export class ArbitrumAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 42161, firstL1BlockToSearch);
+    super(spokePoolClients, 42161);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]) {

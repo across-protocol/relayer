@@ -10,9 +10,6 @@ const customL1OptimismBridgeAddresses = {
 const l1StandardBridgeAddressOvm = "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1";
 const l1StandardBridgeAddressBoba = "0xdc1664458d2f0B6090bEa60A8793A4E66c2F1c00";
 
-const firstL1BlockOvm = 13352477;
-const firstL1BlockBoba = 13012048;
-
 const ovmL2StandardBridgeAddress = "0x4200000000000000000000000000000000000010";
 const customOvmBridgeAddresses = {
   "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0x467194771dae2967aef3ecbedd3bf9a310c76c65", // DAI
@@ -33,7 +30,7 @@ export class OptimismAdapter extends BaseAdapter {
   ) {
     // Note based on if this isOptimism or not we switch the chainId and starting L1 blocks. This is critical. If done
     // wrong funds WILL be deleted in the canonical bridge (eg sending funds to Optimism with a boba L2 token).
-    super(spokePoolClients, isOptimism ? 10 : 288, isOptimism ? firstL1BlockOvm : firstL1BlockBoba);
+    super(spokePoolClients, isOptimism ? 10 : 288);
     this.l2Gas = isOptimism ? 200000 : 1300000;
   }
 

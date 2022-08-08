@@ -67,8 +67,6 @@ const tokenToBridge = {
   }, // MATIC
 };
 
-const firstL1BlockToSearch = 10167767;
-
 const atomicDepositorAddress = "0x26eaf37ee5daf49174637bdcd2f7759a25206c34";
 
 export class PolygonAdapter extends BaseAdapter {
@@ -77,7 +75,7 @@ export class PolygonAdapter extends BaseAdapter {
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 137, firstL1BlockToSearch);
+    super(spokePoolClients, 137);
   }
 
   // On polygon a bridge transaction looks like a transfer from address(0) to the target.
