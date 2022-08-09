@@ -1,13 +1,5 @@
 import winston from "winston";
-import {
-  getProvider,
-  getSigner,
-  getDeployedContract,
-  getDeploymentBlockNumber,
-  Wallet,
-  SpokePool,
-  Contract,
-} from "../utils";
+import { getProvider, getDeployedContract, getDeploymentBlockNumber, Wallet, SpokePool, Contract } from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient, ProfitClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { DataworkerClients } from "../dataworker/DataworkerClientHelper";
@@ -122,10 +114,11 @@ export async function updateSpokePoolClients(
   );
 }
 
-export async function constructClients(logger: winston.Logger, config: CommonConfig): Promise<Clients> {
-  // Create signers for each chain. Each is connected to an associated provider for that chain.
-  const baseSigner = await getSigner();
-
+export async function constructClients(
+  logger: winston.Logger,
+  config: CommonConfig,
+  baseSigner: Wallet
+): Promise<Clients> {
   const hubSigner = baseSigner.connect(getProvider(config.hubPoolChainId));
 
   // Create contract instances for each chain for each required contract.
