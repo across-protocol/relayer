@@ -13,7 +13,7 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Wallet) {
   try {
     logger[startupLogLevel(config)]({ at: "AcrossMonitor#index", message: "Monitor started 🔭", config });
 
-    clients = await constructMonitorClients(config, logger);
+    clients = await constructMonitorClients(config, logger, baseSigner);
     const acrossMonitor = new Monitor(logger, config, clients);
 
     for (;;) {
