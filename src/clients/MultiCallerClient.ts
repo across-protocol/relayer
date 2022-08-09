@@ -11,8 +11,6 @@ import {
   TransactionResponse,
 } from "../utils";
 
-import lodash from "lodash";
-
 export interface AugmentedTransaction {
   contract: Contract;
   chainId: number;
@@ -112,8 +110,21 @@ export class MultiCallerClient {
         assign(groupedTransactions, [transaction.chainId], [transaction]);
       }
 
+      const chunkSize = 100;
       const chunkedTransactions: { [networkId: number]: AugmentedTransaction[][] } = Object.fromEntries(
-        Object.entries(groupedTransactions).map(([chainId, transactions]) => [chainId, lodash.chunk(transactions, 100)])
+        Object.entries(groupedTransactions).map(([chainId, transactions]) => {
+          if (transactions.length > chunkSize) {
+            const dropped: Array<{ [k: string]: string }> = transactions.slice(chunkSize).map((txn) => {
+              return { address: txn.contract.address, method: txn.method, args: txn.args };
+            });
+            this.logger.info({
+              message: `Dropping ${dropped.length} transactions on chain ${chainId}.`,
+              dropped,
+            });
+          }
+          // Multi-chunks not attempted due to nonce reuse complications, but may return in future.
+          return [chainId, [transactions.slice(0, chunkSize)]];
+        })
       );
 
       if (simulationModeOn) {
