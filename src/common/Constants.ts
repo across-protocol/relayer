@@ -28,12 +28,13 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   42161: 3000, // At a conservative 10 TPS, 300 seconds = 3000 transactions. And 1 block per txn.
 };
 
-export const CHAIN_MULTICALL_MAX_CHUNK_SIZE: { [chainId: number]: number } = {
-  1: 100,
-  10: 100,
-  137: 100,
-  288: 100,
-  42161: 100,
+export const DEFAULT_MULTICALL_CHUNK_SIZE = 100;
+export const CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } = {
+  1: DEFAULT_MULTICALL_CHUNK_SIZE,
+  10: DEFAULT_MULTICALL_CHUNK_SIZE,
+  137: DEFAULT_MULTICALL_CHUNK_SIZE,
+  288: DEFAULT_MULTICALL_CHUNK_SIZE,
+  42161: DEFAULT_MULTICALL_CHUNK_SIZE,
 };
 
 // The most critical failure mode that can happen in the inventory management module is a miss-mapping between L1 token
