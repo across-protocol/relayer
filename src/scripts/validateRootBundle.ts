@@ -10,7 +10,7 @@
 // 2. Example of invalid bundle: REQUEST_TIME=1653594774 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
 // 2. Example of valid bundle:   REQUEST_TIME=1653516226 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
 
-import { winston, config, startupLogLevel, Logger, delay } from "../utils";
+import { Wallet, winston, config, getSigner, startupLogLevel, Logger, delay } from "../utils";
 import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { BlockFinder } from "@uma/sdk";
 import { PendingRootBundle } from "../interfaces";
@@ -22,13 +22,13 @@ import { constructSpokePoolClientsForBlockAndUpdate } from "../common";
 config();
 let logger: winston.Logger;
 
-export async function validate(_logger: winston.Logger) {
+export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
   logger = _logger;
   if (!process.env.REQUEST_TIME)
     throw new Error("Must set environment variable 'REQUEST_TIME=<NUMBER>' to disputed price request time");
   const priceRequestTime = Number(process.env.REQUEST_TIME);
 
-  const { clients, config, dataworker } = await createDataworker(logger);
+  const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
   logger[startupLogLevel(config)]({
     at: "RootBundleValidator",
     message: `Validating most recently proposed root bundle before request time ${priceRequestTime}`,
@@ -108,9 +108,10 @@ export async function validate(_logger: winston.Logger) {
 }
 
 export async function run(_logger: winston.Logger) {
-  // Keep trying to validate until it works.
+  // Keep trying to validate until it works. Failure to get a Wallet is probably not transient.
+  const baseSigner: Wallet = await getSigner();
   try {
-    await validate(_logger);
+    await validate(_logger, baseSigner);
   } catch (error) {
     console.error(error);
     logger.error({ at: "RootBundleValidator", message: "Caught an error, retrying!", error });

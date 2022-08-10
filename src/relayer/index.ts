@@ -1,11 +1,11 @@
-import { processEndPollingLoop, winston, processCrash, config, startupLogLevel, getSigner } from "../utils";
+import { processEndPollingLoop, winston, processCrash, config, startupLogLevel, Wallet } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
 config();
 let logger: winston.Logger;
 
-export async function runRelayer(_logger: winston.Logger): Promise<void> {
+export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
   logger = _logger;
   const config = new RelayerConfig(process.env);
   let relayerClients;
@@ -13,9 +13,8 @@ export async function runRelayer(_logger: winston.Logger): Promise<void> {
   try {
     logger[startupLogLevel(config)]({ at: "Relayer#index", message: "Relayer started 🏃‍♂️", config });
 
-    relayerClients = await constructRelayerClients(logger, config);
+    relayerClients = await constructRelayerClients(logger, config, baseSigner);
 
-    const baseSigner = await getSigner();
     const relayer = new Relayer(
       baseSigner.address,
       logger,

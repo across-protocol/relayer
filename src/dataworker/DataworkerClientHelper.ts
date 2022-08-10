@@ -1,7 +1,7 @@
 import winston from "winston";
 import { DataworkerConfig } from "./DataworkerConfig";
 import { CHAIN_ID_LIST_INDICES, Clients, constructClients, getSpokePoolSigners, updateClients } from "../common";
-import { EventSearchConfig, getDeploymentBlockNumber, getSigner, Wallet, ethers } from "../utils";
+import { EventSearchConfig, getDeploymentBlockNumber, Wallet, ethers } from "../utils";
 import { BundleDataClient, SpokePoolClient, TokenClient } from "../clients";
 
 export interface DataworkerClients extends Clients {
@@ -13,10 +13,10 @@ export interface DataworkerClients extends Clients {
 
 export async function constructDataworkerClients(
   logger: winston.Logger,
-  config: DataworkerConfig
+  config: DataworkerConfig,
+  baseSigner: Wallet
 ): Promise<DataworkerClients> {
-  const commonClients = await constructClients(logger, config);
-  const baseSigner = await getSigner();
+  const commonClients = await constructClients(logger, config, baseSigner);
 
   // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
   const tokenClient = new TokenClient(logger, baseSigner.address, {}, commonClients.hubPoolClient);

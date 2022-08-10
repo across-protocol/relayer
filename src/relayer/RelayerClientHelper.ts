@@ -1,5 +1,5 @@
 import winston from "winston";
-import { getSigner } from "../utils";
+import { Wallet } from "../utils";
 import { TokenClient, ProfitClient, BundleDataClient, InventoryClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import { RelayerConfig } from "./RelayerConfig";
@@ -14,10 +14,12 @@ export interface RelayerClients extends Clients {
   inventoryClient: InventoryClient;
 }
 
-export async function constructRelayerClients(logger: winston.Logger, config: RelayerConfig): Promise<RelayerClients> {
-  const baseSigner = await getSigner();
-
-  const commonClients = await constructClients(logger, config);
+export async function constructRelayerClients(
+  logger: winston.Logger,
+  config: RelayerConfig,
+  baseSigner: Wallet
+): Promise<RelayerClients> {
+  const commonClients = await constructClients(logger, config, baseSigner);
 
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
