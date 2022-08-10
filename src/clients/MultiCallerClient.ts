@@ -183,7 +183,7 @@ export class MultiCallerClient {
       this.logger.debug({
         at: "MultiCallerClient",
         message: "Executing transactions grouped by target chain",
-        txs: Object.keys(groupedTransactions).map((chainId) => ({ chainId, num: groupedTransactions[chainId].length })),
+        txs: Object.entries(chunkedTransactions).map(([chainId, txns]) => ({ chainId, num: txns.length })),
       });
 
       // Construct multiCall transaction for each target chain.
