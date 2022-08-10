@@ -28,6 +28,14 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   42161: 3000, // At a conservative 10 TPS, 300 seconds = 3000 transactions. And 1 block per txn.
 };
 
+export const CHAIN_MULTICALL_MAX_CHUNK_SIZE: { [chainId: number]: number } = {
+  1: 100,
+  10: 100,
+  137: 100,
+  288: 100,
+  42161: 100,
+};
+
 // The most critical failure mode that can happen in the inventory management module is a miss-mapping between L1 token
 //  and the associated L2 token. If this is wrong the bot WILL delete money. The mapping below is used to enforce that
 // what the hubpool thinks is the correct L2 token for a given L1 token is actually the correct L2 token. It is simply a

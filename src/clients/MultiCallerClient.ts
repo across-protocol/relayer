@@ -1,3 +1,4 @@
+import { CHAIN_MULTICALL_MAX_CHUNK_SIZE } from "../common";
 import {
   winston,
   getNetworkName,
@@ -110,9 +111,9 @@ export class MultiCallerClient {
         assign(groupedTransactions, [transaction.chainId], [transaction]);
       }
 
-      const chunkSize = 100;
       const chunkedTransactions: { [networkId: number]: AugmentedTransaction[][] } = Object.fromEntries(
         Object.entries(groupedTransactions).map(([chainId, transactions]) => {
+          const chunkSize: number = CHAIN_MULTICALL_MAX_CHUNK_SIZE[chainId];
           if (transactions.length > chunkSize) {
             const dropped: Array<{ [k: string]: string }> = transactions.slice(chunkSize).map((txn) => {
               return { address: txn.contract.address, method: txn.method, args: txn.args };
