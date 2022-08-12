@@ -282,7 +282,7 @@ export class InventoryClient {
       for (const chainId of Object.keys(possibleRebalances)) {
         for (const l1Token of Object.keys(possibleRebalances[chainId])) {
           const receipt = await this.sendTokenCrossChain(chainId, l1Token, possibleRebalances[chainId][l1Token]);
-          assign(executedTransactions, [chainId, l1Token], receipt.hash);
+          //assign(executedTransactions, [chainId, l1Token], receipt.hash);
         }
       }
 
