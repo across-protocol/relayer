@@ -31,6 +31,8 @@ export class BaseAdapter {
 
   updateSearchConfigs() {
     // Update search range based on the latest data from corresponding SpokePoolClients' search ranges.
+    // This needs to be called before fetching any events because spokePoolClients need to be updated first so
+    // latestBlockNumber is defined.
     if (this.l1SearchConfig.toBlock) this.l1SearchConfig.fromBlock = this.l1SearchConfig.toBlock + 1;
     if (this.l2SearchConfig.toBlock) this.l2SearchConfig.fromBlock = this.l2SearchConfig.toBlock + 1;
     this.l1SearchConfig.toBlock = this.spokePoolClients[1].latestBlockNumber;
