@@ -1,4 +1,4 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, processCrash } from "../utils";
+import { processEndPollingLoop, winston, config, startupLogLevel, processCrash, Wallet } from "../utils";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -13,9 +13,9 @@ import { SpokePoolClientsByChain } from "../interfaces";
 config();
 let logger: winston.Logger;
 
-export async function createDataworker(_logger: winston.Logger) {
+export async function createDataworker(_logger: winston.Logger, baseSigner: Wallet) {
   const config = new DataworkerConfig(process.env);
-  const clients = await constructDataworkerClients(_logger, config);
+  const clients = await constructDataworkerClients(_logger, config, baseSigner);
 
   const dataworker = new Dataworker(
     _logger,
@@ -35,9 +35,9 @@ export async function createDataworker(_logger: winston.Logger) {
     dataworker,
   };
 }
-export async function runDataworker(_logger: winston.Logger): Promise<void> {
+export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
   logger = _logger;
-  const { clients, config, dataworker } = await createDataworker(logger);
+  const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
   let spokePoolClients: SpokePoolClientsByChain;
   try {
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });

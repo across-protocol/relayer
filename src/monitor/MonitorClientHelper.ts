@@ -1,5 +1,5 @@
 import { MonitorConfig } from "./MonitorConfig";
-import { getSigner, winston } from "../utils";
+import { Wallet, winston } from "../utils";
 import { BundleDataClient, HubPoolClient, TokenTransferClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import {
@@ -19,9 +19,12 @@ export interface MonitorClients extends Clients {
   tokenTransferClient: TokenTransferClient;
 }
 
-export async function constructMonitorClients(config: MonitorConfig, logger: winston.Logger): Promise<MonitorClients> {
-  const baseSigner = await getSigner(); // todo: add getVoidSigner
-  const commonClients = await constructClients(logger, config);
+export async function constructMonitorClients(
+  config: MonitorConfig,
+  logger: winston.Logger,
+  baseSigner: Wallet
+): Promise<MonitorClients> {
+  const commonClients = await constructClients(logger, config, baseSigner);
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
     commonClients.configStoreClient,

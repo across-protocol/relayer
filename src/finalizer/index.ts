@@ -1,4 +1,4 @@
-import { Wallet, config, startupLogLevel, processEndPollingLoop, processCrash, getSigner } from "../utils";
+import { Wallet, config, startupLogLevel, processEndPollingLoop, processCrash } from "../utils";
 import { winston } from "../utils";
 import {
   finalizeArbitrum,
@@ -86,10 +86,8 @@ export async function finalize(
   }
 }
 
-export async function constructFinalizerClients(_logger: winston.Logger, config) {
-  const baseSigner = await getSigner();
-
-  const commonClients = await constructClients(_logger, config);
+export async function constructFinalizerClients(_logger: winston.Logger, config, baseSigner: Wallet) {
+  const commonClients = await constructClients(_logger, config, baseSigner);
 
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
@@ -128,12 +126,12 @@ export class FinalizerConfig extends DataworkerConfig {
   }
 }
 
-export async function runFinalizer(_logger: winston.Logger): Promise<void> {
+export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
   logger = _logger;
   // Same config as Dataworker for now.
   const config = new FinalizerConfig(process.env);
 
-  const { commonClients, spokePoolClients } = await constructFinalizerClients(logger, config);
+  const { commonClients, spokePoolClients } = await constructFinalizerClients(logger, config, baseSigner);
 
   try {
     logger[startupLogLevel(config)]({ at: "Finalizer#index", message: "Finalizer started 🏋🏿‍♀️", config });

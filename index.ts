@@ -1,6 +1,6 @@
 import minimist from "minimist";
 import { CommonConfig } from "./src/common";
-import { config, delay, help, Logger, processCrash, usage, winston } from "./src/utils";
+import { config, delay, getSigner, help, Logger, processCrash, usage, winston } from "./src/utils";
 import { runRelayer } from "./src/relayer";
 import { runDataworker } from "./src/dataworker";
 import { runMonitor } from "./src/monitor";
@@ -33,7 +33,9 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
   } else {
     do {
       try {
-        await cmds[cmd](logger);
+        // One global signer for use with a specific per-chain provider.
+        // todo: Support a void signer for monitor mode (only) if no wallet was supplied.
+        await cmds[cmd](logger, await getSigner());
       } catch (error) {
         // eslint-disable-next-line no-process-exit
         if (await processCrash(logger, cmd, config.pollingDelay, error)) process.exit(1);

@@ -1,11 +1,11 @@
-import { winston, processEndPollingLoop, processCrash, config, startupLogLevel } from "../utils";
+import { winston, processEndPollingLoop, processCrash, config, startupLogLevel, Wallet } from "../utils";
 import { Monitor } from "./Monitor";
 import { MonitorConfig } from "./MonitorConfig";
 import { constructMonitorClients } from "./MonitorClientHelper";
 config();
 let logger: winston.Logger;
 
-export async function runMonitor(_logger: winston.Logger) {
+export async function runMonitor(_logger: winston.Logger, baseSigner: Wallet) {
   logger = _logger;
   const config = new MonitorConfig(process.env);
   let clients;
@@ -13,7 +13,7 @@ export async function runMonitor(_logger: winston.Logger) {
   try {
     logger[startupLogLevel(config)]({ at: "AcrossMonitor#index", message: "Monitor started 🔭", config });
 
-    clients = await constructMonitorClients(config, logger);
+    clients = await constructMonitorClients(config, logger, baseSigner);
     const acrossMonitor = new Monitor(logger, config, clients);
 
     for (;;) {

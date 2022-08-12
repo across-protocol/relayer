@@ -1,3 +1,4 @@
+import { DEFAULT_MULTICALL_CHUNK_SIZE, CHAIN_MULTICALL_CHUNK_SIZE } from "../common";
 import {
   winston,
   getNetworkName,
@@ -10,8 +11,6 @@ import {
   etherscanLink,
   TransactionResponse,
 } from "../utils";
-
-import lodash from "lodash";
 
 export interface AugmentedTransaction {
   contract: Contract;
@@ -113,7 +112,20 @@ export class MultiCallerClient {
       }
 
       const chunkedTransactions: { [networkId: number]: AugmentedTransaction[][] } = Object.fromEntries(
-        Object.entries(groupedTransactions).map(([chainId, transactions]) => [chainId, lodash.chunk(transactions, 100)])
+        Object.entries(groupedTransactions).map(([chainId, transactions]) => {
+          const chunkSize: number = CHAIN_MULTICALL_CHUNK_SIZE[chainId] || DEFAULT_MULTICALL_CHUNK_SIZE;
+          if (transactions.length > chunkSize) {
+            const dropped: Array<{ [k: string]: string }> = transactions.slice(chunkSize).map((txn) => {
+              return { address: txn.contract.address, method: txn.method, args: txn.args };
+            });
+            this.logger.info({
+              message: `Dropping ${dropped.length} transactions on chain ${chainId}.`,
+              dropped,
+            });
+          }
+          // Multi-chunks not attempted due to nonce reuse complications, but may return in future.
+          return [chainId, [transactions.slice(0, chunkSize)]];
+        })
       );
 
       if (simulationModeOn) {
@@ -124,7 +136,7 @@ export class MultiCallerClient {
         let mrkdwn = "";
         valueTransactions.forEach((transaction, i) => {
           mrkdwn += "*Transaction excluded from batches because it contained value:*\n";
-          mrkdwn += `  ${i + 1}. ${transaction.message || "0 message"}: ` + `${transaction.mrkdwn || "0 mrkdwn"}\n`;
+          mrkdwn += `  ${i + 1}. ${transaction.message || "0 message"}: ${transaction.mrkdwn || "0 mrkdwn"}\n`;
         });
         Object.keys(chunkedTransactions).forEach((chainId) => {
           mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
@@ -171,7 +183,7 @@ export class MultiCallerClient {
       this.logger.debug({
         at: "MultiCallerClient",
         message: "Executing transactions grouped by target chain",
-        txs: Object.keys(groupedTransactions).map((chainId) => ({ chainId, num: groupedTransactions[chainId].length })),
+        txs: Object.entries(chunkedTransactions).map(([chainId, txns]) => ({ chainId, num: txns.length })),
       });
 
       // Construct multiCall transaction for each target chain.
