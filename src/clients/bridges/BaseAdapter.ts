@@ -107,9 +107,9 @@ export class BaseAdapter {
 
         // Match deposits and finalizations by amount. We're only doing a limited lookback of events so collisions
         // should be unlikely.
-        const finalizedAmounts = new Set(l2FinalizationSet.map((finalization) => finalization.amount));
+        const finalizedAmounts = new Set(l2FinalizationSet.map((finalization) => finalization.amount.toString()));
         const pendingDeposits = this.l1DepositInitiatedEvents[monitoredAddress][l1Token].filter(
-          (deposit) => !finalizedAmounts.has(deposit.amount)
+          (deposit) => !finalizedAmounts.has(deposit.amount.toString())
         );
         outstandingTransfers[monitoredAddress][l1Token] = pendingDeposits.reduce(
           (acc, curr) => acc.add(curr.amount),
