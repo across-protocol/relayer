@@ -43,6 +43,7 @@
   "main": "dist/index.js",
   "scripts": {
     "lint": "yarn prettier --list-different",
+    "watch": "tsc --watch",
     "lint-fix": "yarn eslint --fix && yarn prettier --write",
     "prettier": "prettier .",
     "eslint": "eslint .",

@@ -1,3 +1,5 @@
+import { set, isObject, isFunction } from "lodash";
+import { ethers } from "ethers";
 // Append value along the keyPath to object. For example assign(deposits, ['1337', '31337'], [{depositId:1}]) will create
 // deposits = {1337:{31337:[{depositId:1}]}}. Note that if the path into the object exists then this will append. This
 // function respects the destination type; if it is an object then deep merge and if an array effectively will push.
@@ -49,4 +51,40 @@ export function groupObjectCountsByProp(objects: any[], getProp: (obj) => string
     result[getProp(obj)] = existingCount === undefined ? 1 : existingCount + 1;
     return result;
   }, {});
+}
+
+type Path = string[];
+type CB<D> = (path: Path, data: D | number | string | ethers.BigNumber) => void;
+// Traverse a nested object, until you get to primitives or big numbers. Gives you a callback
+// that calls with the nested path and the value at that path. Used for serializing objects.
+export function traverseObject<D>(data: D, cb: CB<D>, path: Path = []): D {
+  cb(path, data);
+  // ignore non objects
+  if (!isObject(data)) return;
+  // ignore functions
+  if (isFunction(data)) return;
+  // stop at bignumbers
+  if (ethers.BigNumber.isBigNumber(data)) return;
+
+  for (const [key, value] of Object.entries(data)) {
+    traverseObject(value, cb, [...path, key]);
+  }
+  return data;
+}
+// Traverse the object and stringify all values if it can. Turn entire thing into a string at the end.
+export function deepSerialize<T>(obj: T): string {
+  const toSerialize = {};
+  traverseObject(obj, (path, value) => {
+    if (path.length === 0) return;
+    if (typeof value === "number") {
+      set(toSerialize, path, value);
+    } else {
+      set(toSerialize, path, value.toString());
+    }
+  });
+  return JSON.stringify(toSerialize);
+}
+// Parse a serialized object, nothing fancy here.
+export function deepDeserialize<T>(str: string): T {
+  return JSON.parse(str);
 }

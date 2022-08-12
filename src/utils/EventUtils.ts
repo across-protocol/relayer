@@ -1,6 +1,7 @@
 import { delay } from "@uma/financial-templates-lib";
 import { DepositWithBlock, FillWithBlock, SortableEvent } from "../interfaces";
-import { Contract, Event, EventFilter, Promise } from "./";
+import { Contract, Event, EventFilter, Promise, BigNumberish } from "./";
+import { EventCache } from "./EventCache";
 
 const defaultConcurrency = 200;
 const maxRetries = 3;
@@ -32,6 +33,37 @@ export interface EventSearchConfig {
   concurrency?: number | null;
 }
 
+// This is an optional paginated query function which will incrementally store events found and return
+// any cached events that fall into the range. Requires additional parameters vs the non cached call.
+// See documentation around the EventCache class for usage.
+export async function cachedPaginatedEventQuery(
+  eventCache: EventCache,
+  searchConfig: EventSearchConfig,
+  latestBlockToCache = 0,
+  retryCount = 0
+) {
+  // If the max block look back is set to 0 then we dont need to do any pagination and can query over the whole range.
+  if (searchConfig.maxBlockLookBack === 0)
+    return await eventCache.queryFilter(searchConfig.fromBlock, searchConfig.toBlock);
+
+  const paginatedRanges = getPaginatedBlockRanges(searchConfig);
+  try {
+    return (
+      await Promise.map(
+        paginatedRanges,
+        async ([fromBlock, toBlock]) => {
+          return eventCache.queryFilter(fromBlock, toBlock, latestBlockToCache);
+        },
+        { concurrency: searchConfig.concurrency | defaultConcurrency }
+      )
+    ).flat();
+  } catch (error) {
+    if (retryCount < maxRetries) {
+      await delay(retrySleepTime);
+      return await cachedPaginatedEventQuery(eventCache, searchConfig, retryCount + 1);
+    } else throw error;
+  }
+}
 export async function paginatedEventQuery(
   contract: Contract,
   filter: EventFilter,
@@ -114,4 +146,19 @@ export function sortEventsDescending<T extends SortableEvent>(events: T[]): T[] 
 
 export function getTransactionHashes(events: SortableEvent[]) {
   return [...new Set(events.map((e) => e.transactionHash))];
+}
+
+// given an event with transaction and block information, return a string which will sort the event in ascending order
+export function eventKey(event: {
+  blockNumber: BigNumberish;
+  transactionIndex: BigNumberish;
+  logIndex: BigNumberish;
+}): string {
+  return [
+    // we pad these because numbers of varying lengths will not sort correctly, ie "10" will incorrectly sort before "9", but "09" will be correct.
+    event.blockNumber.toString().padStart(16, "0"),
+    event.transactionIndex.toString().padStart(16, "0"),
+    event.logIndex?.toString().padStart(16, "0"),
+    // ~ is the last printable ascii char, so it does not interfere with sorting
+  ].join("~");
 }
