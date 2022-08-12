@@ -17,7 +17,6 @@ export class BaseAdapter {
 
   constructor(readonly spokePoolClients: { [chainId: number]: SpokePoolClient }, _chainId: number) {
     this.chainId = _chainId;
-
   }
 
   getSigner(chainId: number): Signer {
@@ -33,8 +32,14 @@ export class BaseAdapter {
     this.l2SearchConfig = { ...this.getSearchConfig(this.chainId) };
   }
 
+
   getSearchConfig(chainId: number) {
-    return { ...this.spokePoolClients[chainId].eventSearchConfig };
+    const spokePoolClient = this.spokePoolClients[chainId];
+    const searchConfig = spokePoolClient.eventSearchConfig;
+    return {
+      ...searchConfig,
+      toBlock: searchConfig.toBlock || spokePoolClient.latestBlockNumber,
+    };
   }
 
   async checkAndSendTokenApprovals(address: string, l1Tokens: string[], associatedL1Bridges: string[]) {
