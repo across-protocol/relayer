@@ -17,6 +17,8 @@ export class BaseAdapter {
 
   constructor(readonly spokePoolClients: { [chainId: number]: SpokePoolClient }, _chainId: number) {
     this.chainId = _chainId;
+    this.l1SearchConfig = { ...this.getSearchConfig(1) };
+    this.l2SearchConfig = { ...this.getSearchConfig(this.chainId) };
   }
 
   getSigner(chainId: number): Signer {
@@ -28,18 +30,15 @@ export class BaseAdapter {
   }
 
   updateSearchConfigs() {
-    this.l1SearchConfig = { ...this.getSearchConfig(1) };
-    this.l2SearchConfig = { ...this.getSearchConfig(this.chainId) };
+    // Update search range based on the latest data from corresponding SpokePoolClients' search ranges.
+    if (this.l1SearchConfig.toBlock) this.l1SearchConfig.fromBlock = this.l1SearchConfig.toBlock + 1;
+    if (this.l2SearchConfig.toBlock) this.l2SearchConfig.fromBlock = this.l2SearchConfig.toBlock + 1;
+    this.l1SearchConfig.toBlock = this.spokePoolClients[1].latestBlockNumber;
+    this.l2SearchConfig.toBlock = this.spokePoolClients[this.chainId].latestBlockNumber;
   }
 
-
   getSearchConfig(chainId: number) {
-    const spokePoolClient = this.spokePoolClients[chainId];
-    const searchConfig = spokePoolClient.eventSearchConfig;
-    return {
-      ...searchConfig,
-      toBlock: searchConfig.toBlock || spokePoolClient.latestBlockNumber,
-    };
+    return { ...this.spokePoolClients[chainId].eventSearchConfig };
   }
 
   async checkAndSendTokenApprovals(address: string, l1Tokens: string[], associatedL1Bridges: string[]) {
@@ -130,11 +129,9 @@ export class BaseAdapter {
         // (associatedL1DepositIndex). If we take a slice of the array from this index to the end then we have only events
         // that have occurred on L1 and have no matching event on L2 (and have happened in the last day due to the
         // previous filter). These events are deposits that must have been made on L1 but not are not yet finalized on L2.
-        console.log("l1DepositInitiatedEvents", this.l1DepositInitiatedEvents)
         const l1EventsToConsider = this.l1DepositInitiatedEvents[monitoredAddress][l1Token].slice(
           associatedL1DepositIndex + 1
         );
-        console.log("l1EventsToConsider", l1EventsToConsider)
         outstandingTransfers[monitoredAddress][l1Token] = l1EventsToConsider.reduce(
           (acc, curr) => acc.add(curr.amount),
           toBN(0)

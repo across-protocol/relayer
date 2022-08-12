@@ -45,10 +45,7 @@ export class ArbitrumAdapter extends BaseAdapter {
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
-    // Initial call to update search configs since toBlock depends on SpokePoolClients being updated.
-    if (!this.l1SearchConfig || !this.l2SearchConfig) {
-      this.updateSearchConfigs();
-    }
+    this.updateSearchConfigs();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
 
     const promises = [];
@@ -100,9 +97,6 @@ export class ArbitrumAdapter extends BaseAdapter {
         assign(eventsStorage, [monitoredAddress, l1Token], events);
       });
     }
-
-    this.l1SearchConfig.fromBlock = this.l1SearchConfig.toBlock + 1;
-    this.l2SearchConfig.fromBlock = this.l2SearchConfig.toBlock + 1;
 
     return this.computeOutstandingCrossChainTransfers(validTokens);
   }

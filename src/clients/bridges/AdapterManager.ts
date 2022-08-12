@@ -41,8 +41,7 @@ export class AdapterManager {
   async sendTokenCrossChain(address: string, chainId: number | string, l1Token: string, amount: BigNumber) {
     this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
     const l2Token = this.l2TokenForL1Token(l1Token, Number(chainId));
-    console.log("SENDING: ", l2Token, amount.toString());
-    // return await this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount);
+    return await this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount);
   }
 
   // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
