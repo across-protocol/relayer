@@ -1,7 +1,6 @@
-import { ethers, expect } from "./utils";
+import { expect } from "./utils";
 import { toBN } from "./utils";
-import { MockHubPoolClient } from "./mocks";
-import { AdapterManager, BaseAdapter } from "../src/clients/bridges";
+import { BaseAdapter } from "../src/clients/bridges";
 import { SpokePoolClient } from "../src/clients";
 import { BigNumber } from "../src/utils"; // Tested
 
@@ -32,7 +31,7 @@ class TestAdapter extends BaseAdapter {
 }
 
 let adapter: TestAdapter;
-describe.only("AdapterManager: Send tokens cross-chain", async function () {
+describe("AdapterManager: Send tokens cross-chain", async function () {
   beforeEach(async function () {
     adapter = new TestAdapter();
   });
