@@ -19,7 +19,6 @@ export class AdapterManager {
     if (!spokePoolClients) {
       return;
     }
-
     if (this.spokePoolClients[10] !== undefined) {
       this.adapters[10] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses, true);
     }
