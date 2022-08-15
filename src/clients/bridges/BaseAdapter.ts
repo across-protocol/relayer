@@ -3,6 +3,8 @@ import { Signer } from "@ethersproject/abstract-signer";
 import { SpokePoolClient } from "../../clients";
 import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20, BigNumber } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
+import { OutstandingTransfers } from "../../interfaces/Bridge";
+import { ZERO_ADDRESS } from "@uma/common";
 
 export class BaseAdapter {
   chainId: number;
@@ -80,29 +82,41 @@ export class BaseAdapter {
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
   }
 
-  computeOutstandingCrossChainTransfers(l1Tokens: string[]): { [address: string]: { [l1Token: string]: BigNumber } } {
-    const outstandingTransfers: { [address: string]: { [l1Token: string]: BigNumber } } = {};
+  computeOutstandingCrossChainTransfers(l1Tokens: string[]): OutstandingTransfers {
+    const outstandingTransfers: OutstandingTransfers = {};
+
     for (const monitoredAddress of this.monitoredAddresses) {
+      // Skip if there are no deposit events for this address at all.
+      if (this.l1DepositInitiatedEvents[monitoredAddress] === undefined) continue;
+
       if (outstandingTransfers[monitoredAddress] === undefined) {
         outstandingTransfers[monitoredAddress] = {};
       }
+      if (this.l2DepositFinalizedEvents[monitoredAddress] === undefined) {
+        this.l2DepositFinalizedEvents[monitoredAddress] = {};
+      }
 
       for (const l1Token of l1Tokens) {
-        let l2FinalizationSet = this.l2DepositFinalizedEvents[monitoredAddress][l1Token];
+        // Skip if there has been no deposits for this token.
+        if (this.l1DepositInitiatedEvents[monitoredAddress][l1Token] === undefined) continue;
 
-        if (
-          this.isWeth(l1Token) &&
-          this.l2DepositFinalizedEvents_DepositAdapter[monitoredAddress]?.[l1Token]?.length > 0
-        ) {
-          // If this is WETH and there are atomic depositor events then consider the union as the full set of
-          // finalization events. We do this as the output event on L2 will show the Atomic depositor as the sender,
-          // not the original sender (monitored address).
-          l2FinalizationSet = [
-            ...l2FinalizationSet,
-            ...this.l2DepositFinalizedEvents_DepositAdapter[monitoredAddress][l1Token].filter(
-              (event) => event.to === monitoredAddress
-            ),
-          ].sort((a, b) => a.blockNumber - b.blockNumber);
+        // It's okay to not have any finalization events. In that case, all deposits are outstanding.
+        if (this.l2DepositFinalizedEvents[monitoredAddress][l1Token] === undefined) {
+          this.l2DepositFinalizedEvents[monitoredAddress][l1Token] = [];
+        }
+        let l2FinalizationSet = this.l2DepositFinalizedEvents[monitoredAddress][l1Token];
+        if (this.isWeth(l1Token)) {
+          let depositFinalizedEventsForL1 =
+            this.l2DepositFinalizedEvents_DepositAdapter[monitoredAddress]?.[l1Token] || [];
+          depositFinalizedEventsForL1 = depositFinalizedEventsForL1.filter((event) => event.to === monitoredAddress);
+          if (depositFinalizedEventsForL1.length > 0) {
+            // If this is WETH and there are atomic depositor events then consider the union as the full set of
+            // finalization events. We do this as the output event on L2 will show the Atomic depositor as the sender,
+            // not the original sender (monitored address).
+            l2FinalizationSet = [...l2FinalizationSet, ...depositFinalizedEventsForL1].sort(
+              (a, b) => a.blockNumber - b.blockNumber
+            );
+          }
         }
 
         // Match deposits and finalizations by amount. We're only doing a limited lookback of events so collisions
@@ -117,10 +131,16 @@ export class BaseAdapter {
           }
           return true;
         });
-        outstandingTransfers[monitoredAddress][l1Token] = pendingDeposits.reduce(
-          (acc, curr) => acc.add(curr.amount),
-          toBN(0)
-        );
+
+        // Short circuit early if there are no pending deposits.
+        if (pendingDeposits.length === 0) continue;
+
+        const totalAmount = pendingDeposits.reduce((acc, curr) => acc.add(curr.amount), toBN(0));
+        const depositTxHashes = pendingDeposits.map((deposit) => deposit.transactionHash);
+        outstandingTransfers[monitoredAddress][l1Token] = {
+          totalAmount,
+          depositTxHashes,
+        };
       }
     }
 

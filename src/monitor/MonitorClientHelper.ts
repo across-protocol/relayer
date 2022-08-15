@@ -40,9 +40,14 @@ export async function constructMonitorClients(
   );
   const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
 
-  const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
-    baseSigner.address,
-  ]);
+  const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePool.address);
+  const adapterManager = new AdapterManager(
+    logger,
+    spokePoolClients,
+    commonClients.hubPoolClient,
+    [baseSigner.address, ...spokePoolAddresses],
+    commonClients.hubPoolClient.hubPool.address
+  );
   const crossChainTransferClient = new CrossChainTransferClient(logger, config.spokePoolChains, adapterManager);
 
   return { ...commonClients, bundleDataClient, crossChainTransferClient, spokePoolClients, tokenTransferClient };

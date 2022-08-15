@@ -91,7 +91,10 @@ export class ArbitrumAdapter extends BaseAdapter {
         const l1Token = validTokens[Math.floor(index / 2)];
         const events = result.map((event) => {
           const eventSpread = spreadEventWithBlockNumber(event);
-          return { amount: eventSpread[index % 2 === 0 ? "_amount" : "amount"], blockNumber: eventSpread.blockNumber };
+          return {
+            amount: eventSpread[index % 2 === 0 ? "_amount" : "amount"],
+            ...eventSpread,
+          };
         });
         const eventsStorage = index % 2 === 0 ? this.l1DepositInitiatedEvents : this.l2DepositFinalizedEvents;
         assign(eventsStorage, [monitoredAddress, l1Token], events);

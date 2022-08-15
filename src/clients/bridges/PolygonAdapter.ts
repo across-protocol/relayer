@@ -139,7 +139,7 @@ export class PolygonAdapter extends BaseAdapter {
           return {
             amount: eventSpread[amountProp],
             to: eventSpread["depositReceiver"],
-            blockNumber: eventSpread.blockNumber,
+            ...eventSpread,
           };
         });
         const eventsStorage = index % 2 === 0 ? this.l1DepositInitiatedEvents : this.l2DepositFinalizedEvents;
