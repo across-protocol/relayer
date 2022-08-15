@@ -84,7 +84,7 @@ export const l2TokensToL1TokenValidation = {
     10: "0xFE8B128bA8C78aabC59d4c64cEE7fF28e9379921",
     137: "0x9a71012B13CA4d3D0Cdc72A177DF3ef03b0E76A3",
     42161: "0x040d1EdC9569d4Bab2D15287Dc5A4F10F56a56B8",
-  } // BAL
+  }, // BAL
 };
 
 // Maps chain ID to root bundle ID to ignore because the roots are known to be invalid from the perspective of the
