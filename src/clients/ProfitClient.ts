@@ -130,7 +130,8 @@ export class ProfitClient {
         (price) => address.toLowerCase() === price.address.toLowerCase()
       );
 
-      // todo: Any additional validation to do? Ensure that timestamps are always moving forwards?
+      // todo: For future, confirm timestamp is only X seconds old and is newer than the previous?
+      //       This should implicitly be factored in if/when price feed caching is introduced.
       if (tokenPrice === undefined || typeof tokenPrice.price !== "number") {
         errors.push({
           address: address,
