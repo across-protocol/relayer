@@ -123,7 +123,9 @@ export class ProfitClient {
 
     const errors: Array<{ [k: string]: string }> = [];
     for (const address of Object.keys(l1Tokens)) {
-      const tokenPrice: CoinGeckoPrice = cgPrices.find((price) => address.toLowerCase() === price.address);
+      const tokenPrice: CoinGeckoPrice = cgPrices.find(
+        (price) => address.toLowerCase() === price.address.toLowerCase()
+      );
 
       // todo: Any additional validation to do? Ensure that timestamps are always moving forwards?
       if (tokenPrice === undefined || typeof tokenPrice.price !== "number") {
