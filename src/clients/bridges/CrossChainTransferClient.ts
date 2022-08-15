@@ -35,8 +35,14 @@ export class CrossChainTransferClient {
       this.outstandingCrossChainTransfers[chainId] = {};
     }
     const transfers = this.outstandingCrossChainTransfers[chainId];
-    if (!transfers[address]) {
+    if (transfers[address] === undefined) {
       transfers[address] = {};
+    }
+    if (transfers[address][l1Token] === undefined) {
+      transfers[address][l1Token] = {
+        totalAmount: toBN(0),
+        depositTxHashes: [],
+      };
     }
 
     // TODO: Require a tx hash here so we can track it as well.
