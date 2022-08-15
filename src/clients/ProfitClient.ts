@@ -96,7 +96,7 @@ export class ProfitClient {
   }
 
   captureUnprofitableFill(deposit: Deposit, fillAmount: BigNumber) {
-    this.logger.debug({ at: "TokenClient", message: "Handling unprofitable fill", deposit, fillAmount });
+    this.logger.debug({ at: "ProfitClient", message: "Handling unprofitable fill", deposit, fillAmount });
     assign(this.unprofitableFills, [deposit.originChainId], [{ deposit, fillAmount }]);
   }
 
@@ -114,11 +114,7 @@ export class ProfitClient {
     try {
       cgPrices = await this.coingeckoPrices(Object.keys(l1Tokens));
     } catch (err) {
-      this.logger.warn({
-        message: "Failed to retrieve prices.",
-        err,
-        l1Tokens,
-      });
+      this.logger.warn({ at: "ProfitClient", message: "Failed to retrieve prices.", err, l1Tokens });
     }
 
     const errors: Array<{ [k: string]: string }> = [];
@@ -129,17 +125,18 @@ export class ProfitClient {
 
       // todo: Any additional validation to do? Ensure that timestamps are always moving forwards?
       if (tokenPrice === undefined || typeof tokenPrice.price !== "number") {
-        const symbol = l1Tokens[address].symbol;
-        const errmsg = tokenPrice ? "Unexpected price response." : `Missing price for ${symbol}.`;
-        this.logger.warn({ at: "ProfitClient", message: errmsg, tokenPrice });
-        errors.push({ address: address, symbol: symbol });
+        errors.push({
+          address: address,
+          symbol: l1Tokens[address].symbol,
+          cause: tokenPrice ? "Unexpected price response" : "Missing price",
+        });
       } else this.tokenPrices[address] = toBNWei(tokenPrice.price);
     }
 
     if (errors.length > 0) {
       let mrkdwn = "The following L1 token prices could not be fetched:\n";
       errors.forEach((token: { [k: string]: string }) => {
-        mrkdwn += `- ${token["symbol"]} not found.`;
+        mrkdwn += `- ${token["symbol"]} not found (${token["cause"]}).`;
         mrkdwn += ` Using last known price of ${this.getPriceOfToken(token["address"])}.\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
