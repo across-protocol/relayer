@@ -45,7 +45,7 @@ const { spy, spyLogger } = createSpyLogger();
 
 const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "Unknown", ALL_CHAINS_NAME];
 
-describe.only("Monitor", async function () {
+describe("Monitor", async function () {
   beforeEach(async function () {
     ({
       configStoreClient,
