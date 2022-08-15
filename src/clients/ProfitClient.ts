@@ -129,7 +129,7 @@ export class ProfitClient {
       if (tokenPrice === undefined || typeof tokenPrice.price !== "number") {
         const symbol = l1Tokens[address].symbol;
         const errmsg = tokenPrice ? "Unexpected price response." : `Missing price for ${symbol}.`;
-        this.logger.warn({ message: errmsg, tokenPrice });
+        this.logger.warn({ at: "ProfitClient", message: errmsg, tokenPrice });
         errors.push({ address: address, symbol: symbol });
       } else this.tokenPrices[address] = toBNWei(tokenPrice.price);
     }
