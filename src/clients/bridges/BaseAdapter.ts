@@ -133,7 +133,7 @@ export class BaseAdapter {
           return true;
         });
         const totalAmount = pendingDeposits.reduce((acc, curr) => acc.add(curr.amount), toBN(0));
-        const depositTxHashes = pendingDeposits.map((deposit) => deposit.txHash);
+        const depositTxHashes = pendingDeposits.map((deposit) => deposit.transactionHash);
         outstandingTransfers[monitoredAddress][l1Token] = {
           totalAmount,
           depositTxHashes,
