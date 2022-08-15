@@ -123,13 +123,15 @@ export class ProfitClient {
 
     const errors: Array<{ [k: string]: string }> = [];
     for (const address of Object.keys(l1Tokens)) {
-      const tokenPrice: CoinGeckoPrice = cgPrices.find((price) => address.toLowerCase() === price.address);
+      const tokenPrice: CoinGeckoPrice = cgPrices.find(
+        (price) => address.toLowerCase() === price.address.toLowerCase()
+      );
 
       // todo: Any additional validation to do? Ensure that timestamps are always moving forwards?
       if (tokenPrice === undefined || typeof tokenPrice.price !== "number") {
         const symbol = l1Tokens[address].symbol;
         const errmsg = tokenPrice ? "Unexpected price response." : `Missing price for ${symbol}.`;
-        this.logger.warn({ message: errmsg, tokenPrice });
+        this.logger.warn({ at: "ProfitClient", message: errmsg, tokenPrice });
         errors.push({ address: address, symbol: symbol });
       } else this.tokenPrices[address] = toBNWei(tokenPrice.price);
     }
