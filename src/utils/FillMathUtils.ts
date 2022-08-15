@@ -2,11 +2,11 @@ import { Fill } from "../interfaces";
 import { toBNWei, BigNumber, toBN } from ".";
 
 export function _getRefundForFill(fill: Fill): BigNumber {
-  return fill.fillAmount.mul(toBNWei(1).sub(fill.realizedLpFeePct)).div(toBNWei(1));
+  return BigNumber.from(fill.fillAmount).mul(toBNWei(1).sub(fill.realizedLpFeePct)).div(toBNWei(1));
 }
 
 export function _getRealizedLpFeeForFill(fill: Fill): BigNumber {
-  return fill.fillAmount.mul(fill.realizedLpFeePct).div(toBNWei(1));
+  return BigNumber.from(fill.fillAmount).mul(fill.realizedLpFeePct).div(toBNWei(1));
 }
 
 export function getRefund(fillAmount: BigNumber, realizedLpFeePct: BigNumber): BigNumber {

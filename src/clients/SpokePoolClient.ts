@@ -244,6 +244,7 @@ export class SpokePoolClient {
   validateFillForDeposit(fill: Fill, deposit: Deposit) {
     let isValid = true;
     Object.keys(deposit).forEach((key) => {
+      if (["transactionHash", "transactionIndex", "logIndex", "blockNumber"].includes(key)) return;
       if (fill[key] !== undefined && deposit[key].toString() !== fill[key].toString()) isValid = false;
     });
     return isValid;
@@ -342,6 +343,7 @@ export class SpokePoolClient {
           const deposit: DepositWithBlock = {
             ...event,
             realizedLpFeePct: dataForQuoteTime[index].realizedLpFeePct,
+            originBlockNumber: event.blockNumber,
           };
           deposit.destinationToken = this.getDestinationTokenForDeposit(deposit);
           assign(this.depositHashes, [this.getDepositHash(deposit)], deposit);
@@ -349,7 +351,7 @@ export class SpokePoolClient {
           assign(
             this.depositsWithBlockNumbers,
             [deposit.destinationChainId],
-            [{ ...deposit, blockNumber: dataForQuoteTime[index].quoteBlock, originBlockNumber: deposit.blockNumber }]
+            [{ ...deposit, blockNumber: dataForQuoteTime[index].quoteBlock }]
           );
         });
       }
