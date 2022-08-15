@@ -44,6 +44,7 @@ export async function constructMonitorClients(
   const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
     baseSigner.address,
     ...spokePoolAddresses,
+    commonClients.hubPoolClient.hubPool.address,
   ]);
   const crossChainTransferClient = new CrossChainTransferClient(logger, config.spokePoolChains, adapterManager);
 

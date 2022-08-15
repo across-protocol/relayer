@@ -11,7 +11,10 @@ export class AdapterManager {
     readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient,
-    readonly monitoredAddresses: string[]
+    readonly monitoredAddresses: string[],
+    // Optional sender address where the cross chain transfers originate from. This is useful for the use case of
+    // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
+    readonly senderAddress?: string
   ) {
     if (!spokePoolClients) {
       return;
@@ -24,7 +27,7 @@ export class AdapterManager {
       this.adapters[137] = new PolygonAdapter(logger, spokePoolClients, monitoredAddresses);
     }
     if (this.spokePoolClients[288] !== undefined) {
-      this.adapters[288] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses, false);
+      this.adapters[288] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses, false, senderAddress);
     }
     if (this.spokePoolClients[42161] !== undefined) {
       this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, monitoredAddresses);

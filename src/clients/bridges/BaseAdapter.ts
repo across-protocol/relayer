@@ -4,6 +4,7 @@ import { SpokePoolClient } from "../../clients";
 import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20, BigNumber } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 import { OutstandingTransfers } from "../../interfaces/Bridge";
+import {ZERO_ADDRESS} from "@uma/common";
 
 export class BaseAdapter {
   chainId: number;
@@ -104,25 +105,28 @@ export class BaseAdapter {
           this.l2DepositFinalizedEvents[monitoredAddress][l1Token] = [];
         }
         let l2FinalizationSet = this.l2DepositFinalizedEvents[monitoredAddress][l1Token];
-
-        if (
-          this.isWeth(l1Token) &&
-          this.l2DepositFinalizedEvents_DepositAdapter[monitoredAddress]?.[l1Token]?.length > 0
-        ) {
-          // If this is WETH and there are atomic depositor events then consider the union as the full set of
-          // finalization events. We do this as the output event on L2 will show the Atomic depositor as the sender,
-          // not the original sender (monitored address).
-          l2FinalizationSet = [
-            ...l2FinalizationSet,
-            ...this.l2DepositFinalizedEvents_DepositAdapter[monitoredAddress][l1Token].filter(
-              (event) => event.to === monitoredAddress
-            ),
-          ].sort((a, b) => a.blockNumber - b.blockNumber);
+        if (this.chainId === 288) console.log("l2FinalizationSet", l2FinalizationSet)
+        if (this.isWeth(l1Token)) {
+          if (this.chainId === 288)  console.log("All this.l2DepositFinalizedEvents_DepositAdapter[monitoredAddress]", this.l2DepositFinalizedEvents_DepositAdapter[monitoredAddress])
+          let depositFinalizedEventsForL1 = this.l2DepositFinalizedEvents_DepositAdapter[monitoredAddress]?.[l1Token] || [];
+          if (this.chainId === 288)  console.log("depositFinalizedEventsForL1", monitoredAddress, depositFinalizedEventsForL1)
+          depositFinalizedEventsForL1 = depositFinalizedEventsForL1.filter((event) => event.to === monitoredAddress);
+          if (this.chainId === 288)  console.log("depositFinalizedEventsForL1 after filter", depositFinalizedEventsForL1)
+          if (depositFinalizedEventsForL1.length > 0) {
+            // If this is WETH and there are atomic depositor events then consider the union as the full set of
+            // finalization events. We do this as the output event on L2 will show the Atomic depositor as the sender,
+            // not the original sender (monitored address).
+            l2FinalizationSet = [
+              ...l2FinalizationSet,
+              ...depositFinalizedEventsForL1,
+            ].sort((a, b) => a.blockNumber - b.blockNumber);
+          }
         }
 
         // Match deposits and finalizations by amount. We're only doing a limited lookback of events so collisions
         // should be unlikely.
         const finalizedAmounts = l2FinalizationSet.map((finalization) => finalization.amount.toString());
+        if (this.chainId === 288)  console.log("finalizedAmounts", monitoredAddress, finalizedAmounts)
         const pendingDeposits = this.l1DepositInitiatedEvents[monitoredAddress][l1Token].filter((deposit) => {
           // Remove the first match. This handles scenarios where are collisions by amount.
           const index = finalizedAmounts.indexOf(deposit.amount.toString());
@@ -132,6 +136,11 @@ export class BaseAdapter {
           }
           return true;
         });
+
+        // Short circuit early if there are no pending deposits.
+        if (pendingDeposits.length === 0) continue;
+
+        if (this.chainId === 288) console.log("pendingDeposits", monitoredAddress, l1Token, pendingDeposits);
         const totalAmount = pendingDeposits.reduce((acc, curr) => acc.add(curr.amount), toBN(0));
         const depositTxHashes = pendingDeposits.map((deposit) => deposit.transactionHash);
         outstandingTransfers[monitoredAddress][l1Token] = {
