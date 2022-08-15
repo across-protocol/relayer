@@ -3,6 +3,13 @@ import { HubPoolClient } from ".";
 import { Deposit, L1Token } from "../interfaces";
 import { Coingecko } from "@uma/sdk";
 
+// Copied from @uma/sdk/coingecko. Propose to export export it upstream in the sdk.
+type CoinGeckoPrice = {
+  address: string;
+  timestamp: number;
+  price: number;
+};
+
 // Define the minimum revenue, in USD, that a relay must yield in order to be considered "profitable". This is a short
 // term solution to enable us to avoid DOS relays that yield negative profits. In the future this should be updated
 // to actual factor in the cost of sending transactions on the associated target chains.
@@ -98,26 +105,49 @@ export class ProfitClient {
   }
 
   async update() {
-    const l1Tokens = this.hubPoolClient.getL1Tokens();
-    this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", l1Tokens });
-    const prices = await Promise.allSettled(l1Tokens.map((l1Token: L1Token) => this.coingeckoPrice(l1Token.address)));
+    const l1Tokens: { [k: string]: L1Token } = Object.fromEntries(
+      this.hubPoolClient.getL1Tokens().map((token) => [token["address"], token])
+    );
 
-    const errors = [];
-    for (const [index, priceResponse] of prices.entries()) {
-      if (priceResponse.status === "rejected") errors.push(l1Tokens[index]);
-      else this.tokenPrices[l1Tokens[index].address] = toBNWei(priceResponse.value[1]);
+    this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", l1Tokens });
+    let cgPrices: Array<CoinGeckoPrice> = [];
+    try {
+      cgPrices = await this.coingeckoPrices(Object.keys(l1Tokens));
+    } catch (err) {
+      this.logger.warn({
+        message: "Failed to retrieve prices.",
+        err,
+        l1Tokens,
+      });
     }
+
+    const errors: Array<{ [k: string]: string }> = [];
+    for (const address of Object.keys(l1Tokens)) {
+      const tokenPrice: CoinGeckoPrice = cgPrices.find(
+        (price) => address.toLowerCase() === price.address.toLowerCase()
+      );
+
+      // todo: Any additional validation to do? Ensure that timestamps are always moving forwards?
+      if (tokenPrice === undefined || typeof tokenPrice.price !== "number") {
+        const symbol = l1Tokens[address].symbol;
+        const errmsg = tokenPrice ? "Unexpected price response." : `Missing price for ${symbol}.`;
+        this.logger.warn({ at: "ProfitClient", message: errmsg, tokenPrice });
+        errors.push({ address: address, symbol: symbol });
+      } else this.tokenPrices[address] = toBNWei(tokenPrice.price);
+    }
+
     if (errors.length > 0) {
       let mrkdwn = "The following L1 token prices could not be fetched:\n";
-      errors.forEach((token: L1Token) => {
-        mrkdwn += `- ${token.symbol} Not found. Using last known price of ${this.getPriceOfToken(token.address)}.\n`;
+      errors.forEach((token: { [k: string]: string }) => {
+        mrkdwn += `- ${token["symbol"]} not found.`;
+        mrkdwn += ` Using last known price of ${this.getPriceOfToken(token["address"])}.\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
     }
     this.logger.debug({ at: "ProfitClient", message: "Updated Profit client", tokenPrices: this.tokenPrices });
   }
 
-  private async coingeckoPrice(token: string) {
-    return await this.coingecko.getCurrentPriceByContract(token, "usd");
+  private async coingeckoPrices(tokens: Array<string>) {
+    return await this.coingecko.getContractPrices(tokens, "usd");
   }
 }
