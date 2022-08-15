@@ -105,36 +105,19 @@ export class BaseAdapter {
           ].sort((a, b) => a.blockNumber - b.blockNumber);
         }
 
-        // If, however, there is either a newestFinalizedDeposit or the most recent L1 deposit time is less than 1 day
-        // we can find how the current pending transactions! To do this we need to find the most recent L1 deposit event
-        // that overlaps with the most recent L2 finalization event. Not all bridges emit a deposit identifier or some
-        // unique way to map inputs to outputs. So the most general logic is to map the input and output amounts. Identify
-        // The associated L1 Deposit event index that maps to the newest finalization event. Note that if there is none
-        // this will return -1 i.e there has been no finalization event in the look back period but there is a deposit
-        // this would be the case if this was the first deposit in ~1day*l2LookBackSafetyMargin blocks on the L2.
-        // NOTE there is an edge case here where you have sent the same amount of funds over the bridge multiple times
-        // in the last lookback period. If this is the case the below logic will consider the newest one first and disregard
-        // the older transfers. The worst case if this happens is the util under counts how much is in the bridge.
-        let associatedL1DepositIndex = -1;
-        if (l2FinalizationSet.length > 0) {
-          const newestFinalizedDeposit = l2FinalizationSet[l2FinalizationSet.length - 1];
-          this.l1DepositInitiatedEvents[monitoredAddress][l1Token].forEach((l1Event, index) => {
-            if (l1Event.amount.eq(newestFinalizedDeposit.amount)) {
-              associatedL1DepositIndex = index;
-            }
-          });
-        }
-
-        // We now take a subset of all L1 Events over the interval. Remember that the L1 events are sorted by block number
-        // with the most recent event last. The event set contains all deposit events that have ever happened on L1 for
-        // the relayer. We know the L1 event index where which matches to the most recent L2 finalization event
-        // (associatedL1DepositIndex). If we take a slice of the array from this index to the end then we have only events
-        // that have occurred on L1 and have no matching event on L2 (and have happened in the last day due to the
-        // previous filter). These events are deposits that must have been made on L1 but not are not yet finalized on L2.
-        const l1EventsToConsider = this.l1DepositInitiatedEvents[monitoredAddress][l1Token].slice(
-          associatedL1DepositIndex + 1
-        );
-        outstandingTransfers[monitoredAddress][l1Token] = l1EventsToConsider.reduce(
+        // Match deposits and finalizations by amount. We're only doing a limited lookback of events so collisions
+        // should be unlikely.
+        const finalizedAmounts = l2FinalizationSet.map((finalization) => finalization.amount.toString());
+        const pendingDeposits = this.l1DepositInitiatedEvents[monitoredAddress][l1Token].filter((deposit) => {
+          // Remove the first match. This handles scenarios where are collisions by amount.
+          const index = finalizedAmounts.indexOf(deposit.amount.toString());
+          if (index > -1) {
+            finalizedAmounts.splice(index, 1);
+            return false;
+          }
+          return true;
+        });
+        outstandingTransfers[monitoredAddress][l1Token] = pendingDeposits.reduce(
           (acc, curr) => acc.add(curr.amount),
           toBN(0)
         );
