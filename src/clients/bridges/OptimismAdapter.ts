@@ -82,7 +82,11 @@ export class OptimismAdapter extends BaseAdapter {
         const l1Token = l1Tokens[Math.floor(index / 3)];
         const events = result.map((event) => {
           const eventSpread = spreadEventWithBlockNumber(event);
-          return { amount: eventSpread["_amount"], to: eventSpread["_to"], blockNumber: eventSpread.blockNumber };
+          return {
+            amount: eventSpread["_amount"],
+            to: eventSpread["_to"],
+            ...eventSpread,
+          };
         });
         const eventsStorage = [
           this.l1DepositInitiatedEvents,
