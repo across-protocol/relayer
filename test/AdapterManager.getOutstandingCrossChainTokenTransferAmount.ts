@@ -2,7 +2,7 @@ import { expect } from "./utils";
 import { toBN } from "./utils";
 import { BaseAdapter } from "../src/clients/bridges";
 import { SpokePoolClient } from "../src/clients";
-import { BigNumber } from "../src/utils"; // Tested
+import { OutstandingTransfers } from "../src/interfaces/Bridge";
 
 class TestAdapter extends BaseAdapter {
   constructor() {
@@ -64,9 +64,6 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   });
 });
 
-const expectOutstandingTransfersAmount = (
-  transfers: { [address: string]: { [l1Token: string]: BigNumber } },
-  amount: number
-) => {
-  expect(transfers["0xmonitored"]["token"]).to.eq(toBN(amount));
+const expectOutstandingTransfersAmount = (transfers: OutstandingTransfers, amount: number) => {
+  expect(transfers["0xmonitored"]["token"].totalAmount).to.eq(toBN(amount));
 };

@@ -1,10 +1,9 @@
 import { BigNumber, winston, assign, toBN } from "../../utils";
 import { AdapterManager } from "./AdapterManager";
+import { OutstandingTransfers } from "../../interfaces/Bridge";
 
 export class CrossChainTransferClient {
-  private outstandingCrossChainTransfers: {
-    [chainId: number]: { [address: string]: { [l1Token: string]: BigNumber } };
-  } = {};
+  private outstandingCrossChainTransfers: { [chainId: number]: OutstandingTransfers } = {};
 
   constructor(
     readonly logger: winston.Logger,
@@ -14,8 +13,13 @@ export class CrossChainTransferClient {
 
   // Get any funds currently in the canonical bridge.
   getOutstandingCrossChainTransferAmount(address: string, chainId: number | string, l1Token: string): BigNumber {
-    const amount = this.outstandingCrossChainTransfers[Number(chainId)]?.[address]?.[l1Token];
+    const amount = this.outstandingCrossChainTransfers[Number(chainId)]?.[address]?.[l1Token]?.totalAmount;
     return amount ? toBN(amount) : toBN(0);
+  }
+
+  getOutstandingCrossChainTransferTxs(address: string, chainId: number | string, l1Token: string): string[] {
+    const txHashes = this.outstandingCrossChainTransfers[Number(chainId)]?.[address]?.[l1Token]?.depositTxHashes;
+    return txHashes ? txHashes : [];
   }
 
   getEnabledChains(): number[] {
@@ -35,7 +39,12 @@ export class CrossChainTransferClient {
       transfers[address] = {};
     }
 
-    transfers[address][l1Token] = this.getOutstandingCrossChainTransferAmount(address, chainId, l1Token).add(rebalance);
+    // TODO: Require a tx hash here so we can track it as well.
+    transfers[address][l1Token].totalAmount = this.getOutstandingCrossChainTransferAmount(
+      address,
+      chainId,
+      l1Token
+    ).add(rebalance);
   }
 
   async update(l1Tokens: string[]) {

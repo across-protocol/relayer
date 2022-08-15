@@ -368,6 +368,14 @@ export class Monitor {
           chainId,
           l1Token.address
         );
+        const outstandingDepositTxs = etherscanLinks(
+          this.clients.crossChainTransferClient.getOutstandingCrossChainTransferTxs(
+            spokePoolAddress,
+            chainId,
+            l1Token.address
+          ),
+          1
+        );
 
         if (transferBalance.gt(0)) {
           const mrkdwn = `Rebalances of ${l1Token.symbol} to ${getNetworkName(chainId)} is stuck`;
@@ -376,6 +384,7 @@ export class Monitor {
             message: "HubPool -> SpokePool rebalances stuck 🦴",
             mrkdwn,
             transferBalance: transferBalance.toString(),
+            outstandingDepositTxs,
           });
         }
       }

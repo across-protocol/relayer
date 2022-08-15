@@ -3,6 +3,7 @@ import { BigNumber, winston, toBN, createFormatFunction, etherscanLink } from ".
 import { SpokePoolClient, HubPoolClient } from "../";
 import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter } from "./";
 import { Signer } from "@arbitrum/sdk/node_modules/@ethersproject/abstract-signer";
+import { OutstandingTransfers } from "../../interfaces/Bridge";
 export class AdapterManager {
   public adapters: { [chainId: number]: OptimismAdapter | ArbitrumAdapter | PolygonAdapter } = {};
 
@@ -33,7 +34,7 @@ export class AdapterManager {
   async getOutstandingCrossChainTokenTransferAmount(
     chainId: number,
     l1Tokens: string[]
-  ): Promise<{ [address: string]: { [l1Token: string]: BigNumber } }> {
+  ): Promise<OutstandingTransfers> {
     this.logger.debug({ at: "AdapterManager", message: "Getting outstandingCrossChainTransfers", chainId, l1Tokens });
     return await this.adapters[chainId].getOutstandingCrossChainTransfers(l1Tokens);
   }

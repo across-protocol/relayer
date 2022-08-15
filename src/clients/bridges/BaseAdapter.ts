@@ -3,6 +3,7 @@ import { Signer } from "@ethersproject/abstract-signer";
 import { SpokePoolClient } from "../../clients";
 import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20, BigNumber } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
+import { OutstandingTransfers } from "../../interfaces/Bridge";
 
 export class BaseAdapter {
   chainId: number;
@@ -80,8 +81,9 @@ export class BaseAdapter {
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
   }
 
-  computeOutstandingCrossChainTransfers(l1Tokens: string[]): { [address: string]: { [l1Token: string]: BigNumber } } {
-    const outstandingTransfers: { [address: string]: { [l1Token: string]: BigNumber } } = {};
+  computeOutstandingCrossChainTransfers(l1Tokens: string[]): OutstandingTransfers {
+    const outstandingTransfers: OutstandingTransfers = {};
+
     for (const monitoredAddress of this.monitoredAddresses) {
       // Skip if there are no deposit events for this address at all.
       if (this.l1DepositInitiatedEvents[monitoredAddress] === undefined) continue;
@@ -130,10 +132,12 @@ export class BaseAdapter {
           }
           return true;
         });
-        outstandingTransfers[monitoredAddress][l1Token] = pendingDeposits.reduce(
-          (acc, curr) => acc.add(curr.amount),
-          toBN(0)
-        );
+        const totalAmount = pendingDeposits.reduce((acc, curr) => acc.add(curr.amount), toBN(0));
+        const depositTxHashes = pendingDeposits.map((deposit) => deposit.txHash);
+        outstandingTransfers[monitoredAddress][l1Token] = {
+          totalAmount,
+          depositTxHashes,
+        };
       }
     }
 
