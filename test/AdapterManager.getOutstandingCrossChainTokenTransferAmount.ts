@@ -65,5 +65,6 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 });
 
 const expectOutstandingTransfersAmount = (transfers: OutstandingTransfers, amount: number) => {
-  expect(transfers["0xmonitored"]["token"].totalAmount).to.eq(toBN(amount));
+  const actualAmount = transfers["0xmonitored"]?.["token"]?.totalAmount || toBN(0);
+  expect(actualAmount).to.eq(toBN(amount));
 };
