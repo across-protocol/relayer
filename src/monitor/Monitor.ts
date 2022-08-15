@@ -32,6 +32,7 @@ import {
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 
+export const REBALANCE_FINALIZE_GRACE_PERIOD = 60 * 60 * 4; // 4 hours.
 export const ALL_CHAINS_NAME = "All chains";
 export const UNKNOWN_TRANSFERS_NAME = "Unknown transfers (incoming, outgoing, net)";
 const ALL_BALANCE_TYPES = [
@@ -332,6 +333,47 @@ export class Monitor {
       const mrkdwn =
         "Some balance(s) are below the configured threshold!\n" + alerts.map(({ text }) => text).join("\n");
       this.logger[maxAlertlevel]({ at: "Monitor", message: "Balance(s) below threshold", mrkdwn: mrkdwn });
+    }
+  }
+
+  // We approximate stuck rebalances by checking if there are still any pending cross chain transfers to any SpokePools
+  // some fixed amount of time (grace period) after the last bundle execution. This can give false negative if there are
+  // transfers stuck for longer than 1 bundle and the current time is within the last bundle execution + grace period.
+  // But this should be okay as we should address any stuck transactions immediately so realistically no transfers
+  // should stay unstuck for longer than one bundle.
+  async checkStuckRebalances() {
+    const hubPoolClient = this.clients.hubPoolClient;
+    const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(hubPoolClient.latestBlockNumber);
+    // This case shouldn't happen outside of tests as Across V2 has already launched.
+    if (lastFullyExecutedBundle === undefined) {
+      return;
+    }
+    // If we're still within the grace period, skip looking for any stuck rebalances.
+    // Again, this would give false negatives for transfers that have been stuck for longer than one bundle if the
+    // current time is within the grace period of last executed bundle. But this is a good trade off for simpler code.
+    const lastFullyExecutedBundleTime = lastFullyExecutedBundle.challengePeriodEndTimestamp;
+    if (
+      lastFullyExecutedBundleTime + REBALANCE_FINALIZE_GRACE_PERIOD >
+      this.clients.hubPoolClient.hubPool.getCurrentTime()
+    ) {
+      return;
+    }
+
+    const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
+    for (const chainId of this.monitorConfig.spokePoolChains) {
+      const spokePoolAddress = this.clients.spokePoolClients[chainId].spokePool.address;
+      for (const l1Token of allL1Tokens) {
+        const transferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+          spokePoolAddress,
+          chainId,
+          l1Token.address
+        );
+
+        if (transferBalance.gt(0)) {
+          const mrkdwn = `Rebalances of ${l1Token.symbol} to ${getNetworkName(chainId)} is stuck`;
+          this.logger.warn({ at: "Monitor", message: "HubPool -> SpokePool rebalances stuck 🦴", mrkdwn });
+        }
+      }
     }
   }
 
