@@ -371,7 +371,12 @@ export class Monitor {
 
         if (transferBalance.gt(0)) {
           const mrkdwn = `Rebalances of ${l1Token.symbol} to ${getNetworkName(chainId)} is stuck`;
-          this.logger.warn({ at: "Monitor", message: "HubPool -> SpokePool rebalances stuck 🦴", mrkdwn });
+          this.logger.warn({
+            at: "Monitor",
+            message: "HubPool -> SpokePool rebalances stuck 🦴",
+            mrkdwn,
+            transferBalance: transferBalance.toString(),
+          });
         }
       }
     }

@@ -83,11 +83,24 @@ export class BaseAdapter {
   computeOutstandingCrossChainTransfers(l1Tokens: string[]): { [address: string]: { [l1Token: string]: BigNumber } } {
     const outstandingTransfers: { [address: string]: { [l1Token: string]: BigNumber } } = {};
     for (const monitoredAddress of this.monitoredAddresses) {
+      // Skip if there are no deposit events for this address at all.
+      if (this.l1DepositInitiatedEvents[monitoredAddress] === undefined) continue;
+
       if (outstandingTransfers[monitoredAddress] === undefined) {
         outstandingTransfers[monitoredAddress] = {};
       }
+      if (this.l2DepositFinalizedEvents[monitoredAddress] === undefined) {
+        this.l2DepositFinalizedEvents[monitoredAddress] = {};
+      }
 
       for (const l1Token of l1Tokens) {
+        // Skip if there has been no deposits for this token.
+        if (this.l1DepositInitiatedEvents[monitoredAddress][l1Token] === undefined) continue;
+
+        // It's okay to not have any finalization events. In that case, all deposits are outstanding.
+        if (this.l2DepositFinalizedEvents[monitoredAddress][l1Token] === undefined) {
+          this.l2DepositFinalizedEvents[monitoredAddress][l1Token] = [];
+        }
         let l2FinalizationSet = this.l2DepositFinalizedEvents[monitoredAddress][l1Token];
 
         if (
