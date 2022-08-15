@@ -1,14 +1,7 @@
+import { coingecko } from "@across-protocol/sdk-v2";
 import { BigNumber, winston, toBNWei, toBN, assign } from "../utils";
 import { HubPoolClient } from ".";
 import { Deposit, L1Token } from "../interfaces";
-import { Coingecko } from "@uma/sdk";
-
-// Copied from @uma/sdk/coingecko. Propose to export export it upstream in the sdk.
-type CoinGeckoPrice = {
-  address: string;
-  timestamp: number;
-  price: number;
-};
 
 // Define the minimum revenue, in USD, that a relay must yield in order to be considered "profitable". This is a short
 // term solution to enable us to avoid DOS relays that yield negative profits. In the future this should be updated
@@ -40,7 +33,7 @@ export class ProfitClient {
     readonly relayerDiscount: BigNumber = toBNWei(0),
     readonly minRelayerFeePct: string = "0"
   ) {
-    this.coingecko = new Coingecko();
+    this.coingecko = coingecko.Coingecko.get(logger);
   }
 
   getAllPrices() {
@@ -117,7 +110,7 @@ export class ProfitClient {
     );
 
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", l1Tokens });
-    let cgPrices: Array<CoinGeckoPrice> = [];
+    let cgPrices: Array<coingecko.CoinGeckoPrice> = [];
     try {
       cgPrices = await this.coingeckoPrices(Object.keys(l1Tokens));
     } catch (err) {
@@ -126,7 +119,7 @@ export class ProfitClient {
 
     const errors: Array<{ [k: string]: string }> = [];
     for (const address of Object.keys(l1Tokens)) {
-      const tokenPrice: CoinGeckoPrice = cgPrices.find(
+      const tokenPrice: coingecko.CoinGeckoPrice = cgPrices.find(
         (price) => address.toLowerCase() === price.address.toLowerCase()
       );
 
