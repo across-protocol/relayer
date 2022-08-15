@@ -18,9 +18,7 @@ const customOvmBridgeAddresses = {
 const wethOptimismAddress = "0x4200000000000000000000000000000000000006";
 const wethBobaAddress = "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000";
 
-// On Optimism, transfers are marked as coming from the atomic depositor contract, and not the original sender.
-// This is likely a quirk in how Optimism implements their bridge.
-const optimismAtomicDepositorAddress = "0x26eaf37ee5daf49174637bdcd2f7759a25206c34";
+const atomicDepositorAddress = "0x26eaf37ee5daf49174637bdcd2f7759a25206c34";
 
 export class OptimismAdapter extends BaseAdapter {
   public l2Gas: number;
@@ -56,8 +54,8 @@ export class OptimismAdapter extends BaseAdapter {
         }
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
-        // Optimism has the sender set to their atomic depositor contract while Boba maintains the original sender.
-        const senderAddress = this.isOptimism ? optimismAtomicDepositorAddress : this.senderAddress || monitoredAddress;
+        // Transfers might have come from the monitored address itself or another sender address (if specified).
+        const senderAddress = this.senderAddress || monitoredAddress;
         const adapterSearchConfig = [ZERO_ADDRESS, undefined, senderAddress];
         promises.push(
           paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), this.l1SearchConfig),
@@ -158,7 +156,7 @@ export class OptimismAdapter extends BaseAdapter {
   }
 
   getL1TokenGateway(l1Token: string) {
-    if (this.isWeth(l1Token)) return new Contract(optimismAtomicDepositorAddress, atomicDepositorInterface, this.getSigner(1));
+    if (this.isWeth(l1Token)) return new Contract(atomicDepositorAddress, atomicDepositorInterface, this.getSigner(1));
     else return this.getL1Bridge(l1Token);
   }
 
