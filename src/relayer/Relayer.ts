@@ -1,5 +1,5 @@
 import { BigNumber, winston, buildFillRelayProps, getNetworkName, getUnfilledDeposits, getCurrentTime } from "../utils";
-import { createFormatFunction, etherscanLink, toBN } from "../utils";
+import { createFormatFunction, etherscanLink, formatFeePct, toBN } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 
 import { Deposit } from "../interfaces";
@@ -203,7 +203,7 @@ export class Relayer {
         const formatFunction = createFormatFunction(2, 4, false, decimals);
         depositMrkdwn +=
           `- DepositId ${deposit.depositId} of amount ${formatFunction(deposit.amount)} ${symbol}` +
-          ` with a relayerFeePct ${Relayer.formatFeePct(deposit.relayerFeePct)} being relayed from ` +
+          ` with a relayerFeePct ${formatFeePct(deposit.relayerFeePct)}% being relayed from ` +
           `${getNetworkName(deposit.originChainId)} to ${getNetworkName(deposit.destinationChainId)}` +
           ` and an unfilled amount of  ${formatFunction(fillAmount)} ${symbol} is unprofitable!\n`;
       });
@@ -239,12 +239,8 @@ export class Relayer {
       `${createFormatFunction(2, 4, false, decimals)(deposit.amount.toString())} ${symbol}. ` +
       `with depositor ${etherscanLink(deposit.depositor, deposit.originChainId)}. ` +
       `Fill amount of ${createFormatFunction(2, 4, false, decimals)(fillAmount.toString())} ${symbol} with ` +
-      `relayerFee ${Relayer.formatFeePct(deposit.relayerFeePct)}% & ` +
-      `realizedLpFee ${Relayer.formatFeePct(deposit.realizedLpFeePct)}%. `
+      `relayerFee ${formatFeePct(deposit.relayerFeePct)}% & ` +
+      `realizedLpFee ${formatFeePct(deposit.realizedLpFeePct)}%. `
     );
-  }
-
-  private static formatFeePct(relayerFeePct: BigNumber): string {
-    return createFormatFunction(2, 4, false, 18)(toBN(relayerFeePct).mul(100).toString());
   }
 }
