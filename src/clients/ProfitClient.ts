@@ -65,7 +65,11 @@ export class ProfitClient {
 
   isFillProfitable(deposit: Deposit, fillAmount: BigNumber) {
     if (toBN(deposit.relayerFeePct).lt(toBNWei(this.minRelayerFeePct))) {
-      this.logger.debug({ at: "ProfitClient", message: "Relayer fee % < 0.03%" });
+      this.logger.debug({
+        at: "ProfitClient",
+        message: "Relayer fee % < minimum relayer fee %",
+        minRelayerFeePct: this.minRelayerFeePct,
+      });
       return false;
     }
 
