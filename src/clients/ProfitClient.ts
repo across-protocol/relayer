@@ -1,4 +1,4 @@
-import { BigNumber, winston, toBNWei, toBN, assign } from "../utils";
+import { BigNumber, formatFeePct, winston, toBNWei, toBN, assign } from "../utils";
 import { HubPoolClient } from ".";
 import { Deposit, L1Token } from "../interfaces";
 import { Coingecko } from "@uma/sdk";
@@ -37,8 +37,8 @@ export class ProfitClient {
   constructor(
     readonly logger: winston.Logger,
     readonly hubPoolClient: HubPoolClient,
-    readonly relayerDiscount: BigNumber = toBNWei(0),
-    readonly minRelayerFeePct: string = "0"
+    readonly relayerDiscount: BigNumber = toBN(0),
+    readonly minRelayerFeePct: BigNumber = toBN(0)
   ) {
     this.coingecko = new Coingecko();
   }
@@ -64,11 +64,11 @@ export class ProfitClient {
   }
 
   isFillProfitable(deposit: Deposit, fillAmount: BigNumber) {
-    if (toBN(deposit.relayerFeePct).lt(toBNWei(this.minRelayerFeePct))) {
+    if (toBN(deposit.relayerFeePct).lt(this.minRelayerFeePct)) {
       this.logger.debug({
         at: "ProfitClient",
         message: "Relayer fee % < minimum relayer fee %",
-        minRelayerFeePct: this.minRelayerFeePct,
+        minRelayerFeePct: `${formatFeePct(this.minRelayerFeePct)}%`,
       });
       return false;
     }
