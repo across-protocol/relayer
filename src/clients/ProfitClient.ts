@@ -37,7 +37,8 @@ export class ProfitClient {
   constructor(
     readonly logger: winston.Logger,
     readonly hubPoolClient: HubPoolClient,
-    readonly relayerDiscount: BigNumber = toBNWei(0)
+    readonly relayerDiscount: BigNumber = toBNWei(0),
+    readonly minRelayerFeePct: string = "0"
   ) {
     this.coingecko = new Coingecko();
   }
@@ -63,6 +64,11 @@ export class ProfitClient {
   }
 
   isFillProfitable(deposit: Deposit, fillAmount: BigNumber) {
+    if (toBN(deposit.relayerFeePct).lt(toBNWei(this.minRelayerFeePct))) {
+      this.logger.debug({ at: "ProfitClient", message: "Relayer fee % < 0.03%" });
+      return false;
+    }
+
     if (toBN(this.relayerDiscount).eq(toBNWei(1))) {
       this.logger.debug({ at: "ProfitClient", message: "Relayer discount set to 100%. Accepting relay" });
       return true;
@@ -72,6 +78,7 @@ export class ProfitClient {
       this.logger.debug({ at: "ProfitClient", message: "Deposit set 0 relayerFeePct. Rejecting relay" });
       return false;
     }
+
     const { decimals, address: l1Token } = this.hubPoolClient.getTokenInfoForDeposit(deposit);
     const tokenPriceInUsd = this.getPriceOfToken(l1Token);
     const fillRevenueInRelayedToken = toBN(deposit.relayerFeePct).mul(fillAmount).div(toBN(10).pow(decimals));

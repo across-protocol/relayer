@@ -31,7 +31,12 @@ export async function constructRelayerClients(
 
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients, commonClients.hubPoolClient);
 
-  const profitClient = new ProfitClient(logger, commonClients.hubPoolClient, config.relayerDiscount);
+  const profitClient = new ProfitClient(
+    logger,
+    commonClients.hubPoolClient,
+    config.relayerDiscount,
+    config.minRelayerFeePct
+  );
 
   const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
     baseSigner.address,
