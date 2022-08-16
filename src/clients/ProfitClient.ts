@@ -49,7 +49,13 @@ export class ProfitClient {
 
   getPriceOfToken(token: string) {
     if (!this.tokenPrices[token]) {
-      this.logger.warn({ at: "ProfitClient", message: `Token ${token} not found in state. Using 0` });
+      // A warning is already emitted for token price retrieval failures, so only warn if we are missing specific prices.
+      const errmsg = `Token ${token} not found in state. Using 0.`;
+      if (Object.keys(this.tokenPrices).length === 0) {
+        this.logger.info({ at: "ProfitClient", message: errmsg });
+      } else {
+        this.logger.warn({ at: "ProfitClient", message: errmsg });
+      }
       return toBN(0);
     }
     return this.tokenPrices[token];
@@ -121,7 +127,13 @@ export class ProfitClient {
     try {
       cgPrices = await this.coingeckoPrices(Object.keys(l1Tokens));
     } catch (err) {
-      this.logger.warn({ at: "ProfitClient", message: "Failed to retrieve prices.", err, l1Tokens });
+      const addresses: Array<string> = Object.keys(l1Tokens);
+      this.logger.warn({
+        at: "ProfitClient",
+        message: `Failed to retrieve token prices (${err}).`,
+        addresses,
+      });
+      return;
     }
 
     const errors: Array<{ [k: string]: string }> = [];
@@ -144,8 +156,7 @@ export class ProfitClient {
     if (errors.length > 0) {
       let mrkdwn = "The following L1 token prices could not be fetched:\n";
       errors.forEach((token: { [k: string]: string }) => {
-        mrkdwn += `- ${token["symbol"]} not found (${token["cause"]}).`;
-        mrkdwn += ` Using last known price of ${this.getPriceOfToken(token["address"])}.\n`;
+        mrkdwn += `- ${token["symbol"]} not found (${token["cause"]}).\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
     }
