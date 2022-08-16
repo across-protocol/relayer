@@ -9,6 +9,7 @@ export class RelayerConfig extends CommonConfig {
   readonly sendingSlowRelaysEnabled: boolean;
   readonly relayerTokens: string[];
   readonly relayerDestinationChains: number[];
+  readonly minRelayerFeePct: string;
 
   constructor(env: ProcessEnv) {
     const {
@@ -18,6 +19,7 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_TOKENS,
       SEND_RELAYS,
       SEND_SLOW_RELAYS,
+      MIN_RELAYER_FEE_PCT,
     } = env;
     super(env);
 
@@ -26,6 +28,7 @@ export class RelayerConfig extends CommonConfig {
     // Empty means all tokens.
     this.relayerTokens = RELAYER_TOKENS ? JSON.parse(RELAYER_TOKENS) : [];
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
+    this.minRelayerFeePct = MIN_RELAYER_FEE_PCT ?? "0";
 
     if (Object.keys(this.inventoryConfig).length > 0) {
       this.inventoryConfig = replaceAddressCase(this.inventoryConfig); // Cast any non-address case addresses.
