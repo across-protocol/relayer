@@ -165,7 +165,7 @@ export class ProfitClient {
     if (errors.length > 0) {
       let mrkdwn = "The following L1 token prices could not be fetched:\n";
       errors.forEach((token: { [k: string]: string }) => {
-        mrkdwn += `- ${token["symbol"]} not found (${token["cause"]}).\n`;
+        mrkdwn += `- ${token["symbol"]} not found (${token["cause"]}).`;
         mrkdwn += ` Using last known price of ${this.getPriceOfToken(token["address"])}.\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
