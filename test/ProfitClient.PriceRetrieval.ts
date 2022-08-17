@@ -14,6 +14,7 @@ const mainnetTokens: Array<L1Token> = [
   // Lower-case addresses
   { symbol: "WBTC", address: "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599", decimals: 8 },
   { symbol: "BOBA", address: "0x42bbfa2e77757c645eeaad1655e0911a7553efbc", decimals: 18 },
+  { symbol: "BAL", address: "0xba100000625a3754423978a60c9317c58a424e3d", decimals: 18 },
   // Upper-case addresses
   { symbol: "DAI", address: "0X6B175474E89094C44DA98B954EEDEAC495271D0F", decimals: 18 },
   { symbol: "UMA", address: "0X04FA0D235C4ABF4BCF4787AF4CF447DE572EF828", decimals: 18 },
