@@ -48,7 +48,7 @@ export class ProfitClient {
   }
 
   getPriceOfToken(token: string) {
-    assert(typeof this.tokenPrices[token] === "number", `Token ${token} not in price list.`);
+    assert(typeof this.tokenPrices[token] === "string", `Token ${token} not in price list.`);
     return this.tokenPrices[token];
   }
 
@@ -109,18 +109,25 @@ export class ProfitClient {
   }
 
   async update() {
+    // Generate list of tokens to retrieve and pre-populate any new addresses
+    const newTokens: Array<{ [k: string]: string }> = [];
     const l1Tokens: { [k: string]: L1Token } = Object.fromEntries(
-      this.hubPoolClient.getL1Tokens().map((token) => [token["address"], token])
+      this.hubPoolClient.getL1Tokens().map((token) => {
+        const { address, symbol } = token;
+
+        if (typeof this.tokenPrices[address] !== "string") {
+          this.tokenPrices[address] = toBN(0);
+          newTokens.push({ address: address, symbol: symbol });
+        }
+
+        return [address, token];
+      })
     );
 
-    this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", l1Tokens });
-
-    // Pre-populate all addresses
-    Object.keys(l1Tokens).forEach((address) => {
-      if (typeof this.tokenPrices[address] !== "number") {
-        this.tokenPrices[address] = toBN(0);
-      }
-    });
+    this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens: Object.values(l1Tokens) });
+    if (newTokens.length > 0) {
+      this.logger.debug({ at: "ProfitClient", message: "Initialised tokens to price 0.", tokens: newTokens });
+    }
 
     let cgPrices: Array<CoinGeckoPrice> = [];
     try {
@@ -129,7 +136,7 @@ export class ProfitClient {
       this.logger.warn({
         at: "ProfitClient",
         message: `Failed to retrieve token prices (${err}).`,
-        addresses: Object.keys(l1Tokens),
+        tokens: Object.values(l1Tokens),
       });
       return;
     }
