@@ -1,4 +1,4 @@
-import { BigNumber, winston, toBNWei, toBN, assign } from "../utils";
+import { assert, BigNumber, winston, toBNWei, toBN, assign } from "../utils";
 import { HubPoolClient } from ".";
 import { Deposit, L1Token } from "../interfaces";
 import { Coingecko } from "@uma/sdk";
@@ -48,16 +48,7 @@ export class ProfitClient {
   }
 
   getPriceOfToken(token: string) {
-    if (!this.tokenPrices[token]) {
-      // A warning is already emitted for token price retrieval failures, so only warn if we are missing specific prices.
-      const errmsg = `Token ${token} not found in state. Using 0.`;
-      if (Object.keys(this.tokenPrices).length === 0) {
-        this.logger.info({ at: "ProfitClient", message: errmsg });
-      } else {
-        this.logger.warn({ at: "ProfitClient", message: errmsg });
-      }
-      return toBN(0);
-    }
+    assert(typeof this.tokenPrices[token] === "number", `Token ${token} not in price list.`);
     return this.tokenPrices[token];
   }
 
@@ -123,6 +114,14 @@ export class ProfitClient {
     );
 
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", l1Tokens });
+
+    // Pre-populate all addresses
+    Object.keys(l1Tokens).forEach((address) => {
+      if (typeof this.tokenPrices[address] !== "number") {
+        this.tokenPrices[address] = toBN(0);
+      }
+    });
+
     let cgPrices: Array<CoinGeckoPrice> = [];
     try {
       cgPrices = await this.coingeckoPrices(Object.keys(l1Tokens));
@@ -156,6 +155,7 @@ export class ProfitClient {
       let mrkdwn = "The following L1 token prices could not be fetched:\n";
       errors.forEach((token: { [k: string]: string }) => {
         mrkdwn += `- ${token["symbol"]} not found (${token["cause"]}).\n`;
+        mrkdwn += ` Using last known price of ${this.getPriceOfToken(token["address"])}.\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
     }
