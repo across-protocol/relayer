@@ -1,5 +1,18 @@
-import { createSpyLogger, deployAndConfigureHubPool, enableRoutesOnHubPool, buildDepositStruct } from "./utils";
-import { deploySpokePoolWithToken, destinationChainId, deployConfigStore, getLastBlockTime, expect } from "./utils";
+import {
+  createSpyLogger,
+  deployAndConfigureHubPool,
+  enableRoutesOnHubPool,
+  buildDepositStruct,
+  signForSpeedUp,
+} from "./utils";
+import {
+  deploySpokePoolWithToken,
+  destinationChainId,
+  deployConfigStore,
+  getLastBlockTime,
+  expect,
+  toBNWei,
+} from "./utils";
 import { simpleDeposit, fillRelay, ethers, Contract, SignerWithAddress, setupTokensForWallet, winston } from "./utils";
 import { amountToLp, originChainId, amountToRelay } from "./constants";
 import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient } from "../src/clients";
@@ -130,6 +143,23 @@ describe("Relayer: Unfilled Deposits", async function () {
     expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients)).to.deep.equal([
       { unfilledAmount: deposit1Complete.amount, deposit: deposit1Complete, fillCount: 0 },
     ]);
+  });
+  it("Correctly selects unfilled deposit with updated fee", async function () {
+    // perform simple deposit
+    const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await updateAllClients();
+
+    // update fee before deposit filled
+    const newRelayFeePct = toBNWei(0.1337);
+    const speedUpSignature = await signForSpeedUp(depositor, deposit1, newRelayFeePct);
+    await spokePool_1.speedUpDeposit(depositor.address, newRelayFeePct, deposit1.depositId, speedUpSignature);
+    await updateAllClients();
+
+    const unfilledDeposits = getUnfilledDeposits(relayerInstance.clients.spokePoolClients);
+    // expect only one unfilled deposit
+    expect(unfilledDeposits.length).to.eq(1);
+    // expect unfilled deposit to have new relay fee
+    expect(unfilledDeposits[0].deposit.relayerFeePct).to.deep.eq(newRelayFeePct);
   });
 });
 

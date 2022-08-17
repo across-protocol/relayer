@@ -3,6 +3,7 @@ import { deploySpokePoolWithToken, enableRoutes, simpleDeposit, originChainId, c
 import { depositRelayerFeePct, destinationChainId } from "./constants";
 
 import { SpokePoolClient } from "../src/clients";
+import { getUnfilledDeposits } from "../src/utils";
 
 let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress;
