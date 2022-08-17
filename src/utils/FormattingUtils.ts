@@ -15,6 +15,10 @@ export const toBN = (num: string | number | BigNumber) => {
   return BigNumber.from(num.toString());
 };
 
+export const formatFeePct = (relayerFeePct: BigNumber): string => {
+  return createFormatFunction(2, 4, false, 18)(toBN(relayerFeePct).mul(100).toString());
+};
+
 export { createFormatFunction } from "@uma/common";
 
 import { createEtherscanLinkMarkdown } from "@uma/common";

@@ -153,7 +153,7 @@ export class SpokePoolClient {
   }
 
   appendMaxSpeedUpSignatureToDeposit(deposit: Deposit) {
-    const maxSpeedUp = this.speedUps[deposit.depositor]?.[deposit.depositId].reduce((prev, current) =>
+    const maxSpeedUp = this.speedUps[deposit.depositor]?.[deposit.depositId]?.reduce((prev, current) =>
       prev.newRelayerFeePct.gt(current.newRelayerFeePct) ? prev : current
     );
 

@@ -8,7 +8,7 @@ const mainnetWeth = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
 const mainnetUsdc = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 
 describe("ProfitClient: Consider relay profit", async function () {
-  beforeEach(async function () {
+  beforeEach(() => {
     ({ spyLogger } = createSpyLogger());
 
     hubPoolClient = new MockHubPoolClient(null, null);
@@ -17,7 +17,7 @@ describe("ProfitClient: Consider relay profit", async function () {
     profitClient.setTokenPrices({ [mainnetWeth]: toBNWei(3000), [mainnetUsdc]: toBNWei(1) }); // Seed prices
   });
 
-  it("Decides a relay profitability", async function () {
+  it("Decides a relay profitability", () => {
     // Create a relay that is clearly profitable. Currency of the relay is WETH with a fill amount of 1 WETH, price per
     // WETH set at 3000 and relayer fee % of 10% which is a revenue of 300. This is more than the hard coded min of 10.
     const relaySize = toBNWei(1); // 1 ETH
@@ -40,7 +40,8 @@ describe("ProfitClient: Consider relay profit", async function () {
     const marginallyWethL2ProfitableRelay = { relayerFeePct: toBNWei("0.00034"), destinationChainId: 10 } as Deposit;
     expect(profitClient.isFillProfitable(marginallyWethL2ProfitableRelay, relaySize)).to.be.true;
   });
-  it("Handles non-standard token decimals when considering a relay profitability", async function () {
+
+  it("Handles non-standard token decimals when considering a relay profitability", () => {
     // Create a relay that is clearly profitable. Currency of the relay is USDC with a fill amount of 1000 USDC with a
     // price per USDC of 1 USD. Set the relayer Fee to 10% should make this clearly relayable.
 
@@ -63,6 +64,14 @@ describe("ProfitClient: Consider relay profit", async function () {
     const marginallyUsdcL2ProfitableRelay = { relayerFeePct: toBNWei("0.00101"), destinationChainId: 10 } as Deposit;
     expect(profitClient.isFillProfitable(marginallyUsdcL2ProfitableRelay, relaySize)).to.be.true;
   });
+
+  it("Considers deposits with relayer fee below min required unprofitable", () => {
+    const profitableWethL1Relay = { relayerFeePct: toBNWei("0.01"), destinationChainId: 1 } as Deposit;
+    // Full profit discount but with a min fee of 0.03%.
+    const profitClientWithMinFee = new MockProfitClient(spyLogger, hubPoolClient, toBN(1), toBNWei("0.03"));
+    expect(profitClientWithMinFee.isFillProfitable(profitableWethL1Relay, toBNWei(1))).to.be.false;
+  });
+
   it("Captures unprofitable fills", async function () {
     const deposit = { relayerFeePct: toBNWei("0.003"), originChainId: 1, depositId: 42 } as Deposit;
     profitClient.captureUnprofitableFill(deposit, toBNWei(1));

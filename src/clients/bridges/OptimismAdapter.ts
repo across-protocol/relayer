@@ -26,7 +26,10 @@ export class OptimismAdapter extends BaseAdapter {
     readonly logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly monitoredAddresses: string[],
-    readonly isOptimism: boolean
+    readonly isOptimism: boolean,
+    // Optional sender address where the cross chain transfers originate from. This is useful for the use case of
+    // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
+    readonly senderAddress?: string
   ) {
     // Note based on if this isOptimism or not we switch the chainId and starting L1 blocks. This is critical. If done
     // wrong funds WILL be deleted in the canonical bridge (eg sending funds to Optimism with a boba L2 token).
@@ -51,7 +54,9 @@ export class OptimismAdapter extends BaseAdapter {
         }
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
-        const adapterSearchConfig = [ZERO_ADDRESS, undefined, atomicDepositorAddress];
+        // Transfers might have come from the monitored address itself or another sender address (if specified).
+        const senderAddress = this.senderAddress || monitoredAddress;
+        const adapterSearchConfig = [ZERO_ADDRESS, undefined, senderAddress];
         promises.push(
           paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), this.l1SearchConfig),
           paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...l2SearchFilter), this.l2SearchConfig),
@@ -82,7 +87,11 @@ export class OptimismAdapter extends BaseAdapter {
         const l1Token = l1Tokens[Math.floor(index / 3)];
         const events = result.map((event) => {
           const eventSpread = spreadEventWithBlockNumber(event);
-          return { amount: eventSpread["_amount"], to: eventSpread["_to"], blockNumber: eventSpread.blockNumber };
+          return {
+            amount: eventSpread["_amount"],
+            to: eventSpread["_to"],
+            ...eventSpread,
+          };
         });
         const eventsStorage = [
           this.l1DepositInitiatedEvents,

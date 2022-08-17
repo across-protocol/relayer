@@ -1,4 +1,4 @@
-import { BigNumber, winston, toBNWei, toBN, assign } from "../utils";
+import { BigNumber, formatFeePct, winston, toBNWei, toBN, assign } from "../utils";
 import { HubPoolClient } from ".";
 import { Deposit, L1Token } from "../interfaces";
 import { Coingecko } from "@uma/sdk";
@@ -37,7 +37,8 @@ export class ProfitClient {
   constructor(
     readonly logger: winston.Logger,
     readonly hubPoolClient: HubPoolClient,
-    readonly relayerDiscount: BigNumber = toBNWei(0)
+    readonly relayerDiscount: BigNumber = toBN(0),
+    readonly minRelayerFeePct: BigNumber = toBN(0)
   ) {
     this.coingecko = new Coingecko();
   }
@@ -63,6 +64,15 @@ export class ProfitClient {
   }
 
   isFillProfitable(deposit: Deposit, fillAmount: BigNumber) {
+    if (toBN(deposit.relayerFeePct).lt(this.minRelayerFeePct)) {
+      this.logger.debug({
+        at: "ProfitClient",
+        message: "Relayer fee % < minimum relayer fee %",
+        minRelayerFeePct: `${formatFeePct(this.minRelayerFeePct)}%`,
+      });
+      return false;
+    }
+
     if (toBN(this.relayerDiscount).eq(toBNWei(1))) {
       this.logger.debug({ at: "ProfitClient", message: "Relayer discount set to 100%. Accepting relay" });
       return true;
@@ -72,6 +82,7 @@ export class ProfitClient {
       this.logger.debug({ at: "ProfitClient", message: "Deposit set 0 relayerFeePct. Rejecting relay" });
       return false;
     }
+
     const { decimals, address: l1Token } = this.hubPoolClient.getTokenInfoForDeposit(deposit);
     const tokenPriceInUsd = this.getPriceOfToken(l1Token);
     const fillRevenueInRelayedToken = toBN(deposit.relayerFeePct).mul(fillAmount).div(toBN(10).pow(decimals));
@@ -96,7 +107,7 @@ export class ProfitClient {
   }
 
   captureUnprofitableFill(deposit: Deposit, fillAmount: BigNumber) {
-    this.logger.debug({ at: "TokenClient", message: "Handling unprofitable fill", deposit, fillAmount });
+    this.logger.debug({ at: "ProfitClient", message: "Handling unprofitable fill", deposit, fillAmount });
     assign(this.unprofitableFills, [deposit.originChainId], [{ deposit, fillAmount }]);
   }
 
@@ -114,11 +125,7 @@ export class ProfitClient {
     try {
       cgPrices = await this.coingeckoPrices(Object.keys(l1Tokens));
     } catch (err) {
-      this.logger.warn({
-        message: "Failed to retrieve prices.",
-        err,
-        l1Tokens,
-      });
+      this.logger.warn({ at: "ProfitClient", message: "Failed to retrieve prices.", err, l1Tokens });
     }
 
     const errors: Array<{ [k: string]: string }> = [];
@@ -129,17 +136,18 @@ export class ProfitClient {
 
       // todo: Any additional validation to do? Ensure that timestamps are always moving forwards?
       if (tokenPrice === undefined || typeof tokenPrice.price !== "number") {
-        const symbol = l1Tokens[address].symbol;
-        const errmsg = tokenPrice ? "Unexpected price response." : `Missing price for ${symbol}.`;
-        this.logger.warn({ at: "ProfitClient", message: errmsg, tokenPrice });
-        errors.push({ address: address, symbol: symbol });
+        errors.push({
+          address: address,
+          symbol: l1Tokens[address].symbol,
+          cause: tokenPrice ? "Unexpected price response" : "Missing price",
+        });
       } else this.tokenPrices[address] = toBNWei(tokenPrice.price);
     }
 
     if (errors.length > 0) {
       let mrkdwn = "The following L1 token prices could not be fetched:\n";
       errors.forEach((token: { [k: string]: string }) => {
-        mrkdwn += `- ${token["symbol"]} not found.`;
+        mrkdwn += `- ${token["symbol"]} not found (${token["cause"]}).`;
         mrkdwn += ` Using last known price of ${this.getPriceOfToken(token["address"])}.\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
