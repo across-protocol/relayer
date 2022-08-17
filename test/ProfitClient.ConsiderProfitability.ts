@@ -68,7 +68,7 @@ describe("ProfitClient: Consider relay profit", async function () {
   it("Considers deposits with relayer fee below min required unprofitable", () => {
     const profitableWethL1Relay = { relayerFeePct: toBNWei("0.01"), destinationChainId: 1 } as Deposit;
     // Full profit discount but with a min fee of 0.03%.
-    const profitClientWithMinFee = new MockProfitClient(spyLogger, hubPoolClient, toBN(1), "0.03");
+    const profitClientWithMinFee = new MockProfitClient(spyLogger, hubPoolClient, toBN(1), toBNWei("0.03"));
     expect(profitClientWithMinFee.isFillProfitable(profitableWethL1Relay, toBNWei(1))).to.be.false;
   });
 
