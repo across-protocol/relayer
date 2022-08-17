@@ -262,6 +262,7 @@ export async function setupDataworker(
     updateAllClients: async () => {
       await hubPoolClient.update();
       await configStoreClient.update();
+      await profitClient.update();
       await spokePoolClient_1.update();
       await spokePoolClient_2.update();
       await spokePoolClient_3.update();
