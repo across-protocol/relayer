@@ -1,6 +1,7 @@
+import { Provider } from "@ethersproject/abstract-provider";
 import { BigNumber, formatFeePct, winston, toBNWei, toBN, assign } from "../utils";
 import { HubPoolClient } from ".";
-import { Deposit, L1Token } from "../interfaces";
+import { Deposit, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { Coingecko } from "@uma/sdk";
 import { relayFeeCalculator } from "@across-protocol/sdk-v2";
 import { CHAIN_ID_LIST_INDICES } from "../common";
@@ -39,6 +40,7 @@ export class ProfitClient {
   constructor(
     readonly logger: winston.Logger,
     readonly hubPoolClient: HubPoolClient,
+    spokePoolClients: SpokePoolClientsByChain,
     readonly enableProfitability: boolean,
     enabledChainIds: number[],
     // Default to throwing errors if fetching token prices fails.
@@ -47,9 +49,17 @@ export class ProfitClient {
   ) {
     this.coingecko = new Coingecko();
 
-    this.enabledChainIds = enabledChainIds || CHAIN_ID_LIST_INDICES;
+    this.enabledChainIds = enabledChainIds.length > 0 ? enabledChainIds : CHAIN_ID_LIST_INDICES;
+    this.logger.debug({
+      at: "Profit client",
+      message: `Enabled chain ids: ${this.enabledChainIds}`,
+    });
+
     for (const chainId of this.enabledChainIds) {
-      this.relayerFeeQueries[chainId] = this.constructRelayerFeeQuery(chainId);
+      this.relayerFeeQueries[chainId] = this.constructRelayerFeeQuery(
+        chainId,
+        spokePoolClients[chainId].spokePool.provider
+      );
     }
   }
 
@@ -204,6 +214,11 @@ export class ProfitClient {
       getGasCosts.push(this.relayerFeeQueries[chainId].getGasCosts());
     }
     const gasCosts = Promise.all(getGasCosts);
+    this.logger.debug({
+      at: "ProfitClient",
+      message: "Fetched gas costs of relays",
+      gasCosts,
+    });
     for (let i = 0; i < this.enabledChainIds.length; i++) {
       this.totalGasCosts[this.enabledChainIds[i]] = gasCosts[i];
     }
@@ -215,8 +230,7 @@ export class ProfitClient {
     return await this.coingecko.getContractPrices(tokens, "usd", platformId);
   }
 
-  private constructRelayerFeeQuery(chainId: number): relayFeeCalculator.QueryInterface {
-    const provider = this.hubPoolClient.hubPool.provider;
+  private constructRelayerFeeQuery(chainId: number, provider: Provider): relayFeeCalculator.QueryInterface {
     // Fallback to Coingecko's free API for now.
     // TODO: Add support for Coingecko Pro.
     const coingeckoProApiKey = undefined;

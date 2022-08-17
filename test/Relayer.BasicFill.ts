@@ -53,6 +53,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     profitClient = new ProfitClient(
       spyLogger,
       hubPoolClient,
+      spokePoolClients,
       true,
       [originChainId, destinationChainId],
       false,

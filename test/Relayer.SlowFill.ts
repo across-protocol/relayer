@@ -52,6 +52,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     profitClient = new ProfitClient(
       spyLogger,
       hubPoolClient,
+      spokePoolClients,
       true,
       [originChainId, destinationChainId],
       false,

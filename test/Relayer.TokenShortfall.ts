@@ -50,8 +50,9 @@ describe("Relayer: Token balance shortfall", async function () {
     profitClient = new ProfitClient(
       spyLogger,
       hubPoolClient,
-      [originChainId, destinationChainId],
+      spokePoolClients,
       true,
+      [originChainId, destinationChainId],
       false,
       toBNWei(1)
     ); // Set the profit discount to 1 (ignore relay cost.)
