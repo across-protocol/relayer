@@ -30,7 +30,6 @@ export class ProfitClient {
   private readonly coingecko;
   protected tokenPrices: { [l1Token: string]: BigNumber } = {};
   private unprofitableFills: { [chainId: number]: { deposit: Deposit; fillAmount: BigNumber }[] } = {};
-  private enabledChainIds: number[] = [];
 
   // Track total gas costs of a relay on each chain.
   private totalGasCosts: { [chainId: number]: BigNumber } = {};
@@ -42,18 +41,12 @@ export class ProfitClient {
     readonly hubPoolClient: HubPoolClient,
     spokePoolClients: SpokePoolClientsByChain,
     readonly enableProfitability: boolean,
-    enabledChainIds: number[],
+    readonly enabledChainIds: number[],
     // Default to throwing errors if fetching token prices fails.
     readonly ignoreTokenPriceFailures: boolean = false,
     readonly minRelayerFeePct: BigNumber = toBN(0)
   ) {
     this.coingecko = new Coingecko();
-
-    this.enabledChainIds = enabledChainIds.length > 0 ? enabledChainIds : CHAIN_ID_LIST_INDICES;
-    this.logger.debug({
-      at: "Profit client",
-      message: `Enabled chain ids: ${this.enabledChainIds}`,
-    });
 
     for (const chainId of this.enabledChainIds) {
       this.relayerFeeQueries[chainId] = this.constructRelayerFeeQuery(
