@@ -380,10 +380,15 @@ export class SpokePoolClient {
       // Traverse all deposit events and update them with associated speedups, If they exist.
       for (const destinationChainId of Object.keys(this.depositsWithBlockNumbers))
         for (const [index, deposit] of this.depositsWithBlockNumbers[destinationChainId].entries()) {
-          const speedUpDeposit = this.appendMaxSpeedUpSignatureToDeposit(deposit);
-          if (speedUpDeposit !== deposit) {
+          const { blockNumber, originBlockNumber, ...depositData } = deposit;
+          const speedUpDeposit = this.appendMaxSpeedUpSignatureToDeposit(depositData);
+          if (speedUpDeposit !== depositData) {
             this.deposits[destinationChainId][index] = speedUpDeposit;
-            this.depositsWithBlockNumbers[destinationChainId][index] = speedUpDeposit;
+            this.depositsWithBlockNumbers[destinationChainId][index] = {
+              ...speedUpDeposit,
+              blockNumber,
+              originBlockNumber,
+            };
           }
         }
     }
