@@ -3,6 +3,7 @@ import { HubPoolClient } from ".";
 import { Deposit, L1Token } from "../interfaces";
 import { Coingecko } from "@uma/sdk";
 import { relayFeeCalculator } from "@across-protocol/sdk-v2";
+import { CHAIN_ID_LIST_INDICES } from "../common";
 
 // Copied from @uma/sdk/coingecko. Propose to export export it upstream in the sdk.
 type CoinGeckoPrice = {
@@ -28,6 +29,7 @@ export class ProfitClient {
   private readonly coingecko;
   protected tokenPrices: { [l1Token: string]: BigNumber } = {};
   private unprofitableFills: { [chainId: number]: { deposit: Deposit; fillAmount: BigNumber }[] } = {};
+  private enabledChainIds: number[] = [];
 
   // Track total gas costs of a relay on each chain.
   private totalGasCosts: { [chainId: number]: BigNumber } = {};
@@ -38,14 +40,15 @@ export class ProfitClient {
     readonly logger: winston.Logger,
     readonly hubPoolClient: HubPoolClient,
     readonly enableProfitability: boolean,
-    readonly enabledChainIds: number[],
+    enabledChainIds: number[],
     // Default to throwing errors if fetching token prices fails.
     readonly ignoreTokenPriceFailures: boolean = false,
     readonly minRelayerFeePct: BigNumber = toBN(0)
   ) {
     this.coingecko = new Coingecko();
 
-    for (const chainId of enabledChainIds) {
+    this.enabledChainIds = enabledChainIds || CHAIN_ID_LIST_INDICES;
+    for (const chainId of this.enabledChainIds) {
       this.relayerFeeQueries[chainId] = this.constructRelayerFeeQuery(chainId);
     }
   }
@@ -100,12 +103,14 @@ export class ProfitClient {
     // Consider gas cost.
     const totalGasCostWei = this.totalGasCosts[deposit.destinationChainId];
     if (!totalGasCostWei) {
+      const errorMsg = "Missing total gas cost. This likely indicate some gas cost requests to provider failed";
       this.logger.error({
         at: "ProfitClient",
-        message: "Missing total gas cost. This likely indicate some gas cost requests to provider failed.",
+        message: errorMsg,
         allGasCostsFetched: this.totalGasCosts,
         chainId: deposit.destinationChainId,
       });
+      throw new Error(errorMsg);
     }
     const gasCostInUsd = totalGasCostWei
       .mul(this.getPriceOfToken(GAS_TOKEN_BY_CHAIN_ID[deposit.destinationChainId]))
