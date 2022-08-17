@@ -1,10 +1,9 @@
 import { Provider } from "@ethersproject/abstract-provider";
 import { Signer } from "@ethersproject/abstract-signer";
 import { SpokePoolClient } from "../../clients";
-import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20, BigNumber } from "../../utils";
+import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20 } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 import { OutstandingTransfers } from "../../interfaces/Bridge";
-import { ZERO_ADDRESS } from "@uma/common";
 
 export class BaseAdapter {
   chainId: number;

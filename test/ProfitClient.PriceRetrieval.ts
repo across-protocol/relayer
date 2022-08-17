@@ -23,7 +23,7 @@ describe("ProfitClient: Price Retrieval", async function () {
     ({ spy, spyLogger } = createSpyLogger());
 
     hubPoolClient = new MockHubPoolClient(null, null);
-    profitClient = new ProfitClient(spyLogger, hubPoolClient, toBN(0));
+    profitClient = new ProfitClient(spyLogger, hubPoolClient, true, [], false, toBN(0));
   });
 
   it("Correctly fetches token prices", async function () {

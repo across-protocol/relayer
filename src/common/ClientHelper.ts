@@ -161,10 +161,10 @@ export async function constructClients(
     redisClient
   );
 
-  // const gasEstimator = new GasEstimator() // todo when this is implemented in the SDK.
-  const multiCallerClient = new MultiCallerClient(logger, null, config.maxTxWait);
+  const multiCallerClient = new MultiCallerClient(logger);
 
-  const profitClient = new ProfitClient(logger, hubPoolClient);
+  // Disable profitability by default as only the relayer needs it. Relayer has its own client initializations.
+  const profitClient = new ProfitClient(logger, hubPoolClient, false);
 
   return { hubPoolClient, configStoreClient, multiCallerClient, profitClient, hubSigner };
 }

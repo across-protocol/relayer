@@ -34,7 +34,9 @@ export async function constructRelayerClients(
   const profitClient = new ProfitClient(
     logger,
     commonClients.hubPoolClient,
-    config.relayerDiscount,
+    config.enableProfitability,
+    config.relayerDestinationChains,
+    config.ignoreTokenPriceFailures,
     config.minRelayerFeePct
   );
 

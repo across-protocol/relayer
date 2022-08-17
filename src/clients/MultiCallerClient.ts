@@ -25,7 +25,7 @@ export interface AugmentedTransaction {
 export class MultiCallerClient {
   private transactions: AugmentedTransaction[] = [];
   // eslint-disable-next-line no-useless-constructor
-  constructor(readonly logger: winston.Logger, readonly gasEstimator: any, readonly maxTxWait: number = 180) {}
+  constructor(readonly logger: winston.Logger) {}
 
   // Adds all information associated with a transaction to the transaction queue. This is the intention of the
   // caller to send a transaction. The transaction might not be executable, which should be filtered later.
