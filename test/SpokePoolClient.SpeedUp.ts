@@ -89,7 +89,7 @@ describe("SpokePoolClient: SpeedUp", async function () {
       await spokePoolClient.update();
       success = true;
     } catch {
-      /* no-empty */
+      // no-op
     }
 
     expect(success).to.be.true;
