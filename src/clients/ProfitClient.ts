@@ -48,7 +48,7 @@ export class ProfitClient {
   }
 
   getPriceOfToken(token: string) {
-    assert(typeof this.tokenPrices[token] === "string", `Token ${token} not in price list.`);
+    assert(typeof this.tokenPrices[token] !== "undefined", `Token ${token} not in price list.`);
     return this.tokenPrices[token];
   }
 
@@ -119,7 +119,7 @@ export class ProfitClient {
       this.hubPoolClient.getL1Tokens().map((token) => {
         const { address, symbol } = token;
 
-        if (typeof this.tokenPrices[address] !== "string") {
+        if (typeof this.tokenPrices[address] === "undefined") {
           this.tokenPrices[address] = toBN(0);
           newTokens.push({ address: address, symbol: symbol });
         }
