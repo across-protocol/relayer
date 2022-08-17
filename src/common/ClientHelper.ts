@@ -164,7 +164,7 @@ export async function constructClients(
   const multiCallerClient = new MultiCallerClient(logger);
 
   // Disable profitability by default as only the relayer needs it. Relayer has its own client initializations.
-  const profitClient = new ProfitClient(logger, hubPoolClient, false);
+  const profitClient = new ProfitClient(logger, hubPoolClient, false, []);
 
   return { hubPoolClient, configStoreClient, multiCallerClient, profitClient, hubSigner };
 }
