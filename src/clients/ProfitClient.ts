@@ -127,11 +127,10 @@ export class ProfitClient {
     try {
       cgPrices = await this.coingeckoPrices(Object.keys(l1Tokens));
     } catch (err) {
-      const addresses: Array<string> = Object.keys(l1Tokens);
       this.logger.warn({
         at: "ProfitClient",
         message: `Failed to retrieve token prices (${err}).`,
-        addresses,
+        addresses: Object.keys(l1Tokens),
       });
       return;
     }
