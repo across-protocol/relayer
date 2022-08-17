@@ -381,7 +381,10 @@ export class SpokePoolClient {
       for (const destinationChainId of Object.keys(this.deposits))
         for (const [index, deposit] of this.deposits[destinationChainId].entries()) {
           const speedUpDeposit = this.appendMaxSpeedUpSignatureToDeposit(deposit);
-          if (speedUpDeposit !== deposit) this.deposits[destinationChainId][index] = speedUpDeposit;
+          if (speedUpDeposit !== deposit) {
+            this.deposits[destinationChainId][index] = speedUpDeposit;
+            this.depositsWithBlockNumbers[destinationChainId][index] = speedUpDeposit;
+          }
         }
     }
 

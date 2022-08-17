@@ -3,6 +3,7 @@ import { deploySpokePoolWithToken, enableRoutes, simpleDeposit, originChainId, c
 import { depositRelayerFeePct, destinationChainId } from "./constants";
 
 import { SpokePoolClient } from "../src/clients";
+import { getUnfilledDeposits } from "../src/utils";
 
 let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress;
@@ -71,7 +72,7 @@ describe("SpokePoolClient: SpeedUp", async function () {
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)).to.deep.equal([expectedDepositData]);
     expect(spokePoolClient.getDepositsFromDepositor(depositor.address)).to.deep.equal([expectedDepositData]);
   });
-  it("Receives a speed up for a correct depositor but invalid deposit Id", async function() {
+  it("Receives a speed up for a correct depositor but invalid deposit Id", async function () {
     const deposit = await simpleDeposit(spokePool, erc20, depositor, depositor, destinationChainId);
 
     await spokePoolClient.update();
@@ -85,9 +86,11 @@ describe("SpokePoolClient: SpeedUp", async function () {
 
     let success = false;
     try {
-        await spokePoolClient.update();
-        success = true;
-    } catch {}
+      await spokePoolClient.update();
+      success = true;
+    } catch {
+      /* no-empty */
+    }
 
     expect(success).to.be.true;
   });
