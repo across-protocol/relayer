@@ -4,7 +4,6 @@ import { HubPoolClient } from ".";
 import { Deposit, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { Coingecko } from "@uma/sdk";
 import { relayFeeCalculator } from "@across-protocol/sdk-v2";
-import { CHAIN_ID_LIST_INDICES } from "../common";
 
 // Copied from @uma/sdk/coingecko. Propose to export export it upstream in the sdk.
 type CoinGeckoPrice = {
@@ -32,8 +31,9 @@ export class ProfitClient {
   private unprofitableFills: { [chainId: number]: { deposit: Deposit; fillAmount: BigNumber }[] } = {};
 
   // Track total gas costs of a relay on each chain.
-  private totalGasCosts: { [chainId: number]: BigNumber } = {};
+  protected totalGasCosts: { [chainId: number]: BigNumber } = {};
 
+  // Queries needed to fetch relay gas costs.
   private relayerFeeQueries: { [chainId: number]: relayFeeCalculator.QueryInterface } = {};
 
   constructor(
@@ -148,6 +148,9 @@ export class ProfitClient {
   }
 
   async update() {
+    // Short circuit early if profitability is disabled.
+    if (!this.enableProfitability) return;
+
     const l1Tokens: { [k: string]: L1Token } = Object.fromEntries(
       this.hubPoolClient.getL1Tokens().map((token) => [token["address"], token])
     );
@@ -206,14 +209,16 @@ export class ProfitClient {
     for (const chainId of this.enabledChainIds) {
       getGasCosts.push(this.relayerFeeQueries[chainId].getGasCosts());
     }
-    const gasCosts = Promise.all(getGasCosts);
+    const gasCosts = await Promise.all(getGasCosts);
     this.logger.debug({
       at: "ProfitClient",
       message: "Fetched gas costs of relays",
+      enabledChainIds: this.enabledChainIds,
       gasCosts,
     });
     for (let i = 0; i < this.enabledChainIds.length; i++) {
-      this.totalGasCosts[this.enabledChainIds[i]] = gasCosts[i];
+      // An extra toBN cast is needed as the provider returns a different BigNumber type.
+      this.totalGasCosts[this.enabledChainIds[i]] = toBN(gasCosts[i]);
     }
 
     this.logger.debug({ at: "ProfitClient", message: "Updated Profit client", tokenPrices: this.tokenPrices });

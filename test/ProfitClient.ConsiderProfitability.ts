@@ -1,20 +1,42 @@
-import { expect, createSpyLogger, winston, toBNWei, toBN } from "./utils";
+import {
+  expect,
+  createSpyLogger,
+  winston,
+  toBNWei,
+  toBN,
+  ethers,
+  deploySpokePoolWithToken,
+  originChainId, destinationChainId, deployAndConfigureHubPool, enableRoutesOnHubPool, deployConfigStore, Contract
+} from "./utils";
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
 import { Deposit } from "../src/interfaces";
+import {AcrossConfigStoreClient, HubPoolClient, MultiCallerClient, SpokePoolClient} from "../src/clients";
 
 let hubPoolClient: MockHubPoolClient, spyLogger: winston.Logger, profitClient: MockProfitClient;
 
 const mainnetWeth = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
 const mainnetUsdc = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 
-describe("ProfitClient: Consider relay profit", async function () {
-  beforeEach(() => {
+describe.only("ProfitClient: Consider relay profit", async function () {
+  beforeEach(async () => {
     ({ spyLogger } = createSpyLogger());
 
     hubPoolClient = new MockHubPoolClient(null, null);
-    profitClient = new MockProfitClient(spyLogger, hubPoolClient, toBN(0));
+    const [owner] = await ethers.getSigners();
+    const { spokePool: spokePool_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId);
+    const { spokePool: spokePool_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId);
 
-    profitClient.setTokenPrices({ [mainnetWeth]: toBNWei(3000), [mainnetUsdc]: toBNWei(1) }); // Seed prices
+    const spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(owner), null, originChainId);
+    const spokePoolClient_2 = new SpokePoolClient(
+      spyLogger,
+      spokePool_2.connect(owner),
+      null,
+      destinationChainId
+    );
+    const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
+    profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, true, [], false, toBN(0));
+    profitClient.setTokenPrices({ [mainnetWeth]: toBNWei(3000), [mainnetUsdc]: toBNWei(1) });
+    profitClient.setGasCosts({ [mainnetWeth]: toBNWei(1), [mainnetUsdc]: toBNWei(1) });
   });
 
   it("Decides a relay profitability", () => {
@@ -68,7 +90,7 @@ describe("ProfitClient: Consider relay profit", async function () {
   it("Considers deposits with relayer fee below min required unprofitable", () => {
     const profitableWethL1Relay = { relayerFeePct: toBNWei("0.01"), destinationChainId: 1 } as Deposit;
     // Full profit discount but with a min fee of 0.03%.
-    const profitClientWithMinFee = new MockProfitClient(spyLogger, hubPoolClient, toBN(1), toBNWei("0.03"));
+    const profitClientWithMinFee = new MockProfitClient(spyLogger, hubPoolClient, {}, true, [], false, toBNWei("0.03"));
     expect(profitClientWithMinFee.isFillProfitable(profitableWethL1Relay, toBNWei(1))).to.be.false;
   });
 

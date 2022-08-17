@@ -4,7 +4,7 @@ import { expect, ethers, SignerWithAddress, createSpyLogger, winston, BigNumber,
 import { MockHubPoolClient } from "./mocks/MockHubPoolClient";
 import { ProfitClient } from "../src/clients"; // Tested
 
-let hubPoolClient: MockHubPoolClient, owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
+let hubPoolClient: MockHubPoolClient, spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let profitClient: ProfitClient; // tested
 
 const mainnetTokens: Array<L1Token> = [
@@ -19,11 +19,10 @@ const mainnetTokens: Array<L1Token> = [
 
 describe("ProfitClient: Price Retrieval", async function () {
   beforeEach(async function () {
-    [owner] = await ethers.getSigners();
     ({ spy, spyLogger } = createSpyLogger());
 
     hubPoolClient = new MockHubPoolClient(null, null);
-    profitClient = new ProfitClient(spyLogger, hubPoolClient, true, [], false, toBN(0));
+    profitClient = new ProfitClient(spyLogger, hubPoolClient, {}, true, [], false, toBN(0));
   });
 
   it("Correctly fetches token prices", async function () {
