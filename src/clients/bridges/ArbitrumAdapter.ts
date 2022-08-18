@@ -103,8 +103,8 @@ export class ArbitrumAdapter extends BaseAdapter {
       // l2DepositFinalizedEvents state from the BaseAdapter.
       eventsToProcess.forEach((result, index) => {
         const l1Token = validTokens[Math.floor(index / 2)];
-        // l1Token is not an indexed field on Aribtrum gateway's deposit events so we need to filter unrelated deposits
-        // of other tokens.
+        // l1Token is not an indexed field on Aribtrum gateway's deposit events, so these events are for all tokens.
+        // Therefore, we need to filter unrelated deposits of other tokens.
         const filteredEvents = result.filter((event) => spreadEvent(event)["l1Token"] === l1Token);
         const events = filteredEvents.map((event) => {
           const eventSpread = spreadEventWithBlockNumber(event);
