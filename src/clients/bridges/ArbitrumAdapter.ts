@@ -71,6 +71,8 @@ export class ArbitrumAdapter extends BaseAdapter {
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
         // l1Token is not an indexed field on deposit events in L1 but is on finalization events on Arb.
+        // This unfortunately leads to fetching of all deposit events for all tokens multiple times, one per l1Token.
+        // There's likely not much we can do here as the deposit events don't have l1Token as an indexed field.
         // https://github.com/OffchainLabs/arbitrum/blob/master/packages/arb-bridge-peripherals/contracts/tokenbridge/ethereum/gateway/L1ArbitrumGateway.sol#L51
         const l1SearchFilter = [undefined, monitoredAddress];
         // https://github.com/OffchainLabs/arbitrum/blob/d75568fa70919364cf56463038c57c96d1ca8cda/packages/arb-bridge-peripherals/contracts/tokenbridge/arbitrum/gateway/L2ArbitrumGateway.sol#L40
