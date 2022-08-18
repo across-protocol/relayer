@@ -36,7 +36,8 @@ describe.only("ProfitClient: Consider relay profit", async function () {
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, true, [], false, toBN(0));
     profitClient.setTokenPrices({ [mainnetWeth]: toBNWei(3000), [mainnetUsdc]: toBNWei(1) });
-    profitClient.setGasCosts({ [mainnetWeth]: toBNWei(1), [mainnetUsdc]: toBNWei(1) });
+    // Default gas to 0 and let the tests decide for themselves how much gas costs should be.
+    profitClient.setGasCosts({ 1: toBN(0), [originChainId]: toBN(0), [destinationChainId]: toBN(0) });
   });
 
   it("Decides a relay profitability", () => {

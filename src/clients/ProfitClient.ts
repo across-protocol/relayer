@@ -21,6 +21,10 @@ const GAS_TOKEN_BY_CHAIN_ID = {
   137: WMATIC,
   288: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
   42161: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
+
+  // For tests.
+  666: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+  1337: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
 };
 // TODO: Make this dynamic once we support chains with gas tokens that have different decimals.
 const GAS_TOKEN_DECIMALS = 18;
@@ -106,12 +110,13 @@ export class ProfitClient {
     // Consider gas cost.
     const totalGasCostWei = this.totalGasCosts[deposit.destinationChainId];
     if (!totalGasCostWei) {
-      const errorMsg = "Missing total gas cost. This likely indicate some gas cost requests to provider failed";
+      const chainId = deposit.destinationChainId;
+      const errorMsg = `Missing total gas cost for ${chainId}. This likely indicate some gas cost request failed`;
       this.logger.error({
         at: "ProfitClient",
         message: errorMsg,
         allGasCostsFetched: this.totalGasCosts,
-        chainId: deposit.destinationChainId,
+        chainId,
       });
       throw new Error(errorMsg);
     }
