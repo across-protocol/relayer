@@ -1,4 +1,12 @@
-import { assign, BigNumber, Contract, runTransaction, spreadEventWithBlockNumber, winston } from "../../utils";
+import {
+  assign,
+  BigNumber,
+  Contract,
+  runTransaction,
+  spreadEvent,
+  spreadEventWithBlockNumber,
+  winston,
+} from "../../utils";
 import { toBN, toWei, paginatedEventQuery, Promise } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
@@ -8,8 +16,8 @@ import { arbitrumL2Erc20GatewayInterface, arbitrumL1Erc20GatewayInterface } from
 const l1Gateways = {
   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "0xcEe284F754E854890e311e3280b767F80797180d", // USDC
   "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "0xd92023E9d9911199a6711321D1277285e6d4e2db", // WETH
-  "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0xd3b5b60020504bc3489d6949d545893982ba3011", // DAI
-  "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "0xa3a7b6f88361f48403514059f1f16c8e78d60eec", // WBTC
+  "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0xD3B5b60020504bc3489D6949d545893982BA3011", // DAI
+  "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // WBTC
   "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828": "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // UMA
   "0x3472A5A71965499acd81997a54BBA8D852C6E53d": "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // BADGER
   "0xba100000625a3754423978a60c9317c58a424e3D": "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // BAL
@@ -62,10 +70,14 @@ export class ArbitrumAdapter extends BaseAdapter {
 
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
-        const searchFilter = [undefined, monitoredAddress];
+        // l1Token is not an indexed field on deposit events in L1 but is on finalization events on Arb.
+        // https://github.com/OffchainLabs/arbitrum/blob/master/packages/arb-bridge-peripherals/contracts/tokenbridge/ethereum/gateway/L1ArbitrumGateway.sol#L51
+        const l1SearchFilter = [undefined, monitoredAddress];
+        // https://github.com/OffchainLabs/arbitrum/blob/d75568fa70919364cf56463038c57c96d1ca8cda/packages/arb-bridge-peripherals/contracts/tokenbridge/arbitrum/gateway/L2ArbitrumGateway.sol#L40
+        const l2SearchFilter = [l1Token, monitoredAddress, undefined];
         promises.push(
-          paginatedEventQuery(l1Bridge, l1Bridge.filters.DepositInitiated(...searchFilter), this.l1SearchConfig),
-          paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...searchFilter), this.l2SearchConfig)
+          paginatedEventQuery(l1Bridge, l1Bridge.filters.DepositInitiated(...l1SearchFilter), this.l1SearchConfig),
+          paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...l2SearchFilter), this.l2SearchConfig)
         );
         validTokens.push(l1Token);
       }
@@ -91,7 +103,10 @@ export class ArbitrumAdapter extends BaseAdapter {
       // l2DepositFinalizedEvents state from the BaseAdapter.
       eventsToProcess.forEach((result, index) => {
         const l1Token = validTokens[Math.floor(index / 2)];
-        const events = result.map((event) => {
+        // l1Token is not an indexed field on Aribtrum gateway's deposit events so we need to filter unrelated deposits
+        // of other tokens.
+        const filteredEvents = result.filter((event) => spreadEvent(event)["l1Token"] === l1Token);
+        const events = filteredEvents.map((event) => {
           const eventSpread = spreadEventWithBlockNumber(event);
           return {
             amount: eventSpread[index % 2 === 0 ? "_amount" : "amount"],
