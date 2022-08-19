@@ -23,7 +23,7 @@ let hubPoolClient: MockHubPoolClient, spyLogger: winston.Logger, profitClient: M
 const mainnetWeth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const mainnetUsdc = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 
-describe("ProfitClient: Consider relay profit", async function () {
+describeg("ProfitClient: Consider relay profit", async function () {
   beforeEach(async () => {
     ({ spyLogger } = createSpyLogger());
 

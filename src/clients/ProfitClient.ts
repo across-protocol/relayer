@@ -21,10 +21,6 @@ const GAS_TOKEN_BY_CHAIN_ID = {
   137: WMATIC,
   288: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
   42161: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
-
-  // For tests.
-  666: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-  1337: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
 };
 // TODO: Make this dynamic once we support chains with gas tokens that have different decimals.
 const GAS_TOKEN_DECIMALS = 18;
@@ -168,8 +164,7 @@ export class ProfitClient {
         this.coingeckoPrices([WMATIC], "polygon-pos"),
         this.coingeckoPrices(Object.keys(l1Tokens)),
       ]);
-      cgPrices = cgPrices.concat(maticTokenPrice);
-      cgPrices = cgPrices.concat(otherTokenPrices);
+      cgPrices = maticTokenPrice.concat(otherTokenPrices);
     } catch (err) {
       this.logger.warn({ at: "ProfitClient", message: "Failed to retrieve prices.", err, l1Tokens });
     }
@@ -188,7 +183,7 @@ export class ProfitClient {
       );
 
       // TODO: Any additional validation to do? Ensure that timestamps are always moving forwards?
-      if (tokenPrice !== undefined && typeof tokenPrice.price === "number") {
+      if (tokenPrice !== undefined && !isNaN(tokenPrice.price)) {
         this.tokenPrices[address] = toBNWei(tokenPrice.price);
       } else {
         errors.push({
