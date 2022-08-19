@@ -121,7 +121,7 @@ export class ProfitClient {
 
         if (this.tokenPrices[address] === undefined) {
           this.tokenPrices[address] = toBN(0);
-          newTokens.push(address);
+          newTokens.push(symbol);
         }
 
         return [address, token];
@@ -140,7 +140,7 @@ export class ProfitClient {
       this.logger.warn({
         at: "ProfitClient",
         message: `Failed to retrieve token prices (${err}).`,
-        tokens: Object.keys(l1Tokens),
+        tokens: Object.values(l1Tokens).map((token) => token.symbol),
       });
       return;
     }
