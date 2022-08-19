@@ -1,11 +1,10 @@
-import { L1Token } from "../src/interfaces/HubPool";
-import { expect, ethers, SignerWithAddress, createSpyLogger, winston, BigNumber, toBN } from "./utils";
+import { L1Token } from "../src/interfaces";
+import { expect, createSpyLogger, winston, BigNumber, toBN } from "./utils";
 
-import { MockHubPoolClient } from "./mocks/MockHubPoolClient";
-import { ProfitClient } from "../src/clients"; // Tested
+import { MockHubPoolClient } from "./mocks";
+import { ProfitClient, WMATIC } from "../src/clients"; // Tested
 
 let hubPoolClient: MockHubPoolClient, spy: sinon.SinonSpy, spyLogger: winston.Logger;
-let profitClient: ProfitClient; // tested
 
 const mainnetTokens: Array<L1Token> = [
   { symbol: "WETH", address: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", decimals: 18 },
@@ -15,14 +14,28 @@ const mainnetTokens: Array<L1Token> = [
   { symbol: "DAI", address: "0x6b175474e89094c44da98b954eedeac495271d0f", decimals: 18 },
   { symbol: "UMA", address: "0x04fa0d235c4abf4bcf4787af4cf447de572ef828", decimals: 18 },
   { symbol: "BADGER", address: "0x3472a5a71965499acd81997a54bba8d852c6e53d", decimals: 18 },
+  { symbol: "WMATIC", address: WMATIC, decimals: 18 },
 ];
+
+class ProfitClientWithMockCoingecko extends ProfitClient {
+  public wmaticPrice = { address: WMATIC, price: 1 };
+  public otherPrices: { address: string; price: number }[] = mainnetTokens.map((token) => {
+    return { address: token.address, price: 1 };
+  });
+
+  protected async coingeckoPrices(tokens: string[], platformId?: string) {
+    if (tokens[0] === WMATIC) return [this.wmaticPrice];
+    else return this.otherPrices;
+  }
+}
+let profitClient: ProfitClientWithMockCoingecko; // tested
 
 describe("ProfitClient: Price Retrieval", async function () {
   beforeEach(async function () {
     ({ spy, spyLogger } = createSpyLogger());
 
     hubPoolClient = new MockHubPoolClient(null, null);
-    profitClient = new ProfitClient(spyLogger, hubPoolClient, {}, true, [], false, toBN(0));
+    profitClient = new ProfitClientWithMockCoingecko(spyLogger, hubPoolClient, {}, true, [], false, toBN(0));
   });
 
   it("Correctly fetches token prices", async function () {

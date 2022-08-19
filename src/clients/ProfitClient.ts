@@ -161,21 +161,21 @@ export class ProfitClient {
     );
 
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", l1Tokens });
-    const cgPrices: CoinGeckoPrice[] = [];
+    let cgPrices: CoinGeckoPrice[] = [];
     try {
       const [maticTokenPrice, otherTokenPrices] = await Promise.all([
         // Add WMATIC for gas cost calculations.
         this.coingeckoPrices([WMATIC], "polygon-pos"),
         this.coingeckoPrices(Object.keys(l1Tokens)),
       ]);
-      cgPrices.concat(maticTokenPrice);
-      cgPrices.concat(otherTokenPrices);
+      cgPrices = cgPrices.concat(maticTokenPrice);
+      cgPrices = cgPrices.concat(otherTokenPrices);
     } catch (err) {
       this.logger.warn({ at: "ProfitClient", message: "Failed to retrieve prices.", err, l1Tokens });
     }
 
     // Add to l1Tokens after the fetches, so prices and l1Tokens have the same entries, for any error logging later.
-    l1Tokens["WMATIC"] = {
+    l1Tokens[WMATIC] = {
       address: WMATIC,
       symbol: "WMATIC",
       decimals: 18,
@@ -188,8 +188,7 @@ export class ProfitClient {
       );
 
       // TODO: Any additional validation to do? Ensure that timestamps are always moving forwards?
-      const priceFetchSuccessful = tokenPrice !== undefined && typeof tokenPrice.price === "number";
-      if (priceFetchSuccessful || this.ignoreTokenPriceFailures) {
+      if (tokenPrice !== undefined && typeof tokenPrice.price === "number") {
         this.tokenPrices[address] = toBNWei(tokenPrice.price);
       } else {
         errors.push({
@@ -206,7 +205,12 @@ export class ProfitClient {
         mrkdwn += `- ${token["symbol"]} not found (${token["cause"]}).`;
         mrkdwn += ` Using last known price of ${this.getPriceOfToken(token["address"])}.\n`;
       });
-      this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
+      if (this.ignoreTokenPriceFailures) {
+        this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
+      } else {
+        this.logger.error({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
+        throw new Error(mrkdwn);
+      }
     }
 
     // Pre-fetch total gas costs for relays on enabled chains.
@@ -229,7 +233,7 @@ export class ProfitClient {
     this.logger.debug({ at: "ProfitClient", message: "Updated Profit client", tokenPrices: this.tokenPrices });
   }
 
-  private async coingeckoPrices(tokens: Array<string>, platformId?: string) {
+  protected async coingeckoPrices(tokens: string[], platformId?: string) {
     return await this.coingecko.getContractPrices(tokens, "usd", platformId);
   }
 

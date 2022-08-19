@@ -6,15 +6,21 @@ import {
   toBN,
   ethers,
   deploySpokePoolWithToken,
-  originChainId, destinationChainId, deployAndConfigureHubPool, enableRoutesOnHubPool, deployConfigStore, Contract
+  originChainId,
+  destinationChainId,
+  deployAndConfigureHubPool,
+  enableRoutesOnHubPool,
+  deployConfigStore,
+  Contract,
 } from "./utils";
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
 import { Deposit } from "../src/interfaces";
-import {AcrossConfigStoreClient, HubPoolClient, MultiCallerClient, SpokePoolClient} from "../src/clients";
+import { SpokePoolClient } from "../src/clients";
+import { WMATIC } from "../src/clients";
 
 let hubPoolClient: MockHubPoolClient, spyLogger: winston.Logger, profitClient: MockProfitClient;
 
-const mainnetWeth = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
+const mainnetWeth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const mainnetUsdc = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 
 describe("ProfitClient: Consider relay profit", async function () {
@@ -27,66 +33,55 @@ describe("ProfitClient: Consider relay profit", async function () {
     const { spokePool: spokePool_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId);
 
     const spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(owner), null, originChainId);
-    const spokePoolClient_2 = new SpokePoolClient(
-      spyLogger,
-      spokePool_2.connect(owner),
-      null,
-      destinationChainId
-    );
+    const spokePoolClient_2 = new SpokePoolClient(spyLogger, spokePool_2.connect(owner), null, destinationChainId);
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, true, [], false, toBN(0));
-    profitClient.setTokenPrices({ [mainnetWeth]: toBNWei(3000), [mainnetUsdc]: toBNWei(1) });
-    // Default gas to 0 and let the tests decide for themselves how much gas costs should be.
-    profitClient.setGasCosts({ 1: toBN(0), [originChainId]: toBN(0), [destinationChainId]: toBN(0) });
+    profitClient.setTokenPrices({
+      [mainnetWeth]: toBNWei(3000),
+      [mainnetUsdc]: toBNWei(1),
+      [WMATIC]: toBNWei("0.4"),
+    });
   });
 
-  it.only("Decides a relay profitability", () => {
-    // Create a relay that is clearly profitable. Currency of the relay is WETH with a fill amount of 1 WETH, price per
-    // WETH set at 3000 and relayer fee % of 10% which is a revenue of 300. This is more than the hard coded min of 10.
-    const relaySize = toBNWei(1); // 1 ETH
-
+  it("Considers gas cost when computing protfitability", async function () {
+    // Create a relay that is clearly profitable. Currency of the relay is WETH with a fill amount of 0.1 WETH, price per
+    // WETH set at 3000 and relayer fee % of 0.1% which is a revenue of 0.3.
+    // However, since WMATIC costs $0.4, the profit is only 1.2 - 0.3 = $0.9 after gas, which is unprofitable.
+    const relaySize = toBNWei("0.1"); // 1 ETH
     hubPoolClient.setTokenInfoToReturn({ address: mainnetWeth, decimals: 18, symbol: "WETH" });
-    const profitableWethL1Relay = { relayerFeePct: toBNWei("0.1"), destinationChainId: 1 } as Deposit;
-    //expect(profitClient.isFillProfitable(profitableWethL1Relay, relaySize)).to.be.true;
 
-    // The profitability margin for a relay of this currency given this pricing of 10 USD minimum is 10/3000=0.00333333.
-    // I.e anything below this, as a percentage of the total allocated as a relayer fee, should be unprofitable.
-    const unprofitableWethL1Relay = { relayerFeePct: toBNWei("0.003"), destinationChainId: 1 } as Deposit;
-    expect(profitClient.isFillProfitable(unprofitableWethL1Relay, relaySize)).to.be.false;
-    /*
-    const marginallyWethL1ProfitableRelay = { relayerFeePct: toBNWei("0.0034"), destinationChainId: 1 } as Deposit;
-    expect(profitClient.isFillProfitable(marginallyWethL1ProfitableRelay, relaySize)).to.be.true;
-
-    // Relay minimum revenue is different on different chains. On all L2s its minimum set to 1 USD. This works out to
-    // a relayed amount of 1/3000= 0.0003333333333 as the realized LP Fee PCT as the mim. Set chain Id to OP Mainnnet.
-    const unprofitableWethL2Relay = { relayerFeePct: toBNWei("0.0003"), destinationChainId: 10 } as Deposit;
-    expect(profitClient.isFillProfitable(unprofitableWethL2Relay, relaySize)).to.be.false;
-    const marginallyWethL2ProfitableRelay = { relayerFeePct: toBNWei("0.00034"), destinationChainId: 10 } as Deposit;
-    expect(profitClient.isFillProfitable(marginallyWethL2ProfitableRelay, relaySize)).to.be.true;
-     */
+    const relay = { relayerFeePct: toBNWei("0.001"), destinationChainId: 137 } as Deposit;
+    profitClient.setGasCosts({ 137: toBNWei(1) });
+    expect(profitClient.isFillProfitable(relay, relaySize)).to.be.false;
   });
 
-  it("Handles non-standard token decimals when considering a relay profitability", () => {
+  it("Handles non-standard token decimals when considering a relay profitability", async function () {
     // Create a relay that is clearly profitable. Currency of the relay is USDC with a fill amount of 1000 USDC with a
     // price per USDC of 1 USD. Set the relayer Fee to 10% should make this clearly relayable.
-
     const relaySize = toBN(1000).mul(toBN(10).pow(6)); // 1000e6 for 1000 USDC.
 
+    // Relayer fee is 10% or $100. Gas cost is 0.01 * 3000 = $30. This leaves a profit of $70.
     hubPoolClient.setTokenInfoToReturn({ address: mainnetUsdc, decimals: 6, symbol: "USDC" });
     const profitableUsdcL1Relay = { relayerFeePct: toBNWei("0.1"), destinationChainId: 1 } as Deposit;
+    profitClient.setGasCosts({ 1: toBNWei("0.01") });
     expect(profitClient.isFillProfitable(profitableUsdcL1Relay, relaySize)).to.be.true;
 
-    // The profitability margin for a relay of this currency given this pricing of 10 USD minimum is 10/1000=0.01
-    // I.e anything below this, as a percentage of the total allocated as a relayer fee, should be unprofitable.
-    const unprofitableUsdcL1Relay = { relayerFeePct: toBNWei("0.009"), destinationChainId: 1 } as Deposit;
+    // Relayer fee is still $100. Gas cost is 0.1 * 3000 = $300. This leaves a loss of $200.
+    const unprofitableUsdcL1Relay = { relayerFeePct: toBNWei("0.1"), destinationChainId: 1 } as Deposit;
+    profitClient.setGasCosts({ 1: toBNWei("0.1") });
     expect(profitClient.isFillProfitable(unprofitableUsdcL1Relay, relaySize)).to.be.false;
-    const marginallyProfitableUsdcL1Relay = { relayerFeePct: toBNWei("0.0101"), destinationChainId: 1 } as Deposit;
+
+    // Relayer fee is still $100. Gas cost is 0.033 * 3000 = $99. This leaves a small profit of $1.
+    const marginallyProfitableUsdcL1Relay = { relayerFeePct: toBNWei("0.1"), destinationChainId: 1 } as Deposit;
+    profitClient.setGasCosts({ 1: toBNWei("0.033") });
     expect(profitClient.isFillProfitable(marginallyProfitableUsdcL1Relay, relaySize)).to.be.true;
 
-    // Equally, works on non-mainnet chainIDs. Again, this is 1/10th of the previous margin.
-    const unprofitableUsdcL2Relay = { relayerFeePct: toBNWei("0.0009"), destinationChainId: 10 } as Deposit;
+    // Equally, works on non-mainnet chainIDs.
+    const unprofitableUsdcL2Relay = { relayerFeePct: toBNWei("0.1"), destinationChainId: 10 } as Deposit;
+    profitClient.setGasCosts({ 10: toBNWei("0.1") });
     expect(profitClient.isFillProfitable(unprofitableUsdcL2Relay, relaySize)).to.be.false;
-    const marginallyUsdcL2ProfitableRelay = { relayerFeePct: toBNWei("0.00101"), destinationChainId: 10 } as Deposit;
+    profitClient.setGasCosts({ 10: toBNWei("0.033") });
+    const marginallyUsdcL2ProfitableRelay = { relayerFeePct: toBNWei("0.1"), destinationChainId: 10 } as Deposit;
     expect(profitClient.isFillProfitable(marginallyUsdcL2ProfitableRelay, relaySize)).to.be.true;
   });
 
