@@ -13,7 +13,7 @@ let spokePoolClients: { [chainId: number]: SpokePoolClient };
 let hubPoolClient: HubPoolClient;
 let updateAllClients: () => Promise<void>;
 
-describe.only("Dataworker block range-related utility methods", async function () {
+describe("Dataworker block range-related utility methods", async function () {
   beforeEach(async function () {
     ({ dataworkerClients, spokePoolClients, updateAllClients, hubPoolClient } = await setupDataworker(
       ethers,

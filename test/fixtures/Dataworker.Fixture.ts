@@ -179,10 +179,8 @@ export async function setupDataworker(
     spyLogger,
     hubPoolClient,
     spokePoolClients,
-    true,
-    [originChainId, destinationChainId, repaymentChainId],
     false,
-    toBNWei(1)
+    [],
   );
   const bundleDataClient = new BundleDataClient(
     spyLogger,
