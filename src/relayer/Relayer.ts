@@ -199,13 +199,15 @@ export class Relayer {
           return;
         }
 
+        const gasCost = this.clients.profitClient.getTotalGasCost(deposit.destinationChainId);
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
         const formatFunction = createFormatFunction(2, 4, false, decimals);
+        const gasFormatFunction = createFormatFunction(2, 10, false, 18);
         depositMrkdwn +=
           `- DepositId ${deposit.depositId} of amount ${formatFunction(deposit.amount)} ${symbol}` +
-          ` with a relayerFeePct ${formatFeePct(deposit.relayerFeePct)}% being relayed from ` +
-          `${getNetworkName(deposit.originChainId)} to ${getNetworkName(deposit.destinationChainId)}` +
-          ` and an unfilled amount of  ${formatFunction(fillAmount)} ${symbol} is unprofitable!\n`;
+          ` with a relayerFeePct ${formatFeePct(deposit.relayerFeePct)}% and gas cost ${gasFormatFunction(gasCost)}` +
+          ` from ${getNetworkName(deposit.originChainId)} to ${getNetworkName(deposit.destinationChainId)}` +
+          ` and an unfilled amount of ${formatFunction(fillAmount)} ${symbol} is unprofitable!\n`;
       });
 
       if (depositMrkdwn) {
