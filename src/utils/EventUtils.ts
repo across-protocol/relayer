@@ -28,6 +28,9 @@ export function spreadEvent(event: Event) {
 export interface EventSearchConfig {
   fromBlock: number;
   toBlock: number | null;
+  // Number of blocks to subtract from latest block the provider returns. This helps avoid fork reorgs that can lead
+  // to double filling of the same deposit.
+  followingDistance?: number;
   maxBlockLookBack?: number;
   concurrency?: number | null;
 }
