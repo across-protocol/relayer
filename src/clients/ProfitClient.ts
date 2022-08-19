@@ -130,7 +130,11 @@ export class ProfitClient {
 
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens: Object.values(l1Tokens) });
     if (newTokens.length > 0) {
-      this.logger.debug({ at: "ProfitClient", message: "Initialised tokens to price 0.", tokens: newTokens });
+      this.logger.debug({
+        at: "ProfitClient",
+        message: "Initialised tokens to price 0.",
+        tokens: newTokens.join(", "),
+      });
     }
 
     let cgPrices: CoinGeckoPrice[] = [];
@@ -140,7 +144,9 @@ export class ProfitClient {
       this.logger.warn({
         at: "ProfitClient",
         message: `Failed to retrieve token prices (${err}).`,
-        tokens: Object.values(l1Tokens).map((token) => token.symbol),
+        tokens: Object.values(l1Tokens)
+          .map((token) => token.symbol)
+          .join(", "),
       });
       return;
     }
