@@ -80,22 +80,23 @@ export async function constructSpokePoolClientsWithLookback(
   });
 
   // Create client for each spoke pool.
-  spokePools.forEach((obj: { networkId: number; contract: Contract }) => {
+  spokePools.forEach(({ networkId, contract }) => {
     const spokePoolDeploymentBlock = getDeploymentBlockNumber("SpokePool", obj.networkId);
     const spokePoolClientSearchSettings = {
-      fromBlock: fromBlocks[obj.networkId]
-        ? Math.max(fromBlocks[obj.networkId], spokePoolDeploymentBlock)
+      fromBlock: fromBlocks[networkId]
+        ? Math.max(fromBlocks[networkId], spokePoolDeploymentBlock)
         : spokePoolDeploymentBlock,
       toBlock: null,
-      maxBlockLookBack: config.maxBlockLookBack[obj.networkId],
+      maxBlockLookBack: config.maxBlockLookBack[networkId],
     };
-    spokePoolClients[obj.networkId] = new SpokePoolClient(
+    spokePoolClients[networkId] = new SpokePoolClient(
       logger,
-      obj.contract,
+      contract,
       configStoreClient,
-      obj.networkId,
+      networkId,
       spokePoolClientSearchSettings,
-      spokePoolDeploymentBlock
+      spokePoolDeploymentBlock,
+      config.followingDistances[networkId] ?? 0
     );
   });
 

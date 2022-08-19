@@ -39,10 +39,14 @@ export class SpokePoolClient {
   constructor(
     readonly logger: winston.Logger,
     readonly spokePool: Contract,
-    readonly configStoreClient: AcrossConfigStoreClient | null, // Can be excluded. This disables some deposit validation.
+    // Can be excluded. This disables some deposit validation.
+    readonly configStoreClient: AcrossConfigStoreClient | null,
     readonly chainId: number,
     readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
-    readonly spokePoolDeploymentBlock: number = 0
+    readonly spokePoolDeploymentBlock: number = 0,
+    // Number of blocks to subtract from latest block the provider returns. This helps avoid fork reorgs that can lead
+    // to double filling of the same deposit.
+    readonly blockFollowingDistance: number = 0
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
@@ -221,7 +225,8 @@ export class SpokePoolClient {
       process.env[`NODE_MAX_CONCURRENCY_${this.chainId}`] || NODE_MAX_CONCURRENCY || "1000"
     );
 
-    this.latestBlockNumber = await this.spokePool.provider.getBlockNumber();
+    // Use a following distance to ensure the data we see are final.
+    this.latestBlockNumber = (await this.spokePool.provider.getBlockNumber()) - this.blockFollowingDistance;
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
       toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
