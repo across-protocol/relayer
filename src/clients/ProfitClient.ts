@@ -48,7 +48,7 @@ export class ProfitClient {
   }
 
   getPriceOfToken(token: string) {
-    assert(typeof this.tokenPrices[token] !== "undefined", `Token ${token} not in price list.`);
+    assert(this.tokenPrices[token] !== undefined, `Token ${token} not in price list.`);
     return this.tokenPrices[token];
   }
 
@@ -114,14 +114,14 @@ export class ProfitClient {
 
   async update() {
     // Generate list of tokens to retrieve and pre-populate any new addresses
-    const newTokens: Array<{ [k: string]: string }> = [];
-    const l1Tokens: { [k: string]: L1Token } = Object.fromEntries(
+    const newTokens: string[] = [];
+    const l1Tokens: { [address: string]: L1Token } = Object.fromEntries(
       this.hubPoolClient.getL1Tokens().map((token) => {
         const { address, symbol } = token;
 
-        if (typeof this.tokenPrices[address] === "undefined") {
+        if (this.tokenPrices[address] === undefined) {
           this.tokenPrices[address] = toBN(0);
-          newTokens.push({ address: address, symbol: symbol });
+          newTokens.push(address);
         }
 
         return [address, token];
@@ -133,19 +133,19 @@ export class ProfitClient {
       this.logger.debug({ at: "ProfitClient", message: "Initialised tokens to price 0.", tokens: newTokens });
     }
 
-    let cgPrices: Array<CoinGeckoPrice> = [];
+    let cgPrices: CoinGeckoPrice[] = [];
     try {
       cgPrices = await this.coingeckoPrices(Object.keys(l1Tokens));
     } catch (err) {
       this.logger.warn({
         at: "ProfitClient",
         message: `Failed to retrieve token prices (${err}).`,
-        tokens: Object.values(l1Tokens),
+        tokens: Object.keys(l1Tokens),
       });
       return;
     }
 
-    const errors: Array<{ [k: string]: string }> = [];
+    const errors: { address: string; symbol: string; cause: string }[] = [];
     for (const address of Object.keys(l1Tokens)) {
       const tokenPrice: CoinGeckoPrice = cgPrices.find(
         (price) => address.toLowerCase() === price.address.toLowerCase()
@@ -153,13 +153,15 @@ export class ProfitClient {
 
       // todo: For future, confirm timestamp is only X seconds old and is newer than the previous?
       //       This should implicitly be factored in if/when price feed caching is introduced.
-      if (tokenPrice === undefined || typeof tokenPrice.price !== "number") {
+      if (tokenPrice !== undefined && !isNaN(tokenPrice.price)) {
+        this.tokenPrices[address] = toBNWei(tokenPrice.price);
+      } else {
         errors.push({
           address: address,
           symbol: l1Tokens[address].symbol,
           cause: tokenPrice ? "Unexpected price response" : "Missing price",
         });
-      } else this.tokenPrices[address] = toBNWei(tokenPrice.price);
+      }
     }
 
     if (errors.length > 0) {
