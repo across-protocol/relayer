@@ -17,6 +17,8 @@ export class CommonConfig {
   readonly bundleRefundLookback: number;
   readonly maxRelayerLookBack: { [chainId: number]: number };
   readonly maxRelayerUnfilledDepositLookBack: { [chainId: number]: number };
+  // Following distances in blocks to guarantee finality on each chain.
+  readonly followingDistances: { [chainId: number]: number };
 
   constructor(env: ProcessEnv) {
     const {
@@ -30,6 +32,7 @@ export class CommonConfig {
       SEND_TRANSACTIONS,
       REDIS_URL,
       BUNDLE_REFUND_LOOKBACK,
+      FOLLOWING_DISTANCES,
     } = env;
 
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
@@ -59,5 +62,6 @@ export class CommonConfig {
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
     this.redisUrl = REDIS_URL;
     this.bundleRefundLookback = BUNDLE_REFUND_LOOKBACK ? Number(BUNDLE_REFUND_LOOKBACK) : 2;
+    this.followingDistances = FOLLOWING_DISTANCES ? JSON.parse(FOLLOWING_DISTANCES) : {};
   }
 }
