@@ -41,12 +41,7 @@ export class AcrossConfigStoreClient {
     readonly logger: winston.Logger,
     readonly configStore: Contract, // TODO: Rename to ConfigStore
     readonly hubPoolClient: HubPoolClient,
-    readonly eventSearchConfig: EventSearchConfig = {
-      fromBlock: 0,
-      toBlock: null,
-      maxBlockLookBack: 0,
-      followingDistance: 0,
-    },
+    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
     readonly redisClient?: ReturnType<typeof createClient>
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
