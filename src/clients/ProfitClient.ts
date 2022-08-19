@@ -25,6 +25,14 @@ const GAS_TOKEN_BY_CHAIN_ID = {
 // TODO: Make this dynamic once we support chains with gas tokens that have different decimals.
 const GAS_TOKEN_DECIMALS = 18;
 
+const QUERY_HANDLERS = {
+  1: relayFeeCalculator.EthereumQueries,
+  10: relayFeeCalculator.OptimismQueries,
+  137: relayFeeCalculator.PolygonQueries,
+  288: relayFeeCalculator.BobaQueries,
+  42161: relayFeeCalculator.ArbitrumQueries,
+};
+
 export class ProfitClient {
   private readonly coingecko;
   protected tokenPrices: { [l1Token: string]: BigNumber } = {};
@@ -242,64 +250,15 @@ export class ProfitClient {
     const coingeckoProApiKey = undefined;
     // TODO: Set this once we figure out gas markup on the API side.
     const gasMarkup = 0;
-    switch (chainId) {
-      case 1:
-        return new relayFeeCalculator.EthereumQueries(
-          provider,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          coingeckoProApiKey,
-          this.logger,
-          gasMarkup
-        );
-      case 10:
-        return new relayFeeCalculator.OptimismQueries(
-          provider,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          coingeckoProApiKey,
-          this.logger,
-          gasMarkup
-        );
-      case 137:
-        return new relayFeeCalculator.PolygonQueries(
-          provider,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          coingeckoProApiKey,
-          this.logger,
-          gasMarkup
-        );
-      case 288:
-        return new relayFeeCalculator.BobaQueries(
-          provider,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          coingeckoProApiKey,
-          this.logger,
-          gasMarkup
-        );
-      case 42161:
-        return new relayFeeCalculator.ArbitrumQueries(
-          provider,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          coingeckoProApiKey,
-          this.logger,
-          gasMarkup
-        );
-      default:
-        throw new Error(`Unexpected chain ${chainId}`);
-    }
+    return new QUERY_HANDLERS[chainId](
+      provider,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      coingeckoProApiKey,
+      this.logger,
+      gasMarkup
+    );
   }
 }
