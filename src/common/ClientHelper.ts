@@ -88,6 +88,7 @@ export async function constructSpokePoolClientsWithLookback(
         : spokePoolDeploymentBlock,
       toBlock: null,
       maxBlockLookBack: config.maxBlockLookBack[networkId],
+      followingDistance: config.followingDistances[networkId],
     };
     spokePoolClients[networkId] = new SpokePoolClient(
       logger,
@@ -95,8 +96,7 @@ export async function constructSpokePoolClientsWithLookback(
       configStoreClient,
       networkId,
       spokePoolClientSearchSettings,
-      spokePoolDeploymentBlock,
-      config.followingDistances[networkId] ?? 0
+      spokePoolDeploymentBlock
     );
   });
 

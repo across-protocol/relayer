@@ -43,10 +43,7 @@ export class SpokePoolClient {
     readonly configStoreClient: AcrossConfigStoreClient | null,
     readonly chainId: number,
     readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
-    readonly spokePoolDeploymentBlock: number = 0,
-    // Number of blocks to subtract from latest block the provider returns. This helps avoid fork reorgs that can lead
-    // to double filling of the same deposit.
-    readonly blockFollowingDistance: number = 0
+    readonly spokePoolDeploymentBlock: number = 0
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
@@ -226,7 +223,8 @@ export class SpokePoolClient {
     );
 
     // Use a following distance to ensure the data we see are final.
-    this.latestBlockNumber = (await this.spokePool.provider.getBlockNumber()) - this.blockFollowingDistance;
+    const followingDistance = this.eventSearchConfig.followingDistance ?? 0;
+    this.latestBlockNumber = (await this.spokePool.provider.getBlockNumber()) - followingDistance;
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
       toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
