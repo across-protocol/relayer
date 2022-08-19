@@ -199,7 +199,7 @@ export class Relayer {
           return;
         }
 
-        const gasCost = this.clients.profitClient.getTotalGasCost(deposit.destinationChainId);
+        const gasCost = this.clients.profitClient.getTotalGasCost(deposit.destinationChainId).toString();
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
         const formatFunction = createFormatFunction(2, 4, false, decimals);
         const gasFormatFunction = createFormatFunction(2, 10, false, 18);
