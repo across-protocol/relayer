@@ -81,7 +81,7 @@ export async function constructSpokePoolClientsWithLookback(
 
   // Create client for each spoke pool.
   spokePools.forEach(({ networkId, contract }) => {
-    const spokePoolDeploymentBlock = getDeploymentBlockNumber("SpokePool", obj.networkId);
+    const spokePoolDeploymentBlock = getDeploymentBlockNumber("SpokePool", networkId);
     const spokePoolClientSearchSettings = {
       fromBlock: fromBlocks[networkId]
         ? Math.max(fromBlocks[networkId], spokePoolDeploymentBlock)
