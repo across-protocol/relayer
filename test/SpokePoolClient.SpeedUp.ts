@@ -3,6 +3,7 @@ import { deploySpokePoolWithToken, enableRoutes, simpleDeposit, originChainId, c
 import { depositRelayerFeePct, destinationChainId } from "./constants";
 
 import { SpokePoolClient } from "../src/clients";
+import { getUnfilledDeposits } from "../src/utils";
 
 let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress;
@@ -70,5 +71,27 @@ describe("SpokePoolClient: SpeedUp", async function () {
     expect(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit)).to.deep.equal(expectedDepositData);
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)).to.deep.equal([expectedDepositData]);
     expect(spokePoolClient.getDepositsFromDepositor(depositor.address)).to.deep.equal([expectedDepositData]);
+  });
+  it("Receives a speed up for a correct depositor but invalid deposit Id", async function () {
+    const deposit = await simpleDeposit(spokePool, erc20, depositor, depositor, destinationChainId);
+
+    await spokePoolClient.update();
+
+    // change deposit ID to some invalid value
+    deposit.depositId = 1337;
+
+    const newRelayFeePct = toBNWei(0.1337);
+    const speedUpSignature = await signForSpeedUp(depositor, deposit, newRelayFeePct);
+    await spokePool.speedUpDeposit(depositor.address, newRelayFeePct, deposit.depositId, speedUpSignature);
+
+    let success = false;
+    try {
+      await spokePoolClient.update();
+      success = true;
+    } catch {
+      // no-op
+    }
+
+    expect(success).to.be.true;
   });
 });
