@@ -8,19 +8,13 @@ import {
   deploySpokePoolWithToken,
   originChainId,
   destinationChainId,
-  deployAndConfigureHubPool,
-  enableRoutesOnHubPool,
-  deployConfigStore,
-  Contract,
 } from "./utils";
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
 import { Deposit } from "../src/interfaces";
-import { SpokePoolClient } from "../src/clients";
-import { WMATIC } from "../src/clients";
+import { SpokePoolClient, WETH, MATIC } from "../src/clients";
 
 let hubPoolClient: MockHubPoolClient, spyLogger: winston.Logger, profitClient: MockProfitClient;
 
-const mainnetWeth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const mainnetUsdc = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 
 describe("ProfitClient: Consider relay profit", async function () {
@@ -37,18 +31,18 @@ describe("ProfitClient: Consider relay profit", async function () {
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, true, [], false, toBN(0));
     profitClient.setTokenPrices({
-      [mainnetWeth]: toBNWei(3000),
+      [WETH]: toBNWei(3000),
       [mainnetUsdc]: toBNWei(1),
-      [WMATIC]: toBNWei("0.4"),
+      [MATIC]: toBNWei("0.4"),
     });
   });
 
   it("Considers gas cost when computing protfitability", async function () {
     // Create a relay that is clearly profitable. Currency of the relay is WETH with a fill amount of 0.1 WETH, price per
     // WETH set at 3000 and relayer fee % of 0.1% which is a revenue of 0.3.
-    // However, since WMATIC costs $0.4, the profit is only 1.2 - 0.3 = $0.9 after gas, which is unprofitable.
+    // However, since MATIC costs $0.4, the profit is only 1.2 - 0.3 = $0.9 after gas, which is unprofitable.
     const relaySize = toBNWei("0.1"); // 1 ETH
-    hubPoolClient.setTokenInfoToReturn({ address: mainnetWeth, decimals: 18, symbol: "WETH" });
+    hubPoolClient.setTokenInfoToReturn({ address: WETH, decimals: 18, symbol: "WETH" });
 
     const relay = { relayerFeePct: toBNWei("0.001"), destinationChainId: 137 } as Deposit;
     profitClient.setGasCosts({ 137: toBNWei(1) });

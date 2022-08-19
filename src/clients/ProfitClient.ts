@@ -13,14 +13,15 @@ type CoinGeckoPrice = {
 };
 
 // We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
-export const WMATIC = "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270";
+export const MATIC = "0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0";
+export const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 
 const GAS_TOKEN_BY_CHAIN_ID = {
-  1: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
-  10: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
-  137: WMATIC,
-  288: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
-  42161: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
+  1: WETH,
+  10: WETH,
+  137: MATIC,
+  288: WETH,
+  42161: WETH,
 };
 // TODO: Make this dynamic once we support chains with gas tokens that have different decimals.
 const GAS_TOKEN_DECIMALS = 18;
@@ -103,7 +104,7 @@ export class ProfitClient {
       return false;
     }
 
-    // This should happen before the previous checks as we don't want to turn them off when profitability is disabled.
+    // This should happen after the previous checks as we don't want to turn them off when profitability is disabled.
     // TODO: Revisit whether this makes sense once we have capital fee evaluation.
     if (!this.enableProfitability) {
       this.logger.debug({ at: "ProfitClient", message: "Profitability check is disabled. Accepting relay" });
@@ -117,10 +118,10 @@ export class ProfitClient {
 
     // Consider gas cost.
     const totalGasCostWei = this.getTotalGasCost(deposit.destinationChainId);
-    if (!totalGasCostWei) {
+    if (totalGasCostWei === undefined || totalGasCostWei.eq(toBN(0))) {
       const chainId = deposit.destinationChainId;
-      const errorMsg = `Missing total gas cost for ${chainId}. This likely indicate some gas cost request failed`;
-      this.logger.error({
+      const errorMsg = `Missing total gas cost for ${chainId}. This likely indicates some gas cost request failed`;
+      this.logger.warn({
         at: "ProfitClient",
         message: errorMsg,
         allGasCostsFetched: this.totalGasCosts,
@@ -168,25 +169,20 @@ export class ProfitClient {
       this.hubPoolClient.getL1Tokens().map((token) => [token["address"], token])
     );
 
+    // Also include MATIC in the price queries as we need it for gas cost calculation.
+    l1Tokens[MATIC] = {
+      address: MATIC,
+      symbol: "MATIC",
+      decimals: 18,
+    };
+
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", l1Tokens });
     let cgPrices: CoinGeckoPrice[] = [];
     try {
-      const [maticTokenPrice, otherTokenPrices] = await Promise.all([
-        // Add WMATIC for gas cost calculations.
-        this.coingeckoPrices([WMATIC], "polygon-pos"),
-        this.coingeckoPrices(Object.keys(l1Tokens)),
-      ]);
-      cgPrices = maticTokenPrice.concat(otherTokenPrices);
+      cgPrices = await this.coingeckoPrices(Object.keys(l1Tokens));
     } catch (err) {
       this.logger.warn({ at: "ProfitClient", message: "Failed to retrieve prices.", err, l1Tokens });
     }
-
-    // Add to l1Tokens after the fetches, so prices and l1Tokens have the same entries, for any error logging later.
-    l1Tokens[WMATIC] = {
-      address: WMATIC,
-      symbol: "WMATIC",
-      decimals: 18,
-    };
 
     const errors: Array<{ [k: string]: string }> = [];
     for (const address of Object.keys(l1Tokens)) {
@@ -212,20 +208,16 @@ export class ProfitClient {
         mrkdwn += `- ${token["symbol"]} not found (${token["cause"]}).`;
         mrkdwn += ` Using last known price of ${this.getPriceOfToken(token["address"])}.\n`;
       });
-      if (this.ignoreTokenPriceFailures) {
-        this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
-      } else {
-        this.logger.error({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
+      this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
+      if (!this.ignoreTokenPriceFailures) {
         throw new Error(mrkdwn);
       }
     }
 
     // Pre-fetch total gas costs for relays on enabled chains.
-    const getGasCosts = [];
-    for (const chainId of this.enabledChainIds) {
-      getGasCosts.push(this.relayerFeeQueries[chainId].getGasCosts());
-    }
-    const gasCosts = await Promise.all(getGasCosts);
+    const gasCosts = await Promise.all(
+      this.enabledChainIds.map((chainId) => this.relayerFeeQueries[chainId].getGasCosts())
+    );
     this.logger.debug({
       at: "ProfitClient",
       message: "Fetched gas costs of relays",
@@ -240,8 +232,8 @@ export class ProfitClient {
     this.logger.debug({ at: "ProfitClient", message: "Updated Profit client", tokenPrices: this.tokenPrices });
   }
 
-  protected async coingeckoPrices(tokens: string[], platformId?: string) {
-    return await this.coingecko.getContractPrices(tokens, "usd", platformId);
+  protected async coingeckoPrices(tokens: string[]) {
+    return await this.coingecko.getContractPrices(tokens, "usd");
   }
 
   private constructRelayerFeeQuery(chainId: number, provider: Provider): relayFeeCalculator.QueryInterface {

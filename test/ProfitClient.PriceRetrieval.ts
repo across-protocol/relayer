@@ -2,7 +2,7 @@ import { L1Token } from "../src/interfaces";
 import { expect, createSpyLogger, winston, BigNumber, toBN } from "./utils";
 
 import { MockHubPoolClient } from "./mocks";
-import { ProfitClient, WMATIC } from "../src/clients"; // Tested
+import { ProfitClient, MATIC } from "../src/clients"; // Tested
 
 let hubPoolClient: MockHubPoolClient, spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
@@ -14,18 +14,14 @@ const mainnetTokens: Array<L1Token> = [
   { symbol: "DAI", address: "0x6b175474e89094c44da98b954eedeac495271d0f", decimals: 18 },
   { symbol: "UMA", address: "0x04fa0d235c4abf4bcf4787af4cf447de572ef828", decimals: 18 },
   { symbol: "BADGER", address: "0x3472a5a71965499acd81997a54bba8d852c6e53d", decimals: 18 },
-  { symbol: "WMATIC", address: WMATIC, decimals: 18 },
+  { symbol: "MATIC", address: MATIC, decimals: 18 },
 ];
 
 class ProfitClientWithMockCoingecko extends ProfitClient {
-  public wmaticPrice = { address: WMATIC, price: 1 };
-  public otherPrices: { address: string; price: number }[] = mainnetTokens.map((token) => {
-    return { address: token.address, price: 1 };
-  });
-
   protected async coingeckoPrices(tokens: string[], platformId?: string) {
-    if (tokens[0] === WMATIC) return [this.wmaticPrice];
-    else return this.otherPrices;
+    return mainnetTokens.map((token) => {
+      return { address: token.address, price: 1 };
+    });
   }
 }
 let profitClient: ProfitClientWithMockCoingecko; // tested
