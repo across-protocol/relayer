@@ -38,7 +38,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
     configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
 
-    multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
+    multiCallerClient = new MultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 
     spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(relayer), configStoreClient, originChainId);
     spokePoolClient_2 = new SpokePoolClient(
@@ -49,7 +49,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
-    profitClient = new ProfitClient(spyLogger, hubPoolClient, toBNWei(1)); // Set relayer discount to 100%.
+    profitClient = new ProfitClient(spyLogger, hubPoolClient, spokePoolClients, false, []); // Set relayer discount to 100%.
     relayerInstance = new Relayer(relayer.address, spyLogger, {
       spokePoolClients,
       hubPoolClient,

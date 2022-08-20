@@ -31,7 +31,7 @@ describe.skip("Relayer: Iterative fill", async function () {
     ({ configStore } = await deployConfigStore(relayer, []));
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
     configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
-    multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
+    multiCallerClient = new MultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 
     ({ spokePools, l1TokenToL2Tokens } = await deployIterativeSpokePoolsAndToken(
       spyLogger,
@@ -54,7 +54,7 @@ describe.skip("Relayer: Iterative fill", async function () {
     });
 
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
-    profitClient = new ProfitClient(spyLogger, hubPoolClient, toBNWei(1)); // Set relayer discount to 100%.
+    profitClient = new ProfitClient(spyLogger, hubPoolClient, {}, false, [], false, toBNWei(1)); // Set relayer discount to 100%.
     await updateAllClients();
     relayerInstance = new Relayer(relayer.address, spyLogger, {
       spokePoolClients,
