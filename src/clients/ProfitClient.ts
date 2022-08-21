@@ -210,6 +210,7 @@ export class ProfitClient {
         throw new Error(mrkdwn);
       }
     }
+    this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
 
     // Short circuit early if profitability is disabled. We still need to fetch CG prices but don't need to fetch gas
     // costs of relays.
@@ -219,18 +220,17 @@ export class ProfitClient {
     const gasCosts = await Promise.all(
       this.enabledChainIds.map((chainId) => this.relayerFeeQueries[chainId].getGasCosts())
     );
-    this.logger.debug({
-      at: "ProfitClient",
-      message: "Fetched gas costs of relays",
-      enabledChainIds: this.enabledChainIds,
-      gasCosts,
-    });
     for (let i = 0; i < this.enabledChainIds.length; i++) {
       // An extra toBN cast is needed as the provider returns a different BigNumber type.
       this.totalGasCosts[this.enabledChainIds[i]] = toBN(gasCosts[i]);
     }
 
-    this.logger.debug({ at: "ProfitClient", message: "Updated Profit client", tokenPrices: this.tokenPrices });
+    this.logger.debug({
+      at: "ProfitClient",
+      message: "Updated gas cost",
+      enabledChainIds: this.enabledChainIds,
+      totalGasCosts: this.totalGasCosts,
+    });
   }
 
   protected async coingeckoPrices(tokens: string[]) {
