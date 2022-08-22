@@ -1,4 +1,4 @@
-import { buildDeposit, buildFillForRepaymentChain, createSpyLogger, lastSpyLogIncludes } from "./utils";
+import { buildDeposit, buildFillForRepaymentChain, createSpyLogger, lastSpyLogIncludes, toBNWei } from "./utils";
 import { Contract, SignerWithAddress, ethers, expect } from "./utils";
 import {
   AcrossConfigStoreClient,
@@ -9,6 +9,8 @@ import {
   ProfitClient,
   TokenTransferClient,
   BalanceAllocator,
+  WETH,
+  MATIC,
 } from "../src/clients";
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import {
@@ -24,7 +26,7 @@ import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { getNetworkName, getRefundForFills, MAX_UINT_VAL, toBN } from "../src/utils";
 import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
-import { MockAdapterManager } from "./mocks";
+import { MockAdapterManager, MockProfitClient } from "./mocks";
 import { BalanceType } from "../src/interfaces";
 
 let l1Token: Contract, l2Token: Contract, erc20_2: Contract;
@@ -33,7 +35,7 @@ let dataworker: SignerWithAddress, depositor: SignerWithAddress;
 let dataworkerInstance: Dataworker;
 let bundleDataClient: BundleDataClient;
 let configStoreClient: AcrossConfigStoreClient;
-let hubPoolClient: HubPoolClient, multiCallerClient: MultiCallerClient, profitClient: ProfitClient;
+let hubPoolClient: HubPoolClient, multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
 let tokenTransferClient: TokenTransferClient;
 let monitorInstance: Monitor;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
@@ -60,7 +62,6 @@ describe("Monitor", async function () {
       spokePool_2,
       hubPoolClient,
       spokePoolClients,
-      profitClient,
       multiCallerClient,
       updateAllClients,
     } = await setupDataworker(
@@ -70,6 +71,11 @@ describe("Monitor", async function () {
       constants.DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
       0
     ));
+
+    profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, false, []);
+    profitClient.setTokenPrices({
+      [l1Token.address]: toBNWei(1),
+    });
 
     const monitorConfig = new MonitorConfig({
       STARTING_BLOCK_NUMBER: "0",
