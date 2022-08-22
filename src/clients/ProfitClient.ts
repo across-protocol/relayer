@@ -158,11 +158,11 @@ export class ProfitClient {
     return Object.keys(this.unprofitableFills).length != 0;
   }
 
-  async update() {  
-    // Generate list of tokens to retrieve and pre-populate any new addresses
+  async update() {
+    // Generate list of tokens to retrieve.
     const newTokens: string[] = [];
     const l1Tokens: { [address: string]: L1Token } = Object.fromEntries(
-      this.hubPoolClient.getL1Tokens().map((token) => [token["address"], token ])
+      this.hubPoolClient.getL1Tokens().map((token: l1Token) => [token["address"], token])
     );
 
     // Also include MATIC in the price queries as we need it for gas cost calculation.
@@ -174,13 +174,15 @@ export class ProfitClient {
 
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens: Object.values(l1Tokens) });
 
-    Object.keys(l1Tokens).forEach((token) => {
+    // Pre-populate any new addresses.
+    Object.keys(l1Tokens).forEach((token: l1Token) => {
       const { address, symbol } = token;
       if (this.tokenPrices[address] === undefined) {
         this.tokenPrices[address] = toBN(0);
         newTokens.push(symbol);
       }
-    }
+    });
+
     if (newTokens.length > 0) {
       this.logger.debug({
         at: "ProfitClient",
@@ -197,14 +199,17 @@ export class ProfitClient {
         at: "ProfitClient",
         message: `Failed to retrieve token prices (${err}).`,
         tokens: Object.values(l1Tokens)
-          .map((token) => token.symbol)
+          .map((token: l1Token) => token.symbol)
           .join(", "),
       });
+      if (!this.ignoreTokenPriceFailures) {
+        throw new Error(mrkdwn);
+      }
       return;
     }
 
     const errors: { address: string; symbol: string; cause: string }[] = [];
-    for (const address of Object.keys(l1Tokens)) {
+    Object.keys(l1Tokens).forEach((address: string) => {
       const tokenPrice: CoinGeckoPrice = cgPrices.find(
         (price) => address.toLowerCase() === price.address.toLowerCase()
       );
@@ -220,11 +225,11 @@ export class ProfitClient {
           cause: tokenPrice ? "Unexpected price response" : "Missing price",
         });
       }
-    }
+    });
 
     if (errors.length > 0) {
       let mrkdwn = "The following L1 token prices could not be fetched:\n";
-      errors.forEach((token: { [k: string]: string }) => {
+      errors.forEach((token: { address: string; symbol: string; cause: string }) => {
         mrkdwn += `- ${token["symbol"]} not found (${token["cause"]}).`;
         mrkdwn += ` Using last known price of ${this.getPriceOfToken(token["address"])}.\n`;
       });
@@ -236,10 +241,10 @@ export class ProfitClient {
 
     // Short circuit early if profitability is disabled.
     if (!this.enableProfitability) return;
-    
+
     // Pre-fetch total gas costs for relays on enabled chains.
     const gasCosts = await Promise.all(
-      this.enabledChainIds.map((chainId) => this.relayerFeeQueries[chainId].getGasCosts())
+      this.enabledChainIds.map((chainId: number) => this.relayerFeeQueries[chainId].getGasCosts())
     );
     this.logger.debug({
       at: "ProfitClient",
