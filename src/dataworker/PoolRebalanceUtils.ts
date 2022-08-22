@@ -463,8 +463,9 @@ export function generateMarkdownForRootBundle(
     leaf.recipient = shortenHexString(leaf.recipient);
     leaf.destToken = convertTokenAddressToSymbol(leaf.destinationChainId, leaf.destinationToken);
     leaf.amount = convertFromWei(leaf.amount, decimalsForDestToken);
-    leaf.realizedLpFee = `${convertFromWei(leaf.realizedLpFeePct, decimalsForDestToken)}%`;
-    leaf.relayerFee = `${convertFromWei(leaf.relayerFeePct, decimalsForDestToken)}%`;
+    // Fee decimals is always 18. 1e18 = 100%.
+    leaf.realizedLpFee = `${convertFromWei(leaf.realizedLpFeePct, 18)}%`;
+    leaf.relayerFee = `${convertFromWei(leaf.relayerFeePct, 18)}%`;
     delete leaf.destinationToken;
     delete leaf.realizedLpFeePct;
     delete leaf.relayerFeePct;
