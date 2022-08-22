@@ -4,7 +4,11 @@ import { InventoryConfig } from "../interfaces";
 
 export class RelayerConfig extends CommonConfig {
   readonly inventoryConfig: InventoryConfig;
-  readonly relayerDiscount: BigNumber;
+  // Whether relay profitability is considered. If false, relayers will attempt to relay all deposits.
+  readonly enableProfitability: boolean;
+  // Whether token price fetch failures will be ignored when computing relay profitability.
+  // If this is false, the relayer will throw an error when fetching prices fails.
+  readonly ignoreTokenPriceFailures: boolean;
   readonly sendingRelaysEnabled: boolean;
   readonly sendingSlowRelaysEnabled: boolean;
   readonly relayerTokens: string[];
@@ -14,7 +18,8 @@ export class RelayerConfig extends CommonConfig {
   constructor(env: ProcessEnv) {
     const {
       RELAYER_DESTINATION_CHAINS,
-      RELAYER_DISCOUNT,
+      ENABLE_PROFITABILITY,
+      IGNORE_TOKEN_PRICE_FAILURES,
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
       SEND_RELAYS,
@@ -58,7 +63,8 @@ export class RelayerConfig extends CommonConfig {
         });
       });
     }
-    this.relayerDiscount = RELAYER_DISCOUNT ? toBNWei(RELAYER_DISCOUNT) : toBNWei(0);
+    this.enableProfitability = ENABLE_PROFITABILITY === "true";
+    this.ignoreTokenPriceFailures = IGNORE_TOKEN_PRICE_FAILURES === "true";
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
   }

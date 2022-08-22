@@ -6,6 +6,10 @@ export class MockProfitClient extends ProfitClient {
     this.tokenPrices = tokenPrices;
   }
 
+  setGasCosts(gasCosts: { [chainId: number]: BigNumber }) {
+    this.totalGasCosts = gasCosts;
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-empty-function
   async update() {}
 }

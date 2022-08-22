@@ -3,7 +3,7 @@ import { Wallet } from "../utils";
 import { TokenClient, ProfitClient, BundleDataClient, InventoryClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import { RelayerConfig } from "./RelayerConfig";
-import { Clients, constructClients, updateClients, updateSpokePoolClients } from "../common";
+import { CHAIN_ID_LIST_INDICES, Clients, constructClients, updateClients, updateSpokePoolClients } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { constructSpokePoolClientsWithLookback } from "../common";
 
@@ -31,10 +31,16 @@ export async function constructRelayerClients(
 
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients, commonClients.hubPoolClient);
 
+  // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
+  const enabledChainIds =
+    config.relayerDestinationChains.length > 0 ? config.relayerDestinationChains : CHAIN_ID_LIST_INDICES;
   const profitClient = new ProfitClient(
     logger,
     commonClients.hubPoolClient,
-    config.relayerDiscount,
+    spokePoolClients,
+    config.enableProfitability,
+    enabledChainIds,
+    config.ignoreTokenPriceFailures,
     config.minRelayerFeePct
   );
 

@@ -1,11 +1,10 @@
-import { L1Token } from "../src/interfaces/HubPool";
-import { expect, ethers, SignerWithAddress, createSpyLogger, winston, BigNumber, toBN } from "./utils";
+import { L1Token } from "../src/interfaces";
+import { expect, createSpyLogger, winston, BigNumber, toBN } from "./utils";
 
-import { MockHubPoolClient } from "./mocks/MockHubPoolClient";
-import { ProfitClient } from "../src/clients"; // Tested
+import { MockHubPoolClient } from "./mocks";
+import { ProfitClient, MATIC } from "../src/clients"; // Tested
 
-let hubPoolClient: MockHubPoolClient, owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
-let profitClient: ProfitClient; // tested
+let hubPoolClient: MockHubPoolClient, spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
 const mainnetTokens: Array<L1Token> = [
   // Checksummed addresses
@@ -19,15 +18,25 @@ const mainnetTokens: Array<L1Token> = [
   { symbol: "DAI", address: "0X6B175474E89094C44DA98B954EEDEAC495271D0F", decimals: 18 },
   { symbol: "UMA", address: "0X04FA0D235C4ABF4BCF4787AF4CF447DE572EF828", decimals: 18 },
   { symbol: "BADGER", address: "0X3472A5A71965499ACD81997A54BBA8D852C6E53D", decimals: 18 },
+  // Misc.
+  { symbol: "MATIC", address: MATIC, decimals: 18 },
 ];
+
+class ProfitClientWithMockCoingecko extends ProfitClient {
+  protected async coingeckoPrices(tokens: string[], platformId?: string) {
+    return mainnetTokens.map((token) => {
+      return { address: token.address, price: 1 };
+    });
+  }
+}
+let profitClient: ProfitClientWithMockCoingecko; // tested
 
 describe("ProfitClient: Price Retrieval", async function () {
   beforeEach(async function () {
-    [owner] = await ethers.getSigners();
     ({ spy, spyLogger } = createSpyLogger());
 
     hubPoolClient = new MockHubPoolClient(null, null);
-    profitClient = new ProfitClient(spyLogger, hubPoolClient, toBN(0));
+    profitClient = new ProfitClientWithMockCoingecko(spyLogger, hubPoolClient, {}, true, [], false, toBN(0));
   });
 
   it("Correctly fetches token prices", async function () {

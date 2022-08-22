@@ -1,7 +1,9 @@
+import { Provider } from "@ethersproject/abstract-provider";
 import { assert, BigNumber, formatFeePct, winston, toBNWei, toBN, assign } from "../utils";
 import { HubPoolClient } from ".";
-import { Deposit, L1Token } from "../interfaces";
+import { Deposit, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { Coingecko } from "@uma/sdk";
+import { relayFeeCalculator } from "@across-protocol/sdk-v2";
 
 // Copied from @uma/sdk/coingecko. Propose to export export it upstream in the sdk.
 type CoinGeckoPrice = {
@@ -10,23 +12,26 @@ type CoinGeckoPrice = {
   price: number;
 };
 
-// Define the minimum revenue, in USD, that a relay must yield in order to be considered "profitable". This is a short
-// term solution to enable us to avoid DOS relays that yield negative profits. In the future this should be updated
-// to actual factor in the cost of sending transactions on the associated target chains.
-const chainIdToMinRevenue = {
-  // Mainnet and L1 testnets.
-  1: toBNWei(10),
-  4: toBNWei(10),
-  5: toBNWei(10),
-  42: toBNWei(10),
-  // Rollups/L2s/sidechains & their testnets.
-  10: toBNWei(1),
-  69: toBNWei(1),
-  288: toBNWei(1),
-  28: toBNWei(1),
-  42161: toBNWei(1),
-  137: toBNWei(1),
-  80001: toBNWei(1),
+// We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
+export const MATIC = "0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0";
+export const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+
+const GAS_TOKEN_BY_CHAIN_ID = {
+  1: WETH,
+  10: WETH,
+  137: MATIC,
+  288: WETH,
+  42161: WETH,
+};
+// TODO: Make this dynamic once we support chains with gas tokens that have different decimals.
+const GAS_TOKEN_DECIMALS = 18;
+
+const QUERY_HANDLERS = {
+  1: relayFeeCalculator.EthereumQueries,
+  10: relayFeeCalculator.OptimismQueries,
+  137: relayFeeCalculator.PolygonQueries,
+  288: relayFeeCalculator.BobaQueries,
+  42161: relayFeeCalculator.ArbitrumQueries,
 };
 
 export class ProfitClient {
@@ -34,13 +39,30 @@ export class ProfitClient {
   protected tokenPrices: { [l1Token: string]: BigNumber } = {};
   private unprofitableFills: { [chainId: number]: { deposit: Deposit; fillAmount: BigNumber }[] } = {};
 
+  // Track total gas costs of a relay on each chain.
+  protected totalGasCosts: { [chainId: number]: BigNumber } = {};
+
+  // Queries needed to fetch relay gas costs.
+  private relayerFeeQueries: { [chainId: number]: relayFeeCalculator.QueryInterface } = {};
+
   constructor(
     readonly logger: winston.Logger,
     readonly hubPoolClient: HubPoolClient,
-    readonly relayerDiscount: BigNumber = toBN(0),
+    spokePoolClients: SpokePoolClientsByChain,
+    readonly enableProfitability: boolean,
+    readonly enabledChainIds: number[],
+    // Default to throwing errors if fetching token prices fails.
+    readonly ignoreTokenPriceFailures: boolean = false,
     readonly minRelayerFeePct: BigNumber = toBN(0)
   ) {
     this.coingecko = new Coingecko();
+
+    for (const chainId of this.enabledChainIds) {
+      this.relayerFeeQueries[chainId] = this.constructRelayerFeeQuery(
+        chainId,
+        spokePoolClients[chainId].spokePool.provider
+      );
+    }
   }
 
   getAllPrices() {
@@ -50,6 +72,10 @@ export class ProfitClient {
   getPriceOfToken(token: string) {
     assert(this.tokenPrices[token] !== undefined, `Token ${token} not in price list.`);
     return this.tokenPrices[token];
+  }
+
+  getTotalGasCost(chainId: number) {
+    return this.totalGasCosts[chainId] ?? toBN(0);
   }
 
   getUnprofitableFills() {
@@ -70,24 +96,43 @@ export class ProfitClient {
       return false;
     }
 
-    if (toBN(this.relayerDiscount).eq(toBNWei(1))) {
-      this.logger.debug({ at: "ProfitClient", message: "Relayer discount set to 100%. Accepting relay" });
-      return true;
-    }
-
     if (toBN(deposit.relayerFeePct).eq(toBN(0))) {
       this.logger.debug({ at: "ProfitClient", message: "Deposit set 0 relayerFeePct. Rejecting relay" });
       return false;
+    }
+
+    // This should happen after the previous checks as we don't want to turn them off when profitability is disabled.
+    // TODO: Revisit whether this makes sense once we have capital fee evaluation.
+    if (!this.enableProfitability) {
+      this.logger.debug({ at: "ProfitClient", message: "Profitability check is disabled. Accepting relay" });
+      return true;
     }
 
     const { decimals, address: l1Token } = this.hubPoolClient.getTokenInfoForDeposit(deposit);
     const tokenPriceInUsd = this.getPriceOfToken(l1Token);
     const fillRevenueInRelayedToken = toBN(deposit.relayerFeePct).mul(fillAmount).div(toBN(10).pow(decimals));
     const fillRevenueInUsd = fillRevenueInRelayedToken.mul(tokenPriceInUsd).div(toBNWei(1));
+
+    // Consider gas cost.
+    const totalGasCostWei = this.getTotalGasCost(deposit.destinationChainId);
+    if (totalGasCostWei === undefined || totalGasCostWei.eq(toBN(0))) {
+      const chainId = deposit.destinationChainId;
+      const errorMsg = `Missing total gas cost for ${chainId}. This likely indicates some gas cost request failed`;
+      this.logger.warn({
+        at: "ProfitClient",
+        message: errorMsg,
+        allGasCostsFetched: this.totalGasCosts,
+        chainId,
+      });
+      throw new Error(errorMsg);
+    }
+    const gasCostInUsd = totalGasCostWei
+      .mul(this.getPriceOfToken(GAS_TOKEN_BY_CHAIN_ID[deposit.destinationChainId]))
+      .div(toBN(10).pow(GAS_TOKEN_DECIMALS));
+
     // How much minimumAcceptableRevenue is scaled. If relayer discount is 0 then need minimumAcceptableRevenue at min.
-    const revenueScalar = toBNWei(1).sub(this.relayerDiscount);
-    const minimumAcceptableRevenue = chainIdToMinRevenue[deposit.destinationChainId].mul(revenueScalar).div(toBNWei(1));
-    const fillProfitable = fillRevenueInUsd.gte(minimumAcceptableRevenue);
+    const fillProfitInUsd = fillRevenueInUsd.sub(gasCostInUsd);
+    const fillProfitable = fillProfitInUsd.gte(toBN(0));
     this.logger.debug({
       at: "ProfitClient",
       message: "Considered fill profitability",
@@ -96,8 +141,9 @@ export class ProfitClient {
       tokenPriceInUsd,
       fillRevenueInRelayedToken,
       fillRevenueInUsd,
-      minimumAcceptableRevenue,
-      discount: this.relayerDiscount,
+      totalGasCostWei,
+      gasCostInUsd,
+      fillProfitInUsd,
       fillProfitable,
     });
     return fillProfitable;
@@ -112,23 +158,29 @@ export class ProfitClient {
     return Object.keys(this.unprofitableFills).length != 0;
   }
 
-  async update() {
+  async update() {  
     // Generate list of tokens to retrieve and pre-populate any new addresses
     const newTokens: string[] = [];
     const l1Tokens: { [address: string]: L1Token } = Object.fromEntries(
-      this.hubPoolClient.getL1Tokens().map((token) => {
-        const { address, symbol } = token;
-
-        if (this.tokenPrices[address] === undefined) {
-          this.tokenPrices[address] = toBN(0);
-          newTokens.push(symbol);
-        }
-
-        return [address, token];
-      })
+      this.hubPoolClient.getL1Tokens().map((token) => [token["address"], token ])
     );
 
+    // Also include MATIC in the price queries as we need it for gas cost calculation.
+    l1Tokens[MATIC] = {
+      address: MATIC,
+      symbol: "MATIC",
+      decimals: 18,
+    };
+
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens: Object.values(l1Tokens) });
+
+    Object.keys(l1Tokens).forEach((token) => {
+      const { address, symbol } = token;
+      if (this.tokenPrices[address] === undefined) {
+        this.tokenPrices[address] = toBN(0);
+        newTokens.push(symbol);
+      }
+    }
     if (newTokens.length > 0) {
       this.logger.debug({
         at: "ProfitClient",
@@ -177,11 +229,51 @@ export class ProfitClient {
         mrkdwn += ` Using last known price of ${this.getPriceOfToken(token["address"])}.\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
+      if (!this.ignoreTokenPriceFailures) {
+        throw new Error(mrkdwn);
+      }
     }
+
+    // Short circuit early if profitability is disabled.
+    if (!this.enableProfitability) return;
+    
+    // Pre-fetch total gas costs for relays on enabled chains.
+    const gasCosts = await Promise.all(
+      this.enabledChainIds.map((chainId) => this.relayerFeeQueries[chainId].getGasCosts())
+    );
+    this.logger.debug({
+      at: "ProfitClient",
+      message: "Fetched gas costs of relays",
+      enabledChainIds: this.enabledChainIds,
+      gasCosts,
+    });
+    for (let i = 0; i < this.enabledChainIds.length; i++) {
+      // An extra toBN cast is needed as the provider returns a different BigNumber type.
+      this.totalGasCosts[this.enabledChainIds[i]] = toBN(gasCosts[i]);
+    }
+
     this.logger.debug({ at: "ProfitClient", message: "Updated Profit client", tokenPrices: this.tokenPrices });
   }
 
-  private async coingeckoPrices(tokens: Array<string>) {
+  protected async coingeckoPrices(tokens: string[]) {
     return await this.coingecko.getContractPrices(tokens, "usd");
+  }
+
+  private constructRelayerFeeQuery(chainId: number, provider: Provider): relayFeeCalculator.QueryInterface {
+    // Fallback to Coingecko's free API for now.
+    // TODO: Add support for Coingecko Pro.
+    const coingeckoProApiKey = undefined;
+    // TODO: Set this once we figure out gas markup on the API side.
+    const gasMarkup = 0;
+    return new QUERY_HANDLERS[chainId](
+      provider,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      coingeckoProApiKey,
+      this.logger,
+      gasMarkup
+    );
   }
 }

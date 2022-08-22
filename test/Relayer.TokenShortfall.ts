@@ -37,7 +37,7 @@ describe("Relayer: Token balance shortfall", async function () {
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
     configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
-    multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
+    multiCallerClient = new MultiCallerClient(spyLogger); // leave out the gasEstimator for now.
     spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(relayer), configStoreClient, originChainId);
     spokePoolClient_2 = new SpokePoolClient(
       spyLogger,
@@ -47,7 +47,7 @@ describe("Relayer: Token balance shortfall", async function () {
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
-    profitClient = new ProfitClient(spyLogger, hubPoolClient, toBNWei(1)); // Set the profit discount to 1 (ignore relay cost.)
+    profitClient = new ProfitClient(spyLogger, hubPoolClient, spokePoolClients, false, []); // Set the profit discount to 1 (ignore relay cost.)
     relayerInstance = new Relayer(relayer.address, spyLogger, {
       spokePoolClients,
       hubPoolClient,
