@@ -196,7 +196,9 @@ export class ProfitClient {
       cgPrices = await this.coingeckoPrices(Object.keys(l1Tokens));
     } catch (err) {
       const errMsg = `Failed to retrieve token prices (${err})`;
-      const tokens = Object.values(l1Tokens).map((token: L1Token) => token.symbol).join(", ");
+      const tokens = Object.values(l1Tokens)
+        .map((token: L1Token) => token.symbol)
+        .join(", ");
 
       if (!this.ignoreTokenPriceFailures) {
         throw new Error(errMsg);
@@ -243,7 +245,7 @@ export class ProfitClient {
 
     // Pre-fetch total gas costs for relays on enabled chains.
     const gasCosts = await Promise.all(
-      this.enabledChainIds.map((chainId: number) => this.relayerFeeQueries[chainId].getGasCosts())
+      this.enabledChainIds.map((chainId) => this.relayerFeeQueries[chainId].getGasCosts())
     );
     for (let i = 0; i < this.enabledChainIds.length; i++) {
       // An extra toBN cast is needed as the provider returns a different BigNumber type.
@@ -256,7 +258,6 @@ export class ProfitClient {
       enabledChainIds: this.enabledChainIds,
       totalGasCosts: this.totalGasCosts,
     });
-
   }
 
   protected async coingeckoPrices(tokens: string[]) {
