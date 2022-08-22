@@ -464,8 +464,8 @@ export function generateMarkdownForRootBundle(
     leaf.destToken = convertTokenAddressToSymbol(leaf.destinationChainId, leaf.destinationToken);
     leaf.amount = convertFromWei(leaf.amount, decimalsForDestToken);
     // Fee decimals is always 18. 1e18 = 100%.
-    leaf.realizedLpFee = `${convertFromWei(leaf.realizedLpFeePct, 18)}%`;
-    leaf.relayerFee = `${convertFromWei(leaf.relayerFeePct, 18)}%`;
+    leaf.realizedLpFee = `${convertFromWei(leaf.realizedLpFeePct, 16)}%`;
+    leaf.relayerFee = `${convertFromWei(leaf.relayerFeePct, 16)}%`;
     delete leaf.destinationToken;
     delete leaf.realizedLpFeePct;
     delete leaf.relayerFeePct;
