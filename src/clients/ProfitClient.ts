@@ -49,7 +49,7 @@ export class ProfitClient {
     readonly logger: winston.Logger,
     readonly hubPoolClient: HubPoolClient,
     spokePoolClients: SpokePoolClientsByChain,
-    readonly enableProfitability: boolean,
+    readonly enableRelayProfitability: boolean,
     readonly enabledChainIds: number[],
     // Default to throwing errors if fetching token prices fails.
     readonly ignoreTokenPriceFailures: boolean = false,
@@ -106,7 +106,7 @@ export class ProfitClient {
 
     // This should happen after the previous checks as we don't want to turn them off when profitability is disabled.
     // TODO: Revisit whether this makes sense once we have capital fee evaluation.
-    if (!this.enableProfitability) {
+    if (!this.enableRelayProfitability) {
       this.logger.debug({ at: "ProfitClient", message: "Profitability check is disabled. Accepting relay" });
       return true;
     }
@@ -162,9 +162,6 @@ export class ProfitClient {
   }
 
   async update() {
-    // Short circuit early if profitability is disabled.
-    if (!this.enableProfitability) return;
-
     const l1Tokens: { [k: string]: L1Token } = Object.fromEntries(
       this.hubPoolClient.getL1Tokens().map((token) => [token["address"], token])
     );
@@ -213,23 +210,27 @@ export class ProfitClient {
         throw new Error(mrkdwn);
       }
     }
+    this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
+
+    // Short circuit early if profitability is disabled. We still need to fetch CG prices but don't need to fetch gas
+    // costs of relays.
+    if (!this.enableRelayProfitability) return;
 
     // Pre-fetch total gas costs for relays on enabled chains.
     const gasCosts = await Promise.all(
       this.enabledChainIds.map((chainId) => this.relayerFeeQueries[chainId].getGasCosts())
     );
-    this.logger.debug({
-      at: "ProfitClient",
-      message: "Fetched gas costs of relays",
-      enabledChainIds: this.enabledChainIds,
-      gasCosts,
-    });
     for (let i = 0; i < this.enabledChainIds.length; i++) {
       // An extra toBN cast is needed as the provider returns a different BigNumber type.
       this.totalGasCosts[this.enabledChainIds[i]] = toBN(gasCosts[i]);
     }
 
-    this.logger.debug({ at: "ProfitClient", message: "Updated Profit client", tokenPrices: this.tokenPrices });
+    this.logger.debug({
+      at: "ProfitClient",
+      message: "Updated gas cost",
+      enabledChainIds: this.enabledChainIds,
+      totalGasCosts: this.totalGasCosts,
+    });
   }
 
   protected async coingeckoPrices(tokens: string[]) {
