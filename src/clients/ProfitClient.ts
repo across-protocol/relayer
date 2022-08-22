@@ -162,7 +162,7 @@ export class ProfitClient {
     // Generate list of tokens to retrieve.
     const newTokens: string[] = [];
     const l1Tokens: { [address: string]: L1Token } = Object.fromEntries(
-      this.hubPoolClient.getL1Tokens().map((token: l1Token) => [token["address"], token])
+      this.hubPoolClient.getL1Tokens().map((token: L1Token) => [token["address"], token])
     );
 
     // Also include MATIC in the price queries as we need it for gas cost calculation.
@@ -175,7 +175,7 @@ export class ProfitClient {
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens: Object.values(l1Tokens) });
 
     // Pre-populate any new addresses.
-    Object.keys(l1Tokens).forEach((token: l1Token) => {
+    Object.values(l1Tokens).forEach((token: L1Token) => {
       const { address, symbol } = token;
       if (this.tokenPrices[address] === undefined) {
         this.tokenPrices[address] = toBN(0);
@@ -195,16 +195,13 @@ export class ProfitClient {
     try {
       cgPrices = await this.coingeckoPrices(Object.keys(l1Tokens));
     } catch (err) {
-      this.logger.warn({
-        at: "ProfitClient",
-        message: `Failed to retrieve token prices (${err}).`,
-        tokens: Object.values(l1Tokens)
-          .map((token: l1Token) => token.symbol)
-          .join(", "),
-      });
+      const errMsg = `Failed to retrieve token prices (${err})`;
+      const tokens = Object.values(l1Tokens).map((token: L1Token) => token.symbol).join(", ");
+
       if (!this.ignoreTokenPriceFailures) {
-        throw new Error(mrkdwn);
+        throw new Error(errMsg);
       }
+      this.logger.warn({ at: "ProfitClient", message: errMsg, tokens: tokens });
       return;
     }
 
@@ -238,6 +235,7 @@ export class ProfitClient {
         throw new Error(mrkdwn);
       }
     }
+    this.logger.debug({ at: "ProfitClient", message: "Updated Profit client", tokenPrices: this.tokenPrices });
 
     // Short circuit early if profitability is disabled.
     if (!this.enableProfitability) return;
@@ -256,8 +254,6 @@ export class ProfitClient {
       // An extra toBN cast is needed as the provider returns a different BigNumber type.
       this.totalGasCosts[this.enabledChainIds[i]] = toBN(gasCosts[i]);
     }
-
-    this.logger.debug({ at: "ProfitClient", message: "Updated Profit client", tokenPrices: this.tokenPrices });
   }
 
   protected async coingeckoPrices(tokens: string[]) {
