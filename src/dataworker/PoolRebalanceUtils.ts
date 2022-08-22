@@ -20,6 +20,7 @@ import {
   MerkleTree,
   winston,
   toBNWei,
+  formatFeePct,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "../utils";
@@ -463,9 +464,9 @@ export function generateMarkdownForRootBundle(
     leaf.recipient = shortenHexString(leaf.recipient);
     leaf.destToken = convertTokenAddressToSymbol(leaf.destinationChainId, leaf.destinationToken);
     leaf.amount = convertFromWei(leaf.amount, decimalsForDestToken);
-    // Fee decimals is always 18. 1e18 = 100%.
-    leaf.realizedLpFee = `${convertFromWei(leaf.realizedLpFeePct, 16)}%`;
-    leaf.relayerFee = `${convertFromWei(leaf.relayerFeePct, 16)}%`;
+    // Fee decimals is always 18. 1e18 = 100% so 1e16 = 1%.
+    leaf.realizedLpFee = `${formatFeePct(leaf.realizedLpFeePct)}%`;
+    leaf.relayerFee = `${formatFeePct(leaf.relayerFeePct)}%`;
     delete leaf.destinationToken;
     delete leaf.realizedLpFeePct;
     delete leaf.relayerFeePct;
