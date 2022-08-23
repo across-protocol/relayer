@@ -20,6 +20,7 @@ import {
   MerkleTree,
   winston,
   toBNWei,
+  formatFeePct,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "../utils";
@@ -463,8 +464,9 @@ export function generateMarkdownForRootBundle(
     leaf.recipient = shortenHexString(leaf.recipient);
     leaf.destToken = convertTokenAddressToSymbol(leaf.destinationChainId, leaf.destinationToken);
     leaf.amount = convertFromWei(leaf.amount, decimalsForDestToken);
-    leaf.realizedLpFee = `${convertFromWei(leaf.realizedLpFeePct, decimalsForDestToken)}%`;
-    leaf.relayerFee = `${convertFromWei(leaf.relayerFeePct, decimalsForDestToken)}%`;
+    // Fee decimals is always 18. 1e18 = 100% so 1e16 = 1%.
+    leaf.realizedLpFee = `${formatFeePct(leaf.realizedLpFeePct)}%`;
+    leaf.relayerFee = `${formatFeePct(leaf.relayerFeePct)}%`;
     delete leaf.destinationToken;
     delete leaf.realizedLpFeePct;
     delete leaf.relayerFeePct;
@@ -472,13 +474,17 @@ export function generateMarkdownForRootBundle(
     delete leaf.destinationChainId;
     slowRelayLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
   });
+
+  const slowRelayMsg = slowRelayLeavesPretty
+    ? `root:${shortenHexString(slowRelayRoot)}...\n\t\tleaves:${slowRelayLeavesPretty}`
+    : "No slow relay leaves";
   return (
     `\n\t*Bundle blocks*:${bundleBlockRangePretty}` +
     `\n\t*PoolRebalance*:\n\t\troot:${shortenHexString(
       poolRebalanceRoot
     )}...\n\t\tleaves:${poolRebalanceLeavesPretty}` +
     `\n\t*RelayerRefund*\n\t\troot:${shortenHexString(relayerRefundRoot)}...\n\t\tleaves:${relayerRefundLeavesPretty}` +
-    `\n\t*SlowRelay*\n\troot:${shortenHexString(slowRelayRoot)}...\n\t\tleaves:${slowRelayLeavesPretty}`
+    `\n\t*SlowRelay*\n\t${slowRelayMsg}`
   );
 }
 
