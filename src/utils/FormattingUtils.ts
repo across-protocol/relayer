@@ -16,7 +16,8 @@ export const toBN = (num: string | number | BigNumber) => {
 };
 
 export const formatFeePct = (relayerFeePct: BigNumber): string => {
-  return createFormatFunction(2, 4, false, 18)(toBN(relayerFeePct).mul(100).toString());
+  // 1e18 = 100% so 1e16 = 1%.
+  return createFormatFunction(2, 4, false, 16)(toBN(relayerFeePct).toString());
 };
 
 export { createFormatFunction } from "@uma/common";
