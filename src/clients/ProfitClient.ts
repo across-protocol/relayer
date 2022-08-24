@@ -70,7 +70,12 @@ export class ProfitClient {
   }
 
   getPriceOfToken(token: string) {
-    assert(this.tokenPrices[token] !== undefined, `Token ${token} not in price list.`);
+    // Warn on this initially, and move to an assert() once any latent issues are resolved.
+    // assert(this.tokenPrices[token] !== undefined, `Token ${token} not in price list.`);
+    if (this.tokenPrices[token] === undefined) {
+      this.logger.warn({ at: "ProfitClient#getPriceOfToken", message: `Token ${token} not in price list.` });
+      return toBN(0);
+    }
     return this.tokenPrices[token];
   }
 
