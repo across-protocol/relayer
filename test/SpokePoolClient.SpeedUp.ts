@@ -21,7 +21,7 @@ describe("SpokePoolClient: SpeedUp", async function () {
     await setupTokensForWallet(spokePool, depositor, [erc20, destErc20], weth, 10);
   });
 
-  it.skip("Fetches speedup data associated with a deposit", async function () {
+  it("Fetches speedup data associated with a deposit", async function () {
     const deposit = await simpleDeposit(spokePool, erc20, depositor, depositor, destinationChainId);
 
     await spokePoolClient.update();
@@ -42,7 +42,7 @@ describe("SpokePoolClient: SpeedUp", async function () {
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)).to.deep.equal([expectedDepositData]);
     expect(spokePoolClient.getDepositsFromDepositor(depositor.address)).to.deep.equal([expectedDepositData]);
   });
-  it.skip("Selects the highest speedup option when multiple are presented", async function () {
+  it("Selects the highest speedup option when multiple are presented", async function () {
     const deposit = await simpleDeposit(spokePool, erc20, depositor, depositor, destinationChainId);
 
     // Speedup below the original fee should not update to use the new fee.
