@@ -372,7 +372,9 @@ export class SpokePoolClient {
       }
     }
 
-    if (eventsToQuery.includes("RequestedSpeedUpDeposit")) {
+    // Disable this loop.
+    // eslint-disable-next-line no-constant-condition
+    if (eventsToQuery.includes("RequestedSpeedUpDeposit") && false) {
       const speedUpEvents = queryResults[eventsToQuery.indexOf("RequestedSpeedUpDeposit")];
 
       for (const event of speedUpEvents) {
