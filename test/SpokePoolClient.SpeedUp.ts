@@ -35,7 +35,7 @@ describe("SpokePoolClient: SpeedUp", async function () {
     await spokePoolClient.update();
 
     // After speedup should return the appended object with the new fee information and signature.
-    const expectedDepositData = { ...deposit, speedUpSignature, relayerFeePct: newRelayFeePct }; // Old data with new fees.
+    const expectedDepositData = { ...deposit, speedUpSignature, newRelayerFeePct: newRelayFeePct };
     expect(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit)).to.deep.equal(expectedDepositData);
 
     // Fetching deposits for the depositor should contain the correct fees.
@@ -67,7 +67,11 @@ describe("SpokePoolClient: SpeedUp", async function () {
     await spokePoolClient.update();
 
     // Should use the faster data between the two speedups.
-    const expectedDepositData = { ...deposit, speedUpSignature: speedUpFasterSignature, relayerFeePct: speedupFaster };
+    const expectedDepositData = {
+      ...deposit,
+      speedUpSignature: speedUpFasterSignature,
+      newRelayerFeePct: speedupFaster,
+    };
     expect(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit)).to.deep.equal(expectedDepositData);
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)).to.deep.equal([expectedDepositData]);
     expect(spokePoolClient.getDepositsFromDepositor(depositor.address)).to.deep.equal([expectedDepositData]);

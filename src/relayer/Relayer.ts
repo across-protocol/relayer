@@ -1,4 +1,12 @@
-import { BigNumber, winston, buildFillRelayProps, getNetworkName, getUnfilledDeposits, getCurrentTime } from "../utils";
+import {
+  BigNumber,
+  winston,
+  buildFillRelayProps,
+  getNetworkName,
+  getUnfilledDeposits,
+  getCurrentTime,
+  buildFillRelayWithUpdatedFeeProps,
+} from "../utils";
 import { createFormatFunction, etherscanLink, formatFeePct, toBN } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 
@@ -103,15 +111,32 @@ export class Relayer {
         throw new Error("Fatal error! Repayment chain set to a chain that is not part of the defined sets of chains!");
 
       this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain });
-      // Add the fill transaction to the multiCallerClient so it will be executed with the next batch.
-      this.clients.multiCallerClient.enqueueTransaction({
-        contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
-        chainId: deposit.destinationChainId,
-        method: "fillRelay", // method called.
-        args: buildFillRelayProps(deposit, repaymentChain, fillAmount), // props sent with function call.
-        message: fillAmount.eq(deposit.amount) ? "Relay instantly sent 🚀" : "Instantly completed relay 📫", // message sent to logger.
-        mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChain, fillAmount), // message details mrkdwn
-      });
+
+      // If deposit has a speed up signature, then use updated relayer fee.
+      if (deposit.speedUpSignature !== undefined && deposit.newRelayerFeePct !== undefined) {
+        this.clients.multiCallerClient.enqueueTransaction({
+          contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
+          chainId: deposit.destinationChainId,
+          method: "fillRelayWithUpdatedFee",
+          args: buildFillRelayWithUpdatedFeeProps(deposit, repaymentChain, fillAmount), // props sent with function call.
+          message: fillAmount.eq(deposit.amount)
+            ? "Relay instantly sent with modified fee 🚀"
+            : "Instantly completed relay with modified fee 📫", // message sent to logger.
+          mrkdwn:
+            this.constructRelayFilledMrkdwn(deposit, repaymentChain, fillAmount) +
+            `Modified relayer fee: ${formatFeePct(deposit.newRelayerFeePct)}%.`, // message details mrkdwn
+        });
+      } else {
+        // Add the fill transaction to the multiCallerClient so it will be executed with the next batch.
+        this.clients.multiCallerClient.enqueueTransaction({
+          contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
+          chainId: deposit.destinationChainId,
+          method: "fillRelay", // method called.
+          args: buildFillRelayProps(deposit, repaymentChain, fillAmount), // props sent with function call.
+          message: fillAmount.eq(deposit.amount) ? "Relay instantly sent 🚀" : "Instantly completed relay 📫", // message sent to logger.
+          mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChain, fillAmount), // message details mrkdwn
+        });
+      }
 
       // TODO: Revisit in the future when we implement partial fills.
       this.fullyFilledDeposits[fillKey] = true;
@@ -133,6 +158,8 @@ export class Relayer {
     const fillAmount = toBN(1); // 1 wei; smallest fill size possible.
     this.logger.debug({ at: "Relayer", message: "Zero filling", deposit, repaymentChain: repaymentChainId });
     try {
+      // Note: Ignore deposit.newRelayerFeePct because slow relay leaves use a 0% relayer fee if executed.
+
       // Add the zero fill fill transaction to the multiCallerClient so it will be executed with the next batch.
       this.clients.multiCallerClient.enqueueTransaction({
         contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
