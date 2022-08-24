@@ -162,24 +162,24 @@ describe("Relayer: Unfilled Deposits", async function () {
     // expect unfilled deposit to have new relay fee
     expect(unfilledDeposits[0].deposit.relayerFeePct).to.deep.eq(newRelayFeePct);
   });
-  it("Does not double fill deposit when updating fee after fill", async function() {
-        const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-        const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, configStoreClient, l1Token);
-        const fill1 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete);
-        await updateAllClients();
-        expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients)).to.deep.equal([
-          { unfilledAmount: deposit1.amount.sub(fill1.fillAmount), deposit: deposit1Complete, fillCount: 1 }
-        ]);
+  it("Does not double fill deposit when updating fee after fill", async function () {
+    const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, configStoreClient, l1Token);
+    const fill1 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete);
+    await updateAllClients();
+    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients)).to.deep.equal([
+      { unfilledAmount: deposit1.amount.sub(fill1.fillAmount), deposit: deposit1Complete, fillCount: 1 },
+    ]);
 
-        // Speed up deposit, and check that unfilled amount is still the same.
-        const newRelayerFeePct = toBNWei(0.1337);
-        const speedUpSignature = await signForSpeedUp(depositor, deposit1, newRelayerFeePct);
-        await spokePool_1.speedUpDeposit(depositor.address, newRelayerFeePct, deposit1.depositId, speedUpSignature);
-        await updateAllClients(); 
-        const depositWithSpeedUp = { ...deposit1Complete, newRelayerFeePct, speedUpSignature }
-        expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients)).to.deep.equal([
-          { unfilledAmount: deposit1.amount.sub(fill1.fillAmount), deposit: depositWithSpeedUp, fillCount: 1 }
-        ]);   
+    // Speed up deposit, and check that unfilled amount is still the same.
+    const newRelayerFeePct = toBNWei(0.1337);
+    const speedUpSignature = await signForSpeedUp(depositor, deposit1, newRelayerFeePct);
+    await spokePool_1.speedUpDeposit(depositor.address, newRelayerFeePct, deposit1.depositId, speedUpSignature);
+    await updateAllClients();
+    const depositWithSpeedUp = { ...deposit1Complete, newRelayerFeePct, speedUpSignature };
+    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients)).to.deep.equal([
+      { unfilledAmount: deposit1.amount.sub(fill1.fillAmount), deposit: depositWithSpeedUp, fillCount: 1 },
+    ]);
   });
 });
 
