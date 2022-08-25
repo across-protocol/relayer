@@ -11,6 +11,14 @@ export const MAX_RELAYER_DEPOSIT_LOOK_BACK: { [chainId: number]: number } = {
   42161: 350000,
 };
 
+export const CHAIN_DEPOSIT_MIN_AGE: { [chainId: number]: number } = {
+  1: 2,
+  10: 1,
+  137: 100,
+  288: 1,
+  42161: 1,
+};
+
 // Optimism, ethereum can do infinity lookbacks. boba and Arbitrum limited to 100000 on infura.
 export const CHAIN_MAX_BLOCK_LOOKBACK = {
   1: 0, // Note: 0 gets defaulted to infinity lookback

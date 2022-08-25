@@ -62,6 +62,6 @@ export class CommonConfig {
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
     this.redisUrl = REDIS_URL;
     this.bundleRefundLookback = BUNDLE_REFUND_LOOKBACK ? Number(BUNDLE_REFUND_LOOKBACK) : 2;
-    this.followingDistances = FOLLOWING_DISTANCES ? JSON.parse(FOLLOWING_DISTANCES) : {};
+    this.followingDistances = FOLLOWING_DISTANCES ? JSON.parse(FOLLOWING_DISTANCES) : Constants.CHAIN_DEPOSIT_MIN_AGE;
   }
 }
