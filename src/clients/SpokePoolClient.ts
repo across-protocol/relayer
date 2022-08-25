@@ -158,7 +158,7 @@ export class SpokePoolClient {
       prev.newRelayerFeePct.gt(current.newRelayerFeePct) ? prev : current
     );
 
-    // Only if there is a speedup and the new relayer fee is greater than the current relayer fee, save the new the fee.
+    // Only if there is a speedup and the new relayer fee is greater than the current relayer fee, save the new fee.
     if (!maxSpeedUp || maxSpeedUp.newRelayerFeePct.lte(deposit.relayerFeePct)) return deposit;
     return {
       ...deposit,
