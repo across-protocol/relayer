@@ -149,7 +149,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     expect(fillEvents2[0].args.depositor).to.equal(deposit1.depositor);
     expect(fillEvents2[0].args.recipient).to.equal(deposit1.recipient);
 
-    // This specific line differs from the above test: the emitted event's appliedRelayerFeePct is 
+    // This specific line differs from the above test: the emitted event's appliedRelayerFeePct is
     // now !== relayerFeePct.
     expect(fillEvents2[0].args.appliedRelayerFeePct).to.equal(newRelayerFeePct);
 
