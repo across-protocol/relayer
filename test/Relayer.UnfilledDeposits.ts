@@ -160,7 +160,9 @@ describe("Relayer: Unfilled Deposits", async function () {
     // expect only one unfilled deposit
     expect(unfilledDeposits.length).to.eq(1);
     // expect unfilled deposit to have new relay fee
-    expect(unfilledDeposits[0].deposit.relayerFeePct).to.deep.eq(newRelayFeePct);
+    expect(unfilledDeposits[0].deposit.newRelayerFeePct).to.deep.eq(newRelayFeePct);
+    // Old relayer fee pct is unchanged as this is what's included in relay hash
+    expect(unfilledDeposits[0].deposit.relayerFeePct).to.deep.eq(deposit1.relayerFeePct);
   });
   it("Does not double fill deposit when updating fee after fill", async function () {
     const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
