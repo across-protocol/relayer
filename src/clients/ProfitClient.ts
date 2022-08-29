@@ -92,7 +92,13 @@ export class ProfitClient {
   }
 
   isFillProfitable(deposit: Deposit, fillAmount: BigNumber) {
-    const relayerFeePct = toBN(deposit.newRelayerFeePct ?? deposit.relayerFeePct);
+    const newRelayerFeePct = toBN(deposit.newRelayerFeePct ?? 0);
+    let relayerFeePct = toBN(deposit.relayerFeePct);
+    // Use the maximum between the original newRelayerFeePct and any updated fee from speedups.
+    if (relayerFeePct.lt(newRelayerFeePct)) {
+      relayerFeePct = newRelayerFeePct;
+    }
+
     if (relayerFeePct.lt(this.minRelayerFeePct)) {
       this.logger.debug({
         at: "ProfitClient",
