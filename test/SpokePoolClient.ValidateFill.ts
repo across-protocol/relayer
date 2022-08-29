@@ -1,4 +1,17 @@
-import { expect, toBNWei, ethers, fillRelay, SignerWithAddress, deposit, setupTokensForWallet, toBN } from "./utils";
+import {
+  expect,
+  toBNWei,
+  ethers,
+  fillRelay,
+  SignerWithAddress,
+  deposit,
+  setupTokensForWallet,
+  toBN,
+  signForSpeedUp,
+  getFillRelayUpdatedFeeParams,
+  buildFill,
+  buildModifiedFill,
+} from "./utils";
 import {
   deploySpokePoolWithToken,
   Contract,
@@ -9,6 +22,7 @@ import {
 } from "./utils";
 
 import { SpokePoolClient } from "../src/clients";
+import { buildFillRelayWithUpdatedFeeProps } from "../src/utils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
@@ -58,6 +72,45 @@ describe("SpokePoolClient: Fill Validation", async function () {
     expect(
       spokePoolClientForDestinationChain.getDepositForFill({
         ...fill_1,
+        destinationToken: zeroAddress,
+        realizedLpFeePct: toBN(0),
+      })
+    ).to.deep.equal(expectedDeposit);
+  });
+
+  it("Returns sped up deposit matched with fill", async function () {
+    const deposit_1 = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    // Override the fill's realized LP fee % and destination token so that it matches the deposit's default zero'd
+    // out values. The destination token and realized LP fee % are set by the spoke pool client by querying the hub pool
+    // contract state, however this test ignores the rate model contract and therefore there is no hub pool contract
+    // to query from, so they will be set to 0x0 and 0% respectively.
+    const expectedDeposit = {
+      ...deposit_1,
+      destinationToken: zeroAddress,
+      realizedLpFeePct: toBN(0),
+    };
+    const fill_1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, expectedDeposit, 0.2);
+    const fill_2 = await buildModifiedFill(spokePool_2, depositor, relayer, fill_1, 2, 0.2); // Fill same % of deposit with 2x larger relayer fee pct.
+
+    const spokePoolClientForDestinationChain = new SpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool_1,
+      null,
+      destinationChainId
+    ); // create spoke pool client on the "target" chain.
+    await spokePoolClientForDestinationChain.update();
+
+    expect(fill_1.appliedRelayerFeePct.eq(fill_2.appliedRelayerFeePct)).to.be.false;
+    expect(
+      spokePoolClientForDestinationChain.getDepositForFill({
+        ...fill_1,
+        destinationToken: zeroAddress,
+        realizedLpFeePct: toBN(0),
+      })
+    ).to.deep.equal(expectedDeposit);
+    expect(
+      spokePoolClientForDestinationChain.getDepositForFill({
+        ...fill_2,
         destinationToken: zeroAddress,
         realizedLpFeePct: toBN(0),
       })
