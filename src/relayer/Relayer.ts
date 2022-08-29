@@ -6,11 +6,13 @@ import {
   getUnfilledDeposits,
   getCurrentTime,
   buildFillRelayWithUpdatedFeeProps,
+  isDepositSpedUp,
 } from "../utils";
 import { createFormatFunction, etherscanLink, formatFeePct, toBN } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 
 import { Deposit } from "../interfaces";
+import { RelayerConfig } from "./RelayerConfig";
 
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
@@ -18,15 +20,16 @@ export class Relayer {
   // Track by originChainId since depositId is issued on the origin chain.
   // Key is in the form of "chainId-depositId".
   private fullyFilledDeposits: { [key: string]: boolean } = {};
+  private readonly maxUnfilledDepositLookBack: { [chainId: number]: number } = {};
 
   constructor(
     readonly relayerAddress: string,
     readonly logger: winston.Logger,
     readonly clients: RelayerClients,
-    readonly maxUnfilledDepositLookBack: { [chainId: number]: number } = {},
-    readonly relayerTokens: string[] = [],
-    readonly relayerDestinationChains: number[] = []
-  ) {}
+    readonly config: RelayerConfig
+  ) {
+    this.maxUnfilledDepositLookBack = config.maxRelayerUnfilledDepositLookBack ?? {};
+  }
 
   async checkForUnfilledDepositsAndFill(sendSlowRelays = true) {
     // Fetch all unfilled deposits, order by total earnable fee.
@@ -41,6 +44,7 @@ export class Relayer {
     } else {
       this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
     }
+
     // Iterate over all unfilled deposits. For each unfilled deposit: a) check that the token balance client has enough
     // balance to fill the unfilled amount. b) the fill is profitable. If both hold true then fill the unfilled amount.
     // If not enough ballance add the shortfall to the shortfall tracker to produce an appropriate log. If the deposit
@@ -51,16 +55,19 @@ export class Relayer {
       // If relayerTokens is an empty list, we'll assume that all tokens are supported.
       const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(deposit.originToken, deposit.originChainId);
       if (
-        this.relayerTokens.length > 0 &&
-        !this.relayerTokens.includes(l1Token.address) &&
-        !this.relayerTokens.includes(l1Token.address.toLowerCase())
+        this.config.relayerTokens.length > 0 &&
+        !this.config.relayerTokens.includes(l1Token.address) &&
+        !this.config.relayerTokens.includes(l1Token.address.toLowerCase())
       ) {
         this.logger.debug({ at: "Relayer", message: "Skipping deposit for unwhitelisted token", deposit, l1Token });
         continue;
       }
 
       const destinationChainId = deposit.destinationChainId;
-      if (this.relayerDestinationChains.length > 0 && !this.relayerDestinationChains.includes(destinationChainId)) {
+      if (
+        this.config.relayerDestinationChains.length > 0 &&
+        !this.config.relayerDestinationChains.includes(destinationChainId)
+      ) {
         this.logger.debug({
           at: "Relayer",
           message: "Skipping deposit for unsupported destination chain",
@@ -72,7 +79,16 @@ export class Relayer {
 
       if (this.clients.tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
         if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount)) {
-          this.fillRelay(deposit, unfilledAmount);
+          if (isDepositSpedUp(deposit) && !this.config.enableSpeedups) {
+            this.logger.warn({
+              at: "Relayer",
+              message: "Skipping deposit speedups",
+              deposit,
+              destinationChain: getNetworkName(destinationChainId),
+            });
+          } else {
+            this.fillRelay(deposit, unfilledAmount);
+          }
         } else {
           this.clients.profitClient.captureUnprofitableFill(deposit, unfilledAmount);
         }
@@ -112,8 +128,10 @@ export class Relayer {
 
       this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain });
 
-      // If deposit has a speed up signature, then use updated relayer fee.
-      if (deposit.speedUpSignature !== undefined && deposit.newRelayerFeePct !== undefined) {
+      // If deposit has been sped up, call fillRelayWithUpdatedFee instead. This guarantees that the relayer wouldn't
+      // accidentally double fill due to the deposit hash being different - SpokePool contract will check that the
+      // original hash with the old fee hasn't been filled.
+      if (isDepositSpedUp(deposit)) {
         this.clients.multiCallerClient.enqueueTransaction({
           contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
           chainId: deposit.destinationChainId,
