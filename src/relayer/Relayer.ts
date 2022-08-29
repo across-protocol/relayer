@@ -79,16 +79,7 @@ export class Relayer {
 
       if (this.clients.tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
         if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount)) {
-          if (isDepositSpedUp(deposit) && !this.config.enableSpeedups) {
-            this.logger.warn({
-              at: "Relayer",
-              message: "Skipping deposit speedups",
-              deposit,
-              destinationChain: getNetworkName(destinationChainId),
-            });
-          } else {
-            this.fillRelay(deposit, unfilledAmount);
-          }
+          this.fillRelay(deposit, unfilledAmount);
         } else {
           this.clients.profitClient.captureUnprofitableFill(deposit, unfilledAmount);
         }
