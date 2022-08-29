@@ -63,7 +63,7 @@ export class RelayerConfig extends CommonConfig {
         });
       });
     }
-    this.enableProfitability = ENABLE_PROFITABILITY === "true";
+    this.enableProfitability = ENABLE_PROFITABILITY !== "false";
     this.ignoreTokenPriceFailures = IGNORE_TOKEN_PRICE_FAILURES === "true";
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
