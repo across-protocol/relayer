@@ -38,7 +38,7 @@ export async function constructRelayerClients(
     logger,
     commonClients.hubPoolClient,
     spokePoolClients,
-    config.enableProfitability,
+    config.ignoreProfitability,
     enabledChainIds,
     config.ignoreTokenPriceFailures,
     config.minRelayerFeePct
