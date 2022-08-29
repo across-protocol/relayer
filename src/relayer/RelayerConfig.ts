@@ -14,7 +14,6 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerTokens: string[];
   readonly relayerDestinationChains: number[];
   readonly minRelayerFeePct: BigNumber;
-  readonly enableSpeedups: boolean;
 
   constructor(env: ProcessEnv) {
     const {
@@ -26,7 +25,6 @@ export class RelayerConfig extends CommonConfig {
       SEND_RELAYS,
       SEND_SLOW_RELAYS,
       MIN_RELAYER_FEE_PCT,
-      ENABLE_SPEEDUPS,
     } = env;
     super(env);
 
@@ -69,6 +67,5 @@ export class RelayerConfig extends CommonConfig {
     this.ignoreTokenPriceFailures = IGNORE_TOKEN_PRICE_FAILURES === "true";
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
-    this.enableSpeedups = ENABLE_SPEEDUPS === "true";
   }
 }
