@@ -208,7 +208,7 @@ export class ProfitClient {
       if (!this.ignoreTokenPriceFailures) {
         throw new Error(errMsg);
       }
-      this.logger.debug({ at: "ProfitClient", message: errMsg, tokens: tokens });
+      this.logger.info({ at: "ProfitClient", message: errMsg, tokens: tokens });
       return;
     }
 
@@ -237,7 +237,7 @@ export class ProfitClient {
         mrkdwn += `- ${token["symbol"]} not found (${token["cause"]}).`;
         mrkdwn += ` Using last known price of ${this.getPriceOfToken(token["address"])}.\n`;
       });
-      this.logger.debug({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
+      this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
       if (!this.ignoreTokenPriceFailures) {
         throw new Error(mrkdwn);
       }
