@@ -1174,7 +1174,7 @@ export class Dataworker {
                 );
 
                 if (!success) {
-                  this.logger.debug({
+                  this.logger.warn({
                     at: "Dataworker#executeRelayerRefundLeaves",
                     message: "Not executing relayer refund leaf on SpokePool due to lack of funds.",
                     root: rootBundleRelay.relayerRefundRoot,
