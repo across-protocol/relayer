@@ -92,7 +92,8 @@ export class ProfitClient {
   }
 
   isFillProfitable(deposit: Deposit, fillAmount: BigNumber) {
-    if (toBN(deposit.relayerFeePct).lt(this.minRelayerFeePct)) {
+    const relayerFeePct = toBN(deposit.newRelayerFeePct ?? deposit.relayerFeePct);
+    if (relayerFeePct.lt(this.minRelayerFeePct)) {
       this.logger.debug({
         at: "ProfitClient",
         message: "Relayer fee % < minimum relayer fee %",
@@ -101,7 +102,7 @@ export class ProfitClient {
       return false;
     }
 
-    if (toBN(deposit.relayerFeePct).eq(toBN(0))) {
+    if (relayerFeePct.eq(toBN(0))) {
       this.logger.debug({ at: "ProfitClient", message: "Deposit set 0 relayerFeePct. Rejecting relay" });
       return false;
     }
@@ -115,7 +116,7 @@ export class ProfitClient {
 
     const { decimals, address: l1Token } = this.hubPoolClient.getTokenInfoForDeposit(deposit);
     const tokenPriceInUsd = this.getPriceOfToken(l1Token);
-    const fillRevenueInRelayedToken = toBN(deposit.relayerFeePct).mul(fillAmount).div(toBN(10).pow(decimals));
+    const fillRevenueInRelayedToken = relayerFeePct.mul(fillAmount).div(toBN(10).pow(decimals));
     const fillRevenueInUsd = fillRevenueInRelayedToken.mul(tokenPriceInUsd).div(toBNWei(1));
 
     // Consider gas cost.
