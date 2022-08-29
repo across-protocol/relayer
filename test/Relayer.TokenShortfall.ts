@@ -7,7 +7,8 @@ import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerCli
 import { TokenClient, ProfitClient } from "../src/clients";
 import { MockInventoryClient } from "./mocks";
 
-import { Relayer } from "../src/relayer/Relayer"; // Tested
+import { Relayer } from "../src/relayer/Relayer";
+import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -48,15 +49,23 @@ describe("Relayer: Token balance shortfall", async function () {
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new ProfitClient(spyLogger, hubPoolClient, spokePoolClients, false, []); // Set the profit discount to 1 (ignore relay cost.)
-    relayerInstance = new Relayer(relayer.address, spyLogger, {
-      spokePoolClients,
-      hubPoolClient,
-      configStoreClient,
-      tokenClient,
-      profitClient,
-      multiCallerClient,
-      inventoryClient: new MockInventoryClient(),
-    });
+    relayerInstance = new Relayer(
+      relayer.address,
+      spyLogger,
+      {
+        spokePoolClients,
+        hubPoolClient,
+        configStoreClient,
+        tokenClient,
+        profitClient,
+        multiCallerClient,
+        inventoryClient: new MockInventoryClient(),
+      },
+      {
+        relayerTokens: [],
+        relayerDestinationChains: [],
+      } as RelayerConfig
+    );
 
     // Seed Owner and depositor wallets but dont seed relayer to test how the relayer handles being out of funds.
     await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // Seed owner to LP.

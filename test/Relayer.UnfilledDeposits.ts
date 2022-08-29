@@ -21,6 +21,7 @@ import { MockInventoryClient } from "./mocks";
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
 import { getUnfilledDeposits } from "../src/utils";
+import { RelayerConfig } from "../src/relayer/RelayerConfig";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, l1Token: Contract, configStore: Contract;
@@ -51,15 +52,23 @@ describe("Relayer: Unfilled Deposits", async function () {
     spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1, configStoreClient, originChainId);
     spokePoolClient_2 = new SpokePoolClient(spyLogger, spokePool_2, configStoreClient, destinationChainId);
 
-    relayerInstance = new Relayer(relayer.address, spyLogger, {
-      spokePoolClients: { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
-      hubPoolClient,
-      configStoreClient,
-      profitClient: null,
-      tokenClient: null,
-      multiCallerClient: null,
-      inventoryClient: new MockInventoryClient(),
-    });
+    relayerInstance = new Relayer(
+      relayer.address,
+      spyLogger,
+      {
+        spokePoolClients: { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
+        hubPoolClient,
+        configStoreClient,
+        profitClient: null,
+        tokenClient: null,
+        multiCallerClient: null,
+        inventoryClient: new MockInventoryClient(),
+      },
+      {
+        relayerTokens: [],
+        relayerDestinationChains: [],
+      } as RelayerConfig
+    );
 
     await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // seed the owner to LP.
     await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 100); // seed the depositor to LP.
