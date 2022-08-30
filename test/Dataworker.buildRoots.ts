@@ -1,4 +1,10 @@
-import { buildSlowRelayTree, buildSlowRelayLeaves, buildFillForRepaymentChain, enableRoutesOnHubPool } from "./utils";
+import {
+  buildSlowRelayTree,
+  buildSlowRelayLeaves,
+  buildFillForRepaymentChain,
+  enableRoutesOnHubPool,
+  signForSpeedUp,
+} from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
 import { buildRelayerRefundTreeWithUnassignedLeafIds, constructPoolRebalanceTree } from "./utils";
@@ -118,6 +124,13 @@ describe("Dataworker: Build merkle roots", async function () {
     const merkleRoot1 = dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(0), spokePoolClients).tree;
     const expectedMerkleRoot1 = await buildSlowRelayTree(expectedSlowRelayLeaves);
     expect(merkleRoot1.getHexRoot()).to.equal(expectedMerkleRoot1.getHexRoot());
+
+    // Speeding up a deposit should have no effect on the slow root:
+    const newRelayerFeePct = toBNWei(0.1337);
+    const speedUpSignature = await signForSpeedUp(depositor, deposit1, newRelayerFeePct);
+    await spokePool_1.speedUpDeposit(depositor.address, newRelayerFeePct, deposit1.depositId, speedUpSignature);
+    await updateAllClients();
+    expect(merkleRoot1.getHexRoot()).to.equal((await buildSlowRelayTree(expectedSlowRelayLeaves)).getHexRoot());
 
     // Fill deposits such that there are no unfilled deposits remaining.
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 1);

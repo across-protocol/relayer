@@ -1,6 +1,6 @@
 import winston from "winston";
 import { getProvider, getDeployedContract, getDeploymentBlockNumber, Wallet, SpokePool, Contract } from "../utils";
-import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient, ProfitClient } from "../clients";
+import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { DataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { createClient } from "redis4";
@@ -10,7 +10,6 @@ export interface Clients {
   hubPoolClient: HubPoolClient;
   configStoreClient: AcrossConfigStoreClient;
   multiCallerClient: MultiCallerClient;
-  profitClient: ProfitClient;
   hubSigner?: Wallet;
 }
 
@@ -164,15 +163,9 @@ export async function constructClients(
 
   const multiCallerClient = new MultiCallerClient(logger);
 
-  // Disable profitability by default as only the relayer needs it. Relayer has its own client initializations.
-  const profitClient = new ProfitClient(logger, hubPoolClient, {}, false, []);
-
-  return { hubPoolClient, configStoreClient, multiCallerClient, profitClient, hubSigner };
+  return { hubPoolClient, configStoreClient, multiCallerClient, hubSigner };
 }
 
 export async function updateClients(clients: Clients) {
   await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
-  // Must come after hubPoolClient. // TODO: this should be refactored to check if the hubpool client has had one
-  // previous update run such that it has l1 tokens within it.If it has we dont need to make it sequential like this.
-  await clients.profitClient.update();
 }

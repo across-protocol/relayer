@@ -158,9 +158,13 @@ export class SpokePoolClient {
       prev.newRelayerFeePct.gt(current.newRelayerFeePct) ? prev : current
     );
 
-    // Only if there is a speedup and the new relayer fee is greater than the current relayer fee, replace the fee.
+    // Only if there is a speedup and the new relayer fee is greater than the current relayer fee, save the new fee.
     if (!maxSpeedUp || maxSpeedUp.newRelayerFeePct.lte(deposit.relayerFeePct)) return deposit;
-    return { ...deposit, speedUpSignature: maxSpeedUp.depositorSignature, relayerFeePct: maxSpeedUp.newRelayerFeePct };
+    return {
+      ...deposit,
+      speedUpSignature: maxSpeedUp.depositorSignature,
+      newRelayerFeePct: maxSpeedUp.newRelayerFeePct,
+    };
   }
 
   getDepositForFill(fill: Fill): Deposit | undefined {
@@ -372,6 +376,8 @@ export class SpokePoolClient {
       }
     }
 
+    // Disable this loop.
+    // eslint-disable-next-line no-constant-condition
     if (eventsToQuery.includes("RequestedSpeedUpDeposit")) {
       const speedUpEvents = queryResults[eventsToQuery.indexOf("RequestedSpeedUpDeposit")];
 

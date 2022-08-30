@@ -779,7 +779,7 @@ export class Dataworker {
                 );
 
                 if (!success) {
-                  this.logger.debug({
+                  this.logger.warn({
                     at: "Dataworker#executeSlowRelayLeaves",
                     message: "Not executing slow relay leaf due to lack of funds in SpokePool",
                     root: rootBundleRelay.slowRelayRoot,
@@ -1174,7 +1174,7 @@ export class Dataworker {
                 );
 
                 if (!success) {
-                  this.logger.debug({
+                  this.logger.warn({
                     at: "Dataworker#executeRelayerRefundLeaves",
                     message: "Not executing relayer refund leaf on SpokePool due to lack of funds.",
                     root: rootBundleRelay.relayerRefundRoot,

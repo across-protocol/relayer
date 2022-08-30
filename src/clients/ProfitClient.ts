@@ -1,5 +1,5 @@
 import { Provider } from "@ethersproject/abstract-provider";
-import { BigNumber, formatFeePct, winston, toBNWei, toBN, assign } from "../utils";
+import { assert, BigNumber, formatFeePct, winston, toBNWei, toBN, assign } from "../utils";
 import { HubPoolClient } from ".";
 import { Deposit, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { Coingecko } from "@uma/sdk";
@@ -70,8 +70,10 @@ export class ProfitClient {
   }
 
   getPriceOfToken(token: string) {
-    if (!this.tokenPrices[token]) {
-      this.logger.warn({ at: "ProfitClient", message: `Token ${token} not found in state. Using 0` });
+    // Warn on this initially, and move to an assert() once any latent issues are resolved.
+    // assert(this.tokenPrices[token] !== undefined, `Token ${token} not in price list.`);
+    if (this.tokenPrices[token] === undefined) {
+      this.logger.warn({ at: "ProfitClient#getPriceOfToken", message: `Token ${token} not in price list.` });
       return toBN(0);
     }
     return this.tokenPrices[token];
@@ -90,7 +92,14 @@ export class ProfitClient {
   }
 
   isFillProfitable(deposit: Deposit, fillAmount: BigNumber) {
-    if (toBN(deposit.relayerFeePct).lt(this.minRelayerFeePct)) {
+    const newRelayerFeePct = toBN(deposit.newRelayerFeePct ?? 0);
+    let relayerFeePct = toBN(deposit.relayerFeePct);
+    // Use the maximum between the original newRelayerFeePct and any updated fee from speedups.
+    if (relayerFeePct.lt(newRelayerFeePct)) {
+      relayerFeePct = newRelayerFeePct;
+    }
+
+    if (relayerFeePct.lt(this.minRelayerFeePct)) {
       this.logger.debug({
         at: "ProfitClient",
         message: "Relayer fee % < minimum relayer fee %",
@@ -99,7 +108,7 @@ export class ProfitClient {
       return false;
     }
 
-    if (toBN(deposit.relayerFeePct).eq(toBN(0))) {
+    if (relayerFeePct.eq(toBN(0))) {
       this.logger.debug({ at: "ProfitClient", message: "Deposit set 0 relayerFeePct. Rejecting relay" });
       return false;
     }
@@ -113,7 +122,7 @@ export class ProfitClient {
 
     const { decimals, address: l1Token } = this.hubPoolClient.getTokenInfoForDeposit(deposit);
     const tokenPriceInUsd = this.getPriceOfToken(l1Token);
-    const fillRevenueInRelayedToken = toBN(deposit.relayerFeePct).mul(fillAmount).div(toBN(10).pow(decimals));
+    const fillRevenueInRelayedToken = relayerFeePct.mul(fillAmount).div(toBN(10).pow(decimals));
     const fillRevenueInUsd = fillRevenueInRelayedToken.mul(tokenPriceInUsd).div(toBNWei(1));
 
     // Consider gas cost.
@@ -162,6 +171,8 @@ export class ProfitClient {
   }
 
   async update() {
+    // Generate list of tokens to retrieve.
+    const newTokens: string[] = [];
     const l1Tokens: { [k: string]: L1Token } = Object.fromEntries(
       this.hubPoolClient.getL1Tokens().map((token) => [token["address"], token])
     );
@@ -173,21 +184,49 @@ export class ProfitClient {
       decimals: 18,
     };
 
-    this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", l1Tokens });
+    this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens: Object.values(l1Tokens) });
+
+    // Pre-populate any new addresses.
+    Object.values(l1Tokens).forEach((token: L1Token) => {
+      const { address, symbol } = token;
+      if (this.tokenPrices[address] === undefined) {
+        this.tokenPrices[address] = toBN(0);
+        newTokens.push(symbol);
+      }
+    });
+
+    if (newTokens.length > 0) {
+      this.logger.debug({
+        at: "ProfitClient",
+        message: "Initialised tokens to price 0.",
+        tokens: newTokens.join(", "),
+      });
+    }
+
     let cgPrices: CoinGeckoPrice[] = [];
     try {
       cgPrices = await this.coingeckoPrices(Object.keys(l1Tokens));
     } catch (err) {
-      this.logger.warn({ at: "ProfitClient", message: "Failed to retrieve prices.", err, l1Tokens });
+      const errMsg = `Failed to retrieve token prices (${err})`;
+      const tokens = Object.values(l1Tokens)
+        .map((token: L1Token) => token.symbol)
+        .join(", ");
+
+      if (!this.ignoreTokenPriceFailures) {
+        throw new Error(errMsg);
+      }
+      this.logger.warn({ at: "ProfitClient", message: errMsg, tokens: tokens });
+      return;
     }
 
-    const errors: Array<{ [k: string]: string }> = [];
-    for (const address of Object.keys(l1Tokens)) {
+    const errors: { address: string; symbol: string; cause: string }[] = [];
+    Object.keys(l1Tokens).forEach((address: string) => {
       const tokenPrice: CoinGeckoPrice = cgPrices.find(
         (price) => address.toLowerCase() === price.address.toLowerCase()
       );
 
-      // TODO: Any additional validation to do? Ensure that timestamps are always moving forwards?
+      // todo: For future, confirm timestamp is only X seconds old and is newer than the previous?
+      //       This should implicitly be factored in if/when price feed caching is introduced.
       if (tokenPrice !== undefined && !isNaN(tokenPrice.price)) {
         this.tokenPrices[address] = toBNWei(tokenPrice.price);
       } else {
@@ -197,11 +236,11 @@ export class ProfitClient {
           cause: tokenPrice ? "Unexpected price response" : "Missing price",
         });
       }
-    }
+    });
 
     if (errors.length > 0) {
       let mrkdwn = "The following L1 token prices could not be fetched:\n";
-      errors.forEach((token: { [k: string]: string }) => {
+      errors.forEach((token: { address: string; symbol: string; cause: string }) => {
         mrkdwn += `- ${token["symbol"]} not found (${token["cause"]}).`;
         mrkdwn += ` Using last known price of ${this.getPriceOfToken(token["address"])}.\n`;
       });

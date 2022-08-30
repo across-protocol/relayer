@@ -21,6 +21,7 @@ import { MockInventoryClient } from "./mocks";
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
 import { getUnfilledDeposits } from "../src/utils";
+import { RelayerConfig } from "../src/relayer/RelayerConfig";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, l1Token: Contract, configStore: Contract;
@@ -51,15 +52,23 @@ describe("Relayer: Unfilled Deposits", async function () {
     spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1, configStoreClient, originChainId);
     spokePoolClient_2 = new SpokePoolClient(spyLogger, spokePool_2, configStoreClient, destinationChainId);
 
-    relayerInstance = new Relayer(relayer.address, spyLogger, {
-      spokePoolClients: { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
-      hubPoolClient,
-      configStoreClient,
-      profitClient: null,
-      tokenClient: null,
-      multiCallerClient: null,
-      inventoryClient: new MockInventoryClient(),
-    });
+    relayerInstance = new Relayer(
+      relayer.address,
+      spyLogger,
+      {
+        spokePoolClients: { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
+        hubPoolClient,
+        configStoreClient,
+        profitClient: null,
+        tokenClient: null,
+        multiCallerClient: null,
+        inventoryClient: new MockInventoryClient(),
+      },
+      {
+        relayerTokens: [],
+        relayerDestinationChains: [],
+      } as RelayerConfig
+    );
 
     await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // seed the owner to LP.
     await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 100); // seed the depositor to LP.
@@ -144,6 +153,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       { unfilledAmount: deposit1Complete.amount, deposit: deposit1Complete, fillCount: 0 },
     ]);
   });
+
   it("Correctly selects unfilled deposit with updated fee", async function () {
     // perform simple deposit
     const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
@@ -159,7 +169,28 @@ describe("Relayer: Unfilled Deposits", async function () {
     // expect only one unfilled deposit
     expect(unfilledDeposits.length).to.eq(1);
     // expect unfilled deposit to have new relay fee
-    expect(unfilledDeposits[0].deposit.relayerFeePct).to.deep.eq(newRelayFeePct);
+    expect(unfilledDeposits[0].deposit.newRelayerFeePct).to.deep.eq(newRelayFeePct);
+    // Old relayer fee pct is unchanged as this is what's included in relay hash
+    expect(unfilledDeposits[0].deposit.relayerFeePct).to.deep.eq(deposit1.relayerFeePct);
+  });
+  it("Does not double fill deposit when updating fee after fill", async function () {
+    const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, configStoreClient, l1Token);
+    const fill1 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete);
+    await updateAllClients();
+    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients)).to.deep.equal([
+      { unfilledAmount: deposit1.amount.sub(fill1.fillAmount), deposit: deposit1Complete, fillCount: 1 },
+    ]);
+
+    // Speed up deposit, and check that unfilled amount is still the same.
+    const newRelayerFeePct = toBNWei(0.1337);
+    const speedUpSignature = await signForSpeedUp(depositor, deposit1, newRelayerFeePct);
+    await spokePool_1.speedUpDeposit(depositor.address, newRelayerFeePct, deposit1.depositId, speedUpSignature);
+    await updateAllClients();
+    const depositWithSpeedUp = { ...deposit1Complete, newRelayerFeePct, speedUpSignature };
+    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients)).to.deep.equal([
+      { unfilledAmount: deposit1.amount.sub(fill1.fillAmount), deposit: depositWithSpeedUp, fillCount: 1 },
+    ]);
   });
 });
 
