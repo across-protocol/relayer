@@ -26,7 +26,7 @@ describe("SpokePoolClient: Deposits", async function () {
 
     await spokePoolClient.update();
 
-    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)).to.deep.equal([deposit1, deposit2]);
+    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)).to.deep.contain([deposit1, deposit2]);
   });
   it("Correctly fetches deposit data multiple depositors, multiple chains", async function () {
     // Do 6 deposits. 2 for the first depositor on chain1, 1 for the first depositor on chain2, 1 for the second
@@ -54,13 +54,13 @@ describe("SpokePoolClient: Deposits", async function () {
     ]);
 
     // Validate associated depositor address information is correctly returned.
-    expect(spokePoolClient.getDepositsFromDepositor(depositor1.address)).to.deep.equal([
+    expect(spokePoolClient.getDeposits().filter((deposit) => deposit.depositor === depositor1.address)).to.deep.equal([
       deposit1Chain1_1,
       deposit1Chain1_2,
       deposit1Chain2_1,
     ]);
 
-    expect(spokePoolClient.getDepositsFromDepositor(depositor2.address)).to.deep.equal([
+    expect(spokePoolClient.getDeposits().filter((deposit) => deposit.depositor === depositor2.address)).to.deep.equal([
       deposit2Chain1_1,
       deposit2Chain2_1,
       deposit2Chain2_2,

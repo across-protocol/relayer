@@ -75,7 +75,7 @@ export function getUniqueDepositsInRange(
     chainIdListForBundleEvaluationBlockNumbers
   );
   return originClient
-    .getDepositsForDestinationChain(destinationChain, true)
+    .getDepositsForDestinationChain(destinationChain)
     .filter(
       (deposit: DepositWithBlock) =>
         deposit.originBlockNumber <= originChainBlockRange[1] &&

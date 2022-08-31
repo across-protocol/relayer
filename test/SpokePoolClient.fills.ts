@@ -55,25 +55,25 @@ describe("SpokePoolClient: Fills", async function () {
     // TODO: Add `getFillsForRepaymentChainId` tests once we update the `fillRelay` method from contracts-v2 to allow
     // an overridable `repaymentChainId`
 
-    expect(spokePoolClient.getFillsForOriginChain(originChainId)).to.deep.equal([
+    expect(spokePoolClient.getFills().filter((fill) => fill.originChainId === originChainId)).to.deep.equal([
       relayer1Chain1_1,
       relayer1Chain1_2,
       relayer2Chain1_1,
     ]);
 
-    expect(spokePoolClient.getFillsForOriginChain(originChainId2)).to.deep.equal([
+    expect(spokePoolClient.getFills().filter((fill) => fill.originChainId === originChainId2)).to.deep.equal([
       relayer1Chain2_1,
       relayer2Chain2_1,
       relayer2Chain2_2,
     ]);
 
-    expect(spokePoolClient.getFillsForRelayer(relayer1.address)).to.deep.equal([
+    expect(spokePoolClient.getFills().filter((fill) => fill.relayer === relayer1.address)).to.deep.equal([
       relayer1Chain1_1,
       relayer1Chain1_2,
       relayer1Chain2_1,
     ]);
 
-    expect(spokePoolClient.getFillsForRelayer(relayer2.address)).to.deep.equal([
+    expect(spokePoolClient.getFills().filter((fill) => fill.relayer === relayer2.address)).to.deep.equal([
       relayer2Chain1_1,
       relayer2Chain2_1,
       relayer2Chain2_2,
