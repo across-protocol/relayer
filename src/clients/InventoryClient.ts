@@ -170,8 +170,15 @@ export class InventoryClient {
     const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
     let cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
 
-    // Consider any refunds from executed and to-be executed bundles.
-    const totalRefundsPerChain = this.getBundleRefunds(l1Token);
+    let totalRefundsPerChain: { [chainId: string]: BigNumber } = {};
+    try {
+      // Consider any refunds from executed and to-be executed bundles.
+      totalRefundsPerChain = this.getBundleRefunds(l1Token);
+    } catch (e) {
+      // Fallback to getting refunds on Mainnet if calculating bundle refunds goes wrong.
+      // Inventory management can always rebalance from Mainnet to other chains easily if needed.
+      return 1;
+    }
 
     // Add upcoming refunds going to this destination chain.
     chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
