@@ -16,7 +16,7 @@ export const MAX_RELAYER_DEPOSIT_LOOK_BACK: { [chainId: number]: number } = {
 // Polygon: https://polygonscan.com/blocks_forked
 // Optimistic Rollups are currently centrally serialized and are not expected to reorg.
 export const CHAIN_DEPOSIT_MIN_AGE: { [chainId: number]: number } = {
-  1: 2,
+  1: 3,
   10: 0,
   137: 100,
   288: 0,
