@@ -223,8 +223,8 @@ export class SpokePoolClient {
     );
 
     // Use a following distance to ensure the data we see are final.
-    const followingDistance = this.eventSearchConfig.followingDistance ?? 0;
-    this.latestBlockNumber = (await this.spokePool.provider.getBlockNumber()) - followingDistance;
+    const minDepositConfirmations = this.eventSearchConfig.minDepositConfirmations ?? 0;
+    this.latestBlockNumber = (await this.spokePool.provider.getBlockNumber()) - minDepositConfirmations;
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
       toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,

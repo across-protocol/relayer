@@ -30,7 +30,7 @@ export interface EventSearchConfig {
   toBlock: number | null;
   // Number of blocks to subtract from latest block the provider returns. This helps avoid fork reorgs that can lead
   // to double filling of the same deposit.
-  followingDistance?: number;
+  minDepositConfirmations?: number;
   maxBlockLookBack?: number;
   concurrency?: number | null;
 }
