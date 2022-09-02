@@ -21,7 +21,7 @@ const { GCP_STORAGE_CONFIG } = process.env;
  
 // Allows the environment to customize the config that's used to interact with google cloud storage.
 // Relevant options can be found here: https://googleapis.dev/nodejs/storage/latest/global.html#StorageOptions.
-// Specific fields on interest:
+// Specific fields of interest:
 // - timeout: allows the env to set the timeout for all http requests.
 // - retryOptions: object that allows the caller to specify how the library retries.
 const storageConfig = process.env.GCP_STORAGE_CONFIG ? JSON.parse(process.env.GCP_STORAGE_CONFIG) : undefined;
