@@ -79,8 +79,9 @@ export class ProfitClient {
     return this.tokenPrices[token];
   }
 
-  getTotalGasCost(chainId: number) {
-    return this.totalGasCosts[chainId] ?? toBN(0);
+  getTotalGasCost(chainId: number): BigNumber {
+    // TODO: Figure out where the mysterious BigNumber -> string conversion happens.
+    return toBN(this.totalGasCosts[chainId]) ?? toBN(0);
   }
 
   getUnprofitableFills() {
@@ -127,7 +128,7 @@ export class ProfitClient {
 
     // Consider gas cost.
     const totalGasCostWei = this.getTotalGasCost(deposit.destinationChainId);
-    if (totalGasCostWei === undefined || totalGasCostWei.eq(toBN(0))) {
+    if (totalGasCostWei.eq(toBN(0))) {
       const chainId = deposit.destinationChainId;
       const errorMsg = `Missing total gas cost for ${chainId}. This likely indicates some gas cost request failed`;
       this.logger.warn({
