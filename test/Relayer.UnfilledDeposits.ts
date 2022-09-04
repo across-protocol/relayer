@@ -192,36 +192,6 @@ describe("Relayer: Unfilled Deposits", async function () {
     expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients)).to.deep.equal([
       { unfilledAmount: deposit1.amount.sub(fill1.fillAmount), deposit: depositWithSpeedUp, fillCount: 1 },
     ]);
-
-    // Fill deposit with modified fee and check the client matches it with original deposit.
-    await spokePool_2.connect(relayer).fillRelayWithUpdatedFee(
-      ...getFillRelayUpdatedFeeParams(
-        {
-          depositor: fill1.depositor,
-          recipient: fill1.recipient,
-          destinationToken: fill1.destinationToken,
-          amount: fill1.amount,
-          originChainId: fill1.originChainId.toString(),
-          destinationChainId: fill1.destinationChainId.toString(),
-          realizedLpFeePct: fill1.realizedLpFeePct,
-          relayerFeePct: fill1.relayerFeePct,
-          depositId: fill1.depositId.toString(),
-        },
-        fill1?.fillAmount,
-        newRelayerFeePct,
-        speedUpSignature
-      )
-    );
-    await updateAllClients();
-    const events = await spokePool_2.queryFilter(spokePool_2.filters.FilledRelay());
-    const lastEvent = events[events.length - 1];
-    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients)).to.deep.equal([
-      {
-        unfilledAmount: deposit1.amount.sub(fill1.fillAmount).sub(lastEvent.args.fillAmount),
-        deposit: depositWithSpeedUp,
-        fillCount: 2,
-      },
-    ]);
   });
 });
 
