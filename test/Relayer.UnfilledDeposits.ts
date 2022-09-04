@@ -4,7 +4,6 @@ import {
   enableRoutesOnHubPool,
   buildDepositStruct,
   signForSpeedUp,
-  getFillRelayUpdatedFeeParams,
 } from "./utils";
 import {
   deploySpokePoolWithToken,
