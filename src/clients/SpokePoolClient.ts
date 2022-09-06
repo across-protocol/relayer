@@ -185,9 +185,19 @@ export class SpokePoolClient {
     }
     const fills = fillsForDeposit.filter((fill) => {
       const isValid = this.validateFillForDeposit(fill, deposit);
+      console.log(
+        "isValid",
+        this.logInvalidFills,
+        isValid,
+        fill.depositId,
+        deposit.depositId,
+        fill.relayerFeePct,
+        deposit.relayerFeePct
+      );
+
       // Log any invalid deposits with same deposit id but different params.
-      if (fill.depositId === deposit.depositId && !isValid && this.logInvalidFills) {
-        this.logger.info({
+      if (this.logInvalidFills && !isValid && fill.depositId === deposit.depositId) {
+        this.logger.warn({
           at: "SpokePoolClient",
           chainId: this.chainId,
           message: "Invalid fill found",

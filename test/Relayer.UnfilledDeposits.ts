@@ -4,6 +4,7 @@ import {
   enableRoutesOnHubPool,
   buildDepositStruct,
   signForSpeedUp,
+  lastSpyLogIncludes,
 } from "./utils";
 import {
   deploySpokePoolWithToken,
@@ -20,14 +21,15 @@ import { MockInventoryClient } from "./mocks";
 
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
-import { getUnfilledDeposits } from "../src/utils";
+import { getUnfilledDeposits, toBN } from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
+import { BigNumber } from "ethers";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, l1Token: Contract, configStore: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
 
-let spyLogger: winston.Logger;
+const { spy, spyLogger } = createSpyLogger();
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let configStoreClient: AcrossConfigStoreClient, hubPoolClient: HubPoolClient;
 
@@ -46,11 +48,18 @@ describe("Relayer: Unfilled Deposits", async function () {
     ]));
 
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    ({ spyLogger } = createSpyLogger());
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
     configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
     spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1, configStoreClient, originChainId);
-    spokePoolClient_2 = new SpokePoolClient(spyLogger, spokePool_2, configStoreClient, destinationChainId);
+    spokePoolClient_2 = new SpokePoolClient(
+      spyLogger,
+      spokePool_2,
+      configStoreClient,
+      destinationChainId,
+      { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
+      0,
+      true
+    );
 
     relayerInstance = new Relayer(
       relayer.address,
@@ -103,6 +112,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       { unfilledAmount: deposit2.amount, deposit: deposit2Complete, fillCount: 0 },
     ]);
   });
+
   it("Correctly fetches partially filled deposits", async function () {
     expect(true).to.equal(true);
 
@@ -140,6 +150,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       { unfilledAmount: deposit2Complete.amount, deposit: deposit2Complete, fillCount: 0 },
     ]);
   });
+
   it("Correctly excludes fills that are incorrectly applied to a deposit", async function () {
     expect(true).to.equal(true);
     const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
@@ -173,6 +184,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     // Old relayer fee pct is unchanged as this is what's included in relay hash
     expect(unfilledDeposits[0].deposit.relayerFeePct).to.deep.eq(deposit1.relayerFeePct);
   });
+
   it("Does not double fill deposit when updating fee after fill", async function () {
     const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, configStoreClient, l1Token);
@@ -192,6 +204,27 @@ describe("Relayer: Unfilled Deposits", async function () {
       { unfilledAmount: deposit1.amount.sub(fill1.fillAmount), deposit: depositWithSpeedUp, fillCount: 1 },
     ]);
   });
+
+  it("Logs invalid fills", async function () {
+    const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, configStoreClient, l1Token);
+    // Send a fill with a different relayer fee pct from the deposit's. This fill should be considered an invalid fill
+    // and getUnfilledDeposits should log it.
+    const fill = await fillWithRealizedLpFeePct(
+      spokePool_2,
+      relayer,
+      depositor,
+      deposit1Complete,
+      amountToRelay,
+      toBN(2)
+    );
+    await updateAllClients();
+    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients)).to.not.deep.equal([
+      { unfilledAmount: deposit1.amount.sub(fill.fillAmount), deposit: deposit1Complete, fillCount: 1 },
+    ]);
+
+    expect(lastSpyLogIncludes(spy, "Invalid fill found")).to.be.true;
+  });
 });
 
 async function updateAllClients() {
@@ -201,7 +234,14 @@ async function updateAllClients() {
   await spokePoolClient_2.update();
 }
 
-async function fillWithRealizedLpFeePct(spokePool, relayer, depositor, deposit, relayAmount = amountToRelay) {
+async function fillWithRealizedLpFeePct(
+  spokePool,
+  relayer,
+  depositor,
+  deposit,
+  relayAmount = amountToRelay,
+  relayerFeePct: BigNumber = undefined
+) {
   const realizedLpFeePctForDeposit = (await configStoreClient.computeRealizedLpFeePct(deposit, l1Token.address))
     .realizedLpFeePct;
   return await fillRelay(
@@ -214,6 +254,7 @@ async function fillWithRealizedLpFeePct(spokePool, relayer, depositor, deposit, 
     deposit.originChainId,
     deposit.amount,
     relayAmount,
-    realizedLpFeePctForDeposit
+    realizedLpFeePctForDeposit,
+    relayerFeePct
   );
 }
