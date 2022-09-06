@@ -6,11 +6,8 @@ import {
   HubPoolClient,
   SpokePoolClient,
   MultiCallerClient,
-  ProfitClient,
   TokenTransferClient,
   BalanceAllocator,
-  WETH,
-  MATIC,
 } from "../src/clients";
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import {
@@ -26,7 +23,7 @@ import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { getNetworkName, getRefundForFills, MAX_UINT_VAL, toBN } from "../src/utils";
 import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
-import { MockAdapterManager, MockProfitClient } from "./mocks";
+import { MockAdapterManager } from "./mocks";
 import { BalanceType } from "../src/interfaces";
 
 let l1Token: Contract, l2Token: Contract, erc20_2: Contract;
@@ -35,7 +32,7 @@ let dataworker: SignerWithAddress, depositor: SignerWithAddress;
 let dataworkerInstance: Dataworker;
 let bundleDataClient: BundleDataClient;
 let configStoreClient: AcrossConfigStoreClient;
-let hubPoolClient: HubPoolClient, multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
+let hubPoolClient: HubPoolClient, multiCallerClient: MultiCallerClient;
 let tokenTransferClient: TokenTransferClient;
 let monitorInstance: Monitor;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
@@ -72,11 +69,6 @@ describe("Monitor", async function () {
       0
     ));
 
-    profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, false, []);
-    profitClient.setTokenPrices({
-      [l1Token.address]: toBNWei(1),
-    });
-
     const monitorConfig = new MonitorConfig({
       STARTING_BLOCK_NUMBER: "0",
       ENDING_BLOCK_NUMBER: "100",
@@ -98,7 +90,6 @@ describe("Monitor", async function () {
       {
         configStoreClient,
         multiCallerClient,
-        profitClient,
         hubPoolClient,
       },
       spokePoolClients,
@@ -116,7 +107,6 @@ describe("Monitor", async function () {
       bundleDataClient,
       configStoreClient,
       multiCallerClient,
-      profitClient,
       hubPoolClient,
       spokePoolClients,
       tokenTransferClient,

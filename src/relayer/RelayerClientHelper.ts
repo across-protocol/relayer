@@ -68,6 +68,7 @@ export async function constructRelayerClients(
 
 export async function updateRelayerClients(clients: RelayerClients) {
   await updateClients(clients);
+  await clients.profitClient.update();
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
 
   // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter

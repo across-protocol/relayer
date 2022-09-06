@@ -23,6 +23,13 @@ const tokenToBridge = {
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // USDC
+  "0xdAC17F958D2ee523a2206206994597C13D831ec7": {
+    l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
+    l2TokenAddress: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
+    l1Method: "LockedERC20",
+    l1AmountProp: "amount",
+    l2AmountProp: "value",
+  }, // USDT
   "0x6B175474E89094C44Da98b954EedeAC495271d0F": {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
     l2TokenAddress: "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063",
