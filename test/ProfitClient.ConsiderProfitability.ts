@@ -29,7 +29,7 @@ describe("ProfitClient: Consider relay profit", async function () {
     const spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(owner), null, originChainId);
     const spokePoolClient_2 = new SpokePoolClient(spyLogger, spokePool_2.connect(owner), null, destinationChainId);
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
-    profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, true, [], false, toBN(0));
+    profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, false, [], false, toBN(0));
     profitClient.setTokenPrices({
       [WETH]: toBNWei(3000),
       [mainnetUsdc]: toBNWei(1),
@@ -86,7 +86,7 @@ describe("ProfitClient: Consider relay profit", async function () {
       spyLogger,
       hubPoolClient,
       {},
-      false,
+      true,
       [],
       false,
       toBNWei("0.03")
