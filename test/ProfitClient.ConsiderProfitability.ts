@@ -105,7 +105,7 @@ describe("ProfitClient: Consider relay profit", async function () {
       spyLogger,
       hubPoolClient,
       {},
-      false,
+      true,
       [],
       false,
       toBNWei("0.03")
@@ -125,7 +125,7 @@ describe("ProfitClient: Consider relay profit", async function () {
       spyLogger,
       hubPoolClient,
       {},
-      false,
+      true,
       [],
       false,
       toBNWei("0.03")
