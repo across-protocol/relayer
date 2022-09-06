@@ -43,7 +43,8 @@ export class SpokePoolClient {
     readonly configStoreClient: AcrossConfigStoreClient | null,
     readonly chainId: number,
     readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
-    readonly spokePoolDeploymentBlock: number = 0
+    readonly spokePoolDeploymentBlock: number = 0,
+    readonly logInvalidFills: boolean = false
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
@@ -208,6 +209,18 @@ export class SpokePoolClient {
     Object.keys(deposit).forEach((key) => {
       if (fill[key] !== undefined && deposit[key].toString() !== fill[key].toString()) isValid = false;
     });
+
+    // Log any invalid deposits with same deposit id but different params.
+    if (fill.depositId === deposit.depositId && !isValid && this.logInvalidFills) {
+      this.logger.info({
+        at: "SpokePoolClient",
+        chainId: this.chainId,
+        message: "Invalid fill found",
+        deposit,
+        fill,
+      });
+    }
+
     return isValid;
   }
 
