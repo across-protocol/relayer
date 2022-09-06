@@ -82,15 +82,7 @@ describe("ProfitClient: Consider relay profit", async function () {
   it("Considers deposits with relayer fee below min required unprofitable", async function () {
     const profitableWethL1Relay = { relayerFeePct: toBNWei("0.01"), destinationChainId: 1 } as Deposit;
     // Ignore gas cost but with a min fee of 0.03%.
-    const profitClientWithMinFee = new MockProfitClient(
-      spyLogger,
-      hubPoolClient,
-      {},
-      true,
-      [],
-      false,
-      toBNWei("0.03")
-    );
+    const profitClientWithMinFee = new MockProfitClient(spyLogger, hubPoolClient, {}, true, [], false, toBNWei("0.03"));
     expect(profitClientWithMinFee.isFillProfitable(profitableWethL1Relay, toBNWei(1))).to.be.false;
   });
 
@@ -101,15 +93,7 @@ describe("ProfitClient: Consider relay profit", async function () {
       destinationChainId: 1,
     } as Deposit;
     // Ignore gas cost but with a min fee of 0.03%.
-    const profitClientWithMinFee = new MockProfitClient(
-      spyLogger,
-      hubPoolClient,
-      {},
-      true,
-      [],
-      false,
-      toBNWei("0.03")
-    );
+    const profitClientWithMinFee = new MockProfitClient(spyLogger, hubPoolClient, {}, true, [], false, toBNWei("0.03"));
     expect(profitClientWithMinFee.isFillProfitable(profitableWethL1Relay, toBNWei(1))).to.be.true;
   });
 
@@ -121,15 +105,7 @@ describe("ProfitClient: Consider relay profit", async function () {
     } as Deposit;
     profitClient.setGasCosts({ 1: toBNWei("0.01") });
     // Ignore gas cost but with a min fee of 0.03%.
-    const profitClientWithMinFee = new MockProfitClient(
-      spyLogger,
-      hubPoolClient,
-      {},
-      true,
-      [],
-      false,
-      toBNWei("0.03")
-    );
+    const profitClientWithMinFee = new MockProfitClient(spyLogger, hubPoolClient, {}, true, [], false, toBNWei("0.03"));
     expect(profitClientWithMinFee.isFillProfitable(profitableWethL1Relay, toBNWei(1))).to.be.true;
   });
 
