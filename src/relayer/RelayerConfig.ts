@@ -15,6 +15,7 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerTokens: string[];
   readonly relayerDestinationChains: number[];
   readonly minRelayerFeePct: BigNumber;
+  readonly logInvalidFills: boolean;
 
   constructor(env: ProcessEnv) {
     const {
@@ -26,6 +27,7 @@ export class RelayerConfig extends CommonConfig {
       SEND_RELAYS,
       SEND_SLOW_RELAYS,
       MIN_RELAYER_FEE_PCT,
+      LOG_INVALID_FILLS,
     } = env;
     super(env);
 
@@ -68,5 +70,6 @@ export class RelayerConfig extends CommonConfig {
     this.ignoreTokenPriceFailures = IGNORE_TOKEN_PRICE_FAILURES === "true";
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
+    this.logInvalidFills = LOG_INVALID_FILLS === "true";
   }
 }
