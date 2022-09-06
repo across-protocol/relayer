@@ -56,7 +56,8 @@ export async function constructSpokePoolClientsWithLookback(
   configStoreClient: AcrossConfigStoreClient,
   config: CommonConfig,
   baseSigner: Wallet,
-  initialLookBackOverride: { [chainId: number]: number } = {}
+  initialLookBackOverride: { [chainId: number]: number } = {},
+  logInvalidFills = false
 ): Promise<SpokePoolClientsByChain> {
   const spokePoolClients: SpokePoolClientsByChain = {};
 
@@ -95,7 +96,8 @@ export async function constructSpokePoolClientsWithLookback(
       configStoreClient,
       networkId,
       spokePoolClientSearchSettings,
-      spokePoolDeploymentBlock
+      spokePoolDeploymentBlock,
+      logInvalidFills
     );
   });
 
