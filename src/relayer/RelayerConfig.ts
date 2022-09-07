@@ -1,11 +1,12 @@
 import { BigNumber, toBNWei, assert, toBN, replaceAddressCase } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
+import * as Constants from "../common/Constants";
 import { InventoryConfig } from "../interfaces";
 
 export class RelayerConfig extends CommonConfig {
   readonly inventoryConfig: InventoryConfig;
   // Whether relay profitability is considered. If false, relayers will attempt to relay all deposits.
-  readonly enableProfitability: boolean;
+  readonly ignoreProfitability: boolean;
   // Whether token price fetch failures will be ignored when computing relay profitability.
   // If this is false, the relayer will throw an error when fetching prices fails.
   readonly ignoreTokenPriceFailures: boolean;
@@ -14,17 +15,19 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerTokens: string[];
   readonly relayerDestinationChains: number[];
   readonly minRelayerFeePct: BigNumber;
+  readonly logInvalidFills: boolean;
 
   constructor(env: ProcessEnv) {
     const {
       RELAYER_DESTINATION_CHAINS,
-      ENABLE_PROFITABILITY,
+      IGNORE_PROFITABILITY,
       IGNORE_TOKEN_PRICE_FAILURES,
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
       SEND_RELAYS,
       SEND_SLOW_RELAYS,
       MIN_RELAYER_FEE_PCT,
+      LOG_INVALID_FILLS,
     } = env;
     super(env);
 
@@ -33,7 +36,7 @@ export class RelayerConfig extends CommonConfig {
     // Empty means all tokens.
     this.relayerTokens = RELAYER_TOKENS ? JSON.parse(RELAYER_TOKENS) : [];
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
-    this.minRelayerFeePct = MIN_RELAYER_FEE_PCT ? toBNWei(MIN_RELAYER_FEE_PCT) : toBN(0);
+    this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
     if (Object.keys(this.inventoryConfig).length > 0) {
       this.inventoryConfig = replaceAddressCase(this.inventoryConfig); // Cast any non-address case addresses.
@@ -63,9 +66,10 @@ export class RelayerConfig extends CommonConfig {
         });
       });
     }
-    this.enableProfitability = ENABLE_PROFITABILITY === "true";
+    this.ignoreProfitability = IGNORE_PROFITABILITY === "true";
     this.ignoreTokenPriceFailures = IGNORE_TOKEN_PRICE_FAILURES === "true";
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
+    this.logInvalidFills = LOG_INVALID_FILLS === "true";
   }
 }

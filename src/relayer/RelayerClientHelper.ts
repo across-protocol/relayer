@@ -26,7 +26,8 @@ export async function constructRelayerClients(
     commonClients.configStoreClient,
     config,
     baseSigner,
-    config.maxRelayerLookBack
+    config.maxRelayerLookBack,
+    config.logInvalidFills
   );
 
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients, commonClients.hubPoolClient);
@@ -38,7 +39,7 @@ export async function constructRelayerClients(
     logger,
     commonClients.hubPoolClient,
     spokePoolClients,
-    config.enableProfitability,
+    config.ignoreProfitability,
     enabledChainIds,
     config.ignoreTokenPriceFailures,
     config.minRelayerFeePct
