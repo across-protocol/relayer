@@ -14,9 +14,16 @@ import {
   expect,
   toBNWei,
 } from "./utils";
-import { simpleDeposit, fillRelay, ethers, Contract, SignerWithAddress, setupTokensForWallet, winston } from "./utils";
+import { simpleDeposit, fillRelay, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
 import { amountToLp, originChainId, amountToRelay } from "./constants";
-import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient } from "../src/clients";
+import {
+  SpokePoolClient,
+  HubPoolClient,
+  AcrossConfigStoreClient,
+  ProfitClient,
+  MultiCallerClient,
+  TokenClient,
+} from "../src/clients";
 import { MockInventoryClient } from "./mocks";
 
 // Tested
@@ -32,6 +39,7 @@ let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithA
 const { spy, spyLogger } = createSpyLogger();
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let configStoreClient: AcrossConfigStoreClient, hubPoolClient: HubPoolClient;
+let multiCallerClient: MultiCallerClient;
 
 let relayerInstance: Relayer;
 
@@ -61,16 +69,18 @@ describe("Relayer: Unfilled Deposits", async function () {
       true
     );
 
+    const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
+    multiCallerClient = new MultiCallerClient(spyLogger);
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
       {
-        spokePoolClients: { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 },
+        spokePoolClients,
         hubPoolClient,
         configStoreClient,
-        profitClient: null,
-        tokenClient: null,
-        multiCallerClient: null,
+        profitClient: new ProfitClient(spyLogger, hubPoolClient, spokePoolClients, false, []),
+        tokenClient: new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient),
+        multiCallerClient,
         inventoryClient: new MockInventoryClient(),
       },
       {
@@ -205,25 +215,32 @@ describe("Relayer: Unfilled Deposits", async function () {
     ]);
   });
 
-  it("Logs invalid fills", async function () {
-    const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, configStoreClient, l1Token);
+  it("Skip invalid fills from the same relayer", async function () {
+    const deposit = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    const depositComplete = await buildDepositStruct(deposit, hubPoolClient, configStoreClient, l1Token);
     // Send a fill with a different relayer fee pct from the deposit's. This fill should be considered an invalid fill
     // and getUnfilledDeposits should log it.
     const fill = await fillWithRealizedLpFeePct(
       spokePool_2,
       relayer,
       depositor,
-      deposit1Complete,
+      depositComplete,
       amountToRelay,
       toBN(2)
     );
     await updateAllClients();
-    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients)).to.not.deep.equal([
-      { unfilledAmount: deposit1.amount.sub(fill.fillAmount), deposit: deposit1Complete, fillCount: 1 },
-    ]);
 
+    // getUnfilledDeposit still returns the deposit as unfilled but with the invalid fill.
+    const unfilledDeposit = getUnfilledDeposits(relayerInstance.clients.spokePoolClients)[0];
+    expect(unfilledDeposit.unfilledAmount).to.equal(deposit.amount);
+    expect(unfilledDeposit.deposit).to.deep.equal(depositComplete);
+    expect(unfilledDeposit.invalidFills[0].amount).to.equal(toBN(fill.amount));
     expect(lastSpyLogIncludes(spy, "Invalid fill found")).to.be.true;
+
+    await relayerInstance.checkForUnfilledDepositsAndFill();
+    // Relayer shouldn't try to relay the fill even though it's unfilled as there has been one invalid fill from this
+    // same relayer.
+    expect(multiCallerClient.transactionCount()).to.equal(0);
   });
 });
 

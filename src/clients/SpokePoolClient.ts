@@ -177,15 +177,37 @@ export class SpokePoolClient {
       : undefined;
   }
 
-  getValidUnfilledAmountForDeposit(deposit: Deposit): { unfilledAmount: BigNumber; fillCount: number; invalidFills: Fill[] } {
-    const invalidFills: Fill[] = [];
+  getValidUnfilledAmountForDeposit(deposit: Deposit): {
+    unfilledAmount: BigNumber;
+    fillCount: number;
+    invalidFills: Fill[];
+  } {
     const fillsForDeposit = this.depositHashesToFills[this.getDepositHash(deposit)];
     // If no fills then the full amount is remaining.
     if (fillsForDeposit === undefined || fillsForDeposit.length === 0) {
-      return { unfilledAmount: toBN(deposit.amount), fillCount: 0, invalidFills };
+      return { unfilledAmount: toBN(deposit.amount), fillCount: 0, invalidFills: [] };
     }
 
-    const validFills: Fill[] = [];
+    const { validFills, invalidFills } = fillsForDeposit.reduce(
+      (groupedFills: { validFills: Fill[]; invalidFills: Fill[] }, fill: Fill) => {
+        const isValid = this.validateFillForDeposit(fill, deposit);
+        // Log any invalid deposits with same deposit id but different params.
+        if (this.logInvalidFills && !isValid && fill.depositId === deposit.depositId) {
+          this.logger.warn({
+            at: "SpokePoolClient",
+            chainId: this.chainId,
+            message: "Invalid fill found",
+            deposit,
+            fill,
+          });
+        }
+
+        if (isValid) groupedFills.validFills.push(fill);
+        else groupedFills.invalidFills.push(fill);
+        return groupedFills;
+      },
+      { validFills: [], invalidFills: [] }
+    );
     for (const fill of fillsForDeposit) {
       const isValid = this.validateFillForDeposit(fill, deposit);
       // Log any invalid deposits with same deposit id but different params.
@@ -218,7 +240,11 @@ export class SpokePoolClient {
     );
 
     const lastFill = fillsOrderedByTotalFilledAmount[0];
-    return { unfilledAmount: toBN(lastFill.amount.sub(lastFill.totalFilledAmount)), fillCount: validFills.length, invalidFills };
+    return {
+      unfilledAmount: toBN(lastFill.amount.sub(lastFill.totalFilledAmount)),
+      fillCount: validFills.length,
+      invalidFills,
+    };
   }
 
   // Ensure that each deposit element is included with the same value in the fill. This includes all elements defined
