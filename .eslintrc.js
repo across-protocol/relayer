@@ -36,5 +36,12 @@ module.exports = {
       tryExtensions: [".js", ".ts"],
     },
   },
-  ignorePatterns: ["scripts/*.ts", "src/utils/GckmsUtils.ts", "src/utils/Help.ts"],
+  overrides: [
+    {
+      files: ["scripts/*.ts"],
+      rules: {
+        "no-console": 0,
+      },
+    },
+  ],
 };
