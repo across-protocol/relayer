@@ -49,7 +49,7 @@ export class ProfitClient {
     readonly logger: winston.Logger,
     readonly hubPoolClient: HubPoolClient,
     spokePoolClients: SpokePoolClientsByChain,
-    readonly enableRelayProfitability: boolean,
+    readonly ignoreProfitability: boolean,
     readonly enabledChainIds: number[],
     // Default to throwing errors if fetching token prices fails.
     readonly ignoreTokenPriceFailures: boolean = false,
@@ -79,8 +79,9 @@ export class ProfitClient {
     return this.tokenPrices[token];
   }
 
-  getTotalGasCost(chainId: number) {
-    return this.totalGasCosts[chainId] ?? toBN(0);
+  getTotalGasCost(chainId: number): BigNumber {
+    // TODO: Figure out where the mysterious BigNumber -> string conversion happens.
+    return toBN(this.totalGasCosts[chainId]) ?? toBN(0);
   }
 
   getUnprofitableFills() {
@@ -92,7 +93,14 @@ export class ProfitClient {
   }
 
   isFillProfitable(deposit: Deposit, fillAmount: BigNumber) {
-    if (toBN(deposit.relayerFeePct).lt(this.minRelayerFeePct)) {
+    const newRelayerFeePct = toBN(deposit.newRelayerFeePct ?? 0);
+    let relayerFeePct = toBN(deposit.relayerFeePct);
+    // Use the maximum between the original newRelayerFeePct and any updated fee from speedups.
+    if (relayerFeePct.lt(newRelayerFeePct)) {
+      relayerFeePct = newRelayerFeePct;
+    }
+
+    if (relayerFeePct.lt(this.minRelayerFeePct)) {
       this.logger.debug({
         at: "ProfitClient",
         message: "Relayer fee % < minimum relayer fee %",
@@ -101,26 +109,26 @@ export class ProfitClient {
       return false;
     }
 
-    if (toBN(deposit.relayerFeePct).eq(toBN(0))) {
+    if (relayerFeePct.eq(toBN(0))) {
       this.logger.debug({ at: "ProfitClient", message: "Deposit set 0 relayerFeePct. Rejecting relay" });
       return false;
     }
 
     // This should happen after the previous checks as we don't want to turn them off when profitability is disabled.
     // TODO: Revisit whether this makes sense once we have capital fee evaluation.
-    if (!this.enableRelayProfitability) {
+    if (this.ignoreProfitability) {
       this.logger.debug({ at: "ProfitClient", message: "Profitability check is disabled. Accepting relay" });
       return true;
     }
 
     const { decimals, address: l1Token } = this.hubPoolClient.getTokenInfoForDeposit(deposit);
     const tokenPriceInUsd = this.getPriceOfToken(l1Token);
-    const fillRevenueInRelayedToken = toBN(deposit.relayerFeePct).mul(fillAmount).div(toBN(10).pow(decimals));
+    const fillRevenueInRelayedToken = relayerFeePct.mul(fillAmount).div(toBN(10).pow(decimals));
     const fillRevenueInUsd = fillRevenueInRelayedToken.mul(tokenPriceInUsd).div(toBNWei(1));
 
     // Consider gas cost.
     const totalGasCostWei = this.getTotalGasCost(deposit.destinationChainId);
-    if (totalGasCostWei === undefined || totalGasCostWei.eq(toBN(0))) {
+    if (totalGasCostWei.eq(toBN(0))) {
       const chainId = deposit.destinationChainId;
       const errorMsg = `Missing total gas cost for ${chainId}. This likely indicates some gas cost request failed`;
       this.logger.warn({
@@ -246,7 +254,7 @@ export class ProfitClient {
 
     // Short circuit early if profitability is disabled. We still need to fetch CG prices but don't need to fetch gas
     // costs of relays.
-    if (!this.enableRelayProfitability) return;
+    if (this.ignoreProfitability) return;
 
     // Pre-fetch total gas costs for relays on enabled chains.
     const gasCosts = await Promise.all(

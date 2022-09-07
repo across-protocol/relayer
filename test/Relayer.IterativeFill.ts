@@ -6,7 +6,8 @@ import { HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../sr
 import { TokenClient, ProfitClient } from "../src/clients";
 import { MockInventoryClient } from "./mocks";
 
-import { Relayer } from "../src/relayer/Relayer"; // Tested
+import { Relayer } from "../src/relayer/Relayer";
+import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 
 let relayer: SignerWithAddress, hubPool: Contract, mockAdapter: Contract, configStore: Contract;
 let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient, tokenClient: TokenClient;
@@ -54,17 +55,25 @@ describe.skip("Relayer: Iterative fill", async function () {
     });
 
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
-    profitClient = new ProfitClient(spyLogger, hubPoolClient, {}, false, [], false, toBNWei(1)); // Set relayer discount to 100%.
+    profitClient = new ProfitClient(spyLogger, hubPoolClient, {}, true, [], false, toBNWei(1)); // Set relayer discount to 100%.
     await updateAllClients();
-    relayerInstance = new Relayer(relayer.address, spyLogger, {
-      spokePoolClients,
-      hubPoolClient,
-      configStoreClient,
-      tokenClient,
-      profitClient,
-      multiCallerClient,
-      inventoryClient: new MockInventoryClient(),
-    });
+    relayerInstance = new Relayer(
+      relayer.address,
+      spyLogger,
+      {
+        spokePoolClients,
+        hubPoolClient,
+        configStoreClient,
+        tokenClient,
+        profitClient,
+        multiCallerClient,
+        inventoryClient: new MockInventoryClient(),
+      },
+      {
+        relayerTokens: [],
+        relayerDestinationChains: [],
+      } as RelayerConfig
+    );
 
     let depositCount = 0;
 
