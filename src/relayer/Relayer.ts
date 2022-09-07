@@ -59,7 +59,7 @@ export class Relayer {
         !this.config.relayerTokens.includes(l1Token.address) &&
         !this.config.relayerTokens.includes(l1Token.address.toLowerCase())
       ) {
-        this.logger.debug({ at: "Relayer", message: "👨‍👧‍👦 Skipping deposit for unwhitelisted token", deposit, l1Token });
+        this.logger.debug({ at: "Relayer", message: "Skipping deposit for unwhitelisted token", deposit, l1Token });
         continue;
       }
 
@@ -82,7 +82,7 @@ export class Relayer {
       if (invalidFills.some((fill) => fill.relayer === this.relayerAddress)) {
         this.logger.error({
           at: "Relayer",
-          message: "Skipping deposit with invalid fills from the same relayer",
+          message: "👨‍👧‍👦 Skipping deposit with invalid fills from the same relayer",
           deposit,
           invalidFills,
           destinationChain: getNetworkName(destinationChainId),
