@@ -23,7 +23,7 @@ import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../in
 
 export class SpokePoolClient {
   private depositHashes: { [depositHash: string]: Deposit } = {};
-  private depositHashesToFills: { [depositHash: string]: Fill[] } = {};
+  private depositHashesToFills: { [depositHash: string]: FillWithBlock[] } = {};
   private speedUps: { [depositorAddress: string]: { [depositId: number]: SpeedUp[] } } = {};
   private depositRoutes: { [originToken: string]: { [DestinationChainId: number]: boolean } } = {};
   private tokensBridged: TokensBridged[] = [];
@@ -35,7 +35,6 @@ export class SpokePoolClient {
   // public fills: FillWithBlock[] = [];
   public deposits: { [DestinationChainId: number]: DepositWithBlock[] } = {};
   public fills: { [OriginChainId: number]: FillWithBlock[] } = {};
-
 
   constructor(
     readonly logger: winston.Logger,
@@ -420,13 +419,13 @@ export class SpokePoolClient {
           dataToCache.fills.push(convertedFill);
 
           if (fill.blockNumber >= searchConfig.fromBlock && fill.blockNumber <= searchConfig.toBlock) {
-            this.fills.push(convertedFill);
+            assign(this.fills, [fill.originChainId], [convertedFill]);
             assign(this.depositHashesToFills, [this.getDepositHash(convertedFill)], [convertedFill]);
           }
         });
         this.log(
           "debug",
-          `Using ${this.fills.length} cached fill events within search config for chain ${this.chainId}`
+          `Using ${Object.values(this.fills).reduce((acc, curr) => acc + curr.length, 0)} cached fill events within search config for chain ${this.chainId}`
         );
       }
 
@@ -435,10 +434,10 @@ export class SpokePoolClient {
           earliestEvent: fillEvents[0].blockNumber,
         });
       for (const event of fillEvents) {
-        this.fills.push(spreadEventWithBlockNumber(event) as FillWithBlock);
-        dataToCache.fills.push(spreadEventWithBlockNumber(event) as FillWithBlock);
-        const newFill = spreadEvent(event);
-        assign(this.depositHashesToFills, [this.getDepositHash(newFill)], [newFill]);
+        const fill = spreadEventWithBlockNumber(event) as FillWithBlock;
+        assign(this.fills, [fill.originChainId], [fill])
+        dataToCache.fills.push(fill);
+        assign(this.depositHashesToFills, [this.getDepositHash(fill)], [fill]);
       }
     }
 
