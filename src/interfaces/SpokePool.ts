@@ -15,6 +15,7 @@ export interface Deposit {
   realizedLpFeePct?: BigNumber; // appended after initialization (not part of Deposit event).
   destinationToken?: string; // appended after initialization (not part of Deposit event).
   speedUpSignature?: string | undefined; // appended after initialization, if deposit was speedup (not part of Deposit event).
+  newRelayerFeePct?: BigNumber; // appended after initialization, if deposit was speedup (not part of Deposit event).
 }
 
 export interface DepositWithBlock extends Deposit, SortableEvent {

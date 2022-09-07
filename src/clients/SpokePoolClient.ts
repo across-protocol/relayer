@@ -43,7 +43,8 @@ export class SpokePoolClient {
     readonly configStoreClient: AcrossConfigStoreClient | null,
     readonly chainId: number,
     readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
-    readonly spokePoolDeploymentBlock: number = 0
+    readonly spokePoolDeploymentBlock: number = 0,
+    readonly logInvalidFills: boolean = false
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
@@ -158,9 +159,13 @@ export class SpokePoolClient {
       prev.newRelayerFeePct.gt(current.newRelayerFeePct) ? prev : current
     );
 
-    // Only if there is a speedup and the new relayer fee is greater than the current relayer fee, replace the fee.
+    // Only if there is a speedup and the new relayer fee is greater than the current relayer fee, save the new fee.
     if (!maxSpeedUp || maxSpeedUp.newRelayerFeePct.lte(deposit.relayerFeePct)) return deposit;
-    return { ...deposit, speedUpSignature: maxSpeedUp.depositorSignature, relayerFeePct: maxSpeedUp.newRelayerFeePct };
+    return {
+      ...deposit,
+      speedUpSignature: maxSpeedUp.depositorSignature,
+      newRelayerFeePct: maxSpeedUp.newRelayerFeePct,
+    };
   }
 
   getDepositForFill(fill: Fill): Deposit | undefined {
@@ -178,7 +183,21 @@ export class SpokePoolClient {
     if (fillsForDeposit === undefined || fillsForDeposit.length === 0) {
       return { unfilledAmount: toBN(deposit.amount), fillCount: 0 };
     }
-    const fills = fillsForDeposit.filter((fill) => this.validateFillForDeposit(fill, deposit));
+    const fills = fillsForDeposit.filter((fill) => {
+      const isValid = this.validateFillForDeposit(fill, deposit);
+
+      // Log any invalid deposits with same deposit id but different params.
+      if (this.logInvalidFills && !isValid && fill.depositId === deposit.depositId) {
+        this.logger.warn({
+          at: "SpokePoolClient",
+          chainId: this.chainId,
+          message: "Invalid fill found",
+          deposit,
+          fill,
+        });
+      }
+      return isValid;
+    });
     // If all fills are invalid we can consider this unfilled.
     if (fills.length === 0) {
       return { unfilledAmount: toBN(deposit.amount), fillCount: 0 };
@@ -204,6 +223,7 @@ export class SpokePoolClient {
     Object.keys(deposit).forEach((key) => {
       if (fill[key] !== undefined && deposit[key].toString() !== fill[key].toString()) isValid = false;
     });
+
     return isValid;
   }
 
@@ -374,7 +394,7 @@ export class SpokePoolClient {
 
     // Disable this loop.
     // eslint-disable-next-line no-constant-condition
-    if (eventsToQuery.includes("RequestedSpeedUpDeposit") && false) {
+    if (eventsToQuery.includes("RequestedSpeedUpDeposit")) {
       const speedUpEvents = queryResults[eventsToQuery.indexOf("RequestedSpeedUpDeposit")];
 
       for (const event of speedUpEvents) {

@@ -181,7 +181,6 @@ export async function setupDataworker(
     {
       configStoreClient,
       multiCallerClient,
-      profitClient,
       hubPoolClient,
     },
     spokePoolClients,

@@ -86,3 +86,7 @@ export function getUniqueDepositsInRange(
         )
     ) as DepositWithBlock[];
 }
+
+export function isDepositSpedUp(deposit: Deposit): boolean {
+  return deposit.speedUpSignature !== undefined && deposit.newRelayerFeePct !== undefined;
+}

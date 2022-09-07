@@ -1,5 +1,6 @@
 import { BigNumber, toBNWei, assert, toBN, replaceAddressCase } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
+import * as Constants from "../common/Constants";
 import { InventoryConfig } from "../interfaces";
 
 export class RelayerConfig extends CommonConfig {
@@ -14,6 +15,7 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerTokens: string[];
   readonly relayerDestinationChains: number[];
   readonly minRelayerFeePct: BigNumber;
+  readonly logInvalidFills: boolean;
 
   constructor(env: ProcessEnv) {
     const {
@@ -25,6 +27,7 @@ export class RelayerConfig extends CommonConfig {
       SEND_RELAYS,
       SEND_SLOW_RELAYS,
       MIN_RELAYER_FEE_PCT,
+      LOG_INVALID_FILLS,
     } = env;
     super(env);
 
@@ -33,7 +36,7 @@ export class RelayerConfig extends CommonConfig {
     // Empty means all tokens.
     this.relayerTokens = RELAYER_TOKENS ? JSON.parse(RELAYER_TOKENS) : [];
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
-    this.minRelayerFeePct = MIN_RELAYER_FEE_PCT ? toBNWei(MIN_RELAYER_FEE_PCT) : toBN(0);
+    this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
     if (Object.keys(this.inventoryConfig).length > 0) {
       this.inventoryConfig = replaceAddressCase(this.inventoryConfig); // Cast any non-address case addresses.
@@ -67,5 +70,6 @@ export class RelayerConfig extends CommonConfig {
     this.ignoreTokenPriceFailures = IGNORE_TOKEN_PRICE_FAILURES === "true";
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
+    this.logInvalidFills = LOG_INVALID_FILLS === "true";
   }
 }
