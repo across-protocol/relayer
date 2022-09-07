@@ -24,7 +24,7 @@ module.exports = {
     quotes: ["error", "double", { avoidEscape: true }],
     semi: ["error", "always"],
     "spaced-comment": ["error", "always", { exceptions: ["-", "+"] }],
-    "no-console": 0,
+    "no-console": 2,
     camelcase: "off",
     "@typescript-eslint/camelcase": "off",
     "mocha/no-exclusive-tests": "error",
@@ -36,4 +36,5 @@ module.exports = {
       tryExtensions: [".js", ".ts"],
     },
   },
+  ignorePatterns: ["scripts/*.ts", "src/utils/GckmsUtils.ts", "src/utils/Help.ts"],
 };

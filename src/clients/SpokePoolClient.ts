@@ -185,15 +185,6 @@ export class SpokePoolClient {
     }
     const fills = fillsForDeposit.filter((fill) => {
       const isValid = this.validateFillForDeposit(fill, deposit);
-      console.log(
-        "isValid",
-        this.logInvalidFills,
-        isValid,
-        fill.depositId,
-        deposit.depositId,
-        fill.relayerFeePct,
-        deposit.relayerFeePct
-      );
 
       // Log any invalid deposits with same deposit id but different params.
       if (this.logInvalidFills && !isValid && fill.depositId === deposit.depositId) {
