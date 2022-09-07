@@ -50,7 +50,7 @@ export class Relayer {
     // If not enough ballance add the shortfall to the shortfall tracker to produce an appropriate log. If the deposit
     // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
     // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
-    for (const { deposit, unfilledAmount, fillCount } of unfilledDeposits) {
+    for (const { deposit, unfilledAmount, fillCount, invalidFills } of unfilledDeposits) {
       // Skip any L1 tokens that are not specified in the config.
       // If relayerTokens is an empty list, we'll assume that all tokens are supported.
       const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(deposit.originToken, deposit.originChainId);
@@ -72,6 +72,19 @@ export class Relayer {
           at: "Relayer",
           message: "Skipping deposit for unsupported destination chain",
           deposit,
+          destinationChain: getNetworkName(destinationChainId),
+        });
+        continue;
+      }
+
+      // Skip deposits that contain invalid fills from the same relayer. This prevents potential corrupted data from
+      // making the same relayer fill a deposit multiple times.
+      if (invalidFills.filter((fill) => fill.relayer === this.relayerAddress).length > 0) {
+        this.logger.error({
+          at: "Relayer",
+          message: "Skipping deposit with invalid fills from the same relayer",
+          deposit,
+          invalidFills,
           destinationChain: getNetworkName(destinationChainId),
         });
         continue;

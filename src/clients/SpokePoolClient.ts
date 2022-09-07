@@ -177,24 +177,17 @@ export class SpokePoolClient {
       : undefined;
   }
 
-  getValidUnfilledAmountForDeposit(deposit: Deposit): { unfilledAmount: BigNumber; fillCount: number } {
+  getValidUnfilledAmountForDeposit(deposit: Deposit): { unfilledAmount: BigNumber; fillCount: number; invalidFills: Fill[] } {
+    const invalidFills: Fill[] = [];
     const fillsForDeposit = this.depositHashesToFills[this.getDepositHash(deposit)];
     // If no fills then the full amount is remaining.
     if (fillsForDeposit === undefined || fillsForDeposit.length === 0) {
-      return { unfilledAmount: toBN(deposit.amount), fillCount: 0 };
+      return { unfilledAmount: toBN(deposit.amount), fillCount: 0, invalidFills };
     }
-    const fills = fillsForDeposit.filter((fill) => {
-      const isValid = this.validateFillForDeposit(fill, deposit);
-      console.log(
-        "isValid",
-        this.logInvalidFills,
-        isValid,
-        fill.depositId,
-        deposit.depositId,
-        fill.relayerFeePct,
-        deposit.relayerFeePct
-      );
 
+    const validFills: Fill[] = [];
+    for (const fill of fillsForDeposit) {
+      const isValid = this.validateFillForDeposit(fill, deposit);
       // Log any invalid deposits with same deposit id but different params.
       if (this.logInvalidFills && !isValid && fill.depositId === deposit.depositId) {
         this.logger.warn({
@@ -205,15 +198,18 @@ export class SpokePoolClient {
           fill,
         });
       }
-      return isValid;
-    });
+
+      if (isValid) validFills.push(fill);
+      else invalidFills.push(fill);
+    }
+
     // If all fills are invalid we can consider this unfilled.
-    if (fills.length === 0) {
-      return { unfilledAmount: toBN(deposit.amount), fillCount: 0 };
+    if (validFills.length === 0) {
+      return { unfilledAmount: toBN(deposit.amount), fillCount: 0, invalidFills };
     }
 
     // Order fills by totalFilledAmount and then return the first fill's full deposit amount minus total filled amount.
-    const fillsOrderedByTotalFilledAmount = fills.sort((fillA, fillB) =>
+    const fillsOrderedByTotalFilledAmount = validFills.sort((fillA, fillB) =>
       fillB.totalFilledAmount.gt(fillA.totalFilledAmount)
         ? 1
         : fillB.totalFilledAmount.lt(fillA.totalFilledAmount)
@@ -222,7 +218,7 @@ export class SpokePoolClient {
     );
 
     const lastFill = fillsOrderedByTotalFilledAmount[0];
-    return { unfilledAmount: toBN(lastFill.amount.sub(lastFill.totalFilledAmount)), fillCount: fills.length };
+    return { unfilledAmount: toBN(lastFill.amount.sub(lastFill.totalFilledAmount)), fillCount: validFills.length, invalidFills };
   }
 
   // Ensure that each deposit element is included with the same value in the fill. This includes all elements defined
