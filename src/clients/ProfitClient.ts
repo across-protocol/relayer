@@ -49,7 +49,7 @@ export class ProfitClient {
     readonly logger: winston.Logger,
     readonly hubPoolClient: HubPoolClient,
     spokePoolClients: SpokePoolClientsByChain,
-    readonly enableRelayProfitability: boolean,
+    readonly ignoreProfitability: boolean,
     readonly enabledChainIds: number[],
     // Default to throwing errors if fetching token prices fails.
     readonly ignoreTokenPriceFailures: boolean = false,
@@ -116,7 +116,7 @@ export class ProfitClient {
 
     // This should happen after the previous checks as we don't want to turn them off when profitability is disabled.
     // TODO: Revisit whether this makes sense once we have capital fee evaluation.
-    if (!this.enableRelayProfitability) {
+    if (this.ignoreProfitability) {
       this.logger.debug({ at: "ProfitClient", message: "Profitability check is disabled. Accepting relay" });
       return true;
     }
@@ -254,7 +254,7 @@ export class ProfitClient {
 
     // Short circuit early if profitability is disabled. We still need to fetch CG prices but don't need to fetch gas
     // costs of relays.
-    if (!this.enableRelayProfitability) return;
+    if (this.ignoreProfitability) return;
 
     // Pre-fetch total gas costs for relays on enabled chains.
     const gasCosts = await Promise.all(

@@ -151,8 +151,9 @@ export function getFillsInRange(
 export function getUnfilledDeposits(
   spokePoolClients: SpokePoolClientsByChain,
   maxUnfilledDepositLookBack: { [chainId: number]: number } = {}
-): { deposit: Deposit; unfilledAmount: BigNumber; fillCount: number }[] {
-  const unfilledDeposits: { deposit: Deposit; unfilledAmount: BigNumber; fillCount: number }[] = [];
+): { deposit: Deposit; unfilledAmount: BigNumber; fillCount: number; invalidFills: Fill[] }[] {
+  const unfilledDeposits: { deposit: Deposit; unfilledAmount: BigNumber; fillCount: number; invalidFills: Fill[] }[] =
+    [];
   // Iterate over each chainId and check for unfilled deposits.
   const chainIds = Object.keys(spokePoolClients);
   for (const originChain of chainIds) {
