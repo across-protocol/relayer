@@ -43,7 +43,8 @@ export class SpokePoolClient {
     readonly configStoreClient: AcrossConfigStoreClient | null,
     readonly chainId: number,
     readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
-    readonly spokePoolDeploymentBlock: number = 0
+    readonly spokePoolDeploymentBlock: number = 0,
+    readonly logInvalidFills: boolean = false
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
@@ -182,7 +183,30 @@ export class SpokePoolClient {
     if (fillsForDeposit === undefined || fillsForDeposit.length === 0) {
       return { unfilledAmount: toBN(deposit.amount), fillCount: 0 };
     }
-    const fills = fillsForDeposit.filter((fill) => this.validateFillForDeposit(fill, deposit));
+    const fills = fillsForDeposit.filter((fill) => {
+      const isValid = this.validateFillForDeposit(fill, deposit);
+      console.log(
+        "isValid",
+        this.logInvalidFills,
+        isValid,
+        fill.depositId,
+        deposit.depositId,
+        fill.relayerFeePct,
+        deposit.relayerFeePct
+      );
+
+      // Log any invalid deposits with same deposit id but different params.
+      if (this.logInvalidFills && !isValid && fill.depositId === deposit.depositId) {
+        this.logger.warn({
+          at: "SpokePoolClient",
+          chainId: this.chainId,
+          message: "Invalid fill found",
+          deposit,
+          fill,
+        });
+      }
+      return isValid;
+    });
     // If all fills are invalid we can consider this unfilled.
     if (fills.length === 0) {
       return { unfilledAmount: toBN(deposit.amount), fillCount: 0 };
@@ -208,6 +232,7 @@ export class SpokePoolClient {
     Object.keys(deposit).forEach((key) => {
       if (fill[key] !== undefined && deposit[key].toString() !== fill[key].toString()) isValid = false;
     });
+
     return isValid;
   }
 
