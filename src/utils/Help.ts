@@ -11,6 +11,7 @@ export function usage(badInput: string = undefined) {
     \tts-node ./index.tx [-h] <--dataworker|--finalizer> --wallet <${walletOpts}>
   `.slice(1); // Skip leading newline
 
+  // eslint-disable-next-line no-console
   console.log(usageStr);
 
   // eslint-disable-next-line no-process-exit
@@ -56,6 +57,7 @@ export function help() {
     \tRelayer Instructions: ${relayerDocsUrl}
   `.slice(0, -1); // Skip trailing newline
 
+  // eslint-disable-next-line no-console
   console.log(helpStr);
   usage(); // no return
 }

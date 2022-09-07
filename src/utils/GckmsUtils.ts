@@ -35,6 +35,7 @@ export function getGckmsConfig(keys) {
     try {
       if (fs.existsSync(`${__dirname}/${overrideFname}`)) configOverride = require(`./${overrideFname}`);
     } catch (err) {
+      // eslint-disable-next-line no-console
       console.error(err);
     }
   }

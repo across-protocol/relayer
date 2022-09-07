@@ -113,7 +113,6 @@ export async function run(_logger: winston.Logger) {
   try {
     await validate(_logger, baseSigner);
   } catch (error) {
-    console.error(error);
     logger.error({ at: "RootBundleValidator", message: "Caught an error, retrying!", error });
     await delay(5);
     await run(Logger);
