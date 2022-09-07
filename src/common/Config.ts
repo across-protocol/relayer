@@ -65,5 +65,14 @@ export class CommonConfig {
     this.minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS
       ? JSON.parse(MIN_DEPOSIT_CONFIRMATIONS)
       : Constants.MIN_DEPOSIT_CONFIRMATIONS;
+
+    this.spokePoolChains.forEach((chainId) => {
+      const nBlocks: number = this.minDepositConfirmations[chainId];
+      console.log(`Got nBlocks ${nBlocks} for chainID ${chainId}.`);
+      assert(
+        !isNaN(nBlocks) && nBlocks >= 0,
+        `Chain ${chainId} minimum deposit confirmations missing or invalid (${nBlocks}).`
+      );
+    });
   }
 }
