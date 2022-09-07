@@ -22,6 +22,15 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   42161: 99990,
 };
 
+// Default blocks to follow HEAD to account for orphaned events originating from chain reorganisations.
+export const FOLLOWING_DISTANCES: { [chainId: number]: number } = {
+  1: 3,
+  10: 0,
+  137: 100,
+  288: 0,
+  42161: 0,
+};
+
 export const BUNDLE_END_BLOCK_BUFFERS = {
   1: 100, // At 15s/block, 100 blocks = 20 mins
   10: 3000, // At a conservative 10 TPS, 300 seconds = 3000 transactions. And 1 block per txn.
