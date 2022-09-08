@@ -422,7 +422,18 @@ export class HubPoolClient {
         unclaimedPoolRebalanceLeafCount: pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount,
         challengePeriodEndTimestamp: pendingRootBundleProposal.challengePeriodEndTimestamp,
         bundleEvaluationBlockNumbers: mostRecentProposedRootBundle.bundleEvaluationBlockNumbers.map(
-          (block: BigNumber) => block.toNumber()
+          (block: BigNumber) => {
+            // Ideally, the HubPool.sol contract should limit the size of the elements within the
+            // bundleEvaluationBlockNumbers array. But because it doesn't, we wrap the cast of BN --> Number
+            // in a try/catch statement and return some value that would always be disputable.
+            // This catches the denial of service attack vector where a malicious proposer proposes with bundle block
+            // evaluation block numbers larger than what BigNumber::toNumber() can handle.
+            try {
+              return block.toNumber();
+            } catch {
+              return 0;
+            }
+          }
         ),
         proposalBlockNumber: mostRecentProposedRootBundle.blockNumber,
       };
