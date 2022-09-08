@@ -69,6 +69,9 @@ describe("Monitor", async function () {
       0
     ));
 
+    const configuredNetworks = [1, repaymentChainId, originChainId, destinationChainId];
+    const minDepositConfirmations = Object.fromEntries(configuredNetworks.map((chainId) => [chainId, 0]));
+
     const monitorConfig = new MonitorConfig({
       STARTING_BLOCK_NUMBER: "0",
       ENDING_BLOCK_NUMBER: "100",
@@ -81,7 +84,8 @@ describe("Monitor", async function () {
       MONITOR_REPORT_ENABLED: "true",
       MONITOR_REPORT_INTERVAL: "10",
       MONITORED_RELAYERS: `["${depositor.address}"]`,
-      CONFIGURED_NETWORKS: `[1, ${repaymentChainId}, ${originChainId}, ${destinationChainId}]`,
+      CONFIGURED_NETWORKS: JSON.stringify(configuredNetworks),
+      MIN_DEPOSIT_CONFIRMATIONS: JSON.stringify(minDepositConfirmations),
     });
 
     const chainIds = [1, repaymentChainId, originChainId, destinationChainId];
