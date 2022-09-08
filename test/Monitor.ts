@@ -70,9 +70,7 @@ describe("Monitor", async function () {
     ));
 
     const configuredNetworks = [1, repaymentChainId, originChainId, destinationChainId];
-    const minDepositConfirmations = Object.fromEntries(
-      configuredNetworks.map((chainId) => [chainId, 0])
-    );
+    const minDepositConfirmations = Object.fromEntries(configuredNetworks.map((chainId) => [chainId, 0]));
 
     const monitorConfig = new MonitorConfig({
       STARTING_BLOCK_NUMBER: "0",
