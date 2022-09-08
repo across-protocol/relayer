@@ -13,7 +13,7 @@ import { Dataworker } from "../src/dataworker/Dataworker";
 let spy: sinon.SinonSpy;
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract;
 let l1Token_1: Contract, hubPool: Contract;
-let depositor: SignerWithAddress;
+let depositor: SignerWithAddress, dataworker: SignerWithAddress;
 
 let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
 let dataworkerInstance: Dataworker, multiCallerClient: MultiCallerClient;
@@ -32,6 +32,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       hubPoolClient,
       l1Token_1,
       depositor,
+      dataworker,
       dataworkerInstance,
       spokePoolClients,
       multiCallerClient,
@@ -291,5 +292,29 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected slow relay root, submitting dispute");
     await multiCallerClient.executeTransactionQueue();
+  });
+  it("Validates root bundle with large bundleEvaluationBlockNumbers", async function () {
+    await updateAllClients();
+
+    // propose root bundle with larger bundleEvaluationBlockNumbers than blockNumber.toNumber() can handle.
+    // This simulates a DOS attack vector on the HubPoolClient's ability to parse a pending proposal.
+    await hubPool
+      .connect(dataworker)
+      .proposeRootBundle(
+        ["0x" + "ff".repeat(32)],
+        1,
+        "0x" + "00".repeat(32),
+        "0x" + "00".repeat(32),
+        "0x" + "00".repeat(32)
+      );
+
+    let success = false;
+    try {
+      await updateAllClients();
+      success = true;
+      // eslint-disable-next-line no-empty
+    } catch {}
+
+    expect(success).to.be.true;
   });
 });
