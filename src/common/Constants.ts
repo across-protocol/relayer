@@ -13,6 +13,18 @@ export const MAX_RELAYER_DEPOSIT_LOOK_BACK: { [chainId: number]: number } = {
   42161: 350000,
 };
 
+// Reorgs are anticipated on Ethereum and Polygon.
+// Ethereum: https://etherscan.io/blocks_forked
+// Polygon: https://polygonscan.com/blocks_forked
+// Optimistic Rollups are currently centrally serialized and are not expected to reorg.
+export const MIN_DEPOSIT_CONFIRMATIONS: { [chainId: number]: number } = {
+  1: 3,
+  10: 0,
+  137: 100,
+  288: 0,
+  42161: 0,
+};
+
 // Optimism, ethereum can do infinity lookbacks. boba and Arbitrum limited to 100000 on infura.
 export const CHAIN_MAX_BLOCK_LOOKBACK = {
   1: 0, // Note: 0 gets defaulted to infinity lookback
@@ -98,7 +110,7 @@ export const l2TokensToL1TokenValidation = {
 // Maps chain ID to root bundle ID to ignore because the roots are known to be invalid from the perspective of the
 // latest dataworker code, or there is no matching L1 root bundle, because the root bundle was relayed by an admin.
 export const IGNORED_SPOKE_BUNDLES = {
-  1: [104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
+  1: [357, 322, 321, 104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
   10: [105, 104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
   137: [105, 104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
   288: [96, 93, 90, 85, 78, 72, 68, 67, 65, 2],

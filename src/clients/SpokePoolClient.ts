@@ -237,9 +237,9 @@ export class SpokePoolClient {
       process.env[`NODE_MAX_CONCURRENCY_${this.chainId}`] || NODE_MAX_CONCURRENCY || "1000"
     );
 
-    // Use a following distance to ensure the data we see are final.
-    const followingDistance = this.eventSearchConfig.followingDistance ?? 0;
-    this.latestBlockNumber = (await this.spokePool.provider.getBlockNumber()) - followingDistance;
+    // Require that all Deposits meet the minimum specified number of confirmations.
+    this.latestBlockNumber =
+      (await this.spokePool.provider.getBlockNumber()) - (this.eventSearchConfig.minDepositConfirmations ?? 0);
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
       toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
