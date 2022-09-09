@@ -40,7 +40,9 @@ describe("SpokePoolClient: SpeedUp", async function () {
 
     // Fetching deposits for the depositor should contain the correct fees.
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)).to.deep.equal([expectedDepositData]);
-    expect(spokePoolClient.getDeposits().filter((deposit) => deposit.depositor === depositor.address)).to.deep.equal([expectedDepositData]);
+    expect(spokePoolClient.getDeposits().filter((deposit) => deposit.depositor === depositor.address)).to.deep.equal([
+      expectedDepositData,
+    ]);
   });
   it("Selects the highest speedup option when multiple are presented", async function () {
     const deposit = await simpleDeposit(spokePool, erc20, depositor, depositor, destinationChainId);
@@ -53,7 +55,9 @@ describe("SpokePoolClient: SpeedUp", async function () {
     // below the original fee should equal the original deposit with no signature.
     expect(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit)).to.deep.equal(deposit);
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)).to.deep.equal([deposit]);
-    expect(spokePoolClient.getDeposits().filter((deposit) => deposit.depositor === depositor.address)).to.deep.equal([deposit]);
+    expect(spokePoolClient.getDeposits().filter((deposit) => deposit.depositor === depositor.address)).to.deep.equal([
+      deposit,
+    ]);
     expect(
       spokePoolClient.getDeposits().filter((deposit) => deposit.depositor === depositor.address)[0].speedUpSignature
     ).to.deep.equal(undefined);

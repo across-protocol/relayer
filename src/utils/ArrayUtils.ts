@@ -1,7 +1,11 @@
 import { SortableEvent } from "../interfaces";
 import lodash from "lodash";
 
-export function sliceBlockRangeSorted<T extends SortableEvent>(sortedArray: T[], startBlock: number, endBlock: number): T[] {
+export function sliceBlockRangeSorted<T extends SortableEvent>(
+  sortedArray: T[],
+  startBlock: number,
+  endBlock: number
+): T[] {
   const startIndex = lodash.findIndex(sortedArray, (event) => event.blockNumber >= startBlock);
   if (startIndex === -1) return [];
   const endIndex = lodash.findIndex(sortedArray, (event) => event.blockNumber > endBlock);
