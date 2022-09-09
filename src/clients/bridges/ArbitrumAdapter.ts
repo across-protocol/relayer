@@ -87,7 +87,7 @@ export class ArbitrumAdapter extends BaseAdapter {
       }
     }
 
-    const results = await Promise.all(promises, { concurrency: 4 });
+    const results = await Promise.all(promises);
 
     // 2 events per token.
     const numEventsPerMonitoredAddress = 2 * validTokens.length;

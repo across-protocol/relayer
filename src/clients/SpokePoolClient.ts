@@ -13,7 +13,6 @@ import {
   CachedData,
   DepositWithBlockInCache,
   FillWithBlockInCache,
-  sortEventsAscending,
   sortEventsAscendingInPlace,
 } from "../utils";
 import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
@@ -67,7 +66,7 @@ export class SpokePoolClient {
   }
 
   getDeposits(): DepositWithBlock[] {
-    return sortEventsAscending(Object.values(this.deposits).flat());
+    return sortEventsAscendingInPlace(Object.values(this.deposits).flat());
   }
 
   getTokensBridged(): TokensBridged[] {
@@ -87,7 +86,7 @@ export class SpokePoolClient {
   }
 
   getFills(): FillWithBlock[] {
-    return sortEventsAscending(Object.values(this.fills).flat());
+    return sortEventsAscendingInPlace(Object.values(this.fills).flat());
   }
 
   getFillsForOriginChain(originChainId: number): FillWithBlock[] {
