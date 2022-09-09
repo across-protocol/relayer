@@ -55,7 +55,7 @@ export class OptimismAdapter extends BaseAdapter {
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
         // Transfers might have come from the monitored address itself or another sender address (if specified).
-        const senderAddress = this.senderAddress || monitoredAddress;
+        const senderAddress = this.senderAddress || atomicDepositorAddress;
         const adapterSearchConfig = [ZERO_ADDRESS, undefined, senderAddress];
         promises.push(
           paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), this.l1SearchConfig),
