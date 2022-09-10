@@ -39,7 +39,7 @@ let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithA
 const { spy, spyLogger } = createSpyLogger();
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let configStoreClient: AcrossConfigStoreClient, hubPoolClient: HubPoolClient;
-let multiCallerClient: MultiCallerClient;
+let multiCallerClient: MultiCallerClient, tokenClient: TokenClient;
 
 let relayerInstance: Relayer;
 
@@ -71,6 +71,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     multiCallerClient = new MultiCallerClient(spyLogger);
+    tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -79,13 +80,14 @@ describe("Relayer: Unfilled Deposits", async function () {
         hubPoolClient,
         configStoreClient,
         profitClient: new ProfitClient(spyLogger, hubPoolClient, spokePoolClients, false, []),
-        tokenClient: new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient),
+        tokenClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
       },
       {
         relayerTokens: [],
         relayerDestinationChains: [],
+        skipInvalidFills: true
       } as RelayerConfig
     );
 
@@ -256,6 +258,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     await relayerInstance.checkForUnfilledDepositsAndFill();
     // Relayer shouldn't try to relay the fill even though it's unfilled as there has been one invalid fill from this
     // same relayer.
+
+    expect(lastSpyLogIncludes(spy, "Skipping deposit with invalid fills from the same relayer")).to.be.true;
     expect(multiCallerClient.transactionCount()).to.equal(0);
   });
 });
@@ -263,6 +267,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 async function updateAllClients() {
   await hubPoolClient.update();
   await configStoreClient.update();
+  await tokenClient.update();
   await spokePoolClient_1.update();
   await spokePoolClient_2.update();
 }
