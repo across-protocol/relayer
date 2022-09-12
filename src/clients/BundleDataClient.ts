@@ -185,7 +185,7 @@ export class BundleDataClient {
     const allValidFills: FillWithBlock[] = [];
     const allInvalidFills: FillWithBlock[] = [];
 
-    const allChainIds = Object.keys(spokePoolClients);
+    const allChainIds = Object.keys(spokePoolClients).map(Number);
 
     for (const originChainId of allChainIds) {
       const originClient = spokePoolClients[originChainId];

@@ -90,7 +90,7 @@ export class SpokePoolClient {
   }
 
   getFillsForOriginChain(originChainId: number): FillWithBlock[] {
-    return this.fills[originChainId];
+    return this.fills[originChainId] || [];
   }
 
   getFillsForRelayer(relayer: string): FillWithBlock[] {
