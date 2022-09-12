@@ -54,9 +54,7 @@ describe("SpokePoolClient: SpeedUp", async function () {
     expect(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit)).to.deep.equal(deposit);
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0]).to.deep.contain(deposit);
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId).length).to.equal(1);
-    expect(
-      spokePoolClient.getDeposits()[0].speedUpSignature
-    ).to.deep.equal(undefined);
+    expect(spokePoolClient.getDeposits()[0].speedUpSignature).to.deep.equal(undefined);
 
     // SpeedUp the deposit twice. Ensure the highest fee (and signature) is used.
 
