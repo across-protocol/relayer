@@ -21,6 +21,18 @@ import { AcrossConfigStoreClient } from "./ConfigStoreClient";
 import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock, TokensBridged } from "../interfaces/SpokePool";
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
 
+const FILL_DEPOSIT_COMPARISON_KEYS = [
+  "amount",
+  "originChainId",
+  "relayerFeePct",
+  "realizedLpFeePct",
+  "depositId",
+  "depositor",
+  "recipient",
+  "destinationChainId",
+  "destinationToken",
+];
+
 export class SpokePoolClient {
   private depositHashes: { [depositHash: string]: Deposit } = {};
   private depositHashesToFills: { [depositHash: string]: FillWithBlock[] } = {};
@@ -214,12 +226,10 @@ export class SpokePoolClient {
   // Ensure that each deposit element is included with the same value in the fill. This includes all elements defined
   // by the depositor as well as the realizedLpFeePct and the destinationToken, which are pulled from other clients.
   validateFillForDeposit(fill: Fill, deposit: Deposit) {
-    let isValid = true;
-    Object.keys(deposit).forEach((key) => {
-      if (fill[key] !== undefined && deposit[key].toString() !== fill[key].toString()) isValid = false;
+    // Note: this short circuits when a key is found where the comparison doesn't match.
+    return FILL_DEPOSIT_COMPARISON_KEYS.every((key) => {
+      return fill[key].toString() === deposit[key].toString() && fill[key] !== undefined;
     });
-
-    return isValid;
   }
 
   getDepositHash(event: Deposit | Fill) {

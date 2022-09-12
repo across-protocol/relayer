@@ -176,6 +176,7 @@ export function getUnfilledDeposits(
         .map((deposit) => {
           // Remove block number that we don't need anymore and because function expects to return a Deposit type.
           const { blockNumber, originBlockNumber, ...depositData } = deposit;
+          // eslint-disable-next-line no-console
           return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit: depositData };
         });
       // Remove any deposits that have no unfilled amount and append the remaining deposits to unfilledDeposits array.
