@@ -27,7 +27,9 @@ describe("SpokePoolClient: Fills", async function () {
 
     await spokePoolClient.update();
 
-    expect(spokePoolClient.getFills()).to.deep.equal([fill1, fill2]);
+    expect(spokePoolClient.getFills()[0]).to.deep.contains(fill1);
+    expect(spokePoolClient.getFills()[1]).to.deep.contains(fill2);
+    expect(spokePoolClient.getFills().length).to.equal(2);
   });
   it("Correctly fetches deposit data multiple fills, multiple chains", async function () {
     // Do 6 deposits. 2 for the first depositor on chain1, 1 for the first depositor on chain2, 1 for the second
@@ -43,40 +45,35 @@ describe("SpokePoolClient: Fills", async function () {
     await spokePoolClient.update();
 
     // Validate associated ChainId Events are correctly returned.
-    expect(spokePoolClient.getFills()).to.deep.equal([
-      relayer1Chain1_1,
-      relayer1Chain1_2,
-      relayer1Chain2_1,
-      relayer2Chain1_1,
-      relayer2Chain2_1,
-      relayer2Chain2_2,
-    ]);
+    expect(spokePoolClient.getFills()[0]).to.deep.contains(relayer1Chain1_1);
+    expect(spokePoolClient.getFills()[1]).to.deep.contains(relayer1Chain1_2);
+    expect(spokePoolClient.getFills()[2]).to.deep.contains(relayer1Chain2_1);
+    expect(spokePoolClient.getFills()[3]).to.deep.contains(relayer2Chain1_1);
+    expect(spokePoolClient.getFills()[4]).to.deep.contains(relayer2Chain2_1);
+    expect(spokePoolClient.getFills()[5]).to.deep.contains(relayer2Chain2_2);
+    expect(spokePoolClient.getFills().length).to.equal(6);
 
     // TODO: Add `getFillsForRepaymentChainId` tests once we update the `fillRelay` method from contracts-v2 to allow
     // an overridable `repaymentChainId`
 
-    expect(spokePoolClient.getFills().filter((fill) => fill.originChainId === originChainId)).to.deep.equal([
-      relayer1Chain1_1,
-      relayer1Chain1_2,
-      relayer2Chain1_1,
-    ]);
+    expect(spokePoolClient.getFillsForOriginChain(originChainId)[0]).to.deep.contains(relayer1Chain1_1);
+    expect(spokePoolClient.getFillsForOriginChain(originChainId)[1]).to.deep.contains(relayer1Chain1_2);
+    expect(spokePoolClient.getFillsForOriginChain(originChainId)[2]).to.deep.contains(relayer2Chain1_1);
+    expect(spokePoolClient.getFillsForOriginChain(originChainId).length).to.equal(3);
 
-    expect(spokePoolClient.getFills().filter((fill) => fill.originChainId === originChainId2)).to.deep.equal([
-      relayer1Chain2_1,
-      relayer2Chain2_1,
-      relayer2Chain2_2,
-    ]);
+    expect(spokePoolClient.getFillsForOriginChain(originChainId2)[0]).to.deep.contains(relayer1Chain2_1);
+    expect(spokePoolClient.getFillsForOriginChain(originChainId2)[1]).to.deep.contains(relayer2Chain2_1);
+    expect(spokePoolClient.getFillsForOriginChain(originChainId2)[2]).to.deep.contains(relayer2Chain2_2);
+    expect(spokePoolClient.getFillsForOriginChain(originChainId2).length).to.equal(3);
 
-    expect(spokePoolClient.getFills().filter((fill) => fill.relayer === relayer1.address)).to.deep.equal([
-      relayer1Chain1_1,
-      relayer1Chain1_2,
-      relayer1Chain2_1,
-    ]);
+    expect(spokePoolClient.getFillsForRelayer(relayer1.address)[0]).to.deep.contains(relayer1Chain1_1);
+    expect(spokePoolClient.getFillsForRelayer(relayer1.address)[1]).to.deep.contains(relayer1Chain1_2);
+    expect(spokePoolClient.getFillsForRelayer(relayer1.address)[2]).to.deep.contains(relayer1Chain2_1);
+    expect(spokePoolClient.getFillsForRelayer(relayer1.address).length).to.equal(3);
 
-    expect(spokePoolClient.getFills().filter((fill) => fill.relayer === relayer2.address)).to.deep.equal([
-      relayer2Chain1_1,
-      relayer2Chain2_1,
-      relayer2Chain2_2,
-    ]);
+    expect(spokePoolClient.getFillsForRelayer(relayer2.address)[0]).to.deep.contains(relayer2Chain1_1);
+    expect(spokePoolClient.getFillsForRelayer(relayer2.address)[1]).to.deep.contains(relayer2Chain2_1);
+    expect(spokePoolClient.getFillsForRelayer(relayer2.address)[2]).to.deep.contains(relayer2Chain2_2);
+    expect(spokePoolClient.getFillsForRelayer(relayer2.address).length).to.equal(3);
   });
 });

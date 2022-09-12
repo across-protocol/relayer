@@ -27,7 +27,8 @@ import { buildFillRelayWithUpdatedFeeProps } from "../src/utils";
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
 
-let spokePoolClient: SpokePoolClient;
+let spokePoolClient2: SpokePoolClient;
+let spokePoolClient1: SpokePoolClient;
 
 describe("SpokePoolClient: Fill Validation", async function () {
   beforeEach(async function () {
@@ -35,16 +36,33 @@ describe("SpokePoolClient: Fill Validation", async function () {
     // Creat two spoke pools: one to act as the source and the other to act as the destination.
     ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId));
     ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
-    spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_2, null, originChainId); // create spoke pool client on the "target" chain.
+    const { spyLogger } = createSpyLogger();
+    spokePoolClient2 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_2, null, originChainId); // create spoke pool client on the "target" chain.
+    spokePoolClient1 = new SpokePoolClient(spyLogger, spokePool_1, null, destinationChainId);
 
     await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);
     await setupTokensForWallet(spokePool_2, relayer, [erc20_2], null, 10);
   });
 
   it("Accepts valid fills", async function () {
-    const deposit_1 = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    const fill_1 = await fillRelay(spokePool_2, erc20_2, depositor, depositor, relayer, 0, originChainId);
-    expect(spokePoolClient.validateFillForDeposit(fill_1, deposit_1)).to.equal(true);
+    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await fillRelay(spokePool_2, erc20_2, depositor, depositor, relayer, 0, originChainId);
+
+    await spokePoolClient2.update();
+    await spokePoolClient1.update();
+
+    const [deposit_1] = spokePoolClient1.getDeposits();
+    const [fill_1] = spokePoolClient2.getFills();
+
+    // Some fields are expected to be dynamically populated by the client, but aren't in this environment.
+    // Fill them in manually from the fill struct to get a valid comparison.
+    expect(
+      spokePoolClient2.validateFillForDeposit(fill_1, {
+        ...deposit_1,
+        realizedLpFeePct: fill_1.realizedLpFeePct,
+        destinationToken: fill_1.destinationToken,
+      })
+    ).to.equal(true);
   });
 
   it("Returns deposit matched with fill", async function () {
@@ -118,23 +136,36 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Rejects fills that dont match the deposit data", async function () {
-    const deposit_1 = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    const validFill = await fillRelay(spokePool_2, erc20_2, depositor, depositor, relayer, 0, originChainId);
+    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await fillRelay(spokePool_2, erc20_2, depositor, depositor, relayer, 0, originChainId);
+
+    await spokePoolClient2.update();
+    await spokePoolClient1.update();
+
+    const [incompleteDeposit] = spokePoolClient1.getDeposits();
+    const [validFill] = spokePoolClient2.getFills();
+    const validDeposit = {
+      ...incompleteDeposit,
+      realizedLpFeePct: validFill.realizedLpFeePct,
+      destinationToken: validFill.destinationToken,
+    };
 
     // Invalid Amount.
-    expect(spokePoolClient.validateFillForDeposit({ ...validFill, amount: toBNWei(1337) }, deposit_1)).to.be.false;
+    expect(spokePoolClient2.validateFillForDeposit({ ...validFill, amount: toBNWei(1337) }, validDeposit)).to.be.false;
 
     // Invalid depositId.
-    expect(spokePoolClient.validateFillForDeposit({ ...validFill, depositId: 1337 }, deposit_1)).to.be.false;
+    expect(spokePoolClient2.validateFillForDeposit({ ...validFill, depositId: 1337 }, validDeposit)).to.be.false;
 
     // Changed the depositor.
-    expect(spokePoolClient.validateFillForDeposit({ ...validFill, depositor: relayer.address }, deposit_1)).to.be.false;
+    expect(spokePoolClient2.validateFillForDeposit({ ...validFill, depositor: relayer.address }, validDeposit)).to.be
+      .false;
 
     // Changed the recipient.
-    expect(spokePoolClient.validateFillForDeposit({ ...validFill, recipient: relayer.address }, deposit_1)).to.be.false;
+    expect(spokePoolClient2.validateFillForDeposit({ ...validFill, recipient: relayer.address }, validDeposit)).to.be
+      .false;
 
     // Changed the relayerFeePct.
-    expect(spokePoolClient.validateFillForDeposit({ ...validFill, relayerFeePct: toBNWei(1337) }, deposit_1)).to.be
+    expect(spokePoolClient2.validateFillForDeposit({ ...validFill, relayerFeePct: toBNWei(1337) }, validDeposit)).to.be
       .false;
 
     // Validate the realizedLPFeePct and destinationToken matches. These values are optional in the deposit object and
@@ -142,17 +173,17 @@ describe("SpokePoolClient: Fill Validation", async function () {
 
     // Assign a realizedLPFeePct to the deposit and check it matches with the fill. The default set on a fill (from
     // contracts-v2) is 0.1. After, try changing this to a separate value and ensure this is rejected.
-    expect(spokePoolClient.validateFillForDeposit(validFill, { ...deposit_1, realizedLpFeePct: toBNWei(0.1) })).to.be
-      .true;
+    expect(spokePoolClient2.validateFillForDeposit(validFill, { ...validDeposit, realizedLpFeePct: toBNWei(0.1) })).to
+      .be.true;
 
-    expect(spokePoolClient.validateFillForDeposit(validFill, { ...deposit_1, realizedLpFeePct: toBNWei(0.1337) })).to.be
-      .false;
+    expect(spokePoolClient2.validateFillForDeposit(validFill, { ...validDeposit, realizedLpFeePct: toBNWei(0.1337) }))
+      .to.be.false;
 
     // Assign a destinationToken to the deposit and ensure it is validated correctly. erc20_2 from the fillRelay method
     // above is the destination token. After, try changing this to something that is clearly wrong.
-    expect(spokePoolClient.validateFillForDeposit(validFill, { ...deposit_1, destinationToken: erc20_2.address })).to.be
-      .true;
-    expect(spokePoolClient.validateFillForDeposit(validFill, { ...deposit_1, destinationToken: owner.address })).to.be
-      .false;
+    expect(spokePoolClient2.validateFillForDeposit(validFill, { ...validDeposit, destinationToken: erc20_2.address }))
+      .to.be.true;
+    expect(spokePoolClient2.validateFillForDeposit(validFill, { ...validDeposit, destinationToken: owner.address })).to
+      .be.false;
   });
 });

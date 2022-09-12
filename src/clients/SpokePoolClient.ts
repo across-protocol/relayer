@@ -31,7 +31,7 @@ const FILL_DEPOSIT_COMPARISON_KEYS = [
   "recipient",
   "destinationChainId",
   "destinationToken",
-];
+] as const;
 
 export class SpokePoolClient {
   private depositHashes: { [depositHash: string]: Deposit } = {};
@@ -228,7 +228,7 @@ export class SpokePoolClient {
   validateFillForDeposit(fill: Fill, deposit: Deposit) {
     // Note: this short circuits when a key is found where the comparison doesn't match.
     return FILL_DEPOSIT_COMPARISON_KEYS.every((key) => {
-      return fill[key].toString() === deposit[key].toString() && fill[key] !== undefined;
+      return fill[key] !== undefined && fill[key].toString() === deposit[key]?.toString();
     });
   }
 
