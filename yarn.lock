@@ -1783,6 +1783,20 @@
     split-array-stream "^2.0.0"
     stream-events "^1.0.5"
 
+"@google-cloud/datastore@^7.0.0":
+  version "7.0.0"
+  resolved "https://registry.yarnpkg.com/@google-cloud/datastore/-/datastore-7.0.0.tgz#e026db7d12c773230abf9e6b391a6196ef3fb81b"
+  integrity sha512-CbvqzqWFtwHqH3EWMWHqKzKiM9dV+/Ga0e1oSr7rO2KA6QBHGvUEBbLxRWirHnt6Xz2drjzIVjVE1tuOENHPlQ==
+  dependencies:
+    "@google-cloud/promisify" "^2.0.0"
+    arrify "^2.0.1"
+    concat-stream "^2.0.0"
+    extend "^3.0.2"
+    google-gax "^3.0.1"
+    is "^3.3.0"
+    split-array-stream "^2.0.0"
+    stream-events "^1.0.5"
+
 "@google-cloud/kms@^2.3.1":
   version "2.11.1"
   resolved "https://registry.yarnpkg.com/@google-cloud/kms/-/kms-2.11.1.tgz#56a19957e11e2f560fa469c34aad932502a0db43"
@@ -1790,7 +1804,7 @@
   dependencies:
     google-gax "^2.24.1"
 
-"@google-cloud/kms@^3.0.0", "@google-cloud/kms@^3.0.1":
+"@google-cloud/kms@^3.0.1":
   version "3.0.1"
   resolved "https://registry.yarnpkg.com/@google-cloud/kms/-/kms-3.0.1.tgz#2e86889f2c08f13208afc5bd272a7f25326c9f17"
   integrity sha512-xUrhzattC5mkNqbfMcIgBzwAab9eXCYrn1R1KYUNV5E96fK7ciT57bJESaUQvin7XKd18sQcLRD+uOJ6eTfXbg==
@@ -1887,32 +1901,6 @@
     teeny-request "^7.1.3"
     xdg-basedir "^4.0.0"
 
-"@google-cloud/storage@^6.1.0":
-  version "6.3.0"
-  resolved "https://registry.yarnpkg.com/@google-cloud/storage/-/storage-6.3.0.tgz#0a9765416b659f54477da6611d9c12b914c04a61"
-  integrity sha512-Ah4wl9cWUEW+2lAqHsKauaLlPmbtdOdQkvJE6BFwmTSZhywYVtVHLcEpf5F+/GmmNTnirFGNdE7UjgbyOxcnRg==
-  dependencies:
-    "@google-cloud/paginator" "^3.0.7"
-    "@google-cloud/projectify" "^3.0.0"
-    "@google-cloud/promisify" "^3.0.0"
-    abort-controller "^3.0.0"
-    arrify "^2.0.0"
-    async-retry "^1.3.3"
-    compressible "^2.0.12"
-    duplexify "^4.0.0"
-    ent "^2.2.0"
-    extend "^3.0.2"
-    gaxios "^5.0.0"
-    google-auth-library "^8.0.1"
-    mime "^3.0.0"
-    mime-types "^2.0.8"
-    p-limit "^3.0.1"
-    pumpify "^2.0.0"
-    retry-request "^5.0.0"
-    stream-events "^1.0.4"
-    teeny-request "^8.0.0"
-    uuid "^8.0.0"
-
 "@google-cloud/storage@^6.2.2":
   version "6.2.2"
   resolved "https://registry.yarnpkg.com/@google-cloud/storage/-/storage-6.2.2.tgz#1fd3ee85e5fea55a9696c98769d097b28ff4d775"
@@ -1936,6 +1924,30 @@
     pumpify "^2.0.0"
     retry-request "^5.0.0"
     stream-events "^1.0.4"
+    teeny-request "^8.0.0"
+    uuid "^8.0.0"
+
+"@google-cloud/storage@^6.4.2":
+  version "6.4.2"
+  resolved "https://registry.yarnpkg.com/@google-cloud/storage/-/storage-6.4.2.tgz#e81bfdda64e88d7b06668287d31119804cad988a"
+  integrity sha512-rnwx++XIxy63t1CREGlY2+H+tvuvYmkiIqJdq0IRzGaah9bDetV+qJVl5Mvi5aPhgoqn3UNnKGv9SPcETimFgw==
+  dependencies:
+    "@google-cloud/paginator" "^3.0.7"
+    "@google-cloud/projectify" "^3.0.0"
+    "@google-cloud/promisify" "^3.0.0"
+    abort-controller "^3.0.0"
+    arrify "^2.0.0"
+    async-retry "^1.3.3"
+    compressible "^2.0.12"
+    duplexify "^4.0.0"
+    ent "^2.2.0"
+    extend "^3.0.2"
+    gaxios "^5.0.0"
+    google-auth-library "^8.0.1"
+    mime "^3.0.0"
+    mime-types "^2.0.8"
+    p-limit "^3.0.1"
+    retry-request "^5.0.0"
     teeny-request "^8.0.0"
     uuid "^8.0.0"
 
@@ -2538,6 +2550,14 @@
     ethereumjs-util "^7.0.3"
     proper-lockfile "^4.1.1"
     solidity-ast "^0.4.15"
+
+"@pagerduty/pdjs@^2.2.4":
+  version "2.2.4"
+  resolved "https://registry.yarnpkg.com/@pagerduty/pdjs/-/pdjs-2.2.4.tgz#62af1ec60bb3076b0ec07af05133c1f8c9af420b"
+  integrity sha512-MMZvxos7PJnGJ8z3ijsu/gsMQLIfO8peeigKCjUDmviXk8FIaZZjX0X889NIKuFDhGirYbJVwGTaDYCEw4baLg==
+  dependencies:
+    browser-or-node "^2.0.0"
+    cross-fetch "^3.0.6"
 
 "@protobufjs/aspromise@^1.1.1", "@protobufjs/aspromise@^1.1.2":
   version "1.1.2"
@@ -3491,16 +3511,16 @@
     truffle-deploy-registry "^0.5.1"
     web3 "^1.6.0"
 
-"@uma/common@^2.24.0":
-  version "2.24.0"
-  resolved "https://registry.yarnpkg.com/@uma/common/-/common-2.24.0.tgz#089ddcdf39cc44163b1add6bf316db40ae5c7494"
-  integrity sha512-/OnSS6kQVlbbCykohLaLdn1ld7WJEq7wO3rZ0g1WthinlEVhiTfRK72RIyjz7pOb50u2tzY56z3MgpvYZEqu/Q==
+"@uma/common@^2.27.0":
+  version "2.27.0"
+  resolved "https://registry.yarnpkg.com/@uma/common/-/common-2.27.0.tgz#b32cd76ef03090029b55bc508bdc6d9023a9978e"
+  integrity sha512-JHeBzMOmAhWE+E+3Qn6BJpVNM5gGbrCFUMrnVKR7SulavDAFvkVM/WUipHOOuMoLWg+YtBHqx89X1acPwDhvog==
   dependencies:
     "@across-protocol/contracts" "^0.1.4"
     "@eth-optimism/hardhat-ovm" "^0.2.2"
     "@ethersproject/bignumber" "^5.0.5"
-    "@google-cloud/kms" "^3.0.0"
-    "@google-cloud/storage" "^6.1.0"
+    "@google-cloud/kms" "^3.0.1"
+    "@google-cloud/storage" "^6.4.2"
     "@nomiclabs/hardhat-ethers" "^2.0.2"
     "@nomiclabs/hardhat-etherscan" "^3.0.0"
     "@nomiclabs/hardhat-web3" "^2.0.0"
@@ -3528,10 +3548,10 @@
     web3 "^1.6.0"
     winston "^3.2.1"
 
-"@uma/contracts-frontend@^0.3.11":
-  version "0.3.11"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.3.11.tgz#d966be9da9312de2090acdf5860576080b987052"
-  integrity sha512-1ogKI+olhGvcc/MyUtsbMIbwW/2nIqaCbDI/v9zBZrhkTgqp6FKqQeXM+TIx0fbxROAFVZrFd0sJjzyuCmYelg==
+"@uma/contracts-frontend@^0.3.15":
+  version "0.3.15"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.3.15.tgz#cc8eae27826809b6925b2cd268d3973aea027804"
+  integrity sha512-FKDu3FXHd31ILXu9Wo+Er4El0BN35I2+Unu9Nun6PWHZtByo1/4B2439xtfysDKQFF0f4PHMdL1V645A5Q1OKQ==
 
 "@uma/contracts-frontend@^0.3.7":
   version "0.3.7"
@@ -3553,10 +3573,10 @@
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.2.tgz#884b00b2c6bf983c9f136d5f8a0749c5ff4e08cd"
   integrity sha512-Ncl7Kv2nxuY/wV5oczH2Nf6XCS7dJLad9DlzMI3jwPMPU98YT8ChHydcDe6ZiL0SAVTg7FgpIyh7lX0B7nV9Aw==
 
-"@uma/contracts-node@^0.3.11":
-  version "0.3.11"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.11.tgz#ecbb7e4eb5f389a5ceef0c646653a0ae54041116"
-  integrity sha512-meRHB9YRz6DCF/0i3+IwVUwfi7gMyvJazvcWPbavFKRZzgYHSloWCOz5CL7ckYaz2OwfVupgYeCFmBltLM0B3A==
+"@uma/contracts-node@^0.3.15":
+  version "0.3.15"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.15.tgz#bcd658edb0baa9ddaeb4248933affa04865468cf"
+  integrity sha512-z14gtnt6VKjMkfZYGtCFERG/wyngHUp0/yDKB6ZhAVz/EanUSGpWvD4ehm/xC/HCSQcT253oFl9e0P1tsZRblw==
 
 "@uma/contracts-node@^0.3.7":
   version "0.3.7"
@@ -3582,17 +3602,18 @@
     "@uniswap/v3-core" "^1.0.0-rc.2"
     "@uniswap/v3-periphery" "^1.0.0-beta.23"
 
-"@uma/financial-templates-lib@^2.29.0":
-  version "2.30.1"
-  resolved "https://registry.yarnpkg.com/@uma/financial-templates-lib/-/financial-templates-lib-2.30.1.tgz#d2115d2ad7557647baec04d320263efbe5ac6f90"
-  integrity sha512-rvncBGyfySaWVDp7hNawdVQd+J3LCcsb617I1k6A/MdEJFo3WAS/0NJPHum8XVGR/T0Bc6ILWf1R9AANR1M/PA==
+"@uma/financial-templates-lib@^2.31.0":
+  version "2.31.0"
+  resolved "https://registry.yarnpkg.com/@uma/financial-templates-lib/-/financial-templates-lib-2.31.0.tgz#d9804ce9ac4441ce065dd6ec29aaad9fa9a3cb5f"
+  integrity sha512-yOBhBaCnY0cEeZvEvriho4IKSK2nZwaKCc81V0OqyqN7//S0hp24x/TkkzjwGifjxW+EZ5gbyv7BHwRd2C+7+w==
   dependencies:
     "@ethersproject/bignumber" "^5.4.2"
     "@google-cloud/logging-winston" "^4.1.1"
     "@google-cloud/trace-agent" "^5.1.6"
-    "@uma/common" "^2.24.0"
-    "@uma/contracts-node" "^0.3.11"
-    "@uma/sdk" "^0.27.0"
+    "@pagerduty/pdjs" "^2.2.4"
+    "@uma/common" "^2.27.0"
+    "@uma/contracts-node" "^0.3.15"
+    "@uma/sdk" "^0.29.0"
     "@uniswap/sdk" "^2.0.5"
     bluebird "^3.7.2"
     bn.js "^4.11.9"
@@ -3640,15 +3661,15 @@
     immer "^9.0.7"
     lodash-es "^4.17.21"
 
-"@uma/sdk@^0.27.0":
-  version "0.27.0"
-  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.27.0.tgz#c4f25bb3d1094ac3ed35e456135d2476ef81cea9"
-  integrity sha512-vy4LHxSW+O3lYmXoFj1hk/tIlUQMY4EOxSMgPY7skk20fWPHEkzUlA/TMrDJYT5piEhfLoAA7p7SBUxV/Rzo6w==
+"@uma/sdk@^0.29.0":
+  version "0.29.0"
+  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.29.0.tgz#1a41897e6c8b37d149a598d9e17ffcd9f9a7564c"
+  integrity sha512-FWHK3GWOJ+Y+q3lVro7u2jAFNKIevEVsRzIIl6YS7Jqt5eHFpFewq/iFtXXBspmr+wXyGLLrGqb8aZ1c24E/ww==
   dependencies:
-    "@google-cloud/datastore" "^6.6.0"
+    "@google-cloud/datastore" "^7.0.0"
     "@types/lodash-es" "^4.17.5"
-    "@uma/contracts-frontend" "^0.3.11"
-    "@uma/contracts-node" "^0.3.11"
+    "@uma/contracts-frontend" "^0.3.15"
+    "@uma/contracts-node" "^0.3.15"
     axios "^0.24.0"
     bn.js "^4.11.9"
     decimal.js "^10.3.1"
@@ -5199,6 +5220,11 @@ brorand@^1.0.1, brorand@^1.1.0:
   resolved "https://registry.yarnpkg.com/brorand/-/brorand-1.1.0.tgz#12c25efe40a45e3c323eb8675a0a0ce57b22371f"
   integrity sha1-EsJe/kCkXjwyPrhnWgoM5XsiNx8=
 
+browser-or-node@^2.0.0:
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/browser-or-node/-/browser-or-node-2.0.0.tgz#808ea90282a670931cdc0ea98166538a50dd0d89"
+  integrity sha512-3Lrks/Okgof+/cRguUNG+qRXSeq79SO3hY4QrXJayJofwJwHiGC0qi99uDjsfTwULUFSr1OGVsBkdIkygKjTUA==
+
 browser-stdout@1.3.1:
   version "1.3.1"
   resolved "https://registry.yarnpkg.com/browser-stdout/-/browser-stdout-1.3.1.tgz#baa559ee14ced73452229bad7326467c61fabd60"
@@ -6213,6 +6239,13 @@ cross-fetch@^2.1.0, cross-fetch@^2.1.1:
   dependencies:
     node-fetch "^2.6.7"
     whatwg-fetch "^2.0.4"
+
+cross-fetch@^3.0.6:
+  version "3.1.5"
+  resolved "https://registry.yarnpkg.com/cross-fetch/-/cross-fetch-3.1.5.tgz#e1389f44d9e7ba767907f7af8454787952ab534f"
+  integrity sha512-lvb1SBsI0Z7GDwmuid+mU3kWVBwTVUbe7S0H52yaaAdQOXq2YktTCZdlAcNKFzE6QtRz0snpw9bNiPeOIkkQvw==
+  dependencies:
+    node-fetch "2.6.7"
 
 cross-spawn@^6.0.5:
   version "6.0.5"
