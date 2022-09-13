@@ -30,7 +30,7 @@ const FILL_DEPOSIT_COMPARISON_KEYS = [
   "depositor",
   "recipient",
   "destinationChainId",
-  "destinationToken"
+  "destinationToken",
 ] as const;
 
 export class SpokePoolClient {
