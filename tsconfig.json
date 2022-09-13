@@ -14,12 +14,6 @@
     "watchDirectory": "useFsEvents",
     "fallbackPolling": "dynamicPriority",
     "synchronousWatchDirectory": true,
-    "excludeDirectories": [
-      "**/node_modules",
-      "artifacts",
-      "cache",
-      "contracts",
-      "dist"
-    ]
+    "excludeDirectories": ["**/node_modules", "artifacts", "cache", "contracts", "dist"]
   }
 }
