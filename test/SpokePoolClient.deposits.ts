@@ -26,9 +26,11 @@ describe("SpokePoolClient: Deposits", async function () {
 
     await spokePoolClient.update();
 
-    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)).to.deep.equal([deposit1, deposit2]);
+    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0]).to.deep.contain(deposit1);
+    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)[1]).to.deep.contain(deposit2);
+    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId).length).to.equal(2);
   });
-  it("Correctly fetches deposit data multiple depositors, multiple chains", async function () {
+  it("Correctly fetches deposit data multiple multiple chains", async function () {
     // Do 6 deposits. 2 for the first depositor on chain1, 1 for the first depositor on chain2, 1 for the second
     // depositor on chain1, and 2 for the second depositor on chain2. For each deposit append the data that is excluded
     // from the deposit as it cant be fetched from the contract directly (realizedLpFeePct, destinationToken).
@@ -41,29 +43,14 @@ describe("SpokePoolClient: Deposits", async function () {
     await spokePoolClient.update();
 
     // Validate associated ChainId Events are correctly returned.
-    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)).to.deep.equal([
-      deposit1Chain1_1,
-      deposit1Chain1_2,
-      deposit2Chain1_1,
-    ]);
+    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0]).to.deep.contain(deposit1Chain1_1);
+    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)[1]).to.deep.contain(deposit1Chain1_2);
+    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)[2]).to.deep.contain(deposit2Chain1_1);
+    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId).length).to.equal(3);
 
-    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId2)).to.deep.equal([
-      deposit1Chain2_1,
-      deposit2Chain2_1,
-      deposit2Chain2_2,
-    ]);
-
-    // Validate associated depositor address information is correctly returned.
-    expect(spokePoolClient.getDepositsFromDepositor(depositor1.address)).to.deep.equal([
-      deposit1Chain1_1,
-      deposit1Chain1_2,
-      deposit1Chain2_1,
-    ]);
-
-    expect(spokePoolClient.getDepositsFromDepositor(depositor2.address)).to.deep.equal([
-      deposit2Chain1_1,
-      deposit2Chain2_1,
-      deposit2Chain2_2,
-    ]);
+    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId2)[0]).to.deep.contain(deposit1Chain2_1);
+    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId2)[1]).to.deep.contain(deposit2Chain2_1);
+    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId2)[2]).to.deep.contain(deposit2Chain2_2);
+    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId2).length).to.equal(3);
   });
 });

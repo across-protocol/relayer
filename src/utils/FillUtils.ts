@@ -164,10 +164,8 @@ export function getUnfilledDeposits(
       // validates that the deposit is filled "correctly" for the given deposit information. This includes validation
       // of the all deposit -> relay props, the realizedLpFeePct and the origin->destination token mapping.
       const destinationClient = spokePoolClients[destinationChain];
-      const depositsForDestinationChain: DepositWithBlock[] = originClient.getDepositsForDestinationChain(
-        destinationChain,
-        true
-      );
+      const depositsForDestinationChain: DepositWithBlock[] =
+        originClient.getDepositsForDestinationChain(destinationChain);
       const unfilledDepositsForDestinationChain = depositsForDestinationChain
         .filter((deposit) => {
           // If deposit is older than unfilled deposit lookback, ignore it
@@ -178,6 +176,7 @@ export function getUnfilledDeposits(
         .map((deposit) => {
           // Remove block number that we don't need anymore and because function expects to return a Deposit type.
           const { blockNumber, originBlockNumber, ...depositData } = deposit;
+          // eslint-disable-next-line no-console
           return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit: depositData };
         });
       // Remove any deposits that have no unfilled amount and append the remaining deposits to unfilledDeposits array.

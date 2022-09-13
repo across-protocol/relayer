@@ -13,6 +13,7 @@ import {
   CachedData,
   DepositWithBlockInCache,
   FillWithBlockInCache,
+  sortEventsAscendingInPlace,
 } from "../utils";
 import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
@@ -20,11 +21,21 @@ import { AcrossConfigStoreClient } from "./ConfigStoreClient";
 import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock, TokensBridged } from "../interfaces/SpokePool";
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
 
+const FILL_DEPOSIT_COMPARISON_KEYS = [
+  "amount",
+  "originChainId",
+  "relayerFeePct",
+  "realizedLpFeePct",
+  "depositId",
+  "depositor",
+  "recipient",
+  "destinationChainId",
+  "destinationToken",
+] as const;
+
 export class SpokePoolClient {
-  private deposits: { [DestinationChainId: number]: Deposit[] } = {};
   private depositHashes: { [depositHash: string]: Deposit } = {};
-  private fills: Fill[] = [];
-  private depositHashesToFills: { [depositHash: string]: Fill[] } = {};
+  private depositHashesToFills: { [depositHash: string]: FillWithBlock[] } = {};
   private speedUps: { [depositorAddress: string]: { [depositId: number]: SpeedUp[] } } = {};
   private depositRoutes: { [originToken: string]: { [DestinationChainId: number]: boolean } } = {};
   private tokensBridged: TokensBridged[] = [];
@@ -33,8 +44,8 @@ export class SpokePoolClient {
   public isUpdated = false;
   public firstBlockToSearch: number;
   public latestBlockNumber: number;
-  public fillsWithBlockNumbers: FillWithBlock[] = [];
-  public depositsWithBlockNumbers: { [DestinationChainId: number]: DepositWithBlock[] } = {};
+  public deposits: { [DestinationChainId: number]: DepositWithBlock[] } = {};
+  public fills: { [OriginChainId: number]: FillWithBlock[] } = {};
 
   constructor(
     readonly logger: winston.Logger,
@@ -61,20 +72,12 @@ export class SpokePoolClient {
     };
   }
 
-  getDepositsForDestinationChain(destinationChainId: number, withBlock = false): Deposit[] | DepositWithBlock[] {
-    return withBlock
-      ? this.depositsWithBlockNumbers[destinationChainId] || []
-      : this.deposits[destinationChainId] || [];
+  getDepositsForDestinationChain(destinationChainId: number): DepositWithBlock[] {
+    return this.deposits[destinationChainId] || [];
   }
 
-  getDepositsFromDepositor(depositor: string): Deposit[] {
-    return Object.values(this.deposits)
-      .flat()
-      .filter((deposit: Deposit) => deposit.depositor === depositor); // Select only deposits where the depositor is the same.
-  }
-
-  getFills(): Fill[] {
-    return this.fills;
+  getDeposits(): DepositWithBlock[] {
+    return sortEventsAscendingInPlace(Object.values(this.deposits).flat());
   }
 
   getTokensBridged(): TokensBridged[] {
@@ -93,32 +96,20 @@ export class SpokePoolClient {
     return Object.keys(this.depositRoutes);
   }
 
-  getFillsForOriginChain(originChainId: number): Fill[] {
-    return this.fills.filter((fill: Fill) => fill.originChainId === originChainId);
+  getFills(): FillWithBlock[] {
+    return sortEventsAscendingInPlace(Object.values(this.fills).flat());
   }
 
-  getFillsWithBlockForOriginChain(originChainId: number): FillWithBlock[] {
-    return this.fillsWithBlockNumbers.filter((fill: FillWithBlock) => fill.originChainId === originChainId);
+  getFillsForOriginChain(originChainId: number): FillWithBlock[] {
+    return this.fills[originChainId] || [];
   }
 
-  getFillsWithBlockForDestinationChainAndRelayer(chainId: number, relayer: string): FillWithBlock[] {
-    return this.fillsWithBlockNumbers.filter(
-      (fill: FillWithBlock) => fill.relayer === relayer && fill.destinationChainId === chainId
-    );
+  getFillsForRelayer(relayer: string): FillWithBlock[] {
+    return this.getFills().filter((fill) => fill.relayer === relayer);
   }
 
   getFillsWithBlockInRange(startingBlock: number, endingBlock: number): FillWithBlock[] {
-    return this.fillsWithBlockNumbers.filter(
-      (fill) => fill.blockNumber >= startingBlock && fill.blockNumber <= endingBlock
-    );
-  }
-
-  getFillsForRepaymentChain(repaymentChainId: number) {
-    return this.fills.filter((fill: Fill) => fill.repaymentChainId === repaymentChainId);
-  }
-
-  getFillsForRelayer(relayer: string) {
-    return this.fills.filter((fill: Fill) => fill.relayer === relayer);
+    return this.getFills().filter((fill) => fill.blockNumber >= startingBlock && fill.blockNumber <= endingBlock);
   }
 
   getRootBundleRelays() {
@@ -234,12 +225,12 @@ export class SpokePoolClient {
   // Ensure that each deposit element is included with the same value in the fill. This includes all elements defined
   // by the depositor as well as the realizedLpFeePct and the destinationToken, which are pulled from other clients.
   validateFillForDeposit(fill: Fill, deposit: Deposit) {
-    let isValid = true;
-    Object.keys(deposit).forEach((key) => {
-      if (fill[key] !== undefined && deposit[key].toString() !== fill[key].toString()) isValid = false;
+    // Note: this short circuits when a key is found where the comparison doesn't match.
+    // TODO: if we turn on "strict" in the tsconfig, the elements of FILL_DEPOSIT_COMPARISON_KEYS will be automatically
+    // validated against the fields in Fill and Deposit, generating an error if there is a discrepency.
+    return FILL_DEPOSIT_COMPARISON_KEYS.every((key) => {
+      return fill[key] !== undefined && fill[key].toString() === deposit[key]?.toString();
     });
-
-    return isValid;
   }
 
   getDepositHash(event: Deposit | Fill) {
@@ -286,10 +277,10 @@ export class SpokePoolClient {
     // from the RPC.
     const cachedData = await this.getEventsFromCache(latestBlockToCache, searchConfig);
     if (cachedData !== undefined) {
-      depositEventSearchConfig.fromBlock = cachedData.latestCachedBlock + 1;
+      depositEventSearchConfig.fromBlock = cachedData.latestBlock + 1;
       this.log("debug", `Partially loading deposit and fill event data from cache for chain ${this.chainId}`, {
-        latestBlock: cachedData.latestCachedBlock,
-        earliestBlock: cachedData.earliestCachedBlock,
+        latestBlock: cachedData.latestBlock,
+        earliestBlock: cachedData.earliestBlock,
         newSearchConfigForDepositAndFillEvents: depositEventSearchConfig,
         originalSearchConfigForDepositAndFillEvents: searchConfig,
       });
@@ -323,6 +314,11 @@ export class SpokePoolClient {
     const queryResults = await Promise.all(
       eventSearchConfigs.map((config) => paginatedEventQuery(this.spokePool, config.filter, config.searchConfig))
     );
+
+    // Sort all events to ensure they are stored in a consistent order.
+    queryResults.forEach((events) => {
+      sortEventsAscendingInPlace(events);
+    });
 
     if (eventsToQuery.includes("TokensBridged"))
       for (const event of queryResults[eventsToQuery.indexOf("TokensBridged")]) {
@@ -369,14 +365,13 @@ export class SpokePoolClient {
             ) {
               assign(this.depositHashes, [this.getDepositHash(convertedDeposit)], convertedDeposit);
               assign(this.deposits, [convertedDeposit.destinationChainId], [convertedDeposit]);
-              assign(this.depositsWithBlockNumbers, [convertedDeposit.destinationChainId], [convertedDeposit]);
             }
           });
         }
         this.log("debug", `Using cached deposit events within search config for chain ${this.chainId}`, {
           cachedDeposits: Object.fromEntries(
-            Object.keys(this.depositsWithBlockNumbers).map((destinationChainId) => {
-              return [destinationChainId, this.depositsWithBlockNumbers[destinationChainId].length];
+            Object.keys(this.deposits).map((destinationChainId) => {
+              return [destinationChainId, this.deposits[destinationChainId].length];
             })
           ),
         });
@@ -393,9 +388,8 @@ export class SpokePoolClient {
         // Append the destination token to the deposit.
         deposit.destinationToken = this.getDestinationTokenForDeposit(deposit);
         assign(this.depositHashes, [this.getDepositHash(deposit)], deposit);
-        assign(this.deposits, [deposit.destinationChainId], [deposit]);
         assign(
-          this.depositsWithBlockNumbers,
+          this.deposits,
           [deposit.destinationChainId],
           [{ ...deposit, blockNumber: dataForQuoteTime[index].quoteBlock, originBlockNumber: event.blockNumber }]
         );
@@ -418,13 +412,12 @@ export class SpokePoolClient {
       }
 
       // Traverse all deposit events and update them with associated speedups, If they exist.
-      for (const destinationChainId of Object.keys(this.depositsWithBlockNumbers))
-        for (const [index, deposit] of this.depositsWithBlockNumbers[destinationChainId].entries()) {
+      for (const destinationChainId of Object.keys(this.deposits))
+        for (const [index, deposit] of this.deposits[destinationChainId].entries()) {
           const { blockNumber, originBlockNumber, ...depositData } = deposit;
           const speedUpDeposit = this.appendMaxSpeedUpSignatureToDeposit(depositData);
           if (speedUpDeposit !== depositData) {
-            this.deposits[destinationChainId][index] = speedUpDeposit;
-            this.depositsWithBlockNumbers[destinationChainId][index] = {
+            this.deposits[destinationChainId][index] = {
               ...speedUpDeposit,
               blockNumber,
               originBlockNumber,
@@ -442,14 +435,16 @@ export class SpokePoolClient {
           dataToCache.fills.push(convertedFill);
 
           if (fill.blockNumber >= searchConfig.fromBlock && fill.blockNumber <= searchConfig.toBlock) {
-            this.fills.push(convertedFill);
-            this.fillsWithBlockNumbers.push(convertedFill);
+            assign(this.fills, [fill.originChainId], [convertedFill]);
             assign(this.depositHashesToFills, [this.getDepositHash(convertedFill)], [convertedFill]);
           }
         });
         this.log(
           "debug",
-          `Using ${this.fillsWithBlockNumbers.length} cached fill events within search config for chain ${this.chainId}`
+          `Using ${Object.values(this.fills).reduce(
+            (acc, curr) => acc + curr.length,
+            0
+          )} cached fill events within search config for chain ${this.chainId}`
         );
       }
 
@@ -458,11 +453,10 @@ export class SpokePoolClient {
           earliestEvent: fillEvents[0].blockNumber,
         });
       for (const event of fillEvents) {
-        this.fills.push(spreadEvent(event));
-        this.fillsWithBlockNumbers.push(spreadEventWithBlockNumber(event) as FillWithBlock);
-        dataToCache.fills.push(spreadEventWithBlockNumber(event) as FillWithBlock);
-        const newFill = spreadEvent(event);
-        assign(this.depositHashesToFills, [this.getDepositHash(newFill)], [newFill]);
+        const fill = spreadEventWithBlockNumber(event) as FillWithBlock;
+        assign(this.fills, [fill.originChainId], [fill]);
+        dataToCache.fills.push(fill);
+        assign(this.depositHashesToFills, [this.getDepositHash(fill)], [fill]);
       }
     }
 
@@ -470,7 +464,7 @@ export class SpokePoolClient {
     if (latestBlockToCache > 0) {
       // Only reset earliest block in cache if there was no existing cached data. We assume that only the most recent
       // events up until latestBlockToCache are added to the cache.
-      const earliestBlockToCache = cachedData !== undefined ? cachedData.earliestCachedBlock : searchConfig.fromBlock;
+      const earliestBlockToCache = cachedData !== undefined ? cachedData.earliestBlock : searchConfig.fromBlock;
       await this.setDataInCache(earliestBlockToCache, latestBlockToCache, dataToCache);
     }
 
@@ -545,7 +539,7 @@ export class SpokePoolClient {
       ]);
 
       // Make sure that deposit and fill events are stored for the exact same block range.
-      const latestCachedBlock = _cachedDepositData.latestBlock ? Number(_cachedDepositData.latestBlock) : undefined;
+      const latestCachedBlock = _cachedDepositData.earliestBlock ? Number(_cachedDepositData.latestBlock) : undefined;
       if (latestCachedBlock === undefined || Number(_cachedFillData.latestBlock) !== latestCachedBlock)
         return undefined;
       const earliestCachedBlock = _cachedDepositData.earliestBlock
@@ -578,8 +572,8 @@ export class SpokePoolClient {
       return {
         deposits: _cachedDepositData.deposits,
         fills: _cachedFillData.fills,
-        latestCachedBlock,
-        earliestCachedBlock,
+        latestBlock: latestCachedBlock,
+        earliestBlock: earliestCachedBlock,
       };
     }
 
@@ -593,13 +587,13 @@ export class SpokePoolClient {
     };
   }
 
-  private async getDepositDataFromCache(): Promise<CachedDepositData> {
+  private async getDepositDataFromCache(): Promise<CachedDepositData | Record<string, never>> {
     const result = await getFromCache(this.getCacheKey().deposits, this.configStoreClient.redisClient);
     if (result === null) return {};
     else return JSON.parse(result);
   }
 
-  private async getFillDataFromCache(): Promise<CachedFillData> {
+  private async getFillDataFromCache(): Promise<CachedFillData | Record<string, never>> {
     const result = await getFromCache(this.getCacheKey().fills, this.configStoreClient.redisClient);
     if (result === null) return {};
     else return JSON.parse(result);

@@ -670,7 +670,7 @@ export class Dataworker {
           message: `Evaluating ${rootBundleRelays.length} historical non-empty slow roots relayed to chain ${chainId}`,
         });
 
-        const sortedFills = sortEventsDescending(client.fillsWithBlockNumbers);
+        const sortedFills = client.getFills();
 
         const slowFillsForChain = client.getFills().filter((fill) => fill.isSlowRelay);
         for (const rootBundleRelay of sortEventsAscending(rootBundleRelays)) {
@@ -739,7 +739,8 @@ export class Dataworker {
           if (unexecutedLeaves.length === 0) continue;
 
           const leavesWithLatestFills = unexecutedLeaves.map((leaf) => {
-            const fill = sortedFills.find((fill) => {
+            // Start with the most recent fills and search backwards.
+            const fill = _.findLast(sortedFills, (fill) => {
               return (
                 fill.depositId === leaf.depositId &&
                 fill.originChainId === leaf.originChainId &&
