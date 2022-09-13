@@ -58,7 +58,11 @@ export class ArbitrumAdapter extends BaseAdapter {
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
     this.updateSearchConfigs();
-    this.log("Getting Arbitrum cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
+    this.log("Getting Arbitrum cross-chain txs", {
+      l1Tokens,
+      l1Config: this.l1SearchConfig,
+      l2Config: this.l2SearchConfig,
+    });
 
     const promises = [];
     const validTokens = [];
