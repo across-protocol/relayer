@@ -79,7 +79,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         spokePoolClients,
         hubPoolClient,
         configStoreClient,
-        profitClient: new ProfitClient(spyLogger, hubPoolClient, spokePoolClients, false, []),
+        profitClient: new ProfitClient(spyLogger, hubPoolClient, spokePoolClients, true, []),
         tokenClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
