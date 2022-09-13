@@ -53,7 +53,7 @@ export async function constructDataworkerClients(
   };
 }
 
-export async function updateDataworkerClients(clients: DataworkerClients, setAllowances=true) {
+export async function updateDataworkerClients(clients: DataworkerClients, setAllowances = true) {
   await updateClients(clients);
 
   // Token client needs updated hub pool client to pull bond token data.
