@@ -53,14 +53,14 @@ export async function constructDataworkerClients(
   };
 }
 
-export async function updateDataworkerClients(clients: DataworkerClients) {
+export async function updateDataworkerClients(clients: DataworkerClients, setAllowances=true) {
   await updateClients(clients);
 
   // Token client needs updated hub pool client to pull bond token data.
   await clients.tokenClient.update();
 
   // Run approval on hub pool.
-  await clients.tokenClient.setBondTokenAllowance();
+  if (setAllowances) await clients.tokenClient.setBondTokenAllowance();
 
   // Must come after hubPoolClient.
   // TODO: This should be refactored to check if the hubpool client has had one previous update run such that it has
