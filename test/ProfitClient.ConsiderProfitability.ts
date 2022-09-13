@@ -49,6 +49,11 @@ describe("ProfitClient: Consider relay profit", async function () {
     expect(profitClient.isFillProfitable(relay, relaySize)).to.be.false;
   });
 
+  it("Return 0 when gas cost fails to be fetched", async function () {
+    profitClient.setGasCosts({ 137: undefined });
+    expect(profitClient.getTotalGasCost(137)).to.equal(toBN(0));
+  });
+
   it("Handles non-standard token decimals when considering a relay profitability", async function () {
     // Create a relay that is clearly profitable. Currency of the relay is USDC with a fill amount of 1000 USDC with a
     // price per USDC of 1 USD. Set the relayer Fee to 10% should make this clearly relayable.
