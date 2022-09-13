@@ -7,13 +7,13 @@ import {
   spreadEventWithBlockNumber,
   winston,
 } from "../../utils";
-import { toBN, toWei, paginatedEventQuery, Promise } from "../../utils";
+import { toBN, toWei, paginatedEventQuery, Promise, Event } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
 import { arbitrumL2Erc20GatewayInterface, arbitrumL1Erc20GatewayInterface } from "./ContractInterfaces";
 
 // These values are obtained from Arbitrum's gateway router contract.
-const l1Gateways = {
+const l1Gateways: { [tokenAddress: string]: string } = {
   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "0xcEe284F754E854890e311e3280b767F80797180d", // USDC
   "0xdAC17F958D2ee523a2206206994597C13D831ec7": "0xcEe284F754E854890e311e3280b767F80797180d", // USDT
   "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "0xd92023E9d9911199a6711321D1277285e6d4e2db", // WETH
@@ -26,7 +26,7 @@ const l1Gateways = {
 
 const l1GatewayRouter = "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef";
 
-const l2Gateways = {
+const l2Gateways: { [tokenAddress: string]: string } = {
   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "0x096760F208390250649E3e8763348E783AEF5562", // USDC
   "0xdAC17F958D2ee523a2206206994597C13D831ec7": "0x096760F208390250649E3e8763348E783AEF5562", // USDT
   "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "0x6c411aD3E74De3E7Bd422b94A27770f5B86C623B", // WETH
@@ -60,18 +60,22 @@ export class ArbitrumAdapter extends BaseAdapter {
     this.updateSearchConfigs();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
 
-    const promises = [];
-    const validTokens = [];
+    const promises: Promise<Event[]>[] = [];
+    const validTokens: string[] = [];
     // Fetch bridge events for all monitored addresses.
     for (const monitoredAddress of this.monitoredAddresses) {
       for (const l1Token of l1Tokens) {
         // Skip the token if we can't find the corresponding bridge.
         // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
         // rather than maintaining a list of native bridge-supported tokens.
-        if (l1Gateways[l1Token] === undefined || l2Gateways[l1Token] === null) continue;
+        if (l1Gateways[l1Token] === undefined || l2Gateways[l1Token] === undefined) continue;
 
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
+
+        // If either of the above calls errors out, an error log will be sent, but the loop cannot be completed without a bridge.
+        if (l1Bridge === null || l2Bridge === null) continue;
+
         // l1Token is not an indexed field on deposit events in L1 but is on finalization events on Arb.
         // This unfortunately leads to fetching of all deposit events for all tokens multiple times, one per l1Token.
         // There's likely not much we can do here as the deposit events don't have l1Token as an indexed field.
