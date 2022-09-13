@@ -79,7 +79,7 @@ export class Relayer {
 
       // Skip deposits that contain invalid fills from the same relayer. This prevents potential corrupted data from
       // making the same relayer fill a deposit multiple times.
-      if (invalidFills.some((fill) => fill.relayer === this.relayerAddress)) {
+      if (!this.config.acceptInvalidFills && invalidFills.some((fill) => fill.relayer === this.relayerAddress)) {
         this.logger.error({
           at: "Relayer",
           message: "👨‍👧‍👦 Skipping deposit with invalid fills from the same relayer",
