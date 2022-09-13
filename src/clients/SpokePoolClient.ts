@@ -44,7 +44,6 @@ export class SpokePoolClient {
   public isUpdated = false;
   public firstBlockToSearch: number;
   public latestBlockNumber: number;
-  // public fills: FillWithBlock[] = [];
   public deposits: { [DestinationChainId: number]: DepositWithBlock[] } = {};
   public fills: { [OriginChainId: number]: FillWithBlock[] } = {};
 
