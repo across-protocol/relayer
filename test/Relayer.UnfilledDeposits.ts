@@ -87,7 +87,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [],
-        acceptInvalidFills: true,
+        acceptInvalidFills: false,
       } as RelayerConfig
     );
 
