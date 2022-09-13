@@ -71,10 +71,10 @@
     ts-node "^10.2.1"
     typechain "7.0.0"
 
-"@arbitrum/sdk-nitro@npm:@arbitrum/sdk@3.0.0-beta.11":
-  version "3.0.0-beta.11"
-  resolved "https://registry.yarnpkg.com/@arbitrum/sdk/-/sdk-3.0.0-beta.11.tgz#54bd4fb150911fcc83f7b50e23bfab8be97971dc"
-  integrity sha512-Lq+c3v4W9lNz3Q68XZFu1+iaAdAr2m9i7mTkdRm/Sk0QD1nX8IAOwxyCruph6JLB/PJtx+QUsdOpwNiIc9IZAQ==
+"@arbitrum/sdk-nitro@npm:@arbitrum/sdk@3.0.0-beta.12":
+  version "3.0.0-beta.12"
+  resolved "https://registry.yarnpkg.com/@arbitrum/sdk/-/sdk-3.0.0-beta.12.tgz#9d5ed854ca9aca14ce75634a5fa2c3096d1507ae"
+  integrity sha512-VM9+Vpnr2ZSy7nTVvMKbw6wslVTX6KvHNwN/k7C+bdhS8ehFOv6aWm0ldZQDFZVpP+3x93HQlgi4fDcolcn4Ig==
   dependencies:
     "@ethersproject/address" "^5.0.8"
     "@ethersproject/bignumber" "^5.1.1"
@@ -87,13 +87,13 @@
     ts-node "^10.2.1"
     typechain "7.0.0"
 
-"@arbitrum/sdk@^2.0.17":
-  version "2.0.17"
-  resolved "https://registry.yarnpkg.com/@arbitrum/sdk/-/sdk-2.0.17.tgz#95e3c1ca74abd2462693eeb0db11554d7a1e61aa"
-  integrity sha512-uVfRAtM3KS1lnAmiyVCE7nGddgpuRJO09FeyS+0x0ebOU0i6c4plSV4tMzX5BRqvP4JkKxBcKSYF9kElvSM1Lw==
+"@arbitrum/sdk@^2.0.18":
+  version "2.0.18"
+  resolved "https://registry.yarnpkg.com/@arbitrum/sdk/-/sdk-2.0.18.tgz#a63902d41fd7546083e4fb4555ce02823040f71c"
+  integrity sha512-/Z5iQmbcX1JKZebcBS0TIGAT6hLEI3hl3VD16z5u+mYQl6VDXVSj2aXkczXZssuVYoFcAUCdKW3lZX8WvBBFMg==
   dependencies:
     "@arbitrum/sdk-classic" "npm:@arbitrum/sdk@1.1.13"
-    "@arbitrum/sdk-nitro" "npm:@arbitrum/sdk@3.0.0-beta.11"
+    "@arbitrum/sdk-nitro" "npm:@arbitrum/sdk@3.0.0-beta.12"
     "@ethersproject/address" "^5.0.8"
     "@ethersproject/bignumber" "^5.1.1"
     "@ethersproject/bytes" "^5.0.8"
