@@ -196,14 +196,6 @@ export class ProfitClient {
       }
     });
 
-    if (newTokens.length > 0) {
-      this.logger.debug({
-        at: "ProfitClient",
-        message: "Initialised tokens to price 0.",
-        tokens: newTokens.join(", "),
-      });
-    }
-
     let cgPrices: CoinGeckoPrice[] = [];
     try {
       cgPrices = await this.coingeckoPrices(Object.keys(l1Tokens));

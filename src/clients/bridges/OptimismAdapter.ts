@@ -39,7 +39,7 @@ export class OptimismAdapter extends BaseAdapter {
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
     this.updateSearchConfigs();
-    this.log("Getting cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
+    this.log(`Getting ${this.isOptimism ? "Optimism" : "Boba"} cross-chain txs`, { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
 
     const promises = [];
     // Fetch bridge events for all monitored addresses.

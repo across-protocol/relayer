@@ -45,7 +45,6 @@ export class BaseAdapter {
   }
 
   async checkAndSendTokenApprovals(address: string, l1Tokens: string[], associatedL1Bridges: string[]) {
-    this.log("Checking and sending token approvals", { l1Tokens, associatedL1Bridges });
     const tokensToApprove: { l1Token: Contract; targetContract: string }[] = [];
     const l1TokenContracts = l1Tokens.map((l1Token) => new Contract(l1Token, ERC20.abi, this.getSigner(1)));
     const allowances = await Promise.all(
@@ -65,7 +64,6 @@ export class BaseAdapter {
     });
 
     if (tokensToApprove.length == 0) {
-      this.log("No token bridge approvals needed", { l1Tokens });
       return;
     }
 

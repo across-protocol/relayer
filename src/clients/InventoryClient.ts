@@ -252,7 +252,6 @@ export class InventoryClient {
       }
 
       if (Object.keys(rebalancesRequired).length === 0) {
-        this.log("No rebalances required");
         return;
       }
 
@@ -372,7 +371,6 @@ export class InventoryClient {
           ])
         )
       );
-      this.log("Checking WETH unwrap thresholds for chains with thresholds set", { nativeBalances });
 
       for (const chainId of Object.keys(nativeBalances)) {
         const l2WethBalance =
@@ -390,7 +388,6 @@ export class InventoryClient {
       this.log("Considered WETH unwraps", { unwrapsRequired, unexecutedUnwraps });
 
       if (Object.keys(unwrapsRequired).length === 0) {
-        this.log("No unwraps required");
         return;
       }
 
@@ -489,13 +486,11 @@ export class InventoryClient {
   async setL1TokenApprovals() {
     if (!this.isInventoryManagementEnabled()) return;
     const l1Tokens = this.getL1Tokens();
-    this.log("Checking token approvals", { l1Tokens });
     await this.adapterManager.setL1TokenApprovals(this.relayer, l1Tokens);
   }
 
   async wrapL2EthIfAboveThreshold() {
     if (!this.isInventoryManagementEnabled()) return;
-    this.log("Checking ETH->WETH Wrap status");
     await this.adapterManager.wrapEthIfAboveThreshold(this.inventoryConfig.wrapEtherThreshold);
   }
 

@@ -108,7 +108,6 @@ export class TokenClient {
       });
     });
     if (tokensToApprove.length === 0) {
-      this.logger.debug({ at: "TokenBalanceClient", message: "All token approvals set for non-zero balances" });
       return;
     }
 

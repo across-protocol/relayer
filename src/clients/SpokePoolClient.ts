@@ -287,12 +287,6 @@ export class SpokePoolClient {
     const cachedData = await this.getEventsFromCache(latestBlockToCache, searchConfig);
     if (cachedData !== undefined) {
       depositEventSearchConfig.fromBlock = cachedData.latestCachedBlock + 1;
-      this.log("debug", `Partially loading deposit and fill event data from cache for chain ${this.chainId}`, {
-        latestBlock: cachedData.latestCachedBlock,
-        earliestBlock: cachedData.earliestCachedBlock,
-        newSearchConfigForDepositAndFillEvents: depositEventSearchConfig,
-        originalSearchConfigForDepositAndFillEvents: searchConfig,
-      });
     }
 
     this.log("debug", `Updating SpokePool client for chain ${this.chainId}`, {
@@ -341,10 +335,6 @@ export class SpokePoolClient {
     // hubPoolClient is updated on the first before this call as this needed the the L1 token mapping to each L2 token.
     if (eventsToQuery.includes("FundsDeposited")) {
       const depositEvents = queryResults[eventsToQuery.indexOf("FundsDeposited")];
-      if (depositEvents.length > 0)
-        this.log("debug", `Fetching realizedLpFeePct for ${depositEvents.length} deposits on chain ${this.chainId}`, {
-          numDeposits: depositEvents.length,
-        });
       const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number }[] = await Promise.map(
         depositEvents,
         async (event) => {
@@ -373,20 +363,9 @@ export class SpokePoolClient {
             }
           });
         }
-        this.log("debug", `Using cached deposit events within search config for chain ${this.chainId}`, {
-          cachedDeposits: Object.fromEntries(
-            Object.keys(this.depositsWithBlockNumbers).map((destinationChainId) => {
-              return [destinationChainId, this.depositsWithBlockNumbers[destinationChainId].length];
-            })
-          ),
-        });
       }
 
       // Now add any newly fetched events from RPC.
-      if (depositEvents.length > 0)
-        this.log("debug", `Using ${depositEvents.length} newly queried deposit events for chain ${this.chainId}`, {
-          earliestEvent: depositEvents[0].blockNumber,
-        });
       for (const [index, event] of depositEvents.entries()) {
         // Append the realizedLpFeePct.
         const deposit: Deposit = { ...spreadEvent(event), realizedLpFeePct: dataForQuoteTime[index].realizedLpFeePct };
@@ -447,16 +426,8 @@ export class SpokePoolClient {
             assign(this.depositHashesToFills, [this.getDepositHash(convertedFill)], [convertedFill]);
           }
         });
-        this.log(
-          "debug",
-          `Using ${this.fillsWithBlockNumbers.length} cached fill events within search config for chain ${this.chainId}`
-        );
       }
 
-      if (fillEvents.length > 0)
-        this.log("debug", `Using ${fillEvents.length} newly queried fill events for chain ${this.chainId}`, {
-          earliestEvent: fillEvents[0].blockNumber,
-        });
       for (const event of fillEvents) {
         this.fills.push(spreadEvent(event));
         this.fillsWithBlockNumbers.push(spreadEventWithBlockNumber(event) as FillWithBlock);

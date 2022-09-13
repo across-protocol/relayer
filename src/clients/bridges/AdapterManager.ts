@@ -37,7 +37,6 @@ export class AdapterManager {
     chainId: number,
     l1Tokens: string[]
   ): Promise<OutstandingTransfers> {
-    this.logger.debug({ at: "AdapterManager", message: "Getting outstandingCrossChainTransfers", chainId, l1Tokens });
     return await this.adapters[chainId].getOutstandingCrossChainTransfers(l1Tokens);
   }
 
