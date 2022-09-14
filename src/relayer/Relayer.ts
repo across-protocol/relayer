@@ -35,10 +35,19 @@ export class Relayer {
     // Fetch all unfilled deposits, order by total earnable fee.
     // TODO: Note this does not consider the price of the token which will be added once the profitability module is
     // added to this bot.
-    const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients, this.maxUnfilledDepositLookBack).sort(
-      (a, b) =>
+
+    // Require that all fillable deposits meet the minimum specified number of confirmations.
+    const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients, this.maxUnfilledDepositLookBack)
+      .filter((x) => {
+        return (
+          x.deposit.originBlockNumber <=
+            this.clients.spokePoolClients[x.deposit.originChainId].latestBlockNumber -
+              this.config.minDepositConfirmations[x.deposit.originChainId] ?? 0
+        );
+      })
+      .sort((a, b) =>
         a.unfilledAmount.mul(a.deposit.relayerFeePct).lt(b.unfilledAmount.mul(b.deposit.relayerFeePct)) ? 1 : -1
-    );
+      );
     if (unfilledDeposits.length > 0) {
       this.logger.debug({ at: "Relayer", message: "Unfilled deposits found", number: unfilledDeposits.length });
     } else {

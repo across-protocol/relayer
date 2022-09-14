@@ -249,8 +249,7 @@ export class SpokePoolClient {
     );
 
     // Require that all Deposits meet the minimum specified number of confirmations.
-    this.latestBlockNumber =
-      (await this.spokePool.provider.getBlockNumber()) - (this.eventSearchConfig.minDepositConfirmations ?? 0);
+    this.latestBlockNumber = await this.spokePool.provider.getBlockNumber();
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
       toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
