@@ -1,7 +1,7 @@
 // How to run:
+// 0. Start redis in a separate window: `redis-server`
 // 1. You might need to set the following environment variables:
-//    HUB_CHAIN_ID=1
-//    MAX_BLOCK_LOOK_BACK='{"1":0,"10":0,"137":3499,"288":4999,"42161":0}'
+//    REDIS_URL=redis://localhost:6379
 //    NODE_URL_1=https://mainnet.infura.io/v3/KEY
 //    NODE_URL_10=https://optimism-mainnet.infura.io/v3/KEY
 //    NODE_URL_137=https://polygon-mainnet.infura.io/v3/KEY
@@ -41,7 +41,8 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
     clients.configStoreClient.configStore.provider.getBlock.bind(clients.configStoreClient.configStore.provider)
   );
   const priceRequestBlock = (await blockFinder.getBlockForTimestamp(priceRequestTime)).number;
-  await updateDataworkerClients(clients);
+
+  await updateDataworkerClients(clients, false);
   const precedingProposeRootBundleEvent = clients.hubPoolClient.getMostRecentProposedRootBundle(priceRequestBlock);
   const rootBundle: PendingRootBundle = {
     poolRebalanceRoot: precedingProposeRootBundleEvent.poolRebalanceRoot,
