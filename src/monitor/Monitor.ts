@@ -456,9 +456,7 @@ export class Monitor {
 
           let totalOutgoingAmount = toBN(0);
           // Filter v2 fills and bond payments from outgoing transfers.
-          const fillTransactionHashes = spokePoolClient
-            .getFillsWithBlockForDestinationChainAndRelayer(chainId, relayer)
-            .map((fill) => fill.transactionHash);
+          const fillTransactionHashes = spokePoolClient.getFillsForRelayer(relayer).map((fill) => fill.transactionHash);
           const outgoingTransfers = this.categorizeUnknownTransfers(transfers.outgoing, fillTransactionHashes);
           if (outgoingTransfers.all.length > 0) {
             currentTokenMrkdwn += "Outgoing:\n";
