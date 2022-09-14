@@ -65,7 +65,7 @@ export class OptimismAdapter extends BaseAdapter {
       }
     }
 
-    const results = await Promise.all(promises, { concurrency: 4 });
+    const results = await Promise.all(promises);
 
     // 3 events per token.
     const numEventsPerMonitoredAddress = 3 * l1Tokens.length;

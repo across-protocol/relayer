@@ -185,7 +185,7 @@ export class BundleDataClient {
     const allValidFills: FillWithBlock[] = [];
     const allInvalidFills: FillWithBlock[] = [];
 
-    const allChainIds = Object.keys(spokePoolClients);
+    const allChainIds = Object.keys(spokePoolClients).map(Number);
 
     for (const originChainId of allChainIds) {
       const originClient = spokePoolClients[originChainId];
@@ -225,7 +225,7 @@ export class BundleDataClient {
         // Don't include any fills past the bundle end block for the chain, otherwise the destination client will
         // return fill events that are younger than the bundle end block.
         destinationClient
-          .getFillsWithBlockForOriginChain(Number(originChainId))
+          .getFillsForOriginChain(Number(originChainId))
           .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1])
           .forEach((fillWithBlock) => {
             // If fill matches with a deposit, then its a valid fill.
@@ -267,7 +267,7 @@ export class BundleDataClient {
             } else {
               // Note: If the fill's origin chain is set incorrectly (e.g. equal to the destination chain, or
               // set to some unexpected chain), then it won't be added to `allInvalidFills` because we wouldn't
-              // have been able to grab it from the destinationClient.getFillsWithBlockForOriginChain call.
+              // have been able to grab it from the destinationClient.getFillsForOriginChain call.
               allInvalidFills.push(fillWithBlock);
             }
           });
