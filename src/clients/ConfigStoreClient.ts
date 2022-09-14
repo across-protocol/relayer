@@ -9,8 +9,17 @@ import {
   EventSearchConfig,
   utf8ToHex,
   getCurrentTime,
+  toBN,
 } from "../utils";
-import { L1TokenTransferThreshold, Deposit, TokenConfig, GlobalConfigUpdate } from "../interfaces";
+import {
+  L1TokenTransferThreshold,
+  Deposit,
+  TokenConfig,
+  GlobalConfigUpdate,
+  ParsedTokenConfig,
+  SpokeTargetBalanceUpdate,
+  SpokePoolTargetBalance,
+} from "../interfaces";
 
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
@@ -29,6 +38,7 @@ export class AcrossConfigStoreClient {
   public cumulativeTokenTransferUpdates: L1TokenTransferThreshold[] = [];
   public cumulativeMaxRefundCountUpdates: GlobalConfigUpdate[] = [];
   public cumulativeMaxL1TokenCountUpdates: GlobalConfigUpdate[] = [];
+  public cumulativeSpokeTargetBalanceUpdates: SpokeTargetBalanceUpdate[] = [];
 
   private rateModelDictionary: across.rateModel.RateModelDictionary;
   public firstBlockToSearch: number;
@@ -85,6 +95,17 @@ export class AcrossConfigStoreClient {
     return config.transferThreshold;
   }
 
+  getSpokeTargetBalancesForBlock(
+    l1Token: string,
+    blockNumber: number = Number.MAX_SAFE_INTEGER
+  ): { [chainId: number]: SpokePoolTargetBalance } {
+    const config = (sortEventsDescending(this.cumulativeTokenTransferUpdates) as SpokeTargetBalanceUpdate[]).find(
+      (config) => config.blockNumber <= blockNumber && config.l1Token === l1Token
+    );
+    if (!config?.spokeTargetBalances) return {};
+    return config.spokeTargetBalances;
+  }
+
   getMaxRefundCountForRelayerRefundLeafForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number {
     const config = (sortEventsDescending(this.cumulativeMaxRefundCountUpdates) as GlobalConfigUpdate[]).find(
       (config) => config.blockNumber <= blockNumber
@@ -123,8 +144,9 @@ export class AcrossConfigStoreClient {
       };
 
       try {
-        const rateModelForToken = JSON.stringify(JSON.parse(args.value).rateModel);
-        const transferThresholdForToken = JSON.parse(args.value).transferThreshold;
+        const parsedValue = JSON.parse(args.value) as ParsedTokenConfig;
+        const rateModelForToken = JSON.stringify(parsedValue.rateModel);
+        const transferThresholdForToken = parsedValue.transferThreshold;
 
         // If Token config doesn't contain all expected properties, skip it.
         if (!(rateModelForToken && transferThresholdForToken)) {
@@ -141,7 +163,22 @@ export class AcrossConfigStoreClient {
         this.cumulativeRateModelUpdates.push({ ...args, rateModel: rateModelForToken, l1Token });
 
         // Store transferThreshold
-        this.cumulativeTokenTransferUpdates.push({ ...args, transferThreshold: transferThresholdForToken, l1Token });
+        this.cumulativeTokenTransferUpdates.push({
+          ...args,
+          transferThreshold: toBN(transferThresholdForToken),
+          l1Token,
+        });
+
+        if (parsedValue?.spokeTargetBalances) {
+          // Note: cast is required because fromEntries always produces string keys, despite the function returning a
+          // numerical key.
+          const targetBalances = Object.fromEntries(
+            Object.entries(parsedValue.spokeTargetBalances).map(([chainId, targetBalance]) => {
+              return [chainId, { target: toBN(targetBalance.target), threshold: toBN(targetBalance.threshold) }];
+            })
+          ) as SpokeTargetBalanceUpdate["spokeTargetBalances"];
+          this.cumulativeSpokeTargetBalanceUpdates.push({ ...args, spokeTargetBalances: targetBalances, l1Token });
+        }
       } catch (err) {
         continue;
       }

@@ -151,9 +151,15 @@ export function _buildRelayerRefundRoot(
         tokenTransferThresholdOverrides[l1TokenCounterpart] ||
         clients.configStoreClient.getTokenTransferThresholdForBlock(l1TokenCounterpart, endBlockForMainnet);
 
+      const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
+        l1TokenCounterpart,
+        endBlockForMainnet
+      )[Number(repaymentChainId)] || { target: toBN(0), threshold: toBN(0) };
+
       // The `amountToReturn` for a { repaymentChainId, L2TokenAddress} should be set to max(-netSendAmount, 0).
       const amountToReturn = getAmountToReturnForRelayerRefundLeaf(
         transferThreshold,
+        spokePoolTargetBalance,
         runningBalances[repaymentChainId][l1TokenCounterpart]
       );
       for (let i = 0; i < sortedRefundAddresses.length; i += maxRefundCount)
@@ -191,8 +197,15 @@ export function _buildRelayerRefundRoot(
       const transferThreshold =
         tokenTransferThresholdOverrides[leaf.l1Tokens[index]] ||
         clients.configStoreClient.getTokenTransferThresholdForBlock(leaf.l1Tokens[index], endBlockForMainnet);
+
+      const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
+        leaf.l1Tokens[index],
+        endBlockForMainnet
+      )[leaf.chainId] || { target: toBN(0), threshold: toBN(0) };
+
       const amountToReturn = getAmountToReturnForRelayerRefundLeaf(
         transferThreshold,
+        spokePoolTargetBalance,
         runningBalances[leaf.chainId][leaf.l1Tokens[index]]
       );
       relayerRefundLeaves.push({
