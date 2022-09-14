@@ -41,8 +41,8 @@ export class Relayer {
       .filter((x) => {
         return (
           x.deposit.originBlockNumber <=
-            this.clients.spokePoolClients[x.deposit.originChainId].latestBlockNumber -
-              this.config.minDepositConfirmations[x.deposit.originChainId] ?? 0
+          this.clients.spokePoolClients[x.deposit.originChainId].latestBlockNumber -
+            (this.config.minDepositConfirmations[x.deposit.originChainId] ?? 0)
         );
       })
       .sort((a, b) =>

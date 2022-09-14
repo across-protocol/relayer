@@ -72,6 +72,7 @@ describe.skip("Relayer: Iterative fill", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [],
+        minDepositConfirmations: {},
       } as RelayerConfig
     );
 

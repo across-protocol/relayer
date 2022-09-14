@@ -18,6 +18,8 @@ import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/util
 import winston from "winston";
 import sinon from "sinon";
 import chai from "chai";
+import chaiExclude from "chai-exclude";
+chai.use(chaiExclude);
 export { winston, sinon };
 
 const assert = chai.assert;

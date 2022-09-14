@@ -76,6 +76,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [],
+        minDepositConfirmations: {},
       } as RelayerConfig
     );
 
@@ -207,6 +208,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [originChainId],
+        minDepositConfirmations: {},
       } as RelayerConfig
     );
 
