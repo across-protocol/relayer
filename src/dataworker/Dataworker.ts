@@ -1165,6 +1165,7 @@ export class Dataworker {
           const fundedLeaves = (
             await Promise.all(
               unexecutedLeaves.map(async (leaf) => {
+                const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
                 const refundSum = leaf.refundAmounts.reduce((acc, curr) => acc.add(curr), BigNumber.from(0));
                 const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
                 const success = await balanceAllocator.requestBalanceAllocation(
@@ -1181,7 +1182,7 @@ export class Dataworker {
                     root: rootBundleRelay.relayerRefundRoot,
                     bundle: rootBundleRelay.rootBundleId,
                     leafId: leaf.leafId,
-                    token: leaf.l2TokenAddress,
+                    token: l1TokenInfo.symbol,
                     chainId: leaf.chainId,
                     amountToReturn: leaf.amountToReturn,
                     refunds: leaf.refundAmounts,
@@ -1194,10 +1195,12 @@ export class Dataworker {
           ).filter((element) => element !== undefined);
 
           fundedLeaves.forEach((leaf) => {
+            const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
+
             const mrkdwn = `rootBundleId: ${rootBundleRelay.rootBundleId}\nrelayerRefundRoot: ${
               rootBundleRelay.relayerRefundRoot
             }\nLeaf: ${leaf.leafId}\nchainId: ${chainId}\ntoken: ${
-              leaf.l2TokenAddress
+              l1TokenInfo.symbol
             }\namount: ${leaf.amountToReturn.toString()}`;
             if (submitExecution)
               this.clients.multiCallerClient.enqueueTransaction({
