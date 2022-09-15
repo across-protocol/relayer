@@ -87,9 +87,9 @@ describe("Relayer: Unfilled Deposits", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [],
-        minDepositConfirmations: {},
+        minDepositConfirmations: { [originChainId]: 0, [destinationChainId]: 0 },
         acceptInvalidFills: false,
-      } as RelayerConfig
+      } as unknown as RelayerConfig
     );
 
     await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // seed the owner to LP.
