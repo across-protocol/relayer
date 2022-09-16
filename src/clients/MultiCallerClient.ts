@@ -58,17 +58,21 @@ export class MultiCallerClient {
 
       // Filter out transactions that revert for expected reasons. For example, the "relay filled" error
       // will occur frequently if there are multiple relayers running at the same time because only one relay
-      // can go through. This is a non critical error we can ignore to filter out the noise.
+      // can go through. Similarly, the "already claimed" error will occur if the dataworker executor is running at a 
+      // practical cadence of ~10 mins per run, because it takes ~5-7 mins per run, these runs can overlap and
+      // execution collisions can occur. These are non critical errors we can ignore to filter out the noise.
+      // TODO: Figure out less hacky way to reduce these errors rather than ignoring them.
+      const canIgnoreRevertReason = (reason: string) => reason === "relay filled" || reason === "Already claimed";
+      const transactionsToIgnore = _transactionsSucceed.filter(
+        (txn) => !txn.succeed && canIgnoreRevertReason(txn.reason)
+      );
       this.logger.debug({
         at: "MultiCallerClient",
-        message: `Filtering out ${
-          _transactionsSucceed.filter((txn) => !txn.succeed && txn.reason === "relay filled").length
-        } relay transactions that will fail because the relay has already been filled`,
+        message: `Filtering out ${transactionsToIgnore.length} relay transactions that will fail because the relay has already been filled`,
         totalTransactions: _transactionsSucceed.length,
-        relayFilledReverts: _transactionsSucceed.filter((txn) => !txn.succeed && txn.reason === "relay filled").length,
       });
       const transactionsSucceed = _transactionsSucceed.filter(
-        (transaction) => transaction.succeed || transaction.reason !== "relay filled"
+        (transaction) => transaction.succeed || !canIgnoreRevertReason(transaction.reason)
       );
 
       // If any transactions will revert then log the reason and remove them from the transaction queue.
