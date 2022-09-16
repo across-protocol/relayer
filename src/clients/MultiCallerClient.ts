@@ -58,7 +58,7 @@ export class MultiCallerClient {
 
       // Filter out transactions that revert for expected reasons. For example, the "relay filled" error
       // will occur frequently if there are multiple relayers running at the same time because only one relay
-      // can go through. Similarly, the "already claimed" error will occur if the dataworker executor is running at a 
+      // can go through. Similarly, the "already claimed" error will occur if the dataworker executor is running at a
       // practical cadence of ~10 mins per run, because it takes ~5-7 mins per run, these runs can overlap and
       // execution collisions can occur. These are non critical errors we can ignore to filter out the noise.
       // TODO: Figure out less hacky way to reduce these errors rather than ignoring them.
