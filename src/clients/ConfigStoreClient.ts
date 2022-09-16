@@ -100,7 +100,7 @@ export class AcrossConfigStoreClient {
     blockNumber: number = Number.MAX_SAFE_INTEGER
   ): { [chainId: number]: SpokePoolTargetBalance } {
     const config = (sortEventsDescending(this.cumulativeTokenTransferUpdates) as SpokeTargetBalanceUpdate[]).find(
-      (config) => config.blockNumber <= blockNumber && config.l1Token === l1Token
+      (config) => config.l1Token === l1Token && config.blockNumber <= blockNumber
     );
     if (!config?.spokeTargetBalances) return {};
     return config.spokeTargetBalances;
