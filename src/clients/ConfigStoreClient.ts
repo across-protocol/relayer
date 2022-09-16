@@ -10,7 +10,7 @@ import {
   utf8ToHex,
   getCurrentTime,
   toBN,
-  min
+  min,
 } from "../utils";
 import {
   L1TokenTransferThreshold,
