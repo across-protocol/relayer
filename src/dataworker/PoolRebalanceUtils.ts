@@ -286,12 +286,8 @@ export function constructPoolRebalanceLeaves(
             configStoreClient.getTokenTransferThresholdForBlock(l1Token, latestMainnetBlock)
         );
 
-        const spokeTargetBalances = l1TokensToIncludeInThisLeaf.map(
-          (l1Token) =>
-            configStoreClient.getSpokeTargetBalancesForBlock(l1Token, latestMainnetBlock)[Number(chainId)] || {
-              target: toBN(0),
-              threshold: toBN(0),
-            }
+        const spokeTargetBalances = l1TokensToIncludeInThisLeaf.map((l1Token) =>
+          configStoreClient.getSpokeTargetBalancesForBlock(l1Token, Number(chainId), latestMainnetBlock)
         );
 
         // Build leaves using running balances and realized lp fees data for l1Token + chain, or default to
@@ -335,7 +331,7 @@ export function constructPoolRebalanceLeaves(
 
 // Note: this function computes the intended transfer amount before considering the transfer threshold.
 // A positive number indicates a transfer from hub to spoke.
-export function computeDesiredTransferAmount(
+export function computeDesiredTransferAmountToSpoke(
   runningBalance: BigNumber,
   spokePoolTargetBalance: SpokePoolTargetBalance
 ) {
@@ -368,7 +364,7 @@ export function getNetSendAmountForL1Token(
   spokePoolTargetBalance: SpokePoolTargetBalance,
   runningBalance: BigNumber
 ): BigNumber {
-  const desiredTransferAmount = computeDesiredTransferAmount(runningBalance, spokePoolTargetBalance);
+  const desiredTransferAmount = computeDesiredTransferAmountToSpoke(runningBalance, spokePoolTargetBalance);
   return desiredTransferAmount.abs().gte(transferThreshold) ? desiredTransferAmount : toBN(0);
 }
 
@@ -377,7 +373,7 @@ export function getRunningBalanceForL1Token(
   spokePoolTargetBalance: SpokePoolTargetBalance,
   runningBalance: BigNumber
 ): BigNumber {
-  const desiredTransferAmount = computeDesiredTransferAmount(runningBalance, spokePoolTargetBalance);
+  const desiredTransferAmount = computeDesiredTransferAmountToSpoke(runningBalance, spokePoolTargetBalance);
   return desiredTransferAmount.abs().lt(transferThreshold) ? runningBalance : runningBalance.sub(desiredTransferAmount);
 }
 

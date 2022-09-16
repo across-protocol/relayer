@@ -153,8 +153,9 @@ export function _buildRelayerRefundRoot(
 
       const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
         l1TokenCounterpart,
+        Number(repaymentChainId),
         endBlockForMainnet
-      )[Number(repaymentChainId)] || { target: toBN(0), threshold: toBN(0) };
+      );
 
       // The `amountToReturn` for a { repaymentChainId, L2TokenAddress} should be set to max(-netSendAmount, 0).
       const amountToReturn = getAmountToReturnForRelayerRefundLeaf(

@@ -10,6 +10,7 @@ import {
   utf8ToHex,
   getCurrentTime,
   toBN,
+  min
 } from "../utils";
 import {
   L1TokenTransferThreshold,
@@ -97,13 +98,14 @@ export class AcrossConfigStoreClient {
 
   getSpokeTargetBalancesForBlock(
     l1Token: string,
+    chainId: number,
     blockNumber: number = Number.MAX_SAFE_INTEGER
-  ): { [chainId: number]: SpokePoolTargetBalance } {
+  ): SpokePoolTargetBalance {
     const config = (sortEventsDescending(this.cumulativeTokenTransferUpdates) as SpokeTargetBalanceUpdate[]).find(
       (config) => config.l1Token === l1Token && config.blockNumber <= blockNumber
     );
-    if (!config?.spokeTargetBalances) return {};
-    return config.spokeTargetBalances;
+    const targetBalance = config?.spokeTargetBalances?.[chainId];
+    return targetBalance || { target: toBN(0), threshold: toBN(0) };
   }
 
   getMaxRefundCountForRelayerRefundLeafForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number {
@@ -174,7 +176,9 @@ export class AcrossConfigStoreClient {
           // numerical key.
           const targetBalances = Object.fromEntries(
             Object.entries(parsedValue.spokeTargetBalances).map(([chainId, targetBalance]) => {
-              return [chainId, { target: toBN(targetBalance.target), threshold: toBN(targetBalance.threshold) }];
+              const target = min(toBN(targetBalance.target), toBN(0));
+              const threshold = min(toBN(targetBalance.threshold), toBN(0));
+              return [chainId, { target, threshold }];
             })
           ) as SpokeTargetBalanceUpdate["spokeTargetBalances"];
           this.cumulativeSpokeTargetBalanceUpdates.push({ ...args, spokeTargetBalances: targetBalances, l1Token });
