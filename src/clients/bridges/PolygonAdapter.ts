@@ -129,7 +129,7 @@ export class PolygonAdapter extends BaseAdapter {
       }
     }
 
-    const results = await Promise.all(promises, { concurrency: 2 });
+    const results = await Promise.all(promises);
 
     // 2 events per token.
     const numEventsPerMonitoredAddress = 2 * validTokens.length;

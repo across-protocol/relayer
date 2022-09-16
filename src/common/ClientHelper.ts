@@ -88,7 +88,6 @@ export async function constructSpokePoolClientsWithLookback(
         : spokePoolDeploymentBlock,
       toBlock: null,
       maxBlockLookBack: config.maxBlockLookBack[networkId],
-      minDepositConfirmations: config.minDepositConfirmations[networkId],
     };
     spokePoolClients[networkId] = new SpokePoolClient(
       logger,

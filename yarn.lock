@@ -71,10 +71,10 @@
     ts-node "^10.2.1"
     typechain "7.0.0"
 
-"@arbitrum/sdk-nitro@npm:@arbitrum/sdk@3.0.0-beta.11":
-  version "3.0.0-beta.11"
-  resolved "https://registry.yarnpkg.com/@arbitrum/sdk/-/sdk-3.0.0-beta.11.tgz#54bd4fb150911fcc83f7b50e23bfab8be97971dc"
-  integrity sha512-Lq+c3v4W9lNz3Q68XZFu1+iaAdAr2m9i7mTkdRm/Sk0QD1nX8IAOwxyCruph6JLB/PJtx+QUsdOpwNiIc9IZAQ==
+"@arbitrum/sdk-nitro@npm:@arbitrum/sdk@3.0.0-beta.12":
+  version "3.0.0-beta.12"
+  resolved "https://registry.yarnpkg.com/@arbitrum/sdk/-/sdk-3.0.0-beta.12.tgz#9d5ed854ca9aca14ce75634a5fa2c3096d1507ae"
+  integrity sha512-VM9+Vpnr2ZSy7nTVvMKbw6wslVTX6KvHNwN/k7C+bdhS8ehFOv6aWm0ldZQDFZVpP+3x93HQlgi4fDcolcn4Ig==
   dependencies:
     "@ethersproject/address" "^5.0.8"
     "@ethersproject/bignumber" "^5.1.1"
@@ -87,13 +87,13 @@
     ts-node "^10.2.1"
     typechain "7.0.0"
 
-"@arbitrum/sdk@^2.0.17":
-  version "2.0.17"
-  resolved "https://registry.yarnpkg.com/@arbitrum/sdk/-/sdk-2.0.17.tgz#95e3c1ca74abd2462693eeb0db11554d7a1e61aa"
-  integrity sha512-uVfRAtM3KS1lnAmiyVCE7nGddgpuRJO09FeyS+0x0ebOU0i6c4plSV4tMzX5BRqvP4JkKxBcKSYF9kElvSM1Lw==
+"@arbitrum/sdk@^2.0.18":
+  version "2.0.18"
+  resolved "https://registry.yarnpkg.com/@arbitrum/sdk/-/sdk-2.0.18.tgz#a63902d41fd7546083e4fb4555ce02823040f71c"
+  integrity sha512-/Z5iQmbcX1JKZebcBS0TIGAT6hLEI3hl3VD16z5u+mYQl6VDXVSj2aXkczXZssuVYoFcAUCdKW3lZX8WvBBFMg==
   dependencies:
     "@arbitrum/sdk-classic" "npm:@arbitrum/sdk@1.1.13"
-    "@arbitrum/sdk-nitro" "npm:@arbitrum/sdk@3.0.0-beta.11"
+    "@arbitrum/sdk-nitro" "npm:@arbitrum/sdk@3.0.0-beta.12"
     "@ethersproject/address" "^5.0.8"
     "@ethersproject/bignumber" "^5.1.1"
     "@ethersproject/bytes" "^5.0.8"
@@ -3177,6 +3177,11 @@
   dependencies:
     bignumber.js "*"
 
+"@types/bluebird@^3.5.36":
+  version "3.5.36"
+  resolved "https://registry.yarnpkg.com/@types/bluebird/-/bluebird-3.5.36.tgz#00d9301d4dc35c2f6465a8aec634bb533674c652"
+  integrity sha512-HBNx4lhkxN7bx6P0++W8E289foSu8kO8GCk2unhuVggO+cE7rh9DhZUyPhUxNRG9m+5B5BTKxZQ5ZP92x/mx9Q==
+
 "@types/bn.js@*", "@types/bn.js@5.1.0", "@types/bn.js@^5.1.0":
   version "5.1.0"
   resolved "https://registry.yarnpkg.com/@types/bn.js/-/bn.js-5.1.0.tgz#32c5d271503a12653c62cf4d2b45e6eab8cebc68"
@@ -5558,6 +5563,13 @@ cbor@^8.0.0:
   integrity sha512-DwGjNW9omn6EwP70aXsn7FQJx5kO12tX0bZkaTjzdVFM6/7nhA4t0EENocKGx6D2Bch9PE2KzCUf5SceBdeijg==
   dependencies:
     nofilter "^3.1.0"
+
+chai-exclude@^2.1.0:
+  version "2.1.0"
+  resolved "https://registry.yarnpkg.com/chai-exclude/-/chai-exclude-2.1.0.tgz#653d1218144eafb49b563684ad90b76d12bbc3f9"
+  integrity sha512-IBnm50Mvl3O1YhPpTgbU8MK0Gw7NHcb18WT2TxGdPKOMtdtZVKLHmQwdvOF7mTlHVQStbXuZKFwkevFtbHjpVg==
+  dependencies:
+    fclone "^1.0.11"
 
 chai@^4.2.0, chai@^4.3.4:
   version "4.3.6"
@@ -8280,6 +8292,11 @@ fastq@^1.6.0:
   integrity sha512-YpkpUnK8od0o1hmeSc7UUs/eB/vIPWJYjKck2QKIzAf71Vm1AAQ3EbuZB3g2JIy+pg+ERD0vqI79KyZiB2e2Nw==
   dependencies:
     reusify "^1.0.4"
+
+fclone@^1.0.11:
+  version "1.0.11"
+  resolved "https://registry.yarnpkg.com/fclone/-/fclone-1.0.11.tgz#10e85da38bfea7fc599341c296ee1d77266ee640"
+  integrity sha512-GDqVQezKzRABdeqflsgMr7ktzgF9CyS+p2oe0jJqUY6izSSbhPIQJDpoU4PtGcD7VPM9xh/dVrTu6z1nwgmEGw==
 
 fecha@^4.2.0:
   version "4.2.2"

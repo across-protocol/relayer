@@ -28,9 +28,6 @@ export function spreadEvent(event: Event) {
 export interface EventSearchConfig {
   fromBlock: number;
   toBlock: number | null;
-  // Number of blocks to subtract from latest block the provider returns. This helps avoid fork reorgs that can lead
-  // to double filling of the same deposit.
-  minDepositConfirmations?: number;
   maxBlockLookBack?: number;
   concurrency?: number | null;
 }
@@ -40,7 +37,7 @@ export async function paginatedEventQuery(
   filter: EventFilter,
   searchConfig: EventSearchConfig,
   retryCount = 0
-) {
+): Promise<Event[]> {
   // If the max block look back is set to 0 then we dont need to do any pagination and can query over the whole range.
   if (searchConfig.maxBlockLookBack === 0)
     return await contract.queryFilter(filter, searchConfig.fromBlock, searchConfig.toBlock);
@@ -99,16 +96,30 @@ export function spreadEventWithBlockNumber(event: Event): SortableEvent {
   };
 }
 
+// This copies the array and sorts it, returning a new array with the new ordering.
 export function sortEventsAscending<T extends SortableEvent>(events: T[]): T[] {
-  return [...events].sort((ex, ey) => {
+  return sortEventsAscendingInPlace([...events]);
+}
+
+// This sorts the events in place, meaning it modifies the passed array and returns a reference to the same array.
+// Note: this method should only be used in cases where modifications are acceptable.
+export function sortEventsAscendingInPlace<T extends SortableEvent>(events: T[]): T[] {
+  return events.sort((ex, ey) => {
     if (ex.blockNumber !== ey.blockNumber) return ex.blockNumber - ey.blockNumber;
     if (ex.transactionIndex !== ey.transactionIndex) return ex.transactionIndex - ey.transactionIndex;
     return ex.logIndex - ey.logIndex;
   });
 }
 
+// This copies the array and sorts it, returning a new array with the new ordering.
 export function sortEventsDescending<T extends SortableEvent>(events: T[]): T[] {
-  return [...events].sort((ex, ey) => {
+  return sortEventsDescendingInPlace([...events]);
+}
+
+// This sorts the events in place, meaning it modifies the passed array and returns a reference to the same array.
+// Note: this method should only be used in cases where modifications are acceptable.
+export function sortEventsDescendingInPlace<T extends SortableEvent>(events: T[]): T[] {
+  return events.sort((ex, ey) => {
     if (ex.blockNumber !== ey.blockNumber) return ey.blockNumber - ex.blockNumber;
     if (ex.transactionIndex !== ey.transactionIndex) return ey.transactionIndex - ex.transactionIndex;
     return ey.logIndex - ex.logIndex;

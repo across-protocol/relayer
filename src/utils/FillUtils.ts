@@ -151,9 +151,13 @@ export function getFillsInRange(
 export function getUnfilledDeposits(
   spokePoolClients: SpokePoolClientsByChain,
   maxUnfilledDepositLookBack: { [chainId: number]: number } = {}
-): { deposit: Deposit; unfilledAmount: BigNumber; fillCount: number; invalidFills: Fill[] }[] {
-  const unfilledDeposits: { deposit: Deposit; unfilledAmount: BigNumber; fillCount: number; invalidFills: Fill[] }[] =
-    [];
+): { deposit: DepositWithBlock; unfilledAmount: BigNumber; fillCount: number; invalidFills: Fill[] }[] {
+  const unfilledDeposits: {
+    deposit: DepositWithBlock;
+    unfilledAmount: BigNumber;
+    fillCount: number;
+    invalidFills: Fill[];
+  }[] = [];
   // Iterate over each chainId and check for unfilled deposits.
   const chainIds = Object.keys(spokePoolClients);
   for (const originChain of chainIds) {
@@ -164,10 +168,8 @@ export function getUnfilledDeposits(
       // validates that the deposit is filled "correctly" for the given deposit information. This includes validation
       // of the all deposit -> relay props, the realizedLpFeePct and the origin->destination token mapping.
       const destinationClient = spokePoolClients[destinationChain];
-      const depositsForDestinationChain: DepositWithBlock[] = originClient.getDepositsForDestinationChain(
-        destinationChain,
-        true
-      );
+      const depositsForDestinationChain: DepositWithBlock[] =
+        originClient.getDepositsForDestinationChain(destinationChain);
       const unfilledDepositsForDestinationChain = depositsForDestinationChain
         .filter((deposit) => {
           // If deposit is older than unfilled deposit lookback, ignore it
@@ -176,9 +178,8 @@ export function getUnfilledDeposits(
           return lookback === undefined || deposit.originBlockNumber >= latestBlockForOriginChain - lookback;
         })
         .map((deposit) => {
-          // Remove block number that we don't need anymore and because function expects to return a Deposit type.
-          const { blockNumber, originBlockNumber, ...depositData } = deposit;
-          return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit: depositData };
+          // eslint-disable-next-line no-console
+          return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit };
         });
       // Remove any deposits that have no unfilled amount and append the remaining deposits to unfilledDeposits array.
       unfilledDeposits.push(...unfilledDepositsForDestinationChain.filter((deposit) => deposit.unfilledAmount.gt(0)));

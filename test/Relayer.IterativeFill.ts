@@ -72,7 +72,8 @@ describe.skip("Relayer: Iterative fill", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [],
-      } as RelayerConfig
+        minDepositConfirmations: {},
+      } as unknown as RelayerConfig
     );
 
     let depositCount = 0;
