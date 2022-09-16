@@ -76,7 +76,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [],
-      } as RelayerConfig
+        minDepositConfirmations: { [originChainId]: 0, [destinationChainId]: 0 },
+      } as unknown as RelayerConfig
     );
 
     await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // Seed owner to LP.
@@ -207,7 +208,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [originChainId],
-      } as RelayerConfig
+        minDepositConfirmations: { [originChainId]: 0, [destinationChainId]: 0 },
+      } as unknown as RelayerConfig
     );
 
     // Deposit is not on a whitelisted destination chain so relayer shouldn't fill it.

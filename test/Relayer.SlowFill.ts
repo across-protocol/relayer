@@ -66,7 +66,8 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [],
-      } as RelayerConfig
+        minDepositConfirmations: { [originChainId]: 0, [destinationChainId]: 0 },
+      } as unknown as RelayerConfig
     );
 
     await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // Seed owner to LP.
