@@ -22,6 +22,13 @@ export interface AugmentedTransaction {
   value?: BigNumber;
 }
 
+// Use this list of Smart Contract revert reasons to filter out transactions that revert in the
+// Multicaller client's simulations but that we can ignore. Check for exact revert reason instead of using
+// .includes() to partially match reason string in order to not ignore errors thrown by non-contract reverts.
+// For example, a NodeJS error might result in a reason string that includes more than just the contract r
+// evert reason.
+const canIgnoreRevertReasons = new Set(["relay filled", "Already claimed"]);
+
 export class MultiCallerClient {
   private transactions: AugmentedTransaction[] = [];
   // eslint-disable-next-line no-useless-constructor
@@ -66,7 +73,6 @@ export class MultiCallerClient {
       // Note: Check for exact revert reason instead of using .includes() to partially match reason string in order
       // to not ignore errors thrown by non-contract reverts. For example, a NodeJS error might result in a reason
       // string that includes more than just the contract revert reason.
-      const canIgnoreRevertReasons = new Set(["relay filled", "Already claimed"]);
       const transactionRevertsToIgnore = _transactionsSucceed.filter(
         (txn) => !txn.succeed && canIgnoreRevertReasons.has(txn.reason)
       );
