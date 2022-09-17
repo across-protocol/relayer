@@ -22,6 +22,13 @@ export interface AugmentedTransaction {
   value?: BigNumber;
 }
 
+// Use this list of Smart Contract revert reasons to filter out transactions that revert in the
+// Multicaller client's simulations but that we can ignore. Check for exact revert reason instead of using
+// .includes() to partially match reason string in order to not ignore errors thrown by non-contract reverts.
+// For example, a NodeJS error might result in a reason string that includes more than just the contract r
+// evert reason.
+const canIgnoreRevertReasons = new Set(["relay filled", "Already claimed"]);
+
 export class MultiCallerClient {
   private transactions: AugmentedTransaction[] = [];
   // eslint-disable-next-line no-useless-constructor
@@ -58,41 +65,48 @@ export class MultiCallerClient {
 
       // Filter out transactions that revert for expected reasons. For example, the "relay filled" error
       // will occur frequently if there are multiple relayers running at the same time because only one relay
-      // can go through. This is a non critical error we can ignore to filter out the noise.
-      this.logger.debug({
-        at: "MultiCallerClient",
-        message: `Filtering out ${
-          _transactionsSucceed.filter((txn) => !txn.succeed && txn.reason === "relay filled").length
-        } relay transactions that will fail because the relay has already been filled`,
-        totalTransactions: _transactionsSucceed.length,
-        relayFilledReverts: _transactionsSucceed.filter((txn) => !txn.succeed && txn.reason === "relay filled").length,
-      });
-      const transactionsSucceed = _transactionsSucceed.filter(
-        (transaction) => transaction.succeed || transaction.reason !== "relay filled"
-      );
+      // can go through. Similarly, the "already claimed" error will occur if the dataworker executor is running at a
+      // practical cadence of ~10 mins per run, because it takes ~5-7 mins per run, these runs can overlap and
+      // execution collisions can occur. These are non critical errors we can ignore to filter out the noise.
+      // TODO: Figure out less hacky way to reduce these errors rather than ignoring them.
 
-      // If any transactions will revert then log the reason and remove them from the transaction queue.
-      if (transactionsSucceed.some((succeed) => !succeed.succeed))
+      // Note: Check for exact revert reason instead of using .includes() to partially match reason string in order
+      // to not ignore errors thrown by non-contract reverts. For example, a NodeJS error might result in a reason
+      // string that includes more than just the contract revert reason.
+      const transactionRevertsToIgnore = _transactionsSucceed.filter(
+        (txn) => !txn.succeed && canIgnoreRevertReasons.has(txn.reason)
+      );
+      const transactionRevertsToLog = _transactionsSucceed.filter(
+        (txn) => !txn.succeed && !canIgnoreRevertReasons.has(txn.reason)
+      );
+      if (transactionRevertsToIgnore.length > 0)
+        this.logger.debug({
+          at: "MultiCallerClient",
+          message: `Filtering out ${transactionRevertsToIgnore.length} relay transactions that will fail because the relay has already been filled`,
+          totalTransactions: _transactionsSucceed.length,
+        });
+
+      // If any transactions will revert then log the reason.
+      if (transactionRevertsToLog.length > 0)
         this.logger.error({
           at: "MultiCallerClient",
           message: "Some transaction in the queue will revert!",
-          revertingTransactions: transactionsSucceed
-            .filter((transaction) => !transaction.succeed)
-            .map((transaction) => {
-              return {
-                target: getTarget(transaction.transaction.contract.address),
-                args: transaction.transaction.args,
-                reason: transaction.reason,
-                message: transaction.transaction.message,
-                mrkdwn: transaction.transaction.mrkdwn,
-              };
-            }),
+          count: transactionRevertsToLog.length,
+          revertingTransactions: transactionRevertsToLog.map((transaction) => {
+            return {
+              target: getTarget(transaction.transaction.contract.address),
+              args: transaction.transaction.args,
+              reason: transaction.reason,
+              message: transaction.transaction.message,
+              mrkdwn: transaction.transaction.mrkdwn,
+            };
+          }),
           notificationPath: "across-error",
         });
-      const validTransactions: AugmentedTransaction[] = transactionsSucceed
-        .filter((transaction) => transaction.succeed)
-        .map((transaction) => transaction.transaction);
 
+      const validTransactions = _transactionsSucceed
+        .filter((txn) => txn.succeed)
+        .map((transaction) => transaction.transaction);
       if (validTransactions.length === 0) {
         this.logger.debug({ at: "MultiCallerClient", message: "No valid transactions in the queue" });
         return;
