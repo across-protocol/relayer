@@ -66,12 +66,12 @@ export class MultiCallerClient {
       // Note: Check for exact revert reason instead of using .includes() to partially match reason string in order
       // to not ignore errors thrown by non-contract reverts. For example, a NodeJS error might result in a reason
       // string that includes more than just the contract revert reason.
-      const canIgnoreRevertReason = (reason: string) => reason === "relay filled" || reason === "Already claimed";
+      const canIgnoreRevertReasons = new Set(["relay filled", "Already claimed"])
       const transactionRevertsToIgnore = _transactionsSucceed.filter(
-        (txn) => !txn.succeed && canIgnoreRevertReason(txn.reason)
+        (txn) => !txn.succeed && canIgnoreRevertReasons.has(txn.reason)
       );
       const transactionRevertsToLog = _transactionsSucceed.filter(
-        (txn) => !txn.succeed && !canIgnoreRevertReason(txn.reason)
+        (txn) => !txn.succeed && !canIgnoreRevertReasons.has(txn.reason)
       );
       if (transactionRevertsToIgnore.length > 0)
         this.logger.debug({
