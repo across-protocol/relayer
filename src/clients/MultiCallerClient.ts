@@ -63,12 +63,12 @@ export class MultiCallerClient {
       // execution collisions can occur. These are non critical errors we can ignore to filter out the noise.
       // TODO: Figure out less hacky way to reduce these errors rather than ignoring them.
       const canIgnoreRevertReason = (reason: string) => reason === "relay filled" || reason === "Already claimed";
-      const transactionsToIgnore = _transactionsSucceed.filter(
+      const transactionRevertsToIgnore = _transactionsSucceed.filter(
         (txn) => !txn.succeed && canIgnoreRevertReason(txn.reason)
       );
       this.logger.debug({
         at: "MultiCallerClient",
-        message: `Filtering out ${transactionsToIgnore.length} relay transactions that will fail because the relay has already been filled`,
+        message: `Filtering out ${transactionRevertsToIgnore.length} relay transactions that will fail because the relay has already been filled`,
         totalTransactions: _transactionsSucceed.length,
       });
       const transactionsSucceed = _transactionsSucceed.filter(
