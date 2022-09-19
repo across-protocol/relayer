@@ -14,11 +14,11 @@ export const MAX_RELAYER_DEPOSIT_LOOK_BACK: { [chainId: number]: number } = {
 };
 
 // Reorgs are anticipated on Ethereum and Polygon.
-// Ethereum: https://etherscan.io/blocks_forked
+// Ethereum: https://etherscan.io/blocks_forked (not working since the merge)
 // Polygon: https://polygonscan.com/blocks_forked
 // Optimistic Rollups are currently centrally serialized and are not expected to reorg.
 export const MIN_DEPOSIT_CONFIRMATIONS: { [chainId: number]: number } = {
-  1: 6,
+  1: 32,
   10: 240,
   137: 100,
   288: 4,
