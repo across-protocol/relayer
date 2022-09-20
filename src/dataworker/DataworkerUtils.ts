@@ -201,8 +201,9 @@ export function _buildRelayerRefundRoot(
 
       const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
         leaf.l1Tokens[index],
+        leaf.chainId,
         endBlockForMainnet
-      )[leaf.chainId] || { target: toBN(0), threshold: toBN(0) };
+      );
 
       const amountToReturn = getAmountToReturnForRelayerRefundLeaf(
         transferThreshold,

@@ -10,7 +10,7 @@ import {
   utf8ToHex,
   getCurrentTime,
   toBN,
-  min,
+  max,
 } from "../utils";
 import {
   L1TokenTransferThreshold,
@@ -101,7 +101,7 @@ export class AcrossConfigStoreClient {
     chainId: number,
     blockNumber: number = Number.MAX_SAFE_INTEGER
   ): SpokePoolTargetBalance {
-    const config = (sortEventsDescending(this.cumulativeTokenTransferUpdates) as SpokeTargetBalanceUpdate[]).find(
+    const config = (sortEventsDescending(this.cumulativeSpokeTargetBalanceUpdates) as SpokeTargetBalanceUpdate[]).find(
       (config) => config.l1Token === l1Token && config.blockNumber <= blockNumber
     );
     const targetBalance = config?.spokeTargetBalances?.[chainId];
@@ -176,12 +176,14 @@ export class AcrossConfigStoreClient {
           // numerical key.
           const targetBalances = Object.fromEntries(
             Object.entries(parsedValue.spokeTargetBalances).map(([chainId, targetBalance]) => {
-              const target = min(toBN(targetBalance.target), toBN(0));
-              const threshold = min(toBN(targetBalance.threshold), toBN(0));
+              const target = max(toBN(targetBalance.target), toBN(0));
+              const threshold = max(toBN(targetBalance.threshold), toBN(0));
               return [chainId, { target, threshold }];
             })
           ) as SpokeTargetBalanceUpdate["spokeTargetBalances"];
           this.cumulativeSpokeTargetBalanceUpdates.push({ ...args, spokeTargetBalances: targetBalances, l1Token });
+        } else {
+          this.cumulativeSpokeTargetBalanceUpdates.push({ ...args, spokeTargetBalances: {}, l1Token });
         }
       } catch (err) {
         continue;

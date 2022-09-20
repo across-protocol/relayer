@@ -1079,5 +1079,191 @@ describe("Dataworker: Build merkle roots", async function () {
         },
       ]);
     });
+    it("Spoke pool balance threshold, above and below", async function () {
+      await updateAllClients();
+      const deposit = await buildDeposit(
+        configStoreClient,
+        hubPoolClient,
+        spokePool_1,
+        erc20_1,
+        l1Token_1,
+        depositor,
+        destinationChainId,
+        amountToDeposit
+      );
+      await updateAllClients();
+      const fill = await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 1, destinationChainId);
+      await updateAllClients();
+      await configStore.updateTokenConfig(
+        l1Token_1.address,
+        JSON.stringify({
+          rateModel: sampleRateModel,
+          transferThreshold: "0",
+          spokeTargetBalances: {
+            [originChainId]: {
+              // Threshold above the deposit amount.
+              threshold: amountToDeposit.mul(2).toString(),
+              target: amountToDeposit.div(2).toString(),
+            },
+            [destinationChainId]: {
+              // Threshold above the deposit amount.
+              threshold: amountToDeposit.mul(2).toString(),
+              target: amountToDeposit.div(2).toString(),
+            }
+          }
+        })
+      );
+      await configStoreClient.update();
+      const merkleRoot1 = dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(0), spokePoolClients);
+
+      const orderedChainIds = [originChainId, destinationChainId].sort((x, y) => x - y);
+      const expectedLeaves1 = orderedChainIds
+        .map((chainId) => {
+          return {
+            groupIndex: 0,
+            chainId,
+            bundleLpFees: chainId === originChainId ? [toBN(0)] : [getRealizedLpFeeForFills([fill])],
+            // Running balance is <<< spoke pool balance threshold, so running balance should be non-zero and net send
+            // amount should be 0 for the origin chain. This should _not affect_ the destination chain, since spoke
+            // pool balance thresholds only apply to funds being sent from spoke to hub.
+            runningBalances: chainId === originChainId ? [deposit.amount.mul(toBN(-1))] : [toBN(0)],
+            netSendAmounts: chainId === originChainId ? [toBN(0)] : [getRefundForFills([fill])],
+            l1Tokens: [l1Token_1.address],
+          };
+        })
+        .map((leaf, i) => {
+          return { ...leaf, leafId: i };
+        });
+      expect(merkleRoot1.leaves).to.deep.equal(expectedLeaves1);
+
+      // Now set the threshold much lower than the running balance and check that running balances for all
+      // chains gets set to 0 and net send amount is equal to the running balance. This also tests that the
+      // dataworker is comparing the absolute value of the running balance with the threshold, not the signed value.
+      await configStore.updateTokenConfig(
+        l1Token_1.address,
+        JSON.stringify({
+          rateModel: sampleRateModel,
+          transferThreshold: "0",
+          spokeTargetBalances: {
+            [originChainId]: {
+              // Threshold is equal to the deposit amount.
+              threshold: amountToDeposit.toString(),
+              target: amountToDeposit.div(2).toString(),
+            },
+            [destinationChainId]: {
+              // Threshold above the deposit amount.
+              threshold: amountToDeposit.mul(2).toString(),
+              target: amountToDeposit.div(2).toString(),
+            }
+          }
+        })
+      );
+      await configStoreClient.update();
+      const merkleRoot2 = dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(1), spokePoolClients);
+      // We expect to have the target remaining on the spoke.
+      // We expect to transfer the total deposit amount minus the remaining spoke balance.
+      const expectedSpokeBalance = amountToDeposit.div(2);
+      const expectedTransferAmount = amountToDeposit.sub(expectedSpokeBalance);
+      const expectedLeaves2 = expectedLeaves1.map((leaf) => {
+        return {
+          ...leaf,
+          runningBalances: leaf.chainId === originChainId ? [expectedSpokeBalance.mul(-1)] : leaf.runningBalances,
+          netSendAmounts: leaf.chainId === originChainId ? [expectedTransferAmount.mul(-1)] : leaf.netSendAmounts,
+        };
+      });
+      expect(merkleRoot2.leaves).to.deep.equal(expectedLeaves2);
+    });
+    it("Spoke pool balance threshold, below transfer threshold", async function () {
+      await updateAllClients();
+      const deposit = await buildDeposit(
+        configStoreClient,
+        hubPoolClient,
+        spokePool_1,
+        erc20_1,
+        l1Token_1,
+        depositor,
+        destinationChainId,
+        amountToDeposit
+      );
+      await updateAllClients();
+      const fill = await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 1, destinationChainId);
+      await updateAllClients();
+      await configStore.updateTokenConfig(
+        l1Token_1.address,
+        JSON.stringify({
+          rateModel: sampleRateModel,
+          transferThreshold: amountToDeposit.add(1).toString(),
+          spokeTargetBalances: {
+            [originChainId]: {
+              // Threshold above the deposit amount.
+              threshold: amountToDeposit.toString(),
+              target: amountToDeposit.div(2).toString(),
+            },
+            [destinationChainId]: {
+              // Threshold above the deposit amount.
+              threshold: amountToDeposit.mul(2).toString(),
+              target: amountToDeposit.div(2).toString(),
+            }
+          }
+        })
+      );
+      await configStoreClient.update();
+      const merkleRoot1 = dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(0), spokePoolClients);
+
+      const orderedChainIds = [originChainId, destinationChainId].sort((x, y) => x - y);
+      const expectedLeaves1 = orderedChainIds
+        .map((chainId) => {
+          return {
+            groupIndex: 0,
+            chainId,
+            bundleLpFees: chainId === originChainId ? [toBN(0)] : [getRealizedLpFeeForFills([fill])],
+            // Running balance is below the transfer threshold, so the spoke balance threshold should have no impact.
+            runningBalances: chainId === originChainId ? [deposit.amount.mul(toBN(-1))] : [getRefundForFills([fill])],
+            netSendAmounts: [toBN(0)],
+            l1Tokens: [l1Token_1.address],
+          };
+        })
+        .map((leaf, i) => {
+          return { ...leaf, leafId: i };
+        });
+      expect(merkleRoot1.leaves).to.deep.equal(expectedLeaves1);
+
+      // Now set the threshold much lower than the running balance and check that running balances for all
+      // chains gets set to 0 and net send amount is equal to the running balance. This also tests that the
+      // dataworker is comparing the absolute value of the running balance with the threshold, not the signed value.
+      await configStore.updateTokenConfig(
+        l1Token_1.address,
+        JSON.stringify({
+          rateModel: sampleRateModel,
+          transferThreshold: "0",
+          spokeTargetBalances: {
+            [originChainId]: {
+              // Threshold is equal to the deposit amount.
+              threshold: amountToDeposit.toString(),
+              target: amountToDeposit.div(2).toString(),
+            },
+            [destinationChainId]: {
+              // Threshold above the deposit amount.
+              threshold: amountToDeposit.mul(2).toString(),
+              target: amountToDeposit.div(2).toString(),
+            }
+          }
+        })
+      );
+      await configStoreClient.update();
+      const merkleRoot2 = dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(1), spokePoolClients);
+      // We expect to have the target remaining on the spoke.
+      // We expect to transfer the total deposit amount minus the remaining spoke balance.
+      const expectedSpokeBalance = amountToDeposit.div(2);
+      const expectedTransferAmount = amountToDeposit.sub(expectedSpokeBalance);
+      const expectedLeaves2 = expectedLeaves1.map((leaf) => {
+        return {
+          ...leaf,
+          runningBalances: leaf.chainId === originChainId ? [expectedSpokeBalance.mul(-1)] : [toBN(0)],
+          netSendAmounts: leaf.chainId === originChainId ? [expectedTransferAmount.mul(-1)] : [getRefundForFills([fill])],
+        };
+      });
+      expect(merkleRoot2.leaves).to.deep.equal(expectedLeaves2);
+    });
   });
 });
