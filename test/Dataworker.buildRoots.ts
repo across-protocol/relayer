@@ -1109,8 +1109,8 @@ describe("Dataworker: Build merkle roots", async function () {
               // Threshold above the deposit amount.
               threshold: amountToDeposit.mul(2).toString(),
               target: amountToDeposit.div(2).toString(),
-            }
-          }
+            },
+          },
         })
       );
       await configStoreClient.update();
@@ -1154,8 +1154,8 @@ describe("Dataworker: Build merkle roots", async function () {
               // Threshold above the deposit amount.
               threshold: amountToDeposit.mul(2).toString(),
               target: amountToDeposit.div(2).toString(),
-            }
-          }
+            },
+          },
         })
       );
       await configStoreClient.update();
@@ -1203,8 +1203,8 @@ describe("Dataworker: Build merkle roots", async function () {
               // Threshold above the deposit amount.
               threshold: amountToDeposit.mul(2).toString(),
               target: amountToDeposit.div(2).toString(),
-            }
-          }
+            },
+          },
         })
       );
       await configStoreClient.update();
@@ -1246,8 +1246,8 @@ describe("Dataworker: Build merkle roots", async function () {
               // Threshold above the deposit amount.
               threshold: amountToDeposit.mul(2).toString(),
               target: amountToDeposit.div(2).toString(),
-            }
-          }
+            },
+          },
         })
       );
       await configStoreClient.update();
@@ -1260,7 +1260,8 @@ describe("Dataworker: Build merkle roots", async function () {
         return {
           ...leaf,
           runningBalances: leaf.chainId === originChainId ? [expectedSpokeBalance.mul(-1)] : [toBN(0)],
-          netSendAmounts: leaf.chainId === originChainId ? [expectedTransferAmount.mul(-1)] : [getRefundForFills([fill])],
+          netSendAmounts:
+            leaf.chainId === originChainId ? [expectedTransferAmount.mul(-1)] : [getRefundForFills([fill])],
         };
       });
       expect(merkleRoot2.leaves).to.deep.equal(expectedLeaves2);
