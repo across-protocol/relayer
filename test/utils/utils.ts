@@ -90,7 +90,7 @@ export async function deployConfigStore(
   transferThreshold: BigNumber = DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
 ) {
   const configStore = await (await utils.getContractFactory("AcrossConfigStore", signer)).deploy();
-  for (const token of tokensToAdd) {
+  for (const token of tokensToAdd)
     await configStore.updateTokenConfig(
       token.address,
       JSON.stringify({
@@ -98,7 +98,6 @@ export async function deployConfigStore(
         transferThreshold: transferThreshold.toString(),
       })
     );
-  }
   await configStore.updateGlobalConfig(
     utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE),
     maxL1TokensPerPoolRebalanceLeaf.toString()
