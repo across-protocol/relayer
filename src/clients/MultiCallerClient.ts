@@ -43,16 +43,19 @@ const unknownRevertReasonMethodsToIgnore = new Set([
   "executeRootBundle",
 ]);
 
+// Ignore the general unknown revert reason for specific methods or uniformly ignore specific revert reasons
+// for any contract method.
 const canIgnoreRevertReasons = (obj: {
   succeed: boolean;
   reason: string;
   transaction: AugmentedTransaction;
 }): boolean => {
+  // prettier-ignore
   return (
-    (!obj.succeed &&
-      unknownRevertReasonMethodsToIgnore.has(obj.transaction.method) &&
-      obj.reason === unknownRevertReason) ||
-    knownRevertReasons.has(obj.reason)
+    !obj.succeed && (
+      knownRevertReasons.has(obj.reason) ||
+      (unknownRevertReasonMethodsToIgnore.has(obj.transaction.method) && obj.reason === unknownRevertReason)
+    )
   );
 };
 
