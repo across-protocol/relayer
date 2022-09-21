@@ -186,7 +186,6 @@ export class AcrossConfigStoreClient {
           this.cumulativeSpokeTargetBalanceUpdates.push({ ...args, spokeTargetBalances: {}, l1Token });
         }
       } catch (err) {
-        console.log(err);
         continue;
       }
     }
