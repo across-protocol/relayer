@@ -24,7 +24,7 @@ const sampleRateModel = {
 
 const tokenConfigToUpdate = JSON.stringify({
   rateModel: sampleRateModel,
-  transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
+  transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD.toString(),
 });
 
 describe("AcrossConfigStoreClient", async function () {
