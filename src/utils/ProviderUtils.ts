@@ -4,9 +4,6 @@ import winston from "winston";
 import { isPromiseFulfulled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
 
-let logger: winston.Logger;
-let maxConcurrency: number;
-
 // The async/queue library has a task-based interface for building a concurrent queue.
 // This is the type we pass to define a request "task".
 interface RateLimitTask {
@@ -240,33 +237,10 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
   }
 }
 
-async function rpcRateLimited(attempt: number, url: string): Promise<boolean> {
-  // Make an effort to filter out any api keys.
-  const regex = url.match(/https:..([\w-.]+)\/.*/d);
-  logger.debug({
-    at: "ProviderUtils#rpcRateLimited",
-    message: `Got 429 on attempt ${attempt}.`,
-    rpc: regex[1] || url,
-    workers: maxConcurrency,
-  });
-
-  return true;
-}
-
-export function getProvider(chainId: number, _logger?: winston.Logger) {
-  logger ??= _logger;
+export function getProvider(chainId: number, logger?: winston.Logger) {
   const { NODE_RETRIES, NODE_RETRY_DELAY, NODE_QUORUM, NODE_TIMEOUT, NODE_MAX_CONCURRENCY } = process.env;
 
   const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
-
-  const constructorArgumentLists = getNodeUrlList(chainId).map((nodeUrl): [ethers.utils.ConnectionInfo, number] => [
-    {
-      url: nodeUrl,
-      timeout,
-      throttleCallback: rpcRateLimited,
-    },
-    chainId,
-  ]);
 
   // Default to 2 retries.
   const retries = Number(process.env[`NODE_RETRIES_${chainId}`] || NODE_RETRIES || "3");
@@ -278,9 +252,32 @@ export function getProvider(chainId: number, _logger?: winston.Logger) {
   const nodeQuorumThreshold = Number(process.env[`NODE_QUORUM_${chainId}`] || NODE_QUORUM || "1");
 
   // Default to a max concurrency of 1000 requests per node.
-  const nodeMaxConcurrency = (maxConcurrency = Number(
-    process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "1000"
-  ));
+  const nodeMaxConcurrency = Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "1000");
+
+  // Temporarily added to expose RPC rate-limiting.
+  const rpcRateLimited = ({nodeMaxConcurrency, logger}) => async (attempt: number, url: string): Promise<boolean> => {
+    if (logger) {
+      // Make an effort to filter out any api keys.
+      const regex = url.match(/https:..([\w-.]+)\/.*/d);
+      logger.debug({
+        at: "ProviderUtils#rpcRateLimited",
+        message: `Got 429 on attempt ${attempt}.`,
+        rpc: regex[1] || url,
+        workers: nodeMaxConcurrency,
+      });
+    }
+    return true;
+  };
+
+  const constructorArgumentLists = getNodeUrlList(chainId).map((nodeUrl): [ethers.utils.ConnectionInfo, number] => [
+    {
+      url: nodeUrl,
+      timeout,
+      throttleCallback: rpcRateLimited({nodeMaxConcurrency, logger}),
+    },
+    chainId,
+  ]);
+
 
   return new RetryProvider(
     constructorArgumentLists,
