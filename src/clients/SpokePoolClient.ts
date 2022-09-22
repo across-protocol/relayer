@@ -54,8 +54,7 @@ export class SpokePoolClient {
     readonly configStoreClient: AcrossConfigStoreClient | null,
     readonly chainId: number,
     readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
-    readonly spokePoolDeploymentBlock: number = 0,
-    readonly logInvalidFills: boolean = false
+    readonly spokePoolDeploymentBlock: number = 0
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
@@ -181,24 +180,23 @@ export class SpokePoolClient {
 
     const { validFills, invalidFills } = fillsForDeposit.reduce(
       (groupedFills: { validFills: Fill[]; invalidFills: Fill[] }, fill: Fill) => {
-        const isValid = this.validateFillForDeposit(fill, deposit);
-        // Log any invalid deposits with same deposit id but different params.
-        if (this.logInvalidFills && !isValid && fill.depositId === deposit.depositId) {
-          this.logger.warn({
-            at: "SpokePoolClient",
-            chainId: this.chainId,
-            message: "Invalid fill found",
-            deposit,
-            fill,
-          });
-        }
-
-        if (isValid) groupedFills.validFills.push(fill);
+        if (this.validateFillForDeposit(fill, deposit)) groupedFills.validFills.push(fill);
         else groupedFills.invalidFills.push(fill);
         return groupedFills;
       },
       { validFills: [], invalidFills: [] }
     );
+
+    // Log any invalid deposits with same deposit id but different params.
+    const invalidFillsForDeposit = invalidFills.filter((x) => x.depositId === deposit.depositId);
+    if (invalidFillsForDeposit.length > 0)
+      this.logger.warn({
+        at: "SpokePoolClient",
+        chainId: this.chainId,
+        message: "Invalid fills found matching deposit ID",
+        deposit,
+        invalidFills: Object.fromEntries(invalidFillsForDeposit.map((x) => [x.relayer, x])),
+      });
 
     // If all fills are invalid we can consider this unfilled.
     if (validFills.length === 0) {
@@ -249,8 +247,7 @@ export class SpokePoolClient {
     );
 
     // Require that all Deposits meet the minimum specified number of confirmations.
-    this.latestBlockNumber =
-      (await this.spokePool.provider.getBlockNumber()) - (this.eventSearchConfig.minDepositConfirmations ?? 0);
+    this.latestBlockNumber = await this.spokePool.provider.getBlockNumber();
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
       toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,

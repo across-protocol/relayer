@@ -64,7 +64,8 @@ describe("Relayer: Token balance shortfall", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [],
-      } as RelayerConfig
+        minDepositConfirmations: { [originChainId]: 0, [destinationChainId]: 0 },
+      } as unknown as RelayerConfig
     );
 
     // Seed Owner and depositor wallets but dont seed relayer to test how the relayer handles being out of funds.
