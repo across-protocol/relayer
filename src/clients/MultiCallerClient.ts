@@ -27,7 +27,37 @@ export interface AugmentedTransaction {
 // .includes() to partially match reason string in order to not ignore errors thrown by non-contract reverts.
 // For example, a NodeJS error might result in a reason string that includes more than just the contract r
 // evert reason.
-const canIgnoreRevertReasons = new Set(["relay filled", "Already claimed"]);
+const knownRevertReasons = new Set(["relay filled", "Already claimed"]);
+
+// The following reason potentially includes false positives of reverts that we should be alerted on, however
+// there is something likely broken in how the provider is interpreting contract reverts. Currently, there are
+// a lot of duplicate transaction sends that are reverting with this reason, for example, sending a transaction
+// to execute a relayer refund leaf takes a while to execute and ends up reverting because a duplicate transaction
+// mines before it. This situation leads to this revert reason which is spamming the Logger currently.
+const unknownRevertReason = "missing revert data in call exception; Transaction reverted without a reason string";
+const unknownRevertReasonMethodsToIgnore = new Set([
+  "fillRelay",
+  "fillRelayWithUpdatedFee",
+  "executeSlowRelayLeaf",
+  "executeRelayerRefundLeaf",
+  "executeRootBundle",
+]);
+
+// Ignore the general unknown revert reason for specific methods or uniformly ignore specific revert reasons
+// for any contract method.
+const canIgnoreRevertReasons = (obj: {
+  succeed: boolean;
+  reason: string;
+  transaction: AugmentedTransaction;
+}): boolean => {
+  // prettier-ignore
+  return (
+    !obj.succeed && (
+      knownRevertReasons.has(obj.reason) ||
+      (unknownRevertReasonMethodsToIgnore.has(obj.transaction.method) && obj.reason === unknownRevertReason)
+    )
+  );
+};
 
 export class MultiCallerClient {
   private transactions: AugmentedTransaction[] = [];
@@ -74,10 +104,10 @@ export class MultiCallerClient {
       // to not ignore errors thrown by non-contract reverts. For example, a NodeJS error might result in a reason
       // string that includes more than just the contract revert reason.
       const transactionRevertsToIgnore = _transactionsSucceed.filter(
-        (txn) => !txn.succeed && canIgnoreRevertReasons.has(txn.reason)
+        (txn) => !txn.succeed && canIgnoreRevertReasons(txn)
       );
       const transactionRevertsToLog = _transactionsSucceed.filter(
-        (txn) => !txn.succeed && !canIgnoreRevertReasons.has(txn.reason)
+        (txn) => !txn.succeed && !canIgnoreRevertReasons(txn)
       );
       if (transactionRevertsToIgnore.length > 0)
         this.logger.debug({
