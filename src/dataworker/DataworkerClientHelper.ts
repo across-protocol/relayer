@@ -1,14 +1,17 @@
 import winston from "winston";
 import { DataworkerConfig } from "./DataworkerConfig";
-import { CHAIN_ID_LIST_INDICES, Clients, constructClients, getSpokePoolSigners, updateClients } from "../common";
-import { EventSearchConfig, getDeploymentBlockNumber, Wallet, ethers } from "../utils";
+import {
+  CHAIN_ID_LIST_INDICES,
+  Clients,
+  constructClients,
+  updateClients,
+} from "../common";
+import { Wallet, ethers } from "../utils";
 import { BundleDataClient, ProfitClient, SpokePoolClient, TokenClient } from "../clients";
 
 export interface DataworkerClients extends Clients {
   profitClient: ProfitClient;
   tokenClient: TokenClient;
-  spokePoolSigners: { [chainId: number]: Wallet };
-  spokePoolClientSearchSettings: { [chainId: number]: EventSearchConfig };
   bundleDataClient: BundleDataClient;
 }
 
@@ -21,22 +24,7 @@ export async function constructDataworkerClients(
 
   // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
   const tokenClient = new TokenClient(logger, baseSigner.address, {}, commonClients.hubPoolClient);
-  const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
-  const spokePoolClientSearchSettings = Object.fromEntries(
-    config.spokePoolChains.map((chainId) => {
-      return [
-        chainId,
-        {
-          fromBlock: Number(getDeploymentBlockNumber("SpokePool", chainId)),
-          toBlock: null,
-          maxBlockLookBack: config.maxBlockLookBack[chainId],
-        },
-      ];
-    })
-  );
 
-  // Dataworker does not yet have to depend on SpokePoolClients so we don't need to construct them for now.
-  const spokePoolClients = {};
   const bundleDataClient = new BundleDataClient(logger, commonClients, spokePoolClients, CHAIN_ID_LIST_INDICES);
 
   // Disable profitability by default as only the relayer needs it.
@@ -48,8 +36,6 @@ export async function constructDataworkerClients(
     bundleDataClient,
     profitClient,
     tokenClient,
-    spokePoolSigners,
-    spokePoolClientSearchSettings,
   };
 }
 

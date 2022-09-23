@@ -7,9 +7,9 @@ import {
   updateDataworkerClients,
   spokePoolClientsToProviders,
 } from "./DataworkerClientHelper";
-import { constructSpokePoolClientsForBlockAndUpdate, updateSpokePoolClients } from "../common";
+import { constructSpokePoolClientsForBlockAndUpdate, constructSpokePoolClientsWithLookback, updateSpokePoolClients } from "../common";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
-import { SpokePoolClientsByChain } from "../interfaces";
+import { Deposit, SpokePoolClientsByChain } from "../interfaces";
 config();
 let logger: winston.Logger;
 
@@ -62,35 +62,58 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         })
       );
 
-      if (spokePoolClients === undefined) {
-        spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-          dataworker.chainIdListForBundleEvaluationBlockNumbers,
-          clients,
+      // We first updated the spoke pool clients with a limited lookback. We now need to check whether we should
+      // actually load more data. We only need older data only if there is a fill in the data that completed
+      // a partially filled deposit (i.e. it wasn't the first fill for a deposit), and the first fill cannot be
+      // found within the loaded event pool. 
+      let shouldUpdateWithLongerLookback = false;
+
+      // On each loop, double the lookback length.
+      const lookbackMultiplier = 1;
+      while (shouldUpdateWithLongerLookback) {
+        for (const chainId of Object.keys(config.maxRelayerLookBack)) {
+          config.maxRelayerLookBack[chainId] *= lookbackMultiplier; 
+        }
+        spokePoolClients = await constructSpokePoolClientsWithLookback(
           logger,
-          clients.hubPoolClient.latestBlockNumber,
-          [
-            "FundsDeposited",
-            "RequestedSpeedUpDeposit",
-            "FilledRelay",
-            "EnabledDepositRoute",
-            "RelayedRootBundle",
-            "ExecutedRelayerRefundRoot",
-          ],
-          config.useCacheForSpokePool ? bundleEndBlockMapping : {}
+          clients.configStoreClient,
+          config,
+          baseSigner,
+          config.maxRelayerLookBack
         );
-      } else
         await updateSpokePoolClients(
-          spokePoolClients,
-          [
-            "FundsDeposited",
-            "RequestedSpeedUpDeposit",
-            "FilledRelay",
-            "EnabledDepositRoute",
-            "RelayedRootBundle",
-            "ExecutedRelayerRefundRoot",
-          ],
-          config.useCacheForSpokePool ? bundleEndBlockMapping : {}
-        );
+            spokePoolClients,
+            [
+              "FundsDeposited",
+              "RequestedSpeedUpDeposit",
+              "FilledRelay",
+              "EnabledDepositRoute",
+              "RelayedRootBundle",
+              "ExecutedRelayerRefundRoot",
+            ],
+            config.useCacheForSpokePool ? bundleEndBlockMapping : {}
+          );
+
+          // For every partial fill that completed a deposit in the event search window, match it with its deposit.
+          // If the deposit isn't in the window, then break and extend the window.
+          for (const originChainId of Object.keys(spokePoolClients)) {
+            for (const destChainId of Object.keys(spokePoolClients)) {
+              if (originChainId === destChainId) continue;
+              spokePoolClients[destChainId]
+                .getFillsForOriginChain(Number(originChainId))
+                .filter((fill) => fill.totalFilledAmount.eq(fill.amount) && !fill.fillAmount.eq(fill.amount))
+                .forEach((fill) => {
+                  if (shouldUpdateWithLongerLookback) return;
+                  const matchedDeposit: Deposit = spokePoolClients[originChainId].getDepositForFill(fill);
+                  if (!matchedDeposit) shouldUpdateWithLongerLookback = true;
+                })
+              if (shouldUpdateWithLongerLookback) break;
+            }   
+            if (shouldUpdateWithLongerLookback) break;
+          } 
+         
+      }
+        
 
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled)
