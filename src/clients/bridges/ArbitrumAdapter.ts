@@ -6,11 +6,14 @@ import {
   spreadEvent,
   spreadEventWithBlockNumber,
   winston,
+  BigNumberish,
+  isDefined,
 } from "../../utils";
 import { toBN, toWei, paginatedEventQuery, Promise, Event } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
 import { arbitrumL2Erc20GatewayInterface, arbitrumL1Erc20GatewayInterface } from "./ContractInterfaces";
+import { SortableEvent } from "../../interfaces";
 
 // These values are obtained from Arbitrum's gateway router contract.
 const l1Gateways: { [tokenAddress: string]: string } = {
@@ -49,11 +52,11 @@ export class ArbitrumAdapter extends BaseAdapter {
 
   l1SubmitValue: BigNumber = toWei(0.013);
   constructor(
-    readonly logger: winston.Logger,
+    logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    readonly monitoredAddresses: string[]
+    monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 42161);
+    super(spokePoolClients, 42161, monitoredAddresses, logger);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
@@ -115,9 +118,14 @@ export class ArbitrumAdapter extends BaseAdapter {
         // Therefore, we need to filter unrelated deposits of other tokens.
         const filteredEvents = result.filter((event) => spreadEvent(event)["l1Token"] === l1Token);
         const events = filteredEvents.map((event) => {
-          const eventSpread = spreadEventWithBlockNumber(event);
+          // TODO: typing here is a little janky. To get these right, we'll probably need to rework how we're sorting
+          // these different types of events into the array to get stronger guarantees when extracting them.
+          const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
+            amount?: BigNumberish;
+            _amount?: BigNumberish;
+          };
           return {
-            amount: eventSpread[index % 2 === 0 ? "_amount" : "amount"],
+            amount: eventSpread[index % 2 === 0 ? "_amount" : "amount"]!,
             ...eventSpread,
           };
         });
@@ -133,7 +141,7 @@ export class ArbitrumAdapter extends BaseAdapter {
     // Note we send the approvals to the L1 Bridge but actually send outbound transfers to the L1 Gateway Router.
     // Note that if the token trying to be approved is not configured in this client (i.e. not in the l1Gateways object)
     // then this will pass null into the checkAndSendTokenApprovals. This method gracefully deals with this case.
-    const associatedL1Bridges = l1Tokens.map((l1Token) => this.getL1Bridge(l1Token)?.address);
+    const associatedL1Bridges = l1Tokens.map((l1Token) => this.getL1Bridge(l1Token)?.address).filter(isDefined);
     await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
   }
 

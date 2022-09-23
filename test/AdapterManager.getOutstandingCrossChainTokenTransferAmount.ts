@@ -10,9 +10,9 @@ class TestAdapter extends BaseAdapter {
       {
         1: { latestBlockNumber: 123 } as unknown as SpokePoolClient,
       },
-      1
+      1,
+      ["0xmonitored"]
     );
-    this.monitoredAddresses = ["0xmonitored"];
   }
 
   public setDepositEvents(amounts: number[]) {
