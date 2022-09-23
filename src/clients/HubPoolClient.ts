@@ -342,6 +342,7 @@ export class HubPoolClient {
       at: "HubPoolClient#update",
       message: `Updated HubPool information @ ${currentTime}.`,
       pendingRootBundleProposal,
+      pendingRootBundleProposalKeys: Object.keys(pendingRootBundleProposal),
     });
 
     for (const event of crossChainContractsSetEvents) {
