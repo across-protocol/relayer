@@ -449,7 +449,11 @@ export class HubPoolClient {
     this.isUpdated = true;
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
-    this.logger.debug({ at: "HubPoolClient", message: "HubPool client updated!" });
+    this.logger.debug({
+      at: "HubPoolClient",
+      message: "HubPool client updated!",
+      pendingRootBundle: this.pendingRootBundle,
+    });
   }
 
   private async fetchTokenInfoFromContract(address: string): Promise<L1Token> {
