@@ -183,10 +183,12 @@ export class Dataworker {
     )[1];
 
     // 3. Create roots
+    const timerStart = Date.now();
     const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this.clients.bundleDataClient.loadData(
       blockRangesForProposal,
       spokePoolClients
     );
+    this.logger.debug({ at: "Dataworker", message: `Time to load data from BundleDataClient: ${Date.now()-timerStart}ms` })
     const allValidFillsInRange = getFillsInRange(
       allValidFills,
       blockRangesForProposal,
