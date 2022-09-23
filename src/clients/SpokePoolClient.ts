@@ -119,6 +119,10 @@ export class SpokePoolClient {
     return this.relayerRefundExecutions;
   }
 
+  findRelayerRefundExecutions(rootBundleId: number, leafId: number) {
+    return this.relayerRefundExecutions.find((b) => b.rootBundleId == rootBundleId && b.leafId == leafId);
+  }
+
   getExecutedRefunds(relayerRefundRoot: string) {
     const bundle = this.getRootBundleRelays().find((bundle) => bundle.relayerRefundRoot === relayerRefundRoot);
     if (bundle === undefined) {

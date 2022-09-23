@@ -233,8 +233,14 @@ export class HubPoolClient {
 
   getFollowingRootBundle(currentRootBundle: ProposedRootBundle) {
     return sortEventsAscending(this.proposedRootBundles).find(
-      (_rootBundle: ProposedRootBundle) => _rootBundle.blockNumber > currentRootBundle.blockNumber
+      (bundle: ProposedRootBundle) => bundle && bundle.blockNumber > currentRootBundle.blockNumber
     ) as ProposedRootBundle;
+  }
+
+  findRootBundle(poolRebalanceRoot: string) {
+    return sortEventsAscending(this.proposedRootBundles).find(
+      (bundle: ProposedRootBundle) => bundle.poolRebalanceRoot === poolRebalanceRoot
+    );
   }
 
   getExecutedLeavesForRootBundle(rootBundle: ProposedRootBundle, latestMainnetBlockToSearch: number) {
