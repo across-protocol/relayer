@@ -43,6 +43,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
 
     for (;;) {
+      const loopStart = Date.now();
       // Clear cache so results can be updated with new data.
       dataworker.clearCache();
       await updateDataworkerClients(clients);
@@ -124,6 +125,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
 
       await clients.multiCallerClient.executeTransactionQueue();
 
+      logger.debug({ at: "Dataworker#index", message: `Time to loop: ${Date.now() - loopStart}ms` });
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }
   } catch (error) {
