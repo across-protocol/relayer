@@ -338,6 +338,11 @@ export class HubPoolClient {
     ]);
 
     this.currentTime = currentTime;
+    this.logger.debug({
+      at: "HubPoolClient#update",
+      message: `Updated HubPool information @ ${currentTime}.`,
+      pendingRootBundleProposal,
+    });
 
     for (const event of crossChainContractsSetEvents) {
       const args = spreadEventWithBlockNumber(event) as CrossChainContractsSet;
