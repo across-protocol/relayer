@@ -275,7 +275,7 @@ export class SpokePoolClient {
 
     let timerStart = Date.now();
     const cachedData = await this.getEventsFromCache(latestBlockToCache, searchConfig);
-    this.log("debug", `Time to load cache for chain ${this.chainId}: ${Date.now()-timerStart}ms`);
+    this.log("debug", `Time to load cache for chain ${this.chainId}: ${Date.now() - timerStart}ms`);
 
     if (cachedData !== undefined) {
       depositEventSearchConfig.fromBlock = cachedData.latestBlock + 1;
@@ -316,7 +316,7 @@ export class SpokePoolClient {
     const queryResults = await Promise.all(
       eventSearchConfigs.map((config) => paginatedEventQuery(this.spokePool, config.filter, config.searchConfig))
     );
-    this.log("debug", `Time to query new events from RPC for ${this.chainId}: ${Date.now()-timerStart}ms`);
+    this.log("debug", `Time to query new events from RPC for ${this.chainId}: ${Date.now() - timerStart}ms`);
 
     // Sort all events to ensure they are stored in a consistent order.
     queryResults.forEach((events) => {
@@ -470,7 +470,7 @@ export class SpokePoolClient {
       // events up until latestBlockToCache are added to the cache.
       const earliestBlockToCache = cachedData !== undefined ? cachedData.earliestBlock : searchConfig.fromBlock;
       await this.setDataInCache(earliestBlockToCache, latestBlockToCache, dataToCache);
-      this.log("debug", `Time to cache new data for chain ${this.chainId}: ${Date.now()-timerStart}ms`);
+      this.log("debug", `Time to cache new data for chain ${this.chainId}: ${Date.now() - timerStart}ms`);
     }
 
     if (eventsToQuery.includes("EnabledDepositRoute")) {

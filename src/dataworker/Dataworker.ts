@@ -188,7 +188,10 @@ export class Dataworker {
       blockRangesForProposal,
       spokePoolClients
     );
-    this.logger.debug({ at: "Dataworker", message: `Time to load data from BundleDataClient: ${Date.now()-timerStart}ms` })
+    this.logger.debug({
+      at: "Dataworker",
+      message: `Time to load data from BundleDataClient: ${Date.now() - timerStart}ms`,
+    });
     const allValidFillsInRange = getFillsInRange(
       allValidFills,
       blockRangesForProposal,
