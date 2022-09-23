@@ -71,6 +71,9 @@ export async function findDeficitBundles(_logger: winston.Logger) {
     const bundleBlockRanges = dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, index) => {
       return [bundleStartBlocks[chainId], bundle.bundleEvaluationBlockNumbers[index].toNumber()];
     });
+    for (const [idx, chainId] of dataworker.chainIdListForBundleEvaluationBlockNumbers.entries()) {
+      bundleStartBlocks[chainId] = bundle.bundleEvaluationBlockNumbers[idx].toNumber();
+    }
     const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = clients.bundleDataClient.loadData(
       bundleBlockRanges,
       spokePoolClients

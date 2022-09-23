@@ -344,6 +344,12 @@ export class HubPoolClient {
     ]);
 
     this.currentTime = currentTime;
+    this.logger.debug({
+      at: "HubPoolClient#update",
+      message: `Updated HubPool information @ ${currentTime}.`,
+      pendingRootBundleProposal,
+      pendingRootBundleProposalKeys: Object.keys(pendingRootBundleProposal),
+    });
 
     for (const event of crossChainContractsSetEvents) {
       const args = spreadEventWithBlockNumber(event) as CrossChainContractsSet;
@@ -450,7 +456,11 @@ export class HubPoolClient {
     this.isUpdated = true;
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
-    this.logger.debug({ at: "HubPoolClient", message: "HubPool client updated!" });
+    this.logger.debug({
+      at: "HubPoolClient",
+      message: "HubPool client updated!",
+      pendingRootBundle: this.pendingRootBundle,
+    });
   }
 
   private async fetchTokenInfoFromContract(address: string): Promise<L1Token> {
