@@ -1,4 +1,4 @@
-import { expect } from "./utils";
+import { expect, winston } from "./utils";
 import { toBN } from "./utils";
 import { BaseAdapter } from "../src/clients/bridges";
 import { SpokePoolClient } from "../src/clients";
@@ -6,12 +6,14 @@ import { OutstandingTransfers } from "../src/interfaces/Bridge";
 
 class TestAdapter extends BaseAdapter {
   constructor() {
+
     super(
       {
         1: { latestBlockNumber: 123 } as unknown as SpokePoolClient,
       },
       1,
-      ["0xmonitored"]
+      ["0xmonitored"],
+      new winston.Logger({ silent: true })
     );
   }
 
