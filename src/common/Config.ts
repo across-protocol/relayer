@@ -15,7 +15,9 @@ export class CommonConfig {
   readonly sendingTransactionsEnabled: boolean;
   readonly redisUrl: string | undefined;
   readonly bundleRefundLookback: number;
-  // TODO: Rename below to maxLookBack since it can be used in Dataworker now.
+  // TODO: Create separate Dataworker lookback, since we don’t want to confuse with relayer lookback
+  // (dataworker will prob want to lookback older, say 10 days?) and we can set reasonable defaults that dont have
+  // to work for relayer
   readonly maxRelayerLookBack: { [chainId: number]: number };
   readonly maxRelayerUnfilledDepositLookBack: { [chainId: number]: number };
 
