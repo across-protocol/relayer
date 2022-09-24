@@ -68,16 +68,20 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       // found within the loaded event pool.
       let shouldUpdateWithLongerLookback = false;
 
+      // TODO: Doubling doesn't really decrease the risk of unluckily finding a partial fill whose deposit was
+      // before the lookback start block. This is kind of random, perhaps just default to searching all time?
       // On each loop, double the lookback length.
-      const lookbackMultiplier = 1;
+      let lookbackMultiplier = 1;
       do {
         for (const chainId of Object.keys(config.maxRelayerLookBack)) {
           config.maxRelayerLookBack[chainId] *= lookbackMultiplier;
         }
+        lookbackMultiplier++;
         logger.debug({
           at: "Dataworker#index",
           message: "Using lookback for SpokePoolClient",
           lookbackConfig: config.maxRelayerLookBack,
+          lookbackMultiplier,
         });
         spokePoolClients = await constructSpokePoolClientsWithLookback(
           logger,
