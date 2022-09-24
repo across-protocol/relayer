@@ -1,7 +1,6 @@
 import { winston, BigNumber, toBN } from "../utils";
 import * as _ from "lodash";
 import {
-  Deposit,
   DepositWithBlock,
   FillsToRefund,
   FillWithBlock,
@@ -119,10 +118,9 @@ export class BundleDataClient {
       );
 
       for (const tokenAddress of Object.keys(allRefunds[chainId])) {
-        if (executedRefunds[tokenAddress] === undefined || allRefunds[chainId][tokenAddress].refunds === undefined)
-          continue;
-
         const refunds = allRefunds[chainId][tokenAddress].refunds;
+        if (executedRefunds[tokenAddress] === undefined || refunds === undefined) continue;
+
         for (const relayer of Object.keys(refunds)) {
           const executedAmount = executedRefunds[tokenAddress][relayer];
           if (executedAmount === undefined) continue;
@@ -229,7 +227,7 @@ export class BundleDataClient {
           .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1])
           .forEach((fillWithBlock) => {
             // If fill matches with a deposit, then its a valid fill.
-            const matchedDeposit: Deposit = originClient.getDepositForFill(fillWithBlock);
+            const matchedDeposit = originClient.getDepositForFill(fillWithBlock);
             if (matchedDeposit) {
               // Fill was validated. Save it under all validated fills list with the block number so we can sort it by
               // time. Note that its important we don't skip fills earlier than the block range at this step because

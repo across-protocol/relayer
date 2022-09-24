@@ -1,4 +1,13 @@
-import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, EventSearchConfig } from "../utils";
+import {
+  assign,
+  Contract,
+  winston,
+  BigNumber,
+  ERC20,
+  sortEventsAscending,
+  EventSearchConfig,
+  MakeOptional,
+} from "../utils";
 import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
 import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
 import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle, LpToken } from "../interfaces";
@@ -18,17 +27,17 @@ export class HubPoolClient {
   private l1TokensToDestinationTokensWithBlock: {
     [l1Token: string]: { [destinationChainId: number]: DestinationTokenWithBlock[] };
   } = {};
-  private pendingRootBundle: PendingRootBundle;
+  private pendingRootBundle: PendingRootBundle | undefined;
 
   public isUpdated = false;
   public firstBlockToSearch: number;
-  public latestBlockNumber: number;
-  public currentTime: number;
+  public latestBlockNumber: number | undefined;
+  public currentTime: number | undefined;
 
   constructor(
     readonly logger: winston.Logger,
     readonly hubPool: Contract,
-    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
+    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
@@ -83,8 +92,7 @@ export class HubPoolClient {
   getL1TokenForDeposit(deposit: Deposit) {
     let l1Token = null;
     Object.keys(this.l1TokensToDestinationTokens).forEach((_l1Token) => {
-      if (this.l1TokensToDestinationTokens[_l1Token][deposit.originChainId.toString()] === deposit.originToken)
-        l1Token = _l1Token;
+      if (this.l1TokensToDestinationTokens[_l1Token][deposit.originChainId] === deposit.originToken) l1Token = _l1Token;
     });
     if (l1Token === null)
       throw new Error(
@@ -93,7 +101,7 @@ export class HubPoolClient {
     return l1Token;
   }
 
-  getL1TokenCounterpartAtBlock(l2ChainId: string, l2Token: string, block: number) {
+  getL1TokenCounterpartAtBlock(l2ChainId: number, l2Token: string, block: number) {
     const l1Token = Object.keys(this.l1TokensToDestinationTokensWithBlock).find((_l1Token) => {
       // If this token doesn't exist on this L2, return false.
       if (this.l1TokensToDestinationTokensWithBlock[_l1Token][l2ChainId] === undefined) return false;
@@ -142,24 +150,24 @@ export class HubPoolClient {
     return this.l1Tokens;
   }
 
-  getTokenInfoForL1Token(l1Token: string): L1Token {
+  getTokenInfoForL1Token(l1Token: string): L1Token | undefined {
     return this.l1Tokens.find((token) => token.address === l1Token);
   }
 
-  getLpTokenInfoForL1Token(l1Token: string): LpToken {
+  getLpTokenInfoForL1Token(l1Token: string): LpToken | undefined {
     return this.lpTokens[l1Token];
   }
 
-  getL1TokenInfoForL2Token(l2Token: string, chainId: number | string): L1Token {
-    const l1TokenCounterpart = this.getL1TokenCounterpartAtBlock(chainId as string, l2Token, this.latestBlockNumber);
+  getL1TokenInfoForL2Token(l2Token: string, chainId: number): L1Token | undefined {
+    const l1TokenCounterpart = this.getL1TokenCounterpartAtBlock(chainId, l2Token, this.latestBlockNumber || 0);
     return this.getTokenInfoForL1Token(l1TokenCounterpart);
   }
 
-  getTokenInfoForDeposit(deposit: Deposit): L1Token {
+  getTokenInfoForDeposit(deposit: Deposit): L1Token | undefined {
     return this.getTokenInfoForL1Token(this.getL1TokenForDeposit(deposit));
   }
 
-  getTokenInfo(chainId: number | string, tokenAddress: string): L1Token {
+  getTokenInfo(chainId: number | string, tokenAddress: string): L1Token | undefined {
     const deposit = { originChainId: parseInt(chainId.toString()), originToken: tokenAddress } as Deposit;
     return this.getTokenInfoForDeposit(deposit);
   }
@@ -183,7 +191,7 @@ export class HubPoolClient {
     chain: number,
     chainIdList: number[]
   ): number | undefined {
-    let endingBlockNumber: number;
+    let endingBlockNumber: number | undefined;
     for (const rootBundle of sortEventsAscending(this.proposedRootBundles)) {
       const nextRootBundle = this.getFollowingRootBundle(rootBundle);
       if (!this.isRootBundleValid(rootBundle, nextRootBundle ? nextRootBundle.blockNumber : latestMainnetBlock))

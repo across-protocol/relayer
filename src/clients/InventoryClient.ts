@@ -60,7 +60,7 @@ export class InventoryClient {
   // Get the fraction of funds allocated on each chain.
   getChainDistribution(l1Token: string): { [chainId: number]: BigNumber } {
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
-    const distribution = {};
+    const distribution: { [chainId: number]: BigNumber } = {};
     this.getEnabledChains().forEach((chainId) => {
       if (cumulativeBalance.gt(0))
         distribution[chainId] = this.getBalanceOnChainForL1Token(chainId, l1Token).mul(scalar).div(cumulativeBalance);
@@ -69,8 +69,8 @@ export class InventoryClient {
   }
 
   // Get the distribution of all tokens, spread over all chains.
-  getTokenDistributionPerL1Token(): { [l1Token: string]: { [chainId: number]: BigNumber } } {
-    const distributionPerL1Token = {};
+  getTokenDistributionPerL1Token() {
+    const distributionPerL1Token: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
     this.getL1Tokens().forEach((l1Token) => (distributionPerL1Token[l1Token] = this.getChainDistribution(l1Token)));
     return distributionPerL1Token;
   }

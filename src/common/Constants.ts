@@ -122,5 +122,5 @@ export const IGNORED_SPOKE_BUNDLES = {
 // include any invalid bundles that got through, such as at blocks 15001113 or 15049343 which are missing
 // some events but have correct bundle eval blocks. This list specifically contains admin proposals that are sent
 // to correct the bundles such as 15049343 that missed some events.
-export const IGNORED_HUB_PROPOSED_BUNDLES = [];
-export const IGNORED_HUB_EXECUTED_BUNDLES = [];
+export const IGNORED_HUB_PROPOSED_BUNDLES: number[] = [];
+export const IGNORED_HUB_EXECUTED_BUNDLES: number[] = [];
