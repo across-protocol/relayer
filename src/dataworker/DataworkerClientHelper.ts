@@ -1,12 +1,6 @@
 import winston from "winston";
 import { DataworkerConfig } from "./DataworkerConfig";
-import {
-  CHAIN_ID_LIST_INDICES,
-  Clients,
-  constructClients,
-  getSpokePoolSigners,
-  updateClients,
-} from "../common";
+import { CHAIN_ID_LIST_INDICES, Clients, constructClients, getSpokePoolSigners, updateClients } from "../common";
 import { Wallet, ethers, EventSearchConfig, getDeploymentBlockNumber } from "../utils";
 import { BundleDataClient, ProfitClient, SpokePoolClient, TokenClient } from "../clients";
 

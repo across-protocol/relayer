@@ -65,16 +65,20 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       // We first updated the spoke pool clients with a limited lookback. We now need to check whether we should
       // actually load more data. We only need older data only if there is a fill in the data that completed
       // a partially filled deposit (i.e. it wasn't the first fill for a deposit), and the first fill cannot be
-      // found within the loaded event pool. 
+      // found within the loaded event pool.
       let shouldUpdateWithLongerLookback = false;
 
       // On each loop, double the lookback length.
       const lookbackMultiplier = 1;
       do {
         for (const chainId of Object.keys(config.maxRelayerLookBack)) {
-          config.maxRelayerLookBack[chainId] *= lookbackMultiplier; 
+          config.maxRelayerLookBack[chainId] *= lookbackMultiplier;
         }
-        logger.debug({ at: "Dataworker#index", message: "Using lookback for SpokePoolClient", lookbackConfig: config.maxRelayerLookBack });
+        logger.debug({
+          at: "Dataworker#index",
+          message: "Using lookback for SpokePoolClient",
+          lookbackConfig: config.maxRelayerLookBack,
+        });
         spokePoolClients = await constructSpokePoolClientsWithLookback(
           logger,
           clients.configStoreClient,
@@ -83,40 +87,38 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           config.maxRelayerLookBack
         );
         await updateSpokePoolClients(
-            spokePoolClients,
-            [
-              "FundsDeposited",
-              "RequestedSpeedUpDeposit",
-              "FilledRelay",
-              "EnabledDepositRoute",
-              "RelayedRootBundle",
-              "ExecutedRelayerRefundRoot",
-            ],
-            config.useCacheForSpokePool ? bundleEndBlockMapping : {}
-          );
+          spokePoolClients,
+          [
+            "FundsDeposited",
+            "RequestedSpeedUpDeposit",
+            "FilledRelay",
+            "EnabledDepositRoute",
+            "RelayedRootBundle",
+            "ExecutedRelayerRefundRoot",
+          ],
+          config.useCacheForSpokePool ? bundleEndBlockMapping : {}
+        );
 
-          // For every partial fill that completed a deposit in the event search window, match it with its deposit.
-          // If the deposit isn't in the window, then break and extend the window.
-          for (const originChainId of Object.keys(spokePoolClients)) {
-            for (const destChainId of Object.keys(spokePoolClients)) {
-              if (originChainId === destChainId) continue;
-              spokePoolClients[destChainId]
-                .getFillsForOriginChain(Number(originChainId))
-                .filter((fill) => fill.totalFilledAmount.eq(fill.amount) && !fill.fillAmount.eq(fill.amount))
-                .forEach((fill) => {
-                  if (shouldUpdateWithLongerLookback) return;
-                  const matchedDeposit: Deposit = spokePoolClients[originChainId].getDepositForFill(fill);
-                  if (!matchedDeposit) {
-                    shouldUpdateWithLongerLookback = true;
-                  }
-                })
-              if (shouldUpdateWithLongerLookback) break;
-            }   
+        // For every partial fill that completed a deposit in the event search window, match it with its deposit.
+        // If the deposit isn't in the window, then break and extend the window.
+        for (const originChainId of Object.keys(spokePoolClients)) {
+          for (const destChainId of Object.keys(spokePoolClients)) {
+            if (originChainId === destChainId) continue;
+            spokePoolClients[destChainId]
+              .getFillsForOriginChain(Number(originChainId))
+              .filter((fill) => fill.totalFilledAmount.eq(fill.amount) && !fill.fillAmount.eq(fill.amount))
+              .forEach((fill) => {
+                if (shouldUpdateWithLongerLookback) return;
+                const matchedDeposit: Deposit = spokePoolClients[originChainId].getDepositForFill(fill);
+                if (!matchedDeposit) {
+                  shouldUpdateWithLongerLookback = true;
+                }
+              });
             if (shouldUpdateWithLongerLookback) break;
-          } 
-         
-      } while (shouldUpdateWithLongerLookback)
-        
+          }
+          if (shouldUpdateWithLongerLookback) break;
+        }
+      } while (shouldUpdateWithLongerLookback);
 
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled)
