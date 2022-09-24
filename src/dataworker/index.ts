@@ -7,7 +7,7 @@ import {
   updateDataworkerClients,
   spokePoolClientsToProviders,
 } from "./DataworkerClientHelper";
-import { constructSpokePoolClientsForBlockAndUpdate, constructSpokePoolClientsWithLookback, updateSpokePoolClients } from "../common";
+import { constructSpokePoolClientsWithLookback, updateSpokePoolClients } from "../common";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
 import { Deposit, SpokePoolClientsByChain } from "../interfaces";
 config();
@@ -70,10 +70,11 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
 
       // On each loop, double the lookback length.
       const lookbackMultiplier = 1;
-      while (shouldUpdateWithLongerLookback) {
+      do {
         for (const chainId of Object.keys(config.maxRelayerLookBack)) {
           config.maxRelayerLookBack[chainId] *= lookbackMultiplier; 
         }
+        logger.debug({ at: "Dataworker#index", message: "Using lookback for SpokePoolClient", lookbackConfig: config.maxRelayerLookBack });
         spokePoolClients = await constructSpokePoolClientsWithLookback(
           logger,
           clients.configStoreClient,
@@ -105,14 +106,16 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
                 .forEach((fill) => {
                   if (shouldUpdateWithLongerLookback) return;
                   const matchedDeposit: Deposit = spokePoolClients[originChainId].getDepositForFill(fill);
-                  if (!matchedDeposit) shouldUpdateWithLongerLookback = true;
+                  if (!matchedDeposit) {
+                    shouldUpdateWithLongerLookback = true;
+                  }
                 })
               if (shouldUpdateWithLongerLookback) break;
             }   
             if (shouldUpdateWithLongerLookback) break;
           } 
          
-      }
+      } while (shouldUpdateWithLongerLookback)
         
 
       // Validate and dispute pending proposal before proposing a new one

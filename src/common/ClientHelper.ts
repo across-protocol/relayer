@@ -21,6 +21,7 @@ export function getSpokePoolSigners(baseSigner: Wallet, config: CommonConfig): {
   );
 }
 
+// TODO: Remove this function as its no longer used in prod and only useful in tests.
 export async function constructSpokePoolClientsForBlockAndUpdate(
   chainIdListForBundleEvaluationBlockNumbers: number[],
   clients: DataworkerClients,

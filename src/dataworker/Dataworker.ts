@@ -655,15 +655,23 @@ export class Dataworker {
 
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([chainId, client]) => {
-        let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
-          (rootBundle) =>
-            rootBundle.slowRelayRoot !== EMPTY_MERKLE_ROOT &&
-            (IGNORED_SPOKE_BUNDLES[chainId] ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId) : true)
-        );
+        let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays())
+          .filter(
+            (rootBundle) =>
+              (IGNORED_SPOKE_BUNDLES[chainId] ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId) : true)
+          )
 
         // Only grab the most recent n roots that have been sent if configured to do so.
         if (this.spokeRootsLookbackCount !== 0)
           rootBundleRelays = rootBundleRelays.slice(0, this.spokeRootsLookbackCount);
+      
+        // Filter out empty slow fill roots:
+        rootBundleRelays = rootBundleRelays
+          .filter(
+            (rootBundle) =>
+              rootBundle.slowRelayRoot !== EMPTY_MERKLE_ROOT
+          );
+
 
         this.logger.debug({
           at: "Dataworker#executeSlowRelayLeaves",
@@ -720,6 +728,7 @@ export class Dataworker {
               at: "Dataworke#executeSlowRelayLeaves",
               message: "Constructed a different root for the block range!",
               chainId,
+              rootBundleRelay,
               mainnetRootBundleBlock: matchingRootBundle.blockNumber,
               publishedSlowRelayRoot: rootBundleRelay.slowRelayRoot,
               constructedSlowRelayRoot: tree.getHexRoot(),
