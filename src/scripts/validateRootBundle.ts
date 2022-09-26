@@ -17,7 +17,7 @@ import { PendingRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
 import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
-import { constructSpokePoolClientsForBlockAndUpdate } from "../common";
+import { constructSpokePoolClientsWithLookbackAndUpdate } from "../common";
 
 config();
 let logger: winston.Logger;
@@ -68,11 +68,12 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
       return [chainId, latestFullyExecutedBundleEndBlocks[index].toNumber()];
     })
   );
-  const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-    dataworker.chainIdListForBundleEvaluationBlockNumbers,
-    clients,
+  const spokePoolClients = await constructSpokePoolClientsWithLookbackAndUpdate(
     logger,
-    clients.hubPoolClient.latestBlockNumber,
+    clients.configStoreClient,
+    config,
+    baseSigner,
+    {}, // Empty lookback config means lookback from SpokePool deployment block.
     [
       "FundsDeposited",
       "RequestedSpeedUpDeposit",
@@ -81,7 +82,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
     ],
-    bundleEndBlockMapping
+    config.useCacheForSpokePool ? bundleEndBlockMapping : {}
   );
 
   const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(

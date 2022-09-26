@@ -29,10 +29,9 @@ import {
   _buildRelayerRefundRoot,
   _buildSlowRelayRoot,
 } from "./DataworkerUtils";
-import { constructSpokePoolClientsForBlockAndUpdate } from "../common/ClientHelper";
 import { BalanceAllocator } from "../clients";
 import _ from "lodash";
-import { IGNORED_SPOKE_BUNDLES } from "../common";
+import { constructSpokePoolClientsWithLookback, IGNORED_SPOKE_BUNDLES } from "../common";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -518,22 +517,11 @@ export class Dataworker {
       chainIdListForBundleEvaluationBlockNumbers: this.chainIdListForBundleEvaluationBlockNumbers,
     });
 
-    // Construct spoke pool clients using spoke pools deployed at end of block range.
-    // We do make an assumption that the spoke pool contract was not changed during the block range. By using the
-    // spoke pool at this block instead of assuming its the currently deployed one, we can pay refunds for deposits
-    // on deprecated spoke pools.
     const endBlockForMainnet = getBlockRangeForChain(
       blockRangesImpliedByBundleEndBlocks,
       1,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
-    if (spokePoolClients === undefined)
-      spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-        this.chainIdListForBundleEvaluationBlockNumbers,
-        this.clients,
-        this.logger,
-        endBlockForMainnet
-      );
 
     // Compare roots with expected. The roots will be different if the block range start blocks were different
     // than the ones we constructed above when the original proposer submitted their proposal. The roots will also
@@ -657,8 +645,9 @@ export class Dataworker {
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([chainId, client]) => {
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter((rootBundle) =>
-          IGNORED_SPOKE_BUNDLES[chainId] ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId) : true &&
-          rootBundle.blockNumber >= client.firstBlockToSearch
+          IGNORED_SPOKE_BUNDLES[chainId]
+            ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
+            : true && rootBundle.blockNumber >= client.firstBlockToSearch
         );
 
         // Only grab the most recent n roots that have been sent if configured to do so.
@@ -712,7 +701,7 @@ export class Dataworker {
             return [fromBlock, endBlock.toNumber()];
           });
 
-          // Only search bundles who's start block for every chain is greater than the corresponding 
+          // Only search bundles who's start block for every chain is greater than the corresponding
           // SpokePoolClient's from block.
 
           const { unfilledDeposits } = this.clients.bundleDataClient.loadData(
@@ -1105,25 +1094,23 @@ export class Dataworker {
             return [fromBlock, endBlock.toNumber()];
           });
 
-          // Only search bundles who's start block for every chain is greater than the corresponding 
+          // Only search bundles who's start block for every chain is greater than the corresponding
           // SpokePoolClient's from block.
-          const chainIdsWithEarlyEvents = Object.keys(spokePoolClients).filter((chainId) => { 
+          const chainIdsWithEarlyEvents = Object.keys(spokePoolClients).filter((chainId) => {
             const blockRangeForChain = getBlockRangeForChain(
               blockNumberRanges,
               Number(chainId),
               this.chainIdListForBundleEvaluationBlockNumbers
             );
-            return (blockRangeForChain[0] < spokePoolClients[chainId].eventSearchConfig.fromBlock) 
-          })
-          if (
-            chainIdsWithEarlyEvents.length > 0
-          ) {
+            return blockRangeForChain[0] < spokePoolClients[chainId].eventSearchConfig.fromBlock;
+          });
+          if (chainIdsWithEarlyEvents.length > 0) {
             this.logger.debug({
               at: "Dataworke#executeRelayerRefundLeaves",
               message: "Skipping bundle with some chain's startBlock < client start block",
               chainIdsWithEarlyEvents,
               rootBundleRanges: blockNumberRanges,
-              clientStartBlocks: Object.values(spokePoolClients).map((client => client.eventSearchConfig.fromBlock)),
+              clientStartBlocks: Object.values(spokePoolClients).map((client) => client.eventSearchConfig.fromBlock),
               matchingRootBundle,
             });
             continue;

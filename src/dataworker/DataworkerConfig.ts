@@ -1,5 +1,6 @@
-import { CommonConfig, ProcessEnv, BUNDLE_END_BLOCK_BUFFERS, CHAIN_ID_LIST_INDICES } from "../common";
+import { CommonConfig, ProcessEnv } from "../common";
 import { BigNumber, assert, toBNWei } from "../utils";
+import * as Constants from "../common/Constants";
 
 export class DataworkerConfig extends CommonConfig {
   readonly maxPoolRebalanceLeafSizeOverride: number;
@@ -24,7 +25,12 @@ export class DataworkerConfig extends CommonConfig {
   readonly sendingProposalsEnabled: boolean;
   readonly sendingExecutionsEnabled: boolean;
 
+  // These variables allow the user to optimize dataworker run-time, which can slow down drastically because of all the
+  // historical events it needs to fetch and parse.
   readonly useCacheForSpokePool: boolean;
+  readonly dataworkerFastLookback: { [chainId: number]: number };
+  readonly dataworkerFastRetryCount: number;
+  readonly dataworkerFastLookbackMultiplier: number;
 
   readonly bufferToPropose: number;
 
@@ -46,6 +52,9 @@ export class DataworkerConfig extends CommonConfig {
       FINALIZER_ENABLED,
       USE_CACHE_FOR_SPOKE_POOL,
       BUFFER_TO_PROPOSE,
+      DATAWORKER_FAST_LOOKBACK,
+      DATAWORKER_FAST_RETRIES,
+      DATAWORKER_FAST_LOOKBACK_MULTIPLIER,
     } = env;
     super(env);
 
@@ -70,7 +79,7 @@ export class DataworkerConfig extends CommonConfig {
       : toBNWei("500000");
     this.blockRangeEndBlockBuffer = BLOCK_RANGE_END_BLOCK_BUFFER
       ? JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER)
-      : BUNDLE_END_BLOCK_BUFFERS;
+      : Constants.BUNDLE_END_BLOCK_BUFFERS;
     this.disputerEnabled = DISPUTER_ENABLED === "true";
     this.proposerEnabled = PROPOSER_ENABLED === "true";
     this.executorEnabled = EXECUTOR_ENABLED === "true";
@@ -83,8 +92,18 @@ export class DataworkerConfig extends CommonConfig {
     this.sendingDisputesEnabled = SEND_DISPUTES === "true";
     this.sendingProposalsEnabled = SEND_PROPOSALS === "true";
     this.sendingExecutionsEnabled = SEND_EXECUTIONS === "true";
-    this.finalizerChains = FINALIZER_CHAINS ? JSON.parse(FINALIZER_CHAINS) : CHAIN_ID_LIST_INDICES;
+    this.finalizerChains = FINALIZER_CHAINS ? JSON.parse(FINALIZER_CHAINS) : Constants.CHAIN_ID_LIST_INDICES;
     this.finalizerEnabled = FINALIZER_ENABLED === "true";
     this.useCacheForSpokePool = USE_CACHE_FOR_SPOKE_POOL === "true";
+    // `dataworkerFastLookback` is how far we fetch events from, modifying the search config's 'fromBlock'. If the
+    // dataworker needs more data, it will extend the lookback up to `dataworkerFastRetries` number of times before
+    // it loads ALL historical data.
+    this.dataworkerFastLookback = DATAWORKER_FAST_LOOKBACK
+      ? JSON.parse(DATAWORKER_FAST_LOOKBACK)
+      : Constants.DATAWORKER_FAST_LOOKBACK;
+    this.dataworkerFastRetryCount = DATAWORKER_FAST_RETRIES ? Number(DATAWORKER_FAST_RETRIES) : 3;
+    this.dataworkerFastLookbackMultiplier = DATAWORKER_FAST_LOOKBACK_MULTIPLIER
+      ? Number(DATAWORKER_FAST_LOOKBACK_MULTIPLIER)
+      : 1.25;
   }
 }

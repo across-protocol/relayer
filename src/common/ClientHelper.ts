@@ -21,37 +21,6 @@ export function getSpokePoolSigners(baseSigner: Wallet, config: CommonConfig): {
   );
 }
 
-// TODO: Remove this function as its no longer used in prod and only useful in tests.
-export async function constructSpokePoolClientsForBlockAndUpdate(
-  chainIdListForBundleEvaluationBlockNumbers: number[],
-  clients: DataworkerClients,
-  logger: winston.Logger,
-  latestMainnetBlock: number,
-  eventsToQuery?: string[],
-  latestFullyExecutedBundleEndBlocks: { [chainId: number]: number } = {}
-): Promise<{ [chainId: number]: SpokePoolClient }> {
-  const spokePoolClients = Object.fromEntries(
-    chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
-      const spokePoolContract = new Contract(
-        clients.hubPoolClient.getSpokePoolForBlock(latestMainnetBlock, Number(chainId)),
-        SpokePool.abi,
-        clients.spokePoolSigners[chainId]
-      );
-      const client = new SpokePoolClient(
-        logger,
-        spokePoolContract,
-        clients.configStoreClient,
-        Number(chainId),
-        clients.spokePoolClientSearchSettings[chainId],
-        clients.spokePoolClientSearchSettings[chainId].fromBlock
-      );
-      return [chainId, client];
-    })
-  );
-  await updateSpokePoolClients(spokePoolClients, eventsToQuery, latestFullyExecutedBundleEndBlocks);
-  return spokePoolClients;
-}
-
 export async function constructSpokePoolClientsWithLookback(
   logger: winston.Logger,
   configStoreClient: AcrossConfigStoreClient,
@@ -112,6 +81,30 @@ export async function updateSpokePoolClients(
       client.update(eventsToQuery, latestFullyExecutedBundleEndBlocks[client.chainId])
     )
   );
+}
+
+export async function constructSpokePoolClientsWithLookbackAndUpdate(
+  logger: winston.Logger,
+  configStoreClient: AcrossConfigStoreClient,
+  config: CommonConfig,
+  baseSigner: Wallet,
+  initialLookBackOverride: { [chainId: number]: number } = {},
+  eventsToQuery?: string[],
+  latestFullyExecutedBundleEndBlocks: { [chainId: number]: number } = {}
+) {
+  const spokePoolClients = await constructSpokePoolClientsWithLookback(
+    logger,
+    configStoreClient,
+    config,
+    baseSigner,
+    initialLookBackOverride
+  );
+  await updateSpokePoolClients(
+    spokePoolClients,
+    eventsToQuery,
+    latestFullyExecutedBundleEndBlocks
+  );
+  return spokePoolClients;
 }
 
 export async function constructClients(

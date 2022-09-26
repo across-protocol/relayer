@@ -188,3 +188,20 @@ export function getUnfilledDeposits(
 
   return unfilledDeposits;
 }
+
+export function allFillsHaveMatchingDeposits(spokePoolClients: SpokePoolClientsByChain): boolean {
+  for (const originChainId of Object.keys(spokePoolClients)) {
+    for (const destChainId of Object.keys(spokePoolClients)) {
+      if (originChainId === destChainId) continue;
+      const foundUnmatchedFill = spokePoolClients[destChainId]
+        .getFillsForOriginChain(Number(originChainId))
+        .filter((fill) => fill.totalFilledAmount.eq(fill.amount) && !fill.fillAmount.eq(fill.amount))
+        .some((fill) => {
+          const matchedDeposit: Deposit = spokePoolClients[originChainId].getDepositForFill(fill);
+          return matchedDeposit === undefined;
+        });
+      if (foundUnmatchedFill) return false;
+    }
+  }
+  return true;
+}

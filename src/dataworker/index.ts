@@ -1,4 +1,11 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, processCrash, Wallet } from "../utils";
+import {
+  processEndPollingLoop,
+  winston,
+  config,
+  startupLogLevel,
+  Wallet,
+  allFillsHaveMatchingDeposits,
+} from "../utils";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -7,9 +14,9 @@ import {
   updateDataworkerClients,
   spokePoolClientsToProviders,
 } from "./DataworkerClientHelper";
-import { constructSpokePoolClientsWithLookback, updateSpokePoolClients } from "../common";
+import { constructSpokePoolClientsWithLookbackAndUpdate } from "../common";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
-import { Deposit, SpokePoolClientsByChain } from "../interfaces";
+import { SpokePoolClientsByChain } from "../interfaces";
 config();
 let logger: winston.Logger;
 
@@ -62,36 +69,82 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         })
       );
 
-      // We first updated the spoke pool clients with a limited lookback. We now need to check whether we should
-      // actually load more data. We only need older data only if there is a fill in the data that completed
-      // a partially filled deposit (i.e. it wasn't the first fill for a deposit), and the first fill cannot be
-      // found within the loaded event pool.
-      let shouldUpdateWithLongerLookback = false;
+      if (Object.keys(config.dataworkerFastLookback).length > 0) {
+        // We'll optimistically construct and update the spoke pool clients with a short lookback with an eye to
+        // reducing compute time. With the data we load, we need to check if there are any fills that completed
+        // a partially filled deposit (i.e. it wasn't the first fill for a deposit) that cannot be found in the data. This
+        // would make constructing accurate slow relay root bundles potentially impossible so we will have to load
+        // more data.
 
-      // TODO: Doubling doesn't really decrease the risk of unluckily finding a partial fill whose deposit was
-      // before the lookback start block. This is kind of random, perhaps just default to searching all time?
-      // On each loop, double the lookback length.
-      let lookbackMultiplier = 1;
-      do {
-        for (const chainId of Object.keys(config.maxRelayerLookBack)) {
-          config.maxRelayerLookBack[chainId] *= lookbackMultiplier;
+        // If we need to extend the lookback window to find the deposit matching a partial fill, then ideally we should
+        // increase the window exactly as much as needed to find the deposit, but we have no choice but to iteratively
+        // guess and check. If we were to extend the lookback window by 25% and the default lookback
+        // window is 4 days old, then this would extend the lookback another day. If we assume that deposits are never
+        // more than 24 hours older than the partial fill, then its highly likely that the new lookback will include the
+        // fill. However, there is a chance that the new lookback captures a new partial fill at the beginning of the
+        // lookback window whose deposit is older than the lookback. This is unlikely because partial fills are expected
+        // to be rare in the near term.
+
+        // For the above reasoning, the default lookback window is set to 4 days and default lookback multiplier
+        // is 25%.
+        for (let i = 0; i < config.dataworkerFastRetryCount; i++) {
+          logger.debug({
+            at: "Dataworker#index",
+            message: "Using lookback for SpokePoolClient",
+            dataworkerFastLookback: config.dataworkerFastLookback,
+            dataworkerFastLookbackMultiplier: config.dataworkerFastLookbackMultiplier,
+          });
+          spokePoolClients = await constructSpokePoolClientsWithLookbackAndUpdate(
+            logger,
+            clients.configStoreClient,
+            config,
+            baseSigner,
+            config.dataworkerFastLookback,
+            [
+              "FundsDeposited",
+              "RequestedSpeedUpDeposit",
+              "FilledRelay",
+              "EnabledDepositRoute",
+              "RelayedRootBundle",
+              "ExecutedRelayerRefundRoot",
+            ],
+            config.useCacheForSpokePool ? bundleEndBlockMapping : {}
+          );
+
+          // For every partial fill that completed a deposit in the event search window, match it with its deposit.
+          // If the deposit isn't in the window, then break and extend the window.
+          if (!allFillsHaveMatchingDeposits(spokePoolClients)) {
+            logger.warn({
+              at: "Dataworker#index",
+              message:
+                "Cannot find deposit matching partial fill that completed a full, extending lookback window and reinstantiating SpokePoolClient",
+              lookbackConfig: config.dataworkerFastLookback,
+            });
+            spokePoolClients = undefined;
+            // Increase lookback for next retry.
+            for (const chainId of Object.keys(config.dataworkerFastLookback)) {
+              config.dataworkerFastLookback[chainId] *= Math.ceil(config.dataworkerFastLookbackMultiplier);
+            }
+          } else {
+            break;
+          }
         }
-        lookbackMultiplier++;
-        logger.debug({
+      }
+
+      // If we have gotten unlucky and still are finding partial fills without matching deposits within the lookback
+      // window, then load events for all history. This will take a long time and possibly cause timeout errors.
+      if (spokePoolClients === undefined) {
+        logger.warn({
           at: "Dataworker#index",
-          message: "Using lookback for SpokePoolClient",
-          lookbackConfig: config.maxRelayerLookBack,
-          lookbackMultiplier,
+          message:
+            "Constructing SpokePoolClient and loading events from deployment block. This could take a long time to update (>30 mins)",
         });
-        spokePoolClients = await constructSpokePoolClientsWithLookback(
+        spokePoolClients = await constructSpokePoolClientsWithLookbackAndUpdate(
           logger,
           clients.configStoreClient,
           config,
           baseSigner,
-          config.maxRelayerLookBack
-        );
-        await updateSpokePoolClients(
-          spokePoolClients,
+          {}, // Empty lookback config means lookback from SpokePool deployment block.
           [
             "FundsDeposited",
             "RequestedSpeedUpDeposit",
@@ -102,27 +155,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           ],
           config.useCacheForSpokePool ? bundleEndBlockMapping : {}
         );
-
-        // For every partial fill that completed a deposit in the event search window, match it with its deposit.
-        // If the deposit isn't in the window, then break and extend the window.
-        for (const originChainId of Object.keys(spokePoolClients)) {
-          for (const destChainId of Object.keys(spokePoolClients)) {
-            if (originChainId === destChainId) continue;
-            spokePoolClients[destChainId]
-              .getFillsForOriginChain(Number(originChainId))
-              .filter((fill) => fill.totalFilledAmount.eq(fill.amount) && !fill.fillAmount.eq(fill.amount))
-              .forEach((fill) => {
-                if (shouldUpdateWithLongerLookback) return;
-                const matchedDeposit: Deposit = spokePoolClients[originChainId].getDepositForFill(fill);
-                if (!matchedDeposit) {
-                  shouldUpdateWithLongerLookback = true;
-                }
-              });
-            if (shouldUpdateWithLongerLookback) break;
-          }
-          if (shouldUpdateWithLongerLookback) break;
-        }
-      } while (shouldUpdateWithLongerLookback);
+      }
 
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled)
