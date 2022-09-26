@@ -400,7 +400,18 @@ export class Dataworker {
     const invalidReasonsToSkipDispute = new Set(["insufficient-dataworker-lookback", "bundle-end-block-buffer"]);
     if (!valid) {
       if (invalidReasonsToSkipDispute.has(reason)) {
-        this.logger.error({
+        // In the case where the Dataworker lookback is improperly configured, emit an error level alert so bot runner
+        // can get dataworker running ASAP.
+        if (reason === "insufficient-dataworker-lookback") {
+          this.logger.error({
+            at: "Dataworker#validate",
+            message:
+              "Cannot validate bundle with some chain's startBlock < client start block. Set a larger DATAWORKER_FAST_LOOKBACK",
+            clientStartBlocks: Object.values(spokePoolClients).map((client) => client.eventSearchConfig.fromBlock),
+          });
+        }
+        // Catch-all debug level alert for known invalid reasons.
+        this.logger.debug({
           at: "Dataworker",
           message: "Skipping dispute 😪",
           mrkdwn: reason,
@@ -542,7 +553,7 @@ export class Dataworker {
         this.chainIdListForBundleEvaluationBlockNumbers
       )
     ) {
-      this.logger.error({
+      this.logger.debug({
         at: "Dataworker#validate",
         message:
           "Cannot validate bundle with some chain's startBlock < client start block. Set a larger DATAWORKER_FAST_LOOKBACK",

@@ -113,4 +113,5 @@ export async function run(_logger: winston.Logger) {
   await validate(_logger, baseSigner);
 }
 
-run(Logger);
+// eslint-disable-next-line no-process-exit
+run(Logger).then(() => process.exit(0));

@@ -83,13 +83,13 @@ describe("Dataworker: Validate pending root bundle", async function () {
 
     // Exit early if no pending bundle. There shouldn't be a bundle seen yet because we haven't passed enough blocks
     // beyond the block buffer.
-    await dataworkerInstance.validatePendingRootBundle();
+    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(lastSpyLogIncludes(spy, "No pending proposal, nothing to validate")).to.be.true;
 
     // Exit early if pending bundle but challenge period has passed
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.validatePendingRootBundle();
+    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(lastSpyLogIncludes(spy, "Challenge period passed, cannot dispute")).to.be.true;
 
     // Propose new valid root bundle
