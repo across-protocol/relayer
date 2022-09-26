@@ -1,4 +1,11 @@
-import { BigNumberForToken, DepositWithBlock, FillsToRefund, FillWithBlock, PoolRebalanceLeaf } from "../interfaces";
+import {
+  BigNumberForToken,
+  DepositWithBlock,
+  FillsToRefund,
+  FillWithBlock,
+  PoolRebalanceLeaf,
+  SpokePoolClientsByChain,
+} from "../interfaces";
 import { RelayData, RelayerRefundLeaf } from "../interfaces";
 import { RelayerRefundLeafWithGroup, RunningBalances, UnfilledDeposit } from "../interfaces";
 import { buildPoolRebalanceLeafTree, buildRelayerRefundTree, buildSlowRelayTree, toBNWei, winston } from "../utils";
@@ -43,6 +50,26 @@ export function getBlockRangeForChain(
   const blockRangeForChain = blockRange[indexForChain];
   if (!blockRangeForChain || blockRangeForChain.length !== 2) throw new Error(`Invalid block range for chain ${chain}`);
   return blockRangeForChain;
+}
+
+export function blockRangesAreValidForSpokeClients(
+  spokePoolClients: SpokePoolClientsByChain,
+  blockRanges: number[][],
+  chainIdListForBundleEvaluationBlockNumbers: number[]
+): boolean {
+  // Return false if any of the bundle block ranges ("blockRanges") has a start block less than the event search
+  // config's start block for the same chain. This indicates that the bundle block range can't be validated
+  // against the SpokeClient which doesn't have early enough event data.
+  return (
+    Object.keys(spokePoolClients).filter((chainId) => {
+      const blockRangeForChain = getBlockRangeForChain(
+        blockRanges,
+        Number(chainId),
+        chainIdListForBundleEvaluationBlockNumbers
+      );
+      return blockRangeForChain[0] < spokePoolClients[chainId].eventSearchConfig.fromBlock;
+    }).length > 0
+  );
 }
 
 export function prettyPrintSpokePoolEvents(

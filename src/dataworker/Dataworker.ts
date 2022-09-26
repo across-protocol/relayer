@@ -22,7 +22,7 @@ import {
 import { DataworkerClients, spokePoolClientsToProviders } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
-import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
+import { blockRangesAreValidForSpokeClients, getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 import {
   getEndBlockBuffers,
   _buildPoolRebalanceRoot,
@@ -184,8 +184,7 @@ export class Dataworker {
     // 3. Create roots
     const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this.clients.bundleDataClient.loadData(
       blockRangesForProposal,
-      spokePoolClients,
-      true
+      spokePoolClients
     );
     const allValidFillsInRange = getFillsInRange(
       allValidFills,
@@ -341,7 +340,7 @@ export class Dataworker {
       );
   }
 
-  async validatePendingRootBundle(spokePoolClients?: { [chainId: number]: SpokePoolClient }, submitDisputes = true) {
+  async validatePendingRootBundle(spokePoolClients: { [chainId: number]: SpokePoolClient }, submitDisputes = true) {
     if (!this.clients.hubPoolClient.isUpdated) throw new Error("HubPoolClient not updated");
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
@@ -398,7 +397,7 @@ export class Dataworker {
     hubPoolChainId: number,
     widestPossibleExpectedBlockRange: number[][],
     rootBundle: PendingRootBundle,
-    spokePoolClients?: { [chainId: number]: SpokePoolClient }
+    spokePoolClients: { [chainId: number]: SpokePoolClient }
   ): Promise<{
     valid: boolean;
     reason?: string;
@@ -701,8 +700,22 @@ export class Dataworker {
             return [fromBlock, endBlock.toNumber()];
           });
 
-          // Only search bundles who's start block for every chain is greater than the corresponding
-          // SpokePoolClient's from block.
+          if (
+            blockRangesAreValidForSpokeClients(
+              spokePoolClients,
+              blockNumberRanges,
+              this.chainIdListForBundleEvaluationBlockNumbers
+            )
+          ) {
+            this.logger.debug({
+              at: "Dataworke#executeSlowRelayLeaves",
+              message: "Skipping bundle with some chain's startBlock < client start block",
+              rootBundleRanges: blockNumberRanges,
+              clientStartBlocks: Object.values(spokePoolClients).map((client) => client.eventSearchConfig.fromBlock),
+              matchingRootBundle,
+            });
+            continue;
+          }
 
           const { unfilledDeposits } = this.clients.bundleDataClient.loadData(
             blockNumberRanges,
@@ -1094,21 +1107,16 @@ export class Dataworker {
             return [fromBlock, endBlock.toNumber()];
           });
 
-          // Only search bundles who's start block for every chain is greater than the corresponding
-          // SpokePoolClient's from block.
-          const chainIdsWithEarlyEvents = Object.keys(spokePoolClients).filter((chainId) => {
-            const blockRangeForChain = getBlockRangeForChain(
+          if (
+            blockRangesAreValidForSpokeClients(
+              spokePoolClients,
               blockNumberRanges,
-              Number(chainId),
               this.chainIdListForBundleEvaluationBlockNumbers
-            );
-            return blockRangeForChain[0] < spokePoolClients[chainId].eventSearchConfig.fromBlock;
-          });
-          if (chainIdsWithEarlyEvents.length > 0) {
+            )
+          ) {
             this.logger.debug({
               at: "Dataworke#executeRelayerRefundLeaves",
               message: "Skipping bundle with some chain's startBlock < client start block",
-              chainIdsWithEarlyEvents,
               rootBundleRanges: blockNumberRanges,
               clientStartBlocks: Object.values(spokePoolClients).map((client) => client.eventSearchConfig.fromBlock),
               matchingRootBundle,

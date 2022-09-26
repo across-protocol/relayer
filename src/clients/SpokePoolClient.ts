@@ -18,8 +18,17 @@ import {
 import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
 import { AcrossConfigStoreClient } from "./ConfigStoreClient";
-import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock, TokensBridged } from "../interfaces/SpokePool";
+import {
+  Deposit,
+  DepositWithBlock,
+  Fill,
+  SpeedUp,
+  FillWithBlock,
+  TokensBridged,
+  SpokePoolClientsByChain,
+} from "../interfaces/SpokePool";
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
+import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
 const FILL_DEPOSIT_COMPARISON_KEYS = [
   "amount",
