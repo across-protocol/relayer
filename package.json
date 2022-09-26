@@ -23,7 +23,7 @@
     "@maticnetwork/maticjs-ethers": "^1.0.2",
     "@uma/common": "^2.19.0",
     "@uma/contracts-node": "^0.3.1",
-    "@uma/financial-templates-lib": "^2.31.0",
+    "@uma/financial-templates-lib": "^2.31.2",
     "@uma/sdk": "^0.25.0",
     "async": "^3.2.4",
     "bluebird": "^3.7.2",
@@ -47,7 +47,8 @@
     "prettier": "prettier .",
     "eslint": "eslint .",
     "test": "hardhat test",
-    "build": "tsc && rsync -a --include '*/' --include '*.d.ts' --exclude '*' ./dist/"
+    "build": "tsc --build",
+    "watch": "tsc --build --incremental --watch"
   },
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "^2.0.6",

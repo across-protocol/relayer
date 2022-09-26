@@ -5,9 +5,12 @@ This code implements [UMIP-157](https://github.com/UMAprotocol/UMIPs/blob/master
 # Installation
 
 ```sh
-# build
+# install dependencies
 cd relayer-v2
-yarn
+yarn install
+
+# build relayer bot
+yarn build
 
 # run test suite
 yarn test
@@ -31,3 +34,10 @@ REDIS_URL=redis://localhost:6379
 ```
 
 Check out [this guide](https://docs.across.to/v2/developers/running-a-relayer) for detailed bot instructions!
+
+# Development
+
+```sh
+# continuously watch for changes and rebuild as required
+yarn watch
+```
