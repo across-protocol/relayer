@@ -647,7 +647,7 @@ export class Dataworker {
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter((rootBundle) =>
           IGNORED_SPOKE_BUNDLES[chainId]
             ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
-            : true && rootBundle.blockNumber >= client.firstBlockToSearch
+            : true && rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
         );
 
         // Only grab the most recent n roots that have been sent if configured to do so.

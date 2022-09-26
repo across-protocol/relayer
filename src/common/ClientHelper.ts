@@ -99,11 +99,7 @@ export async function constructSpokePoolClientsWithLookbackAndUpdate(
     baseSigner,
     initialLookBackOverride
   );
-  await updateSpokePoolClients(
-    spokePoolClients,
-    eventsToQuery,
-    latestFullyExecutedBundleEndBlocks
-  );
+  await updateSpokePoolClients(spokePoolClients, eventsToQuery, latestFullyExecutedBundleEndBlocks);
   return spokePoolClients;
 }
 
