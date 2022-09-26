@@ -13,6 +13,7 @@ import {
   constructDataworkerClients,
   updateDataworkerClients,
   spokePoolClientsToProviders,
+  constructSpokePoolClientsForFastDataworker,
 } from "./DataworkerClientHelper";
 import { constructSpokePoolClientsWithLookbackAndUpdate } from "../common";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
@@ -94,34 +95,21 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
             dataworkerFastLookback: config.dataworkerFastLookback,
             dataworkerFastLookbackMultiplier: config.dataworkerFastLookbackMultiplier,
           });
-          spokePoolClients = await constructSpokePoolClientsWithLookbackAndUpdate(
+
+          spokePoolClients = await constructSpokePoolClientsForFastDataworker(
             logger,
             clients.configStoreClient,
             config,
             baseSigner,
-            config.dataworkerFastLookback,
-            [
-              "FundsDeposited",
-              "RequestedSpeedUpDeposit",
-              "FilledRelay",
-              "EnabledDepositRoute",
-              "RelayedRootBundle",
-              "ExecutedRelayerRefundRoot",
-            ]
-            // Don't use the cache for the quick lookup so we don't load and parse unneccessary events from Redis DB
-            // that we'll throw away if the below checks succeed.
+            config.dataworkerFastLookback
           );
-
-          // For every partial fill that completed a deposit in the event search window, match it with its deposit.
-          // If the deposit isn't in the window, then break and extend the window.
-          if (!allFillsHaveMatchingDeposits(spokePoolClients)) {
+          if (spokePoolClients === undefined) {
             logger.warn({
               at: "Dataworker#index",
               message:
                 "Cannot find deposit matching partial fill that completed a full, extending lookback window and reinstantiating SpokePoolClient",
               lookbackConfig: config.dataworkerFastLookback,
             });
-            spokePoolClients = undefined;
             // Increase lookback for next retry.
             for (const chainId of Object.keys(config.dataworkerFastLookback)) {
               config.dataworkerFastLookback[chainId] *= Math.ceil(config.dataworkerFastLookbackMultiplier);

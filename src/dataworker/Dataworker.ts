@@ -188,6 +188,7 @@ export class Dataworker {
       });
       return;
     }
+
     const mainnetBundleEndBlock = getBlockRangeForChain(
       blockRangesForProposal,
       1,
@@ -396,13 +397,22 @@ export class Dataworker {
       pendingRootBundle,
       spokePoolClients
     );
+    const invalidReasonsToSkipDispute = new Set(["insufficient-dataworker-lookback", "bundle-end-block-buffer"]);
     if (!valid) {
-      this.logger.error({
-        at: "Dataworker",
-        message: "Submitting dispute 🤏🏼",
-        mrkdwn: reason,
-      });
-      if (submitDisputes) this._submitDisputeWithMrkdwn(hubPoolChainId, reason);
+      if (invalidReasonsToSkipDispute.has(reason)) {
+        this.logger.error({
+          at: "Dataworker",
+          message: "Skipping dispute 😪",
+          mrkdwn: reason,
+        });
+      } else {
+        this.logger.error({
+          at: "Dataworker",
+          message: "Submitting dispute 🤏🏼",
+          mrkdwn: reason,
+        });
+        if (submitDisputes) this._submitDisputeWithMrkdwn(hubPoolChainId, reason);
+      }
     }
   }
 
@@ -503,14 +513,15 @@ export class Dataworker {
       } else {
         this.logger.debug({
           at: "Dataworker#validate",
-          message: "A bundle end block is > latest block but within buffer, skipping",
+          message: "Cannot validate because a bundle end block is > latest block but within buffer",
           expectedEndBlocks: widestPossibleExpectedBlockRange.map((range) => range[1]),
           pendingEndBlocks: rootBundle.bundleEvaluationBlockNumbers,
           endBlockBuffers,
         });
       }
       return {
-        valid: true,
+        valid: false,
+        reason: "bundle-end-block-buffer",
       };
     }
 
@@ -521,6 +532,28 @@ export class Dataworker {
       blockRange[0],
       rootBundle.bundleEvaluationBlockNumbers[index],
     ]);
+
+    // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
+    // pending proposal. Log an error loudly so that user knows that disputer needs to increase its lookback.
+    if (
+      blockRangesAreInvalidForSpokeClients(
+        spokePoolClients,
+        blockRangesImpliedByBundleEndBlocks,
+        this.chainIdListForBundleEvaluationBlockNumbers
+      )
+    ) {
+      this.logger.error({
+        at: "Dataworker#validate",
+        message:
+          "Cannot validate bundle with some chain's startBlock < client start block. Set a larger DATAWORKER_FAST_LOOKBACK",
+        rootBundleRanges: blockRangesImpliedByBundleEndBlocks,
+        clientStartBlocks: Object.values(spokePoolClients).map((client) => client.eventSearchConfig.fromBlock),
+      });
+      return {
+        valid: false,
+        reason: "insufficient-dataworker-lookback",
+      };
+    }
 
     this.logger.debug({
       at: "Dataworker#validate",
@@ -723,6 +756,7 @@ export class Dataworker {
             this.logger.debug({
               at: "Dataworke#executeSlowRelayLeaves",
               message: "Skipping bundle with some chain's startBlock < client start block",
+              chainId,
               rootBundleRanges: blockNumberRanges,
               clientStartBlocks: Object.values(spokePoolClients).map((client) => client.eventSearchConfig.fromBlock),
               matchingRootBundle,
@@ -1131,8 +1165,9 @@ export class Dataworker {
             )
           ) {
             this.logger.debug({
-              at: "Dataworke#executeRelayerRefundLeaves",
+              at: "Dataworker#executeRelayerRefundLeaves",
               message: "Skipping bundle with some chain's startBlock < client start block",
+              chainId,
               rootBundleRanges: blockNumberRanges,
               clientStartBlocks: Object.values(spokePoolClients).map((client) => client.eventSearchConfig.fromBlock),
               matchingRootBundle,

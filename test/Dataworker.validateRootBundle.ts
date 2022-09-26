@@ -185,7 +185,8 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await hubPoolClient.update(); // Update only HubPool client, not spoke pool clients so we can simulate them
     // "lagging" and their latest block is behind the proposed bundle end blocks.
     await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
-    expect(lastSpyLogIncludes(spy, "A bundle end block is > latest block but within buffer, skipping")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Cannot validate because a bundle end block is > latest block but within buffer")).to
+      .be.true;
     await updateAllClients();
     expect(hubPoolClient.hasPendingProposal()).to.equal(true);
 

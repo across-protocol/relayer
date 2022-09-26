@@ -1,8 +1,16 @@
 import winston from "winston";
 import { DataworkerConfig } from "./DataworkerConfig";
-import { CHAIN_ID_LIST_INDICES, Clients, constructClients, getSpokePoolSigners, updateClients } from "../common";
-import { Wallet, ethers, EventSearchConfig, getDeploymentBlockNumber } from "../utils";
-import { BundleDataClient, ProfitClient, SpokePoolClient, TokenClient } from "../clients";
+import {
+  CHAIN_ID_LIST_INDICES,
+  Clients,
+  CommonConfig,
+  constructClients,
+  constructSpokePoolClientsWithLookbackAndUpdate,
+  getSpokePoolSigners,
+  updateClients,
+} from "../common";
+import { Wallet, ethers, EventSearchConfig, getDeploymentBlockNumber, allFillsHaveMatchingDeposits } from "../utils";
+import { AcrossConfigStoreClient, BundleDataClient, ProfitClient, SpokePoolClient, TokenClient } from "../clients";
 
 export interface DataworkerClients extends Clients {
   profitClient: ProfitClient;
@@ -74,4 +82,38 @@ export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number
   return Object.fromEntries(
     Object.entries(spokePoolClients).map(([chainId, client]) => [Number(chainId), client.spokePool.signer.provider!])
   );
+}
+
+// Constructs spoke pool clients with short lookback and validates that the Dataworker can use the data
+// to construct roots. The Dataworker still needs to validate the event set against the bundle block ranges it
+// wants to propose or validate.
+export async function constructSpokePoolClientsForFastDataworker(
+  logger: winston.Logger,
+  configStoreClient: AcrossConfigStoreClient,
+  config: DataworkerConfig,
+  baseSigner: Wallet,
+  lookback: { [chainId: number]: number }
+) {
+  const spokePoolClients = await constructSpokePoolClientsWithLookbackAndUpdate(
+    logger,
+    configStoreClient,
+    config,
+    baseSigner,
+    lookback,
+    [
+      "FundsDeposited",
+      "RequestedSpeedUpDeposit",
+      "FilledRelay",
+      "EnabledDepositRoute",
+      "RelayedRootBundle",
+      "ExecutedRelayerRefundRoot",
+    ]
+    // Don't use the cache for the quick lookup so we don't load and parse unneccessary events from Redis DB
+    // that we'll throw away if the below checks succeed.
+  );
+
+  // Validate data loaded from clients. Every partial fill that completed a deposit in the event search window must
+  // match with a deposit in the search window.
+  if (allFillsHaveMatchingDeposits(spokePoolClients)) return spokePoolClients;
+  else return undefined;
 }
