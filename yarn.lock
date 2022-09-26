@@ -3558,10 +3558,10 @@
     web3 "^1.6.0"
     winston "^3.2.1"
 
-"@uma/contracts-frontend@^0.3.15":
-  version "0.3.15"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.3.15.tgz#cc8eae27826809b6925b2cd268d3973aea027804"
-  integrity sha512-FKDu3FXHd31ILXu9Wo+Er4El0BN35I2+Unu9Nun6PWHZtByo1/4B2439xtfysDKQFF0f4PHMdL1V645A5Q1OKQ==
+"@uma/contracts-frontend@^0.3.16":
+  version "0.3.16"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.3.16.tgz#eef5d04f1b963f64efdd5e86acda585f9a3ad88a"
+  integrity sha512-ekbh7A5pas6hsBwbYNl60U5n2Ul3b+ipEaxgMKqJYQwZcUqiX9i6JoI1LuBWkWG+X7hI85ryg0uJdctzPBKIug==
 
 "@uma/contracts-frontend@^0.3.7":
   version "0.3.7"
@@ -3583,10 +3583,10 @@
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.2.tgz#884b00b2c6bf983c9f136d5f8a0749c5ff4e08cd"
   integrity sha512-Ncl7Kv2nxuY/wV5oczH2Nf6XCS7dJLad9DlzMI3jwPMPU98YT8ChHydcDe6ZiL0SAVTg7FgpIyh7lX0B7nV9Aw==
 
-"@uma/contracts-node@^0.3.15":
-  version "0.3.15"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.15.tgz#bcd658edb0baa9ddaeb4248933affa04865468cf"
-  integrity sha512-z14gtnt6VKjMkfZYGtCFERG/wyngHUp0/yDKB6ZhAVz/EanUSGpWvD4ehm/xC/HCSQcT253oFl9e0P1tsZRblw==
+"@uma/contracts-node@^0.3.16":
+  version "0.3.16"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.16.tgz#2d496340260a48649f33e8a00c8549f52a5db546"
+  integrity sha512-oYLKlxdFnG0VnFrZIBqps/QclO9o6/tweNoI+M/8oaNkdqEzkS4zDEg2DzcLmkdfFbQKFOQFDgYc6xZ8DPvHZQ==
 
 "@uma/contracts-node@^0.3.7":
   version "0.3.7"
@@ -3612,18 +3612,18 @@
     "@uniswap/v3-core" "^1.0.0-rc.2"
     "@uniswap/v3-periphery" "^1.0.0-beta.23"
 
-"@uma/financial-templates-lib@^2.31.0":
-  version "2.31.0"
-  resolved "https://registry.yarnpkg.com/@uma/financial-templates-lib/-/financial-templates-lib-2.31.0.tgz#d9804ce9ac4441ce065dd6ec29aaad9fa9a3cb5f"
-  integrity sha512-yOBhBaCnY0cEeZvEvriho4IKSK2nZwaKCc81V0OqyqN7//S0hp24x/TkkzjwGifjxW+EZ5gbyv7BHwRd2C+7+w==
+"@uma/financial-templates-lib@^2.31.2":
+  version "2.31.2"
+  resolved "https://registry.yarnpkg.com/@uma/financial-templates-lib/-/financial-templates-lib-2.31.2.tgz#15a4b3df8cc4c7633cebea35b6d09d1de68cedf9"
+  integrity sha512-YxnpkTfSchqntAFlcbC2itefszG5gKdUCeKcmUMrHZ/06h2iT7kLN8Wd/v+pUlG2+qObtchVeJI6Fv7hpK3L4w==
   dependencies:
     "@ethersproject/bignumber" "^5.4.2"
     "@google-cloud/logging-winston" "^4.1.1"
     "@google-cloud/trace-agent" "^5.1.6"
     "@pagerduty/pdjs" "^2.2.4"
     "@uma/common" "^2.27.0"
-    "@uma/contracts-node" "^0.3.15"
-    "@uma/sdk" "^0.29.0"
+    "@uma/contracts-node" "^0.3.16"
+    "@uma/sdk" "^0.29.1"
     "@uniswap/sdk" "^2.0.5"
     bluebird "^3.7.2"
     bn.js "^4.11.9"
@@ -3635,6 +3635,7 @@
     moment-timezone "^0.5.33"
     node-fetch "^2.6.0"
     node-pagerduty "^1.2.0"
+    superstruct "^0.16.4"
     web3 "^1.6.0"
     winston "^3.2.1"
     winston-transport "^4.3.0"
@@ -3671,15 +3672,15 @@
     immer "^9.0.7"
     lodash-es "^4.17.21"
 
-"@uma/sdk@^0.29.0":
-  version "0.29.0"
-  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.29.0.tgz#1a41897e6c8b37d149a598d9e17ffcd9f9a7564c"
-  integrity sha512-FWHK3GWOJ+Y+q3lVro7u2jAFNKIevEVsRzIIl6YS7Jqt5eHFpFewq/iFtXXBspmr+wXyGLLrGqb8aZ1c24E/ww==
+"@uma/sdk@^0.29.1":
+  version "0.29.1"
+  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.29.1.tgz#f62d598d6ab71002d956e17e59025cffcf2d2e7d"
+  integrity sha512-Rb9c2On8be4v21VA+homKzVP6Wb7FM3b9yfDQguazRcwFk0/0z2GOepzpEssvb6CU6hpiKPxex0fdeIUgUw0tQ==
   dependencies:
     "@google-cloud/datastore" "^7.0.0"
     "@types/lodash-es" "^4.17.5"
-    "@uma/contracts-frontend" "^0.3.15"
-    "@uma/contracts-node" "^0.3.15"
+    "@uma/contracts-frontend" "^0.3.16"
+    "@uma/contracts-node" "^0.3.16"
     axios "^0.24.0"
     bn.js "^4.11.9"
     decimal.js "^10.3.1"
@@ -14842,6 +14843,11 @@ superstruct@^0.15.4:
   version "0.15.4"
   resolved "https://registry.yarnpkg.com/superstruct/-/superstruct-0.15.4.tgz#e3381dd84ca07e704e19f69eda74eee1a5efb1f9"
   integrity sha512-eOoMeSbP9ZJChNOm/9RYjE+F36rYR966AAqeG3xhQB02j2sfAUXDp4EQ/7bAOqnlJnuFDB8yvOu50SocvKpUEw==
+
+superstruct@^0.16.4:
+  version "0.16.5"
+  resolved "https://registry.yarnpkg.com/superstruct/-/superstruct-0.16.5.tgz#7b7e1f1f8bf6ab141c660e501ac57026e42c09c0"
+  integrity sha512-GBa1VPdCUDAIrsoMVy2lzE/hKQnieUlc1JVoVzJ2YLx47SoPY4AqF85Ht1bPg5r+8I0v54GbaRdNTnYQ0p+T+Q==
 
 supports-color@6.0.0:
   version "6.0.0"
