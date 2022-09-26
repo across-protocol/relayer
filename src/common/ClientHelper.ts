@@ -118,7 +118,7 @@ export async function constructClients(
   config: CommonConfig,
   baseSigner: Wallet
 ): Promise<Clients> {
-  const hubSigner = baseSigner.connect(getProvider(config.hubPoolChainId));
+  const hubSigner = baseSigner.connect(getProvider(config.hubPoolChainId, logger));
 
   // Create contract instances for each chain for each required contract.
   const hubPool = getDeployedContract("HubPool", config.hubPoolChainId, hubSigner);

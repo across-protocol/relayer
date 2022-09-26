@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 import lodash from "lodash";
+import winston from "winston";
 import { isPromiseFulfulled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
 
@@ -236,14 +237,10 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
   }
 }
 
-export function getProvider(chainId: number) {
+export function getProvider(chainId: number, logger?: winston.Logger) {
   const { NODE_RETRIES, NODE_RETRY_DELAY, NODE_QUORUM, NODE_TIMEOUT, NODE_MAX_CONCURRENCY } = process.env;
 
   const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
-
-  const constructorArgumentLists = getNodeUrlList(chainId).map(
-    (nodeUrl): [{ url: string; timeout: number }, number] => [{ url: nodeUrl, timeout }, chainId]
-  );
 
   // Default to 2 retries.
   const retries = Number(process.env[`NODE_RETRIES_${chainId}`] || NODE_RETRIES || "3");
@@ -256,6 +253,32 @@ export function getProvider(chainId: number) {
 
   // Default to a max concurrency of 1000 requests per node.
   const nodeMaxConcurrency = Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "1000");
+
+  // Temporarily added to expose RPC rate-limiting.
+  const rpcRateLimited =
+    ({ nodeMaxConcurrency, logger }) =>
+    async (attempt: number, url: string): Promise<boolean> => {
+      if (logger) {
+        // Make an effort to filter out any api keys.
+        const regex = url.match(/https?:\/\/([\w.-]+)\/.*/);
+        logger.debug({
+          at: "ProviderUtils#rpcRateLimited",
+          message: `Got 429 on attempt ${attempt}.`,
+          rpc: regex ? regex[1] : url,
+          workers: nodeMaxConcurrency,
+        });
+      }
+      return true;
+    };
+
+  const constructorArgumentLists = getNodeUrlList(chainId).map((nodeUrl): [ethers.utils.ConnectionInfo, number] => [
+    {
+      url: nodeUrl,
+      timeout,
+      throttleCallback: rpcRateLimited({ nodeMaxConcurrency, logger }),
+    },
+    chainId,
+  ]);
 
   return new RetryProvider(
     constructorArgumentLists,
