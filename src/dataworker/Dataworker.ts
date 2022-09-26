@@ -1055,15 +1055,18 @@ export class Dataworker {
 
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([chainId, client]) => {
-        let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
-          (rootBundle) =>
-            rootBundle.relayerRefundRoot !== EMPTY_MERKLE_ROOT &&
-            (IGNORED_SPOKE_BUNDLES[chainId] ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId) : true)
+        let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter((rootBundle) =>
+          IGNORED_SPOKE_BUNDLES[chainId]
+            ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
+            : true && rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
         );
 
         // Only grab the most recent n roots that have been sent if configured to do so.
         if (this.spokeRootsLookbackCount !== 0)
           rootBundleRelays = rootBundleRelays.slice(0, this.spokeRootsLookbackCount);
+
+        // Filter out empty relayer refund root:
+        rootBundleRelays = rootBundleRelays.filter((rootBundle) => rootBundle.relayerRefundRoot !== EMPTY_MERKLE_ROOT);
 
         this.logger.debug({
           at: "Dataworker#executeRelayerRefundLeaves",
@@ -1169,7 +1172,7 @@ export class Dataworker {
               at: "Dataworke#executeRelayerRefundLeaves",
               message: "Constructed a different root for the block range!",
               chainId,
-              rootBundleId: rootBundleRelay.rootBundleId,
+              rootBundleRelay,
               mainnetRootBundleBlock: matchingRootBundle.blockNumber,
               publishedRelayerRefundRoot: rootBundleRelay.relayerRefundRoot,
               constructedRelayerRefundRoot: tree.getHexRoot(),
