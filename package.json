@@ -47,7 +47,8 @@
     "prettier": "prettier .",
     "eslint": "eslint .",
     "test": "hardhat test",
-    "build": "tsc && rsync -a --include '*/' --include '*.d.ts' --exclude '*' ./dist/"
+    "build": "tsc --build",
+    "watch": "tsc --build --incremental --watch"
   },
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "^2.0.6",
