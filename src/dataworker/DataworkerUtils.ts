@@ -52,7 +52,7 @@ export function getBlockRangeForChain(
   return blockRangeForChain;
 }
 
-export function blockRangesAreValidForSpokeClients(
+export function blockRangesAreInvalidForSpokeClients(
   spokePoolClients: SpokePoolClientsByChain,
   blockRanges: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[]
@@ -60,16 +60,14 @@ export function blockRangesAreValidForSpokeClients(
   // Return false if any of the bundle block ranges ("blockRanges") has a start block less than the event search
   // config's start block for the same chain. This indicates that the bundle block range can't be validated
   // against the SpokeClient which doesn't have early enough event data.
-  return (
-    Object.keys(spokePoolClients).filter((chainId) => {
-      const blockRangeForChain = getBlockRangeForChain(
-        blockRanges,
-        Number(chainId),
-        chainIdListForBundleEvaluationBlockNumbers
-      );
-      return blockRangeForChain[0] < spokePoolClients[chainId].eventSearchConfig.fromBlock;
-    }).length > 0
-  );
+  return Object.keys(spokePoolClients).some((chainId) => {
+    const blockRangeForChain = getBlockRangeForChain(
+      blockRanges,
+      Number(chainId),
+      chainIdListForBundleEvaluationBlockNumbers
+    );
+    return blockRangeForChain[0] < spokePoolClients[chainId].eventSearchConfig.fromBlock;
+  });
 }
 
 export function prettyPrintSpokePoolEvents(

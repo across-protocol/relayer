@@ -22,7 +22,7 @@ import {
 import { DataworkerClients, spokePoolClientsToProviders } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
-import { blockRangesAreValidForSpokeClients, getBlockRangeForChain } from "../dataworker/DataworkerUtils";
+import { blockRangesAreInvalidForSpokeClients, getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 import {
   getEndBlockBuffers,
   _buildPoolRebalanceRoot,
@@ -31,7 +31,7 @@ import {
 } from "./DataworkerUtils";
 import { BalanceAllocator } from "../clients";
 import _ from "lodash";
-import { constructSpokePoolClientsWithLookback, IGNORED_SPOKE_BUNDLES } from "../common";
+import { IGNORED_SPOKE_BUNDLES } from "../common";
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -150,7 +150,7 @@ export class Dataworker {
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
     // safe strategy but could lead to new roots failing to be proposed until ALL networks are healthy.
 
-    // 0. Check if a bundle is pending.
+    // Check if a bundle is pending.
     if (!this.clients.hubPoolClient.isUpdated) throw new Error("HubPoolClient not updated");
     if (this.clients.hubPoolClient.hasPendingProposal()) {
       this.logger.debug({
@@ -160,7 +160,7 @@ export class Dataworker {
       return;
     }
 
-    // 1. Construct a list of ending block ranges for each chain that we want to include
+    // Construct a list of ending block ranges for each chain that we want to include
     // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
     const blockRangesForProposal = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
@@ -171,17 +171,30 @@ export class Dataworker {
       this.clients.hubPoolClient.latestBlockNumber
     );
 
-    // 2. Construct spoke pool clients using spoke pools deployed at end of block range.
-    // We do make an assumption that the spoke pool contract was not changed during the block range. By using the
-    // spoke pool at this block instead of assuming its the currently deployed one, we can pay refunds for deposits
-    // on deprecated spoke pools.
+    // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
+    // potential proposal
+    if (
+      blockRangesAreInvalidForSpokeClients(
+        spokePoolClients,
+        blockRangesForProposal,
+        this.chainIdListForBundleEvaluationBlockNumbers
+      )
+    ) {
+      this.logger.debug({
+        at: "Dataworke#propose",
+        message: "Cannot propose bundle with some chain's startBlock < client start block",
+        rootBundleRanges: blockRangesForProposal,
+        clientStartBlocks: Object.values(spokePoolClients).map((client) => client.eventSearchConfig.fromBlock),
+      });
+      return;
+    }
     const mainnetBundleEndBlock = getBlockRangeForChain(
       blockRangesForProposal,
       1,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
 
-    // 3. Create roots
+    // Create roots using constructed block ranges.
     const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this.clients.bundleDataClient.loadData(
       blockRangesForProposal,
       spokePoolClients
@@ -701,7 +714,7 @@ export class Dataworker {
           });
 
           if (
-            blockRangesAreValidForSpokeClients(
+            blockRangesAreInvalidForSpokeClients(
               spokePoolClients,
               blockNumberRanges,
               this.chainIdListForBundleEvaluationBlockNumbers
@@ -1111,7 +1124,7 @@ export class Dataworker {
           });
 
           if (
-            blockRangesAreValidForSpokeClients(
+            blockRangesAreInvalidForSpokeClients(
               spokePoolClients,
               blockNumberRanges,
               this.chainIdListForBundleEvaluationBlockNumbers

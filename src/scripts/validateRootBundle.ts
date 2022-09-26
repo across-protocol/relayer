@@ -10,7 +10,16 @@
 // 2. Example of invalid bundle: REQUEST_TIME=1653594774 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
 // 2. Example of valid bundle:   REQUEST_TIME=1653516226 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
 
-import { Wallet, winston, config, getSigner, startupLogLevel, Logger, delay } from "../utils";
+import {
+  Wallet,
+  winston,
+  config,
+  getSigner,
+  startupLogLevel,
+  Logger,
+  delay,
+  allFillsHaveMatchingDeposits,
+} from "../utils";
 import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { BlockFinder } from "@uma/sdk";
 import { PendingRootBundle } from "../interfaces";
@@ -68,12 +77,19 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
       return [chainId, latestFullyExecutedBundleEndBlocks[index].toNumber()];
     })
   );
+
+  logger.debug({
+    at: "RootBundleValidator",
+    message: "Using lookback for SpokePoolClient",
+    dataworkerFastLookback: config.dataworkerFastLookback,
+    dataworkerFastLookbackMultiplier: config.dataworkerFastLookbackMultiplier,
+  });
   const spokePoolClients = await constructSpokePoolClientsWithLookbackAndUpdate(
     logger,
     clients.configStoreClient,
     config,
     baseSigner,
-    {}, // Empty lookback config means lookback from SpokePool deployment block.
+    config.dataworkerFastLookback,
     [
       "FundsDeposited",
       "RequestedSpeedUpDeposit",
@@ -81,9 +97,13 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
       "EnabledDepositRoute",
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
-    ],
-    config.useCacheForSpokePool ? bundleEndBlockMapping : {}
+    ]
   );
+  if (!allFillsHaveMatchingDeposits(spokePoolClients)) {
+    throw new Error(
+      "Cannot find deposit matching partial fill that completed a full, try setting a larger DATAWORKER_FAST_LOOKBACK for all chains"
+    );
+  }
 
   const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
     dataworker.chainIdListForBundleEvaluationBlockNumbers,
@@ -97,7 +117,8 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
   const { valid, reason } = await dataworker.validateRootBundle(
     config.hubPoolChainId,
     widestPossibleBlockRanges,
-    rootBundle
+    rootBundle,
+    spokePoolClients
   );
 
   logger.info({

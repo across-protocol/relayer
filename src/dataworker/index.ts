@@ -107,8 +107,9 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
               "EnabledDepositRoute",
               "RelayedRootBundle",
               "ExecutedRelayerRefundRoot",
-            ],
-            config.useCacheForSpokePool ? bundleEndBlockMapping : {}
+            ]
+            // Don't use the cache for the quick lookup so we don't load and parse unneccessary events from Redis DB
+            // that we'll throw away if the below checks succeed.
           );
 
           // For every partial fill that completed a deposit in the event search window, match it with its deposit.
@@ -153,7 +154,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
             "RelayedRootBundle",
             "ExecutedRelayerRefundRoot",
           ],
-          config.useCacheForSpokePool ? bundleEndBlockMapping : {}
+          config.useCacheForSpokePool ? bundleEndBlockMapping : {} // Now, use the cache for the longer lookback.
         );
       }
 
