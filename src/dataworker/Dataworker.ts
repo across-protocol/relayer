@@ -180,7 +180,7 @@ export class Dataworker {
         this.chainIdListForBundleEvaluationBlockNumbers
       )
     ) {
-      this.logger.debug({
+      this.logger.warn({
         at: "Dataworke#propose",
         message: "Cannot propose bundle with some chain's startBlock < client start block",
         rootBundleRanges: blockRangesForProposal,

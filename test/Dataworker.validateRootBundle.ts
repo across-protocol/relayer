@@ -1,4 +1,4 @@
-import { buildFillForRepaymentChain, lastSpyLogIncludes, hre } from "./utils";
+import { buildFillForRepaymentChain, lastSpyLogIncludes, hre, spyLogIncludes } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit } from "./utils";
 import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, BUNDLE_END_BLOCK_BUFFER } from "./constants";
@@ -46,7 +46,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       BUNDLE_END_BLOCK_BUFFER
     ));
   });
-  it("Simple lifecycle", async function () {
+  it.only("Simple lifecycle", async function () {
     await updateAllClients();
 
     // Send a deposit and a fill so that dataworker builds simple roots.
@@ -185,8 +185,10 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await hubPoolClient.update(); // Update only HubPool client, not spoke pool clients so we can simulate them
     // "lagging" and their latest block is behind the proposed bundle end blocks.
     await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
-    expect(lastSpyLogIncludes(spy, "Cannot validate because a bundle end block is > latest block but within buffer")).to
+    expect(spyLogIncludes(spy, -2, "Cannot validate because a bundle end block is > latest block but within buffer")).to
       .be.true;
+    expect(lastSpyLogIncludes(spy, "Skipping dispute")).to.be.true;
+
     await updateAllClients();
     expect(hubPoolClient.hasPendingProposal()).to.equal(true);
 
