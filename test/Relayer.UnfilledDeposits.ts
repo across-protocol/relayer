@@ -65,8 +65,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       configStoreClient,
       destinationChainId,
       { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
-      0,
-      true
+      0
     );
 
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
@@ -268,7 +267,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     expect(unfilledDeposit.deposit.depositId).to.equal(deposit.depositId);
     expect(unfilledDeposit.invalidFills.length).to.equal(1);
     expect(unfilledDeposit.invalidFills[0].amount).to.equal(toBN(fill.amount));
-    expect(lastSpyLogIncludes(spy, "Invalid fill found")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Invalid fills found")).to.be.true;
 
     await relayerInstance.checkForUnfilledDepositsAndFill();
     // Relayer shouldn't try to relay the fill even though it's unfilled as there has been one invalid fill from this
