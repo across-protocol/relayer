@@ -8,6 +8,7 @@ import {
   PendingRootBundle,
   RunningBalances,
   UnfilledDeposit,
+  SpokePoolTargetBalance,
 } from "../interfaces";
 import {
   assign,
@@ -285,6 +286,10 @@ export function constructPoolRebalanceLeaves(
             configStoreClient.getTokenTransferThresholdForBlock(l1Token, latestMainnetBlock)
         );
 
+        const spokeTargetBalances = l1TokensToIncludeInThisLeaf.map((l1Token) =>
+          configStoreClient.getSpokeTargetBalancesForBlock(l1Token, Number(chainId), latestMainnetBlock)
+        );
+
         // Build leaves using running balances and realized lp fees data for l1Token + chain, or default to
         // zero if undefined.
         const leafBundleLpFees = l1TokensToIncludeInThisLeaf.map((l1Token) => {
@@ -293,12 +298,20 @@ export function constructPoolRebalanceLeaves(
         });
         const leafNetSendAmounts = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
           if (runningBalances[chainId] && runningBalances[chainId][l1Token])
-            return getNetSendAmountForL1Token(transferThresholds[index], runningBalances[chainId][l1Token]);
+            return getNetSendAmountForL1Token(
+              transferThresholds[index],
+              spokeTargetBalances[index],
+              runningBalances[chainId][l1Token]
+            );
           else return toBN(0);
         });
         const leafRunningBalances = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
           if (runningBalances[chainId]?.[l1Token])
-            return getRunningBalanceForL1Token(transferThresholds[index], runningBalances[chainId][l1Token]);
+            return getRunningBalanceForL1Token(
+              transferThresholds[index],
+              spokeTargetBalances[index],
+              runningBalances[chainId][l1Token]
+            );
           else return toBN(0);
         });
 
@@ -316,16 +329,52 @@ export function constructPoolRebalanceLeaves(
   return leaves;
 }
 
+// Note: this function computes the intended transfer amount before considering the transfer threshold.
+// A positive number indicates a transfer from hub to spoke.
+export function computeDesiredTransferAmountToSpoke(
+  runningBalance: BigNumber,
+  spokePoolTargetBalance: SpokePoolTargetBalance
+) {
+  // Transfer is always desired if hub owes spoke.
+  if (runningBalance.gte(0)) return runningBalance;
+
+  // Running balance is negative, but its absolute value is less than the spoke pool target balance threshold.
+  // In this case, we transfer nothing.
+  if (runningBalance.abs().lt(spokePoolTargetBalance.threshold)) return toBN(0);
+
+  // We are left with the case where the spoke pool is beyond the threshold.
+  // A transfer needs to be initiated to bring it down to the target.
+  const transferSize = runningBalance.abs().sub(spokePoolTargetBalance.target);
+
+  // If the transferSize is < 0, this indicates that the target is still above the running balance.
+  // This can only happen if the threshold is less than the target. This is likely due to a misconfiguration.
+  // In this case, we transfer nothing until the target is exceeded.
+  if (transferSize.lt(0)) return toBN(0);
+
+  // Negate the transfer size because a transfer from spoke to hub is indicated by a negative number.
+  return transferSize.mul(-1);
+}
+
 // If the running balance is greater than the token transfer threshold, then set the net send amount
 // equal to the running balance and reset the running balance to 0. Otherwise, the net send amount should be
 // 0, indicating that we do not want the data worker to trigger a token transfer between hub pool and spoke
 // pool when executing this leaf.
-export function getNetSendAmountForL1Token(transferThreshold: BigNumber, runningBalance: BigNumber): BigNumber {
-  return runningBalance.abs().gte(transferThreshold) ? runningBalance : toBN(0);
+export function getNetSendAmountForL1Token(
+  transferThreshold: BigNumber,
+  spokePoolTargetBalance: SpokePoolTargetBalance,
+  runningBalance: BigNumber
+): BigNumber {
+  const desiredTransferAmount = computeDesiredTransferAmountToSpoke(runningBalance, spokePoolTargetBalance);
+  return desiredTransferAmount.abs().gte(transferThreshold) ? desiredTransferAmount : toBN(0);
 }
 
-export function getRunningBalanceForL1Token(transferThreshold: BigNumber, runningBalance: BigNumber): BigNumber {
-  return runningBalance.abs().lt(transferThreshold) ? runningBalance : toBN(0);
+export function getRunningBalanceForL1Token(
+  transferThreshold: BigNumber,
+  spokePoolTargetBalance: SpokePoolTargetBalance,
+  runningBalance: BigNumber
+): BigNumber {
+  const desiredTransferAmount = computeDesiredTransferAmountToSpoke(runningBalance, spokePoolTargetBalance);
+  return desiredTransferAmount.abs().lt(transferThreshold) ? runningBalance : runningBalance.sub(desiredTransferAmount);
 }
 
 // This returns a possible next block range that could be submitted as a new root bundle, or used as a reference
