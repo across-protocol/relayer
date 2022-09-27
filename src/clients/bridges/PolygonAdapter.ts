@@ -123,7 +123,7 @@ export class PolygonAdapter extends BaseAdapter {
 
         const l2Token = this.getL2Token(l1Token);
 
-        if (l2Token == null) continue;
+        if (l2Token === null) continue;
         if (!this.isSupportedToken(l1Token)) continue;
 
         const l1Method = tokenToBridge[l1Token].l1Method;
