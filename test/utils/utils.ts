@@ -178,7 +178,7 @@ export async function deployNewTokenMapping(
   ]);
   await configStore.updateTokenConfig(
     l1Token.address,
-    JSON.stringify({ rateModel: sampleRateModel, transferThreshold: l1TokenTransferThreshold })
+    JSON.stringify({ rateModel: sampleRateModel, transferThreshold: l1TokenTransferThreshold.toString() })
   );
 
   // Give signer initial balance and approve hub pool and spoke pool to pull funds from it
