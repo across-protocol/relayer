@@ -56,6 +56,8 @@ export class BundleDataClient {
 
   getPendingRefundsFromValidBundles(bundleLookback: number): FillsToRefund[] {
     const refunds = [];
+    if (this.clients.hubPoolClient.latestBlockNumber === undefined)
+      throw new Error("BundleDataClient::getPendingRefundsFromValidBundles HubPoolClient not updated.");
 
     let latestBlock = this.clients.hubPoolClient.latestBlockNumber;
     for (let i = 0; i < bundleLookback; i++) {
@@ -97,10 +99,12 @@ export class BundleDataClient {
   // - Not yet proposed bundles
   getNextBundleRefunds(): FillsToRefund {
     const chainIds = Object.keys(this.spokePoolClients).map(Number);
+    const latestMainnetBlockNumber = this.clients.hubPoolClient.latestBlockNumber;
+    if (latestMainnetBlockNumber === undefined) throw new Error("BundleDataClient::getNextBundleRefunds HubPoolClient not updated");
     const futureBundleEvaluationBlockRanges: number[][] = chainIds.map((chainId, i) => [
       this.clients.hubPoolClient.getNextBundleStartBlockNumber(
         this.chainIdListForBundleEvaluationBlockNumbers,
-        this.clients.hubPoolClient.latestBlockNumber,
+        latestMainnetBlockNumber,
         chainId
       ),
       this.spokePoolClients[chainIds[i]].latestBlockNumber,
