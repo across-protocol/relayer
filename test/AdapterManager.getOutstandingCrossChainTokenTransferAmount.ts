@@ -1,4 +1,4 @@
-import { expect, winston } from "./utils";
+import { expect, createSpyLogger } from "./utils";
 import { toBN } from "./utils";
 import { BaseAdapter } from "../src/clients/bridges";
 import { SpokePoolClient } from "../src/clients";
@@ -12,7 +12,7 @@ class TestAdapter extends BaseAdapter {
       },
       1,
       ["0xmonitored"],
-      new winston.Logger({ silent: true })
+      createSpyLogger().spyLogger
     );
   }
 
@@ -32,7 +32,7 @@ class TestAdapter extends BaseAdapter {
 }
 
 let adapter: TestAdapter;
-describe("AdapterManager: Send tokens cross-chain", async function () {
+describe("AdapterManager: Get outstanding cross chain token transfer amounts", async function () {
   beforeEach(async function () {
     adapter = new TestAdapter();
   });

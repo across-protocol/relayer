@@ -8,5 +8,12 @@
     "skipLibCheck": true
   },
   "include": ["./src", "index.ts"],
-  "files": ["./hardhat.config.ts"]
+  "files": ["./hardhat.config.ts"],
+  "watchOptions": {
+    "watchFile": "useFsEventsOnParentDirectory",
+    "watchDirectory": "useFsEvents",
+    "fallbackPolling": "dynamicPriority",
+    "synchronousWatchDirectory": true,
+    "excludeDirectories": ["**/node_modules", "artifacts", "cache", "contracts", "dist"]
+  }
 }
