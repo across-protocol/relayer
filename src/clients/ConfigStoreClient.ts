@@ -51,7 +51,7 @@ export class AcrossConfigStoreClient {
   }
 
   async computeRealizedLpFeePct(
-    deposit: Deposit,
+    deposit: { quoteTimestamp: number; amount: BigNumber },
     l1Token: string
   ): Promise<{ realizedLpFeePct: BigNumber; quoteBlock: number }> {
     let quoteBlock = await this.getBlockNumber(deposit.quoteTimestamp);

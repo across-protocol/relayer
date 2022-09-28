@@ -2,6 +2,9 @@ import { BigNumber } from "../utils";
 import { SortableEvent } from "./Common";
 import { SpokePoolClient } from "../clients";
 
+// TODO: see if there's a way to get typechain to directly export this event type.
+export { FundsDepositedEvent } from "@across-protocol/contracts-v2/dist/typechain/SpokePool";
+
 export interface Deposit {
   depositId: number;
   depositor: string;
@@ -12,8 +15,8 @@ export interface Deposit {
   destinationChainId: number;
   relayerFeePct: BigNumber;
   quoteTimestamp: number;
-  realizedLpFeePct?: BigNumber; // appended after initialization (not part of Deposit event).
-  destinationToken?: string; // appended after initialization (not part of Deposit event).
+  realizedLpFeePct: BigNumber; // appended after initialization (not part of Deposit event).
+  destinationToken: string; // appended after initialization (not part of Deposit event).
   speedUpSignature?: string | undefined; // appended after initialization, if deposit was speedup (not part of Deposit event).
   newRelayerFeePct?: BigNumber; // appended after initialization, if deposit was speedup (not part of Deposit event).
 }

@@ -72,7 +72,7 @@ export class HubPoolClient {
     else return mostRecentSpokePoolUpdatebeforeBlock.spokePool;
   }
 
-  getDestinationTokenForDeposit(deposit: Deposit) {
+  getDestinationTokenForDeposit(deposit: { originChainId: number; originToken: string; destinationChainId: number }) {
     const l1Token = this.getL1TokenForDeposit(deposit);
     const destinationToken = this.getDestinationTokenForL1Token(l1Token, deposit.destinationChainId);
     if (!destinationToken)
@@ -89,7 +89,7 @@ export class HubPoolClient {
     return this.l1TokensToDestinationTokens;
   }
 
-  getL1TokenForDeposit(deposit: Deposit) {
+  getL1TokenForDeposit(deposit: { originChainId: number; originToken: string }) {
     let l1Token = null;
     Object.keys(this.l1TokensToDestinationTokens).forEach((_l1Token) => {
       if (this.l1TokensToDestinationTokens[_l1Token][deposit.originChainId] === deposit.originToken) l1Token = _l1Token;

@@ -14,11 +14,21 @@ import {
   DepositWithBlockInCache,
   FillWithBlockInCache,
   sortEventsAscendingInPlace,
+  DefaultLogLevels,
+  MakeOptional,
 } from "../utils";
-import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
+import { toBN, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
 import { AcrossConfigStoreClient } from "./ConfigStoreClient";
-import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock, TokensBridged } from "../interfaces/SpokePool";
+import {
+  Deposit,
+  DepositWithBlock,
+  Fill,
+  SpeedUp,
+  FillWithBlock,
+  TokensBridged,
+  FundsDepositedEvent,
+} from "../interfaces/SpokePool";
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
 
 const FILL_DEPOSIT_COMPARISON_KEYS = [
@@ -43,7 +53,7 @@ export class SpokePoolClient {
   private relayerRefundExecutions: RelayerRefundExecutionWithBlock[] = [];
   public isUpdated = false;
   public firstBlockToSearch: number;
-  public latestBlockNumber: number;
+  public latestBlockNumber: number | undefined;
   public deposits: { [DestinationChainId: number]: DepositWithBlock[] } = {};
   public fills: { [OriginChainId: number]: FillWithBlock[] } = {};
 
@@ -53,7 +63,7 @@ export class SpokePoolClient {
     // Can be excluded. This disables some deposit validation.
     readonly configStoreClient: AcrossConfigStoreClient | null,
     readonly chainId: number,
-    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
+    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
     readonly spokePoolDeploymentBlock: number = 0
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
@@ -144,7 +154,7 @@ export class SpokePoolClient {
     return executedRefunds;
   }
 
-  appendMaxSpeedUpSignatureToDeposit(deposit: Deposit) {
+  appendMaxSpeedUpSignatureToDeposit(deposit: DepositWithBlock) {
     const maxSpeedUp = this.speedUps[deposit.depositor]?.[deposit.depositId]?.reduce((prev, current) =>
       prev.newRelayerFeePct.gt(current.newRelayerFeePct) ? prev : current
     );
@@ -333,7 +343,7 @@ export class SpokePoolClient {
     // is heavy as there is a fair bit of block number lookups that need to happen. Note this call REQUIRES that the
     // hubPoolClient is updated on the first before this call as this needed the the L1 token mapping to each L2 token.
     if (eventsToQuery.includes("FundsDeposited")) {
-      const depositEvents = queryResults[eventsToQuery.indexOf("FundsDeposited")];
+      const depositEvents = queryResults[eventsToQuery.indexOf("FundsDeposited")] as FundsDepositedEvent[];
       if (depositEvents.length > 0)
         this.log("debug", `Fetching realizedLpFeePct for ${depositEvents.length} deposits on chain ${this.chainId}`, {
           numDeposits: depositEvents.length,
@@ -350,7 +360,7 @@ export class SpokePoolClient {
       // data always precedes newly fetched data. We also only want to use cached data as old as the original search
       // config's fromBlock.
       if (cachedData !== undefined) {
-        for (const destinationChainId of Object.keys(cachedData.deposits)) {
+        for (const destinationChainId of Object.keys(cachedData.deposits).map(Number)) {
           cachedData.deposits[destinationChainId].forEach((deposit: DepositWithBlockInCache) => {
             const convertedDeposit = this.convertDepositInCache(deposit);
             assign(dataToCache.deposits, [convertedDeposit.destinationChainId], [convertedDeposit]);
@@ -367,8 +377,8 @@ export class SpokePoolClient {
         }
         this.log("debug", `Using cached deposit events within search config for chain ${this.chainId}`, {
           cachedDeposits: Object.fromEntries(
-            Object.keys(this.deposits).map((destinationChainId) => {
-              return [destinationChainId, this.deposits[destinationChainId].length];
+            Object.entries(this.deposits).map(([destinationChainId, deposits]) => {
+              return [destinationChainId, deposits.length];
             })
           ),
         });
@@ -381,20 +391,20 @@ export class SpokePoolClient {
         });
       for (const [index, event] of depositEvents.entries()) {
         // Append the realizedLpFeePct.
-        const deposit: Deposit = { ...spreadEvent(event), realizedLpFeePct: dataForQuoteTime[index].realizedLpFeePct };
-        // Append the destination token to the deposit.
-        deposit.destinationToken = this.getDestinationTokenForDeposit(deposit);
+        const processedEvent: Omit<Deposit, "destinationToken" | "realizedLpFeePct"> = spreadEvent(event);
+
+        // Append destination token and realized lp fee to deposit.
+        const deposit = {
+          ...processedEvent,
+          realizedLpFeePct: dataForQuoteTime[index].realizedLpFeePct,
+          destinationToken: this.getDestinationTokenForDeposit(processedEvent),
+          blockNumber: dataForQuoteTime[index].quoteBlock,
+          originBlockNumber: event.blockNumber,
+        };
+
         assign(this.depositHashes, [this.getDepositHash(deposit)], deposit);
-        assign(
-          this.deposits,
-          [deposit.destinationChainId],
-          [{ ...deposit, blockNumber: dataForQuoteTime[index].quoteBlock, originBlockNumber: event.blockNumber }]
-        );
-        assign(
-          dataToCache.deposits,
-          [deposit.destinationChainId],
-          [{ ...deposit, blockNumber: dataForQuoteTime[index].quoteBlock, originBlockNumber: event.blockNumber }]
-        );
+        assign(this.deposits, [deposit.destinationChainId], [deposit]);
+        assign(dataToCache.deposits, [deposit.destinationChainId], [deposit]);
       }
     }
 
@@ -409,17 +419,9 @@ export class SpokePoolClient {
       }
 
       // Traverse all deposit events and update them with associated speedups, If they exist.
-      for (const destinationChainId of Object.keys(this.deposits))
-        for (const [index, deposit] of this.deposits[destinationChainId].entries()) {
-          const { blockNumber, originBlockNumber, ...depositData } = deposit;
-          const speedUpDeposit = this.appendMaxSpeedUpSignatureToDeposit(depositData);
-          if (speedUpDeposit !== depositData) {
-            this.deposits[destinationChainId][index] = {
-              ...speedUpDeposit,
-              blockNumber,
-              originBlockNumber,
-            };
-          }
+      for (const deposits of Object.values(this.deposits))
+        for (const [index, deposit] of deposits.entries()) {
+          deposits[index] = this.appendMaxSpeedUpSignatureToDeposit(deposit);
         }
     }
 
@@ -522,10 +524,13 @@ export class SpokePoolClient {
   }
 
   public hubPoolClient() {
-    return this.configStoreClient.hubPoolClient;
+    return this.configStoreClient?.hubPoolClient;
   }
 
-  private async getEventsFromCache(latestBlockToCache: number, searchConfig: EventSearchConfig): Promise<CachedData> {
+  private async getEventsFromCache(
+    latestBlockToCache: number,
+    searchConfig: EventSearchConfig
+  ): Promise<CachedData | undefined> {
     if (latestBlockToCache > 0) {
       // Invariant: The cached deposit data for this chain should include all events from searchConfig.fromBlock
       // until latestCachedBlock, and latestCachedBlock <= latestBlockToCache. If latestCachedBlock <=
@@ -585,23 +590,27 @@ export class SpokePoolClient {
   }
 
   private async getDepositDataFromCache(): Promise<CachedDepositData | Record<string, never>> {
+    if (!this.configStoreClient) return {};
     const result = await getFromCache(this.getCacheKey().deposits, this.configStoreClient.redisClient);
     if (result === null) return {};
     else return JSON.parse(result);
   }
 
   private async getFillDataFromCache(): Promise<CachedFillData | Record<string, never>> {
+    if (!this.configStoreClient) return {};
     const result = await getFromCache(this.getCacheKey().fills, this.configStoreClient.redisClient);
     if (result === null) return {};
     else return JSON.parse(result);
   }
 
   private async setDepositDataInCache(newData: CachedDepositData) {
-    await setInCache(this.getCacheKey().deposits, JSON.stringify(newData), this.configStoreClient.redisClient);
+    if (this.configStoreClient)
+      await setInCache(this.getCacheKey().deposits, JSON.stringify(newData), this.configStoreClient.redisClient);
   }
 
   private async setFillDataInCache(newData: CachedFillData) {
-    await setInCache(this.getCacheKey().fills, JSON.stringify(newData), this.configStoreClient.redisClient);
+    if (this.configStoreClient)
+      await setInCache(this.getCacheKey().fills, JSON.stringify(newData), this.configStoreClient.redisClient);
   }
 
   private async setDataInCache(
@@ -622,8 +631,8 @@ export class SpokePoolClient {
                 ...deposit,
                 amount: deposit.amount.toString(),
                 relayerFeePct: deposit.relayerFeePct.toString(),
-                realizedLpFeePct: deposit.realizedLpFeePct.toString(),
-              } as DepositWithBlockInCache;
+                realizedLpFeePct: deposit.realizedLpFeePct?.toString(),
+              };
             }),
         ];
       })
@@ -694,24 +703,30 @@ export class SpokePoolClient {
     };
   }
 
-  private async computeRealizedLpFeePct(depositEvent: Event) {
-    if (!this.configStoreClient) return { realizedLpFeePct: toBN(0), quoteBlock: 0 }; // If there is no rate model client return 0.
+  private async computeRealizedLpFeePct(depositEvent: FundsDepositedEvent) {
+    const hubPoolClient = this.hubPoolClient();
+    if (!hubPoolClient || !this.configStoreClient) return { realizedLpFeePct: toBN(0), quoteBlock: 0 }; // If there is no rate model client return 0.
     const deposit = {
       amount: depositEvent.args.amount,
       originChainId: Number(depositEvent.args.originChainId),
       originToken: depositEvent.args.originToken,
       quoteTimestamp: depositEvent.args.quoteTimestamp,
-    } as Deposit;
+    };
 
-    return this.configStoreClient.computeRealizedLpFeePct(deposit, this.hubPoolClient().getL1TokenForDeposit(deposit));
+    return this.configStoreClient.computeRealizedLpFeePct(deposit, hubPoolClient.getL1TokenForDeposit(deposit));
   }
 
-  private getDestinationTokenForDeposit(deposit: Deposit): string {
-    if (!this.configStoreClient) return ZERO_ADDRESS; // If there is no rate model client return address(0).
-    return this.hubPoolClient().getDestinationTokenForDeposit(deposit);
+  private getDestinationTokenForDeposit(deposit: {
+    originChainId: number;
+    originToken: string;
+    destinationChainId: number;
+  }): string {
+    const hubPoolClient = this.hubPoolClient();
+    if (!hubPoolClient) return ZERO_ADDRESS; // If there is no rate model client return address(0).
+    return hubPoolClient.getDestinationTokenForDeposit(deposit);
   }
 
-  private log(level: string, message: string, data?: any) {
+  private log(level: DefaultLogLevels, message: string, data?: any) {
     this.logger[level]({ at: "SpokePoolClient", chainId: this.chainId, message, ...data });
   }
 }
