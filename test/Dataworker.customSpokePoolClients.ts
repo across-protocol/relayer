@@ -52,6 +52,7 @@ describe("Dataworker: Using SpokePool clients with short lookback windows", asyn
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(lastSpyLogIncludes(spy, "Skipping dispute")).to.be.true;
+    expect(spyLogLevel(spy, -1)).to.equal("error");
     expect(
       spyLogIncludes(
         spy,
@@ -59,7 +60,7 @@ describe("Dataworker: Using SpokePool clients with short lookback windows", asyn
         "Cannot validate bundle with some chain's startBlock < client start block. Set a larger DATAWORKER_FAST_LOOKBACK"
       )
     ).to.be.true;
-    expect(spyLogLevel(spy, -2)).to.equal("error");
+    expect(spyLogLevel(spy, -2)).to.equal("debug");
     expect(multiCallerClient.transactionCount()).to.equal(0);
   });
 });

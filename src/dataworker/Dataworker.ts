@@ -33,6 +33,13 @@ import { BalanceAllocator } from "../clients";
 import _ from "lodash";
 import { IGNORED_SPOKE_BUNDLES } from "../common";
 
+// Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
+// for. These errors are due to issues with the dataworker configuration, instead of with the pending root
+// bundle. Any reasons in IGNORE_X we emit a "debug" level log for, and any reasons in ERROR_X we emit an "error"
+// level log for.
+const IGNORE_DISPUTE_REASONS = new Set(["bundle-end-block-buffer"]);
+const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback"]);
+
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
 export class Dataworker {
@@ -402,24 +409,20 @@ export class Dataworker {
       pendingRootBundle,
       spokePoolClients
     );
-    const invalidReasonsToSkipDispute = new Set(["insufficient-dataworker-lookback", "bundle-end-block-buffer"]);
     if (!valid) {
-      if (invalidReasonsToSkipDispute.has(reason)) {
-        // In the case where the Dataworker lookback is improperly configured, emit an error level alert so bot runner
-        // can get dataworker running ASAP.
-        if (reason === "insufficient-dataworker-lookback") {
-          this.logger.error({
-            at: "Dataworker#validate",
-            message:
-              "Cannot validate bundle with some chain's startBlock < client start block. Set a larger DATAWORKER_FAST_LOOKBACK",
-            clientStartBlocks: Object.values(spokePoolClients).map((client) => client.eventSearchConfig.fromBlock),
-          });
-        }
-        // Catch-all debug level alert for known invalid reasons.
+      // In the case where the Dataworker lookback is improperly configured, emit an error level alert so bot runner
+      // can get dataworker running ASAP.
+      if (ERROR_DISPUTE_REASONS.has(reason)) {
+        this.logger.error({
+          at: "Dataworker#validate",
+          message: "Skipping dispute because of dataworker configuration error that needs to be fixed",
+          reason,
+        });
+      } else if (IGNORE_DISPUTE_REASONS.has(reason)) {
         this.logger.debug({
-          at: "Dataworker",
-          message: "Skipping dispute 😪",
-          mrkdwn: reason,
+          at: "Dataworker#validate",
+          message: "Skipping dispute because of dataworker configuration error, should resolve itself eventually 😪",
+          reason,
         });
       } else {
         this.logger.error({
@@ -769,9 +772,10 @@ export class Dataworker {
               this.chainIdListForBundleEvaluationBlockNumbers
             )
           ) {
-            this.logger.debug({
+            this.logger.warn({
               at: "Dataworke#executeSlowRelayLeaves",
-              message: "Skipping bundle with some chain's startBlock < client start block",
+              message:
+                "Skipping bundle with some chain's startBlock < client start block. Set a larger DATAWORKER_FAST_LOOKBACK",
               chainId,
               rootBundleRanges: blockNumberRanges,
               clientStartBlocks: Object.values(spokePoolClients).map((client) => client.eventSearchConfig.fromBlock),
@@ -793,6 +797,7 @@ export class Dataworker {
               chainId,
               rootBundleRelay,
               mainnetRootBundleBlock: matchingRootBundle.blockNumber,
+              mainnetRootBundleTxn: matchingRootBundle.transactionHash,
               publishedSlowRelayRoot: rootBundleRelay.slowRelayRoot,
               constructedSlowRelayRoot: tree.getHexRoot(),
             });
@@ -1180,9 +1185,10 @@ export class Dataworker {
               this.chainIdListForBundleEvaluationBlockNumbers
             )
           ) {
-            this.logger.debug({
+            this.logger.warn({
               at: "Dataworker#executeRelayerRefundLeaves",
-              message: "Skipping bundle with some chain's startBlock < client start block",
+              message:
+                "Skipping bundle with some chain's startBlock < client start block. Set a larger DATAWORKER_FAST_LOOKBACK",
               chainId,
               rootBundleRanges: blockNumberRanges,
               clientStartBlocks: Object.values(spokePoolClients).map((client) => client.eventSearchConfig.fromBlock),
@@ -1238,6 +1244,7 @@ export class Dataworker {
               chainId,
               rootBundleRelay,
               mainnetRootBundleBlock: matchingRootBundle.blockNumber,
+              mainnetRootBundleTxn: matchingRootBundle.transactionHash,
               publishedRelayerRefundRoot: rootBundleRelay.relayerRefundRoot,
               constructedRelayerRefundRoot: tree.getHexRoot(),
             });
