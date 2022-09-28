@@ -258,6 +258,16 @@ export class HubPoolClient {
     });
   }
 
+  getNthFullyExecutedRootBundle(n: number): ProposedRootBundle | undefined {
+    let bundleToReturn: ProposedRootBundle | undefined;
+    let nextLatestMainnetBlock = this.latestBlockNumber;
+    for (let i = 0; i < n; i++) {
+      bundleToReturn = this.getLatestFullyExecutedRootBundle(nextLatestMainnetBlock);
+      nextLatestMainnetBlock = Math.max(0, bundleToReturn.blockNumber - 1);
+    }
+    return bundleToReturn;
+  }
+
   getNextBundleStartBlockNumber(chainIdList: number[], latestMainnetBlock: number, chainId: number): number {
     const latestFullyExecutedPoolRebalanceRoot = this.getLatestFullyExecutedRootBundle(latestMainnetBlock);
 

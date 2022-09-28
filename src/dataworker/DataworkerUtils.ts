@@ -52,21 +52,39 @@ export function getBlockRangeForChain(
   return blockRangeForChain;
 }
 
+export function getBlockForChain(
+  bundleEvaluationBlockNumbers: number[],
+  chain: number,
+  chainIdListForBundleEvaluationBlockNumbers: number[]
+): number {
+  const indexForChain = chainIdListForBundleEvaluationBlockNumbers.indexOf(chain);
+  if (indexForChain === -1)
+    throw new Error(
+      `Could not find chain ${chain} in chain ID list ${this.chainIdListForBundleEvaluationBlockNumbers}`
+    );
+  const blockForChain = bundleEvaluationBlockNumbers[indexForChain];
+  if (!blockForChain) throw new Error(`Invalid block range for chain ${chain}`);
+  return blockForChain;
+}
+
 export function blockRangesAreInvalidForSpokeClients(
   spokePoolClients: SpokePoolClientsByChain,
   blockRanges: number[][],
-  chainIdListForBundleEvaluationBlockNumbers: number[]
+  chainIdListForBundleEvaluationBlockNumbers: number[],
+  earliestMatchedFillBlocks: { [chainId: number]: number }
 ): boolean {
-  // Return false if any of the bundle block ranges ("blockRanges") has a start block less than the event search
-  // config's start block for the same chain. This indicates that the bundle block range can't be validated
-  // against the SpokeClient which doesn't have early enough event data.
+  // Return true if we won't be able to construct a root bundle for the bundle block ranges ("blockRanges") because
+  // the bundle wants to look up data for events that would be older than the earliest matched fill for a chain ID.
   return Object.keys(spokePoolClients).some((chainId) => {
     const blockRangeForChain = getBlockRangeForChain(
       blockRanges,
       Number(chainId),
       chainIdListForBundleEvaluationBlockNumbers
     );
-    return blockRangeForChain[0] < spokePoolClients[chainId].eventSearchConfig.fromBlock;
+    // If `earliestMatchedFillBlocks` is not defined for chain, then block range is valid for chain.
+    return earliestMatchedFillBlocks[chainId] !== undefined
+      ? blockRangeForChain[0] < earliestMatchedFillBlocks[chainId]
+      : false;
   });
 }
 

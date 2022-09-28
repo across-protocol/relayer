@@ -28,9 +28,7 @@ export class DataworkerConfig extends CommonConfig {
   // These variables allow the user to optimize dataworker run-time, which can slow down drastically because of all the
   // historical events it needs to fetch and parse.
   readonly useCacheForSpokePool: boolean;
-  readonly dataworkerFastLookback: { [chainId: number]: number };
-  readonly dataworkerFastRetryCount: number;
-  readonly dataworkerFastLookbackMultiplier: number;
+  readonly dataworkerFastLookbackCount: number;
 
   readonly bufferToPropose: number;
 
@@ -52,9 +50,7 @@ export class DataworkerConfig extends CommonConfig {
       FINALIZER_ENABLED,
       USE_CACHE_FOR_SPOKE_POOL,
       BUFFER_TO_PROPOSE,
-      DATAWORKER_FAST_LOOKBACK,
-      DATAWORKER_FAST_RETRIES,
-      DATAWORKER_FAST_LOOKBACK_MULTIPLIER,
+      DATAWORKER_FAST_LOOKBACK_COUNT,
     } = env;
     super(env);
 
@@ -95,15 +91,8 @@ export class DataworkerConfig extends CommonConfig {
     this.finalizerChains = FINALIZER_CHAINS ? JSON.parse(FINALIZER_CHAINS) : Constants.CHAIN_ID_LIST_INDICES;
     this.finalizerEnabled = FINALIZER_ENABLED === "true";
     this.useCacheForSpokePool = USE_CACHE_FOR_SPOKE_POOL === "true";
-    // `dataworkerFastLookback` is how far we fetch events from, modifying the search config's 'fromBlock'. If the
-    // dataworker needs more data, it will extend the lookback up to `dataworkerFastRetries` number of times before
-    // it loads ALL historical data.
-    this.dataworkerFastLookback = DATAWORKER_FAST_LOOKBACK
-      ? JSON.parse(DATAWORKER_FAST_LOOKBACK)
-      : Constants.DATAWORKER_FAST_LOOKBACK;
-    this.dataworkerFastRetryCount = DATAWORKER_FAST_RETRIES ? Number(DATAWORKER_FAST_RETRIES) : 3;
-    this.dataworkerFastLookbackMultiplier = DATAWORKER_FAST_LOOKBACK_MULTIPLIER
-      ? Number(DATAWORKER_FAST_LOOKBACK_MULTIPLIER)
-      : 1.25;
+
+    // `dataworkerFastLookbackCount` affects how far we fetch events from, modifying the search config's 'fromBlock'.
+    this.dataworkerFastLookbackCount = DATAWORKER_FAST_LOOKBACK_COUNT ? Number(DATAWORKER_FAST_LOOKBACK_COUNT) : 16;
   }
 }

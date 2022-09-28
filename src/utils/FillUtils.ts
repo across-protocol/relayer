@@ -1,6 +1,14 @@
 import { HubPoolClient } from "../clients";
-import { Deposit, DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
-import { BigNumber, assign, getRealizedLpFeeForFills, getRefundForFills, sortEventsDescending, toBN } from "./";
+import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
+import {
+  BigNumber,
+  assign,
+  getRealizedLpFeeForFills,
+  getRefundForFills,
+  sortEventsDescending,
+  toBN,
+  sortEventsAscending,
+} from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
 export function getRefundInformationFromFill(
@@ -189,19 +197,25 @@ export function getUnfilledDeposits(
   return unfilledDeposits;
 }
 
-export function allFillsHaveMatchingDeposits(spokePoolClients: SpokePoolClientsByChain): boolean {
+// Returns set of block numbers, keyed by chain ID, that represent the earliest block number for
+// that chain where a fill event matches a deposit event on its origin chain. This dictionary can be used
+// by the dataworker to conveniently skip root bundles it won't be able to construct roots for.
+export function getEarliestMatchedFillBlocks(spokePoolClients: SpokePoolClientsByChain): { [chainId: number]: number } {
+  const matchedFillBlocks: { [chainId: number]: number } = {};
   for (const originChainId of Object.keys(spokePoolClients)) {
     for (const destChainId of Object.keys(spokePoolClients)) {
       if (originChainId === destChainId) continue;
-      const foundUnmatchedFill = spokePoolClients[destChainId]
-        .getFillsForOriginChain(Number(originChainId))
-        .filter((fill) => fill.totalFilledAmount.eq(fill.amount) && !fill.fillAmount.eq(fill.amount))
-        .some((fill) => {
-          const matchedDeposit: Deposit = spokePoolClients[originChainId].getDepositForFill(fill);
-          return matchedDeposit === undefined;
-        });
-      if (foundUnmatchedFill) return false;
+      const earliestMatchedFill = sortEventsAscending(
+        spokePoolClients[destChainId].getFillsForOriginChain(Number(originChainId))
+      ).find((fill) => {
+        return spokePoolClients[originChainId].getDepositForFill(fill) !== undefined;
+      });
+
+      // If we can't  match a single fill for this destination chain, then the earliest matched fill block should be
+      // infinite so that the downstream Dataworker doesn't validate or propose any roots.
+      if (earliestMatchedFill !== undefined) matchedFillBlocks[destChainId] = earliestMatchedFill.blockNumber;
+      else matchedFillBlocks[destChainId] = Number.MAX_SAFE_INTEGER;
     }
   }
-  return true;
+  return matchedFillBlocks;
 }

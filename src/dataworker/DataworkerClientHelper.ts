@@ -3,13 +3,12 @@ import { DataworkerConfig } from "./DataworkerConfig";
 import {
   CHAIN_ID_LIST_INDICES,
   Clients,
-  CommonConfig,
   constructClients,
-  constructSpokePoolClientsWithLookbackAndUpdate,
+  constructSpokePoolClientsWithStartBlocksAndUpdate,
   getSpokePoolSigners,
   updateClients,
 } from "../common";
-import { Wallet, ethers, EventSearchConfig, getDeploymentBlockNumber, allFillsHaveMatchingDeposits } from "../utils";
+import { Wallet, ethers, EventSearchConfig, getDeploymentBlockNumber } from "../utils";
 import { AcrossConfigStoreClient, BundleDataClient, ProfitClient, SpokePoolClient, TokenClient } from "../clients";
 
 export interface DataworkerClients extends Clients {
@@ -92,14 +91,14 @@ export async function constructSpokePoolClientsForFastDataworker(
   configStoreClient: AcrossConfigStoreClient,
   config: DataworkerConfig,
   baseSigner: Wallet,
-  lookback: { [chainId: number]: number }
+  startBlocks: { [chainId: number]: number }
 ) {
-  const spokePoolClients = await constructSpokePoolClientsWithLookbackAndUpdate(
+  return await constructSpokePoolClientsWithStartBlocksAndUpdate(
     logger,
     configStoreClient,
     config,
     baseSigner,
-    lookback,
+    startBlocks,
     [
       "FundsDeposited",
       "RequestedSpeedUpDeposit",
@@ -111,9 +110,4 @@ export async function constructSpokePoolClientsForFastDataworker(
     // Don't use the cache for the quick lookup so we don't load and parse unneccessary events from Redis DB
     // that we'll throw away if the below checks succeed.
   );
-
-  // Validate data loaded from clients. Every partial fill that completed a deposit in the event search window must
-  // match with a deposit in the search window.
-  if (allFillsHaveMatchingDeposits(spokePoolClients)) return spokePoolClients;
-  else return undefined;
 }

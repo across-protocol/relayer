@@ -4,7 +4,7 @@ import {
   config,
   startupLogLevel,
   Wallet,
-  allFillsHaveMatchingDeposits,
+  getEarliestMatchedFillBlocks,
 } from "../utils";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
@@ -15,9 +15,10 @@ import {
   spokePoolClientsToProviders,
   constructSpokePoolClientsForFastDataworker,
 } from "./DataworkerClientHelper";
-import { constructSpokePoolClientsWithLookbackAndUpdate } from "../common";
+import { constructSpokePoolClientsWithStartBlocksAndUpdate } from "../common";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
 import { SpokePoolClientsByChain } from "../interfaces";
+import { getBlockForChain } from "./DataworkerUtils";
 config();
 let logger: winston.Logger;
 
@@ -46,7 +47,6 @@ export async function createDataworker(_logger: winston.Logger, baseSigner: Wall
 export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
   logger = _logger;
   const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
-  let spokePoolClients: SpokePoolClientsByChain;
   try {
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
 
@@ -70,70 +70,77 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         })
       );
 
-      if (Object.keys(config.dataworkerFastLookback).length > 0) {
-        // We'll optimistically construct and update the spoke pool clients with a short lookback with an eye to
-        // reducing compute time. With the data we load, we need to check if there are any fills that completed
-        // a partially filled deposit (i.e. it wasn't the first fill for a deposit) that cannot be found in the data. This
-        // would make constructing accurate slow relay root bundles potentially impossible so we will have to load
-        // more data.
+      // Construct spoke pool clients.
+      let spokePoolClients: SpokePoolClientsByChain;
+      // Record the latest blocks for each spoke client that we can use to construct root bundles. This is dependent
+      // on the fills for the client having matching deposit events on a different client. If a fill cannot be matched
+      // with a deposit then we can't construct a root bundle for it.
+      let earliestMatchedFillBlocks: { [chainId: number]: number } = {};
 
-        // If we need to extend the lookback window to find the deposit matching a partial fill, then ideally we should
-        // increase the window exactly as much as needed to find the deposit, but we have no choice but to iteratively
-        // guess and check. If we were to extend the lookback window by 25% and the default lookback
-        // window is 4 days old, then this would extend the lookback another day. If we assume that deposits are never
-        // more than 24 hours older than the partial fill, then its highly likely that the new lookback will include the
-        // fill. However, there is a chance that the new lookback captures a new partial fill at the beginning of the
-        // lookback window whose deposit is older than the lookback. This is unlikely because partial fills are expected
-        // to be rare in the near term.
+      if (config.dataworkerFastLookbackCount > 0) {
+        // We'll construct and update the spoke pool clients with a short lookback with an eye to
+        // reducing compute time. With the data we load, we need to check if there are any fills that cannot be
+        // matched with a deposit in the events loaded by the clients. This would make constructing accurate root
+        // bundles potentially impossible. So, we should save the last block for each chain with fills that we can
+        // construct or validate root bundles for.
 
-        // For the above reasoning, the default lookback window is set to 4 days and default lookback multiplier
-        // is 25%.
-        for (let i = 0; i < config.dataworkerFastRetryCount; i++) {
-          logger.debug({
-            at: "Dataworker#index",
-            message: "Using lookback for SpokePoolClient",
-            dataworkerFastLookback: config.dataworkerFastLookback,
-            dataworkerFastLookbackMultiplier: config.dataworkerFastLookbackMultiplier,
-          });
+        const nthLatestFullyExecutedBundle = clients.hubPoolClient.getNthFullyExecutedRootBundle(
+          config.dataworkerFastLookbackCount
+        );
+        const nthLatestFullyExecutedBundleEndBlocks = nthLatestFullyExecutedBundle.bundleEvaluationBlockNumbers.map(
+          (x) => x.toNumber()
+        );
+        const startBlocks = Object.fromEntries(
+          dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
+            return [
+              chainId,
+              getBlockForChain(
+                nthLatestFullyExecutedBundleEndBlocks,
+                chainId,
+                dataworker.chainIdListForBundleEvaluationBlockNumbers
+              ) + 1, // Need to add 1 to bundle end block since bundles begin at previous bundle end blocks + 1
+            ];
+          })
+        );
+        logger.debug({
+          at: "Dataworker#index",
+          message:
+            "Setting start blocks for SpokePoolClient equal to bundle evaluation end blocks from Nth latest valid root bundle",
+          N: config.dataworkerFastLookbackCount,
+          startBlocks,
+          nthLatestFullyExecutedBundleTxn: nthLatestFullyExecutedBundle.transactionHash,
+        });
 
-          spokePoolClients = await constructSpokePoolClientsForFastDataworker(
-            logger,
-            clients.configStoreClient,
-            config,
-            baseSigner,
-            config.dataworkerFastLookback
-          );
-          if (spokePoolClients === undefined) {
-            logger.warn({
-              at: "Dataworker#index",
-              message:
-                "Cannot find deposit matching partial fill that completed a full, extending lookback window and reinstantiating SpokePoolClient",
-              lookbackConfig: config.dataworkerFastLookback,
-            });
-            // Increase lookback for next retry.
-            for (const chainId of Object.keys(config.dataworkerFastLookback)) {
-              config.dataworkerFastLookback[chainId] *= Math.ceil(config.dataworkerFastLookbackMultiplier);
-            }
-          } else {
-            break;
-          }
-        }
-      }
+        spokePoolClients = await constructSpokePoolClientsForFastDataworker(
+          logger,
+          clients.configStoreClient,
+          config,
+          baseSigner,
+          startBlocks
+        );
+        earliestMatchedFillBlocks = getEarliestMatchedFillBlocks(spokePoolClients);
 
-      // If we have gotten unlucky and still are finding partial fills without matching deposits within the lookback
-      // window, then load events for all history. This will take a long time and possibly cause timeout errors.
-      if (spokePoolClients === undefined) {
+        logger.debug({
+          at: "Dataworker#index",
+          message:
+            "Identified earliest matched fill blocks per chain that we will use to filter root bundles that can be proposed and validated",
+          earliestMatchedFillBlocks,
+          spokeClientFromBlocks: startBlocks,
+        });
+      } else {
+        // If no fast lookback is configured for dataworker, load events from all time.
+        // This will take a long time and possibly cause timeout errors.
         logger.warn({
           at: "Dataworker#index",
           message:
             "Constructing SpokePoolClient and loading events from deployment block. This could take a long time to update (>30 mins)",
         });
-        spokePoolClients = await constructSpokePoolClientsWithLookbackAndUpdate(
+        spokePoolClients = await constructSpokePoolClientsWithStartBlocksAndUpdate(
           logger,
           clients.configStoreClient,
           config,
           baseSigner,
-          {}, // Empty lookback config means lookback from SpokePool deployment block.
+          {}, // Empty start block override means start blocks default to SpokePool deployment blocks.
           [
             "FundsDeposited",
             "RequestedSpeedUpDeposit",
@@ -148,14 +155,19 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
 
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled)
-        await dataworker.validatePendingRootBundle(spokePoolClients, config.sendingDisputesEnabled);
+        await dataworker.validatePendingRootBundle(
+          spokePoolClients,
+          config.sendingDisputesEnabled,
+          earliestMatchedFillBlocks
+        );
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
 
       if (config.proposerEnabled)
         await dataworker.proposeRootBundle(
           spokePoolClients,
           config.rootBundleExecutionThreshold,
-          config.sendingProposalsEnabled
+          config.sendingProposalsEnabled,
+          earliestMatchedFillBlocks
         );
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
 
@@ -165,15 +177,22 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         await dataworker.executePoolRebalanceLeaves(
           spokePoolClients,
           balanceAllocator,
-          config.sendingExecutionsEnabled
+          config.sendingExecutionsEnabled,
+          earliestMatchedFillBlocks
         );
 
         // Execute slow relays before relayer refunds to give them priority for any L2 funds.
-        await dataworker.executeSlowRelayLeaves(spokePoolClients, balanceAllocator, config.sendingExecutionsEnabled);
+        await dataworker.executeSlowRelayLeaves(
+          spokePoolClients,
+          balanceAllocator,
+          config.sendingExecutionsEnabled,
+          earliestMatchedFillBlocks
+        );
         await dataworker.executeRelayerRefundLeaves(
           spokePoolClients,
           balanceAllocator,
-          config.sendingExecutionsEnabled
+          config.sendingExecutionsEnabled,
+          earliestMatchedFillBlocks
         );
       } else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
 

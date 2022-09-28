@@ -31,9 +31,18 @@ describe("Dataworker: Using SpokePool clients with short lookback windows", asyn
 
     // Attempting to propose a root fails because bundle block range has a start blocks < spoke clients fromBlock's
     // (because lookback is set to low)
-    await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    expect(lastSpyLogIncludes(spy, "Cannot propose bundle with some chain's startBlock < client start block")).to.be
-      .true;
+    await dataworkerInstance.proposeRootBundle(
+      spokePoolClients,
+      undefined,
+      true,
+      Object.fromEntries(Object.keys(spokePoolClients).map((chainId) => [chainId, Number.MAX_SAFE_INTEGER]))
+    );
+    expect(
+      lastSpyLogIncludes(
+        spy,
+        "Cannot propose bundle with some chain's startBlock < earliest matched fill block. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT"
+      )
+    ).to.be.true;
     expect(lastSpyLogLevel(spy)).to.equal("warn");
     expect(multiCallerClient.transactionCount()).to.equal(0);
   });
@@ -50,14 +59,18 @@ describe("Dataworker: Using SpokePool clients with short lookback windows", asyn
       utf8ToHex("BogusRoot")
     );
     await updateAllClients();
-    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
+    await dataworkerInstance.validatePendingRootBundle(
+      spokePoolClients,
+      true,
+      Object.fromEntries(Object.keys(spokePoolClients).map((chainId) => [chainId, Number.MAX_SAFE_INTEGER]))
+    );
     expect(lastSpyLogIncludes(spy, "Skipping dispute")).to.be.true;
     expect(spyLogLevel(spy, -1)).to.equal("error");
     expect(
       spyLogIncludes(
         spy,
         -2,
-        "Cannot validate bundle with some chain's startBlock < client start block. Set a larger DATAWORKER_FAST_LOOKBACK"
+        "Cannot validate bundle with some chain's startBlock < earliest matched fill block. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT"
       )
     ).to.be.true;
     expect(spyLogLevel(spy, -2)).to.equal("debug");
