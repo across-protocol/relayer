@@ -129,7 +129,9 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         });
       } else {
         // If no fast lookback is configured for dataworker, load events from all time.
-        // This will take a long time and possibly cause timeout errors.
+        // This will take a long time and possibly cause timeout errors. This option should really only be
+        // used by technical system auditors who want to validate the history of all Across bundles
+        // and have a lot of hardware memory.
         logger.warn({
           at: "Dataworker#index",
           message:

@@ -1,5 +1,12 @@
 import winston from "winston";
-import { getProvider, getDeployedContract, getDeploymentBlockNumber, Wallet, Contract, EventSearchConfig } from "../utils";
+import {
+  getProvider,
+  getDeployedContract,
+  getDeploymentBlockNumber,
+  Wallet,
+  Contract,
+  EventSearchConfig,
+} from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { createClient } from "redis4";
@@ -45,7 +52,7 @@ export async function constructSpokePoolClientsWithLookback(
     }
   });
 
-  return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks)
+  return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks);
 }
 
 function getSpokePoolClientsForContract(
@@ -53,30 +60,29 @@ function getSpokePoolClientsForContract(
   configStoreClient: AcrossConfigStoreClient,
   config: CommonConfig,
   spokePools: { networkId: number; contract: Contract }[],
-  fromBlocks: { [networkId: number]: number}
+  fromBlocks: { [networkId: number]: number }
 ): SpokePoolClientsByChain {
-    const spokePoolClients: SpokePoolClientsByChain = {}
-    spokePools.forEach(({ networkId, contract }) => {
-      const spokePoolDeploymentBlock = getDeploymentBlockNumber("SpokePool", networkId);
-      const spokePoolClientSearchSettings = {
-        fromBlock: fromBlocks[networkId]
-          ? Math.max(fromBlocks[networkId], spokePoolDeploymentBlock)
-          : spokePoolDeploymentBlock,
-        toBlock: null,
-        maxBlockLookBack: config.maxBlockLookBack[networkId],
-      };
-      spokePoolClients[networkId] = new SpokePoolClient(
-        logger,
-        contract,
-        configStoreClient,
-        networkId,
-        spokePoolClientSearchSettings,
-        spokePoolDeploymentBlock
-      );
-    });
-  
-    return spokePoolClients;
-  
+  const spokePoolClients: SpokePoolClientsByChain = {};
+  spokePools.forEach(({ networkId, contract }) => {
+    const spokePoolDeploymentBlock = getDeploymentBlockNumber("SpokePool", networkId);
+    const spokePoolClientSearchSettings = {
+      fromBlock: fromBlocks[networkId]
+        ? Math.max(fromBlocks[networkId], spokePoolDeploymentBlock)
+        : spokePoolDeploymentBlock,
+      toBlock: null,
+      maxBlockLookBack: config.maxBlockLookBack[networkId],
+    };
+    spokePoolClients[networkId] = new SpokePoolClient(
+      logger,
+      contract,
+      configStoreClient,
+      networkId,
+      spokePoolClientSearchSettings,
+      spokePoolDeploymentBlock
+    );
+  });
+
+  return spokePoolClients;
 }
 
 export async function constructSpokePoolClientsWithStartBlocks(
@@ -100,7 +106,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
     }
   });
 
-  return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks)
+  return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks);
 }
 
 export async function updateSpokePoolClients(
