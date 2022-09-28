@@ -60,8 +60,8 @@ export class ArbitrumAdapter extends BaseAdapter {
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
-    this.updateSearchConfigs();
-    this.log("Getting cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
+    const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
     const promises: Promise<Event[]>[] = [];
     const validTokens: string[] = [];
@@ -87,8 +87,8 @@ export class ArbitrumAdapter extends BaseAdapter {
         // https://github.com/OffchainLabs/arbitrum/blob/d75568fa70919364cf56463038c57c96d1ca8cda/packages/arb-bridge-peripherals/contracts/tokenbridge/arbitrum/gateway/L2ArbitrumGateway.sol#L40
         const l2SearchFilter = [l1Token, monitoredAddress, undefined];
         promises.push(
-          paginatedEventQuery(l1Bridge, l1Bridge.filters.DepositInitiated(...l1SearchFilter), this.l1SearchConfig),
-          paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...l2SearchFilter), this.l2SearchConfig)
+          paginatedEventQuery(l1Bridge, l1Bridge.filters.DepositInitiated(...l1SearchFilter), l1SearchConfig),
+          paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...l2SearchFilter), l2SearchConfig)
         );
         validTokens.push(l1Token);
       }

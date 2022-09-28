@@ -1050,7 +1050,8 @@ export class Dataworker {
     });
 
     await Promise.all(
-      Object.entries(spokePoolClients).map(async ([chainId, client]) => {
+      Object.entries(spokePoolClients).map(async ([_chainId, client]) => {
+        const chainId = Number(_chainId);
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
           (rootBundle) =>
             rootBundle.relayerRefundRoot !== EMPTY_MERKLE_ROOT &&

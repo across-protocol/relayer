@@ -1,5 +1,5 @@
 import { HubPoolClient } from "../clients";
-import { Deposit, DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
+import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
 import { BigNumber, assign, getRealizedLpFeeForFills, getRefundForFills, sortEventsDescending, toBN } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
@@ -20,7 +20,7 @@ export function getRefundInformationFromFill(
     chainIdListForBundleEvaluationBlockNumbers
   )[1];
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-    fill.destinationChainId.toString(),
+    fill.destinationChainId,
     fill.destinationToken,
     endBlockForMainnet
   );

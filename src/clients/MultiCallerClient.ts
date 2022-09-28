@@ -166,7 +166,7 @@ export class MultiCallerClient {
               .slice(chunkSize)
               .map((txn) => {
                 return { address: txn.contract.address, method: txn.method, args: txn.args };
-            });
+              });
             this.logger.info({
               message: `Dropping ${dropped.length} transactions on chain ${chainId}.`,
               dropped,

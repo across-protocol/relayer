@@ -74,7 +74,11 @@ export class TokenClient {
   // Returns the total token shortfall the client has seen. Shortfall is defined as the difference between the total
   // requirement to send all seen relays and the total remaining balance of the relayer.
   getTokenShortfall() {
-    const tokenShortfall = {};
+    const tokenShortfall: {
+      [chainId: number]: {
+        [token: string]: { balance: BigNumber; needed: BigNumber; shortfall: BigNumber; deposits: BigNumber };
+      };
+    } = {};
     Object.entries(this.tokenShortfall).forEach(([_chainId, tokenMap]) => {
       const chainId = Number(_chainId);
       Object.entries(tokenMap).forEach(([token, { totalRequirement, deposits }]) =>

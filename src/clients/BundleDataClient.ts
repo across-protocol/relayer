@@ -100,15 +100,21 @@ export class BundleDataClient {
   getNextBundleRefunds(): FillsToRefund {
     const chainIds = Object.keys(this.spokePoolClients).map(Number);
     const latestMainnetBlockNumber = this.clients.hubPoolClient.latestBlockNumber;
-    if (latestMainnetBlockNumber === undefined) throw new Error("BundleDataClient::getNextBundleRefunds HubPoolClient not updated");
-    const futureBundleEvaluationBlockRanges: number[][] = chainIds.map((chainId, i) => [
-      this.clients.hubPoolClient.getNextBundleStartBlockNumber(
-        this.chainIdListForBundleEvaluationBlockNumbers,
-        latestMainnetBlockNumber,
-        chainId
-      ),
-      this.spokePoolClients[chainIds[i]].latestBlockNumber,
-    ]);
+    if (latestMainnetBlockNumber === undefined)
+      throw new Error("BundleDataClient::getNextBundleRefunds HubPoolClient not updated");
+    const futureBundleEvaluationBlockRanges: number[][] = chainIds.map((chainId) => {
+      const latestBlockNumber = this.spokePoolClients[chainId].latestBlockNumber;
+      if (latestBlockNumber === undefined)
+        throw new Error(`BundleDataClient::getNextBundleRefunds SpokePoolClient for chainId ${chainId} not updated`);
+      return [
+        this.clients.hubPoolClient.getNextBundleStartBlockNumber(
+          this.chainIdListForBundleEvaluationBlockNumbers,
+          latestMainnetBlockNumber,
+          chainId
+        ),
+        latestBlockNumber,
+      ];
+    });
     // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
     // (if any) has been fully executed.
     return this.loadData(futureBundleEvaluationBlockRanges, this.spokePoolClients, false).fillsToRefund;

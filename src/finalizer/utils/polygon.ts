@@ -139,7 +139,7 @@ export async function finalizePolygon(
   logger: winston.Logger
 ) {
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-    CHAIN_ID.toString(),
+    CHAIN_ID,
     event.l2TokenAddress,
     hubPoolClient.latestBlockNumber
   );
@@ -180,11 +180,7 @@ export async function retrieveTokenFromMainnetTokenBridger(
   mainnetSigner: Wallet,
   hubPoolClient: HubPoolClient
 ): Promise<boolean> {
-  const l1Token = hubPoolClient.getL1TokenCounterpartAtBlock(
-    CHAIN_ID.toString(),
-    l2Token,
-    hubPoolClient.latestBlockNumber
-  );
+  const l1Token = hubPoolClient.getL1TokenCounterpartAtBlock(CHAIN_ID, l2Token, hubPoolClient.latestBlockNumber);
   const mainnetTokenBridger = getMainnetTokenBridger(mainnetSigner);
   const token = new Contract(l1Token, ERC20.abi, mainnetSigner);
   const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1Token);

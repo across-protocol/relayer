@@ -9,13 +9,12 @@ import {
   Contract,
   runTransaction,
   isDefined,
-  DefaultLogLevels
+  DefaultLogLevels,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient, weth9Abi } from "./bridges";
 import { Deposit, FillsToRefund, InventoryConfig } from "../interfaces";
 import lodash from "lodash";
-
 
 const scalar = toBN(10).pow(18);
 const formatWei = createFormatFunction(2, 4, false, 18);
@@ -92,7 +91,7 @@ export class InventoryClient {
   }
 
   // Find how short a given chain is for a desired L1Token.
-  getTokenShortFall(l1Token: string, chainId: number | string): BigNumber {
+  getTokenShortFall(l1Token: string, chainId: number): BigNumber {
     return this.tokenClient.getShortfallTotalRequirement(chainId, this.getDestinationTokenForL1Token(l1Token, chainId));
   }
 
