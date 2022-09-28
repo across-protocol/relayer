@@ -490,10 +490,8 @@ export class InventoryClient {
     }
   }
 
-  constructConsideringRebalanceDebugLog(tokenDistributionPerL1Token: {
-    [l1Token: string]: { [chainId: number]: BigNumber };
-  }) {
-    const tokenDistribution: {
+  constructConsideringRebalanceDebugLog(distribution: { [l1Token: string]: { [chainId: number]: BigNumber } }) {
+    const logData: {
       [symbol: string]: {
         [chainId: number]: {
           actualBalanceOnChain: string;
@@ -505,40 +503,41 @@ export class InventoryClient {
       };
     } = {};
     const cumulativeBalances: { [symbol: string]: string } = {};
-    Object.keys(tokenDistributionPerL1Token).forEach((l1Token) => {
+    Object.entries(distribution).forEach(([l1Token, distributionForToken]) => {
       const tokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
       if (tokenInfo === undefined)
         throw new Error(
           `InventoryClient::constructConsideringRebalanceDebugLog info not found for L1 token ${l1Token}`
         );
       const { symbol, decimals } = tokenInfo;
-      if (!tokenDistribution[symbol]) tokenDistribution[symbol] = {};
+      if (!logData[symbol]) logData[symbol] = {};
       const formatter = createFormatFunction(2, 4, false, decimals);
       cumulativeBalances[symbol] = formatter(this.getCumulativeBalance(l1Token).toString());
-      Object.keys(tokenDistributionPerL1Token[l1Token])
-        .map(Number)
-        .forEach((chainId) => {
-          tokenDistribution[symbol][chainId] = {
-            actualBalanceOnChain: formatter(
-              this.getBalanceOnChainForL1Token(chainId, l1Token)
-                .sub(
-                  this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
-                )
-                .toString()
-            ),
-            virtualBalanceOnChain: formatter(this.getBalanceOnChainForL1Token(chainId, l1Token).toString()),
-            outstandingTransfers: formatter(
-              this.crossChainTransferClient
-                .getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
-                .toString()
-            ),
-            tokenShortFalls: formatter(this.getTokenShortFall(l1Token, chainId).toString()),
-            proRataShare: formatWei(tokenDistributionPerL1Token[l1Token][chainId].mul(100).toString()) + "%",
-          };
-        });
+      Object.entries(distributionForToken).forEach(([_chainId, amount]) => {
+        const chainId = Number(_chainId);
+        logData[symbol][chainId] = {
+          actualBalanceOnChain: formatter(
+            this.getBalanceOnChainForL1Token(chainId, l1Token)
+              .sub(this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token))
+              .toString()
+          ),
+          virtualBalanceOnChain: formatter(this.getBalanceOnChainForL1Token(chainId, l1Token).toString()),
+          outstandingTransfers: formatter(
+            this.crossChainTransferClient
+              .getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
+              .toString()
+          ),
+          tokenShortFalls: formatter(this.getTokenShortFall(l1Token, chainId).toString()),
+          proRataShare: formatWei(amount.mul(100).toString()) + "%",
+        };
+      });
     });
 
-    this.log("Considering rebalance", { tokenDistribution, cumulativeBalances, inventoryConfig: this.inventoryConfig });
+    this.log("Considering rebalance", {
+      tokenDistribution: logData,
+      cumulativeBalances,
+      inventoryConfig: this.inventoryConfig,
+    });
   }
 
   async sendTokenCrossChain(chainId: number | string, l1Token: string, amount: BigNumber) {
