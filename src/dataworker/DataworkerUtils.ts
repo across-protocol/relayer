@@ -84,7 +84,8 @@ export function blockRangesAreInvalidForSpokeClients(
     // If `earliestMatchedFillBlocks` is not defined for chain, then block range is valid for chain. Also, check
     // that spoke clients earliest queried block is not before the bundle start block.
     return earliestMatchedFillBlocks[chainId] !== undefined
-      ? blockRangeForChain[0] < earliestMatchedFillBlocks[chainId] || blockRangeForChain[0] < spokePoolClients[chainId].eventSearchConfig.fromBlock
+      ? blockRangeForChain[0] < earliestMatchedFillBlocks[chainId] ||
+          blockRangeForChain[0] < spokePoolClients[chainId].eventSearchConfig.fromBlock
       : false;
   });
 }
