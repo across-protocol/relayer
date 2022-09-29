@@ -151,7 +151,7 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     usdThresholdToSubmitNewBundle?: BigNumber,
     submitProposals = true,
-    earliestMatchedFillBlocks: { [chainId: number]: number } = {}
+    latestInvalidBundleStartBlock: { [chainId: number]: number } = {}
   ) {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
@@ -186,15 +186,15 @@ export class Dataworker {
         spokePoolClients,
         blockRangesForProposal,
         this.chainIdListForBundleEvaluationBlockNumbers,
-        earliestMatchedFillBlocks
+        latestInvalidBundleStartBlock
       )
     ) {
       this.logger.warn({
         at: "Dataworke#propose",
         message:
-          "Cannot propose bundle with some chain's startBlock < earliest matched fill block. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
+          "Cannot propose bundle with some chain's startBlock <= latest invalid bundle start block. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
         rootBundleRanges: blockRangesForProposal,
-        earliestMatchedFillBlocks,
+        latestInvalidBundleStartBlock,
       });
       return;
     }
@@ -372,7 +372,7 @@ export class Dataworker {
   async validatePendingRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     submitDisputes = true,
-    earliestMatchedFillBlocks: { [chainId: number]: number } = {}
+    latestInvalidBundleStartBlock: { [chainId: number]: number } = {}
   ) {
     if (!this.clients.hubPoolClient.isUpdated) throw new Error("HubPoolClient not updated");
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
@@ -415,7 +415,7 @@ export class Dataworker {
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
       spokePoolClients,
-      earliestMatchedFillBlocks
+      latestInvalidBundleStartBlock
     );
     if (!valid) {
       // In the case where the Dataworker lookback is improperly configured, emit an error level alert so bot runner
@@ -448,7 +448,7 @@ export class Dataworker {
     widestPossibleExpectedBlockRange: number[][],
     rootBundle: PendingRootBundle,
     spokePoolClients: { [chainId: number]: SpokePoolClient },
-    earliestMatchedFillBlocks: { [chainId: number]: number }
+    latestInvalidBundleStartBlock: { [chainId: number]: number }
   ): Promise<{
     valid: boolean;
     reason?: string;
@@ -568,15 +568,15 @@ export class Dataworker {
         spokePoolClients,
         blockRangesImpliedByBundleEndBlocks,
         this.chainIdListForBundleEvaluationBlockNumbers,
-        earliestMatchedFillBlocks
+        latestInvalidBundleStartBlock
       )
     ) {
       this.logger.debug({
         at: "Dataworker#validate",
         message:
-          "Cannot validate bundle with some chain's startBlock < earliest matched fill block. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
+          "Cannot validate bundle with some chain's startBlock <= latest invalid bundle start block. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
         rootBundleRanges: blockRangesImpliedByBundleEndBlocks,
-        earliestMatchedFillBlocks,
+        latestInvalidBundleStartBlock,
       });
       return {
         valid: false,
@@ -710,7 +710,7 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
-    earliestMatchedFillBlocks: { [chainId: number]: number } = {}
+    latestInvalidBundleStartBlock: { [chainId: number]: number } = {}
   ) {
     this.logger.debug({
       at: "Dataworker#executeSlowRelayLeaves",
@@ -781,16 +781,16 @@ export class Dataworker {
               spokePoolClients,
               blockNumberRanges,
               this.chainIdListForBundleEvaluationBlockNumbers,
-              earliestMatchedFillBlocks
+              latestInvalidBundleStartBlock
             )
           ) {
             this.logger.warn({
               at: "Dataworke#executeSlowRelayLeaves",
               message:
-                "Skipping bundle with some chain's startBlock < earliest matched fill block. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
+                "Skipping bundle with some chain's startBlock <= latest invalid bundle start block. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
               chainId,
               rootBundleRanges: blockNumberRanges,
-              earliestMatchedFillBlocks,
+              latestInvalidBundleStartBlock,
               matchingRootBundle,
             });
             continue;
@@ -924,7 +924,7 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
-    earliestMatchedFillBlocks: { [chainId: number]: number } = {}
+    latestInvalidBundleStartBlock: { [chainId: number]: number } = {}
   ) {
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
@@ -972,7 +972,7 @@ export class Dataworker {
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
       spokePoolClients,
-      earliestMatchedFillBlocks
+      latestInvalidBundleStartBlock
     );
 
     if (!valid) {
@@ -1129,7 +1129,7 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
-    earliestMatchedFillBlocks: { [chainId: number]: number } = {}
+    latestInvalidBundleStartBlock: { [chainId: number]: number } = {}
   ) {
     this.logger.debug({
       at: "Dataworker#executeRelayerRefundLeaves",
@@ -1198,16 +1198,16 @@ export class Dataworker {
               spokePoolClients,
               blockNumberRanges,
               this.chainIdListForBundleEvaluationBlockNumbers,
-              earliestMatchedFillBlocks
+              latestInvalidBundleStartBlock
             )
           ) {
             this.logger.warn({
               at: "Dataworker#executeRelayerRefundLeaves",
               message:
-                "Skipping bundle with some chain's startBlock < earliest matched fill block. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
+                "Skipping bundle with some chain's startBlock <= latest invalid bundle start block. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
               chainId,
               rootBundleRanges: blockNumberRanges,
-              earliestMatchedFillBlocks,
+              latestInvalidBundleStartBlock,
               matchingRootBundle,
             });
             continue;

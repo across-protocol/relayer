@@ -71,19 +71,19 @@ export function blockRangesAreInvalidForSpokeClients(
   spokePoolClients: SpokePoolClientsByChain,
   blockRanges: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[],
-  earliestMatchedFillBlocks: { [chainId: number]: number }
+  latestInvalidBundleStartBlock: { [chainId: number]: number }
 ): boolean {
   // Return true if we won't be able to construct a root bundle for the bundle block ranges ("blockRanges") because
-  // the bundle wants to look up data for events that would be older than the earliest matched fill for a chain ID.
+  // the bundle wants to look up data for events that weren't in the spoke pool client's search range.
   return Object.keys(spokePoolClients).some((chainId) => {
     const blockRangeForChain = getBlockRangeForChain(
       blockRanges,
       Number(chainId),
       chainIdListForBundleEvaluationBlockNumbers
     );
-    // If `earliestMatchedFillBlocks` is not defined for chain, then block range is valid for chain.
-    return earliestMatchedFillBlocks[chainId] !== undefined
-      ? blockRangeForChain[0] < earliestMatchedFillBlocks[chainId]
+    // If `latestInvalidBundleStartBlock` is not defined for chain, then block range is valid for chain.
+    return latestInvalidBundleStartBlock[chainId] !== undefined
+      ? blockRangeForChain[0] <= latestInvalidBundleStartBlock[chainId]
       : false;
   });
 }

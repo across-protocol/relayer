@@ -40,7 +40,7 @@ describe("Dataworker: Using SpokePool clients with short lookback windows", asyn
     expect(
       lastSpyLogIncludes(
         spy,
-        "Cannot propose bundle with some chain's startBlock < earliest matched fill block. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT"
+        "Cannot propose bundle with some chain's startBlock <= latest invalid bundle start block. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT"
       )
     ).to.be.true;
     expect(lastSpyLogLevel(spy)).to.equal("warn");
@@ -70,7 +70,7 @@ describe("Dataworker: Using SpokePool clients with short lookback windows", asyn
       spyLogIncludes(
         spy,
         -2,
-        "Cannot validate bundle with some chain's startBlock < earliest matched fill block. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT"
+        "Cannot validate bundle with some chain's startBlock <= latest invalid bundle start block. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT"
       )
     ).to.be.true;
     expect(spyLogLevel(spy, -2)).to.equal("debug");

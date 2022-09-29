@@ -10,7 +10,7 @@
 // 2. Example of invalid bundle: REQUEST_TIME=1653594774 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
 // 2. Example of valid bundle:   REQUEST_TIME=1653516226 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
 
-import { Wallet, winston, config, getSigner, startupLogLevel, Logger, getEarliestMatchedFillBlocks } from "../utils";
+import { Wallet, winston, config, getSigner, startupLogLevel, Logger, getLatestUnmatchedFillBlocks } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
   updateDataworkerClients,
@@ -102,12 +102,12 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
     baseSigner,
     startBlocks
   );
-  const earliestMatchedFillBlocks = getEarliestMatchedFillBlocks(spokePoolClients);
+  const latestUnmatchedFillBlocks = getLatestUnmatchedFillBlocks(spokePoolClients);
   logger.debug({
     at: "RootBundleValidator",
     message:
-      "Identified earliest matched fill blocks per chain that we will use to filter root bundles that can be proposed and validated",
-    earliestMatchedFillBlocks,
+      "Identified latest unmatched fill blocks per chain that we will use to filter root bundles that can be proposed and validated",
+    latestUnmatchedFillBlocks,
     spokeClientFromBlocks: startBlocks,
   });
 
@@ -125,7 +125,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
     widestPossibleBlockRanges,
     rootBundle,
     spokePoolClients,
-    earliestMatchedFillBlocks
+    latestUnmatchedFillBlocks
   );
 
   logger.info({
