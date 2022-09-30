@@ -4,7 +4,7 @@ import {
   config,
   startupLogLevel,
   Wallet,
-  getLatestUnmatchedFillBlocks,
+  getLatestInvalidBundleStartBlocks,
 } from "../utils";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
@@ -75,7 +75,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       // Record the latest blocks for each spoke client that we can use to construct root bundles. This is dependent
       // on the fills for the client having matching deposit events on a different client. If a fill cannot be matched
       // with a deposit then we can't construct a root bundle for it.
-      let latestUnmatchedFillBlocks: { [chainId: number]: number } = {};
+      let latestInvalidBundleStartBlocks: { [chainId: number]: number } = {};
 
       if (config.dataworkerFastLookbackCount > 0) {
         // We'll construct and update the spoke pool clients with a short lookback with an eye to
@@ -117,14 +117,17 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           config,
           baseSigner,
           startBlocks
+          // Don't use the cache for shorter lookback windows because loading and storing into RedisDB adds
+          // overhead that we can avoid if the lookback is strategically set. Empirically a lookback of up to 32 bundles
+          // allows the dataworker to run in < 2 minutes.
         );
-        latestUnmatchedFillBlocks = getLatestUnmatchedFillBlocks(spokePoolClients);
+        latestInvalidBundleStartBlocks = getLatestInvalidBundleStartBlocks(spokePoolClients);
 
         logger.debug({
           at: "Dataworker#index",
           message:
-            "Identified latest unmatched fill blocks per chain that we will use to filter root bundles that can be proposed and validated",
-          latestUnmatchedFillBlocks,
+            "Identified latest invalid bundle start blocks per chain that we will use to filter root bundles that can be proposed and validated",
+          latestInvalidBundleStartBlocks,
           spokeClientFromBlocks: startBlocks,
         });
       } else {
@@ -153,6 +156,19 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           ],
           config.useCacheForSpokePool ? bundleEndBlockMapping : {} // Now, use the cache for the longer lookback.
         );
+
+        // Since we loaded all events, default invalid start blocks to spoke pool deployment blocks minus 1
+        latestInvalidBundleStartBlocks = Object.fromEntries(
+          Object.keys(spokePoolClients).map((chainId) => [
+            chainId,
+            spokePoolClients[chainId].eventSearchConfig.fromBlock - 1,
+          ])
+        );
+        logger.debug({
+          at: "Dataworker#index",
+          message: "Defaulted latest invalid bundle start blocks per chain to spoke pool deployment blocks - 1",
+          latestInvalidBundleStartBlocks,
+        });
       }
 
       // Validate and dispute pending proposal before proposing a new one
@@ -160,7 +176,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         await dataworker.validatePendingRootBundle(
           spokePoolClients,
           config.sendingDisputesEnabled,
-          latestUnmatchedFillBlocks
+          latestInvalidBundleStartBlocks
         );
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
 
@@ -169,7 +185,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           spokePoolClients,
           config.rootBundleExecutionThreshold,
           config.sendingProposalsEnabled,
-          latestUnmatchedFillBlocks
+          latestInvalidBundleStartBlocks
         );
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
 
@@ -180,7 +196,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           spokePoolClients,
           balanceAllocator,
           config.sendingExecutionsEnabled,
-          latestUnmatchedFillBlocks
+          latestInvalidBundleStartBlocks
         );
 
         // Execute slow relays before relayer refunds to give them priority for any L2 funds.
@@ -188,13 +204,13 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           spokePoolClients,
           balanceAllocator,
           config.sendingExecutionsEnabled,
-          latestUnmatchedFillBlocks
+          latestInvalidBundleStartBlocks
         );
         await dataworker.executeRelayerRefundLeaves(
           spokePoolClients,
           balanceAllocator,
           config.sendingExecutionsEnabled,
-          latestUnmatchedFillBlocks
+          latestInvalidBundleStartBlocks
         );
       } else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
 

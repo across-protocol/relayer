@@ -276,9 +276,9 @@ export class SpokePoolClient {
 
     let timerStart = Date.now();
     const cachedData = await this.getEventsFromCache(latestBlockToCache, searchConfig);
-    this.log("debug", `Time to load cache for chain ${this.chainId}: ${Date.now() - timerStart}ms`);
 
     if (cachedData !== undefined) {
+      this.log("debug", `Time to load cache for chain ${this.chainId}: ${Date.now() - timerStart}ms`);
       depositEventSearchConfig.fromBlock = cachedData.latestBlock + 1;
       this.log("debug", `Partially loading deposit and fill event data from cache for chain ${this.chainId}`, {
         latestBlock: cachedData.latestBlock,

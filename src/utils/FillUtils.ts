@@ -198,14 +198,24 @@ export function getUnfilledDeposits(
   return unfilledDeposits;
 }
 
-// Returns set of block numbers, keyed by chain ID, that represent the latest block number for
+// Returns set of block numbers, keyed by chain ID, that represent the highest block number for
 // that chain where a fill event cannot possibly be matched with a deposit event on its origin chain.
-// This dictionary can be used by the dataworker to conveniently skip root bundles.
-export function getLatestUnmatchedFillBlocks(spokePoolClients: SpokePoolClientsByChain): { [chainId: number]: number } {
+// This dictionary can be used by the dataworker to conveniently skip root bundles whose start block is before
+// the block returned by this function.
+export function getLatestInvalidBundleStartBlocks(spokePoolClients: SpokePoolClientsByChain): {
+  [chainId: number]: number;
+} {
   const blocks: { [chainId: number]: number } = {};
-  for (const originChainId of Object.keys(spokePoolClients)) {
-    for (const destChainId of Object.keys(spokePoolClients)) {
+  for (const destChainId of Object.keys(spokePoolClients)) {
+    const destSpokeClient = spokePoolClients[destChainId];
+
+    // Default latest unmatched fill block to the spoke client's earliest queried block. This signals to the dataworker
+    // not to attempt to validate any data earlier than its earliest queried block.
+    blocks[destChainId] = destSpokeClient.eventSearchConfig.fromBlock;
+
+    for (const originChainId of Object.keys(spokePoolClients)) {
       if (originChainId === destChainId) continue;
+
       // Search events from right to left in descending order to find first fill that can't possibly match with a
       // deposit in the spoke client. This is because deposit ID's are strictly increasing and cannot be forged since
       // they are emitted by the SpokePool contracts. This does mean that a malicious user can send a fill with a very
@@ -213,14 +223,11 @@ export function getLatestUnmatchedFillBlocks(spokePoolClients: SpokePoolClientsB
       // will emit an ERROR level log if it can't validate the pending bundle because the latestUnmatchedFill
       // block is manipulated too high.
       const latestUnmatchedFill = _.findLast(
-        spokePoolClients[destChainId].getFillsForOriginChain(Number(originChainId)),
+        destSpokeClient.getFillsForOriginChain(Number(originChainId)),
         (fill) => fill.depositId < spokePoolClients[originChainId].earliestDepositId
       );
-
-      // If all fills can be matched for this destination chain, then the latest unmatched fill block should be
-      // 0 so that the downstream Dataworker can validate all roots.
-      if (latestUnmatchedFill !== undefined) blocks[destChainId] = latestUnmatchedFill.blockNumber;
-      else blocks[destChainId] = 0;
+      if (latestUnmatchedFill !== undefined)
+        blocks[destChainId] = Math.max(latestUnmatchedFill.blockNumber, blocks[destChainId]);
     }
   }
   return blocks;
