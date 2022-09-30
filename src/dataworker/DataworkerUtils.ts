@@ -67,14 +67,14 @@ export function getBlockForChain(
   return blockForChain;
 }
 
+// Return true if we won't be able to construct a root bundle for the bundle block ranges ("blockRanges") because
+// the bundle wants to look up data for events that weren't in the spoke pool client's search range.
 export function blockRangesAreInvalidForSpokeClients(
   spokePoolClients: SpokePoolClientsByChain,
   blockRanges: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[],
   latestInvalidBundleStartBlock: { [chainId: number]: number }
 ): boolean {
-  // Return true if we won't be able to construct a root bundle for the bundle block ranges ("blockRanges") because
-  // the bundle wants to look up data for events that weren't in the spoke pool client's search range.
   return Object.keys(spokePoolClients).some((chainId) => {
     // If `latestInvalidBundleStartBlock` is not defined for chain, then block range is valid for chain.
     if (latestInvalidBundleStartBlock[chainId] === undefined) return false;

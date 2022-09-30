@@ -84,6 +84,14 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         // bundles potentially impossible. So, we should save the last block for each chain with fills that we can
         // construct or validate root bundles for.
 
+        // In summary:
+        // 1. We generate the lookback in terms of how many bundles we want to look back.
+        // 2. We use the block numbers in the nth bundle to determine the fromBlock for the spoke clients.
+        // 3. Once we do all the querying, we figure out the earliest block that we’re able to validate per chain.
+        //    This logic can be found in `getLatestInvalidBundleStartBlocks()`
+        // 4. If the bundle we’re trying to validate or propose requires an earlier block, we exit early and emit
+        //    an alert. In the dispute flow, this alert should be ERROR level.
+
         const nthLatestFullyExecutedBundle = clients.hubPoolClient.getNthFullyExecutedRootBundle(
           config.dataworkerFastLookbackCount
         );

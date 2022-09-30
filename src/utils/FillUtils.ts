@@ -202,6 +202,12 @@ export function getUnfilledDeposits(
 // that chain where a fill event cannot possibly be matched with a deposit event on its origin chain.
 // This dictionary can be used by the dataworker to conveniently skip root bundles whose start block is before
 // the block returned by this function.
+
+// How do we know if the set of `spokePoolClients` can validate a bundle block range:
+// 1. The client lookbacks must include the bundle’s entire block range.
+// 2. The earliest fill that we are unable to validate on each chain must be before the bundle’s start block.
+
+// We use the above rules to return the latest blocks after which a bundle block range must start to be validatable.
 export function getLatestInvalidBundleStartBlocks(spokePoolClients: SpokePoolClientsByChain): {
   [chainId: number]: number;
 } {
