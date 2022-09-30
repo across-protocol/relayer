@@ -44,7 +44,7 @@ const FILL_DEPOSIT_COMPARISON_KEYS = [
 ] as const;
 
 export class SpokePoolClient {
-  private depositHashes: { [depositHash: string]: Deposit } = {};
+  private depositHashes: { [depositHash: string]: DepositWithBlock } = {};
   private depositHashesToFills: { [depositHash: string]: FillWithBlock[] } = {};
   private speedUps: { [depositorAddress: string]: { [depositId: number]: SpeedUp[] } } = {};
   private depositRoutes: { [originToken: string]: { [DestinationChainId: number]: boolean } } = {};
@@ -168,7 +168,7 @@ export class SpokePoolClient {
     };
   }
 
-  getDepositForFill(fill: Fill): Deposit | undefined {
+  getDepositForFill(fill: Fill): DepositWithBlock | undefined {
     const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill.
     const depositWithMatchingDepositId = this.depositHashes[this.getDepositHash(fill)];
     if (depositWithMatchingDepositId === undefined) return undefined;

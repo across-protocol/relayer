@@ -342,7 +342,7 @@ export async function contractAt(contractName: string, signer: utils.Signer, add
 
 // Submits a deposit transaction and returns the Deposit struct that that clients interact with.
 export async function buildDepositStruct(
-  deposit: Deposit,
+  deposit: Omit<Deposit, "destinationToken" | "realizedLpFeePct">,
   hubPoolClient: HubPoolClient,
   configStoreClient: AcrossConfigStoreClient,
   l1TokenForDepositedToken: Contract
@@ -374,7 +374,7 @@ export async function buildDeposit(
     _amountToDeposit,
     _relayerFeePct
   );
-  return await buildDepositStruct(_deposit, hubPoolClient, configStoreClient, l1TokenForDepositedToken);
+  return await buildDepositStruct(_deposit!, hubPoolClient, configStoreClient, l1TokenForDepositedToken);
 }
 
 // Submits a fillRelay transaction and returns the Fill struct that that clients will interact with.
