@@ -16,7 +16,7 @@ import { arbitrumL2Erc20GatewayInterface, arbitrumL1Erc20GatewayInterface } from
 import { SortableEvent } from "../../interfaces";
 
 // These values are obtained from Arbitrum's gateway router contract.
-const l1Gateways: { [tokenAddress: string]: string } = {
+const l1Gateways = {
   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "0xcEe284F754E854890e311e3280b767F80797180d", // USDC
   "0xdAC17F958D2ee523a2206206994597C13D831ec7": "0xcEe284F754E854890e311e3280b767F80797180d", // USDT
   "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "0xd92023E9d9911199a6711321D1277285e6d4e2db", // WETH
@@ -25,11 +25,11 @@ const l1Gateways: { [tokenAddress: string]: string } = {
   "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828": "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // UMA
   "0x3472A5A71965499acd81997a54BBA8D852C6E53d": "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // BADGER
   "0xba100000625a3754423978a60c9317c58a424e3D": "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // BAL
-};
+} as const;
 
 const l1GatewayRouter = "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef";
 
-const l2Gateways: { [tokenAddress: string]: string } = {
+const l2Gateways = {
   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "0x096760F208390250649E3e8763348E783AEF5562", // USDC
   "0xdAC17F958D2ee523a2206206994597C13D831ec7": "0x096760F208390250649E3e8763348E783AEF5562", // USDT
   "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "0x6c411aD3E74De3E7Bd422b94A27770f5B86C623B", // WETH
@@ -38,7 +38,9 @@ const l2Gateways: { [tokenAddress: string]: string } = {
   "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828": "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // UMA
   "0x3472A5A71965499acd81997a54BBA8D852C6E53d": "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // BADGER
   "0xba100000625a3754423978a60c9317c58a424e3D": "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // BAL
-};
+} as const;
+
+type SupportedL1Token = keyof typeof l1Gateways & keyof typeof l2Gateways;
 
 // TODO: replace these numbers using the arbitrum SDK. these are bad values that mean we will over pay but transactions
 // wont get stuck.
@@ -71,13 +73,10 @@ export class ArbitrumAdapter extends BaseAdapter {
         // Skip the token if we can't find the corresponding bridge.
         // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
         // rather than maintaining a list of native bridge-supported tokens.
-        if (l1Gateways[l1Token] === undefined || l2Gateways[l1Token] === undefined) continue;
+        if (!this.isSupportedToken(l1Token)) continue;
 
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
-
-        // If either of the above calls errors out, an error log will be sent, but the loop cannot be completed without a bridge.
-        if (l1Bridge === null || l2Bridge === null) continue;
 
         // l1Token is not an indexed field on deposit events in L1 but is on finalization events on Arb.
         // This unfortunately leads to fetching of all deposit events for all tokens multiple times, one per l1Token.
@@ -141,7 +140,12 @@ export class ArbitrumAdapter extends BaseAdapter {
     // Note we send the approvals to the L1 Bridge but actually send outbound transfers to the L1 Gateway Router.
     // Note that if the token trying to be approved is not configured in this client (i.e. not in the l1Gateways object)
     // then this will pass null into the checkAndSendTokenApprovals. This method gracefully deals with this case.
-    const associatedL1Bridges = l1Tokens.map((l1Token) => this.getL1Bridge(l1Token)?.address).filter(isDefined);
+    const associatedL1Bridges = l1Tokens
+      .map((l1Token) => {
+        if (!this.isSupportedToken(l1Token)) return null;
+        return this.getL1Bridge(l1Token).address;
+      })
+      .filter(isDefined);
     await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
   }
 
@@ -158,25 +162,19 @@ export class ArbitrumAdapter extends BaseAdapter {
     return await runTransaction(this.logger, this.getL1GatewayRouter(), "outboundTransfer", args, this.l1SubmitValue);
   }
 
-  getL1Bridge(l1Token: string): Contract | null {
-    try {
-      return new Contract(l1Gateways[l1Token], arbitrumL1Erc20GatewayInterface, this.getSigner(1));
-    } catch (error) {
-      this.log("Could not construct l1Bridge. Likely misconfiguration", { l1Token, error, l1Gateways }, "error");
-      return null;
-    }
+  getL1Bridge(l1Token: SupportedL1Token): Contract {
+    return new Contract(l1Gateways[l1Token], arbitrumL1Erc20GatewayInterface, this.getSigner(1));
   }
 
   getL1GatewayRouter() {
     return new Contract(l1GatewayRouter, arbitrumL1Erc20GatewayInterface, this.getSigner(1));
   }
 
-  getL2Bridge(l1Token: string) {
-    try {
-      return new Contract(l2Gateways[l1Token], arbitrumL2Erc20GatewayInterface, this.getSigner(this.chainId));
-    } catch (error) {
-      this.log("Could not construct l2Bridge. Likely misconfiguration", { l1Token, error, l2Gateways }, "error");
-      return null;
-    }
+  getL2Bridge(l1Token: SupportedL1Token) {
+    return new Contract(l2Gateways[l1Token], arbitrumL2Erc20GatewayInterface, this.getSigner(this.chainId));
+  }
+
+  isSupportedToken(l1Token: string): l1Token is SupportedL1Token {
+    return l1Token in l1Gateways && l1Token in l2Gateways;
   }
 }

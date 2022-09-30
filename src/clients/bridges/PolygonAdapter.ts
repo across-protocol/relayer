@@ -115,16 +115,13 @@ export class PolygonAdapter extends BaseAdapter {
     // Fetch bridge events for all monitored addresses.
     for (const monitoredAddress of this.monitoredAddresses) {
       for (const l1Token of l1Tokens) {
-        const l1Bridge = this.getL1Bridge(l1Token);
         // Skip the token if we can't find the corresponding bridge.
         // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
         // rather than maintaining a list of native bridge-supported tokens.
-        if (l1Bridge === null) continue;
-
-        const l2Token = this.getL2Token(l1Token);
-
-        if (l2Token === null) continue;
         if (!this.isSupportedToken(l1Token)) continue;
+
+        const l1Bridge = this.getL1Bridge(l1Token);
+        const l2Token = this.getL2Token(l1Token);
 
         const l1Method = tokenToBridge[l1Token].l1Method;
         let l1SearchFilter: (string | undefined)[] = [];
@@ -204,23 +201,15 @@ export class PolygonAdapter extends BaseAdapter {
     const associatedL1Bridges = l1Tokens
       .map((l1Token) => {
         if (this.isWeth(l1Token)) return this.getL1TokenGateway(l1Token)?.address;
-        return this.getL1Bridge(l1Token)?.address;
+        if (!this.isSupportedToken(l1Token)) return null;
+        return this.getL1Bridge(l1Token).address;
       })
       .filter(isDefined);
     await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
   }
 
-  getL1Bridge(l1Token: string): Contract | null {
-    if (this.isSupportedToken(l1Token))
-      return new Contract(tokenToBridge[l1Token].l1BridgeAddress, polygonL1BridgeInterface, this.getSigner(1));
-    else {
-      this.log(
-        "Could not construct l1Bridge due to unsupported l1Token. Likely misconfiguration",
-        { l1Token, tokenToBridge },
-        "error"
-      );
-      return null;
-    }
+  getL1Bridge(l1Token: SupportedL1Token): Contract {
+    return new Contract(tokenToBridge[l1Token].l1BridgeAddress, polygonL1BridgeInterface, this.getSigner(1));
   }
 
   getL1TokenGateway(l1Token: string): Contract {
@@ -229,21 +218,8 @@ export class PolygonAdapter extends BaseAdapter {
   }
 
   // Note that on polygon we dont query events on the L2 bridge. rather, we look for mint events on the L2 token.
-  getL2Token(l1Token: string): Contract | null {
-    if (this.isSupportedToken(l1Token))
-      return new Contract(
-        tokenToBridge[l1Token].l2TokenAddress,
-        polygonL2BridgeInterface,
-        this.getSigner(this.chainId)
-      );
-    else {
-      this.log(
-        "Could not construct l2Token due to unsupported l1Token. Likely misconfiguration",
-        { l1Token, tokenToBridge },
-        "error"
-      );
-      return null;
-    }
+  getL2Token(l1Token: SupportedL1Token): Contract {
+    return new Contract(tokenToBridge[l1Token].l2TokenAddress, polygonL2BridgeInterface, this.getSigner(this.chainId));
   }
 
   private isSupportedToken(l1Token: string): l1Token is SupportedL1Token {
