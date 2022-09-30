@@ -1,8 +1,19 @@
-import { runTransaction, assign, Contract, BigNumber, bnToHex, winston } from "../../utils";
+import {
+  runTransaction,
+  assign,
+  Contract,
+  BigNumber,
+  bnToHex,
+  winston,
+  Event,
+  isDefined,
+  BigNumberish,
+} from "../../utils";
 import { ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery, Promise } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter, polygonL1BridgeInterface, polygonL2BridgeInterface } from "./";
 import { polygonL1RootChainManagerInterface, atomicDepositorInterface } from "./";
+import { SortableEvent } from "../../interfaces";
 
 // ether bridge = 0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30
 // erc20 bridge = 0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf
@@ -79,17 +90,19 @@ const tokenToBridge = {
     l1AmountProp: "amountOrNFTId",
     l2AmountProp: "amount",
   }, // MATIC
-};
+} as const;
+
+type SupportedL1Token = keyof typeof tokenToBridge;
 
 const atomicDepositorAddress = "0x26eaf37ee5daf49174637bdcd2f7759a25206c34";
 
 export class PolygonAdapter extends BaseAdapter {
   constructor(
-    readonly logger: winston.Logger,
+    logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    readonly monitoredAddresses: string[]
+    monitoredAddresses: string[]
   ) {
-    super(spokePoolClients, 137);
+    super(spokePoolClients, 137, monitoredAddresses, logger);
   }
 
   // On polygon a bridge transaction looks like a transfer from address(0) to the target.
@@ -97,8 +110,8 @@ export class PolygonAdapter extends BaseAdapter {
     this.updateSearchConfigs();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
 
-    const promises = [];
-    const validTokens = [];
+    const promises: Promise<Event[]>[] = [];
+    const validTokens: SupportedL1Token[] = [];
     // Fetch bridge events for all monitored addresses.
     for (const monitoredAddress of this.monitoredAddresses) {
       for (const l1Token of l1Tokens) {
@@ -110,14 +123,17 @@ export class PolygonAdapter extends BaseAdapter {
 
         const l2Token = this.getL2Token(l1Token);
 
+        if (l2Token === null) continue;
+        if (!this.isSupportedToken(l1Token)) continue;
+
         const l1Method = tokenToBridge[l1Token].l1Method;
-        let l1SearchFilter = [];
+        let l1SearchFilter: (string | undefined)[] = [];
         if (l1Method === "LockedERC20") l1SearchFilter = [monitoredAddress, undefined, l1Token];
         if (l1Method === "LockedEther") l1SearchFilter = [undefined, monitoredAddress];
         if (l1Method === "NewDepositBlock") l1SearchFilter = [monitoredAddress, l1MaticAddress];
 
         const l2Method = l1Token === l1MaticAddress ? "TokenDeposited" : "Transfer";
-        let l2SearchFilter = [];
+        let l2SearchFilter: (string | undefined)[] = [];
         if (l2Method === "Transfer") l2SearchFilter = [ZERO_ADDRESS, monitoredAddress];
         if (l2Method === "TokenDeposited") l2SearchFilter = [l1MaticAddress, ZERO_ADDRESS, monitoredAddress];
 
@@ -149,9 +165,12 @@ export class PolygonAdapter extends BaseAdapter {
         const l1Token = validTokens[Math.floor(index / 2)];
         const amountProp = index % 2 === 0 ? tokenToBridge[l1Token].l1AmountProp : tokenToBridge[l1Token].l2AmountProp;
         const events = result.map((event) => {
-          const eventSpread = spreadEventWithBlockNumber(event);
+          // Hacky typing here. We should probably rework the structure of this function to improve.
+          const eventSpread = spreadEventWithBlockNumber(event) as unknown as SortableEvent & {
+            [amount in typeof amountProp]?: BigNumberish;
+          } & { depositReceiver: string };
           return {
-            amount: eventSpread[amountProp],
+            amount: eventSpread[amountProp]!,
             to: eventSpread["depositReceiver"],
             ...eventSpread,
           };
@@ -182,46 +201,52 @@ export class PolygonAdapter extends BaseAdapter {
   }
 
   async checkTokenApprovals(address: string, l1Tokens: string[]) {
-    const associatedL1Bridges = l1Tokens.map((l1Token) => {
-      if (this.isWeth(l1Token)) return this.getL1TokenGateway(l1Token)?.address;
-      return this.getL1Bridge(l1Token)?.address;
-    });
+    const associatedL1Bridges = l1Tokens
+      .map((l1Token) => {
+        if (this.isWeth(l1Token)) return this.getL1TokenGateway(l1Token)?.address;
+        return this.getL1Bridge(l1Token)?.address;
+      })
+      .filter(isDefined);
     await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
   }
 
   getL1Bridge(l1Token: string): Contract | null {
-    if (tokenToBridge[l1Token] === undefined) return null;
-
-    try {
+    if (this.isSupportedToken(l1Token))
       return new Contract(tokenToBridge[l1Token].l1BridgeAddress, polygonL1BridgeInterface, this.getSigner(1));
-    } catch (error) {
-      this.log("Could not construct l1Bridge. Likely misconfiguration", { l1Token, error, tokenToBridge }, "error");
+    else {
+      this.log(
+        "Could not construct l1Bridge due to unsupported l1Token. Likely misconfiguration",
+        { l1Token, tokenToBridge },
+        "error"
+      );
       return null;
     }
   }
 
-  getL1TokenGateway(l1Token: string): Contract | null {
+  getL1TokenGateway(l1Token: string): Contract {
     if (this.isWeth(l1Token)) return new Contract(atomicDepositorAddress, atomicDepositorInterface, this.getSigner(1));
-    else
-      try {
-        return new Contract(l1RootChainManager, polygonL1RootChainManagerInterface, this.getSigner(1));
-      } catch (error) {
-        this.log("Could not construct l1Bridge. Likely misconfiguration", { l1Token, error, tokenToBridge }, "error");
-        return null;
-      }
+    else return new Contract(l1RootChainManager, polygonL1RootChainManagerInterface, this.getSigner(1));
   }
 
   // Note that on polygon we dont query events on the L2 bridge. rather, we look for mint events on the L2 token.
   getL2Token(l1Token: string): Contract | null {
-    try {
+    if (this.isSupportedToken(l1Token))
       return new Contract(
         tokenToBridge[l1Token].l2TokenAddress,
         polygonL2BridgeInterface,
         this.getSigner(this.chainId)
       );
-    } catch (error) {
-      this.log("Could not construct l2Token. Likely misconfiguration", { l1Token, error, tokenToBridge }, "error");
+    else {
+      this.log(
+        "Could not construct l2Token due to unsupported l1Token. Likely misconfiguration",
+        { l1Token, tokenToBridge },
+        "error"
+      );
       return null;
     }
+  }
+
+  private isSupportedToken(l1Token: string): l1Token is SupportedL1Token {
+    return l1Token in tokenToBridge;
   }
 }

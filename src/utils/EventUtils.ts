@@ -27,7 +27,7 @@ export function spreadEvent(event: Event) {
 
 export interface EventSearchConfig {
   fromBlock: number;
-  toBlock: number | null;
+  toBlock: number;
   maxBlockLookBack?: number;
   concurrency?: number | null;
 }

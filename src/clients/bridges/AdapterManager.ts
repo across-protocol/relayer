@@ -42,6 +42,7 @@ export class AdapterManager {
   }
 
   async sendTokenCrossChain(address: string, chainId: number | string, l1Token: string, amount: BigNumber) {
+    chainId = Number(chainId); // Ensure chainId is a number before using.
     this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
     const l2Token = this.l2TokenForL1Token(l1Token, Number(chainId));
     return await this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount);
