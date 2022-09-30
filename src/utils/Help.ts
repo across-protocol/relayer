@@ -1,4 +1,4 @@
-export function usage(badInput: string = undefined) {
+export function usage(badInput: string | undefined = undefined): boolean {
   let usageStr = badInput ? `\nUnrecognized input: "${badInput}".\n\n` : "";
   const userModes = "monitor|relayer";
   const proModes = "dataworker|finalizer";

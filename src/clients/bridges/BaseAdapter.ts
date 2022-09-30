@@ -1,22 +1,25 @@
 import { Provider } from "@ethersproject/abstract-provider";
 import { Signer } from "@ethersproject/abstract-signer";
 import { SpokePoolClient } from "../../clients";
-import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20 } from "../../utils";
+import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20, winston, EventSearchConfig, DefaultLogLevels } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 import { OutstandingTransfers } from "../../interfaces/Bridge";
 
 export class BaseAdapter {
   chainId: number;
-  l1SearchConfig;
-  l2SearchConfig;
-  monitoredAddresses: string[];
-  logger;
+  l1SearchConfig: EventSearchConfig;
+  l2SearchConfig: EventSearchConfig;
 
   l1DepositInitiatedEvents: { [address: string]: { [l1Token: string]: any[] } } = {};
   l2DepositFinalizedEvents: { [address: string]: { [l1Token: string]: any[] } } = {};
   l2DepositFinalizedEvents_DepositAdapter: { [address: string]: { [l1Token: string]: any[] } } = {};
 
-  constructor(readonly spokePoolClients: { [chainId: number]: SpokePoolClient }, _chainId: number) {
+  constructor(
+    readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
+    _chainId: number,
+    readonly monitoredAddresses: string[],
+    readonly logger: winston.Logger
+  ) {
     this.chainId = _chainId;
     this.l1SearchConfig = { ...this.getSearchConfig(1) };
     this.l2SearchConfig = { ...this.getSearchConfig(this.chainId) };
@@ -146,7 +149,7 @@ export class BaseAdapter {
     return outstandingTransfers;
   }
 
-  log(message: string, data?: any, level = "debug") {
+  log(message: string, data?: any, level: DefaultLogLevels = "debug") {
     this.logger[level]({ at: this.getName(), message, ...data });
   }
 
