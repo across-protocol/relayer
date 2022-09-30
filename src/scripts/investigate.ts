@@ -9,11 +9,14 @@ import {
   Contract,
   ERC20,
   etherscanLink,
-  sortEventsAscending, getSigner,
+  sortEventsAscending,
+  getSigner,
 } from "../utils";
 import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { createDataworker } from "../dataworker";
 import { constructSpokePoolClientsForBlockAndUpdate, updateSpokePoolClients } from "../common";
+import { DepositWithBlock } from "../interfaces";
+import { BigNumber } from "ethers";
 
 config();
 let logger: winston.Logger;
@@ -42,131 +45,150 @@ export async function findDeficitBundles(_logger: winston.Logger) {
   );
   await updateSpokePoolClients(spokePoolClients);
 
-  // TODO: Consider moving this to .env
-  // This can be updated to restrict the search. Only bundles proposed after this block number of mainnet are examined.
-  const startBlockNumber = 0;
+  // WETH.
+  const tokenOfInterest = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 
   const latestMainnetBlock = hubPoolClient.latestBlockNumber;
-  const bundleStartBlocks = Object.fromEntries(
+  const bundleStartBlocks: { [chainId: number]: number } = Object.fromEntries(
     dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => [chainId, 0])
   );
 
   const allBundles = sortEventsAscending(hubPoolClient.getProposedRootBundles());
   for (const bundle of allBundles) {
-    // Skip all bundles older than search's start or bundle that were not executed.
-    if (bundle.blockNumber < startBlockNumber || !hubPoolClient.isRootBundleValid(bundle, latestMainnetBlock)) {
+    // Skip bundles that were not executed.
+    if (!hubPoolClient.isRootBundleValid(bundle, latestMainnetBlock)) {
+      console.log("Bundle not executed. Skipping...");
       continue;
     }
 
-    /*
-    const bundleIds: { [chainId: number]: number } = {};
-    for (const chainId of dataworker.chainIdListForBundleEvaluationBlockNumbers) {
-      bundleIds[chainId] = spokePoolClients[chainId]
-        .getRootBundleRelays()
-        .find((b) => b.relayerRefundRoot === bundle.relayerRefundRoot)
-        .rootBundleId;
-    }
-    */
+    // Populate the deposits going to a specific chain during the bundle's block range.
+    const arrivingDepositsByChain: { [chainId: number]: DepositWithBlock[] } = {};
+    for (const destinationChainId of dataworker.chainIdListForBundleEvaluationBlockNumbers) {
+      console.log("Populating deposits for destination", destinationChainId);
+      for (const [chainIdx, originChainId] of dataworker.chainIdListForBundleEvaluationBlockNumbers.entries()) {
+        if (!bundle.bundleEvaluationBlockNumbers[chainIdx]) {
+          console.log(`${originChainId} not in bundle`);
+          continue;
+        }
+        console.log(`Populating deposits from ${originChainId} to ${destinationChainId}`);
 
-    const bundleBlockRanges = dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, index) => {
-      return [bundleStartBlocks[chainId], bundle.bundleEvaluationBlockNumbers[index].toNumber()];
-    });
-    for (const [idx, chainId] of dataworker.chainIdListForBundleEvaluationBlockNumbers.entries()) {
-      bundleStartBlocks[chainId] = bundle.bundleEvaluationBlockNumbers[idx].toNumber();
-    }
-    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = clients.bundleDataClient.loadData(
-      bundleBlockRanges,
-      spokePoolClients
-    );
-    const allValidFillsInRange = getFillsInRange(
-      allValidFills,
-      bundleBlockRanges,
-      dataworker.chainIdListForBundleEvaluationBlockNumbers
-    );
-    const poolRebalanceRoot = dataworker._getPoolRebalanceRoot(
-      bundleBlockRanges,
-      bundle.blockNumber,
-      fillsToRefund,
-      deposits,
-      allValidFills,
-      allValidFillsInRange,
-      unfilledDeposits,
-      true
-    );
-
-    /*
-    const { leaves: allRefundLeaves } = dataworker.buildRelayerRefundRoot(
-      bundleBlockRanges,
-      spokePoolClients,
-      poolRebalanceRoot.leaves,
-      poolRebalanceRoot.runningBalances
-    );
-
-    // Diff refund leaf against what was actually executed.
-    for (const [leafId, leaf] of allRefundLeaves.entries()) {
-      const chainId = leaf.chainId;
-      const executedLeaf = spokePoolClients[chainId].findRelayerRefundExecutions(bundleIds[chainId], leafId);
-      if (!executedLeaf) {
-        logger.warn({
+        const spokePoolClient = spokePoolClients[originChainId];
+        const startingBlock = bundleStartBlocks[originChainId];
+        const endingBlock = bundle.bundleEvaluationBlockNumbers[chainIdx].toNumber();
+        const originToken = hubPoolClient.getDestinationTokenForL1Token(tokenOfInterest, originChainId);
+        const deposits = spokePoolClient
+          .getDepositsForDestinationChain(destinationChainId)
+          .filter(
+            (deposit: DepositWithBlock) =>
+              deposit.originBlockNumber <= endingBlock &&
+              deposit.originBlockNumber >= startingBlock &&
+              deposit.originToken === originToken
+          ) as DepositWithBlock[];
+        logger.info({
           at: "findDeficitBundles",
-          message: `Bundle ${bundleIds[chainId]} on ${chainId}: Cannot find executed leaf`,
-          leaf,
-          executedLeaf,
+          message: `FOUND ${deposits.length} deposits from ${originChainId} to ${destinationChainId}`,
+          startingBlock,
+          endingBlock,
+          originToken,
+          bundleBlockNumbers: bundle.bundleEvaluationBlockNumbers,
         });
+
+        if (arrivingDepositsByChain[destinationChainId] === undefined) arrivingDepositsByChain[destinationChainId] = [];
+        arrivingDepositsByChain[destinationChainId] = arrivingDepositsByChain[destinationChainId].concat(deposits);
+      }
+    }
+
+    // For each chain for the current bundle, examine:
+    // 1. Valid fills on that chain. The refunds for these fills needed to be added to previous bundle's running balance
+    // 2. All deposits originating from that chain. These needed to be subtracted from previous bundle's running balance
+    // 3. Deposits arriving at that chain with unfilled amount > 0. These are slow fills and need to be added to the
+    // previous bundle's running balance.
+    console.log("MOVING ON");
+    const runningBalances: { [chainId: number]: BigNumber } = {};
+    for (const chainId of dataworker.chainIdListForBundleEvaluationBlockNumbers) {
+      runningBalances[chainId] = toBN(0);
+    }
+
+    for (const [chainIdx, destinationChainId] of dataworker.chainIdListForBundleEvaluationBlockNumbers.entries()) {
+      if (!bundle.bundleEvaluationBlockNumbers[chainIdx]) {
+        console.log(`Bundle number not found ${chainIdx} ${destinationChainId} ${bundle.bundleEvaluationBlockNumbers}`);
         continue;
       }
-      if (!leaf.amountToReturn.eq(executedLeaf.amountToReturn)) {
-        logger.warn({
-          at: "findDeficitBundles",
-          message: `Bundle ${bundleIds[chainId]} on ${chainId}: Mismatching amountToReturn leaf found`,
-          leaf,
-          executedLeaf,
-        });
-      }
-    }
-     */
 
-    // TODO: Diff rebalance leaves.
-    const followingBlockNumber = clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber;
-    if (!followingBlockNumber) {
-      logger.warn({
-        at: "findDeficitBundles",
-        message: "Cannot find next bundle",
-        bundleTx: bundle.transactionHash,
+      const spokePoolClient = spokePoolClients[destinationChainId];
+      const startingBlock = bundleStartBlocks[destinationChainId];
+      const endingBlock = bundle.bundleEvaluationBlockNumbers[chainIdx].toNumber();
+      const localTokenOfInterest = hubPoolClient.getDestinationTokenForL1Token(tokenOfInterest, destinationChainId);
+      const arrivingDeposits = arrivingDepositsByChain[destinationChainId];
+      console.log(`FOUND ${arrivingDeposits.length} arriving deposits`);
+
+      const fills = spokePoolClient
+        .getFillsWithBlockInRange(startingBlock, endingBlock)
+        .filter((fill) => fill.destinationToken === localTokenOfInterest);
+      console.log(`FOUND ${fills.length} fills`);
+
+      const validFills = fills.filter((fill) => {
+        const matchingDeposit = arrivingDeposits.find((deposit) => deposit.depositId == fill.depositId);
+        return matchingDeposit && spokePoolClient.validateFillForDeposit(fill, matchingDeposit);
       });
-      continue;
-    }
-    const executedLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
-    const mismatchingLeafs = [];
-    for (const leaf of poolRebalanceRoot.leaves) {
-      for (const executedLeaf of executedLeaves) {
-        if (leaf.leafId == executedLeaf.leafId) {
-          const leafRunningBalances = leaf.runningBalances.map((l) => l.toString());
-          const executedLeafRunningBalances = executedLeaf.runningBalances.map((l) => l.toString());
-          const leafNetSendAmounts = leaf.netSendAmounts.map((l) => l.toString());
-          const executedLeafNetSendAmounts = executedLeaf.netSendAmounts.map((l) => l.toString());
-          if (JSON.stringify(leafRunningBalances) != JSON.stringify(executedLeafRunningBalances)
-            || JSON.stringify(leafNetSendAmounts) != JSON.stringify(executedLeafNetSendAmounts)) {
-            mismatchingLeafs.push([leaf, executedLeaf]);
-          }
+      console.log(`FOUND ${validFills.length} valid fills`);
+      // Add any valid fill's amount to the refunded chain's runningBalance.
+      for (const validFill of validFills) {
+        runningBalances[validFill.repaymentChainId] = runningBalances[validFill.repaymentChainId].add(
+          validFill.fillAmount
+        );
+      }
+
+      const unfilledDeposits = [];
+      for (const deposit of arrivingDeposits) {
+        const matchingFills = fills.filter((fill) => fill.depositId == deposit.depositId);
+        deposit.amount = deposit.amount.sub(matchingFills.reduce((acc, deposit) => acc.add(deposit.amount), toBN(0)));
+        if (deposit.amount.gt(toBN(0))) {
+          unfilledDeposits.push(deposit);
         }
       }
+      console.log(`FOUND ${unfilledDeposits.length} unfilledDeposits`);
+      // Add any unfilled deposits' amount (slow fills) to the destination chain's running balance.
+      for (const unfilledDeposit of unfilledDeposits) {
+        runningBalances[destinationChainId] = runningBalances[destinationChainId].add(unfilledDeposit.amount);
+      }
+
+      const originatingDeposits = spokePoolClient
+        .getDeposits()
+        .filter(
+          (deposit) =>
+            deposit.originBlockNumber <= endingBlock &&
+            deposit.originBlockNumber >= startingBlock &&
+            deposit.originToken === localTokenOfInterest
+        );
+      console.log(`FOUND ${originatingDeposits.length} originatingDeposits`);
+      // Subtract all deposits on the current chain from its running balance.
+      for (const originatingDeposit of originatingDeposits) {
+        runningBalances[originatingDeposit.originChainId] = runningBalances[originatingDeposit.originChainId].add(
+          originatingDeposit.amount
+        );
+      }
+
+      // Update the starting block now that we've examined this (executed) bundle on this chain.
+      bundleStartBlocks[destinationChainId] = endingBlock + 1;
     }
 
-    if (mismatchingLeafs.length > 0) {
-      for (const [leaf, executedLeaf] of mismatchingLeafs) {
-        logger.warn({
-          at: "findDeficitBundles",
-          message: "Mismatching leaves found",
-          leaf,
-          executedLeaf,
-        });
+    // Compare computed running balances with executed leaves.
+    const followingBlockNumber = clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber;
+    const executedLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
+    for (const [chainIdx, chainId] of dataworker.chainIdListForBundleEvaluationBlockNumbers.entries()) {
+      console.log(`Running balances for ${chainId}:`, runningBalances[chainId].toString());
+
+      for (const leaf of executedLeaves) {
+        if (leaf.chainId == chainId && !runningBalances[chainId].eq(leaf.runningBalances[chainIdx])) {
+          logger.error({
+            at: "findDeficitBundles",
+            message: `Mismatching running balances for chain ${chainId}`,
+            computedRunningBalance: runningBalances[chainId].toString(),
+            leafRunningBalance: leaf.runningBalances[chainIdx].toString,
+          });
+        }
       }
-    } else {
-      logger.info({
-        at: "findDeficitBundles",
-        message: "No mismatching leaves found",
-      });
     }
   }
 }
