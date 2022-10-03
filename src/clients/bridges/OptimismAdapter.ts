@@ -1,19 +1,29 @@
-import { Contract, BigNumber, ZERO_ADDRESS, paginatedEventQuery, runTransaction, toBN } from "../../utils";
+import {
+  Contract,
+  BigNumber,
+  ZERO_ADDRESS,
+  paginatedEventQuery,
+  runTransaction,
+  toBN,
+  BigNumberish,
+} from "../../utils";
 import { spreadEventWithBlockNumber, assign, Promise, winston } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter, weth9Abi, ovmL1BridgeInterface, ovmL2BridgeInterface, atomicDepositorInterface } from "./";
+import { SortableEvent } from "../../interfaces";
 
 const customL1OptimismBridgeAddresses = {
   "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f", // DAI
-};
+} as const;
+
+const customOvmBridgeAddresses = {
+  "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0x467194771dae2967aef3ecbedd3bf9a310c76c65", // DAI
+} as const;
 
 const l1StandardBridgeAddressOvm = "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1";
 const l1StandardBridgeAddressBoba = "0xdc1664458d2f0B6090bEa60A8793A4E66c2F1c00";
 
 const ovmL2StandardBridgeAddress = "0x4200000000000000000000000000000000000010";
-const customOvmBridgeAddresses = {
-  "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0x467194771dae2967aef3ecbedd3bf9a310c76c65", // DAI
-};
 
 const wethOptimismAddress = "0x4200000000000000000000000000000000000006";
 const wethBobaAddress = "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000";
@@ -23,9 +33,9 @@ const atomicDepositorAddress = "0x26eaf37ee5daf49174637bdcd2f7759a25206c34";
 export class OptimismAdapter extends BaseAdapter {
   public l2Gas: number;
   constructor(
-    readonly logger: winston.Logger,
+    logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    readonly monitoredAddresses: string[],
+    monitoredAddresses: string[],
     readonly isOptimism: boolean,
     // Optional sender address where the cross chain transfers originate from. This is useful for the use case of
     // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
@@ -33,7 +43,7 @@ export class OptimismAdapter extends BaseAdapter {
   ) {
     // Note based on if this isOptimism or not we switch the chainId and starting L1 blocks. This is critical. If done
     // wrong funds WILL be deleted in the canonical bridge (eg sending funds to Optimism with a boba L2 token).
-    super(spokePoolClients, isOptimism ? 10 : 288);
+    super(spokePoolClients, isOptimism ? 10 : 288, monitoredAddresses, logger);
     this.l2Gas = isOptimism ? 200000 : 1300000;
   }
 
@@ -86,7 +96,10 @@ export class OptimismAdapter extends BaseAdapter {
       eventsToProcess.forEach((result, index) => {
         const l1Token = l1Tokens[Math.floor(index / 3)];
         const events = result.map((event) => {
-          const eventSpread = spreadEventWithBlockNumber(event);
+          const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
+            _amount: BigNumberish;
+            _to: string;
+          };
           return {
             amount: eventSpread["_amount"],
             to: eventSpread["_to"],
@@ -148,7 +161,7 @@ export class OptimismAdapter extends BaseAdapter {
 
   getL1Bridge(l1Token: string) {
     const l1BridgeAddress = this.isOptimism
-      ? Object.keys(customL1OptimismBridgeAddresses).includes(l1Token)
+      ? this.hasCustomL1Bridge(l1Token)
         ? customL1OptimismBridgeAddresses[l1Token]
         : l1StandardBridgeAddressOvm
       : l1StandardBridgeAddressBoba;
@@ -162,10 +175,18 @@ export class OptimismAdapter extends BaseAdapter {
 
   getL2Bridge(l1Token: string) {
     const l2BridgeAddress = this.isOptimism
-      ? Object.keys(customOvmBridgeAddresses).includes(l1Token)
+      ? this.hasCustomL2Bridge(l1Token)
         ? customOvmBridgeAddresses[l1Token]
         : ovmL2StandardBridgeAddress
       : ovmL2StandardBridgeAddress;
     return new Contract(l2BridgeAddress, ovmL2BridgeInterface, this.getSigner(this.chainId));
+  }
+
+  private hasCustomL1Bridge(l1Token: string): l1Token is keyof typeof customL1OptimismBridgeAddresses {
+    return l1Token in customL1OptimismBridgeAddresses;
+  }
+
+  private hasCustomL2Bridge(l1Token: string): l1Token is keyof typeof customOvmBridgeAddresses {
+    return l1Token in customOvmBridgeAddresses;
   }
 }
