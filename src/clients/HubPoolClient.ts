@@ -269,10 +269,13 @@ export class HubPoolClient {
     });
   }
 
-  // Note: This function could be a lot less verbose if we pre-filtered all fully executed root bundles
-  // in the update() method, but by applying the slightly more complex search condition in this function call,
-  // we can save some overhead assuming we don't call this function more than once.
+  // If n is negative, then return the Nth latest executed bundle, otherwise return the Nth earliest
+  // executed bundle. Latest means most recent, earliest means oldest. N cannot be 0.
+  // `startBlock` can be used to set the starting point from which we look forwards or backwards, depending
+  // on whether n is positive or negative.
   getNthFullyExecutedRootBundle(n: number, startBlock?: number): ProposedRootBundle | undefined {
+    if (n === 0) throw new Error("n cannot be 0");
+
     let bundleToReturn: ProposedRootBundle | undefined;
 
     // If n is negative, then return the Nth latest executed bundle, otherwise return the Nth earliest

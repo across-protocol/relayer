@@ -83,14 +83,18 @@ export function blockRangesAreInvalidForSpokeClients(
   latestInvalidBundleStartBlock: { [chainId: number]: number }
 ): boolean {
   return Object.keys(spokePoolClients).some((chainId) => {
-    // If `latestInvalidBundleStartBlock` is not defined for chain, then block range is valid for chain by default.
-    if (latestInvalidBundleStartBlock[chainId] === undefined) return false;
-
     const blockRangeForChain = getBlockRangeForChain(
       blockRanges,
       Number(chainId),
       chainIdListForBundleEvaluationBlockNumbers
     );
+    const clientLastBlockQueried =
+      spokePoolClients[chainId].eventSearchConfig.toBlock ?? spokePoolClients[chainId].latestBlockNumber;
+    const bundleRangeToBlock = blockRangeForChain[1];
+
+    // If `latestInvalidBundleStartBlock` is not defined for chain, then block range is valid for chain by default
+    // unless the spoke client hasn't queried the end block yet.
+    if (latestInvalidBundleStartBlock[chainId] === undefined) return bundleRangeToBlock > clientLastBlockQueried;
 
     // Note: Math.max the from block with the deployment block of the spoke pool to handle the edge case for the first
     // bundle that set its start blocks equal 0.
@@ -98,9 +102,6 @@ export function blockRangesAreInvalidForSpokeClients(
       getDeploymentBlockNumber("SpokePool", Number(chainId)),
       blockRangeForChain[0]
     );
-    const bundleRangeToBlock = blockRangeForChain[1];
-    const clientLastBlockQueried =
-      spokePoolClients[chainId].eventSearchConfig.toBlock ?? spokePoolClients[chainId].latestBlockNumber;
     return (
       bundleRangeFromBlock <= latestInvalidBundleStartBlock[chainId] || bundleRangeToBlock > clientLastBlockQueried
     );

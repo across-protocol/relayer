@@ -36,8 +36,8 @@ export async function constructSpokePoolClientsWithLookback(
 ): Promise<SpokePoolClientsByChain> {
   // Set up Spoke signers and connect them to spoke pool contract objects:
   const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
-  const spokePools = config.spokePoolChains.map((networkId) => {
-    return { networkId, contract: getDeployedContract("SpokePool", networkId, spokePoolSigners[networkId]) };
+  const spokePools = config.spokePoolChains.map((chainId) => {
+    return { chainId, contract: getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) };
   });
 
   // For each spoke chain, look up its latest block and adjust by lookback configuration to determine
@@ -46,9 +46,9 @@ export async function constructSpokePoolClientsWithLookback(
   const l2BlockNumbers = await Promise.all(
     spokePools.map((obj: { contract: Contract }) => obj.contract.provider.getBlockNumber())
   );
-  spokePools.forEach((obj: { networkId: number; contract: Contract }, index) => {
-    if (initialLookBackOverride[obj.networkId]) {
-      fromBlocks[obj.networkId] = l2BlockNumbers[index] - initialLookBackOverride[obj.networkId];
+  spokePools.forEach((obj: { chainId: number; contract: Contract }, index) => {
+    if (initialLookBackOverride[obj.chainId]) {
+      fromBlocks[obj.chainId] = l2BlockNumbers[index] - initialLookBackOverride[obj.chainId];
     }
   });
 
@@ -59,25 +59,25 @@ function getSpokePoolClientsForContract(
   logger: winston.Logger,
   configStoreClient: AcrossConfigStoreClient,
   config: CommonConfig,
-  spokePools: { networkId: number; contract: Contract }[],
-  fromBlocks: { [networkId: number]: number },
-  toBlocks?: { [networkId: number]: number }
+  spokePools: { chainId: number; contract: Contract }[],
+  fromBlocks: { [chainId: number]: number },
+  toBlocks?: { [chainId: number]: number }
 ): SpokePoolClientsByChain {
   const spokePoolClients: SpokePoolClientsByChain = {};
-  spokePools.forEach(({ networkId, contract }) => {
-    const spokePoolDeploymentBlock = getDeploymentBlockNumber("SpokePool", networkId);
+  spokePools.forEach(({ chainId, contract }) => {
+    const spokePoolDeploymentBlock = getDeploymentBlockNumber("SpokePool", chainId);
     const spokePoolClientSearchSettings = {
-      fromBlock: fromBlocks[networkId]
-        ? Math.max(fromBlocks[networkId], spokePoolDeploymentBlock)
+      fromBlock: fromBlocks[chainId]
+        ? Math.max(fromBlocks[chainId], spokePoolDeploymentBlock)
         : spokePoolDeploymentBlock,
-      toBlock: toBlocks[networkId] ? toBlocks[networkId] : null,
-      maxBlockLookBack: config.maxBlockLookBack[networkId],
+      toBlock: toBlocks[chainId] ? toBlocks[chainId] : null,
+      maxBlockLookBack: config.maxBlockLookBack[chainId],
     };
-    spokePoolClients[networkId] = new SpokePoolClient(
+    spokePoolClients[chainId] = new SpokePoolClient(
       logger,
       contract,
       configStoreClient,
-      networkId,
+      chainId,
       spokePoolClientSearchSettings,
       spokePoolDeploymentBlock
     );
@@ -96,15 +96,15 @@ export async function constructSpokePoolClientsWithStartBlocks(
 ): Promise<SpokePoolClientsByChain> {
   // Set up Spoke signers and connect them to spoke pool contract objects:
   const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
-  const spokePools = config.spokePoolChains.map((networkId) => {
-    return { networkId, contract: getDeployedContract("SpokePool", networkId, spokePoolSigners[networkId]) };
+  const spokePools = config.spokePoolChains.map((chainId) => {
+    return { chainId, contract: getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) };
   });
 
   // If no lookback is set, fromBlock will be set to spoke pool's deployment block.
   const fromBlocks = {};
-  spokePools.forEach((obj: { networkId: number; contract: Contract }) => {
-    if (startBlockOverride[obj.networkId]) {
-      fromBlocks[obj.networkId] = startBlockOverride[obj.networkId];
+  spokePools.forEach((obj: { chainId: number; contract: Contract }) => {
+    if (startBlockOverride[obj.chainId]) {
+      fromBlocks[obj.chainId] = startBlockOverride[obj.chainId];
     }
   });
 
