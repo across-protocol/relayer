@@ -21,6 +21,7 @@ import {
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
+  getSpokePoolClientEventSearchConfigsForFastDataworker,
   updateDataworkerClients,
 } from "../dataworker/DataworkerClientHelper";
 import { BlockFinder } from "@uma/sdk";
@@ -76,31 +77,22 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
     throw new Error("Set DATAWORKER_FAST_LOOKBACK_COUNT > 0, otherwise script will take too long to run");
   }
 
-  const nthLatestFullyExecutedBundle = clients.hubPoolClient.getNthFullyExecutedRootBundle(
-    config.dataworkerFastLookbackCount
+  const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
+    config,
+    clients,
+    dataworker
   );
-  const nthLatestFullyExecutedBundleEndBlocks = nthLatestFullyExecutedBundle.bundleEvaluationBlockNumbers.map((x) =>
-    x.toNumber()
-  );
-  const startBlocks = Object.fromEntries(
-    dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
-      return [
-        chainId,
-        getBlockForChain(
-          nthLatestFullyExecutedBundleEndBlocks,
-          chainId,
-          dataworker.chainIdListForBundleEvaluationBlockNumbers
-        ) + 1, // Need to add 1 to bundle end block since bundles begin at previous bundle end blocks + 1
-      ];
-    })
-  );
+
   logger.debug({
     at: "RootBundleValidator",
     message:
       "Setting start blocks for SpokePoolClient equal to bundle evaluation end blocks from Nth latest valid root bundle",
-    N: config.dataworkerFastLookbackCount,
-    startBlocks,
-    nthLatestFullyExecutedBundleTxn: nthLatestFullyExecutedBundle.transactionHash,
+    dataworkerFastStartBundle: config.dataworkerFastStartBundle,
+    dataworkerFastLookbackCount: config.dataworkerFastLookbackCount,
+    fromBlocks,
+    toBlocks,
+    fromBundleTxn: fromBundle?.transactionHash,
+    toBundleTxn: toBundle?.transactionHash,
   });
 
   const spokePoolClients = await constructSpokePoolClientsForFastDataworker(
@@ -108,15 +100,21 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
     clients.configStoreClient,
     config,
     baseSigner,
-    startBlocks
+    fromBlocks,
+    toBlocks
+    // Don't use the cache for shorter lookback windows because loading and storing into RedisDB adds
+    // overhead that we can avoid if the lookback is strategically set. Empirically a lookback of up to 32 bundles
+    // allows the dataworker to run in < 2 minutes.
   );
+
   const latestInvalidBundleStartBlocks = getLatestInvalidBundleStartBlocks(spokePoolClients);
   logger.debug({
     at: "RootBundleValidator",
     message:
       "Identified latest invalid bundle start blocks per chain that we will use to filter root bundles that can be proposed and validated",
     latestInvalidBundleStartBlocks,
-    spokeClientFromBlocks: startBlocks,
+    fromBlocks,
+    toBlocks,
   });
 
   const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(

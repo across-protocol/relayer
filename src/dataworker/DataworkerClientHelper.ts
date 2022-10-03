@@ -10,6 +10,8 @@ import {
 } from "../common";
 import { Wallet, ethers, EventSearchConfig, getDeploymentBlockNumber } from "../utils";
 import { AcrossConfigStoreClient, BundleDataClient, ProfitClient, SpokePoolClient, TokenClient } from "../clients";
+import { getBlockForChain } from "./DataworkerUtils";
+import { Dataworker } from "./Dataworker";
 
 export interface DataworkerClients extends Clients {
   profitClient: ProfitClient;
@@ -112,4 +114,57 @@ export async function constructSpokePoolClientsForFastDataworker(
     // Don't use the cache for the quick lookup so we don't load and parse unneccessary events from Redis DB
     // that we'll throw away if the below checks succeed.
   );
+}
+
+export function getSpokePoolClientEventSearchConfigsForFastDataworker(
+  config: DataworkerConfig,
+  clients: DataworkerClients,
+  dataworker: Dataworker
+) {
+  const toBundle =
+    config.dataworkerFastStartBundle === "latest"
+      ? undefined
+      : clients.hubPoolClient.getNthFullyExecutedRootBundle(Number(config.dataworkerFastStartBundle));
+  const fromBundle =
+    config.dataworkerFastLookbackCount === config.dataworkerFastStartBundle
+      ? undefined
+      : clients.hubPoolClient.getNthFullyExecutedRootBundle(-config.dataworkerFastLookbackCount, toBundle?.blockNumber);
+
+  const toBlocks =
+    toBundle === undefined
+      ? {}
+      : Object.fromEntries(
+          dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
+            return [
+              chainId,
+              getBlockForChain(
+                toBundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
+                chainId,
+                dataworker.chainIdListForBundleEvaluationBlockNumbers
+              ) + 1, // Need to add 1 to bundle end block since bundles begin at previous bundle end blocks + 1
+            ];
+          })
+        );
+  const fromBlocks =
+    fromBundle === undefined
+      ? {}
+      : Object.fromEntries(
+          dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
+            return [
+              chainId,
+              getBlockForChain(
+                fromBundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
+                chainId,
+                dataworker.chainIdListForBundleEvaluationBlockNumbers
+              ) + 1, // Need to add 1 to bundle end block since bundles begin at previous bundle end blocks + 1
+            ];
+          })
+        );
+
+  return {
+    fromBundle,
+    toBundle,
+    fromBlocks,
+    toBlocks,
+  };
 }
