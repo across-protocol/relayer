@@ -35,7 +35,8 @@ export interface DepositWithBlockInCache extends SortableEvent {
   realizedLpFeePct: string;
   destinationToken: string;
   originBlockNumber: number;
-  speedUpSignature?: string | undefined;
+  speedUpSignature?: string;
+  newRelayerFeePct?: string;
 }
 
 export interface CachedDataBlocks {

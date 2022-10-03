@@ -404,8 +404,7 @@ export class SpokePoolClient {
       }
     }
 
-    // Disable this loop.
-    // eslint-disable-next-line no-constant-condition
+    // Update deposits with speed up requests from depositor.
     if (eventsToQuery.includes("RequestedSpeedUpDeposit")) {
       const speedUpEvents = queryResults[eventsToQuery.indexOf("RequestedSpeedUpDeposit")];
 
@@ -425,6 +424,12 @@ export class SpokePoolClient {
               blockNumber,
               originBlockNumber,
             };
+            if (dataToCache?.deposits?.[destinationChainId])
+              this.deposits[destinationChainId][index] = {
+                ...speedUpDeposit,
+                blockNumber,
+                originBlockNumber,
+              };
           }
         }
     }
@@ -626,12 +631,18 @@ export class SpokePoolClient {
             .map((deposit) => {
               // Here we convert BigNumber objects to strings before storing into Redis cache
               // which only stores strings.
-              return {
+              const depositToCache = {
                 ...deposit,
                 amount: deposit.amount.toString(),
                 relayerFeePct: deposit.relayerFeePct.toString(),
+                newRelayerFeePct: deposit?.newRelayerFeePct?.toString(),
                 realizedLpFeePct: deposit.realizedLpFeePct.toString(),
               } as DepositWithBlockInCache;
+              // Delete undefined values.
+              Object.keys(depositToCache).forEach(
+                (key) => depositToCache[key] === undefined && delete depositToCache[key]
+              );
+              return depositToCache;
             }),
         ];
       })
@@ -640,7 +651,7 @@ export class SpokePoolClient {
     const fillsToCacheBeforeSnapshot = newCachedData.fills
       .filter((e) => e.blockNumber <= latestBlockToCache)
       .map((fill) => {
-        return {
+        const fillToCache = {
           ...fill,
           amount: fill.amount.toString(),
           totalFilledAmount: fill.totalFilledAmount.toString(),
@@ -649,6 +660,9 @@ export class SpokePoolClient {
           appliedRelayerFeePct: fill.appliedRelayerFeePct.toString(),
           realizedLpFeePct: fill.realizedLpFeePct.toString(),
         } as FillWithBlockInCache;
+        // Delete undefined values.
+        Object.keys(fillToCache).forEach((key) => fillToCache[key] === undefined && delete fillToCache[key]);
+        return fillToCache;
       });
 
     this.log("debug", `Saved cached for chain ${this.chainId}`, {
@@ -678,7 +692,7 @@ export class SpokePoolClient {
     });
   }
 
-  // Neccessary to use this function because RedisDB can only store strings so we need to stringify the BN objects
+  // Necessary to use this function because RedisDB can only store strings so we need to stringify the BN objects
   // before storing them in the cache, and do the opposite to retrieve the data type that we expect when fetching
   // from the cache.
   private convertDepositInCache(deposit: DepositWithBlockInCache): DepositWithBlock {
@@ -686,6 +700,7 @@ export class SpokePoolClient {
       ...deposit,
       amount: toBN(deposit.amount),
       relayerFeePct: toBN(deposit.relayerFeePct),
+      newRelayerFeePct: deposit.newRelayerFeePct ? toBN(deposit.newRelayerFeePct) : undefined,
       realizedLpFeePct: toBN(deposit.realizedLpFeePct),
     };
   }
