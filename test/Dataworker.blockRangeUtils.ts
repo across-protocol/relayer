@@ -1,12 +1,16 @@
-import { ethers, expect } from "./utils";
+import { ethers, expect, Logger } from "./utils";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 // Tested
-import { DataworkerClients } from "../src/dataworker/DataworkerClientHelper";
+import {
+  constructSpokePoolClientsForFastDataworker,
+  DataworkerClients,
+} from "../src/dataworker/DataworkerClientHelper";
 import { HubPoolClient, SpokePoolClient } from "../src/clients";
 import { getWidestPossibleExpectedBlockRange } from "../src/dataworker/PoolRebalanceUtils";
-import { CHAIN_ID_TEST_LIST, toBN } from "./constants";
-import { getEndBlockBuffers } from "../src/dataworker/DataworkerUtils";
+import { CHAIN_ID_TEST_LIST, toBN, originChainId } from "./constants";
+import { blockRangesAreInvalidForSpokeClients, getEndBlockBuffers } from "../src/dataworker/DataworkerUtils";
+import { getDeployedBlockNumber } from "@across-protocol/contracts-v2";
 
 let dataworkerClients: DataworkerClients;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
@@ -66,6 +70,65 @@ describe("Dataworker block range-related utility methods", async function () {
       dataworkerClients,
       latestMainnetBlock
     );
-    expect(zeroRange).to.deep.equal(latestBlocks.map((endBlock) => [0, 0]));
+    expect(zeroRange).to.deep.equal(latestBlocks.map((_) => [0, 0]));
+  });
+  it("DataworkerUtils.blockRangesAreInvalidForSpokeClients", async function () {
+    const chainId = originChainId;
+    const spokeClient = spokePoolClients[chainId];
+
+    // latestInvalidBundleStartBlock is not defined, return invalid iff block range to block is > spoke client's
+    // latest blocks. If `eventSearchConfig.toBlock` is null, then the client's latest block defaults to the latest
+    // block on the network as opposed to its eventSearchConfig.toBlock.
+    expect(spokeClient.eventSearchConfig.toBlock).to.equal(null);
+    expect(
+      blockRangesAreInvalidForSpokeClients(
+        spokePoolClients,
+        Array(CHAIN_ID_TEST_LIST.length).fill([0, spokeClient.latestBlockNumber + 1]),
+        CHAIN_ID_TEST_LIST,
+        {}
+      )
+    ).to.equal(true);
+    expect(
+      blockRangesAreInvalidForSpokeClients(
+        spokePoolClients,
+        Array(CHAIN_ID_TEST_LIST.length).fill([0, spokeClient.latestBlockNumber]),
+        CHAIN_ID_TEST_LIST,
+        {}
+      )
+    ).to.equal(false);
+
+    // latestInvalidBundleStartBlock is defined, so look if bundle range from block is before the latest invalid
+    // bundle start block. If so, then the range is invalid.
+    const mainnetDeploymentBlock = getDeployedBlockNumber("SpokePool", 1);
+    // latestInvalidBundleStartBlock is only used if its greater than the spoke pool deployment block
+    const latestInvalidStartBlock = mainnetDeploymentBlock + 100;
+    expect(
+      blockRangesAreInvalidForSpokeClients(
+        spokePoolClients,
+        Array(CHAIN_ID_TEST_LIST.length).fill([latestInvalidStartBlock, latestInvalidStartBlock + 1]),
+        CHAIN_ID_TEST_LIST,
+        { [1]: latestInvalidStartBlock } // Can only set a value for chain ID 1 since getDeploymentBlockNumber will only
+        // successfully fetch real networks.
+      )
+    ).to.equal(true);
+    expect(
+      blockRangesAreInvalidForSpokeClients(
+        spokePoolClients,
+        // This block range is obviously nonsensical since toBlock > fromBlock but its a workaround since
+        // getDeployedBlockNumber only works for real networks like chainId 1.
+        Array(CHAIN_ID_TEST_LIST.length).fill([latestInvalidStartBlock + 1, spokeClient.latestBlockNumber]),
+        CHAIN_ID_TEST_LIST,
+        { [1]: latestInvalidStartBlock }
+      )
+    ).to.equal(false);
+    // Returns range is invalid if toBlock is greater than client's last block queried
+    expect(
+      blockRangesAreInvalidForSpokeClients(
+        spokePoolClients,
+        Array(CHAIN_ID_TEST_LIST.length).fill([latestInvalidStartBlock + 1, spokeClient.latestBlockNumber + 1]),
+        CHAIN_ID_TEST_LIST,
+        { [1]: latestInvalidStartBlock }
+      )
+    ).to.equal(true);
   });
 });
