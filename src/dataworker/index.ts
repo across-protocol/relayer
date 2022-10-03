@@ -5,6 +5,7 @@ import {
   startupLogLevel,
   Wallet,
   getLatestInvalidBundleStartBlocks,
+  assert,
 } from "../utils";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
@@ -85,38 +86,68 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         // construct or validate root bundles for.
 
         // In summary:
-        // 1. We generate the lookback in terms of how many bundles we want to look back.
-        // 2. We use the block numbers in the nth bundle to determine the fromBlock for the spoke clients.
+        // 1. We generate the spoke client event search windows based on a start bundle's bundle block end numbers and
+        //    how many bundles we want to look back from the start bundle blocks.
+        // 2. For example, if the start bundle is 100 and the lookback is 16, then we will set the spoke client event
+        //    search window's toBlocks equal to the 100th bundle's block evaluation numbers and the fromBlocks equal
+        //    to the 84th bundle's block evaluation numbers.
         // 3. Once we do all the querying, we figure out the earliest block that we’re able to validate per chain.
         //    This logic can be found in `getLatestInvalidBundleStartBlocks()`
         // 4. If the bundle we’re trying to validate or propose requires an earlier block, we exit early and emit
         //    an alert. In the dispute flow, this alert should be ERROR level.
+        const toBundle =
+          config.dataworkerFastStartBundle === "latest"
+            ? undefined
+            : clients.hubPoolClient.getNthFullyExecutedRootBundle(Number(config.dataworkerFastStartBundle));
+        const fromBundle =
+          config.dataworkerFastLookbackCount === config.dataworkerFastStartBundle
+            ? undefined
+            : clients.hubPoolClient.getNthFullyExecutedRootBundle(
+                -config.dataworkerFastLookbackCount,
+                toBundle?.blockNumber
+              );
 
-        const nthLatestFullyExecutedBundle = clients.hubPoolClient.getNthFullyExecutedRootBundle(
-          config.dataworkerFastLookbackCount
-        );
-        const nthLatestFullyExecutedBundleEndBlocks = nthLatestFullyExecutedBundle.bundleEvaluationBlockNumbers.map(
-          (x) => x.toNumber()
-        );
-        const startBlocks = Object.fromEntries(
-          dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
-            return [
-              chainId,
-              getBlockForChain(
-                nthLatestFullyExecutedBundleEndBlocks,
-                chainId,
-                dataworker.chainIdListForBundleEvaluationBlockNumbers
-              ) + 1, // Need to add 1 to bundle end block since bundles begin at previous bundle end blocks + 1
-            ];
-          })
-        );
+        const toBlocks =
+          toBundle === undefined
+            ? {}
+            : Object.fromEntries(
+                dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
+                  return [
+                    chainId,
+                    getBlockForChain(
+                      toBundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
+                      chainId,
+                      dataworker.chainIdListForBundleEvaluationBlockNumbers
+                    ) + 1, // Need to add 1 to bundle end block since bundles begin at previous bundle end blocks + 1
+                  ];
+                })
+              );
+        const fromBlocks =
+          fromBundle === undefined
+            ? {}
+            : Object.fromEntries(
+                dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
+                  return [
+                    chainId,
+                    getBlockForChain(
+                      fromBundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
+                      chainId,
+                      dataworker.chainIdListForBundleEvaluationBlockNumbers
+                    ) + 1, // Need to add 1 to bundle end block since bundles begin at previous bundle end blocks + 1
+                  ];
+                })
+              );
+
         logger.debug({
           at: "Dataworker#index",
           message:
             "Setting start blocks for SpokePoolClient equal to bundle evaluation end blocks from Nth latest valid root bundle",
-          N: config.dataworkerFastLookbackCount,
-          startBlocks,
-          nthLatestFullyExecutedBundleTxn: nthLatestFullyExecutedBundle.transactionHash,
+          dataworkerFastStartBundle: config.dataworkerFastStartBundle,
+          dataworkerFastLookbackCount: config.dataworkerFastLookbackCount,
+          fromBlocks,
+          toBlocks,
+          fromBundleTxn: fromBundle?.transactionHash,
+          toBundleTxn: toBundle?.transactionHash,
         });
 
         spokePoolClients = await constructSpokePoolClientsForFastDataworker(
@@ -124,7 +155,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           clients.configStoreClient,
           config,
           baseSigner,
-          startBlocks
+          fromBlocks,
+          toBlocks
           // Don't use the cache for shorter lookback windows because loading and storing into RedisDB adds
           // overhead that we can avoid if the lookback is strategically set. Empirically a lookback of up to 32 bundles
           // allows the dataworker to run in < 2 minutes.
@@ -136,7 +168,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           message:
             "Identified latest invalid bundle start blocks per chain that we will use to filter root bundles that can be proposed and validated",
           latestInvalidBundleStartBlocks,
-          spokeClientFromBlocks: startBlocks,
+          fromBlocks,
+          toBlocks,
         });
       } else {
         // If no fast lookback is configured for dataworker, load events from all time.
@@ -154,6 +187,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           config,
           baseSigner,
           {}, // Empty start block override means start blocks default to SpokePool deployment blocks.
+          {},
           [
             "FundsDeposited",
             "RequestedSpeedUpDeposit",

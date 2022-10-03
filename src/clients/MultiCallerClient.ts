@@ -112,7 +112,8 @@ export class MultiCallerClient {
       if (transactionRevertsToIgnore.length > 0)
         this.logger.debug({
           at: "MultiCallerClient",
-          message: `Filtering out ${transactionRevertsToIgnore.length} relay transactions that will fail because the relay has already been filled`,
+          message: `Filtering out ${transactionRevertsToIgnore.length} transactions with revert reasons we can ignore`,
+          revertReasons: transactionRevertsToIgnore.map((txn) => txn.reason),
           totalTransactions: _transactionsSucceed.length,
         });
 

@@ -60,7 +60,8 @@ function getSpokePoolClientsForContract(
   configStoreClient: AcrossConfigStoreClient,
   config: CommonConfig,
   spokePools: { networkId: number; contract: Contract }[],
-  fromBlocks: { [networkId: number]: number }
+  fromBlocks: { [networkId: number]: number },
+  toBlocks?: { [networkId: number]: number }
 ): SpokePoolClientsByChain {
   const spokePoolClients: SpokePoolClientsByChain = {};
   spokePools.forEach(({ networkId, contract }) => {
@@ -69,7 +70,7 @@ function getSpokePoolClientsForContract(
       fromBlock: fromBlocks[networkId]
         ? Math.max(fromBlocks[networkId], spokePoolDeploymentBlock)
         : spokePoolDeploymentBlock,
-      toBlock: null,
+      toBlock: toBlocks[networkId] ? toBlocks[networkId] : null,
       maxBlockLookBack: config.maxBlockLookBack[networkId],
     };
     spokePoolClients[networkId] = new SpokePoolClient(
@@ -90,7 +91,8 @@ export async function constructSpokePoolClientsWithStartBlocks(
   configStoreClient: AcrossConfigStoreClient,
   config: CommonConfig,
   baseSigner: Wallet,
-  startBlockOverride: { [chainId: number]: number } = {}
+  startBlockOverride: { [chainId: number]: number } = {},
+  toBlockOverride: { [chainId: number]: number } = {}
 ): Promise<SpokePoolClientsByChain> {
   // Set up Spoke signers and connect them to spoke pool contract objects:
   const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
@@ -106,7 +108,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
     }
   });
 
-  return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks);
+  return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks, toBlockOverride);
 }
 
 export async function updateSpokePoolClients(
@@ -127,6 +129,7 @@ export async function constructSpokePoolClientsWithStartBlocksAndUpdate(
   config: CommonConfig,
   baseSigner: Wallet,
   startBlockOverride: { [chainId: number]: number } = {},
+  endBlockOverride: { [chainId: number]: number } = {},
   eventsToQuery?: string[],
   latestFullyExecutedBundleEndBlocks: { [chainId: number]: number } = {}
 ) {
@@ -135,7 +138,8 @@ export async function constructSpokePoolClientsWithStartBlocksAndUpdate(
     configStoreClient,
     config,
     baseSigner,
-    startBlockOverride
+    startBlockOverride,
+    endBlockOverride
   );
   await updateSpokePoolClients(spokePoolClients, eventsToQuery, latestFullyExecutedBundleEndBlocks);
   return spokePoolClients;

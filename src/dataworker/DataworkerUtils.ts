@@ -8,7 +8,14 @@ import {
 } from "../interfaces";
 import { RelayData, RelayerRefundLeaf } from "../interfaces";
 import { RelayerRefundLeafWithGroup, RunningBalances, UnfilledDeposit } from "../interfaces";
-import { buildPoolRebalanceLeafTree, buildRelayerRefundTree, buildSlowRelayTree, toBNWei, winston } from "../utils";
+import {
+  buildPoolRebalanceLeafTree,
+  buildRelayerRefundTree,
+  buildSlowRelayTree,
+  getDeploymentBlockNumber,
+  toBNWei,
+  winston,
+} from "../utils";
 import { getDepositPath, getFillsInRange, groupObjectCountsByProp, groupObjectCountsByTwoProps, toBN } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { addSlowFillsToRunningBalances, initializeRunningBalancesFromRelayerRepayments } from "./PoolRebalanceUtils";
@@ -76,7 +83,7 @@ export function blockRangesAreInvalidForSpokeClients(
   latestInvalidBundleStartBlock: { [chainId: number]: number }
 ): boolean {
   return Object.keys(spokePoolClients).some((chainId) => {
-    // If `latestInvalidBundleStartBlock` is not defined for chain, then block range is valid for chain.
+    // If `latestInvalidBundleStartBlock` is not defined for chain, then block range is valid for chain by default.
     if (latestInvalidBundleStartBlock[chainId] === undefined) return false;
 
     const blockRangeForChain = getBlockRangeForChain(
@@ -85,7 +92,18 @@ export function blockRangesAreInvalidForSpokeClients(
       chainIdListForBundleEvaluationBlockNumbers
     );
 
-    return blockRangeForChain[0] <= latestInvalidBundleStartBlock[chainId];
+    // Note: Math.max the from block with the deployment block of the spoke pool to handle the edge case for the first
+    // bundle that set its start blocks equal 0.
+    const bundleRangeFromBlock = Math.max(
+      getDeploymentBlockNumber("SpokePool", Number(chainId)),
+      blockRangeForChain[0]
+    );
+    const bundleRangeToBlock = blockRangeForChain[1];
+    const clientLastBlockQueried =
+      spokePoolClients[chainId].eventSearchConfig.toBlock ?? spokePoolClients[chainId].latestBlockNumber;
+    return (
+      bundleRangeFromBlock <= latestInvalidBundleStartBlock[chainId] || bundleRangeToBlock > clientLastBlockQueried
+    );
   });
 }
 

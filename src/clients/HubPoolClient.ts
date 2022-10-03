@@ -4,6 +4,7 @@ import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../c
 import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle, LpToken } from "../interfaces";
 import { ExecutedRootBundle, PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
+import _ from "lodash";
 
 export class HubPoolClient {
   // L1Token -> destinationChainId -> destinationToken
@@ -207,6 +208,8 @@ export class HubPoolClient {
     return endingBlockNumber;
   }
 
+  // TODO: This might not be necessary since the cumulative root bundle count doesn't grow fast enough, but consider
+  // using _.findLast/_.find instead of resorting the arrays if these functions begin to take a lot time.
   getProposedRootBundlesInBlockRange(startingBlock: number, endingBlock: number) {
     return sortEventsDescending(this.proposedRootBundles).filter(
       (bundle: ProposedRootBundle) => bundle.blockNumber >= startingBlock && bundle.blockNumber <= endingBlock
@@ -252,19 +255,46 @@ export class HubPoolClient {
   getLatestFullyExecutedRootBundle(latestMainnetBlock: number): ProposedRootBundle | undefined {
     // Search for latest ProposeRootBundleExecuted event followed by all of its RootBundleExecuted event suggesting
     // that all pool rebalance leaves were executed. This ignores any proposed bundles that were partially executed.
-    return sortEventsDescending(this.proposedRootBundles).find((rootBundle: ProposedRootBundle) => {
+    return _.findLast(this.proposedRootBundles, (rootBundle: ProposedRootBundle) => {
       if (rootBundle.blockNumber > latestMainnetBlock) return false;
       return this.isRootBundleValid(rootBundle, latestMainnetBlock);
     });
   }
 
-  getNthFullyExecutedRootBundle(n: number): ProposedRootBundle | undefined {
+  getEarliestFullyExecutedRootBundle(latestMainnetBlock: number, startBlock = 0): ProposedRootBundle | undefined {
+    return this.proposedRootBundles.find((rootBundle: ProposedRootBundle) => {
+      if (rootBundle.blockNumber > latestMainnetBlock) return false;
+      if (rootBundle.blockNumber < startBlock) return false;
+      return this.isRootBundleValid(rootBundle, latestMainnetBlock);
+    });
+  }
+
+  // Note: This function could be a lot less verbose if we pre-filtered all fully executed root bundles
+  // in the update() method, but by applying the slightly more complex search condition in this function call,
+  // we can save some overhead assuming we don't call this function more than once.
+  getNthFullyExecutedRootBundle(n: number, startBlock?: number): ProposedRootBundle | undefined {
     let bundleToReturn: ProposedRootBundle | undefined;
-    let nextLatestMainnetBlock = this.latestBlockNumber;
-    for (let i = 0; i < n; i++) {
-      bundleToReturn = this.getLatestFullyExecutedRootBundle(nextLatestMainnetBlock);
-      nextLatestMainnetBlock = Math.max(0, bundleToReturn.blockNumber - 1);
+
+    // If n is negative, then return the Nth latest executed bundle, otherwise return the Nth earliest
+    // executed bundle.
+    if (n < 0) {
+      let nextLatestMainnetBlock = startBlock ?? this.latestBlockNumber;
+      for (let i = 0; i < -n; i++) {
+        bundleToReturn = this.getLatestFullyExecutedRootBundle(nextLatestMainnetBlock);
+        // Subtract 1 so that next `getLatestFullyExecutedRootBundle` call filters out the root bundle we just found
+        // because its block number is > nextLatestMainnetBlock.
+        nextLatestMainnetBlock = Math.max(0, bundleToReturn.blockNumber - 1);
+      }
+    } else {
+      let nextStartBlock = startBlock ?? 0;
+      for (let i = 0; i < n; i++) {
+        bundleToReturn = this.getEarliestFullyExecutedRootBundle(this.latestBlockNumber, nextStartBlock);
+        // Add 1 so that next `getEarliestFullyExecutedRootBundle` call filters out the root bundle we just found
+        // because its block number is < nextStartBlock.
+        nextStartBlock = Math.min(bundleToReturn.blockNumber + 1, this.latestBlockNumber);
+      }
     }
+
     return bundleToReturn;
   }
 

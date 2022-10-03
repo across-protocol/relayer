@@ -91,7 +91,8 @@ export async function constructSpokePoolClientsForFastDataworker(
   configStoreClient: AcrossConfigStoreClient,
   config: DataworkerConfig,
   baseSigner: Wallet,
-  startBlocks: { [chainId: number]: number }
+  startBlocks: { [chainId: number]: number },
+  endBlocks: { [chainId: number]: number }
 ) {
   return await constructSpokePoolClientsWithStartBlocksAndUpdate(
     logger,
@@ -99,6 +100,7 @@ export async function constructSpokePoolClientsForFastDataworker(
     config,
     baseSigner,
     startBlocks,
+    endBlocks,
     [
       "FundsDeposited",
       "RequestedSpeedUpDeposit",

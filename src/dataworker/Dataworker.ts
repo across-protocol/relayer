@@ -191,10 +191,12 @@ export class Dataworker {
     ) {
       this.logger.warn({
         at: "Dataworke#propose",
-        message:
-          "Cannot propose bundle with some chain's startBlock <= latest invalid bundle start block. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
+        message: "Cannot propose bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
         rootBundleRanges: blockRangesForProposal,
         latestInvalidBundleStartBlock,
+        spokeClientsEventSearchConfigs: Object.fromEntries(
+          Object.keys(spokePoolClients).map((chainId) => [chainId, spokePoolClients[chainId].eventSearchConfig])
+        ),
       });
       return;
     }
@@ -572,11 +574,13 @@ export class Dataworker {
       )
     ) {
       this.logger.debug({
-        at: "Dataworker#validate",
-        message:
-          "Cannot validate bundle with some chain's startBlock <= latest invalid bundle start block. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
+        at: "Dataworke#validate",
+        message: "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
         rootBundleRanges: blockRangesImpliedByBundleEndBlocks,
         latestInvalidBundleStartBlock,
+        spokeClientsEventSearchConfigs: Object.fromEntries(
+          Object.keys(spokePoolClients).map((chainId) => [chainId, spokePoolClients[chainId].eventSearchConfig])
+        ),
       });
       return {
         valid: false,
@@ -787,11 +791,13 @@ export class Dataworker {
             this.logger.warn({
               at: "Dataworke#executeSlowRelayLeaves",
               message:
-                "Skipping bundle with some chain's startBlock <= latest invalid bundle start block. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
+                "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
               chainId,
               rootBundleRanges: blockNumberRanges,
               latestInvalidBundleStartBlock,
-              matchingRootBundle,
+              spokeClientsEventSearchConfigs: Object.fromEntries(
+                Object.keys(spokePoolClients).map((chainId) => [chainId, spokePoolClients[chainId].eventSearchConfig])
+              ),
             });
             continue;
           }
@@ -1202,13 +1208,15 @@ export class Dataworker {
             )
           ) {
             this.logger.warn({
-              at: "Dataworker#executeRelayerRefundLeaves",
+              at: "Dataworke#executeRelayerRefundLeaves",
               message:
-                "Skipping bundle with some chain's startBlock <= latest invalid bundle start block. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
+                "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
               chainId,
               rootBundleRanges: blockNumberRanges,
               latestInvalidBundleStartBlock,
-              matchingRootBundle,
+              spokeClientsEventSearchConfigs: Object.fromEntries(
+                Object.keys(spokePoolClients).map((chainId) => [chainId, spokePoolClients[chainId].eventSearchConfig])
+              ),
             });
             continue;
           }
