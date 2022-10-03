@@ -424,7 +424,7 @@ export class SpokePoolClient {
               blockNumber,
               originBlockNumber,
             };
-            if (dataToCache?.deposits && dataToCache?.deposits[destinationChainId])
+            if (dataToCache?.deposits?.[destinationChainId])
               this.deposits[destinationChainId][index] = {
                 ...speedUpDeposit,
                 blockNumber,
