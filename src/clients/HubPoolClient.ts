@@ -282,7 +282,7 @@ export class HubPoolClient {
     // executed bundle.
     if (n < 0) {
       let nextLatestMainnetBlock = startBlock ?? this.latestBlockNumber;
-      for (let i = 0; i < -n; i++) {
+      for (let i = 0; i < Math.abs(n); i++) {
         bundleToReturn = this.getLatestFullyExecutedRootBundle(nextLatestMainnetBlock);
         // Subtract 1 so that next `getLatestFullyExecutedRootBundle` call filters out the root bundle we just found
         // because its block number is > nextLatestMainnetBlock.
