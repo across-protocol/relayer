@@ -182,6 +182,7 @@ export class Dataworker {
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // potential proposal
     if (
+      Object.keys(latestInvalidBundleStartBlock).length > 0 &&
       blockRangesAreInvalidForSpokeClients(
         spokePoolClients,
         blockRangesForProposal,
@@ -566,6 +567,7 @@ export class Dataworker {
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // pending proposal. Log an error loudly so that user knows that disputer needs to increase its lookback.
     if (
+      Object.keys(latestInvalidBundleStartBlock).length > 0 &&
       blockRangesAreInvalidForSpokeClients(
         spokePoolClients,
         blockRangesImpliedByBundleEndBlocks,
@@ -781,6 +783,7 @@ export class Dataworker {
           });
 
           if (
+            Object.keys(latestInvalidBundleStartBlock).length > 0 &&
             blockRangesAreInvalidForSpokeClients(
               spokePoolClients,
               blockNumberRanges,
@@ -1200,6 +1203,7 @@ export class Dataworker {
           });
 
           if (
+            Object.keys(latestInvalidBundleStartBlock).length > 0 &&
             blockRangesAreInvalidForSpokeClients(
               spokePoolClients,
               blockNumberRanges,
