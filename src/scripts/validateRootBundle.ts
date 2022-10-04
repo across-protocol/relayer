@@ -28,7 +28,7 @@ import { BlockFinder } from "@uma/sdk";
 import { PendingRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
-import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
+import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
 
 config();
 let logger: winston.Logger;
@@ -102,9 +102,6 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
     baseSigner,
     fromBlocks,
     toBlocks
-    // Don't use the cache for shorter lookback windows because loading and storing into RedisDB adds
-    // overhead that we can avoid if the lookback is strategically set. Empirically a lookback of up to 32 bundles
-    // allows the dataworker to run in < 2 minutes.
   );
 
   const latestInvalidBundleStartBlocks = getLatestInvalidBundleStartBlocks(spokePoolClients);

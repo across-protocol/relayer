@@ -121,9 +121,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           baseSigner,
           fromBlocks,
           toBlocks
-          // Don't use the cache for shorter lookback windows because loading and storing into RedisDB adds
-          // overhead that we can avoid if the lookback is strategically set. Empirically a lookback of up to 32 bundles
-          // allows the dataworker to run in < 2 minutes.
         );
         latestInvalidBundleStartBlocks = getLatestInvalidBundleStartBlocks(spokePoolClients);
 
@@ -163,7 +160,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           config.useCacheForSpokePool ? bundleEndBlockMapping : {} // Now, use the cache for the longer lookback.
         );
 
-        // Since we loaded all events, default invalid start blocks to spoke pool deployment blocks minus 1
+        // Since we loaded all events, default invalid start blocks to spoke pool deployment blocks minus 1 to indicate
+        // that all bundles can be validated using the queried events.
         latestInvalidBundleStartBlocks = Object.fromEntries(
           Object.keys(spokePoolClients).map((chainId) => [
             chainId,
