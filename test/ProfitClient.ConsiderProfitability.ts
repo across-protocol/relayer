@@ -1,4 +1,5 @@
 import {
+  BigNumber,
   expect,
   createSpyLogger,
   winston,
@@ -10,17 +11,29 @@ import {
   destinationChainId,
 } from "./utils";
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
-import { Deposit } from "../src/interfaces";
+import { Deposit, L1Token } from "../src/interfaces";
 import { SpokePoolClient, WETH, MATIC } from "../src/clients";
 
-let hubPoolClient: MockHubPoolClient, spyLogger: winston.Logger, profitClient: MockProfitClient;
+// @todo: This should be centralised (and probably already is...).
+const USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+const tokens: { [symbol: string]: L1Token } = {
+  MATIC: { address: MATIC, decimals: 18, symbol: "MATIC" },
+  USDC: { address: USDC, decimals: 6, symbol: "USDC" },
+  WETH: { address: WETH, decimals: 18, symbol: "WETH" },
+};
 
-const mainnetUsdc = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+const tokenPrices: { [symbol: string]: BigNumber } = {
+  MATIC: toBNWei("0.4"),
+  USDC: toBNWei(1),
+  WETH: toBNWei(3000),
+};
+
+// Set env LOG_IN_TEST to log to console.
+const { spyLogger } = createSpyLogger();
+let hubPoolClient: MockHubPoolClient, profitClient: MockProfitClient;
 
 describe("ProfitClient: Consider relay profit", async function () {
   beforeEach(async function () {
-    ({ spyLogger } = createSpyLogger());
-
     hubPoolClient = new MockHubPoolClient(null, null);
     const [owner] = await ethers.getSigners();
     const { spokePool: spokePool_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId);
@@ -30,11 +43,11 @@ describe("ProfitClient: Consider relay profit", async function () {
     const spokePoolClient_2 = new SpokePoolClient(spyLogger, spokePool_2.connect(owner), null, destinationChainId);
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, false, [], false, toBN(0));
-    profitClient.setTokenPrices({
-      [WETH]: toBNWei(3000),
-      [mainnetUsdc]: toBNWei(1),
-      [MATIC]: toBNWei("0.4"),
-    });
+
+    // Load ERC20 token prices in USD.
+    profitClient.setTokenPrices(
+      Object.fromEntries(Object.entries(tokenPrices).map(([symbol, price]) => [tokens[symbol].address, price]))
+    );
   });
 
   it("Considers gas cost when computing protfitability", async function () {
@@ -42,7 +55,7 @@ describe("ProfitClient: Consider relay profit", async function () {
     // WETH set at 3000 and relayer fee % of 0.1% which is a revenue of 0.3.
     // However, since MATIC costs $0.4, the profit is only 1.2 - 0.3 = $0.9 after gas, which is unprofitable.
     const relaySize = toBNWei("0.1"); // 1 ETH
-    hubPoolClient.setTokenInfoToReturn({ address: WETH, decimals: 18, symbol: "WETH" });
+    hubPoolClient.setTokenInfoToReturn(tokens["WETH"]);
 
     const relay = { relayerFeePct: toBNWei("0.001"), destinationChainId: 137 } as Deposit;
     profitClient.setGasCosts({ 137: toBNWei(1) });
@@ -60,7 +73,7 @@ describe("ProfitClient: Consider relay profit", async function () {
     const relaySize = toBN(1000).mul(toBN(10).pow(6)); // 1000e6 for 1000 USDC.
 
     // Relayer fee is 10% or $100. Gas cost is 0.01 * 3000 = $30. This leaves a profit of $70.
-    hubPoolClient.setTokenInfoToReturn({ address: mainnetUsdc, decimals: 6, symbol: "USDC" });
+    hubPoolClient.setTokenInfoToReturn(tokens["USDC"]);
     const profitableUsdcL1Relay = { relayerFeePct: toBNWei("0.1"), destinationChainId: 1 } as Deposit;
     profitClient.setGasCosts({ 1: toBNWei("0.01") });
     expect(profitClient.isFillProfitable(profitableUsdcL1Relay, relaySize)).to.be.true;
