@@ -19,7 +19,21 @@ export const MATIC = "0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0";
 export const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 export const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 
-const GAS_TOKEN_BY_CHAIN_ID = {
+export type FillProfit = {
+  grossRelayerFeePct: BigNumber;
+  l1TokenPriceUsd: BigNumber;
+  fillAmountUsd: BigNumber;
+  grossRelayerFeeUsd: BigNumber;
+  nativeGasCost: BigNumber;
+  gasPriceUsd: BigNumber;
+  gasCostUsd: BigNumber;
+  relayerCapitalOutlayUsd: BigNumber;
+  netRelayerFeePct: BigNumber;
+  netRelayerFeeUsd: BigNumber;
+  fillProfitable: boolean;
+};
+
+export const GAS_TOKEN_BY_CHAIN_ID = {
   1: WETH,
   10: WETH,
   137: MATIC,
@@ -87,12 +101,90 @@ export class ProfitClient {
     return this.totalGasCosts[chainId] ? toBN(this.totalGasCosts[chainId]) : toBN(0);
   }
 
+  // Estimate the gas cost of filling this relay.
+  calculateFillCost(chainId: number): {
+    nativeGasCost: BigNumber;
+    gasPriceUsd: BigNumber;
+    gasCostUsd: BigNumber;
+  } {
+    const nativeGasCost: BigNumber = this.getTotalGasCost(chainId); // gas cost in native token
+    const gasToken: string = GAS_TOKEN_BY_CHAIN_ID[chainId];
+    const gasPriceUsd: BigNumber = this.getPriceOfToken(gasToken);
+    const gasCostUsd: BigNumber = nativeGasCost.mul(gasPriceUsd).div(toBN(10).pow(GAS_TOKEN_DECIMALS));
+
+    return {
+      nativeGasCost,
+      gasPriceUsd,
+      gasCostUsd,
+    };
+  }
+
   getUnprofitableFills() {
     return this.unprofitableFills;
   }
 
   clearUnprofitableFills() {
     this.unprofitableFills = {};
+  }
+
+  calculateFillProfitability(deposit: Deposit, fillAmount: BigNumber, l1Token?: L1Token): FillProfit {
+    assert(fillAmount.gt(0), `Unexpected fillAmount: ${fillAmount}`);
+    assert(
+      Object.keys(GAS_TOKEN_BY_CHAIN_ID).includes(deposit.destinationChainId.toString()),
+      `Unsupported destination chain ID: ${deposit.destinationChainId}`
+    );
+
+    l1Token ??= this.hubPoolClient.getTokenInfoForDeposit(deposit);
+    assert(l1Token !== undefined, `No L1 token found for deposit ${JSON.stringify(deposit)}`);
+    const l1TokenPriceUsd: BigNumber = this.getPriceOfToken(l1Token.address);
+
+    // Scale l1Token to 18 decimals.
+    assert(l1Token.decimals > 0 && l1Token.decimals <= 18, `Unsupported token: ${JSON.stringify(l1Token)}`);
+    if (l1Token.decimals < 18) {
+      const _fillAmount = fillAmount;
+      fillAmount = toBN(fillAmount).mul(toBNWei(1, 18 - l1Token.decimals));
+    }
+
+    // Use the maximum available relayerFeePct (max of Deposit and SpeedUps).
+    // nb. This grossRelayerFeePct defaults to 0 if deposit.relayerFeePct < 0
+    const grossRelayerFeePct: BigNumber = deposit.relayerFeePct.gte(deposit.newRelayerFeePct ?? 0)
+      ? deposit.relayerFeePct
+      : deposit.newRelayerFeePct || toBN(0);
+
+    // Calculate relayer fee and capital outlay in relay token terms.
+    const grossRelayerFee: BigNumber = grossRelayerFeePct.mul(fillAmount).div(toBNWei(1));
+    const relayerCapitalOutlay: BigNumber = fillAmount.sub(grossRelayerFee);
+    assert(relayerCapitalOutlay.add(grossRelayerFee).eq(fillAmount), "Relayer fee miscalculation");
+
+    // Normalise to USD terms.
+    const fillAmountUsd: BigNumber = fillAmount.mul(l1TokenPriceUsd).div(toBNWei(1));
+    const grossRelayerFeeUsd: BigNumber = grossRelayerFee.mul(l1TokenPriceUsd).div(toBNWei(1));
+    const relayerCapitalOutlayUsd: BigNumber = relayerCapitalOutlay.mul(l1TokenPriceUsd).div(toBNWei(1));
+    assert(fillAmountUsd.eq(relayerCapitalOutlayUsd.add(grossRelayerFeeUsd)), "Relayer fee miscalculation");
+
+    // Estimate the gas cost of filling this relay.
+    const { nativeGasCost, gasPriceUsd, gasCostUsd } = this.calculateFillCost(deposit.destinationChainId);
+
+    // Subtract gas cost from revenue.
+    const netRelayerFeeUsd: BigNumber = grossRelayerFeeUsd.sub(gasCostUsd);
+    const netRelayerFeePct: BigNumber = netRelayerFeeUsd.mul(toBNWei(1)).div(relayerCapitalOutlayUsd);
+
+    // If the gas cost is unknown, assume the relay is unprofitable.
+    const fillProfitable = gasCostUsd.gt(0) && netRelayerFeePct.gte(this.minRelayerFeePct);
+
+    return {
+      grossRelayerFeePct,
+      l1TokenPriceUsd,
+      fillAmountUsd,
+      grossRelayerFeeUsd,
+      nativeGasCost,
+      gasPriceUsd,
+      gasCostUsd,
+      relayerCapitalOutlayUsd,
+      netRelayerFeePct,
+      netRelayerFeeUsd,
+      fillProfitable,
+    } as FillProfit;
   }
 
   isFillProfitable(deposit: Deposit, fillAmount: BigNumber) {
