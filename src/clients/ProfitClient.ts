@@ -1,4 +1,5 @@
 import { Provider } from "@ethersproject/abstract-provider";
+import * as constants from "../common/Constants";
 import { assert, BigNumber, formatFeePct, winston, toBNWei, toBN, assign } from "../utils";
 import { HubPoolClient } from ".";
 import { Deposit, L1Token, SpokePoolClientsByChain } from "../interfaces";
@@ -13,7 +14,9 @@ type CoinGeckoPrice = {
 };
 
 // We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
+// @todo: These don't belong in the ProfitClient; they should be relocated.
 export const MATIC = "0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0";
+export const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 export const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 
 const GAS_TOKEN_BY_CHAIN_ID = {
@@ -53,7 +56,7 @@ export class ProfitClient {
     readonly enabledChainIds: number[],
     // Default to throwing errors if fetching token prices fails.
     readonly ignoreTokenPriceFailures: boolean = false,
-    readonly minRelayerFeePct: BigNumber = toBN(0)
+    readonly minRelayerFeePct: BigNumber = toBN(constants.RELAYER_MIN_FEE_PCT)
   ) {
     this.coingecko = new Coingecko();
 
