@@ -101,10 +101,13 @@ export class DataworkerConfig extends CommonConfig {
     this.dataworkerFastLookbackCount = DATAWORKER_FAST_LOOKBACK_COUNT ? Number(DATAWORKER_FAST_LOOKBACK_COUNT) : 16;
     this.dataworkerFastStartBundle = DATAWORKER_FAST_START_BUNDLE ? Number(DATAWORKER_FAST_START_BUNDLE) : "latest";
     if (typeof this.dataworkerFastStartBundle === "number") {
-      assert(this.dataworkerFastStartBundle > 0, "dataworkerFastStartBundle > 0");
+      assert(
+        this.dataworkerFastStartBundle > 0,
+        `dataworkerFastStartBundle=${this.dataworkerFastStartBundle} should be > 0`
+      );
       assert(
         this.dataworkerFastStartBundle >= this.dataworkerFastLookbackCount,
-        "dataworkerFastStartBundle >= dataworkerFastLookbackCount"
+        `dataworkerFastStartBundle=${this.dataworkerFastStartBundle} should be >= dataworkerFastLookbackCount=${this.dataworkerFastLookbackCount}`
       );
     }
   }
