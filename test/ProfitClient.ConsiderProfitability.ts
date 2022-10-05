@@ -12,10 +12,8 @@ import {
 } from "./utils";
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
 import { Deposit, L1Token } from "../src/interfaces";
-import { SpokePoolClient, WETH, MATIC } from "../src/clients";
+import { SpokePoolClient, MATIC, USDC, WETH } from "../src/clients";
 
-// @todo: This should be centralised (and probably already is...).
-const USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 const tokens: { [symbol: string]: L1Token } = {
   MATIC: { address: MATIC, decimals: 18, symbol: "MATIC" },
   USDC: { address: USDC, decimals: 6, symbol: "USDC" },
