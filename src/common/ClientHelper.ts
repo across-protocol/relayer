@@ -61,7 +61,7 @@ function getSpokePoolClientsForContract(
   config: CommonConfig,
   spokePools: { chainId: number; contract: Contract }[],
   fromBlocks: { [chainId: number]: number },
-  toBlocks?: { [chainId: number]: number }
+  toBlocks: { [chainId: number]: number } = {}
 ): SpokePoolClientsByChain {
   const spokePoolClients: SpokePoolClientsByChain = {};
   spokePools.forEach(({ chainId, contract }) => {

@@ -221,6 +221,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       await clients.multiCallerClient.executeTransactionQueue();
 
       logger.debug({ at: "Dataworker#index", message: `Time to loop: ${Date.now() - loopStart}ms` });
+
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }
   } catch (error) {
