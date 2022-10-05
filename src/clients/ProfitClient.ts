@@ -16,7 +16,7 @@ type CoinGeckoPrice = {
 // We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
 // @todo: These don't belong in the ProfitClient; they should be relocated.
 export const MATIC = "0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0";
-export const USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+export const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 export const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 
 const GAS_TOKEN_BY_CHAIN_ID = {
