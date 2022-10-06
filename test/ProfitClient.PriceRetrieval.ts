@@ -4,8 +4,6 @@ import { expect, createSpyLogger, winston, BigNumber, toBN } from "./utils";
 import { MockHubPoolClient } from "./mocks";
 import { ProfitClient, MATIC, WETH } from "../src/clients"; // Tested
 
-let hubPoolClient: MockHubPoolClient, spy: sinon.SinonSpy, spyLogger: winston.Logger;
-
 const mainnetTokens: Array<L1Token> = [
   // Checksummed addresses
   { symbol: "USDC", address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6 },
@@ -23,18 +21,21 @@ const mainnetTokens: Array<L1Token> = [
 ];
 
 class ProfitClientWithMockCoingecko extends ProfitClient {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   protected async coingeckoPrices(tokens: string[], platformId?: string) {
     return mainnetTokens.map((token) => {
       return { address: token.address, price: 1 };
     });
   }
 }
+
+// Define LOG_IN_TEST for logging to console.
+const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
+let hubPoolClient: MockHubPoolClient;
 let profitClient: ProfitClientWithMockCoingecko; // tested
 
 describe("ProfitClient: Price Retrieval", async function () {
   beforeEach(async function () {
-    ({ spy, spyLogger } = createSpyLogger());
-
     hubPoolClient = new MockHubPoolClient(null, null);
     mainnetTokens.forEach((token: L1Token) => hubPoolClient.addL1Token(token));
     profitClient = new ProfitClientWithMockCoingecko(spyLogger, hubPoolClient, {}, true, [], false, toBN(0));

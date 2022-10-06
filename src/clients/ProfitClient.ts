@@ -88,11 +88,11 @@ export class ProfitClient {
     }
   }
 
-  getAllPrices() {
+  getAllPrices(): { [address: string]: BigNumber } {
     return this.tokenPrices;
   }
 
-  getPriceOfToken(token: string) {
+  getPriceOfToken(token: string): BigNumber {
     // Warn on this initially, and move to an assert() once any latent issues are resolved.
     // assert(this.tokenPrices[token] !== undefined, `Token ${token} not in price list.`);
     if (this.tokenPrices[token] === undefined) {
@@ -130,11 +130,11 @@ export class ProfitClient {
     };
   }
 
-  getUnprofitableFills() {
+  getUnprofitableFills(): { [chainId: number]: { deposit: Deposit; fillAmount: BigNumber }[] } {
     return this.unprofitableFills;
   }
 
-  clearUnprofitableFills() {
+  clearUnprofitableFills(): void {
     this.unprofitableFills = {};
   }
 
@@ -191,7 +191,7 @@ export class ProfitClient {
     };
   }
 
-  isFillProfitable(deposit: Deposit, fillAmount: BigNumber) {
+  isFillProfitable(deposit: Deposit, fillAmount: BigNumber): boolean {
     const newRelayerFeePct = toBN(deposit.newRelayerFeePct ?? 0);
     let relayerFeePct = toBN(deposit.relayerFeePct);
     // Use the maximum between the original newRelayerFeePct and any updated fee from speedups.
@@ -267,7 +267,7 @@ export class ProfitClient {
     return fillProfitable;
   }
 
-  captureUnprofitableFill(deposit: Deposit, fillAmount: BigNumber) {
+  captureUnprofitableFill(deposit: Deposit, fillAmount: BigNumber): void {
     this.logger.debug({ at: "ProfitClient", message: "Handling unprofitable fill", deposit, fillAmount });
     assign(this.unprofitableFills, [deposit.originChainId], [{ deposit, fillAmount }]);
   }
@@ -276,7 +276,7 @@ export class ProfitClient {
     return Object.keys(this.unprofitableFills).length != 0;
   }
 
-  async update() {
+  async update(): Promise<void> {
     const updates = [this.updateTokenPrices()];
 
     // Skip gas cost lookup if profitability is disabled. We still
