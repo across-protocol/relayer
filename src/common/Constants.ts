@@ -4,13 +4,22 @@ export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
 
 export const RELAYER_MIN_FEE_PCT = 0.0003;
 
-// Target ~2 days per chain. Avg. block times: { 1: 15s, 10/42161: 0.5s, 137: 2.5s, 288: 30s }
+// Target ~2 days per chain. Avg. block times: { 1: 12s, 10/42161: 0.5s, 137: 2.5s, 288: 30s }
 export const MAX_RELAYER_DEPOSIT_LOOK_BACK: { [chainId: number]: number } = {
-  1: 11500,
-  10: 350000,
-  137: 70000,
-  288: 6000,
-  42161: 350000,
+  1: 14400,
+  10: 345600,
+  137: 69120,
+  288: 5760,
+  42161: 345600,
+};
+
+// Target ~4 days per chain. Avg. block times: { 1: 12s, 10/42161: 0.5s, 137: 2.5s, 288: 30s }
+export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
+  1: 28800,
+  10: 691200,
+  137: 138240,
+  288: 11520,
+  42161: 691200,
 };
 
 // Reorgs are anticipated on Ethereum and Polygon.

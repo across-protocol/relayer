@@ -1,7 +1,21 @@
-import { BigNumberForToken, DepositWithBlock, FillsToRefund, FillWithBlock, PoolRebalanceLeaf } from "../interfaces";
+import {
+  BigNumberForToken,
+  DepositWithBlock,
+  FillsToRefund,
+  FillWithBlock,
+  PoolRebalanceLeaf,
+  SpokePoolClientsByChain,
+} from "../interfaces";
 import { RelayData, RelayerRefundLeaf } from "../interfaces";
 import { RelayerRefundLeafWithGroup, RunningBalances, UnfilledDeposit } from "../interfaces";
-import { buildPoolRebalanceLeafTree, buildRelayerRefundTree, buildSlowRelayTree, toBNWei, winston } from "../utils";
+import {
+  buildPoolRebalanceLeafTree,
+  buildRelayerRefundTree,
+  buildSlowRelayTree,
+  getDeploymentBlockNumber,
+  toBNWei,
+  winston,
+} from "../utils";
 import { getDepositPath, getFillsInRange, groupObjectCountsByProp, groupObjectCountsByTwoProps, toBN } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { addSlowFillsToRunningBalances, initializeRunningBalancesFromRelayerRepayments } from "./PoolRebalanceUtils";
@@ -43,6 +57,51 @@ export function getBlockRangeForChain(
   const blockRangeForChain = blockRange[indexForChain];
   if (!blockRangeForChain || blockRangeForChain.length !== 2) throw new Error(`Invalid block range for chain ${chain}`);
   return blockRangeForChain;
+}
+
+export function getBlockForChain(
+  bundleEvaluationBlockNumbers: number[],
+  chain: number,
+  chainIdListForBundleEvaluationBlockNumbers: number[]
+): number {
+  const indexForChain = chainIdListForBundleEvaluationBlockNumbers.indexOf(chain);
+  if (indexForChain === -1)
+    throw new Error(
+      `Could not find chain ${chain} in chain ID list ${this.chainIdListForBundleEvaluationBlockNumbers}`
+    );
+  const blockForChain = bundleEvaluationBlockNumbers[indexForChain];
+  if (!blockForChain) throw new Error(`Invalid block range for chain ${chain}`);
+  return blockForChain;
+}
+
+// Return true if we won't be able to construct a root bundle for the bundle block ranges ("blockRanges") because
+// the bundle wants to look up data for events that weren't in the spoke pool client's search range.
+export function blockRangesAreInvalidForSpokeClients(
+  spokePoolClients: SpokePoolClientsByChain,
+  blockRanges: number[][],
+  chainIdListForBundleEvaluationBlockNumbers: number[],
+  latestInvalidBundleStartBlock: { [chainId: number]: number }
+): boolean {
+  return Object.keys(spokePoolClients).some((chainId) => {
+    const blockRangeForChain = getBlockRangeForChain(
+      blockRanges,
+      Number(chainId),
+      chainIdListForBundleEvaluationBlockNumbers
+    );
+    const clientLastBlockQueried =
+      spokePoolClients[chainId].eventSearchConfig.toBlock ?? spokePoolClients[chainId].latestBlockNumber;
+    const bundleRangeToBlock = blockRangeForChain[1];
+
+    // Note: Math.max the from block with the deployment block of the spoke pool to handle the edge case for the first
+    // bundle that set its start blocks equal 0.
+    const bundleRangeFromBlock = Math.max(
+      getDeploymentBlockNumber("SpokePool", Number(chainId)),
+      blockRangeForChain[0]
+    );
+    return (
+      bundleRangeFromBlock <= latestInvalidBundleStartBlock[chainId] || bundleRangeToBlock > clientLastBlockQueried
+    );
+  });
 }
 
 export function prettyPrintSpokePoolEvents(

@@ -19,7 +19,7 @@ import {
 } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { refundProposalLiveness, CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
-import { setupDataworker } from "./fixtures/Dataworker.Fixture";
+import { setupDataworker, setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import { Deposit, Fill, RunningBalances } from "../src/interfaces";
 import { getRealizedLpFeeForFills, getRefundForFills, getRefund, EMPTY_MERKLE_ROOT } from "../src/utils";
 import { compareAddresses } from "../src/utils";
@@ -56,13 +56,7 @@ describe("Dataworker: Build merkle roots", async function () {
       timer,
       spokePoolClients,
       updateAllClients,
-    } = await setupDataworker(
-      ethers,
-      MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
-      MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
-      DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
-      0
-    ));
+    } = await setupFastDataworker(ethers));
   });
   it("Build slow relay root", async function () {
     await updateAllClients();

@@ -22,17 +22,23 @@ import {
 import { DataworkerClients, spokePoolClientsToProviders } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
-import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
+import { blockRangesAreInvalidForSpokeClients, getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 import {
   getEndBlockBuffers,
   _buildPoolRebalanceRoot,
   _buildRelayerRefundRoot,
   _buildSlowRelayRoot,
 } from "./DataworkerUtils";
-import { constructSpokePoolClientsForBlockAndUpdate } from "../common/ClientHelper";
 import { BalanceAllocator } from "../clients";
 import _ from "lodash";
 import { IGNORED_SPOKE_BUNDLES } from "../common";
+
+// Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
+// for. These errors are due to issues with the dataworker configuration, instead of with the pending root
+// bundle. Any reasons in IGNORE_X we emit a "debug" level log for, and any reasons in ERROR_X we emit an "error"
+// level log for.
+const IGNORE_DISPUTE_REASONS = new Set(["bundle-end-block-buffer"]);
+const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback"]);
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -144,14 +150,15 @@ export class Dataworker {
   async proposeRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     usdThresholdToSubmitNewBundle?: BigNumber,
-    submitProposals = true
+    submitProposals = true,
+    latestInvalidBundleStartBlock: { [chainId: number]: number } = {}
   ) {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
     // safe strategy but could lead to new roots failing to be proposed until ALL networks are healthy.
 
-    // 0. Check if a bundle is pending.
+    // Check if a bundle is pending.
     if (!this.clients.hubPoolClient.isUpdated) throw new Error("HubPoolClient not updated");
     if (this.clients.hubPoolClient.hasPendingProposal()) {
       this.logger.debug({
@@ -161,7 +168,7 @@ export class Dataworker {
       return;
     }
 
-    // 1. Construct a list of ending block ranges for each chain that we want to include
+    // Construct a list of ending block ranges for each chain that we want to include
     // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
     const blockRangesForProposal = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
@@ -172,17 +179,36 @@ export class Dataworker {
       this.clients.hubPoolClient.latestBlockNumber
     );
 
-    // 2. Construct spoke pool clients using spoke pools deployed at end of block range.
-    // We do make an assumption that the spoke pool contract was not changed during the block range. By using the
-    // spoke pool at this block instead of assuming its the currently deployed one, we can pay refunds for deposits
-    // on deprecated spoke pools.
+    // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
+    // potential proposal
+    if (
+      Object.keys(latestInvalidBundleStartBlock).length > 0 &&
+      blockRangesAreInvalidForSpokeClients(
+        spokePoolClients,
+        blockRangesForProposal,
+        this.chainIdListForBundleEvaluationBlockNumbers,
+        latestInvalidBundleStartBlock
+      )
+    ) {
+      this.logger.warn({
+        at: "Dataworke#propose",
+        message: "Cannot propose bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
+        rootBundleRanges: blockRangesForProposal,
+        latestInvalidBundleStartBlock,
+        spokeClientsEventSearchConfigs: Object.fromEntries(
+          Object.keys(spokePoolClients).map((chainId) => [chainId, spokePoolClients[chainId].eventSearchConfig])
+        ),
+      });
+      return;
+    }
+
     const mainnetBundleEndBlock = getBlockRangeForChain(
       blockRangesForProposal,
       1,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
 
-    // 3. Create roots
+    // Create roots using constructed block ranges.
     const timerStart = Date.now();
     const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this.clients.bundleDataClient.loadData(
       blockRangesForProposal,
@@ -346,7 +372,11 @@ export class Dataworker {
       );
   }
 
-  async validatePendingRootBundle(spokePoolClients?: { [chainId: number]: SpokePoolClient }, submitDisputes = true) {
+  async validatePendingRootBundle(
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    submitDisputes = true,
+    latestInvalidBundleStartBlock: { [chainId: number]: number } = {}
+  ) {
     if (!this.clients.hubPoolClient.isUpdated) throw new Error("HubPoolClient not updated");
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
@@ -387,15 +417,32 @@ export class Dataworker {
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
-      spokePoolClients
+      spokePoolClients,
+      latestInvalidBundleStartBlock
     );
     if (!valid) {
-      this.logger.error({
-        at: "Dataworker",
-        message: "Submitting dispute 🤏🏼",
-        mrkdwn: reason,
-      });
-      if (submitDisputes) this._submitDisputeWithMrkdwn(hubPoolChainId, reason);
+      // In the case where the Dataworker lookback is improperly configured, emit an error level alert so bot runner
+      // can get dataworker running ASAP.
+      if (ERROR_DISPUTE_REASONS.has(reason)) {
+        this.logger.error({
+          at: "Dataworker#validate",
+          message: "Skipping dispute because of dataworker configuration error that needs to be fixed",
+          reason,
+        });
+      } else if (IGNORE_DISPUTE_REASONS.has(reason)) {
+        this.logger.debug({
+          at: "Dataworker#validate",
+          message: "Skipping dispute because of dataworker configuration error, should resolve itself eventually 😪",
+          reason,
+        });
+      } else {
+        this.logger.error({
+          at: "Dataworker",
+          message: "Submitting dispute 🤏🏼",
+          mrkdwn: reason,
+        });
+        if (submitDisputes) this._submitDisputeWithMrkdwn(hubPoolChainId, reason);
+      }
     }
   }
 
@@ -403,7 +450,8 @@ export class Dataworker {
     hubPoolChainId: number,
     widestPossibleExpectedBlockRange: number[][],
     rootBundle: PendingRootBundle,
-    spokePoolClients?: { [chainId: number]: SpokePoolClient }
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    latestInvalidBundleStartBlock: { [chainId: number]: number }
   ): Promise<{
     valid: boolean;
     reason?: string;
@@ -496,14 +544,15 @@ export class Dataworker {
       } else {
         this.logger.debug({
           at: "Dataworker#validate",
-          message: "A bundle end block is > latest block but within buffer, skipping",
+          message: "Cannot validate because a bundle end block is > latest block but within buffer",
           expectedEndBlocks: widestPossibleExpectedBlockRange.map((range) => range[1]),
           pendingEndBlocks: rootBundle.bundleEvaluationBlockNumbers,
           endBlockBuffers,
         });
       }
       return {
-        valid: true,
+        valid: false,
+        reason: "bundle-end-block-buffer",
       };
     }
 
@@ -515,6 +564,32 @@ export class Dataworker {
       rootBundle.bundleEvaluationBlockNumbers[index],
     ]);
 
+    // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
+    // pending proposal. Log an error loudly so that user knows that disputer needs to increase its lookback.
+    if (
+      Object.keys(latestInvalidBundleStartBlock).length > 0 &&
+      blockRangesAreInvalidForSpokeClients(
+        spokePoolClients,
+        blockRangesImpliedByBundleEndBlocks,
+        this.chainIdListForBundleEvaluationBlockNumbers,
+        latestInvalidBundleStartBlock
+      )
+    ) {
+      this.logger.debug({
+        at: "Dataworke#validate",
+        message: "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
+        rootBundleRanges: blockRangesImpliedByBundleEndBlocks,
+        latestInvalidBundleStartBlock,
+        spokeClientsEventSearchConfigs: Object.fromEntries(
+          Object.keys(spokePoolClients).map((chainId) => [chainId, spokePoolClients[chainId].eventSearchConfig])
+        ),
+      });
+      return {
+        valid: false,
+        reason: "insufficient-dataworker-lookback",
+      };
+    }
+
     this.logger.debug({
       at: "Dataworker#validate",
       message: "Implied bundle ranges are valid",
@@ -522,22 +597,11 @@ export class Dataworker {
       chainIdListForBundleEvaluationBlockNumbers: this.chainIdListForBundleEvaluationBlockNumbers,
     });
 
-    // Construct spoke pool clients using spoke pools deployed at end of block range.
-    // We do make an assumption that the spoke pool contract was not changed during the block range. By using the
-    // spoke pool at this block instead of assuming its the currently deployed one, we can pay refunds for deposits
-    // on deprecated spoke pools.
     const endBlockForMainnet = getBlockRangeForChain(
       blockRangesImpliedByBundleEndBlocks,
       1,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
-    if (spokePoolClients === undefined)
-      spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-        this.chainIdListForBundleEvaluationBlockNumbers,
-        this.clients,
-        this.logger,
-        endBlockForMainnet
-      );
 
     // Compare roots with expected. The roots will be different if the block range start blocks were different
     // than the ones we constructed above when the original proposer submitted their proposal. The roots will also
@@ -651,7 +715,8 @@ export class Dataworker {
   async executeSlowRelayLeaves(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
-    submitExecution = true
+    submitExecution = true,
+    latestInvalidBundleStartBlock: { [chainId: number]: number } = {}
   ) {
     this.logger.debug({
       at: "Dataworker#executeSlowRelayLeaves",
@@ -660,15 +725,18 @@ export class Dataworker {
 
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([chainId, client]) => {
-        let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
-          (rootBundle) =>
-            rootBundle.slowRelayRoot !== EMPTY_MERKLE_ROOT &&
-            (IGNORED_SPOKE_BUNDLES[chainId] ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId) : true)
+        let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter((rootBundle) =>
+          IGNORED_SPOKE_BUNDLES[chainId]
+            ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
+            : true && rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
         );
 
         // Only grab the most recent n roots that have been sent if configured to do so.
         if (this.spokeRootsLookbackCount !== 0)
           rootBundleRelays = rootBundleRelays.slice(0, this.spokeRootsLookbackCount);
+
+        // Filter out empty slow fill roots:
+        rootBundleRelays = rootBundleRelays.filter((rootBundle) => rootBundle.slowRelayRoot !== EMPTY_MERKLE_ROOT);
 
         this.logger.debug({
           at: "Dataworker#executeSlowRelayLeaves",
@@ -714,6 +782,29 @@ export class Dataworker {
             return [fromBlock, endBlock.toNumber()];
           });
 
+          if (
+            Object.keys(latestInvalidBundleStartBlock).length > 0 &&
+            blockRangesAreInvalidForSpokeClients(
+              spokePoolClients,
+              blockNumberRanges,
+              this.chainIdListForBundleEvaluationBlockNumbers,
+              latestInvalidBundleStartBlock
+            )
+          ) {
+            this.logger.warn({
+              at: "Dataworke#executeSlowRelayLeaves",
+              message:
+                "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
+              chainId,
+              rootBundleRanges: blockNumberRanges,
+              latestInvalidBundleStartBlock,
+              spokeClientsEventSearchConfigs: Object.fromEntries(
+                Object.keys(spokePoolClients).map((chainId) => [chainId, spokePoolClients[chainId].eventSearchConfig])
+              ),
+            });
+            continue;
+          }
+
           const { unfilledDeposits } = this.clients.bundleDataClient.loadData(
             blockNumberRanges,
             spokePoolClients,
@@ -725,7 +816,9 @@ export class Dataworker {
               at: "Dataworke#executeSlowRelayLeaves",
               message: "Constructed a different root for the block range!",
               chainId,
+              rootBundleRelay,
               mainnetRootBundleBlock: matchingRootBundle.blockNumber,
+              mainnetRootBundleTxn: matchingRootBundle.transactionHash,
               publishedSlowRelayRoot: rootBundleRelay.slowRelayRoot,
               constructedSlowRelayRoot: tree.getHexRoot(),
             });
@@ -839,7 +932,8 @@ export class Dataworker {
   async executePoolRebalanceLeaves(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
-    submitExecution = true
+    submitExecution = true,
+    latestInvalidBundleStartBlock: { [chainId: number]: number } = {}
   ) {
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
@@ -886,7 +980,8 @@ export class Dataworker {
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
-      spokePoolClients
+      spokePoolClients,
+      latestInvalidBundleStartBlock
     );
 
     if (!valid) {
@@ -1042,7 +1137,8 @@ export class Dataworker {
   async executeRelayerRefundLeaves(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
-    submitExecution = true
+    submitExecution = true,
+    latestInvalidBundleStartBlock: { [chainId: number]: number } = {}
   ) {
     this.logger.debug({
       at: "Dataworker#executeRelayerRefundLeaves",
@@ -1051,15 +1147,18 @@ export class Dataworker {
 
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([chainId, client]) => {
-        let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
-          (rootBundle) =>
-            rootBundle.relayerRefundRoot !== EMPTY_MERKLE_ROOT &&
-            (IGNORED_SPOKE_BUNDLES[chainId] ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId) : true)
+        let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter((rootBundle) =>
+          IGNORED_SPOKE_BUNDLES[chainId]
+            ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
+            : true && rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
         );
 
         // Only grab the most recent n roots that have been sent if configured to do so.
         if (this.spokeRootsLookbackCount !== 0)
           rootBundleRelays = rootBundleRelays.slice(0, this.spokeRootsLookbackCount);
+
+        // Filter out empty relayer refund root:
+        rootBundleRelays = rootBundleRelays.filter((rootBundle) => rootBundle.relayerRefundRoot !== EMPTY_MERKLE_ROOT);
 
         this.logger.debug({
           at: "Dataworker#executeRelayerRefundLeaves",
@@ -1102,6 +1201,29 @@ export class Dataworker {
               : 0;
             return [fromBlock, endBlock.toNumber()];
           });
+
+          if (
+            Object.keys(latestInvalidBundleStartBlock).length > 0 &&
+            blockRangesAreInvalidForSpokeClients(
+              spokePoolClients,
+              blockNumberRanges,
+              this.chainIdListForBundleEvaluationBlockNumbers,
+              latestInvalidBundleStartBlock
+            )
+          ) {
+            this.logger.warn({
+              at: "Dataworke#executeRelayerRefundLeaves",
+              message:
+                "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
+              chainId,
+              rootBundleRanges: blockNumberRanges,
+              latestInvalidBundleStartBlock,
+              spokeClientsEventSearchConfigs: Object.fromEntries(
+                Object.keys(spokePoolClients).map((chainId) => [chainId, spokePoolClients[chainId].eventSearchConfig])
+              ),
+            });
+            continue;
+          }
 
           const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this.clients.bundleDataClient.loadData(
             blockNumberRanges,
@@ -1148,8 +1270,9 @@ export class Dataworker {
               at: "Dataworke#executeRelayerRefundLeaves",
               message: "Constructed a different root for the block range!",
               chainId,
-              rootBundleId: rootBundleRelay.rootBundleId,
+              rootBundleRelay,
               mainnetRootBundleBlock: matchingRootBundle.blockNumber,
+              mainnetRootBundleTxn: matchingRootBundle.transactionHash,
               publishedRelayerRefundRoot: rootBundleRelay.relayerRefundRoot,
               constructedRelayerRefundRoot: tree.getHexRoot(),
             });
