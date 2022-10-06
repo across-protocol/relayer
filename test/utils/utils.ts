@@ -14,6 +14,7 @@ import { SpokePoolClient } from "../../src/clients";
 import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber } from "./index";
 import { Deposit, Fill, RunningBalances } from "../../src/interfaces";
 import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
+import { Provider } from "@ethersproject/providers";
 
 import winston from "winston";
 import sinon from "sinon";
@@ -625,4 +626,8 @@ export function createRefunds(address: string, refundAmount: BigNumber, token: s
       realizedLpFees: toBN(0),
     },
   };
+}
+
+export function getLastBlockNumber() {
+  return (utils.ethers.provider as Provider).getBlockNumber();
 }

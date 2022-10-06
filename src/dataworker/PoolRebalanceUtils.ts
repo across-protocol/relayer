@@ -95,22 +95,24 @@ export function initializeRunningBalancesFromRelayerRepayments(
 ) {
   Object.entries(fillsToRefund).forEach(([_repaymentChainId, fillsForChain]) => {
     const repaymentChainId = Number(_repaymentChainId);
-    Object.entries(fillsForChain).forEach(([l2TokenAddress, { realizedLpFees, totalRefundAmount }]) => {
-      const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-        repaymentChainId,
-        l2TokenAddress,
-        latestMainnetBlock
-      );
+    Object.entries(fillsForChain).forEach(
+      ([l2TokenAddress, { realizedLpFees: totalRealizedLpFee, totalRefundAmount }]) => {
+        const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
+          repaymentChainId,
+          l2TokenAddress,
+          latestMainnetBlock
+        );
 
-      // Realized LP fees is only affected by relayer repayments so we'll return a brand new dictionary of those
-      // mapped to each { repaymentChainId, repaymentToken } combination.
-      assign(realizedLpFees, [repaymentChainId, l1TokenCounterpart], realizedLpFees);
+        // Realized LP fees is only affected by relayer repayments so we'll return a brand new dictionary of those
+        // mapped to each { repaymentChainId, repaymentToken } combination.
+        assign(realizedLpFees, [repaymentChainId, l1TokenCounterpart], totalRealizedLpFee);
 
-      // Add total repayment amount to running balances. Note: totalRefundAmount won't exist for chains that
-      // only had slow fills, so we should explicitly check for it.
-      if (totalRefundAmount) assign(runningBalances, [repaymentChainId, l1TokenCounterpart], totalRefundAmount);
-      else assign(runningBalances, [repaymentChainId, l1TokenCounterpart], toBN(0));
-    });
+        // Add total repayment amount to running balances. Note: totalRefundAmount won't exist for chains that
+        // only had slow fills, so we should explicitly check for it.
+        if (totalRefundAmount) assign(runningBalances, [repaymentChainId, l1TokenCounterpart], totalRefundAmount);
+        else assign(runningBalances, [repaymentChainId, l1TokenCounterpart], toBN(0));
+      }
+    );
   });
 }
 

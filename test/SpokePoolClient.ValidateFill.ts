@@ -7,22 +7,18 @@ import {
   deposit,
   setupTokensForWallet,
   toBN,
-  signForSpeedUp,
-  getFillRelayUpdatedFeeParams,
   buildFill,
   buildModifiedFill,
-} from "./utils";
-import {
   deploySpokePoolWithToken,
   Contract,
   originChainId,
   destinationChainId,
   createSpyLogger,
   zeroAddress,
+  getLastBlockNumber,
 } from "./utils";
 
 import { SpokePoolClient } from "../src/clients";
-import { buildFillRelayWithUpdatedFeeProps } from "../src/utils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
@@ -66,7 +62,11 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Returns deposit matched with fill", async function () {
-    const deposit_1 = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    const deposit_1 = {
+      ...(await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId)),
+      originBlockNumber: await getLastBlockNumber(),
+      blockNumber: 0,
+    };
     const fill_1 = await fillRelay(spokePool_2, erc20_2, depositor, depositor, relayer, 0, originChainId);
 
     const spokePoolClientForDestinationChain = new SpokePoolClient(
@@ -97,7 +97,11 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Returns sped up deposit matched with fill", async function () {
-    const deposit_1 = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    const deposit_1 = {
+      ...(await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId)),
+      originBlockNumber: await getLastBlockNumber(),
+      blockNumber: 0,
+    };
     // Override the fill's realized LP fee % and destination token so that it matches the deposit's default zero'd
     // out values. The destination token and realized LP fee % are set by the spoke pool client by querying the hub pool
     // contract state, however this test ignores the rate model contract and therefore there is no hub pool contract

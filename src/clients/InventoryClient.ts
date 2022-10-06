@@ -1,7 +1,6 @@
 import {
   BigNumber,
   winston,
-  assign,
   toBN,
   getNetworkName,
   createFormatFunction,

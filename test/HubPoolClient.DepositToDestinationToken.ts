@@ -60,9 +60,9 @@ describe("HubPoolClient: Deposit to Destination Token", async function () {
   });
   it("Get L1 token counterparts at block height", async function () {
     await hubPoolClient.update();
-    expect(() =>
-      hubPoolClient.getL1TokenCounterpartAtBlock(destinationChainId, randomDestinationToken, 0)
-    ).to.throw(/Could not find L1 token mapping/);
+    expect(() => hubPoolClient.getL1TokenCounterpartAtBlock(destinationChainId, randomDestinationToken, 0)).to.throw(
+      /Could not find L1 token mapping/
+    );
 
     await hubPool.setPoolRebalanceRoute(destinationChainId, randomL1Token, randomDestinationToken);
     const currentBlock = await hubPool.provider.getBlockNumber();
@@ -71,11 +71,7 @@ describe("HubPoolClient: Deposit to Destination Token", async function () {
       hubPoolClient.getL1TokenCounterpartAtBlock(destinationChainId, randomDestinationToken, currentBlock)
     ).to.equal(randomL1Token);
     expect(() =>
-      hubPoolClient.getL1TokenCounterpartAtBlock(
-        destinationChainId,
-        randomDestinationToken,
-        currentBlock - 10
-      )
+      hubPoolClient.getL1TokenCounterpartAtBlock(destinationChainId, randomDestinationToken, currentBlock - 10)
     ).to.throw(/Could not find L1 token mapping/);
   });
 });

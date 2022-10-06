@@ -36,7 +36,9 @@ describe("SpokePoolClient: SpeedUp", async function () {
 
     // After speedup should return the appended object with the new fee information and signature.
     const expectedDepositData = { ...deposit, speedUpSignature, newRelayerFeePct: newRelayFeePct };
-    expect(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock)).to.deep.equal(expectedDepositData);
+    expect(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock)).to.deep.equal(
+      expectedDepositData
+    );
 
     // Fetching deposits for the depositor should contain the correct fees.
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0]).to.deep.contain(expectedDepositData);
@@ -72,7 +74,9 @@ describe("SpokePoolClient: SpeedUp", async function () {
       speedUpSignature: speedUpFasterSignature,
       newRelayerFeePct: speedupFaster,
     };
-    expect(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock)).to.deep.contain(expectedDepositData);
+    expect(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock)).to.deep.contain(
+      expectedDepositData
+    );
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0]).to.deep.contain(expectedDepositData);
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId).length).to.equal(1);
   });
