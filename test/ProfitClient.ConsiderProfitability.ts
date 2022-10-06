@@ -32,8 +32,8 @@ const tokenPrices: { [symbol: string]: BigNumber } = {
 // gas prices to test with, since there's a spread in the chainId numbers.
 const gasCost: { [chainId: number]: BigNumber } = Object.fromEntries(
   chainIds.map((chainId: number) => {
-    const nativeGasPrice: BigNumber = toBN(chainId).mul(1e9); // Gwei
-    const gasConsumed: BigNumber = toBN(100_000); // Assume 100k gas for a single fill
+    const nativeGasPrice = toBN(chainId).mul(1e9); // Gwei
+    const gasConsumed = toBN(100_000); // Assume 100k gas for a single fill
     return [chainId, gasConsumed.mul(nativeGasPrice)];
   })
 );
@@ -68,7 +68,7 @@ describe("ProfitClient: Consider relay profit", async function () {
     chainIds.forEach((chainId: number) => {
       spyLogger.debug({ message: `Verifying USD fill cost calculation for chain ${chainId}.` });
 
-      const nativeGasCost: BigNumber = profitClient.getTotalGasCost(chainId);
+      const nativeGasCost = profitClient.getTotalGasCost(chainId);
       expect(nativeGasCost.eq(0)).to.be.false;
       expect(nativeGasCost.eq(gasCost[chainId]));
 
@@ -76,7 +76,7 @@ describe("ProfitClient: Consider relay profit", async function () {
       const gasToken: L1Token = Object.values(tokens).find((token: L1Token) => gasTokenAddr === token.address);
       expect(gasToken).to.not.be.undefined;
 
-      const gasPriceUsd: BigNumber = tokenPrices[gasToken.symbol];
+      const gasPriceUsd = tokenPrices[gasToken.symbol];
       expect(gasPriceUsd.eq(tokenPrices[gasToken.symbol]));
 
       const estimate: { [key: string]: BigNumber } = profitClient.calculateFillCost(chainId);
@@ -155,7 +155,7 @@ describe("ProfitClient: Consider relay profit", async function () {
     const l1Token: L1Token = tokens["WETH"];
     hubPoolClient.setTokenInfoToReturn(l1Token);
 
-    const fillAmount: BigNumber = toBNWei(1);
+    const fillAmount = toBNWei(1);
     const deposit = {
       relayerFeePct: toBNWei("0.001"),
       destinationChainId: 1,
@@ -191,7 +191,7 @@ describe("ProfitClient: Consider relay profit", async function () {
       newRelayerFeePct: toBNWei("0.01"),
       destinationChainId: 1,
     } as Deposit;
-    const fillAmount: BigNumber = toBNWei(1);
+    const fillAmount = toBNWei(1);
 
     let fill: FillProfit;
     fill = profitClient.calculateFillProfitability(deposit, fillAmount, l1Token);

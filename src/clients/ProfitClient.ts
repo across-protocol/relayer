@@ -136,38 +136,36 @@ export class ProfitClient {
 
     l1Token ??= this.hubPoolClient.getTokenInfoForDeposit(deposit);
     assert(l1Token !== undefined, `No L1 token found for deposit ${JSON.stringify(deposit)}`);
-    const l1TokenPriceUsd: BigNumber = this.getPriceOfToken(l1Token.address);
+    const l1TokenPriceUsd = this.getPriceOfToken(l1Token.address);
 
     // Scale l1Token to 18 decimals.
     assert(l1Token.decimals > 0 && l1Token.decimals <= 18, `Unsupported token: ${JSON.stringify(l1Token)}`);
-    if (l1Token.decimals < 18) {
-      const _fillAmount = fillAmount;
-      fillAmount = toBN(fillAmount).mul(toBNWei(1, 18 - l1Token.decimals));
-    }
+    const scaledFillAmount =
+      l1Token.decimals === 18 ? fillAmount : toBN(fillAmount).mul(toBNWei(1, 18 - l1Token.decimals));
 
     // Use the maximum available relayerFeePct (max of Deposit and SpeedUps).
     // nb. This grossRelayerFeePct defaults to 0 if deposit.relayerFeePct < 0
-    const grossRelayerFeePct: BigNumber = deposit.relayerFeePct.gte(deposit.newRelayerFeePct ?? 0)
+    const grossRelayerFeePct = deposit.relayerFeePct.gte(deposit.newRelayerFeePct ?? 0)
       ? deposit.relayerFeePct
       : deposit.newRelayerFeePct || toBN(0);
 
     // Calculate relayer fee and capital outlay in relay token terms.
-    const grossRelayerFee: BigNumber = grossRelayerFeePct.mul(fillAmount).div(toBNWei(1));
-    const relayerCapitalOutlay: BigNumber = fillAmount.sub(grossRelayerFee);
-    assert(relayerCapitalOutlay.add(grossRelayerFee).eq(fillAmount), "Relayer fee miscalculation");
+    const grossRelayerFee = grossRelayerFeePct.mul(scaledFillAmount).div(toBNWei(1));
+    const relayerCapitalOutlay: BigNumber = scaledFillAmount.sub(grossRelayerFee);
+    assert(relayerCapitalOutlay.add(grossRelayerFee).eq(scaledFillAmount), "Relayer fee miscalculation");
 
     // Normalise to USD terms.
-    const fillAmountUsd: BigNumber = fillAmount.mul(l1TokenPriceUsd).div(toBNWei(1));
-    const grossRelayerFeeUsd: BigNumber = grossRelayerFee.mul(l1TokenPriceUsd).div(toBNWei(1));
-    const relayerCapitalOutlayUsd: BigNumber = relayerCapitalOutlay.mul(l1TokenPriceUsd).div(toBNWei(1));
+    const fillAmountUsd = scaledFillAmount.mul(l1TokenPriceUsd).div(toBNWei(1));
+    const grossRelayerFeeUsd = grossRelayerFee.mul(l1TokenPriceUsd).div(toBNWei(1));
+    const relayerCapitalOutlayUsd = relayerCapitalOutlay.mul(l1TokenPriceUsd).div(toBNWei(1));
     assert(fillAmountUsd.eq(relayerCapitalOutlayUsd.add(grossRelayerFeeUsd)), "Relayer fee miscalculation");
 
     // Estimate the gas cost of filling this relay.
     const { nativeGasCost, gasPriceUsd, gasCostUsd } = this.calculateFillCost(deposit.destinationChainId);
 
     // Subtract gas cost from revenue.
-    const netRelayerFeeUsd: BigNumber = grossRelayerFeeUsd.sub(gasCostUsd);
-    const netRelayerFeePct: BigNumber = netRelayerFeeUsd.mul(toBNWei(1)).div(relayerCapitalOutlayUsd);
+    const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd);
+    const netRelayerFeePct = netRelayerFeeUsd.mul(toBNWei(1)).div(relayerCapitalOutlayUsd);
 
     // If the gas cost is unknown, assume the relay is unprofitable.
     const fillProfitable = gasCostUsd.gt(0) && netRelayerFeePct.gte(this.minRelayerFeePct);
@@ -184,7 +182,7 @@ export class ProfitClient {
       netRelayerFeePct,
       netRelayerFeeUsd,
       fillProfitable,
-    } as FillProfit;
+    };
   }
 
   isFillProfitable(deposit: Deposit, fillAmount: BigNumber) {
