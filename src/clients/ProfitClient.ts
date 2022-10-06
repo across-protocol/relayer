@@ -108,8 +108,7 @@ export class ProfitClient {
     gasCostUsd: BigNumber;
   } {
     const nativeGasCost: BigNumber = this.getTotalGasCost(chainId); // gas cost in native token
-    const gasToken: string = GAS_TOKEN_BY_CHAIN_ID[chainId];
-    const gasPriceUsd: BigNumber = this.getPriceOfToken(gasToken);
+    const gasPriceUsd: BigNumber = this.getPriceOfToken(GAS_TOKEN_BY_CHAIN_ID[chainId]);
     const gasCostUsd: BigNumber = nativeGasCost.mul(gasPriceUsd).div(toBN(10).pow(GAS_TOKEN_DECIMALS));
 
     return {
