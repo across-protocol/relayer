@@ -2,6 +2,7 @@ import { HubPoolClient } from "../clients";
 import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
 import { BigNumber, assign, getRealizedLpFeeForFills, getRefundForFills, sortEventsDescending, toBN } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
+import _ from "lodash";
 
 export function getRefundInformationFromFill(
   fill: Fill,
@@ -187,4 +188,45 @@ export function getUnfilledDeposits(
   }
 
   return unfilledDeposits;
+}
+
+// Returns set of block numbers, keyed by chain ID, that represent the highest block number for
+// that chain where a fill event cannot possibly be matched with a deposit event on its origin chain.
+// This dictionary can be used by the dataworker to conveniently skip root bundles whose start block is before
+// the block returned by this function.
+
+// How do we know if the set of `spokePoolClients` can validate a bundle block range:
+// 1. The client lookbacks must include the bundle’s entire block range.
+// 2. The earliest fill that we are unable to validate on each chain must be before the bundle’s start block.
+
+// We use the above rules to return the latest blocks after which a bundle block range must start to be validatable.
+export function getLatestInvalidBundleStartBlocks(spokePoolClients: SpokePoolClientsByChain): {
+  [chainId: number]: number;
+} {
+  const blocks: { [chainId: number]: number } = {};
+  for (const destChainId of Object.keys(spokePoolClients)) {
+    const destSpokeClient = spokePoolClients[destChainId];
+
+    // Default latest unmatched fill block to the spoke client's earliest queried block. This signals to the dataworker
+    // not to attempt to validate any data earlier than its earliest queried block.
+    blocks[destChainId] = destSpokeClient.eventSearchConfig.fromBlock;
+
+    for (const originChainId of Object.keys(spokePoolClients)) {
+      if (originChainId === destChainId) continue;
+
+      // Search events from right to left in descending order to find first fill that can't possibly match with a
+      // deposit in the spoke client. This is because deposit ID's are strictly increasing and cannot be forged since
+      // they are emitted by the SpokePool contracts. This does mean that a malicious user can send a fill with a very
+      // low deposit ID in order to crash the dataworker functions. This is why the dataworker dispute function
+      // will emit an ERROR level log if it can't validate the pending bundle because the latestUnmatchedFill
+      // block is manipulated too high.
+      const latestUnmatchedFill = _.findLast(
+        destSpokeClient.getFillsForOriginChain(Number(originChainId)),
+        (fill) => fill.depositId < spokePoolClients[originChainId].earliestDepositId
+      );
+      if (latestUnmatchedFill !== undefined)
+        blocks[destChainId] = Math.max(latestUnmatchedFill.blockNumber, blocks[destChainId]);
+    }
+  }
+  return blocks;
 }
