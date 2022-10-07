@@ -10,22 +10,34 @@
 // 2. Example of invalid bundle: REQUEST_TIME=1653594774 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
 // 2. Example of valid bundle:   REQUEST_TIME=1653516226 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
 
-import { Wallet, winston, config, getSigner, startupLogLevel, Logger, delay } from "../utils";
-import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
+import {
+  Wallet,
+  winston,
+  config,
+  getSigner,
+  startupLogLevel,
+  Logger,
+  getLatestInvalidBundleStartBlocks,
+} from "../utils";
+import {
+  constructSpokePoolClientsForFastDataworker,
+  getSpokePoolClientEventSearchConfigsForFastDataworker,
+  updateDataworkerClients,
+} from "../dataworker/DataworkerClientHelper";
 import { BlockFinder } from "@uma/sdk";
 import { PendingRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
 import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
-import { constructSpokePoolClientsForBlockAndUpdate } from "../common";
 
 config();
 let logger: winston.Logger;
 
 export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
   logger = _logger;
-  if (!process.env.REQUEST_TIME)
+  if (!process.env.REQUEST_TIME) {
     throw new Error("Must set environment variable 'REQUEST_TIME=<NUMBER>' to disputed price request time");
+  }
   const priceRequestTime = Number(process.env.REQUEST_TIME);
 
   const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
@@ -60,29 +72,47 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
     message: "Found preceding root bundle",
     transactionHash: precedingProposeRootBundleEvent.transactionHash,
   });
-  const latestFullyExecutedBundleEndBlocks = clients.hubPoolClient.getLatestFullyExecutedRootBundle(
-    clients.hubPoolClient.latestBlockNumber
-  ).bundleEvaluationBlockNumbers;
-  const bundleEndBlockMapping = Object.fromEntries(
-    dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, index) => {
-      return [chainId, latestFullyExecutedBundleEndBlocks[index].toNumber()];
-    })
-  );
-  const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-    dataworker.chainIdListForBundleEvaluationBlockNumbers,
+
+  if (config.dataworkerFastLookbackCount === 0) {
+    throw new Error("Set DATAWORKER_FAST_LOOKBACK_COUNT > 0, otherwise script will take too long to run");
+  }
+
+  const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
+    config,
     clients,
-    logger,
-    clients.hubPoolClient.latestBlockNumber,
-    [
-      "FundsDeposited",
-      "RequestedSpeedUpDeposit",
-      "FilledRelay",
-      "EnabledDepositRoute",
-      "RelayedRootBundle",
-      "ExecutedRelayerRefundRoot",
-    ],
-    bundleEndBlockMapping
+    dataworker
   );
+
+  logger.debug({
+    at: "RootBundleValidator",
+    message:
+      "Setting start blocks for SpokePoolClient equal to bundle evaluation end blocks from Nth latest valid root bundle",
+    dataworkerFastStartBundle: config.dataworkerFastStartBundle,
+    dataworkerFastLookbackCount: config.dataworkerFastLookbackCount,
+    fromBlocks,
+    toBlocks,
+    fromBundleTxn: fromBundle?.transactionHash,
+    toBundleTxn: toBundle?.transactionHash,
+  });
+
+  const spokePoolClients = await constructSpokePoolClientsForFastDataworker(
+    logger,
+    clients.configStoreClient,
+    config,
+    baseSigner,
+    fromBlocks,
+    toBlocks
+  );
+
+  const latestInvalidBundleStartBlocks = getLatestInvalidBundleStartBlocks(spokePoolClients);
+  logger.debug({
+    at: "RootBundleValidator",
+    message:
+      "Identified latest invalid bundle start blocks per chain that we will use to filter root bundles that can be proposed and validated",
+    latestInvalidBundleStartBlocks,
+    fromBlocks,
+    toBlocks,
+  });
 
   const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
     dataworker.chainIdListForBundleEvaluationBlockNumbers,
@@ -96,7 +126,9 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
   const { valid, reason } = await dataworker.validateRootBundle(
     config.hubPoolChainId,
     widestPossibleBlockRanges,
-    rootBundle
+    rootBundle,
+    spokePoolClients,
+    latestInvalidBundleStartBlocks
   );
 
   logger.info({
@@ -109,26 +141,9 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
 }
 
 export async function run(_logger: winston.Logger) {
-  // Keep trying to validate until it works. Failure to get a Wallet is probably not transient.
   const baseSigner: Wallet = await getSigner();
-  try {
-    await validate(_logger, baseSigner);
-  } catch (error) {
-    logger.error({ at: "RootBundleValidator", message: "Caught an error, retrying!", error });
-    await delay(5);
-    await run(Logger);
-  }
+  await validate(_logger, baseSigner);
 }
 
-if (require.main === module) {
-  run(Logger)
-    .then(() => {
-      // eslint-disable-next-line no-process-exit
-      process.exit(0);
-    })
-    .catch(async (error) => {
-      logger.error({ at: "InfrastructureEntryPoint", message: "There was an error in the main entry point!", error });
-      await delay(5);
-      await run(Logger);
-    });
-}
+// eslint-disable-next-line no-process-exit
+run(Logger).then(() => process.exit(0));

@@ -4,6 +4,7 @@ import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../c
 import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle, LpToken } from "../interfaces";
 import { ExecutedRootBundle, PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
+import _ from "lodash";
 
 export class HubPoolClient {
   // L1Token -> destinationChainId -> destinationToken
@@ -207,6 +208,8 @@ export class HubPoolClient {
     return endingBlockNumber;
   }
 
+  // TODO: This might not be necessary since the cumulative root bundle count doesn't grow fast enough, but consider
+  // using _.findLast/_.find instead of resorting the arrays if these functions begin to take a lot time.
   getProposedRootBundlesInBlockRange(startingBlock: number, endingBlock: number) {
     return sortEventsDescending(this.proposedRootBundles).filter(
       (bundle: ProposedRootBundle) => bundle.blockNumber >= startingBlock && bundle.blockNumber <= endingBlock
@@ -252,10 +255,50 @@ export class HubPoolClient {
   getLatestFullyExecutedRootBundle(latestMainnetBlock: number): ProposedRootBundle | undefined {
     // Search for latest ProposeRootBundleExecuted event followed by all of its RootBundleExecuted event suggesting
     // that all pool rebalance leaves were executed. This ignores any proposed bundles that were partially executed.
-    return sortEventsDescending(this.proposedRootBundles).find((rootBundle: ProposedRootBundle) => {
+    return _.findLast(this.proposedRootBundles, (rootBundle: ProposedRootBundle) => {
       if (rootBundle.blockNumber > latestMainnetBlock) return false;
       return this.isRootBundleValid(rootBundle, latestMainnetBlock);
     });
+  }
+
+  getEarliestFullyExecutedRootBundle(latestMainnetBlock: number, startBlock = 0): ProposedRootBundle | undefined {
+    return this.proposedRootBundles.find((rootBundle: ProposedRootBundle) => {
+      if (rootBundle.blockNumber > latestMainnetBlock) return false;
+      if (rootBundle.blockNumber < startBlock) return false;
+      return this.isRootBundleValid(rootBundle, latestMainnetBlock);
+    });
+  }
+
+  // If n is negative, then return the Nth latest executed bundle, otherwise return the Nth earliest
+  // executed bundle. Latest means most recent, earliest means oldest. N cannot be 0.
+  // `startBlock` can be used to set the starting point from which we look forwards or backwards, depending
+  // on whether n is positive or negative.
+  getNthFullyExecutedRootBundle(n: number, startBlock?: number): ProposedRootBundle | undefined {
+    if (n === 0) throw new Error("n cannot be 0");
+
+    let bundleToReturn: ProposedRootBundle | undefined;
+
+    // If n is negative, then return the Nth latest executed bundle, otherwise return the Nth earliest
+    // executed bundle.
+    if (n < 0) {
+      let nextLatestMainnetBlock = startBlock ?? this.latestBlockNumber;
+      for (let i = 0; i < Math.abs(n); i++) {
+        bundleToReturn = this.getLatestFullyExecutedRootBundle(nextLatestMainnetBlock);
+        // Subtract 1 so that next `getLatestFullyExecutedRootBundle` call filters out the root bundle we just found
+        // because its block number is > nextLatestMainnetBlock.
+        nextLatestMainnetBlock = Math.max(0, bundleToReturn.blockNumber - 1);
+      }
+    } else {
+      let nextStartBlock = startBlock ?? 0;
+      for (let i = 0; i < n; i++) {
+        bundleToReturn = this.getEarliestFullyExecutedRootBundle(this.latestBlockNumber, nextStartBlock);
+        // Add 1 so that next `getEarliestFullyExecutedRootBundle` call filters out the root bundle we just found
+        // because its block number is < nextStartBlock.
+        nextStartBlock = Math.min(bundleToReturn.blockNumber + 1, this.latestBlockNumber);
+      }
+    }
+
+    return bundleToReturn;
   }
 
   getNextBundleStartBlockNumber(chainIdList: number[], latestMainnetBlock: number, chainId: number): number {
@@ -338,11 +381,6 @@ export class HubPoolClient {
     ]);
 
     this.currentTime = currentTime;
-    this.logger.debug({
-      at: "HubPoolClient#update",
-      message: `Updated HubPool information @ ${currentTime}.`,
-      pendingRootBundleProposal,
-    });
 
     for (const event of crossChainContractsSetEvents) {
       const args = spreadEventWithBlockNumber(event) as CrossChainContractsSet;

@@ -23,7 +23,7 @@
     "@maticnetwork/maticjs-ethers": "^1.0.2",
     "@uma/common": "^2.19.0",
     "@uma/contracts-node": "^0.3.1",
-    "@uma/financial-templates-lib": "^2.31.3",
+    "@uma/financial-templates-lib": "^2.31.4",
     "@uma/sdk": "^0.25.0",
     "async": "^3.2.4",
     "bluebird": "^3.7.2",

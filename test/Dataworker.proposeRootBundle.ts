@@ -2,9 +2,8 @@ import { buildFillForRepaymentChain, lastSpyLogIncludes } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit, toBNWei } from "./utils";
 import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, originChainId } from "./constants";
-import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
-import { CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
-import { setupDataworker } from "./fixtures/Dataworker.Fixture";
+import { CHAIN_ID_TEST_LIST } from "./constants";
+import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT } from "../src/utils";
 
 // Tested
@@ -40,13 +39,7 @@ describe("Dataworker: Propose root bundle", async function () {
       multiCallerClient,
       updateAllClients,
       spy,
-    } = await setupDataworker(
-      ethers,
-      MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
-      MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
-      DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
-      0
-    ));
+    } = await setupFastDataworker(ethers));
   });
 
   it("Simple lifecycle", async function () {
