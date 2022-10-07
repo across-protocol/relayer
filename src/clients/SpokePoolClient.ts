@@ -647,10 +647,13 @@ export class SpokePoolClient {
                 newRelayerFeePct: deposit?.newRelayerFeePct?.toString(),
                 realizedLpFeePct: deposit.realizedLpFeePct.toString(),
               };
+
               // Delete undefined values.
-              Object.keys(depositToCache).forEach(
-                (key) => depositToCache[key] === undefined && delete depositToCache[key]
-              );
+              Object.keys(depositToCache).forEach((_key) => {
+                // Object.keys always produces strings, not the key type, so a cast is necessary.
+                const key = _key as keyof typeof depositToCache;
+                if (depositToCache[key] === undefined) delete depositToCache[key];
+              });
               return depositToCache;
             }),
         ];
@@ -670,7 +673,10 @@ export class SpokePoolClient {
           realizedLpFeePct: fill.realizedLpFeePct.toString(),
         } as FillWithBlockInCache;
         // Delete undefined values.
-        Object.keys(fillToCache).forEach((key) => fillToCache[key] === undefined && delete fillToCache[key]);
+        Object.keys(fillToCache).forEach((_key) => {
+          const key = _key as keyof typeof fillToCache;
+          if (fillToCache[key] === undefined) delete fillToCache[key];
+        });
         return fillToCache;
       });
 

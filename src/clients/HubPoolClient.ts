@@ -283,6 +283,7 @@ export class HubPoolClient {
   // on whether n is positive or negative.
   getNthFullyExecutedRootBundle(n: number, startBlock?: number): ProposedRootBundle | undefined {
     if (n === 0) throw new Error("n cannot be 0");
+    if (!this.latestBlockNumber) throw new Error("HubPoolClient::getNthFullyExecutedRootBundle client not updated");
 
     let bundleToReturn: ProposedRootBundle | undefined;
 
@@ -292,17 +293,21 @@ export class HubPoolClient {
       let nextLatestMainnetBlock = startBlock ?? this.latestBlockNumber;
       for (let i = 0; i < Math.abs(n); i++) {
         bundleToReturn = this.getLatestFullyExecutedRootBundle(nextLatestMainnetBlock);
+        const bundleBlockNumber = bundleToReturn ? bundleToReturn.blockNumber : 0;
+
         // Subtract 1 so that next `getLatestFullyExecutedRootBundle` call filters out the root bundle we just found
         // because its block number is > nextLatestMainnetBlock.
-        nextLatestMainnetBlock = Math.max(0, bundleToReturn.blockNumber - 1);
+        nextLatestMainnetBlock = Math.max(0, bundleBlockNumber - 1);
       }
     } else {
       let nextStartBlock = startBlock ?? 0;
       for (let i = 0; i < n; i++) {
         bundleToReturn = this.getEarliestFullyExecutedRootBundle(this.latestBlockNumber, nextStartBlock);
+        const bundleBlockNumber = bundleToReturn ? bundleToReturn.blockNumber : 0;
+
         // Add 1 so that next `getEarliestFullyExecutedRootBundle` call filters out the root bundle we just found
         // because its block number is < nextStartBlock.
-        nextStartBlock = Math.min(bundleToReturn.blockNumber + 1, this.latestBlockNumber);
+        nextStartBlock = Math.min(bundleBlockNumber + 1, this.latestBlockNumber);
       }
     }
 
