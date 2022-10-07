@@ -15,7 +15,6 @@
     "@arbitrum/sdk": "^2.0.18",
     "@defi-wonderland/smock": "^2.0.7",
     "@eth-optimism/sdk": "^1.1.5",
-    "@ethersproject/abstract-provider": "^5.6.1",
     "@ethersproject/abstract-signer": "^5.6.2",
     "@google-cloud/kms": "^3.0.1",
     "@google-cloud/storage": "^6.2.2",
@@ -51,7 +50,6 @@
     "watch": "tsc --build --incremental --watch"
   },
   "devDependencies": {
-    "@ethersproject/providers": "^5.7.1",
     "@nomiclabs/hardhat-ethers": "^2.0.6",
     "@nomiclabs/hardhat-etherscan": "^3.0.0",
     "@nomiclabs/hardhat-waffle": "^2.0.0",
