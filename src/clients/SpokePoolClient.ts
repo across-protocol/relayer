@@ -432,17 +432,19 @@ export class SpokePoolClient {
             };
           }
         }
-        for (const [index, deposit] of dataToCache?.deposits?.[destinationChainId].entries()) {
-          const { blockNumber, originBlockNumber, ...depositData } = deposit;
-          const speedUpDeposit = this.appendMaxSpeedUpSignatureToDeposit(depositData);
-          if (speedUpDeposit !== depositData) {
-            dataToCache.deposits[destinationChainId][index] = {
-              ...speedUpDeposit,
-              blockNumber,
-              originBlockNumber,
-            };
+
+        if (dataToCache?.deposits?.[destinationChainId] !== undefined)
+          for (const [index, deposit] of dataToCache.deposits[destinationChainId].entries()) {
+            const { blockNumber, originBlockNumber, ...depositData } = deposit;
+            const speedUpDeposit = this.appendMaxSpeedUpSignatureToDeposit(depositData);
+            if (speedUpDeposit !== depositData) {
+              dataToCache.deposits[destinationChainId][index] = {
+                ...speedUpDeposit,
+                blockNumber,
+                originBlockNumber,
+              };
+            }
           }
-        }
       }
     }
 
