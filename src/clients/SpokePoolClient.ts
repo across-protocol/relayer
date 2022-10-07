@@ -430,10 +430,16 @@ export class SpokePoolClient {
       }
 
       // Traverse all deposit events and update them with associated speedups, If they exist.
-      for (const deposits of Object.values(this.deposits))
+      for (const [_destinationChainId, deposits] of Object.entries(this.deposits)) {
+        const destinationChainId = Number(_destinationChainId);
         for (const [index, deposit] of deposits.entries()) {
           deposits[index] = this.appendMaxSpeedUpSignatureToDeposit(deposit);
         }
+        if (dataToCache.deposits[destinationChainId] !== undefined)
+          for (const [index, deposit] of dataToCache.deposits[destinationChainId].entries()) {
+            dataToCache.deposits[destinationChainId][index] = this.appendMaxSpeedUpSignatureToDeposit(deposit);
+          }
+      }
     }
 
     if (eventsToQuery.includes("FilledRelay")) {
