@@ -186,6 +186,30 @@ export class ProfitClient {
   }
 
   async update() {
+    await this.updateTokenPrices();
+
+    // Short circuit early if profitability is disabled. We still need to fetch CG prices but don't need to fetch gas
+    // costs of relays.
+    if (this.ignoreProfitability) return;
+
+    // Pre-fetch total gas costs for relays on enabled chains.
+    const gasCosts = await Promise.all(
+      this.enabledChainIds.map((chainId) => this.relayerFeeQueries[chainId].getGasCosts())
+    );
+    for (let i = 0; i < this.enabledChainIds.length; i++) {
+      // An extra toBN cast is needed as the provider returns a different BigNumber type.
+      this.totalGasCosts[this.enabledChainIds[i]] = toBN(gasCosts[i]);
+    }
+
+    this.logger.debug({
+      at: "ProfitClient",
+      message: "Updated gas cost",
+      enabledChainIds: this.enabledChainIds,
+      totalGasCosts: this.totalGasCosts,
+    });
+  }
+
+  protected async updateTokenPrices(): Promise<void> {
     // Generate list of tokens to retrieve.
     const newTokens: string[] = [];
     const l1Tokens: { [k: string]: L1Token } = Object.fromEntries(
@@ -220,7 +244,7 @@ export class ProfitClient {
 
     let cgPrices: CoinGeckoPrice[] = [];
     try {
-      cgPrices = await this.coingeckoPrices(Object.keys(l1Tokens));
+      cgPrices = await this.coingecko.getContractPrices(Object.keys(l1Tokens), "usd");
     } catch (err) {
       const errMsg = `Failed to retrieve token prices (${err})`;
       const tokens = Object.values(l1Tokens)
@@ -263,30 +287,6 @@ export class ProfitClient {
       }
     }
     this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
-
-    // Short circuit early if profitability is disabled. We still need to fetch CG prices but don't need to fetch gas
-    // costs of relays.
-    if (this.ignoreProfitability) return;
-
-    // Pre-fetch total gas costs for relays on enabled chains.
-    const gasCosts = await Promise.all(
-      this.enabledChainIds.map((chainId) => this.relayerFeeQueries[chainId].getGasCosts())
-    );
-    for (let i = 0; i < this.enabledChainIds.length; i++) {
-      // An extra toBN cast is needed as the provider returns a different BigNumber type.
-      this.totalGasCosts[this.enabledChainIds[i]] = toBN(gasCosts[i]);
-    }
-
-    this.logger.debug({
-      at: "ProfitClient",
-      message: "Updated gas cost",
-      enabledChainIds: this.enabledChainIds,
-      totalGasCosts: this.totalGasCosts,
-    });
-  }
-
-  protected async coingeckoPrices(tokens: string[]) {
-    return await this.coingecko.getContractPrices(tokens, "usd");
   }
 
   private constructRelayerFeeQuery(chainId: number, provider: Provider): relayFeeCalculator.QueryInterface {
