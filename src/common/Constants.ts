@@ -2,7 +2,7 @@
 // in the HubPool's proposeRootBundle method should be: Mainnet, Optimism, Polygon, Boba, Arbitrum
 export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
 
-export const RELAYER_MIN_FEE_PCT = 0.0003;
+export const RELAYER_MIN_FEE_PCT = 0.0001;
 
 // Target ~2 days per chain. Avg. block times: { 1: 12s, 10/42161: 0.5s, 137: 2.5s, 288: 30s }
 export const MAX_RELAYER_DEPOSIT_LOOK_BACK: { [chainId: number]: number } = {
