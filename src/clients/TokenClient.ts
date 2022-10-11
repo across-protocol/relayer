@@ -106,7 +106,7 @@ export class TokenClient {
     Object.entries(this.tokenData).forEach(([_chainId, tokenMap]) => {
       const chainId = Number(_chainId);
       Object.entries(tokenMap).forEach(([token, { balance, allowance }]) => {
-        if (balance.gt(toBN(0)) && allowance.lt(toBN(MAX_SAFE_ALLOWANCE))) tokensToApprove.push({ chainId, token });
+        if (balance.gt(0) && allowance.lt(MAX_SAFE_ALLOWANCE)) tokensToApprove.push({ chainId, token });
       });
     });
     if (tokensToApprove.length === 0) {

@@ -56,7 +56,7 @@ export class BundleDataClient {
 
   getPendingRefundsFromValidBundles(bundleLookback: number): FillsToRefund[] {
     const refunds = [];
-    if (this.clients.hubPoolClient.latestBlockNumber === undefined)
+    if (!this.clients.hubPoolClient.isUpdated || this.clients.hubPoolClient.latestBlockNumber === undefined)
       throw new Error("BundleDataClient::getPendingRefundsFromValidBundles HubPoolClient not updated.");
 
     let latestBlock = this.clients.hubPoolClient.latestBlockNumber;
