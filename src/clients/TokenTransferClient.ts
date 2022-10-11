@@ -38,8 +38,8 @@ export class TokenTransferClient {
     });
     const tokenContractsByChainId = Object.fromEntries(
       Object.entries(tokenByChainIds).map(([chainId, tokens]) => [
-        chainId,
-        tokens.map((token: string) => new Contract(token, ERC20.abi, this.providerByChainIds[chainId])),
+        Number(chainId),
+        tokens.map((token: string) => new Contract(token, ERC20.abi, this.providerByChainIds[Number(chainId)])),
       ])
     );
 

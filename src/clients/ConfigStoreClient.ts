@@ -9,9 +9,11 @@ import {
   EventSearchConfig,
   utf8ToHex,
   getCurrentTime,
+  MakeOptional,
   toBN,
   max,
 } from "../utils";
+
 import {
   L1TokenTransferThreshold,
   Deposit,
@@ -32,6 +34,8 @@ export const GLOBAL_CONFIG_STORE_KEYS = {
   MAX_POOL_REBALANCE_LEAF_SIZE: "MAX_POOL_REBALANCE_LEAF_SIZE",
 };
 
+type RedisClient = ReturnType<typeof createClient>;
+
 export class AcrossConfigStoreClient {
   private readonly blockFinder;
 
@@ -46,14 +50,12 @@ export class AcrossConfigStoreClient {
 
   public isUpdated = false;
 
-  public client: ReturnType<typeof createClient>;
-
   constructor(
     readonly logger: winston.Logger,
     readonly configStore: Contract, // TODO: Rename to ConfigStore
     readonly hubPoolClient: HubPoolClient,
-    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
-    readonly redisClient?: ReturnType<typeof createClient>
+    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
+    readonly redisClient?: RedisClient
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
     this.blockFinder = new BlockFinder(this.configStore.provider.getBlock.bind(this.configStore.provider));
@@ -61,7 +63,7 @@ export class AcrossConfigStoreClient {
   }
 
   async computeRealizedLpFeePct(
-    deposit: Deposit,
+    deposit: { quoteTimestamp: number; amount: BigNumber },
     l1Token: string
   ): Promise<{ realizedLpFeePct: BigNumber; quoteBlock: number }> {
     let quoteBlock = await this.getBlockNumber(deposit.quoteTimestamp);
@@ -133,7 +135,7 @@ export class AcrossConfigStoreClient {
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than
 
     this.logger.debug({ at: "ConfigStore", message: "Updating ConfigStore client", searchConfig });
-    if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
+    if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
     const [updatedTokenConfigEvents, updatedGlobalConfigEvents] = await Promise.all([
       paginatedEventQuery(this.configStore, this.configStore.filters.UpdatedTokenConfig(), searchConfig),
       paginatedEventQuery(this.configStore, this.configStore.filters.UpdatedGlobalConfig(), searchConfig),
@@ -160,13 +162,14 @@ export class AcrossConfigStoreClient {
         // the expected shape. This is a fix for now that we should eventually replace when we change the sdk.rateModel
         // class itself to work with the generalized ConfigStore.
         const l1Token = args.key;
-        delete args.value;
-        delete args.key;
-        this.cumulativeRateModelUpdates.push({ ...args, rateModel: rateModelForToken, l1Token });
+
+        // Drop value and key before passing args.
+        const { value, key, ...passedArgs } = args;
+        this.cumulativeRateModelUpdates.push({ ...passedArgs, rateModel: rateModelForToken, l1Token });
 
         // Store transferThreshold
         this.cumulativeTokenTransferUpdates.push({
-          ...args,
+          ...passedArgs,
           transferThreshold: toBN(transferThresholdForToken),
           l1Token,
         });

@@ -12,11 +12,13 @@ import {
   TransactionResponse,
 } from "../utils";
 
+import lodash from "lodash";
+
 export interface AugmentedTransaction {
   contract: Contract;
   chainId: number;
   method: string;
-  args: any;
+  args: any[];
   message: string;
   mrkdwn: string;
   value?: BigNumber;
@@ -151,18 +153,21 @@ export class MultiCallerClient {
       // Group by target chain. Note that there is NO grouping by target contract. The relayer will only ever use this
       // MultiCallerClient to send multiple transactions to one target contract on a given target chain and so we dont
       // need to group by target contract. This can be further refactored with another group by if this is needed.
-      const groupedTransactions: { [networkId: number]: AugmentedTransaction[] } = {};
-      for (const transaction of nonValueTransactions) {
-        assign(groupedTransactions, [transaction.chainId], [transaction]);
-      }
+      const groupedTransactions: { [chainId: number]: AugmentedTransaction[] } = lodash.groupBy(
+        nonValueTransactions,
+        "chainId"
+      );
 
-      const chunkedTransactions: { [networkId: number]: AugmentedTransaction[][] } = Object.fromEntries(
-        Object.entries(groupedTransactions).map(([chainId, transactions]) => {
+      const chunkedTransactions: { [chainId: number]: AugmentedTransaction[][] } = Object.fromEntries(
+        Object.entries(groupedTransactions).map(([_chainId, transactions]) => {
+          const chainId = Number(_chainId);
           const chunkSize: number = CHAIN_MULTICALL_CHUNK_SIZE[chainId] || DEFAULT_MULTICALL_CHUNK_SIZE;
           if (transactions.length > chunkSize) {
-            const dropped: Array<{ [k: string]: string }> = transactions.slice(chunkSize).map((txn) => {
-              return { address: txn.contract.address, method: txn.method, args: txn.args };
-            });
+            const dropped: Array<{ address: string; method: string; args: any[] }> = transactions
+              .slice(chunkSize)
+              .map((txn) => {
+                return { address: txn.contract.address, method: txn.method, args: txn.args };
+              });
             this.logger.info({
               message: `Dropping ${dropped.length} transactions on chain ${chainId}.`,
               dropped,
@@ -183,9 +188,10 @@ export class MultiCallerClient {
           mrkdwn += "*Transaction excluded from batches because it contained value:*\n";
           mrkdwn += `  ${i + 1}. ${transaction.message || "0 message"}: ${transaction.mrkdwn || "0 mrkdwn"}\n`;
         });
-        Object.keys(chunkedTransactions).forEach((chainId) => {
+        Object.entries(chunkedTransactions).forEach(([_chainId, transactions]) => {
+          const chainId = Number(_chainId);
           mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
-          chunkedTransactions[chainId].forEach((chunk, groupIndex) => {
+          transactions.forEach((chunk, groupIndex) => {
             chunk.forEach((transaction, chunkTxIndex) => {
               mrkdwn +=
                 `  ${groupIndex + 1}-${chunkTxIndex + 1}. ${transaction.message || "0 message"}: ` +
@@ -198,17 +204,17 @@ export class MultiCallerClient {
         return;
       }
 
-      const groupedValueTransactions: { [networkId: number]: AugmentedTransaction[] } = {};
-      for (const transaction of valueTransactions) {
-        assign(groupedValueTransactions, [transaction.chainId], [transaction]);
-      }
+      const groupedValueTransactions: { [networkId: number]: AugmentedTransaction[] } = lodash.groupBy(
+        valueTransactions,
+        "chainId"
+      );
 
       this.logger.debug({
         at: "MultiCallerClient",
         message: "Executing transactions with msg.value excluded from batches by target chain",
-        txs: Object.keys(groupedValueTransactions).map((chainId) => ({
-          chainId,
-          num: groupedValueTransactions[chainId].length,
+        txs: Object.entries(groupedValueTransactions).map(([chainId, transactions]) => ({
+          chainId: Number(chainId),
+          num: transactions.length,
         })),
       });
 
@@ -233,14 +239,14 @@ export class MultiCallerClient {
 
       // Construct multiCall transaction for each target chain.
       const multiCallTransactionsResult = await Promise.allSettled(
-        Object.keys(chunkedTransactions)
-          .map((chainId) => chunkedTransactions[chainId].map((chunk) => this.buildMultiCallBundle(chunk)))
+        Object.values(chunkedTransactions)
+          .map((transactions) => transactions.map((chunk) => this.buildMultiCallBundle(chunk)))
           .flat()
       );
 
       // Each element in the bundle of receipts relates back to each set within the groupedTransactions. Produce log.
       let mrkdwn = "";
-      const transactionHashes = [];
+      const transactionHashes: string[] = [];
       valueTransactionsResult.forEach((result, i) => {
         const { chainId } = valueTransactions[i];
         mrkdwn += "*Transaction excluded from batches because it contained value:*\n";
@@ -261,9 +267,10 @@ export class MultiCallerClient {
         }
       });
       let flatIndex = 0;
-      Object.keys(chunkedTransactions).forEach((chainId) => {
+      Object.entries(chunkedTransactions).forEach(([_chainId, transactions]) => {
+        const chainId = Number(_chainId);
         mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
-        chunkedTransactions[chainId].forEach((chunk, chunkIndex) => {
+        transactions.forEach((chunk, chunkIndex) => {
           const settledPromise = multiCallTransactionsResult[flatIndex++];
           if (settledPromise.status === "rejected") {
             const rejectionError = (settledPromise as PromiseRejectedResult).reason;
