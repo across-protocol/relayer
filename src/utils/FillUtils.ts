@@ -21,7 +21,7 @@ export function getRefundInformationFromFill(
     chainIdListForBundleEvaluationBlockNumbers
   )[1];
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-    fill.destinationChainId.toString(),
+    fill.destinationChainId,
     fill.destinationToken,
     endBlockForMainnet
   );

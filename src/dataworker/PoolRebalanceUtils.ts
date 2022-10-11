@@ -47,7 +47,7 @@ export function updateRunningBalanceForFill(
   updateAmount: BigNumber
 ) {
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-    fill.destinationChainId.toString(),
+    fill.destinationChainId,
     fill.destinationToken,
     endBlockForMainnet
   );
@@ -61,7 +61,7 @@ export function updateRunningBalanceForDeposit(
   updateAmount: BigNumber
 ) {
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-    deposit.originChainId.toString(),
+    deposit.originChainId,
     deposit.originToken,
     deposit.blockNumber
   );
@@ -93,9 +93,10 @@ export function initializeRunningBalancesFromRelayerRepayments(
   hubPoolClient: HubPoolClient,
   fillsToRefund: interfaces.FillsToRefund
 ) {
-  if (Object.keys(fillsToRefund).length > 0) {
-    Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
-      Object.keys(fillsToRefund[repaymentChainId]).forEach((l2TokenAddress: string) => {
+  Object.entries(fillsToRefund).forEach(([_repaymentChainId, fillsForChain]) => {
+    const repaymentChainId = Number(_repaymentChainId);
+    Object.entries(fillsForChain).forEach(
+      ([l2TokenAddress, { realizedLpFees: totalRealizedLpFee, totalRefundAmount }]) => {
         const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
           repaymentChainId,
           l2TokenAddress,
@@ -104,24 +105,15 @@ export function initializeRunningBalancesFromRelayerRepayments(
 
         // Realized LP fees is only affected by relayer repayments so we'll return a brand new dictionary of those
         // mapped to each { repaymentChainId, repaymentToken } combination.
-        assign(
-          realizedLpFees,
-          [repaymentChainId, l1TokenCounterpart],
-          fillsToRefund[repaymentChainId][l2TokenAddress].realizedLpFees
-        );
+        assign(realizedLpFees, [repaymentChainId, l1TokenCounterpart], totalRealizedLpFee);
 
         // Add total repayment amount to running balances. Note: totalRefundAmount won't exist for chains that
         // only had slow fills, so we should explicitly check for it.
-        if (fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount)
-          assign(
-            runningBalances,
-            [repaymentChainId, l1TokenCounterpart],
-            fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount
-          );
+        if (totalRefundAmount) assign(runningBalances, [repaymentChainId, l1TokenCounterpart], totalRefundAmount);
         else assign(runningBalances, [repaymentChainId, l1TokenCounterpart], toBN(0));
-      });
-    });
-  }
+      }
+    );
+  });
 }
 
 export function addSlowFillsToRunningBalances(
@@ -132,7 +124,7 @@ export function addSlowFillsToRunningBalances(
 ) {
   unfilledDeposits.forEach((unfilledDeposit) => {
     const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-      unfilledDeposit.deposit.originChainId.toString(),
+      unfilledDeposit.deposit.originChainId,
       unfilledDeposit.deposit.originToken,
       latestMainnetBlock
     );

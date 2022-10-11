@@ -48,8 +48,8 @@ export class OptimismAdapter extends BaseAdapter {
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
-    this.updateSearchConfigs();
-    this.log("Getting cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
+    const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
     const promises = [];
     // Fetch bridge events for all monitored addresses.
@@ -68,9 +68,9 @@ export class OptimismAdapter extends BaseAdapter {
         const senderAddress = this.senderAddress || atomicDepositorAddress;
         const adapterSearchConfig = [ZERO_ADDRESS, undefined, senderAddress];
         promises.push(
-          paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), this.l1SearchConfig),
-          paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...l2SearchFilter), this.l2SearchConfig),
-          paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...adapterSearchConfig), this.l2SearchConfig)
+          paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), l1SearchConfig),
+          paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...l2SearchFilter), l2SearchConfig),
+          paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...adapterSearchConfig), l2SearchConfig)
         );
       }
     }
@@ -116,8 +116,8 @@ export class OptimismAdapter extends BaseAdapter {
       });
     }
 
-    this.l1SearchConfig.fromBlock = this.l1SearchConfig.toBlock + 1;
-    this.l2SearchConfig.fromBlock = this.l2SearchConfig.toBlock + 1;
+    this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
+    this.baseL1SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
 
     return this.computeOutstandingCrossChainTransfers(l1Tokens);
   }

@@ -1146,7 +1146,8 @@ export class Dataworker {
     });
 
     await Promise.all(
-      Object.entries(spokePoolClients).map(async ([chainId, client]) => {
+      Object.entries(spokePoolClients).map(async ([_chainId, client]) => {
+        const chainId = Number(_chainId);
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter((rootBundle) =>
           IGNORED_SPOKE_BUNDLES[chainId]
             ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
