@@ -1,6 +1,6 @@
 import { Provider } from "@ethersproject/abstract-provider";
 import * as constants from "../common/Constants";
-import { assert, BigNumber, formatFeePct, winston, toBNWei, toBN, assign } from "../utils";
+import { assert, BigNumber, formatFeePct, max, winston, toBNWei, toBN, assign } from "../utils";
 import { HubPoolClient } from ".";
 import { Deposit, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { Coingecko } from "@uma/sdk";
@@ -142,10 +142,7 @@ export class ProfitClient {
       l1Token.decimals === 18 ? fillAmount : toBN(fillAmount).mul(toBNWei(1, 18 - l1Token.decimals));
 
     // Use the maximum available relayerFeePct (max of Deposit and SpeedUps).
-    // nb. This grossRelayerFeePct defaults to 0 if deposit.relayerFeePct < 0.
-    const grossRelayerFeePct = deposit.relayerFeePct.gte(deposit.newRelayerFeePct ?? 0)
-      ? deposit.relayerFeePct
-      : deposit.newRelayerFeePct || toBN(0);
+    const grossRelayerFeePct = max(deposit.relayerFeePct, deposit.newRelayerFeePct ?? toBN(0));
 
     // Calculate relayer fee and capital outlay in relay token terms.
     const grossRelayerFee = grossRelayerFeePct.mul(scaledFillAmount).div(toBNWei(1));
