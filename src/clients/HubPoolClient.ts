@@ -437,7 +437,10 @@ export class HubPoolClient {
       Promise.all(uniqueL1Tokens.map(async (l1Token: string) => await this.hubPool.pooledTokens(l1Token))),
     ]);
     for (const info of tokenInfo) {
-      if (!this.l1Tokens.find((token) => token.symbol === info.symbol)) this.l1Tokens.push(info);
+      if (!this.l1Tokens.find((token) => token.symbol === info.symbol)) {
+        if (info.decimals > 0 && info.decimals <= 18) this.l1Tokens.push(info);
+        else throw new Error(`Unsupported HubPool token: ${JSON.stringify(info)}`);
+      }
     }
 
     uniqueL1Tokens.forEach((token: string, i) => {
