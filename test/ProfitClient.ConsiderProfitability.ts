@@ -38,6 +38,13 @@ const gasCost: { [chainId: number]: BigNumber } = Object.fromEntries(
   })
 );
 
+function setDefaultTokenPrices(profitClient: MockProfitClient): void {
+  // Load ERC20 token prices in USD.
+  profitClient.setTokenPrices(
+    Object.fromEntries(Object.entries(tokenPrices).map(([symbol, price]) => [tokens[symbol].address, price]))
+  );
+}
+
 // Set env LOG_IN_TEST to log to console.
 const { spyLogger } = createSpyLogger();
 let hubPoolClient: MockHubPoolClient, profitClient: MockProfitClient;
@@ -57,10 +64,7 @@ describe("ProfitClient: Consider relay profit", async function () {
     // Load per-chain gas cost (gas consumed * gas price in Wei), in native gas token.
     profitClient.setGasCosts(gasCost);
 
-    // Load ERC20 token prices in USD.
-    profitClient.setTokenPrices(
-      Object.fromEntries(Object.entries(tokenPrices).map(([symbol, price]) => [tokens[symbol].address, price]))
-    );
+    setDefaultTokenPrices(profitClient);
   });
 
   // Verify gas cost calculation first, so we can leverage it in all subsequent tests.
@@ -101,6 +105,37 @@ describe("ProfitClient: Consider relay profit", async function () {
   it("Return 0 when gas cost fails to be fetched", async function () {
     profitClient.setGasCosts({ 137: undefined });
     expect(profitClient.getTotalGasCost(137)).to.equal(toBN(0));
+  });
+
+  it("Verify gas price lookup failures", function () {
+    const l1Token: L1Token = tokens["WETH"];
+    const fillAmount = toBNWei(1);
+
+    hubPoolClient.setTokenInfoToReturn(l1Token);
+
+    chainIds.forEach((_chainId: number) => {
+      const chainId = Number(_chainId);
+      const deposit = {
+        relayerFeePct: toBNWei("0.0003"),
+        destinationChainId: chainId,
+      } as Deposit;
+
+      // Verify that it works before we break it.
+      expect(() => profitClient.calculateFillProfitability(deposit, fillAmount, l1Token)).to.not.throw();
+
+      spyLogger.debug({ message: `Verifying exception on gas cost estimation lookup failure on chain ${chainId}.` });
+      profitClient.setGasCosts({});
+      expect(() => profitClient.calculateFillProfitability(deposit, fillAmount, l1Token)).to.throw();
+      profitClient.setGasCosts(gasCost);
+
+      spyLogger.debug({ message: `Verifying exception on token price lookup failure on chain ${chainId}.` });
+      profitClient.setTokenPrices({});
+      expect(() => profitClient.calculateFillProfitability(deposit, fillAmount, l1Token)).to.throw();
+      setDefaultTokenPrices(profitClient);
+
+      // Verify we left everything as we found it.
+      expect(() => profitClient.calculateFillProfitability(deposit, fillAmount, l1Token)).to.not.throw();
+    });
   });
 
   it("Handles non-standard token decimals when considering a relay profitability", async function () {

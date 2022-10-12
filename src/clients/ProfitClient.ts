@@ -108,8 +108,14 @@ export class ProfitClient {
     gasPriceUsd: BigNumber;
     gasCostUsd: BigNumber;
   } {
-    const nativeGasCost = this.getTotalGasCost(chainId); // gas cost in native token
     const gasPriceUsd = this.getPriceOfToken(GAS_TOKEN_BY_CHAIN_ID[chainId]);
+    const nativeGasCost = this.getTotalGasCost(chainId); // gas cost in native token
+
+    if (gasPriceUsd.lte(0) || nativeGasCost.lte(0)) {
+      const err = gasPriceUsd.lte(0) ? "gas price" : "gas consumption";
+      throw new Error(`Unable to compute gas cost (${err} unknown)`);
+    }
+
     const gasCostUsd = nativeGasCost.mul(gasPriceUsd).div(toBN(10).pow(GAS_TOKEN_DECIMALS));
 
     return {
@@ -137,6 +143,7 @@ export class ProfitClient {
     l1Token ??= this.hubPoolClient.getTokenInfoForDeposit(deposit);
     assert(l1Token !== undefined, `No L1 token found for deposit ${JSON.stringify(deposit)}`);
     const tokenPriceUsd = this.getPriceOfToken(l1Token.address);
+    if (tokenPriceUsd.lte(0)) throw new Error(`Unable to determine ${l1Token.symbol}) L1 token price`);
 
     // Normalise to 18 decimals.
     const scaledFillAmount =
@@ -150,7 +157,6 @@ export class ProfitClient {
     const relayerCapitalOutlay = scaledFillAmount.sub(grossRelayerFee);
 
     // Normalise to USD terms.
-    // nb. Price may be zero.
     const fillAmountUsd = scaledFillAmount.mul(tokenPriceUsd).div(toBNWei(1));
     const grossRelayerFeeUsd = grossRelayerFee.mul(tokenPriceUsd).div(toBNWei(1));
     const relayerCapitalOutlayUsd = relayerCapitalOutlay.mul(tokenPriceUsd).div(toBNWei(1));
@@ -160,9 +166,7 @@ export class ProfitClient {
 
     // Determine profitability.
     const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd);
-    const netRelayerFeePct = relayerCapitalOutlayUsd.gt(0)
-      ? netRelayerFeeUsd.mul(toBNWei(1)).div(relayerCapitalOutlayUsd)
-      : toBN(0);
+    const netRelayerFeePct = netRelayerFeeUsd.mul(toBNWei(1)).div(relayerCapitalOutlayUsd);
 
     // If token price or gas cost is unknown, assume the relay is unprofitable.
     const fillProfitable = tokenPriceUsd.gt(0) && gasCostUsd.gt(0) && netRelayerFeePct.gte(this.minRelayerFeePct);
