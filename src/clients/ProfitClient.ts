@@ -1,6 +1,6 @@
 import { Provider } from "@ethersproject/abstract-provider";
 import * as constants from "../common/Constants";
-import { assert, BigNumber, formatFeePct, max, winston, toBNWei, toBN, assign } from "../utils";
+import { BigNumber, formatFeePct, max, winston, toBNWei, toBN, assign } from "../utils";
 import { HubPoolClient } from ".";
 import { Deposit, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { Coingecko } from "@uma/sdk";
@@ -34,7 +34,7 @@ export type FillProfit = {
   fillProfitable: boolean; // Fill profitability indicator.
 };
 
-export const GAS_TOKEN_BY_CHAIN_ID = {
+export const GAS_TOKEN_BY_CHAIN_ID: { [chainId: number]: string } = {
   1: WETH,
   10: WETH,
   137: MATIC,
@@ -44,7 +44,12 @@ export const GAS_TOKEN_BY_CHAIN_ID = {
 // TODO: Make this dynamic once we support chains with gas tokens that have different decimals.
 const GAS_TOKEN_DECIMALS = 18;
 
-const QUERY_HANDLERS = {
+// Note: the type here assumes that all of these classes take the same constructor parameters.
+const QUERY_HANDLERS: {
+  [chainId: number]: new (
+    ...args: ConstructorParameters<typeof relayFeeCalculator.EthereumQueries>
+  ) => relayFeeCalculator.QueryInterface;
+} = {
   1: relayFeeCalculator.EthereumQueries,
   10: relayFeeCalculator.OptimismQueries,
   137: relayFeeCalculator.PolygonQueries,
@@ -215,7 +220,12 @@ export class ProfitClient {
       return true;
     }
 
-    const { decimals, address: l1Token } = this.hubPoolClient.getTokenInfoForDeposit(deposit);
+    const l1TokenInfo = this.hubPoolClient.getTokenInfoForDeposit(deposit);
+    if (!l1TokenInfo)
+      throw new Error(
+        `ProfitClient::isFillProfitable missing l1TokenInfo for deposit with origin token: ${deposit.originToken}`
+      );
+    const { decimals, address: l1Token } = l1TokenInfo;
     const tokenPriceInUsd = this.getPriceOfToken(l1Token);
     const fillRevenueInRelayedToken = relayerFeePct.mul(fillAmount).div(toBN(10).pow(decimals));
     const fillRevenueInUsd = fillRevenueInRelayedToken.mul(tokenPriceInUsd).div(toBNWei(1));
@@ -233,6 +243,7 @@ export class ProfitClient {
       });
       throw new Error(errorMsg);
     }
+
     const gasCostInUsd = totalGasCostWei
       .mul(this.getPriceOfToken(GAS_TOKEN_BY_CHAIN_ID[deposit.destinationChainId]))
       .div(toBN(10).pow(GAS_TOKEN_DECIMALS));
@@ -316,9 +327,7 @@ export class ProfitClient {
 
     const errors: { address: string; symbol: string; cause: string }[] = [];
     Object.keys(l1Tokens).forEach((address: string) => {
-      const tokenPrice: CoinGeckoPrice = cgPrices.find(
-        (price) => address.toLowerCase() === price.address.toLowerCase()
-      );
+      const tokenPrice = cgPrices.find((price) => address.toLowerCase() === price.address.toLowerCase());
 
       // todo: For future, confirm timestamp is only X seconds old and is newer than the previous?
       //       This should implicitly be factored in if/when price feed caching is introduced.

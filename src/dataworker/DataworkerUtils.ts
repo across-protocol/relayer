@@ -190,9 +190,10 @@ export function _buildRelayerRefundRoot(
   const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
 
   // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
-  Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
-    Object.keys(fillsToRefund[repaymentChainId]).forEach((l2TokenAddress: string) => {
-      const refunds = fillsToRefund[repaymentChainId][l2TokenAddress].refunds;
+  Object.entries(fillsToRefund).forEach(([_repaymentChainId, fillsForChain]) => {
+    const repaymentChainId = Number(_repaymentChainId);
+    Object.entries(fillsForChain).forEach(([l2TokenAddress, fillsForToken]) => {
+      const refunds = fillsForToken.refunds;
       if (refunds === undefined) return;
 
       // We need to sort leaves deterministically so that the same root is always produced from the same _loadData

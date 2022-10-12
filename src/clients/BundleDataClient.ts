@@ -1,7 +1,6 @@
 import { winston, BigNumber, toBN } from "../utils";
 import * as _ from "lodash";
 import {
-  Deposit,
   DepositWithBlock,
   FillsToRefund,
   FillWithBlock,
@@ -57,6 +56,8 @@ export class BundleDataClient {
 
   getPendingRefundsFromValidBundles(bundleLookback: number): FillsToRefund[] {
     const refunds = [];
+    if (!this.clients.hubPoolClient.isUpdated || this.clients.hubPoolClient.latestBlockNumber === undefined)
+      throw new Error("BundleDataClient::getPendingRefundsFromValidBundles HubPoolClient not updated.");
 
     let latestBlock = this.clients.hubPoolClient.latestBlockNumber;
     for (let i = 0; i < bundleLookback; i++) {
@@ -98,14 +99,22 @@ export class BundleDataClient {
   // - Not yet proposed bundles
   getNextBundleRefunds(): FillsToRefund {
     const chainIds = Object.keys(this.spokePoolClients).map(Number);
-    const futureBundleEvaluationBlockRanges: number[][] = chainIds.map((chainId, i) => [
-      this.clients.hubPoolClient.getNextBundleStartBlockNumber(
-        this.chainIdListForBundleEvaluationBlockNumbers,
-        this.clients.hubPoolClient.latestBlockNumber,
-        chainId
-      ),
-      this.spokePoolClients[chainIds[i]].latestBlockNumber,
-    ]);
+    const latestMainnetBlockNumber = this.clients.hubPoolClient.latestBlockNumber;
+    if (latestMainnetBlockNumber === undefined)
+      throw new Error("BundleDataClient::getNextBundleRefunds HubPoolClient not updated");
+    const futureBundleEvaluationBlockRanges: number[][] = chainIds.map((chainId) => {
+      const latestBlockNumber = this.spokePoolClients[chainId].latestBlockNumber;
+      if (latestBlockNumber === undefined)
+        throw new Error(`BundleDataClient::getNextBundleRefunds SpokePoolClient for chainId ${chainId} not updated`);
+      return [
+        this.clients.hubPoolClient.getNextBundleStartBlockNumber(
+          this.chainIdListForBundleEvaluationBlockNumbers,
+          latestMainnetBlockNumber,
+          chainId
+        ),
+        latestBlockNumber,
+      ];
+    });
     // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
     // (if any) has been fully executed.
     return this.loadData(futureBundleEvaluationBlockRanges, this.spokePoolClients, false).fillsToRefund;
@@ -119,10 +128,9 @@ export class BundleDataClient {
       );
 
       for (const tokenAddress of Object.keys(allRefunds[chainId])) {
-        if (executedRefunds[tokenAddress] === undefined || allRefunds[chainId][tokenAddress].refunds === undefined)
-          continue;
-
         const refunds = allRefunds[chainId][tokenAddress].refunds;
+        if (executedRefunds[tokenAddress] === undefined || refunds === undefined) continue;
+
         for (const relayer of Object.keys(refunds)) {
           const executedAmount = executedRefunds[tokenAddress][relayer];
           if (executedAmount === undefined) continue;
@@ -229,7 +237,7 @@ export class BundleDataClient {
           .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1])
           .forEach((fillWithBlock) => {
             // If fill matches with a deposit, then its a valid fill.
-            const matchedDeposit: Deposit = originClient.getDepositForFill(fillWithBlock);
+            const matchedDeposit = originClient.getDepositForFill(fillWithBlock);
             if (matchedDeposit) {
               // Fill was validated. Save it under all validated fills list with the block number so we can sort it by
               // time. Note that its important we don't skip fills earlier than the block range at this step because

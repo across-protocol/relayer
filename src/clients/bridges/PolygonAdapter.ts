@@ -107,8 +107,8 @@ export class PolygonAdapter extends BaseAdapter {
 
   // On polygon a bridge transaction looks like a transfer from address(0) to the target.
   async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
-    this.updateSearchConfigs();
-    this.log("Getting cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
+    const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
     const promises: Promise<Event[]>[] = [];
     const validTokens: SupportedL1Token[] = [];
@@ -135,8 +135,8 @@ export class PolygonAdapter extends BaseAdapter {
         if (l2Method === "TokenDeposited") l2SearchFilter = [l1MaticAddress, ZERO_ADDRESS, monitoredAddress];
 
         promises.push(
-          paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), this.l1SearchConfig),
-          paginatedEventQuery(l2Token, l2Token.filters[l2Method](...l2SearchFilter), this.l2SearchConfig)
+          paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), l1SearchConfig),
+          paginatedEventQuery(l2Token, l2Token.filters[l2Method](...l2SearchFilter), l2SearchConfig)
         );
         validTokens.push(l1Token);
       }
@@ -177,8 +177,8 @@ export class PolygonAdapter extends BaseAdapter {
       });
     }
 
-    this.l1SearchConfig.fromBlock = this.l1SearchConfig.toBlock + 1;
-    this.l2SearchConfig.fromBlock = this.l2SearchConfig.toBlock + 1;
+    this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
+    this.baseL2SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
 
     return this.computeOutstandingCrossChainTransfers(validTokens);
   }

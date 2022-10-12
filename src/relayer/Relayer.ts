@@ -215,13 +215,14 @@ export class Relayer {
     const tokenShortfall = this.clients.tokenClient.getTokenShortfall();
 
     let mrkdwn = "";
-    Object.keys(tokenShortfall).forEach((chainId) => {
+    Object.entries(tokenShortfall).forEach(([_chainId, shortfallForChain]) => {
+      const chainId = Number(_chainId);
       mrkdwn += `*Shortfall on ${getNetworkName(chainId)}:*\n`;
-      Object.keys(tokenShortfall[chainId]).forEach((token) => {
+      Object.entries(shortfallForChain).forEach(([token, { shortfall, balance, needed, deposits }]) => {
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfo(chainId, token);
         const formatter = createFormatFunction(2, 4, false, decimals);
         let crossChainLog = "";
-        if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== "1") {
+        if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== 1) {
           const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(token, chainId);
           crossChainLog =
             "There is " +
@@ -234,10 +235,10 @@ export class Relayer {
         }
         mrkdwn +=
           ` - ${symbol} cumulative shortfall of ` +
-          `${formatter(tokenShortfall[chainId][token].shortfall)} ` +
-          `(have ${formatter(tokenShortfall[chainId][token].balance)} but need ` +
-          `${formatter(tokenShortfall[chainId][token].needed)}). ${crossChainLog}` +
-          `This is blocking deposits: ${tokenShortfall[chainId][token].deposits}.\n`;
+          `${formatter(shortfall.toString())} ` +
+          `(have ${formatter(balance.toString())} but need ` +
+          `${formatter(needed.toString())}). ${crossChainLog}` +
+          `This is blocking deposits: ${deposits}.\n`;
       });
     });
 
