@@ -1,6 +1,6 @@
 import { Provider } from "@ethersproject/abstract-provider";
 import * as constants from "../common/Constants";
-import { BigNumber, formatFeePct, max, winston, toBNWei, toBN, assign } from "../utils";
+import { assert, BigNumber, formatFeePct, max, winston, toBNWei, toBN, assign } from "../utils";
 import { HubPoolClient } from ".";
 import { Deposit, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { Coingecko } from "@uma/sdk";
