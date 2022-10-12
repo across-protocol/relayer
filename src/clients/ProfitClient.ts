@@ -19,18 +19,19 @@ export const MATIC = "0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0";
 export const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 export const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 
+// note: All FillProfit BigNumbers are scaled to 18 decimals unless specified otherwise.
 export type FillProfit = {
-  grossRelayerFeePct: BigNumber;
-  tokenPriceUsd: BigNumber;
-  fillAmountUsd: BigNumber;
-  grossRelayerFeeUsd: BigNumber;
-  nativeGasCost: BigNumber;
-  gasPriceUsd: BigNumber;
-  gasCostUsd: BigNumber;
-  relayerCapitalOutlayUsd: BigNumber;
-  netRelayerFeePct: BigNumber;
-  netRelayerFeeUsd: BigNumber;
-  fillProfitable: boolean;
+  grossRelayerFeePct: BigNumber; // Max of relayerFeePct and newRelayerFeePct from Deposit.
+  tokenPriceUsd: BigNumber; // Resolved USD price of the bridged token.
+  fillAmountUsd: BigNumber; // Amount of the bridged token being filled.
+  grossRelayerFeeUsd: BigNumber; // USD value of the relay fee paid by the user.
+  nativeGasCost: BigNumber; // Cost of completing the fill in the native gas token.
+  gasPriceUsd: BigNumber; // Price paid per unit of gas in USD.
+  gasCostUsd: BigNumber; // Estimated cost of completing the fill in USD.
+  relayerCapitalOutlayUsd: BigNumber; // Amount to be sent by the relayer in USD.
+  netRelayerFeePct: BigNumber; // Relayer fee after gas costs as a portion of relayerCapitalOutlayUsd.
+  netRelayerFeeUsd: BigNumber; // Relayer fee in USD after paying for gas costs.
+  fillProfitable: boolean; // Fill profitability indicator.
 };
 
 export const GAS_TOKEN_BY_CHAIN_ID = {
