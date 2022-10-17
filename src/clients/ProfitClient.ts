@@ -186,13 +186,13 @@ export class ProfitClient {
   }
 
   async update() {
-    await this.updateTokenPrices();
+    const updates = [this.updateTokenPrices()];
 
     // Skip gas cost lookup if profitability is disabled. We still
     // need to fetch token prices but don't care about gas costs.
-    if (this.ignoreProfitability) return;
+    if (!this.ignoreProfitability) updates.push(this.updateGasCosts());
 
-    await this.updateGasCosts();
+    await Promise.all(updates);
   }
 
   protected async updateTokenPrices(): Promise<void> {
