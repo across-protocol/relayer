@@ -188,25 +188,11 @@ export class ProfitClient {
   async update() {
     await this.updateTokenPrices();
 
-    // Short circuit early if profitability is disabled. We still need to fetch CG prices but don't need to fetch gas
-    // costs of relays.
+    // Skip gas cost lookup if profitability is disabled. We still
+    // need to fetch token prices but don't care about gas costs.
     if (this.ignoreProfitability) return;
 
-    // Pre-fetch total gas costs for relays on enabled chains.
-    const gasCosts = await Promise.all(
-      this.enabledChainIds.map((chainId) => this.relayerFeeQueries[chainId].getGasCosts())
-    );
-    for (let i = 0; i < this.enabledChainIds.length; i++) {
-      // An extra toBN cast is needed as the provider returns a different BigNumber type.
-      this.totalGasCosts[this.enabledChainIds[i]] = toBN(gasCosts[i]);
-    }
-
-    this.logger.debug({
-      at: "ProfitClient",
-      message: "Updated gas cost",
-      enabledChainIds: this.enabledChainIds,
-      totalGasCosts: this.totalGasCosts,
-    });
+    await this.updateGasCosts();
   }
 
   protected async updateTokenPrices(): Promise<void> {
@@ -287,6 +273,24 @@ export class ProfitClient {
       }
     }
     this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
+  }
+
+  private async updateGasCosts(): Promise<void> {
+    // Pre-fetch total gas costs for relays on enabled chains.
+    const gasCosts = await Promise.all(
+      this.enabledChainIds.map((chainId) => this.relayerFeeQueries[chainId].getGasCosts())
+    );
+    for (let i = 0; i < this.enabledChainIds.length; i++) {
+      // An extra toBN cast is needed as the provider returns a different BigNumber type.
+      this.totalGasCosts[this.enabledChainIds[i]] = toBN(gasCosts[i]);
+    }
+
+    this.logger.debug({
+      at: "ProfitClient",
+      message: "Updated gas cost",
+      enabledChainIds: this.enabledChainIds,
+      totalGasCosts: this.totalGasCosts,
+    });
   }
 
   private constructRelayerFeeQuery(chainId: number, provider: Provider): relayFeeCalculator.QueryInterface {
