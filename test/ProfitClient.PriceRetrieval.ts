@@ -49,14 +49,13 @@ const verifyTokenPrices = (logger: winston.Logger, profitClient: ProfitClientWit
   Object.keys(tokenPrices).forEach((token) => expect(toBN(profitClient.getPriceOfToken(token)).gt(toBN(0))).to.be.true);
 };
 
-let hubPoolClient: MockHubPoolClient, spyLogger: winston.Logger, spy: sinon.SinonSpy;
+// Define LOG_IN_TEST for logging to console.
+const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
+let hubPoolClient: MockHubPoolClient;
 let profitClient: ProfitClientWithMockPriceClient; // tested
 
 describe("ProfitClient: Price Retrieval", async function () {
   beforeEach(async function () {
-    // Set env LOG_IN_TEST to log to console.
-    ({ spy, spyLogger } = createSpyLogger());
-
     hubPoolClient = new MockHubPoolClient(null, null);
     mainnetTokens.forEach((token: L1Token) => hubPoolClient.addL1Token(token));
     profitClient = new ProfitClientWithMockPriceClient(spyLogger, hubPoolClient, {}, true, [], false, toBN(0));
