@@ -1,5 +1,13 @@
 import { BigNumber, formatFeePct, toBN, toBNWei } from "../src/utils";
-import { expect, createSpyLogger, winston, ethers, deploySpokePoolWithToken, originChainId, destinationChainId } from "./utils";
+import {
+  expect,
+  createSpyLogger,
+  winston,
+  ethers,
+  deploySpokePoolWithToken,
+  originChainId,
+  destinationChainId,
+} from "./utils";
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
 import { Deposit, L1Token } from "../src/interfaces";
 import { FillProfit, GAS_TOKEN_BY_CHAIN_ID, SpokePoolClient, MATIC, USDC, WBTC, WETH } from "../src/clients";
