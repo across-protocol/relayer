@@ -14,11 +14,11 @@ import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
 
 export interface DataworkerClients extends Clients {
-  profitClient: ProfitClient;
   tokenClient: TokenClient;
   spokePoolSigners: { [chainId: number]: Wallet };
   spokePoolClientSearchSettings: { [chainId: number]: EventSearchConfig };
   bundleDataClient: BundleDataClient;
+  profitClient?: ProfitClient;
 }
 
 export async function constructDataworkerClients(
@@ -50,15 +50,17 @@ export async function constructDataworkerClients(
 
   // Disable profitability by default as only the relayer needs it.
   // The dataworker only needs price updates from ProfitClient to calculate bundle volume.
-  const profitClient = new ProfitClient(logger, commonClients.hubPoolClient, {}, false, [], true);
+  const profitClient = config.proposerEnabled
+    ? new ProfitClient(logger, commonClients.hubPoolClient, {}, false, [], true)
+    : undefined;
 
   return {
     ...commonClients,
     bundleDataClient,
-    profitClient,
     tokenClient,
     spokePoolSigners,
     spokePoolClientSearchSettings,
+    profitClient,
   };
 }
 
@@ -74,7 +76,7 @@ export async function updateDataworkerClients(clients: DataworkerClients, setAll
   // Must come after hubPoolClient.
   // TODO: This should be refactored to check if the hubpool client has had one previous update run such that it has
   // L1 tokens within it.If it has we dont need to make it sequential like this.
-  await clients.profitClient.update();
+  if (clients.profitClient) await clients.profitClient.update();
 }
 
 export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number]: SpokePoolClient }): {
