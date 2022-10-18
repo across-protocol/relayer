@@ -27,11 +27,12 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
 // Polygon: https://polygonscan.com/blocks_forked
 // Optimistic Rollups are currently centrally serialized and are not expected to reorg.
 export const MIN_DEPOSIT_CONFIRMATIONS: { [chainId: number]: number } = {
-  1: 32,
-  10: 240,
-  137: 100,
-  288: 4,
-  42161: 240,
+  1: 32, // Eth post-merge finality time
+  10: 0, // Finality on Optimistic Rollups is 1 week, which is too long, and there is little practical difference in 
+  // finality for any distance between 0 and 1 week.
+  137: 128, // Polygon finality time
+  288: 0,
+  42161: 0,
 };
 
 // Optimism, ethereum can do infinity lookbacks. boba and Arbitrum limited to 100000 on infura.
