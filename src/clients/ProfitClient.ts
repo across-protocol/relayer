@@ -233,7 +233,6 @@ export class ProfitClient {
         this.tokenPrices[tokenPrice.address] = toBNWei(tokenPrice.price);
       });
       this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
-
     } catch (err) {
       const errMsg = `Failed to update token prices (${err})`;
       let mrkdwn = `${errMsg}:\n`;
