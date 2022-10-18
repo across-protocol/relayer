@@ -45,8 +45,8 @@ function setDefaultTokenPrices(profitClient: MockProfitClient): void {
   );
 }
 
-// Set env LOG_IN_TEST to log to console.
-const { spyLogger } = createSpyLogger();
+// Define LOG_IN_TEST for logging to console.
+const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
 let hubPoolClient: MockHubPoolClient, profitClient: MockProfitClient;
 
 describe("ProfitClient: Consider relay profit", async function () {
