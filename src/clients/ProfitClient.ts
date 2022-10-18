@@ -28,8 +28,8 @@ export type FillProfit = {
   nativeGasCost: BigNumber; // Cost of completing the fill in the native gas token.
   gasPriceUsd: BigNumber; // Price paid per unit of gas in USD.
   gasCostUsd: BigNumber; // Estimated cost of completing the fill in USD.
-  relayerCapitalOutlayUsd: BigNumber; // Amount to be sent by the relayer in USD.
-  netRelayerFeePct: BigNumber; // Relayer fee after gas costs as a portion of relayerCapitalOutlayUsd.
+  relayerCapitalUsd: BigNumber; // Amount to be sent by the relayer in USD.
+  netRelayerFeePct: BigNumber; // Relayer fee after gas costs as a portion of relayerCapitalUsd.
   netRelayerFeeUsd: BigNumber; // Relayer fee in USD after paying for gas costs.
   fillProfitable: boolean; // Fill profitability indicator.
 };
@@ -159,19 +159,19 @@ export class ProfitClient {
 
     // Calculate relayer fee and capital outlay in relay token terms.
     const grossRelayerFee = grossRelayerFeePct.mul(scaledFillAmount).div(toBNWei(1));
-    const relayerCapitalOutlay = scaledFillAmount.sub(grossRelayerFee);
+    const relayerCapital = scaledFillAmount.sub(grossRelayerFee);
 
     // Normalise to USD terms.
     const fillAmountUsd = scaledFillAmount.mul(tokenPriceUsd).div(toBNWei(1));
     const grossRelayerFeeUsd = grossRelayerFee.mul(tokenPriceUsd).div(toBNWei(1));
-    const relayerCapitalOutlayUsd = relayerCapitalOutlay.mul(tokenPriceUsd).div(toBNWei(1));
+    const relayerCapitalUsd = relayerCapital.mul(tokenPriceUsd).div(toBNWei(1));
 
     // Estimate the gas cost of filling this relay.
     const { nativeGasCost, gasPriceUsd, gasCostUsd } = this.calculateFillCost(deposit.destinationChainId);
 
     // Determine profitability.
     const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd);
-    const netRelayerFeePct = netRelayerFeeUsd.mul(toBNWei(1)).div(relayerCapitalOutlayUsd);
+    const netRelayerFeePct = netRelayerFeeUsd.mul(toBNWei(1)).div(relayerCapitalUsd);
 
     // If token price or gas cost is unknown, assume the relay is unprofitable.
     const fillProfitable = tokenPriceUsd.gt(0) && gasCostUsd.gt(0) && netRelayerFeePct.gte(this.minRelayerFeePct);
@@ -184,7 +184,7 @@ export class ProfitClient {
       nativeGasCost,
       gasPriceUsd,
       gasCostUsd,
-      relayerCapitalOutlayUsd,
+      relayerCapitalUsd,
       netRelayerFeePct,
       netRelayerFeeUsd,
       fillProfitable,
