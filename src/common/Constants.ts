@@ -23,31 +23,43 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
 };
 
 // Reorgs are anticipated on Ethereum and Polygon. We use different following distances when processing deposit
-// events based on the USD amount of the deposit. The Key of the following dictionary is used as the USD
-// threshold to determine the MDC: if the deposited USD amount is <= the key value, then the MDC associated
-// with the previous key is used. For example, a USD amount of 4_000 uses the MDC's associated with the 5_000 key.
-// Ethereum: https://etherscan.io/blocks_forked (not working since the merge)
-// Polygon: https://polygonscan.com/blocks_forked
-// Optimistic Rollups are currently centrally serialized and are not expected to reorg.
+// events based on the USD amount of the deposit. This protects the relayer from the worst case situation where it fills
+// a large deposit (i.e. with an amount equal to a large amount of $$$) but the deposit is included in a re-orged
+// block. This would cause the relayer to unintentionally send an invalid fill and not refunded. The tradeoff is that
+// the larger the follow distance, the slower the relayer will be to fulfill deposits. Therefore, the following 
+// configuration allows the user to set higher follow distances for higher deposit amounts.
+// The Key of the following dictionary is used as the USD threshold to determine the MDC:
+// - Searching from highest USD threshold to lowest
+// - if the deposited USD amount is <= the key value, then the MDC associated with the key for the origin chain 
+// - For example, a deposit on Polygon worth $4,000 would use the MDC associated with the 5_000 key and chain
+// 137, so it would use a follow distance of 64 blocks.
+
+// To see the latest block reorg events go to:
+// - Ethereum: https://etherscan.io/blocks_forked
+// - Polygon: https://polygonscan.com/blocks_forked
+
+// Optimistic Rollups are currently centrally serialized and are not expected to reorg. Technically a block on an
+// ORU will not be finalized until after 7 days, so there is little difference in following behind 0 blocks versus
+// anything under 7 days.
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number]: { [chainId: number]: number } } = {
-  0: {
-    1: 4,
+  10_000: {
+    1: 64, // Finalized block: https://www.alchemy.com/overviews/ethereum-commitment-levels
     10: 0,
-    137: 32,
+    137: 128, // Commonly used finality level for CEX's that accept Polygon deposits
     288: 0,
     42161: 0,
   },
   5_000: {
-    1: 16,
+    1: 32, // Justified block
     10: 0,
-    137: 64,
+    137: 100, // Probabilistically safe level based on historic Polygon reorgs
     288: 0,
     42161: 0,
   },
-  10_000: {
-    1: 32,
+  0: {
+    1: 12,
     10: 0,
-    137: 128,
+    137: 80,
     288: 0,
     42161: 0,
   },
