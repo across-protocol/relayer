@@ -3,9 +3,6 @@ import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
 import { InventoryConfig } from "../interfaces";
 
-interface MinDepositConfirmationByChainId {
-  [chainId: number]: number;
-}
 export class RelayerConfig extends CommonConfig {
   readonly inventoryConfig: InventoryConfig;
   // Whether relay profitability is considered. If false, relayers will attempt to relay all deposits.
@@ -21,13 +18,7 @@ export class RelayerConfig extends CommonConfig {
   readonly acceptInvalidFills: boolean;
   // Following distances in blocks to guarantee finality on each chain.
   readonly minDepositConfirmations: {
-    small: MinDepositConfirmationByChainId;
-    medium: MinDepositConfirmationByChainId;
-    large: MinDepositConfirmationByChainId;
-  };
-  readonly minDepositConfirmationUsdThresholds: {
-    small: BigNumber;
-    large: BigNumber;
+    [threshold: number]: { [chainId: number]: number };
   };
 
   constructor(env: ProcessEnv) {
@@ -42,10 +33,6 @@ export class RelayerConfig extends CommonConfig {
       MIN_RELAYER_FEE_PCT,
       ACCEPT_INVALID_FILLS,
       MIN_DEPOSIT_CONFIRMATIONS,
-      MIN_DEPOSIT_CONFIRMATIONS_LARGE_TRANSFERS,
-      MIN_DEPOSIT_CONFIRMATIONS_SMALL_TRANSFERS,
-      LARGE_TRANSFER_USD_THRESHOLD,
-      SMALL_TRANSFER_USD_THRESHOLD,
     } = env;
     super(env);
 
@@ -89,28 +76,17 @@ export class RelayerConfig extends CommonConfig {
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
     this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";
-    this.minDepositConfirmations = {
-      small: MIN_DEPOSIT_CONFIRMATIONS_SMALL_TRANSFERS
-        ? JSON.parse(MIN_DEPOSIT_CONFIRMATIONS_SMALL_TRANSFERS)
-        : Constants.MIN_DEPOSIT_CONFIRMATIONS_SMALL_TRANSFERS,
-      medium: MIN_DEPOSIT_CONFIRMATIONS ? JSON.parse(MIN_DEPOSIT_CONFIRMATIONS) : Constants.MIN_DEPOSIT_CONFIRMATIONS,
-      large: MIN_DEPOSIT_CONFIRMATIONS_LARGE_TRANSFERS
-        ? JSON.parse(MIN_DEPOSIT_CONFIRMATIONS_LARGE_TRANSFERS)
-        : Constants.MIN_DEPOSIT_CONFIRMATIONS_LARGE_TRANSFERS,
-    };
-    this.minDepositConfirmationUsdThresholds = {
-      small: toBNWei(SMALL_TRANSFER_USD_THRESHOLD || Constants.SMALL_TRANSFER_USD_THRESHOLD),
-      large: toBNWei(LARGE_TRANSFER_USD_THRESHOLD || Constants.LARGE_TRANSFER_USD_THRESHOLD),
-    };
-
-    this.spokePoolChains.forEach((chainId) => {
-      Object.keys(this.minDepositConfirmations).forEach((mdcConfigName) => {
-        const nBlocks: number = this.minDepositConfirmations[mdcConfigName][chainId];
-        assert(
-          !isNaN(nBlocks) && nBlocks >= 0,
-          `Chain ${chainId} minimum deposit confirmations for "${mdcConfigName}" config missing or invalid (${nBlocks}).`
-        );
+    (this.minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS
+      ? JSON.parse(MIN_DEPOSIT_CONFIRMATIONS)
+      : Constants.MIN_DEPOSIT_CONFIRMATIONS),
+      this.spokePoolChains.forEach((chainId) => {
+        Object.keys(this.minDepositConfirmations).forEach((threshold) => {
+          const nBlocks: number = this.minDepositConfirmations[threshold][chainId];
+          assert(
+            !isNaN(nBlocks) && nBlocks >= 0,
+            `Chain ${chainId} minimum deposit confirmations for "${threshold}" threshold missing or invalid (${nBlocks}).`
+          );
+        });
       });
-    });
   }
 }

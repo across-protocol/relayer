@@ -23,33 +23,35 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
 };
 
 // Reorgs are anticipated on Ethereum and Polygon. We use different following distances when processing deposit
-// events based on the USD amount of the deposit.
+// events based on the USD amount of the deposit. The Key of the following dictionary is used as the USD
+// threshold to determine the MDC: if the deposited USD amount is <= the key value, then the MDC associated
+// with the previous key is used. For example, a USD amount of 4_000 uses the MDC's associated with the 5_000 key.
 // Ethereum: https://etherscan.io/blocks_forked (not working since the merge)
 // Polygon: https://polygonscan.com/blocks_forked
 // Optimistic Rollups are currently centrally serialized and are not expected to reorg.
-export const MIN_DEPOSIT_CONFIRMATIONS_SMALL_TRANSFERS: { [chainId: number]: number } = {
-  1: 4,
-  10: 0,
-  137: 32,
-  288: 0,
-  42161: 0,
+export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number]: { [chainId: number]: number } } = {
+  0: {
+    1: 4,
+    10: 0,
+    137: 32,
+    288: 0,
+    42161: 0,
+  },
+  5_000: {
+    1: 16,
+    10: 0,
+    137: 64,
+    288: 0,
+    42161: 0,
+  },
+  10_000: {
+    1: 32,
+    10: 0,
+    137: 128,
+    288: 0,
+    42161: 0,
+  },
 };
-export const MIN_DEPOSIT_CONFIRMATIONS: { [chainId: number]: number } = {
-  1: 16,
-  10: 0,
-  137: 64,
-  288: 0,
-  42161: 0,
-};
-export const MIN_DEPOSIT_CONFIRMATIONS_LARGE_TRANSFERS: { [chainId: number]: number } = {
-  1: 32,
-  10: 0,
-  137: 128,
-  288: 0,
-  42161: 0,
-};
-export const SMALL_TRANSFER_USD_THRESHOLD = 5_000;
-export const LARGE_TRANSFER_USD_THRESHOLD = 10_000;
 
 // Optimism, ethereum can do infinity lookbacks. boba and Arbitrum limited to 100000 on infura.
 export const CHAIN_MAX_BLOCK_LOOKBACK = {

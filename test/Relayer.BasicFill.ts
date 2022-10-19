@@ -7,17 +7,11 @@ import {
   setupTokensForWallet,
   getLastBlockTime,
   signForSpeedUp,
-  amountToDeposit,
 } from "./utils";
 import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfigureHubPool, winston } from "./utils";
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId } from "./utils";
 import { originChainId, sinon, toBNWei } from "./utils";
-import {
-  amountToLp,
-  defaultMinDepositConfirmations,
-  defaultMinDepositConfirmationThresholds,
-  defaultTokenConfig,
-} from "./constants";
+import { amountToLp, defaultMinDepositConfirmations, defaultTokenConfig } from "./constants";
 import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
 import { TokenClient, ProfitClient } from "../src/clients";
 import { MockInventoryClient } from "./mocks";
@@ -83,7 +77,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         relayerTokens: [],
         relayerDestinationChains: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
-        minDepositConfirmationUsdThresholds: defaultMinDepositConfirmationThresholds,
       } as unknown as RelayerConfig
     );
 
@@ -144,7 +137,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
     // Set MDC such that the deposit is is ignored. The profit client will return a fill USD amount of $0,
-    // so we need to set the MDC for `small` to be large enough such that the deposit would be ignored.
+    // so we need to set the MDC for the `0` threshold to be large enough such that the deposit would be ignored.
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -161,11 +154,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         relayerTokens: [],
         relayerDestinationChains: [],
         minDepositConfirmations: {
-          small: { [originChainId]: 10 }, // This needs to be set large enough such that the deposit is ignored.
-          medium: { [originChainId]: 11 },
-          large: { [originChainId]: 12 },
+          0: { [originChainId]: 10 }, // This needs to be set large enough such that the deposit is ignored.
         },
-        minDepositConfirmationUsdThresholds: { small: amountToDeposit, large: amountToDeposit.mul(2) },
         sendingRelaysEnabled: false,
       } as unknown as RelayerConfig
     );
@@ -253,7 +243,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         relayerTokens: [],
         relayerDestinationChains: [originChainId],
         minDepositConfirmations: defaultMinDepositConfirmations,
-        minDepositConfirmationUsdThresholds: defaultMinDepositConfirmationThresholds,
       } as unknown as RelayerConfig
     );
 

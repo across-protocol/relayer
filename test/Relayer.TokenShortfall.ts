@@ -2,12 +2,7 @@ import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, or
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
 import { lastSpyLogIncludes, toBNWei, createSpyLogger, deployConfigStore } from "./utils";
 import { deployAndConfigureHubPool, winston } from "./utils";
-import {
-  amountToLp,
-  defaultMinDepositConfirmations,
-  defaultMinDepositConfirmationThresholds,
-  defaultTokenConfig,
-} from "./constants";
+import { amountToLp, defaultMinDepositConfirmations, defaultTokenConfig } from "./constants";
 import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
 import { TokenClient, ProfitClient } from "../src/clients";
 import { MockInventoryClient } from "./mocks";
@@ -70,7 +65,6 @@ describe("Relayer: Token balance shortfall", async function () {
         relayerTokens: [],
         relayerDestinationChains: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
-        minDepositConfirmationUsdThresholds: defaultMinDepositConfirmationThresholds,
       } as unknown as RelayerConfig
     );
 

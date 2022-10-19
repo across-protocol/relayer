@@ -8,7 +8,7 @@ import {
   buildFillRelayWithUpdatedFeeProps,
   isDepositSpedUp,
 } from "../utils";
-import { createFormatFunction, etherscanLink, formatFeePct, toBN } from "../utils";
+import { createFormatFunction, etherscanLink, formatFeePct, toBN, toBNWei } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 
 import { Deposit } from "../interfaces";
@@ -36,15 +36,19 @@ export class Relayer {
     // TODO: Note this does not consider the price of the token which will be added once the profitability module is
     // added to this bot.
 
+    // Sort thresholds in descending order.
+    const minimumDepositConfirmationThresholds = Object.keys(this.config.minDepositConfirmations).sort(
+      (x, y) => Number(y) - Number(x)
+    );
+
     // Require that all fillable deposits meet the minimum specified number of confirmations.
     const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients, this.maxUnfilledDepositLookBack)
       .filter((x) => {
         const unfilledAmountUsd = this.clients.profitClient.getFillAmountInUsd(x.deposit, x.unfilledAmount);
-        const minDepositConfirmations = unfilledAmountUsd.lte(this.config.minDepositConfirmationUsdThresholds.small)
-          ? this.config.minDepositConfirmations.small[x.deposit.originChainId]
-          : unfilledAmountUsd.lte(this.config.minDepositConfirmationUsdThresholds.large)
-          ? this.config.minDepositConfirmations.medium[x.deposit.originChainId]
-          : this.config.minDepositConfirmations.large[x.deposit.originChainId];
+        const usdThresholdToUse = minimumDepositConfirmationThresholds.find((usdThreshold) => {
+          return unfilledAmountUsd.gte(toBNWei(usdThreshold));
+        });
+        const minDepositConfirmations = this.config.minDepositConfirmations[usdThresholdToUse][x.deposit.originChainId];
         return (
           x.deposit.originBlockNumber <=
           this.clients.spokePoolClients[x.deposit.originChainId].latestBlockNumber - minDepositConfirmations
