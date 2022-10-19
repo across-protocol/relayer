@@ -151,7 +151,7 @@ export class ProfitClient {
     l1Token ??= this.hubPoolClient.getTokenInfoForDeposit(deposit);
     assert(l1Token !== undefined, `No L1 token found for deposit ${JSON.stringify(deposit)}`);
     const tokenPriceUsd = this.getPriceOfToken(l1Token.address);
-    if (tokenPriceUsd.lte(0)) throw new Error(`Unable to determine ${l1Token.symbol}) L1 token price`);
+    if (tokenPriceUsd.lte(0)) throw new Error(`Unable to determine ${l1Token.symbol} L1 token price`);
 
     // Normalise to 18 decimals.
     const scaledFillAmount =
