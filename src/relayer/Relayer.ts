@@ -40,9 +40,9 @@ export class Relayer {
     const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients, this.maxUnfilledDepositLookBack)
       .filter((x) => {
         const unfilledAmountUsd = this.clients.profitClient.getFillAmountInUsd(x.deposit, x.unfilledAmount);
-        const minDepositConfirmations = unfilledAmountUsd.lt(this.config.minDepositConfirmationUsdThresholds.small)
+        const minDepositConfirmations = unfilledAmountUsd.lte(this.config.minDepositConfirmationUsdThresholds.small)
           ? this.config.minDepositConfirmations.small[x.deposit.originChainId]
-          : unfilledAmountUsd.lt(this.config.minDepositConfirmationUsdThresholds.large)
+          : unfilledAmountUsd.lte(this.config.minDepositConfirmationUsdThresholds.large)
           ? this.config.minDepositConfirmations.medium[x.deposit.originChainId]
           : this.config.minDepositConfirmations.large[x.deposit.originChainId];
         return (
