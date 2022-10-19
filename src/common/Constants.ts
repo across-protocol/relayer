@@ -48,8 +48,8 @@ export const MIN_DEPOSIT_CONFIRMATIONS_LARGE_TRANSFERS: { [chainId: number]: num
   288: 0,
   42161: 0,
 };
-export const SMALL_TRANSFER_USD_THRESHOLD = 5;
-export const LARGE_TRANSFER_USD_THRESHOLD = 50;
+export const SMALL_TRANSFER_USD_THRESHOLD = 5_000;
+export const LARGE_TRANSFER_USD_THRESHOLD = 10_000;
 
 // Optimism, ethereum can do infinity lookbacks. boba and Arbitrum limited to 100000 on infura.
 export const CHAIN_MAX_BLOCK_LOOKBACK = {
