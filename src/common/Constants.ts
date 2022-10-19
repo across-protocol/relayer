@@ -26,11 +26,11 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
 // events based on the USD amount of the deposit. This protects the relayer from the worst case situation where it fills
 // a large deposit (i.e. with an amount equal to a large amount of $$$) but the deposit is included in a re-orged
 // block. This would cause the relayer to unintentionally send an invalid fill and not refunded. The tradeoff is that
-// the larger the follow distance, the slower the relayer will be to fulfill deposits. Therefore, the following 
+// the larger the follow distance, the slower the relayer will be to fulfill deposits. Therefore, the following
 // configuration allows the user to set higher follow distances for higher deposit amounts.
 // The Key of the following dictionary is used as the USD threshold to determine the MDC:
 // - Searching from highest USD threshold to lowest
-// - if the deposited USD amount is <= the key value, then the MDC associated with the key for the origin chain 
+// - if the deposited USD amount is <= the key value, then the MDC associated with the key for the origin chain
 // - For example, a deposit on Polygon worth $4,000 would use the MDC associated with the 5_000 key and chain
 // 137, so it would use a follow distance of 64 blocks.
 
