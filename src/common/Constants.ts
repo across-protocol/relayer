@@ -23,15 +23,20 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
 };
 
 // Reorgs are anticipated on Ethereum and Polygon.
-// Ethereum: https://etherscan.io/blocks_forked (not working since the merge)
-// Polygon: https://polygonscan.com/blocks_forked
-// Optimistic Rollups are currently centrally serialized and are not expected to reorg.
+// Ethereum: Post-merge finality time is 2 epochs (64 slots total), we set the default to 32 which is the
+// length of time for a block to be "justified", which Alchemy (for example) marks as "safe":
+// https://docs.alchemy.com/reference/ethereum-developer-guide-to-the-merge#what-are-safe-and-finalized
+// Polygon: https://polygonscan.com/blocks_forked. There have been re orgs > 128 blocks deep but most CEX's
+// use 128 blocks as the finality time so we'll follow that guideline.
+// Optimistic Rollups are currently centrally serialized and are not expected to reorg. Finality on Optimistic Rollups
+// is technically 1 week, which is too long, and there is little practical difference in
+// finality for any distance between 0 and 1 week.
 export const MIN_DEPOSIT_CONFIRMATIONS: { [chainId: number]: number } = {
-  1: 32,
-  10: 240,
-  137: 100,
-  288: 4,
-  42161: 240,
+  1: 32, // Eth post-merge finality time
+  10: 0,
+  137: 128,
+  288: 0,
+  42161: 0,
 };
 
 // Optimism, ethereum can do infinity lookbacks. boba and Arbitrum limited to 100000 on infura.
