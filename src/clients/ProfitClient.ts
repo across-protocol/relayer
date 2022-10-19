@@ -191,6 +191,17 @@ export class ProfitClient {
     };
   }
 
+  // Return USD amount of fill amount for deposited token, should always return in wei as the units.
+  getFillAmountInUsd(deposit: Deposit, fillAmount: BigNumber): BigNumber {
+    const l1TokenInfo = this.hubPoolClient.getTokenInfoForDeposit(deposit);
+    if (!l1TokenInfo)
+      throw new Error(
+        `ProfitClient::isFillProfitable missing l1TokenInfo for deposit with origin token: ${deposit.originToken}`
+      );
+    const tokenPriceInUsd = this.getPriceOfToken(l1TokenInfo.address);
+    return fillAmount.mul(tokenPriceInUsd).div(toBN(10).pow(l1TokenInfo.decimals));
+  }
+
   isFillProfitable(deposit: Deposit, fillAmount: BigNumber): boolean {
     const newRelayerFeePct = toBN(deposit.newRelayerFeePct ?? 0);
     let relayerFeePct = toBN(deposit.relayerFeePct);

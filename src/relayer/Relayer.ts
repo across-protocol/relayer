@@ -39,10 +39,15 @@ export class Relayer {
     // Require that all fillable deposits meet the minimum specified number of confirmations.
     const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients, this.maxUnfilledDepositLookBack)
       .filter((x) => {
+        const unfilledAmountUsd = this.clients.profitClient.getFillAmountInUsd(x.deposit, x.unfilledAmount);
+        const minDepositConfirmations = unfilledAmountUsd.lt(this.config.minDepositConfirmationUsdThresholds.small)
+          ? this.config.minDepositConfirmations.small[x.deposit.originChainId]
+          : unfilledAmountUsd.lt(this.config.minDepositConfirmationUsdThresholds.large)
+          ? this.config.minDepositConfirmations.medium[x.deposit.originChainId]
+          : this.config.minDepositConfirmations.large[x.deposit.originChainId];
         return (
           x.deposit.originBlockNumber <=
-          this.clients.spokePoolClients[x.deposit.originChainId].latestBlockNumber -
-            this.config.minDepositConfirmations[x.deposit.originChainId]
+          this.clients.spokePoolClients[x.deposit.originChainId].latestBlockNumber - minDepositConfirmations
         );
       })
       .sort((a, b) =>
