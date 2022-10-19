@@ -277,10 +277,7 @@ export class ProfitClient {
   }
 
   async update(): Promise<void> {
-    await Promise.all([
-      this.updateTokenPrices(),
-      this.updateGasCosts(),
-    ]);
+    await Promise.all([this.updateTokenPrices(), this.updateGasCosts()]);
   }
 
   protected async updateTokenPrices(): Promise<void> {
