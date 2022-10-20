@@ -31,8 +31,8 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
 // The Key of the following dictionary is used as the USD threshold to determine the MDC:
 // - Searching from highest USD threshold to lowest
 // - if the deposited USD amount is <= the key value, then the MDC associated with the key for the origin chain
-// - For example, a deposit on Polygon worth $4,000 would use the MDC associated with the 5_000 key and chain
-// 137, so it would use a follow distance of 64 blocks.
+// - For example, a deposit on Polygon worth $4,000 would use the MDC associated with the 0 key and chain
+// 137, so it would use a follow distance of 80 blocks.
 
 // To see the latest block reorg events go to:
 // - Ethereum: https://etherscan.io/blocks_forked
