@@ -57,7 +57,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number]: { [chainId: numbe
     42161: 0,
   },
   0: {
-    1: 12,
+    1: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
     10: 0,
     137: 80,
     288: 0,
