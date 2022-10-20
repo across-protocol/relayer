@@ -3,18 +3,17 @@ import {
   config,
   Logger,
   delay,
-  getFillsInRange,
-  getNetworkName,
   toBN,
-  Contract,
-  ERC20,
-  etherscanLink,
   sortEventsAscending,
-  getSigner,
+  getSigner, toBNWei,
 } from "../utils";
-import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
+import {
+  constructSpokePoolClientsForFastDataworker,
+  getSpokePoolClientEventSearchConfigsForFastDataworker,
+  updateDataworkerClients
+} from "../dataworker/DataworkerClientHelper";
 import { createDataworker } from "../dataworker";
-import { constructSpokePoolClientsForBlockAndUpdate, updateSpokePoolClients } from "../common";
+import { updateSpokePoolClients } from "../common";
 import { DepositWithBlock } from "../interfaces";
 import { BigNumber } from "ethers";
 
@@ -25,23 +24,35 @@ export async function findDeficitBundles(_logger: winston.Logger) {
   logger = _logger;
 
   const baseSigner = await getSigner();
-  const { clients, dataworker } = await createDataworker(logger, baseSigner);
+  const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
   await updateDataworkerClients(clients);
 
+
   const hubPoolClient = clients.hubPoolClient;
-  const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-    dataworker.chainIdListForBundleEvaluationBlockNumbers,
+  const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
+    config,
     clients,
+    dataworker
+  );
+
+  console.log({
+    message:
+      "Setting start blocks for SpokePoolClient equal to bundle evaluation end blocks from Nth latest valid root bundle",
+    dataworkerFastStartBundle: config.dataworkerFastStartBundle,
+    dataworkerFastLookbackCount: config.dataworkerFastLookbackCount,
+    fromBlocks,
+    toBlocks,
+    fromBundleTxn: fromBundle?.transactionHash,
+    toBundleTxn: toBundle?.transactionHash,
+  });
+
+  const spokePoolClients = await constructSpokePoolClientsForFastDataworker(
     logger,
-    hubPoolClient.latestBlockNumber,
-    [
-      "FundsDeposited",
-      "RequestedSpeedUpDeposit",
-      "FilledRelay",
-      "EnabledDepositRoute",
-      "RelayedRootBundle",
-      "ExecutedRelayerRefundRoot",
-    ]
+    clients.configStoreClient,
+    config,
+    baseSigner,
+    fromBlocks,
+    toBlocks
   );
   await updateSpokePoolClients(spokePoolClients);
 
@@ -54,29 +65,26 @@ export async function findDeficitBundles(_logger: winston.Logger) {
   );
 
   const allBundles = sortEventsAscending(hubPoolClient.getProposedRootBundles());
+  let count = 0;
   for (const bundle of allBundles) {
     // Skip bundles that were not executed.
     if (!hubPoolClient.isRootBundleValid(bundle, latestMainnetBlock)) {
-      //console.log("Bundle not executed. Skipping...");
       continue;
     }
 
+    if (++count > config.dataworkerFastLookbackCount) break;
     // Populate the deposits going to a specific chain during the bundle's block range.
     const arrivingDepositsByChain: { [chainId: number]: DepositWithBlock[] } = {};
     for (const destinationChainId of dataworker.chainIdListForBundleEvaluationBlockNumbers) {
-      //console.log("Populating deposits for destination", destinationChainId);
       for (const [chainIdx, originChainId] of dataworker.chainIdListForBundleEvaluationBlockNumbers.entries()) {
         if (!bundle.bundleEvaluationBlockNumbers[chainIdx]) {
-          //console.log(`${originChainId} not in bundle`);
           continue;
         }
-        //console.log(`Populating deposits from ${originChainId} to ${destinationChainId}`);
 
         const spokePoolClient = spokePoolClients[originChainId];
         const startingBlock = bundleStartBlocks[originChainId];
         const endingBlock = bundle.bundleEvaluationBlockNumbers[chainIdx].toNumber();
         const originToken = hubPoolClient.getDestinationTokenForL1Token(tokenOfInterest, originChainId);
-        //console.log(`originToken on ${originChainId}: ${originToken}`);
         const deposits = spokePoolClient
           .getDepositsForDestinationChain(destinationChainId)
           .filter(
@@ -85,16 +93,6 @@ export async function findDeficitBundles(_logger: winston.Logger) {
               deposit.originBlockNumber >= startingBlock &&
               deposit.originToken === originToken
           ) as DepositWithBlock[];
-        /*
-        logger.info({
-          at: "findDeficitBundles",
-          message: `FOUND ${deposits.length} deposits from ${originChainId} to ${destinationChainId}`,
-          startingBlock,
-          endingBlock,
-          originToken,
-          bundleBlockNumbers: bundle.bundleEvaluationBlockNumbers,
-        });
-         */
 
         if (arrivingDepositsByChain[destinationChainId] === undefined) arrivingDepositsByChain[destinationChainId] = [];
         arrivingDepositsByChain[destinationChainId] = arrivingDepositsByChain[destinationChainId].concat(deposits);
@@ -106,41 +104,37 @@ export async function findDeficitBundles(_logger: winston.Logger) {
     // 2. All deposits originating from that chain. These needed to be subtracted from previous bundle's running balance
     // 3. Deposits arriving at that chain with unfilled amount > 0. These are slow fills and need to be added to the
     // previous bundle's running balance.
-    //console.log("MOVING ON");
     const runningBalances: { [chainId: number]: BigNumber } = {};
     for (const chainId of dataworker.chainIdListForBundleEvaluationBlockNumbers) {
       runningBalances[chainId] = toBN(0);
     }
 
-    for (const [chainIdx, destinationChainId] of dataworker.chainIdListForBundleEvaluationBlockNumbers.entries()) {
+    const validFillsByDestinationChain = {};
+    const depositsByOriginChain = {};
+    const unfilledDepositByDestinationChain = {};
+    for (const [chainIdx, chainId] of dataworker.chainIdListForBundleEvaluationBlockNumbers.entries()) {
       if (!bundle.bundleEvaluationBlockNumbers[chainIdx]) {
-        //console.log(`Bundle number not found ${chainIdx} ${destinationChainId} ${bundle.bundleEvaluationBlockNumbers}`);
         continue;
       }
 
-      const spokePoolClient = spokePoolClients[destinationChainId];
-      const startingBlock = bundleStartBlocks[destinationChainId];
+      const spokePoolClient = spokePoolClients[chainId];
+      const startingBlock = bundleStartBlocks[chainId];
       const endingBlock = bundle.bundleEvaluationBlockNumbers[chainIdx].toNumber();
-      const localTokenOfInterest = hubPoolClient.getDestinationTokenForL1Token(tokenOfInterest, destinationChainId);
-      //console.log(`localTokenOfInterest on ${destinationChainId}: ${localTokenOfInterest}`);
-      const arrivingDeposits = arrivingDepositsByChain[destinationChainId];
-      //console.log(`FOUND ${arrivingDeposits.length} arriving deposits`);
+      const localTokenOfInterest = hubPoolClient.getDestinationTokenForL1Token(tokenOfInterest, chainId);
+      const arrivingDeposits = arrivingDepositsByChain[chainId];
 
       const fills = spokePoolClient
         .getFillsWithBlockInRange(startingBlock, endingBlock)
         .filter((fill) => fill.destinationToken === localTokenOfInterest);
-      //console.log(`FOUND ${fills.length} fills`);
 
       const validFills = fills.filter((fill) => {
         const matchingDeposit = arrivingDeposits.find((deposit) => deposit.depositId == fill.depositId);
         return matchingDeposit && spokePoolClient.validateFillForDeposit(fill, matchingDeposit);
       });
-      //console.log(`FOUND ${validFills.length} valid fills`);
       // Add any valid fill's amount to the refunded chain's runningBalance.
       for (const validFill of validFills) {
-        runningBalances[validFill.repaymentChainId] = runningBalances[validFill.repaymentChainId].add(
-          validFill.fillAmount
-        );
+        const refundAmount = validFill.fillAmount.mul(toBNWei(1).sub(validFill.realizedLpFeePct)).div(toBNWei(1));
+        runningBalances[validFill.repaymentChainId] = runningBalances[validFill.repaymentChainId].add(refundAmount);
       }
 
       const unfilledDeposits = [];
@@ -151,10 +145,12 @@ export async function findDeficitBundles(_logger: winston.Logger) {
           unfilledDeposits.push(deposit);
         }
       }
-      //console.log(`FOUND ${unfilledDeposits.length} unfilledDeposits`);
       // Add any unfilled deposits' amount (slow fills) to the destination chain's running balance.
       for (const unfilledDeposit of unfilledDeposits) {
+        const destinationChainId = unfilledDeposit.destinationChainId;
         runningBalances[destinationChainId] = runningBalances[destinationChainId].add(unfilledDeposit.amount);
+        if (!unfilledDepositByDestinationChain[destinationChainId]) unfilledDepositByDestinationChain[destinationChainId] = [];
+        unfilledDepositByDestinationChain[destinationChainId].add(unfilledDeposit);
       }
 
       const originatingDeposits = spokePoolClient
@@ -165,45 +161,45 @@ export async function findDeficitBundles(_logger: winston.Logger) {
             deposit.originBlockNumber >= startingBlock &&
             deposit.originToken === localTokenOfInterest
         );
-      //console.log(`FOUND ${originatingDeposits.length} originatingDeposits`);
+      depositsByOriginChain[chainId] = originatingDeposits;
       // Subtract all deposits on the current chain from its running balance.
       for (const originatingDeposit of originatingDeposits) {
-        runningBalances[originatingDeposit.originChainId] = runningBalances[originatingDeposit.originChainId].add(
-          originatingDeposit.amount
-        );
+        console.log(`Subtracting ${originatingDeposit.amount.toString()} from running balance of ${chainId}}`, originatingDeposit);
+        runningBalances[chainId] = runningBalances[chainId].sub(originatingDeposit.amount);
       }
 
       // Update the starting block now that we've examined this (executed) bundle on this chain.
-      console.log("Valid fills", {
-        destinationChainId,
-        validFills,
-        originatingDeposits,
-      });
-      bundleStartBlocks[destinationChainId] = endingBlock + 1;
+      validFillsByDestinationChain[chainId] = validFills;
+      bundleStartBlocks[chainId] = endingBlock + 1;
     }
 
     // Compare computed running balances with executed leaves.
     const followingBlockNumber = clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber;
     const executedLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
     for (const [chainIdx, chainId] of dataworker.chainIdListForBundleEvaluationBlockNumbers.entries()) {
-      //console.log(`Running balances for ${chainId}:`, runningBalances[chainId].toString());
 
       for (const leaf of executedLeaves) {
         if (!leaf.runningBalances[chainIdx]) continue;
-        if (leaf.chainId == chainId) {
+        const leafChainId = leaf.chainId;
+        if (leafChainId == chainId) {
           const tokenIdx = leaf.l1Tokens.indexOf(tokenOfInterest);
           if (tokenIdx < 0) continue;
-          const leafRunningBalance = leaf.runningBalances[tokenIdx];
-          const leafNetSendAmount = leaf.netSendAmounts[tokenIdx];
+          const leafRunningBalance = leaf.runningBalances[tokenIdx].toString();
+          const leafNetSendAmount = leaf.netSendAmounts[tokenIdx].toString();
 
-          if (!runningBalances[chainId].eq(leafRunningBalance) || !runningBalances[chainId].eq(leafNetSendAmount)) {
+          const computedRunningBalance = runningBalances[chainId].toString();
+
+          if (computedRunningBalance !== leafRunningBalance && computedRunningBalance !== leafNetSendAmount) {
             console.log({
               message: `Mismatching running balances for chain ${chainId}`,
               bundle: bundle.transactionHash,
-              leafRunningBalance: leafRunningBalance.toString(),
-              leafNetSendAmount: leafNetSendAmount.toString(),
-              computedRunningBalance: runningBalances[chainId].toString(),
+              leafRunningBalance,
+              leafNetSendAmount,
+              computedRunningBalance,
               leafExec: leaf.transactionHash,
+              validFills: validFillsByDestinationChain[leafChainId],
+              deposits: depositsByOriginChain[leafChainId],
+              slowFills: unfilledDepositByDestinationChain[leafChainId],
             });
           }
         }
