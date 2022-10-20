@@ -47,20 +47,25 @@ export class Relayer {
       return agg;
     }, {});
 
-    // Sort thresholds in descending order.
-    const minimumDepositConfirmationThresholds = Object.keys(this.config.minDepositConfirmations).sort(
-      (x, y) => Number(y) - Number(x)
-    );
+    // Sort thresholds in ascending order.
+    const minimumDepositConfirmationThresholds = Object.keys(this.config.minDepositConfirmations)
+      .filter((x) => x !== "default")
+      .sort((x, y) => Number(x) - Number(y));
 
-    // Set the MDC for each origin chain equal to highest threshold not greater than the unfilled USD deposit amount.
+    // Set the MDC for each origin chain equal to lowest threshold greater than the unfilled USD deposit amount.
+    // If we can't find a threshold greater than the USD amount, then use the default.
     const mdcPerChain = Object.fromEntries(
       Object.keys(unfilledDepositAmountsPerChain).map((chainId) => {
-        // We don't need to handle an undefined case here since RelayerConfig enforces that a $0 USD threshold is set,
-        // so the $0 threshold should always be used as a fallback.
         const usdThreshold = minimumDepositConfirmationThresholds.find((_usdThreshold) => {
-          return unfilledDepositAmountsPerChain[chainId].gte(toBNWei(_usdThreshold));
+          return toBNWei(_usdThreshold).gte(unfilledDepositAmountsPerChain[chainId]);
         });
-        return [chainId, this.config.minDepositConfirmations[usdThreshold][chainId]];
+        // If no thresholds are greater than unfilled amount, then use fallback which should have largest MDCs.
+        return [
+          chainId,
+          usdThreshold === undefined
+            ? this.config.minDepositConfirmations["default"][chainId]
+            : this.config.minDepositConfirmations[usdThreshold][chainId],
+        ];
       })
     );
     this.logger.debug({
@@ -68,7 +73,7 @@ export class Relayer {
       message: "Setting minimum deposit confirmation based on origin chain aggregate deposit amount",
       unfilledDepositAmountsPerChain,
       mdcPerChain,
-      minimumDepositConfirmationThresholds,
+      minDepositConfirmations: this.config.minDepositConfirmations,
     });
 
     // Require that all fillable deposits meet the minimum specified number of confirmations.

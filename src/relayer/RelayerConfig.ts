@@ -89,8 +89,8 @@ export class RelayerConfig extends CommonConfig {
         });
       });
     assert(
-      Object.keys(this.minDepositConfirmations).some((threshold) => threshold === "0"),
-      "Unspecified 0 threshold in minDepositConfirmations"
+      Object.keys(this.minDepositConfirmations).some((threshold) => threshold === "default"),
+      "Unspecified 'default' or '0' threshold in minDepositConfirmations"
     );
   }
 }

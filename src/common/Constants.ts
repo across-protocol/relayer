@@ -30,9 +30,11 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
 // configuration allows the user to set higher follow distances for higher deposit amounts.
 // The Key of the following dictionary is used as the USD threshold to determine the MDC:
 // - Searching from highest USD threshold to lowest
-// - if the deposited USD amount is <= the key value, then the MDC associated with the key for the origin chain
-// - For example, a deposit on Polygon worth $4,000 would use the MDC associated with the 0 key and chain
-// 137, so it would use a follow distance of 80 blocks.
+// - If the key value is >= deposited USD amount, then use the MDC associated with the key for the origin chain
+// - If no key values are >= depostied USD amount, use the "default" value for the origin chain
+// - For example, a deposit on Polygon worth $4,000 would use the MDC associated with the 5_000 key and chain
+// 137, so it would use a follow distance of 80 blocks, while a deposit on Polygon for $6,000 would use 10_000
+// key. A deposit of $11,000 would use the "default" key
 
 // To see the latest block reorg events go to:
 // - Ethereum: https://etherscan.io/blocks_forked
@@ -41,22 +43,22 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
 // Optimistic Rollups are currently centrally serialized and are not expected to reorg. Technically a block on an
 // ORU will not be finalized until after 7 days, so there is little difference in following behind 0 blocks versus
 // anything under 7 days.
-export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number]: { [chainId: number]: number } } = {
-  10_000: {
+export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
+  default: {
     1: 64, // Finalized block: https://www.alchemy.com/overviews/ethereum-commitment-levels
     10: 0,
     137: 128, // Commonly used finality level for CEX's that accept Polygon deposits
     288: 0,
     42161: 0,
   },
-  5_000: {
+  10_000: {
     1: 32, // Justified block
     10: 0,
     137: 100, // Probabilistically safe level based on historic Polygon reorgs
     288: 0,
     42161: 0,
   },
-  0: {
+  5_000: {
     1: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
     10: 0,
     137: 80,
