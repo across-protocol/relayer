@@ -36,34 +36,48 @@ export class Relayer {
     // TODO: Note this does not consider the price of the token which will be added once the profitability module is
     // added to this bot.
 
+    // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
+    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = getUnfilledDeposits(
+      this.clients.spokePoolClients,
+      this.maxUnfilledDepositLookBack
+    ).reduce((agg, curr) => {
+      const unfilledAmountUsd = this.clients.profitClient.getFillAmountInUsd(curr.deposit, curr.unfilledAmount);
+      if (!agg[curr.deposit.originChainId]) agg[curr.deposit.originChainId] = toBN(0);
+      agg[curr.deposit.originChainId] = agg[curr.deposit.originChainId].add(unfilledAmountUsd);
+      return agg;
+    }, {});
+
     // Sort thresholds in descending order.
     const minimumDepositConfirmationThresholds = Object.keys(this.config.minDepositConfirmations).sort(
       (x, y) => Number(y) - Number(x)
     );
 
+    // Set the MDC for each origin chain equal to highest threshold not greater than the unfilled USD deposit amount.
+    const mdcPerChain = Object.fromEntries(
+      Object.keys(unfilledDepositAmountsPerChain).map((chainId) => {
+        // We don't need to handle an undefined case here since RelayerConfig enforces that a $0 USD threshold is set,
+        // so the $0 threshold should always be used as a fallback.
+        const usdThreshold = minimumDepositConfirmationThresholds.find((_usdThreshold) => {
+          return unfilledDepositAmountsPerChain[chainId].gte(toBNWei(_usdThreshold));
+        });
+        return [chainId, this.config.minDepositConfirmations[usdThreshold][chainId]];
+      })
+    );
+    this.logger.debug({
+      at: "Relayer",
+      message: "Setting minimum deposit confirmation based on origin chain aggregate deposit amount",
+      unfilledDepositAmountsPerChain,
+      mdcPerChain,
+      minimumDepositConfirmationThresholds,
+    });
+
     // Require that all fillable deposits meet the minimum specified number of confirmations.
     const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients, this.maxUnfilledDepositLookBack)
       .filter((x) => {
-        const unfilledAmountUsd = this.clients.profitClient.getFillAmountInUsd(x.deposit, x.unfilledAmount);
-
-        // We don't need to handle an undefined case here since RelayerConfig enforces that a $0 USD threshold is set,
-        // so the $0 threshold should always be used as a fallback.
-        const usdThresholdToUse = minimumDepositConfirmationThresholds.find((usdThreshold) => {
-          return unfilledAmountUsd.gte(toBNWei(usdThreshold));
-        });
-        const minDepositConfirmations = this.config.minDepositConfirmations[usdThresholdToUse][x.deposit.originChainId];
-        this.logger.debug({
-          at: "Relayer",
-          message: "Setting minimum deposit confirmation based on deposit amount",
-          unfilledAmountUsd,
-          unfilledAmount: x.unfilledAmount,
-          originChainId: x.deposit.originChainId,
-          usdThresholdToUse: toBNWei(usdThresholdToUse),
-          minDepositConfirmations,
-        });
         return (
           x.deposit.originBlockNumber <=
-          this.clients.spokePoolClients[x.deposit.originChainId].latestBlockNumber - minDepositConfirmations
+          this.clients.spokePoolClients[x.deposit.originChainId].latestBlockNumber -
+            mdcPerChain[x.deposit.originChainId]
         );
       })
       .sort((a, b) =>
