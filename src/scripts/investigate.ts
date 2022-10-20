@@ -174,6 +174,11 @@ export async function findDeficitBundles(_logger: winston.Logger) {
       }
 
       // Update the starting block now that we've examined this (executed) bundle on this chain.
+      console.log("Valid fills", {
+        destinationChainId,
+        validFills,
+        originatingDeposits,
+      });
       bundleStartBlocks[destinationChainId] = endingBlock + 1;
     }
 
@@ -189,13 +194,15 @@ export async function findDeficitBundles(_logger: winston.Logger) {
           const tokenIdx = leaf.l1Tokens.indexOf(tokenOfInterest);
           if (tokenIdx < 0) continue;
           const leafRunningBalance = leaf.runningBalances[tokenIdx];
+          const leafNetSendAmount = leaf.netSendAmounts[tokenIdx];
 
-          if (!runningBalances[chainId].eq(leafRunningBalance)) {
+          if (!runningBalances[chainId].eq(leafRunningBalance) || !runningBalances[chainId].eq(leafNetSendAmount)) {
             console.log({
               message: `Mismatching running balances for chain ${chainId}`,
               bundle: bundle.transactionHash,
-              computedRunningBalance: runningBalances[chainId].toString(),
               leafRunningBalance: leafRunningBalance.toString(),
+              leafNetSendAmount: leafNetSendAmount.toString(),
+              computedRunningBalance: runningBalances[chainId].toString(),
               leafExec: leaf.transactionHash,
             });
           }
