@@ -30,6 +30,8 @@ module.exports = {
     "mocha/no-exclusive-tests": "error",
     "@typescript-eslint/no-var-requires": "off",
     "node/no-unsupported-features/es-syntax": ["error", { ignores: ["modules"] }],
+    // Disable warnings for { a, b, ...rest } variables, since this is typically used to remove variables.
+    "@typescript-eslint/no-unused-vars": ["warn", { ignoreRestSiblings: true }],
   },
   settings: {
     node: {
@@ -38,7 +40,7 @@ module.exports = {
   },
   overrides: [
     {
-      files: ["scripts/*.ts"],
+      files: ["scripts/*.ts", "tasks/*.ts"],
       rules: {
         "no-console": 0,
       },

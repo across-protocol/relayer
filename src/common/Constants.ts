@@ -4,25 +4,39 @@ export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
 
 export const RELAYER_MIN_FEE_PCT = 0.0003;
 
-// Target ~2 days per chain. Avg. block times: { 1: 15s, 10/42161: 0.5s, 137: 2.5s, 288: 30s }
+// Target ~2 days per chain. Avg. block times: { 1: 12s, 10/42161: 0.5s, 137: 2.5s, 288: 30s }
 export const MAX_RELAYER_DEPOSIT_LOOK_BACK: { [chainId: number]: number } = {
-  1: 11500,
-  10: 350000,
-  137: 70000,
-  288: 6000,
-  42161: 350000,
+  1: 14400,
+  10: 345600,
+  137: 69120,
+  288: 5760,
+  42161: 345600,
+};
+
+// Target ~4 days per chain. Avg. block times: { 1: 12s, 10/42161: 0.5s, 137: 2.5s, 288: 30s }
+export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
+  1: 28800,
+  10: 691200,
+  137: 138240,
+  288: 11520,
+  42161: 691200,
 };
 
 // Reorgs are anticipated on Ethereum and Polygon.
-// Ethereum: https://etherscan.io/blocks_forked (not working since the merge)
-// Polygon: https://polygonscan.com/blocks_forked
-// Optimistic Rollups are currently centrally serialized and are not expected to reorg.
+// Ethereum: Post-merge finality time is 2 epochs (64 slots total), we set the default to 32 which is the
+// length of time for a block to be "justified", which Alchemy (for example) marks as "safe":
+// https://docs.alchemy.com/reference/ethereum-developer-guide-to-the-merge#what-are-safe-and-finalized
+// Polygon: https://polygonscan.com/blocks_forked. There have been re orgs > 128 blocks deep but most CEX's
+// use 128 blocks as the finality time so we'll follow that guideline.
+// Optimistic Rollups are currently centrally serialized and are not expected to reorg. Finality on Optimistic Rollups
+// is technically 1 week, which is too long, and there is little practical difference in
+// finality for any distance between 0 and 1 week.
 export const MIN_DEPOSIT_CONFIRMATIONS: { [chainId: number]: number } = {
-  1: 32,
-  10: 240,
-  137: 100,
-  288: 4,
-  42161: 240,
+  1: 32, // Eth post-merge finality time
+  10: 0,
+  137: 128,
+  288: 0,
+  42161: 0,
 };
 
 // Optimism, ethereum can do infinity lookbacks. boba and Arbitrum limited to 100000 on infura.
@@ -56,7 +70,7 @@ export const CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } = {
 // what the hubpool thinks is the correct L2 token for a given L1 token is actually the correct L2 token. It is simply a
 //  sanity check: if for whatever reason this does not line up the bot show fail loudly and stop execution as something
 // is broken and funds are not safe to be sent over the canonical L2 bridges.
-export const l2TokensToL1TokenValidation = {
+export const l2TokensToL1TokenValidation: { [tokenAddress: string]: { [chainId: number]: string } } = {
   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": {
     10: "0x7F5c764cBc14f9669B88837ca1490cCa17c31607",
     137: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
@@ -122,5 +136,5 @@ export const IGNORED_SPOKE_BUNDLES = {
 // include any invalid bundles that got through, such as at blocks 15001113 or 15049343 which are missing
 // some events but have correct bundle eval blocks. This list specifically contains admin proposals that are sent
 // to correct the bundles such as 15049343 that missed some events.
-export const IGNORED_HUB_PROPOSED_BUNDLES = [];
-export const IGNORED_HUB_EXECUTED_BUNDLES = [];
+export const IGNORED_HUB_PROPOSED_BUNDLES: number[] = [];
+export const IGNORED_HUB_EXECUTED_BUNDLES: number[] = [];

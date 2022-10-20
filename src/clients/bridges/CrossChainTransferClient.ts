@@ -1,4 +1,4 @@
-import { BigNumber, winston, assign, toBN } from "../../utils";
+import { BigNumber, winston, assign, toBN, DefaultLogLevels } from "../../utils";
 import { AdapterManager } from "./AdapterManager";
 import { OutstandingTransfers } from "../../interfaces/Bridge";
 
@@ -69,7 +69,7 @@ export class CrossChainTransferClient {
     this.log("Updated cross chain transfers", { outstandingCrossChainTransfers: this.outstandingCrossChainTransfers });
   }
 
-  log(message: string, data?: any, level = "debug") {
+  log(message: string, data?: any, level: DefaultLogLevels = "debug") {
     if (this.logger) this.logger[level]({ at: "CrossChainTransferClient", message, ...data });
   }
 }

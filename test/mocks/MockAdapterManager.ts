@@ -1,5 +1,5 @@
 import { AdapterManager } from "../../src/clients/bridges";
-import { BigNumber } from "../../src/utils";
+import { BigNumber, TransactionResponse } from "../../src/utils";
 
 import { createRandomBytes32 } from "../utils";
 import { OutstandingTransfers } from "../../src/interfaces/Bridge";
@@ -14,7 +14,7 @@ export class MockAdapterManager extends AdapterManager {
     if (!this.tokensSentCrossChain[chainId]) this.tokensSentCrossChain[chainId] = {};
     const hash = createRandomBytes32();
     this.tokensSentCrossChain[chainId][l1Token] = { amount, hash };
-    return { hash };
+    return { hash } as TransactionResponse;
   }
 
   override async getOutstandingCrossChainTokenTransferAmount(

@@ -14,11 +14,21 @@ import {
   DepositWithBlockInCache,
   FillWithBlockInCache,
   sortEventsAscendingInPlace,
+  DefaultLogLevels,
+  MakeOptional,
 } from "../utils";
-import { toBN, Event, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
+import { toBN, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
 import { AcrossConfigStoreClient } from "./ConfigStoreClient";
-import { Deposit, DepositWithBlock, Fill, SpeedUp, FillWithBlock, TokensBridged } from "../interfaces/SpokePool";
+import {
+  Deposit,
+  DepositWithBlock,
+  Fill,
+  SpeedUp,
+  FillWithBlock,
+  TokensBridged,
+  FundsDepositedEvent,
+} from "../interfaces/SpokePool";
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
 
 const FILL_DEPOSIT_COMPARISON_KEYS = [
@@ -34,16 +44,17 @@ const FILL_DEPOSIT_COMPARISON_KEYS = [
 ] as const;
 
 export class SpokePoolClient {
-  private depositHashes: { [depositHash: string]: Deposit } = {};
+  private depositHashes: { [depositHash: string]: DepositWithBlock } = {};
   private depositHashesToFills: { [depositHash: string]: FillWithBlock[] } = {};
   private speedUps: { [depositorAddress: string]: { [depositId: number]: SpeedUp[] } } = {};
   private depositRoutes: { [originToken: string]: { [DestinationChainId: number]: boolean } } = {};
   private tokensBridged: TokensBridged[] = [];
   private rootBundleRelays: RootBundleRelayWithBlock[] = [];
   private relayerRefundExecutions: RelayerRefundExecutionWithBlock[] = [];
+  public earliestDepositId: number = Number.MAX_SAFE_INTEGER;
   public isUpdated = false;
   public firstBlockToSearch: number;
-  public latestBlockNumber: number;
+  public latestBlockNumber: number | undefined;
   public deposits: { [DestinationChainId: number]: DepositWithBlock[] } = {};
   public fills: { [OriginChainId: number]: FillWithBlock[] } = {};
 
@@ -53,7 +64,7 @@ export class SpokePoolClient {
     // Can be excluded. This disables some deposit validation.
     readonly configStoreClient: AcrossConfigStoreClient | null,
     readonly chainId: number,
-    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
+    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
     readonly spokePoolDeploymentBlock: number = 0
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
@@ -148,7 +159,7 @@ export class SpokePoolClient {
     return executedRefunds;
   }
 
-  appendMaxSpeedUpSignatureToDeposit(deposit: Deposit) {
+  appendMaxSpeedUpSignatureToDeposit(deposit: DepositWithBlock) {
     const maxSpeedUp = this.speedUps[deposit.depositor]?.[deposit.depositId]?.reduce((prev, current) =>
       prev.newRelayerFeePct.gt(current.newRelayerFeePct) ? prev : current
     );
@@ -162,7 +173,7 @@ export class SpokePoolClient {
     };
   }
 
-  getDepositForFill(fill: Fill): Deposit | undefined {
+  getDepositForFill(fill: Fill): DepositWithBlock | undefined {
     const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill.
     const depositWithMatchingDepositId = this.depositHashes[this.getDepositHash(fill)];
     if (depositWithMatchingDepositId === undefined) return undefined;
@@ -276,8 +287,12 @@ export class SpokePoolClient {
     // cachedData.latestBlock. The cache might contain events older than searchConfig.fromBlock which we'll filter
     // before loading in into this client's memory. We will fetch any blocks > cachedData.latestBlock and <= HEAD
     // from the RPC.
+
+    let timerStart = Date.now();
     const cachedData = await this.getEventsFromCache(latestBlockToCache, searchConfig);
+
     if (cachedData !== undefined) {
+      this.log("debug", `Time to load cache for chain ${this.chainId}: ${Date.now() - timerStart}ms`);
       depositEventSearchConfig.fromBlock = cachedData.latestBlock + 1;
       this.log("debug", `Partially loading deposit and fill event data from cache for chain ${this.chainId}`, {
         latestBlock: cachedData.latestBlock,
@@ -312,9 +327,11 @@ export class SpokePoolClient {
       };
     });
 
+    timerStart = Date.now();
     const queryResults = await Promise.all(
       eventSearchConfigs.map((config) => paginatedEventQuery(this.spokePool, config.filter, config.searchConfig))
     );
+    this.log("debug", `Time to query new events from RPC for ${this.chainId}: ${Date.now() - timerStart}ms`);
 
     // Sort all events to ensure they are stored in a consistent order.
     queryResults.forEach((events) => {
@@ -337,7 +354,7 @@ export class SpokePoolClient {
     // is heavy as there is a fair bit of block number lookups that need to happen. Note this call REQUIRES that the
     // hubPoolClient is updated on the first before this call as this needed the the L1 token mapping to each L2 token.
     if (eventsToQuery.includes("FundsDeposited")) {
-      const depositEvents = queryResults[eventsToQuery.indexOf("FundsDeposited")];
+      const depositEvents = queryResults[eventsToQuery.indexOf("FundsDeposited")] as FundsDepositedEvent[];
       if (depositEvents.length > 0)
         this.log("debug", `Fetching realizedLpFeePct for ${depositEvents.length} deposits on chain ${this.chainId}`, {
           numDeposits: depositEvents.length,
@@ -354,7 +371,7 @@ export class SpokePoolClient {
       // data always precedes newly fetched data. We also only want to use cached data as old as the original search
       // config's fromBlock.
       if (cachedData !== undefined) {
-        for (const destinationChainId of Object.keys(cachedData.deposits)) {
+        for (const destinationChainId of Object.keys(cachedData.deposits).map(Number)) {
           cachedData.deposits[destinationChainId].forEach((deposit: DepositWithBlockInCache) => {
             const convertedDeposit = this.convertDepositInCache(deposit);
             assign(dataToCache.deposits, [convertedDeposit.destinationChainId], [convertedDeposit]);
@@ -367,12 +384,15 @@ export class SpokePoolClient {
               assign(this.depositHashes, [this.getDepositHash(convertedDeposit)], convertedDeposit);
               assign(this.deposits, [convertedDeposit.destinationChainId], [convertedDeposit]);
             }
+
+            if (convertedDeposit.depositId < this.earliestDepositId)
+              this.earliestDepositId = convertedDeposit.depositId;
           });
         }
         this.log("debug", `Using cached deposit events within search config for chain ${this.chainId}`, {
           cachedDeposits: Object.fromEntries(
-            Object.keys(this.deposits).map((destinationChainId) => {
-              return [destinationChainId, this.deposits[destinationChainId].length];
+            Object.entries(this.deposits).map(([destinationChainId, deposits]) => {
+              return [destinationChainId, deposits.length];
             })
           ),
         });
@@ -385,25 +405,26 @@ export class SpokePoolClient {
         });
       for (const [index, event] of depositEvents.entries()) {
         // Append the realizedLpFeePct.
-        const deposit: Deposit = { ...spreadEvent(event), realizedLpFeePct: dataForQuoteTime[index].realizedLpFeePct };
-        // Append the destination token to the deposit.
-        deposit.destinationToken = this.getDestinationTokenForDeposit(deposit);
+        const processedEvent: Omit<Deposit, "destinationToken" | "realizedLpFeePct"> = spreadEvent(event);
+
+        // Append destination token and realized lp fee to deposit.
+        const deposit = {
+          ...processedEvent,
+          realizedLpFeePct: dataForQuoteTime[index].realizedLpFeePct,
+          destinationToken: this.getDestinationTokenForDeposit(processedEvent),
+          blockNumber: dataForQuoteTime[index].quoteBlock,
+          originBlockNumber: event.blockNumber,
+        };
+
         assign(this.depositHashes, [this.getDepositHash(deposit)], deposit);
-        assign(
-          this.deposits,
-          [deposit.destinationChainId],
-          [{ ...deposit, blockNumber: dataForQuoteTime[index].quoteBlock, originBlockNumber: event.blockNumber }]
-        );
-        assign(
-          dataToCache.deposits,
-          [deposit.destinationChainId],
-          [{ ...deposit, blockNumber: dataForQuoteTime[index].quoteBlock, originBlockNumber: event.blockNumber }]
-        );
+        assign(this.deposits, [deposit.destinationChainId], [deposit]);
+        assign(dataToCache.deposits, [deposit.destinationChainId], [deposit]);
+
+        if (deposit.depositId < this.earliestDepositId) this.earliestDepositId = deposit.depositId;
       }
     }
 
-    // Disable this loop.
-    // eslint-disable-next-line no-constant-condition
+    // Update deposits with speed up requests from depositor.
     if (eventsToQuery.includes("RequestedSpeedUpDeposit")) {
       const speedUpEvents = queryResults[eventsToQuery.indexOf("RequestedSpeedUpDeposit")];
 
@@ -413,18 +434,16 @@ export class SpokePoolClient {
       }
 
       // Traverse all deposit events and update them with associated speedups, If they exist.
-      for (const destinationChainId of Object.keys(this.deposits))
-        for (const [index, deposit] of this.deposits[destinationChainId].entries()) {
-          const { blockNumber, originBlockNumber, ...depositData } = deposit;
-          const speedUpDeposit = this.appendMaxSpeedUpSignatureToDeposit(depositData);
-          if (speedUpDeposit !== depositData) {
-            this.deposits[destinationChainId][index] = {
-              ...speedUpDeposit,
-              blockNumber,
-              originBlockNumber,
-            };
-          }
+      for (const [_destinationChainId, deposits] of Object.entries(this.deposits)) {
+        const destinationChainId = Number(_destinationChainId);
+        for (const [index, deposit] of deposits.entries()) {
+          deposits[index] = this.appendMaxSpeedUpSignatureToDeposit(deposit);
         }
+        if (dataToCache.deposits[destinationChainId] !== undefined)
+          for (const [index, deposit] of dataToCache.deposits[destinationChainId].entries()) {
+            dataToCache.deposits[destinationChainId][index] = this.appendMaxSpeedUpSignatureToDeposit(deposit);
+          }
+      }
     }
 
     if (eventsToQuery.includes("FilledRelay")) {
@@ -463,10 +482,12 @@ export class SpokePoolClient {
 
     // Update cache with events <= latest block to cache.
     if (latestBlockToCache > 0) {
+      timerStart = Date.now();
       // Only reset earliest block in cache if there was no existing cached data. We assume that only the most recent
       // events up until latestBlockToCache are added to the cache.
       const earliestBlockToCache = cachedData !== undefined ? cachedData.earliestBlock : searchConfig.fromBlock;
       await this.setDataInCache(earliestBlockToCache, latestBlockToCache, dataToCache);
+      this.log("debug", `Time to cache new data for chain ${this.chainId}: ${Date.now() - timerStart}ms`);
     }
 
     if (eventsToQuery.includes("EnabledDepositRoute")) {
@@ -526,10 +547,13 @@ export class SpokePoolClient {
   }
 
   public hubPoolClient() {
-    return this.configStoreClient.hubPoolClient;
+    return this.configStoreClient?.hubPoolClient;
   }
 
-  private async getEventsFromCache(latestBlockToCache: number, searchConfig: EventSearchConfig): Promise<CachedData> {
+  private async getEventsFromCache(
+    latestBlockToCache: number,
+    searchConfig: EventSearchConfig
+  ): Promise<CachedData | undefined> {
     if (latestBlockToCache > 0) {
       // Invariant: The cached deposit data for this chain should include all events from searchConfig.fromBlock
       // until latestCachedBlock, and latestCachedBlock <= latestBlockToCache. If latestCachedBlock <=
@@ -589,23 +613,27 @@ export class SpokePoolClient {
   }
 
   private async getDepositDataFromCache(): Promise<CachedDepositData | Record<string, never>> {
+    if (!this.configStoreClient) return {};
     const result = await getFromCache(this.getCacheKey().deposits, this.configStoreClient.redisClient);
     if (result === null) return {};
     else return JSON.parse(result);
   }
 
   private async getFillDataFromCache(): Promise<CachedFillData | Record<string, never>> {
+    if (!this.configStoreClient) return {};
     const result = await getFromCache(this.getCacheKey().fills, this.configStoreClient.redisClient);
     if (result === null) return {};
     else return JSON.parse(result);
   }
 
   private async setDepositDataInCache(newData: CachedDepositData) {
-    await setInCache(this.getCacheKey().deposits, JSON.stringify(newData), this.configStoreClient.redisClient);
+    if (this.configStoreClient)
+      await setInCache(this.getCacheKey().deposits, JSON.stringify(newData), this.configStoreClient.redisClient);
   }
 
   private async setFillDataInCache(newData: CachedFillData) {
-    await setInCache(this.getCacheKey().fills, JSON.stringify(newData), this.configStoreClient.redisClient);
+    if (this.configStoreClient)
+      await setInCache(this.getCacheKey().fills, JSON.stringify(newData), this.configStoreClient.redisClient);
   }
 
   private async setDataInCache(
@@ -622,12 +650,21 @@ export class SpokePoolClient {
             .map((deposit) => {
               // Here we convert BigNumber objects to strings before storing into Redis cache
               // which only stores strings.
-              return {
+              const depositToCache = {
                 ...deposit,
                 amount: deposit.amount.toString(),
                 relayerFeePct: deposit.relayerFeePct.toString(),
+                newRelayerFeePct: deposit?.newRelayerFeePct?.toString(),
                 realizedLpFeePct: deposit.realizedLpFeePct.toString(),
-              } as DepositWithBlockInCache;
+              };
+
+              // Delete undefined values.
+              Object.keys(depositToCache).forEach((_key) => {
+                // Object.keys always produces strings, not the key type, so a cast is necessary.
+                const key = _key as keyof typeof depositToCache;
+                if (depositToCache[key] === undefined) delete depositToCache[key];
+              });
+              return depositToCache;
             }),
         ];
       })
@@ -636,7 +673,7 @@ export class SpokePoolClient {
     const fillsToCacheBeforeSnapshot = newCachedData.fills
       .filter((e) => e.blockNumber <= latestBlockToCache)
       .map((fill) => {
-        return {
+        const fillToCache = {
           ...fill,
           amount: fill.amount.toString(),
           totalFilledAmount: fill.totalFilledAmount.toString(),
@@ -645,6 +682,12 @@ export class SpokePoolClient {
           appliedRelayerFeePct: fill.appliedRelayerFeePct.toString(),
           realizedLpFeePct: fill.realizedLpFeePct.toString(),
         } as FillWithBlockInCache;
+        // Delete undefined values.
+        Object.keys(fillToCache).forEach((_key) => {
+          const key = _key as keyof typeof fillToCache;
+          if (fillToCache[key] === undefined) delete fillToCache[key];
+        });
+        return fillToCache;
       });
 
     this.log("debug", `Saved cached for chain ${this.chainId}`, {
@@ -674,7 +717,7 @@ export class SpokePoolClient {
     });
   }
 
-  // Neccessary to use this function because RedisDB can only store strings so we need to stringify the BN objects
+  // Necessary to use this function because RedisDB can only store strings so we need to stringify the BN objects
   // before storing them in the cache, and do the opposite to retrieve the data type that we expect when fetching
   // from the cache.
   private convertDepositInCache(deposit: DepositWithBlockInCache): DepositWithBlock {
@@ -682,6 +725,7 @@ export class SpokePoolClient {
       ...deposit,
       amount: toBN(deposit.amount),
       relayerFeePct: toBN(deposit.relayerFeePct),
+      newRelayerFeePct: deposit.newRelayerFeePct ? toBN(deposit.newRelayerFeePct) : undefined,
       realizedLpFeePct: toBN(deposit.realizedLpFeePct),
     };
   }
@@ -698,24 +742,30 @@ export class SpokePoolClient {
     };
   }
 
-  private async computeRealizedLpFeePct(depositEvent: Event) {
-    if (!this.configStoreClient) return { realizedLpFeePct: toBN(0), quoteBlock: 0 }; // If there is no rate model client return 0.
+  private async computeRealizedLpFeePct(depositEvent: FundsDepositedEvent) {
+    const hubPoolClient = this.hubPoolClient();
+    if (!hubPoolClient || !this.configStoreClient) return { realizedLpFeePct: toBN(0), quoteBlock: 0 }; // If there is no rate model client return 0.
     const deposit = {
       amount: depositEvent.args.amount,
       originChainId: Number(depositEvent.args.originChainId),
       originToken: depositEvent.args.originToken,
       quoteTimestamp: depositEvent.args.quoteTimestamp,
-    } as Deposit;
+    };
 
-    return this.configStoreClient.computeRealizedLpFeePct(deposit, this.hubPoolClient().getL1TokenForDeposit(deposit));
+    return this.configStoreClient.computeRealizedLpFeePct(deposit, hubPoolClient.getL1TokenForDeposit(deposit));
   }
 
-  private getDestinationTokenForDeposit(deposit: Deposit): string {
-    if (!this.configStoreClient) return ZERO_ADDRESS; // If there is no rate model client return address(0).
-    return this.hubPoolClient().getDestinationTokenForDeposit(deposit);
+  private getDestinationTokenForDeposit(deposit: {
+    originChainId: number;
+    originToken: string;
+    destinationChainId: number;
+  }): string {
+    const hubPoolClient = this.hubPoolClient();
+    if (!hubPoolClient) return ZERO_ADDRESS; // If there is no rate model client return address(0).
+    return hubPoolClient.getDestinationTokenForDeposit(deposit);
   }
 
-  private log(level: string, message: string, data?: any) {
+  private log(level: DefaultLogLevels, message: string, data?: any) {
     this.logger[level]({ at: "SpokePoolClient", chainId: this.chainId, message, ...data });
   }
 }

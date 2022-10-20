@@ -3281,6 +3281,11 @@
   resolved "https://registry.yarnpkg.com/@types/minimatch/-/minimatch-3.0.5.tgz#1001cc5e6a3704b83c236027e77f2f58ea010f40"
   integrity sha512-Klz949h02Gz2uZCMGwDUSDS1YBlTdDDgbWHi+81l29tQALUtvz4rAYi5uoVhE5Lagoq6DeqAUlbrHvW/mXDgdQ==
 
+"@types/minimist@^1.2.2":
+  version "1.2.2"
+  resolved "https://registry.yarnpkg.com/@types/minimist/-/minimist-1.2.2.tgz#ee771e2ba4b3dc5b372935d549fd9617bf345b8c"
+  integrity sha512-jhuKLIRrhvCPLqwPcx6INqmKeiA5EWrsCOPhrlFSrbrmU4ZMPjj5Ul/oLCMDO98XRUIwVm78xICz4EPCektzeQ==
+
 "@types/mkdirp@^0.5.2":
   version "0.5.2"
   resolved "https://registry.yarnpkg.com/@types/mkdirp/-/mkdirp-0.5.2.tgz#503aacfe5cc2703d5484326b1b27efa67a339c1f"
@@ -3516,10 +3521,10 @@
     truffle-deploy-registry "^0.5.1"
     web3 "^1.6.0"
 
-"@uma/common@^2.27.0":
-  version "2.27.0"
-  resolved "https://registry.yarnpkg.com/@uma/common/-/common-2.27.0.tgz#b32cd76ef03090029b55bc508bdc6d9023a9978e"
-  integrity sha512-JHeBzMOmAhWE+E+3Qn6BJpVNM5gGbrCFUMrnVKR7SulavDAFvkVM/WUipHOOuMoLWg+YtBHqx89X1acPwDhvog==
+"@uma/common@^2.28.0":
+  version "2.28.0"
+  resolved "https://registry.yarnpkg.com/@uma/common/-/common-2.28.0.tgz#7123caf705a7bad3f16a9c211759913d9226929b"
+  integrity sha512-a6znfnN8Te5imvIzEkcrwg87vkd6//Oa+H74uBtx1z4ZTU0+FcByUnfSbPMlwQxrvkF2GUF9+7mmnD81Dz8ZVg==
   dependencies:
     "@across-protocol/contracts" "^0.1.4"
     "@eth-optimism/hardhat-ovm" "^0.2.2"
@@ -3553,10 +3558,10 @@
     web3 "^1.6.0"
     winston "^3.2.1"
 
-"@uma/contracts-frontend@^0.3.15":
-  version "0.3.15"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.3.15.tgz#cc8eae27826809b6925b2cd268d3973aea027804"
-  integrity sha512-FKDu3FXHd31ILXu9Wo+Er4El0BN35I2+Unu9Nun6PWHZtByo1/4B2439xtfysDKQFF0f4PHMdL1V645A5Q1OKQ==
+"@uma/contracts-frontend@^0.3.18":
+  version "0.3.18"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.3.18.tgz#dc6afcfa401c07d8d08be53eff4a97ca8eb06c79"
+  integrity sha512-eneJdzpxe+UFAmZufL7MAnQ/gX1c9reU12iUpfcBcNscNDoQcHw82P4KTmzIQ2zqHvvnMmvE/uLOsZ5OXGGJBw==
 
 "@uma/contracts-frontend@^0.3.7":
   version "0.3.7"
@@ -3578,10 +3583,10 @@
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.2.tgz#884b00b2c6bf983c9f136d5f8a0749c5ff4e08cd"
   integrity sha512-Ncl7Kv2nxuY/wV5oczH2Nf6XCS7dJLad9DlzMI3jwPMPU98YT8ChHydcDe6ZiL0SAVTg7FgpIyh7lX0B7nV9Aw==
 
-"@uma/contracts-node@^0.3.15":
-  version "0.3.15"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.15.tgz#bcd658edb0baa9ddaeb4248933affa04865468cf"
-  integrity sha512-z14gtnt6VKjMkfZYGtCFERG/wyngHUp0/yDKB6ZhAVz/EanUSGpWvD4ehm/xC/HCSQcT253oFl9e0P1tsZRblw==
+"@uma/contracts-node@^0.3.18":
+  version "0.3.18"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.18.tgz#40e053ff6bc66f7ae7ce6c5d203a3200cf9ed928"
+  integrity sha512-ENFYjvVnyplKZF1G5YxOfpm0Ob1nOKtKcwX+TtfOiQGLNMVed8azV8tTSAWlJG/5SZkekX9Y5xZSP5YfcmMj0A==
 
 "@uma/contracts-node@^0.3.7":
   version "0.3.7"
@@ -3607,18 +3612,18 @@
     "@uniswap/v3-core" "^1.0.0-rc.2"
     "@uniswap/v3-periphery" "^1.0.0-beta.23"
 
-"@uma/financial-templates-lib@^2.31.0":
-  version "2.31.0"
-  resolved "https://registry.yarnpkg.com/@uma/financial-templates-lib/-/financial-templates-lib-2.31.0.tgz#d9804ce9ac4441ce065dd6ec29aaad9fa9a3cb5f"
-  integrity sha512-yOBhBaCnY0cEeZvEvriho4IKSK2nZwaKCc81V0OqyqN7//S0hp24x/TkkzjwGifjxW+EZ5gbyv7BHwRd2C+7+w==
+"@uma/financial-templates-lib@^2.31.4":
+  version "2.31.4"
+  resolved "https://registry.yarnpkg.com/@uma/financial-templates-lib/-/financial-templates-lib-2.31.4.tgz#8fd36d9d62f06af7ba6c6352248ca60fed47c50c"
+  integrity sha512-snfX/dtyqXAOJcxI9Hc4N5nBmupie8E5Zn2XkyIL115EJwT8FHY3175M573YPiw1MkSifC7zJzGntnyJTn0Q1Q==
   dependencies:
     "@ethersproject/bignumber" "^5.4.2"
     "@google-cloud/logging-winston" "^4.1.1"
     "@google-cloud/trace-agent" "^5.1.6"
     "@pagerduty/pdjs" "^2.2.4"
-    "@uma/common" "^2.27.0"
-    "@uma/contracts-node" "^0.3.15"
-    "@uma/sdk" "^0.29.0"
+    "@uma/common" "^2.28.0"
+    "@uma/contracts-node" "^0.3.18"
+    "@uma/sdk" "^0.29.3"
     "@uniswap/sdk" "^2.0.5"
     bluebird "^3.7.2"
     bn.js "^4.11.9"
@@ -3630,6 +3635,7 @@
     moment-timezone "^0.5.33"
     node-fetch "^2.6.0"
     node-pagerduty "^1.2.0"
+    superstruct "^0.16.4"
     web3 "^1.6.0"
     winston "^3.2.1"
     winston-transport "^4.3.0"
@@ -3666,15 +3672,15 @@
     immer "^9.0.7"
     lodash-es "^4.17.21"
 
-"@uma/sdk@^0.29.0":
-  version "0.29.0"
-  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.29.0.tgz#1a41897e6c8b37d149a598d9e17ffcd9f9a7564c"
-  integrity sha512-FWHK3GWOJ+Y+q3lVro7u2jAFNKIevEVsRzIIl6YS7Jqt5eHFpFewq/iFtXXBspmr+wXyGLLrGqb8aZ1c24E/ww==
+"@uma/sdk@^0.29.3":
+  version "0.29.3"
+  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.29.3.tgz#5ce510b80285df42db8cea671c44c68f1b7cab7a"
+  integrity sha512-BhCehfenH+wTVn4kIcXjPdhyNhbHSFypr5m3n2Kwovfjg/w0CN559+kzvC7mA+X67CsI0hmB+lBFgsmG+kbS+w==
   dependencies:
     "@google-cloud/datastore" "^7.0.0"
     "@types/lodash-es" "^4.17.5"
-    "@uma/contracts-frontend" "^0.3.15"
-    "@uma/contracts-node" "^0.3.15"
+    "@uma/contracts-frontend" "^0.3.18"
+    "@uma/contracts-node" "^0.3.18"
     axios "^0.24.0"
     bn.js "^4.11.9"
     decimal.js "^10.3.1"
@@ -14837,6 +14843,11 @@ superstruct@^0.15.4:
   version "0.15.4"
   resolved "https://registry.yarnpkg.com/superstruct/-/superstruct-0.15.4.tgz#e3381dd84ca07e704e19f69eda74eee1a5efb1f9"
   integrity sha512-eOoMeSbP9ZJChNOm/9RYjE+F36rYR966AAqeG3xhQB02j2sfAUXDp4EQ/7bAOqnlJnuFDB8yvOu50SocvKpUEw==
+
+superstruct@^0.16.4:
+  version "0.16.5"
+  resolved "https://registry.yarnpkg.com/superstruct/-/superstruct-0.16.5.tgz#7b7e1f1f8bf6ab141c660e501ac57026e42c09c0"
+  integrity sha512-GBa1VPdCUDAIrsoMVy2lzE/hKQnieUlc1JVoVzJ2YLx47SoPY4AqF85Ht1bPg5r+8I0v54GbaRdNTnYQ0p+T+Q==
 
 supports-color@6.0.0:
   version "6.0.0"

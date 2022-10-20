@@ -1,14 +1,19 @@
 import { ethers, BigNumber } from "ethers";
+import { utils } from "@across-protocol/sdk-v2";
 import { createFormatFunction } from "../utils";
+
+export type BigNumberish = utils.BigNumberish;
+export type BN = utils.BN;
 
 export const toWei = (num: string | number | BigNumber) => ethers.utils.parseEther(num.toString());
 
-export const toBNWei = (num: string | number | BigNumber) => BigNumber.from(toWei(num));
+export const toBNWei = utils.toBNWei;
 
 export const toGWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 9);
 
-export const fromWei = (num: string | number | BigNumber) => ethers.utils.formatUnits(num.toString());
+export const fromWei = utils.fromWei;
 
+// @todo: Backport support for decimal points to @across-protocol/sdk-v2
 export const toBN = (num: string | number | BigNumber) => {
   // If the string version of the num contains a `.` then it is a number which needs to be parsed to a string int.
   if (num.toString().includes(".")) return BigNumber.from(parseInt(num.toString()));

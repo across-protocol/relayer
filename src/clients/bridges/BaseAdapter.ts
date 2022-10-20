@@ -1,25 +1,37 @@
 import { Provider } from "@ethersproject/abstract-provider";
 import { Signer } from "@ethersproject/abstract-signer";
 import { SpokePoolClient } from "../../clients";
-import { toBN, MAX_SAFE_ALLOWANCE, Contract, ERC20 } from "../../utils";
+import {
+  toBN,
+  MAX_SAFE_ALLOWANCE,
+  Contract,
+  ERC20,
+  winston,
+  EventSearchConfig,
+  DefaultLogLevels,
+  MakeOptional,
+} from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 import { OutstandingTransfers } from "../../interfaces/Bridge";
 
 export class BaseAdapter {
   chainId: number;
-  l1SearchConfig;
-  l2SearchConfig;
-  monitoredAddresses: string[];
-  logger;
+  baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
+  baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
 
   l1DepositInitiatedEvents: { [address: string]: { [l1Token: string]: any[] } } = {};
   l2DepositFinalizedEvents: { [address: string]: { [l1Token: string]: any[] } } = {};
   l2DepositFinalizedEvents_DepositAdapter: { [address: string]: { [l1Token: string]: any[] } } = {};
 
-  constructor(readonly spokePoolClients: { [chainId: number]: SpokePoolClient }, _chainId: number) {
+  constructor(
+    readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
+    _chainId: number,
+    readonly monitoredAddresses: string[],
+    readonly logger: winston.Logger
+  ) {
     this.chainId = _chainId;
-    this.l1SearchConfig = { ...this.getSearchConfig(1) };
-    this.l2SearchConfig = { ...this.getSearchConfig(this.chainId) };
+    this.baseL1SearchConfig = { ...this.getSearchConfig(1) };
+    this.baseL2SearchConfig = { ...this.getSearchConfig(this.chainId) };
   }
 
   getSigner(chainId: number): Signer {
@@ -30,14 +42,31 @@ export class BaseAdapter {
     return this.spokePoolClients[chainId].spokePool.provider;
   }
 
-  updateSearchConfigs() {
+  // Note: this must be called after the SpokePoolClients are updated.
+  getUpdatedSearchConfigs(): { l1SearchConfig: EventSearchConfig; l2SearchConfig: EventSearchConfig } {
     // Update search range based on the latest data from corresponding SpokePoolClients' search ranges.
     // This needs to be called before fetching any events because spokePoolClients need to be updated first so
     // latestBlockNumber is defined.
-    if (this.l1SearchConfig.toBlock) this.l1SearchConfig.fromBlock = this.l1SearchConfig.toBlock + 1;
-    if (this.l2SearchConfig.toBlock) this.l2SearchConfig.fromBlock = this.l2SearchConfig.toBlock + 1;
-    this.l1SearchConfig.toBlock = this.spokePoolClients[1].latestBlockNumber;
-    this.l2SearchConfig.toBlock = this.spokePoolClients[this.chainId].latestBlockNumber;
+    const l1LatestBlock = this.spokePoolClients[1].latestBlockNumber;
+    const l2LatestBlock = this.spokePoolClients[this.chainId].latestBlockNumber;
+    if (l1LatestBlock === undefined || l2LatestBlock === undefined)
+      throw new Error("Spoke pool clients don't have an updated block number");
+    return {
+      l1SearchConfig: {
+        ...this.baseL1SearchConfig,
+        fromBlock: this.baseL1SearchConfig.toBlock
+          ? this.baseL1SearchConfig.toBlock + 1
+          : this.baseL1SearchConfig.fromBlock,
+        toBlock: l1LatestBlock,
+      },
+      l2SearchConfig: {
+        ...this.baseL2SearchConfig,
+        fromBlock: this.baseL2SearchConfig.toBlock
+          ? this.baseL2SearchConfig.toBlock + 1
+          : this.baseL2SearchConfig.fromBlock,
+        toBlock: l2LatestBlock,
+      },
+    };
   }
 
   getSearchConfig(chainId: number) {
@@ -146,7 +175,7 @@ export class BaseAdapter {
     return outstandingTransfers;
   }
 
-  log(message: string, data?: any, level = "debug") {
+  log(message: string, data?: any, level: DefaultLogLevels = "debug") {
     this.logger[level]({ at: this.getName(), message, ...data });
   }
 
