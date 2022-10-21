@@ -143,7 +143,7 @@ export class ProfitClient {
 
   appliedRelayerFeePct(deposit: Deposit): BigNumber {
     // Return the maximum available relayerFeePct (max of Deposit and any SpeedUp).
-    return max(deposit.relayerFeePct, deposit.newRelayerFeePct ?? toBN(0));
+    return max(toBN(deposit.relayerFeePct), deposit.newRelayerFeePct ? toBN(deposit.newRelayerFeePct) : toBN(0));
   }
 
   calculateFillProfitability(deposit: Deposit, fillAmount: BigNumber, l1Token?: L1Token): FillProfit {
