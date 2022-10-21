@@ -140,7 +140,7 @@ export class Relayer {
       }
 
       if (this.clients.tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
-        if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount)) {
+        if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount, l1Token)) {
           this.fillRelay(deposit, unfilledAmount);
         } else {
           this.clients.profitClient.captureUnprofitableFill(deposit, unfilledAmount);

@@ -17,6 +17,7 @@ type CoinGeckoPrice = {
 // @todo: These don't belong in the ProfitClient; they should be relocated.
 export const MATIC = "0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0";
 export const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+export const WBTC = "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599";
 export const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 
 // note: All FillProfit BigNumbers are scaled to 18 decimals unless specified otherwise.
@@ -68,6 +69,7 @@ export class ProfitClient {
   // Queries needed to fetch relay gas costs.
   private relayerFeeQueries: { [chainId: number]: relayFeeCalculator.QueryInterface } = {};
 
+  // @todo: Consolidate this set of args before it grows legs and runs away from us.
   constructor(
     readonly logger: winston.Logger,
     readonly hubPoolClient: HubPoolClient,
@@ -76,7 +78,8 @@ export class ProfitClient {
     readonly enabledChainIds: number[],
     // Default to throwing errors if fetching token prices fails.
     readonly ignoreTokenPriceFailures: boolean = false,
-    readonly minRelayerFeePct: BigNumber = toBN(constants.RELAYER_MIN_FEE_PCT)
+    readonly minRelayerFeePct: BigNumber = toBN(constants.RELAYER_MIN_FEE_PCT),
+    readonly debugProfitability: boolean = false
   ) {
     this.coingecko = new Coingecko();
 
@@ -138,6 +141,11 @@ export class ProfitClient {
     this.unprofitableFills = {};
   }
 
+  appliedRelayerFeePct(deposit: Deposit): BigNumber {
+    // Return the maximum available relayerFeePct (max of Deposit and any SpeedUp).
+    return max(deposit.relayerFeePct, deposit.newRelayerFeePct ?? toBN(0));
+  }
+
   calculateFillProfitability(deposit: Deposit, fillAmount: BigNumber, l1Token?: L1Token): FillProfit {
     assert(fillAmount.gt(0), `Unexpected fillAmount: ${fillAmount}`);
     assert(
@@ -148,14 +156,13 @@ export class ProfitClient {
     l1Token ??= this.hubPoolClient.getTokenInfoForDeposit(deposit);
     assert(l1Token !== undefined, `No L1 token found for deposit ${JSON.stringify(deposit)}`);
     const tokenPriceUsd = this.getPriceOfToken(l1Token.address);
-    if (tokenPriceUsd.lte(0)) throw new Error(`Unable to determine ${l1Token.symbol}) L1 token price`);
+    if (tokenPriceUsd.lte(0)) throw new Error(`Unable to determine ${l1Token.symbol} L1 token price`);
 
     // Normalise to 18 decimals.
     const scaledFillAmount =
       l1Token.decimals === 18 ? fillAmount : toBN(fillAmount).mul(toBNWei(1, 18 - l1Token.decimals));
 
-    // Use the maximum available relayerFeePct (max of Deposit and SpeedUps).
-    const grossRelayerFeePct = max(deposit.relayerFeePct, deposit.newRelayerFeePct ?? toBN(0));
+    const grossRelayerFeePct = this.appliedRelayerFeePct(deposit);
 
     // Calculate relayer fee and capital outlay in relay token terms.
     const grossRelayerFee = grossRelayerFeePct.mul(scaledFillAmount).div(toBNWei(1));
@@ -202,80 +209,47 @@ export class ProfitClient {
     return fillAmount.mul(tokenPriceInUsd).div(toBN(10).pow(l1TokenInfo.decimals));
   }
 
-  isFillProfitable(deposit: Deposit, fillAmount: BigNumber): boolean {
-    const newRelayerFeePct = toBN(deposit.newRelayerFeePct ?? 0);
-    let relayerFeePct = toBN(deposit.relayerFeePct);
-    // Use the maximum between the original newRelayerFeePct and any updated fee from speedups.
-    if (relayerFeePct.lt(newRelayerFeePct)) {
-      relayerFeePct = newRelayerFeePct;
-    }
+  isFillProfitable(deposit: Deposit, fillAmount: BigNumber, l1Token?: L1Token): boolean {
+    let fill: FillProfit;
 
-    if (relayerFeePct.lt(this.minRelayerFeePct)) {
+    try {
+      fill = this.calculateFillProfitability(deposit, fillAmount, l1Token);
+    } catch (err) {
       this.logger.debug({
-        at: "ProfitClient",
-        message: "Relayer fee % < minimum relayer fee %",
+        at: "ProfitClient#isFillProfitable",
+        message: `Unable to determine fill profitability (${err}).`,
+        deposit,
+        fillAmount,
+      });
+      return this.ignoreProfitability && this.appliedRelayerFeePct(deposit).gte(this.minRelayerFeePct);
+    }
+
+    if (!fill.fillProfitable || this.debugProfitability) {
+      const { depositId, originChainId } = deposit;
+      const profitable = fill.fillProfitable ? "profitable" : "unprofitable";
+      this.logger.debug({
+        at: "ProfitClient#isFillProfitable",
+        message: `${l1Token.symbol} deposit ${depositId} on chain ${originChainId} is ${profitable}`,
+        deposit,
+        l1Token,
+        fillAmount,
+        fillAmountUsd: fill.fillAmountUsd,
+        grossRelayerFeePct: `${formatFeePct(fill.grossRelayerFeePct)}%`,
+        nativeGasCost: fill.nativeGasCost,
+        gasPriceUsd: fill.gasPriceUsd,
+        relayerCapitalUsd: `${fill.relayerCapitalUsd}`,
+        grossRelayerFeeUsd: fill.grossRelayerFeeUsd,
+        gasCostUsd: fill.gasCostUsd,
+        netRelayerFeeUsd: `${fill.netRelayerFeeUsd}`,
+        netRelayerFeePct: `${formatFeePct(fill.netRelayerFeePct)}%`,
         minRelayerFeePct: `${formatFeePct(this.minRelayerFeePct)}%`,
+        fillProfitable: fill.fillProfitable,
       });
-      return false;
     }
 
-    if (relayerFeePct.eq(toBN(0))) {
-      this.logger.debug({ at: "ProfitClient", message: "Deposit set 0 relayerFeePct. Rejecting relay" });
-      return false;
-    }
-
-    // This should happen after the previous checks as we don't want to turn them off when profitability is disabled.
-    // TODO: Revisit whether this makes sense once we have capital fee evaluation.
-    if (this.ignoreProfitability) {
-      this.logger.debug({ at: "ProfitClient", message: "Profitability check is disabled. Accepting relay" });
-      return true;
-    }
-
-    const l1TokenInfo = this.hubPoolClient.getTokenInfoForDeposit(deposit);
-    if (!l1TokenInfo)
-      throw new Error(
-        `ProfitClient::isFillProfitable missing l1TokenInfo for deposit with origin token: ${deposit.originToken}`
-      );
-    const { decimals, address: l1Token } = l1TokenInfo;
-    const tokenPriceInUsd = this.getPriceOfToken(l1Token);
-    const fillRevenueInRelayedToken = relayerFeePct.mul(fillAmount).div(toBN(10).pow(decimals));
-    const fillRevenueInUsd = fillRevenueInRelayedToken.mul(tokenPriceInUsd).div(toBNWei(1));
-
-    // Consider gas cost.
-    const totalGasCostWei = this.getTotalGasCost(deposit.destinationChainId);
-    if (totalGasCostWei.eq(toBN(0))) {
-      const chainId = deposit.destinationChainId;
-      const errorMsg = `Missing total gas cost for ${chainId}. This likely indicates some gas cost request failed`;
-      this.logger.warn({
-        at: "ProfitClient",
-        message: errorMsg,
-        allGasCostsFetched: this.totalGasCosts,
-        chainId,
-      });
-      throw new Error(errorMsg);
-    }
-
-    const gasCostInUsd = totalGasCostWei
-      .mul(this.getPriceOfToken(GAS_TOKEN_BY_CHAIN_ID[deposit.destinationChainId]))
-      .div(toBN(10).pow(GAS_TOKEN_DECIMALS));
-
-    // How much minimumAcceptableRevenue is scaled. If relayer discount is 0 then need minimumAcceptableRevenue at min.
-    const fillProfitInUsd = fillRevenueInUsd.sub(gasCostInUsd);
-    const fillProfitable = fillProfitInUsd.gte(toBN(0));
-    this.logger.debug({
-      at: "ProfitClient",
-      message: "Considered fill profitability",
-      deposit,
-      fillAmount,
-      tokenPriceInUsd,
-      fillRevenueInRelayedToken,
-      fillRevenueInUsd,
-      totalGasCostWei,
-      gasCostInUsd,
-      fillProfitInUsd,
-      fillProfitable,
-    });
-    return fillProfitable;
+    // If profitability is disabled, ensure _at least_ that the relayerFeePct >= minRelayerFeePct.
+    // This is a temporary measure and can hopefully be removed (together with ignoreProfitability) in future.
+    return fill.fillProfitable || (this.ignoreProfitability && fill.grossRelayerFeePct.gte(this.minRelayerFeePct));
   }
 
   captureUnprofitableFill(deposit: Deposit, fillAmount: BigNumber): void {
