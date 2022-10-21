@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@across-protocol/contracts-v2": "^1.0.2",
-    "@across-protocol/sdk-v2": "^0.1.21",
+    "@across-protocol/sdk-v2": "^0.1.30",
     "@arbitrum/sdk": "^2.0.18",
     "@defi-wonderland/smock": "^2.0.7",
     "@eth-optimism/sdk": "^1.1.5",
