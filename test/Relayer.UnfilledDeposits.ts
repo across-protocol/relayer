@@ -15,7 +15,7 @@ import {
   toBNWei,
 } from "./utils";
 import { simpleDeposit, fillRelay, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
-import { amountToLp, originChainId, amountToRelay } from "./constants";
+import { amountToLp, originChainId, amountToRelay, defaultMinDepositConfirmations } from "./constants";
 import {
   SpokePoolClient,
   HubPoolClient,
@@ -88,7 +88,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [],
-        minDepositConfirmations: { [originChainId]: 0, [destinationChainId]: 0 },
+        minDepositConfirmations: defaultMinDepositConfirmations,
         acceptInvalidFills: false,
       } as unknown as RelayerConfig
     );

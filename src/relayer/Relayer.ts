@@ -8,7 +8,7 @@ import {
   buildFillRelayWithUpdatedFeeProps,
   isDepositSpedUp,
 } from "../utils";
-import { createFormatFunction, etherscanLink, formatFeePct, toBN } from "../utils";
+import { createFormatFunction, etherscanLink, formatFeePct, toBN, toBNWei } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 
 import { Deposit } from "../interfaces";
@@ -36,13 +36,53 @@ export class Relayer {
     // TODO: Note this does not consider the price of the token which will be added once the profitability module is
     // added to this bot.
 
+    // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
+    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = getUnfilledDeposits(
+      this.clients.spokePoolClients,
+      this.maxUnfilledDepositLookBack
+    ).reduce((agg, curr) => {
+      const unfilledAmountUsd = this.clients.profitClient.getFillAmountInUsd(curr.deposit, curr.unfilledAmount);
+      if (!agg[curr.deposit.originChainId]) agg[curr.deposit.originChainId] = toBN(0);
+      agg[curr.deposit.originChainId] = agg[curr.deposit.originChainId].add(unfilledAmountUsd);
+      return agg;
+    }, {});
+
+    // Sort thresholds in ascending order.
+    const minimumDepositConfirmationThresholds = Object.keys(this.config.minDepositConfirmations)
+      .filter((x) => x !== "default")
+      .sort((x, y) => Number(x) - Number(y));
+
+    // Set the MDC for each origin chain equal to lowest threshold greater than the unfilled USD deposit amount.
+    // If we can't find a threshold greater than the USD amount, then use the default.
+    const mdcPerChain = Object.fromEntries(
+      Object.entries(unfilledDepositAmountsPerChain).map(([chainId, unfilledAmount]) => {
+        const usdThreshold = minimumDepositConfirmationThresholds.find((_usdThreshold) => {
+          return toBNWei(_usdThreshold).gte(unfilledAmount);
+        });
+        // If no thresholds are greater than unfilled amount, then use fallback which should have largest MDCs.
+        return [
+          chainId,
+          usdThreshold === undefined
+            ? this.config.minDepositConfirmations["default"][chainId]
+            : this.config.minDepositConfirmations[usdThreshold][chainId],
+        ];
+      })
+    );
+    this.logger.debug({
+      at: "Relayer",
+      message: "Setting minimum deposit confirmation based on origin chain aggregate deposit amount",
+      unfilledDepositAmountsPerChain,
+      mdcPerChain,
+      minDepositConfirmations: this.config.minDepositConfirmations,
+    });
+
     // Require that all fillable deposits meet the minimum specified number of confirmations.
     const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients, this.maxUnfilledDepositLookBack)
       .filter((x) => {
         return (
           x.deposit.originBlockNumber <=
           this.clients.spokePoolClients[x.deposit.originChainId].latestBlockNumber -
-            this.config.minDepositConfirmations[x.deposit.originChainId]
+            mdcPerChain[x.deposit.originChainId]
         );
       })
       .sort((a, b) =>

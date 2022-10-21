@@ -22,21 +22,49 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   42161: 691200,
 };
 
-// Reorgs are anticipated on Ethereum and Polygon.
-// Ethereum: Post-merge finality time is 2 epochs (64 slots total), we set the default to 32 which is the
-// length of time for a block to be "justified", which Alchemy (for example) marks as "safe":
-// https://docs.alchemy.com/reference/ethereum-developer-guide-to-the-merge#what-are-safe-and-finalized
-// Polygon: https://polygonscan.com/blocks_forked. There have been re orgs > 128 blocks deep but most CEX's
-// use 128 blocks as the finality time so we'll follow that guideline.
-// Optimistic Rollups are currently centrally serialized and are not expected to reorg. Finality on Optimistic Rollups
-// is technically 1 week, which is too long, and there is little practical difference in
-// finality for any distance between 0 and 1 week.
-export const MIN_DEPOSIT_CONFIRMATIONS: { [chainId: number]: number } = {
-  1: 32, // Eth post-merge finality time
+// Reorgs are anticipated on Ethereum and Polygon. We use different following distances when processing deposit
+// events based on the USD amount of the deposit. This protects the relayer from the worst case situation where it fills
+// a large deposit (i.e. with an amount equal to a large amount of $$$) but the deposit is included in a re-orged
+// block. This would cause the relayer to unintentionally send an invalid fill and not refunded. The tradeoff is that
+// the larger the follow distance, the slower the relayer will be to fulfill deposits. Therefore, the following
+// configuration allows the user to set higher follow distances for higher deposit amounts.
+// The Key of the following dictionary is used as the USD threshold to determine the MDC:
+// - Searching from highest USD threshold to lowest
+// - If the key value is >= deposited USD amount, then use the MDC associated with the key for the origin chain
+// - If no key values are >= depostied USD amount, use the "default" value for the origin chain
+// - For example, a deposit on Polygon worth $90 would use the MDC associated with the 100 key and chain
+// 137, so it would use a follow distance of 80 blocks, while a deposit on Polygon for $110 would use 1000
+// key. A deposit of $1100 would use the "default" key
+
+// To see the latest block reorg events go to:
+// - Ethereum: https://etherscan.io/blocks_forked
+// - Polygon: https://polygonscan.com/blocks_forked
+
+// Optimistic Rollups are currently centrally serialized and are not expected to reorg. Technically a block on an
+// ORU will not be finalized until after 7 days, so there is little difference in following behind 0 blocks versus
+// anything under 7 days.
+export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
+  1: 64, // Finalized block: https://www.alchemy.com/overviews/ethereum-commitment-levels
   10: 0,
-  137: 128,
+  137: 128, // Commonly used finality level for CEX's that accept Polygon deposits
   288: 0,
   42161: 0,
+};
+export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
+  1000: {
+    1: 32, // Justified block
+    10: 0,
+    137: 100, // Probabilistically safe level based on historic Polygon reorgs
+    288: 0,
+    42161: 0,
+  },
+  100: {
+    1: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
+    10: 0,
+    137: 80,
+    288: 0,
+    42161: 0,
+  },
 };
 
 // Optimism, ethereum can do infinity lookbacks. boba and Arbitrum limited to 100000 on infura.
