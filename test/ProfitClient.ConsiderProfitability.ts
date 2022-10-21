@@ -125,10 +125,27 @@ describe("ProfitClient: Consider relay profit", async function () {
       const gasPriceUsd = tokenPrices[gasToken.symbol];
       expect(gasPriceUsd.eq(tokenPrices[gasToken.symbol]));
 
-      const estimate: { [key: string]: BigNumber } = profitClient.calculateFillCost(chainId);
+      const estimate: { [key: string]: BigNumber } = profitClient.estimateFillCost(chainId);
       expect(estimate.nativeGasCost.eq(gasCost[chainId]));
       expect(estimate.gasPriceUsd.eq(tokenPrices[gasToken.symbol]));
       expect(estimate.gasCostUsd.eq(gasPriceUsd.mul(nativeGasCost)));
+    });
+  });
+
+  it("Verify gas multiplier", function () {
+    chainIds.forEach((chainId: number) => {
+      spyLogger.debug({ message: `Verifying gas multiplier for chainId ${chainId}.` });
+
+      const nativeGasCost = profitClient.getTotalGasCost(chainId);
+      expect(nativeGasCost.gt(0)).to.be.true;
+
+      const gasMultipliers = [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.50, 1.75, 2.0];
+      gasMultipliers.forEach((gasMultiplier) => {
+
+        const expectedFillCostUsd = nativeGasCost.mul(tokenPrices["USDC"]).mul(toBNWei(gasMultiplier)).div(toBNWei(1));
+        const { gasCostUsd } = profitClient.estimateFillCost(chainId);
+        expect(expectedFillCostUsd.eq(gasCostUsd), `${expectedFillCostUsd} != ${gasCostUsd}`);
+      });
     });
   });
 
@@ -186,7 +203,7 @@ describe("ProfitClient: Consider relay profit", async function () {
     const fillAmounts = [".001", "0.1", 1, 10, 100, 1_000, 100_000];
 
     chainIds.forEach((destinationChainId: number) => {
-      const { gasCostUsd } = profitClient.calculateFillCost(destinationChainId);
+      const { gasCostUsd } = profitClient.estimateFillCost(destinationChainId);
 
       Object.values(tokens).forEach((l1Token: L1Token) => {
         const tokenPriceUsd = profitClient.getPriceOfToken(l1Token.address);
