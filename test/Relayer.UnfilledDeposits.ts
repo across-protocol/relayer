@@ -20,11 +20,10 @@ import {
   SpokePoolClient,
   HubPoolClient,
   AcrossConfigStoreClient,
-  ProfitClient,
   MultiCallerClient,
   TokenClient,
 } from "../src/clients";
-import { MockInventoryClient } from "./mocks";
+import { MockInventoryClient, MockProfitClient } from "./mocks";
 
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
@@ -40,6 +39,7 @@ const { spy, spyLogger } = createSpyLogger();
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let configStoreClient: AcrossConfigStoreClient, hubPoolClient: HubPoolClient;
 let multiCallerClient: MultiCallerClient, tokenClient: TokenClient;
+let profitClient: MockProfitClient;
 
 let relayerInstance: Relayer;
 
@@ -71,6 +71,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     multiCallerClient = new MultiCallerClient(spyLogger);
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
+    profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, true, []);
+    profitClient.testInit();
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -78,7 +80,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         spokePoolClients,
         hubPoolClient,
         configStoreClient,
-        profitClient: new ProfitClient(spyLogger, hubPoolClient, spokePoolClients, true, []),
+        profitClient,
         tokenClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),

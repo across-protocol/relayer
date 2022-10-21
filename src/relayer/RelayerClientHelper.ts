@@ -41,7 +41,8 @@ export async function constructRelayerClients(
     config.ignoreProfitability,
     enabledChainIds,
     config.ignoreTokenPriceFailures,
-    config.minRelayerFeePct
+    config.minRelayerFeePct,
+    config.debugProfitability
   );
 
   const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
