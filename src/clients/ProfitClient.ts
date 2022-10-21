@@ -141,6 +141,11 @@ export class ProfitClient {
     this.unprofitableFills = {};
   }
 
+  appliedRelayerFeePct(deposit: Deposit): BigNumber {
+    // Return the maximum available relayerFeePct (max of Deposit and any SpeedUp).
+    return max(deposit.relayerFeePct, deposit.newRelayerFeePct ?? toBN(0));
+  }
+
   calculateFillProfitability(deposit: Deposit, fillAmount: BigNumber, l1Token?: L1Token): FillProfit {
     assert(fillAmount.gt(0), `Unexpected fillAmount: ${fillAmount}`);
     assert(
@@ -157,8 +162,7 @@ export class ProfitClient {
     const scaledFillAmount =
       l1Token.decimals === 18 ? fillAmount : toBN(fillAmount).mul(toBNWei(1, 18 - l1Token.decimals));
 
-    // Use the maximum available relayerFeePct (max of Deposit and SpeedUps).
-    const grossRelayerFeePct = max(deposit.relayerFeePct, deposit.newRelayerFeePct ?? toBN(0));
+    const grossRelayerFeePct = this.appliedRelayerFeePct(deposit);
 
     // Calculate relayer fee and capital outlay in relay token terms.
     const grossRelayerFee = grossRelayerFeePct.mul(scaledFillAmount).div(toBNWei(1));
@@ -195,7 +199,19 @@ export class ProfitClient {
   }
 
   isFillProfitable(deposit: Deposit, fillAmount: BigNumber, l1Token?: L1Token): boolean {
-    const fill: FillProfit = this.calculateFillProfitability(deposit, fillAmount, l1Token);
+    let fill: FillProfit;
+
+    try {
+      fill = this.calculateFillProfitability(deposit, fillAmount, l1Token);
+    } catch (err) {
+      this.logger.debug({
+        at: "ProfitClient#isFillProfitable",
+        message: `Unable to determine fill profitability (${err}).`,
+        deposit,
+        fillAmount,
+      });
+      return this.ignoreProfitability && this.appliedRelayerFeePct(deposit).gte(this.minRelayerFeePct);
+    }
 
     if (!fill.fillProfitable || this.debugProfitability) {
       const { depositId, originChainId } = deposit;
