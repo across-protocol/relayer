@@ -1,10 +1,8 @@
+import { BigNumber, formatFeePct, toBN, toBNWei } from "../src/utils";
 import {
-  BigNumber,
   expect,
   createSpyLogger,
   winston,
-  toBNWei,
-  toBN,
   ethers,
   deploySpokePoolWithToken,
   originChainId,
@@ -12,19 +10,21 @@ import {
 } from "./utils";
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
 import { Deposit, L1Token } from "../src/interfaces";
-import { FillProfit, GAS_TOKEN_BY_CHAIN_ID, SpokePoolClient, MATIC, USDC, WETH } from "../src/clients";
+import { FillProfit, GAS_TOKEN_BY_CHAIN_ID, SpokePoolClient, MATIC, USDC, WBTC, WETH } from "../src/clients";
 
 const chainIds: number[] = [1, 10, 137, 288, 42161];
 
 const tokens: { [symbol: string]: L1Token } = {
   MATIC: { address: MATIC, decimals: 18, symbol: "MATIC" },
   USDC: { address: USDC, decimals: 6, symbol: "USDC" },
+  WBTC: { address: WBTC, decimals: 8, symbol: "WBTC" },
   WETH: { address: WETH, decimals: 18, symbol: "WETH" },
 };
 
 const tokenPrices: { [symbol: string]: BigNumber } = {
   MATIC: toBNWei("0.4"),
   USDC: toBNWei(1),
+  WBTC: toBNWei(21000),
   WETH: toBNWei(3000),
 };
 
@@ -45,9 +45,37 @@ function setDefaultTokenPrices(profitClient: MockProfitClient): void {
   );
 }
 
+const minRelayerFeeBps = 3;
+const minRelayerFeePct = toBNWei(minRelayerFeeBps).div(1e4);
+
+// relayerFeePct clamped at 50 bps by each SpokePool.
+const maxRelayerFeeBps = 50;
+const maxRelayerFeePct = toBNWei(maxRelayerFeeBps).div(1e4);
+
 // Define LOG_IN_TEST for logging to console.
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
 let hubPoolClient: MockHubPoolClient, profitClient: MockProfitClient;
+
+function testProfitability(deposit: Deposit, fillAmountUsd: BigNumber, gasCostUsd: BigNumber): FillProfit {
+  const { relayerFeePct } = deposit;
+
+  const grossRelayerFeeUsd = fillAmountUsd.mul(relayerFeePct).div(toBNWei(1));
+  const relayerCapitalUsd = fillAmountUsd.sub(grossRelayerFeeUsd);
+
+  const minRelayerFeeUsd = relayerCapitalUsd.mul(minRelayerFeePct).div(toBNWei(1));
+  const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd);
+  const netRelayerFeePct = netRelayerFeeUsd.mul(toBNWei(1)).div(relayerCapitalUsd);
+
+  const fillProfitable = netRelayerFeeUsd.gte(minRelayerFeeUsd);
+
+  return {
+    grossRelayerFeeUsd,
+    netRelayerFeePct,
+    relayerCapitalUsd,
+    netRelayerFeeUsd,
+    fillProfitable,
+  } as FillProfit;
+}
 
 describe("ProfitClient: Consider relay profit", async function () {
   beforeEach(async function () {
@@ -59,7 +87,21 @@ describe("ProfitClient: Consider relay profit", async function () {
     const spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(owner), null, originChainId);
     const spokePoolClient_2 = new SpokePoolClient(spyLogger, spokePool_2.connect(owner), null, destinationChainId);
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
-    profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, false, [], false, toBN(0));
+
+    const ignoreProfitability = false;
+    const ignoreTokenPriceFailures = false;
+    const debugProfitability = true;
+
+    profitClient = new MockProfitClient(
+      spyLogger,
+      hubPoolClient,
+      spokePoolClients,
+      ignoreProfitability,
+      [],
+      ignoreTokenPriceFailures,
+      minRelayerFeePct,
+      debugProfitability
+    );
 
     // Load per-chain gas cost (gas consumed * gas price in Wei), in native gas token.
     profitClient.setGasCosts(gasCost);
@@ -90,24 +132,12 @@ describe("ProfitClient: Consider relay profit", async function () {
     });
   });
 
-  it("Considers gas cost when computing protfitability", async function () {
-    // Create a relay that is clearly profitable. Currency of the relay is WETH with a fill amount of 0.1 WETH, price per
-    // WETH set at 3000 and relayer fee % of 0.1% which is a revenue of 0.3.
-    // However, since MATIC costs $0.4, the profit is only 1.2 - 0.3 = $0.9 after gas, which is unprofitable.
-    const relaySize = toBNWei("0.1"); // 1 ETH
-    hubPoolClient.setTokenInfoToReturn(tokens["WETH"]);
-
-    const relay = { relayerFeePct: toBNWei("0.001"), destinationChainId: 137 } as Deposit;
-    profitClient.setGasCosts({ 137: toBNWei(1) });
-    expect(profitClient.isFillProfitable(relay, relaySize)).to.be.false;
-  });
-
   it("Return 0 when gas cost fails to be fetched", async function () {
     profitClient.setGasCosts({ 137: undefined });
     expect(profitClient.getTotalGasCost(137)).to.equal(toBN(0));
   });
 
-  it("Verify gas price lookup failures", function () {
+  it("Verify token price and gas cost lookup failures", function () {
     const l1Token: L1Token = tokens["WETH"];
     const fillAmount = toBNWei(1);
 
@@ -138,52 +168,73 @@ describe("ProfitClient: Consider relay profit", async function () {
     });
   });
 
-  it("Handles non-standard token decimals when considering a relay profitability", async function () {
-    // Create a relay that is clearly profitable. Currency of the relay is USDC with a fill amount of 1000 USDC with a
-    // price per USDC of 1 USD. Set the relayer Fee to 10% should make this clearly relayable.
-    const relaySize = toBN(1000).mul(toBN(10).pow(6)); // 1000e6 for 1000 USDC.
+  /**
+   * Note: This test is a bit of a monster. It iterates over all combinations of:
+   * - Configured destination chains.
+   * - Configured L1 tokens.
+   * - A range of fill amounts.
+   * - A range of relayerFeePct values (sane and insane).
+   *
+   * The utility of this test is also _somewhat_ debatable, since it implements
+   * quite similar logic to the ProfitClient itself. A logic error in both
+   * implementations is certainly possible. However, relay pricing is quite
+   * dynamic, and the development of this test _did_ catch a few unexpected
+   * corner cases. This approach does however require fairly careful analysis of
+   * the test results to make sure that they are sane. Sampling is recommended.
+   */
+  it("Considers gas cost when computing profitability", async function () {
+    const fillAmounts = [".001", "0.1", 1, 10, 100, 1_000, 100_000];
 
-    // Relayer fee is 10% or $100. Gas cost is 0.01 * 3000 = $30. This leaves a profit of $70.
-    hubPoolClient.setTokenInfoToReturn(tokens["USDC"]);
-    const profitableUsdcL1Relay = { relayerFeePct: toBNWei("0.1"), destinationChainId: 1 } as Deposit;
-    profitClient.setGasCosts({ 1: toBNWei("0.01") });
-    expect(profitClient.isFillProfitable(profitableUsdcL1Relay, relaySize)).to.be.true;
+    chainIds.forEach((destinationChainId: number) => {
+      const { gasCostUsd } = profitClient.calculateFillCost(destinationChainId);
 
-    // Relayer fee is still $100. Gas cost is 0.1 * 3000 = $300. This leaves a loss of $200.
-    const unprofitableUsdcL1Relay = { relayerFeePct: toBNWei("0.1"), destinationChainId: 1 } as Deposit;
-    profitClient.setGasCosts({ 1: toBNWei("0.1") });
-    expect(profitClient.isFillProfitable(unprofitableUsdcL1Relay, relaySize)).to.be.false;
+      Object.values(tokens).forEach((l1Token: L1Token) => {
+        const tokenPriceUsd = profitClient.getPriceOfToken(l1Token.address);
+        hubPoolClient.setTokenInfoToReturn(l1Token);
 
-    // Relayer fee is still $100. Gas cost is 0.033 * 3000 = $99. This leaves a small profit of $1.
-    const marginallyProfitableUsdcL1Relay = { relayerFeePct: toBNWei("0.1"), destinationChainId: 1 } as Deposit;
-    profitClient.setGasCosts({ 1: toBNWei("0.033") });
-    expect(profitClient.isFillProfitable(marginallyProfitableUsdcL1Relay, relaySize)).to.be.true;
+        fillAmounts.forEach((_fillAmount: number | string) => {
+          const fillAmount = toBNWei(_fillAmount);
+          const nativeFillAmount = toBNWei(_fillAmount, l1Token.decimals);
+          spyLogger.debug({ message: `Testing fillAmount ${_fillAmount} (${fillAmount}).` });
 
-    // Equally, works on non-mainnet chainIDs.
-    const unprofitableUsdcL2Relay = { relayerFeePct: toBNWei("0.1"), destinationChainId: 10 } as Deposit;
-    profitClient.setGasCosts({ 10: toBNWei("0.1") });
-    expect(profitClient.isFillProfitable(unprofitableUsdcL2Relay, relaySize)).to.be.false;
-    profitClient.setGasCosts({ 10: toBNWei("0.033") });
-    const marginallyUsdcL2ProfitableRelay = { relayerFeePct: toBNWei("0.1"), destinationChainId: 10 } as Deposit;
-    expect(profitClient.isFillProfitable(marginallyUsdcL2ProfitableRelay, relaySize)).to.be.true;
-  });
+          const fillAmountUsd = fillAmount.mul(tokenPriceUsd).div(toBNWei(1));
+          const gasCostPct = gasCostUsd.mul(toBNWei(1)).div(fillAmountUsd);
 
-  it("Considers deposits with relayer fee below min required unprofitable", async function () {
-    const profitableWethL1Relay = { relayerFeePct: toBNWei("0.01"), destinationChainId: 1 } as Deposit;
-    // Ignore gas cost but with a min fee of 0.03%.
-    const profitClientWithMinFee = new MockProfitClient(spyLogger, hubPoolClient, {}, true, [], false, toBNWei("0.03"));
-    expect(profitClientWithMinFee.isFillProfitable(profitableWethL1Relay, toBNWei(1))).to.be.false;
-  });
+          const relayerFeePcts: BigNumber[] = [
+            toBNWei(-1),
+            toBNWei(0),
+            minRelayerFeePct.div(4),
+            minRelayerFeePct.div(2),
+            minRelayerFeePct,
+            minRelayerFeePct.add(gasCostPct),
+            minRelayerFeePct.add(gasCostPct).add(1),
+            minRelayerFeePct.add(gasCostPct).add(toBNWei(1)),
+          ];
 
-  it("Considers deposits with newRelayerFeePct (old)", async function () {
-    const profitableWethL1Relay = {
-      relayerFeePct: toBNWei("0.01"),
-      newRelayerFeePct: toBNWei("0.1"),
-      destinationChainId: 1,
-    } as Deposit;
-    // Ignore gas cost but with a min fee of 0.03%.
-    const profitClientWithMinFee = new MockProfitClient(spyLogger, hubPoolClient, {}, true, [], false, toBNWei("0.03"));
-    expect(profitClientWithMinFee.isFillProfitable(profitableWethL1Relay, toBNWei(1))).to.be.true;
+          relayerFeePcts.forEach((_relayerFeePct: BigNumber) => {
+            const relayerFeePct = _relayerFeePct.gt(maxRelayerFeePct) ? maxRelayerFeePct : _relayerFeePct;
+            const deposit = { relayerFeePct, destinationChainId } as Deposit;
+
+            const fill: FillProfit = testProfitability(deposit, fillAmountUsd, gasCostUsd);
+            spyLogger.debug({
+              message: `Expect ${l1Token.symbol} deposit is ${fill.fillProfitable ? "" : "un"}profitable:`,
+              fillAmount,
+              fillAmountUsd,
+              gasCostUsd,
+              grossRelayerFeePct: `${formatFeePct(relayerFeePct)} %`,
+              gasCostPct: `${formatFeePct(gasCostPct)} %`,
+              relayerCapitalUsd: fill.relayerCapitalUsd,
+              minRelayerFeePct: `${formatFeePct(minRelayerFeePct)} %`,
+              minRelayerFeeUsd: minRelayerFeePct.mul(fillAmountUsd).div(toBNWei(1)),
+              netRelayerFeePct: `${formatFeePct(fill.netRelayerFeePct)} %`,
+              netRelayerFeeUsd: fill.netRelayerFeeUsd,
+            });
+
+            expect(profitClient.isFillProfitable(deposit, nativeFillAmount, l1Token)).to.equal(fill.fillProfitable);
+          });
+        });
+      });
+    });
   });
 
   it("Considers deposits with newRelayerFeePct", async function () {
@@ -203,18 +254,6 @@ describe("ProfitClient: Consider relay profit", async function () {
     deposit["newRelayerFeePct"] = toBNWei("0.1");
     fill = profitClient.calculateFillProfitability(deposit, fillAmount, l1Token);
     expect(fill.grossRelayerFeePct.eq(deposit.newRelayerFeePct));
-  });
-
-  it("Ignores newRelayerFeePct if it's lower than original relayerFeePct (old)", async function () {
-    const profitableWethL1Relay = {
-      relayerFeePct: toBNWei("0.1"),
-      newRelayerFeePct: toBNWei("0.01"),
-      destinationChainId: 1,
-    } as Deposit;
-    profitClient.setGasCosts({ 1: toBNWei("0.01") });
-    // Ignore gas cost but with a min fee of 0.03%.
-    const profitClientWithMinFee = new MockProfitClient(spyLogger, hubPoolClient, {}, true, [], false, toBNWei("0.03"));
-    expect(profitClientWithMinFee.isFillProfitable(profitableWethL1Relay, toBNWei(1))).to.be.true;
   });
 
   it("Ignores newRelayerFeePct if it's lower than original relayerFeePct", async function () {
