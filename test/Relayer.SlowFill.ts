@@ -1,8 +1,8 @@
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
 import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfigureHubPool, winston } from "./utils";
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, spyLogIncludes } from "./utils";
-import { originChainId, sinon, toBNWei } from "./utils";
-import { amountToLp, defaultTokenConfig, amountToDeposit } from "./constants";
+import { originChainId, sinon } from "./utils";
+import { amountToLp, defaultTokenConfig, amountToDeposit, defaultMinDepositConfirmations } from "./constants";
 import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
 import { TokenClient, ProfitClient } from "../src/clients";
 import { MockInventoryClient } from "./mocks";
@@ -66,7 +66,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [],
-        minDepositConfirmations: { [originChainId]: 0, [destinationChainId]: 0 },
+        minDepositConfirmations: defaultMinDepositConfirmations,
       } as unknown as RelayerConfig
     );
 

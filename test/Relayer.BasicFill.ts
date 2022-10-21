@@ -11,7 +11,7 @@ import {
 import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfigureHubPool, winston } from "./utils";
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId } from "./utils";
 import { originChainId, sinon, toBNWei } from "./utils";
-import { amountToLp, defaultTokenConfig } from "./constants";
+import { amountToLp, defaultMinDepositConfirmations, defaultTokenConfig } from "./constants";
 import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
 import { TokenClient } from "../src/clients";
 import { MockInventoryClient, MockProfitClient } from "./mocks";
@@ -78,7 +78,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [],
-        minDepositConfirmations: { [originChainId]: 0, [destinationChainId]: 0 },
+        minDepositConfirmations: defaultMinDepositConfirmations,
       } as unknown as RelayerConfig
     );
 
@@ -130,6 +130,40 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(multiCallerClient.transactionCount()).to.equal(0); // no Transactions to send.
+    expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
+  });
+
+  it("Ignores deposits older than min deposit confirmation threshold", async function () {
+    // Send a deposit and save the block time.
+    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
+    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+
+    // Set MDC such that the deposit is is ignored. The profit client will return a fill USD amount of $0,
+    // so we need to set the MDC for the `0` threshold to be large enough such that the deposit would be ignored.
+    relayerInstance = new Relayer(
+      relayer.address,
+      spyLogger,
+      {
+        spokePoolClients,
+        hubPoolClient,
+        configStoreClient,
+        tokenClient,
+        profitClient,
+        multiCallerClient,
+        inventoryClient: new MockInventoryClient(),
+      },
+      {
+        relayerTokens: [],
+        relayerDestinationChains: [],
+        minDepositConfirmations: {
+          default: { [originChainId]: 10 }, // This needs to be set large enough such that the deposit is ignored.
+        },
+        sendingRelaysEnabled: false,
+      } as unknown as RelayerConfig
+    );
+
+    await updateAllClients();
+    await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
   });
 
@@ -210,7 +244,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [originChainId],
-        minDepositConfirmations: { [originChainId]: 0, [destinationChainId]: 0 },
+        minDepositConfirmations: defaultMinDepositConfirmations,
       } as unknown as RelayerConfig
     );
 
