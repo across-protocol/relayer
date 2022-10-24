@@ -86,10 +86,9 @@ export class Relayer {
 
     // Require that all fillable deposits meet the minimum specified number of confirmations.
     const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients, this.maxUnfilledDepositLookBack)
-      .filter((x) => x.deposit.quoteTimestamp <= latestHubPoolTime)
       .filter((x) => {
         return (
-          x.deposit.quoteTimestamp <= latestHubPoolTime &&
+          x.deposit.quoteTimestamp + this.config.quoteTimeBuffer <= latestHubPoolTime &&
           x.deposit.originBlockNumber <=
             this.clients.spokePoolClients[x.deposit.originChainId].latestBlockNumber -
               mdcPerChain[x.deposit.originChainId]
