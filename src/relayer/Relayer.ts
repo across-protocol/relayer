@@ -76,13 +76,22 @@ export class Relayer {
       minDepositConfirmations: this.config.minDepositConfirmations,
     });
 
+    // Remove deposits whose deposit quote timestamp is > HubPool's current time, because there is a risk that
+    // the ConfigStoreClient's computed realized lp fee % is incorrect for quote times in the future. The client
+    // would use the current utilization as an input to compute this fee %, but if the utilization is different for the
+    // actual block that is mined at the deposit quote time, then the fee % would be different. This should not
+    // impact the bridge users' UX in the normal path because deposit UI's have no reason to set quote times in the
+    // future.
+    const latestHubPoolTime = this.clients.hubPoolClient.currentTime;
+
     // Require that all fillable deposits meet the minimum specified number of confirmations.
     const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients, this.maxUnfilledDepositLookBack)
       .filter((x) => {
         return (
+          x.deposit.quoteTimestamp + this.config.quoteTimeBuffer <= latestHubPoolTime &&
           x.deposit.originBlockNumber <=
-          this.clients.spokePoolClients[x.deposit.originChainId].latestBlockNumber -
-            mdcPerChain[x.deposit.originChainId]
+            this.clients.spokePoolClients[x.deposit.originChainId].latestBlockNumber -
+              mdcPerChain[x.deposit.originChainId]
         );
       })
       .sort((a, b) =>
