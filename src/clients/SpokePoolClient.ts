@@ -373,9 +373,6 @@ export class SpokePoolClient {
       if (cachedData !== undefined) {
         for (const destinationChainId of Object.keys(cachedData.deposits).map(Number)) {
           cachedData.deposits[destinationChainId].forEach((deposit: DepositWithBlockInCache) => {
-            if (deposit.depositor === "0xBf7f331918De730B3778eDa1179F8aA5922b2a8f") {
-              console.log("@@@@@@@@@@@@@@@@@@@@@@@ CACHED DEPOSIT", deposit);
-            }
             const convertedDeposit = this.convertDepositInCache(deposit);
             assign(dataToCache.deposits, [convertedDeposit.destinationChainId], [convertedDeposit]);
 
@@ -395,11 +392,6 @@ export class SpokePoolClient {
         this.log("debug", `Using cached deposit events within search config for chain ${this.chainId}`, {
           cachedDeposits: Object.fromEntries(
             Object.entries(this.deposits).map(([destinationChainId, deposits]) => {
-              for (const deposit of deposits) {
-                if (deposit.depositor === "0xBf7f331918De730B3778eDa1179F8aA5922b2a8f") {
-                  console.log("@@@@@@@@@@@@@@@@@@@@@@@ NON-CACHED DEPOSIT", deposit);
-                }
-              }
               return [destinationChainId, deposits.length];
             })
           ),
@@ -424,18 +416,9 @@ export class SpokePoolClient {
           originBlockNumber: event.blockNumber,
         };
 
-        if (deposit.quoteTimestamp === 1653501031) {
-          console.log("@@@@@@@@@@@@@@@@@@@@@@@ NON-CACHED DEPOSIT", deposit);
-        }
         assign(this.depositHashes, [this.getDepositHash(deposit)], deposit);
         assign(this.deposits, [deposit.destinationChainId], [deposit]);
         assign(dataToCache.deposits, [deposit.destinationChainId], [deposit]);
-        if (deposit.quoteTimestamp === 1653501031) {
-          console.log("@@@@@@@@@@@@@@@@@@@@@@@ AFTER NON-CACHED DEPOSIT", dataToCache.deposits[deposit.destinationChainId][dataToCache.deposits[deposit.destinationChainId].length - 1]);
-        }
-        if (deposit.quoteTimestamp === 1653501031) {
-          console.log("@@@@@@@@@@@@@@@@@@@@@@@ AFTER NON-CACHED DEPOSIT", dataToCache.deposits[deposit.destinationChainId][dataToCache.deposits[deposit.destinationChainId].length - 1]);
-        }
 
         if (deposit.depositId < this.earliestDepositId) this.earliestDepositId = deposit.depositId;
       }
@@ -460,14 +443,6 @@ export class SpokePoolClient {
           for (const [index, deposit] of dataToCache.deposits[destinationChainId].entries()) {
             dataToCache.deposits[destinationChainId][index] = this.appendMaxSpeedUpSignatureToDeposit(deposit);
           }
-      }
-
-      if (this.deposits[1]) {
-        for (const deposit of this.deposits[1]) {
-          if (deposit.quoteTimestamp === 1653501031) {
-            console.log("@@@@@@@@@@@@@@@@@@@@@@@ AT THE END", deposit);
-          }
-        }
       }
     }
 
