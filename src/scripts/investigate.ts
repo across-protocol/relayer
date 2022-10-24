@@ -103,6 +103,7 @@ export async function findDeficitBundles(_logger: winston.Logger) {
     const validFillsByDestinationChain = {};
     const depositsByOriginChain = {};
     const unfilledDepositByDestinationChain = {};
+    const invalidFillsByDestinationChain = {};
     for (const [chainIdx, chainId] of dataworker.chainIdListForBundleEvaluationBlockNumbers.entries()) {
       if (!bundle.bundleEvaluationBlockNumbers[chainIdx]) {
         continue;
@@ -120,7 +121,12 @@ export async function findDeficitBundles(_logger: winston.Logger) {
 
       const validFills = fills.filter((fill) => {
         const matchingDeposit = arrivingDeposits.find((deposit) => deposit.depositId == fill.depositId);
-        return matchingDeposit && spokePoolClient.validateFillForDeposit(fill, matchingDeposit);
+        const isValid = matchingDeposit && spokePoolClient.validateFillForDeposit(fill, matchingDeposit);
+        if (!isValid) {
+          if (invalidFillsByDestinationChain[chainId] === undefined) invalidFillsByDestinationChain[chainId] = [];
+          invalidFillsByDestinationChain[chainId].push(_.cloneDeep(fill));
+        }
+        return isValid;
       });
       // Add any valid fill's amount to the refunded chain's runningBalance.
       for (const validFill of validFills) {
@@ -142,7 +148,7 @@ export async function findDeficitBundles(_logger: winston.Logger) {
         const destinationChainId = unfilledDeposit.destinationChainId;
         runningBalances[destinationChainId] = runningBalances[destinationChainId].add(unfilledDeposit.amount);
         if (!unfilledDepositByDestinationChain[destinationChainId]) unfilledDepositByDestinationChain[destinationChainId] = [];
-        unfilledDepositByDestinationChain[destinationChainId].add(unfilledDeposit);
+        unfilledDepositByDestinationChain[destinationChainId].push(unfilledDeposit);
       }
 
       const originatingDeposits = spokePoolClient
@@ -178,27 +184,36 @@ export async function findDeficitBundles(_logger: winston.Logger) {
 
           const leafRunningBalance = leaf.runningBalances[tokenIdx].toString();
           const leafNetSendAmount = leaf.netSendAmounts[tokenIdx].toString();
-          previousBundleData[leafChainId] = {
-            leafRunningBalance,
-            leafNetSendAmount,
-          };
-
           const computedRunningBalance = runningBalances[chainId].toString();
-
-          if (computedRunningBalance !== leafRunningBalance && computedRunningBalance !== leafNetSendAmount) {
+          const computedRunningBalanceWithPrevious =
+            previousBundleData[leafChainId] && previousBundleData[leafChainId].leafRunningBalance ?
+              runningBalances[chainId].add(previousBundleData[leafChainId].leafRunningBalance).toString() :
+              computedRunningBalance;
+          if (
+            computedRunningBalance !== leafRunningBalance &&
+            computedRunningBalance !== leafNetSendAmount &&
+            computedRunningBalanceWithPrevious != leafRunningBalance &&
+            computedRunningBalanceWithPrevious != leafNetSendAmount) {
             console.log({
               message: `Mismatching running balances for chain ${chainId}`,
               bundle: bundle.transactionHash,
               leafRunningBalance,
               leafNetSendAmount,
               computedRunningBalance,
+              computedRunningBalanceWithPrevious,
               leafExec: leaf.transactionHash,
               validFills: validFillsByDestinationChain[leafChainId],
               deposits: depositsByOriginChain[leafChainId],
               slowFills: unfilledDepositByDestinationChain[leafChainId],
               previousBundleData: previousBundleData[leafChainId],
+              invalidFills: invalidFillsByDestinationChain[leafChainId],
             });
           }
+
+          previousBundleData[leafChainId] = {
+            leafRunningBalance,
+            leafNetSendAmount,
+          };
         }
       }
     }
