@@ -66,7 +66,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     42161: 0,
   },
 };
-export const QUOTE_TIME_BUFFER = 12 * 60 * 2; // 2 blocks on Mainnet.
+export const QUOTE_TIME_BUFFER = 12 * 60 * 5; // 5 blocks on Mainnet.
 
 // Optimism, ethereum can do infinity lookbacks. boba and Arbitrum limited to 100000 on infura.
 export const CHAIN_MAX_BLOCK_LOOKBACK = {
