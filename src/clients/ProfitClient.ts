@@ -145,7 +145,7 @@ export class ProfitClient {
 
   appliedRelayerFeePct(deposit: Deposit): BigNumber {
     // Return the maximum available relayerFeePct (max of Deposit and any SpeedUp).
-    return max(deposit.relayerFeePct, deposit.newRelayerFeePct ?? toBN(0));
+    return max(toBN(deposit.relayerFeePct), deposit.newRelayerFeePct ? toBN(deposit.newRelayerFeePct) : toBN(0));
   }
 
   calculateFillProfitability(deposit: Deposit, fillAmount: BigNumber, l1Token?: L1Token): FillProfit {
@@ -199,6 +199,17 @@ export class ProfitClient {
       netRelayerFeeUsd,
       fillProfitable,
     };
+  }
+
+  // Return USD amount of fill amount for deposited token, should always return in wei as the units.
+  getFillAmountInUsd(deposit: Deposit, fillAmount: BigNumber): BigNumber {
+    const l1TokenInfo = this.hubPoolClient.getTokenInfoForDeposit(deposit);
+    if (!l1TokenInfo)
+      throw new Error(
+        `ProfitClient::isFillProfitable missing l1TokenInfo for deposit with origin token: ${deposit.originToken}`
+      );
+    const tokenPriceInUsd = this.getPriceOfToken(l1TokenInfo.address);
+    return fillAmount.mul(tokenPriceInUsd).div(toBN(10).pow(l1TokenInfo.decimals));
   }
 
   isFillProfitable(deposit: Deposit, fillAmount: BigNumber, l1Token?: L1Token): boolean {

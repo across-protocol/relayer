@@ -19,7 +19,14 @@ export class RelayerConfig extends CommonConfig {
   readonly minRelayerFeePct: BigNumber;
   readonly acceptInvalidFills: boolean;
   // Following distances in blocks to guarantee finality on each chain.
-  readonly minDepositConfirmations: { [chainId: number]: number };
+  readonly minDepositConfirmations: {
+    [threshold: number]: { [chainId: number]: number };
+  };
+  // Quote timestamp buffer to protect relayer from edge case where a quote time is > HEAD's latest block.
+  // This exposes relayer to risk that HubPool utilization changes between now and the eventual block mined at that
+  // timestamp, since the ConfigStoreClient.computeRealizedLpFee returns the current lpFee % for quote times >
+  // HEAD
+  readonly quoteTimeBuffer: number;
 
   constructor(env: ProcessEnv) {
     const {
@@ -35,6 +42,7 @@ export class RelayerConfig extends CommonConfig {
       MIN_RELAYER_FEE_PCT,
       ACCEPT_INVALID_FILLS,
       MIN_DEPOSIT_CONFIRMATIONS,
+      QUOTE_TIME_BUFFER,
     } = env;
     super(env);
 
@@ -83,15 +91,20 @@ export class RelayerConfig extends CommonConfig {
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
     this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";
-    this.minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS
+    (this.minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS
       ? JSON.parse(MIN_DEPOSIT_CONFIRMATIONS)
-      : Constants.MIN_DEPOSIT_CONFIRMATIONS;
-    this.spokePoolChains.forEach((chainId) => {
-      const nBlocks: number = this.minDepositConfirmations[chainId];
-      assert(
-        !isNaN(nBlocks) && nBlocks >= 0,
-        `Chain ${chainId} minimum deposit confirmations missing or invalid (${nBlocks}).`
-      );
-    });
+      : Constants.MIN_DEPOSIT_CONFIRMATIONS),
+      this.spokePoolChains.forEach((chainId) => {
+        Object.keys(this.minDepositConfirmations).forEach((threshold) => {
+          const nBlocks: number = this.minDepositConfirmations[threshold][chainId];
+          assert(
+            !isNaN(nBlocks) && nBlocks >= 0,
+            `Chain ${chainId} minimum deposit confirmations for "${threshold}" threshold missing or invalid (${nBlocks}).`
+          );
+        });
+      });
+    // Force default thresholds in MDC config.
+    this.minDepositConfirmations["default"] = Constants.DEFAULT_MIN_DEPOSIT_CONFIRMATIONS;
+    this.quoteTimeBuffer = QUOTE_TIME_BUFFER ? Number(QUOTE_TIME_BUFFER) : Constants.QUOTE_TIME_BUFFER;
   }
 }
