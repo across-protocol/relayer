@@ -39,7 +39,9 @@ export class Relayer {
     // Remove deposits whose deposit quote timestamp is > HubPool's current time, because there is a risk that
     // the ConfigStoreClient's computed realized lp fee % is incorrect for quote times in the future. The client
     // would use the current utilization as an input to compute this fee %, but if the utilization is different for the
-    // actual block that is mined at the deposit quote time, then the fee % would be different.
+    // actual block that is mined at the deposit quote time, then the fee % would be different. This should not
+    // impact the bridge users' UX in the normal path because deposit UI's have no reason to set quote times in the
+    // future.
     const latestHubPoolTime = this.clients.hubPoolClient.currentTime;
 
     // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
