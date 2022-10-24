@@ -16,6 +16,7 @@ import { createDataworker } from "../dataworker";
 import { updateSpokePoolClients } from "../common";
 import { DepositWithBlock } from "../interfaces";
 import { BigNumber } from "ethers";
+import _ from "lodash";
 
 config();
 let logger: winston.Logger;
@@ -34,17 +35,6 @@ export async function findDeficitBundles(_logger: winston.Logger) {
     clients,
     dataworker
   );
-
-  console.log({
-    message:
-      "Setting start blocks for SpokePoolClient equal to bundle evaluation end blocks from Nth latest valid root bundle",
-    dataworkerFastStartBundle: config.dataworkerFastStartBundle,
-    dataworkerFastLookbackCount: config.dataworkerFastLookbackCount,
-    fromBlocks,
-    toBlocks,
-    fromBundleTxn: fromBundle?.transactionHash,
-    toBundleTxn: toBundle?.transactionHash,
-  });
 
   const spokePoolClients = await constructSpokePoolClientsForFastDataworker(
     logger,
@@ -66,6 +56,7 @@ export async function findDeficitBundles(_logger: winston.Logger) {
 
   const allBundles = sortEventsAscending(hubPoolClient.getProposedRootBundles());
   let count = 0;
+  const previousBundleData = {};
   for (const bundle of allBundles) {
     // Skip bundles that were not executed.
     if (!hubPoolClient.isRootBundleValid(bundle, latestMainnetBlock)) {
@@ -140,9 +131,10 @@ export async function findDeficitBundles(_logger: winston.Logger) {
       const unfilledDeposits = [];
       for (const deposit of arrivingDeposits) {
         const matchingFills = fills.filter((fill) => fill.depositId == deposit.depositId);
-        deposit.amount = deposit.amount.sub(matchingFills.reduce((acc, deposit) => acc.add(deposit.amount), toBN(0)));
-        if (deposit.amount.gt(toBN(0))) {
-          unfilledDeposits.push(deposit);
+        const depositClone = _.cloneDeep(deposit);
+        depositClone.amount = deposit.amount.sub(matchingFills.reduce((acc, fill) => acc.add(fill.amount), toBN(0)));
+        if (depositClone.amount.gt(toBN(0))) {
+          unfilledDeposits.push(depositClone);
         }
       }
       // Add any unfilled deposits' amount (slow fills) to the destination chain's running balance.
@@ -164,7 +156,6 @@ export async function findDeficitBundles(_logger: winston.Logger) {
       depositsByOriginChain[chainId] = originatingDeposits;
       // Subtract all deposits on the current chain from its running balance.
       for (const originatingDeposit of originatingDeposits) {
-        console.log(`Subtracting ${originatingDeposit.amount.toString()} from running balance of ${chainId}}`, originatingDeposit);
         runningBalances[chainId] = runningBalances[chainId].sub(originatingDeposit.amount);
       }
 
@@ -184,8 +175,13 @@ export async function findDeficitBundles(_logger: winston.Logger) {
         if (leafChainId == chainId) {
           const tokenIdx = leaf.l1Tokens.indexOf(tokenOfInterest);
           if (tokenIdx < 0) continue;
+
           const leafRunningBalance = leaf.runningBalances[tokenIdx].toString();
           const leafNetSendAmount = leaf.netSendAmounts[tokenIdx].toString();
+          previousBundleData[leafChainId] = {
+            leafRunningBalance,
+            leafNetSendAmount,
+          };
 
           const computedRunningBalance = runningBalances[chainId].toString();
 
@@ -200,6 +196,7 @@ export async function findDeficitBundles(_logger: winston.Logger) {
               validFills: validFillsByDestinationChain[leafChainId],
               deposits: depositsByOriginChain[leafChainId],
               slowFills: unfilledDepositByDestinationChain[leafChainId],
+              previousBundleData: previousBundleData[leafChainId],
             });
           }
         }
