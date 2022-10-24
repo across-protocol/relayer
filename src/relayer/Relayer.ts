@@ -47,13 +47,13 @@ export class Relayer {
       this.clients.spokePoolClients,
       this.maxUnfilledDepositLookBack
     )
-    .filter((x) => x.deposit.quoteTimestamp <= latestHubPoolTime)
-    .reduce((agg, curr) => {
-      const unfilledAmountUsd = this.clients.profitClient.getFillAmountInUsd(curr.deposit, curr.unfilledAmount);
-      if (!agg[curr.deposit.originChainId]) agg[curr.deposit.originChainId] = toBN(0);
-      agg[curr.deposit.originChainId] = agg[curr.deposit.originChainId].add(unfilledAmountUsd);
-      return agg;
-    }, {});
+      .filter((x) => x.deposit.quoteTimestamp <= latestHubPoolTime)
+      .reduce((agg, curr) => {
+        const unfilledAmountUsd = this.clients.profitClient.getFillAmountInUsd(curr.deposit, curr.unfilledAmount);
+        if (!agg[curr.deposit.originChainId]) agg[curr.deposit.originChainId] = toBN(0);
+        agg[curr.deposit.originChainId] = agg[curr.deposit.originChainId].add(unfilledAmountUsd);
+        return agg;
+      }, {});
 
     // Sort thresholds in ascending order.
     const minimumDepositConfirmationThresholds = Object.keys(this.config.minDepositConfirmations)
