@@ -201,7 +201,7 @@ export class SpokePoolClient {
     // Log any invalid deposits with same deposit id but different params.
     const invalidFillsForDeposit = invalidFills.filter((x) => x.depositId === deposit.depositId);
     if (invalidFillsForDeposit.length > 0)
-      this.logger.warn({
+      this.logger.error({
         at: "SpokePoolClient",
         chainId: this.chainId,
         message: "Invalid fills found matching deposit ID",
