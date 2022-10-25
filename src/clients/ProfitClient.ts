@@ -125,7 +125,10 @@ export class ProfitClient {
       throw new Error(`Unable to compute gas cost (${err} unknown)`);
     }
 
-    const gasCostUsd = nativeGasCost.mul(this.gasMultiplier).mul(gasPriceUsd).div(toBN(10).pow(GAS_TOKEN_DECIMALS));
+    const gasCostUsd = nativeGasCost
+      .mul(this.gasMultiplier.toString())
+      .mul(gasPriceUsd)
+      .div(toBN(10).pow(GAS_TOKEN_DECIMALS));
 
     return {
       nativeGasCost,
