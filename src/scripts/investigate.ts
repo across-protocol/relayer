@@ -194,9 +194,13 @@ export async function findDeficitBundles(_logger: winston.Logger) {
             computedRunningBalanceWithPrevious != leafRunningBalance &&
             computedRunningBalanceWithPrevious != leafNetSendAmount
           ) {
+            const deficitAmount = toBN(computedRunningBalanceWithPrevious)
+              .sub(toBN(leafRunningBalance).add(toBN(leafNetSendAmount)))
+              .toString();
             console.log({
               message: `Mismatching running balances for chain ${chainId}`,
               bundle: bundle.transactionHash,
+              deficitAmount,
               leafRunningBalance,
               leafNetSendAmount,
               computedRunningBalance,
