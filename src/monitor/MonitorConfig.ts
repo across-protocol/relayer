@@ -3,11 +3,12 @@ import { ethers, BigNumber, ZERO_ADDRESS } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
+  balancesEnabled: boolean;
+  reportEnabled: boolean;
+  stuckRebalancesEnabled: boolean;
   utilizationEnabled: boolean; // Monitors pool utilization ratio
   unknownRootBundleCallersEnabled: boolean; // Monitors relay related events triggered by non-whitelisted addresses
   unknownRelayerCallersEnabled: boolean;
-  reportEnabled: boolean;
-  balancesEnabled: boolean;
 }
 
 export class MonitorConfig extends CommonConfig {
@@ -17,7 +18,7 @@ export class MonitorConfig extends CommonConfig {
   readonly utilizationThreshold: number;
   readonly hubPoolStartingBlock: number | undefined;
   readonly hubPoolEndingBlock: number | undefined;
-  readonly monitorReportInterval: number;
+  readonly stuckRebalancesEnabled: boolean;
   readonly monitoredRelayers: string[];
   readonly whitelistedDataworkers: string[];
   readonly whitelistedRelayers: string[];
@@ -48,14 +49,16 @@ export class MonitorConfig extends CommonConfig {
       KNOWN_V1_ADDRESSES,
       BALANCES_ENABLED,
       MONITORED_BALANCES,
+      STUCK_REBALANCES_ENABLED,
     } = env;
 
     this.botModes = {
+      balancesEnabled: BALANCES_ENABLED === "true",
+      reportEnabled: MONITOR_REPORT_ENABLED === "true",
       utilizationEnabled: UTILIZATION_ENABLED === "true",
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       unknownRelayerCallersEnabled: UNKNOWN_RELAYER_CALLERS_ENABLED === "true",
-      reportEnabled: MONITOR_REPORT_ENABLED === "true",
-      balancesEnabled: BALANCES_ENABLED === "true",
+      stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
     };
 
     // Used to monitor activities not from whitelisted data workers or relayers.

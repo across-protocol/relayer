@@ -1,3 +1,4 @@
+import { DEFAULT_MULTICALL_CHUNK_SIZE, CHAIN_MULTICALL_CHUNK_SIZE } from "../common";
 import {
   winston,
   getNetworkName,
@@ -17,16 +18,53 @@ export interface AugmentedTransaction {
   contract: Contract;
   chainId: number;
   method: string;
-  args: any;
+  args: any[];
   message: string;
   mrkdwn: string;
   value?: BigNumber;
 }
 
+// Use this list of Smart Contract revert reasons to filter out transactions that revert in the
+// Multicaller client's simulations but that we can ignore. Check for exact revert reason instead of using
+// .includes() to partially match reason string in order to not ignore errors thrown by non-contract reverts.
+// For example, a NodeJS error might result in a reason string that includes more than just the contract r
+// evert reason.
+const knownRevertReasons = new Set(["relay filled", "Already claimed"]);
+
+// The following reason potentially includes false positives of reverts that we should be alerted on, however
+// there is something likely broken in how the provider is interpreting contract reverts. Currently, there are
+// a lot of duplicate transaction sends that are reverting with this reason, for example, sending a transaction
+// to execute a relayer refund leaf takes a while to execute and ends up reverting because a duplicate transaction
+// mines before it. This situation leads to this revert reason which is spamming the Logger currently.
+const unknownRevertReason = "missing revert data in call exception; Transaction reverted without a reason string";
+const unknownRevertReasonMethodsToIgnore = new Set([
+  "fillRelay",
+  "fillRelayWithUpdatedFee",
+  "executeSlowRelayLeaf",
+  "executeRelayerRefundLeaf",
+  "executeRootBundle",
+]);
+
+// Ignore the general unknown revert reason for specific methods or uniformly ignore specific revert reasons
+// for any contract method.
+const canIgnoreRevertReasons = (obj: {
+  succeed: boolean;
+  reason: string;
+  transaction: AugmentedTransaction;
+}): boolean => {
+  // prettier-ignore
+  return (
+    !obj.succeed && (
+      knownRevertReasons.has(obj.reason) ||
+      (unknownRevertReasonMethodsToIgnore.has(obj.transaction.method) && obj.reason === unknownRevertReason)
+    )
+  );
+};
+
 export class MultiCallerClient {
   private transactions: AugmentedTransaction[] = [];
   // eslint-disable-next-line no-useless-constructor
-  constructor(readonly logger: winston.Logger, readonly gasEstimator: any, readonly maxTxWait: number = 180) {}
+  constructor(readonly logger: winston.Logger) {}
 
   // Adds all information associated with a transaction to the transaction queue. This is the intention of the
   // caller to send a transaction. The transaction might not be executable, which should be filtered later.
@@ -59,41 +97,49 @@ export class MultiCallerClient {
 
       // Filter out transactions that revert for expected reasons. For example, the "relay filled" error
       // will occur frequently if there are multiple relayers running at the same time because only one relay
-      // can go through. This is a non critical error we can ignore to filter out the noise.
-      this.logger.debug({
-        at: "MultiCallerClient",
-        message: `Filtering out ${
-          _transactionsSucceed.filter((txn) => !txn.succeed && txn.reason === "relay filled").length
-        } relay transactions that will fail because the relay has already been filled`,
-        totalTransactions: _transactionsSucceed.length,
-        relayFilledReverts: _transactionsSucceed.filter((txn) => !txn.succeed && txn.reason === "relay filled").length,
-      });
-      const transactionsSucceed = _transactionsSucceed.filter(
-        (transaction) => transaction.succeed || transaction.reason !== "relay filled"
-      );
+      // can go through. Similarly, the "already claimed" error will occur if the dataworker executor is running at a
+      // practical cadence of ~10 mins per run, because it takes ~5-7 mins per run, these runs can overlap and
+      // execution collisions can occur. These are non critical errors we can ignore to filter out the noise.
+      // TODO: Figure out less hacky way to reduce these errors rather than ignoring them.
 
-      // If any transactions will revert then log the reason and remove them from the transaction queue.
-      if (transactionsSucceed.some((succeed) => !succeed.succeed))
+      // Note: Check for exact revert reason instead of using .includes() to partially match reason string in order
+      // to not ignore errors thrown by non-contract reverts. For example, a NodeJS error might result in a reason
+      // string that includes more than just the contract revert reason.
+      const transactionRevertsToIgnore = _transactionsSucceed.filter(
+        (txn) => !txn.succeed && canIgnoreRevertReasons(txn)
+      );
+      const transactionRevertsToLog = _transactionsSucceed.filter(
+        (txn) => !txn.succeed && !canIgnoreRevertReasons(txn)
+      );
+      if (transactionRevertsToIgnore.length > 0)
+        this.logger.debug({
+          at: "MultiCallerClient",
+          message: `Filtering out ${transactionRevertsToIgnore.length} transactions with revert reasons we can ignore`,
+          revertReasons: transactionRevertsToIgnore.map((txn) => txn.reason),
+          totalTransactions: _transactionsSucceed.length,
+        });
+
+      // If any transactions will revert then log the reason.
+      if (transactionRevertsToLog.length > 0)
         this.logger.error({
           at: "MultiCallerClient",
           message: "Some transaction in the queue will revert!",
-          revertingTransactions: transactionsSucceed
-            .filter((transaction) => !transaction.succeed)
-            .map((transaction) => {
-              return {
-                target: getTarget(transaction.transaction.contract.address),
-                args: transaction.transaction.args,
-                reason: transaction.reason,
-                message: transaction.transaction.message,
-                mrkdwn: transaction.transaction.mrkdwn,
-              };
-            }),
+          count: transactionRevertsToLog.length,
+          revertingTransactions: transactionRevertsToLog.map((transaction) => {
+            return {
+              target: getTarget(transaction.transaction.contract.address),
+              args: transaction.transaction.args,
+              reason: transaction.reason,
+              message: transaction.transaction.message,
+              mrkdwn: transaction.transaction.mrkdwn,
+            };
+          }),
           notificationPath: "across-error",
         });
-      const validTransactions: AugmentedTransaction[] = transactionsSucceed
-        .filter((transaction) => transaction.succeed)
-        .map((transaction) => transaction.transaction);
 
+      const validTransactions = _transactionsSucceed
+        .filter((txn) => txn.succeed)
+        .map((transaction) => transaction.transaction);
       if (validTransactions.length === 0) {
         this.logger.debug({ at: "MultiCallerClient", message: "No valid transactions in the queue" });
         return;
@@ -107,13 +153,29 @@ export class MultiCallerClient {
       // Group by target chain. Note that there is NO grouping by target contract. The relayer will only ever use this
       // MultiCallerClient to send multiple transactions to one target contract on a given target chain and so we dont
       // need to group by target contract. This can be further refactored with another group by if this is needed.
-      const groupedTransactions: { [networkId: number]: AugmentedTransaction[] } = {};
-      for (const transaction of nonValueTransactions) {
-        assign(groupedTransactions, [transaction.chainId], [transaction]);
-      }
+      const groupedTransactions: { [chainId: number]: AugmentedTransaction[] } = lodash.groupBy(
+        nonValueTransactions,
+        "chainId"
+      );
 
-      const chunkedTransactions: { [networkId: number]: AugmentedTransaction[][] } = Object.fromEntries(
-        Object.entries(groupedTransactions).map(([chainId, transactions]) => [chainId, lodash.chunk(transactions, 100)])
+      const chunkedTransactions: { [chainId: number]: AugmentedTransaction[][] } = Object.fromEntries(
+        Object.entries(groupedTransactions).map(([_chainId, transactions]) => {
+          const chainId = Number(_chainId);
+          const chunkSize: number = CHAIN_MULTICALL_CHUNK_SIZE[chainId] || DEFAULT_MULTICALL_CHUNK_SIZE;
+          if (transactions.length > chunkSize) {
+            const dropped: Array<{ address: string; method: string; args: any[] }> = transactions
+              .slice(chunkSize)
+              .map((txn) => {
+                return { address: txn.contract.address, method: txn.method, args: txn.args };
+              });
+            this.logger.info({
+              message: `Dropping ${dropped.length} transactions on chain ${chainId}.`,
+              dropped,
+            });
+          }
+          // Multi-chunks not attempted due to nonce reuse complications, but may return in future.
+          return [chainId, [transactions.slice(0, chunkSize)]];
+        })
       );
 
       if (simulationModeOn) {
@@ -124,11 +186,12 @@ export class MultiCallerClient {
         let mrkdwn = "";
         valueTransactions.forEach((transaction, i) => {
           mrkdwn += "*Transaction excluded from batches because it contained value:*\n";
-          mrkdwn += `  ${i + 1}. ${transaction.message || "0 message"}: ` + `${transaction.mrkdwn || "0 mrkdwn"}\n`;
+          mrkdwn += `  ${i + 1}. ${transaction.message || "0 message"}: ${transaction.mrkdwn || "0 mrkdwn"}\n`;
         });
-        Object.keys(chunkedTransactions).forEach((chainId) => {
+        Object.entries(chunkedTransactions).forEach(([_chainId, transactions]) => {
+          const chainId = Number(_chainId);
           mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
-          chunkedTransactions[chainId].forEach((chunk, groupIndex) => {
+          transactions.forEach((chunk, groupIndex) => {
             chunk.forEach((transaction, chunkTxIndex) => {
               mrkdwn +=
                 `  ${groupIndex + 1}-${chunkTxIndex + 1}. ${transaction.message || "0 message"}: ` +
@@ -141,17 +204,17 @@ export class MultiCallerClient {
         return;
       }
 
-      const groupedValueTransactions: { [networkId: number]: AugmentedTransaction[] } = {};
-      for (const transaction of valueTransactions) {
-        assign(groupedValueTransactions, [transaction.chainId], [transaction]);
-      }
+      const groupedValueTransactions: { [networkId: number]: AugmentedTransaction[] } = lodash.groupBy(
+        valueTransactions,
+        "chainId"
+      );
 
       this.logger.debug({
         at: "MultiCallerClient",
         message: "Executing transactions with msg.value excluded from batches by target chain",
-        txs: Object.keys(groupedValueTransactions).map((chainId) => ({
-          chainId,
-          num: groupedValueTransactions[chainId].length,
+        txs: Object.entries(groupedValueTransactions).map(([chainId, transactions]) => ({
+          chainId: Number(chainId),
+          num: transactions.length,
         })),
       });
 
@@ -171,19 +234,19 @@ export class MultiCallerClient {
       this.logger.debug({
         at: "MultiCallerClient",
         message: "Executing transactions grouped by target chain",
-        txs: Object.keys(groupedTransactions).map((chainId) => ({ chainId, num: groupedTransactions[chainId].length })),
+        txs: Object.entries(chunkedTransactions).map(([chainId, txns]) => ({ chainId, num: txns.length })),
       });
 
       // Construct multiCall transaction for each target chain.
       const multiCallTransactionsResult = await Promise.allSettled(
-        Object.keys(chunkedTransactions)
-          .map((chainId) => chunkedTransactions[chainId].map((chunk) => this.buildMultiCallBundle(chunk)))
+        Object.values(chunkedTransactions)
+          .map((transactions) => transactions.map((chunk) => this.buildMultiCallBundle(chunk)))
           .flat()
       );
 
       // Each element in the bundle of receipts relates back to each set within the groupedTransactions. Produce log.
       let mrkdwn = "";
-      const transactionHashes = [];
+      const transactionHashes: string[] = [];
       valueTransactionsResult.forEach((result, i) => {
         const { chainId } = valueTransactions[i];
         mrkdwn += "*Transaction excluded from batches because it contained value:*\n";
@@ -204,9 +267,10 @@ export class MultiCallerClient {
         }
       });
       let flatIndex = 0;
-      Object.keys(chunkedTransactions).forEach((chainId) => {
+      Object.entries(chunkedTransactions).forEach(([_chainId, transactions]) => {
+        const chainId = Number(_chainId);
         mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
-        chunkedTransactions[chainId].forEach((chunk, chunkIndex) => {
+        transactions.forEach((chunk, chunkIndex) => {
           const settledPromise = multiCallTransactionsResult[flatIndex++];
           if (settledPromise.status === "rejected") {
             const rejectionError = (settledPromise as PromiseRejectedResult).reason;

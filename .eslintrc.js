@@ -24,16 +24,26 @@ module.exports = {
     quotes: ["error", "double", { avoidEscape: true }],
     semi: ["error", "always"],
     "spaced-comment": ["error", "always", { exceptions: ["-", "+"] }],
-    "no-console": 0,
+    "no-console": 2,
     camelcase: "off",
     "@typescript-eslint/camelcase": "off",
     "mocha/no-exclusive-tests": "error",
     "@typescript-eslint/no-var-requires": "off",
     "node/no-unsupported-features/es-syntax": ["error", { ignores: ["modules"] }],
+    // Disable warnings for { a, b, ...rest } variables, since this is typically used to remove variables.
+    "@typescript-eslint/no-unused-vars": ["warn", { ignoreRestSiblings: true }],
   },
   settings: {
     node: {
       tryExtensions: [".js", ".ts"],
     },
   },
+  overrides: [
+    {
+      files: ["scripts/*.ts", "tasks/*.ts"],
+      rules: {
+        "no-console": 0,
+      },
+    },
+  ],
 };

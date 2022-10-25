@@ -1,7 +1,7 @@
 // How to run:
+// 0. Start redis in a separate window: `redis-server`
 // 1. You might need to set the following environment variables:
-//    HUB_CHAIN_ID=1
-//    MAX_BLOCK_LOOK_BACK='{"1":0,"10":0,"137":3499,"288":4999,"42161":0}'
+//    REDIS_URL=redis://localhost:6379
 //    NODE_URL_1=https://mainnet.infura.io/v3/KEY
 //    NODE_URL_10=https://optimism-mainnet.infura.io/v3/KEY
 //    NODE_URL_137=https://polygon-mainnet.infura.io/v3/KEY
@@ -10,25 +10,37 @@
 // 2. Example of invalid bundle: REQUEST_TIME=1653594774 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
 // 2. Example of valid bundle:   REQUEST_TIME=1653516226 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
 
-import { winston, config, startupLogLevel, Logger, delay } from "../utils";
-import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
+import {
+  Wallet,
+  winston,
+  config,
+  getSigner,
+  startupLogLevel,
+  Logger,
+  getLatestInvalidBundleStartBlocks,
+} from "../utils";
+import {
+  constructSpokePoolClientsForFastDataworker,
+  getSpokePoolClientEventSearchConfigsForFastDataworker,
+  updateDataworkerClients,
+} from "../dataworker/DataworkerClientHelper";
 import { BlockFinder } from "@uma/sdk";
 import { PendingRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
 import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
-import { constructSpokePoolClientsForBlockAndUpdate } from "../common";
 
 config();
 let logger: winston.Logger;
 
-export async function validate(_logger: winston.Logger) {
+export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
   logger = _logger;
-  if (!process.env.REQUEST_TIME)
+  if (!process.env.REQUEST_TIME) {
     throw new Error("Must set environment variable 'REQUEST_TIME=<NUMBER>' to disputed price request time");
+  }
   const priceRequestTime = Number(process.env.REQUEST_TIME);
 
-  const { clients, config, dataworker } = await createDataworker(logger);
+  const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
   logger[startupLogLevel(config)]({
     at: "RootBundleValidator",
     message: `Validating most recently proposed root bundle before request time ${priceRequestTime}`,
@@ -41,7 +53,8 @@ export async function validate(_logger: winston.Logger) {
     clients.configStoreClient.configStore.provider.getBlock.bind(clients.configStoreClient.configStore.provider)
   );
   const priceRequestBlock = (await blockFinder.getBlockForTimestamp(priceRequestTime)).number;
-  await updateDataworkerClients(clients);
+
+  await updateDataworkerClients(clients, false);
   const precedingProposeRootBundleEvent = clients.hubPoolClient.getMostRecentProposedRootBundle(priceRequestBlock);
   const rootBundle: PendingRootBundle = {
     poolRebalanceRoot: precedingProposeRootBundleEvent.poolRebalanceRoot,
@@ -60,20 +73,46 @@ export async function validate(_logger: winston.Logger) {
     transactionHash: precedingProposeRootBundleEvent.transactionHash,
   });
 
-  const spokePoolClients = await constructSpokePoolClientsForBlockAndUpdate(
-    dataworker.chainIdListForBundleEvaluationBlockNumbers,
+  if (config.dataworkerFastLookbackCount === 0) {
+    throw new Error("Set DATAWORKER_FAST_LOOKBACK_COUNT > 0, otherwise script will take too long to run");
+  }
+
+  const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
+    config,
     clients,
-    logger,
-    clients.hubPoolClient.latestBlockNumber,
-    [
-      "FundsDeposited",
-      "RequestedSpeedUpDeposit",
-      "FilledRelay",
-      "EnabledDepositRoute",
-      "RelayedRootBundle",
-      "ExecutedRelayerRefundRoot",
-    ]
+    dataworker
   );
+
+  logger.debug({
+    at: "RootBundleValidator",
+    message:
+      "Setting start blocks for SpokePoolClient equal to bundle evaluation end blocks from Nth latest valid root bundle",
+    dataworkerFastStartBundle: config.dataworkerFastStartBundle,
+    dataworkerFastLookbackCount: config.dataworkerFastLookbackCount,
+    fromBlocks,
+    toBlocks,
+    fromBundleTxn: fromBundle?.transactionHash,
+    toBundleTxn: toBundle?.transactionHash,
+  });
+
+  const spokePoolClients = await constructSpokePoolClientsForFastDataworker(
+    logger,
+    clients.configStoreClient,
+    config,
+    baseSigner,
+    fromBlocks,
+    toBlocks
+  );
+
+  const latestInvalidBundleStartBlocks = getLatestInvalidBundleStartBlocks(spokePoolClients);
+  logger.debug({
+    at: "RootBundleValidator",
+    message:
+      "Identified latest invalid bundle start blocks per chain that we will use to filter root bundles that can be proposed and validated",
+    latestInvalidBundleStartBlocks,
+    fromBlocks,
+    toBlocks,
+  });
 
   const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
     dataworker.chainIdListForBundleEvaluationBlockNumbers,
@@ -87,7 +126,9 @@ export async function validate(_logger: winston.Logger) {
   const { valid, reason } = await dataworker.validateRootBundle(
     config.hubPoolChainId,
     widestPossibleBlockRanges,
-    rootBundle
+    rootBundle,
+    spokePoolClients,
+    latestInvalidBundleStartBlocks
   );
 
   logger.info({
@@ -100,25 +141,9 @@ export async function validate(_logger: winston.Logger) {
 }
 
 export async function run(_logger: winston.Logger) {
-  // Keep trying to validate until it works.
-  try {
-    await validate(_logger);
-  } catch (error) {
-    logger.error({ at: "RootBundleValidator", message: "Caught an error, retrying!", error });
-    await delay(5);
-    await run(Logger);
-  }
+  const baseSigner: Wallet = await getSigner();
+  await validate(_logger, baseSigner);
 }
 
-if (require.main === module) {
-  run(Logger)
-    .then(() => {
-      // eslint-disable-next-line no-process-exit
-      process.exit(0);
-    })
-    .catch(async (error) => {
-      logger.error({ at: "InfrastructureEntryPoint", message: "There was an error in the main entry point!", error });
-      await delay(5);
-      await run(Logger);
-    });
-}
+// eslint-disable-next-line no-process-exit
+run(Logger).then(() => process.exit(0));

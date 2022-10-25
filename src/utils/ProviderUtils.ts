@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 import lodash from "lodash";
+import winston from "winston";
 import { isPromiseFulfulled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
 
@@ -15,9 +16,13 @@ interface RateLimitTask {
   reject: (err: any) => void;
 }
 
-// This provider is a very small addition to the JsonRpcProvider that ensures that no more than `maxConcurrency`
+// StaticJsonRpcProvider is used in place of JsonRpcProvider to avoid redundant eth_chainId queries prior to each
+// request. This is safe to use when the back-end provider is guaranteed not to change.
+// See https://docs.ethers.io/v5/api/providers/jsonrpc-provider/#StaticJsonRpcProvider
+
+// This provider is a very small addition to the StaticJsonRpcProvider that ensures that no more than `maxConcurrency`
 // requests are ever in flight. It uses the async/queue library to manage this.
-class RateLimitedProvider extends ethers.providers.JsonRpcProvider {
+class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
   // The queue object that manages the tasks.
   private queue: QueueObject;
 
@@ -25,7 +30,7 @@ class RateLimitedProvider extends ethers.providers.JsonRpcProvider {
   // of the list.
   constructor(
     maxConcurrency: number,
-    ...jsonRpcConstructorParams: ConstructorParameters<typeof ethers.providers.JsonRpcProvider>
+    ...jsonRpcConstructorParams: ConstructorParameters<typeof ethers.providers.StaticJsonRpcProvider>
   ) {
     super(...jsonRpcConstructorParams);
 
@@ -53,13 +58,13 @@ class RateLimitedProvider extends ethers.providers.JsonRpcProvider {
   }
 }
 
-const defaultTimeout = 15 * 1000;
+const defaultTimeout = 60 * 1000;
 
 function delay(s: number): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, Math.round(s * 1000)));
 }
 
-function formatProviderError(provider: ethers.providers.JsonRpcProvider, rawErrorText: string) {
+function formatProviderError(provider: ethers.providers.StaticJsonRpcProvider, rawErrorText: string) {
   return `Provider ${provider.connection.url} failed with error: ${rawErrorText}`;
 }
 
@@ -68,10 +73,10 @@ function createSendErrorWithMessage(message: string, sendError: any) {
   return { ...sendError, ...error };
 }
 
-class RetryProvider extends ethers.providers.JsonRpcProvider {
-  readonly providers: ethers.providers.JsonRpcProvider[];
+class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
+  readonly providers: ethers.providers.StaticJsonRpcProvider[];
   constructor(
-    params: ConstructorParameters<typeof ethers.providers.JsonRpcProvider>[],
+    params: ConstructorParameters<typeof ethers.providers.StaticJsonRpcProvider>[],
     chainId: number,
     readonly nodeQuorumThreshold: number,
     readonly retries: number,
@@ -99,17 +104,17 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
     const quorumThreshold = this._getQuorum(method, params);
     const requiredProviders = this.providers.slice(0, quorumThreshold);
     const fallbackProviders = this.providers.slice(quorumThreshold);
-    const errors: [ethers.providers.JsonRpcProvider, string][] = [];
+    const errors: [ethers.providers.StaticJsonRpcProvider, string][] = [];
 
     // This function is used to try to send with a provider and if it fails pop an element off the fallback list to try
     // with that one. Once the fallback provider list is empty, the method throws. Because the fallback providers are
     // removed, we ensure that no provider is used more than once because we care about quorum, making sure all
     // considered responses come from unique providers.
     const tryWithFallback = (
-      provider: ethers.providers.JsonRpcProvider
-    ): Promise<[ethers.providers.JsonRpcProvider, any]> => {
+      provider: ethers.providers.StaticJsonRpcProvider
+    ): Promise<[ethers.providers.StaticJsonRpcProvider, any]> => {
       return this._trySend(provider, method, params)
-        .then((result): [ethers.providers.JsonRpcProvider, any] => [provider, result])
+        .then((result): [ethers.providers.StaticJsonRpcProvider, any] => [provider, result])
         .catch((err) => {
           // Append the provider and error to the error array.
           errors.push([provider, err?.stack || err?.toString()]);
@@ -166,7 +171,7 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
     const fallbackResults = await Promise.allSettled(
       fallbackProviders.map((provider) =>
         this._trySend(provider, method, params)
-          .then((result): [ethers.providers.JsonRpcProvider, any] => [provider, result])
+          .then((result): [ethers.providers.StaticJsonRpcProvider, any] => [provider, result])
           .catch((err) => {
             errors.push([provider, err?.stack || err?.toString()]);
             throw new Error("No fallbacks during quorum search");
@@ -207,7 +212,7 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
     return quorumResult;
   }
 
-  _trySend(provider: ethers.providers.JsonRpcProvider, method: string, params: Array<any>): Promise<any> {
+  _trySend(provider: ethers.providers.StaticJsonRpcProvider, method: string, params: Array<any>): Promise<any> {
     let promise = provider.send(method, params);
     for (let i = 0; i < this.retries; i++) {
       promise = promise.catch(() => delay(this.delay).then(() => provider.send(method, params)));
@@ -232,14 +237,10 @@ class RetryProvider extends ethers.providers.JsonRpcProvider {
   }
 }
 
-export function getProvider(chainId: number) {
+export function getProvider(chainId: number, logger?: winston.Logger) {
   const { NODE_RETRIES, NODE_RETRY_DELAY, NODE_QUORUM, NODE_TIMEOUT, NODE_MAX_CONCURRENCY } = process.env;
 
   const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
-
-  const constructorArgumentLists = getNodeUrlList(chainId).map(
-    (nodeUrl): [{ url: string; timeout: number }, number] => [{ url: nodeUrl, timeout }, chainId]
-  );
 
   // Default to 2 retries.
   const retries = Number(process.env[`NODE_RETRIES_${chainId}`] || NODE_RETRIES || "3");
@@ -252,6 +253,32 @@ export function getProvider(chainId: number) {
 
   // Default to a max concurrency of 1000 requests per node.
   const nodeMaxConcurrency = Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "1000");
+
+  // Temporarily added to expose RPC rate-limiting.
+  const rpcRateLimited =
+    ({ nodeMaxConcurrency, logger }) =>
+    async (attempt: number, url: string): Promise<boolean> => {
+      if (logger) {
+        // Make an effort to filter out any api keys.
+        const regex = url.match(/https?:\/\/([\w.-]+)\/.*/);
+        logger.debug({
+          at: "ProviderUtils#rpcRateLimited",
+          message: `Got 429 on attempt ${attempt}.`,
+          rpc: regex ? regex[1] : url,
+          workers: nodeMaxConcurrency,
+        });
+      }
+      return true;
+    };
+
+  const constructorArgumentLists = getNodeUrlList(chainId).map((nodeUrl): [ethers.utils.ConnectionInfo, number] => [
+    {
+      url: nodeUrl,
+      timeout,
+      throttleCallback: rpcRateLimited({ nodeMaxConcurrency, logger }),
+    },
+    chainId,
+  ]);
 
   return new RetryProvider(
     constructorArgumentLists,

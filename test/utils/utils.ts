@@ -14,10 +14,13 @@ import { SpokePoolClient } from "../../src/clients";
 import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber } from "./index";
 import { Deposit, Fill, RunningBalances } from "../../src/interfaces";
 import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
+import { providers } from "ethers";
 
 import winston from "winston";
 import sinon from "sinon";
 import chai from "chai";
+import chaiExclude from "chai-exclude";
+chai.use(chaiExclude);
 export { winston, sinon };
 
 const assert = chai.assert;
@@ -176,7 +179,7 @@ export async function deployNewTokenMapping(
   ]);
   await configStore.updateTokenConfig(
     l1Token.address,
-    JSON.stringify({ rateModel: sampleRateModel, transferThreshold: l1TokenTransferThreshold })
+    JSON.stringify({ rateModel: sampleRateModel, transferThreshold: l1TokenTransferThreshold.toString() })
   );
 
   // Give signer initial balance and approve hub pool and spoke pool to pull funds from it
@@ -340,7 +343,7 @@ export async function contractAt(contractName: string, signer: utils.Signer, add
 
 // Submits a deposit transaction and returns the Deposit struct that that clients interact with.
 export async function buildDepositStruct(
-  deposit: Deposit,
+  deposit: Omit<Deposit, "destinationToken" | "realizedLpFeePct">,
   hubPoolClient: HubPoolClient,
   configStoreClient: AcrossConfigStoreClient,
   l1TokenForDepositedToken: Contract
@@ -372,7 +375,7 @@ export async function buildDeposit(
     _amountToDeposit,
     _relayerFeePct
   );
-  return await buildDepositStruct(_deposit, hubPoolClient, configStoreClient, l1TokenForDepositedToken);
+  return await buildDepositStruct(_deposit!, hubPoolClient, configStoreClient, l1TokenForDepositedToken);
 }
 
 // Submits a fillRelay transaction and returns the Fill struct that that clients will interact with.
@@ -623,4 +626,8 @@ export function createRefunds(address: string, refundAmount: BigNumber, token: s
       realizedLpFees: toBN(0),
     },
   };
+}
+
+export function getLastBlockNumber() {
+  return (utils.ethers.provider as providers.Provider).getBlockNumber();
 }

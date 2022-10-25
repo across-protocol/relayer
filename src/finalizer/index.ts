@@ -1,4 +1,4 @@
-import { Wallet, config, startupLogLevel, processEndPollingLoop, processCrash, getSigner } from "../utils";
+import { Wallet, config, startupLogLevel, processEndPollingLoop, processCrash } from "../utils";
 import { winston } from "../utils";
 import {
   finalizeArbitrum,
@@ -46,12 +46,9 @@ export async function finalize(
     const tokensBridged = client.getTokensBridged();
 
     if (chainId === 42161) {
-      // Skip events that are definitely not past the seven day challenge period, and those that are really
-      // old and have already been finalized.
+      // Skip events that are likely not past the seven day challenge period.
       const olderTokensBridgedEvents = tokensBridged.filter(
-        (e) =>
-          e.blockNumber < client.latestBlockNumber - optimisticRollupFinalizationWindow &&
-          e.blockNumber >= client.latestBlockNumber - 2 * optimisticRollupFinalizationWindow
+        (e) => e.blockNumber < client.latestBlockNumber - optimisticRollupFinalizationWindow
       );
       const finalizableMessages = await getFinalizableMessages(logger, olderTokensBridgedEvents, hubSigner);
       for (const l2Message of finalizableMessages) {
@@ -72,12 +69,9 @@ export async function finalize(
         await retrieveTokenFromMainnetTokenBridger(logger, l2Token, hubSigner, hubPoolClient);
       }
     } else if (chainId === 10) {
-      // Skip events that are definitely not past the seven day challenge period, and those that are really
-      // old and have already been finalized.
+      // Skip events that are likely not past the seven day challenge period.
       const olderTokensBridgedEvents = tokensBridged.filter(
-        (e) =>
-          e.blockNumber < client.latestBlockNumber - optimisticRollupFinalizationWindow &&
-          e.blockNumber >= client.latestBlockNumber - 2 * optimisticRollupFinalizationWindow
+        (e) => e.blockNumber < client.latestBlockNumber - optimisticRollupFinalizationWindow
       );
       const crossChainMessenger = getOptimismClient(hubSigner);
       const finalizableMessages = await getOptimismFinalizableMessages(
@@ -92,10 +86,8 @@ export async function finalize(
   }
 }
 
-export async function constructFinalizerClients(_logger: winston.Logger, config) {
-  const baseSigner = await getSigner();
-
-  const commonClients = await constructClients(_logger, config);
+export async function constructFinalizerClients(_logger: winston.Logger, config, baseSigner: Wallet) {
+  const commonClients = await constructClients(_logger, config, baseSigner);
 
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
@@ -134,12 +126,12 @@ export class FinalizerConfig extends DataworkerConfig {
   }
 }
 
-export async function runFinalizer(_logger: winston.Logger): Promise<void> {
+export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
   logger = _logger;
   // Same config as Dataworker for now.
   const config = new FinalizerConfig(process.env);
 
-  const { commonClients, spokePoolClients } = await constructFinalizerClients(logger, config);
+  const { commonClients, spokePoolClients } = await constructFinalizerClients(logger, config, baseSigner);
 
   try {
     logger[startupLogLevel(config)]({ at: "Finalizer#index", message: "Finalizer started 🏋🏿‍♀️", config });
@@ -163,8 +155,11 @@ export async function runFinalizer(_logger: winston.Logger): Promise<void> {
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }
   } catch (error) {
-    // eslint-disable-next-line no-process-exit
-    if (await processCrash(logger, "Dataworker", config.pollingDelay, error)) process.exit(1);
-    await runFinalizer(logger);
+    if (commonClients.configStoreClient.redisClient !== undefined) {
+      // If this throws an exception, it will mask the underlying error.
+      logger.debug("Disconnecting from redis server.");
+      commonClients.configStoreClient.redisClient.disconnect();
+    }
+    throw error;
   }
 }

@@ -75,7 +75,7 @@ export function getUniqueDepositsInRange(
     chainIdListForBundleEvaluationBlockNumbers
   );
   return originClient
-    .getDepositsForDestinationChain(destinationChain, true)
+    .getDepositsForDestinationChain(destinationChain)
     .filter(
       (deposit: DepositWithBlock) =>
         deposit.originBlockNumber <= originChainBlockRange[1] &&
@@ -85,4 +85,8 @@ export function getUniqueDepositsInRange(
             existingDeposit.originChainId === deposit.originChainId && existingDeposit.depositId === deposit.depositId
         )
     ) as DepositWithBlock[];
+}
+
+export function isDepositSpedUp(deposit: Deposit): boolean {
+  return deposit.speedUpSignature !== undefined && deposit.newRelayerFeePct !== undefined;
 }
