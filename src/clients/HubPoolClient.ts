@@ -244,7 +244,7 @@ export class HubPoolClient {
 
   getFollowingRootBundle(currentRootBundle: ProposedRootBundle) {
     return sortEventsAscending(this.proposedRootBundles).find(
-      (bundle: ProposedRootBundle) => bundle.blockNumber > currentRootBundle.blockNumber
+      (_rootBundle: ProposedRootBundle) => _rootBundle.blockNumber > currentRootBundle.blockNumber
     ) as ProposedRootBundle;
   }
 
