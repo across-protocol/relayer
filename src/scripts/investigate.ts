@@ -125,7 +125,9 @@ export async function findDeficitBundles(_logger: winston.Logger) {
       // Add any valid fill's amount to the refund chain's runningBalance.
       for (const validFill of validFills) {
         const refundAmount = validFill.fillAmount.mul(toBNWei(1).sub(validFill.realizedLpFeePct)).div(toBNWei(1));
-        runningBalances[validFill.repaymentChainId] = runningBalances[validFill.repaymentChainId].add(refundAmount);
+        runningBalances[validFill.repaymentChainId] = runningBalances[validFill.repaymentChainId]
+          ? runningBalances[validFill.repaymentChainId].add(refundAmount)
+          : refundAmount;
       }
 
       const unfilledDeposits = [];
