@@ -141,7 +141,14 @@ describe("ProfitClient: Consider relay profit", async function () {
 
       const gasMultipliers = [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
       gasMultipliers.forEach((gasMultiplier) => {
-        const expectedFillCostUsd = nativeGasCost.mul(tokenPrices["USDC"]).mul(toBNWei(gasMultiplier)).div(toBNWei(1));
+        profitClient.gasMultiplier = gasMultiplier;
+        expect(profitClient.gasMultiplier).to.equal(gasMultiplier, `${profitClient.gasMultiplier} != ${gasMultiplier}`);
+
+        const expectedFillCostUsd = nativeGasCost
+          .mul(tokenPrices["USDC"])
+          .mul(toBNWei(gasMultiplier))
+          .div(toBNWei(1))
+          .div(toBNWei(1));
         const { gasCostUsd } = profitClient.estimateFillCost(chainId);
         expect(expectedFillCostUsd.eq(gasCostUsd), `${expectedFillCostUsd} != ${gasCostUsd}`);
       });
