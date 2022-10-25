@@ -66,6 +66,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     42161: 0,
   },
 };
+export const QUOTE_TIME_BUFFER = 12 * 5; // 5 blocks on Mainnet.
 
 // Optimism, ethereum can do infinity lookbacks. boba and Arbitrum limited to 100000 on infura.
 export const CHAIN_MAX_BLOCK_LOOKBACK = {
@@ -83,6 +84,8 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   288: 50, // At 30s/block, 50 blocks = 25 mins
   42161: 3000, // At a conservative 10 TPS, 300 seconds = 3000 transactions. And 1 block per txn.
 };
+
+export const DEFAULT_RELAYER_GAS_MULTIPLIER = 1.2;
 
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 100;
 export const CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } = {

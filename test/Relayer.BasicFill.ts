@@ -79,6 +79,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         relayerTokens: [],
         relayerDestinationChains: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
+        quoteTimeBuffer: 0,
       } as unknown as RelayerConfig
     );
 
@@ -158,6 +159,40 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         minDepositConfirmations: {
           default: { [originChainId]: 10 }, // This needs to be set large enough such that the deposit is ignored.
         },
+        quoteTimeBuffer: 0,
+        sendingRelaysEnabled: false,
+      } as unknown as RelayerConfig
+    );
+
+    await updateAllClients();
+    await relayerInstance.checkForUnfilledDepositsAndFill();
+    expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
+  });
+
+  it("Ignores deposits with quote times in future", async function () {
+    // Send a deposit with the default quote time.
+    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
+    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+
+    // Set a non-zero quote time buffer, so that deposit quote time + buffer is > latest timestamp in
+    // the HubPool.
+    relayerInstance = new Relayer(
+      relayer.address,
+      spyLogger,
+      {
+        spokePoolClients,
+        hubPoolClient,
+        configStoreClient,
+        tokenClient,
+        profitClient,
+        multiCallerClient,
+        inventoryClient: new MockInventoryClient(),
+      },
+      {
+        relayerTokens: [],
+        relayerDestinationChains: [],
+        minDepositConfirmations: defaultMinDepositConfirmations,
+        quoteTimeBuffer: 100,
         sendingRelaysEnabled: false,
       } as unknown as RelayerConfig
     );
@@ -245,6 +280,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         relayerTokens: [],
         relayerDestinationChains: [originChainId],
         minDepositConfirmations: defaultMinDepositConfirmations,
+        quoteTimeBuffer: 0,
       } as unknown as RelayerConfig
     );
 

@@ -15,12 +15,18 @@ export class RelayerConfig extends CommonConfig {
   readonly sendingSlowRelaysEnabled: boolean;
   readonly relayerTokens: string[];
   readonly relayerDestinationChains: number[];
+  readonly relayerGasMultiplier: number;
   readonly minRelayerFeePct: BigNumber;
   readonly acceptInvalidFills: boolean;
   // Following distances in blocks to guarantee finality on each chain.
   readonly minDepositConfirmations: {
     [threshold: number]: { [chainId: number]: number };
   };
+  // Quote timestamp buffer to protect relayer from edge case where a quote time is > HEAD's latest block.
+  // This exposes relayer to risk that HubPool utilization changes between now and the eventual block mined at that
+  // timestamp, since the ConfigStoreClient.computeRealizedLpFee returns the current lpFee % for quote times >
+  // HEAD
+  readonly quoteTimeBuffer: number;
 
   constructor(env: ProcessEnv) {
     const {
@@ -28,6 +34,7 @@ export class RelayerConfig extends CommonConfig {
       DEBUG_PROFITABILITY,
       IGNORE_PROFITABILITY,
       IGNORE_TOKEN_PRICE_FAILURES,
+      RELAYER_GAS_MULTIPLIER,
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
       SEND_RELAYS,
@@ -35,6 +42,7 @@ export class RelayerConfig extends CommonConfig {
       MIN_RELAYER_FEE_PCT,
       ACCEPT_INVALID_FILLS,
       MIN_DEPOSIT_CONFIRMATIONS,
+      QUOTE_TIME_BUFFER,
     } = env;
     super(env);
 
@@ -76,6 +84,10 @@ export class RelayerConfig extends CommonConfig {
     this.debugProfitability = DEBUG_PROFITABILITY === "true";
     this.ignoreProfitability = IGNORE_PROFITABILITY === "true";
     this.ignoreTokenPriceFailures = IGNORE_TOKEN_PRICE_FAILURES === "true";
+    this.relayerGasMultiplier = RELAYER_GAS_MULTIPLIER
+      ? Number(RELAYER_GAS_MULTIPLIER)
+      : Constants.DEFAULT_RELAYER_GAS_MULTIPLIER;
+    assert(this.relayerGasMultiplier >= 0.0, `Invalid relayer gas multiplier: ${this.relayerGasMultiplier}`);
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
     this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";
@@ -93,5 +105,6 @@ export class RelayerConfig extends CommonConfig {
       });
     // Force default thresholds in MDC config.
     this.minDepositConfirmations["default"] = Constants.DEFAULT_MIN_DEPOSIT_CONFIRMATIONS;
+    this.quoteTimeBuffer = QUOTE_TIME_BUFFER ? Number(QUOTE_TIME_BUFFER) : Constants.QUOTE_TIME_BUFFER;
   }
 }
