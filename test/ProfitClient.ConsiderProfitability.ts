@@ -126,9 +126,9 @@ describe("ProfitClient: Consider relay profit", async function () {
       expect(gasPriceUsd.eq(tokenPrices[gasToken.symbol])).to.be.true;
 
       const estimate: { [key: string]: BigNumber } = profitClient.estimateFillCost(chainId);
-      expect(estimate.nativeGasCost.eq(gasCost[chainId]));
-      expect(estimate.gasPriceUsd.eq(tokenPrices[gasToken.symbol]));
-      expect(estimate.gasCostUsd.eq(gasPriceUsd.mul(nativeGasCost)));
+      expect(estimate.nativeGasCost.eq(gasCost[chainId])).to.be.true;
+      expect(estimate.gasPriceUsd.eq(tokenPrices[gasToken.symbol])).to.be.true;
+      expect(estimate.gasCostUsd.eq(gasPriceUsd.mul(nativeGasCost).div(toBNWei(1)))).to.be.true;
     });
   });
 
@@ -212,7 +212,7 @@ describe("ProfitClient: Consider relay profit", async function () {
     const fillAmounts = [".001", "0.1", 1, 10, 100, 1_000, 100_000];
 
     chainIds.forEach((destinationChainId: number) => {
-      const { gasCostUsd } = profitClient.calculateFillCost(destinationChainId);
+      const { gasCostUsd } = profitClient.estimateFillCost(destinationChainId);
 
       Object.values(tokens).forEach((l1Token: L1Token) => {
         const tokenPriceUsd = profitClient.getPriceOfToken(l1Token.address);
