@@ -3,15 +3,7 @@ import * as constants from "../common/Constants";
 import { assert, BigNumber, formatFeePct, max, winston, toBNWei, toBN, assign } from "../utils";
 import { HubPoolClient } from ".";
 import { Deposit, L1Token, SpokePoolClientsByChain } from "../interfaces";
-import { Coingecko } from "@uma/sdk";
-import { relayFeeCalculator } from "@across-protocol/sdk-v2";
-
-// Copied from @uma/sdk/coingecko. Propose to export export it upstream in the sdk.
-type CoinGeckoPrice = {
-  address: string;
-  timestamp: number;
-  price: number;
-};
+import { priceClient, relayFeeCalculator } from "@across-protocol/sdk-v2";
 
 // We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
 // @todo: These don't belong in the ProfitClient; they should be relocated.
@@ -59,8 +51,12 @@ const QUERY_HANDLERS: {
   42161: relayFeeCalculator.ArbitrumQueries,
 };
 
+type TokenPrice = priceClient.TokenPrice;
+const { PriceClient } = priceClient;
+const { acrossApi, coingecko } = priceClient.adapters;
+
 export class ProfitClient {
-  private readonly coingecko;
+  private readonly priceClient;
   protected tokenPrices: { [l1Token: string]: BigNumber } = {};
   private unprofitableFills: { [chainId: number]: { deposit: Deposit; fillAmount: BigNumber }[] } = {};
 
@@ -83,7 +79,10 @@ export class ProfitClient {
     readonly debugProfitability: boolean = false,
     readonly gasMultiplier = 1.0
   ) {
-    this.coingecko = new Coingecko();
+    this.priceClient = new PriceClient(logger, [
+      new acrossApi.PriceFeed("Across API", {}),
+      new coingecko.PriceFeed("CoinGecko Free", {}),
+    ]);
 
     for (const chainId of this.enabledChainIds) {
       this.relayerFeeQueries[chainId] = this.constructRelayerFeeQuery(
@@ -301,51 +300,23 @@ export class ProfitClient {
       });
     }
 
-    let cgPrices: CoinGeckoPrice[] = [];
     try {
-      cgPrices = await this.coingecko.getContractPrices(Object.keys(l1Tokens), "usd");
+      const tokenPrices = await this.priceClient.getPricesByAddress(Object.keys(l1Tokens), "usd");
+      tokenPrices.forEach((tokenPrice) => {
+        this.tokenPrices[tokenPrice.address] = toBNWei(tokenPrice.price);
+      });
+      this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
     } catch (err) {
-      const errMsg = `Failed to retrieve token prices (${err})`;
-      const tokens = Object.values(l1Tokens)
-        .map((token: L1Token) => token.symbol)
-        .join(", ");
-
-      if (!this.ignoreTokenPriceFailures) {
-        throw new Error(errMsg);
-      }
-      this.logger.warn({ at: "ProfitClient", message: errMsg, tokens: tokens });
-      return;
-    }
-
-    const errors: { address: string; symbol: string; cause: string }[] = [];
-    Object.keys(l1Tokens).forEach((address: string) => {
-      const tokenPrice = cgPrices.find((price) => address.toLowerCase() === price.address.toLowerCase());
-
-      // todo: For future, confirm timestamp is only X seconds old and is newer than the previous?
-      //       This should implicitly be factored in if/when price feed caching is introduced.
-      if (tokenPrice !== undefined && !isNaN(tokenPrice.price)) {
-        this.tokenPrices[address] = toBNWei(tokenPrice.price);
-      } else {
-        errors.push({
-          address: address,
-          symbol: l1Tokens[address].symbol,
-          cause: tokenPrice ? "Unexpected price response" : "Missing price",
-        });
-      }
-    });
-
-    if (errors.length > 0) {
-      let mrkdwn = "The following L1 token prices could not be fetched:\n";
-      errors.forEach((token: { address: string; symbol: string; cause: string }) => {
-        mrkdwn += `- ${token["symbol"]} not found (${token["cause"]}).`;
-        mrkdwn += ` Using last known price of ${this.getPriceOfToken(token["address"])}.\n`;
+      const errMsg = `Failed to update token prices (${err})`;
+      let mrkdwn = `${errMsg}:\n`;
+      Object.entries(l1Tokens).forEach(([address, l1Token]) => {
+        mrkdwn += `- Using last known ${l1Token.symbol} price of ${this.getPriceOfToken(l1Token.address)}.\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
       if (!this.ignoreTokenPriceFailures) {
-        throw new Error(mrkdwn);
+        throw new Error(errMsg);
       }
     }
-    this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
   }
 
   private async updateGasCosts(): Promise<void> {

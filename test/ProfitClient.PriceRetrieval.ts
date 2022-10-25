@@ -1,8 +1,11 @@
+import { priceClient } from "@across-protocol/sdk-v2";
 import { L1Token } from "../src/interfaces";
-import { expect, createSpyLogger, winston, BigNumber, toBN } from "./utils";
+import { expect, createSpyLogger, winston, BigNumber, toBN, toBNWei } from "./utils";
 
 import { MockHubPoolClient } from "./mocks";
 import { ProfitClient, MATIC, WETH } from "../src/clients"; // Tested
+
+type TokenPrice = priceClient.TokenPrice;
 
 const mainnetTokens: Array<L1Token> = [
   // Checksummed addresses
@@ -20,47 +23,55 @@ const mainnetTokens: Array<L1Token> = [
   { symbol: "MATIC", address: MATIC, decimals: 18 },
 ];
 
-class ProfitClientWithMockCoingecko extends ProfitClient {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  protected async coingeckoPrices(tokens: string[], platformId?: string) {
-    return mainnetTokens.map((token) => {
-      return { address: token.address, price: 1 };
+const tokenPrices: { [addr: string]: number } = Object.fromEntries(
+  mainnetTokens.map((token) => [token.address, Math.random()])
+);
+
+class ProfitClientWithMockPriceClient extends ProfitClient {
+  protected override async updateTokenPrices(): Promise<void> {
+    const l1Tokens: { [k: string]: L1Token } = Object.fromEntries(
+      this.hubPoolClient.getL1Tokens().map((token) => [token["address"], token])
+    );
+
+    Object.keys(l1Tokens).forEach((address) => {
+      this.tokenPrices[address] = toBNWei(tokenPrices[address]);
     });
   }
 }
 
-// Define LOG_IN_TEST for logging to console.
-const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
-let hubPoolClient: MockHubPoolClient;
-let profitClient: ProfitClientWithMockCoingecko; // tested
-
-describe("ProfitClient: Price Retrieval", async function () {
-  beforeEach(async function () {
-    hubPoolClient = new MockHubPoolClient(null, null);
-    mainnetTokens.forEach((token: L1Token) => hubPoolClient.addL1Token(token));
-    profitClient = new ProfitClientWithMockCoingecko(spyLogger, hubPoolClient, {}, true, [], false, toBN(0));
-  });
-
-  it("Correctly fetches token prices", async function () {
-    await profitClient.update();
-    verifyTokenPrices();
-  });
-
-  it("Still fetches prices when profitability is disabled", async function () {
-    // enableRelayProfitability is set to false.
-    profitClient = new ProfitClientWithMockCoingecko(spyLogger, hubPoolClient, {}, false, []);
-
-    // Verify that update() still fetches prices from Coingecko.
-    await profitClient.update();
-    verifyTokenPrices();
-  });
-});
-
-const verifyTokenPrices = () => {
+const verifyTokenPrices = (logger: winston.Logger, profitClient: ProfitClientWithMockPriceClient) => {
   const tokenPrices: { [k: string]: BigNumber } = profitClient.getAllPrices();
+  logger.debug({ message: "Got tokenPrices.", tokenPrices });
 
   // The client should have fetched prices for all requested tokens.
   expect(Object.keys(tokenPrices)).to.have.deep.members(mainnetTokens.map((token) => token["address"]));
   Object.values(tokenPrices).forEach((price: BigNumber) => expect(toBN(price).gt(toBN(0))).to.be.true);
   Object.keys(tokenPrices).forEach((token) => expect(toBN(profitClient.getPriceOfToken(token)).gt(toBN(0))).to.be.true);
 };
+
+// Define LOG_IN_TEST for logging to console.
+const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
+let hubPoolClient: MockHubPoolClient;
+let profitClient: ProfitClientWithMockPriceClient; // tested
+
+describe("ProfitClient: Price Retrieval", async function () {
+  beforeEach(async function () {
+    hubPoolClient = new MockHubPoolClient(null, null);
+    mainnetTokens.forEach((token: L1Token) => hubPoolClient.addL1Token(token));
+    profitClient = new ProfitClientWithMockPriceClient(spyLogger, hubPoolClient, {}, true, [], false, toBN(0));
+  });
+
+  it("Correctly fetches token prices", async function () {
+    await profitClient.update();
+    verifyTokenPrices(spyLogger, profitClient);
+  });
+
+  it("Still fetches prices when profitability is disabled", async function () {
+    // enableRelayProfitability is set to false.
+    profitClient = new ProfitClientWithMockPriceClient(spyLogger, hubPoolClient, {}, false, []);
+
+    // Verify that update() still fetches prices.
+    await profitClient.update();
+    verifyTokenPrices(spyLogger, profitClient);
+  });
+});
