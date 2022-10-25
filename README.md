@@ -37,9 +37,9 @@ You can conveniently run the dataworker, relayer, and finalizer functions via th
 
 ```sh
 # Run with gckms keys
-yarn hardhat integration-tests --wallet gckms --keys bot2
+LOG_IN_TEST=true yarn hardhat integration-tests --wallet gckms --keys bot2
 # Run with MNEMONIC
-yarn hardhat integration-tests --wallet mnemonic
+LOG_IN_TEST=true yarn hardhat integration-tests --wallet mnemonic
 ```
 
 # Prerequisites
