@@ -45,4 +45,8 @@ export const IMPOSSIBLE_BLOCK_RANGE = DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) 
 
 export const baseSpeedUpString = "ACROSS-V2-FEE-1.0";
 
+export const defaultMinDepositConfirmations = {
+  default: { [originChainId]: 0, [destinationChainId]: 0 },
+};
+
 export * from "@across-protocol/contracts-v2/dist/test-utils"; // Contains all the Across contract constants.
