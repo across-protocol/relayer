@@ -1,16 +1,8 @@
-import {
-  winston,
-  config,
-  Logger,
-  delay,
-  toBN,
-  sortEventsAscending,
-  getSigner, toBNWei,
-} from "../utils";
+import { winston, config, Logger, delay, toBN, sortEventsAscending, getSigner, toBNWei } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
   getSpokePoolClientEventSearchConfigsForFastDataworker,
-  updateDataworkerClients
+  updateDataworkerClients,
 } from "../dataworker/DataworkerClientHelper";
 import { createDataworker } from "../dataworker";
 import { updateSpokePoolClients } from "../common";
@@ -28,14 +20,8 @@ export async function findDeficitBundles(_logger: winston.Logger) {
   const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
   await updateDataworkerClients(clients);
 
-
   const hubPoolClient = clients.hubPoolClient;
-  const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
-    config,
-    clients,
-    dataworker
-  );
-
+  const { fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(config, clients, dataworker);
   const spokePoolClients = await constructSpokePoolClientsForFastDataworker(
     logger,
     clients.configStoreClient,
@@ -55,7 +41,10 @@ export async function findDeficitBundles(_logger: winston.Logger) {
   );
 
   const allBundles = sortEventsAscending(hubPoolClient.getProposedRootBundles());
-  let count = 0;
+  // The fast bundle lookback only applies to SpokePoolClient's events. HubPoolClient still loads all events.
+  // We need to track how many bundles have been processed from HubPoolClient, so we don't process those that are not
+  // covered by the SpokePoolClient's lookback.
+  let bundleCount = 0;
   const previousBundleData = {};
   for (const bundle of allBundles) {
     // Skip bundles that were not executed.
@@ -63,11 +52,15 @@ export async function findDeficitBundles(_logger: winston.Logger) {
       continue;
     }
 
-    if (++count > config.dataworkerFastLookbackCount) break;
-    // Populate the deposits going to a specific chain during the bundle's block range.
+    // Stop once we have processed enough bundles from HubPoolClient.
+    if (++bundleCount > config.dataworkerFastLookbackCount) break;
+
+    // Track the deposits going to a specific chain during the bundle's block range.
+    // We'll need this later to validate fills on the destination chains.
     const arrivingDepositsByChain: { [chainId: number]: DepositWithBlock[] } = {};
     for (const destinationChainId of dataworker.chainIdListForBundleEvaluationBlockNumbers) {
       for (const [chainIdx, originChainId] of dataworker.chainIdListForBundleEvaluationBlockNumbers.entries()) {
+        // Edge case: Some bundles don't include all chains (e.g. when there was no activity or in admin bundles).
         if (!bundle.bundleEvaluationBlockNumbers[chainIdx]) {
           continue;
         }
@@ -91,10 +84,10 @@ export async function findDeficitBundles(_logger: winston.Logger) {
     }
 
     // For each chain for the current bundle, examine:
-    // 1. Valid fills on that chain. The refunds for these fills needed to be added to previous bundle's running balance
-    // 2. All deposits originating from that chain. These needed to be subtracted from previous bundle's running balance
+    // 1. Valid fills on that chain. The refunds for these fills needed to be added to refund chain's running balance.
+    // 2. All deposits originating from that chain. These needed to be subtracted from running balance.
     // 3. Deposits arriving at that chain with unfilled amount > 0. These are slow fills and need to be added to the
-    // previous bundle's running balance.
+    // running balance.
     const runningBalances: { [chainId: number]: BigNumber } = {};
     for (const chainId of dataworker.chainIdListForBundleEvaluationBlockNumbers) {
       runningBalances[chainId] = toBN(0);
@@ -105,6 +98,7 @@ export async function findDeficitBundles(_logger: winston.Logger) {
     const unfilledDepositByDestinationChain = {};
     const invalidFillsByDestinationChain = {};
     for (const [chainIdx, chainId] of dataworker.chainIdListForBundleEvaluationBlockNumbers.entries()) {
+      // Edge case: Some bundles don't include all chains (e.g. when there was no activity or in admin bundles).
       if (!bundle.bundleEvaluationBlockNumbers[chainIdx]) {
         continue;
       }
@@ -114,7 +108,6 @@ export async function findDeficitBundles(_logger: winston.Logger) {
       const endingBlock = bundle.bundleEvaluationBlockNumbers[chainIdx].toNumber();
       const localTokenOfInterest = hubPoolClient.getDestinationTokenForL1Token(tokenOfInterest, chainId);
       const arrivingDeposits = arrivingDepositsByChain[chainId];
-
       const fills = spokePoolClient
         .getFillsWithBlockInRange(startingBlock, endingBlock)
         .filter((fill) => fill.destinationToken === localTokenOfInterest);
@@ -122,13 +115,14 @@ export async function findDeficitBundles(_logger: winston.Logger) {
       const validFills = fills.filter((fill) => {
         const matchingDeposit = arrivingDeposits.find((deposit) => deposit.depositId == fill.depositId);
         const isValid = matchingDeposit && spokePoolClient.validateFillForDeposit(fill, matchingDeposit);
+        // Track invalid fills for debugging purposes.
         if (!isValid) {
           if (invalidFillsByDestinationChain[chainId] === undefined) invalidFillsByDestinationChain[chainId] = [];
           invalidFillsByDestinationChain[chainId].push(_.cloneDeep(fill));
         }
         return isValid;
       });
-      // Add any valid fill's amount to the refunded chain's runningBalance.
+      // Add any valid fill's amount to the refund chain's runningBalance.
       for (const validFill of validFills) {
         const refundAmount = validFill.fillAmount.mul(toBNWei(1).sub(validFill.realizedLpFeePct)).div(toBNWei(1));
         runningBalances[validFill.repaymentChainId] = runningBalances[validFill.repaymentChainId].add(refundAmount);
@@ -139,6 +133,7 @@ export async function findDeficitBundles(_logger: winston.Logger) {
         const matchingFills = fills.filter((fill) => fill.depositId == deposit.depositId);
         const depositClone = _.cloneDeep(deposit);
         depositClone.amount = deposit.amount.sub(matchingFills.reduce((acc, fill) => acc.add(fill.amount), toBN(0)));
+        // Deposits with remaining unfilled amount > 0 would lead to a slow fill.
         if (depositClone.amount.gt(toBN(0))) {
           unfilledDeposits.push(depositClone);
         }
@@ -147,7 +142,8 @@ export async function findDeficitBundles(_logger: winston.Logger) {
       for (const unfilledDeposit of unfilledDeposits) {
         const destinationChainId = unfilledDeposit.destinationChainId;
         runningBalances[destinationChainId] = runningBalances[destinationChainId].add(unfilledDeposit.amount);
-        if (!unfilledDepositByDestinationChain[destinationChainId]) unfilledDepositByDestinationChain[destinationChainId] = [];
+        if (!unfilledDepositByDestinationChain[destinationChainId])
+          unfilledDepositByDestinationChain[destinationChainId] = [];
         unfilledDepositByDestinationChain[destinationChainId].push(unfilledDeposit);
       }
 
@@ -174,26 +170,30 @@ export async function findDeficitBundles(_logger: winston.Logger) {
     const followingBlockNumber = clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber;
     const executedLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
     for (const [chainIdx, chainId] of dataworker.chainIdListForBundleEvaluationBlockNumbers.entries()) {
-
       for (const leaf of executedLeaves) {
+        // Match leaf by chain id. There's no other concrete ids to match by.
         if (!leaf.runningBalances[chainIdx]) continue;
         const leafChainId = leaf.chainId;
         if (leafChainId == chainId) {
           const tokenIdx = leaf.l1Tokens.indexOf(tokenOfInterest);
           if (tokenIdx < 0) continue;
 
+          // Compare computed running balance with the leaf's actual running balance/net send amount.
           const leafRunningBalance = leaf.runningBalances[tokenIdx].toString();
           const leafNetSendAmount = leaf.netSendAmounts[tokenIdx].toString();
           const computedRunningBalance = runningBalances[chainId].toString();
+          // Actual bundles constructed by the dataworker also include previous bundles' running balances if > 0.
+          // We also want to simulate that here to avoid false mismatches.
           const computedRunningBalanceWithPrevious =
-            previousBundleData[leafChainId] && previousBundleData[leafChainId].leafRunningBalance ?
-              runningBalances[chainId].add(previousBundleData[leafChainId].leafRunningBalance).toString() :
-              computedRunningBalance;
+            previousBundleData[leafChainId] && previousBundleData[leafChainId].leafRunningBalance
+              ? runningBalances[chainId].add(previousBundleData[leafChainId].leafRunningBalance).toString()
+              : computedRunningBalance;
           if (
             computedRunningBalance !== leafRunningBalance &&
             computedRunningBalance !== leafNetSendAmount &&
             computedRunningBalanceWithPrevious != leafRunningBalance &&
-            computedRunningBalanceWithPrevious != leafNetSendAmount) {
+            computedRunningBalanceWithPrevious != leafNetSendAmount
+          ) {
             console.log({
               message: `Mismatching running balances for chain ${chainId}`,
               bundle: bundle.transactionHash,
@@ -226,7 +226,7 @@ export async function run(_logger: winston.Logger) {
     await findDeficitBundles(_logger);
   } catch (error) {
     console.error(error);
-    logger.error({ at: "findDeficitBundles", message: "Caught an error, retrying!", error });
+    logger.error({ at: "investigate", message: "Caught an error, retrying!", error });
     await delay(5);
     await run(Logger);
   }

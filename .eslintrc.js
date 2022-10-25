@@ -40,7 +40,7 @@ module.exports = {
   },
   overrides: [
     {
-      files: ["scripts/*.ts", "tasks/*.ts"],
+      files: ["src/scripts/*.ts", "scripts/*.ts", "tasks/*.ts"],
       rules: {
         "no-console": 0,
       },
