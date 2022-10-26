@@ -50,7 +50,6 @@ const QUERY_HANDLERS: {
   42161: relayFeeCalculator.ArbitrumQueries,
 };
 
-type TokenPrice = priceClient.TokenPrice;
 const { PriceClient } = priceClient;
 const { acrossApi, coingecko } = priceClient.adapters;
 
