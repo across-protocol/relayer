@@ -34,6 +34,8 @@ export async function findDeficitBundles(_logger: winston.Logger) {
 
   // WBTC.
   const tokenOfInterest = "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599";
+  // Skip all bundles where we know for certain that the mismatches would not have led to actual persistent deficits.
+  const skippedBundles = [35, 49];
 
   const latestMainnetBlock = hubPoolClient.latestBlockNumber;
   const bundleStartBlocks: { [chainId: number]: number } = Object.fromEntries(
@@ -53,7 +55,7 @@ export async function findDeficitBundles(_logger: winston.Logger) {
     }
 
     // Stop once we have processed enough bundles from HubPoolClient.
-    if (++bundleCount > config.dataworkerFastLookbackCount) break;
+    if (++bundleCount > config.dataworkerFastLookbackCount || skippedBundles.includes(bundleCount)) break;
 
     // Track the deposits going to a specific chain during the bundle's block range.
     // We'll need this later to validate fills on the destination chains.
@@ -196,25 +198,31 @@ export async function findDeficitBundles(_logger: winston.Logger) {
             computedRunningBalanceWithPrevious != leafRunningBalance &&
             computedRunningBalanceWithPrevious != leafNetSendAmount
           ) {
-            const deficitAmount = toBN(computedRunningBalanceWithPrevious)
-              .sub(toBN(leafRunningBalance).add(toBN(leafNetSendAmount)))
-              .toString();
-            logger.error({
-              message: `Mismatching running balances for chain ${chainId}`,
-              bundleId: bundleCount,
-              bundle: bundle.transactionHash,
-              deficitAmount,
-              leafRunningBalance,
-              leafNetSendAmount,
-              computedRunningBalance,
-              computedRunningBalanceWithPrevious,
-              leafExec: leaf.transactionHash,
-              validFills: validFillsByDestinationChain[leafChainId],
-              deposits: depositsByOriginChain[leafChainId],
-              slowFills: unfilledDepositByDestinationChain[leafChainId],
-              previousBundleData: previousBundleData[leafChainId],
-              invalidFills: invalidFillsByDestinationChain[leafChainId],
-            });
+            const actualLeafRunningBalance = toBN(leafRunningBalance).add(toBN(leafNetSendAmount));
+
+            if (actualLeafRunningBalance.lt(computedRunningBalanceWithPrevious)) {
+              const computedRunningBalanceWithPreviousNum = toBN(computedRunningBalanceWithPrevious);
+              const deficitAmount = actualLeafRunningBalance.lt(toBN(0))
+                ? actualLeafRunningBalance.sub(computedRunningBalanceWithPreviousNum).abs().toString()
+                : computedRunningBalanceWithPreviousNum.sub(actualLeafRunningBalance).toString();
+
+              logger.error({
+                message: `Mismatching running balances for chain ${chainId}`,
+                bundleId: bundleCount,
+                bundle: bundle.transactionHash,
+                deficitAmount,
+                leafRunningBalance,
+                leafNetSendAmount,
+                computedRunningBalance,
+                computedRunningBalanceWithPrevious,
+                leafExec: leaf.transactionHash,
+                validFills: validFillsByDestinationChain[leafChainId],
+                deposits: depositsByOriginChain[leafChainId],
+                slowFills: unfilledDepositByDestinationChain[leafChainId],
+                previousBundleData: previousBundleData[leafChainId],
+                invalidFills: invalidFillsByDestinationChain[leafChainId],
+              });
+            }
           }
 
           previousBundleData[leafChainId] = {
