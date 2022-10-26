@@ -20,7 +20,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
     logger.debug({ at: "Relayer#index", message: "Relayer components initialized. Starting execution loop" });
 
     for (;;) {
-      await updateRelayerClients(relayerClients);
+      await updateRelayerClients(relayerClients, config);
 
       await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled);
 
