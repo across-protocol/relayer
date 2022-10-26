@@ -43,8 +43,9 @@ LOG_IN_TEST=true yarn hardhat integration-tests --wallet mnemonic
 ```
 
 # Prerequisites
+
 After installing dependencies and building the repository, be sure to to [install RedisDB](https://redis.io/docs/getting-started/installation/), an in-memory storage layer that is required to make the bots work. The bots query blockchain RPCs for a lot of smart contract events so its important that the bot
-cache some of this data in order to maintain its speed. 
+cache some of this data in order to maintain its speed.
 
 The first time that the bot runs, it might be slower than usual as the Redis DB fills up. This slowdown should disappear on subsequent runs.
 
@@ -64,13 +65,13 @@ REDIS_URL=redis://localhost:6379
 
 Check out [this guide](https://docs.across.to/v2/developers/running-a-relayer) for detailed bot instructions!
 
-# Community 
+# Community
 
 General discussion happens most frequently on the [Across discord](https://discord.com/invite/across).
 
 # Contributing
 
-Read through [CONTRIBUTING.md](https://github.com/UMAprotocol/protocol/blob/master/CONTRIBUTING.md) for a general overview of our contribution process. These guidelines are shared between the UMA and Across codebases because they were built originally by the same teams. 
+Read through [CONTRIBUTING.md](https://github.com/UMAprotocol/protocol/blob/master/CONTRIBUTING.md) for a general overview of our contribution process. These guidelines are shared between the UMA and Across codebases because they were built originally by the same teams.
 
 # Bug Bounty
 
@@ -80,9 +81,9 @@ Here's the official Across [bug bounty program](https://docs.across.to/v2/miscel
 
 ## Active Branches
 
-| Branch          | Status                                                                           |
-| --------------- | -------------------------------------------------------------------------------- |
-| [master](https://github.com/across-protocol/relayer-v2/tree/master)                   | Accepts all PRs.                                      |
+| Branch                                                              | Status           |
+| ------------------------------------------------------------------- | ---------------- |
+| [master](https://github.com/across-protocol/relayer-v2/tree/master) | Accepts all PRs. |
 
 ## Overview
 
