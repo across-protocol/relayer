@@ -299,7 +299,7 @@ describe("Dataworker: Build merkle roots", async function () {
       expect(
         allSigners.length >= MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1,
         "ethers.getSigners doesn't have enough signers"
-      );
+      ).to.be.true;
       for (let i = 0; i < MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1; i++) {
         await setupTokensForWallet(spokePool_2, allSigners[i], [erc20_2]);
         await buildFillForRepaymentChain(spokePool_2, allSigners[i], deposit4, 0.01 + i * 0.01, 98);
@@ -405,7 +405,7 @@ describe("Dataworker: Build merkle roots", async function () {
       expect(
         allSigners.length >= MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1,
         "ethers.getSigners doesn't have enough signers"
-      );
+      ).to.be.true;
       const sortedAllSigners = [...allSigners].sort((x, y) => compareAddresses(x.address, y.address));
       const fills = [];
       for (let i = 0; i < MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1; i++) {
