@@ -74,7 +74,7 @@ Read through [CONTRIBUTING.md](https://github.com/UMAprotocol/protocol/blob/mast
 
 # Bug Bounty
 
-Here's the official Across [bug bounty program](https://docs.across.to/v2/miscellaneous/bug-bounty).
+Here's the official Across [bug bounty program](https://docs.across.to/v2/miscellaneous/bug-bounty). The bug bounty only applies to the `master` branch and is agnostic of release versions.
 
 # Branching Model
 
@@ -82,47 +82,35 @@ Here's the official Across [bug bounty program](https://docs.across.to/v2/miscel
 
 | Branch          | Status                                                                           |
 | --------------- | -------------------------------------------------------------------------------- |
-| [master](https://github.com/across-protocol/relayer-v2/tree/master)                   | Accepts PRs from `develop` when we intend to deploy to mainnet.                                      |
-| [develop](https://github.com/across-protocol/relayer-v2/tree/develop)                 | Accepts PRs that are compatible with `master` OR from `release/X.X.X` branches.                    |
-| release/X.X.X                                                                          | Accepts PRs for all changes, particularly those not backwards compatible with `develop` and `master`. |
+| [master](https://github.com/across-protocol/relayer-v2/tree/master)                   | Accepts all PRs.                                      |
 
 ## Overview
 
-We generally follow [this Git branching model](https://nvie.com/posts/a-successful-git-branching-model/).
-Please read the linked post if you're planning to make frequent PRs into this repository (e.g., people working at/with UMA).
+Longer term we'd ideally like to follow [this Git branching model](https://nvie.com/posts/a-successful-git-branching-model/), but for now we manually trigger GitHub releases to demarcate features that we'd like to "release" for public usage.
 
 ## Production branch
 
-Our production branch is `master`. The `master` branch contains the code for our latest "stable" releases.
-
-## Development branch
-
-Pull requests directed towards this branch should be backwards compatible with `master`.
-
-## Release candidate branches
-
-Branches marked `release/X.X.X` are **release candidate branches**.
-Changes that are not backwards compatible with `master` MUST be directed towards a release candidate branch.
-Release candidates are merged into `develop` and then into `master` once they've been fully deployed.
-We may sometimes have more than one active `release/X.X.X` branch if we're in the middle of a deployment.
-See table in the **Active Branches** section above to find the right branch to target.
+Our production branch is `master` and releases are only made from `master`.
 
 # Release Process
 
-Merge all features from `develop` into `master` that you want to include in the new release. We use GitHub's native release feature to manually trigger releases for now, follow [this documentation](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository) for more information.
+Merge all features into `master` that you want to include in the new release. We use GitHub's native release feature to manually trigger releases, follow [this documentation](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository) for more information.
 
 When selecting a tag, select "Create a new tag: on publish" to have GitHub default to a tag, and set the "target" to `master`.
 
-TODO: Decide on naming convention. We could go with the usual v1.2.3 and v5.9-beta.3. style, or we could select to use more catchy names like how [Lighthouse](https://github.com/sigp/lighthouse/releases) releases Beacon Client versions.
+We use [Semantic Versioning](https://semver.org/) for naming releases and we aim to publish `major` and `minor` releases very rarely (and with very detailed notes).
+
+## NPM
+
+`.github/workflows/publish.yml` will automatically publish a new `NPM` package whenever a GitHub release is made. This will not happen for pre-releases.
 
 ## Pre-releases
 
-We aim to publish releases *infrequently*, therefore there should be good reason to _not_ mark a release as a "pre-release. For example, if there are emergency bug fixes that need to be introduced, or several important (and potentiall breaking) features.
-
+We publish pre-releases to signal to users about potential releases that are risky to use in production setups.
 
 ## Documenting changes
 
-Every merged PR into `master` should be following the [conventional commit](https://www.conventionalcommits.org/en/v1.0.0/) format, as documented in [CONTRIBUTING.md](https://github.com/UMAprotocol/protocol/blob/master/CONTRIBUTING.md). This should allow the GitHub release to auto-populate the changes introduced in the new release.
+Every merged PR into `master` should be following the [conventional commit](https://www.conventionalcommits.org/en/v1.0.0/) format, as documented in [CONTRIBUTING.md](https://github.com/UMAprotocol/protocol/blob/master/CONTRIBUTING.md).
 
 # License
 
