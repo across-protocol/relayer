@@ -55,7 +55,8 @@ export async function findDeficitBundles(_logger: winston.Logger) {
     }
 
     // Stop once we have processed enough bundles from HubPoolClient.
-    if (++bundleCount > config.dataworkerFastLookbackCount || skippedBundles.includes(bundleCount)) break;
+    if (++bundleCount > config.dataworkerFastLookbackCount) break;
+    if (skippedBundles.includes(bundleCount)) continue;
 
     // Track the deposits going to a specific chain during the bundle's block range.
     // We'll need this later to validate fills on the destination chains.
