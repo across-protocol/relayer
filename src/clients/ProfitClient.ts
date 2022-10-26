@@ -80,7 +80,7 @@ export class ProfitClient {
   ) {
     // Require .01e18 <= gasMultiplier <= 4e18
     assert(
-      this.gasMultiplier.div(toBNWei(".01")).gte(1) && this.gasMultiplier.lte(toBNWei(4)),
+      this.gasMultiplier.gte(toBNWei(".01")) && this.gasMultiplier.lte(toBNWei(4)),
       `Gas multiplier out of range (${this.gasMultiplier})`
     );
 
