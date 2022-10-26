@@ -15,7 +15,7 @@ export class RelayerConfig extends CommonConfig {
   readonly sendingSlowRelaysEnabled: boolean;
   readonly relayerTokens: string[];
   readonly relayerDestinationChains: number[];
-  readonly relayerGasMultiplier: number;
+  readonly relayerGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
   readonly acceptInvalidFills: boolean;
   // Following distances in blocks to guarantee finality on each chain.
@@ -84,10 +84,7 @@ export class RelayerConfig extends CommonConfig {
     this.debugProfitability = DEBUG_PROFITABILITY === "true";
     this.ignoreProfitability = IGNORE_PROFITABILITY === "true";
     this.ignoreTokenPriceFailures = IGNORE_TOKEN_PRICE_FAILURES === "true";
-    this.relayerGasMultiplier = RELAYER_GAS_MULTIPLIER
-      ? Number(RELAYER_GAS_MULTIPLIER)
-      : Constants.DEFAULT_RELAYER_GAS_MULTIPLIER;
-    assert(this.relayerGasMultiplier >= 0.0, `Invalid relayer gas multiplier: ${this.relayerGasMultiplier}`);
+    this.relayerGasMultiplier = toBNWei(RELAYER_GAS_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MULTIPLIER);
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
     this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";

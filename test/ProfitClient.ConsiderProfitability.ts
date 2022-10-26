@@ -141,8 +141,7 @@ describe("ProfitClient: Consider relay profit", async function () {
 
       const gasMultipliers = [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
       gasMultipliers.forEach((gasMultiplier) => {
-        profitClient.gasMultiplier = gasMultiplier;
-        expect(profitClient.gasMultiplier).to.equal(gasMultiplier, `${profitClient.gasMultiplier} != ${gasMultiplier}`);
+        profitClient.setGasMultiplier(toBNWei(gasMultiplier));
 
         const gasTokenAddr = GAS_TOKEN_BY_CHAIN_ID[chainId];
         const gasToken: L1Token = Object.values(tokens).find((token: L1Token) => gasTokenAddr === token.address);

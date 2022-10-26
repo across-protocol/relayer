@@ -10,6 +10,10 @@ export class MockProfitClient extends ProfitClient {
     this.totalGasCosts = gasCosts;
   }
 
+  setGasMultiplier(gasMultiplier: BigNumber): void {
+    this.gasMultiplier = gasMultiplier;
+  }
+
   // Some tests run against mocked chains, so hack in the necessary parts
   testInit(): void {
     GAS_TOKEN_BY_CHAIN_ID[666] = WETH;

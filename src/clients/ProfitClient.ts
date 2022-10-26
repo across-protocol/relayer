@@ -19,7 +19,7 @@ export type FillProfit = {
   fillAmountUsd: BigNumber; // Amount of the bridged token being filled.
   grossRelayerFeeUsd: BigNumber; // USD value of the relay fee paid by the user.
   nativeGasCost: BigNumber; // Cost of completing the fill in the native gas token.
-  gasMultiplier: number; // Multiplier to apply to nativeGasCost as padding or discount
+  gasMultiplier: BigNumber; // Multiplier to apply to nativeGasCost as padding or discount
   gasPriceUsd: BigNumber; // Price paid per unit of gas in USD.
   gasCostUsd: BigNumber; // Estimated cost of completing the fill in USD.
   relayerCapitalUsd: BigNumber; // Amount to be sent by the relayer in USD.
@@ -58,7 +58,6 @@ export class ProfitClient {
   private readonly priceClient;
   protected tokenPrices: { [l1Token: string]: BigNumber } = {};
   private unprofitableFills: { [chainId: number]: { deposit: Deposit; fillAmount: BigNumber }[] } = {};
-  private _gasMultiplier: BigNumber;
 
   // Track total gas costs of a relay on each chain.
   protected totalGasCosts: { [chainId: number]: BigNumber } = {};
@@ -75,11 +74,16 @@ export class ProfitClient {
     readonly enabledChainIds: number[],
     // Default to throwing errors if fetching token prices fails.
     readonly ignoreTokenPriceFailures: boolean = false,
-    readonly minRelayerFeePct: BigNumber = toBN(constants.RELAYER_MIN_FEE_PCT),
+    readonly minRelayerFeePct: BigNumber = toBNWei(constants.RELAYER_MIN_FEE_PCT),
     readonly debugProfitability: boolean = false,
-    gasMultiplier = 1.0
+    protected gasMultiplier: BigNumber = toBNWei(1)
   ) {
-    this.gasMultiplier = gasMultiplier;
+    // Require .01e18 <= gasMultiplier <= 4e18
+    assert(
+      this.gasMultiplier.div(toBNWei(".01")).gte(1) && this.gasMultiplier.lte(toBNWei(4)),
+      `Gas multiplier out of range (${this.gasMultiplier})`
+    );
+
     this.priceClient = new PriceClient(logger, [
       new acrossApi.PriceFeed("Across API", {}),
       new coingecko.PriceFeed("CoinGecko Free", {}),
@@ -91,16 +95,6 @@ export class ProfitClient {
         spokePoolClients[chainId].spokePool.provider
       );
     }
-  }
-
-  set gasMultiplier(gasMultiplier: number) {
-    assert(gasMultiplier > 0.0 && gasMultiplier <= 2.0, `Gas multiplier out of range: ${gasMultiplier}`);
-    this._gasMultiplier = toBNWei(gasMultiplier);
-  }
-
-  get gasMultiplier(): number {
-    // Preserve at most 2 decimal places
-    return this._gasMultiplier.div(toBNWei("0.01")).toNumber() / 100;
   }
 
   getAllPrices(): { [address: string]: BigNumber } {
@@ -138,7 +132,7 @@ export class ProfitClient {
 
     // this._gasMultiplier is scaled to 18 decimals
     const gasCostUsd = nativeGasCost
-      .mul(this._gasMultiplier)
+      .mul(this.gasMultiplier)
       .mul(gasPriceUsd)
       .div(toBNWei(1))
       .div(toBN(10).pow(GAS_TOKEN_DECIMALS));
@@ -254,7 +248,7 @@ export class ProfitClient {
         fillAmountUsd: fill.fillAmountUsd,
         grossRelayerFeePct: `${formatFeePct(fill.grossRelayerFeePct)}%`,
         nativeGasCost: fill.nativeGasCost,
-        gasMultiplier: fill.gasMultiplier,
+        gasMultiplier: `${formatFeePct(fill.gasMultiplier)}%`,
         gasPriceUsd: fill.gasPriceUsd,
         relayerCapitalUsd: `${fill.relayerCapitalUsd}`,
         grossRelayerFeeUsd: fill.grossRelayerFeeUsd,
