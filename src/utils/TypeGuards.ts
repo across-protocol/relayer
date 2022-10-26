@@ -13,3 +13,10 @@ export function isPromiseRejected<T>(
 export function isDefined<T>(input: T | null | undefined): input is T {
   return input !== null && input !== undefined;
 }
+
+export function isKeyOf<T extends V, V extends number | string | symbol>(
+  input: V,
+  obj: Record<T, unknown>
+): input is T {
+  return input in obj;
+}
