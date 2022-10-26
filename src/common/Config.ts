@@ -42,8 +42,9 @@ export class CommonConfig {
     // `maxRelayerLookBack` is set. This can happen because block lookback per chain is not exactly equal to the same
     // amount of time looking back on the chains, so you might produce some deposits that look like they weren't filled.
     this.maxRelayerUnfilledDepositLookBack = { ...this.maxRelayerLookBack };
-    Object.keys(this.maxRelayerUnfilledDepositLookBack).forEach((chain) => {
-      this.maxRelayerUnfilledDepositLookBack[chain] = Number(this.maxRelayerLookBack[chain]) / 4; // TODO: Allow caller
+    Object.keys(this.maxRelayerUnfilledDepositLookBack).forEach((_chainId) => {
+      const chainId = Number(_chainId);
+      this.maxRelayerUnfilledDepositLookBack[chainId] = Number(this.maxRelayerLookBack[chainId]) / 4; // TODO: Allow caller
       // to modify what we divide `maxRelayerLookBack` values by.
     });
     this.hubPoolChainId = HUB_CHAIN_ID ? Number(HUB_CHAIN_ID) : 1;

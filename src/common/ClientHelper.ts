@@ -1,12 +1,5 @@
 import winston from "winston";
-import {
-  getProvider,
-  getDeployedContract,
-  getDeploymentBlockNumber,
-  Wallet,
-  Contract,
-  EventSearchConfig,
-} from "../utils";
+import { getProvider, getDeployedContract, getDeploymentBlockNumber, Wallet, Contract } from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { createClient } from "redis4";
@@ -42,7 +35,7 @@ export async function constructSpokePoolClientsWithLookback(
 
   // For each spoke chain, look up its latest block and adjust by lookback configuration to determine
   // fromBlock. If no lookback is set, fromBlock will be set to spoke pool's deployment block.
-  const fromBlocks = {};
+  const fromBlocks: { [chainId: number]: number } = {};
   const l2BlockNumbers = await Promise.all(
     spokePools.map((obj: { contract: Contract }) => obj.contract.provider.getBlockNumber())
   );
@@ -70,7 +63,7 @@ function getSpokePoolClientsForContract(
       fromBlock: fromBlocks[chainId]
         ? Math.max(fromBlocks[chainId], spokePoolDeploymentBlock)
         : spokePoolDeploymentBlock,
-      toBlock: toBlocks[chainId] ? toBlocks[chainId] : null,
+      toBlock: toBlocks[chainId] ? toBlocks[chainId] : undefined,
       maxBlockLookBack: config.maxBlockLookBack[chainId],
     };
     spokePoolClients[chainId] = new SpokePoolClient(
@@ -101,7 +94,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
   });
 
   // If no lookback is set, fromBlock will be set to spoke pool's deployment block.
-  const fromBlocks = {};
+  const fromBlocks: { [chainId: number]: number } = {};
   spokePools.forEach((obj: { chainId: number; contract: Contract }) => {
     if (startBlockOverride[obj.chainId]) {
       fromBlocks[obj.chainId] = startBlockOverride[obj.chainId];
@@ -159,7 +152,7 @@ export async function constructClients(
 
   const hubPoolClientSearchSettings = {
     fromBlock: Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId)),
-    toBlock: null, // Important that we set this to `null` to always look up latest HubPool events such as
+    toBlock: undefined, // Important that we set this to `undefined` to always look up latest HubPool events such as
     // ProposeRootBundle in order to match a bundle block evaluation block range with a pending root bundle.
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
@@ -167,7 +160,7 @@ export async function constructClients(
 
   const rateModelClientSearchSettings = {
     fromBlock: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),
-    toBlock: null,
+    toBlock: undefined,
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
 
