@@ -42,8 +42,7 @@ export async function constructRelayerClients(
     enabledChainIds,
     config.ignoreTokenPriceFailures,
     config.minRelayerFeePct,
-    config.debugProfitability,
-    config.relayerGasMultiplier
+    config.debugProfitability
   );
 
   const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
