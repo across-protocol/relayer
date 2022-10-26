@@ -618,7 +618,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     // Speed up relays are included. Re-use the same fill information
     const fill4 = await buildModifiedFill(spokePool_2, depositor, relayer, fill1, 2, 0.1);
-    expect(fill4.totalFilledAmount.gt(fill4.fillAmount), "speed up fill didn't match original deposit");
+    expect(fill4.totalFilledAmount.gt(fill4.fillAmount), "speed up fill didn't match original deposit").to.be.true;
     await updateAllClients();
     const data6 = dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(4), spokePoolClients);
     expect(data6.fillsToRefund).to.deep.equal({

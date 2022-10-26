@@ -5,7 +5,7 @@ module.exports = {
     mocha: true,
     node: true,
   },
-  plugins: ["node", "prettier", "@typescript-eslint", "mocha"],
+  plugins: ["node", "prettier", "@typescript-eslint", "mocha", "chai-expect"],
   extends: [
     "plugin:prettier/recommended",
     "eslint:recommended",
@@ -32,6 +32,7 @@ module.exports = {
     "node/no-unsupported-features/es-syntax": ["error", { ignores: ["modules"] }],
     // Disable warnings for { a, b, ...rest } variables, since this is typically used to remove variables.
     "@typescript-eslint/no-unused-vars": ["warn", { ignoreRestSiblings: true }],
+    "chai-expect/missing-assertion": 2,
   },
   settings: {
     node: {
