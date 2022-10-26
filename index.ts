@@ -5,12 +5,14 @@ import { runRelayer } from "./src/relayer";
 import { runDataworker } from "./src/dataworker";
 import { runMonitor } from "./src/monitor";
 import { runFinalizer } from "./src/finalizer";
+import { version } from "./package.json";
 
 let logger: winston.Logger;
 
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {
   logger = Logger;
 
+  logger.debug({ at: "index#run", message: "Startup.", version });
   const config = new CommonConfig(process.env);
 
   const cmds = {
