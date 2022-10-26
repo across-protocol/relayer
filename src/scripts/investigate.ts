@@ -57,29 +57,37 @@ export async function findDeficitBundles(_logger: winston.Logger) {
 
     // Track the deposits going to a specific chain during the bundle's block range.
     // We'll need this later to validate fills on the destination chains.
-    const arrivingDepositsByChain: { [chainId: number]: DepositWithBlock[] } = {};
-    for (const destinationChainId of dataworker.chainIdListForBundleEvaluationBlockNumbers) {
-      for (const [chainIdx, originChainId] of dataworker.chainIdListForBundleEvaluationBlockNumbers.entries()) {
-        // Edge case: Some bundles don't include all chains (e.g. when there was no activity or in admin bundles).
-        if (!bundle.bundleEvaluationBlockNumbers[chainIdx]) {
-          continue;
-        }
+    const depositsByOriginChain: { [chainId: number]: DepositWithBlock[] } = Object.fromEntries(
+      dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => [chainId, []])
+    );
+    const arrivingDepositsByChain: { [chainId: number]: DepositWithBlock[] } = Object.fromEntries(
+      dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => [chainId, []])
+    );
+    for (const [chainIdx, originChainId] of dataworker.chainIdListForBundleEvaluationBlockNumbers.entries()) {
+      // Edge case: Some bundles don't include all chains (e.g. when there was no activity or in admin bundles).
+      if (!bundle.bundleEvaluationBlockNumbers[chainIdx]) {
+        continue;
+      }
 
-        const spokePoolClient = spokePoolClients[originChainId];
-        const startingBlock = bundleStartBlocks[originChainId];
-        const endingBlock = bundle.bundleEvaluationBlockNumbers[chainIdx].toNumber();
-        const originToken = hubPoolClient.getDestinationTokenForL1Token(tokenOfInterest, originChainId);
-        const deposits = spokePoolClient
-          .getDepositsForDestinationChain(destinationChainId)
-          .filter(
-            (deposit: DepositWithBlock) =>
-              deposit.originBlockNumber <= endingBlock &&
-              deposit.originBlockNumber >= startingBlock &&
-              deposit.originToken === originToken
-          ) as DepositWithBlock[];
+      const spokePoolClient = spokePoolClients[originChainId];
+      const startingBlock = bundleStartBlocks[originChainId];
+      const endingBlock = bundle.bundleEvaluationBlockNumbers[chainIdx].toNumber();
+      const originToken = hubPoolClient.getDestinationTokenForL1Token(tokenOfInterest, originChainId);
+      // Filter for deposits within the bundle's block range and for the token of interest.
+      const deposits = spokePoolClient
+        .getDeposits()
+        .filter(
+          (deposit: DepositWithBlock) =>
+            deposit.originBlockNumber <= endingBlock &&
+            deposit.originBlockNumber >= startingBlock &&
+            deposit.originToken === originToken
+        ) as DepositWithBlock[];
 
-        if (arrivingDepositsByChain[destinationChainId] === undefined) arrivingDepositsByChain[destinationChainId] = [];
-        arrivingDepositsByChain[destinationChainId] = arrivingDepositsByChain[destinationChainId].concat(deposits);
+      // Add copies of the deposits to both the origin and destination chains' lists.
+      for (const deposit of deposits) {
+        const destinationChainId = deposit.destinationChainId;
+        depositsByOriginChain[originChainId].push(_.cloneDeep(deposit));
+        arrivingDepositsByChain[destinationChainId].push(_.cloneDeep(deposit));
       }
     }
 
@@ -94,7 +102,6 @@ export async function findDeficitBundles(_logger: winston.Logger) {
     }
 
     const validFillsByDestinationChain = {};
-    const depositsByOriginChain = {};
     const unfilledDepositByDestinationChain = {};
     const invalidFillsByDestinationChain = {};
     for (const [chainIdx, chainId] of dataworker.chainIdListForBundleEvaluationBlockNumbers.entries()) {
@@ -118,7 +125,9 @@ export async function findDeficitBundles(_logger: winston.Logger) {
         // Track invalid fills for debugging purposes.
         if (!isValid) {
           if (invalidFillsByDestinationChain[chainId] === undefined) invalidFillsByDestinationChain[chainId] = [];
-          invalidFillsByDestinationChain[chainId].push(_.cloneDeep(fill));
+          const invalidFill = _.cloneDeep(fill);
+          invalidFill["deposit"] = matchingDeposit;
+          invalidFillsByDestinationChain[chainId].push(invalidFill);
         }
         return isValid;
       });
@@ -149,17 +158,8 @@ export async function findDeficitBundles(_logger: winston.Logger) {
         unfilledDepositByDestinationChain[destinationChainId].push(unfilledDeposit);
       }
 
-      const originatingDeposits = spokePoolClient
-        .getDeposits()
-        .filter(
-          (deposit) =>
-            deposit.originBlockNumber <= endingBlock &&
-            deposit.originBlockNumber >= startingBlock &&
-            deposit.originToken === localTokenOfInterest
-        );
-      depositsByOriginChain[chainId] = originatingDeposits;
       // Subtract all deposits on the current chain from its running balance.
-      for (const originatingDeposit of originatingDeposits) {
+      for (const originatingDeposit of depositsByOriginChain[chainId]) {
         runningBalances[chainId] = runningBalances[chainId].sub(originatingDeposit.amount);
       }
 
@@ -199,8 +199,9 @@ export async function findDeficitBundles(_logger: winston.Logger) {
             const deficitAmount = toBN(computedRunningBalanceWithPrevious)
               .sub(toBN(leafRunningBalance).add(toBN(leafNetSendAmount)))
               .toString();
-            console.log({
+            logger.error({
               message: `Mismatching running balances for chain ${chainId}`,
+              bundleId: bundleCount,
               bundle: bundle.transactionHash,
               deficitAmount,
               leafRunningBalance,
