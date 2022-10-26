@@ -116,14 +116,14 @@ describe("ProfitClient: Consider relay profit", async function () {
 
       const nativeGasCost = profitClient.getTotalGasCost(chainId);
       expect(nativeGasCost.eq(0)).to.be.false;
-      expect(nativeGasCost.eq(gasCost[chainId]));
+      expect(nativeGasCost.eq(gasCost[chainId])).to.be.true;
 
       const gasTokenAddr: string = GAS_TOKEN_BY_CHAIN_ID[chainId];
       const gasToken: L1Token = Object.values(tokens).find((token: L1Token) => gasTokenAddr === token.address);
       expect(gasToken).to.not.be.undefined;
 
       const gasPriceUsd = tokenPrices[gasToken.symbol];
-      expect(gasPriceUsd.eq(tokenPrices[gasToken.symbol]));
+      expect(gasPriceUsd.eq(tokenPrices[gasToken.symbol])).to.be.true;
 
       const estimate: { [key: string]: BigNumber } = profitClient.estimateFillCost(chainId);
       expect(estimate.nativeGasCost.eq(gasCost[chainId]));
@@ -153,7 +153,7 @@ describe("ProfitClient: Consider relay profit", async function () {
           .div(toBNWei(1))
           .div(toBNWei(1));
         const { gasCostUsd } = profitClient.estimateFillCost(chainId);
-        expect(expectedFillCostUsd).to.equal(gasCostUsd);
+        expect(expectedFillCostUsd.eq(gasCostUsd)).to.be.true;
       });
     });
   });
@@ -212,7 +212,7 @@ describe("ProfitClient: Consider relay profit", async function () {
     const fillAmounts = [".001", "0.1", 1, 10, 100, 1_000, 100_000];
 
     chainIds.forEach((destinationChainId: number) => {
-      const { gasCostUsd } = profitClient.estimateFillCost(destinationChainId);
+      const { gasCostUsd } = profitClient.calculateFillCost(destinationChainId);
 
       Object.values(tokens).forEach((l1Token: L1Token) => {
         const tokenPriceUsd = profitClient.getPriceOfToken(l1Token.address);
@@ -275,11 +275,11 @@ describe("ProfitClient: Consider relay profit", async function () {
 
     let fill: FillProfit;
     fill = profitClient.calculateFillProfitability(deposit, fillAmount, l1Token);
-    expect(fill.grossRelayerFeePct.eq(deposit.relayerFeePct));
+    expect(fill.grossRelayerFeePct.eq(deposit.relayerFeePct)).to.be.true;
 
     deposit["newRelayerFeePct"] = toBNWei("0.1");
     fill = profitClient.calculateFillProfitability(deposit, fillAmount, l1Token);
-    expect(fill.grossRelayerFeePct.eq(deposit.newRelayerFeePct));
+    expect(fill.grossRelayerFeePct.eq(deposit.newRelayerFeePct)).to.be.true;
   });
 
   it("Ignores newRelayerFeePct if it's lower than original relayerFeePct", async function () {
@@ -295,12 +295,12 @@ describe("ProfitClient: Consider relay profit", async function () {
 
     let fill: FillProfit;
     fill = profitClient.calculateFillProfitability(deposit, fillAmount, l1Token);
-    expect(fill.grossRelayerFeePct.eq(deposit.relayerFeePct));
+    expect(fill.grossRelayerFeePct.eq(deposit.relayerFeePct)).to.be.true;
 
     deposit.relayerFeePct = toBNWei(".001");
-    expect(deposit.relayerFeePct.lt(deposit.newRelayerFeePct)); // Sanity check
+    expect(deposit.relayerFeePct.lt(deposit.newRelayerFeePct)).to.be.true; // Sanity check
     fill = profitClient.calculateFillProfitability(deposit, fillAmount, l1Token);
-    expect(fill.grossRelayerFeePct.eq(deposit.newRelayerFeePct));
+    expect(fill.grossRelayerFeePct.eq(deposit.newRelayerFeePct)).to.be.true;
   });
 
   it("Captures unprofitable fills", async function () {
