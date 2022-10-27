@@ -12,7 +12,6 @@ let logger: winston.Logger;
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {
   logger = Logger;
 
-  logger.debug({ at: "index#run", message: "Startup.", version });
   const config = new CommonConfig(process.env);
 
   const cmds = {
@@ -48,6 +47,8 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
 }
 
 if (require.main === module) {
+  // Inject version into process.env so CommonConfig and all subclasses inherit it.
+  process.env.VERSION = version;
   config();
 
   const opts = {
