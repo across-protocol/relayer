@@ -125,10 +125,35 @@ describe("ProfitClient: Consider relay profit", async function () {
       const gasPriceUsd = tokenPrices[gasToken.symbol];
       expect(gasPriceUsd.eq(tokenPrices[gasToken.symbol])).to.be.true;
 
-      const estimate: { [key: string]: BigNumber } = profitClient.calculateFillCost(chainId);
+      const estimate: { [key: string]: BigNumber } = profitClient.estimateFillCost(chainId);
       expect(estimate.nativeGasCost.eq(gasCost[chainId])).to.be.true;
       expect(estimate.gasPriceUsd.eq(tokenPrices[gasToken.symbol])).to.be.true;
-      expect(estimate.gasCostUsd.eq(gasPriceUsd.mul(nativeGasCost).div(toBN(10).pow(gasToken.decimals)))).to.be.true;
+      expect(estimate.gasCostUsd.eq(gasPriceUsd.mul(nativeGasCost).div(toBNWei(1)))).to.be.true;
+    });
+  });
+
+  it("Verify gas multiplier", function () {
+    chainIds.forEach((chainId: number) => {
+      spyLogger.debug({ message: `Verifying gas multiplier for chainId ${chainId}.` });
+
+      const nativeGasCost = profitClient.getTotalGasCost(chainId);
+      expect(nativeGasCost.gt(0)).to.be.true;
+
+      const gasMultipliers = [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+      gasMultipliers.forEach((gasMultiplier) => {
+        profitClient.setGasMultiplier(toBNWei(gasMultiplier));
+
+        const gasTokenAddr = GAS_TOKEN_BY_CHAIN_ID[chainId];
+        const gasToken: L1Token = Object.values(tokens).find((token: L1Token) => gasTokenAddr === token.address);
+
+        const expectedFillCostUsd = nativeGasCost
+          .mul(tokenPrices[gasToken.symbol])
+          .mul(toBNWei(gasMultiplier))
+          .div(toBNWei(1))
+          .div(toBNWei(1));
+        const { gasCostUsd } = profitClient.estimateFillCost(chainId);
+        expect(expectedFillCostUsd.eq(gasCostUsd)).to.be.true;
+      });
     });
   });
 
@@ -186,7 +211,7 @@ describe("ProfitClient: Consider relay profit", async function () {
     const fillAmounts = [".001", "0.1", 1, 10, 100, 1_000, 100_000];
 
     chainIds.forEach((destinationChainId: number) => {
-      const { gasCostUsd } = profitClient.calculateFillCost(destinationChainId);
+      const { gasCostUsd } = profitClient.estimateFillCost(destinationChainId);
 
       Object.values(tokens).forEach((l1Token: L1Token) => {
         const tokenPriceUsd = profitClient.getPriceOfToken(l1Token.address);
