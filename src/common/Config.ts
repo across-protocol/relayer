@@ -31,10 +31,10 @@ export class CommonConfig {
       SEND_TRANSACTIONS,
       REDIS_URL,
       BUNDLE_REFUND_LOOKBACK,
-      VERSION
+      ACROSS_BOT_VERSION
     } = env;
 
-    this.version = VERSION ?? "unknown";
+    this.version = ACROSS_BOT_VERSION ?? "unknown";
 
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = MAX_RELAYER_DEPOSIT_LOOK_BACK

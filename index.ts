@@ -48,7 +48,7 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
 
 if (require.main === module) {
   // Inject version into process.env so CommonConfig and all subclasses inherit it.
-  process.env.VERSION = version;
+  process.env.ACROSS_BOT_VERSION = version;
   config();
 
   const opts = {
