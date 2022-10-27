@@ -19,7 +19,7 @@ export type FillProfit = {
   fillAmountUsd: BigNumber; // Amount of the bridged token being filled.
   grossRelayerFeeUsd: BigNumber; // USD value of the relay fee paid by the user.
   nativeGasCost: BigNumber; // Cost of completing the fill in the native gas token.
-  gasMultiplier: number; // Multiplier to apply to nativeGasCost as padding or discount
+  gasMultiplier: BigNumber; // Multiplier to apply to nativeGasCost as padding or discount
   gasPriceUsd: BigNumber; // Price paid per unit of gas in USD.
   gasCostUsd: BigNumber; // Estimated cost of completing the fill in USD.
   relayerCapitalUsd: BigNumber; // Amount to be sent by the relayer in USD.
@@ -51,7 +51,6 @@ const QUERY_HANDLERS: {
   42161: relayFeeCalculator.ArbitrumQueries,
 };
 
-type TokenPrice = priceClient.TokenPrice;
 const { PriceClient } = priceClient;
 const { acrossApi, coingecko } = priceClient.adapters;
 
@@ -75,10 +74,16 @@ export class ProfitClient {
     readonly enabledChainIds: number[],
     // Default to throwing errors if fetching token prices fails.
     readonly ignoreTokenPriceFailures: boolean = false,
-    readonly minRelayerFeePct: BigNumber = toBN(constants.RELAYER_MIN_FEE_PCT),
+    readonly minRelayerFeePct: BigNumber = toBNWei(constants.RELAYER_MIN_FEE_PCT),
     readonly debugProfitability: boolean = false,
-    readonly gasMultiplier = 1.0
+    protected gasMultiplier: BigNumber = toBNWei(1)
   ) {
+    // Require 25% <= gasMultiplier <= 400%
+    assert(
+      this.gasMultiplier.gt(toBNWei("0.25")) && this.gasMultiplier.lte(toBNWei(4)),
+      `Gas multiplier out of range (${this.gasMultiplier})`
+    );
+
     this.priceClient = new PriceClient(logger, [
       new acrossApi.PriceFeed("Across API", {}),
       new coingecko.PriceFeed("CoinGecko Free", {}),
@@ -125,7 +130,12 @@ export class ProfitClient {
       throw new Error(`Unable to compute gas cost (${err} unknown)`);
     }
 
-    const gasCostUsd = nativeGasCost.mul(this.gasMultiplier).mul(gasPriceUsd).div(toBN(10).pow(GAS_TOKEN_DECIMALS));
+    // this._gasMultiplier is scaled to 18 decimals
+    const gasCostUsd = nativeGasCost
+      .mul(this.gasMultiplier)
+      .mul(gasPriceUsd)
+      .div(toBNWei(1))
+      .div(toBN(10).pow(GAS_TOKEN_DECIMALS));
 
     return {
       nativeGasCost,
@@ -238,6 +248,7 @@ export class ProfitClient {
         fillAmountUsd: fill.fillAmountUsd,
         grossRelayerFeePct: `${formatFeePct(fill.grossRelayerFeePct)}%`,
         nativeGasCost: fill.nativeGasCost,
+        gasMultiplier: `${formatFeePct(fill.gasMultiplier)}%`,
         gasPriceUsd: fill.gasPriceUsd,
         relayerCapitalUsd: `${fill.relayerCapitalUsd}`,
         grossRelayerFeeUsd: fill.grossRelayerFeeUsd,
