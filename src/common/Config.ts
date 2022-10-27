@@ -31,7 +31,7 @@ export class CommonConfig {
       SEND_TRANSACTIONS,
       REDIS_URL,
       BUNDLE_REFUND_LOOKBACK,
-      ACROSS_BOT_VERSION
+      ACROSS_BOT_VERSION,
     } = env;
 
     this.version = ACROSS_BOT_VERSION ?? "unknown";
