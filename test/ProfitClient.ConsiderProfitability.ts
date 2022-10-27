@@ -128,7 +128,7 @@ describe("ProfitClient: Consider relay profit", async function () {
       const estimate: { [key: string]: BigNumber } = profitClient.estimateFillCost(chainId);
       expect(estimate.nativeGasCost.eq(gasCost[chainId])).to.be.true;
       expect(estimate.gasPriceUsd.eq(tokenPrices[gasToken.symbol])).to.be.true;
-      expect(estimate.gasCostUsd.eq(gasPriceUsd.mul(nativeGasCost).div(toBNWei(1)))).to.be.true;
+      expect(estimate.gasCostUsd.eq(gasPriceUsd.mul(nativeGasCost).div(toBN(10).pow(gasToken.decimals)))).to.be.true;
     });
   });
 
