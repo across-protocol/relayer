@@ -312,9 +312,8 @@ export class SpokePoolClient {
       if (!Object.keys(this._queryableEventNames()).includes(eventName))
         throw new Error("Unknown event to query in SpokePoolClient");
       let searchConfigToUse = searchConfig;
-      if (eventName === "EnabledDepositRoute" || eventName === "TokensBridged")
-        searchConfigToUse = depositRouteSearchConfig;
-      else if (eventName === "FundsDeposited" || eventName === "FilledRelay")
+      if (eventName === "EnabledDepositRoute") searchConfigToUse = depositRouteSearchConfig;
+      else if (eventName === "FundsDeposited" || eventName === "FilledRelay" || eventName === "TokensBridged")
         searchConfigToUse = depositEventSearchConfig;
 
       return {

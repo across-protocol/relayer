@@ -1,4 +1,4 @@
-import { Wallet, config, startupLogLevel, processEndPollingLoop, processCrash } from "../utils";
+import { Wallet, config, startupLogLevel, processEndPollingLoop } from "../utils";
 import { winston } from "../utils";
 import {
   finalizeArbitrum,
@@ -21,6 +21,7 @@ import {
   updateSpokePoolClients,
   Clients,
   ProcessEnv,
+  FINALIZER_TOKENBRIDGE_LOOKBACK,
 } from "../common";
 config();
 let logger: winston.Logger;
@@ -94,7 +95,7 @@ export async function constructFinalizerClients(_logger: winston.Logger, config,
     commonClients.configStoreClient,
     config,
     baseSigner,
-    {} // We don't override the lookback as we want to look up all TokensBridged events.
+    config.maxFinalizerLookback
   );
 
   return {
@@ -110,9 +111,14 @@ async function updateFinalizerClients(clients: Clients) {
 export class FinalizerConfig extends DataworkerConfig {
   readonly optimisticRollupFinalizationWindow: number;
   readonly polygonFinalizationWindow: number;
+  readonly maxFinalizerLookback: number;
 
   constructor(env: ProcessEnv) {
-    const { FINALIZER_OROLLUP_FINALIZATION_WINDOW, FINALIZER_POLYGON_FINALIZATION_WINDOW } = env;
+    const {
+      FINALIZER_OROLLUP_FINALIZATION_WINDOW,
+      FINALIZER_POLYGON_FINALIZATION_WINDOW,
+      FINALIZER_MAX_TOKENBRIDGE_LOOKBACK,
+    } = env;
     super(env);
 
     // By default, filters out any TokensBridged events younger than 5 days old and older than 10 days old.
@@ -123,6 +129,10 @@ export class FinalizerConfig extends DataworkerConfig {
     this.polygonFinalizationWindow = FINALIZER_POLYGON_FINALIZATION_WINDOW
       ? Number(FINALIZER_POLYGON_FINALIZATION_WINDOW)
       : oneDayOfBlocks;
+    // `maxFinalizerLookback` is how far we fetch events from, modifying the search config's 'fromBlock'
+    this.maxFinalizerLookback = FINALIZER_MAX_TOKENBRIDGE_LOOKBACK
+      ? JSON.parse(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK)
+      : FINALIZER_TOKENBRIDGE_LOOKBACK;
   }
 }
 
