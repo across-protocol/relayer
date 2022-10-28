@@ -33,6 +33,7 @@ When running the bot, be sure to set the following environment variable
 ```sh
 REDIS_URL=redis://localhost:6379
 ```
+
 ## Installation
 
 ```sh
@@ -43,6 +44,7 @@ yarn install
 # build relayer bot
 yarn build
 ```
+
 # Community
 
 General discussion happens most frequently on the [Across discord](https://discord.com/invite/across).
@@ -78,7 +80,9 @@ If you want to read more about the three different agents in the Across system, 
 ```sh
 LOG_IN_TEST=true yarn hardhat integration-tests --wallet mnemonic
 ```
+
 ## Branching Model
+
 ### Active Branches
 
 | Branch                                                              | Status           |
