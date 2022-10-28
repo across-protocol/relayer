@@ -147,6 +147,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet):
     logger[startupLogLevel(config)]({ at: "Finalizer#index", message: "Finalizer started 🏋🏿‍♀️", config });
 
     for (;;) {
+      const loopStart = Date.now();
       await updateFinalizerClients(commonClients);
       await updateSpokePoolClients(spokePoolClients, ["TokensBridged", "EnabledDepositRoute"]);
 
@@ -161,6 +162,8 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet):
           config.polygonFinalizationWindow
         );
       else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
+
+      logger.debug({ at: "Finalizer#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }
