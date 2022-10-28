@@ -17,6 +17,7 @@ export class CommonConfig {
   readonly bundleRefundLookback: number;
   readonly maxRelayerLookBack: { [chainId: number]: number };
   readonly maxRelayerUnfilledDepositLookBack: { [chainId: number]: number };
+  readonly version: string;
 
   constructor(env: ProcessEnv) {
     const {
@@ -30,7 +31,10 @@ export class CommonConfig {
       SEND_TRANSACTIONS,
       REDIS_URL,
       BUNDLE_REFUND_LOOKBACK,
+      ACROSS_BOT_VERSION,
     } = env;
+
+    this.version = ACROSS_BOT_VERSION ?? "unknown";
 
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = MAX_RELAYER_DEPOSIT_LOOK_BACK
