@@ -78,9 +78,9 @@ export class ProfitClient {
     readonly debugProfitability: boolean = false,
     protected gasMultiplier: BigNumber = toBNWei(1)
   ) {
-    // Require 25% <= gasMultiplier <= 400%
+    // Require 1% <= gasMultiplier <= 400%
     assert(
-      this.gasMultiplier.gt(toBNWei("0.25")) && this.gasMultiplier.lte(toBNWei(4)),
+      this.gasMultiplier.gte(toBNWei("0.01")) && this.gasMultiplier.lte(toBNWei(4)),
       `Gas multiplier out of range (${this.gasMultiplier})`
     );
 
