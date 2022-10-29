@@ -311,9 +311,13 @@ export class SpokePoolClient {
     const eventSearchConfigs = eventsToQuery.map((eventName) => {
       if (!Object.keys(this._queryableEventNames()).includes(eventName))
         throw new Error("Unknown event to query in SpokePoolClient");
+      // By default, an event's query range can be overridden (usually shortened) by the `eventSearchConfig`
+      // passed in to the Config object. However, certain types of have special rules that could change their
+      // search ranges:
       let searchConfigToUse = searchConfig;
-      if (eventName === "EnabledDepositRoute" || eventName === "TokensBridged")
-        searchConfigToUse = depositRouteSearchConfig;
+      // These events always are queried from when Across' spoke pools were first deployed.
+      if (eventName === "EnabledDepositRoute") searchConfigToUse = depositRouteSearchConfig;
+      // These events can be loaded from the `cachedData` so they use a potentially modified `depositEventSearchConfig`.
       else if (eventName === "FundsDeposited" || eventName === "FilledRelay")
         searchConfigToUse = depositEventSearchConfig;
 

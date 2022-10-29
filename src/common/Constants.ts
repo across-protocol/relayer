@@ -13,13 +13,23 @@ export const MAX_RELAYER_DEPOSIT_LOOK_BACK: { [chainId: number]: number } = {
   42161: 345600,
 };
 
-// Target ~4 days per chain. Avg. block times: { 1: 12s, 10/42161: 0.5s, 137: 2.5s, 288: 30s }
+// Target ~4 days per chain. Should cover all events needed to construct pending bundle.
 export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   1: 28800,
   10: 691200,
   137: 138240,
   288: 11520,
   42161: 691200,
+};
+
+// Target ~14 days per chain. Should cover all events that could be finalized, so 2x the optimistic
+// rollup challenge period seems safe.
+export const FINALIZER_TOKENBRIDGE_LOOKBACK: { [chainId: number]: number } = {
+  1: 100800,
+  10: 2419200,
+  137: 483840,
+  288: 40320,
+  42161: 2419200,
 };
 
 // Reorgs are anticipated on Ethereum and Polygon. We use different following distances when processing deposit
