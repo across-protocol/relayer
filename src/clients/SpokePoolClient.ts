@@ -313,7 +313,7 @@ export class SpokePoolClient {
         throw new Error("Unknown event to query in SpokePoolClient");
       let searchConfigToUse = searchConfig;
       if (eventName === "EnabledDepositRoute") searchConfigToUse = depositRouteSearchConfig;
-      else if (eventName === "FundsDeposited" || eventName === "FilledRelay" || eventName === "TokensBridged")
+      else if (eventName === "FundsDeposited" || eventName === "FilledRelay")
         searchConfigToUse = depositEventSearchConfig;
 
       return {
