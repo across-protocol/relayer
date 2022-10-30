@@ -1,23 +1,14 @@
 import * as optimismSDK from "@eth-optimism/sdk";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
-import { TokensBridged } from "../../interfaces";
-import {
-  convertFromWei,
-  delay,
-  etherscanLink,
-  getProvider,
-  groupObjectCountsByProp,
-  Wallet,
-  winston,
-} from "../../utils";
+import { L1Token, TokensBridged } from "../../interfaces";
+import { convertFromWei, delay, etherscanLink, getNodeUrlList, groupObjectCountsByProp, winston } from "../../utils";
 
-const CHAIN_ID = 10;
-
-export function getOptimismClient(mainnetSigner: Wallet) {
+export function getOptimismClient(): optimismSDK.CrossChainMessenger {
   return new optimismSDK.CrossChainMessenger({
     l1ChainId: 1,
-    l1SignerOrProvider: mainnetSigner,
-    l2SignerOrProvider: mainnetSigner.connect(getProvider(10)),
+    l2ChainId: 10,
+    l1SignerOrProvider: optimismSDK.toSignerOrProvider(getNodeUrlList(1)[0]),
+    l2SignerOrProvider: optimismSDK.toSignerOrProvider(getNodeUrlList(10)[0]),
   });
 }
 
@@ -81,7 +72,7 @@ export async function getOptimismFinalizableMessages(
   logger: winston.Logger,
   tokensBridged: TokensBridged[],
   crossChainMessenger: optimismSDK.CrossChainMessenger
-) {
+): Promise<CrossChainMessageWithStatus[]> {
   const crossChainMessages = await getCrossChainMessages(tokensBridged, crossChainMessenger);
   const messageStatuses = await getMessageStatuses(crossChainMessages, crossChainMessenger);
   logger.debug({
@@ -94,8 +85,8 @@ export async function getOptimismFinalizableMessages(
   );
 }
 
-export function getL1TokenInfoForOptimismToken(hubPoolClient: HubPoolClient, l2Token: string) {
-  return hubPoolClient.getL1TokenInfoForL2Token(SpokePoolClient.getExecutedRefundLeafL2Token(10, l2Token), CHAIN_ID);
+export function getL1TokenInfoForOptimismToken(hubPoolClient: HubPoolClient, l2Token: string): L1Token {
+  return hubPoolClient.getL1TokenInfoForL2Token(SpokePoolClient.getExecutedRefundLeafL2Token(10, l2Token), 10);
 }
 
 export async function finalizeOptimismMessage(
@@ -103,7 +94,7 @@ export async function finalizeOptimismMessage(
   crossChainMessenger: optimismSDK.CrossChainMessenger,
   message: CrossChainMessageWithStatus,
   logger: winston.Logger
-) {
+): Promise<void> {
   // Need to handle special case where WETH is bridged as ETH and the contract address changes.
   const l1TokenInfo = getL1TokenInfoForOptimismToken(hubPoolClient, message.event.l2TokenAddress);
   const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
