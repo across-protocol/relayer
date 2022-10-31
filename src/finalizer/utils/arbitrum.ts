@@ -3,25 +3,16 @@ import {
   Wallet,
   winston,
   convertFromWei,
-  Contract,
   groupObjectCountsByProp,
   delay,
   etherscanLink,
 } from "../../utils";
 import { L2ToL1MessageStatus, L2TransactionReceipt, IL2ToL1MessageWriter } from "@arbitrum/sdk";
-import Outbox__factory_1 from "@arbitrum/sdk/dist/lib/abi/factories/Outbox__factory";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
 
 const CHAIN_ID = 42161;
 
-export function getOutboxContract(hubPoolClient: HubPoolClient) {
-  return new Contract(
-    "0x760723CD2e632826c38Fef8CD438A4CC7E7E1A40",
-    Outbox__factory_1.Outbox__factory.abi,
-    hubPoolClient.hubPool.signer
-  );
-}
 export async function finalizeArbitrum(
   logger: winston.Logger,
   message: IL2ToL1MessageWriter,

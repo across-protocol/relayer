@@ -1,22 +1,29 @@
-import { Contract, BigNumber, ZERO_ADDRESS, paginatedEventQuery, runTransaction, toBN } from "../../utils";
+import {
+  Contract,
+  BigNumber,
+  ZERO_ADDRESS,
+  paginatedEventQuery,
+  runTransaction,
+  toBN,
+  BigNumberish,
+} from "../../utils";
 import { spreadEventWithBlockNumber, assign, Promise, winston } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter, weth9Abi, ovmL1BridgeInterface, ovmL2BridgeInterface, atomicDepositorInterface } from "./";
+import { SortableEvent } from "../../interfaces";
 
 const customL1OptimismBridgeAddresses = {
   "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f", // DAI
-};
+} as const;
+
+const customOvmBridgeAddresses = {
+  "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0x467194771dae2967aef3ecbedd3bf9a310c76c65", // DAI
+} as const;
 
 const l1StandardBridgeAddressOvm = "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1";
 const l1StandardBridgeAddressBoba = "0xdc1664458d2f0B6090bEa60A8793A4E66c2F1c00";
 
-const firstL1BlockOvm = 13352477;
-const firstL1BlockBoba = 13012048;
-
 const ovmL2StandardBridgeAddress = "0x4200000000000000000000000000000000000010";
-const customOvmBridgeAddresses = {
-  "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0x467194771dae2967aef3ecbedd3bf9a310c76c65", // DAI
-};
 
 const wethOptimismAddress = "0x4200000000000000000000000000000000000006";
 const wethBobaAddress = "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000";
@@ -26,20 +33,23 @@ const atomicDepositorAddress = "0x26eaf37ee5daf49174637bdcd2f7759a25206c34";
 export class OptimismAdapter extends BaseAdapter {
   public l2Gas: number;
   constructor(
-    readonly logger: winston.Logger,
+    logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    readonly monitoredAddresses: string[],
-    readonly isOptimism: boolean
+    monitoredAddresses: string[],
+    readonly isOptimism: boolean,
+    // Optional sender address where the cross chain transfers originate from. This is useful for the use case of
+    // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
+    readonly senderAddress?: string
   ) {
     // Note based on if this isOptimism or not we switch the chainId and starting L1 blocks. This is critical. If done
     // wrong funds WILL be deleted in the canonical bridge (eg sending funds to Optimism with a boba L2 token).
-    super(spokePoolClients, isOptimism ? 10 : 288, isOptimism ? firstL1BlockOvm : firstL1BlockBoba);
+    super(spokePoolClients, isOptimism ? 10 : 288, monitoredAddresses, logger);
     this.l2Gas = isOptimism ? 200000 : 1300000;
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
-    await this.updateBlockSearchConfig();
-    this.log("Getting cross-chain txs", { l1Tokens, l1Config: this.l1SearchConfig, l2Config: this.l2SearchConfig });
+    const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
+    this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
     const promises = [];
     // Fetch bridge events for all monitored addresses.
@@ -54,16 +64,18 @@ export class OptimismAdapter extends BaseAdapter {
         }
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
-        const adapterSearchConfig = [ZERO_ADDRESS, undefined, atomicDepositorAddress];
+        // Transfers might have come from the monitored address itself or another sender address (if specified).
+        const senderAddress = this.senderAddress || atomicDepositorAddress;
+        const adapterSearchConfig = [ZERO_ADDRESS, undefined, senderAddress];
         promises.push(
-          paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), this.l1SearchConfig),
-          paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...l2SearchFilter), this.l2SearchConfig),
-          paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...adapterSearchConfig), this.l2SearchConfig)
+          paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), l1SearchConfig),
+          paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...l2SearchFilter), l2SearchConfig),
+          paginatedEventQuery(l2Bridge, l2Bridge.filters.DepositFinalized(...adapterSearchConfig), l2SearchConfig)
         );
       }
     }
 
-    const results = await Promise.all(promises, { concurrency: 4 });
+    const results = await Promise.all(promises);
 
     // 3 events per token.
     const numEventsPerMonitoredAddress = 3 * l1Tokens.length;
@@ -84,8 +96,15 @@ export class OptimismAdapter extends BaseAdapter {
       eventsToProcess.forEach((result, index) => {
         const l1Token = l1Tokens[Math.floor(index / 3)];
         const events = result.map((event) => {
-          const eventSpread = spreadEventWithBlockNumber(event);
-          return { amount: eventSpread["_amount"], to: eventSpread["_to"], blockNumber: eventSpread.blockNumber };
+          const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
+            _amount: BigNumberish;
+            _to: string;
+          };
+          return {
+            amount: eventSpread["_amount"],
+            to: eventSpread["_to"],
+            ...eventSpread,
+          };
         });
         const eventsStorage = [
           this.l1DepositInitiatedEvents,
@@ -97,8 +116,8 @@ export class OptimismAdapter extends BaseAdapter {
       });
     }
 
-    this.l1SearchConfig.fromBlock = this.l1SearchConfig.toBlock + 1;
-    this.l2SearchConfig.fromBlock = this.l2SearchConfig.toBlock + 1;
+    this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
+    this.baseL1SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
 
     return this.computeOutstandingCrossChainTransfers(l1Tokens);
   }
@@ -142,7 +161,7 @@ export class OptimismAdapter extends BaseAdapter {
 
   getL1Bridge(l1Token: string) {
     const l1BridgeAddress = this.isOptimism
-      ? Object.keys(customL1OptimismBridgeAddresses).includes(l1Token)
+      ? this.hasCustomL1Bridge(l1Token)
         ? customL1OptimismBridgeAddresses[l1Token]
         : l1StandardBridgeAddressOvm
       : l1StandardBridgeAddressBoba;
@@ -156,10 +175,18 @@ export class OptimismAdapter extends BaseAdapter {
 
   getL2Bridge(l1Token: string) {
     const l2BridgeAddress = this.isOptimism
-      ? Object.keys(customOvmBridgeAddresses).includes(l1Token)
+      ? this.hasCustomL2Bridge(l1Token)
         ? customOvmBridgeAddresses[l1Token]
         : ovmL2StandardBridgeAddress
       : ovmL2StandardBridgeAddress;
     return new Contract(l2BridgeAddress, ovmL2BridgeInterface, this.getSigner(this.chainId));
+  }
+
+  private hasCustomL1Bridge(l1Token: string): l1Token is keyof typeof customL1OptimismBridgeAddresses {
+    return l1Token in customL1OptimismBridgeAddresses;
+  }
+
+  private hasCustomL2Bridge(l1Token: string): l1Token is keyof typeof customOvmBridgeAddresses {
+    return l1Token in customOvmBridgeAddresses;
   }
 }

@@ -3,6 +3,9 @@ import * as dotenv from "dotenv";
 import { HardhatUserConfig } from "hardhat/config";
 import { getNodeUrl, getMnemonic } from "@uma/common";
 
+// Custom tasks to add to HRE.
+require("./tasks");
+
 import "@nomiclabs/hardhat-etherscan";
 import "@nomiclabs/hardhat-waffle";
 import "@typechain/hardhat";
@@ -65,6 +68,9 @@ const config: HardhatUserConfig = {
   gasReporter: { enabled: process.env.REPORT_GAS !== undefined, currency: "USD" },
   etherscan: { apiKey: process.env.ETHERSCAN_API_KEY },
   namedAccounts: { deployer: 0 },
+  mocha: {
+    timeout: 100000,
+  },
 };
 
 export default config;

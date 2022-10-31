@@ -1,31 +1,26 @@
-import { processEndPollingLoop, winston, processCrash, config, startupLogLevel, getSigner } from "../utils";
+import { processEndPollingLoop, winston, processCrash, config, startupLogLevel, Wallet } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
 config();
 let logger: winston.Logger;
 
-export async function runRelayer(_logger: winston.Logger): Promise<void> {
+export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
   logger = _logger;
   const config = new RelayerConfig(process.env);
+  let relayerClients;
+
   try {
     logger[startupLogLevel(config)]({ at: "Relayer#index", message: "Relayer started 🏃‍♂️", config });
 
-    const relayerClients = await constructRelayerClients(logger, config);
+    relayerClients = await constructRelayerClients(logger, config, baseSigner);
 
-    const baseSigner = await getSigner();
-    const relayer = new Relayer(
-      baseSigner.address,
-      logger,
-      relayerClients,
-      config.maxRelayerUnfilledDepositLookBack,
-      config.relayerTokens
-    );
+    const relayer = new Relayer(baseSigner.address, logger, relayerClients, config);
 
     logger.debug({ at: "Relayer#index", message: "Relayer components initialized. Starting execution loop" });
 
     for (;;) {
-      await updateRelayerClients(relayerClients);
+      await updateRelayerClients(relayerClients, config);
 
       await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled);
 
@@ -44,8 +39,11 @@ export async function runRelayer(_logger: winston.Logger): Promise<void> {
       if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) break;
     }
   } catch (error) {
-    // eslint-disable-next-line no-process-exit
-    if (await processCrash(logger, "Relayer", config.pollingDelay, error)) process.exit(1);
-    await runRelayer(logger);
+    if (relayerClients !== undefined && relayerClients.configStoreClient.redisClient !== undefined) {
+      // todo understand why redisClient isn't GCed automagically.
+      logger.debug("Disconnecting from redis server.");
+      relayerClients.configStoreClient.redisClient.disconnect();
+    }
+    throw error;
   }
 }

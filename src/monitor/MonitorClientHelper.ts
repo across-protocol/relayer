@@ -1,5 +1,5 @@
 import { MonitorConfig } from "./MonitorConfig";
-import { getSigner, winston } from "../utils";
+import { Wallet, winston } from "../utils";
 import { BundleDataClient, HubPoolClient, TokenTransferClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import {
@@ -19,9 +19,12 @@ export interface MonitorClients extends Clients {
   tokenTransferClient: TokenTransferClient;
 }
 
-export async function constructMonitorClients(config: MonitorConfig, logger: winston.Logger): Promise<MonitorClients> {
-  const baseSigner = await getSigner(); // todo: add getVoidSigner
-  const commonClients = await constructClients(logger, config);
+export async function constructMonitorClients(
+  config: MonitorConfig,
+  logger: winston.Logger,
+  baseSigner: Wallet
+): Promise<MonitorClients> {
+  const commonClients = await constructClients(logger, config, baseSigner);
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
     commonClients.configStoreClient,
@@ -37,9 +40,14 @@ export async function constructMonitorClients(config: MonitorConfig, logger: win
   );
   const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
 
-  const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
-    baseSigner.address,
-  ]);
+  const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePool.address);
+  const adapterManager = new AdapterManager(
+    logger,
+    spokePoolClients,
+    commonClients.hubPoolClient,
+    [baseSigner.address, ...spokePoolAddresses],
+    commonClients.hubPoolClient.hubPool.address
+  );
   const crossChainTransferClient = new CrossChainTransferClient(logger, config.spokePoolChains, adapterManager);
 
   return { ...commonClients, bundleDataClient, crossChainTransferClient, spokePoolClients, tokenTransferClient };

@@ -1,9 +1,17 @@
-import { Refund, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
+import { Refund, RelayerRefundLeaf, RelayerRefundLeafWithGroup, SpokePoolTargetBalance } from "../interfaces";
 import { BigNumber, compareAddresses, toBN } from "../utils";
 import { getNetSendAmountForL1Token } from "./PoolRebalanceUtils";
 
-export function getAmountToReturnForRelayerRefundLeaf(transferThreshold: BigNumber, runningBalanceForLeaf: BigNumber) {
-  const netSendAmountForLeaf = getNetSendAmountForL1Token(transferThreshold, runningBalanceForLeaf);
+export function getAmountToReturnForRelayerRefundLeaf(
+  transferThreshold: BigNumber,
+  spokePoolTargetBalance: SpokePoolTargetBalance,
+  runningBalanceForLeaf: BigNumber
+) {
+  const netSendAmountForLeaf = getNetSendAmountForL1Token(
+    transferThreshold,
+    spokePoolTargetBalance,
+    runningBalanceForLeaf
+  );
   return netSendAmountForLeaf.mul(toBN(-1)).gt(toBN(0)) ? netSendAmountForLeaf.mul(toBN(-1)) : toBN(0);
 }
 

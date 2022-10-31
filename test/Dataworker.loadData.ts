@@ -1,4 +1,12 @@
-import { expect, ethers, Contract, deployNewToken, getDefaultBlockRange, buildFillForRepaymentChain } from "./utils";
+import {
+  expect,
+  ethers,
+  Contract,
+  deployNewToken,
+  getDefaultBlockRange,
+  buildFillForRepaymentChain,
+  getLastBlockNumber,
+} from "./utils";
 import { SignerWithAddress, buildSlowRelayTree, enableRoutesOnHubPool } from "./utils";
 import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, buildSlowFill } from "./utils";
 import {
@@ -9,14 +17,21 @@ import {
   MultiCallerClient,
   BalanceAllocator,
 } from "../src/clients";
-import { amountToDeposit, repaymentChainId, destinationChainId, originChainId, CHAIN_ID_TEST_LIST } from "./constants";
+import {
+  amountToDeposit,
+  repaymentChainId,
+  destinationChainId,
+  originChainId,
+  CHAIN_ID_TEST_LIST,
+  deposit,
+} from "./constants";
 import { IMPOSSIBLE_BLOCK_RANGE } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { toBN, getRefundForFills, getRealizedLpFeeForFills, MAX_UINT_VAL } from "../src/utils";
 import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
-import { Fill } from "../src/interfaces";
+import { DepositWithBlock, Fill, FillWithBlock } from "../src/interfaces";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, l1Token_2: Contract, hubPool: Contract;
@@ -347,26 +362,35 @@ describe("Dataworker: Load data used in all functions", async function () {
   it("Returns unfilled deposits", async function () {
     await updateAllClients();
 
-    const deposit1 = await buildDeposit(
-      configStoreClient,
-      hubPoolClient,
-      spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
-      destinationChainId,
-      amountToDeposit
-    );
-    const deposit2 = await buildDeposit(
-      configStoreClient,
-      hubPoolClient,
-      spokePool_2,
-      erc20_2,
-      l1Token_2,
-      depositor,
-      originChainId,
-      amountToDeposit
-    );
+    const deposit1 = {
+      ...(await buildDeposit(
+        configStoreClient,
+        hubPoolClient,
+        spokePool_1,
+        erc20_1,
+        l1Token_1,
+        depositor,
+        destinationChainId,
+        amountToDeposit
+      )),
+      originBlockNumber: await getLastBlockNumber(),
+    } as DepositWithBlock;
+    deposit1.blockNumber = (await configStoreClient.computeRealizedLpFeePct(deposit1, l1Token_1.address)).quoteBlock;
+
+    const deposit2 = {
+      ...(await buildDeposit(
+        configStoreClient,
+        hubPoolClient,
+        spokePool_2,
+        erc20_2,
+        l1Token_2,
+        depositor,
+        originChainId,
+        amountToDeposit
+      )),
+      originBlockNumber: await getLastBlockNumber(),
+    } as DepositWithBlock;
+    deposit2.blockNumber = (await configStoreClient.computeRealizedLpFeePct(deposit2, l1Token_2.address)).quoteBlock;
 
     // Unfilled deposits are ignored.
     await updateAllClients();
@@ -418,8 +442,14 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data3 = dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(3), spokePoolClients);
     expect(data3.unfilledDeposits).to.deep.equal([
-      { unfilledAmount: amountToDeposit.sub(fill1.fillAmount), deposit: deposit1 },
-      { unfilledAmount: amountToDeposit.sub(fill2.fillAmount), deposit: deposit2 },
+      {
+        unfilledAmount: amountToDeposit.sub(fill1.fillAmount),
+        deposit: deposit1,
+      },
+      {
+        unfilledAmount: amountToDeposit.sub(fill2.fillAmount),
+        deposit: deposit2,
+      },
     ]);
 
     // If block range does not cover fills, then unfilled deposits are not included.
@@ -439,16 +469,20 @@ describe("Dataworker: Load data used in all functions", async function () {
     // events queried.
 
     // Fill events emitted by slow relays are included in unfilled amount calculations.
-    const deposit5 = await buildDeposit(
-      configStoreClient,
-      hubPoolClient,
-      spokePool_2,
-      erc20_2,
-      l1Token_1,
-      depositor,
-      originChainId,
-      amountToDeposit
-    );
+    const deposit5 = {
+      ...(await buildDeposit(
+        configStoreClient,
+        hubPoolClient,
+        spokePool_2,
+        erc20_2,
+        l1Token_1,
+        depositor,
+        originChainId,
+        amountToDeposit
+      )),
+      originBlockNumber: await getLastBlockNumber(),
+    } as DepositWithBlock;
+    deposit5.blockNumber = (await configStoreClient.computeRealizedLpFeePct(deposit5, l1Token_1.address)).quoteBlock;
     const fill3 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit5, 0.25);
 
     // One unfilled deposit that we're going to slow fill:
@@ -584,7 +618,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     // Speed up relays are included. Re-use the same fill information
     const fill4 = await buildModifiedFill(spokePool_2, depositor, relayer, fill1, 2, 0.1);
-    expect(fill4.totalFilledAmount.gt(fill4.fillAmount), "speed up fill didn't match original deposit");
+    expect(fill4.totalFilledAmount.gt(fill4.fillAmount), "speed up fill didn't match original deposit").to.be.true;
     await updateAllClients();
     const data6 = dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(4), spokePoolClients);
     expect(data6.fillsToRefund).to.deep.equal({

@@ -1,9 +1,9 @@
 import winston from "winston";
-import { getSigner } from "../utils";
+import { Wallet } from "../utils";
 import { TokenClient, ProfitClient, BundleDataClient, InventoryClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import { RelayerConfig } from "./RelayerConfig";
-import { Clients, constructClients, updateClients, updateSpokePoolClients } from "../common";
+import { CHAIN_ID_LIST_INDICES, Clients, constructClients, updateClients, updateSpokePoolClients } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { constructSpokePoolClientsWithLookback } from "../common";
 
@@ -14,10 +14,12 @@ export interface RelayerClients extends Clients {
   inventoryClient: InventoryClient;
 }
 
-export async function constructRelayerClients(logger: winston.Logger, config: RelayerConfig): Promise<RelayerClients> {
-  const baseSigner = await getSigner();
-
-  const commonClients = await constructClients(logger, config);
+export async function constructRelayerClients(
+  logger: winston.Logger,
+  config: RelayerConfig,
+  baseSigner: Wallet
+): Promise<RelayerClients> {
+  const commonClients = await constructClients(logger, config, baseSigner);
 
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
@@ -29,7 +31,20 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
 
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients, commonClients.hubPoolClient);
 
-  const profitClient = new ProfitClient(logger, commonClients.hubPoolClient, config.relayerDiscount);
+  // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
+  const enabledChainIds =
+    config.relayerDestinationChains.length > 0 ? config.relayerDestinationChains : CHAIN_ID_LIST_INDICES;
+  const profitClient = new ProfitClient(
+    logger,
+    commonClients.hubPoolClient,
+    spokePoolClients,
+    config.ignoreProfitability,
+    enabledChainIds,
+    config.ignoreTokenPriceFailures,
+    config.minRelayerFeePct,
+    config.debugProfitability,
+    config.relayerGasMultiplier
+  );
 
   const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
     baseSigner.address,
@@ -53,8 +68,9 @@ export async function constructRelayerClients(logger: winston.Logger, config: Re
   return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient };
 }
 
-export async function updateRelayerClients(clients: RelayerClients) {
+export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig) {
   await updateClients(clients);
+  await clients.profitClient.update();
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
 
   // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
@@ -82,6 +98,7 @@ export async function updateRelayerClients(clients: RelayerClients) {
   ]);
 
   // Update the token client after the inventory client has done its wrapping of L2 ETH to ensure latest WETH ballance.
+  // The token client needs route data, so wait for update before checking approvals.
   await clients.tokenClient.update();
-  await clients.tokenClient.setOriginTokenApprovals(); // Run approval check  after updating token clients as needs route data.
+  if (config.sendingRelaysEnabled) await clients.tokenClient.setOriginTokenApprovals();
 }

@@ -68,6 +68,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     bundleDataClient = new MockBundleDataClient(null, null, null, null);
 
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, enabledChainIds, adapterManager);
+
     inventoryClient = new InventoryClient(
       owner.address,
       spyLogger,

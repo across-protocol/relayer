@@ -1,23 +1,48 @@
 import { BigNumber, toBNWei, assert, toBN, replaceAddressCase } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
+import * as Constants from "../common/Constants";
 import { InventoryConfig } from "../interfaces";
 
 export class RelayerConfig extends CommonConfig {
   readonly inventoryConfig: InventoryConfig;
-  readonly relayerDiscount: BigNumber;
+  // Whether relay profitability is considered. If false, relayers will attempt to relay all deposits.
+  readonly ignoreProfitability: boolean;
+  readonly debugProfitability: boolean;
+  // Whether token price fetch failures will be ignored when computing relay profitability.
+  // If this is false, the relayer will throw an error when fetching prices fails.
+  readonly ignoreTokenPriceFailures: boolean;
   readonly sendingRelaysEnabled: boolean;
   readonly sendingSlowRelaysEnabled: boolean;
   readonly relayerTokens: string[];
   readonly relayerDestinationChains: number[];
+  readonly relayerGasMultiplier: BigNumber;
+  readonly minRelayerFeePct: BigNumber;
+  readonly acceptInvalidFills: boolean;
+  // Following distances in blocks to guarantee finality on each chain.
+  readonly minDepositConfirmations: {
+    [threshold: number]: { [chainId: number]: number };
+  };
+  // Quote timestamp buffer to protect relayer from edge case where a quote time is > HEAD's latest block.
+  // This exposes relayer to risk that HubPool utilization changes between now and the eventual block mined at that
+  // timestamp, since the ConfigStoreClient.computeRealizedLpFee returns the current lpFee % for quote times >
+  // HEAD
+  readonly quoteTimeBuffer: number;
 
   constructor(env: ProcessEnv) {
     const {
       RELAYER_DESTINATION_CHAINS,
-      RELAYER_DISCOUNT,
+      DEBUG_PROFITABILITY,
+      IGNORE_PROFITABILITY,
+      IGNORE_TOKEN_PRICE_FAILURES,
+      RELAYER_GAS_MULTIPLIER,
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
       SEND_RELAYS,
       SEND_SLOW_RELAYS,
+      MIN_RELAYER_FEE_PCT,
+      ACCEPT_INVALID_FILLS,
+      MIN_DEPOSIT_CONFIRMATIONS,
+      QUOTE_TIME_BUFFER,
     } = env;
     super(env);
 
@@ -26,6 +51,7 @@ export class RelayerConfig extends CommonConfig {
     // Empty means all tokens.
     this.relayerTokens = RELAYER_TOKENS ? JSON.parse(RELAYER_TOKENS) : [];
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
+    this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
     if (Object.keys(this.inventoryConfig).length > 0) {
       this.inventoryConfig = replaceAddressCase(this.inventoryConfig); // Cast any non-address case addresses.
@@ -55,8 +81,27 @@ export class RelayerConfig extends CommonConfig {
         });
       });
     }
-    this.relayerDiscount = RELAYER_DISCOUNT ? toBNWei(RELAYER_DISCOUNT) : toBNWei(0);
+    this.debugProfitability = DEBUG_PROFITABILITY === "true";
+    this.ignoreProfitability = IGNORE_PROFITABILITY === "true";
+    this.ignoreTokenPriceFailures = IGNORE_TOKEN_PRICE_FAILURES === "true";
+    this.relayerGasMultiplier = toBNWei(RELAYER_GAS_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MULTIPLIER);
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
+    this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";
+    (this.minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS
+      ? JSON.parse(MIN_DEPOSIT_CONFIRMATIONS)
+      : Constants.MIN_DEPOSIT_CONFIRMATIONS),
+      this.spokePoolChains.forEach((chainId) => {
+        Object.keys(this.minDepositConfirmations).forEach((threshold) => {
+          const nBlocks: number = this.minDepositConfirmations[threshold][chainId];
+          assert(
+            !isNaN(nBlocks) && nBlocks >= 0,
+            `Chain ${chainId} minimum deposit confirmations for "${threshold}" threshold missing or invalid (${nBlocks}).`
+          );
+        });
+      });
+    // Force default thresholds in MDC config.
+    this.minDepositConfirmations["default"] = Constants.DEFAULT_MIN_DEPOSIT_CONFIRMATIONS;
+    this.quoteTimeBuffer = QUOTE_TIME_BUFFER ? Number(QUOTE_TIME_BUFFER) : Constants.QUOTE_TIME_BUFFER;
   }
 }
