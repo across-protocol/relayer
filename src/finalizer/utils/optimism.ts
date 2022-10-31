@@ -1,14 +1,32 @@
 import * as optimismSDK from "@eth-optimism/sdk";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { L1Token, TokensBridged } from "../../interfaces";
-import { convertFromWei, delay, etherscanLink, getNodeUrlList, groupObjectCountsByProp, winston } from "../../utils";
+import {
+  convertFromWei,
+  delay,
+  ethers,
+  etherscanLink,
+  getNodeUrlList,
+  groupObjectCountsByProp,
+  Wallet,
+  winston,
+} from "../../utils";
 
-export function getOptimismClient(): optimismSDK.CrossChainMessenger {
+export function getOptimismClient(hubSigner: Wallet): optimismSDK.CrossChainMessenger {
   return new optimismSDK.CrossChainMessenger({
     l1ChainId: 1,
     l2ChainId: 10,
-    l1SignerOrProvider: optimismSDK.toSignerOrProvider(getNodeUrlList(1)[0]),
-    l2SignerOrProvider: optimismSDK.toSignerOrProvider(getNodeUrlList(10)[0]),
+    // @dev: The optimismSDK's version of Signer and Provider is a bit different than the one imported by
+    // this repo, specifically it claims:
+    // - Type 'Wallet' is not assignable to type 'Signer'.
+    // - The types returned by 'provider.getFeeData()' are incompatible between these types.
+    // - So we cast to unknown to ignore this incompatibility which doesn't seem important.
+    l1SignerOrProvider: hubSigner.connect(
+      new ethers.providers.JsonRpcProvider(getNodeUrlList(1)[0])
+    ) as unknown as optimismSDK.SignerLike,
+    l2SignerOrProvider: hubSigner.connect(
+      new ethers.providers.JsonRpcProvider(getNodeUrlList(10)[0])
+    ) as unknown as optimismSDK.SignerLike,
   });
 }
 
