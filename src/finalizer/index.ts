@@ -74,7 +74,7 @@ export async function finalize(
       const olderTokensBridgedEvents = tokensBridged.filter(
         (e) => e.blockNumber < client.latestBlockNumber - optimisticRollupFinalizationWindow
       );
-      const crossChainMessenger = getOptimismClient();
+      const crossChainMessenger = getOptimismClient(hubSigner);
       const finalizableMessages = await getOptimismFinalizableMessages(
         logger,
         olderTokensBridgedEvents,
