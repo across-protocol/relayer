@@ -16,6 +16,11 @@ export function getOptimismClient(hubSigner: Wallet): optimismSDK.CrossChainMess
   return new optimismSDK.CrossChainMessenger({
     l1ChainId: 1,
     l2ChainId: 10,
+    // @dev: The optimismSDK's version of Signer and Provider is a bit different than the one imported by
+    // this repo, specifically it claims:
+    // - Type 'Wallet' is not assignable to type 'Signer'.
+    // - The types returned by 'provider.getFeeData()' are incompatible between these types.
+    // - So we cast to unknown to ignore this incompatibility which doesn't seem important.
     l1SignerOrProvider: hubSigner.connect(
       new ethers.providers.JsonRpcProvider(getNodeUrlList(1)[0])
     ) as unknown as optimismSDK.SignerLike,
