@@ -41,17 +41,17 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk-v2@^0.1.30":
-  version "0.1.30"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.1.30.tgz#dcfb92b8db2cdbc3d1815b6d6cdd4d49814ecec7"
-  integrity sha512-8723IU9H08IuEbG3LccOqVln8vdOoR9VyIR6m7KwAR6rAXoZjjJf0zhgPvkkef7W3DC9AULQJlmKELd4qtNhVg==
+"@across-protocol/sdk-v2@^0.1.31":
+  version "0.1.31"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.1.31.tgz#ec9494cbef1d705cefb927ab6dc2aa53470f11e7"
+  integrity sha512-fb5RKDm043TeLk00/f0mifaGCbQieayxJ3eE990Ha/zFKgJ+UhpQyDbxZ2QrWPj0e0ck9VjSBkqKRPaLgoB89w==
   dependencies:
     "@across-protocol/contracts-v2" "^1.0.3"
-    "@eth-optimism/sdk" "^1.1.4"
+    "@eth-optimism/sdk" "^1.6.0"
     "@uma/sdk" "^0.29.3"
     axios "^0.27.2"
     decimal.js "^10.3.1"
-    ethers "^5.6.1"
+    ethers "^5.7.2"
     hardhat-deploy "^0.11.2"
     hardhat-gas-reporter "^1.0.8"
     lodash.get "^4.4.2"
@@ -385,16 +385,6 @@
     ethers "^5.7.0"
     hardhat "^2.9.6"
 
-"@eth-optimism/contracts@0.5.24":
-  version "0.5.24"
-  resolved "https://registry.yarnpkg.com/@eth-optimism/contracts/-/contracts-0.5.24.tgz#7a71fb530327b8af54824acedcc6fdb4676a993a"
-  integrity sha512-9Z+KUMYAxYZyIZHvpn5Yngz787DzNw1E8HUBib27iPtJ5gAWdKXisuScEkP2gnt4bDcUQ8qtMfGZ9Z7FARbuvQ==
-  dependencies:
-    "@eth-optimism/core-utils" "0.8.4"
-    "@ethersproject/abstract-provider" "^5.5.1"
-    "@ethersproject/abstract-signer" "^5.5.0"
-    "@ethersproject/hardware-wallets" "^5.5.0"
-
 "@eth-optimism/contracts@0.5.37":
   version "0.5.37"
   resolved "https://registry.yarnpkg.com/@eth-optimism/contracts/-/contracts-0.5.37.tgz#3aaca1ca1f49ef895d4165cc7bf29c8d1f5b0f56"
@@ -450,37 +440,12 @@
     chai "^4.3.4"
     ethers "^5.5.4"
 
-"@eth-optimism/core-utils@0.8.4":
-  version "0.8.4"
-  resolved "https://registry.yarnpkg.com/@eth-optimism/core-utils/-/core-utils-0.8.4.tgz#617883bf85c438e40e0e09de427582390359dff9"
-  integrity sha512-HayyAM8rawvRY8wg/Iy/5O4Gn6VPYxlgaQ1vLcbwDDMvXOCbIjONbOBqi+v7LKVPuvfL6xY+3aMibm5tWtrn/g==
-  dependencies:
-    "@ethersproject/abstract-provider" "^5.5.1"
-    "@ethersproject/bytes" "^5.5.0"
-    "@ethersproject/providers" "^5.5.3"
-    "@ethersproject/transactions" "^5.5.0"
-    "@ethersproject/web" "^5.5.1"
-    bufio "^1.0.7"
-    chai "^4.3.4"
-    ethers "^5.5.4"
-
 "@eth-optimism/hardhat-ovm@^0.2.2":
   version "0.2.4"
   resolved "https://registry.yarnpkg.com/@eth-optimism/hardhat-ovm/-/hardhat-ovm-0.2.4.tgz#1ffe114e341296703cce17006e120ea4107fcb97"
   integrity sha512-lfDADd++qg2F9CLNQ5lctGcPlQB3gDe8BsYXu8B72SOJCzOlnfYiS96N/JErG/YpLoLyT2fVPmXCIIl0ogU9ow==
   dependencies:
     node-fetch "^2.6.1"
-
-"@eth-optimism/sdk@^1.1.4":
-  version "1.1.5"
-  resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-1.1.5.tgz#403e931a8b78cacbabe795612a0839930099868a"
-  integrity sha512-Lxkc2QAF2W1XWBl7c4dEwGP8l88THowZ9knc4omJCEmRUIIHUiS28dllFDM5kS/r52xPTzlQnF5uWzvlin3Shg==
-  dependencies:
-    "@eth-optimism/contracts" "0.5.24"
-    "@eth-optimism/core-utils" "0.8.4"
-    lodash "^4.17.21"
-    merkletreejs "^0.2.27"
-    rlp "^2.2.7"
 
 "@eth-optimism/sdk@^1.6.0":
   version "1.6.9"
@@ -8722,7 +8687,7 @@ ethers@^4.0.0-beta.1, ethers@^4.0.32, ethers@^4.0.40:
     uuid "2.0.1"
     xmlhttprequest "1.8.0"
 
-ethers@^5.0.1, ethers@^5.0.13, ethers@^5.0.2, ethers@^5.5.2, ethers@^5.5.4, ethers@^5.6.0, ethers@^5.6.1:
+ethers@^5.0.1, ethers@^5.0.13, ethers@^5.0.2, ethers@^5.5.2, ethers@^5.5.4, ethers@^5.6.0:
   version "5.6.4"
   resolved "https://registry.yarnpkg.com/ethers/-/ethers-5.6.4.tgz#23629e9a7d4bc5802dfb53d4da420d738744b53c"
   integrity sha512-62UIfxAQXdf67TeeOaoOoPctm5hUlYgfd0iW3wxfj7qRYKDcvvy0f+sJ3W2/Pyx77R8dblvejA8jokj+lS+ATQ==
@@ -8794,7 +8759,7 @@ ethers@^5.1.0:
     "@ethersproject/web" "5.6.0"
     "@ethersproject/wordlists" "5.6.0"
 
-ethers@^5.4.2, ethers@^5.4.6, ethers@^5.7.0:
+ethers@^5.4.2, ethers@^5.4.6, ethers@^5.7.0, ethers@^5.7.2:
   version "5.7.2"
   resolved "https://registry.yarnpkg.com/ethers/-/ethers-5.7.2.tgz#3a7deeabbb8c030d4126b24f84e525466145872e"
   integrity sha512-wswUsmWo1aOK8rR7DIKiWSw9DbLWe6x98Jrn8wcTflTVvaXhAMaB5zGAXy0GYQEQp9iO1iSHWVyARQm11zUtyg==
