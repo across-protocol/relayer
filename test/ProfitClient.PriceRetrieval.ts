@@ -24,9 +24,7 @@ const mainnetTokens: Array<L1Token> = [
 const minTokenPrice = 0.000001;
 const tokenPrices: { [addr: string]: number } = Object.fromEntries(
   mainnetTokens.map((token) => {
-    let tokenPrice = Math.random();
-    if (tokenPrice < minTokenPrice) tokenPrice = minTokenPrice;
-    return [token.address, tokenPrice];
+    return [token.address, Math.max(Math.random(), minTokenPrice)];
   })
 );
 
