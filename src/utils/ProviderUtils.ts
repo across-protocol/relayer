@@ -275,6 +275,7 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
     {
       url: nodeUrl,
       timeout,
+      allowGzip: true,
       throttleCallback: rpcRateLimited({ nodeMaxConcurrency, logger }),
     },
     chainId,
