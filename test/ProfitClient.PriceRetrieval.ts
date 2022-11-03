@@ -21,10 +21,9 @@ const mainnetTokens: Array<L1Token> = [
   { symbol: "MATIC", address: MATIC, decimals: 18 },
 ];
 
-const minTokenPrice = 0.000001;
-const tokenPrices: { [addr: string]: number } = Object.fromEntries(
+const tokenPrices: { [addr: string]: string } = Object.fromEntries(
   mainnetTokens.map((token) => {
-    return [token.address, Math.max(Math.random(), minTokenPrice)];
+    return [token.address, Math.random().toPrecision(10)];
   })
 );
 
@@ -42,7 +41,6 @@ class ProfitClientWithMockPriceClient extends ProfitClient {
 
 const verifyTokenPrices = (logger: winston.Logger, profitClient: ProfitClientWithMockPriceClient) => {
   const tokenPrices: { [k: string]: BigNumber } = profitClient.getAllPrices();
-  logger.debug({ message: "Got tokenPrices.", tokenPrices });
 
   // The client should have fetched prices for all requested tokens.
   expect(Object.keys(tokenPrices)).to.have.deep.members(mainnetTokens.map((token) => token["address"]));
