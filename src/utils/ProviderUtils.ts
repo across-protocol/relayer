@@ -81,7 +81,8 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     readonly nodeQuorumThreshold: number,
     readonly retries: number,
     readonly delay: number,
-    readonly maxConcurrency: number
+    readonly maxConcurrency: number,
+    readonly logger?: winston.Logger
   ) {
     // Initialize the super just with the chainId, which stops it from trying to immediately send out a .send before
     // this derived class is initialized.
@@ -215,7 +216,18 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
   _trySend(provider: ethers.providers.StaticJsonRpcProvider, method: string, params: Array<any>): Promise<any> {
     let promise = provider.send(method, params);
     for (let i = 0; i < this.retries; i++) {
-      promise = promise.catch(() => delay(this.delay).then(() => provider.send(method, params)));
+      promise = promise
+        .catch((err) => {
+          if (this.logger) {
+            this.logger.debug({
+              at: "ProviderUtils#_trySend",
+              message: "Caught provider error.",
+              error: JSON.stringify(err),
+            });
+          }
+          delay(this.delay);
+        })
+        .then(() => provider.send(method, params));
     }
     return promise;
   }
@@ -287,7 +299,8 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
     nodeQuorumThreshold,
     retries,
     retryDelay,
-    nodeMaxConcurrency
+    nodeMaxConcurrency,
+    logger
   );
 }
 
