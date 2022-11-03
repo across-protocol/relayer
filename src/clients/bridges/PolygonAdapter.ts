@@ -76,6 +76,13 @@ const tokenToBridge = {
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // BAL
+  "0x44108f0223A3C3028F5Fe7AEC7f9bb2E66beF82F": {
+    l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
+    l2TokenAddress: "0xF328b73B6c685831F238c30a23Fc19140CB4D8FC",
+    l1Method: "LockedERC20",
+    l1AmountProp: "amount",
+    l2AmountProp: "value",
+  }, // ACX
   "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": {
     l1BridgeAddress: "0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30",
     l2TokenAddress: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619",
