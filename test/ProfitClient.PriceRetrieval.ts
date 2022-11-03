@@ -21,8 +21,11 @@ const mainnetTokens: Array<L1Token> = [
   { symbol: "MATIC", address: MATIC, decimals: 18 },
 ];
 
+const minTokenPrice = 0.000001;
 const tokenPrices: { [addr: string]: number } = Object.fromEntries(
-  mainnetTokens.map((token) => [token.address, Math.random()])
+  mainnetTokens.map((token) => {
+    return [token.address, Math.max(Math.random(), minTokenPrice)];
+  })
 );
 
 class ProfitClientWithMockPriceClient extends ProfitClient {
