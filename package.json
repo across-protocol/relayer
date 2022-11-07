@@ -50,7 +50,8 @@
     "eslint": "eslint .",
     "test": "hardhat test",
     "build": "tsc --build",
-    "watch": "tsc --build --incremental --watch"
+    "watch": "tsc --build --incremental --watch",
+    "relay": "node ./dist/index.js --relayer"
   },
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "^2.0.6",
