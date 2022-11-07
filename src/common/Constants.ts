@@ -160,6 +160,12 @@ export const l2TokensToL1TokenValidation: { [tokenAddress: string]: { [chainId: 
     137: "0x9a71012B13CA4d3D0Cdc72A177DF3ef03b0E76A3",
     42161: "0x040d1EdC9569d4Bab2D15287Dc5A4F10F56a56B8",
   }, // BAL
+  "0x44108f0223A3C3028F5Fe7AEC7f9bb2E66beF82F": {
+    10: "0xFf733b2A3557a7ed6697007ab5D11B79FdD1b76B",
+    137: "0xF328b73B6c685831F238c30a23Fc19140CB4D8FC",
+    288: "0x96821b258955587069F680729cD77369C0892B40",
+    42161: "0x53691596d1BCe8CEa565b84d4915e69e03d9C99d",
+  }, // ACX
 };
 
 // Maps chain ID to root bundle ID to ignore because the roots are known to be invalid from the perspective of the

@@ -1,8 +1,7 @@
 import { l2TokensToL1TokenValidation } from "../../common";
-import { BigNumber, winston, toBN, createFormatFunction, etherscanLink } from "../../utils";
+import { BigNumber, winston, toBN, createFormatFunction, etherscanLink, Signer } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter } from "./";
-import { Signer } from "@arbitrum/sdk/node_modules/@ethersproject/abstract-signer";
 import { OutstandingTransfers } from "../../interfaces/Bridge";
 export class AdapterManager {
   public adapters: { [chainId: number]: OptimismAdapter | ArbitrumAdapter | PolygonAdapter } = {};

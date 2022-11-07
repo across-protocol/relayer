@@ -86,6 +86,6 @@ export interface PendingRootBundle {
   proposer: string;
   unclaimedPoolRebalanceLeafCount: number;
   challengePeriodEndTimestamp: number;
-  bundleEvaluationBlockNumbers?: number[];
+  bundleEvaluationBlockNumbers: number[];
   proposalBlockNumber?: number;
 }
