@@ -39,12 +39,16 @@ export async function getCrossChainMessages(
     logIndexesForMessage.push(logIndex);
     uniqueTokenhashes[event.transactionHash] += 1;
   }
+
   return (
     await Promise.all(
       tokensBridged.map(
         async (l2Event, i) =>
           (
-            await crossChainMessenger.getMessagesByTransaction(l2Event.transactionHash)
+            await crossChainMessenger.getMessagesByTransaction(
+              l2Event.transactionHash,
+              { direction: optimismSDK.MessageDirection.L2_TO_L1 }
+            )
           )[logIndexesForMessage[i]]
       )
     )
