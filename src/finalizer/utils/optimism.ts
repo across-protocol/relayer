@@ -45,10 +45,9 @@ export async function getCrossChainMessages(
       tokensBridged.map(
         async (l2Event, i) =>
           (
-            await crossChainMessenger.getMessagesByTransaction(
-              l2Event.transactionHash,
-              { direction: optimismSDK.MessageDirection.L2_TO_L1 }
-            )
+            await crossChainMessenger.getMessagesByTransaction(l2Event.transactionHash, {
+              direction: optimismSDK.MessageDirection.L2_TO_L1,
+            })
           )[logIndexesForMessage[i]]
       )
     )
