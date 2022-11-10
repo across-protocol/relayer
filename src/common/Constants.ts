@@ -29,7 +29,7 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK: { [chainId: number]: number } = {
   10: 4838400,
   137: 483840,
   288: 40320,
-  42161: 2419200,
+  42161: 4838400,
 };
 
 // Reorgs are anticipated on Ethereum and Polygon. We use different following distances when processing deposit
