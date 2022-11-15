@@ -26,7 +26,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
 // rollup challenge period seems safe.
 export const FINALIZER_TOKENBRIDGE_LOOKBACK: { [chainId: number]: number } = {
   1: 100800,
-  10: 2419200,
+  10: 4819200,
   137: 483840,
   288: 40320,
   42161: 2419200,

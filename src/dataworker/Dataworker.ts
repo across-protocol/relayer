@@ -720,7 +720,7 @@ export class Dataworker {
   ) {
     this.logger.debug({
       at: "Dataworker#executeSlowRelayLeaves",
-      message: "Executing slow relay leaves",
+      message: "  Executing slow relay leaves",
     });
 
     await Promise.all(
