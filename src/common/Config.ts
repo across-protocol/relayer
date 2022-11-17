@@ -26,7 +26,6 @@ export class CommonConfig {
       HUB_CHAIN_ID,
       POLLING_DELAY,
       MAX_BLOCK_LOOK_BACK,
-      NODE_QUORUM_THRESHOLD,
       MAX_TX_WAIT_DURATION,
       SEND_TRANSACTIONS,
       REDIS_URL,
