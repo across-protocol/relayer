@@ -1,5 +1,8 @@
 import { BigNumber, ERC20, ethers, ZERO_ADDRESS } from "../utils";
 
+const ovmEthAddresses = ["0x4200000000000000000000000000000000000006", "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000"];
+const ovmChainIds = [10, 288];
+
 // This type is used to map used and current balances of different users.
 interface BalanceMap {
   [chainId: number]: {
@@ -49,10 +52,18 @@ export class BalanceAllocator {
 
   async getBalance(chainId: number, token: string, holder: string) {
     if (!this.balances?.[chainId]?.[token]?.[holder]) {
-      const balance =
-        token === ZERO_ADDRESS
-          ? await this.providers[chainId].getBalance(holder)
-          : await ERC20.connect(token, this.providers[chainId]).balanceOf(holder);
+      let balance: BigNumber;
+      // If chain is an OVM and the token is a weth address, then sum both weth and eth addresses
+      // since the Ovm_SpokePool will automatically deposit ETH into WETH before executing a leaf.
+      if (ovmChainIds.includes(chainId) && ovmEthAddresses.includes(token)) 
+        balance = (await ERC20.connect(ovmEthAddresses[0], this.providers[chainId]).balanceOf(holder)).add(
+          await ERC20.connect(ovmEthAddresses[1], this.providers[chainId]).balanceOf(holder)
+        );
+      else 
+        balance =
+          token === ZERO_ADDRESS
+            ? await this.providers[chainId].getBalance(holder)
+            : await ERC20.connect(token, this.providers[chainId]).balanceOf(holder);
 
       // Note: cannot use assign because it breaks the BigNumber object.
       if (!this.balances[chainId]) this.balances[chainId] = {};
