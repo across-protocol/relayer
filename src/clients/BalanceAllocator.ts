@@ -55,11 +55,11 @@ export class BalanceAllocator {
       let balance: BigNumber;
       // If chain is an OVM and the token is a weth address, then sum both weth and eth addresses
       // since the Ovm_SpokePool will automatically deposit ETH into WETH before executing a leaf.
-      if (ovmChainIds.includes(chainId) && ovmEthAddresses.includes(token)) 
+      if (ovmChainIds.includes(chainId) && ovmEthAddresses.includes(token))
         balance = (await ERC20.connect(ovmEthAddresses[0], this.providers[chainId]).balanceOf(holder)).add(
           await ERC20.connect(ovmEthAddresses[1], this.providers[chainId]).balanceOf(holder)
         );
-      else 
+      else
         balance =
           token === ZERO_ADDRESS
             ? await this.providers[chainId].getBalance(holder)
