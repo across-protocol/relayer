@@ -1,8 +1,5 @@
 import { BigNumber, ERC20, ethers, ZERO_ADDRESS } from "../utils";
 
-const ovmEthAddresses = ["0x4200000000000000000000000000000000000006", "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000"];
-const ovmChainIds = [10, 288];
-
 // This type is used to map used and current balances of different users.
 interface BalanceMap {
   [chainId: number]: {
@@ -19,15 +16,25 @@ export class BalanceAllocator {
 
   constructor(readonly providers: { [chainId: number]: ethers.providers.Provider }) {}
 
+  // Note: The caller is suggesting that `tokens` for a request are interchangeable.
   async requestBalanceAllocations(
-    requests: { chainId: number; token: string; holder: string; amount: BigNumber }[]
+    requests: { chainId: number; tokens: string[]; holder: string; amount: BigNumber }[]
   ): Promise<boolean> {
     // Do all async work up-front to avoid atomicity problems with updating used.
     const requestsWithbalances = await Promise.all(
-      requests.map(async (request) => ({
-        ...request,
-        balance: await this.getBalance(request.chainId, request.token, request.holder),
-      }))
+      requests.map(async (request) => {
+          request.tokens.map((token) => this.getBalance(request.chainId, token, request.holder))
+        );
+
+        // Replace `tokens` property with one of the interchangeable tokens.
+        const returnedRequest = {
+          ...request,
+          token: request.tokens[0],
+          balance: balances.reduce((acc, curr) => acc.add(curr), BigNumber.from(0)),
+        };
+        delete returnedRequest.tokens;
+        return returnedRequest;
+      })
     );
 
     // Determine if the entire group will be successful.
@@ -46,24 +53,21 @@ export class BalanceAllocator {
     return success;
   }
 
-  async requestBalanceAllocation(chainId: number, token: string, holder: string, amount: BigNumber): Promise<boolean> {
-    return this.requestBalanceAllocations([{ chainId, token, holder, amount }]);
+  async requestBalanceAllocation(
+    chainId: number,
+    tokens: string[],
+    holder: string,
+    amount: BigNumber
+  ): Promise<boolean> {
+    return this.requestBalanceAllocations([{ chainId, tokens, holder, amount }]);
   }
 
   async getBalance(chainId: number, token: string, holder: string) {
     if (!this.balances?.[chainId]?.[token]?.[holder]) {
-      let balance: BigNumber;
-      // If chain is an OVM and the token is a weth address, then sum both weth and eth addresses
-      // since the Ovm_SpokePool will automatically deposit ETH into WETH before executing a leaf.
-      if (ovmChainIds.includes(chainId) && ovmEthAddresses.includes(token))
-        balance = (await ERC20.connect(ovmEthAddresses[0], this.providers[chainId]).balanceOf(holder)).add(
-          await ERC20.connect(ovmEthAddresses[1], this.providers[chainId]).balanceOf(holder)
-        );
-      else
-        balance =
-          token === ZERO_ADDRESS
-            ? await this.providers[chainId].getBalance(holder)
-            : await ERC20.connect(token, this.providers[chainId]).balanceOf(holder);
+      const balance =
+        token === ZERO_ADDRESS
+          ? await this.providers[chainId].getBalance(holder)
+          : await ERC20.connect(token, this.providers[chainId]).balanceOf(holder);
 
       // Note: cannot use assign because it breaks the BigNumber object.
       if (!this.balances[chainId]) this.balances[chainId] = {};
