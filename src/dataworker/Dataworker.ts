@@ -1321,7 +1321,6 @@ export class Dataworker {
 
           const leavesForChain = leaves.filter((leaf) => leaf.chainId === Number(chainId));
           const unexecutedLeaves = leavesForChain.filter((leaf) => {
-            return true;
             const executedLeaf = executedLeavesForChain.find(
               (event) => event.rootBundleId === rootBundleRelay.rootBundleId && event.leafId === leaf.leafId
             );
