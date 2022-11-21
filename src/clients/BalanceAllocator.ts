@@ -23,6 +23,7 @@ export class BalanceAllocator {
     // Do all async work up-front to avoid atomicity problems with updating used.
     const requestsWithbalances = await Promise.all(
       requests.map(async (request) => {
+        const balances = await Promise.all(
           request.tokens.map((token) => this.getBalance(request.chainId, token, request.holder))
         );
 
