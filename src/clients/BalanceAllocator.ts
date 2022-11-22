@@ -40,7 +40,6 @@ export class BalanceAllocator {
           )
         );
 
-        // Replace `tokens` property with one of the interchangeable tokens.
         const returnedRequest = {
           ...request,
           balances,
