@@ -22,17 +22,23 @@ export class BalanceAllocator {
   async requestBalanceAllocations(
     requests: { chainId: number; tokens: string[]; holder: string; amount: BigNumber }[]
   ): Promise<boolean> {
-
     // Validate that all input tokens are unique.
-    const tokens = requests.map(({ tokens }) => tokens.map(token => token.toLowerCase())).flat();
+    const tokens = requests.map(({ tokens }) => tokens.map((token) => token.toLowerCase())).flat();
     if (!lodash.uniq(tokens)) throw new Error("BalanceAllocator::requestBalanceAllocations input tokens not unique!");
 
     // Do all async work up-front to avoid atomicity problems with updating used.
     const requestsWithbalances = await Promise.all(
       requests.map(async (request) => {
-        const balances = Object.fromEntries(await Promise.all(
-          request.tokens.map(async (token): Promise<[string, BigNumber]> => [token, await this.getBalance(request.chainId, token, request.holder)])
-        ));
+        const balances = Object.fromEntries(
+          await Promise.all(
+            request.tokens.map(
+              async (token): Promise<[string, BigNumber]> => [
+                token,
+                await this.getBalance(request.chainId, token, request.holder),
+              ]
+            )
+          )
+        );
 
         // Replace `tokens` property with one of the interchangeable tokens.
         const returnedRequest = {
@@ -45,14 +51,17 @@ export class BalanceAllocator {
 
     // Determine if the entire group will be successful.
     const success = requestsWithbalances.every(({ chainId, tokens, holder, amount, balances }) => {
-      const availableBalance = tokens.reduce((acc, token) => acc.add(balances[token].sub(this.getUsed(chainId, token, holder))), BigNumber.from(0));
+      const availableBalance = tokens.reduce(
+        (acc, token) => acc.add(balances[token].sub(this.getUsed(chainId, token, holder))),
+        BigNumber.from(0)
+      );
       return availableBalance.gte(amount);
     });
 
     // If the entire group is successful commit to using these tokens.
     if (success)
       requestsWithbalances.forEach(({ chainId, tokens, holder, balances, amount }) =>
-        tokens.forEach(token => {
+        tokens.forEach((token) => {
           const used = amount.gt(balances[token]) ? balances[token] : amount;
           this.addUsed(chainId, token, holder, used);
           amount = amount.sub(used);
