@@ -34,6 +34,7 @@ import {
 import { BalanceAllocator } from "../clients";
 import _ from "lodash";
 import { IGNORED_SPOKE_BUNDLES } from "../common";
+import { isOvmChain, ovmWethTokens } from "../clients/bridges";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -897,7 +898,7 @@ export class Dataworker {
                 const amountRequired = getRefund(leaf.amount.sub(amountFilled), leaf.realizedLpFeePct);
                 const success = await balanceAllocator.requestBalanceAllocation(
                   leaf.destinationChainId,
-                  leaf.destinationToken,
+                  isOvmChain(leaf.destinationChainId) ? ovmWethTokens : [leaf.destinationToken],
                   client.spokePool.address,
                   amountRequired
                 );
@@ -1052,7 +1053,7 @@ export class Dataworker {
         unexecutedLeaves.map(async (leaf) => {
           const requests = leaf.netSendAmounts.map((amount, i) => ({
             amount: amount.gte(0) ? amount : BigNumber.from(0),
-            token: leaf.l1Tokens[i],
+            tokens: [leaf.l1Tokens[i]],
             holder: this.clients.hubPoolClient.hubPool.address,
             chainId: hubPoolChainId,
           }));
@@ -1063,7 +1064,7 @@ export class Dataworker {
             );
             if (hubPoolBalance.lt(this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf)))
               requests.push({
-                token: ZERO_ADDRESS,
+                tokens: [ZERO_ADDRESS],
                 amount: this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf),
                 holder: await this.clients.spokePoolSigners[hubPoolChainId].getAddress(),
                 chainId: hubPoolChainId,
@@ -1337,7 +1338,7 @@ export class Dataworker {
                 const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
                 const success = await balanceAllocator.requestBalanceAllocation(
                   leaf.chainId,
-                  leaf.l2TokenAddress,
+                  isOvmChain(leaf.chainId) ? ovmWethTokens : [leaf.l2TokenAddress],
                   client.spokePool.address,
                   totalSent
                 );

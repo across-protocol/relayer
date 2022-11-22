@@ -27,6 +27,8 @@ const ovmL2StandardBridgeAddress = "0x4200000000000000000000000000000000000010";
 
 const wethOptimismAddress = "0x4200000000000000000000000000000000000006";
 const wethBobaAddress = "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000";
+export const ovmWethTokens = [wethOptimismAddress, wethBobaAddress];
+export const isOvmChain = (chainId: number) => [10, 288].includes(chainId);
 
 const atomicDepositorAddress = "0x26eaf37ee5daf49174637bdcd2f7759a25206c34";
 
