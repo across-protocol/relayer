@@ -29,6 +29,8 @@ export class DataworkerConfig extends CommonConfig {
   // historical events it needs to fetch and parse.
   readonly useCacheForSpokePool: boolean;
   readonly dataworkerFastLookbackCount: number;
+  readonly dataworkerFastLookbackRetryCount: number;
+  readonly dataworkerFastLookbackRetryIncrease: number;
   readonly dataworkerFastStartBundle: number | string;
 
   readonly bufferToPropose: number;
@@ -52,6 +54,8 @@ export class DataworkerConfig extends CommonConfig {
       USE_CACHE_FOR_SPOKE_POOL,
       BUFFER_TO_PROPOSE,
       DATAWORKER_FAST_LOOKBACK_COUNT,
+      DATAWORKER_FAST_LOOKBACK_RETRIES,
+      DATAWORKER_FAST_LOOKBACK_RETRY_INCREASE,
       DATAWORKER_FAST_START_BUNDLE,
     } = env;
     super(env);
@@ -99,6 +103,12 @@ export class DataworkerConfig extends CommonConfig {
     // The average bundle frequency is 4 bundles per day so 16 bundles is a reasonable default
     // to lookback 4 days.
     this.dataworkerFastLookbackCount = DATAWORKER_FAST_LOOKBACK_COUNT ? Number(DATAWORKER_FAST_LOOKBACK_COUNT) : 16;
+    this.dataworkerFastLookbackRetryCount = DATAWORKER_FAST_LOOKBACK_RETRIES
+      ? Number(DATAWORKER_FAST_LOOKBACK_RETRIES)
+      : 2;
+    this.dataworkerFastLookbackRetryIncrease = DATAWORKER_FAST_LOOKBACK_RETRY_INCREASE
+      ? Number(DATAWORKER_FAST_LOOKBACK_RETRY_INCREASE)
+      : 2;
     this.dataworkerFastStartBundle = DATAWORKER_FAST_START_BUNDLE ? Number(DATAWORKER_FAST_START_BUNDLE) : "latest";
     if (typeof this.dataworkerFastStartBundle === "number") {
       assert(
