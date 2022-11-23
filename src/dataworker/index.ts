@@ -142,7 +142,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
             })
           ) {
             // Overwrite fast lookback count.
-            customConfig.dataworkerFastLookbackCount *= Math.floor(config.dataworkerFastLookbackRetryIncrease);
+            customConfig.dataworkerFastLookbackCount *= config.dataworkerFastLookbackRetryIncrease;
 
             // !!Note: This is a very inefficient algorithm as it requeries all events from the new fromBlocks to the
             // same toBlocks. Better algorithms would be:
@@ -169,7 +169,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
               fromBlocks,
               toBlocks,
             });
-            i = config.dataworkerFastLookbackRetryCount; // Force for-loop to exit by setting i equal to upper bound.
+            break;
           }
         }
       } else {
