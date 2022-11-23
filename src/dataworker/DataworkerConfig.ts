@@ -103,6 +103,9 @@ export class DataworkerConfig extends CommonConfig {
     // The average bundle frequency is 4 bundles per day so 16 bundles is a reasonable default
     // to lookback 4 days.
     this.dataworkerFastLookbackCount = DATAWORKER_FAST_LOOKBACK_COUNT ? Number(DATAWORKER_FAST_LOOKBACK_COUNT) : 16;
+    // By default, if we need to load more data to construct the next bundle, we'll retry once and set a lookback
+    // to a very safe 16 * 8 = 128 bundles. This should cover at least the latest 10 days of events and take
+    // ~15 mins to run with quorum=2.
     this.dataworkerFastLookbackRetryCount = DATAWORKER_FAST_LOOKBACK_RETRIES
       ? Number(DATAWORKER_FAST_LOOKBACK_RETRIES)
       : 1;
