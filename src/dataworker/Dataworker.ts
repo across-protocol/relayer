@@ -898,7 +898,9 @@ export class Dataworker {
                 const amountRequired = getRefund(leaf.amount.sub(amountFilled), leaf.realizedLpFeePct);
                 const success = await balanceAllocator.requestBalanceAllocation(
                   leaf.destinationChainId,
-                  isOvmChain(leaf.destinationChainId) ? ovmWethTokens : [leaf.destinationToken],
+                  isOvmChain(leaf.destinationChainId) && ovmWethTokens.includes(leaf.destinationToken)
+                    ? ovmWethTokens
+                    : [leaf.destinationToken],
                   client.spokePool.address,
                   amountRequired
                 );
@@ -1338,7 +1340,9 @@ export class Dataworker {
                 const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
                 const success = await balanceAllocator.requestBalanceAllocation(
                   leaf.chainId,
-                  isOvmChain(leaf.chainId) ? ovmWethTokens : [leaf.l2TokenAddress],
+                  isOvmChain(leaf.chainId) && ovmWethTokens.includes(leaf.l2TokenAddress)
+                    ? ovmWethTokens
+                    : [leaf.l2TokenAddress],
                   client.spokePool.address,
                   totalSent
                 );
