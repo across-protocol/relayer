@@ -102,7 +102,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         // 5. If the bundle we’re trying to validate or propose requires an earlier block, then exit early and
         //    emit an alert. In the dispute flow, this alert should be ERROR level.
         const customConfig = { ...config };
-        for (let i = 0; i < config.dataworkerFastLookbackRetryCount; i++) {
+        for (let i = 0; i <= config.dataworkerFastLookbackRetryCount; i++) {
           const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
             customConfig,
             clients,
@@ -142,7 +142,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
             })
           ) {
             // Overwrite fast lookback count.
-            customConfig.dataworkerFastLookbackCount *= config.dataworkerFastLookbackRetryIncrease;
+            customConfig.dataworkerFastLookbackCount *= Math.floor(config.dataworkerFastLookbackRetryIncrease);
 
             // !!Note: This is a very inefficient algorithm as it requeries all events from the new fromBlocks to the
             // same toBlocks. Better algorithms would be:
