@@ -134,11 +134,11 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           );
           latestInvalidBundleStartBlocks = getLatestInvalidBundleStartBlocks(spokePoolClients);
 
-          // Increase SpokePoolClient event lookback to try to make invalid bundle start blocks at least
-          // earlier than the next bundle's start blocks.
+          // Increase SpokePoolClient event lookback if any of the invalid bundle start blocks are later
+          // than one of the bundle end blocks in the latest executed bundle.
           if (
             Object.entries(latestInvalidBundleStartBlocks).some(([chainId, invalidBundleStartBlock]) => {
-              return bundleEndBlockMapping[chainId] > invalidBundleStartBlock;
+              return invalidBundleStartBlock > bundleEndBlockMapping[chainId];
             })
           ) {
             // Overwrite fast lookback count.
