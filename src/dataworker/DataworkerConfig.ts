@@ -27,7 +27,6 @@ export class DataworkerConfig extends CommonConfig {
 
   // These variables allow the user to optimize dataworker run-time, which can slow down drastically because of all the
   // historical events it needs to fetch and parse.
-  readonly useCacheForSpokePool: boolean;
   readonly dataworkerFastLookbackCount: number;
   readonly dataworkerFastLookbackRetryCount: number;
   readonly dataworkerFastLookbackRetryMultiplier: number;
@@ -51,7 +50,6 @@ export class DataworkerConfig extends CommonConfig {
       SEND_EXECUTIONS,
       FINALIZER_CHAINS,
       FINALIZER_ENABLED,
-      USE_CACHE_FOR_SPOKE_POOL,
       BUFFER_TO_PROPOSE,
       DATAWORKER_FAST_LOOKBACK_COUNT,
       DATAWORKER_FAST_LOOKBACK_RETRIES,
@@ -96,7 +94,6 @@ export class DataworkerConfig extends CommonConfig {
     this.sendingExecutionsEnabled = SEND_EXECUTIONS === "true";
     this.finalizerChains = FINALIZER_CHAINS ? JSON.parse(FINALIZER_CHAINS) : Constants.CHAIN_ID_LIST_INDICES;
     this.finalizerEnabled = FINALIZER_ENABLED === "true";
-    this.useCacheForSpokePool = USE_CACHE_FOR_SPOKE_POOL === "true";
 
     // `dataworkerFastLookbackCount` affects how far we fetch events from, modifying the search config's 'fromBlock'.
     // Set to 0 to load all events, but be careful as this will cause the Dataworker to take 30+ minutes to complete.
