@@ -106,14 +106,9 @@ export async function constructSpokePoolClientsWithStartBlocks(
 
 export async function updateSpokePoolClients(
   spokePoolClients: { [chainId: number]: SpokePoolClient },
-  eventsToQuery?: string[],
-  latestFullyExecutedBundleEndBlocks: { [chainId: number]: number } = {}
-) {
-  await Promise.all(
-    Object.values(spokePoolClients).map((client: SpokePoolClient) =>
-      client.update(eventsToQuery, latestFullyExecutedBundleEndBlocks[client.chainId])
-    )
-  );
+  eventsToQuery?: string[]
+): Promise<void> {
+  await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update(eventsToQuery)));
 }
 
 export async function constructSpokePoolClientsWithStartBlocksAndUpdate(
@@ -123,9 +118,8 @@ export async function constructSpokePoolClientsWithStartBlocksAndUpdate(
   baseSigner: Wallet,
   startBlockOverride: { [chainId: number]: number } = {},
   endBlockOverride: { [chainId: number]: number } = {},
-  eventsToQuery?: string[],
-  latestFullyExecutedBundleEndBlocks: { [chainId: number]: number } = {}
-) {
+  eventsToQuery?: string[]
+): Promise<SpokePoolClientsByChain> {
   const spokePoolClients = await constructSpokePoolClientsWithStartBlocks(
     logger,
     configStoreClient,
@@ -134,7 +128,7 @@ export async function constructSpokePoolClientsWithStartBlocksAndUpdate(
     startBlockOverride,
     endBlockOverride
   );
-  await updateSpokePoolClients(spokePoolClients, eventsToQuery, latestFullyExecutedBundleEndBlocks);
+  await updateSpokePoolClients(spokePoolClients, eventsToQuery);
   return spokePoolClients;
 }
 
@@ -190,6 +184,6 @@ export async function constructClients(
   return { hubPoolClient, configStoreClient, multiCallerClient, hubSigner };
 }
 
-export async function updateClients(clients: Clients) {
+export async function updateClients(clients: Clients): Promise<void> {
   await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
 }
