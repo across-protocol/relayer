@@ -5,7 +5,6 @@ import {
   startupLogLevel,
   Wallet,
   getLatestInvalidBundleStartBlocks,
-  assert,
 } from "../utils";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
@@ -17,10 +16,8 @@ import {
   constructSpokePoolClientsForFastDataworker,
   getSpokePoolClientEventSearchConfigsForFastDataworker,
 } from "./DataworkerClientHelper";
-import { constructSpokePoolClientsWithStartBlocksAndUpdate } from "../common";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { getBlockForChain } from "./DataworkerUtils";
 config();
 let logger: winston.Logger;
 
@@ -54,8 +51,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
 
     for (;;) {
       const loopStart = Date.now();
-      // Clear cache so results can be updated with new data.
-      dataworker.clearCache();
       await updateDataworkerClients(clients);
 
       // Grab end blocks for latest fully executed bundle. We can use this block to optimize the dataworker event
@@ -79,140 +74,97 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       // with a deposit then we can't construct a root bundle for it.
       let latestInvalidBundleStartBlocks: { [chainId: number]: number } = {};
 
-      if (config.dataworkerFastLookbackCount > 0) {
-        // We'll construct and update the spoke pool clients with a short lookback with an eye to
-        // reducing compute time. With the data we load, we need to check if there are any fills that cannot be
-        // matched with a deposit in the events loaded by the clients. This would make constructing accurate root
-        // bundles potentially impossible. So, we should save the last block for each chain with fills that we can
-        // construct or validate root bundles for.
+      // We'll construct and update the spoke pool clients with a short lookback with an eye to
+      // reducing compute time. With the data we load, we need to check if there are any fills that cannot be
+      // matched with a deposit in the events loaded by the clients. This would make constructing accurate root
+      // bundles potentially impossible. So, we should save the last block for each chain with fills that we can
+      // construct or validate root bundles for.
 
-        // In summary:
-        // 1. We generate the spoke client event search windows based on a start bundle's bundle block end numbers and
-        //    how many bundles we want to look back from the start bundle blocks.
-        // 2. For example, if the start bundle is 100 and the lookback is 16, then we will set the spoke client event
-        //    search window's toBlocks equal to the 100th bundle's block evaluation numbers and the fromBlocks equal
-        //    to the 84th bundle's block evaluation numbers.
-        // 3. Once we do all the querying, we figure out the earliest block that we’re able to validate per chain.
-        //    This logic can be found in `getLatestInvalidBundleStartBlocks()`
-        // 4. If the earliest block we can validate is later than the latest fully executed bundle's end blocks,
-        //    then extend the SpokePoolClients' lookbacks and update again. Do this up to a specified # of retries.
-        //    By dynamically increasing the range of Deposit events to at least cover the next/pending bundle's
-        //    start blocks, we can reduce the error rate. This is because of how the disputer and proposer will handle
-        //    the case where it can't validate a fill without loading an earlier block.
-        // 5. If the bundle we’re trying to validate or propose requires an earlier block, then exit early and
-        //    emit an alert. In the dispute flow, this alert should be ERROR level.
-        const customConfig = { ...config };
-        for (let i = 0; i <= config.dataworkerFastLookbackRetryCount; i++) {
-          const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
-            customConfig,
-            clients,
-            dataworker
-          );
+      // In summary:
+      // 1. We generate the spoke client event search windows based on a start bundle's bundle block end numbers and
+      //    how many bundles we want to look back from the start bundle blocks.
+      // 2. For example, if the start bundle is 100 and the lookback is 16, then we will set the spoke client event
+      //    search window's toBlocks equal to the 100th bundle's block evaluation numbers and the fromBlocks equal
+      //    to the 84th bundle's block evaluation numbers.
+      // 3. Once we do all the querying, we figure out the earliest block that we’re able to validate per chain.
+      //    This logic can be found in `getLatestInvalidBundleStartBlocks()`
+      // 4. If the earliest block we can validate is later than the latest fully executed bundle's end blocks,
+      //    then extend the SpokePoolClients' lookbacks and update again. Do this up to a specified # of retries.
+      //    By dynamically increasing the range of Deposit events to at least cover the next/pending bundle's
+      //    start blocks, we can reduce the error rate. This is because of how the disputer and proposer will handle
+      //    the case where it can't validate a fill without loading an earlier block.
+      // 5. If the bundle we’re trying to validate or propose requires an earlier block, then exit early and
+      //    emit an alert. In the dispute flow, this alert should be ERROR level.
+      const customConfig = { ...config };
+      for (let i = 0; i <= config.dataworkerFastLookbackRetryCount; i++) {
+        const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
+          customConfig,
+          clients,
+          dataworker
+        );
 
+        logger.debug({
+          at: "Dataworker#index",
+          message:
+            "Setting start blocks for SpokePoolClient equal to bundle evaluation end blocks from Nth latest valid root bundle",
+          dataworkerFastStartBundle: customConfig.dataworkerFastStartBundle,
+          dataworkerFastLookbackRetryCount: customConfig.dataworkerFastLookbackRetryCount,
+          dataworkerFastLookbackRetryMultiplier: customConfig.dataworkerFastLookbackRetryMultiplier,
+          retriesMade: i,
+          dataworkerFastLookbackCount: customConfig.dataworkerFastLookbackCount,
+          fromBlocks,
+          toBlocks,
+          fromBundleTxn: fromBundle?.transactionHash,
+          toBundleTxn: toBundle?.transactionHash,
+        });
+
+        spokePoolClients = await constructSpokePoolClientsForFastDataworker(
+          logger,
+          clients.configStoreClient,
+          customConfig,
+          baseSigner,
+          fromBlocks,
+          toBlocks
+        );
+        latestInvalidBundleStartBlocks = getLatestInvalidBundleStartBlocks(spokePoolClients);
+
+        // Increase SpokePoolClient event lookback if any of the invalid bundle start blocks are later
+        // than one of the bundle end blocks in the latest executed bundle.
+        if (
+          Object.entries(latestInvalidBundleStartBlocks).some(([chainId, invalidBundleStartBlock]) => {
+            return invalidBundleStartBlock > bundleEndBlockMapping[chainId];
+          })
+        ) {
+          // Overwrite fast lookback count.
+          customConfig.dataworkerFastLookbackCount *= config.dataworkerFastLookbackRetryMultiplier;
+
+          // !!Note: This is a very inefficient algorithm as it requeries all events from the new fromBlocks to the
+          // same toBlocks. Better algorithms would be:
+          // - Re-updating SpokePoolClients only from new fromBlocks to old fromBlocks. Challenge here is to add a
+          //   a utility function to SpokePoolClient to enable querying older events and inserting them correctly
+          //   into the already-populated arrays of events.
+          // - Only increase the lookback for the SpokePoolClient that will decrease the invalidBundleStartBlock
+          //   the most.
           logger.debug({
             at: "Dataworker#index",
             message:
-              "Setting start blocks for SpokePoolClient equal to bundle evaluation end blocks from Nth latest valid root bundle",
-            dataworkerFastStartBundle: customConfig.dataworkerFastStartBundle,
-            dataworkerFastLookbackRetryCount: customConfig.dataworkerFastLookbackRetryCount,
-            dataworkerFastLookbackRetryMultiplier: customConfig.dataworkerFastLookbackRetryMultiplier,
-            retriesMade: i,
-            dataworkerFastLookbackCount: customConfig.dataworkerFastLookbackCount,
+              "latest invalid bundle start blocks are later than latest executed root bundle's end blocks. Will increase update range and retry 😬",
+            latestInvalidBundleStartBlocks,
+            latestFullyExecutedBundleEndBlocks: bundleEndBlockMapping,
+            oldDataworkerFastLookbackCount: config.dataworkerFastLookbackCount,
+            newDataworkerFastLookbackCount: customConfig.dataworkerFastLookbackCount,
+          });
+        } else {
+          logger.debug({
+            at: "Dataworker#index",
+            message:
+              "Identified latest invalid bundle start blocks per chain that we will use to filter root bundles that can be proposed and validated",
+            latestInvalidBundleStartBlocks,
             fromBlocks,
             toBlocks,
-            fromBundleTxn: fromBundle?.transactionHash,
-            toBundleTxn: toBundle?.transactionHash,
           });
-
-          spokePoolClients = await constructSpokePoolClientsForFastDataworker(
-            logger,
-            clients.configStoreClient,
-            customConfig,
-            baseSigner,
-            fromBlocks,
-            toBlocks
-          );
-          latestInvalidBundleStartBlocks = getLatestInvalidBundleStartBlocks(spokePoolClients);
-
-          // Increase SpokePoolClient event lookback if any of the invalid bundle start blocks are later
-          // than one of the bundle end blocks in the latest executed bundle.
-          if (
-            Object.entries(latestInvalidBundleStartBlocks).some(([chainId, invalidBundleStartBlock]) => {
-              return invalidBundleStartBlock > bundleEndBlockMapping[chainId];
-            })
-          ) {
-            // Overwrite fast lookback count.
-            customConfig.dataworkerFastLookbackCount *= config.dataworkerFastLookbackRetryMultiplier;
-
-            // !!Note: This is a very inefficient algorithm as it requeries all events from the new fromBlocks to the
-            // same toBlocks. Better algorithms would be:
-            // - Re-updating SpokePoolClients only from new fromBlocks to old fromBlocks. Challenge here is to add a
-            //   a utility function to SpokePoolClient to enable querying older events and inserting them correctly
-            //   into the already-populated arrays of events.
-            // - Only increase the lookback for the SpokePoolClient that will decrease the invalidBundleStartBlock
-            //   the most.
-            logger.debug({
-              at: "Dataworker#index",
-              message:
-                "latest invalid bundle start blocks are later than latest executed root bundle's end blocks. Will increase update range and retry 😬",
-              latestInvalidBundleStartBlocks,
-              latestFullyExecutedBundleEndBlocks: bundleEndBlockMapping,
-              oldDataworkerFastLookbackCount: config.dataworkerFastLookbackCount,
-              newDataworkerFastLookbackCount: customConfig.dataworkerFastLookbackCount,
-            });
-          } else {
-            logger.debug({
-              at: "Dataworker#index",
-              message:
-                "Identified latest invalid bundle start blocks per chain that we will use to filter root bundles that can be proposed and validated",
-              latestInvalidBundleStartBlocks,
-              fromBlocks,
-              toBlocks,
-            });
-            break;
-          }
+          break;
         }
-      } else {
-        // If no fast lookback is configured for dataworker, load events from all time.
-        // This will take a long time and possibly cause timeout errors. This option should really only be
-        // used by technical system auditors who want to validate the history of all Across bundles
-        // and have a lot of hardware memory.
-        logger.warn({
-          at: "Dataworker#index",
-          message:
-            "Constructing SpokePoolClient and loading events from deployment block. This could take a long time to update (>30 mins)",
-        });
-        spokePoolClients = await constructSpokePoolClientsWithStartBlocksAndUpdate(
-          logger,
-          clients.configStoreClient,
-          config,
-          baseSigner,
-          {}, // Empty start block override means start blocks default to SpokePool deployment blocks.
-          {}, // Empty end block override means end blocks default to latest blocks.
-          [
-            "FundsDeposited",
-            "RequestedSpeedUpDeposit",
-            "FilledRelay",
-            "EnabledDepositRoute",
-            "RelayedRootBundle",
-            "ExecutedRelayerRefundRoot",
-          ],
-          config.useCacheForSpokePool ? bundleEndBlockMapping : {} // Now, use the cache for the longer lookback.
-        );
-
-        // Since we loaded all events, default invalid start blocks to spoke pool deployment blocks minus 1 to indicate
-        // that all bundles can be validated using the queried events.
-        latestInvalidBundleStartBlocks = Object.fromEntries(
-          Object.keys(spokePoolClients).map((chainId) => [
-            chainId,
-            spokePoolClients[chainId].eventSearchConfig.fromBlock - 1,
-          ])
-        );
-        logger.debug({
-          at: "Dataworker#index",
-          message: "Defaulted latest invalid bundle start blocks per chain to spoke pool deployment blocks - 1",
-          latestInvalidBundleStartBlocks,
-        });
       }
 
       // Validate and dispute pending proposal before proposing a new one
