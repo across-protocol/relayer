@@ -115,7 +115,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
               "Setting start blocks for SpokePoolClient equal to bundle evaluation end blocks from Nth latest valid root bundle",
             dataworkerFastStartBundle: customConfig.dataworkerFastStartBundle,
             dataworkerFastLookbackRetryCount: customConfig.dataworkerFastLookbackRetryCount,
-            dataworkerFastLookbackRetryIncrease: customConfig.dataworkerFastLookbackRetryIncrease,
+            dataworkerFastLookbackRetryMultiplier: customConfig.dataworkerFastLookbackRetryMultiplier,
             retriesMade: i,
             dataworkerFastLookbackCount: customConfig.dataworkerFastLookbackCount,
             fromBlocks,
@@ -142,7 +142,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
             })
           ) {
             // Overwrite fast lookback count.
-            customConfig.dataworkerFastLookbackCount *= config.dataworkerFastLookbackRetryIncrease;
+            customConfig.dataworkerFastLookbackCount *= config.dataworkerFastLookbackRetryMultiplier;
 
             // !!Note: This is a very inefficient algorithm as it requeries all events from the new fromBlocks to the
             // same toBlocks. Better algorithms would be:

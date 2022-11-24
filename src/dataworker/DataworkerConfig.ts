@@ -30,7 +30,7 @@ export class DataworkerConfig extends CommonConfig {
   readonly useCacheForSpokePool: boolean;
   readonly dataworkerFastLookbackCount: number;
   readonly dataworkerFastLookbackRetryCount: number;
-  readonly dataworkerFastLookbackRetryIncrease: number;
+  readonly dataworkerFastLookbackRetryMultiplier: number;
   readonly dataworkerFastStartBundle: number | string;
 
   readonly bufferToPropose: number;
@@ -55,7 +55,7 @@ export class DataworkerConfig extends CommonConfig {
       BUFFER_TO_PROPOSE,
       DATAWORKER_FAST_LOOKBACK_COUNT,
       DATAWORKER_FAST_LOOKBACK_RETRIES,
-      DATAWORKER_FAST_LOOKBACK_RETRY_INCREASE,
+      DATAWORKER_FAST_LOOKBACK_RETRY_MULTIPLIER,
       DATAWORKER_FAST_START_BUNDLE,
     } = env;
     super(env);
@@ -102,15 +102,17 @@ export class DataworkerConfig extends CommonConfig {
     // Set to 0 to load all events, but be careful as this will cause the Dataworker to take 30+ minutes to complete.
     // The average bundle frequency is 4 bundles per day so 16 bundles is a reasonable default
     // to lookback 4 days.
-    this.dataworkerFastLookbackCount = DATAWORKER_FAST_LOOKBACK_COUNT ? Math.floor(Number(DATAWORKER_FAST_LOOKBACK_COUNT)) : 16;
+    this.dataworkerFastLookbackCount = DATAWORKER_FAST_LOOKBACK_COUNT
+      ? Math.floor(Number(DATAWORKER_FAST_LOOKBACK_COUNT))
+      : 16;
     // By default, if we need to load more data to construct the next bundle, we'll retry once and set a lookback
     // to a very safe 16 * 8 = 128 bundles. This should cover at least the latest 10 days of events and take
     // ~15 mins to run with quorum=2.
     this.dataworkerFastLookbackRetryCount = DATAWORKER_FAST_LOOKBACK_RETRIES
       ? Number(DATAWORKER_FAST_LOOKBACK_RETRIES)
       : 1;
-    this.dataworkerFastLookbackRetryIncrease = DATAWORKER_FAST_LOOKBACK_RETRY_INCREASE
-      ? Number(DATAWORKER_FAST_LOOKBACK_RETRY_INCREASE)
+    this.dataworkerFastLookbackRetryMultiplier = DATAWORKER_FAST_LOOKBACK_RETRY_MULTIPLIER
+      ? Number(DATAWORKER_FAST_LOOKBACK_RETRY_MULTIPLIER)
       : 8;
     this.dataworkerFastStartBundle = DATAWORKER_FAST_START_BUNDLE ? Number(DATAWORKER_FAST_START_BUNDLE) : "latest";
     if (typeof this.dataworkerFastStartBundle === "number") {
