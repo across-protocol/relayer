@@ -95,10 +95,10 @@ export class DataworkerConfig extends CommonConfig {
     this.useCacheForSpokePool = USE_CACHE_FOR_SPOKE_POOL === "true";
 
     // `dataworkerFastLookbackCount` affects how far we fetch events from, modifying the search config's 'fromBlock'.
-    // Set to 0 to load all events, but be careful as this will cause the Dataworker to take 30+ minutes to complete.
     // The average bundle frequency is 4 bundles per day so 16 bundles is a reasonable default
     // to lookback 4 days.
     this.dataworkerFastLookbackCount = DATAWORKER_FAST_LOOKBACK_COUNT ? Number(DATAWORKER_FAST_LOOKBACK_COUNT) : 16;
+    assert(this.dataworkerFastLookbackCount > 0, "dataworkerFastLookbackCount should be > 0");
     this.dataworkerFastStartBundle = DATAWORKER_FAST_START_BUNDLE ? Number(DATAWORKER_FAST_START_BUNDLE) : "latest";
     if (typeof this.dataworkerFastStartBundle === "number") {
       assert(

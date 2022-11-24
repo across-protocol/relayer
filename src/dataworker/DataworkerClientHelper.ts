@@ -96,7 +96,8 @@ export async function constructSpokePoolClientsForFastDataworker(
   config: DataworkerConfig,
   baseSigner: Wallet,
   startBlocks: { [chainId: number]: number },
-  endBlocks: { [chainId: number]: number }
+  endBlocks: { [chainId: number]: number },
+  latestFullyExecutedBundleEndBlocks: { [chainId: number]: number } = {}
 ) {
   return await constructSpokePoolClientsWithStartBlocksAndUpdate(
     logger,
@@ -112,9 +113,8 @@ export async function constructSpokePoolClientsForFastDataworker(
       "EnabledDepositRoute",
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
-    ]
-    // Don't use the cache for the quick lookup so we don't load and parse unneccessary events from Redis DB
-    // that we'll throw away if the below checks succeed.
+    ],
+    latestFullyExecutedBundleEndBlocks
   );
 }
 

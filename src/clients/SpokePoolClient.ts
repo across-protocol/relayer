@@ -296,6 +296,8 @@ export class SpokePoolClient {
         newSearchConfigForDepositAndFillEvents: depositEventSearchConfig,
         originalSearchConfigForDepositAndFillEvents: searchConfig,
       });
+    } else {
+      this.log("debug", "Cache is empty or was thrown away, will query all data fresh");
     }
 
     this.log("debug", `Updating SpokePool client for chain ${this.chainId}`, {
