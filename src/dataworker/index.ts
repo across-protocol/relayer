@@ -5,7 +5,6 @@ import {
   startupLogLevel,
   Wallet,
   getLatestInvalidBundleStartBlocks,
-  assert,
 } from "../utils";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
@@ -20,7 +19,6 @@ import {
 import { constructSpokePoolClientsWithStartBlocksAndUpdate } from "../common";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { getBlockForChain } from "./DataworkerUtils";
 config();
 let logger: winston.Logger;
 
@@ -37,7 +35,6 @@ export async function createDataworker(_logger: winston.Logger, baseSigner: Wall
     config.tokenTransferThresholdOverride,
     config.blockRangeEndBlockBuffer,
     config.spokeRootsLookbackCount,
-    config.bufferToPropose
   );
 
   return {
