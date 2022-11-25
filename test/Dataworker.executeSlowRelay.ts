@@ -80,6 +80,12 @@ describe("Dataworker: Execute slow relays", async function () {
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
     await multiCallerClient.executeTransactionQueue();
 
+    // Must execute 1 relayer refund leaf to propose the next bundle:
+    await erc20_2.mint(spokePool_2.address, amountToDeposit.div(2));
+    await updateAllClients();
+    await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients, new BalanceAllocator(providers));
+    await multiCallerClient.executeTransactionQueue();
+
     // TEST 3:
     // Submit another root bundle proposal and check bundle block range. There should be no leaves in the new range
     // yet. In the bundle block range, all chains should have increased their start block, including those without
@@ -88,7 +94,7 @@ describe("Dataworker: Execute slow relays", async function () {
     await updateAllClients();
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
 
-    // Advance time and execute leaves:
+    // Advance time and execute leaves, there should be no leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));

@@ -149,6 +149,62 @@ export class Dataworker {
     );
   }
 
+  // This is a temporary fix: Currently, there appears to be a bug where proposing a root bundle before any
+  // RelayerRefundLeaves are executed results in an invalid bundle that gets self-disputed. This bug only seems
+  // to appear when the bundle has slow fills. Its possibly related to slow fill excesses?
+  async shouldWaitToPropose(spokePoolClients: { [chainId: number]: SpokePoolClient }) {
+    const mostRecentValidatedBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
+      await this.clients.hubPoolClient.hubPool.provider.getBlockNumber()
+    );
+    // If there has never been a validated root bundle, then we can always propose a new one:
+    if (mostRecentValidatedBundle === undefined)
+      return {
+        value: false,
+      };
+
+    const relayedRootBundles = Object.fromEntries(
+      Object.entries(spokePoolClients).map(([chainId, client]) => {
+        return [
+          chainId,
+          client
+            .getRootBundleRelays()
+            .find((bundle) => bundle.relayerRefundRoot === mostRecentValidatedBundle.relayerRefundRoot),
+        ];
+      })
+    );
+
+    // If a root bundle hasn't been relayed yet then exit early.
+    if (Object.entries(relayedRootBundles).every(([, _relayedRootBundles]) => _relayedRootBundles === undefined)) {
+      return {
+        value: true,
+        mostRecentValidatedBundle: mostRecentValidatedBundle?.blockNumber,
+      };
+    } else {
+      // Once one leaf has been executed, we can propose the next bundle:
+      const hasNotExecutedLeaf = Object.entries(relayedRootBundles).every(([chainId, relayedRootBundle]) => {
+        return (
+          spokePoolClients[chainId]
+            .getRelayerRefundExecutions()
+            .filter((leaf) => leaf.rootBundleId === relayedRootBundle.rootBundleId).length === 0
+        );
+      });
+      if (hasNotExecutedLeaf)
+        return {
+          value: true,
+          mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
+          relayedRootBundles,
+          hasNotExecutedLeaf,
+        };
+      else
+        return {
+          value: false,
+          mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
+          relayedRootBundles,
+          hasNotExecutedLeaf,
+        };
+    }
+  }
+
   async proposeRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     usdThresholdToSubmitNewBundle?: BigNumber,
@@ -267,43 +323,7 @@ export class Dataworker {
         });
     }
 
-    // This is a temporary fix: Currently, there appears to be a bug where proposing a root bundle before any
-    // RelayerRefundLeaves are executed results in an invalid bundle that gets self-disputed. This bug only seems
-    // to appear when the bundle has slow fills. Its possibly related to slow fill excesses?
-    const _shouldWaitToPropose = async () => {
-      const mostRecentValidatedBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
-        await this.clients.hubPoolClient.hubPool.provider.getBlockNumber()
-      );
-      const mostRecentEthereumRootBundle = spokePoolClients[1]
-        .getRootBundleRelays()
-        .find((bundle) => bundle.relayerRefundRoot === mostRecentValidatedBundle?.relayerRefundRoot);
-      if (mostRecentValidatedBundle !== undefined && mostRecentEthereumRootBundle !== undefined) {
-        const executedLeavesInEthereumBundle = spokePoolClients[1]
-          .getRelayerRefundExecutions()
-          .filter((leaf) => leaf.rootBundleId === mostRecentEthereumRootBundle.rootBundleId);
-        if (executedLeavesInEthereumBundle.length === 0)
-          return {
-            value: true,
-            mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
-            mostRecentEthereumRootBundle: mostRecentEthereumRootBundle.rootBundleId,
-            executedLeavesInEthereumBundle: 0,
-          };
-        else
-          return {
-            value: false,
-            mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
-            mostRecentEthereumRootBundle: mostRecentEthereumRootBundle.rootBundleId,
-            executedLeavesInEthereumBundle: executedLeavesInEthereumBundle.length,
-          };
-      } else
-        return {
-          value: true,
-          mostRecentValidatedBundle: mostRecentValidatedBundle?.blockNumber,
-        }; // If root bundle hasn't been relayed to ethereum spoke yet then exit early.
-      // Here we assume that there is always a RelayerRefundLeaf relayed to chain 1, which is a safe assumption.
-    };
-
-    const shouldWaitToPropose = await _shouldWaitToPropose();
+    const shouldWaitToPropose = await this.shouldWaitToPropose(spokePoolClients);
     if (shouldWaitToPropose.value) {
       this.logger.debug({
         at: "Dataworker#propose",

@@ -1,6 +1,12 @@
 import { buildFillForRepaymentChain, lastSpyLogIncludes, hre, spyLogIncludes } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit } from "./utils";
-import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
+import {
+  HubPoolClient,
+  AcrossConfigStoreClient,
+  SpokePoolClient,
+  MultiCallerClient,
+  BalanceAllocator,
+} from "../src/clients";
 import { amountToDeposit, destinationChainId, BUNDLE_END_BLOCK_BUFFER } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
@@ -9,9 +15,10 @@ import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT, utf8ToHex } from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
+import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
 
 let spy: sinon.SinonSpy;
-let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract;
+let spokePool_1: Contract, erc20_1: Contract, erc20_2: Contract, spokePool_2: Contract;
 let l1Token_1: Contract, hubPool: Contract;
 let depositor: SignerWithAddress, dataworker: SignerWithAddress;
 
@@ -27,6 +34,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       hubPool,
       spokePool_1,
       erc20_1,
+      erc20_2,
       spokePool_2,
       configStoreClient,
       hubPoolClient,
@@ -116,6 +124,17 @@ describe("Dataworker: Validate pending root bundle", async function () {
       );
     }
     for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) await hre.network.provider.send("evm_mine");
+
+    // Must execute 1 relayer refund leaf to propose the next bundle:
+    const providers = {
+      ...spokePoolClientsToProviders(spokePoolClients),
+      [(await hubPool.provider.getNetwork()).chainId]: hubPool.provider,
+    };
+    await erc20_2.mint(spokePool_2.address, amountToDeposit);
+    await updateAllClients();
+    await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients, new BalanceAllocator(providers));
+    await multiCallerClient.executeTransactionQueue();
+
     await updateAllClients();
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     await multiCallerClient.executeTransactionQueue();

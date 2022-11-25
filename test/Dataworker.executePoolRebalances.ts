@@ -12,7 +12,7 @@ import { Dataworker } from "../src/dataworker/Dataworker";
 import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
 import { BalanceAllocator } from "../src/clients/BalanceAllocator";
 
-let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract;
+let spokePool_1: Contract, erc20_1: Contract, erc20_2: Contract, spokePool_2: Contract;
 let l1Token_1: Contract, hubPool: Contract;
 let depositor: SignerWithAddress;
 
@@ -28,6 +28,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       hubPool,
       spokePool_1,
       erc20_1,
+      erc20_2,
       spokePool_2,
       configStoreClient,
       hubPoolClient,
@@ -87,6 +88,17 @@ describe("Dataworker: Execute pool rebalances", async function () {
     expect(multiCallerClient.transactionCount()).to.equal(3);
     await multiCallerClient.executeTransactionQueue();
 
+    // Must execute 1 relayer refund leaf to propose the next bundle:
+    await updateAllClients();
+    expect((await dataworkerInstance.shouldWaitToPropose(spokePoolClients)).value).to.equal(true);
+    await erc20_2.mint(spokePool_2.address, amountToDeposit);
+    await updateAllClients();
+    await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients, new BalanceAllocator(providers));
+    expect(multiCallerClient.transactionCount()).to.equal(1);
+    await multiCallerClient.executeTransactionQueue();
+    await updateAllClients();
+    expect((await dataworkerInstance.shouldWaitToPropose(spokePoolClients)).value).to.equal(false);
+
     // TEST 3:
     // Submit another root bundle proposal and check bundle block range. There should be no leaves in the new range
     // yet. In the bundle block range, all chains should have increased their start block, including those without
@@ -95,7 +107,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await updateAllClients();
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
 
-    // Advance time and execute leaves:
+    // Advance time and execute leaves, there should be no leaves to execute:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
