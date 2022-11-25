@@ -184,6 +184,7 @@ export class Dataworker {
     );
 
     // If a root bundle hasn't been relayed yet then exit early.
+    // We should wait to propose until all root bundles have been relayed to spoke pools.
     if (Object.entries(relayedRootBundles).length !== expectedRootBundles) {
       return {
         value: true,
@@ -192,39 +193,12 @@ export class Dataworker {
         relayedRootBundles,
       };
     } else {
-      // Once at least one leaf has been executed, we can propose the next bundle:
-      const executedLeavesForBundle = Object.fromEntries(
-        Object.entries(relayedRootBundles).map(([chainId, relayedRootBundle]) => {
-          return [
-            chainId,
-            spokePoolClients[chainId]
-              .getRelayerRefundExecutions()
-              .filter((leaf) => leaf.rootBundleId === relayedRootBundle.rootBundleId),
-          ];
-        })
-      );
-      const executedLeaves: number = Object.entries(executedLeavesForBundle).reduce(
-        (sum, [, executions]) => (sum += executions.length),
-        0
-      );
-      if (executedLeaves === 0)
-        return {
-          value: true,
-          mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
-          expectedRootBundles,
-          relayedRootBundles,
-          executedLeaves,
-          executedLeavesForBundle,
-        };
-      else
-        return {
-          value: false,
-          mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
-          expectedRootBundles,
-          relayedRootBundles,
-          executedLeaves,
-          executedLeavesForBundle,
-        };
+      return {
+        value: false,
+        mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
+        expectedRootBundles,
+        relayedRootBundles,
+      };
     }
   }
 

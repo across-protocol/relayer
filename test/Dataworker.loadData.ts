@@ -17,14 +17,21 @@ import {
   MultiCallerClient,
   BalanceAllocator,
 } from "../src/clients";
-import { amountToDeposit, repaymentChainId, destinationChainId, originChainId, CHAIN_ID_TEST_LIST } from "./constants";
+import {
+  amountToDeposit,
+  repaymentChainId,
+  destinationChainId,
+  originChainId,
+  CHAIN_ID_TEST_LIST,
+  deposit,
+} from "./constants";
 import { IMPOSSIBLE_BLOCK_RANGE } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { toBN, getRefundForFills, getRealizedLpFeeForFills, MAX_UINT_VAL } from "../src/utils";
 import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
-import { DepositWithBlock, Fill } from "../src/interfaces";
+import { DepositWithBlock, Fill, FillWithBlock } from "../src/interfaces";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, l1Token_2: Contract, hubPool: Contract;
@@ -222,28 +229,6 @@ describe("Dataworker: Load data used in all functions", async function () {
         );
       }
 
-      // Check that pending refunds include both fills after pool leaves are executed
-      await updateAllClients();
-      await bundleDataClient.getPendingRefundsFromValidBundles(2);
-      expect(
-        bundleDataClient.getTotalRefund(
-          await bundleDataClient.getPendingRefundsFromValidBundles(2),
-          relayer.address,
-          destinationChainId,
-          erc20_2.address
-        )
-      ).to.equal(getRefundForFills([fill1]));
-
-      // Must execute 1 relayer refund leaf to propose the next bundle:
-      const providers = {
-        ...spokePoolClientsToProviders(spokePoolClients),
-        [(await hubPool.provider.getNetwork()).chainId]: hubPool.provider,
-      };
-      await erc20_2.mint(spokePool_2.address, amountToDeposit);
-      await updateAllClients();
-      await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients, new BalanceAllocator(providers));
-      await multiCallerClient.executeTransactionQueue();
-
       // Submit fill2 and propose another bundle:
       const fill2 = await buildFillForRepaymentChain(
         spokePool_2,
@@ -260,6 +245,16 @@ describe("Dataworker: Load data used in all functions", async function () {
       await multiCallerClient.executeTransactionQueue();
       await updateAllClients();
 
+      // Check that pending refunds include both fills after pool leaves are executed
+      await bundleDataClient.getPendingRefundsFromValidBundles(2);
+      expect(
+        bundleDataClient.getTotalRefund(
+          await bundleDataClient.getPendingRefundsFromValidBundles(2),
+          relayer.address,
+          destinationChainId,
+          erc20_2.address
+        )
+      ).to.equal(getRefundForFills([fill1]));
       const latestBlock2 = await hubPool.provider.getBlockNumber();
       const blockRange2 = CHAIN_ID_TEST_LIST.map((_) => [latestBlock + 1, latestBlock2]);
       const expectedPoolRebalanceRoot2 = dataworkerInstance.buildPoolRebalanceRoot(blockRange2, spokePoolClients);
@@ -280,10 +275,14 @@ describe("Dataworker: Load data used in all functions", async function () {
       const postSecondProposalRefunds = await bundleDataClient.getPendingRefundsFromValidBundles(2);
       expect(
         bundleDataClient.getTotalRefund(postSecondProposalRefunds, relayer.address, destinationChainId, erc20_2.address)
-      ).to.equal(getRefundForFills([fill2]));
+      ).to.equal(getRefundForFills([fill1, fill2]));
 
-      // Execute remaining refunds and test that pending refund amounts are decreasing.
-      await erc20_2.mint(spokePool_2.address, getRefundForFills([fill2]));
+      // Execute refunds and test that pending refund amounts are decreasing.
+      await erc20_2.mint(spokePool_2.address, getRefundForFills([fill1, fill2]));
+      const providers = {
+        ...spokePoolClientsToProviders(spokePoolClients),
+        [(await hubPool.provider.getNetwork()).chainId]: hubPool.provider,
+      };
       await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients, new BalanceAllocator(providers));
       await multiCallerClient.executeTransactionQueue();
       await updateAllClients();

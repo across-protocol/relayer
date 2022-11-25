@@ -1,12 +1,6 @@
 import { buildFillForRepaymentChain, lastSpyLogIncludes } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit, toBNWei } from "./utils";
-import {
-  HubPoolClient,
-  AcrossConfigStoreClient,
-  SpokePoolClient,
-  MultiCallerClient,
-  BalanceAllocator,
-} from "../src/clients";
+import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, originChainId } from "./constants";
 import { CHAIN_ID_TEST_LIST } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
@@ -16,7 +10,6 @@ import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT } from "../src/utils";
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { getDepositPath } from "../src/utils";
 import { FillWithBlock } from "../src/interfaces";
-import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
 
 let spy: sinon.SinonSpy;
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -135,16 +128,6 @@ describe("Dataworker: Propose root bundle", async function () {
         expectedPoolRebalanceRoot2.tree.getHexProof(leaf)
       );
     }
-
-    // Must execute 1 relayer refund leaf to propose the next bundle:
-    const providers = {
-      ...spokePoolClientsToProviders(spokePoolClients),
-      [(await hubPool.provider.getNetwork()).chainId]: hubPool.provider,
-    };
-    await erc20_2.mint(spokePool_2.address, amountToDeposit);
-    await updateAllClients();
-    await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients, new BalanceAllocator(providers));
-    await multiCallerClient.executeTransactionQueue();
 
     // TEST 3:
     // Submit another root bundle proposal and check bundle block range. There should be no leaves in the new range

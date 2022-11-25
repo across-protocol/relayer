@@ -80,12 +80,6 @@ describe("Dataworker: Execute relayer refunds", async function () {
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
     await multiCallerClient.executeTransactionQueue();
 
-    // Must execute 1 relayer refund leaf to propose the next bundle:
-    await erc20_2.mint(spokePool_2.address, amountToDeposit.div(2));
-    await updateAllClients();
-    await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients, new BalanceAllocator(providers));
-    await multiCallerClient.executeTransactionQueue();
-
     // TEST 3:
     // Submit another root bundle proposal and check bundle block range. There should be no leaves in the new range
     // yet. In the bundle block range, all chains should have increased their start block, including those without
@@ -94,7 +88,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
     await updateAllClients();
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
 
-    // Advance time and execute leaves, there should be no leaves:
+    // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
@@ -119,18 +113,19 @@ describe("Dataworker: Execute relayer refunds", async function () {
     await updateAllClients();
     await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients, new BalanceAllocator(providers));
 
-    // Note: without sending tokens, the new leaf will not be executable.
-    expect(multiCallerClient.transactionCount()).to.equal(0);
+    // Note: without sending tokens, only one of the leaves will be executable.
+    // This is the leaf with the deposit that is being pulled back to the hub pool.
+    expect(multiCallerClient.transactionCount()).to.equal(1);
     await multiCallerClient.executeTransactionQueue();
 
     await updateAllClients();
 
     // Note: we need to manually supply the tokens since the L1 tokens won't be recognized in the spoke pool.
-    await erc20_2.mint(spokePool_2.address, amountToDeposit.div(2));
+    await erc20_2.mint(spokePool_2.address, amountToDeposit);
     await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients, new BalanceAllocator(providers));
 
     // The other two transactions should now be enqueued.
-    expect(multiCallerClient.transactionCount()).to.equal(1);
+    expect(multiCallerClient.transactionCount()).to.equal(2);
 
     await multiCallerClient.executeTransactionQueue();
   });
