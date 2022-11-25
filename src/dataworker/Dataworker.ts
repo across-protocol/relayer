@@ -183,7 +183,6 @@ export class Dataworker {
         .filter(([, rootBundle]) => rootBundle !== undefined)
     );
 
-    // If a root bundle hasn't been relayed yet then exit early.
     // We should wait to propose until all root bundles have been relayed to spoke pools.
     if (Object.entries(relayedRootBundles).length !== expectedRootBundles) {
       return {
@@ -324,16 +323,14 @@ export class Dataworker {
     if (shouldWaitToPropose.value) {
       this.logger.debug({
         at: "Dataworker#propose",
-        message:
-          "Waiting to propose new bundle until latest validated bundle has had one executed RelayerRefundLeaf on Ethereum",
+        message: "Waiting to propose new bundle until all refund roots have been relayed to spoke pools",
         shouldWaitToPropose,
       });
       return;
     } else
       this.logger.debug({
         at: "Dataworker#propose",
-        message:
-          "Proceeding to propose new bundle; latest validated bundle has had one executed RelayerRefundLeaf on Ethereum",
+        message: "Proceeding to propose new bundle; all refund roots have been relayed to spoke pools",
         shouldWaitToPropose,
       });
 
