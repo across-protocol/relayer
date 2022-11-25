@@ -11,7 +11,13 @@ import {
   isDefined,
 } from "../utils";
 import { toBNWei, getFillsInRange, ZERO_ADDRESS } from "../utils";
-import { DepositWithBlock, FillsToRefund, FillWithBlock, UnfilledDeposit } from "../interfaces";
+import {
+  DepositWithBlock,
+  FillsToRefund,
+  FillWithBlock,
+  RootBundleRelayWithBlock,
+  UnfilledDeposit,
+} from "../interfaces";
 import {
   PendingRootBundle,
   TreeData,
@@ -162,45 +168,62 @@ export class Dataworker {
         value: false,
       };
 
-    const relayedRootBundles = Object.fromEntries(
-      Object.entries(spokePoolClients).map(([chainId, client]) => {
-        return [
-          chainId,
-          client
-            .getRootBundleRelays()
-            .find((bundle) => bundle.relayerRefundRoot === mostRecentValidatedBundle.relayerRefundRoot),
-        ];
-      })
+    const expectedRootBundles = mostRecentValidatedBundle.poolRebalanceLeafCount;
+
+    const relayedRootBundles: { [chainId: string]: RootBundleRelayWithBlock } = Object.fromEntries(
+      Object.entries(spokePoolClients)
+        .map(([chainId, client]) => {
+          return [
+            chainId,
+            client
+              .getRootBundleRelays()
+              .find((bundle) => bundle.relayerRefundRoot === mostRecentValidatedBundle.relayerRefundRoot),
+          ];
+        })
+        .filter(([, rootBundle]) => rootBundle !== undefined)
     );
 
     // If a root bundle hasn't been relayed yet then exit early.
-    if (Object.entries(relayedRootBundles).every(([, _relayedRootBundles]) => _relayedRootBundles === undefined)) {
+    if (Object.entries(relayedRootBundles).length !== expectedRootBundles) {
       return {
         value: true,
         mostRecentValidatedBundle: mostRecentValidatedBundle?.blockNumber,
+        expectedRootBundles,
+        relayedRootBundles,
       };
     } else {
-      // Once one leaf has been executed, we can propose the next bundle:
-      const hasNotExecutedLeaf = Object.entries(relayedRootBundles).every(([chainId, relayedRootBundle]) => {
-        return (
-          spokePoolClients[chainId]
-            .getRelayerRefundExecutions()
-            .filter((leaf) => leaf.rootBundleId === relayedRootBundle.rootBundleId).length === 0
-        );
-      });
-      if (hasNotExecutedLeaf)
+      // Once at least one leaf has been executed, we can propose the next bundle:
+      const executedLeavesForBundle = Object.fromEntries(
+        Object.entries(relayedRootBundles).map(([chainId, relayedRootBundle]) => {
+          return [
+            chainId,
+            spokePoolClients[chainId]
+              .getRelayerRefundExecutions()
+              .filter((leaf) => leaf.rootBundleId === relayedRootBundle.rootBundleId),
+          ];
+        })
+      );
+      const executedLeaves: number = Object.entries(executedLeavesForBundle).reduce(
+        (sum, [, executions]) => (sum += executions.length),
+        0
+      );
+      if (executedLeaves === 0)
         return {
           value: true,
           mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
+          expectedRootBundles,
           relayedRootBundles,
-          hasNotExecutedLeaf,
+          executedLeaves,
+          executedLeavesForBundle,
         };
       else
         return {
           value: false,
           mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
+          expectedRootBundles,
           relayedRootBundles,
-          hasNotExecutedLeaf,
+          executedLeaves,
+          executedLeavesForBundle,
         };
     }
   }
