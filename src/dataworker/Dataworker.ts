@@ -70,7 +70,8 @@ export class Dataworker {
     readonly maxL1TokenCountOverride: number | undefined,
     readonly tokenTransferThreshold: BigNumberForToken = {},
     readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {},
-    readonly spokeRootsLookbackCount = 0
+    readonly spokeRootsLookbackCount = 0,
+    readonly bufferToPropose = 0
   ) {
     if (
       maxRefundCountOverride !== undefined ||
@@ -158,7 +159,11 @@ export class Dataworker {
   // This is a temporary fix: Currently, there appears to be a bug where proposing a root bundle before any
   // RelayerRefundLeaves are executed results in an invalid bundle that gets self-disputed. This bug only seems
   // to appear when the bundle has slow fills. Its possibly related to slow fill excesses?
-  async shouldWaitToPropose(spokePoolClients: { [chainId: number]: SpokePoolClient }) {
+  async shouldWaitToPropose(
+    mainnetBundleEndBlock: number,
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    bufferToPropose: number = this.bufferToPropose
+  ) {
     const mostRecentValidatedBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
       await this.clients.hubPoolClient.hubPool.provider.getBlockNumber()
     );
@@ -192,11 +197,15 @@ export class Dataworker {
         relayedRootBundles,
       };
     } else {
+      const latestRelayedRootBundle = sortEventsAscending(Object.values(relayedRootBundles))[0];
       return {
-        value: false,
+        value: mainnetBundleEndBlock - bufferToPropose < latestRelayedRootBundle.blockNumber,
         mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
         expectedRootBundles,
         relayedRootBundles,
+        latestRelayedRootBundle,
+        bufferToPropose,
+        mainnetBundleEndBlock,
       };
     }
   }
@@ -319,7 +328,7 @@ export class Dataworker {
         });
     }
 
-    const shouldWaitToPropose = await this.shouldWaitToPropose(spokePoolClients);
+    const shouldWaitToPropose = await this.shouldWaitToPropose(mainnetBundleEndBlock, spokePoolClients);
     if (shouldWaitToPropose.value) {
       this.logger.debug({
         at: "Dataworker#propose",

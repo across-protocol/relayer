@@ -34,7 +34,8 @@ export async function createDataworker(_logger: winston.Logger, baseSigner: Wall
     config.maxPoolRebalanceLeafSizeOverride,
     config.tokenTransferThresholdOverride,
     config.blockRangeEndBlockBuffer,
-    config.spokeRootsLookbackCount
+    config.spokeRootsLookbackCount,
+    config.bufferToPropose
   );
 
   return {
