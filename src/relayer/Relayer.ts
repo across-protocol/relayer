@@ -161,7 +161,7 @@ export class Relayer {
       }
 
       // Cache limits to speed up run for next deposit for same path.
-      if (!limits[deposit.originToken]) limits[deposit.originToken] = {}
+      if (!limits[deposit.originToken]) limits[deposit.originToken] = {};
       if (!limits[deposit.originToken][deposit.destinationChainId]) {
         const _limits = await this.callLimits(deposit.originToken, deposit.destinationChainId);
         limits[deposit.originToken][deposit.destinationChainId] = _limits;
@@ -390,26 +390,29 @@ export class Relayer {
 
   private async callLimits(token: string, destinationChainId: number): Promise<DepositLimits> {
     const url = "https://across.to/api/limits";
+    const params = { token, destinationChainId };
 
     try {
-      const result = await axios(url, { timeout: 1000, params: { token, destinationChainId } });
+      const result = await axios(url, { timeout: 1000, params });
       const data = result.data;
       this.logger.debug({
         at: "Relayer",
         message: "🏁 Fetched /limits",
-        data
+        url,
+        params,
+        data,
       });
       return {
-        maxDeposit: BigNumber.from(data.maxDeposit)
-      }
+        maxDeposit: BigNumber.from(data.maxDeposit),
+      };
     } catch (err) {
       const msg = get(err, "response.data.error", get(err, "response.statusText", (err as AxiosError).message));
       this.logger.debug({
         at: "Relayer",
         message: "Failed to get /limits",
-        token,
-        destinationChainId,
-        msg
+        url,
+        params,
+        msg,
       });
       return {
         maxDeposit: BigNumber.from(MAX_UINT_VAL),
