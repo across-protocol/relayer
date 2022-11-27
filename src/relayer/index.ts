@@ -22,7 +22,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
     for (;;) {
       await updateRelayerClients(relayerClients, config);
 
-      await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled);
+      relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled);
 
       await relayerClients.multiCallerClient.executeTransactionQueue(!config.sendingRelaysEnabled);
 
