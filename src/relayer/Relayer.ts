@@ -17,6 +17,7 @@ import { RelayerConfig } from "./RelayerConfig";
 
 import axios, { AxiosError } from "axios";
 import get from "lodash.get";
+import { l2TokensToL1TokenValidation } from "../common";
 
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
@@ -113,7 +114,7 @@ export class Relayer {
     // We will query the relayer API to get the deposit limits for different token and destination combinations.
     // The relayer should not be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
     // refund will be stuck for potentially 7 days.
-    const limits: { [originToken: string]: { [destChainId: number]: DepositLimits } } = {};
+    const limits: { [originToken: string]: DepositLimits } = {};
 
     // Iterate over all unfilled deposits. For each unfilled deposit: a) check that the token balance client has enough
     // balance to fill the unfilled amount. b) the fill is profitable. If both hold true then fill the unfilled amount.
@@ -161,23 +162,17 @@ export class Relayer {
       }
 
       // Cache limits to speed up run for next deposit for same path.
-      if (!limits[deposit.originToken]) limits[deposit.originToken] = {};
-      if (!limits[deposit.originToken][deposit.destinationChainId]) {
-        const _limits = await this.callLimits(deposit.originToken, deposit.destinationChainId);
-        limits[deposit.originToken][deposit.destinationChainId] = _limits;
-      }
+      // Enforcing a timeout of 1s means that this external call will only add up to 1s per l1 token in this batch
+      // which doesn't add significant latency to the relayer run compared to other bottlenecks.
+      if (!limits[l1Token.address]) limits[l1Token.address] = await this.callLimits(l1Token.address, 1000);
 
-      if (
-        limits[deposit.originToken][deposit.destinationChainId] &&
-        unfilledAmount.gt(limits[deposit.originToken][deposit.destinationChainId].maxDeposit)
-      ) {
+      if (unfilledAmount.gt(limits[l1Token.address].maxDeposit)) {
         this.logger.warn({
           at: "Relayer",
           message: "😱 Skipping deposit with greater unfilled amount that API suggested limit",
-          limit: limits[deposit.originToken][deposit.destinationChainId],
+          limit: limits[l1Token.address],
           unfilledAmount: unfilledAmount.toString(),
-          originToken: deposit.originToken,
-          destinationChain: getNetworkName(destinationChainId),
+          l1Token: l1Token.address,
         });
         continue;
       }
@@ -388,12 +383,17 @@ export class Relayer {
     );
   }
 
-  private async callLimits(token: string, destinationChainId: number): Promise<DepositLimits> {
+  private async callLimits(l1Token: string, timeout = 1000): Promise<DepositLimits> {
     const url = "https://across.to/api/limits";
-    const params = { token, destinationChainId };
+    // Need to look up a valid dest chain for an l1 token since not all dest chains are supported, for example
+    // BOBA can only bridge to 288
+    const validDestinationChainForL1Token = Object.keys(l2TokensToL1TokenValidation[l1Token])[0];
+    const params = { token: l1Token, destinationChainId: validDestinationChainForL1Token };
+    // destinationChainId doesn't matter since HubPool liquidity is shared for all tokens and affects maxDeposit.
+    // We don't care about maxDepositInstant when deciding whether a relay will be refunded.
 
     try {
-      const result = await axios(url, { timeout: 1000, params });
+      const result = await axios(url, { timeout, params });
       const data = result.data;
       this.logger.debug({
         at: "Relayer",
@@ -406,7 +406,7 @@ export class Relayer {
         maxDeposit: BigNumber.from(data.maxDeposit),
       };
     } catch (err) {
-      const msg = get(err, "response.data.error", get(err, "response.statusText", (err as AxiosError).message));
+      const msg = get(err, "response.data", get(err, "response.statusText", (err as AxiosError).message));
       this.logger.debug({
         at: "Relayer",
         message: "Failed to get /limits",
