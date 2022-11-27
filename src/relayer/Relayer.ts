@@ -114,7 +114,7 @@ export class Relayer {
     // We will query the relayer API to get the deposit limits for different token and destination combinations.
     // The relayer should not be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
     // refund will be stuck for potentially 7 days.
-    const limits: { [originToken: string]: DepositLimits } = {};
+    const limits: { [token: string]: DepositLimits } = {};
 
     // Iterate over all unfilled deposits. For each unfilled deposit: a) check that the token balance client has enough
     // balance to fill the unfilled amount. b) the fill is profitable. If both hold true then fill the unfilled amount.
