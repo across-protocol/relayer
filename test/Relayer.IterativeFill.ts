@@ -2,7 +2,7 @@ import { expect, deployAndConfigureHubPool, deployIterativeSpokePoolsAndToken, l
 import { deposit, ethers, Contract, getLastBlockTime, contractAt, addLiquidity, createSpyLogger } from "./utils";
 import { SignerWithAddress, setupTokensForWallet, deployConfigStore, winston, sinon, toBNWei } from "./utils";
 import { amountToLp, defaultMinDepositConfirmations, defaultTokenConfig } from "./constants";
-import { HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
+import { HubPoolClient, AcrossConfigStoreClient, MultiCallerClient, AcrossApiClient } from "../src/clients";
 import { TokenClient, ProfitClient } from "../src/clients";
 import { MockInventoryClient } from "./mocks";
 
@@ -68,6 +68,7 @@ describe.skip("Relayer: Iterative fill", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
+        acrossApiClient: new AcrossApiClient(spyLogger)
       },
       {
         relayerTokens: [],

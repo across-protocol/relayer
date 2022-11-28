@@ -12,7 +12,7 @@ import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfig
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId } from "./utils";
 import { originChainId, sinon, toBNWei } from "./utils";
 import { amountToLp, defaultMinDepositConfirmations, defaultTokenConfig } from "./constants";
-import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
+import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient, AcrossApiClient } from "../src/clients";
 import { TokenClient } from "../src/clients";
 import { MockInventoryClient, MockProfitClient } from "./mocks";
 
@@ -74,6 +74,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
+        acrossApiClient: new AcrossApiClient(spyLogger)
       },
       {
         relayerTokens: [],
@@ -152,6 +153,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
+        acrossApiClient: new AcrossApiClient(spyLogger)
       },
       {
         relayerTokens: [],
@@ -187,6 +189,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
+        acrossApiClient: new AcrossApiClient(spyLogger)
       },
       {
         relayerTokens: [],
@@ -275,6 +278,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
+        acrossApiClient: new AcrossApiClient(spyLogger)
       },
       {
         relayerTokens: [],

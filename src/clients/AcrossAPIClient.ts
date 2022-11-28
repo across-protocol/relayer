@@ -16,7 +16,7 @@ export class AcrossApiClient {
     if (Object.keys(tokensQuery).length === 0) this.tokensQuery = Object.keys(l2TokensToL1TokenValidation);
   }
 
-  async update() {
+  async update(): Promise<void> {
     this.logger.debug({
       at: "AcrossAPIClient",
       message: "Updating AcrossAPI client",
@@ -51,7 +51,7 @@ export class AcrossApiClient {
   }
 
   getLimit(l1Token: string): BigNumber {
-    return this.limits[l1Token];
+    return this.limits[l1Token] ? this.limits[l1Token] : BigNumber.from(MAX_UINT_VAL);
   }
 
   private async callLimits(
@@ -68,7 +68,7 @@ export class AcrossApiClient {
       return result.data;
     } catch (err) {
       const msg = get(err, "response.data", get(err, "response.statusText", (err as AxiosError).message));
-      this.logger.debug({
+      this.logger.warn({
         at: "AcrossAPIClient",
         message: "Failed to get /limits",
         url,
