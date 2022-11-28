@@ -12,7 +12,7 @@ export class AcrossApiClient {
 
   private limits: { [token: string]: BigNumber } = {};
 
-  constructor(readonly logger: winston.Logger, readonly tokensQuery: string[] = [], readonly timeout: number = 2000) {
+  constructor(readonly logger: winston.Logger, readonly tokensQuery: string[] = [], readonly timeout: number = 5000) {
     if (Object.keys(tokensQuery).length === 0) this.tokensQuery = Object.keys(l2TokensToL1TokenValidation);
   }
 
