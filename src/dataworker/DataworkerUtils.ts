@@ -13,7 +13,6 @@ import {
   buildRelayerRefundTree,
   buildSlowRelayTree,
   getDeploymentBlockNumber,
-  toBNWei,
   winston,
 } from "../utils";
 import { getDepositPath, getFillsInRange, groupObjectCountsByProp, groupObjectCountsByTwoProps, toBN } from "../utils";
@@ -299,7 +298,7 @@ export function _buildPoolRebalanceRoot(
   unfilledDeposits: UnfilledDeposit[],
   clients: DataworkerClients,
   chainIdListForBundleEvaluationBlockNumbers: number[],
-  maxL1TokenCountOverride: number,
+  maxL1TokenCountOverride: number | undefined,
   tokenTransferThreshold: BigNumberForToken,
   logger?: winston.Logger
 ) {
