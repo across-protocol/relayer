@@ -61,7 +61,7 @@ export class AcrossApiClient {
   ): Promise<DepositLimits> {
     const path = "limits";
     const url = `${this.endpoint}${path}`;
-    const params = { token: l1Token, destinationChainId };
+    const params = { token: l1Token, destinationChainId, originChainId: 1 };
 
     try {
       const result = await axios(url, { timeout, params });
