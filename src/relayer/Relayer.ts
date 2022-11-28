@@ -387,7 +387,9 @@ export class Relayer {
     const url = "https://across.to/api/limits";
     // Need to look up a valid dest chain for an l1 token since not all dest chains are supported, for example
     // BOBA can only bridge to 288
-    const validDestinationChainForL1Token = Object.keys(l2TokensToL1TokenValidation[l1Token])[0];
+    const validDestinationChainForL1Token = l2TokensToL1TokenValidation[l1Token]
+      ? Object.keys(l2TokensToL1TokenValidation[l1Token])[0]
+      : 10;
     const params = { token: l1Token, destinationChainId: validDestinationChainForL1Token };
     // destinationChainId doesn't matter since HubPool liquidity is shared for all tokens and affects maxDeposit.
     // We don't care about maxDepositInstant when deciding whether a relay will be refunded.
