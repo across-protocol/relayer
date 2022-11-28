@@ -3,7 +3,13 @@ import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfig
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, spyLogIncludes } from "./utils";
 import { originChainId, sinon } from "./utils";
 import { amountToLp, defaultTokenConfig, amountToDeposit, defaultMinDepositConfirmations } from "./constants";
-import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient, AcrossApiClient } from "../src/clients";
+import {
+  SpokePoolClient,
+  HubPoolClient,
+  AcrossConfigStoreClient,
+  MultiCallerClient,
+  AcrossApiClient,
+} from "../src/clients";
 import { TokenClient, ProfitClient } from "../src/clients";
 import { MockInventoryClient } from "./mocks";
 
@@ -62,7 +68,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient(spyLogger)
+        acrossApiClient: new AcrossApiClient(spyLogger),
       },
       {
         relayerTokens: [],

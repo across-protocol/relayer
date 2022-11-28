@@ -3,7 +3,13 @@ import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWal
 import { lastSpyLogIncludes, toBNWei, createSpyLogger, deployConfigStore } from "./utils";
 import { deployAndConfigureHubPool, winston } from "./utils";
 import { amountToLp, defaultMinDepositConfirmations, defaultTokenConfig } from "./constants";
-import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient, AcrossApiClient } from "../src/clients";
+import {
+  SpokePoolClient,
+  HubPoolClient,
+  AcrossConfigStoreClient,
+  MultiCallerClient,
+  AcrossApiClient,
+} from "../src/clients";
 import { TokenClient } from "../src/clients";
 import { MockInventoryClient, MockProfitClient } from "./mocks";
 
@@ -62,7 +68,7 @@ describe("Relayer: Token balance shortfall", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient(spyLogger)
+        acrossApiClient: new AcrossApiClient(spyLogger),
       },
       {
         relayerTokens: [],
