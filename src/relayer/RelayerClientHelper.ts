@@ -1,6 +1,6 @@
 import winston from "winston";
 import { Wallet } from "../utils";
-import { TokenClient, ProfitClient, BundleDataClient, InventoryClient } from "../clients";
+import { TokenClient, ProfitClient, BundleDataClient, InventoryClient, AcrossApiClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import { RelayerConfig } from "./RelayerConfig";
 import { CHAIN_ID_LIST_INDICES, Clients, constructClients, updateClients, updateSpokePoolClients } from "../common";
@@ -12,6 +12,7 @@ export interface RelayerClients extends Clients {
   tokenClient: TokenClient;
   profitClient: ProfitClient;
   inventoryClient: InventoryClient;
+  acrossApiClient: AcrossApiClient;
 }
 
 export async function constructRelayerClients(
@@ -29,6 +30,7 @@ export async function constructRelayerClients(
     config.maxRelayerLookBack
   );
 
+  const acrossApiClient = new AcrossApiClient(logger, config.relayerTokens);
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients, commonClients.hubPoolClient);
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
@@ -65,7 +67,7 @@ export async function constructRelayerClients(
     config.bundleRefundLookback
   );
 
-  return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient };
+  return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient, acrossApiClient };
 }
 
 export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig) {
@@ -92,6 +94,7 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
 
   // We can update the inventory client at the same time as checking for eth wrapping as these do not depend on each other.
   await Promise.all([
+    clients.acrossApiClient.update(),
     clients.inventoryClient.update(),
     clients.inventoryClient.wrapL2EthIfAboveThreshold(),
     clients.inventoryClient.setL1TokenApprovals(),

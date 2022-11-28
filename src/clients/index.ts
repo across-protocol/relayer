@@ -8,3 +8,4 @@ export * from "./ProfitClient";
 export * from "./TokenClient";
 export * from "./TokenTransferClient";
 export * from "./InventoryClient";
+export * from "./AcrossAPIClient";
