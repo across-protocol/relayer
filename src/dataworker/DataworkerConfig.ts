@@ -106,14 +106,14 @@ export class DataworkerConfig extends CommonConfig {
       ? Math.floor(Number(DATAWORKER_FAST_LOOKBACK_COUNT))
       : 16;
     // By default, if we need to load more data to construct the next bundle, we'll retry once and set a lookback
-    // to a very safe 16 * 8 = 128 bundles. This should cover at least the latest 10 days of events and take
-    // ~15 mins to run with quorum=2.
+    // to a very safe 16 * 4 = 48 bundles. This should cover at least the latest 4 days of events and take
+    // ~10 mins to run with quorum=1.
     this.dataworkerFastLookbackRetryCount = DATAWORKER_FAST_LOOKBACK_RETRIES
       ? Number(DATAWORKER_FAST_LOOKBACK_RETRIES)
       : 1;
     this.dataworkerFastLookbackRetryMultiplier = DATAWORKER_FAST_LOOKBACK_RETRY_MULTIPLIER
       ? Number(DATAWORKER_FAST_LOOKBACK_RETRY_MULTIPLIER)
-      : 8;
+      : 4;
     this.dataworkerFastStartBundle = DATAWORKER_FAST_START_BUNDLE ? Number(DATAWORKER_FAST_START_BUNDLE) : "latest";
     if (typeof this.dataworkerFastStartBundle === "number") {
       assert(
