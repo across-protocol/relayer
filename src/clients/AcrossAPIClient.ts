@@ -12,46 +12,50 @@ export class AcrossApiClient {
 
   private limits: { [token: string]: BigNumber } = {};
 
+  public updatedLimits = false;
+
   constructor(readonly logger: winston.Logger, readonly tokensQuery: string[] = [], readonly timeout: number = 5000) {
     if (Object.keys(tokensQuery).length === 0) this.tokensQuery = Object.keys(l2TokensToL1TokenValidation);
   }
 
-  async update(): Promise<void> {
-    this.logger.debug({
-      at: "AcrossAPIClient",
-      message: "Updating AcrossAPI client",
-      timeout: this.timeout,
-      tokensQuery: this.tokensQuery,
-      endpoint: this.endpoint,
-    });
+  async update(ignoreLimits: boolean): Promise<void> {
+    if (!ignoreLimits) {
+      this.logger.debug({
+        at: "AcrossAPIClient",
+        message: "Querying /limits",
+        timeout: this.timeout,
+        tokensQuery: this.tokensQuery,
+        endpoint: this.endpoint,
+      });
 
-    // /limits
-    // - Store the max deposit limit for each L1 token. DestinationChainId doesn't matter since HubPool
-    // liquidity is shared for all tokens and affects maxDeposit. We don't care about maxDepositInstant
-    // when deciding whether a relay will be refunded.
-    const data = await Promise.all(
-      this.tokensQuery.map((l1Token) => {
-        const validDestinationChainForL1Token = l2TokensToL1TokenValidation[l1Token]
-          ? Number(Object.keys(l2TokensToL1TokenValidation[l1Token])[0])
-          : 10;
-        return this.callLimits(l1Token, validDestinationChainForL1Token);
-      })
-    );
-    for (let i = 0; i < this.tokensQuery.length; i++) {
-      const l1Token = this.tokensQuery[i];
-      this.limits[l1Token] = data[i]?.maxDeposit ? data[i].maxDeposit : BigNumber.from(MAX_UINT_VAL);
-    }
-    this.logger.debug({
-      at: "AcrossAPIClient",
-      message: "🏁 Fetched max deposit limits",
-      limits: this.limits,
-    });
-
-    this.logger.debug({ at: "AcrossAPIClient", message: "AcrossAPI client updated!" });
+      // /limits
+      // - Store the max deposit limit for each L1 token. DestinationChainId doesn't matter since HubPool
+      // liquidity is shared for all tokens and affects maxDeposit. We don't care about maxDepositInstant
+      // when deciding whether a relay will be refunded.
+      const data = await Promise.all(
+        this.tokensQuery.map((l1Token) => {
+          const validDestinationChainForL1Token = l2TokensToL1TokenValidation[l1Token]
+            ? Number(Object.keys(l2TokensToL1TokenValidation[l1Token])[0])
+            : 10;
+          return this.callLimits(l1Token, validDestinationChainForL1Token);
+        })
+      );
+      for (let i = 0; i < this.tokensQuery.length; i++) {
+        const l1Token = this.tokensQuery[i];
+        this.limits[l1Token] = data[i].maxDeposit;
+      }
+      this.logger.debug({
+        at: "AcrossAPIClient",
+        message: "🏁 Fetched max deposit limits",
+        limits: this.limits,
+      });
+      this.updatedLimits = true;
+    } else this.logger.debug({ at: "AcrossAPIClient", message: "Skipping querying /limits" });
   }
 
   getLimit(l1Token: string): BigNumber {
-    return this.limits[l1Token] ? this.limits[l1Token] : BigNumber.from(MAX_UINT_VAL);
+    if (!this.limits[l1Token]) throw new Error(`No limit stored for l1Token ${l1Token}`);
+    return this.limits[l1Token];
   }
 
   private async callLimits(
@@ -70,11 +74,12 @@ export class AcrossApiClient {
       const msg = get(err, "response.data", get(err, "response.statusText", (err as AxiosError).message));
       this.logger.warn({
         at: "AcrossAPIClient",
-        message: "Failed to get /limits",
+        message: "Failed to get /limits, setting limit to 0",
         url,
         params,
         msg,
       });
+      return { maxDeposit: BigNumber.from(0) };
     }
   }
 }

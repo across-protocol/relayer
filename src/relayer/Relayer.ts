@@ -151,7 +151,10 @@ export class Relayer {
       // We query the relayer API to get the deposit limits for different token and destination combinations.
       // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
       // refund will be stuck for potentially 7 days.
-      if (unfilledAmount.gt(this.clients.acrossApiClient.getLimit(l1Token.address))) {
+      if (
+        this.clients.acrossApiClient.updatedLimits &&
+        unfilledAmount.gt(this.clients.acrossApiClient.getLimit(l1Token.address))
+      ) {
         this.logger.warn({
           at: "Relayer",
           message: "😱 Skipping deposit with greater unfilled amount that API suggested limit",
