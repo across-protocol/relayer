@@ -101,7 +101,7 @@ export async function calculateBlockSpeed(
     lastBlockTimestamp = (await provider.getBlock(lastBlockNumber)).timestamp;
   }
   const averageBlockSpeed = ((latestBlock.number - lastBlockNumber) * 86400) / (latestBlockTimestamp - lastBlockTimestamp);
-  return [averageBlockSpeed, lastBlockNumber];
+  return [Math.floor(averageBlockSpeed), lastBlockNumber];
 }
 
 function getSpokePoolClientsForContract(
