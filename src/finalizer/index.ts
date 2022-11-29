@@ -21,7 +21,7 @@ import {
   updateSpokePoolClients,
   Clients,
   ProcessEnv,
-  FINALIZER_TOKENBRIDGE_LOOKBACK,
+  FINALIZER_TOKENBRIDGE_LOOKBACK, FINALIZER_TOKENBRIDGE_LOOKBACK_SECS, constructSpokePoolClientsWithLookbackSecs,
 } from "../common";
 config();
 let logger: winston.Logger;
@@ -90,12 +90,18 @@ export async function finalize(
 export async function constructFinalizerClients(_logger: winston.Logger, config, baseSigner: Wallet) {
   const commonClients = await constructClients(_logger, config, baseSigner);
 
-  const spokePoolClients = await constructSpokePoolClientsWithLookback(
+  const spokePoolClients = await constructSpokePoolClientsWithLookbackSecs(
     logger,
     commonClients.configStoreClient,
     config,
     baseSigner,
-    config.maxFinalizerLookback
+    {
+      1: 172800,
+      10: 172800,
+      137: 172800,
+      288: 172800,
+      42161: 172800,
+    }
   );
 
   return {
@@ -112,12 +118,14 @@ export class FinalizerConfig extends DataworkerConfig {
   readonly optimisticRollupFinalizationWindow: number;
   readonly polygonFinalizationWindow: number;
   readonly maxFinalizerLookback: number;
+  readonly maxFinalizerLookbackSecs: number;
 
   constructor(env: ProcessEnv) {
     const {
       FINALIZER_OROLLUP_FINALIZATION_WINDOW,
       FINALIZER_POLYGON_FINALIZATION_WINDOW,
       FINALIZER_MAX_TOKENBRIDGE_LOOKBACK,
+      FINALIZER_MAX_TOKENBRIDGE_LOOKBACK_SECS,
     } = env;
     super(env);
 
@@ -125,14 +133,24 @@ export class FinalizerConfig extends DataworkerConfig {
     this.optimisticRollupFinalizationWindow = FINALIZER_OROLLUP_FINALIZATION_WINDOW
       ? Number(FINALIZER_OROLLUP_FINALIZATION_WINDOW)
       : fiveDaysOfBlocks;
+
     // By default, filters out any TokensBridged events younger than 1 days old and older than 2 days old.
     this.polygonFinalizationWindow = FINALIZER_POLYGON_FINALIZATION_WINDOW
       ? Number(FINALIZER_POLYGON_FINALIZATION_WINDOW)
       : oneDayOfBlocks;
-    // `maxFinalizerLookback` is how far we fetch events from, modifying the search config's 'fromBlock'
+
+    // `maxFinalizerLookback` is how far we fetch events from, modifying the search config's 'fromBlock'.
+    // This will be removed after maxFinalizerLookbackSecs is fully tested and proven to be working.
     this.maxFinalizerLookback = FINALIZER_MAX_TOKENBRIDGE_LOOKBACK
       ? JSON.parse(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK)
       : FINALIZER_TOKENBRIDGE_LOOKBACK;
+
+    // `maxFinalizerLookbackSecs` is how far back in secs we fetch events from.
+    // This will replace maxFinalizerLookback, so as block-based lookback is sensitive to the rate of block production
+    // on each chain and would not be precise.
+    this.maxFinalizerLookbackSecs = FINALIZER_MAX_TOKENBRIDGE_LOOKBACK_SECS
+      ? JSON.parse(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK_SECS)
+      : FINALIZER_TOKENBRIDGE_LOOKBACK_SECS;
   }
 }
 

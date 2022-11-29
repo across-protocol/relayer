@@ -48,6 +48,62 @@ export async function constructSpokePoolClientsWithLookback(
   return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks);
 }
 
+// Construct SpokePoolClients for all chains based on durations of time to fetch events for.
+export async function constructSpokePoolClientsWithLookbackSecs(
+  logger: winston.Logger,
+  configStoreClient: AcrossConfigStoreClient,
+  config: CommonConfig,
+  baseSigner: Wallet,
+  lookbackSecs: { [chainId: number]: number } = {}
+): Promise<SpokePoolClientsByChain> {
+  // Calculate fromBlocks based on the desired lookback duration (in secs).
+  const fromBlocks: { [chainId: number]: number } = {};
+  const blockSpeedsFutures: Promise<[number, number]>[] = [];
+  for (const strChainId of Object.keys(lookbackSecs)) {
+    const chainId = Number(strChainId);
+    blockSpeedsFutures.push(calculateBlockSpeed(getProvider(chainId)));
+  }
+  const blockSpeeds = await Promise.all(blockSpeedsFutures);
+  for (const strChainId of Object.keys(lookbackSecs)) {
+    const chainId = Number(strChainId);
+    const blockSpeed = blockSpeeds.shift();
+    const desiredLookbackSecs = lookbackSecs[chainId];
+    fromBlocks[chainId] = blockSpeed[1] - (blockSpeed[0] * desiredLookbackSecs / 86400);
+  }
+
+  console.log("########### fromBlocks", fromBlocks);
+  return constructSpokePoolClientsWithLookback(logger, configStoreClient, config, baseSigner, fromBlocks);
+}
+
+const BlockSpeedSample: { [chainId: number]: number } = {
+  1: 10000,
+  10: 400000,
+  137: 40000,
+  288: 1000,
+  42161: 400000,
+};
+
+export async function calculateBlockSpeed(
+  provider: any,
+): Promise<[number, number]> {
+  const latestBlock = await provider.getBlock("latest");
+  const latestBlockTimestamp = latestBlock.timestamp;
+  const chainId = (await provider.getNetwork()).chainId;
+  const sampleSpeed = BlockSpeedSample[chainId];
+  let lastBlockNumber = latestBlock.number;
+  let lastBlockTimestamp = latestBlockTimestamp;
+  // Keep searching for the first block older than 1 day.
+  // This is only a rough estimate and can go back further than 1 day. However, this would minimize the number
+  // of requests and is generally accurate unless the rate of block production has been very volatile over a
+  // short period of time.
+  while (latestBlockTimestamp - lastBlockTimestamp < 86400) {
+    lastBlockNumber = lastBlockNumber - sampleSpeed;
+    lastBlockTimestamp = (await provider.getBlock(lastBlockNumber)).timestamp;
+  }
+  const averageBlockSpeed = ((latestBlock.number - lastBlockNumber) * 86400) / (latestBlockTimestamp - lastBlockTimestamp);
+  return [averageBlockSpeed, lastBlockNumber];
+}
+
 function getSpokePoolClientsForContract(
   logger: winston.Logger,
   configStoreClient: AcrossConfigStoreClient,

@@ -32,6 +32,10 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK: { [chainId: number]: number } = {
   42161: 4838400,
 };
 
+// Target ~14 days per chain. Should cover all events that could be finalized, so 2x the optimistic
+// rollup challenge period seems safe.
+export const FINALIZER_TOKENBRIDGE_LOOKBACK_SECS = 14 * 24 * 3600;
+
 // Reorgs are anticipated on Ethereum and Polygon. We use different following distances when processing deposit
 // events based on the USD amount of the deposit. This protects the relayer from the worst case situation where it fills
 // a large deposit (i.e. with an amount equal to a large amount of $$$) but the deposit is included in a re-orged
