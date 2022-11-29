@@ -6,13 +6,6 @@ import {
   EventSearchConfig,
   Promise,
   EventFilter,
-  getFromCache,
-  setInCache,
-  CachedDepositData,
-  CachedFillData,
-  CachedData,
-  DepositWithBlockInCache,
-  FillWithBlockInCache,
   sortEventsAscendingInPlace,
   DefaultLogLevels,
   MakeOptional,
@@ -246,10 +239,7 @@ export class SpokePoolClient {
     return `${event.depositId}-${event.originChainId}`;
   }
 
-  // `latestBlockToCache` will inform this client which new blocks to store in the Redis cache. If this is set > 0, then
-  // this function will first load all events from the cache, and then request any blocks not covered in the cache
-  // from an RPC. The combined blocks will then be saved back into the cache up to `latestBlockToCache`.
-  async update(eventsToQuery?: string[], latestBlockToCache = 0) {
+  async update(eventsToQuery?: string[]) {
     if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
     const { NODE_MAX_CONCURRENCY } = process.env;
     // Default to a max concurrency of 1000 requests per node.
@@ -279,26 +269,7 @@ export class SpokePoolClient {
     // all blocks (cached + newly fetched) older than the "latestBlockToCache".
     const depositEventSearchConfig = { ...searchConfig };
 
-    // Invariant: cachedData is defined only if the cache contains events from searchConfig.fromBlock until up to
-    // cachedData.latestBlock. The cache might contain events older than searchConfig.fromBlock which we'll filter
-    // before loading in into this client's memory. We will fetch any blocks > cachedData.latestBlock and <= HEAD
-    // from the RPC.
-
     let timerStart = Date.now();
-    const cachedData = await this.getEventsFromCache(latestBlockToCache, searchConfig);
-
-    if (cachedData !== undefined) {
-      this.log("debug", `Time to load cache for chain ${this.chainId}: ${Date.now() - timerStart}ms`);
-      depositEventSearchConfig.fromBlock = cachedData.latestBlock + 1;
-      this.log("debug", `Partially loading deposit and fill event data from cache for chain ${this.chainId}`, {
-        latestBlock: cachedData.latestBlock,
-        earliestBlock: cachedData.earliestBlock,
-        newSearchConfigForDepositAndFillEvents: depositEventSearchConfig,
-        originalSearchConfigForDepositAndFillEvents: searchConfig,
-      });
-    } else {
-      this.log("debug", "Cache is empty or was thrown away, will query all data fresh");
-    }
 
     this.log("debug", `Updating SpokePool client for chain ${this.chainId}`, {
       searchConfig,
@@ -345,12 +316,6 @@ export class SpokePoolClient {
         this.tokensBridged.push(spreadEventWithBlockNumber(event) as TokensBridged);
       }
 
-    // Populate this dictionary with all events we'll update cache with.
-    const dataToCache: { deposits: { [chainId: number]: DepositWithBlock[] }; fills: FillWithBlock[] } = {
-      deposits: {},
-      fills: [],
-    };
-
     // For each depositEvent, compute the realizedLpFeePct. Note this means that we are only finding this value on the
     // new deposits that were found in the searchConfig (new from the previous run). This is important as this operation
     // is heavy as there is a fair bit of block number lookups that need to happen. Note this call REQUIRES that the
@@ -368,37 +333,6 @@ export class SpokePoolClient {
         },
         { concurrency: nodeMaxConcurrency }
       );
-
-      // First populate deposits mapping with cached event data and then newly fetched data. We assume that cached
-      // data always precedes newly fetched data. We also only want to use cached data as old as the original search
-      // config's fromBlock.
-      if (cachedData !== undefined) {
-        for (const destinationChainId of Object.keys(cachedData.deposits).map(Number)) {
-          cachedData.deposits[destinationChainId].forEach((deposit: DepositWithBlockInCache) => {
-            const convertedDeposit = this.convertDepositInCache(deposit);
-            assign(dataToCache.deposits, [convertedDeposit.destinationChainId], [convertedDeposit]);
-
-            // If cached deposit is in search config, then save it in client's memory:
-            if (
-              deposit.originBlockNumber >= searchConfig.fromBlock &&
-              deposit.originBlockNumber <= searchConfig.toBlock
-            ) {
-              assign(this.depositHashes, [this.getDepositHash(convertedDeposit)], convertedDeposit);
-              assign(this.deposits, [convertedDeposit.destinationChainId], [convertedDeposit]);
-            }
-
-            if (convertedDeposit.depositId < this.earliestDepositId)
-              this.earliestDepositId = convertedDeposit.depositId;
-          });
-        }
-        this.log("debug", `Using cached deposit events within search config for chain ${this.chainId}`, {
-          cachedDeposits: Object.fromEntries(
-            Object.entries(this.deposits).map(([destinationChainId, deposits]) => {
-              return [destinationChainId, deposits.length];
-            })
-          ),
-        });
-      }
 
       // Now add any newly fetched events from RPC.
       if (depositEvents.length > 0)
@@ -420,7 +354,6 @@ export class SpokePoolClient {
 
         assign(this.depositHashes, [this.getDepositHash(deposit)], deposit);
         assign(this.deposits, [deposit.destinationChainId], [deposit]);
-        assign(dataToCache.deposits, [deposit.destinationChainId], [deposit]);
 
         if (deposit.depositId < this.earliestDepositId) this.earliestDepositId = deposit.depositId;
       }
@@ -441,34 +374,11 @@ export class SpokePoolClient {
         for (const [index, deposit] of deposits.entries()) {
           deposits[index] = this.appendMaxSpeedUpSignatureToDeposit(deposit);
         }
-        if (dataToCache.deposits[destinationChainId] !== undefined)
-          for (const [index, deposit] of dataToCache.deposits[destinationChainId].entries()) {
-            dataToCache.deposits[destinationChainId][index] = this.appendMaxSpeedUpSignatureToDeposit(deposit);
-          }
       }
     }
 
     if (eventsToQuery.includes("FilledRelay")) {
       const fillEvents = queryResults[eventsToQuery.indexOf("FilledRelay")];
-
-      if (cachedData !== undefined) {
-        cachedData.fills.forEach((fill: FillWithBlockInCache) => {
-          const convertedFill = this.convertFillInCache(fill);
-          dataToCache.fills.push(convertedFill);
-
-          if (fill.blockNumber >= searchConfig.fromBlock && fill.blockNumber <= searchConfig.toBlock) {
-            assign(this.fills, [fill.originChainId], [convertedFill]);
-            assign(this.depositHashesToFills, [this.getDepositHash(convertedFill)], [convertedFill]);
-          }
-        });
-        this.log(
-          "debug",
-          `Using ${Object.values(this.fills).reduce(
-            (acc, curr) => acc + curr.length,
-            0
-          )} cached fill events within search config for chain ${this.chainId}`
-        );
-      }
 
       if (fillEvents.length > 0)
         this.log("debug", `Using ${fillEvents.length} newly queried fill events for chain ${this.chainId}`, {
@@ -477,19 +387,8 @@ export class SpokePoolClient {
       for (const event of fillEvents) {
         const fill = spreadEventWithBlockNumber(event) as FillWithBlock;
         assign(this.fills, [fill.originChainId], [fill]);
-        dataToCache.fills.push(fill);
         assign(this.depositHashesToFills, [this.getDepositHash(fill)], [fill]);
       }
-    }
-
-    // Update cache with events <= latest block to cache.
-    if (latestBlockToCache > 0) {
-      timerStart = Date.now();
-      // Only reset earliest block in cache if there was no existing cached data. We assume that only the most recent
-      // events up until latestBlockToCache are added to the cache.
-      const earliestBlockToCache = cachedData !== undefined ? cachedData.earliestBlock : searchConfig.fromBlock;
-      await this.setDataInCache(earliestBlockToCache, latestBlockToCache, dataToCache);
-      this.log("debug", `Time to cache new data for chain ${this.chainId}: ${Date.now() - timerStart}ms`);
     }
 
     if (eventsToQuery.includes("EnabledDepositRoute")) {
@@ -550,198 +449,6 @@ export class SpokePoolClient {
 
   public hubPoolClient() {
     return this.configStoreClient?.hubPoolClient;
-  }
-
-  private async getEventsFromCache(
-    latestBlockToCache: number,
-    searchConfig: EventSearchConfig
-  ): Promise<CachedData | undefined> {
-    if (latestBlockToCache > 0) {
-      // Invariant: The cached deposit data for this chain should include all events from searchConfig.fromBlock
-      // until latestCachedBlock, and latestCachedBlock <= latestBlockToCache. If latestCachedBlock <=
-      // searchConfig.toBlock, then we'll fetch fresh events from latestCachedBlock to searchConfig.toBlock.
-      const [_cachedDepositData, _cachedFillData] = await Promise.all([
-        this.getDepositDataFromCache(),
-        this.getFillDataFromCache(),
-      ]);
-
-      // Make sure that deposit and fill events are stored for the exact same block range.
-      const latestCachedBlock = _cachedDepositData.earliestBlock ? Number(_cachedDepositData.latestBlock) : undefined;
-      if (latestCachedBlock === undefined || Number(_cachedFillData.latestBlock) !== latestCachedBlock)
-        return undefined;
-      const earliestCachedBlock = _cachedDepositData.earliestBlock
-        ? Number(_cachedDepositData.earliestBlock)
-        : undefined;
-      if (earliestCachedBlock === undefined || Number(_cachedFillData.earliestBlock) !== earliestCachedBlock)
-        return undefined;
-      if (earliestCachedBlock > latestCachedBlock) return undefined;
-
-      // If `latestBlock > latestBlockToCache` then the above invariant is violated
-      // and we're storing events too close to HEAD for this chain in the cache, so we'll reset the cache and use
-      // no events from it.
-      if (latestCachedBlock > latestBlockToCache) return undefined;
-
-      // If searchConfig.fromBlock < earliestBlock then there are missing events. Ideally we should be fetching these
-      // events but this case should be rare given that the intended use of this client is to store blocks from all
-      // time until latestBlockToCache (a number that should only increase over time) so I'll leave this as a TODO
-      // and force the client to fetch ALL events if this edge case is hit.
-      if (earliestCachedBlock > searchConfig.fromBlock) return undefined;
-
-      // At this point, since `latestBlock >= earliestBlock` and `earliestBlock <= searchConfig.fromBlock`,
-      // we know we can load events from the cache from `searchConfig.fromBlock` until `latestBlock`. Any blocks
-      // between `latestBlock` until `searchConfig.toBlock` we'll get from an RPC.
-
-      // However, we need to do one last check if `latestBlock` < `searchConfig.fromBlock`, which would mean
-      // that there is no point in loading anything from the cache since all cached events are older than the oldest
-      // block we are interested in.
-      if (latestCachedBlock < searchConfig.fromBlock) return undefined;
-
-      return {
-        deposits: _cachedDepositData.deposits,
-        fills: _cachedFillData.fills,
-        latestBlock: latestCachedBlock,
-        earliestBlock: earliestCachedBlock,
-      };
-    }
-
-    return undefined;
-  }
-
-  private getCacheKey() {
-    return {
-      deposits: `deposit_data_${this.chainId}`,
-      fills: `fill_data_${this.chainId}`,
-    };
-  }
-
-  private async getDepositDataFromCache(): Promise<CachedDepositData | Record<string, never>> {
-    if (!this.configStoreClient) return {};
-    const result = await getFromCache(this.getCacheKey().deposits, this.configStoreClient.redisClient);
-    if (result === null) return {};
-    else return JSON.parse(result);
-  }
-
-  private async getFillDataFromCache(): Promise<CachedFillData | Record<string, never>> {
-    if (!this.configStoreClient) return {};
-    const result = await getFromCache(this.getCacheKey().fills, this.configStoreClient.redisClient);
-    if (result === null) return {};
-    else return JSON.parse(result);
-  }
-
-  private async setDepositDataInCache(newData: CachedDepositData) {
-    if (this.configStoreClient)
-      await setInCache(this.getCacheKey().deposits, JSON.stringify(newData), this.configStoreClient.redisClient);
-  }
-
-  private async setFillDataInCache(newData: CachedFillData) {
-    if (this.configStoreClient)
-      await setInCache(this.getCacheKey().fills, JSON.stringify(newData), this.configStoreClient.redisClient);
-  }
-
-  private async setDataInCache(
-    earliestBlockToCache: number,
-    latestBlockToCache: number,
-    newCachedData: { deposits: { [chainId: string]: DepositWithBlock[] }; fills: FillWithBlock[] }
-  ) {
-    const depositsToCacheBeforeSnapshotBlock = Object.fromEntries(
-      Object.keys(newCachedData.deposits).map((destinationChainId) => {
-        return [
-          destinationChainId,
-          newCachedData.deposits[Number(destinationChainId)]
-            .filter((e) => e.originBlockNumber <= latestBlockToCache)
-            .map((deposit) => {
-              // Here we convert BigNumber objects to strings before storing into Redis cache
-              // which only stores strings.
-              const depositToCache = {
-                ...deposit,
-                amount: deposit.amount.toString(),
-                relayerFeePct: deposit.relayerFeePct.toString(),
-                newRelayerFeePct: deposit?.newRelayerFeePct?.toString(),
-                realizedLpFeePct: deposit.realizedLpFeePct.toString(),
-              };
-
-              // Delete undefined values.
-              Object.keys(depositToCache).forEach((_key) => {
-                // Object.keys always produces strings, not the key type, so a cast is necessary.
-                const key = _key as keyof typeof depositToCache;
-                if (depositToCache[key] === undefined) delete depositToCache[key];
-              });
-              return depositToCache;
-            }),
-        ];
-      })
-    );
-
-    const fillsToCacheBeforeSnapshot = newCachedData.fills
-      .filter((e) => e.blockNumber <= latestBlockToCache)
-      .map((fill) => {
-        const fillToCache = {
-          ...fill,
-          amount: fill.amount.toString(),
-          totalFilledAmount: fill.totalFilledAmount.toString(),
-          fillAmount: fill.fillAmount.toString(),
-          relayerFeePct: fill.relayerFeePct.toString(),
-          appliedRelayerFeePct: fill.appliedRelayerFeePct.toString(),
-          realizedLpFeePct: fill.realizedLpFeePct.toString(),
-        } as FillWithBlockInCache;
-        // Delete undefined values.
-        Object.keys(fillToCache).forEach((_key) => {
-          const key = _key as keyof typeof fillToCache;
-          if (fillToCache[key] === undefined) delete fillToCache[key];
-        });
-        return fillToCache;
-      });
-
-    this.log("debug", `Saved cached for chain ${this.chainId}`, {
-      earliestBlock: earliestBlockToCache,
-      latestBlock: latestBlockToCache,
-      cachedFills: fillsToCacheBeforeSnapshot.length,
-      cachedDeposits: Object.keys(depositsToCacheBeforeSnapshotBlock).map((destChain) => {
-        return {
-          destChain,
-          depositsToCacheCount: depositsToCacheBeforeSnapshotBlock[destChain].length,
-        };
-      }),
-    });
-
-    // Save new fill cache for chain.
-    await this.setFillDataInCache({
-      earliestBlock: earliestBlockToCache,
-      latestBlock: latestBlockToCache,
-      fills: fillsToCacheBeforeSnapshot,
-    });
-
-    // Save new deposit cache for chain.
-    await this.setDepositDataInCache({
-      earliestBlock: earliestBlockToCache,
-      latestBlock: latestBlockToCache,
-      deposits: depositsToCacheBeforeSnapshotBlock,
-    });
-  }
-
-  // Necessary to use this function because RedisDB can only store strings so we need to stringify the BN objects
-  // before storing them in the cache, and do the opposite to retrieve the data type that we expect when fetching
-  // from the cache.
-  private convertDepositInCache(deposit: DepositWithBlockInCache): DepositWithBlock {
-    return {
-      ...deposit,
-      amount: toBN(deposit.amount),
-      relayerFeePct: toBN(deposit.relayerFeePct),
-      newRelayerFeePct: deposit.newRelayerFeePct ? toBN(deposit.newRelayerFeePct) : undefined,
-      realizedLpFeePct: toBN(deposit.realizedLpFeePct),
-    };
-  }
-
-  private convertFillInCache(fill: FillWithBlockInCache): FillWithBlock {
-    return {
-      ...fill,
-      amount: toBN(fill.amount),
-      relayerFeePct: toBN(fill.relayerFeePct),
-      realizedLpFeePct: toBN(fill.realizedLpFeePct),
-      totalFilledAmount: toBN(fill.totalFilledAmount),
-      fillAmount: toBN(fill.fillAmount),
-      appliedRelayerFeePct: toBN(fill.appliedRelayerFeePct),
-    };
   }
 
   private async computeRealizedLpFeePct(depositEvent: FundsDepositedEvent) {

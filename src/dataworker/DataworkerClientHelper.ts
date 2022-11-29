@@ -96,8 +96,7 @@ export async function constructSpokePoolClientsForFastDataworker(
   config: DataworkerConfig,
   baseSigner: Wallet,
   startBlocks: { [chainId: number]: number },
-  endBlocks: { [chainId: number]: number },
-  latestFullyExecutedBundleEndBlocks: { [chainId: number]: number } = {}
+  endBlocks: { [chainId: number]: number }
 ) {
   return await constructSpokePoolClientsWithStartBlocksAndUpdate(
     logger,
@@ -113,8 +112,7 @@ export async function constructSpokePoolClientsForFastDataworker(
       "EnabledDepositRoute",
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
-    ],
-    latestFullyExecutedBundleEndBlocks
+    ]
   );
 }
 

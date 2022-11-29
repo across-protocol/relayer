@@ -50,8 +50,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
 
     for (;;) {
       const loopStart = Date.now();
-      // Clear cache so results can be updated with new data.
-      dataworker.clearCache();
       await updateDataworkerClients(clients);
 
       // Grab end blocks for latest fully executed bundle. We can use this block to optimize the dataworker event
@@ -113,8 +111,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         config,
         baseSigner,
         fromBlocks,
-        toBlocks,
-        config.useCacheForSpokePool ? bundleEndBlockMapping : {} // Now, use the cache for the longer lookback.
+        toBlocks
       );
       latestInvalidBundleStartBlocks = getLatestInvalidBundleStartBlocks(spokePoolClients);
 
