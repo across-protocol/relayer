@@ -103,6 +103,10 @@ export class DataworkerConfig extends CommonConfig {
       ? Math.floor(Number(DATAWORKER_FAST_LOOKBACK_COUNT))
       : 16;
     assert(this.dataworkerFastLookbackCount > 0, "dataworkerFastLookbackCount should be > 0");
+    assert(
+      this.dataworkerFastLookbackCount >= this.spokeRootsLookbackCount,
+      "dataworkerFastLookbackCount should be >= spokeRootsLookbackCount"
+    );
 
     // By default, if we need to load more data to construct the next bundle, we'll retry once and set a lookback
     // to a very safe 16 * 4 = 64 bundles. This should cover at least the latest 10 days of events and take
