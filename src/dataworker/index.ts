@@ -5,6 +5,7 @@ import {
   startupLogLevel,
   Wallet,
   getLatestInvalidBundleStartBlocks,
+  getDeploymentBlockNumber,
 } from "../utils";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
@@ -53,20 +54,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       const loopStart = Date.now();
       await updateDataworkerClients(clients);
 
-      // Grab end blocks for latest fully executed bundle. We can use this block to optimize the dataworker event
-      // search by loading partially from the cache and only saving into the cache all blocks older than or equal
-      // to the bundle end blocks for the chains. This will let the dataworker's proposal and validation logic
-      // to continue to fetch fresh events while allowing the leaf execution methods to use cached logic and overall
-      // reduce the number of web3 requests sent.
-      const latestFullyExecutedBundleEndBlocks = clients.hubPoolClient.getLatestFullyExecutedRootBundle(
-        clients.hubPoolClient.latestBlockNumber
-      ).bundleEvaluationBlockNumbers;
-      const bundleEndBlockMapping = Object.fromEntries(
-        dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, index) => {
-          return [chainId, latestFullyExecutedBundleEndBlocks[index].toNumber()];
-        })
-      );
-
       // Construct spoke pool clients.
       let spokePoolClients: SpokePoolClientsByChain;
 
@@ -75,35 +62,54 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       // with a deposit then we can't construct a root bundle for it.
       let latestInvalidBundleStartBlocks: { [chainId: number]: number } = {};
 
-      // We'll construct and update the spoke pool clients with a short lookback with an eye to
-      // reducing compute time. With the data we load, we need to check if there are any fills that cannot be
-      // matched with a deposit in the events loaded by the clients. This would make constructing accurate root
-      // bundles potentially impossible. So, we should save the last block for each chain with fills that we can
-      // construct or validate root bundles for.
-
-      // In summary:
-      // 1. We generate the spoke client event search windows based on a start bundle's bundle block end numbers and
+      // We determine the spoke client's lookback dynamically:
+      // 1. We initiate the spoke client event search windows based on a start bundle's bundle block end numbers and
       //    how many bundles we want to look back from the start bundle blocks.
       // 2. For example, if the start bundle is 100 and the lookback is 16, then we will set the spoke client event
       //    search window's toBlocks equal to the 100th bundle's block evaluation numbers and the fromBlocks equal
       //    to the 84th bundle's block evaluation numbers.
       // 3. Once we do all the querying, we figure out the earliest block that we’re able to validate per chain.
       //    This logic can be found in `getLatestInvalidBundleStartBlocks()`
-      // 4. If the earliest block we can validate is later than the latest fully executed bundle's end blocks,
+      // 4. If the earliest block we can validate is later than some target fully executed bundle's start blocks,
       //    then extend the SpokePoolClients' lookbacks and update again. Do this up to a specified # of retries.
-      //    By dynamically increasing the range of Deposit events to at least cover the next/pending bundle's
+      //    By dynamically increasing the range of Deposit events to at least cover the target bundle's
       //    start blocks, we can reduce the error rate. This is because of how the disputer and proposer will handle
       //    the case where it can't validate a fill without loading an earlier block.
       // 5. If the bundle we’re trying to validate or propose requires an earlier block, then exit early and
       //    emit an alert. In the dispute flow, this alert should be ERROR level.
+
+      // The following code sets the target bundle's start blocks that we'll use as a threshold for determining
+      // whether to expand the lookback dynamically via a retry.
+      // Note: The reason why we pass -(1 + config.spokeRootsLookbackCount) into the function below is because we
+      // want to get the start blocks of the root bundle that is (spokeRootsLookbackCount) bundles from being
+      // from the latest bundle and we start with -2 because n=-1 would get that target spoke root's end blocks,
+      // not its start blocks so we want to start with n=-2 assuming config.spokeRootsLookbackCount = 1.
+      const nthFullyExecutedBundle = clients.hubPoolClient.getNthFullyExecutedRootBundle(
+        -(1 + (config.spokeRootsLookbackCount ?? 0))
+      );
+      const nthFullyExecutedBundleEndBlocks = nthFullyExecutedBundle?.bundleEvaluationBlockNumbers;
+      // Note: If bundle doesn't exist, then use the deployment blocks as the start blocks.
+      const bundleStartBlockMapping = Object.fromEntries(
+        dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, index) => {
+          return [
+            chainId,
+            nthFullyExecutedBundleEndBlocks
+              ? nthFullyExecutedBundleEndBlocks[index].toNumber() + 1
+              : getDeploymentBlockNumber("SpokePool", chainId),
+          ];
+        })
+      );
+
+      // Each loop iteration constructs spoke clients using a lookback and sees if we can query old enough events
+      // to cover the target bundle range determined above (i.e. the bundle after the nthFullyExecutedBundle).
       const customConfig = { ...config };
       for (let i = 0; i <= config.dataworkerFastLookbackRetryCount; i++) {
+        // Get block range for spoke clients using the dataworker fast lookback bundle count.
         const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
           customConfig,
           clients,
           dataworker
         );
-
         logger.debug({
           at: "Dataworker#index",
           message:
@@ -118,7 +124,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           fromBundleTxn: fromBundle?.transactionHash,
           toBundleTxn: toBundle?.transactionHash,
         });
-
         spokePoolClients = await constructSpokePoolClientsForFastDataworker(
           logger,
           clients.configStoreClient,
@@ -127,13 +132,21 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           fromBlocks,
           toBlocks
         );
+
+        // We need to check if there are any queried Fills that cannot possibly be
+        // matched with a deposit in the Deposit events loaded by the clients. This would make constructing accurate
+        // root bundles impossible. So, we should save the last block for each chain with fills that we can
+        // construct or validate root bundles for.
         latestInvalidBundleStartBlocks = getLatestInvalidBundleStartBlocks(spokePoolClients);
 
-        // Increase SpokePoolClient event lookback if any of the invalid bundle start blocks are later
-        // than one of the bundle end blocks in the latest executed bundle.
+        // Now that we have updated the event range fromBlocks for each chain with the latest start blocks we can
+        // construct bundles with, we can determine whether we need to run another loop and create new spoke clients
+        // with longer lookbacks. This will occur if the latest start block we can use to construct a bundle are
+        // greater than the target bundle's start blocks. This basically means we haven't loaded enough data to execute
+        // the (N=config.spokeRootsLookbackCount)th bundle.
         if (
           Object.entries(latestInvalidBundleStartBlocks).some(([chainId, invalidBundleStartBlock]) => {
-            return invalidBundleStartBlock > bundleEndBlockMapping[chainId];
+            return invalidBundleStartBlock >= bundleStartBlockMapping[chainId];
           })
         ) {
           // Overwrite fast lookback count.
@@ -149,9 +162,11 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           logger.debug({
             at: "Dataworker#index",
             message:
-              "latest invalid bundle start blocks are later than latest executed root bundle's end blocks. Will increase update range and retry 😬",
+              "latest invalid bundle start blocks are later than nth validated bundle's end blocks. Will increase update range and retry 😬",
             latestInvalidBundleStartBlocks,
-            latestFullyExecutedBundleEndBlocks: bundleEndBlockMapping,
+            bundleStartBlockMapping: bundleStartBlockMapping,
+            nthBundle: nthFullyExecutedBundle.transactionHash,
+            n: -(1 + config.spokeRootsLookbackCount),
             oldDataworkerFastLookbackCount: config.dataworkerFastLookbackCount,
             newDataworkerFastLookbackCount: customConfig.dataworkerFastLookbackCount,
           });
@@ -161,6 +176,9 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
             message:
               "Identified latest invalid bundle start blocks per chain that we will use to filter root bundles that can be proposed and validated",
             latestInvalidBundleStartBlocks,
+            bundleStartBlockMapping: bundleStartBlockMapping,
+            nthBundle: nthFullyExecutedBundle.transactionHash,
+            n: -(1 + config.spokeRootsLookbackCount),
             fromBlocks,
             toBlocks,
           });
