@@ -21,7 +21,9 @@ import {
   updateSpokePoolClients,
   Clients,
   ProcessEnv,
-  FINALIZER_TOKENBRIDGE_LOOKBACK, FINALIZER_TOKENBRIDGE_LOOKBACK_SECS, constructSpokePoolClientsWithLookbackSecs,
+  FINALIZER_TOKENBRIDGE_LOOKBACK,
+  FINALIZER_TOKENBRIDGE_LOOKBACK_SECS,
+  constructSpokePoolClientsWithLookbackSecs,
 } from "../common";
 config();
 let logger: winston.Logger;
@@ -90,19 +92,30 @@ export async function finalize(
 export async function constructFinalizerClients(_logger: winston.Logger, config, baseSigner: Wallet) {
   const commonClients = await constructClients(_logger, config, baseSigner);
 
-  const spokePoolClients = await constructSpokePoolClientsWithLookbackSecs(
-    logger,
-    commonClients.configStoreClient,
-    config,
-    baseSigner,
-    {
-      1: 172800,
-      10: 172800,
-      137: 172800,
-      288: 172800,
-      42161: 172800,
-    }
-  );
+  let spokePoolClients;
+  if (config.maxFinalizerLookbackSecs > 0) {
+    spokePoolClients = await constructSpokePoolClientsWithLookbackSecs(
+      logger,
+      commonClients.configStoreClient,
+      config,
+      baseSigner,
+      {
+        1: 172800,
+        10: 172800,
+        137: 172800,
+        288: 172800,
+        42161: 172800,
+      }
+    );
+  } else {
+    spokePoolClients = await constructSpokePoolClientsWithLookback(
+      logger,
+      commonClients.configStoreClient,
+      config,
+      baseSigner,
+      config.maxFinalizerLookback
+    );
+  }
 
   return {
     commonClients,
@@ -150,7 +163,8 @@ export class FinalizerConfig extends DataworkerConfig {
     // on each chain and would not be precise.
     this.maxFinalizerLookbackSecs = FINALIZER_MAX_TOKENBRIDGE_LOOKBACK_SECS
       ? JSON.parse(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK_SECS)
-      : FINALIZER_TOKENBRIDGE_LOOKBACK_SECS;
+      : // TODO: Replace with FINALIZER_TOKENBRIDGE_LOOKBACK_SECS when ready to deprecate maxFinalizerLookback.
+        0;
   }
 }
 
