@@ -5,7 +5,6 @@ import {
   startupLogLevel,
   Wallet,
   getLatestInvalidBundleStartBlocks,
-  assert,
 } from "../utils";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
@@ -17,10 +16,7 @@ import {
   constructSpokePoolClientsForFastDataworker,
   getSpokePoolClientEventSearchConfigsForFastDataworker,
 } from "./DataworkerClientHelper";
-import { constructSpokePoolClientsWithStartBlocksAndUpdate } from "../common";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
-import { SpokePoolClientsByChain } from "../interfaces";
-import { getBlockForChain } from "./DataworkerUtils";
 config();
 let logger: winston.Logger;
 
@@ -54,8 +50,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
 
     for (;;) {
       const loopStart = Date.now();
-      // Clear cache so results can be updated with new data.
-      dataworker.clearCache();
       await updateDataworkerClients(clients);
 
       // Grab end blocks for latest fully executed bundle. We can use this block to optimize the dataworker event
@@ -72,14 +66,11 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         })
       );
 
-      // Construct spoke pool clients.
-      let spokePoolClients: SpokePoolClientsByChain;
       // Record the latest blocks for each spoke client that we can use to construct root bundles. This is dependent
       // on the fills for the client having matching deposit events on a different client. If a fill cannot be matched
       // with a deposit then we can't construct a root bundle for it.
       let latestInvalidBundleStartBlocks: { [chainId: number]: number } = {};
 
-      if (config.dataworkerFastLookbackCount > 0) {
         // We'll construct and update the spoke pool clients with a short lookback with an eye to
         // reducing compute time. With the data we load, we need to check if there are any fills that cannot be
         // matched with a deposit in the events loaded by the clients. This would make constructing accurate root
@@ -124,7 +115,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
             toBundleTxn: toBundle?.transactionHash,
           });
 
-          spokePoolClients = await constructSpokePoolClientsForFastDataworker(
+          const spokePoolClients = await constructSpokePoolClientsForFastDataworker(
             logger,
             clients.configStoreClient,
             customConfig,
@@ -172,98 +163,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
             break;
           }
         }
-      } else {
-        // If no fast lookback is configured for dataworker, load events from all time.
-        // This will take a long time and possibly cause timeout errors. This option should really only be
-        // used by technical system auditors who want to validate the history of all Across bundles
-        // and have a lot of hardware memory.
-        logger.warn({
-          at: "Dataworker#index",
-          message:
-            "Constructing SpokePoolClient and loading events from deployment block. This could take a long time to update (>30 mins)",
-        });
-        spokePoolClients = await constructSpokePoolClientsWithStartBlocksAndUpdate(
-          logger,
-          clients.configStoreClient,
-          config,
-          baseSigner,
-          {}, // Empty start block override means start blocks default to SpokePool deployment blocks.
-          {}, // Empty end block override means end blocks default to latest blocks.
-          [
-            "FundsDeposited",
-            "RequestedSpeedUpDeposit",
-            "FilledRelay",
-            "EnabledDepositRoute",
-            "RelayedRootBundle",
-            "ExecutedRelayerRefundRoot",
-          ],
-          config.useCacheForSpokePool ? bundleEndBlockMapping : {} // Now, use the cache for the longer lookback.
-        );
-
-        // Since we loaded all events, default invalid start blocks to spoke pool deployment blocks minus 1 to indicate
-        // that all bundles can be validated using the queried events.
-        latestInvalidBundleStartBlocks = Object.fromEntries(
-          Object.keys(spokePoolClients).map((chainId) => [
-            chainId,
-            spokePoolClients[chainId].eventSearchConfig.fromBlock - 1,
-          ])
-        );
-        logger.debug({
-          at: "Dataworker#index",
-          message: "Defaulted latest invalid bundle start blocks per chain to spoke pool deployment blocks - 1",
-          latestInvalidBundleStartBlocks,
-        });
       }
-
-      // Validate and dispute pending proposal before proposing a new one
-      if (config.disputerEnabled)
-        await dataworker.validatePendingRootBundle(
-          spokePoolClients,
-          config.sendingDisputesEnabled,
-          latestInvalidBundleStartBlocks
-        );
-      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
-
-      if (config.proposerEnabled)
-        await dataworker.proposeRootBundle(
-          spokePoolClients,
-          config.rootBundleExecutionThreshold,
-          config.sendingProposalsEnabled,
-          latestInvalidBundleStartBlocks
-        );
-      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
-
-      if (config.executorEnabled) {
-        const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
-
-        await dataworker.executePoolRebalanceLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          config.sendingExecutionsEnabled,
-          latestInvalidBundleStartBlocks
-        );
-
-        // Execute slow relays before relayer refunds to give them priority for any L2 funds.
-        await dataworker.executeSlowRelayLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          config.sendingExecutionsEnabled,
-          latestInvalidBundleStartBlocks
-        );
-        await dataworker.executeRelayerRefundLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          config.sendingExecutionsEnabled,
-          latestInvalidBundleStartBlocks
-        );
-      } else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
-
-      await clients.multiCallerClient.executeTransactionQueue();
-
-      logger.debug({ at: "Dataworker#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
-
-      if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
-    }
   } catch (error) {
     if (clients.configStoreClient.redisClient !== undefined) {
       // todo understand why redisClient isn't GCed automagically.

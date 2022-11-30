@@ -113,8 +113,6 @@ export async function constructSpokePoolClientsForFastDataworker(
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
     ]
-    // Don't use the cache for the quick lookup so we don't load and parse unneccessary events from Redis DB
-    // that we'll throw away if the below checks succeed.
   );
 }
 
