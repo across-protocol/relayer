@@ -14,8 +14,10 @@ import {
   updateDataworkerClients,
   constructSpokePoolClientsForFastDataworker,
   getSpokePoolClientEventSearchConfigsForFastDataworker,
+  spokePoolClientsToProviders,
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
+import { SpokePoolClientsByChain } from "../interfaces";
 config();
 let logger: winston.Logger;
 
@@ -210,10 +212,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       } else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
 
       await clients.multiCallerClient.executeTransactionQueue();
-
-      logger.debug({ at: "Dataworker#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
-
-      if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
 
       logger.debug({ at: "Dataworker#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
 

@@ -111,7 +111,7 @@ export class DataworkerConfig extends CommonConfig {
       ? Number(DATAWORKER_FAST_LOOKBACK_RETRIES)
       : 1;
     this.dataworkerFastLookbackRetryMultiplier = DATAWORKER_FAST_LOOKBACK_RETRY_MULTIPLIER
-      ? Number(DATAWORKER_FAST_LOOKBACK_RETRY_MULTIPLIER)
+      ? Math.floor(Number(DATAWORKER_FAST_LOOKBACK_RETRY_MULTIPLIER))
       : 4;
     this.dataworkerFastStartBundle = DATAWORKER_FAST_START_BUNDLE ? Number(DATAWORKER_FAST_START_BUNDLE) : "latest";
     if (typeof this.dataworkerFastStartBundle === "number") {
