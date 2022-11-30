@@ -31,7 +31,7 @@ export class Relayer {
     this.maxUnfilledDepositLookBack = config.maxRelayerUnfilledDepositLookBack ?? {};
   }
 
-  async checkForUnfilledDepositsAndFill(sendSlowRelays = true) {
+  async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
     // Fetch all unfilled deposits, order by total earnable fee.
     // TODO: Note this does not consider the price of the token which will be added once the profitability module is
     // added to this bot.
@@ -144,6 +144,23 @@ export class Relayer {
           deposit,
           invalidFills,
           destinationChain: getNetworkName(destinationChainId),
+        });
+        continue;
+      }
+
+      // We query the relayer API to get the deposit limits for different token and destination combinations.
+      // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
+      // refund will be stuck for potentially 7 days.
+      if (
+        this.clients.acrossApiClient.updatedLimits &&
+        unfilledAmount.gt(this.clients.acrossApiClient.getLimit(l1Token.address))
+      ) {
+        this.logger.warn({
+          at: "Relayer",
+          message: "😱 Skipping deposit with greater unfilled amount that API suggested limit",
+          limit: this.clients.acrossApiClient.getLimit(l1Token.address),
+          unfilledAmount: unfilledAmount.toString(),
+          l1Token: l1Token.address,
         });
         continue;
       }
