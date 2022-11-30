@@ -100,14 +100,14 @@ export class DataworkerConfig extends CommonConfig {
 
     // `dataworkerFastLookbackCount` affects how far we fetch events from, modifying the search config's 'fromBlock'.
     // Set to 0 to load all events, but be careful as this will cause the Dataworker to take 30+ minutes to complete.
-    // The average bundle frequency is 4 bundles per day so 16 bundles is a reasonable default
-    // to lookback 4 days.
+    // The average bundle frequency is 4-6 bundles per day so 16 bundles is a reasonable default
+    // to lookback 2-4 days.
     this.dataworkerFastLookbackCount = DATAWORKER_FAST_LOOKBACK_COUNT
       ? Math.floor(Number(DATAWORKER_FAST_LOOKBACK_COUNT))
       : 16;
     // By default, if we need to load more data to construct the next bundle, we'll retry once and set a lookback
-    // to a very safe 16 * 4 = 48 bundles. This should cover at least the latest 4 days of events and take
-    // ~10 mins to run with quorum=1.
+    // to a very safe 16 * 4 = 64 bundles. This should cover at least the latest 10 days of events and take
+    // ~10 mins to run with quorum=2.
     this.dataworkerFastLookbackRetryCount = DATAWORKER_FAST_LOOKBACK_RETRIES
       ? Number(DATAWORKER_FAST_LOOKBACK_RETRIES)
       : 1;
