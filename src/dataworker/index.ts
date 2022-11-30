@@ -162,7 +162,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           logger.debug({
             at: "Dataworker#index",
             message:
-              "latest invalid bundle start blocks are later than next validated bundle's start blocks. Will increase update range and retry 😬",
+              "latest invalid bundle start blocks are later than nth validated bundle's end blocks. Will increase update range and retry 😬",
             latestInvalidBundleStartBlocks,
             bundleStartBlockMapping: bundleStartBlockMapping,
             nthBundle: nthFullyExecutedBundle.transactionHash,
