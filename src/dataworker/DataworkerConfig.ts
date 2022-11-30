@@ -83,6 +83,13 @@ export class DataworkerConfig extends CommonConfig {
     this.disputerEnabled = DISPUTER_ENABLED === "true";
     this.proposerEnabled = PROPOSER_ENABLED === "true";
     this.executorEnabled = EXECUTOR_ENABLED === "true";
+    if (this.executorEnabled)
+      assert(this.spokeRootsLookbackCount > 0, "must set spokeRootsLookbackCount > 0 if executor enabled");
+    else if (this.disputerEnabled || this.proposerEnabled)
+      assert(
+        this.spokeRootsLookbackCount === undefined || this.spokeRootsLookbackCount === 0,
+        "should set spokeRootsLookbackCount == 0 if executor disabled and proposer/disputer enabled"
+      );
     if (Object.keys(this.blockRangeEndBlockBuffer).length > 0)
       for (const chainId of this.spokePoolChains)
         assert(
@@ -103,10 +110,11 @@ export class DataworkerConfig extends CommonConfig {
       ? Math.floor(Number(DATAWORKER_FAST_LOOKBACK_COUNT))
       : 16;
     assert(this.dataworkerFastLookbackCount > 0, "dataworkerFastLookbackCount should be > 0");
-    assert(
-      this.dataworkerFastLookbackCount >= this.spokeRootsLookbackCount,
-      "dataworkerFastLookbackCount should be >= spokeRootsLookbackCount"
-    );
+    if (this.spokeRootsLookbackCount !== undefined)
+      assert(
+        this.dataworkerFastLookbackCount >= this.spokeRootsLookbackCount,
+        "dataworkerFastLookbackCount should be >= spokeRootsLookbackCount"
+      );
 
     // By default, if we need to load more data to construct the next bundle, we'll retry once and set a lookback
     // to a very safe 16 * 4 = 64 bundles. This should cover at least the latest 10 days of events and take

@@ -80,12 +80,12 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
 
       // The following code sets the target bundle's start blocks that we'll use as a threshold for determining
       // whether to expand the lookback dynamically via a retry.
-      // Note: The reason why we pass -(2 + config.spokeRootsLookbackCount) into the function below is because we
+      // Note: The reason why we pass -(1 + config.spokeRootsLookbackCount) into the function below is because we
       // want to get the start blocks of the root bundle that is (spokeRootsLookbackCount) bundles from being
-      // from the latest bundle and we start with -2 because -1 would get that target spoke root's end blocks,
-      // not its start blocks.
+      // from the latest bundle and we start with -2 because n=-1 would get that target spoke root's end blocks,
+      // not its start blocks so we want to start with n=-2 assuming config.spokeRootsLookbackCount = 1.
       const nthFullyExecutedBundle = clients.hubPoolClient.getNthFullyExecutedRootBundle(
-        -(2 + config.spokeRootsLookbackCount)
+        -(1 + (config.spokeRootsLookbackCount ?? 0))
       );
       const nthFullyExecutedBundleEndBlocks = nthFullyExecutedBundle?.bundleEvaluationBlockNumbers;
       // Note: If bundle doesn't exist, then use the deployment blocks as the start blocks.
@@ -146,7 +146,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         // the (N=config.spokeRootsLookbackCount)th bundle.
         if (
           Object.entries(latestInvalidBundleStartBlocks).some(([chainId, invalidBundleStartBlock]) => {
-            return invalidBundleStartBlock > bundleStartBlockMapping[chainId];
+            return invalidBundleStartBlock >= bundleStartBlockMapping[chainId];
           })
         ) {
           // Overwrite fast lookback count.
@@ -166,7 +166,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
             latestInvalidBundleStartBlocks,
             bundleStartBlockMapping: bundleStartBlockMapping,
             nthBundle: nthFullyExecutedBundle.transactionHash,
-            n: -(2 + config.spokeRootsLookbackCount),
+            n: -(1 + config.spokeRootsLookbackCount),
             oldDataworkerFastLookbackCount: config.dataworkerFastLookbackCount,
             newDataworkerFastLookbackCount: customConfig.dataworkerFastLookbackCount,
           });
@@ -178,7 +178,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
             latestInvalidBundleStartBlocks,
             bundleStartBlockMapping: bundleStartBlockMapping,
             nthBundle: nthFullyExecutedBundle.transactionHash,
-            n: -(2 + config.spokeRootsLookbackCount),
+            n: -(1 + config.spokeRootsLookbackCount),
             fromBlocks,
             toBlocks,
           });
