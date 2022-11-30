@@ -53,17 +53,15 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       const loopStart = Date.now();
       await updateDataworkerClients(clients);
 
-      // Grab end blocks for latest fully executed bundle. We can use this block to optimize the dataworker event
-      // search by loading partially from the cache and only saving into the cache all blocks older than or equal
-      // to the bundle end blocks for the chains. This will let the dataworker's proposal and validation logic
-      // to continue to fetch fresh events while allowing the leaf execution methods to use cached logic and overall
-      // reduce the number of web3 requests sent.
-      const latestFullyExecutedBundleEndBlocks = clients.hubPoolClient.getLatestFullyExecutedRootBundle(
-        clients.hubPoolClient.latestBlockNumber
-      ).bundleEvaluationBlockNumbers;
-      const bundleEndBlockMapping = Object.fromEntries(
+      // Get end blocks from second to latest fully executed root bundle. We'll use this end block to determine
+      // if we need to load more events (by expanding the dataworker's lookback) in order to evaluate the pending
+      // bundle. In order to do so, we need to load events as oldas the pending bundle's fromBlock, which is the
+      // the second to latest fully executed bundle's end blocks + 1
+      const nthFullyExecutedBundleEndBlocks =
+        clients.hubPoolClient.getNthFullyExecutedRootBundle(-2).bundleEvaluationBlockNumbers;
+      const bundleStartBlockMapping = Object.fromEntries(
         dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, index) => {
-          return [chainId, latestFullyExecutedBundleEndBlocks[index].toNumber()];
+          return [chainId, nthFullyExecutedBundleEndBlocks[index].toNumber() + 1];
         })
       );
 
@@ -130,10 +128,10 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         latestInvalidBundleStartBlocks = getLatestInvalidBundleStartBlocks(spokePoolClients);
 
         // Increase SpokePoolClient event lookback if any of the invalid bundle start blocks are later
-        // than one of the bundle end blocks in the latest executed bundle.
+        // than one of the next bundle's start blocks.
         if (
           Object.entries(latestInvalidBundleStartBlocks).some(([chainId, invalidBundleStartBlock]) => {
-            return invalidBundleStartBlock > bundleEndBlockMapping[chainId];
+            return invalidBundleStartBlock > bundleStartBlockMapping[chainId];
           })
         ) {
           // Overwrite fast lookback count.
@@ -149,9 +147,9 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           logger.debug({
             at: "Dataworker#index",
             message:
-              "latest invalid bundle start blocks are later than latest executed root bundle's end blocks. Will increase update range and retry 😬",
+              "latest invalid bundle start blocks are later than next validated bundle's start blocks. Will increase update range and retry 😬",
             latestInvalidBundleStartBlocks,
-            latestFullyExecutedBundleEndBlocks: bundleEndBlockMapping,
+            nextValidBundleStartBlocks: bundleStartBlockMapping,
             oldDataworkerFastLookbackCount: config.dataworkerFastLookbackCount,
             newDataworkerFastLookbackCount: customConfig.dataworkerFastLookbackCount,
           });
@@ -161,6 +159,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
             message:
               "Identified latest invalid bundle start blocks per chain that we will use to filter root bundles that can be proposed and validated",
             latestInvalidBundleStartBlocks,
+            nextValidBundleStartBlocks: bundleStartBlockMapping,
             fromBlocks,
             toBlocks,
           });
