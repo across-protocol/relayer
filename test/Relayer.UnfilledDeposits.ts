@@ -22,6 +22,7 @@ import {
   AcrossConfigStoreClient,
   MultiCallerClient,
   TokenClient,
+  AcrossApiClient,
 } from "../src/clients";
 import { MockInventoryClient, MockProfitClient } from "./mocks";
 
@@ -84,6 +85,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         tokenClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
+        acrossApiClient: new AcrossApiClient(spyLogger),
       },
       {
         relayerTokens: [],
