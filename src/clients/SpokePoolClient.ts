@@ -370,7 +370,6 @@ export class SpokePoolClient {
 
       // Traverse all deposit events and update them with associated speedups, If they exist.
       for (const [_destinationChainId, deposits] of Object.entries(this.deposits)) {
-        const destinationChainId = Number(_destinationChainId);
         for (const [index, deposit] of deposits.entries()) {
           deposits[index] = this.appendMaxSpeedUpSignatureToDeposit(deposit);
         }
