@@ -1,15 +1,21 @@
-import { Wallet, config, startupLogLevel, processEndPollingLoop, Contract, ethers } from "../utils";
+import {
+  Wallet,
+  config,
+  startupLogLevel,
+  processEndPollingLoop,
+  Contract,
+  ethers,
+  getNetworkName,
+  etherscanLink,
+} from "../utils";
 import { winston } from "../utils";
 import {
   finalizeArbitrum,
   getFinalizableMessages,
-  getFinalizableTransactions,
   getPosClient,
   getOptimismClient,
-  getOptimismFinalizableMessages,
   multicallOptimismFinalizations,
   multicallPolygonFinalizations,
-  multicallPolygonRetrievals,
 } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient } from "../clients";
@@ -29,6 +35,12 @@ let logger: winston.Logger;
 export interface Multicall2Call {
   callData: ethers.utils.BytesLike;
   target: string;
+}
+
+export interface Withdrawal {
+  l2ChainId: number;
+  l1TokenSymbol: string;
+  amount: string;
 }
 
 // Filter for optimistic rollups
@@ -58,6 +70,10 @@ export async function finalize(
   for (const chainId of configuredChainIds) {
     const client = spokePoolClients[chainId];
     const tokensBridged = client.getTokensBridged();
+    const finalizationsToBatch: { callData: Multicall2Call[]; withdrawals: Withdrawal[] } = {
+      callData: [],
+      withdrawals: [],
+    };
 
     if (chainId === 42161) {
       // Skip events that are likely not past the seven day challenge period.
@@ -75,21 +91,51 @@ export async function finalize(
       const recentTokensBridgedEvents = tokensBridged.filter(
         (e) => e.blockNumber >= client.latestBlockNumber - polygonFinalizationWindow
       );
-      await multicallPolygonFinalizations(recentTokensBridgedEvents, posClient, multicall2, hubPoolClient, logger);
-      await multicallPolygonRetrievals(recentTokensBridgedEvents, hubSigner, hubPoolClient, multicall2, logger);
+      const finalizations = await multicallPolygonFinalizations(
+        recentTokensBridgedEvents,
+        posClient,
+        hubSigner,
+        hubPoolClient,
+        logger
+      );
+      finalizationsToBatch.callData.push(...finalizations.callData);
+      finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
     } else if (chainId === 10) {
       // Skip events that are likely not past the seven day challenge period.
       const olderTokensBridgedEvents = tokensBridged.filter(
         (e) => e.blockNumber < client.latestBlockNumber - optimisticRollupFinalizationWindow
       );
       const crossChainMessenger = getOptimismClient(hubSigner);
-      await multicallOptimismFinalizations(
+      const finalizations = await multicallOptimismFinalizations(
         olderTokensBridgedEvents,
         crossChainMessenger,
-        multicall2,
         hubPoolClient,
         logger
       );
+      finalizationsToBatch.callData.push(...finalizations.callData);
+      finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
+    }
+
+    if (finalizationsToBatch.callData.length > 0) {
+      try {
+        const txn = await (await multicall2.aggregate(finalizationsToBatch.callData)).wait();
+        finalizationsToBatch.withdrawals.forEach((withdrawal) => {
+          logger.info({
+            at: "Finalizer",
+            message: `Finalized ${getNetworkName(withdrawal.l2ChainId)} withdrawal for ${withdrawal.amount} of ${
+              withdrawal.l1TokenSymbol
+            } 🪃`,
+            transactionHash: etherscanLink(txn.transactionHash, 1),
+          });
+        });
+      } catch (error) {
+        logger.warn({
+          at: "Finalizer",
+          message: "Error creating aggregateTx",
+          error,
+          notificationPath: "across-error",
+        });
+      }
     }
   }
 }

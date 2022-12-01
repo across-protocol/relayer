@@ -5,8 +5,6 @@ import {
   Contract,
   convertFromWei,
   ERC20,
-  ethers,
-  etherscanLink,
   getDeployedContract,
   getProvider,
   groupObjectCountsByProp,
@@ -16,7 +14,7 @@ import {
 } from "../../utils";
 import { L1Token, TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
-import { Multicall2Call } from "..";
+import { Multicall2Call, Withdrawal } from "..";
 
 // Note!!: This client will only work for PoS tokens. Matic also has Plasma tokens which have a different finalization
 // process entirely.
@@ -146,75 +144,41 @@ export async function finalizePolygon(posClient: POSClient, event: PolygonTokens
 export async function multicallPolygonFinalizations(
   tokensBridged: TokensBridged[],
   posClient: POSClient,
-  multicall: Contract,
-  hubPoolClient: HubPoolClient,
-  logger: winston.Logger
-): Promise<void> {
-  const finalizableMessages = await getFinalizableTransactions(logger, tokensBridged, posClient);
-  if (finalizableMessages.length === 0) return;
-  try {
-    const callData = await Promise.all(finalizableMessages.map((event) => finalizePolygon(posClient, event)));
-    const txn = await (await multicall.aggregate(callData)).wait();
-    for (const message of finalizableMessages) {
-      const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-        137,
-        message.l2TokenAddress,
-        hubPoolClient.latestBlockNumber
-      );
-      const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
-      const amountFromWei = convertFromWei(message.amountToReturn.toString(), l1TokenInfo.decimals);
-      logger.debug({
-        at: "PolygonFinalizer",
-        message: `Finalized Polygon withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
-        transactionHash: txn.transactionHash,
-      });
-    }
-  } catch (error) {
-    logger.warn({
-      at: "PolygonFinalizer",
-      message: "Error creating aggregateTx for exit",
-      error,
-      notificationPath: "across-error",
-    });
-  }
-}
-
-export async function multicallPolygonRetrievals(
-  events: TokensBridged[],
   hubSigner: Wallet,
   hubPoolClient: HubPoolClient,
-  multicall: Contract,
   logger: winston.Logger
-): Promise<void> {
-  try {
-    const tokensToRetrieve = (
-      await Promise.all(
-        getL2TokensToFinalize(events).map((l2Token) =>
-          retrieveTokenFromMainnetTokenBridger(l2Token, hubSigner, hubPoolClient)
-        )
+): Promise<{ callData: Multicall2Call[]; withdrawals: Withdrawal[] }> {
+  const finalizableMessages = await getFinalizableTransactions(logger, tokensBridged, posClient);
+  const callDataFinalizations = await Promise.all(
+    finalizableMessages.map((event) => finalizePolygon(posClient, event))
+  );
+  const callDataRetrievals = (
+    await Promise.all(
+      getL2TokensToFinalize(tokensBridged).map((l2Token) =>
+        retrieveTokenFromMainnetTokenBridger(l2Token, hubSigner, hubPoolClient)
       )
-    ).filter((x) => x !== undefined);
-    if (tokensToRetrieve.length === 0) return;
-    const txn = await (await multicall.aggregate(tokensToRetrieve.map((x) => x.callData))).wait();
-    for (const retrieval of tokensToRetrieve) {
-      const balanceFromWei = ethers.utils.formatUnits(
-        retrieval.balanceToRetrieve.toString(),
-        retrieval.l1TokenInfo.decimals
-      );
-      logger.info({
-        at: "PolygonFinalizer",
-        message: `Retrieved ${balanceFromWei} of ${retrieval.l1TokenInfo.symbol} from PolygonTokenBridger 🪃`,
-        transactionHash: etherscanLink(txn.transactionHash, 1),
-      });
-    }
-  } catch (error) {
-    logger.warn({
-      at: "PolygonFinalizer",
-      message: "Error creating aggregateTx for token retrieval",
-      error,
-      notificationPath: "across-error",
-    });
-  }
+    )
+  )
+    .filter((x) => x !== undefined)
+    .map((x) => x.callData);
+  const withdrawals = finalizableMessages.map((message) => {
+    const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
+      137,
+      message.l2TokenAddress,
+      hubPoolClient.latestBlockNumber
+    );
+    const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
+    const amountFromWei = convertFromWei(message.amountToReturn.toString(), l1TokenInfo.decimals);
+    return {
+      l2ChainId: 137,
+      l1TokenSymbol: l1TokenInfo.symbol,
+      amount: amountFromWei,
+    };
+  });
+  return {
+    callData: callDataFinalizations.concat(callDataRetrievals),
+    withdrawals,
+  };
 }
 
 export function getMainnetTokenBridger(mainnetSigner: Wallet) {

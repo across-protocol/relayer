@@ -1,17 +1,8 @@
 import * as optimismSDK from "@eth-optimism/sdk";
-import { Multicall2Call } from "..";
+import { Multicall2Call, Withdrawal } from "..";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { L1Token, TokensBridged } from "../../interfaces";
-import {
-  Contract,
-  convertFromWei,
-  ethers,
-  etherscanLink,
-  getNodeUrlList,
-  groupObjectCountsByProp,
-  Wallet,
-  winston,
-} from "../../utils";
+import { convertFromWei, ethers, getNodeUrlList, groupObjectCountsByProp, Wallet, winston } from "../../utils";
 
 export function getOptimismClient(hubSigner: Wallet): optimismSDK.CrossChainMessenger {
   return new optimismSDK.CrossChainMessenger({
@@ -116,32 +107,24 @@ export async function finalizeOptimismMessage(
 export async function multicallOptimismFinalizations(
   tokensBridgedEvents: TokensBridged[],
   crossChainMessenger: optimismSDK.CrossChainMessenger,
-  multicall: Contract,
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
-): Promise<void> {
+): Promise<{ callData: Multicall2Call[]; withdrawals: Withdrawal[] }> {
   const finalizableMessages = await getOptimismFinalizableMessages(logger, tokensBridgedEvents, crossChainMessenger);
-  if (finalizableMessages.length === 0) return;
-  try {
-    const callData = await Promise.all(
-      finalizableMessages.map((message) => finalizeOptimismMessage(crossChainMessenger, message))
-    );
-    const txn = await (await multicall.aggregate(callData)).wait();
-    for (const message of finalizableMessages) {
-      const l1TokenInfo = getL1TokenInfoForOptimismToken(hubPoolClient, message.event.l2TokenAddress);
-      const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
-      logger.info({
-        at: "OptimismFinalizer",
-        message: `Finalized Optimism withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
-        transactionHash: etherscanLink(txn.transactionHash, 1),
-      });
-    }
-  } catch (error) {
-    logger.warn({
-      at: "OptimismFinalizer",
-      message: "Error creating aggregateTx",
-      error,
-      notificationPath: "across-error",
-    });
-  }
+  const callData = await Promise.all(
+    finalizableMessages.map((message) => finalizeOptimismMessage(crossChainMessenger, message))
+  );
+  const withdrawals = finalizableMessages.map((message) => {
+    const l1TokenInfo = getL1TokenInfoForOptimismToken(hubPoolClient, message.event.l2TokenAddress);
+    const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
+    return {
+      l2ChainId: 10,
+      l1TokenSymbol: l1TokenInfo.symbol,
+      amount: amountFromWei,
+    };
+  });
+  return {
+    callData,
+    withdrawals,
+  };
 }
