@@ -157,7 +157,7 @@ export class Relayer {
       ) {
         this.logger.warn({
           at: "Relayer",
-          message: "😱 Skipping deposit with greater unfilled amount that API suggested limit",
+          message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
           limit: this.clients.acrossApiClient.getLimit(l1Token.address),
           unfilledAmount: unfilledAmount.toString(),
           l1Token: l1Token.address,
