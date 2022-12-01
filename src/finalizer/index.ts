@@ -74,7 +74,6 @@ export async function finalize(
     const client = spokePoolClients[chainId];
     const tokensBridged = client.getTokensBridged();
 
-
     if (chainId === 42161) {
       // Skip events that are likely not past the seven day challenge period.
       const olderTokensBridgedEvents = tokensBridged.filter(

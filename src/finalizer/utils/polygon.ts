@@ -149,21 +149,19 @@ export async function multicallPolygonFinalizations(
   logger: winston.Logger
 ): Promise<{ callData: Multicall2Call[]; withdrawals: Withdrawal[] }> {
   const finalizableMessages = await getFinalizableTransactions(logger, tokensBridged, posClient);
-  const callData = await Promise.all(
-    finalizableMessages.map((event) => finalizePolygon(posClient, event))
-  )
-  const tokensInFinalizableMessages = getL2TokensToFinalize(finalizableMessages.map((polygonTokensBridged) => {
-    const { payload, ...tokensBridged } = polygonTokensBridged;
-    return tokensBridged;
-  }))
-  const callDataRetrievals = (
-    await Promise.all(
-      tokensInFinalizableMessages.map((l2Token) =>
-        retrieveTokenFromMainnetTokenBridger(l2Token, hubSigner, hubPoolClient)
-      )
+  const callData = await Promise.all(finalizableMessages.map((event) => finalizePolygon(posClient, event)));
+  const tokensInFinalizableMessages = getL2TokensToFinalize(
+    finalizableMessages.map((polygonTokensBridged) => {
+      const { payload, ...tokensBridged } = polygonTokensBridged;
+      return tokensBridged;
+    })
+  );
+  const callDataRetrievals = await Promise.all(
+    tokensInFinalizableMessages.map((l2Token) =>
+      retrieveTokenFromMainnetTokenBridger(l2Token, hubSigner, hubPoolClient)
     )
   );
-  callData.push(...callDataRetrievals)
+  callData.push(...callDataRetrievals);
   const withdrawals = finalizableMessages.map((message) => {
     const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
       CHAIN_ID,
