@@ -150,7 +150,7 @@ export async function multicallPolygonFinalizations(
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
 ): Promise<void> {
-  const finalizableMessages = await getFinalizableTransactions(logger, tokensBridged, posClient)
+  const finalizableMessages = await getFinalizableTransactions(logger, tokensBridged, posClient);
   if (finalizableMessages.length === 0) return;
   try {
     const callData = await Promise.all(finalizableMessages.map((event) => finalizePolygon(posClient, event)));
@@ -204,7 +204,7 @@ export async function multicallPolygonRetrievals(
       logger.info({
         at: "PolygonFinalizer",
         message: `Retrieved ${balanceFromWei} of ${retrieval.l1TokenInfo.symbol} from PolygonTokenBridger 🪃`,
-        transactionHash: etherscanLink(txn.transactionhash, 1),
+        transactionHash: etherscanLink(txn.transactionHash, 1),
       });
     }
   } catch (error) {
