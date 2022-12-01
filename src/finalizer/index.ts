@@ -1,16 +1,15 @@
-import { Wallet, config, startupLogLevel, processEndPollingLoop } from "../utils";
+import { Wallet, config, startupLogLevel, processEndPollingLoop, Contract, ethers } from "../utils";
 import { winston } from "../utils";
 import {
   finalizeArbitrum,
-  finalizePolygon,
   getFinalizableMessages,
   getFinalizableTransactions,
-  getL2TokensToFinalize,
   getPosClient,
-  retrieveTokenFromMainnetTokenBridger,
   getOptimismClient,
   getOptimismFinalizableMessages,
-  finalizeOptimismMessage,
+  multicallOptimismFinalizations,
+  multicallPolygonFinalizations,
+  multicallPolygonRetrievals,
 } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient } from "../clients";
@@ -23,8 +22,14 @@ import {
   ProcessEnv,
   FINALIZER_TOKENBRIDGE_LOOKBACK,
 } from "../common";
+import { Multicall2Ethers__factory } from "@uma/contracts-node";
 config();
 let logger: winston.Logger;
+
+export interface Multicall2Call {
+  callData: ethers.utils.BytesLike;
+  target: string;
+}
 
 // Filter for optimistic rollups
 const fiveDaysOfBlocks = 5 * 24 * 60 * 60; // Assuming a slow 1s/block rate for Arbitrum and Optimism.
@@ -40,6 +45,14 @@ export async function finalize(
   optimisticRollupFinalizationWindow: number = fiveDaysOfBlocks,
   polygonFinalizationWindow: number = oneDayOfBlocks
 ): Promise<void> {
+  // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
+  // input byte length.
+  const multicall2 = new Contract(
+    "0x5ba1e12693dc8f9c48aad8770482f4739beed696",
+    Multicall2Ethers__factory.abi,
+    hubPoolClient.hubPool.signer
+  );
+
   // For each chain, look up any TokensBridged events emitted by SpokePool client that we'll attempt to finalize
   // on L1.
   for (const chainId of configuredChainIds) {
@@ -62,27 +75,21 @@ export async function finalize(
       const recentTokensBridgedEvents = tokensBridged.filter(
         (e) => e.blockNumber >= client.latestBlockNumber - polygonFinalizationWindow
       );
-      const canWithdraw = await getFinalizableTransactions(logger, recentTokensBridgedEvents, posClient);
-      for (const event of canWithdraw) {
-        await finalizePolygon(posClient, hubPoolClient, event, logger);
-      }
-      for (const l2Token of getL2TokensToFinalize(recentTokensBridgedEvents)) {
-        await retrieveTokenFromMainnetTokenBridger(logger, l2Token, hubSigner, hubPoolClient);
-      }
+      await multicallPolygonFinalizations(recentTokensBridgedEvents, posClient, multicall2, hubPoolClient, logger);
+      await multicallPolygonRetrievals(recentTokensBridgedEvents, hubSigner, hubPoolClient, multicall2, logger);
     } else if (chainId === 10) {
       // Skip events that are likely not past the seven day challenge period.
       const olderTokensBridgedEvents = tokensBridged.filter(
         (e) => e.blockNumber < client.latestBlockNumber - optimisticRollupFinalizationWindow
       );
       const crossChainMessenger = getOptimismClient(hubSigner);
-      const finalizableMessages = await getOptimismFinalizableMessages(
-        logger,
+      await multicallOptimismFinalizations(
         olderTokensBridgedEvents,
-        crossChainMessenger
+        crossChainMessenger,
+        multicall2,
+        hubPoolClient,
+        logger
       );
-      for (const message of finalizableMessages) {
-        await finalizeOptimismMessage(hubPoolClient, crossChainMessenger, message, logger);
-      }
     }
   }
 }

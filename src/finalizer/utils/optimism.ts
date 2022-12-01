@@ -1,9 +1,10 @@
 import * as optimismSDK from "@eth-optimism/sdk";
+import { Multicall2Call } from "..";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { L1Token, TokensBridged } from "../../interfaces";
 import {
+  Contract,
   convertFromWei,
-  delay,
   ethers,
   etherscanLink,
   getNodeUrlList,
@@ -102,26 +103,43 @@ export function getL1TokenInfoForOptimismToken(hubPoolClient: HubPoolClient, l2T
 }
 
 export async function finalizeOptimismMessage(
-  hubPoolClient: HubPoolClient,
   crossChainMessenger: optimismSDK.CrossChainMessenger,
-  message: CrossChainMessageWithStatus,
+  message: CrossChainMessageWithStatus
+): Promise<Multicall2Call> {
+  const callData = await crossChainMessenger.populateTransaction.finalizeMessage(message.message);
+  return {
+    callData: callData.data,
+    target: callData.to,
+  };
+}
+
+export async function multicallOptimismFinalizations(
+  tokensBridgedEvents: TokensBridged[],
+  crossChainMessenger: optimismSDK.CrossChainMessenger,
+  multicall: Contract,
+  hubPoolClient: HubPoolClient,
   logger: winston.Logger
 ): Promise<void> {
-  // Need to handle special case where WETH is bridged as ETH and the contract address changes.
-  const l1TokenInfo = getL1TokenInfoForOptimismToken(hubPoolClient, message.event.l2TokenAddress);
-  const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
+  const finalizableMessages = await getOptimismFinalizableMessages(logger, tokensBridgedEvents, crossChainMessenger);
+  if (finalizableMessages.length === 0) return;
   try {
-    const txn = await crossChainMessenger.finalizeMessage(message.message);
-    logger.info({
-      at: "OptimismFinalizer",
-      message: `Finalized Optimism withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
-      transactionHash: etherscanLink(txn.hash, 1),
-    });
-    await delay(30);
+    const callData = await Promise.all(
+      finalizableMessages.map((message) => finalizeOptimismMessage(crossChainMessenger, message))
+    );
+    const txn = await (await multicall.aggregate(callData)).wait();
+    for (const message of finalizableMessages) {
+      const l1TokenInfo = getL1TokenInfoForOptimismToken(hubPoolClient, message.event.l2TokenAddress);
+      const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
+      logger.info({
+        at: "OptimismFinalizer",
+        message: `Finalized Optimism withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
+        transactionHash: etherscanLink(txn.transactionHash, 1),
+      });
+    }
   } catch (error) {
     logger.warn({
       at: "OptimismFinalizer",
-      message: "Error creating relayMessageTx",
+      message: "Error creating aggregateTx",
       error,
       notificationPath: "across-error",
     });
