@@ -149,34 +149,37 @@ export async function multicallPolygonFinalizations(
   logger: winston.Logger
 ): Promise<{ callData: Multicall2Call[]; withdrawals: Withdrawal[] }> {
   const finalizableMessages = await getFinalizableTransactions(logger, tokensBridged, posClient);
-  const callDataFinalizations = await Promise.all(
+  const callData = await Promise.all(
     finalizableMessages.map((event) => finalizePolygon(posClient, event))
-  );
+  )
+  const tokensInFinalizableMessages = getL2TokensToFinalize(finalizableMessages.map((polygonTokensBridged) => {
+    const { payload, ...tokensBridged } = polygonTokensBridged;
+    return tokensBridged;
+  }))
   const callDataRetrievals = (
     await Promise.all(
-      getL2TokensToFinalize(tokensBridged).map((l2Token) =>
+      tokensInFinalizableMessages.map((l2Token) =>
         retrieveTokenFromMainnetTokenBridger(l2Token, hubSigner, hubPoolClient)
       )
     )
-  )
-    .filter((x) => x !== undefined)
-    .map((x) => x.callData);
+  );
+  callData.push(...callDataRetrievals)
   const withdrawals = finalizableMessages.map((message) => {
     const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-      137,
+      CHAIN_ID,
       message.l2TokenAddress,
       hubPoolClient.latestBlockNumber
     );
     const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
     const amountFromWei = convertFromWei(message.amountToReturn.toString(), l1TokenInfo.decimals);
     return {
-      l2ChainId: 137,
+      l2ChainId: CHAIN_ID,
       l1TokenSymbol: l1TokenInfo.symbol,
       amount: amountFromWei,
     };
   });
   return {
-    callData: callDataFinalizations.concat(callDataRetrievals),
+    callData,
     withdrawals,
   };
 }
@@ -189,27 +192,14 @@ export async function retrieveTokenFromMainnetTokenBridger(
   l2Token: string,
   mainnetSigner: Wallet,
   hubPoolClient: HubPoolClient
-): Promise<{ callData: Multicall2Call; balanceToRetrieve: BigNumber; l1TokenInfo: L1Token }> {
+): Promise<Multicall2Call> {
   const l1Token = hubPoolClient.getL1TokenCounterpartAtBlock(CHAIN_ID, l2Token, hubPoolClient.latestBlockNumber);
   const mainnetTokenBridger = getMainnetTokenBridger(mainnetSigner);
-  const token = new Contract(l1Token, ERC20.abi, mainnetSigner);
-  const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1Token);
-  const balance = await token.balanceOf(mainnetTokenBridger.address);
-
-  // WETH is sent to token bridger contract as ETH.
-  const ethBalance = await mainnetTokenBridger.provider.getBalance(mainnetTokenBridger.address);
-  const balanceToRetrieve = l1TokenInfo.symbol === "WETH" ? ethBalance : balance;
-  if (balanceToRetrieve.gt(toBN(0))) {
-    const callData = await mainnetTokenBridger.populateTransaction.retrieve(l1Token);
-    return {
-      callData: {
-        callData: callData.data,
-        target: callData.to,
-      },
-      l1TokenInfo,
-      balanceToRetrieve,
-    };
-  }
+  const callData = await mainnetTokenBridger.populateTransaction.retrieve(l1Token);
+  return {
+    callData: callData.data,
+    target: callData.to,
+  };
 }
 
 export function getL2TokensToFinalize(events: TokensBridged[]) {
@@ -219,13 +209,3 @@ export function getL2TokensToFinalize(events: TokensBridged[]) {
   }, {});
   return Object.keys(l2TokenCountInBridgeEvents).filter((token) => l2TokenCountInBridgeEvents[token] === true);
 }
-
-export const minimumRootChainAbi = [
-  {
-    inputs: [{ internalType: "bytes", name: "inputData", type: "bytes" }],
-    name: "exit",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-];

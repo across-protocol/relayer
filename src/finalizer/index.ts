@@ -64,16 +64,16 @@ export async function finalize(
     Multicall2Ethers__factory.abi,
     hubPoolClient.hubPool.signer
   );
-
+  const finalizationsToBatch: { callData: Multicall2Call[]; withdrawals: Withdrawal[] } = {
+    callData: [],
+    withdrawals: [],
+  };
   // For each chain, look up any TokensBridged events emitted by SpokePool client that we'll attempt to finalize
   // on L1.
   for (const chainId of configuredChainIds) {
     const client = spokePoolClients[chainId];
     const tokensBridged = client.getTokensBridged();
-    const finalizationsToBatch: { callData: Multicall2Call[]; withdrawals: Withdrawal[] } = {
-      callData: [],
-      withdrawals: [],
-    };
+
 
     if (chainId === 42161) {
       // Skip events that are likely not past the seven day challenge period.
@@ -115,27 +115,29 @@ export async function finalize(
       finalizationsToBatch.callData.push(...finalizations.callData);
       finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
     }
+  }
 
-    if (finalizationsToBatch.callData.length > 0) {
-      try {
-        const txn = await (await multicall2.aggregate(finalizationsToBatch.callData)).wait();
-        finalizationsToBatch.withdrawals.forEach((withdrawal) => {
-          logger.info({
-            at: "Finalizer",
-            message: `Finalized ${getNetworkName(withdrawal.l2ChainId)} withdrawal for ${withdrawal.amount} of ${
-              withdrawal.l1TokenSymbol
-            } 🪃`,
-            transactionHash: etherscanLink(txn.transactionHash, 1),
-          });
-        });
-      } catch (error) {
-        logger.warn({
+  if (finalizationsToBatch.callData.length > 0) {
+    try {
+      // Note: We might want to slice these up in the future but I don't forsee us including enough events
+      // to approach the block gas limit.
+      const txn = await (await multicall2.aggregate(finalizationsToBatch.callData)).wait();
+      finalizationsToBatch.withdrawals.forEach((withdrawal) => {
+        logger.info({
           at: "Finalizer",
-          message: "Error creating aggregateTx",
-          error,
-          notificationPath: "across-error",
+          message: `Finalized ${getNetworkName(withdrawal.l2ChainId)} withdrawal for ${withdrawal.amount} of ${
+            withdrawal.l1TokenSymbol
+          } 🪃`,
+          transactionHash: etherscanLink(txn.transactionHash, 1),
         });
-      }
+      });
+    } catch (error) {
+      logger.warn({
+        at: "Finalizer",
+        message: "Error creating aggregateTx",
+        error,
+        notificationPath: "across-error",
+      });
     }
   }
 }
