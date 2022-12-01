@@ -34,7 +34,7 @@ export async function finalizeArbitrum(
     logger.warn({
       at: "ArbitrumFinalizer",
       message: "Error creating executeTransactionTx",
-      error,
+      reason: error.stack || error.message || error.toString(),
       notificationPath: "across-error",
     });
   }
@@ -105,7 +105,7 @@ export async function getMessageOutboxStatusAndProof(
         logIndex,
         l2ToL1Messages: l2ToL1Messages.length,
         txnHash: event.transactionHash,
-        error,
+        reason: error.stack || error.message || error.toString(),
         notificationPath: "across-error",
       });
       throw error;

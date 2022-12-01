@@ -134,7 +134,7 @@ export async function finalize(
       logger.warn({
         at: "Finalizer",
         message: "Error creating aggregateTx",
-        error,
+        reason: error.stack || error.message || error.toString(),
         notificationPath: "across-error",
       });
     }
