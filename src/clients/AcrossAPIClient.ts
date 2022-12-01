@@ -14,8 +14,7 @@ export class AcrossApiClient {
 
   public updatedLimits = false;
 
-  // Note: Max vercel execution duration is 1 minute
-  constructor(readonly logger: winston.Logger, readonly tokensQuery: string[] = [], readonly timeout: number = 60000) {
+  constructor(readonly logger: winston.Logger, readonly tokensQuery: string[] = [], readonly timeout: number = 5000) {
     if (Object.keys(tokensQuery).length === 0) this.tokensQuery = Object.keys(l2TokensToL1TokenValidation);
   }
 
