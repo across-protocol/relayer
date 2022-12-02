@@ -168,6 +168,7 @@ export class MultiCallerClient {
                 return { address: txn.contract.address, method: txn.method, args: txn.args };
               });
             this.logger.info({
+              at: "MultiCallerClient#chunkedTransactions",
               message: `Dropping ${dropped.length} transactions on chain ${chainId}.`,
               dropped,
             });
