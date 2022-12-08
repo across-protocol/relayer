@@ -141,10 +141,10 @@ describe("Dataworker: Propose root bundle", async function () {
     // relayed before proposing.
     await updateAllClients();
     // Buffer of 0 means proposer should not wait.
-    expect((await dataworkerInstance.shouldWaitToPropose(latestBlock3, spokePoolClients, 0)).value).to.be.false;
+    expect((await dataworkerInstance.shouldWaitToPropose(latestBlock3, spokePoolClients, 0)).shouldWait).to.be.false;
     // Buffer of 5 means proposer should wait until mainnet bundle end block is 5 blocks greater than
     // block in which roots were relayed.
-    expect((await dataworkerInstance.shouldWaitToPropose(latestBlock3, spokePoolClients, 5)).value).to.be.true;
+    expect((await dataworkerInstance.shouldWaitToPropose(latestBlock3, spokePoolClients, 5)).shouldWait).to.be.true;
 
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     const blockRange3 = [

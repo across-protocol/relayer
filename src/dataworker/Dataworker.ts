@@ -170,7 +170,7 @@ export class Dataworker {
     // If there has never been a validated root bundle, then we can always propose a new one:
     if (mostRecentValidatedBundle === undefined)
       return {
-        value: false,
+        shouldWait: false,
       };
 
     const expectedRootBundles = mostRecentValidatedBundle.poolRebalanceLeafCount;
@@ -191,19 +191,19 @@ export class Dataworker {
     // We should wait to propose until all root bundles have been relayed to spoke pools.
     if (Object.entries(relayedRootBundles).length !== expectedRootBundles) {
       return {
-        value: true,
+        shouldWait: true,
         mostRecentValidatedBundle: mostRecentValidatedBundle?.blockNumber,
         expectedRootBundles,
         relayedRootBundles,
       };
     } else {
-      const latestRelayedRootBundle = sortEventsAscending(Object.values(relayedRootBundles))[0];
+      const earliestRelayedRootBundle = sortEventsAscending(Object.values(relayedRootBundles))[0];
       return {
-        value: mainnetBundleEndBlock - bufferToPropose < latestRelayedRootBundle.blockNumber,
+        shouldWait: mainnetBundleEndBlock - bufferToPropose < earliestRelayedRootBundle.blockNumber,
         mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
         expectedRootBundles,
         relayedRootBundles,
-        latestRelayedRootBundle,
+        earliestRelayedRootBundle,
         bufferToPropose,
         mainnetBundleEndBlock,
       };
@@ -329,7 +329,7 @@ export class Dataworker {
     }
 
     const shouldWaitToPropose = await this.shouldWaitToPropose(mainnetBundleEndBlock, spokePoolClients);
-    if (shouldWaitToPropose.value) {
+    if (shouldWaitToPropose.shouldWait) {
       this.logger.debug({
         at: "Dataworker#propose",
         message: "Waiting to propose new bundle until all refund roots have been relayed to spoke pools",
