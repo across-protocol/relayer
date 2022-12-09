@@ -1,13 +1,4 @@
-import {
-  getProvider,
-  Wallet,
-  winston,
-  convertFromWei,
-  groupObjectCountsByProp,
-  delay,
-  etherscanLink,
-  Contract,
-} from "../../utils";
+import { getProvider, Wallet, winston, convertFromWei, groupObjectCountsByProp, Contract } from "../../utils";
 import { L2ToL1MessageStatus, L2TransactionReceipt, getL2Network, IL2ToL1MessageWriter } from "@arbitrum/sdk";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
@@ -43,13 +34,11 @@ export async function multicallArbitrumFinalizations(
   };
 }
 
-export async function finalizeArbitrum(
-  message: IL2ToL1MessageWriter,
-): Promise<Multicall2Call> {
-  const l2Provider = getProvider(42161);
+export async function finalizeArbitrum(message: IL2ToL1MessageWriter): Promise<Multicall2Call> {
+  const l2Provider = getProvider(CHAIN_ID);
   const proof = await message.getOutboxProof(l2Provider);
-  const outbox = new Contract((await getL2Network(l2Provider)).ethBridge.outbox, outboxAbi)
-  const eventData = (message as any).nitroWriter.event; // nitroWriter is a private property on the 
+  const outbox = new Contract((await getL2Network(l2Provider)).ethBridge.outbox, outboxAbi);
+  const eventData = (message as any).nitroWriter.event; // nitroWriter is a private property on the
   // L2ToL1MessageWriter class, which we need to form the calldata so unfortunately we must cast to `any`.
   const callData = await outbox.populateTransaction.executeTransaction(
     proof,
@@ -65,8 +54,8 @@ export async function finalizeArbitrum(
   );
   return {
     callData: callData.data,
-    target: callData.to
-  }
+    target: callData.to,
+  };
 }
 
 export async function getFinalizableMessages(logger: winston.Logger, tokensBridged: TokensBridged[], l1Signer: Wallet) {
@@ -120,7 +109,7 @@ export async function getMessageOutboxStatusAndProof(
   message: IL2ToL1MessageWriter;
   status: string;
 }> {
-  const l2Provider = getProvider(42161);
+  const l2Provider = getProvider(CHAIN_ID);
   const receipt = await l2Provider.getTransactionReceipt(event.transactionHash);
   const l2Receipt = new L2TransactionReceipt(receipt);
 
@@ -174,56 +163,56 @@ export async function getMessageOutboxStatusAndProof(
 
 export const outboxAbi = [
   {
-    "inputs": [
+    inputs: [
       {
-        "internalType": "bytes32[]",
-        "name": "proof",
-        "type": "bytes32[]"
+        internalType: "bytes32[]",
+        name: "proof",
+        type: "bytes32[]",
       },
       {
-        "internalType": "uint256",
-        "name": "index",
-        "type": "uint256"
+        internalType: "uint256",
+        name: "index",
+        type: "uint256",
       },
       {
-        "internalType": "address",
-        "name": "l2Sender",
-        "type": "address"
+        internalType: "address",
+        name: "l2Sender",
+        type: "address",
       },
       {
-        "internalType": "address",
-        "name": "to",
-        "type": "address"
+        internalType: "address",
+        name: "to",
+        type: "address",
       },
       {
-        "internalType": "uint256",
-        "name": "l2Block",
-        "type": "uint256"
+        internalType: "uint256",
+        name: "l2Block",
+        type: "uint256",
       },
       {
-        "internalType": "uint256",
-        "name": "l1Block",
-        "type": "uint256"
+        internalType: "uint256",
+        name: "l1Block",
+        type: "uint256",
       },
       {
-        "internalType": "uint256",
-        "name": "l2Timestamp",
-        "type": "uint256"
+        internalType: "uint256",
+        name: "l2Timestamp",
+        type: "uint256",
       },
       {
-        "internalType": "uint256",
-        "name": "value",
-        "type": "uint256"
+        internalType: "uint256",
+        name: "value",
+        type: "uint256",
       },
       {
-        "internalType": "bytes",
-        "name": "data",
-        "type": "bytes"
-      }
+        internalType: "bytes",
+        name: "data",
+        type: "bytes",
+      },
     ],
-    "name": "executeTransaction",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
+    name: "executeTransaction",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
   },
 ];
