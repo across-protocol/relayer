@@ -4,7 +4,7 @@
   "description": "Across Protocol V2 Relayer Bot",
   "repository": "git@github.com:across-protocol/relayer-v2.git",
   "author": "UMA Team",
-  "license": "AGPL-3.0",
+  "license": "AGPL-3.0-only",
   "private": true,
   "engines": {
     "node": ">=12.9.0"
@@ -26,12 +26,14 @@
     "@uma/financial-templates-lib": "^2.31.4",
     "@uma/sdk": "^0.25.0",
     "async": "^3.2.4",
+    "axios": "^1.2.0",
     "bluebird": "^3.7.2",
     "dotenv": "^16.0.3",
     "ethers": "^5.7.0",
     "hardhat": "^2.9.0",
     "hardhat-deploy": "^0.11.11",
     "lodash": "^4.17.21",
+    "lodash.get": "^4.4.2",
     "minimist": "^1.2.6",
     "node-fetch": "2.6.7",
     "redis4": "npm:redis@^4.1.0",

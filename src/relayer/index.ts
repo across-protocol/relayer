@@ -1,4 +1,4 @@
-import { processEndPollingLoop, winston, processCrash, config, startupLogLevel, Wallet } from "../utils";
+import { processEndPollingLoop, winston, config, startupLogLevel, Wallet } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
