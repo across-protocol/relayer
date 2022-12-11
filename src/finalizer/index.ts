@@ -1,16 +1,21 @@
-import { Wallet, config, startupLogLevel, processEndPollingLoop } from "../utils";
+import {
+  Wallet,
+  config,
+  startupLogLevel,
+  processEndPollingLoop,
+  Contract,
+  ethers,
+  getNetworkName,
+  etherscanLink,
+} from "../utils";
 import { winston } from "../utils";
 import {
   finalizeArbitrum,
-  finalizePolygon,
   getFinalizableMessages,
-  getFinalizableTransactions,
-  getL2TokensToFinalize,
   getPosClient,
-  retrieveTokenFromMainnetTokenBridger,
   getOptimismClient,
-  getOptimismFinalizableMessages,
-  finalizeOptimismMessage,
+  multicallOptimismFinalizations,
+  multicallPolygonFinalizations,
 } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient } from "../clients";
@@ -25,8 +30,20 @@ import {
   FINALIZER_TOKENBRIDGE_LOOKBACK_SECS,
   constructSpokePoolClientsWithLookbackSecs,
 } from "../common";
+import { Multicall2Ethers__factory } from "@uma/contracts-node";
 config();
 let logger: winston.Logger;
+
+export interface Multicall2Call {
+  callData: ethers.utils.BytesLike;
+  target: string;
+}
+
+export interface Withdrawal {
+  l2ChainId: number;
+  l1TokenSymbol: string;
+  amount: string;
+}
 
 // Filter for optimistic rollups
 const fiveDaysOfBlocks = 5 * 24 * 60 * 60; // Assuming a slow 1s/block rate for Arbitrum and Optimism.
@@ -42,6 +59,17 @@ export async function finalize(
   optimisticRollupFinalizationWindow: number = fiveDaysOfBlocks,
   polygonFinalizationWindow: number = oneDayOfBlocks
 ): Promise<void> {
+  // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
+  // input byte length.
+  const multicall2 = new Contract(
+    "0x5ba1e12693dc8f9c48aad8770482f4739beed696",
+    Multicall2Ethers__factory.abi,
+    hubPoolClient.hubPool.signer
+  );
+  const finalizationsToBatch: { callData: Multicall2Call[]; withdrawals: Withdrawal[] } = {
+    callData: [],
+    withdrawals: [],
+  };
   // For each chain, look up any TokensBridged events emitted by SpokePool client that we'll attempt to finalize
   // on L1.
   for (const chainId of configuredChainIds) {
@@ -64,27 +92,53 @@ export async function finalize(
       const recentTokensBridgedEvents = tokensBridged.filter(
         (e) => e.blockNumber >= client.latestBlockNumber - polygonFinalizationWindow
       );
-      const canWithdraw = await getFinalizableTransactions(logger, recentTokensBridgedEvents, posClient);
-      for (const event of canWithdraw) {
-        await finalizePolygon(posClient, hubPoolClient, event, logger);
-      }
-      for (const l2Token of getL2TokensToFinalize(recentTokensBridgedEvents)) {
-        await retrieveTokenFromMainnetTokenBridger(logger, l2Token, hubSigner, hubPoolClient);
-      }
+      const finalizations = await multicallPolygonFinalizations(
+        recentTokensBridgedEvents,
+        posClient,
+        hubSigner,
+        hubPoolClient,
+        logger
+      );
+      finalizationsToBatch.callData.push(...finalizations.callData);
+      finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
     } else if (chainId === 10) {
       // Skip events that are likely not past the seven day challenge period.
       const olderTokensBridgedEvents = tokensBridged.filter(
         (e) => e.blockNumber < client.latestBlockNumber - optimisticRollupFinalizationWindow
       );
       const crossChainMessenger = getOptimismClient(hubSigner);
-      const finalizableMessages = await getOptimismFinalizableMessages(
-        logger,
+      const finalizations = await multicallOptimismFinalizations(
         olderTokensBridgedEvents,
-        crossChainMessenger
+        crossChainMessenger,
+        hubPoolClient,
+        logger
       );
-      for (const message of finalizableMessages) {
-        await finalizeOptimismMessage(hubPoolClient, crossChainMessenger, message, logger);
-      }
+      finalizationsToBatch.callData.push(...finalizations.callData);
+      finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
+    }
+  }
+
+  if (finalizationsToBatch.callData.length > 0) {
+    try {
+      // Note: We might want to slice these up in the future but I don't forsee us including enough events
+      // to approach the block gas limit.
+      const txn = await (await multicall2.aggregate(finalizationsToBatch.callData)).wait();
+      finalizationsToBatch.withdrawals.forEach((withdrawal) => {
+        logger.info({
+          at: "Finalizer",
+          message: `Finalized ${getNetworkName(withdrawal.l2ChainId)} withdrawal for ${withdrawal.amount} of ${
+            withdrawal.l1TokenSymbol
+          } 🪃`,
+          transactionHash: etherscanLink(txn.transactionHash, 1),
+        });
+      });
+    } catch (error) {
+      logger.warn({
+        at: "Finalizer",
+        message: "Error creating aggregateTx",
+        reason: error.stack || error.message || error.toString(),
+        notificationPath: "across-error",
+      });
     }
   }
 }

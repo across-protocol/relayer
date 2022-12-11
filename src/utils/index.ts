@@ -30,7 +30,6 @@ export * from "./AddressUtils";
 export * from "./FillMathUtils";
 export * from "./GckmsUtils";
 export * from "./TimeUtils";
-export * from "./RedisUtils";
 export * from "./TypeGuards";
 export * from "./Help";
 export * from "./LogUtils";
