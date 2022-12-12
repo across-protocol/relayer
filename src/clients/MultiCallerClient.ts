@@ -2,7 +2,6 @@ import { DEFAULT_MULTICALL_CHUNK_SIZE, CHAIN_MULTICALL_CHUNK_SIZE } from "../com
 import {
   winston,
   getNetworkName,
-  assign,
   Contract,
   runTransaction,
   getTarget,
@@ -169,6 +168,7 @@ export class MultiCallerClient {
                 return { address: txn.contract.address, method: txn.method, args: txn.args };
               });
             this.logger.info({
+              at: "MultiCallerClient#chunkedTransactions",
               message: `Dropping ${dropped.length} transactions on chain ${chainId}.`,
               dropped,
             });
@@ -296,7 +296,7 @@ export class MultiCallerClient {
           }
         });
       });
-      this.logger.info({ at: "MultiCallerClient", message: "Multicall batch sent! 🧙‍♂️", mrkdwn });
+      this.logger.info({ at: "MultiCallerClient", message: "Multicall batch sent! 🧙", mrkdwn });
       this.clearTransactionQueue();
       return transactionHashes;
     } catch (error) {

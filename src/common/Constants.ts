@@ -4,32 +4,32 @@ export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
 
 export const RELAYER_MIN_FEE_PCT = 0.0003;
 
-// Target ~2 days per chain. Avg. block times: { 1: 12s, 10/42161: 0.5s, 137: 2.5s, 288: 30s }
+// Target ~2 days per chain. Avg. block times: { 1: 12s, 10/42161: ~0.25s, 137: 2.5s, 288: 30s }
 export const MAX_RELAYER_DEPOSIT_LOOK_BACK: { [chainId: number]: number } = {
   1: 14400,
-  10: 345600,
+  10: 691200,
   137: 69120,
   288: 5760,
-  42161: 345600,
+  42161: 691200,
 };
 
 // Target ~4 days per chain. Should cover all events needed to construct pending bundle.
 export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   1: 28800,
-  10: 691200,
+  10: 1382400,
   137: 138240,
   288: 11520,
-  42161: 691200,
+  42161: 1382400,
 };
 
 // Target ~14 days per chain. Should cover all events that could be finalized, so 2x the optimistic
 // rollup challenge period seems safe.
 export const FINALIZER_TOKENBRIDGE_LOOKBACK: { [chainId: number]: number } = {
   1: 100800,
-  10: 2419200,
+  10: 4838400,
   137: 483840,
   288: 40320,
-  42161: 2419200,
+  42161: 4838400,
 };
 
 // Reorgs are anticipated on Ethereum and Polygon. We use different following distances when processing deposit
@@ -100,7 +100,7 @@ export const DEFAULT_RELAYER_GAS_MULTIPLIER = 1.2;
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 100;
 export const CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } = {
   1: DEFAULT_MULTICALL_CHUNK_SIZE,
-  10: DEFAULT_MULTICALL_CHUNK_SIZE,
+  10: 75,
   137: DEFAULT_MULTICALL_CHUNK_SIZE,
   288: DEFAULT_MULTICALL_CHUNK_SIZE,
   42161: DEFAULT_MULTICALL_CHUNK_SIZE,
