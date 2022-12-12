@@ -85,8 +85,8 @@ export class ProfitClient {
     );
 
     this.priceClient = new PriceClient(logger, [
-      new acrossApi.PriceFeed("Across API", {}),
-      new coingecko.PriceFeed("CoinGecko Free", {}),
+      new acrossApi.PriceFeed(),
+      new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
     ]);
 
     for (const chainId of this.enabledChainIds) {
