@@ -137,7 +137,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         // matched with a deposit in the Deposit events loaded by the clients. This would make constructing accurate
         // root bundles impossible. So, we should save the last block for each chain with fills that we can
         // construct or validate root bundles for.
-        latestInvalidBundleStartBlocks = getLatestInvalidBundleStartBlocks(spokePoolClients);
+        latestInvalidBundleStartBlocks = await getLatestInvalidBundleStartBlocks(spokePoolClients);
 
         // Now that we have updated the event range fromBlocks for each chain with the latest start blocks we can
         // construct bundles with, we can determine whether we need to run another loop and create new spoke clients

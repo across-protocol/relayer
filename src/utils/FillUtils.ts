@@ -222,10 +222,11 @@ export function getUnfilledDeposits(
 // 2. The earliest fill that we are unable to validate on each chain must be before the bundle’s start block.
 
 // We use the above rules to return the latest blocks after which a bundle block range must start to be validatable.
-export function getLatestInvalidBundleStartBlocks(spokePoolClients: SpokePoolClientsByChain): {
+export async function getLatestInvalidBundleStartBlocks(spokePoolClients: SpokePoolClientsByChain): Promise<{
   [chainId: number]: number;
-} {
+}> {
   const blocks: { [chainId: number]: number } = {};
+  const fillsOlderThanLookback: Fill[] = [];
   for (const destChainId of Object.keys(spokePoolClients)) {
     const destSpokeClient = spokePoolClients[destChainId];
 
@@ -242,6 +243,10 @@ export function getLatestInvalidBundleStartBlocks(spokePoolClients: SpokePoolCli
       // low deposit ID in order to crash the dataworker functions. This is why the dataworker dispute function
       // will emit an ERROR level log if it can't validate the pending bundle because the latestUnmatchedFill
       // block is manipulated too high.
+      const unmatchedFills = destSpokeClient.getFillsForOriginChain(Number(originChainId)).filter((fill) => {
+        return fill.depositId < spokePoolClients[originChainId].earliestDepositId
+      })
+      fillsOlderThanLookback.push(...unmatchedFills);
       const latestUnmatchedFill = _.findLast(
         destSpokeClient.getFillsForOriginChain(Number(originChainId)),
         (fill) => fill.depositId < spokePoolClients[originChainId].earliestDepositIdQueried
@@ -250,5 +255,11 @@ export function getLatestInvalidBundleStartBlocks(spokePoolClients: SpokePoolCli
         blocks[destChainId] = Math.max(latestUnmatchedFill.blockNumber, blocks[destChainId]);
     }
   }
+
+  const timerStart = Date.now();
+  const matchedDeposits = await Promise.all(fillsOlderThanLookback.map((fill) => {
+    return spokePoolClients[fill.originChainId].queryHistoricalDepositForFill(fill)
+  }))
+  console.log(`Time to load ${matchedDeposits.length} historical deposits: ${(Date.now()-timerStart)/1000}ms`/*, matchedDeposits*/)
   return blocks;
 }
