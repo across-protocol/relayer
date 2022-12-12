@@ -179,7 +179,7 @@ export async function constructClients(
     redisClient
   );
 
-  const multiCallerClient = new MultiCallerClient(logger);
+  const multiCallerClient = new MultiCallerClient(logger, config.multiCallChunkSize);
 
   return { hubPoolClient, configStoreClient, multiCallerClient, hubSigner };
 }

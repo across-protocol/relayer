@@ -98,7 +98,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
 export const DEFAULT_RELAYER_GAS_MULTIPLIER = 1.2;
 
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 100;
-export const CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } = {
+export const DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } = {
   1: DEFAULT_MULTICALL_CHUNK_SIZE,
   10: 75,
   137: DEFAULT_MULTICALL_CHUNK_SIZE,

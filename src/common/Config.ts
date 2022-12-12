@@ -1,3 +1,4 @@
+import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE } from "../common";
 import { assert } from "../utils";
 import * as Constants from "./Constants";
 
@@ -17,11 +18,13 @@ export class CommonConfig {
   readonly bundleRefundLookback: number;
   readonly maxRelayerLookBack: { [chainId: number]: number };
   readonly maxRelayerUnfilledDepositLookBack: { [chainId: number]: number };
+  readonly multiCallChunkSize: { [chainId: number]: number };
   readonly version: string;
 
   constructor(env: ProcessEnv) {
     const {
       MAX_RELAYER_DEPOSIT_LOOK_BACK,
+      CHAIN_MULTICALL_CHUNK_SIZE,
       CONFIGURED_NETWORKS,
       HUB_CHAIN_ID,
       POLLING_DELAY,
@@ -62,5 +65,12 @@ export class CommonConfig {
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
     this.redisUrl = REDIS_URL;
     this.bundleRefundLookback = BUNDLE_REFUND_LOOKBACK ? Number(BUNDLE_REFUND_LOOKBACK) : 2;
+
+    this.multiCallChunkSize = CHAIN_MULTICALL_CHUNK_SIZE
+      ? JSON.parse(CHAIN_MULTICALL_CHUNK_SIZE)
+      : DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE;
+    Object(this.spokePoolChains).forEach((chainId) => {
+      this.multiCallChunkSize[chainId] = this.multiCallChunkSize[chainId] ?? DEFAULT_MULTICALL_CHUNK_SIZE;
+    });
   }
 }
