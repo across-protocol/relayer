@@ -163,7 +163,7 @@ export class Dataworker {
     mainnetBundleEndBlock: number,
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     bufferToPropose: number = this.bufferToPropose
-  ) {
+  ): { shouldWait: boolean; [key: string]: unknown } {
     const mostRecentValidatedBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
       this.clients.hubPoolClient.latestBlockNumber
     );
