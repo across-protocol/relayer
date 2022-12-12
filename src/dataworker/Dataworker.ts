@@ -200,7 +200,8 @@ export class Dataworker {
     } else {
       const mainnetRelayedRootBundle = relayedRootBundles[1];
       return {
-        shouldWait: mainnetBundleEndBlock - bufferToPropose < mainnetRelayedRootBundle.blockNumber,
+        shouldWait:
+          bufferToPropose > 0 ? mainnetBundleEndBlock - bufferToPropose < mainnetRelayedRootBundle.blockNumber : false,
         mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
         expectedRootBundles,
         relayedRootBundles,
