@@ -94,7 +94,7 @@ export function getLastMatchingFillBeforeBlock(
   lastBlock: number
 ): FillWithBlock {
   return sortEventsDescending(allFills).find(
-    (fill: FillWithBlock) => filledSameDeposit(fillToMatch, fill) && !fill.isSlowRelay && lastBlock >= fill.blockNumber
+    (fill: FillWithBlock) => filledSameDeposit(fillToMatch, fill) && lastBlock >= fill.blockNumber
   ) as FillWithBlock;
 }
 
@@ -119,16 +119,16 @@ export function getFillDataForSlowFillFromPreviousRootBundle(
     chainIdListForBundleEvaluationBlockNumbers
   );
   // Using bundle block number for chain from ProposeRootBundleEvent, find latest fill in the root bundle.
-  let lastFillBeforeSlowFillIncludedInRoot;
+  let lastMatchingFillInSameBundle;
   if (rootBundleEndBlockContainingFirstFill !== undefined) {
-    lastFillBeforeSlowFillIncludedInRoot = getLastMatchingFillBeforeBlock(
+    lastMatchingFillInSameBundle = getLastMatchingFillBeforeBlock(
       fill,
       allValidFills,
       rootBundleEndBlockContainingFirstFill
     );
   }
   return {
-    lastFillBeforeSlowFillIncludedInRoot,
+    lastMatchingFillInSameBundle,
     rootBundleEndBlockContainingFirstFill,
   };
 }
