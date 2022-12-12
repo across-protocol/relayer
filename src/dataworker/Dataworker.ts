@@ -159,13 +159,13 @@ export class Dataworker {
   // This is a temporary fix: Currently, there appears to be a bug where proposing a root bundle before any
   // RelayerRefundLeaves are executed results in an invalid bundle that gets self-disputed. This bug only seems
   // to appear when the bundle has slow fills. Its possibly related to slow fill excesses?
-  async shouldWaitToPropose(
+  shouldWaitToPropose(
     mainnetBundleEndBlock: number,
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     bufferToPropose: number = this.bufferToPropose
   ) {
     const mostRecentValidatedBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
-      await this.clients.hubPoolClient.hubPool.provider.getBlockNumber()
+      this.clients.hubPoolClient.latestBlockNumber
     );
     // If there has never been a validated root bundle, then we can always propose a new one:
     if (mostRecentValidatedBundle === undefined)
@@ -188,7 +188,8 @@ export class Dataworker {
         .filter(([, rootBundle]) => rootBundle !== undefined)
     );
 
-    // We should wait to propose until all root bundles have been relayed to spoke pools.
+    // We should wait to propose until all root bundles have been relayed to spoke pools. Once they have all been
+    // relayed, wait bufferToPropose number of blocks after the mainnet bundle end block.
     if (Object.entries(relayedRootBundles).length !== expectedRootBundles) {
       return {
         shouldWait: true,
@@ -197,13 +198,13 @@ export class Dataworker {
         relayedRootBundles,
       };
     } else {
-      const earliestRelayedRootBundle = sortEventsAscending(Object.values(relayedRootBundles))[0];
+      const mainnetRelayedRootBundle = relayedRootBundles[1];
       return {
-        shouldWait: mainnetBundleEndBlock - bufferToPropose < earliestRelayedRootBundle.blockNumber,
+        shouldWait: mainnetBundleEndBlock - bufferToPropose < mainnetRelayedRootBundle.blockNumber,
         mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
         expectedRootBundles,
         relayedRootBundles,
-        earliestRelayedRootBundle,
+        mainnetRelayedRootBundle,
         bufferToPropose,
         mainnetBundleEndBlock,
       };
@@ -328,7 +329,7 @@ export class Dataworker {
         });
     }
 
-    const shouldWaitToPropose = await this.shouldWaitToPropose(mainnetBundleEndBlock, spokePoolClients);
+    const shouldWaitToPropose = this.shouldWaitToPropose(mainnetBundleEndBlock, spokePoolClients);
     if (shouldWaitToPropose.shouldWait) {
       this.logger.debug({
         at: "Dataworker#propose",

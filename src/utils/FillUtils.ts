@@ -94,7 +94,7 @@ export function getLastMatchingFillBeforeBlock(
   lastBlock: number
 ): FillWithBlock {
   return sortEventsDescending(allFills).find(
-    (fill: FillWithBlock) => !fill.isSlowRelay && filledSameDeposit(fillToMatch, fill) && lastBlock >= fill.blockNumber
+    (fill: FillWithBlock) => filledSameDeposit(fillToMatch, fill) && !fill.isSlowRelay && lastBlock >= fill.blockNumber
   ) as FillWithBlock;
 }
 
