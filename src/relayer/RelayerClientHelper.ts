@@ -42,7 +42,6 @@ export async function constructRelayerClients(
     spokePoolClients,
     config.ignoreProfitability,
     enabledChainIds,
-    config.ignoreTokenPriceFailures,
     config.minRelayerFeePct,
     config.debugProfitability,
     config.relayerGasMultiplier
