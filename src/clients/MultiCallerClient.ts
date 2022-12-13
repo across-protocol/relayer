@@ -9,7 +9,7 @@ import {
   etherscanLink,
   TransactionResponse,
 } from "../utils";
-
+import { DEFAULT_MULTICALL_CHUNK_SIZE } from "../common";
 import lodash from "lodash";
 
 export interface AugmentedTransaction {
@@ -62,7 +62,10 @@ const canIgnoreRevertReasons = (obj: {
 export class MultiCallerClient {
   private transactions: AugmentedTransaction[] = [];
   // eslint-disable-next-line no-useless-constructor
-  constructor(readonly logger: winston.Logger, readonly multiCallChunkSize: { [chainId: number]: number }) {}
+  constructor(
+    readonly logger: winston.Logger,
+    readonly multiCallChunkSize: { [chainId: number]: number } = {}
+  ) {}
 
   // Adds all information associated with a transaction to the transaction queue. This is the intention of the
   // caller to send a transaction. The transaction might not be executable, which should be filtered later.
@@ -159,7 +162,7 @@ export class MultiCallerClient {
       const chunkedTransactions: { [chainId: number]: AugmentedTransaction[][] } = Object.fromEntries(
         Object.entries(groupedTransactions).map(([_chainId, transactions]) => {
           const chainId = Number(_chainId);
-          const chunkSize: number = this.multiCallChunkSize[chainId];
+          const chunkSize: number = this.multiCallChunkSize[chainId] ?? DEFAULT_MULTICALL_CHUNK_SIZE;
           if (transactions.length > chunkSize) {
             const dropped: Array<{ address: string; method: string; args: any[] }> = transactions
               .slice(chunkSize)
