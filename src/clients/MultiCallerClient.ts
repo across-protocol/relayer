@@ -1,3 +1,4 @@
+import { DEFAULT_MULTICALL_CHUNK_SIZE } from "../common";
 import {
   winston,
   getNetworkName,
@@ -9,7 +10,6 @@ import {
   etherscanLink,
   TransactionResponse,
 } from "../utils";
-import { DEFAULT_MULTICALL_CHUNK_SIZE } from "../common";
 import lodash from "lodash";
 
 export interface AugmentedTransaction {
