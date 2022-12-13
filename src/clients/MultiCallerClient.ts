@@ -62,10 +62,7 @@ const canIgnoreRevertReasons = (obj: {
 export class MultiCallerClient {
   private transactions: AugmentedTransaction[] = [];
   // eslint-disable-next-line no-useless-constructor
-  constructor(
-    readonly logger: winston.Logger,
-    readonly multiCallChunkSize: { [chainId: number]: number } = {}
-  ) {}
+  constructor(readonly logger: winston.Logger, readonly multiCallChunkSize: { [chainId: number]: number } = {}) {}
 
   // Adds all information associated with a transaction to the transaction queue. This is the intention of the
   // caller to send a transaction. The transaction might not be executable, which should be filtered later.
