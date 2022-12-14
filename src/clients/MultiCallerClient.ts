@@ -96,9 +96,7 @@ export class MultiCallerClient {
       }
 
       const valueTransactions = transactions.filter((transaction) => transaction.value && transaction.value.gt(0));
-      const nonValueTransactions = transactions.filter(
-        (transaction) => !transaction.value || transaction.value.eq(0)
-      );
+      const nonValueTransactions = transactions.filter((transaction) => !transaction.value || transaction.value.eq(0));
 
       // Group by target chain. Note that there is NO grouping by target contract. The relayer will only ever use this
       // MultiCallerClient to send multiple transactions to one target contract on a given target chain and so we dont
@@ -307,9 +305,7 @@ export class MultiCallerClient {
     const transactionRevertsToIgnore = _transactionsSucceed.filter(
       (txn) => !txn.succeed && canIgnoreRevertReasons(txn)
     );
-    const transactionRevertsToLog = _transactionsSucceed.filter(
-      (txn) => !txn.succeed && !canIgnoreRevertReasons(txn)
-    );
+    const transactionRevertsToLog = _transactionsSucceed.filter((txn) => !txn.succeed && !canIgnoreRevertReasons(txn));
     if (transactionRevertsToIgnore.length > 0)
       this.logger.debug({
         at: "MultiCallerClient",
