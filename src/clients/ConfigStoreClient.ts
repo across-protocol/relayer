@@ -111,8 +111,8 @@ export class AcrossConfigStoreClient {
     const config = (sortEventsDescending(this.cumulativeRouteRateModelUpdates) as RouteRateModelUpdate[]).find(
       (config) => config.blockNumber <= blockNumber && config.l1Token === l1Token
     );
-    if (config[route] === undefined) return undefined;
-    return across.rateModel.parseAndReturnRateModelFromString(config[route]);
+    if (config?.routeRateModels[route] === undefined) return undefined;
+    return across.rateModel.parseAndReturnRateModelFromString(config.routeRateModels[route]);
   }
 
   getTokenTransferThresholdForBlock(l1Token: string, blockNumber: number = Number.MAX_SAFE_INTEGER): BigNumber {
