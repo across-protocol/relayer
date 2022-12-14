@@ -1,18 +1,11 @@
 import { BigNumber } from "../utils";
 import { SortableEvent } from "./Common";
 import { across } from "@uma/sdk";
-
-export interface RateModel {
-  UBar: string;
-  R0: string;
-  R1: string;
-  R2: string;
-}
 export interface ParsedTokenConfig {
   transferThreshold: string;
-  rateModel: RateModel;
+  rateModel: across.rateModel.RateModelDictionary;
   routeRateModels?: {
-    [path: string]: RateModel;
+    [path: string]: across.rateModel.RateModelDictionary;
   };
   spokeTargetBalances?: {
     [chainId: number]: {
