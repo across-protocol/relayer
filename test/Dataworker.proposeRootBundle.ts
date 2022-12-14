@@ -135,8 +135,8 @@ describe("Dataworker: Propose root bundle", async function () {
     // pool rebalance leaves because they should use the chain's end block from the latest fully executed proposed
     // root bundle, which should be the bundle block in expectedPoolRebalanceRoot2 + 1.
     await updateAllClients();
-    await dataworkerInstance.proposeRootBundle(spokePoolClients);
     const latestBlock3 = await hubPool.provider.getBlockNumber();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
     const blockRange3 = [
       [latestBlock2 + 1, latestBlock3],
       [latestBlock2 + 1, latestBlock3],

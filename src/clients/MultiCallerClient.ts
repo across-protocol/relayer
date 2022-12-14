@@ -80,15 +80,15 @@ export class MultiCallerClient {
   }
 
   async executeTransactionQueue(simulationModeOn = false) {
-    try {
-      if (this.transactions.length === 0) return;
-      this.logger.debug({
-        at: "MultiCallerClient",
-        message: "Executing tx bundle",
-        number: this.transactions.length,
-        simulationModeOn,
-      });
+    if (this.transactions.length === 0) return;
+    this.logger.debug({
+      at: "MultiCallerClient",
+      message: "Executing tx bundle",
+      number: this.transactions.length,
+      simulationModeOn,
+    });
 
+    try {
       // Simulate the transaction execution for the whole queue.
       const _transactionsSucceed = await Promise.all(
         this.transactions.map((transaction: AugmentedTransaction) => willSucceed(transaction))
