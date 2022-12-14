@@ -21,7 +21,7 @@ import {
   ParsedTokenConfig,
   SpokeTargetBalanceUpdate,
   SpokePoolTargetBalance,
-  LpFeeScaling,
+  RouteRateModelUpdate,
 } from "../interfaces";
 
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
@@ -40,7 +40,7 @@ export class AcrossConfigStoreClient {
   private readonly blockFinder;
 
   public cumulativeRateModelUpdates: across.rateModel.RateModelEvent[] = [];
-  public cumulativeLpFeeDiscountUpdates: LpFeeScaling[] = [];
+  public cumulativeRouteRateModelUpdates: RouteRateModelUpdate[] = [];
   public cumulativeTokenTransferUpdates: L1TokenTransferThreshold[] = [];
   public cumulativeMaxRefundCountUpdates: GlobalConfigUpdate[] = [];
   public cumulativeMaxL1TokenCountUpdates: GlobalConfigUpdate[] = [];
@@ -64,7 +64,7 @@ export class AcrossConfigStoreClient {
   }
 
   async computeRealizedLpFeePct(
-    deposit: { quoteTimestamp: number; amount: BigNumber; destinationChainId: number },
+    deposit: { quoteTimestamp: number; amount: BigNumber; destinationChainId: number; originChainId: number },
     l1Token: string
   ): Promise<{ realizedLpFeePct: BigNumber; quoteBlock: number }> {
     let quoteBlock = await this.getBlockNumber(deposit.quoteTimestamp);
@@ -75,7 +75,10 @@ export class AcrossConfigStoreClient {
     // Test SNX deposit was before the rate model update for SNX.
     if (quoteBlock === 14856066) quoteBlock = 14856211;
 
-    const rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
+    // Use route-rate model if available, otherwise use default rate model for l1Token.
+    const route = `${deposit.originChainId}-${deposit.destinationChainId}`;
+    const routeRateModel = this.getRouteRateModelForBlockNumber(l1Token, route, quoteBlock);
+    const rateModel = routeRateModel ?? this.getRateModelForBlockNumber(l1Token, quoteBlock);
 
     // There is one deposit on optimism that is right at the margin of when liquidity was first added.
     if (quoteBlock > 14718100 && quoteBlock < 14718107) quoteBlock = 14718107;
@@ -83,13 +86,23 @@ export class AcrossConfigStoreClient {
     const { current, post } = await this.getUtilization(l1Token, quoteBlock, deposit.amount, deposit.quoteTimestamp);
     const realizedLpFeePct = lpFeeCalculator.calculateRealizedLpFeePct(rateModel, current, post);
 
-    const lpFeeScalingPct = this.getLpFeeScalingForBlock(l1Token, deposit.destinationChainId, quoteBlock);
-
-    return { realizedLpFeePct: realizedLpFeePct.mul(lpFeeScalingPct), quoteBlock };
+    return { realizedLpFeePct, quoteBlock };
   }
 
   getRateModelForBlockNumber(l1Token: string, blockNumber: number | undefined = undefined): across.constants.RateModel {
     return this.rateModelDictionary.getRateModelForBlockNumber(l1Token, blockNumber);
+  }
+
+  getRouteRateModelForBlockNumber(
+    l1Token: string,
+    route: string,
+    blockNumber: number | undefined = undefined
+  ): across.constants.RateModel | undefined {
+    const config = (sortEventsDescending(this.cumulativeRouteRateModelUpdates) as RouteRateModelUpdate[]).find(
+      (config) => config.blockNumber <= blockNumber && config.l1Token === l1Token
+    );
+    if (config[route] === undefined) return undefined;
+    return across.rateModel.parseAndReturnRateModelFromString(config[route]);
   }
 
   getTokenTransferThresholdForBlock(l1Token: string, blockNumber: number = Number.MAX_SAFE_INTEGER): BigNumber {
@@ -111,16 +124,6 @@ export class AcrossConfigStoreClient {
     );
     const targetBalance = config?.spokeTargetBalances?.[chainId];
     return targetBalance || { target: toBN(0), threshold: toBN(0) };
-  }
-
-  getLpFeeScalingForBlock(l1Token: string, chainId: number, blockNumber: number = Number.MAX_SAFE_INTEGER): number {
-    const config = (sortEventsDescending(this.cumulativeLpFeeDiscountUpdates) as LpFeeScaling[]).find(
-      (config) => config.l1Token === l1Token && config.blockNumber <= blockNumber
-    );
-    const scalingPct = config?.scalingPct?.[chainId];
-
-    // If scaling % isn't positive, then return 100% indicating that LP fees implied by rate model should be unchanged.
-    return scalingPct && scalingPct >= 0 ? scalingPct : 1;
   }
 
   getMaxRefundCountForRelayerRefundLeafForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number {
@@ -203,16 +206,16 @@ export class AcrossConfigStoreClient {
           this.cumulativeSpokeTargetBalanceUpdates.push({ ...args, spokeTargetBalances: {}, l1Token });
         }
 
-        // Store LP fee scaling %
-        if (parsedValue?.lpFeeScaling) {
-          const lpFeeScalingPct = Object.fromEntries(
-            Object.entries(parsedValue.lpFeeScaling).map(([chainId, feeScalingString]) => {
-              return [chainId, Number(feeScalingString)];
+        // Store route-specific rate models
+        if (parsedValue?.routeRateModels) {
+          const routeRateModels = Object.fromEntries(
+            Object.entries(parsedValue.routeRateModels).map(([path, routeRateModel]) => {
+              return [path, JSON.stringify(routeRateModel)];
             })
           );
-          this.cumulativeLpFeeDiscountUpdates.push({ ...args, scalingPct: lpFeeScalingPct, l1Token });
+          this.cumulativeRouteRateModelUpdates.push({ ...args, routeRateModels, l1Token });
         } else {
-          this.cumulativeLpFeeDiscountUpdates.push({ ...args, scalingPct: {}, l1Token });
+          this.cumulativeRouteRateModelUpdates.push({ ...args, routeRateModels: {}, l1Token });
         }
       } catch (err) {
         continue;
