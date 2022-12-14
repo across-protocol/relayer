@@ -161,7 +161,7 @@ export async function getMessageOutboxStatusAndProof(
   }
 }
 
-export const outboxAbi = [
+const outboxAbi = [
   {
     inputs: [
       {

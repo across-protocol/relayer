@@ -10,8 +10,6 @@ import {
 } from "../utils";
 import { winston } from "../utils";
 import {
-  finalizeArbitrum,
-  getFinalizableMessages,
   getPosClient,
   getOptimismClient,
   multicallOptimismFinalizations,
