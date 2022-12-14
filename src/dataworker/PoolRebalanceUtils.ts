@@ -174,7 +174,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   allValidFillsInRange
     .filter((fill) => fill.totalFilledAmount.eq(fill.amount) && !fill.fillAmount.eq(fill.amount))
     .forEach((fill: interfaces.FillWithBlock) => {
-      const { lastFillBeforeSlowFillIncludedInRoot, rootBundleEndBlockContainingFirstFill } =
+      const { lastMatchingFillInSameBundle, rootBundleEndBlockContainingFirstFill } =
         getFillDataForSlowFillFromPreviousRootBundle(
           hubPoolClient.latestBlockNumber,
           fill,
@@ -190,7 +190,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
 
       // Note, if there is NO fill from a previous root bundle for the same deposit as this fill, then there has been
       // no slow fill payment sent to the spoke pool yet, so we can exit early.
-      if (lastFillBeforeSlowFillIncludedInRoot === undefined) return;
+      if (lastMatchingFillInSameBundle === undefined) return;
 
       // If first fill for this deposit is in this epoch, then no slow fill has been sent so we can ignore this fill.
       // We can check this by searching for a ProposeRootBundle event with a bundle block range that contains the
@@ -205,8 +205,8 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
       if (rootBundleEndBlockContainingFirstFill === rootBundleEndBlockContainingFullFill) return;
 
       // Recompute how much the matched root bundle sent for this slow fill.
-      const amountSentForSlowFill = lastFillBeforeSlowFillIncludedInRoot.amount.sub(
-        lastFillBeforeSlowFillIncludedInRoot.totalFilledAmount
+      const amountSentForSlowFill = lastMatchingFillInSameBundle.amount.sub(
+        lastMatchingFillInSameBundle.totalFilledAmount
       );
 
       // If this fill is a slow fill, then the excess remaining in the contract is equal to the amount sent originally
@@ -221,7 +221,7 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         excesses[fill.destinationChainId][fill.destinationToken] = [];
       excesses[fill.destinationChainId][fill.destinationToken].push({
         excess: excess.toString(),
-        lastFillBeforeSlowFillIncludedInRoot,
+        lastMatchingFillInSameBundle,
         rootBundleEndBlockContainingFirstFill,
         rootBundleEndBlockContainingFullFill: rootBundleEndBlockContainingFullFill
           ? rootBundleEndBlockContainingFullFill
