@@ -10,12 +10,11 @@ import {
 } from "../utils";
 import { winston } from "../utils";
 import {
-  finalizeArbitrum,
-  getFinalizableMessages,
   getPosClient,
   getOptimismClient,
   multicallOptimismFinalizations,
   multicallPolygonFinalizations,
+  multicallArbitrumFinalizations,
 } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient } from "../clients";
@@ -79,10 +78,14 @@ export async function finalize(
       const olderTokensBridgedEvents = tokensBridged.filter(
         (e) => e.blockNumber < client.latestBlockNumber - optimisticRollupFinalizationWindow
       );
-      const finalizableMessages = await getFinalizableMessages(logger, olderTokensBridgedEvents, hubSigner);
-      for (const l2Message of finalizableMessages) {
-        await finalizeArbitrum(logger, l2Message.message, l2Message.info, hubPoolClient);
-      }
+      const finalizations = await multicallArbitrumFinalizations(
+        olderTokensBridgedEvents,
+        hubSigner,
+        hubPoolClient,
+        logger
+      );
+      finalizationsToBatch.callData.push(...finalizations.callData);
+      finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
     } else if (chainId === 137) {
       const posClient = await getPosClient(hubSigner);
       // Unlike the rollups, withdrawals process very quickly on polygon, so we can conservatively remove any events
