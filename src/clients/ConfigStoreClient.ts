@@ -75,10 +75,12 @@ export class AcrossConfigStoreClient {
     // Test SNX deposit was before the rate model update for SNX.
     if (quoteBlock === 14856066) quoteBlock = 14856211;
 
-    // Use route-rate model if available, otherwise use default rate model for l1Token.
-    const route = `${deposit.originChainId}-${deposit.destinationChainId}`;
-    const routeRateModel = this.getRouteRateModelForBlockNumber(l1Token, route, quoteBlock);
-    const rateModel = routeRateModel ?? this.getRateModelForBlockNumber(l1Token, quoteBlock);
+    const rateModel = this.getRateModelForBlockNumber(
+      l1Token,
+      deposit.originChainId,
+      deposit.destinationChainId,
+      quoteBlock
+    );
 
     // There is one deposit on optimism that is right at the margin of when liquidity was first added.
     if (quoteBlock > 14718100 && quoteBlock < 14718107) quoteBlock = 14718107;
@@ -89,8 +91,16 @@ export class AcrossConfigStoreClient {
     return { realizedLpFeePct, quoteBlock };
   }
 
-  getRateModelForBlockNumber(l1Token: string, blockNumber: number | undefined = undefined): across.constants.RateModel {
-    return this.rateModelDictionary.getRateModelForBlockNumber(l1Token, blockNumber);
+  getRateModelForBlockNumber(
+    l1Token: string,
+    originChainId: number | string,
+    destinationChainId: number | string,
+    blockNumber: number | undefined = undefined
+  ): across.constants.RateModel {
+    // Use route-rate model if available, otherwise use default rate model for l1Token.
+    const route = `${originChainId}-${destinationChainId}`;
+    const routeRateModel = this.getRouteRateModelForBlockNumber(l1Token, route, blockNumber);
+    return routeRateModel ?? this.rateModelDictionary.getRateModelForBlockNumber(l1Token, blockNumber);
   }
 
   getRouteRateModelForBlockNumber(
