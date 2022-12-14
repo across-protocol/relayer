@@ -11,7 +11,13 @@ import {
   isDefined,
 } from "../utils";
 import { toBNWei, getFillsInRange, ZERO_ADDRESS } from "../utils";
-import { DepositWithBlock, FillsToRefund, FillWithBlock, UnfilledDeposit } from "../interfaces";
+import {
+  DepositWithBlock,
+  FillsToRefund,
+  FillWithBlock,
+  RootBundleRelayWithBlock,
+  UnfilledDeposit,
+} from "../interfaces";
 import {
   PendingRootBundle,
   TreeData,
@@ -150,6 +156,62 @@ export class Dataworker {
     );
   }
 
+  // This is a temporary fix: Currently, there appears to be a bug where proposing a root bundle before any
+  // RelayerRefundLeaves are executed results in an invalid bundle that gets self-disputed. This bug only seems
+  // to appear when the bundle has slow fills. Its possibly related to slow fill excesses?
+  shouldWaitToPropose(
+    mainnetBundleEndBlock: number,
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    bufferToPropose: number = this.bufferToPropose
+  ): { shouldWait: boolean; [key: string]: unknown } {
+    const mostRecentValidatedBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
+      this.clients.hubPoolClient.latestBlockNumber
+    );
+    // If there has never been a validated root bundle, then we can always propose a new one:
+    if (mostRecentValidatedBundle === undefined)
+      return {
+        shouldWait: false,
+      };
+
+    const expectedRootBundles = mostRecentValidatedBundle.poolRebalanceLeafCount;
+
+    const relayedRootBundles: { [chainId: string]: RootBundleRelayWithBlock } = Object.fromEntries(
+      Object.entries(spokePoolClients)
+        .map(([chainId, client]) => {
+          return [
+            chainId,
+            client
+              .getRootBundleRelays()
+              .find((bundle) => bundle.relayerRefundRoot === mostRecentValidatedBundle.relayerRefundRoot),
+          ];
+        })
+        .filter(([, rootBundle]) => rootBundle !== undefined)
+    );
+
+    // We should wait to propose until all root bundles have been relayed to spoke pools. Once they have all been
+    // relayed, wait bufferToPropose number of blocks after the mainnet bundle end block.
+    if (Object.entries(relayedRootBundles).length !== expectedRootBundles) {
+      return {
+        shouldWait: true,
+        mostRecentValidatedBundle: mostRecentValidatedBundle?.blockNumber,
+        expectedRootBundles,
+        relayedRootBundles,
+      };
+    } else {
+      const mainnetRelayedRootBundle = relayedRootBundles[1];
+      return {
+        shouldWait:
+          bufferToPropose > 0 ? mainnetBundleEndBlock - bufferToPropose < mainnetRelayedRootBundle.blockNumber : false,
+        mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
+        expectedRootBundles,
+        relayedRootBundles,
+        mainnetRelayedRootBundle,
+        bufferToPropose,
+        mainnetBundleEndBlock,
+      };
+    }
+  }
+
   async proposeRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     usdThresholdToSubmitNewBundle?: BigNumber,
@@ -268,57 +330,18 @@ export class Dataworker {
         });
     }
 
-    // This is a temporary fix: wait some time until we propose another root bundle. Currently, there appears to be a bug where proposing a
-    // root bundle immediately after executing all PoolRebalanceLeaves proposes an invalid bundle, but waiting
-    // a bit, possibly for cache to populate, works.
-    const _shouldWaitToPropose = async () => {
-      const mostRecentValidatedBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
-        await this.clients.hubPoolClient.hubPool.provider.getBlockNumber()
-      );
-      const mostRecentEthereumRootBundle = spokePoolClients[1]
-        .getRootBundleRelays()
-        .find((bundle) => bundle.relayerRefundRoot === mostRecentValidatedBundle?.relayerRefundRoot);
-      if (mostRecentValidatedBundle !== undefined && mostRecentEthereumRootBundle !== undefined) {
-        const executedLeavesInEthereumBundle = spokePoolClients[1]
-          .getRelayerRefundExecutions()
-          .filter((leaf) => leaf.rootBundleId === mostRecentEthereumRootBundle.rootBundleId);
-        if (executedLeavesInEthereumBundle.length === 0)
-          return {
-            value: true,
-            mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
-            mostRecentEthereumRootBundle: mostRecentEthereumRootBundle.rootBundleId,
-            earliestExecutedLeaf: undefined,
-            bufferInEthBlocks: this.bufferToPropose,
-          };
-        const earliestExecutedLeaf = sortEventsAscending([...executedLeavesInEthereumBundle])[0];
-        return {
-          value: mainnetBundleEndBlock - this.bufferToPropose < earliestExecutedLeaf.blockNumber,
-          mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
-          mostRecentEthereumRootBundle: mostRecentEthereumRootBundle.rootBundleId,
-          earliestExecutedLeaf: earliestExecutedLeaf.blockNumber,
-          bufferInEthBlocks: this.bufferToPropose,
-        };
-      } else
-        return {
-          value: true,
-          mostRecentValidatedBundle: mostRecentValidatedBundle?.blockNumber,
-          bufferInEthBlocks: this.bufferToPropose,
-        }; // If root bundle hasn't been relayed to ethereum spoke yet then exit early.
-      // Here we assume that there is always a RelayerRefundLeaf relayed to chain 1, which is a safe assumption.
-    };
-
-    const shouldWaitToPropose = await _shouldWaitToPropose();
-    if (this.bufferToPropose > 0 && shouldWaitToPropose.value) {
+    const shouldWaitToPropose = this.shouldWaitToPropose(mainnetBundleEndBlock, spokePoolClients);
+    if (shouldWaitToPropose.shouldWait) {
       this.logger.debug({
         at: "Dataworker#propose",
-        message: `Waiting to propose new bundle until new bundle end block (${mainnetBundleEndBlock}) is ${shouldWaitToPropose.bufferInEthBlocks} blocks past the latest Ethereum relayer refund leaf execution`,
+        message: "Waiting to propose new bundle until all refund roots have been relayed to spoke pools",
         shouldWaitToPropose,
       });
       return;
     } else
       this.logger.debug({
         at: "Dataworker#propose",
-        message: `Proceeding to propose new bundle; new bundle end block (${mainnetBundleEndBlock}) is at least ${shouldWaitToPropose.bufferInEthBlocks} blocks past the latest Ethereum relayer refund leaf execution`,
+        message: "Proceeding to propose new bundle; all refund roots have been relayed to spoke pools",
         shouldWaitToPropose,
       });
 
