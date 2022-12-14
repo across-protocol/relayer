@@ -9,6 +9,9 @@ export interface ParsedTokenConfig {
     R1: string;
     R2: string;
   };
+  lpFeeScaling?: {
+    [chainId: number]: string;
+  };
   spokeTargetBalances?: {
     [chainId: number]: {
       target: string;
@@ -19,6 +22,11 @@ export interface ParsedTokenConfig {
 
 export interface L1TokenTransferThreshold extends SortableEvent {
   transferThreshold: BigNumber;
+  l1Token: string;
+}
+
+export interface LpFeeScaling extends SortableEvent {
+  scalingPct: { [chainId: number]: number };
   l1Token: string;
 }
 

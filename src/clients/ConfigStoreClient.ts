@@ -16,12 +16,12 @@ import {
 
 import {
   L1TokenTransferThreshold,
-  Deposit,
   TokenConfig,
   GlobalConfigUpdate,
   ParsedTokenConfig,
   SpokeTargetBalanceUpdate,
   SpokePoolTargetBalance,
+  LpFeeScaling,
 } from "../interfaces";
 
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
@@ -40,6 +40,7 @@ export class AcrossConfigStoreClient {
   private readonly blockFinder;
 
   public cumulativeRateModelUpdates: across.rateModel.RateModelEvent[] = [];
+  public cumulativeLpFeeDiscountUpdates: LpFeeScaling[] = [];
   public cumulativeTokenTransferUpdates: L1TokenTransferThreshold[] = [];
   public cumulativeMaxRefundCountUpdates: GlobalConfigUpdate[] = [];
   public cumulativeMaxL1TokenCountUpdates: GlobalConfigUpdate[] = [];
@@ -63,7 +64,7 @@ export class AcrossConfigStoreClient {
   }
 
   async computeRealizedLpFeePct(
-    deposit: { quoteTimestamp: number; amount: BigNumber },
+    deposit: { quoteTimestamp: number; amount: BigNumber; destinationChainId: number },
     l1Token: string
   ): Promise<{ realizedLpFeePct: BigNumber; quoteBlock: number }> {
     let quoteBlock = await this.getBlockNumber(deposit.quoteTimestamp);
@@ -82,7 +83,9 @@ export class AcrossConfigStoreClient {
     const { current, post } = await this.getUtilization(l1Token, quoteBlock, deposit.amount, deposit.quoteTimestamp);
     const realizedLpFeePct = lpFeeCalculator.calculateRealizedLpFeePct(rateModel, current, post);
 
-    return { realizedLpFeePct, quoteBlock };
+    const lpFeeScalingPct = this.getLpFeeScalingForBlock(l1Token, deposit.destinationChainId, quoteBlock);
+
+    return { realizedLpFeePct: realizedLpFeePct.mul(lpFeeScalingPct), quoteBlock };
   }
 
   getRateModelForBlockNumber(l1Token: string, blockNumber: number | undefined = undefined): across.constants.RateModel {
@@ -108,6 +111,16 @@ export class AcrossConfigStoreClient {
     );
     const targetBalance = config?.spokeTargetBalances?.[chainId];
     return targetBalance || { target: toBN(0), threshold: toBN(0) };
+  }
+
+  getLpFeeScalingForBlock(l1Token: string, chainId: number, blockNumber: number = Number.MAX_SAFE_INTEGER): number {
+    const config = (sortEventsDescending(this.cumulativeLpFeeDiscountUpdates) as LpFeeScaling[]).find(
+      (config) => config.l1Token === l1Token && config.blockNumber <= blockNumber
+    );
+    const scalingPct = config?.scalingPct?.[chainId];
+
+    // If scaling % isn't positive, then return 100% indicating that LP fees implied by rate model should be unchanged.
+    return scalingPct && scalingPct >= 0 ? scalingPct : 1;
   }
 
   getMaxRefundCountForRelayerRefundLeafForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number {
@@ -174,6 +187,7 @@ export class AcrossConfigStoreClient {
           l1Token,
         });
 
+        // Store spokeTargetBalances
         if (parsedValue?.spokeTargetBalances) {
           // Note: cast is required because fromEntries always produces string keys, despite the function returning a
           // numerical key.
@@ -187,6 +201,18 @@ export class AcrossConfigStoreClient {
           this.cumulativeSpokeTargetBalanceUpdates.push({ ...args, spokeTargetBalances: targetBalances, l1Token });
         } else {
           this.cumulativeSpokeTargetBalanceUpdates.push({ ...args, spokeTargetBalances: {}, l1Token });
+        }
+
+        // Store LP fee scaling %
+        if (parsedValue?.lpFeeScaling) {
+          const lpFeeScalingPct = Object.fromEntries(
+            Object.entries(parsedValue.lpFeeScaling).map(([chainId, feeScalingString]) => {
+              return [chainId, Number(feeScalingString)];
+            })
+          );
+          this.cumulativeLpFeeDiscountUpdates.push({ ...args, scalingPct: lpFeeScalingPct, l1Token });
+        } else {
+          this.cumulativeLpFeeDiscountUpdates.push({ ...args, scalingPct: {}, l1Token });
         }
       } catch (err) {
         continue;
