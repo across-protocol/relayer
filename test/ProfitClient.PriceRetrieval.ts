@@ -57,7 +57,7 @@ describe("ProfitClient: Price Retrieval", async function () {
   beforeEach(async function () {
     hubPoolClient = new MockHubPoolClient(null, null);
     mainnetTokens.forEach((token: L1Token) => hubPoolClient.addL1Token(token));
-    profitClient = new ProfitClientWithMockPriceClient(spyLogger, hubPoolClient, {}, true, [], false, toBN(0));
+    profitClient = new ProfitClientWithMockPriceClient(spyLogger, hubPoolClient, {}, true, [], toBN(0));
   });
 
   it("Correctly fetches token prices", async function () {
