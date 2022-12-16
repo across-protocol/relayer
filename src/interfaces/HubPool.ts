@@ -1,4 +1,4 @@
-import { BigNumber, ethers, EventSearchConfig } from "../utils";
+import { BigNumber, ethers } from "../utils";
 import { SortableEvent } from "./Common";
 
 export interface PoolRebalanceLeaf {
@@ -67,8 +67,6 @@ export interface LpToken {
 export interface CrossChainContractsSet extends SortableEvent {
   l2ChainId: number;
   spokePool: string;
-  l2BlockNumber: number;
-  validSearchRange: Omit<EventSearchConfig, "maxBlockLookBack">;
 }
 
 export interface DestinationTokenWithBlock extends SortableEvent {

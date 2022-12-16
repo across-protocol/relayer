@@ -1,9 +1,11 @@
 import winston from "winston";
-import { getProvider, getDeployedContract, getDeploymentBlockNumber, Wallet, Contract, ethers } from "../utils";
+import { getProvider, getDeployedContract, getDeploymentBlockNumber, Wallet, Contract } from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { createClient } from "redis4";
 import { SpokePoolClientsByChain, SpokePoolProviders } from "../interfaces";
+
+export type RedisClient = ReturnType<typeof createClient>;
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -177,8 +179,7 @@ export async function constructClients(
     hubPool,
     config.hubPoolChainId,
     getSpokePoolProviders(config),
-    hubPoolClientSearchSettings,
-    redisClient
+    hubPoolClientSearchSettings
   );
 
   const rateModelClientSearchSettings = {

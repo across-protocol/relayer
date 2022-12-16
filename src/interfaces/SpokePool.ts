@@ -1,6 +1,7 @@
-import { BigNumber } from "../utils";
+import { BigNumber, EventSearchConfig } from "../utils";
 import { SortableEvent } from "./Common";
 import { SpokePoolClient } from "../clients";
+import { CrossChainContractsSet } from "./HubPool";
 
 // TODO: see if there's a way to get typechain to directly export this event type.
 // eslint-disable-next-line node/no-missing-import
@@ -71,6 +72,10 @@ export interface RootBundleRelay {
   rootBundleId: number;
   relayerRefundRoot: string;
   slowRelayRoot: string;
+}
+
+export interface ActiveSpokePool extends CrossChainContractsSet {
+  activeBlocks: Omit<EventSearchConfig, "maxBlockLookBack">;
 }
 
 export interface RootBundleRelayWithBlock extends RootBundleRelay, SortableEvent {}

@@ -8,8 +8,6 @@ import {
   EventSearchConfig,
   MakeOptional,
   ethers,
-  Block,
-  getCurrentTime,
 } from "../utils";
 import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
 import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
@@ -17,10 +15,7 @@ import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle, LpToken, Spo
 import { ExecutedRootBundle, PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
 import _ from "lodash";
-import { createClient } from "redis4";
-import { BlockFinder } from "@uma/sdk";
 
-type RedisClient = ReturnType<typeof createClient>;
 
 export class HubPoolClient {
   // L1Token -> destinationChainId -> destinationToken
@@ -36,7 +31,6 @@ export class HubPoolClient {
     [l1Token: string]: { [destinationChainId: number]: DestinationTokenWithBlock[] };
   } = {};
   private pendingRootBundle: PendingRootBundle | undefined;
-  private l2BlockFinders: { [chainId: number]: BlockFinder<Block> } = {};
 
   public isUpdated = false;
   public firstBlockToSearch: number;
@@ -47,19 +41,13 @@ export class HubPoolClient {
     readonly logger: winston.Logger,
     readonly hubPool: Contract,
     readonly hubPoolChainId: number,
-    readonly spokePoolProviders: SpokePoolProviders,
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
-    readonly redisClient?: RedisClient
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
 
   getProvider(): ethers.providers.Provider {
     return this.hubPool.provider;
-  }
-
-  setProvider(chainId: number, provider: ethers.providers.Provider): void {
-    this.spokePoolProviders[chainId] = provider;
   }
 
   hasPendingProposal() {
@@ -92,37 +80,8 @@ export class HubPoolClient {
     else return mostRecentSpokePoolUpdatebeforeBlock.spokePool;
   }
 
-  // Return SpokePools set as CrossChainContracts on HubPool before block.
-  getActiveSpokePoolsForBlocks(
-    searchConfig: { fromBlock: number; toBlock: number },
-    chainId: number
-  ): CrossChainContractsSet[] {
-    // Get the most recent CrossChainContractsSet before the fromBlock. This is the first SpokePool for this chain
-    // that was enabled for the searchConfig.
-    const mostRecentSpokePoolUpdateBeforeFromBlock = sortEventsDescending(this.crossChainContracts[chainId]).find(
-      (spokePool) => spokePool.validSearchRange.fromBlock <= searchConfig.fromBlock
-    );
-    if (!mostRecentSpokePoolUpdateBeforeFromBlock?.validSearchRange?.fromBlock) return [];
-
-    // Return all CrossChainContractsSet events after the most recent CrossChainContractsSet before the fromBlock
-    // until we get one that happened after the toBlock.
-    const activeSpokePools = sortEventsAscending(this.crossChainContracts[chainId])
-      .filter((spokePool) => {
-        return (
-          spokePool.validSearchRange.fromBlock >= mostRecentSpokePoolUpdateBeforeFromBlock.validSearchRange.fromBlock &&
-          spokePool.validSearchRange.fromBlock <= searchConfig.toBlock
-        );
-      })
-      // If consecutive spoke pool upgrades are for the same contract address, then squash them together.
-      .reduce((activeSpokePools: CrossChainContractsSet[], activeSpokePoolCurr: CrossChainContractsSet, i) => {
-        if (i === 0) return [activeSpokePoolCurr];
-        if (activeSpokePoolCurr.spokePool === activeSpokePools[activeSpokePools.length - 1].spokePool)
-          activeSpokePools[activeSpokePools.length - 1].validSearchRange.toBlock =
-            activeSpokePoolCurr.validSearchRange.toBlock;
-        else activeSpokePools.push(activeSpokePoolCurr);
-        return activeSpokePools;
-      }, []);
-    return activeSpokePools;
+  getSpokePools(chain: number): CrossChainContractsSet[] {
+    return this.crossChainContracts[chain];
   }
 
   getDestinationTokenForDeposit(deposit: { originChainId: number; originToken: string; destinationChainId: number }) {
@@ -447,12 +406,6 @@ export class HubPoolClient {
 
     this.currentTime = currentTime;
 
-    const l2BlockEquivalents = await Promise.all(
-      crossChainContractsSetEvents.map((event) => {
-        const args = spreadEventWithBlockNumber(event) as CrossChainContractsSet;
-        return this.getL2EquivalentBlockNumber(args.blockNumber, args.l2ChainId);
-      })
-    );
     for (let i = 0; i < crossChainContractsSetEvents.length; i++) {
       const event = crossChainContractsSetEvents[i];
       const args = spreadEventWithBlockNumber(event) as CrossChainContractsSet;
@@ -462,8 +415,6 @@ export class HubPoolClient {
         [
           {
             spokePool: args.spokePool,
-            l2BlockEquivalent: l2BlockEquivalents[i],
-            validSearchRange: { fromBlock: l2BlockEquivalents[i], toBlock: l2BlockEquivalents[i] },
             blockNumber: args.blockNumber,
             transactionIndex: args.transactionIndex,
             logIndex: args.logIndex,
@@ -471,37 +422,6 @@ export class HubPoolClient {
         ]
       );
     }
-
-    // Now update the most recent cross chain contract's valid search range now that we know when it was
-    // deactivated.
-    // Invariant: The most recent spoke pool activated for a chainId must have a `null` toBlock.
-    Object.entries(this.crossChainContracts).forEach(([chainId, crossChainContracts]) => {
-      for (let i = 0; i < crossChainContracts.length - 1; i++) {
-        if (crossChainContracts[i].validSearchRange.toBlock < crossChainContracts[i + 1].validSearchRange.fromBlock)
-          crossChainContracts[i].validSearchRange.toBlock = crossChainContracts[i + 1].validSearchRange.fromBlock - 1;
-      }
-      if (crossChainContracts.length > 0)
-        this.crossChainContracts[chainId][crossChainContracts.length - 1].validSearchRange.toBlock = null;
-    });
-
-    console.log(
-      "Valid search configs:",
-      JSON.stringify(
-        Object.entries(this.crossChainContracts).map(([chainId, crossChainContracts]) => {
-          return {
-            chainId,
-            crossChainContracts: crossChainContracts.map((crossChainContract) => {
-              return {
-                spokePool: crossChainContract.spokePool,
-                validSearchRange: crossChainContract.validSearchRange,
-              };
-            }),
-          };
-        }),
-        null,
-        2
-      )
-    );
 
     for (const event of poolRebalanceRouteEvents) {
       const args = spreadEventWithBlockNumber(event) as SetPoolRebalanceRoot;
@@ -621,33 +541,5 @@ export class HubPoolClient {
     // are only added to the bundle block list, never deleted.
     if (chainIdIndex >= bundleEvaluationBlockNumbers.length) return 0;
     return bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
-  }
-
-  private async getL2EquivalentBlockNumber(l1Block: number, chainId: number) {
-    // If this function is called many times in one run, then its result should be cached.
-    const l1Provider = this.getProvider();
-    const timestamp = (await l1Provider.getBlock(l1Block)).timestamp;
-    if (!this.l2BlockFinders[chainId]) {
-      const l2Provider = this.spokePoolProviders[chainId];
-      this.l2BlockFinders[chainId] = new BlockFinder(l2Provider.getBlock.bind(l2Provider));
-    }
-    if (!this.redisClient) {
-      return (await this.l2BlockFinders[chainId].getBlockForTimestamp(timestamp)).number;
-    }
-    const key = `l2_${chainId}_block_number_${timestamp}`;
-    const result = await this.redisClient.get(key);
-    if (result === null) {
-      const blockNumber = (await this.l2BlockFinders[chainId].getBlockForTimestamp(timestamp)).number;
-      if (this.shouldCache(timestamp)) await this.redisClient.set(key, blockNumber.toString());
-      return blockNumber;
-    } else {
-      return parseInt(result);
-    }
-  }
-
-  // Avoid caching calls that are recent enough to be affected by things like reorgs.
-  private shouldCache(eventTimestamp: number) {
-    // Current time must be >= 5 minutes past the event timestamp for it to be stable enough to cache.
-    return getCurrentTime() - eventTimestamp >= 300;
   }
 }
