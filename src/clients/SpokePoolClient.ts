@@ -316,9 +316,6 @@ export class SpokePoolClient {
           return paginatedEventQuery(this.spokePool, config.filter, config.searchConfig);
 
         const activeSpokePools: ActiveSpokePool[] = await this.getActiveSpokePoolsForBlocks(searchConfig);
-        if (activeSpokePools.length === 0)
-          return paginatedEventQuery(this.spokePool, config.filter, config.searchConfig);
-
         console.log(
           "Active spoke pools in range:",
           JSON.stringify(
@@ -567,6 +564,14 @@ export class SpokePoolClient {
     searchConfig: Omit<EventSearchConfig, "maxBlockLookBack">
   ): Promise<ActiveSpokePool[]> {
     const allSpokePools = await this.getSpokePools();
+    // If there has never been an activated spoke pools, which is a possible value if the
+    // hubPoolClient is undefined, then default to the default spoke pool.
+    if (allSpokePools.length === 0)
+      return[{
+        activeBlocks: searchConfig,
+        contract: this.spokePool,
+      }]
+
     console.log(
       "All Historical Activated Contracts:",
       JSON.stringify(
