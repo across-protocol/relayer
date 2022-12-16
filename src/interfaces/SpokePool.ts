@@ -1,4 +1,4 @@
-import { BigNumber, EventSearchConfig } from "../utils";
+import { BigNumber, Contract, EventSearchConfig } from "../utils";
 import { SortableEvent } from "./Common";
 import { SpokePoolClient } from "../clients";
 import { CrossChainContractsSet } from "./HubPool";
@@ -74,8 +74,13 @@ export interface RootBundleRelay {
   slowRelayRoot: string;
 }
 
-export interface ActiveSpokePool extends CrossChainContractsSet {
-  activeBlocks: Omit<EventSearchConfig, "maxBlockLookBack">;
+export interface ActiveCrossChainContract extends CrossChainContractsSet {
+  activeBlocks: EventSearchConfig;
+}
+
+export interface ActiveSpokePool {
+  activeBlocks: EventSearchConfig;
+  contract: Contract;
 }
 
 export interface RootBundleRelayWithBlock extends RootBundleRelay, SortableEvent {}

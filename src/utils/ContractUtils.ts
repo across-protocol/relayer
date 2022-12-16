@@ -27,6 +27,7 @@ export function getContract(
     const artifact = typechain[`${[factoryName.replace("_", "")]}__factory`];
     return new Contract(address, artifact.abi, provider);
   } catch (error) {
+    console.error(error);
     throw new Error(`Could not find address for contract ${contractName} on ${networkId}`);
   }
 }
@@ -37,6 +38,8 @@ export function castSpokePoolName(networkId: number): string {
   let networkName = getNetworkName(networkId);
   if (networkName == "Mainnet" || networkName == "Rinkeby" || networkName == "Kovan" || networkName == "Goerli")
     return "Ethereum_SpokePool";
+
+  if (networkName.includes("Hardhat")) return "MockSpokePool";
 
   if (networkName.includes("-")) networkName = networkName.substring(0, networkName.indexOf("-"));
   return `${networkName}_SpokePool`;

@@ -28,6 +28,7 @@ import {
   TokensBridged,
   FundsDepositedEvent,
   ActiveSpokePool,
+  ActiveCrossChainContract,
 } from "../interfaces/SpokePool";
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
 import { BlockFinder } from "@uma/sdk";
@@ -311,20 +312,19 @@ export class SpokePoolClient {
       eventSearchConfigs.map(async (config) => {
         // If event is supposed to be searched on current spoke pool beginning at its deployment block, there is no
         // need to send multiply event searches across different spoke pools.
-        // Or, if config store and hub pool client isn't defined, just use the latest spoke pool.
-        if (!this.hubPoolClient() || eventsToQueryFromSpokePoolDeploymentBlock.includes(config.eventName))
+        if (eventsToQueryFromSpokePoolDeploymentBlock.includes(config.eventName))
           return paginatedEventQuery(this.spokePool, config.filter, config.searchConfig);
 
-        const activeCrossChainContractsInQuery: ActiveSpokePool[] = await this.getActiveSpokePoolsForBlocks(
-          searchConfig
-        );
+        const activeSpokePools: ActiveSpokePool[] = await this.getActiveSpokePoolsForBlocks(searchConfig);
+        if (activeSpokePools.length === 0)
+          return paginatedEventQuery(this.spokePool, config.filter, config.searchConfig);
 
         console.log(
           "Active spoke pools in range:",
           JSON.stringify(
-            Object.entries(activeCrossChainContractsInQuery).map(([, crossChainContract]) => {
+            Object.entries(activeSpokePools).map(([, crossChainContract]) => {
               return {
-                spokePool: crossChainContract.spokePool,
+                spokePool: crossChainContract.contract.address,
                 activeBlocks: crossChainContract.activeBlocks,
               };
             }),
@@ -334,31 +334,19 @@ export class SpokePoolClient {
         );
         const queriesForConfig = (
           await Promise.all(
-            activeCrossChainContractsInQuery.map((crossChainContract) => {
-              const spokePoolContract = getContract(
-                crossChainContract.spokePool,
-                "SpokePool",
-                this.chainId,
-                this.getProvider()
-              );
-
-              // We can assume that the most recent spoke pool activated for this chainId has a `null` toBlock.
-
+            activeSpokePools.map((spokePool) => {
               // If the spoke pool was deactivated before the beginning of the query range then we have no reason to query
               // it for any events.
-              if (crossChainContract.activeBlocks.toBlock < config.searchConfig.fromBlock) return undefined;
+              if (spokePool.activeBlocks.toBlock < config.searchConfig.fromBlock) return undefined;
               else {
                 const queryToUseForSpokePool = {
-                  fromBlock: Math.max(config.searchConfig.fromBlock, crossChainContract.activeBlocks.fromBlock),
-                  toBlock:
-                    crossChainContract.activeBlocks.toBlock === null
-                      ? config.searchConfig.toBlock
-                      : crossChainContract.activeBlocks.toBlock,
+                  fromBlock: Math.max(config.searchConfig.fromBlock, spokePool.activeBlocks.fromBlock),
+                  toBlock: spokePool.activeBlocks.toBlock,
                   maxBlockLookBack: config.searchConfig.maxBlockLookBack,
                 };
 
-                console.log(`Searching events on ${spokePoolContract.address}`, queryToUseForSpokePool, config);
-                return paginatedEventQuery(spokePoolContract, config.filter, queryToUseForSpokePool);
+                console.log(`Searching events on ${spokePool.contract.address}`, queryToUseForSpokePool, config);
+                return paginatedEventQuery(spokePool.contract, config.filter, queryToUseForSpokePool);
               }
             })
           )
@@ -557,12 +545,12 @@ export class SpokePoolClient {
     }
   }
 
-  private async getSpokePools(): Promise<ActiveSpokePool[]> {
-    const crossChainContracts = this.hubPoolClient()?.getSpokePools(this.chainId);
+  private async getSpokePools(): Promise<ActiveCrossChainContract[]> {
+    const crossChainContracts = this.hubPoolClient()?.getSpokePools(this.chainId) ?? [];
     const activatedFromBlocks = await Promise.all(
       crossChainContracts.map((event) => this.getL2EquivalentBlockNumber(event.blockNumber))
     );
-    const activatedToBlocks = activatedFromBlocks.map((block, index) => {
+    const activatedToBlocks = activatedFromBlocks.map((_block, index) => {
       if (index === activatedFromBlocks.length - 1) return this.latestBlockNumber;
       return activatedFromBlocks[index + 1] - 1;
     });
@@ -580,7 +568,7 @@ export class SpokePoolClient {
   ): Promise<ActiveSpokePool[]> {
     const allSpokePools = await this.getSpokePools();
     console.log(
-      "Valid search configs:",
+      "All Historical Activated Contracts:",
       JSON.stringify(
         allSpokePools.map((spokePool) => {
           return {
@@ -611,13 +599,20 @@ export class SpokePoolClient {
         );
       })
       // If consecutive spoke pool upgrades are for the same contract address, then squash them together.
-      .reduce((activeSpokePools: ActiveSpokePool[], activeSpokePoolCurr: ActiveSpokePool, i) => {
+      .reduce((activeSpokePools: ActiveCrossChainContract[], activeSpokePoolCurr: ActiveCrossChainContract, i) => {
         if (i === 0) return [activeSpokePoolCurr];
         if (activeSpokePoolCurr.spokePool === activeSpokePools[activeSpokePools.length - 1].spokePool)
           activeSpokePools[activeSpokePools.length - 1].activeBlocks.toBlock = activeSpokePoolCurr.activeBlocks.toBlock;
         else activeSpokePools.push(activeSpokePoolCurr);
         return activeSpokePools;
-      }, []);
+      }, [])
+      .map((spokePool) => {
+        return {
+          activeBlocks: spokePool.activeBlocks,
+          contract: getContract(spokePool.spokePool, "SpokePool", this.chainId, this.getProvider()),
+        };
+      });
+
     return activeSpokePools;
   }
 
