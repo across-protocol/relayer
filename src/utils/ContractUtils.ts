@@ -35,7 +35,6 @@ export function getContract(
 // contract factory name. For example, if the network is "mainnet" then the contract is called Ethereum_SpokePool.
 export function castSpokePoolName(networkId: number): string {
   let networkName = getNetworkName(networkId);
-  if (networkName.includes("Hardhat")) return "MockSpokePool";
   if (networkName == "Mainnet" || networkName == "Rinkeby" || networkName == "Kovan" || networkName == "Goerli")
     return "Ethereum_SpokePool";
 

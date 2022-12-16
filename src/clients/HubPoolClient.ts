@@ -405,8 +405,7 @@ export class HubPoolClient {
 
     this.currentTime = currentTime;
 
-    for (let i = 0; i < crossChainContractsSetEvents.length; i++) {
-      const event = crossChainContractsSetEvents[i];
+    for (const event of crossChainContractsSetEvents) {
       const args = spreadEventWithBlockNumber(event) as CrossChainContractsSet;
       assign(
         this.crossChainContracts,

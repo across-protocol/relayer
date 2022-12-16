@@ -304,8 +304,6 @@ export class SpokePoolClient {
       };
     });
 
-    const activeSpokePools: ActiveSpokePool[] = await this.getActiveSpokePoolsForBlocks(searchConfig);
-
     // For all events not included in `eventsToQueryFromSpokePoolDeploymentBlock`, we may need to query the events
     // from multiple spoke pools.
     const timerStart = Date.now();
@@ -313,7 +311,7 @@ export class SpokePoolClient {
       eventSearchConfigs.map(async (config) => {
         // If event is supposed to be searched on current spoke pool beginning at its deployment block, there is no
         // need to send multiply event searches across different spoke pools.
-        // Or, if config store isn't defined, just use the latest spoke pool.
+        // Or, if config store and hub pool client isn't defined, just use the latest spoke pool.
         if (!this.hubPoolClient() || eventsToQueryFromSpokePoolDeploymentBlock.includes(config.eventName))
           return paginatedEventQuery(this.spokePool, config.filter, config.searchConfig);
 
@@ -560,7 +558,7 @@ export class SpokePoolClient {
   }
 
   private async getSpokePools(): Promise<ActiveSpokePool[]> {
-    const crossChainContracts = this.hubPoolClient().getSpokePools(this.chainId);
+    const crossChainContracts = this.hubPoolClient()?.getSpokePools(this.chainId);
     const activatedFromBlocks = await Promise.all(
       crossChainContracts.map((event) => this.getL2EquivalentBlockNumber(event.blockNumber))
     );

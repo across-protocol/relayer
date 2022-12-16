@@ -153,6 +153,14 @@ export async function constructClients(
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
 
+  const hubPoolClient = new HubPoolClient(logger, hubPool, config.hubPoolChainId, hubPoolClientSearchSettings);
+
+  const rateModelClientSearchSettings = {
+    fromBlock: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),
+    toBlock: undefined,
+    maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
+  };
+
   let redisClient: ReturnType<typeof createClient> | undefined;
   if (config.redisUrl) {
     redisClient = createClient({
@@ -165,14 +173,6 @@ export async function constructClients(
       dbSize: await redisClient.dbSize(),
     });
   }
-
-  const hubPoolClient = new HubPoolClient(logger, hubPool, config.hubPoolChainId, hubPoolClientSearchSettings);
-
-  const rateModelClientSearchSettings = {
-    fromBlock: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),
-    toBlock: undefined,
-    maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
-  };
 
   const configStoreClient = new AcrossConfigStoreClient(
     logger,
