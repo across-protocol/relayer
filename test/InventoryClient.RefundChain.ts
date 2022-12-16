@@ -59,7 +59,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     [owner] = await ethers.getSigners();
     ({ spy, spyLogger } = createSpyLogger());
 
-    hubPoolClient = new MockHubPoolClient(null, null);
+    hubPoolClient = new MockHubPoolClient(null, null, null, {});
     adapterManager = new MockAdapterManager(null, null, null, null);
     tokenClient = new MockTokenClient(null, null, null, null);
     bundleDataClient = new MockBundleDataClient(null, null, null, null);

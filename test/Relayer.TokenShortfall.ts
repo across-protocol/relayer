@@ -1,4 +1,11 @@
-import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, originChainId, sinon } from "./utils";
+import {
+  deploySpokePoolWithToken,
+  enableRoutesOnHubPool,
+  destinationChainId,
+  originChainId,
+  sinon,
+  getProviders,
+} from "./utils";
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
 import { lastSpyLogIncludes, toBNWei, createSpyLogger, deployConfigStore } from "./utils";
 import { deployAndConfigureHubPool, winston } from "./utils";
@@ -33,6 +40,7 @@ describe("Relayer: Token balance shortfall", async function () {
     ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
     ({ hubPool, l1Token_1: l1Token } = await deployAndConfigureHubPool(owner, [
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
+      { l2ChainId: originChainId, spokePool: spokePool_1 },
     ]));
 
     await enableRoutesOnHubPool(hubPool, [
@@ -42,7 +50,13 @@ describe("Relayer: Token balance shortfall", async function () {
 
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool);
+    const hubPoolChainId = (await hubPool.provider.getNetwork()).chainId;
+    hubPoolClient = new HubPoolClient(
+      spyLogger,
+      hubPool,
+      hubPoolChainId,
+      getProviders([originChainId, destinationChainId, hubPoolChainId], hubPool)
+    );
     configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
     multiCallerClient = new MultiCallerClient(spyLogger); // leave out the gasEstimator for now.
     spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(relayer), configStoreClient, originChainId);

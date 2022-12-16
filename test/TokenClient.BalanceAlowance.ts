@@ -1,4 +1,4 @@
-import { deploySpokePoolWithToken, expect, ethers, Contract, SignerWithAddress } from "./utils";
+import { deploySpokePoolWithToken, expect, ethers, Contract, SignerWithAddress, getProviders } from "./utils";
 import { createSpyLogger, winston, originChainId, destinationChainId, toBNWei } from "./utils";
 import { deployAndConfigureHubPool, zeroAddress } from "./utils";
 
@@ -31,7 +31,13 @@ describe("TokenClient: Balance and Allowance", async function () {
     spokePoolClient_2 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_2, null, destinationChainId);
 
     const spokePoolClients = { [destinationChainId]: spokePoolClient_1, [originChainId]: spokePoolClient_2 };
-    const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
+    const hubPoolChainId = (await hubPool.provider.getNetwork()).chainId;
+    const hubPoolClient = new HubPoolClient(
+      spyLogger,
+      hubPool,
+      hubPoolChainId,
+      getProviders([originChainId, destinationChainId, hubPoolChainId], hubPool)
+    );
 
     tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });

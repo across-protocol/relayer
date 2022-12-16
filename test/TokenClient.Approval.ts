@@ -1,4 +1,13 @@
-import { deploySpokePoolWithToken, expect, ethers, Contract, SignerWithAddress, MAX_UINT_VAL, toBN } from "./utils";
+import {
+  deploySpokePoolWithToken,
+  expect,
+  ethers,
+  Contract,
+  SignerWithAddress,
+  MAX_UINT_VAL,
+  toBN,
+  getProviders,
+} from "./utils";
 import { createSpyLogger, winston, originChainId, destinationChainId, lastSpyLogIncludes } from "./utils";
 import { deployAndConfigureHubPool, zeroAddress, getContractFactory, utf8ToHex, toBNWei } from "./utils";
 import { TokenClient, SpokePoolClient, HubPoolClient } from "../src/clients";
@@ -40,7 +49,13 @@ describe("TokenClient: Origin token approval", async function () {
 
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
-    const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
+    const hubPoolChainId = (await hubPool.provider.getNetwork()).chainId;
+    const hubPoolClient = new HubPoolClient(
+      spyLogger,
+      hubPool,
+      hubPoolChainId,
+      getProviders([originChainId, destinationChainId, hubPoolChainId], hubPool)
+    );
     tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });
 

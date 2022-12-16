@@ -43,7 +43,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     [relayer] = await ethers.getSigners();
     ({ spy, spyLogger } = createSpyLogger());
 
-    hubPoolClient = new MockHubPoolClient(null, null);
+    hubPoolClient = new MockHubPoolClient(null, null, null, {});
     await seedMocks();
     adapterManager = new AdapterManager(spyLogger, mockSpokePoolClients, hubPoolClient, [relayer.address]);
 

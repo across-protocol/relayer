@@ -16,7 +16,12 @@ describe("HubPoolClient: L1Tokens", async function () {
       await getContractFactory("HubPool", owner)
     ).deploy(lpTokenFactory.address, zeroAddress, zeroAddress, zeroAddress);
 
-    hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
+    hubPoolClient = new HubPoolClient(
+      createSpyLogger().spyLogger,
+      hubPool,
+      (await hubPool.provider.getNetwork()).chainId,
+      {}
+    );
   });
 
   it("Fetches all L1Tokens Addresses", async function () {

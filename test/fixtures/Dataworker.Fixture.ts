@@ -6,6 +6,7 @@ import {
   BigNumber,
   enableRoutes,
   sampleRateModel,
+  getProviders,
 } from "../utils";
 import { SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "../utils";
 import { createSpyLogger, winston, deployAndConfigureHubPool, deployConfigStore } from "../utils";
@@ -24,6 +25,8 @@ import {
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { BundleDataClient, TokenClient } from "../../src/clients";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
+import { ethers } from "ethers";
+import { SpokePoolProviders } from "../../src/interfaces";
 
 async function _constructSpokePoolClientsWithLookback(
   spokePools: Contract[],
@@ -67,6 +70,7 @@ export async function setupDataworker(
   l1Token_2: Contract;
   configStore: Contract;
   timer: Contract;
+  spokePoolProviders: SpokePoolProviders;
   spokePoolClient_1: clients.SpokePoolClient;
   spokePoolClient_2: clients.SpokePoolClient;
   spokePoolClient_3: clients.SpokePoolClient;
@@ -106,6 +110,7 @@ export async function setupDataworker(
   const { spokePool: spokePool_4 } = await deploySpokePoolWithToken(1, repaymentChainId);
 
   const umaEcosystem = await setupUmaEcosystem(owner);
+
   const { hubPool, l1Token_1, l1Token_2 } = await deployAndConfigureHubPool(
     owner,
     [
@@ -119,12 +124,11 @@ export async function setupDataworker(
     umaEcosystem.finder.address,
     umaEcosystem.timer.address
   );
+  const hubPoolChainId = (await hubPool.provider.getNetwork()).chainId;
 
   // Enable deposit routes for second L2 tokens so relays can be sent between spoke pool 1 <--> 2.
   await enableRoutes(spokePool_1, [{ originToken: erc20_2.address, destinationChainId: destinationChainId }]);
   await enableRoutes(spokePool_2, [{ originToken: erc20_1.address, destinationChainId: originChainId }]);
-
-  const hubPoolChainId = (await hubPool.provider.getNetwork()).chainId;
 
   // For each chain, enable routes to both erc20's so that we can fill relays
   await enableRoutesOnHubPool(hubPool, [
@@ -161,7 +165,12 @@ export async function setupDataworker(
     defaultPoolRebalanceTokenTransferThreshold
   );
 
-  const hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool);
+  const spokePoolProviders = getProviders(
+    [originChainId, destinationChainId, repaymentChainId, hubPoolChainId, 1],
+    hubPool
+  );
+
+  const hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool, hubPoolChainId, spokePoolProviders);
   const configStoreClient = new clients.AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
 
   const multiCallerClient = new clients.MultiCallerClient(spyLogger); // leave out the gasEstimator for now.
@@ -169,7 +178,7 @@ export async function setupDataworker(
   const [spokePoolClient_1, spokePoolClient_2, spokePoolClient_3, spokePoolClient_4] =
     await _constructSpokePoolClientsWithLookback(
       [spokePool_1, spokePool_2, spokePool_3, spokePool_4],
-      [defaultOriginChainid, defaultDestinationChainId, repaymentChainId, 1],
+      [originChainId, destinationChainId, repaymentChainId, 1],
       spyLogger,
       relayer,
       configStoreClient,
@@ -186,6 +195,7 @@ export async function setupDataworker(
     [repaymentChainId]: spokePoolClient_3,
     1: spokePoolClient_4,
   };
+
   const profitClient = new clients.ProfitClient(spyLogger, hubPoolClient, spokePoolClients, false, []);
   const bundleDataClient = new BundleDataClient(
     spyLogger,
@@ -251,6 +261,7 @@ export async function setupDataworker(
     l1Token_2,
     configStore,
     timer: umaEcosystem.timer,
+    spokePoolProviders,
     spokePoolClient_1,
     spokePoolClient_2,
     spokePoolClient_3,
@@ -294,6 +305,7 @@ export async function setupFastDataworker(
   l1Token_2: Contract;
   configStore: Contract;
   timer: Contract;
+  spokePoolProviders: SpokePoolProviders;
   spokePoolClient_1: clients.SpokePoolClient;
   spokePoolClient_2: clients.SpokePoolClient;
   spokePoolClient_3: clients.SpokePoolClient;

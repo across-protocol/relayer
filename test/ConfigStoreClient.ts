@@ -1,4 +1,10 @@
-import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolRebalanceLeaves } from "./utils";
+import {
+  deploySpokePoolWithToken,
+  repaymentChainId,
+  originChainId,
+  buildPoolRebalanceLeaves,
+  getProviders,
+} from "./utils";
 import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
 import { toBNWei, toWei, buildPoolRebalanceLeafTree, createSpyLogger } from "./utils";
 import { getContractFactory, hubPoolFixture, toBN, utf8ToHex } from "./utils";
@@ -47,7 +53,13 @@ describe("AcrossConfigStoreClient", async function () {
     await hubPool.enableL1TokenForLiquidityProvision(l1Token.address);
 
     configStore = await (await getContractFactory("AcrossConfigStore", owner)).deploy();
-    hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
+    const hubPoolChainId = (await hubPool.provider.getNetwork()).chainId;
+    hubPoolClient = new HubPoolClient(
+      createSpyLogger().spyLogger,
+      hubPool,
+      hubPoolChainId,
+      getProviders([originChainId, destinationChainId, hubPoolChainId, repaymentChainId], hubPool)
+    );
     configStoreClient = new AcrossConfigStoreClient(createSpyLogger().spyLogger, configStore, hubPoolClient);
 
     await setupTokensForWallet(spokePool, owner, [l1Token], weth, 100); // Seed owner to LP.

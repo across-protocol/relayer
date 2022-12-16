@@ -5,6 +5,7 @@ import {
   buildDepositStruct,
   signForSpeedUp,
   lastSpyLogIncludes,
+  getProviders,
 } from "./utils";
 import {
   deploySpokePoolWithToken,
@@ -57,7 +58,13 @@ describe("Relayer: Unfilled Deposits", async function () {
     ]));
 
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool);
+    const hubPoolChainId = (await hubPool.provider.getNetwork()).chainId;
+    hubPoolClient = new HubPoolClient(
+      spyLogger,
+      hubPool,
+      hubPoolChainId,
+      getProviders([originChainId, destinationChainId, hubPoolChainId], hubPool)
+    );
     configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
     spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1, configStoreClient, originChainId);
     spokePoolClient_2 = new SpokePoolClient(

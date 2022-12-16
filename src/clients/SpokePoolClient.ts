@@ -10,7 +10,7 @@ import {
   DefaultLogLevels,
   MakeOptional,
   getContract,
-  getProvider,
+  ethers,
 } from "../utils";
 import { toBN, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
@@ -241,6 +241,10 @@ export class SpokePoolClient {
     return `${event.depositId}-${event.originChainId}`;
   }
 
+  getProvider(): ethers.providers.Provider {
+    return this.spokePool.provider;
+  }
+
   async update(eventsToQuery?: string[]) {
     if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
     const { NODE_MAX_CONCURRENCY } = process.env;
@@ -250,7 +254,7 @@ export class SpokePoolClient {
     );
 
     // Require that all Deposits meet the minimum specified number of confirmations.
-    this.latestBlockNumber = await this.spokePool.provider.getBlockNumber();
+    this.latestBlockNumber = await this.getProvider().getBlockNumber();
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
       toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
@@ -294,7 +298,8 @@ export class SpokePoolClient {
       eventSearchConfigs.map(async (config) => {
         // If event is supposed to be searched on current spoke pool beginning at its deployment block, there is no
         // need to send multiply event searches across different spoke pools.
-        if (eventsToQueryFromSpokePoolDeploymentBlock.includes(config.eventName))
+        // Or, if config store isn't defined, just use the latest spoke pool.
+        if (!this.hubPoolClient() || eventsToQueryFromSpokePoolDeploymentBlock.includes(config.eventName))
           return paginatedEventQuery(this.spokePool, config.filter, config.searchConfig);
 
         const activeCrossChainContractsInQuery = this.hubPoolClient().getActiveSpokePoolsForBlocks(
@@ -324,7 +329,7 @@ export class SpokePoolClient {
                 crossChainContract.spokePool,
                 "SpokePool",
                 this.chainId,
-                getProvider(this.chainId)
+                this.getProvider()
               );
 
               // We can assume that the most recent spoke pool activated for this chainId has a `null` toBlock.

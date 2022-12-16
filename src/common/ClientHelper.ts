@@ -1,9 +1,9 @@
 import winston from "winston";
-import { getProvider, getDeployedContract, getDeploymentBlockNumber, Wallet, Contract } from "../utils";
+import { getProvider, getDeployedContract, getDeploymentBlockNumber, Wallet, Contract, ethers } from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { createClient } from "redis4";
-import { SpokePoolClientsByChain } from "../interfaces";
+import { SpokePoolClientsByChain, SpokePoolProviders } from "../interfaces";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -16,6 +16,14 @@ export function getSpokePoolSigners(baseSigner: Wallet, config: CommonConfig): {
   return Object.fromEntries(
     config.spokePoolChains.map((chainId) => {
       return [chainId, baseSigner.connect(getProvider(chainId))];
+    })
+  );
+}
+
+export function getSpokePoolProviders(config: CommonConfig): SpokePoolProviders {
+  return Object.fromEntries(
+    config.spokePoolChains.map((chainId) => {
+      return [chainId, getProvider(chainId)];
     })
   );
 }
@@ -164,7 +172,14 @@ export async function constructClients(
     });
   }
 
-  const hubPoolClient = new HubPoolClient(logger, hubPool, hubPoolClientSearchSettings, redisClient);
+  const hubPoolClient = new HubPoolClient(
+    logger,
+    hubPool,
+    config.hubPoolChainId,
+    getSpokePoolProviders(config),
+    hubPoolClientSearchSettings,
+    redisClient
+  );
 
   const rateModelClientSearchSettings = {
     fromBlock: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),

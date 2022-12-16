@@ -688,7 +688,7 @@ export class Monitor {
 
   private async computeHubPoolBlocks() {
     const { startingBlock, endingBlock } = await this.computeStartingAndEndingBlock(
-      this.clients.hubPoolClient.hubPool.provider,
+      this.clients.hubPoolClient.getProvider(),
       this.monitorConfig.hubPoolStartingBlock,
       this.monitorConfig.hubPoolEndingBlock
     );

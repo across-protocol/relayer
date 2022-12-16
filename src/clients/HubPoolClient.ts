@@ -7,14 +7,13 @@ import {
   sortEventsAscending,
   EventSearchConfig,
   MakeOptional,
-  getProvider,
   ethers,
   Block,
   getCurrentTime,
 } from "../utils";
 import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
 import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
-import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle, LpToken } from "../interfaces";
+import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle, LpToken, SpokePoolProviders } from "../interfaces";
 import { ExecutedRootBundle, PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
 import _ from "lodash";
@@ -43,11 +42,12 @@ export class HubPoolClient {
   public firstBlockToSearch: number;
   public latestBlockNumber: number | undefined;
   public currentTime: number | undefined;
-  public hubPoolChainId = 1;
 
   constructor(
     readonly logger: winston.Logger,
     readonly hubPool: Contract,
+    readonly hubPoolChainId: number,
+    readonly spokePoolProviders: SpokePoolProviders,
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
     readonly redisClient?: RedisClient
   ) {
@@ -55,7 +55,11 @@ export class HubPoolClient {
   }
 
   getProvider(): ethers.providers.Provider {
-    return getProvider(this.hubPoolChainId);
+    return this.hubPool.provider;
+  }
+
+  setProvider(chainId: number, provider: ethers.providers.Provider): void {
+    this.spokePoolProviders[chainId] = provider;
   }
 
   hasPendingProposal() {
@@ -93,35 +97,25 @@ export class HubPoolClient {
     searchConfig: { fromBlock: number; toBlock: number },
     chainId: number
   ): CrossChainContractsSet[] {
-    // First, get the most recent CrossChainContractsSet before the fromBlock.
+    // Get the most recent CrossChainContractsSet before the fromBlock. This is the first SpokePool for this chain
+    // that was enabled for the searchConfig.
     const mostRecentSpokePoolUpdateBeforeFromBlock = sortEventsDescending(this.crossChainContracts[chainId]).find(
       (spokePool) => spokePool.validSearchRange.fromBlock <= searchConfig.fromBlock
     );
+    if (!mostRecentSpokePoolUpdateBeforeFromBlock?.validSearchRange?.fromBlock) return [];
 
-    // Next, find the most recent CrossChainContractsSet before the toBlock.
-    const mostRecentSpokePoolUpdateBeforeToBlock = sortEventsDescending(this.crossChainContracts[chainId]).find(
-      (spokePool) => spokePool.validSearchRange.fromBlock <= searchConfig.toBlock
-    );
-
-    // If there are no events with a valid search range before desired search config's to block, then there are no
-    // active spoke pools for this block range.
-    if (!mostRecentSpokePoolUpdateBeforeToBlock) return [];
-
-    // Finally, return all CrossChainContractsSet events between the two.
+    // Return all CrossChainContractsSet events after the most recent CrossChainContractsSet before the fromBlock
+    // until we get one that happened after the toBlock.
     const activeSpokePools = sortEventsAscending(this.crossChainContracts[chainId])
       .filter((spokePool) => {
         return (
-          ((spokePool.validSearchRange.toBlock === null ||
-            spokePool.validSearchRange.fromBlock <= spokePool.validSearchRange.toBlock) &&
-            spokePool.validSearchRange.fromBlock >=
-              mostRecentSpokePoolUpdateBeforeFromBlock?.validSearchRange.fromBlock) ||
-          (0 &&
-            spokePool.validSearchRange.fromBlock <= mostRecentSpokePoolUpdateBeforeToBlock.validSearchRange.fromBlock)
+          spokePool.validSearchRange.fromBlock >= mostRecentSpokePoolUpdateBeforeFromBlock.validSearchRange.fromBlock &&
+          spokePool.validSearchRange.fromBlock <= searchConfig.toBlock
         );
       })
+      // If consecutive spoke pool upgrades are for the same contract address, then squash them together.
       .reduce((activeSpokePools: CrossChainContractsSet[], activeSpokePoolCurr: CrossChainContractsSet, i) => {
         if (i === 0) return [activeSpokePoolCurr];
-        // If consecutive spoke pool upgrades are for the same contract address, then squash them together.
         if (activeSpokePoolCurr.spokePool === activeSpokePools[activeSpokePools.length - 1].spokePool)
           activeSpokePools[activeSpokePools.length - 1].validSearchRange.toBlock =
             activeSpokePoolCurr.validSearchRange.toBlock;
@@ -420,8 +414,7 @@ export class HubPoolClient {
   }
 
   async update() {
-    this.latestBlockNumber = await this.hubPool.provider.getBlockNumber();
-    if (this.hubPoolChainId === undefined) this.hubPoolChainId = (await this.hubPool.provider.getNetwork()).chainId;
+    this.latestBlockNumber = await this.getProvider().getBlockNumber();
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
       toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
@@ -632,10 +625,10 @@ export class HubPoolClient {
 
   private async getL2EquivalentBlockNumber(l1Block: number, chainId: number) {
     // If this function is called many times in one run, then its result should be cached.
-    const l1Provider = getProvider(this.hubPoolChainId ?? 1);
+    const l1Provider = this.getProvider();
     const timestamp = (await l1Provider.getBlock(l1Block)).timestamp;
     if (!this.l2BlockFinders[chainId]) {
-      const l2Provider = getProvider(chainId);
+      const l2Provider = this.spokePoolProviders[chainId];
       this.l2BlockFinders[chainId] = new BlockFinder(l2Provider.getBlock.bind(l2Provider));
     }
     if (!this.redisClient) {

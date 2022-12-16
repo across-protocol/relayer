@@ -376,7 +376,7 @@ export class Dataworker {
     }
 
     // 4. Propose roots to HubPool contract.
-    const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
+    const hubPoolChainId = (await this.clients.hubPoolClient.getProvider().getNetwork()).chainId;
     this.logger.debug({
       at: "Dataworker#propose",
       message: "Enqueing new root bundle proposal txn",
@@ -410,7 +410,7 @@ export class Dataworker {
       this.clients.hubPoolClient.latestBlockNumber === undefined
     )
       throw new Error("HubPoolClient not updated");
-    const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
+    const hubPoolChainId = this.clients.hubPoolClient.hubPoolChainId;
 
     // Exit early if a bundle is not pending.
     const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundle();
@@ -997,7 +997,7 @@ export class Dataworker {
       this.clients.hubPoolClient.latestBlockNumber === undefined
     )
       throw new Error("HubPoolClient not updated");
-    const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
+    const hubPoolChainId = (await this.clients.hubPoolClient.getProvider().getNetwork()).chainId;
 
     // Exit early if a bundle is not pending.
     const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundle();
@@ -1084,9 +1084,9 @@ export class Dataworker {
           }));
 
           if (leaf.chainId === 42161) {
-            const hubPoolBalance = await this.clients.hubPoolClient.hubPool.provider.getBalance(
-              this.clients.hubPoolClient.hubPool.address
-            );
+            const hubPoolBalance = await this.clients.hubPoolClient
+              .getProvider()
+              .getBalance(this.clients.hubPoolClient.hubPool.address);
             if (hubPoolBalance.lt(this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf)))
               requests.push({
                 tokens: [ZERO_ADDRESS],
@@ -1155,9 +1155,9 @@ export class Dataworker {
       });
     });
 
-    const hubPoolBalance = await this.clients.hubPoolClient.hubPool.provider.getBalance(
-      this.clients.hubPoolClient.hubPool.address
-    );
+    const hubPoolBalance = await this.clients.hubPoolClient
+      .getProvider()
+      .getBalance(this.clients.hubPoolClient.hubPool.address);
     fundedLeaves.forEach((leaf) => {
       const proof = expectedTrees.poolRebalanceTree.tree.getHexProof(leaf);
       const mrkdwn = `Root hash: ${expectedTrees.poolRebalanceTree.tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${
