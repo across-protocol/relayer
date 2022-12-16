@@ -1,4 +1,4 @@
-import { getContractFactory, expect, ethers, Contract, SignerWithAddress, originChainId, getProviders } from "./utils";
+import { getContractFactory, expect, ethers, Contract, SignerWithAddress, originChainId } from "./utils";
 import { zeroAddress, destinationChainId, toBN, createSpyLogger } from "./utils";
 import { randomL1Token, randomOriginToken, randomDestinationToken, randomDestinationToken2 } from "./constants";
 import { HubPoolClient } from "../src/clients";
@@ -23,8 +23,7 @@ describe("HubPoolClient: Deposit to Destination Token", async function () {
     hubPoolClient = new HubPoolClient(
       createSpyLogger().spyLogger,
       hubPool,
-      (await hubPool.provider.getNetwork()).chainId,
-      getProviders([destinationChainId, originChainId], hubPool)
+      (await hubPool.provider.getNetwork()).chainId
     );
   });
 

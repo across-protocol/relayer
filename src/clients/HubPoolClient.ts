@@ -11,11 +11,10 @@ import {
 } from "../utils";
 import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
 import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
-import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle, LpToken, SpokePoolProviders } from "../interfaces";
+import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle, LpToken } from "../interfaces";
 import { ExecutedRootBundle, PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
 import _ from "lodash";
-
 
 export class HubPoolClient {
   // L1Token -> destinationChainId -> destinationToken
@@ -41,7 +40,7 @@ export class HubPoolClient {
     readonly logger: winston.Logger,
     readonly hubPool: Contract,
     readonly hubPoolChainId: number,
-    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
+    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }

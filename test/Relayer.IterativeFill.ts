@@ -1,19 +1,7 @@
-import {
-  expect,
-  deployAndConfigureHubPool,
-  deployIterativeSpokePoolsAndToken,
-  lastSpyLogIncludes,
-  getProviders,
-} from "./utils";
+import { expect, deployAndConfigureHubPool, deployIterativeSpokePoolsAndToken, lastSpyLogIncludes } from "./utils";
 import { deposit, ethers, Contract, getLastBlockTime, contractAt, addLiquidity, createSpyLogger } from "./utils";
 import { SignerWithAddress, setupTokensForWallet, deployConfigStore, winston, sinon, toBNWei } from "./utils";
-import {
-  amountToLp,
-  defaultMinDepositConfirmations,
-  defaultTokenConfig,
-  destinationChainId,
-  originChainId,
-} from "./constants";
+import { amountToLp, defaultMinDepositConfirmations, defaultTokenConfig } from "./constants";
 import { HubPoolClient, AcrossConfigStoreClient, MultiCallerClient, AcrossApiClient } from "../src/clients";
 import { TokenClient, ProfitClient } from "../src/clients";
 import { MockInventoryClient } from "./mocks";
@@ -42,9 +30,7 @@ describe.skip("Relayer: Iterative fill", async function () {
 
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(relayer, []));
-    const hubPoolChainId = (await hubPool.provider.getNetwork()).chainId;
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool, hubPoolChainId, {});
-
+    hubPoolClient = new HubPoolClient(spyLogger, hubPool, (await hubPool.provider.getNetwork()).chainId);
     configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
     multiCallerClient = new MultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 

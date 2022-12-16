@@ -1,10 +1,4 @@
-import {
-  deploySpokePoolWithToken,
-  repaymentChainId,
-  originChainId,
-  buildPoolRebalanceLeaves,
-  getProviders,
-} from "./utils";
+import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolRebalanceLeaves } from "./utils";
 import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
 import { toBNWei, toWei, buildPoolRebalanceLeafTree, createSpyLogger } from "./utils";
 import { getContractFactory, hubPoolFixture, toBN, utf8ToHex } from "./utils";
@@ -53,12 +47,10 @@ describe("AcrossConfigStoreClient", async function () {
     await hubPool.enableL1TokenForLiquidityProvision(l1Token.address);
 
     configStore = await (await getContractFactory("AcrossConfigStore", owner)).deploy();
-    const hubPoolChainId = (await hubPool.provider.getNetwork()).chainId;
     hubPoolClient = new HubPoolClient(
       createSpyLogger().spyLogger,
       hubPool,
-      hubPoolChainId,
-      getProviders([originChainId, destinationChainId, hubPoolChainId, repaymentChainId], hubPool)
+      (await hubPool.provider.getNetwork()).chainId
     );
     configStoreClient = new AcrossConfigStoreClient(createSpyLogger().spyLogger, configStore, hubPoolClient);
 

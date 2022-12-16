@@ -79,7 +79,7 @@ function testProfitability(deposit: Deposit, fillAmountUsd: BigNumber, gasCostUs
 
 describe("ProfitClient: Consider relay profit", async function () {
   beforeEach(async function () {
-    hubPoolClient = new MockHubPoolClient(null, null, null, {});
+    hubPoolClient = new MockHubPoolClient(null, null, null);
     const [owner] = await ethers.getSigners();
     const { spokePool: spokePool_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId);
     const { spokePool: spokePool_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId);

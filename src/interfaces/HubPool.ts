@@ -1,4 +1,4 @@
-import { BigNumber, ethers } from "../utils";
+import { BigNumber } from "../utils";
 import { SortableEvent } from "./Common";
 
 export interface PoolRebalanceLeaf {
@@ -89,7 +89,3 @@ export interface PendingRootBundle {
   bundleEvaluationBlockNumbers: number[];
   proposalBlockNumber?: number;
 }
-
-export type SpokePoolProviders = {
-  [chainId: number]: ethers.providers.Provider;
-};

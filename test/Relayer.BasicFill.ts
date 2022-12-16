@@ -7,7 +7,6 @@ import {
   setupTokensForWallet,
   getLastBlockTime,
   signForSpeedUp,
-  getProviders,
 } from "./utils";
 import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfigureHubPool, winston } from "./utils";
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId } from "./utils";
@@ -44,7 +43,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
     ({ hubPool, l1Token_1: l1Token } = await deployAndConfigureHubPool(owner, [
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
-      { l2ChainId: originChainId, spokePool: spokePool_1 },
     ]));
 
     await enableRoutesOnHubPool(hubPool, [
@@ -54,13 +52,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    const hubPoolChainId = (await hubPool.provider.getNetwork()).chainId;
-    hubPoolClient = new HubPoolClient(
-      spyLogger,
-      hubPool,
-      hubPoolChainId,
-      getProviders([originChainId, destinationChainId, hubPoolChainId], hubPool)
-    );
+    hubPoolClient = new HubPoolClient(spyLogger, hubPool, (await hubPool.provider.getNetwork()).chainId);
     configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
 
     multiCallerClient = new MultiCallerClient(spyLogger);

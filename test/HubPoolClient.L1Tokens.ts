@@ -19,8 +19,7 @@ describe("HubPoolClient: L1Tokens", async function () {
     hubPoolClient = new HubPoolClient(
       createSpyLogger().spyLogger,
       hubPool,
-      (await hubPool.provider.getNetwork()).chainId,
-      {}
+      (await hubPool.provider.getNetwork()).chainId
     );
   });
 

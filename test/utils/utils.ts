@@ -14,7 +14,7 @@ import { SpokePoolClient } from "../../src/clients";
 import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber } from "./index";
 import { Deposit, Fill, RunningBalances } from "../../src/interfaces";
 import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
-import { ethers, providers } from "ethers";
+import { providers } from "ethers";
 
 import winston from "winston";
 import sinon from "sinon";
@@ -284,14 +284,6 @@ export function appendPropsToDeposit(deposit) {
 
 export async function getLastBlockTime(provider: any) {
   return (await provider.getBlock(await provider.getBlockNumber())).timestamp;
-}
-
-export function getProviders(chainIds: number[], hubPool: Contract): { [chainId: number]: ethers.providers.Provider } {
-  return Object.fromEntries(
-    chainIds.map((chainId) => {
-      return [chainId, hubPool.provider];
-    })
-  );
 }
 
 export async function deployIterativeSpokePoolsAndToken(

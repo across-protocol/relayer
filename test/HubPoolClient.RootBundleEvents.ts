@@ -3,12 +3,11 @@ import { SignerWithAddress, expect, ethers, Contract, toBNWei, toBN, BigNumber, 
 import { HubPoolClient } from "../src/clients";
 import * as constants from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import { ProposedRootBundle, SpokePoolProviders } from "../src/interfaces";
+import { ProposedRootBundle, PendingRootBundle } from "../src/interfaces";
 
 let hubPool: Contract, timer: Contract;
 let l1Token_1: Contract, l1Token_2: Contract;
 let dataworker: SignerWithAddress, owner: SignerWithAddress;
-let spokePoolProviders: SpokePoolProviders;
 
 let hubPoolClient: HubPoolClient;
 
@@ -30,7 +29,7 @@ async function constructSimpleTree(runningBalance: BigNumber) {
 
 describe("HubPoolClient: RootBundle Events", async function () {
   beforeEach(async function () {
-    ({ hubPool, l1Token_1, l1Token_2, dataworker, timer, owner, spokePoolProviders } = await setupDataworker(
+    ({ hubPool, l1Token_1, l1Token_2, dataworker, timer, owner } = await setupDataworker(
       ethers,
       constants.MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
       constants.MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
@@ -40,8 +39,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
     hubPoolClient = new HubPoolClient(
       createSpyLogger().spyLogger,
       hubPool,
-      (await hubPool.provider.getNetwork()).chainId,
-      spokePoolProviders
+      (await hubPool.provider.getNetwork()).chainId
     );
   });
 
@@ -381,7 +379,6 @@ describe("HubPoolClient: RootBundle Events", async function () {
     await hre.network.provider.send("evm_mine");
     await hubPool.connect(owner).setCrossChainContracts([11], adapter, spokePool2);
     const secondUpdateBlockNumber = await hubPool.provider.getBlockNumber();
-    hubPoolClient.setProvider(11, hubPool.provider);
 
     // Default case when there are no events for a chain.
     expect(() => hubPoolClient.getSpokePoolForBlock(firstUpdateBlockNumber, 11)).to.throw(
