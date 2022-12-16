@@ -1,4 +1,4 @@
-import { getNetworkName, Contract, Wallet, getDeployedAddress, getDeployedBlockNumber } from ".";
+import { getNetworkName, Contract, Wallet, getDeployedAddress, getDeployedBlockNumber, ethers } from ".";
 
 import * as typechain from "@across-protocol/contracts-v2"; // TODO: refactor once we've fixed export from contract repo
 
@@ -10,6 +10,22 @@ export function getDeployedContract(contractName: string, networkId: number, sig
     const factoryName = contractName === "SpokePool" ? castSpokePoolName(networkId) : contractName;
     const artifact = typechain[`${[factoryName.replace("_", "")]}__factory`];
     return new Contract(address, artifact.abi, signer);
+  } catch (error) {
+    throw new Error(`Could not find address for contract ${contractName} on ${networkId}`);
+  }
+}
+
+export function getContract(
+  address: string,
+  contractName: string,
+  networkId: number,
+  provider: ethers.providers.Provider
+): Contract {
+  try {
+    // If the contractName is SpokePool then we need to modify it to find the correct contract factory artifact.
+    const factoryName = contractName === "SpokePool" ? castSpokePoolName(networkId) : contractName;
+    const artifact = typechain[`${[factoryName.replace("_", "")]}__factory`];
+    return new Contract(address, artifact.abi, provider);
   } catch (error) {
     throw new Error(`Could not find address for contract ${contractName} on ${networkId}`);
   }

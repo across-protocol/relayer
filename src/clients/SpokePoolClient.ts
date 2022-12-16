@@ -9,6 +9,8 @@ import {
   sortEventsAscendingInPlace,
   DefaultLogLevels,
   MakeOptional,
+  getContract,
+  getProvider,
 } from "../utils";
 import { toBN, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
@@ -254,27 +256,18 @@ export class SpokePoolClient {
       toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
-
-    // Deposit route search config should always go from the deployment block to ensure we fetch all routes. If this is
-    // the first run then set the from block to the deployment block of the spoke pool. Else, use the same config as the
-    // other event queries to not double search over the same event ranges.
-    const depositRouteSearchConfig = { ...searchConfig }; // shallow copy.
-    if (!this.isUpdated) depositRouteSearchConfig.fromBlock = this.spokePoolDeploymentBlock;
-
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
-    // Try to reduce the number of web3 requests sent to query FundsDeposited and FilledRelay events since there are
-    // expected to be so many. We will first try to load existing cached events if they exist and if they do, then
-    // we only need to search for new events after the last cached event searched. We will then update the cache with
-    // all blocks (cached + newly fetched) older than the "latestBlockToCache".
-    const depositEventSearchConfig = { ...searchConfig };
-
-    let timerStart = Date.now();
-
+    // By default, an event's query range can be overridden (usually shortened) by the `eventSearchConfig`
+    // passed in to the Config object. However, certain types of have special rules that could change their
+    // search ranges. For example, the following event names should only be queried from the deployment block
+    // of the CURRENT spoke pool.
+    const eventsToQueryFromSpokePoolDeploymentBlock = ["EnabledDepositRoute"];
+    const deploymentBlockSearchConfig = { ...searchConfig }; // shallow copy.
+    if (!this.isUpdated) deploymentBlockSearchConfig.fromBlock = this.spokePoolDeploymentBlock;
     this.log("debug", `Updating SpokePool client for chain ${this.chainId}`, {
       searchConfig,
-      depositRouteSearchConfig,
-      depositEventSearchConfig,
+      deploymentBlockSearchConfig,
       spokePool: this.spokePool.address,
     });
 
@@ -284,25 +277,85 @@ export class SpokePoolClient {
     const eventSearchConfigs = eventsToQuery.map((eventName) => {
       if (!Object.keys(this._queryableEventNames()).includes(eventName))
         throw new Error("Unknown event to query in SpokePoolClient");
-      // By default, an event's query range can be overridden (usually shortened) by the `eventSearchConfig`
-      // passed in to the Config object. However, certain types of have special rules that could change their
-      // search ranges:
-      let searchConfigToUse = searchConfig;
-      // These events always are queried from when Across' spoke pools were first deployed.
-      if (eventName === "EnabledDepositRoute") searchConfigToUse = depositRouteSearchConfig;
-      // These events can be loaded from the `cachedData` so they use a potentially modified `depositEventSearchConfig`.
-      else if (eventName === "FundsDeposited" || eventName === "FilledRelay")
-        searchConfigToUse = depositEventSearchConfig;
-
+      const searchConfigToUse = eventsToQueryFromSpokePoolDeploymentBlock.includes(eventName)
+        ? deploymentBlockSearchConfig
+        : searchConfig;
       return {
+        eventName,
         filter: this._queryableEventNames()[eventName],
         searchConfig: searchConfigToUse,
       };
     });
 
-    timerStart = Date.now();
+    // For all events not included in `eventsToQueryFromSpokePoolDeploymentBlock`, we may need to query the events
+    // from multiple spoke pools.
+    const timerStart = Date.now();
     const queryResults = await Promise.all(
-      eventSearchConfigs.map((config) => paginatedEventQuery(this.spokePool, config.filter, config.searchConfig))
+      eventSearchConfigs.map(async (config) => {
+        // If event is supposed to be searched on current spoke pool beginning at its deployment block, there is no
+        // need to send multiply event searches across different spoke pools.
+        if (eventsToQueryFromSpokePoolDeploymentBlock.includes(config.eventName))
+          return paginatedEventQuery(this.spokePool, config.filter, config.searchConfig);
+
+        const activeCrossChainContractsInQuery = this.hubPoolClient().getActiveSpokePoolsForBlocks(
+          config.searchConfig,
+          this.chainId
+        );
+
+        console.log(
+          "Active spoke pools in range:",
+          JSON.stringify(
+            Object.entries(activeCrossChainContractsInQuery).map(([chainId, crossChainContract]) => {
+              return {
+                chainId: this.chainId,
+                spokePool: crossChainContract.spokePool,
+                validSearchRange: crossChainContract.validSearchRange,
+              };
+            }),
+            null,
+            2
+          )
+        );
+        // console.log(`activeCrossChainContractsInQuery`, config.searchConfig, activeCrossChainContractsInQuery)
+        const queriesForConfig = (
+          await Promise.all(
+            activeCrossChainContractsInQuery.map((crossChainContract) => {
+              const spokePoolContract = getContract(
+                crossChainContract.spokePool,
+                "SpokePool",
+                this.chainId,
+                getProvider(this.chainId)
+              );
+
+              // We can assume that the most recent spoke pool activated for this chainId has a `null` toBlock.
+
+              // If the spoke pool was deactivated before the beginning of the query range then we have no reason to query
+              // it for any events.
+              if (
+                crossChainContract.validSearchRange.toBlock !== null &&
+                crossChainContract.validSearchRange.toBlock < config.searchConfig.fromBlock
+              )
+                return undefined;
+              else {
+                const queryToUseForSpokePool = {
+                  fromBlock: Math.max(config.searchConfig.fromBlock, crossChainContract.validSearchRange.fromBlock),
+                  toBlock:
+                    crossChainContract.validSearchRange.toBlock === null
+                      ? config.searchConfig.toBlock
+                      : crossChainContract.validSearchRange.toBlock,
+                  maxBlockLookBack: config.searchConfig.maxBlockLookBack,
+                };
+
+                console.log(`Searching events on ${spokePoolContract.address}`, queryToUseForSpokePool, config);
+                return paginatedEventQuery(spokePoolContract, config.filter, queryToUseForSpokePool);
+              }
+            })
+          )
+        )
+          .flat()
+          .filter((x) => x !== undefined);
+        return queriesForConfig;
+      })
     );
     this.log("debug", `Time to query new events from RPC for ${this.chainId}: ${Date.now() - timerStart}ms`);
 
@@ -427,8 +480,6 @@ export class SpokePoolClient {
     this.isUpdated = true;
     this.log("debug", `SpokePool client for chain ${this.chainId} updated!`, {
       searchConfig,
-      depositRouteSearchConfig,
-      depositEventSearchConfig,
       nextFirstBlockToSearch: this.firstBlockToSearch,
     });
   }

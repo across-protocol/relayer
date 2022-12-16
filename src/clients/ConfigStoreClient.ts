@@ -16,7 +16,6 @@ import {
 
 import {
   L1TokenTransferThreshold,
-  Deposit,
   TokenConfig,
   GlobalConfigUpdate,
   ParsedTokenConfig,
