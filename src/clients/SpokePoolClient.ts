@@ -316,19 +316,6 @@ export class SpokePoolClient {
           return paginatedEventQuery(this.spokePool, config.filter, config.searchConfig);
 
         const activeSpokePools: ActiveSpokePool[] = await this.getActiveSpokePoolsForBlocks(searchConfig);
-        console.log(
-          "Active spoke pools in range:",
-          JSON.stringify(
-            Object.entries(activeSpokePools).map(([, crossChainContract]) => {
-              return {
-                spokePool: crossChainContract.contract.address,
-                activeBlocks: crossChainContract.activeBlocks,
-              };
-            }),
-            null,
-            2
-          )
-        );
         const queriesForConfig = (
           await Promise.all(
             activeSpokePools.map((spokePool) => {
@@ -567,10 +554,12 @@ export class SpokePoolClient {
     // If there has never been an activated spoke pools, which is a possible value if the
     // hubPoolClient is undefined, then default to the default spoke pool.
     if (allSpokePools.length === 0)
-      return[{
-        activeBlocks: searchConfig,
-        contract: this.spokePool,
-      }]
+      return [
+        {
+          activeBlocks: searchConfig,
+          contract: this.spokePool,
+        },
+      ];
 
     console.log(
       "All Historical Activated Contracts:",
@@ -580,6 +569,7 @@ export class SpokePoolClient {
             chainId: this.chainId,
             spokePool: spokePool.spokePool,
             activeBlocks: spokePool.activeBlocks,
+            activationTxn: spokePool.transactionHash,
           };
         }),
         null,
@@ -618,6 +608,19 @@ export class SpokePoolClient {
         };
       });
 
+    console.log(
+      "Active spoke pools in range:",
+      JSON.stringify(
+        Object.entries(activeSpokePools).map(([, crossChainContract]) => {
+          return {
+            spokePool: crossChainContract.contract.address,
+            activeBlocks: crossChainContract.activeBlocks,
+          };
+        }),
+        null,
+        2
+      )
+    );
     return activeSpokePools;
   }
 
