@@ -30,7 +30,7 @@ export async function constructRelayerClients(
     config.maxRelayerLookBack
   );
 
-  const acrossApiClient = new AcrossApiClient(logger, config.relayerTokens);
+  const acrossApiClient = new AcrossApiClient(logger, commonClients.hubPoolClient, config.relayerTokens);
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients, commonClients.hubPoolClient);
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
@@ -93,7 +93,7 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
 
   // We can update the inventory client at the same time as checking for eth wrapping as these do not depend on each other.
   await Promise.all([
-    clients.acrossApiClient.update(config.ignoreLimits),
+    clients.acrossApiClient.update(config.ignoreLimits), // Note: AcrossAPIClient requires HubPoolClient to be updated.
     clients.inventoryClient.update(),
     clients.inventoryClient.wrapL2EthIfAboveThreshold(),
     clients.inventoryClient.setL1TokenApprovals(),
