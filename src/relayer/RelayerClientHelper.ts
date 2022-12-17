@@ -30,11 +30,7 @@ export async function constructRelayerClients(
     config.maxRelayerLookBack
   );
 
-  const enabledL1Tokens = commonClients.hubPoolClient.getL1Tokens().map((token) => token.address);
-  const acrossApiClient = new AcrossApiClient(
-    logger,
-    config.relayerTokens.filter((token) => enabledL1Tokens.includes(token))
-  );
+  const acrossApiClient = new AcrossApiClient(logger, config.relayerTokens);
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients, commonClients.hubPoolClient);
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
