@@ -83,7 +83,7 @@ export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number
   [chainId: number]: ethers.providers.Provider;
 } {
   return Object.fromEntries(
-    Object.entries(spokePoolClients).map(([chainId, client]) => [Number(chainId), client.spokePool.signer.provider!])
+    Object.entries(spokePoolClients).map(([chainId, client]) => [Number(chainId), client.getProvider()])
   );
 }
 

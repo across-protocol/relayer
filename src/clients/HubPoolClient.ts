@@ -102,7 +102,6 @@ export class HubPoolClient {
 
   getL1TokenForDeposit(deposit: { originChainId: number; originToken: string }): string {
     let l1Token = null;
-    console.log(this.l1TokensToDestinationTokens)
     Object.keys(this.l1TokensToDestinationTokens).forEach((_l1Token) => {
       if (this.l1TokensToDestinationTokens[_l1Token][deposit.originChainId] === deposit.originToken) l1Token = _l1Token;
     });
@@ -415,6 +414,7 @@ export class HubPoolClient {
           {
             spokePool: args.spokePool,
             blockNumber: args.blockNumber,
+            transactionHash: event.transactionHash,
             transactionIndex: args.transactionIndex,
             logIndex: args.logIndex,
           },

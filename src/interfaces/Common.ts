@@ -4,7 +4,7 @@ export interface SortableEvent {
   blockNumber: number;
   transactionIndex: number;
   logIndex: number;
-  transactionHash: string;
+  transactionHash?: string;
 }
 
 export interface BigNumberForToken {
