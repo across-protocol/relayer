@@ -93,7 +93,7 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
 
   // We can update the inventory client at the same time as checking for eth wrapping as these do not depend on each other.
   await Promise.all([
-    clients.acrossApiClient.update(config.ignoreLimits), // Note: AcrossAPIClient requires HubPoolClient to be updated.
+    clients.acrossApiClient.update(config.ignoreLimits),
     clients.inventoryClient.update(),
     clients.inventoryClient.wrapL2EthIfAboveThreshold(),
     clients.inventoryClient.setL1TokenApprovals(),
