@@ -19,6 +19,7 @@ import {
 } from "./utils";
 
 import { SpokePoolClient } from "../src/clients";
+import { MockHubPoolClient } from "./mocks";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
@@ -33,8 +34,9 @@ describe("SpokePoolClient: Fill Validation", async function () {
     ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId));
     ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
     const { spyLogger } = createSpyLogger();
-    spokePoolClient2 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_2, null, originChainId); // create spoke pool client on the "target" chain.
-    spokePoolClient1 = new SpokePoolClient(spyLogger, spokePool_1, null, destinationChainId);
+    const hubPoolClient = new MockHubPoolClient(null, null, null)
+    spokePoolClient2 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_2, hubPoolClient, null, originChainId); // create spoke pool client on the "target" chain.
+    spokePoolClient1 = new SpokePoolClient(spyLogger, spokePool_1, hubPoolClient, null, destinationChainId);
 
     await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);
     await setupTokensForWallet(spokePool_2, relayer, [erc20_2], null, 10);
@@ -72,6 +74,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
     const spokePoolClientForDestinationChain = new SpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_1,
+      new MockHubPoolClient(null, null, null),
       null,
       destinationChainId
     ); // create spoke pool client on the "target" chain.
@@ -117,6 +120,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
     const spokePoolClientForDestinationChain = new SpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_1,
+      new MockHubPoolClient(null, null, null),
       null,
       destinationChainId
     ); // create spoke pool client on the "target" chain.

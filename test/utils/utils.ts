@@ -242,7 +242,7 @@ export async function deploySpokePoolForIterativeTest(
     mockAdapter.address,
     spokePool.address
   );
-  const spokePoolClient = new SpokePoolClient(logger, spokePool.connect(signer), configStoreClient, desiredChainId);
+  const spokePoolClient = new SpokePoolClient(logger, spokePool.connect(signer), configStoreClient.hubPoolClient, configStoreClient, desiredChainId);
 
   return { spokePool, spokePoolClient };
 }

@@ -47,10 +47,11 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
 
     multiCallerClient = new MultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 
-    spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(relayer), configStoreClient, originChainId);
+    spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(relayer), hubPoolClient, configStoreClient, originChainId);
     spokePoolClient_2 = new SpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),
+      hubPoolClient,
       configStoreClient,
       destinationChainId
     );

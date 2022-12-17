@@ -4,6 +4,7 @@ import { depositRelayerFeePct, destinationChainId } from "./constants";
 
 import { SpokePoolClient } from "../src/clients";
 import { DepositWithBlock } from "../src/interfaces";
+import { MockHubPoolClient } from "./mocks";
 
 let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress;
@@ -16,7 +17,8 @@ describe("SpokePoolClient: SpeedUp", async function () {
     [owner, depositor] = await ethers.getSigners();
     ({ spokePool, erc20, destErc20, weth } = await deploySpokePoolWithToken(originChainId));
     await enableRoutes(spokePool, [{ originToken: erc20.address, destinationChainId: destinationChainId2 }]);
-    spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool, null, originChainId);
+    const hubPoolClient = new MockHubPoolClient(null, null, null);
+    spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool, new MockHubPoolClient(null, null, null), null, originChainId);
 
     await setupTokensForWallet(spokePool, depositor, [erc20, destErc20], weth, 10);
   });

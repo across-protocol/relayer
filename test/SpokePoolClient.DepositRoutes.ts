@@ -2,8 +2,9 @@ import { expect, ethers, Contract, SignerWithAddress, getContractFactory, create
 import { randomAddress, enableRoutes, zeroAddress, originChainId, destinationChainId } from "./utils";
 
 import { SpokePoolClient } from "../src/clients"; // tested
+import { MockHubPoolClient } from "./mocks";
 
-let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
+let spokePool: Contract;
 let owner: SignerWithAddress, depositor1: SignerWithAddress, depositor2: SignerWithAddress;
 
 let spokePoolClient: SpokePoolClient;
@@ -16,7 +17,7 @@ describe("SpokePoolClient: Deposit Routes", async function () {
       await getContractFactory("MockSpokePool", owner)
     ).deploy(owner.address, owner.address, zeroAddress, zeroAddress);
 
-    spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool, null, originChainId);
+    spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool, new MockHubPoolClient(null, null, null), null, originChainId);
   });
 
   it("Fetches enabled deposit routes", async function () {

@@ -33,6 +33,7 @@ import {
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
 import { BlockFinder } from "@uma/sdk";
 import { createClient } from "redis4";
+import { HubPoolClient } from "./HubPoolClient";
 
 const FILL_DEPOSIT_COMPARISON_KEYS = [
   "amount",
@@ -69,7 +70,8 @@ export class SpokePoolClient {
   constructor(
     readonly logger: winston.Logger,
     readonly spokePool: Contract,
-    // Can be excluded. This disables some deposit validation.
+    readonly hubPoolClient: HubPoolClient,
+    // ConfigStoreClient can be excluded. This disables some deposit validation.
     readonly configStoreClient: AcrossConfigStoreClient | null,
     readonly chainId: number,
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
@@ -480,13 +482,8 @@ export class SpokePoolClient {
     else return eventL2Token;
   }
 
-  public hubPoolClient() {
-    return this.configStoreClient?.hubPoolClient;
-  }
-
   private async computeRealizedLpFeePct(depositEvent: FundsDepositedEvent) {
-    const hubPoolClient = this.hubPoolClient();
-    if (!hubPoolClient || !this.configStoreClient) return { realizedLpFeePct: toBN(0), quoteBlock: 0 }; // If there is no rate model client return 0.
+    if (!this.configStoreClient) return { realizedLpFeePct: toBN(0), quoteBlock: 0 }; // If there is no rate model client return 0.
     const deposit = {
       amount: depositEvent.args.amount,
       originChainId: Number(depositEvent.args.originChainId),
@@ -494,7 +491,7 @@ export class SpokePoolClient {
       quoteTimestamp: depositEvent.args.quoteTimestamp,
     };
 
-    return this.configStoreClient.computeRealizedLpFeePct(deposit, hubPoolClient.getL1TokenForDeposit(deposit));
+    return this.configStoreClient.computeRealizedLpFeePct(deposit, this.hubPoolClient.getL1TokenForDeposit(deposit));
   }
 
   private getDestinationTokenForDeposit(deposit: {
@@ -502,14 +499,12 @@ export class SpokePoolClient {
     originToken: string;
     destinationChainId: number;
   }): string {
-    const hubPoolClient = this.hubPoolClient();
-    if (!hubPoolClient) return ZERO_ADDRESS; // If there is no rate model client return address(0).
-    return hubPoolClient.getDestinationTokenForDeposit(deposit);
+    return this.hubPoolClient.getDestinationTokenForDeposit(deposit);
   }
 
   private async getL2EquivalentBlockNumber(l1Block: number) {
     // If this function is called many times in one run, then its result should be cached.
-    const l1Provider = this.hubPoolClient().getProvider();
+    const l1Provider = this.hubPoolClient.getProvider();
     const timestamp = (await l1Provider.getBlock(l1Block)).timestamp;
     if (!this.l2BlockFinders[this.chainId]) {
       const l2Provider = this.getProvider();
@@ -529,8 +524,8 @@ export class SpokePoolClient {
     }
   }
 
-  private async getSpokePools(): Promise<ActiveCrossChainContract[]> {
-    const crossChainContracts = this.hubPoolClient()?.getSpokePools(this.chainId) ?? [];
+  public async getSpokePools(): Promise<ActiveCrossChainContract[]> {
+    const crossChainContracts = this.hubPoolClient.getSpokePools(this.chainId);
     const activatedFromBlocks = await Promise.all(
       crossChainContracts.map((event) => this.getL2EquivalentBlockNumber(event.blockNumber))
     );
@@ -547,12 +542,12 @@ export class SpokePoolClient {
     });
   }
 
-  private async getActiveSpokePoolsForBlocks(
+  public async getActiveSpokePoolsForBlocks(
     searchConfig: Omit<EventSearchConfig, "maxBlockLookBack">
   ): Promise<ActiveSpokePool[]> {
     const allSpokePools = await this.getSpokePools();
-    // If there has never been an activated spoke pools, which is a possible value if the
-    // hubPoolClient is undefined, then default to the default spoke pool.
+    // If there has never been an activated spoke pools, then default to the default spoke pool. This is only useful
+    // in tests and before the first spoke pool is activated.
     if (allSpokePools.length === 0)
       return [
         {

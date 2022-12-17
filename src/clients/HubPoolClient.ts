@@ -80,7 +80,7 @@ export class HubPoolClient {
   }
 
   getSpokePools(chain: number): CrossChainContractsSet[] {
-    return this.crossChainContracts[chain];
+    return this.crossChainContracts[chain] ?? [];
   }
 
   getDestinationTokenForDeposit(deposit: { originChainId: number; originToken: string; destinationChainId: number }) {
@@ -100,8 +100,9 @@ export class HubPoolClient {
     return this.l1TokensToDestinationTokens;
   }
 
-  getL1TokenForDeposit(deposit: { originChainId: number; originToken: string }) {
+  getL1TokenForDeposit(deposit: { originChainId: number; originToken: string }): string {
     let l1Token = null;
+    console.log(this.l1TokensToDestinationTokens)
     Object.keys(this.l1TokensToDestinationTokens).forEach((_l1Token) => {
       if (this.l1TokensToDestinationTokens[_l1Token][deposit.originChainId] === deposit.originToken) l1Token = _l1Token;
     });

@@ -84,8 +84,8 @@ describe("ProfitClient: Consider relay profit", async function () {
     const { spokePool: spokePool_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId);
     const { spokePool: spokePool_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId);
 
-    const spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(owner), null, originChainId);
-    const spokePoolClient_2 = new SpokePoolClient(spyLogger, spokePool_2.connect(owner), null, destinationChainId);
+    const spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(owner), hubPoolClient, null, originChainId);
+    const spokePoolClient_2 = new SpokePoolClient(spyLogger, spokePool_2.connect(owner),hubPoolClient,  null, destinationChainId);
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
     const ignoreProfitability = false;

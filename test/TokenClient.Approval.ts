@@ -35,16 +35,17 @@ describe("TokenClient: Origin token approval", async function () {
     ({ hubPool, l1Token_1 } = await deployAndConfigureHubPool(owner, [], finder.address, zeroAddress));
     await collateralWhitelist.addToWhitelist(l1Token_1.address);
     await hubPool.setBond(l1Token_1.address, toBNWei("5"));
-    spokePoolClient_1 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_1, null, originChainId);
-    spokePoolClient_2 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_2, null, destinationChainId);
-
-    const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
     const hubPoolClient = new HubPoolClient(
       createSpyLogger().spyLogger,
       hubPool,
       (await hubPool.provider.getNetwork()).chainId
     );
+    spokePoolClient_1 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_1, hubPoolClient, null, originChainId);
+    spokePoolClient_2 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_2, hubPoolClient, null, destinationChainId);
+
+    const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
+
     tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });
 

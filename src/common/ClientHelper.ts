@@ -71,6 +71,7 @@ function getSpokePoolClientsForContract(
     spokePoolClients[chainId] = new SpokePoolClient(
       logger,
       contract,
+      configStoreClient.hubPoolClient,
       configStoreClient,
       chainId,
       spokePoolClientSearchSettings,

@@ -1,11 +1,12 @@
-import { L1Token, Deposit } from "../../src/interfaces";
+import { L1Token } from "../../src/interfaces";
 import { HubPoolClient } from "../../src/clients";
+import { ZERO_ADDRESS } from "../../src/utils";
 
 export class MockHubPoolClient extends HubPoolClient {
   private l1TokensMock: L1Token[] = []; // L1Tokens and their associated info.
   private tokenInfoToReturn: L1Token;
   private l1TokensToDestinationTokensMock: { [l1Token: string]: { [destinationChainId: number]: string } } = {};
-  private returnedL1TokenForDeposit: string;
+  private returnedL1TokenForDeposit: string = ZERO_ADDRESS;
 
   addL1Token(l1Token: L1Token) {
     this.l1TokensMock.push(l1Token);
@@ -34,14 +35,15 @@ export class MockHubPoolClient extends HubPoolClient {
   }
 
   getDestinationTokenForL1Token(l1Token: string, destinationChainId: number) {
-    return this.l1TokensToDestinationTokensMock[l1Token][destinationChainId];
+    if (!this.l1TokensToDestinationTokensMock[l1Token]) return ZERO_ADDRESS;
+    return this.l1TokensToDestinationTokensMock[l1Token][destinationChainId] ?? ZERO_ADDRESS;
   }
 
   setReturnedL1TokenForDeposit(l1Token: string) {
     this.returnedL1TokenForDeposit = l1Token;
   }
 
-  getL1TokenForDeposit(deposit: Deposit) {
+  getL1TokenForDeposit(_deposit: { originChainId: number; originToken: string }): string {
     return this.returnedL1TokenForDeposit;
   }
 }

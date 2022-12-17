@@ -38,6 +38,7 @@ async function _constructSpokePoolClientsWithLookback(
     return new clients.SpokePoolClient(
       spyLogger,
       pool.connect(signer),
+      configStoreClient.hubPoolClient,
       configStoreClient,
       spokePoolChains[i],
       lookbackForAllChains === undefined
