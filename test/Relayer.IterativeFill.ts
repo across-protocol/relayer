@@ -68,7 +68,7 @@ describe.skip("Relayer: Iterative fill", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient, configStoreClient.hubPoolClient),
+        acrossApiClient: new AcrossApiClient(spyLogger, configStoreClient.hubPoolClient),
       },
       {
         relayerTokens: [],
