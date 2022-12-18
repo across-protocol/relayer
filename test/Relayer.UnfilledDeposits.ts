@@ -86,7 +86,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         tokenClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient(spyLogger),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient),
       },
       {
         relayerTokens: [],
