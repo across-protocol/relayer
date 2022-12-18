@@ -124,8 +124,11 @@ export async function deployAndConfigureHubPool(
 
   const mockAdapter = await (await utils.getContractFactory("Ethereum_Adapter", signer)).deploy();
 
+  const setCrossChainContractsTxn: any[] = [];
   for (const spokePool of spokePools) {
-    await hubPool.setCrossChainContracts(spokePool.l2ChainId, mockAdapter.address, spokePool.spokePool.address);
+    setCrossChainContractsTxn.push(
+      await hubPool.setCrossChainContracts(spokePool.l2ChainId, mockAdapter.address, spokePool.spokePool.address)
+    );
   }
 
   const l1Token_1 = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("Rando L1", "L1", 18);
@@ -133,7 +136,7 @@ export async function deployAndConfigureHubPool(
   const l1Token_2 = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("Rando L1", "L1", 18);
   await l1Token_2.addMember(TokenRolesEnum.MINTER, signer.address);
 
-  return { hubPool, mockAdapter, l1Token_1, l1Token_2 };
+  return { hubPool, mockAdapter, l1Token_1, l1Token_2, setCrossChainContractsTxn };
 }
 
 export async function deployNewToken(owner) {
