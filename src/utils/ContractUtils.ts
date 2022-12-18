@@ -27,7 +27,6 @@ export function getContract(
     const artifact = typechain[`${[factoryName.replace("_", "")]}__factory`];
     return new Contract(address, artifact.abi, provider);
   } catch (error) {
-    console.error(error);
     throw new Error(`Could not find address for contract ${contractName} on ${networkId}`);
   }
 }
