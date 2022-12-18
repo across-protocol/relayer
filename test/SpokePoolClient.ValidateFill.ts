@@ -34,8 +34,14 @@ describe("SpokePoolClient: Fill Validation", async function () {
     ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId));
     ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
     const { spyLogger } = createSpyLogger();
-    const hubPoolClient = new MockHubPoolClient(null, null, null)
-    spokePoolClient2 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_2, hubPoolClient, null, originChainId); // create spoke pool client on the "target" chain.
+    const hubPoolClient = new MockHubPoolClient(null, null, null);
+    spokePoolClient2 = new SpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool_2,
+      hubPoolClient,
+      null,
+      originChainId
+    ); // create spoke pool client on the "target" chain.
     spokePoolClient1 = new SpokePoolClient(spyLogger, spokePool_1, hubPoolClient, null, destinationChainId);
 
     await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);

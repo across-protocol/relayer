@@ -18,14 +18,25 @@ describe("TokenClient: Token shortfall", async function () {
     ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
     const { hubPool } = await deployAndConfigureHubPool(owner, [], zeroAddress, zeroAddress);
 
-
     const hubPoolClient = new HubPoolClient(
       createSpyLogger().spyLogger,
       hubPool,
       (await hubPool.provider.getNetwork()).chainId
     );
-    spokePoolClient_1 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_1, hubPoolClient, null, originChainId);
-    spokePoolClient_2 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_2, hubPoolClient, null, destinationChainId);
+    spokePoolClient_1 = new SpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool_1,
+      hubPoolClient,
+      null,
+      originChainId
+    );
+    spokePoolClient_2 = new SpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool_2,
+      hubPoolClient,
+      null,
+      destinationChainId
+    );
     const spokePoolClients = { [destinationChainId]: spokePoolClient_1, [originChainId]: spokePoolClient_2 };
 
     tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);

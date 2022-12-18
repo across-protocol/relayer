@@ -45,7 +45,13 @@ describe("Relayer: Token balance shortfall", async function () {
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, (await hubPool.provider.getNetwork()).chainId);
     configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
     multiCallerClient = new MultiCallerClient(spyLogger); // leave out the gasEstimator for now.
-    spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(relayer), hubPoolClient, configStoreClient, originChainId);
+    spokePoolClient_1 = new SpokePoolClient(
+      spyLogger,
+      spokePool_1.connect(relayer),
+      hubPoolClient,
+      configStoreClient,
+      originChainId
+    );
     spokePoolClient_2 = new SpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),

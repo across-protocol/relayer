@@ -80,6 +80,7 @@ export interface ActiveCrossChainContract extends CrossChainContractsSet {
 
 export interface ActiveSpokePool {
   activeBlocks: EventSearchConfig;
+  transactionHash?: string;
   contract: Contract;
 }
 

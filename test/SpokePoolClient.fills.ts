@@ -16,7 +16,13 @@ describe("SpokePoolClient: Fills", async function () {
     ({ spokePool, erc20, destErc20, weth } = await deploySpokePoolWithToken(originChainId, destinationChainId));
     await spokePool.setChainId(destinationChainId); // The spoke pool for a fill should be at the destinationChainId.
 
-    spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool, new MockHubPoolClient(null, null, null), null, destinationChainId);
+    spokePoolClient = new SpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool,
+      new MockHubPoolClient(null, null, null),
+      null,
+      destinationChainId
+    );
 
     await setupTokensForWallet(spokePool, relayer1, [erc20, destErc20], weth, 10);
     await setupTokensForWallet(spokePool, relayer2, [erc20, destErc20], weth, 10);

@@ -18,7 +18,13 @@ describe("SpokePoolClient: SpeedUp", async function () {
     ({ spokePool, erc20, destErc20, weth } = await deploySpokePoolWithToken(originChainId));
     await enableRoutes(spokePool, [{ originToken: erc20.address, destinationChainId: destinationChainId2 }]);
     const hubPoolClient = new MockHubPoolClient(null, null, null);
-    spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool, new MockHubPoolClient(null, null, null), null, originChainId);
+    spokePoolClient = new SpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool,
+      new MockHubPoolClient(null, null, null),
+      null,
+      originChainId
+    );
 
     await setupTokensForWallet(spokePool, depositor, [erc20, destErc20], weth, 10);
   });

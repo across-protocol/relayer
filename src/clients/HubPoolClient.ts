@@ -414,7 +414,7 @@ export class HubPoolClient {
           {
             spokePool: args.spokePool,
             blockNumber: args.blockNumber,
-            transactionHash: event.transactionHash,
+            transactionHash: args.transactionHash,
             transactionIndex: args.transactionIndex,
             logIndex: args.logIndex,
           },

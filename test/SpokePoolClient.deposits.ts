@@ -15,7 +15,13 @@ describe("SpokePoolClient: Deposits", async function () {
     [owner, depositor1, depositor2] = await ethers.getSigners();
     ({ spokePool, erc20, destErc20, weth } = await deploySpokePoolWithToken(originChainId));
     await enableRoutes(spokePool, [{ originToken: erc20.address, destinationChainId: destinationChainId2 }]);
-    spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool, new MockHubPoolClient(null, null, null), null, originChainId);
+    spokePoolClient = new SpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool,
+      new MockHubPoolClient(null, null, null),
+      null,
+      originChainId
+    );
 
     await setupTokensForWallet(spokePool, depositor1, [erc20, destErc20], weth, 10);
     await setupTokensForWallet(spokePool, depositor2, [erc20, destErc20], weth, 10);

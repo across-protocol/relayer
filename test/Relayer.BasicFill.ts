@@ -57,7 +57,13 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     multiCallerClient = new MultiCallerClient(spyLogger);
 
-    spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(relayer), hubPoolClient, configStoreClient, originChainId);
+    spokePoolClient_1 = new SpokePoolClient(
+      spyLogger,
+      spokePool_1.connect(relayer),
+      hubPoolClient,
+      configStoreClient,
+      originChainId
+    );
     spokePoolClient_2 = new SpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),

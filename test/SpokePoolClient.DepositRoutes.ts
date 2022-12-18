@@ -17,7 +17,13 @@ describe("SpokePoolClient: Deposit Routes", async function () {
       await getContractFactory("MockSpokePool", owner)
     ).deploy(owner.address, owner.address, zeroAddress, zeroAddress);
 
-    spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool, new MockHubPoolClient(null, null, null), null, originChainId);
+    spokePoolClient = new SpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool,
+      new MockHubPoolClient(null, null, null),
+      null,
+      originChainId
+    );
   });
 
   it("Fetches enabled deposit routes", async function () {
