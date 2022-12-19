@@ -1,4 +1,4 @@
-import { BigNumber, toBNWei, assert, toBN, replaceAddressCase } from "../utils";
+import { BigNumber, toBNWei, assert, toBN, replaceAddressCase, ethers } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
 import { InventoryConfig } from "../interfaces";
@@ -51,7 +51,9 @@ export class RelayerConfig extends CommonConfig {
     // Empty means all chains.
     this.relayerDestinationChains = RELAYER_DESTINATION_CHAINS ? JSON.parse(RELAYER_DESTINATION_CHAINS) : [];
     // Empty means all tokens.
-    this.relayerTokens = RELAYER_TOKENS ? JSON.parse(RELAYER_TOKENS) : [];
+    this.relayerTokens = RELAYER_TOKENS
+      ? JSON.parse(RELAYER_TOKENS).map((token) => ethers.utils.getAddress(token))
+      : [];
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
