@@ -4,14 +4,8 @@ export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
 
 export const RELAYER_MIN_FEE_PCT = 0.0003;
 
-// Target ~2 days per chain. Avg. block times: { 1: 12s, 10/42161: ~0.25s, 137: 2.5s, 288: 30s }
-export const MAX_RELAYER_DEPOSIT_LOOK_BACK: { [chainId: number]: number } = {
-  1: 14400,
-  10: 691200,
-  137: 69120,
-  288: 5760,
-  42161: 691200,
-};
+// Target ~2 days per chain.
+export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 2 * 24 * 60 * 60;
 
 // Target ~4 days per chain. Should cover all events needed to construct pending bundle.
 export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
@@ -24,13 +18,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
 
 // Target ~14 days per chain. Should cover all events that could be finalized, so 2x the optimistic
 // rollup challenge period seems safe.
-export const FINALIZER_TOKENBRIDGE_LOOKBACK: { [chainId: number]: number } = {
-  1: 100800,
-  10: 4838400,
-  137: 483840,
-  288: 40320,
-  42161: 4838400,
-};
+export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 
 // Reorgs are anticipated on Ethereum and Polygon. We use different following distances when processing deposit
 // events based on the USD amount of the deposit. This protects the relayer from the worst case situation where it fills

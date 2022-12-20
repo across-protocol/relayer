@@ -188,7 +188,7 @@ export class FinalizerConfig extends DataworkerConfig {
       : oneDayOfBlocks;
     // `maxFinalizerLookback` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxFinalizerLookback = FINALIZER_MAX_TOKENBRIDGE_LOOKBACK
-      ? JSON.parse(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK)
+      ? Number(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK)
       : FINALIZER_TOKENBRIDGE_LOOKBACK;
   }
 }

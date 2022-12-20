@@ -4,6 +4,7 @@ import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolCli
 import { CommonConfig } from "./Config";
 import { createClient } from "redis4";
 import { SpokePoolClientsByChain } from "../interfaces";
+import { utils } from "@across-protocol/sdk-v2"
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -25,7 +26,7 @@ export async function constructSpokePoolClientsWithLookback(
   configStoreClient: AcrossConfigStoreClient,
   config: CommonConfig,
   baseSigner: Wallet,
-  initialLookBackOverride: { [chainId: number]: number } = {}
+  initialLookBackOverride = 0
 ): Promise<SpokePoolClientsByChain> {
   // Set up Spoke signers and connect them to spoke pool contract objects:
   const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
@@ -33,17 +34,15 @@ export async function constructSpokePoolClientsWithLookback(
     return { chainId, contract: getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) };
   });
 
-  // For each spoke chain, look up its latest block and adjust by lookback configuration to determine
-  // fromBlock. If no lookback is set, fromBlock will be set to spoke pool's deployment block.
-  const fromBlocks: { [chainId: number]: number } = {};
-  const l2BlockNumbers = await Promise.all(
-    spokePools.map((obj: { contract: Contract }) => obj.contract.provider.getBlockNumber())
+  // If initial lookback override is non-zero, then look up the l2 block number at that time, otherwise
+  // use latest L2 block.
+  const _fromBlocks = await Promise.all(
+    initialLookBackOverride > 0 ?
+        spokePools.map((obj: { chainId: number; contract: Contract }) => utils.findBlockAtOrOlder(obj.contract.provider, initialLookBackOverride))
+      :
+        spokePools.map((obj: { contract: Contract }) => obj.contract.provider.getBlockNumber())
   );
-  spokePools.forEach((obj: { chainId: number; contract: Contract }, index) => {
-    if (initialLookBackOverride[obj.chainId]) {
-      fromBlocks[obj.chainId] = l2BlockNumbers[index] - initialLookBackOverride[obj.chainId];
-    }
-  });
+  const fromBlocks = Object.fromEntries(spokePools.map((obj: { chainId: number }, i: number) => { return [obj.chainId, _fromBlocks[i]] }))
 
   return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks);
 }
@@ -79,57 +78,11 @@ function getSpokePoolClientsForContract(
   return spokePoolClients;
 }
 
-export async function constructSpokePoolClientsWithStartBlocks(
-  logger: winston.Logger,
-  configStoreClient: AcrossConfigStoreClient,
-  config: CommonConfig,
-  baseSigner: Wallet,
-  startBlockOverride: { [chainId: number]: number } = {},
-  toBlockOverride: { [chainId: number]: number } = {}
-): Promise<SpokePoolClientsByChain> {
-  // Set up Spoke signers and connect them to spoke pool contract objects:
-  const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
-  const spokePools = config.spokePoolChains.map((chainId) => {
-    return { chainId, contract: getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) };
-  });
-
-  // If no lookback is set, fromBlock will be set to spoke pool's deployment block.
-  const fromBlocks: { [chainId: number]: number } = {};
-  spokePools.forEach((obj: { chainId: number; contract: Contract }) => {
-    if (startBlockOverride[obj.chainId]) {
-      fromBlocks[obj.chainId] = startBlockOverride[obj.chainId];
-    }
-  });
-
-  return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks, toBlockOverride);
-}
-
 export async function updateSpokePoolClients(
   spokePoolClients: { [chainId: number]: SpokePoolClient },
   eventsToQuery?: string[]
-) {
+): Promise<void> {
   await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update(eventsToQuery)));
-}
-
-export async function constructSpokePoolClientsWithStartBlocksAndUpdate(
-  logger: winston.Logger,
-  configStoreClient: AcrossConfigStoreClient,
-  config: CommonConfig,
-  baseSigner: Wallet,
-  startBlockOverride: { [chainId: number]: number } = {},
-  endBlockOverride: { [chainId: number]: number } = {},
-  eventsToQuery?: string[]
-) {
-  const spokePoolClients = await constructSpokePoolClientsWithStartBlocks(
-    logger,
-    configStoreClient,
-    config,
-    baseSigner,
-    startBlockOverride,
-    endBlockOverride
-  );
-  await updateSpokePoolClients(spokePoolClients, eventsToQuery);
-  return spokePoolClients;
 }
 
 export async function constructClients(

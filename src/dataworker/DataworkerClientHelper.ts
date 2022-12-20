@@ -3,15 +3,17 @@ import { DataworkerConfig } from "./DataworkerConfig";
 import {
   CHAIN_ID_LIST_INDICES,
   Clients,
+  CommonConfig,
   constructClients,
-  constructSpokePoolClientsWithStartBlocksAndUpdate,
   getSpokePoolSigners,
   updateClients,
+  updateSpokePoolClients,
 } from "../common";
-import { Wallet, ethers, EventSearchConfig, getDeploymentBlockNumber } from "../utils";
+import { Wallet, ethers, EventSearchConfig, getDeploymentBlockNumber, getDeployedContract, Contract } from "../utils";
 import { AcrossConfigStoreClient, BundleDataClient, ProfitClient, SpokePoolClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
+import { SpokePoolClientsByChain } from "../interfaces";
 
 export interface DataworkerClients extends Clients {
   tokenClient: TokenClient;
@@ -87,6 +89,31 @@ export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number
   );
 }
 
+export async function constructSpokePoolClientsWithStartBlocks(
+  logger: winston.Logger,
+  configStoreClient: AcrossConfigStoreClient,
+  config: CommonConfig,
+  baseSigner: Wallet,
+  startBlockOverride: { [chainId: number]: number } = {},
+  toBlockOverride: { [chainId: number]: number } = {}
+): Promise<SpokePoolClientsByChain> {
+  // Set up Spoke signers and connect them to spoke pool contract objects:
+  const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
+  const spokePools = config.spokePoolChains.map((chainId) => {
+    return { chainId, contract: getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) };
+  });
+
+  // If no lookback is set, fromBlock will be set to spoke pool's deployment block.
+  const fromBlocks: { [chainId: number]: number } = {};
+  spokePools.forEach((obj: { chainId: number; contract: Contract }) => {
+    if (startBlockOverride[obj.chainId]) {
+      fromBlocks[obj.chainId] = startBlockOverride[obj.chainId];
+    }
+  });
+
+  return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks, toBlockOverride);
+}
+
 // Constructs spoke pool clients with short lookback and validates that the Dataworker can use the data
 // to construct roots. The Dataworker still needs to validate the event set against the bundle block ranges it
 // wants to propose or validate.
@@ -98,13 +125,15 @@ export async function constructSpokePoolClientsForFastDataworker(
   startBlocks: { [chainId: number]: number },
   endBlocks: { [chainId: number]: number }
 ) {
-  return await constructSpokePoolClientsWithStartBlocksAndUpdate(
+  const spokePoolClients = await constructSpokePoolClientsWithStartBlocks(
     logger,
     configStoreClient,
     config,
     baseSigner,
     startBlocks,
-    endBlocks,
+    endBlocks
+  );
+  await updateSpokePoolClients(spokePoolClients, 
     [
       "FundsDeposited",
       "RequestedSpeedUpDeposit",
@@ -112,8 +141,8 @@ export async function constructSpokePoolClientsForFastDataworker(
       "EnabledDepositRoute",
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
-    ]
-  );
+    ]);
+  return spokePoolClients;
 }
 
 export function getSpokePoolClientEventSearchConfigsForFastDataworker(
@@ -168,3 +197,7 @@ export function getSpokePoolClientEventSearchConfigsForFastDataworker(
     toBlocks,
   };
 }
+function getSpokePoolClientsForContract(logger: winston.Logger, configStoreClient: AcrossConfigStoreClient, config: CommonConfig, spokePools: { chainId: number; contract: ethers.Contract; }[], fromBlocks: { [chainId: number]: number; }, toBlockOverride: { [chainId: number]: number; }): SpokePoolClientsByChain | PromiseLike<SpokePoolClientsByChain> {
+  throw new Error("Function not implemented.");
+}
+
