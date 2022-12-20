@@ -4,7 +4,7 @@ import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolCli
 import { CommonConfig } from "./Config";
 import { createClient } from "redis4";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { utils } from "@across-protocol/sdk-v2"
+import { utils } from "@across-protocol/sdk-v2";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -37,12 +37,17 @@ export async function constructSpokePoolClientsWithLookback(
   // If initial lookback override is non-zero, then look up the l2 block number at that time, otherwise
   // use latest L2 block.
   const _fromBlocks = await Promise.all(
-    initialLookBackOverride > 0 ?
-        spokePools.map((obj: { chainId: number; contract: Contract }) => utils.findBlockAtOrOlder(obj.contract.provider, initialLookBackOverride))
-      :
-        spokePools.map((obj: { contract: Contract }) => obj.contract.provider.getBlockNumber())
+    initialLookBackOverride > 0
+      ? spokePools.map((obj: { chainId: number; contract: Contract }) =>
+          utils.findBlockAtOrOlder(obj.contract.provider, initialLookBackOverride)
+        )
+      : spokePools.map((obj: { contract: Contract }) => obj.contract.provider.getBlockNumber())
   );
-  const fromBlocks = Object.fromEntries(spokePools.map((obj: { chainId: number }, i: number) => { return [obj.chainId, _fromBlocks[i]] }))
+  const fromBlocks = Object.fromEntries(
+    spokePools.map((obj: { chainId: number }, i: number) => {
+      return [obj.chainId, _fromBlocks[i]];
+    })
+  );
 
   return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks);
 }

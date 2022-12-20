@@ -133,15 +133,14 @@ export async function constructSpokePoolClientsForFastDataworker(
     startBlocks,
     endBlocks
   );
-  await updateSpokePoolClients(spokePoolClients, 
-    [
-      "FundsDeposited",
-      "RequestedSpeedUpDeposit",
-      "FilledRelay",
-      "EnabledDepositRoute",
-      "RelayedRootBundle",
-      "ExecutedRelayerRefundRoot",
-    ]);
+  await updateSpokePoolClients(spokePoolClients, [
+    "FundsDeposited",
+    "RequestedSpeedUpDeposit",
+    "FilledRelay",
+    "EnabledDepositRoute",
+    "RelayedRootBundle",
+    "ExecutedRelayerRefundRoot",
+  ]);
   return spokePoolClients;
 }
 
@@ -197,7 +196,13 @@ export function getSpokePoolClientEventSearchConfigsForFastDataworker(
     toBlocks,
   };
 }
-function getSpokePoolClientsForContract(logger: winston.Logger, configStoreClient: AcrossConfigStoreClient, config: CommonConfig, spokePools: { chainId: number; contract: ethers.Contract; }[], fromBlocks: { [chainId: number]: number; }, toBlockOverride: { [chainId: number]: number; }): SpokePoolClientsByChain | PromiseLike<SpokePoolClientsByChain> {
+function getSpokePoolClientsForContract(
+  logger: winston.Logger,
+  configStoreClient: AcrossConfigStoreClient,
+  config: CommonConfig,
+  spokePools: { chainId: number; contract: ethers.Contract }[],
+  fromBlocks: { [chainId: number]: number },
+  toBlockOverride: { [chainId: number]: number }
+): SpokePoolClientsByChain | PromiseLike<SpokePoolClientsByChain> {
   throw new Error("Function not implemented.");
 }
-

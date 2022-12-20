@@ -1,6 +1,14 @@
 import { HubPoolClient } from "../clients";
 import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
-import { BigNumber, assign, getRealizedLpFeeForFills, getRefundForFills, sortEventsDescending, toBN, MAX_UINT_VAL } from "./";
+import {
+  BigNumber,
+  assign,
+  getRealizedLpFeeForFills,
+  getRefundForFills,
+  sortEventsDescending,
+  toBN,
+  MAX_UINT_VAL,
+} from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 import _ from "lodash";
 
