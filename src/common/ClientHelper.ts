@@ -1,5 +1,12 @@
 import winston from "winston";
-import { getProvider, getDeployedContract, getDeploymentBlockNumber, Wallet, Contract } from "../utils";
+import {
+  getProvider,
+  getDeployedContract,
+  getDeploymentBlockNumber,
+  Wallet,
+  Contract,
+  getDeployedBlockNumber,
+} from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { createClient } from "redis4";
@@ -41,7 +48,7 @@ export async function constructSpokePoolClientsWithLookback(
       ? spokePools.map((obj: { chainId: number; contract: Contract }) =>
           utils.findBlockAtOrOlder(obj.contract.provider, initialLookBackOverride)
         )
-      : spokePools.map((obj: { contract: Contract }) => obj.contract.provider.getBlockNumber())
+      : spokePools.map((obj: { chainId: number }) => getDeployedBlockNumber("SpokePool", obj.chainId))
   );
   const fromBlocks = Object.fromEntries(
     spokePools.map((obj: { chainId: number }, i: number) => {
