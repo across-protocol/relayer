@@ -1,13 +1,25 @@
-import { assign, Contract, winston, BigNumber, ERC20, sortEventsAscending, EventSearchConfig } from "../utils";
+import {
+  assign,
+  Contract,
+  winston,
+  BigNumber,
+  ERC20,
+  sortEventsAscending,
+  EventSearchConfig,
+  MakeOptional,
+} from "../utils";
 import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
-import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle } from "../interfaces";
+import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
+import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle, LpToken } from "../interfaces";
 import { ExecutedRootBundle, PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
+import _ from "lodash";
 
 export class HubPoolClient {
   // L1Token -> destinationChainId -> destinationToken
   private l1TokensToDestinationTokens: { [l1Token: string]: { [destinationChainId: number]: string } } = {};
   private l1Tokens: L1Token[] = []; // L1Tokens and their associated info.
+  private lpTokens: { [token: string]: LpToken } = {};
   private proposedRootBundles: ProposedRootBundle[] = [];
   private canceledRootBundles: CancelledRootBundle[] = [];
   private disputedRootBundles: DisputedRootBundle[] = [];
@@ -16,17 +28,17 @@ export class HubPoolClient {
   private l1TokensToDestinationTokensWithBlock: {
     [l1Token: string]: { [destinationChainId: number]: DestinationTokenWithBlock[] };
   } = {};
-  private pendingRootBundle: PendingRootBundle;
+  private pendingRootBundle: PendingRootBundle | undefined;
 
-  public isUpdated: boolean = false;
+  public isUpdated = false;
   public firstBlockToSearch: number;
-  public latestBlockNumber: number;
-  public currentTime: number;
+  public latestBlockNumber: number | undefined;
+  public currentTime: number | undefined;
 
   constructor(
     readonly logger: winston.Logger,
     readonly hubPool: Contract,
-    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
+    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
@@ -61,7 +73,7 @@ export class HubPoolClient {
     else return mostRecentSpokePoolUpdatebeforeBlock.spokePool;
   }
 
-  getDestinationTokenForDeposit(deposit: Deposit) {
+  getDestinationTokenForDeposit(deposit: { originChainId: number; originToken: string; destinationChainId: number }) {
     const l1Token = this.getL1TokenForDeposit(deposit);
     const destinationToken = this.getDestinationTokenForL1Token(l1Token, deposit.destinationChainId);
     if (!destinationToken)
@@ -78,11 +90,10 @@ export class HubPoolClient {
     return this.l1TokensToDestinationTokens;
   }
 
-  getL1TokenForDeposit(deposit: Deposit) {
+  getL1TokenForDeposit(deposit: { originChainId: number; originToken: string }) {
     let l1Token = null;
     Object.keys(this.l1TokensToDestinationTokens).forEach((_l1Token) => {
-      if (this.l1TokensToDestinationTokens[_l1Token][deposit.originChainId.toString()] === deposit.originToken)
-        l1Token = _l1Token;
+      if (this.l1TokensToDestinationTokens[_l1Token][deposit.originChainId] === deposit.originToken) l1Token = _l1Token;
     });
     if (l1Token === null)
       throw new Error(
@@ -91,7 +102,7 @@ export class HubPoolClient {
     return l1Token;
   }
 
-  getL1TokenCounterpartAtBlock(l2ChainId: string, l2Token: string, block: number) {
+  getL1TokenCounterpartAtBlock(l2ChainId: number, l2Token: string, block: number) {
     const l1Token = Object.keys(this.l1TokensToDestinationTokensWithBlock).find((_l1Token) => {
       // If this token doesn't exist on this L2, return false.
       if (this.l1TokensToDestinationTokensWithBlock[_l1Token][l2ChainId] === undefined) return false;
@@ -140,24 +151,30 @@ export class HubPoolClient {
     return this.l1Tokens;
   }
 
-  getTokenInfoForL1Token(l1Token: string): L1Token {
+  getTokenInfoForL1Token(l1Token: string): L1Token | undefined {
     return this.l1Tokens.find((token) => token.address === l1Token);
   }
 
-  getL1TokenInfoForL2Token(l2Token: string, chainId: number | string): L1Token {
-    const l1TokenCounterpart = this.getL1TokenCounterpartAtBlock(chainId as string, l2Token, this.latestBlockNumber);
+  getLpTokenInfoForL1Token(l1Token: string): LpToken | undefined {
+    return this.lpTokens[l1Token];
+  }
+
+  getL1TokenInfoForL2Token(l2Token: string, chainId: number): L1Token | undefined {
+    const l1TokenCounterpart = this.getL1TokenCounterpartAtBlock(chainId, l2Token, this.latestBlockNumber || 0);
     return this.getTokenInfoForL1Token(l1TokenCounterpart);
   }
 
-  getTokenInfoForDeposit(deposit: Deposit): L1Token {
+  getTokenInfoForDeposit(deposit: Deposit): L1Token | undefined {
     return this.getTokenInfoForL1Token(this.getL1TokenForDeposit(deposit));
   }
 
-  getTokenInfo(chainId: number | string, tokenAddress: string): L1Token {
+  getTokenInfo(chainId: number | string, tokenAddress: string): L1Token | undefined {
     const deposit = { originChainId: parseInt(chainId.toString()), originToken: tokenAddress } as Deposit;
     return this.getTokenInfoForDeposit(deposit);
   }
 
+  // Root bundles are valid if all of their pool rebalance leaves have been executed before the next bundle, or the
+  // latest mainnet block to search. Whichever comes first.
   isRootBundleValid(rootBundle: ProposedRootBundle, latestMainnetBlock: number): boolean {
     const nextRootBundle = this.getFollowingRootBundle(rootBundle);
     const executedLeafCount = this.getExecutedLeavesForRootBundle(
@@ -175,9 +192,11 @@ export class HubPoolClient {
     chain: number,
     chainIdList: number[]
   ): number | undefined {
-    let endingBlockNumber: number;
+    let endingBlockNumber: number | undefined;
     for (const rootBundle of sortEventsAscending(this.proposedRootBundles)) {
-      if (!this.isRootBundleValid(rootBundle, latestMainnetBlock)) continue;
+      const nextRootBundle = this.getFollowingRootBundle(rootBundle);
+      if (!this.isRootBundleValid(rootBundle, nextRootBundle ? nextRootBundle.blockNumber : latestMainnetBlock))
+        continue;
 
       const bundleEvalBlockNumber = this.getBundleEndBlockForChain(
         rootBundle as ProposedRootBundle,
@@ -197,6 +216,8 @@ export class HubPoolClient {
     return endingBlockNumber;
   }
 
+  // TODO: This might not be necessary since the cumulative root bundle count doesn't grow fast enough, but consider
+  // using _.findLast/_.find instead of resorting the arrays if these functions begin to take a lot time.
   getProposedRootBundlesInBlockRange(startingBlock: number, endingBlock: number) {
     return sortEventsDescending(this.proposedRootBundles).filter(
       (bundle: ProposedRootBundle) => bundle.blockNumber >= startingBlock && bundle.blockNumber <= endingBlock
@@ -242,10 +263,55 @@ export class HubPoolClient {
   getLatestFullyExecutedRootBundle(latestMainnetBlock: number): ProposedRootBundle | undefined {
     // Search for latest ProposeRootBundleExecuted event followed by all of its RootBundleExecuted event suggesting
     // that all pool rebalance leaves were executed. This ignores any proposed bundles that were partially executed.
-    return sortEventsDescending(this.proposedRootBundles).find((rootBundle: ProposedRootBundle) => {
+    return _.findLast(this.proposedRootBundles, (rootBundle: ProposedRootBundle) => {
       if (rootBundle.blockNumber > latestMainnetBlock) return false;
       return this.isRootBundleValid(rootBundle, latestMainnetBlock);
     });
+  }
+
+  getEarliestFullyExecutedRootBundle(latestMainnetBlock: number, startBlock = 0): ProposedRootBundle | undefined {
+    return this.proposedRootBundles.find((rootBundle: ProposedRootBundle) => {
+      if (rootBundle.blockNumber > latestMainnetBlock) return false;
+      if (rootBundle.blockNumber < startBlock) return false;
+      return this.isRootBundleValid(rootBundle, latestMainnetBlock);
+    });
+  }
+
+  // If n is negative, then return the Nth latest executed bundle, otherwise return the Nth earliest
+  // executed bundle. Latest means most recent, earliest means oldest. N cannot be 0.
+  // `startBlock` can be used to set the starting point from which we look forwards or backwards, depending
+  // on whether n is positive or negative.
+  getNthFullyExecutedRootBundle(n: number, startBlock?: number): ProposedRootBundle | undefined {
+    if (n === 0) throw new Error("n cannot be 0");
+    if (!this.latestBlockNumber) throw new Error("HubPoolClient::getNthFullyExecutedRootBundle client not updated");
+
+    let bundleToReturn: ProposedRootBundle | undefined;
+
+    // If n is negative, then return the Nth latest executed bundle, otherwise return the Nth earliest
+    // executed bundle.
+    if (n < 0) {
+      let nextLatestMainnetBlock = startBlock ?? this.latestBlockNumber;
+      for (let i = 0; i < Math.abs(n); i++) {
+        bundleToReturn = this.getLatestFullyExecutedRootBundle(nextLatestMainnetBlock);
+        const bundleBlockNumber = bundleToReturn ? bundleToReturn.blockNumber : 0;
+
+        // Subtract 1 so that next `getLatestFullyExecutedRootBundle` call filters out the root bundle we just found
+        // because its block number is > nextLatestMainnetBlock.
+        nextLatestMainnetBlock = Math.max(0, bundleBlockNumber - 1);
+      }
+    } else {
+      let nextStartBlock = startBlock ?? 0;
+      for (let i = 0; i < n; i++) {
+        bundleToReturn = this.getEarliestFullyExecutedRootBundle(this.latestBlockNumber, nextStartBlock);
+        const bundleBlockNumber = bundleToReturn ? bundleToReturn.blockNumber : 0;
+
+        // Add 1 so that next `getEarliestFullyExecutedRootBundle` call filters out the root bundle we just found
+        // because its block number is < nextStartBlock.
+        nextStartBlock = Math.min(bundleBlockNumber + 1, this.latestBlockNumber);
+      }
+    }
+
+    return bundleToReturn;
   }
 
   getNextBundleStartBlockNumber(chainIdList: number[], latestMainnetBlock: number, chainId: number): number {
@@ -365,19 +431,28 @@ export class HubPoolClient {
     // For each enabled Lp token fetch the token symbol and decimals from the token contract. Note this logic will
     // only run iff a new token has been enabled. Will only append iff the info is not there already.
     // Filter out any duplicate addresses. This might happen due to enabling, disabling and re-enabling a token.
-    const tokenInfo: L1Token[] = await Promise.all(
-      [...new Set(l1TokensLpEvents.map((event) => spreadEvent(event).l1Token))].map((l1Token: string) =>
-        this.fetchTokenInfoFromContract(l1Token)
-      )
-    );
+    const uniqueL1Tokens = [...new Set(l1TokensLpEvents.map((event) => spreadEvent(event).l1Token))];
+    const [tokenInfo, lpTokenInfo] = await Promise.all([
+      Promise.all(uniqueL1Tokens.map((l1Token: string) => this.fetchTokenInfoFromContract(l1Token))),
+      Promise.all(uniqueL1Tokens.map(async (l1Token: string) => await this.hubPool.pooledTokens(l1Token))),
+    ]);
     for (const info of tokenInfo) {
-      if (!this.l1Tokens.find((token) => token.symbol === info.symbol)) this.l1Tokens.push(info);
+      if (!this.l1Tokens.find((token) => token.symbol === info.symbol)) {
+        if (info.decimals > 0 && info.decimals <= 18) this.l1Tokens.push(info);
+        else throw new Error(`Unsupported HubPool token: ${JSON.stringify(info)}`);
+      }
     }
 
+    uniqueL1Tokens.forEach((token: string, i) => {
+      this.lpTokens[token] = { lastLpFeeUpdate: lpTokenInfo[i].lastLpFeeUpdate };
+    });
+
     this.proposedRootBundles.push(
-      ...proposeRootBundleEvents.map((event) => {
-        return { ...spreadEventWithBlockNumber(event), transactionHash: event.transactionHash } as ProposedRootBundle;
-      })
+      ...proposeRootBundleEvents
+        .filter((event) => !IGNORED_HUB_PROPOSED_BUNDLES.includes(event.blockNumber))
+        .map((event) => {
+          return { ...spreadEventWithBlockNumber(event), transactionHash: event.transactionHash } as ProposedRootBundle;
+        })
     );
     this.canceledRootBundles.push(
       ...canceledRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as CancelledRootBundle)
@@ -386,7 +461,9 @@ export class HubPoolClient {
       ...disputedRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as DisputedRootBundle)
     );
     this.executedRootBundles.push(
-      ...executedRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as ExecutedRootBundle)
+      ...executedRootBundleEvents
+        .filter((event) => !IGNORED_HUB_EXECUTED_BUNDLES.includes(event.blockNumber))
+        .map((event) => spreadEventWithBlockNumber(event) as ExecutedRootBundle)
     );
 
     // If the contract's current rootBundleProposal() value has an unclaimedPoolRebalanceLeafCount > 0, then
@@ -404,7 +481,18 @@ export class HubPoolClient {
         unclaimedPoolRebalanceLeafCount: pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount,
         challengePeriodEndTimestamp: pendingRootBundleProposal.challengePeriodEndTimestamp,
         bundleEvaluationBlockNumbers: mostRecentProposedRootBundle.bundleEvaluationBlockNumbers.map(
-          (block: BigNumber) => block.toNumber()
+          (block: BigNumber) => {
+            // Ideally, the HubPool.sol contract should limit the size of the elements within the
+            // bundleEvaluationBlockNumbers array. But because it doesn't, we wrap the cast of BN --> Number
+            // in a try/catch statement and return some value that would always be disputable.
+            // This catches the denial of service attack vector where a malicious proposer proposes with bundle block
+            // evaluation block numbers larger than what BigNumber::toNumber() can handle.
+            try {
+              return block.toNumber();
+            } catch {
+              return 0;
+            }
+          }
         ),
         proposalBlockNumber: mostRecentProposedRootBundle.blockNumber,
       };

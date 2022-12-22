@@ -98,6 +98,17 @@ describe("HubPoolClient: RootBundle Events", async function () {
     expect(
       hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(await hubPool.provider.getBlockNumber(), 22, 2, [1])
     ).to.equal(undefined);
+
+    // latestMainnetBlock is before leaves are executed, so client doesn't know that bundle was validated.
+    expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(1, 22, 2, [1, 2])).to.equal(undefined);
+
+    // If we propose a new root bundle, then `getRootBundleEvalBlockNumberContainingBlock` throws away the
+    // `latestMainnetBlock` param and just searches for executed leaves until the next bundle.
+    await hubPool
+      .connect(dataworker)
+      .proposeRootBundle([12, 23], 2, tree.getHexRoot(), constants.mockTreeRoot, constants.mockTreeRoot);
+    await hubPoolClient.update();
+    expect(hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(1, 22, 2, [1, 2])).to.equal(22);
   });
 
   it("Returns validated root bundle", async function () {

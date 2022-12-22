@@ -1,36 +1,76 @@
-import { expect, ethers, SignerWithAddress, createSpyLogger, winston, BigNumber, toBN } from "./utils";
+import { priceClient } from "@across-protocol/sdk-v2";
+import { L1Token } from "../src/interfaces";
+import { expect, createSpyLogger, winston, BigNumber, toBN, toBNWei } from "./utils";
 
-import { MockHubPoolClient } from "./mocks/MockHubPoolClient";
-import { ProfitClient } from "../src/clients"; // Tested
+import { MockHubPoolClient } from "./mocks";
+import { ProfitClient, MATIC, WETH } from "../src/clients"; // Tested
 
-let hubPoolClient: MockHubPoolClient, owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
-let profitClient: ProfitClient; // tested
+const mainnetTokens: Array<L1Token> = [
+  // Checksummed addresses
+  { symbol: "USDC", address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6 },
+  { symbol: "DAI", address: "0x6B175474E89094C44Da98b954EedeAC495271d0F", decimals: 18 },
+  // Lower-case addresses
+  { symbol: "WBTC", address: "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599", decimals: 8 },
+  { symbol: "BOBA", address: "0x42bbfa2e77757c645eeaad1655e0911a7553efbc", decimals: 18 },
+  { symbol: "BAL", address: "0xba100000625a3754423978a60c9317c58a424e3d", decimals: 18 },
+  // Upper-case addresses
+  { symbol: "UMA", address: "0X04FA0D235C4ABF4BCF4787AF4CF447DE572EF828", decimals: 18 },
+  { symbol: "BADGER", address: "0X3472A5A71965499ACD81997A54BBA8D852C6E53D", decimals: 18 },
+  // Misc.
+  { symbol: "WETH", address: WETH, decimals: 18 },
+  { symbol: "MATIC", address: MATIC, decimals: 18 },
+];
 
-const mainnetWeth = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
-const mainnetUsdc = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+const tokenPrices: { [addr: string]: string } = Object.fromEntries(
+  mainnetTokens.map((token) => {
+    return [token.address, Math.random().toPrecision(10)];
+  })
+);
+
+class ProfitClientWithMockPriceClient extends ProfitClient {
+  protected override async updateTokenPrices(): Promise<void> {
+    const l1Tokens: { [k: string]: L1Token } = Object.fromEntries(
+      this.hubPoolClient.getL1Tokens().map((token) => [token["address"], token])
+    );
+
+    Object.keys(l1Tokens).forEach((address) => {
+      this.tokenPrices[address] = toBNWei(tokenPrices[address]);
+    });
+  }
+}
+
+const verifyTokenPrices = (logger: winston.Logger, profitClient: ProfitClientWithMockPriceClient) => {
+  const tokenPrices: { [k: string]: BigNumber } = profitClient.getAllPrices();
+
+  // The client should have fetched prices for all requested tokens.
+  expect(Object.keys(tokenPrices)).to.have.deep.members(mainnetTokens.map((token) => token["address"]));
+  Object.values(tokenPrices).forEach((price: BigNumber) => expect(toBN(price).gt(toBN(0))).to.be.true);
+  Object.keys(tokenPrices).forEach((token) => expect(toBN(profitClient.getPriceOfToken(token)).gt(toBN(0))).to.be.true);
+};
+
+// Define LOG_IN_TEST for logging to console.
+const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
+let hubPoolClient: MockHubPoolClient;
+let profitClient: ProfitClientWithMockPriceClient; // tested
 
 describe("ProfitClient: Price Retrieval", async function () {
   beforeEach(async function () {
-    [owner] = await ethers.getSigners();
-    ({ spy, spyLogger } = createSpyLogger());
-
     hubPoolClient = new MockHubPoolClient(null, null);
-    profitClient = new ProfitClient(spyLogger, hubPoolClient, toBN(0));
+    mainnetTokens.forEach((token: L1Token) => hubPoolClient.addL1Token(token));
+    profitClient = new ProfitClientWithMockPriceClient(spyLogger, hubPoolClient, {}, true, [], toBN(0));
   });
 
   it("Correctly fetches token prices", async function () {
-    // Set the MockHubPool to have WETH and USDC in it.
-    hubPoolClient.addL1Token({ address: mainnetWeth, symbol: "WETH", decimals: 18 });
-    hubPoolClient.addL1Token({ address: mainnetUsdc, symbol: "USDC", decimals: 6 });
     await profitClient.update();
+    verifyTokenPrices(spyLogger, profitClient);
+  });
 
-    // The client should have fetched the prices for both tokens.
-    expect(Object.keys(profitClient.getAllPrices())).to.deep.equal([mainnetWeth, mainnetUsdc]);
-    Object.values(profitClient.getAllPrices()).forEach(
-      (price: BigNumber) => expect(toBN(price).gt(toBN(0))).to.be.true
-    );
-    Object.keys(profitClient.getAllPrices()).forEach(
-      (token) => expect(toBN(profitClient.getPriceOfToken(token)).gt(toBN(0))).to.be.true
-    );
+  it("Still fetches prices when profitability is disabled", async function () {
+    // enableRelayProfitability is set to false.
+    profitClient = new ProfitClientWithMockPriceClient(spyLogger, hubPoolClient, {}, false, []);
+
+    // Verify that update() still fetches prices.
+    await profitClient.update();
+    verifyTokenPrices(spyLogger, profitClient);
   });
 });

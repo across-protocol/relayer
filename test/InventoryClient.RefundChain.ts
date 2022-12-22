@@ -1,9 +1,10 @@
 import { expect, ethers, SignerWithAddress, createSpyLogger, winston, BigNumber, lastSpyLogIncludes } from "./utils";
-import { toBN, toWei, randomAddress, spyLogIncludes } from "./utils";
+import { toBN, toWei, randomAddress, createRefunds } from "./utils";
 
 import { InventoryConfig, Deposit } from "../src/interfaces";
 import { MockBundleDataClient, MockHubPoolClient, MockAdapterManager, MockTokenClient } from "./mocks";
 import { InventoryClient } from "../src/clients"; // Tested
+import { CrossChainTransferClient } from "../src/clients/bridges";
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
 
@@ -12,6 +13,7 @@ let bundleDataClient: MockBundleDataClient;
 let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let inventoryClient: InventoryClient; // tested
 let sampleDepositData: Deposit;
+let crossChainTransferClient: CrossChainTransferClient;
 
 const enabledChainIds = [1, 10, 137, 42161];
 
@@ -19,8 +21,8 @@ const mainnetWeth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const mainnetUsdc = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 
 // construct two mappings of chainId to token address. Set the l1 token address to the "real" token address.
-let l2TokensForWeth = { 1: mainnetWeth };
-let l2TokensForUsdc = { 1: mainnetUsdc };
+const l2TokensForWeth = { 1: mainnetWeth };
+const l2TokensForUsdc = { 1: mainnetUsdc };
 enabledChainIds.slice(1).forEach((chainId) => {
   l2TokensForWeth[chainId] = randomAddress();
   l2TokensForUsdc[chainId] = randomAddress();
@@ -62,6 +64,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     tokenClient = new MockTokenClient(null, null, null, null);
     bundleDataClient = new MockBundleDataClient(null, null, null, null);
 
+    crossChainTransferClient = new CrossChainTransferClient(spyLogger, enabledChainIds, adapterManager);
     inventoryClient = new InventoryClient(
       owner.address,
       spyLogger,
@@ -70,7 +73,8 @@ describe("InventoryClient: Refund chain selection", async function () {
       enabledChainIds,
       hubPoolClient,
       bundleDataClient,
-      adapterManager
+      adapterManager,
+      crossChainTransferClient
     );
 
     seedMocks(initialAllocation);
@@ -98,21 +102,21 @@ describe("InventoryClient: Refund chain selection", async function () {
     // above the threshold of 12 and so the bot should choose to be refunded on L1.
     sampleDepositData.amount = toWei(1);
     expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
-    expect(lastSpyLogIncludes(spy, `expectedPostRelayAllocation":"136690647482014388"`)).to.be.true; // (20-1)/(140-1)=0.136
+    expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"136690647482014388"')).to.be.true; // (20-1)/(140-1)=0.136
 
     // Now consider a case where the relayer is filling a marginally larger relay of size 5 WETH. Now the post relay
     // allocation on optimism would be (20-5)/(140-5)=11%. This now below the target plus buffer of 12%. Relayer should
     // choose to refund on the L2.
     sampleDepositData.amount = toWei(5);
     expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
-    expect(lastSpyLogIncludes(spy, `expectedPostRelayAllocation":"111111111111111111"`)).to.be.true; // (20-5)/(140-5)=0.11
+    expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"111111111111111111"')).to.be.true; // (20-5)/(140-5)=0.11
 
     // Now consider a bigger relay that should force refunds on the L2 chain. Set the relay size to 10 WETH. now post
     // relay allocation would be (20-10)/(140-10)=0.076. This is below the target threshold of 10% and so the bot should
     // set the refund on L2.
     sampleDepositData.amount = toWei(10);
     expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
-    expect(lastSpyLogIncludes(spy, `expectedPostRelayAllocation":"76923076923076923"`)).to.be.true; // (20-10)/(140-10)=0.076
+    expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"76923076923076923"')).to.be.true; // (20-10)/(140-10)=0.076
   });
 
   it("Correctly factors in cross chain transfers when deciding where to refund", async function () {
@@ -124,7 +128,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     // The expected cross chain transfer amount is (0.05+0.02-(10-15)/140)*140=14.8 // Mock the cross-chain transfer
     // leaving L1 to go to arbitrum by adding it to the mock cross chain transfers and removing from l1 balance.
     const bridgedAmount = toWei(14.8);
-    adapterManager.setMockedOutstandingCrossChainTransfers(42161, mainnetWeth, bridgedAmount);
+    adapterManager.setMockedOutstandingCrossChainTransfers(42161, owner.address, mainnetWeth, bridgedAmount);
     await inventoryClient.update();
     tokenClient.setTokenData(1, mainnetWeth, initialAllocation[1][mainnetWeth].sub(bridgedAmount));
 
@@ -149,15 +153,15 @@ describe("InventoryClient: Refund chain selection", async function () {
     sampleDepositData.destinationChainId = 42161;
     sampleDepositData.amount = toWei(1.69);
     expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(42161);
-    expect(lastSpyLogIncludes(spy, `chainShortfall":"15000000000000000000"`)).to.be.true;
-    expect(lastSpyLogIncludes(spy, `chainVirtualBalance":"24800000000000000000"`)).to.be.true; // (10+14.8)=24.8
-    expect(lastSpyLogIncludes(spy, `chainVirtualBalanceWithShortfall":"9800000000000000000"`)).to.be.true; // 24.8-15=9.8
-    expect(lastSpyLogIncludes(spy, `chainVirtualBalanceWithShortfallPostRelay":"8110000000000000000"`)).to.be.true; // 9.8-1.69=8.11
-    expect(lastSpyLogIncludes(spy, `cumulativeVirtualBalance":"140000000000000000000`)).to.be.true; // 140-15+15=140
-    expect(lastSpyLogIncludes(spy, `cumulativeVirtualBalanceWithShortfall":"125000000000000000000"`)).to.be.true; // 140-15=125
-    expect(lastSpyLogIncludes(spy, `cumulativeVirtualBalanceWithShortfallPostRelay":"123310000000000000000"`)).to.be
+    expect(lastSpyLogIncludes(spy, 'chainShortfall":"15000000000000000000"')).to.be.true;
+    expect(lastSpyLogIncludes(spy, 'chainVirtualBalance":"24800000000000000000"')).to.be.true; // (10+14.8)=24.8
+    expect(lastSpyLogIncludes(spy, 'chainVirtualBalanceWithShortfall":"9800000000000000000"')).to.be.true; // 24.8-15=9.8
+    expect(lastSpyLogIncludes(spy, 'chainVirtualBalanceWithShortfallPostRelay":"8110000000000000000"')).to.be.true; // 9.8-1.69=8.11
+    expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalance":"140000000000000000000')).to.be.true; // 140-15+15=140
+    expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalanceWithShortfall":"125000000000000000000"')).to.be.true; // 140-15=125
+    expect(lastSpyLogIncludes(spy, 'cumulativeVirtualBalanceWithShortfallPostRelay":"123310000000000000000"')).to.be
       .true; // 125-1.69=123.31
-    expect(lastSpyLogIncludes(spy, `expectedPostRelayAllocation":"65769199578298597`)).to.be.true; // 8.11/123.31 = 0.0657
+    expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"65769199578298597')).to.be.true; // 8.11/123.31 = 0.0657
 
     // Now consider if this small relay was larger to the point that we should be refunding on the L2. set it to 5 WETH.
     // Numerically we can shortcut some of the computations above to the following: chain virtual balance with shortfall
@@ -166,7 +170,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     sampleDepositData.amount = toWei(5);
     expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(42161);
     // Check only the final step in the computation.
-    expect(lastSpyLogIncludes(spy, `expectedPostRelayAllocation":"40000000000000000"`)).to.be.true; // 4.8/120 = 0.04
+    expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"40000000000000000"')).to.be.true; // 4.8/120 = 0.04
 
     // Consider that we manually send the relayer som funds while it's large transfer is currently in the bridge. This
     // is to validate that the module considers funds in transit correctly + dropping funds indirectly onto the L2 wallet.
@@ -186,14 +190,14 @@ describe("InventoryClient: Refund chain selection", async function () {
     // Therefore, the bot should choose refund on L1 instead of L2.
     sampleDepositData.amount = toWei(5);
     bundleDataClient.setReturnedPendingBundleRefunds({
-      1: createRefunds(5, mainnetWeth),
-      10: createRefunds(5, l2TokensForWeth[10]),
+      1: createRefunds(owner.address, toWei(5), mainnetWeth),
+      10: createRefunds(owner.address, toWei(5), l2TokensForWeth[10]),
     });
     bundleDataClient.setReturnedNextBundleRefunds({
-      10: createRefunds(5, l2TokensForWeth[10]),
+      10: createRefunds(owner.address, toWei(5), l2TokensForWeth[10]),
     });
     expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
-    expect(lastSpyLogIncludes(spy, `expectedPostRelayAllocation":"166666666666666666"`)).to.be.true; // (20-5)/(140-5)=0.11
+    expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"166666666666666666"')).to.be.true; // (20-5)/(140-5)=0.11
   });
 });
 
@@ -201,22 +205,11 @@ function seedMocks(seedBalances: { [chainId: string]: { [token: string]: BigNumb
   hubPoolClient.addL1Token({ address: mainnetWeth, decimals: 18, symbol: "WETH" });
   hubPoolClient.addL1Token({ address: mainnetUsdc, decimals: 6, symbol: "USDC" });
   enabledChainIds.forEach((chainId) => {
-    adapterManager.setMockedOutstandingCrossChainTransfers(chainId, mainnetWeth, toBN(0));
-    adapterManager.setMockedOutstandingCrossChainTransfers(chainId, mainnetUsdc, toBN(0));
+    adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetWeth, toBN(0));
+    adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetUsdc, toBN(0));
     tokenClient.setTokenData(chainId, l2TokensForWeth[chainId], seedBalances[chainId][mainnetWeth]);
     tokenClient.setTokenData(chainId, l2TokensForUsdc[chainId], seedBalances[chainId][mainnetUsdc]);
   });
 
   hubPoolClient.setL1TokensToDestinationTokens({ [mainnetWeth]: l2TokensForWeth, [mainnetUsdc]: l2TokensForUsdc });
-}
-
-function createRefunds(refundAmount: number, token: string) {
-  return {
-    [token]: {
-      refunds: { [owner.address]: BigNumber.from(toWei(refundAmount)) },
-      fills: [],
-      totalRefundAmount: BigNumber.from(0),
-      realizedLpFees: BigNumber.from(0),
-    },
-  };
 }

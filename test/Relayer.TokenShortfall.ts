@@ -2,12 +2,19 @@ import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, or
 import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWallet, getLastBlockTime } from "./utils";
 import { lastSpyLogIncludes, toBNWei, createSpyLogger, deployConfigStore } from "./utils";
 import { deployAndConfigureHubPool, winston } from "./utils";
-import { amountToLp, defaultTokenConfig } from "./constants";
-import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
-import { TokenClient, ProfitClient } from "../src/clients";
-import { MockInventoryClient } from "./mocks";
+import { amountToLp, defaultMinDepositConfirmations, defaultTokenConfig } from "./constants";
+import {
+  SpokePoolClient,
+  HubPoolClient,
+  AcrossConfigStoreClient,
+  MultiCallerClient,
+  AcrossApiClient,
+} from "../src/clients";
+import { TokenClient } from "../src/clients";
+import { MockInventoryClient, MockProfitClient } from "./mocks";
 
-import { Relayer } from "../src/relayer/Relayer"; // Tested
+import { Relayer } from "../src/relayer/Relayer";
+import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -17,7 +24,7 @@ let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let configStoreClient: AcrossConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
 let relayerInstance: Relayer;
-let multiCallerClient: MultiCallerClient, profitClient: ProfitClient;
+let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
 
 describe("Relayer: Token balance shortfall", async function () {
   beforeEach(async function () {
@@ -37,7 +44,7 @@ describe("Relayer: Token balance shortfall", async function () {
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
     configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
-    multiCallerClient = new MultiCallerClient(spyLogger, null); // leave out the gasEstimator for now.
+    multiCallerClient = new MultiCallerClient(spyLogger); // leave out the gasEstimator for now.
     spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(relayer), configStoreClient, originChainId);
     spokePoolClient_2 = new SpokePoolClient(
       spyLogger,
@@ -47,16 +54,29 @@ describe("Relayer: Token balance shortfall", async function () {
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
-    profitClient = new ProfitClient(spyLogger, hubPoolClient, toBNWei(1)); // Set the profit discount to 1 (ignore relay cost.)
-    relayerInstance = new Relayer(spyLogger, {
-      spokePoolClients,
-      hubPoolClient,
-      configStoreClient,
-      tokenClient,
-      profitClient,
-      multiCallerClient,
-      inventoryClient: new MockInventoryClient(),
-    });
+    profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, true, []); // Set the profit discount to 1 (ignore relay cost.)
+    profitClient.testInit();
+
+    relayerInstance = new Relayer(
+      relayer.address,
+      spyLogger,
+      {
+        spokePoolClients,
+        hubPoolClient,
+        configStoreClient,
+        tokenClient,
+        profitClient,
+        multiCallerClient,
+        inventoryClient: new MockInventoryClient(),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient),
+      },
+      {
+        relayerTokens: [],
+        relayerDestinationChains: [],
+        quoteTimeBuffer: 0,
+        minDepositConfirmations: defaultMinDepositConfirmations,
+      } as unknown as RelayerConfig
+    );
 
     // Seed Owner and depositor wallets but dont seed relayer to test how the relayer handles being out of funds.
     await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // Seed owner to LP.

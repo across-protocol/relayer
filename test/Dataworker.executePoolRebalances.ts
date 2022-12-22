@@ -1,7 +1,7 @@
 import { buildFillForRepaymentChain } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit } from "./utils";
 import { HubPoolClient, AcrossConfigStoreClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
-import { amountToDeposit, destinationChainId } from "./constants";
+import { amountToDeposit } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
@@ -42,11 +42,14 @@ describe("Dataworker: Execute pool rebalances", async function () {
       MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
       MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
       DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
-      0
+      0,
+      42161
     ));
   });
   it("Simple lifecycle", async function () {
     await updateAllClients();
+
+    const destinationChainId = 42161;
 
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
@@ -79,8 +82,9 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await updateAllClients();
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
 
-    // Should be 2 transactions: 1 for the to chain and 1 for the from chain.
-    expect(multiCallerClient.transactionCount()).to.equal(2);
+    // Should be 3 transactions: 1 for the to chain, 1 for the from chain, and 1 for the extra ETH sent to cover
+    // arbitrum gas fees.Should NOT be 3 since not enough time has passed since the last lp fee update.
+    expect(multiCallerClient.transactionCount()).to.equal(3);
     await multiCallerClient.executeTransactionQueue();
 
     // TEST 3:

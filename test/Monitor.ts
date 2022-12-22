@@ -1,34 +1,43 @@
-import { buildDeposit, buildFillForRepaymentChain, createSpyLogger, lastSpyLogIncludes } from "./utils";
-import { BigNumber, Contract, SignerWithAddress, ethers, expect } from "./utils";
+import { buildDeposit, buildFillForRepaymentChain, createSpyLogger, lastSpyLogIncludes, toBNWei } from "./utils";
+import { Contract, SignerWithAddress, ethers, expect } from "./utils";
 import {
   AcrossConfigStoreClient,
   BundleDataClient,
   HubPoolClient,
   SpokePoolClient,
   MultiCallerClient,
-  ProfitClient,
   TokenTransferClient,
+  BalanceAllocator,
 } from "../src/clients";
-import { Monitor, ALL_CHAINS_NAME, UNKNOWN_TRANSFERS_NAME } from "../src/monitor/Monitor";
+import { CrossChainTransferClient } from "../src/clients/bridges";
+import {
+  Monitor,
+  ALL_CHAINS_NAME,
+  UNKNOWN_TRANSFERS_NAME,
+  REBALANCE_FINALIZE_GRACE_PERIOD,
+} from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
 import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repaymentChainId } from "./constants";
 import * as constants from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { Dataworker } from "../src/dataworker/Dataworker";
-import { MAX_UINT_VAL } from "../src/utils";
+import { getNetworkName, getRefundForFills, MAX_UINT_VAL, toBN } from "../src/utils";
+import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
+import { MockAdapterManager } from "./mocks";
+import { BalanceType } from "../src/interfaces";
 
-let l1Token: Contract, l2Token: Contract;
+let l1Token: Contract, l2Token: Contract, erc20_2: Contract;
 let hubPool: Contract, spokePool_1: Contract, spokePool_2: Contract;
 let dataworker: SignerWithAddress, depositor: SignerWithAddress;
 let dataworkerInstance: Dataworker;
 let bundleDataClient: BundleDataClient;
 let configStoreClient: AcrossConfigStoreClient;
-let hubPoolClient: HubPoolClient, multiCallerClient: MultiCallerClient, profitClient: ProfitClient;
+let hubPoolClient: HubPoolClient, multiCallerClient: MultiCallerClient;
 let tokenTransferClient: TokenTransferClient;
 let monitorInstance: Monitor;
-let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let spokePoolClient_3: SpokePoolClient, spokePoolClient_4: SpokePoolClient;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
+let crossChainTransferClient: CrossChainTransferClient;
+let adapterManager: MockAdapterManager;
 let updateAllClients: () => Promise<void>;
 
 const { spy, spyLogger } = createSpyLogger();
@@ -44,14 +53,12 @@ describe("Monitor", async function () {
       dataworkerInstance,
       depositor,
       erc20_1: l2Token,
+      erc20_2,
       l1Token_1: l1Token,
       spokePool_1,
       spokePool_2,
-      spokePoolClient_1,
-      spokePoolClient_2,
-      spokePoolClient_3,
-      spokePoolClient_4,
-      profitClient,
+      hubPoolClient,
+      spokePoolClients,
       multiCallerClient,
       updateAllClients,
     } = await setupDataworker(
@@ -61,7 +68,8 @@ describe("Monitor", async function () {
       constants.DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
       0
     ));
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool);
+
+    const configuredNetworks = [1, repaymentChainId, originChainId, destinationChainId];
 
     const monitorConfig = new MonitorConfig({
       STARTING_BLOCK_NUMBER: "0",
@@ -75,25 +83,19 @@ describe("Monitor", async function () {
       MONITOR_REPORT_ENABLED: "true",
       MONITOR_REPORT_INTERVAL: "10",
       MONITORED_RELAYERS: `["${depositor.address}"]`,
-      CONFIGURED_NETWORKS: `[1, ${repaymentChainId}, ${originChainId}, ${destinationChainId}]`,
+      CONFIGURED_NETWORKS: JSON.stringify(configuredNetworks),
     });
 
-    spokePoolClients = {
-      [originChainId]: spokePoolClient_1,
-      [destinationChainId]: spokePoolClient_2,
-      [repaymentChainId]: spokePoolClient_3,
-      1: spokePoolClient_4,
-    };
+    const chainIds = [1, repaymentChainId, originChainId, destinationChainId];
     bundleDataClient = new BundleDataClient(
       spyLogger,
       {
         configStoreClient,
         multiCallerClient,
-        profitClient,
         hubPoolClient,
       },
       spokePoolClients,
-      [1, repaymentChainId, originChainId, destinationChainId]
+      chainIds
     );
 
     const providers = Object.fromEntries(
@@ -101,14 +103,16 @@ describe("Monitor", async function () {
     );
     tokenTransferClient = new TokenTransferClient(spyLogger, providers, [depositor.address]);
 
+    adapterManager = new MockAdapterManager(null, null, null, null);
+    crossChainTransferClient = new CrossChainTransferClient(spyLogger, chainIds, adapterManager);
     monitorInstance = new Monitor(spyLogger, monitorConfig, {
       bundleDataClient,
       configStoreClient,
       multiCallerClient,
-      profitClient,
       hubPoolClient,
       spokePoolClients,
       tokenTransferClient,
+      crossChainTransferClient,
     });
   });
 
@@ -170,12 +174,95 @@ describe("Monitor", async function () {
     );
     await monitorInstance.updateCurrentRelayerBalances(reports);
 
-    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME]["current"].toString()).to.be.equal(
+    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.CURRENT].toString()).to.be.equal(
       "60000000000000000000000"
     );
   });
 
   it("Monitor should get relayer refunds", async function () {
+    await updateAllClients();
+    await monitorInstance.update();
+    // Send a deposit and a fill so that dataworker builds simple roots.
+    const deposit = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      l2Token,
+      l1Token,
+      depositor,
+      destinationChainId,
+      amountToDeposit
+    );
+    const fill1 = await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
+    await monitorInstance.update();
+
+    // Have the data worker propose a new bundle.
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    await l1Token.approve(hubPool.address, MAX_UINT_VAL);
+    await multiCallerClient.executeTransactionQueue();
+
+    // While the new bundle is still pending, refunds are in the "next" category
+    await monitorInstance.update();
+    let reports = monitorInstance.initializeBalanceReports(
+      monitorInstance.monitorConfig.monitoredRelayers,
+      monitorInstance.clients.hubPoolClient.getL1Tokens(),
+      TEST_NETWORK_NAMES
+    );
+    monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
+    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
+    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(getRefundForFills([fill1]));
+
+    // Execute pool rebalance leaves.
+    await executeBundle(hubPool);
+
+    // Before relayer refund leaves are executed, the refund is now in the pending column
+    await monitorInstance.update();
+    reports = monitorInstance.initializeBalanceReports(
+      monitorInstance.monitorConfig.monitoredRelayers,
+      monitorInstance.clients.hubPoolClient.getL1Tokens(),
+      TEST_NETWORK_NAMES
+    );
+    monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
+    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
+    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(
+      getRefundForFills([fill1])
+    );
+
+    // Execute relayer refund leaves. Send funds to spoke pools to execute the leaves.
+    await erc20_2.mint(spokePool_2.address, getRefundForFills([fill1]));
+    const providers = {
+      ...spokePoolClientsToProviders(spokePoolClients),
+      [(await hubPool.provider.getNetwork()).chainId]: hubPool.provider,
+    };
+    await monitorInstance.update();
+    await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients, new BalanceAllocator(providers));
+    await multiCallerClient.executeTransactionQueue();
+
+    // Now, pending refunds should be 0.
+    await monitorInstance.update();
+    reports = monitorInstance.initializeBalanceReports(
+      monitorInstance.monitorConfig.monitoredRelayers,
+      monitorInstance.clients.hubPoolClient.getL1Tokens(),
+      TEST_NETWORK_NAMES
+    );
+    monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
+    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
+    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
+
+    // Simulate some pending cross chain transfers.
+    crossChainTransferClient.increaseOutstandingTransfer(
+      depositor.address,
+      l1Token.address,
+      toBN(5),
+      destinationChainId
+    );
+    monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
+    expect(
+      reports[depositor.address]["L1"][getNetworkName(destinationChainId)][BalanceType.PENDING_TRANSFERS]
+    ).to.be.equal(toBN(5));
+  });
+
+  it("Monitor should report stuck rebalances", async function () {
     await updateAllClients();
     await monitorInstance.update();
     // Send a deposit and a fill so that dataworker builds simple roots.
@@ -197,36 +284,27 @@ describe("Monitor", async function () {
     await l1Token.approve(hubPool.address, MAX_UINT_VAL);
     await multiCallerClient.executeTransactionQueue();
 
-    // While the new bundle is still pending, get pending refunds.
-    await monitorInstance.update();
-    let reports = monitorInstance.initializeBalanceReports(
-      monitorInstance.monitorConfig.monitoredRelayers,
-      monitorInstance.clients.hubPoolClient.getL1Tokens(),
-      TEST_NETWORK_NAMES
-    );
-    monitorInstance.updatePendingAndFutureRelayerRefunds(reports);
-    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME]["pending"].toString()).to.be.equal("49958233892200285050");
+    // Execute pool rebalance leaves.
+    await executeBundle(hubPool);
 
-    reports = monitorInstance.initializeBalanceReports(
-      monitorInstance.monitorConfig.monitoredRelayers,
-      monitorInstance.clients.hubPoolClient.getL1Tokens(),
-      TEST_NETWORK_NAMES
+    // Fast-forward by 2 hours to pass the grace period.
+    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + REBALANCE_FINALIZE_GRACE_PERIOD + 1);
+
+    // Simulate some pending cross chain transfers to SpokePools.
+    adapterManager.setMockedOutstandingCrossChainTransfers(
+      originChainId,
+      spokePool_1.address,
+      l1Token.address,
+      toBN(5)
     );
-    // A small hack to change the executed leaves in SpokePoolClient without having to actually execute any leaves.
-    spokePoolClient_2.getRelayerRefundExecutions().push({
-      rootBundleId: 1,
-      chainId: originChainId,
-      refundAddresses: [depositor.address],
-      refundAmounts: [BigNumber.from("39958233892200285050")],
-      l2TokenAddress: hubPoolClient.getDestinationTokenForL1Token(l1Token.address, destinationChainId),
-    } as any);
-    spokePoolClient_2.getRootBundleRelays().push({
-      rootBundleId: 1,
-      relayerRefundRoot: hubPoolClient.getMostRecentProposedRootBundle(hubPoolClient.latestBlockNumber)
-        .relayerRefundRoot,
-    } as any);
-    monitorInstance.updatePendingAndFutureRelayerRefunds(reports);
-    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME]["pending"].toString()).to.be.equal("10000000000000000000");
+    await monitorInstance.update();
+    await monitorInstance.checkStuckRebalances();
+
+    expect(lastSpyLogIncludes(spy, "HubPool -> SpokePool rebalances stuck 🦴")).to.be.true;
+    const log = spy.lastCall;
+    expect(log.lastArg.mrkdwn).to.contains(
+      `Rebalances of ${await l1Token.symbol()} to ${getNetworkName(originChainId)} is stuck`
+    );
   });
 
   it("Monitor should report unfilled deposits", async function () {
@@ -261,6 +339,25 @@ describe("Monitor", async function () {
     );
     await monitorInstance.updateUnknownTransfers(reports);
 
-    expect(lastSpyLogIncludes(spy, `There are non-v2 transfers for relayer ${depositor.address} 🦨`)).to.be.true;
+    expect(lastSpyLogIncludes(spy, `Transfers that are not fills for relayer ${depositor.address} 🦨`)).to.be.true;
   });
 });
+
+const executeBundle = async (hubPool: Contract) => {
+  const latestBlock = await hubPool.provider.getBlockNumber();
+  const blockRange = constants.CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
+  const expectedPoolRebalanceRoot = dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
+  await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
+  for (const leaf of expectedPoolRebalanceRoot.leaves) {
+    await hubPool.executeRootBundle(
+      leaf.chainId,
+      leaf.groupIndex,
+      leaf.bundleLpFees,
+      leaf.netSendAmounts,
+      leaf.runningBalances,
+      leaf.leafId,
+      leaf.l1Tokens,
+      expectedPoolRebalanceRoot.tree.getHexProof(leaf)
+    );
+  }
+};

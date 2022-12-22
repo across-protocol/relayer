@@ -1,4 +1,4 @@
-import { AcrossConfigStoreClient, HubPoolClient } from "../clients";
+import { AcrossConfigStoreClient, HubPoolClient, SpokePoolClient } from "../clients";
 import * as interfaces from "../interfaces";
 import {
   BigNumberForToken,
@@ -8,6 +8,7 @@ import {
   PendingRootBundle,
   RunningBalances,
   UnfilledDeposit,
+  SpokePoolTargetBalance,
 } from "../interfaces";
 import {
   assign,
@@ -20,6 +21,7 @@ import {
   MerkleTree,
   winston,
   toBNWei,
+  formatFeePct,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "../utils";
@@ -45,7 +47,7 @@ export function updateRunningBalanceForFill(
   updateAmount: BigNumber
 ) {
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-    fill.destinationChainId.toString(),
+    fill.destinationChainId,
     fill.destinationToken,
     endBlockForMainnet
   );
@@ -59,7 +61,7 @@ export function updateRunningBalanceForDeposit(
   updateAmount: BigNumber
 ) {
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-    deposit.originChainId.toString(),
+    deposit.originChainId,
     deposit.originToken,
     deposit.blockNumber
   );
@@ -91,9 +93,10 @@ export function initializeRunningBalancesFromRelayerRepayments(
   hubPoolClient: HubPoolClient,
   fillsToRefund: interfaces.FillsToRefund
 ) {
-  if (Object.keys(fillsToRefund).length > 0) {
-    Object.keys(fillsToRefund).forEach((repaymentChainId: string) => {
-      Object.keys(fillsToRefund[repaymentChainId]).forEach((l2TokenAddress: string) => {
+  Object.entries(fillsToRefund).forEach(([_repaymentChainId, fillsForChain]) => {
+    const repaymentChainId = Number(_repaymentChainId);
+    Object.entries(fillsForChain).forEach(
+      ([l2TokenAddress, { realizedLpFees: totalRealizedLpFee, totalRefundAmount }]) => {
         const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
           repaymentChainId,
           l2TokenAddress,
@@ -102,23 +105,15 @@ export function initializeRunningBalancesFromRelayerRepayments(
 
         // Realized LP fees is only affected by relayer repayments so we'll return a brand new dictionary of those
         // mapped to each { repaymentChainId, repaymentToken } combination.
-        assign(
-          realizedLpFees,
-          [repaymentChainId, l1TokenCounterpart],
-          fillsToRefund[repaymentChainId][l2TokenAddress].realizedLpFees
-        );
+        assign(realizedLpFees, [repaymentChainId, l1TokenCounterpart], totalRealizedLpFee);
 
         // Add total repayment amount to running balances. Note: totalRefundAmount won't exist for chains that
         // only had slow fills, so we should explicitly check for it.
-        if (fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount)
-          assign(
-            runningBalances,
-            [repaymentChainId, l1TokenCounterpart],
-            fillsToRefund[repaymentChainId][l2TokenAddress].totalRefundAmount
-          );
-      });
-    });
-  }
+        if (totalRefundAmount) assign(runningBalances, [repaymentChainId, l1TokenCounterpart], totalRefundAmount);
+        else assign(runningBalances, [repaymentChainId, l1TokenCounterpart], toBN(0));
+      }
+    );
+  });
 }
 
 export function addSlowFillsToRunningBalances(
@@ -129,7 +124,7 @@ export function addSlowFillsToRunningBalances(
 ) {
   unfilledDeposits.forEach((unfilledDeposit) => {
     const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-      unfilledDeposit.deposit.originChainId.toString(),
+      unfilledDeposit.deposit.originChainId,
       unfilledDeposit.deposit.originToken,
       latestMainnetBlock
     );
@@ -160,55 +155,58 @@ export function computePoolRebalanceUsdVolume(leaves: PoolRebalanceLeaf[], clien
 }
 
 export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
-  endBlockForMainnet: number,
+  mainnetBundleEndBlock: number,
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
   allValidFills: interfaces.FillWithBlock[],
   allValidFillsInRange: interfaces.FillWithBlock[],
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ) {
-  allValidFillsInRange.forEach((fill: interfaces.FillWithBlock) => {
-    const { lastFillBeforeSlowFillIncludedInRoot, rootBundleEndBlockContainingFirstFill } =
-      getFillDataForSlowFillFromPreviousRootBundle(
-        endBlockForMainnet,
-        fill,
-        allValidFills,
-        hubPoolClient,
-        chainIdListForBundleEvaluationBlockNumbers
-      );
+  const excesses = {};
+  // We need to subtract excess from any fills that might replaced a slow fill sent to the fill destination chain.
+  // This can only happen if the fill was the last fill for a deposit. Otherwise, its still possible that the slow fill
+  // for the deposit can be executed, so we'll defer the excess calculation until the hypothetical slow fill executes.
+  // In addition to fills that are not the last fill for a deposit, we can ignore fills that completely fill a deposit
+  // as the first fill. These fills could never have triggered a deposit since there were no partial fills for it.
+  // This assumption depends on the rule that slow fills can only be sent after a partial fill for a non zero amount
+  // of the deposit. This is why "1 wei" fills are important, otherwise we'd never know which fills originally
+  // triggered a slow fill payment to be sent to the destination chain.
+  allValidFillsInRange
+    .filter((fill) => fill.totalFilledAmount.eq(fill.amount) && !fill.fillAmount.eq(fill.amount))
+    .forEach((fill: interfaces.FillWithBlock) => {
+      const { lastMatchingFillInSameBundle, rootBundleEndBlockContainingFirstFill } =
+        getFillDataForSlowFillFromPreviousRootBundle(
+          hubPoolClient.latestBlockNumber,
+          fill,
+          allValidFills,
+          hubPoolClient,
+          chainIdListForBundleEvaluationBlockNumbers
+        );
 
-    // Now that we have the last fill sent in a previous root bundle that also sent a slow fill, we can compute
-    // the excess that we need to decrease running balances by. This excess only exists in the case where the
-    // current fill completed a deposit. There will be an excess if (1) the slow fill was never executed, and (2)
-    // the slow fill was executed, but not before some partial fills were sent.
+      // Now that we have the last fill sent in a previous root bundle that also sent a slow fill, we can compute
+      // the excess that we need to decrease running balances by. This excess only exists in the case where the
+      // current fill completed a deposit. There will be an excess if (1) the slow fill was never executed, and (2)
+      // the slow fill was executed, but not before some partial fills were sent.
 
-    // Note, if there is NO fill from a previous root bundle for the same deposit as this fill, then there has been
-    // no slow fill payment sent to the spoke pool yet, so we can exit early.
+      // Note, if there is NO fill from a previous root bundle for the same deposit as this fill, then there has been
+      // no slow fill payment sent to the spoke pool yet, so we can exit early.
+      if (lastMatchingFillInSameBundle === undefined) return;
 
-    if (fill.totalFilledAmount.eq(fill.amount)) {
       // If first fill for this deposit is in this epoch, then no slow fill has been sent so we can ignore this fill.
       // We can check this by searching for a ProposeRootBundle event with a bundle block range that contains the
       // first fill for this deposit. If it is the same as the ProposeRootBundle event containing the
       // current fill, then the first fill is in the current bundle and we can exit early.
       const rootBundleEndBlockContainingFullFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
-        endBlockForMainnet,
+        hubPoolClient.latestBlockNumber,
         fill.blockNumber,
         fill.destinationChainId,
         chainIdListForBundleEvaluationBlockNumbers
       );
-
-      // Note: `rootBundleEndBlockContainingFirstFill` and `rootBundleEndBlockContainingFullFill` could both
-      // be undefined in the case that both fills are in this current bundle, which is a normal case.
       if (rootBundleEndBlockContainingFirstFill === rootBundleEndBlockContainingFullFill) return;
 
-      // If full fill and first fill are in different blocks, then we should always be able to find the last partial
-      // fill included in the root bundle that also included the slow fill refund.
-      if (!lastFillBeforeSlowFillIncludedInRoot)
-        throw new Error("Can't find last fill submitted before slow fill was included in root bundle proposal");
-
       // Recompute how much the matched root bundle sent for this slow fill.
-      const amountSentForSlowFill = lastFillBeforeSlowFillIncludedInRoot.amount.sub(
-        lastFillBeforeSlowFillIncludedInRoot.totalFilledAmount
+      const amountSentForSlowFill = lastMatchingFillInSameBundle.amount.sub(
+        lastMatchingFillInSameBundle.totalFilledAmount
       );
 
       // If this fill is a slow fill, then the excess remaining in the contract is equal to the amount sent originally
@@ -216,9 +214,33 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
       // was never sent, so we need to send the full slow fill back.
       const excess = fill.isSlowRelay ? amountSentForSlowFill.sub(fill.fillAmount) : amountSentForSlowFill;
       if (excess.eq(toBN(0))) return;
-      updateRunningBalanceForFill(endBlockForMainnet, runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
-    }
+
+      // Log excesses for debugging since this logic is so complex.
+      if (excesses[fill.destinationChainId] === undefined) excesses[fill.destinationChainId] = {};
+      if (excesses[fill.destinationChainId][fill.destinationToken] === undefined)
+        excesses[fill.destinationChainId][fill.destinationToken] = [];
+      excesses[fill.destinationChainId][fill.destinationToken].push({
+        excess: excess.toString(),
+        lastMatchingFillInSameBundle,
+        rootBundleEndBlockContainingFirstFill,
+        rootBundleEndBlockContainingFullFill: rootBundleEndBlockContainingFullFill
+          ? rootBundleEndBlockContainingFullFill
+          : "N/A",
+        finalFill: fill,
+      });
+
+      updateRunningBalanceForFill(mainnetBundleEndBlock, runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
+    });
+
+  // Sort excess entries by block number, most recent first.
+  Object.keys(excesses).forEach((chainId) => {
+    Object.keys(excesses[chainId]).forEach((token) => {
+      excesses[chainId][token] = excesses[chainId][token].sort(
+        (ex, ey) => ey.finalFill.blockNumber - ex.finalFill.blockNumber
+      );
+    });
   });
+  return excesses;
 }
 
 export function constructPoolRebalanceLeaves(
@@ -256,6 +278,10 @@ export function constructPoolRebalanceLeaves(
             configStoreClient.getTokenTransferThresholdForBlock(l1Token, latestMainnetBlock)
         );
 
+        const spokeTargetBalances = l1TokensToIncludeInThisLeaf.map((l1Token) =>
+          configStoreClient.getSpokeTargetBalancesForBlock(l1Token, Number(chainId), latestMainnetBlock)
+        );
+
         // Build leaves using running balances and realized lp fees data for l1Token + chain, or default to
         // zero if undefined.
         const leafBundleLpFees = l1TokensToIncludeInThisLeaf.map((l1Token) => {
@@ -264,12 +290,20 @@ export function constructPoolRebalanceLeaves(
         });
         const leafNetSendAmounts = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
           if (runningBalances[chainId] && runningBalances[chainId][l1Token])
-            return getNetSendAmountForL1Token(transferThresholds[index], runningBalances[chainId][l1Token]);
+            return getNetSendAmountForL1Token(
+              transferThresholds[index],
+              spokeTargetBalances[index],
+              runningBalances[chainId][l1Token]
+            );
           else return toBN(0);
         });
         const leafRunningBalances = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
           if (runningBalances[chainId]?.[l1Token])
-            return getRunningBalanceForL1Token(transferThresholds[index], runningBalances[chainId][l1Token]);
+            return getRunningBalanceForL1Token(
+              transferThresholds[index],
+              spokeTargetBalances[index],
+              runningBalances[chainId][l1Token]
+            );
           else return toBN(0);
         });
 
@@ -287,16 +321,52 @@ export function constructPoolRebalanceLeaves(
   return leaves;
 }
 
+// Note: this function computes the intended transfer amount before considering the transfer threshold.
+// A positive number indicates a transfer from hub to spoke.
+export function computeDesiredTransferAmountToSpoke(
+  runningBalance: BigNumber,
+  spokePoolTargetBalance: SpokePoolTargetBalance
+) {
+  // Transfer is always desired if hub owes spoke.
+  if (runningBalance.gte(0)) return runningBalance;
+
+  // Running balance is negative, but its absolute value is less than the spoke pool target balance threshold.
+  // In this case, we transfer nothing.
+  if (runningBalance.abs().lt(spokePoolTargetBalance.threshold)) return toBN(0);
+
+  // We are left with the case where the spoke pool is beyond the threshold.
+  // A transfer needs to be initiated to bring it down to the target.
+  const transferSize = runningBalance.abs().sub(spokePoolTargetBalance.target);
+
+  // If the transferSize is < 0, this indicates that the target is still above the running balance.
+  // This can only happen if the threshold is less than the target. This is likely due to a misconfiguration.
+  // In this case, we transfer nothing until the target is exceeded.
+  if (transferSize.lt(0)) return toBN(0);
+
+  // Negate the transfer size because a transfer from spoke to hub is indicated by a negative number.
+  return transferSize.mul(-1);
+}
+
 // If the running balance is greater than the token transfer threshold, then set the net send amount
 // equal to the running balance and reset the running balance to 0. Otherwise, the net send amount should be
 // 0, indicating that we do not want the data worker to trigger a token transfer between hub pool and spoke
 // pool when executing this leaf.
-export function getNetSendAmountForL1Token(transferThreshold: BigNumber, runningBalance: BigNumber): BigNumber {
-  return runningBalance.abs().gte(transferThreshold) ? runningBalance : toBN(0);
+export function getNetSendAmountForL1Token(
+  transferThreshold: BigNumber,
+  spokePoolTargetBalance: SpokePoolTargetBalance,
+  runningBalance: BigNumber
+): BigNumber {
+  const desiredTransferAmount = computeDesiredTransferAmountToSpoke(runningBalance, spokePoolTargetBalance);
+  return desiredTransferAmount.abs().gte(transferThreshold) ? desiredTransferAmount : toBN(0);
 }
 
-export function getRunningBalanceForL1Token(transferThreshold: BigNumber, runningBalance: BigNumber): BigNumber {
-  return runningBalance.abs().lt(transferThreshold) ? runningBalance : toBN(0);
+export function getRunningBalanceForL1Token(
+  transferThreshold: BigNumber,
+  spokePoolTargetBalance: SpokePoolTargetBalance,
+  runningBalance: BigNumber
+): BigNumber {
+  const desiredTransferAmount = computeDesiredTransferAmountToSpoke(runningBalance, spokePoolTargetBalance);
+  return desiredTransferAmount.abs().lt(transferThreshold) ? runningBalance : runningBalance.sub(desiredTransferAmount);
 }
 
 // This returns a possible next block range that could be submitted as a new root bundle, or used as a reference
@@ -305,21 +375,19 @@ export function getRunningBalanceForL1Token(transferThreshold: BigNumber, runnin
 // greater of 0 and the latest bundle end block for an executed root bundle proposal + 1.
 export async function getWidestPossibleExpectedBlockRange(
   chainIdListForBundleEvaluationBlockNumbers: number[],
+  spokeClients: { [chainId: number]: SpokePoolClient },
   endBlockBuffers: number[],
   clients: DataworkerClients,
   latestMainnetBlock: number
 ): Promise<number[][]> {
-  const latestBlockNumbers = await Promise.all(
-    chainIdListForBundleEvaluationBlockNumbers.map(
-      async (chainId: number, index) =>
-        Math.max(0, (await clients.spokePoolSigners[chainId].provider.getBlockNumber()) - endBlockBuffers[index])
-      // We subtract a buffer from the end blocks to reduce the chance that network providers
-      // for different bot runs produce different contract state because of variability near the HEAD of the network.
-      // Reducing the latest block that we query also gives partially filled deposits slightly more buffer for relayers
-      // to fully fill the deposit and reduces the chance that the data worker includes a slow fill payment that gets
-      // filled during the challenge period.
-    )
+  const latestBlockNumbers = chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) =>
+    Math.max(spokeClients[chainId].latestBlockNumber - endBlockBuffers[index], 0)
   );
+  // We subtract a buffer from the end blocks to reduce the chance that network providers
+  // for different bot runs produce different contract state because of variability near the HEAD of the network.
+  // Reducing the latest block that we query also gives partially filled deposits slightly more buffer for relayers
+  // to fully fill the deposit and reduces the chance that the data worker includes a slow fill payment that gets
+  // filled during the challenge period.
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => [
     clients.hubPoolClient.getNextBundleStartBlockNumber(
       chainIdListForBundleEvaluationBlockNumbers,
@@ -344,7 +412,7 @@ export function generateMarkdownForDisputeInvalidBundleBlocks(
     return bundleBlockRangePretty;
   };
   return (
-    `Disputed pending root bundle because of invalid bundle blocks:` +
+    "Disputed pending root bundle because of invalid bundle blocks:" +
     `\n\t*Widest possible expected block range*:${getBlockRangePretty(widestExpectedBlockRange)}` +
     `\n\t*Buffers to end blocks*:${getBlockRangePretty(buffers)}` +
     `\n\t*Pending end blocks*:${getBlockRangePretty(pendingRootBundle.bundleEvaluationBlockNumbers)}`
@@ -353,7 +421,7 @@ export function generateMarkdownForDisputeInvalidBundleBlocks(
 
 export function generateMarkdownForDispute(pendingRootBundle: PendingRootBundle) {
   return (
-    `Disputed pending root bundle:` +
+    "Disputed pending root bundle:" +
     `\n\tPoolRebalance leaf count: ${pendingRootBundle.unclaimedPoolRebalanceLeafCount}` +
     `\n\tPoolRebalance root: ${shortenHexString(pendingRootBundle.poolRebalanceRoot)}` +
     `\n\tRelayerRefund root: ${shortenHexString(pendingRootBundle.relayerRefundRoot)}` +
@@ -437,8 +505,9 @@ export function generateMarkdownForRootBundle(
     leaf.recipient = shortenHexString(leaf.recipient);
     leaf.destToken = convertTokenAddressToSymbol(leaf.destinationChainId, leaf.destinationToken);
     leaf.amount = convertFromWei(leaf.amount, decimalsForDestToken);
-    leaf.realizedLpFee = `${convertFromWei(leaf.realizedLpFeePct, decimalsForDestToken)}%`;
-    leaf.relayerFee = `${convertFromWei(leaf.relayerFeePct, decimalsForDestToken)}%`;
+    // Fee decimals is always 18. 1e18 = 100% so 1e16 = 1%.
+    leaf.realizedLpFee = `${formatFeePct(leaf.realizedLpFeePct)}%`;
+    leaf.relayerFee = `${formatFeePct(leaf.relayerFeePct)}%`;
     delete leaf.destinationToken;
     delete leaf.realizedLpFeePct;
     delete leaf.relayerFeePct;
@@ -446,13 +515,17 @@ export function generateMarkdownForRootBundle(
     delete leaf.destinationChainId;
     slowRelayLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
   });
+
+  const slowRelayMsg = slowRelayLeavesPretty
+    ? `root:${shortenHexString(slowRelayRoot)}...\n\t\tleaves:${slowRelayLeavesPretty}`
+    : "No slow relay leaves";
   return (
     `\n\t*Bundle blocks*:${bundleBlockRangePretty}` +
     `\n\t*PoolRebalance*:\n\t\troot:${shortenHexString(
       poolRebalanceRoot
     )}...\n\t\tleaves:${poolRebalanceLeavesPretty}` +
     `\n\t*RelayerRefund*\n\t\troot:${shortenHexString(relayerRefundRoot)}...\n\t\tleaves:${relayerRefundLeavesPretty}` +
-    `\n\t*SlowRelay*\n\troot:${shortenHexString(slowRelayRoot)}...\n\t\tleaves:${slowRelayLeavesPretty}`
+    `\n\t*SlowRelay*\n\t${slowRelayMsg}`
   );
 }
 

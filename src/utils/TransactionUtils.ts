@@ -1,6 +1,6 @@
 import { AugmentedTransaction } from "../clients";
 import { winston, Contract, getContractInfoFromAddress, fetch, ethers } from "../utils";
-import { toBNWei, BigNumber, toBN, toGWei } from "../utils";
+import { toBNWei, BigNumber, toBN, toGWei, TransactionResponse } from "../utils";
 
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
 // of this method should be considerate of this and catch the response to deal with the error accordingly.
@@ -11,7 +11,7 @@ export async function runTransaction(
   args: any,
   value: BigNumber = toBN(0),
   gasLimit: BigNumber | null = null
-): Promise<any> {
+): Promise<TransactionResponse> {
   try {
     const gas = await getGasPrice(contract.provider);
     logger.debug({ at: "TxUtil", message: "Send tx", target: getTarget(contract.address), method, args, value, gas });
@@ -21,7 +21,12 @@ export async function runTransaction(
     const txConfig = Object.entries({ ...gas, value, gasLimit }).reduce((a, [k, v]) => (v ? ((a[k] = v), a) : a), {});
     return await contract[method](...args, txConfig);
   } catch (error) {
-    logger.error({ at: "TxUtil", message: "Error executing tx", error, notificationPath: "across-error" });
+    logger.error({
+      at: "TxUtil",
+      message: "Error executing tx",
+      error: JSON.stringify(error),
+      notificationPath: "across-error",
+    });
     throw error;
   }
 }
@@ -49,10 +54,10 @@ export async function willSucceed(
   transaction: AugmentedTransaction
 ): Promise<{ transaction: AugmentedTransaction; succeed: boolean; reason: string }> {
   try {
-    await transaction.contract.callStatic[transaction.method](...transaction.args);
+    const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
+    await transaction.contract.callStatic[transaction.method](...args);
     return { transaction, succeed: true, reason: null };
   } catch (error) {
-    console.error(error);
     return { transaction, succeed: false, reason: error.reason };
   }
 }
@@ -74,7 +79,14 @@ async function getPolygonPriorityFee(): Promise<{
   blockNumber: number;
 }> {
   const res = await fetch("https://gasstation-mainnet.matic.network");
-  return await res.json();
+  return (await res.json()) as {
+    safeLow: number;
+    standard: number;
+    fast: number;
+    fastest: number;
+    blockTime: number;
+    blockNumber: number;
+  };
 }
 
 function scaleByNumber(amount: ethers.BigNumber, scaling: number) {

@@ -1,12 +1,14 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { ethers } from "../utils";
+import { ethers, BigNumber, ZERO_ADDRESS } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
+  balancesEnabled: boolean;
+  reportEnabled: boolean;
+  stuckRebalancesEnabled: boolean;
   utilizationEnabled: boolean; // Monitors pool utilization ratio
   unknownRootBundleCallersEnabled: boolean; // Monitors relay related events triggered by non-whitelisted addresses
   unknownRelayerCallersEnabled: boolean;
-  reportEnabled: boolean;
 }
 
 export class MonitorConfig extends CommonConfig {
@@ -16,12 +18,19 @@ export class MonitorConfig extends CommonConfig {
   readonly utilizationThreshold: number;
   readonly hubPoolStartingBlock: number | undefined;
   readonly hubPoolEndingBlock: number | undefined;
-  readonly monitorReportInterval: number;
+  readonly stuckRebalancesEnabled: boolean;
   readonly monitoredRelayers: string[];
   readonly whitelistedDataworkers: string[];
   readonly whitelistedRelayers: string[];
   readonly knownV1Addresses: string[];
   readonly botModes: BotModes;
+  readonly monitoredBalances: {
+    chainId: number;
+    warnThreshold: number | null;
+    errorThreshold: number | null;
+    account: string;
+    token: string;
+  }[] = [];
 
   constructor(env: ProcessEnv) {
     super(env);
@@ -38,13 +47,18 @@ export class MonitorConfig extends CommonConfig {
       WHITELISTED_DATA_WORKERS,
       WHITELISTED_RELAYERS,
       KNOWN_V1_ADDRESSES,
+      BALANCES_ENABLED,
+      MONITORED_BALANCES,
+      STUCK_REBALANCES_ENABLED,
     } = env;
 
     this.botModes = {
+      balancesEnabled: BALANCES_ENABLED === "true",
+      reportEnabled: MONITOR_REPORT_ENABLED === "true",
       utilizationEnabled: UTILIZATION_ENABLED === "true",
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       unknownRelayerCallersEnabled: UNKNOWN_RELAYER_CALLERS_ENABLED === "true",
-      reportEnabled: MONITOR_REPORT_ENABLED === "true",
+      stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
     };
 
     // Used to monitor activities not from whitelisted data workers or relayers.
@@ -65,17 +79,48 @@ export class MonitorConfig extends CommonConfig {
     this.hubPoolStartingBlock = STARTING_BLOCK_NUMBER ? Number(STARTING_BLOCK_NUMBER) : undefined;
     this.hubPoolEndingBlock = ENDING_BLOCK_NUMBER ? Number(ENDING_BLOCK_NUMBER) : undefined;
 
-    if (UNKNOWN_RELAYER_CALLERS_ENABLED)
-      this.spokePoolChains.forEach((chainId) => {
-        this.spokePoolsBlocks[chainId] = {
-          startingBlock: process.env[`STARTING_BLOCK_NUMBER_${chainId}`]
-            ? Number(process.env[`STARTING_BLOCK_NUMBER_${chainId}`])
-            : undefined,
-          endingBlock: process.env[`ENDING_BLOCK_NUMBER_${chainId}`]
-            ? Number(process.env[`ENDING_BLOCK_NUMBER_${chainId}`])
-            : undefined,
-        };
-      });
+    if (MONITORED_BALANCES) {
+      this.monitoredBalances = JSON.parse(MONITORED_BALANCES).map(
+        ({ errorThreshold, warnThreshold, account, token, chainId }) => {
+          if (!errorThreshold && !warnThreshold)
+            throw new Error("Must provide either an errorThreshold or a warnThreshold");
+
+          let parsedErrorThreshold: number | null = null;
+          if (errorThreshold) {
+            if (Number.isNaN(Number(errorThreshold)))
+              throw new Error(`errorThreshold value: ${errorThreshold} cannot be converted to a number`);
+            parsedErrorThreshold = Number(errorThreshold);
+          }
+
+          let parsedWarnThreshold: number | null = null;
+          if (warnThreshold) {
+            if (Number.isNaN(Number(errorThreshold)))
+              throw new Error(`warnThreshold value: ${warnThreshold} cannot be converted to a number`);
+            parsedWarnThreshold = Number(warnThreshold);
+          }
+
+          const isNativeToken = !token || token === "0x0" || token === ZERO_ADDRESS;
+          return {
+            token: isNativeToken ? ZERO_ADDRESS : token,
+            errorThreshold: parsedErrorThreshold,
+            warnThreshold: parsedWarnThreshold,
+            account: ethers.utils.getAddress(account),
+            chainId: parseInt(chainId),
+          };
+        }
+      );
+    }
+
+    this.spokePoolChains.forEach((chainId) => {
+      this.spokePoolsBlocks[chainId] = {
+        startingBlock: process.env[`STARTING_BLOCK_NUMBER_${chainId}`]
+          ? Number(process.env[`STARTING_BLOCK_NUMBER_${chainId}`])
+          : undefined,
+        endingBlock: process.env[`ENDING_BLOCK_NUMBER_${chainId}`]
+          ? Number(process.env[`ENDING_BLOCK_NUMBER_${chainId}`])
+          : undefined,
+      };
+    });
   }
 }
 

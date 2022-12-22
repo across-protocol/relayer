@@ -5,10 +5,10 @@ import fetch from "node-fetch";
 export { winston, assert, fetch };
 export { delay, Logger } from "@uma/financial-templates-lib";
 
-export { BigNumber, Signer, Contract, ContractFactory, Transaction } from "ethers";
+export { BigNumber, Signer, Contract, ContractFactory, Transaction, BigNumberish } from "ethers";
 export { utils, EventFilter, BaseContract, Event, Wallet } from "ethers";
 export { ethers, providers } from "ethers";
-export type { Block } from "@ethersproject/abstract-provider";
+export type { Block, TransactionResponse, TransactionReceipt } from "@ethersproject/abstract-provider";
 export { config } from "dotenv";
 export { Promise } from "bluebird";
 
@@ -31,6 +31,10 @@ export * from "./FillMathUtils";
 export * from "./GckmsUtils";
 export * from "./TimeUtils";
 export * from "./TypeGuards";
+export * from "./Help";
+export * from "./LogUtils";
+export * from "./TypeUtils";
+export * from "./BigNumberUtils";
 
 export { ZERO_ADDRESS, MAX_SAFE_ALLOWANCE, MAX_UINT_VAL, replaceAddressCase } from "@uma/common";
 

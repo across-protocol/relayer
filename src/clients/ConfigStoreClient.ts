@@ -9,8 +9,20 @@ import {
   EventSearchConfig,
   utf8ToHex,
   getCurrentTime,
+  MakeOptional,
+  toBN,
+  max,
 } from "../utils";
-import { L1TokenTransferThreshold, Deposit, TokenConfig, GlobalConfigUpdate } from "../interfaces";
+
+import {
+  L1TokenTransferThreshold,
+  Deposit,
+  TokenConfig,
+  GlobalConfigUpdate,
+  ParsedTokenConfig,
+  SpokeTargetBalanceUpdate,
+  SpokePoolTargetBalance,
+} from "../interfaces";
 
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
@@ -22,6 +34,8 @@ export const GLOBAL_CONFIG_STORE_KEYS = {
   MAX_POOL_REBALANCE_LEAF_SIZE: "MAX_POOL_REBALANCE_LEAF_SIZE",
 };
 
+type RedisClient = ReturnType<typeof createClient>;
+
 export class AcrossConfigStoreClient {
   private readonly blockFinder;
 
@@ -29,20 +43,19 @@ export class AcrossConfigStoreClient {
   public cumulativeTokenTransferUpdates: L1TokenTransferThreshold[] = [];
   public cumulativeMaxRefundCountUpdates: GlobalConfigUpdate[] = [];
   public cumulativeMaxL1TokenCountUpdates: GlobalConfigUpdate[] = [];
+  public cumulativeSpokeTargetBalanceUpdates: SpokeTargetBalanceUpdate[] = [];
 
   private rateModelDictionary: across.rateModel.RateModelDictionary;
   public firstBlockToSearch: number;
 
-  public isUpdated: boolean = false;
-
-  public client: ReturnType<typeof createClient>;
+  public isUpdated = false;
 
   constructor(
     readonly logger: winston.Logger,
     readonly configStore: Contract, // TODO: Rename to ConfigStore
     readonly hubPoolClient: HubPoolClient,
-    readonly eventSearchConfig: EventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
-    readonly redisClient?: ReturnType<typeof createClient>
+    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
+    readonly redisClient?: RedisClient
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
     this.blockFinder = new BlockFinder(this.configStore.provider.getBlock.bind(this.configStore.provider));
@@ -50,7 +63,7 @@ export class AcrossConfigStoreClient {
   }
 
   async computeRealizedLpFeePct(
-    deposit: Deposit,
+    deposit: { quoteTimestamp: number; amount: BigNumber },
     l1Token: string
   ): Promise<{ realizedLpFeePct: BigNumber; quoteBlock: number }> {
     let quoteBlock = await this.getBlockNumber(deposit.quoteTimestamp);
@@ -94,6 +107,18 @@ export class AcrossConfigStoreClient {
     return config.transferThreshold;
   }
 
+  getSpokeTargetBalancesForBlock(
+    l1Token: string,
+    chainId: number,
+    blockNumber: number = Number.MAX_SAFE_INTEGER
+  ): SpokePoolTargetBalance {
+    const config = (sortEventsDescending(this.cumulativeSpokeTargetBalanceUpdates) as SpokeTargetBalanceUpdate[]).find(
+      (config) => config.l1Token === l1Token && config.blockNumber <= blockNumber
+    );
+    const targetBalance = config?.spokeTargetBalances?.[chainId];
+    return targetBalance || { target: toBN(0), threshold: toBN(0) };
+  }
+
   getMaxRefundCountForRelayerRefundLeafForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number {
     const config = (sortEventsDescending(this.cumulativeMaxRefundCountUpdates) as GlobalConfigUpdate[]).find(
       (config) => config.blockNumber <= blockNumber
@@ -119,7 +144,7 @@ export class AcrossConfigStoreClient {
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than
 
     this.logger.debug({ at: "ConfigStore", message: "Updating ConfigStore client", searchConfig });
-    if (searchConfig[0] > searchConfig[1]) return; // If the starting block is greater than the ending block return.
+    if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
     const [updatedTokenConfigEvents, updatedGlobalConfigEvents] = await Promise.all([
       paginatedEventQuery(this.configStore, this.configStore.filters.UpdatedTokenConfig(), searchConfig),
       paginatedEventQuery(this.configStore, this.configStore.filters.UpdatedGlobalConfig(), searchConfig),
@@ -132,8 +157,9 @@ export class AcrossConfigStoreClient {
       };
 
       try {
-        const rateModelForToken = JSON.stringify(JSON.parse(args.value).rateModel);
-        const transferThresholdForToken = JSON.parse(args.value).transferThreshold;
+        const parsedValue = JSON.parse(args.value) as ParsedTokenConfig;
+        const rateModelForToken = JSON.stringify(parsedValue.rateModel);
+        const transferThresholdForToken = parsedValue.transferThreshold;
 
         // If Token config doesn't contain all expected properties, skip it.
         if (!(rateModelForToken && transferThresholdForToken)) {
@@ -145,12 +171,32 @@ export class AcrossConfigStoreClient {
         // the expected shape. This is a fix for now that we should eventually replace when we change the sdk.rateModel
         // class itself to work with the generalized ConfigStore.
         const l1Token = args.key;
-        delete args.value;
-        delete args.key;
-        this.cumulativeRateModelUpdates.push({ ...args, rateModel: rateModelForToken, l1Token });
+
+        // Drop value and key before passing args.
+        const { value, key, ...passedArgs } = args;
+        this.cumulativeRateModelUpdates.push({ ...passedArgs, rateModel: rateModelForToken, l1Token });
 
         // Store transferThreshold
-        this.cumulativeTokenTransferUpdates.push({ ...args, transferThreshold: transferThresholdForToken, l1Token });
+        this.cumulativeTokenTransferUpdates.push({
+          ...passedArgs,
+          transferThreshold: toBN(transferThresholdForToken),
+          l1Token,
+        });
+
+        if (parsedValue?.spokeTargetBalances) {
+          // Note: cast is required because fromEntries always produces string keys, despite the function returning a
+          // numerical key.
+          const targetBalances = Object.fromEntries(
+            Object.entries(parsedValue.spokeTargetBalances).map(([chainId, targetBalance]) => {
+              const target = max(toBN(targetBalance.target), toBN(0));
+              const threshold = max(toBN(targetBalance.threshold), toBN(0));
+              return [chainId, { target, threshold }];
+            })
+          ) as SpokeTargetBalanceUpdate["spokeTargetBalances"];
+          this.cumulativeSpokeTargetBalanceUpdates.push({ ...args, spokeTargetBalances: targetBalances, l1Token });
+        } else {
+          this.cumulativeSpokeTargetBalanceUpdates.push({ ...args, spokeTargetBalances: {}, l1Token });
+        }
       } catch (err) {
         continue;
       }
@@ -211,7 +257,7 @@ export class AcrossConfigStoreClient {
 
   // Avoid caching calls that are recent enough to be affected by things like reorgs.
   private shouldCache(eventTimestamp: number) {
-    // Current time must be > 5 minutes past the event timestamp for it to be stable enough to cache.
-    return getCurrentTime() - eventTimestamp > 300;
+    // Current time must be >= 5 minutes past the event timestamp for it to be stable enough to cache.
+    return getCurrentTime() - eventTimestamp >= 300;
   }
 }

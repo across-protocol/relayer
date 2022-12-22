@@ -1,24 +1,47 @@
-import { FillsToRefund, ProposedRootBundle, TokenTransfer } from "../interfaces";
-import { BundleAction, BalanceType, L1Token, RelayerBalanceTable, RelayerBalanceReport } from "../interfaces";
-import { BigNumber, Contract, ERC20, assign, etherscanLink, etherscanLinks, getTransactionHashes } from "../utils";
 import {
+  BalanceType,
+  BundleAction,
+  FillsToRefund,
+  L1Token,
+  RelayerBalanceReport,
+  RelayerBalanceTable,
+  TokenTransfer,
+  TransfersByChain,
+  TransfersByTokens,
+} from "../interfaces";
+import {
+  assign,
+  BigNumber,
+  Contract,
   convertFromWei,
-  toBN,
-  toWei,
-  winston,
   createFormatFunction,
+  ERC20,
+  ethers,
+  etherscanLink,
+  etherscanLinks,
+  getNativeTokenSymbol,
   getNetworkName,
   getUnfilledDeposits,
   providers,
+  toBN,
+  toWei,
+  winston,
+  ZERO_ADDRESS,
 } from "../utils";
-import { TransfersByChain, TransfersByTokens } from "../interfaces";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 
+export const REBALANCE_FINALIZE_GRACE_PERIOD = 60 * 60 * 4; // 4 hours.
 export const ALL_CHAINS_NAME = "All chains";
 export const UNKNOWN_TRANSFERS_NAME = "Unknown transfers (incoming, outgoing, net)";
-const ALL_BALANCE_TYPES = [BalanceType.CURRENT, BalanceType.PENDING, BalanceType.NEXT, BalanceType.TOTAL];
+const ALL_BALANCE_TYPES = [
+  BalanceType.CURRENT,
+  BalanceType.PENDING,
+  BalanceType.NEXT,
+  BalanceType.PENDING_TRANSFERS,
+  BalanceType.TOTAL,
+];
 
 interface CategorizedTransfers {
   all: TokenTransfer[];
@@ -32,6 +55,8 @@ export class Monitor {
   private hubPoolStartingBlock: number | undefined = undefined;
   private hubPoolEndingBlock: number | undefined = undefined;
   private spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
+  private balanceCache: { [chainId: number]: { [token: string]: { [account: string]: BigNumber } } } = {};
+  private decimals: { [chainId: number]: { [token: string]: number } } = {};
 
   public constructor(
     readonly logger: winston.Logger,
@@ -44,6 +69,9 @@ export class Monitor {
   }
 
   public async update() {
+    // Clear balance cache at the start of each update.
+    // Note: decimals don't need to be cleared because they shouldn't ever change.
+    this.balanceCache = {};
     await updateMonitorClients(this.clients);
     await this.computeHubPoolBlocks();
     await this.computeSpokePoolsBlocks();
@@ -89,7 +117,7 @@ export class Monitor {
           ${etherscanLink(l1TokenUtilization.l1Token, l1TokenUtilization.chainId)} on \
           ${getNetworkName(l1TokenUtilization.chainId)} is at \
           ${createFormatFunction(0, 2)(utilizationString)}% utilization!"`;
-        this.logger.warn({ at: "UtilizationMonitor", message: "High pool utilization warning 🏊", mrkdwn });
+        this.logger.debug({ at: "UtilizationMonitor", message: "High pool utilization warning 🏊", mrkdwn });
       }
     }
   }
@@ -142,7 +170,10 @@ export class Monitor {
   }
 
   async reportUnfilledDeposits() {
-    const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients);
+    const unfilledDeposits = getUnfilledDeposits(
+      this.clients.spokePoolClients,
+      this.monitorConfig.maxRelayerUnfilledDepositLookBack
+    );
 
     // Group unfilled amounts by chain id and token id.
     const unfilledAmountByChainAndToken: { [chainId: number]: { [tokenAddress: string]: BigNumber } } = {};
@@ -150,7 +181,7 @@ export class Monitor {
       const chainId = deposit.deposit.destinationChainId;
       const tokenAddress = deposit.deposit.destinationToken;
       if (!unfilledAmountByChainAndToken[chainId] || !unfilledAmountByChainAndToken[chainId][tokenAddress]) {
-        assign(unfilledAmountByChainAndToken, [chainId, tokenAddress], BigNumber.from(0));
+        assign(unfilledAmountByChainAndToken, [chainId, tokenAddress], toBN(0));
       }
       unfilledAmountByChainAndToken[chainId][tokenAddress] = unfilledAmountByChainAndToken[chainId][tokenAddress].add(
         deposit.unfilledAmount
@@ -185,21 +216,21 @@ export class Monitor {
     const reports = this.initializeBalanceReports(relayers, allL1Tokens, allChainNames);
 
     await this.updateCurrentRelayerBalances(reports);
-    this.updatePendingAndFutureRelayerRefunds(reports);
+    this.updateLatestAndFutureRelayerRefunds(reports);
     this.updateUnknownTransfers(reports);
 
     for (const relayer of relayers) {
       const report = reports[relayer];
       let summaryMrkdwn = "*[Summary]*\n";
-      let mrkdwn = "Token amounts: current, in liveness, next bundle, total\n";
+      let mrkdwn = "Token amounts: current, pending execution, future, cross-chain transfers, total\n";
       for (const token of allL1Tokens) {
         let tokenMrkdwn = "";
         for (const chainName of allChainNames) {
           const balancesBN = Object.values(report[token.symbol][chainName]);
-          if (balancesBN.find((b) => b.gt(BigNumber.from(0)))) {
+          if (balancesBN.find((b) => b.gt(toBN(0)))) {
             // Human-readable balances
             const balances = balancesBN.map((balance) =>
-              balance.gt(BigNumber.from(0)) ? convertFromWei(balance.toString(), token.decimals) : "0"
+              balance.gt(toBN(0)) ? convertFromWei(balance.toString(), token.decimals) : "0"
             );
             tokenMrkdwn += `${chainName}: ${balances.join(", ")}\n`;
           } else {
@@ -210,7 +241,7 @@ export class Monitor {
 
         const totalBalance = report[token.symbol][ALL_CHAINS_NAME][BalanceType.TOTAL];
         // Update corresponding summary section for current token.
-        if (totalBalance.gt(BigNumber.from(0))) {
+        if (totalBalance.gt(toBN(0))) {
           mrkdwn += `*[${token.symbol}]*\n` + tokenMrkdwn;
           summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
         } else {
@@ -233,13 +264,13 @@ export class Monitor {
       for (const chainId of this.monitorConfig.spokePoolChains) {
         const l2ToL1Tokens = this.clients.hubPoolClient.getDestinationTokensToL1TokensForChainId(chainId);
 
-        // Use the provider from the spoke pool to send requests to the right provider.
-        const spokePoolClient = this.clients.spokePoolClients[chainId];
         const l2TokenAddresses = Object.keys(l2ToL1Tokens);
-        const tokenBalances = await Promise.all(
-          l2TokenAddresses.map((l2TokenAddress) =>
-            new Contract(l2TokenAddress, ERC20.abi, spokePoolClient.spokePool.signer).balanceOf(relayer)
-          )
+        const tokenBalances = await this._getBalances(
+          l2TokenAddresses.map((address) => ({
+            token: address,
+            chainId: chainId,
+            account: relayer,
+          }))
         );
 
         for (let i = 0; i < l2TokenAddresses.length; i++) {
@@ -256,14 +287,148 @@ export class Monitor {
     }
   }
 
-  updatePendingAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport) {
-    let pendingBundleRefunds = this.clients.bundleDataClient.getPendingBundleRefunds();
-    let nextBundleRefunds = this.clients.bundleDataClient.getNextBundleRefunds();
+  async checkBalances() {
+    const { monitoredBalances } = this.monitorConfig;
+    const balances = await this._getBalances(monitoredBalances);
+    const decimalValues = await this._getDecimals(monitoredBalances);
+    const alerts = (
+      await Promise.all(
+        this.monitorConfig.monitoredBalances.map(
+          async (
+            { chainId, token, account, warnThreshold, errorThreshold },
+            i
+          ): Promise<undefined | { level: "warn" | "error"; text: string }> => {
+            const balance = balances[i];
+            const decimals = decimalValues[i];
+            let trippedThreshold: { level: "warn" | "error"; threshold: number } | null = null;
+
+            if (warnThreshold !== null && balance.lt(ethers.utils.parseUnits(warnThreshold.toString(), decimals)))
+              trippedThreshold = { level: "warn", threshold: warnThreshold };
+            if (errorThreshold !== null && balance.lt(ethers.utils.parseUnits(errorThreshold.toString(), decimals)))
+              trippedThreshold = { level: "error", threshold: errorThreshold };
+            if (trippedThreshold !== null) {
+              const symbol =
+                token === ZERO_ADDRESS
+                  ? getNativeTokenSymbol(chainId)
+                  : await new Contract(
+                      token,
+                      ERC20.abi,
+                      this.clients.spokePoolClients[chainId].spokePool.provider
+                    ).symbol();
+              return {
+                level: trippedThreshold.level,
+                text: `  ${getNetworkName(chainId)} ${symbol} balance for ${etherscanLink(
+                  account,
+                  chainId
+                )} is ${ethers.utils.formatUnits(balance, decimals)}. Threshold: ${trippedThreshold.threshold}`,
+              };
+            }
+          }
+        )
+      )
+    ).filter((text) => text !== undefined);
+    if (alerts.length > 0) {
+      // Just send out the maximum alert level rather than splitting into warnings and errors.
+      const maxAlertlevel = alerts.some((alert) => alert.level === "error") ? "error" : "warn";
+      const mrkdwn =
+        "Some balance(s) are below the configured threshold!\n" + alerts.map(({ text }) => text).join("\n");
+      this.logger[maxAlertlevel]({ at: "Monitor", message: "Balance(s) below threshold", mrkdwn: mrkdwn });
+    }
+  }
+
+  // We approximate stuck rebalances by checking if there are still any pending cross chain transfers to any SpokePools
+  // some fixed amount of time (grace period) after the last bundle execution. This can give false negative if there are
+  // transfers stuck for longer than 1 bundle and the current time is within the last bundle execution + grace period.
+  // But this should be okay as we should address any stuck transactions immediately so realistically no transfers
+  // should stay unstuck for longer than one bundle.
+  async checkStuckRebalances() {
+    const hubPoolClient = this.clients.hubPoolClient;
+    const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(hubPoolClient.latestBlockNumber);
+    // This case shouldn't happen outside of tests as Across V2 has already launched.
+    if (lastFullyExecutedBundle === undefined) {
+      return;
+    }
+    // If we're still within the grace period, skip looking for any stuck rebalances.
+    // Again, this would give false negatives for transfers that have been stuck for longer than one bundle if the
+    // current time is within the grace period of last executed bundle. But this is a good trade off for simpler code.
+    const lastFullyExecutedBundleTime = lastFullyExecutedBundle.challengePeriodEndTimestamp;
+    if (
+      lastFullyExecutedBundleTime + REBALANCE_FINALIZE_GRACE_PERIOD >
+      this.clients.hubPoolClient.hubPool.getCurrentTime()
+    ) {
+      return;
+    }
+
+    const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
+    for (const chainId of this.monitorConfig.spokePoolChains) {
+      const spokePoolAddress = this.clients.spokePoolClients[chainId].spokePool.address;
+      for (const l1Token of allL1Tokens) {
+        const transferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+          spokePoolAddress,
+          chainId,
+          l1Token.address
+        );
+        const outstandingDepositTxs = etherscanLinks(
+          this.clients.crossChainTransferClient.getOutstandingCrossChainTransferTxs(
+            spokePoolAddress,
+            chainId,
+            l1Token.address
+          ),
+          1
+        );
+
+        if (transferBalance.gt(0)) {
+          const mrkdwn = `Rebalances of ${l1Token.symbol} to ${getNetworkName(chainId)} is stuck`;
+          this.logger.warn({
+            at: "Monitor",
+            message: "HubPool -> SpokePool rebalances stuck 🦴",
+            mrkdwn,
+            transferBalance: transferBalance.toString(),
+            outstandingDepositTxs,
+          });
+        }
+      }
+    }
+  }
+
+  updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport) {
+    const validatedBundleRefunds: FillsToRefund[] = this.clients.bundleDataClient.getPendingRefundsFromValidBundles(
+      this.monitorConfig.bundleRefundLookback
+    );
+    const nextBundleRefunds = this.clients.bundleDataClient.getNextBundleRefunds();
 
     // Calculate which fills have not yet been refunded for each monitored relayer.
+    for (const refunds of validatedBundleRefunds) {
+      for (const relayer of this.monitorConfig.monitoredRelayers) {
+        this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer], relayer, BalanceType.PENDING);
+      }
+    }
     for (const relayer of this.monitorConfig.monitoredRelayers) {
-      this.updateRelayerRefunds(pendingBundleRefunds, relayerBalanceReport[relayer], relayer, BalanceType.PENDING);
       this.updateRelayerRefunds(nextBundleRefunds, relayerBalanceReport[relayer], relayer, BalanceType.NEXT);
+      this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer]);
+    }
+  }
+
+  updateCrossChainTransfers(relayer: string, relayerBalanceTable: RelayerBalanceTable) {
+    const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
+    for (const chainId of this.monitorConfig.spokePoolChains) {
+      for (const l1Token of allL1Tokens) {
+        const transferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+          relayer,
+          chainId,
+          l1Token.address
+        );
+
+        if (transferBalance.gt(toBN(0))) {
+          this.updateRelayerBalanceTable(
+            relayerBalanceTable,
+            l1Token.symbol,
+            getNetworkName(chainId),
+            BalanceType.PENDING_TRANSFERS,
+            transferBalance
+          );
+        }
+      }
     }
   }
 
@@ -289,11 +454,9 @@ export class Monitor {
           // Skip if there has been no transfers of this token.
           if (!transfers) continue;
 
-          let totalOutgoingAmount = BigNumber.from(0);
+          let totalOutgoingAmount = toBN(0);
           // Filter v2 fills and bond payments from outgoing transfers.
-          const fillTransactionHashes = spokePoolClient
-            .getFillsWithBlockForDestinationChainAndRelayer(chainId, relayer)
-            .map((fill) => fill.transactionHash);
+          const fillTransactionHashes = spokePoolClient.getFillsForRelayer(relayer).map((fill) => fill.transactionHash);
           const outgoingTransfers = this.categorizeUnknownTransfers(transfers.outgoing, fillTransactionHashes);
           if (outgoingTransfers.all.length > 0) {
             currentTokenMrkdwn += "Outgoing:\n";
@@ -301,7 +464,7 @@ export class Monitor {
             currentTokenMrkdwn += this.formatCategorizedTransfers(outgoingTransfers, tokenInfo.decimals, chainId);
           }
 
-          let totalIncomingAmount = BigNumber.from(0);
+          let totalIncomingAmount = toBN(0);
           // Filter v2 refunds and bond repayments from incoming transfers.
           const refundTransactionHashes = spokePoolClient
             .getRelayerRefundExecutions()
@@ -315,7 +478,7 @@ export class Monitor {
 
           // Record if there are net outgoing transfers.
           const netTransfersAmount = totalIncomingAmount.sub(totalOutgoingAmount);
-          if (!netTransfersAmount.eq(BigNumber.from(0))) {
+          if (!netTransfersAmount.eq(toBN(0))) {
             const netAmount = convertFromWei(netTransfersAmount.toString(), tokenInfo.decimals);
             currentTokenMrkdwn = `*${tokenInfo.symbol}: Net ${netAmount}*\n` + currentTokenMrkdwn;
             currentChainMrkdwn += currentTokenMrkdwn;
@@ -333,7 +496,7 @@ export class Monitor {
               tokenInfo.symbol,
               UNKNOWN_TRANSFERS_NAME,
               BalanceType.PENDING,
-              totalOutgoingAmount.mul(BigNumber.from(-1))
+              totalOutgoingAmount.mul(toBN(-1))
             );
             this.incrementBalance(
               report,
@@ -355,7 +518,7 @@ export class Monitor {
       if (mrkdwn) {
         this.logger.info({
           at: "Monitor",
-          message: `There are non-v2 transfers for relayer ${relayer} 🦨`,
+          message: `Transfers that are not fills for relayer ${relayer} 🦨`,
           mrkdwn,
         });
       }
@@ -392,22 +555,20 @@ export class Monitor {
     return mrkdwn + "\n";
   }
 
-  formatKnownTransfers(transfers: TokenTransfer[], decimals: number, transferType: String) {
-    if (transfers.length == 0) return "";
+  formatKnownTransfers(transfers: TokenTransfer[], decimals: number, transferType: string) {
+    if (transfers.length === 0) return "";
 
     const totalAmount = this.getTotalTransferAmount(transfers);
     return `${transferType}: ${convertFromWei(totalAmount.toString(), decimals)}\n`;
   }
 
   formatOtherTransfers(transfers: TokenTransfer[], decimals: number, chainId: number) {
-    if (transfers.length == 0) return "";
+    if (transfers.length === 0) return "";
 
     const totalAmount = this.getTotalTransferAmount(transfers);
     let mrkdwn = `other: ${convertFromWei(totalAmount.toString(), decimals)}\n`;
-    mrkdwn += etherscanLinks(
-      transfers.map((transfer) => transfer.transactionHash),
-      chainId
-    );
+    const transactionHashes = [...new Set(transfers.map((transfer) => transfer.transactionHash))];
+    mrkdwn += etherscanLinks(transactionHashes, chainId);
     return mrkdwn;
   }
 
@@ -424,7 +585,7 @@ export class Monitor {
         for (const chainName of allChainNames) {
           reports[relayer][token.symbol][chainName] = {};
           for (const balanceType of ALL_BALANCE_TYPES) {
-            reports[relayer][token.symbol][chainName][balanceType] = BigNumber.from(0);
+            reports[relayer][token.symbol][chainName][balanceType] = toBN(0);
           }
         }
       }
@@ -441,12 +602,16 @@ export class Monitor {
     for (const chainId of this.monitorConfig.spokePoolChains) {
       const fillsToRefund = fillsToRefundPerChain[chainId];
       // Skip chains that don't have any refunds.
-      if (!fillsToRefund) continue;
+      if (fillsToRefund === undefined) continue;
 
       for (const tokenAddress of Object.keys(fillsToRefund)) {
+        // Skip token if there are no refunds (although there are valid fills).
+        // This is an edge case that shouldn't usually happen.
+        if (fillsToRefund[tokenAddress].refunds === undefined) continue;
+
         const totalRefundAmount = fillsToRefund[tokenAddress].refunds[relayer];
         const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
-        let amount = totalRefundAmount ? totalRefundAmount : BigNumber.from(0);
+        const amount = totalRefundAmount || toBN(0);
         this.updateRelayerBalanceTable(
           relayerBalanceTable,
           tokenInfo.symbol,
@@ -507,7 +672,18 @@ export class Monitor {
     const mrkdwn =
       `An unknown EOA ${etherscanLink(caller, 1)} has ${action} a bundle on ${getNetworkName(1)}` +
       `\ntx: ${etherscanLink(transactionHash, 1)}`;
-    this.logger.error({ at: "Monitor", message: `Unknown bundle caller (${action}) ${emoji}`, mrkdwn });
+    this.logger.error({
+      at: "Monitor",
+      message: `Unknown bundle caller (${action}) ${emoji}${
+        action === BundleAction.PROPOSED
+          ? `. If proposer identity cannot be determined quickly, then the safe response is to call "disputeRootBundle" on the HubPool here ${etherscanLink(
+              this.clients.hubPoolClient.hubPool.address,
+              1
+            )}. Note that you will need to approve the HubPool to transfer 0.4 WETH from your wallet as a dispute bond.`
+          : ""
+      }`,
+      mrkdwn,
+    });
   }
 
   private async computeHubPoolBlocks() {
@@ -562,5 +738,48 @@ export class Monitor {
       startingBlock: finalStartingBlock,
       endingBlock: finalEndingBlock,
     };
+  }
+
+  // Returns balances from cache or from provider if there's a cache miss.
+  private async _getBalances(
+    balanceRequests: { chainId: number; token: string; account: string }[]
+  ): Promise<BigNumber[]> {
+    return await Promise.all(
+      balanceRequests.map(async ({ chainId, token, account }) => {
+        if (this.balanceCache[chainId]?.[token]?.[account]) return this.balanceCache[chainId][token][account];
+        const balance =
+          token === ZERO_ADDRESS
+            ? await this.clients.spokePoolClients[chainId].spokePool.provider.getBalance(account)
+            : // Use the latest block number the SpokePoolClient is aware of to query balances.
+              // This prevents double counting when there are very recent refund leaf executions that the SpokePoolClients
+              // missed (the provider node did not see those events yet) but when the balanceOf calls are made, the node
+              // is now aware of those executions.
+              await new Contract(token, ERC20.abi, this.clients.spokePoolClients[chainId].spokePool.provider).balanceOf(
+                account,
+                { blockTag: this.clients.spokePoolClients[chainId].latestBlockNumber }
+              );
+        if (!this.balanceCache[chainId]) this.balanceCache[chainId] = {};
+        if (!this.balanceCache[chainId][token]) this.balanceCache[chainId][token] = {};
+        this.balanceCache[chainId][token][account] = balance;
+        return balance;
+      })
+    );
+  }
+
+  private async _getDecimals(decimalrequests: { chainId: number; token: string }[]): Promise<number[]> {
+    return await Promise.all(
+      decimalrequests.map(async ({ chainId, token }) => {
+        if (token === ZERO_ADDRESS) return 18; // Assume all EVM chains have 18 decimal native tokens.
+        if (this.decimals[chainId]?.[token]) return this.decimals[chainId][token];
+        const decimals = await new Contract(
+          token,
+          ERC20.abi,
+          this.clients.spokePoolClients[chainId].spokePool.provider
+        ).decimals();
+        if (!this.decimals[chainId]) this.decimals[chainId] = {};
+        if (!this.decimals[chainId][token]) this.decimals[chainId][token] = decimals.toNumber();
+        return decimals.toNumber();
+      })
+    );
   }
 }

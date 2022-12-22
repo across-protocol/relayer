@@ -1,4 +1,4 @@
-import { deploySpokePoolWithToken, expect, ethers, Contract, SignerWithAddress, MAX_UINT_VAL } from "./utils";
+import { deploySpokePoolWithToken, expect, ethers, Contract, SignerWithAddress, MAX_UINT_VAL, toBN } from "./utils";
 import { createSpyLogger, winston, originChainId, destinationChainId, lastSpyLogIncludes } from "./utils";
 import { deployAndConfigureHubPool, zeroAddress, getContractFactory, utf8ToHex, toBNWei } from "./utils";
 import { TokenClient, SpokePoolClient, HubPoolClient } from "../src/clients";
@@ -38,7 +38,7 @@ describe("TokenClient: Origin token approval", async function () {
     spokePoolClient_1 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_1, null, originChainId);
     spokePoolClient_2 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_2, null, destinationChainId);
 
-    const spokePoolClients = { [destinationChainId]: spokePoolClient_1, [originChainId]: spokePoolClient_2 };
+    const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
     const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
     tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
@@ -47,7 +47,18 @@ describe("TokenClient: Origin token approval", async function () {
   it("Executes expected L2 token approvals and produces logs", async function () {
     await updateAllClients();
 
+    // Token client will not set allowances for tokens with zero balance.
     await tokenClient.setOriginTokenApprovals();
+    expect(lastSpyLogIncludes(spy, "All token approvals set for non-zero balances")).to.be.true;
+
+    // Mint token client account some tokens and check that approvals are sent
+    await erc20_1.connect(owner).mint(owner.address, "1");
+    await erc20_2.connect(owner).mint(owner.address, "1");
+    await weth_1.connect(owner).deposit({ value: "1" });
+    await weth_2.connect(owner).deposit({ value: "1" });
+    await updateAllClients();
+    await tokenClient.setOriginTokenApprovals();
+
     // logs should contain expected text and the addresses of all 4 tokens approved.
     expect(lastSpyLogIncludes(spy, "Approval transactions")).to.be.true;
     expect(lastSpyLogIncludes(spy, erc20_1.address)).to.be.true;
@@ -57,10 +68,15 @@ describe("TokenClient: Origin token approval", async function () {
 
     // Approvals should be set correctly. Note that erc20_1 is checked to be approved on spokePool_2 and erc20_2 is
     // checked on spokePool_1 as this is the associated token route.
-    expect(await erc20_1.allowance(owner.address, spokePool_2.address)).to.equal(MAX_UINT_VAL);
-    expect(await erc20_2.allowance(owner.address, spokePool_1.address)).to.equal(MAX_UINT_VAL);
-    expect(await weth_1.allowance(owner.address, spokePool_2.address)).to.equal(MAX_UINT_VAL);
-    expect(await weth_2.allowance(owner.address, spokePool_1.address)).to.equal(MAX_UINT_VAL);
+    expect(await erc20_1.allowance(owner.address, spokePool_1.address)).to.equal(MAX_UINT_VAL);
+    expect(await erc20_2.allowance(owner.address, spokePool_2.address)).to.equal(MAX_UINT_VAL);
+    expect(await weth_1.allowance(owner.address, spokePool_1.address)).to.equal(MAX_UINT_VAL);
+    expect(await weth_2.allowance(owner.address, spokePool_2.address)).to.equal(MAX_UINT_VAL);
+
+    // Does not send allowances again.
+    await updateAllClients();
+    await tokenClient.setOriginTokenApprovals();
+    expect(lastSpyLogIncludes(spy, "All token approvals set for non-zero balances")).to.be.true;
   });
   it("Executes expected L1 token approvals", async function () {
     await updateAllClients();

@@ -1,54 +1,61 @@
-import {
-  getProvider,
-  Wallet,
-  winston,
-  convertFromWei,
-  Contract,
-  groupObjectCountsByProp,
-  delay,
-  etherscanLink,
-} from "../../utils";
-import { L2ToL1MessageWriter, L2ToL1MessageStatus, L2TransactionReceipt, getL2Network } from "@arbitrum/sdk";
-import { MessageBatchProofInfo } from "@arbitrum/sdk/dist/lib/message/L2ToL1Message";
-import Outbox__factory_1 from "@arbitrum/sdk/dist/lib/abi/factories/Outbox__factory";
+import { getProvider, Wallet, winston, convertFromWei, groupObjectCountsByProp, Contract } from "../../utils";
+import { L2ToL1MessageStatus, L2TransactionReceipt, getL2Network, IL2ToL1MessageWriter } from "@arbitrum/sdk";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
+import { Multicall2Call, Withdrawal } from "..";
 
 const CHAIN_ID = 42161;
 
-export function getOutboxContract(hubPoolClient: HubPoolClient) {
-  return new Contract(
-    "0x760723CD2e632826c38Fef8CD438A4CC7E7E1A40",
-    Outbox__factory_1.Outbox__factory.abi,
-    hubPoolClient.hubPool.signer
-  );
+export async function multicallArbitrumFinalizations(
+  tokensBridged: TokensBridged[],
+  hubSigner: Wallet,
+  hubPoolClient: HubPoolClient,
+  logger: winston.Logger
+): Promise<{ callData: Multicall2Call[]; withdrawals: Withdrawal[] }> {
+  const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner);
+  const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(message.message)));
+  const withdrawals = finalizableMessages.map((message) => {
+    const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
+      CHAIN_ID,
+      message.info.l2TokenAddress,
+      hubPoolClient.latestBlockNumber
+    );
+    const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
+    const amountFromWei = convertFromWei(message.info.amountToReturn.toString(), l1TokenInfo.decimals);
+    return {
+      l2ChainId: CHAIN_ID,
+      l1TokenSymbol: l1TokenInfo.symbol,
+      amount: amountFromWei,
+    };
+  });
+  return {
+    callData,
+    withdrawals,
+  };
 }
-export async function finalizeArbitrum(
-  logger: winston.Logger,
-  message: L2ToL1MessageWriter,
-  proofInfo: MessageBatchProofInfo,
-  messageInfo: TokensBridged,
-  hubPoolClient: HubPoolClient
-) {
-  const l1TokenInfo = hubPoolClient.getL1TokenInfoForL2Token(messageInfo.l2TokenAddress, CHAIN_ID);
-  const amountFromWei = convertFromWei(messageInfo.amountToReturn.toString(), l1TokenInfo.decimals);
-  try {
-    const txn = await message.execute(proofInfo);
-    const receipt = await txn.wait();
-    logger.info({
-      at: "ArbitrumFinalizer",
-      message: `Finalized Arbitrum withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
-      transactionhash: etherscanLink(receipt.transactionHash, 1),
-    });
-    await delay(30);
-  } catch (error) {
-    logger.warn({
-      at: "ArbitrumFinalizer",
-      message: "Error creating executeTransactionTx",
-      error,
-      notificationPath: "across-error",
-    });
-  }
+
+export async function finalizeArbitrum(message: IL2ToL1MessageWriter): Promise<Multicall2Call> {
+  const l2Provider = getProvider(CHAIN_ID);
+  const proof = await message.getOutboxProof(l2Provider);
+  const outbox = new Contract((await getL2Network(l2Provider)).ethBridge.outbox, outboxAbi);
+  const eventData = (message as any).nitroWriter.event; // nitroWriter is a private property on the
+  // L2ToL1MessageWriter class, which we need to form the calldata so unfortunately we must cast to `any`.
+  const callData = await outbox.populateTransaction.executeTransaction(
+    proof,
+    eventData.position,
+    eventData.caller,
+    eventData.destination,
+    eventData.arbBlockNum,
+    eventData.ethBlockNum,
+    eventData.timestamp,
+    eventData.callvalue,
+    eventData.data,
+    {}
+  );
+  return {
+    callData: callData.data,
+    target: callData.to,
+  };
 }
 
 export async function getFinalizableMessages(logger: winston.Logger, tokensBridged: TokensBridged[], l1Signer: Wallet) {
@@ -99,16 +106,15 @@ export async function getMessageOutboxStatusAndProof(
   l1Signer: Wallet,
   logIndex: number
 ): Promise<{
-  message: L2ToL1MessageWriter;
-  proofInfo: MessageBatchProofInfo;
+  message: IL2ToL1MessageWriter;
   status: string;
 }> {
-  const l2Provider = getProvider(42161);
+  const l2Provider = getProvider(CHAIN_ID);
   const receipt = await l2Provider.getTransactionReceipt(event.transactionHash);
   const l2Receipt = new L2TransactionReceipt(receipt);
 
   try {
-    const l2ToL1Messages = await l2Receipt.getL2ToL1Messages(l1Signer, await getL2Network(l2Provider));
+    const l2ToL1Messages = await l2Receipt.getL2ToL1Messages(l1Signer, l2Provider);
     if (l2ToL1Messages.length === 0 || l2ToL1Messages.length - 1 < logIndex) {
       const error = new Error(`No outgoing messages found in transaction:${event.transactionHash}`);
       logger.warn({
@@ -117,54 +123,96 @@ export async function getMessageOutboxStatusAndProof(
         logIndex,
         l2ToL1Messages: l2ToL1Messages.length,
         txnHash: event.transactionHash,
-        error,
+        reason: error.stack || error.message || error.toString(),
         notificationPath: "across-error",
       });
       throw error;
     }
     const l2Message = l2ToL1Messages[logIndex];
 
-    // Now fetch the proof info we'll need in order to execute or check execution status.
-    const proofInfo = await l2Message.tryGetProof(l2Provider);
-
     // Check if already executed or unconfirmed (i.e. not yet available to be executed on L1 following dispute
     // window)
-    if (await l2Message.hasExecuted(proofInfo)) {
+    const outboxMessageExecutionStatus = await l2Message.status(l2Provider);
+    if (outboxMessageExecutionStatus === L2ToL1MessageStatus.EXECUTED) {
       return {
         message: l2Message,
-        proofInfo: undefined,
         status: L2ToL1MessageStatus[L2ToL1MessageStatus.EXECUTED],
       };
     }
-    const outboxMessageExecutionStatus = await l2Message.status(proofInfo);
     if (outboxMessageExecutionStatus !== L2ToL1MessageStatus.CONFIRMED) {
       return {
         message: l2Message,
-        proofInfo: undefined,
         status: L2ToL1MessageStatus[L2ToL1MessageStatus.UNCONFIRMED],
       };
     }
 
-    // Now that its confirmed and not executed, we can use the Merkle proof data to execute our
+    // Now that its confirmed and not executed, we can execute our
     // message in its outbox entry.
     return {
       message: l2Message,
-      proofInfo,
       status: L2ToL1MessageStatus[outboxMessageExecutionStatus],
     };
   } catch (error) {
-    logger.debug({
-      at: "ArbitrumFinalizer",
-      message:
-        "Failed to get L2toL1 message from transaction hash, likely message is not included in a batch on mainnet",
-      transactionHash: event.transactionHash,
-      error,
-    });
     // Likely L1 message hasn't been included in an arbitrum batch yet, so ignore it for now.
     return {
       message: undefined,
-      proofInfo: undefined,
       status: L2ToL1MessageStatus[L2ToL1MessageStatus.UNCONFIRMED],
     };
   }
 }
+
+const outboxAbi = [
+  {
+    inputs: [
+      {
+        internalType: "bytes32[]",
+        name: "proof",
+        type: "bytes32[]",
+      },
+      {
+        internalType: "uint256",
+        name: "index",
+        type: "uint256",
+      },
+      {
+        internalType: "address",
+        name: "l2Sender",
+        type: "address",
+      },
+      {
+        internalType: "address",
+        name: "to",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "l2Block",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "l1Block",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "l2Timestamp",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "value",
+        type: "uint256",
+      },
+      {
+        internalType: "bytes",
+        name: "data",
+        type: "bytes",
+      },
+    ],
+    name: "executeTransaction",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+];

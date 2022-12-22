@@ -1,5 +1,6 @@
-import { CommonConfig, ProcessEnv, BUNDLE_END_BLOCK_BUFFERS, CHAIN_ID_LIST_INDICES } from "../common";
+import { CommonConfig, ProcessEnv } from "../common";
 import { BigNumber, assert, toBNWei } from "../utils";
+import * as Constants from "../common/Constants";
 
 export class DataworkerConfig extends CommonConfig {
   readonly maxPoolRebalanceLeafSizeOverride: number;
@@ -24,6 +25,15 @@ export class DataworkerConfig extends CommonConfig {
   readonly sendingProposalsEnabled: boolean;
   readonly sendingExecutionsEnabled: boolean;
 
+  // These variables allow the user to optimize dataworker run-time, which can slow down drastically because of all the
+  // historical events it needs to fetch and parse.
+  readonly dataworkerFastLookbackCount: number;
+  readonly dataworkerFastLookbackRetryCount: number;
+  readonly dataworkerFastLookbackRetryMultiplier: number;
+  readonly dataworkerFastStartBundle: number | string;
+
+  readonly bufferToPropose: number;
+
   constructor(env: ProcessEnv) {
     const {
       ROOT_BUNDLE_EXECUTION_THRESHOLD,
@@ -40,9 +50,15 @@ export class DataworkerConfig extends CommonConfig {
       SEND_EXECUTIONS,
       FINALIZER_CHAINS,
       FINALIZER_ENABLED,
+      BUFFER_TO_PROPOSE,
+      DATAWORKER_FAST_LOOKBACK_COUNT,
+      DATAWORKER_FAST_LOOKBACK_RETRIES,
+      DATAWORKER_FAST_LOOKBACK_RETRY_MULTIPLIER,
+      DATAWORKER_FAST_START_BUNDLE,
     } = env;
     super(env);
 
+    this.bufferToPropose = BUFFER_TO_PROPOSE ? Number(BUFFER_TO_PROPOSE) : (20 * 60) / 15; // 20 mins of blocks;
     // Should we assert that the leaf count caps are > 0?
     this.maxPoolRebalanceLeafSizeOverride = MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE
       ? Number(MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE)
@@ -63,10 +79,17 @@ export class DataworkerConfig extends CommonConfig {
       : toBNWei("500000");
     this.blockRangeEndBlockBuffer = BLOCK_RANGE_END_BLOCK_BUFFER
       ? JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER)
-      : BUNDLE_END_BLOCK_BUFFERS;
+      : Constants.BUNDLE_END_BLOCK_BUFFERS;
     this.disputerEnabled = DISPUTER_ENABLED === "true";
     this.proposerEnabled = PROPOSER_ENABLED === "true";
     this.executorEnabled = EXECUTOR_ENABLED === "true";
+    if (this.executorEnabled)
+      assert(this.spokeRootsLookbackCount > 0, "must set spokeRootsLookbackCount > 0 if executor enabled");
+    else if (this.disputerEnabled || this.proposerEnabled)
+      assert(
+        this.spokeRootsLookbackCount === undefined || this.spokeRootsLookbackCount === 0,
+        "should set spokeRootsLookbackCount == 0 if executor disabled and proposer/disputer enabled"
+      );
     if (Object.keys(this.blockRangeEndBlockBuffer).length > 0)
       for (const chainId of this.spokePoolChains)
         assert(
@@ -76,7 +99,42 @@ export class DataworkerConfig extends CommonConfig {
     this.sendingDisputesEnabled = SEND_DISPUTES === "true";
     this.sendingProposalsEnabled = SEND_PROPOSALS === "true";
     this.sendingExecutionsEnabled = SEND_EXECUTIONS === "true";
-    this.finalizerChains = FINALIZER_CHAINS ? JSON.parse(FINALIZER_CHAINS) : CHAIN_ID_LIST_INDICES;
+    this.finalizerChains = FINALIZER_CHAINS ? JSON.parse(FINALIZER_CHAINS) : Constants.CHAIN_ID_LIST_INDICES;
     this.finalizerEnabled = FINALIZER_ENABLED === "true";
+
+    // `dataworkerFastLookbackCount` affects how far we fetch events from, modifying the search config's 'fromBlock'.
+    // Set to 0 to load all events, but be careful as this will cause the Dataworker to take 30+ minutes to complete.
+    // The average bundle frequency is 4-6 bundles per day so 16 bundles is a reasonable default
+    // to lookback 2-4 days.
+    this.dataworkerFastLookbackCount = DATAWORKER_FAST_LOOKBACK_COUNT
+      ? Math.floor(Number(DATAWORKER_FAST_LOOKBACK_COUNT))
+      : 16;
+    assert(this.dataworkerFastLookbackCount > 0, "dataworkerFastLookbackCount should be > 0");
+    if (this.spokeRootsLookbackCount !== undefined)
+      assert(
+        this.dataworkerFastLookbackCount >= this.spokeRootsLookbackCount,
+        "dataworkerFastLookbackCount should be >= spokeRootsLookbackCount"
+      );
+
+    // By default, if we need to load more data to construct the next bundle, we'll retry once and set a lookback
+    // to a very safe 16 * 4 = 64 bundles. This should cover at least the latest 10 days of events and take
+    // ~10 mins to run with quorum=2.
+    this.dataworkerFastLookbackRetryCount = DATAWORKER_FAST_LOOKBACK_RETRIES
+      ? Number(DATAWORKER_FAST_LOOKBACK_RETRIES)
+      : 1;
+    this.dataworkerFastLookbackRetryMultiplier = DATAWORKER_FAST_LOOKBACK_RETRY_MULTIPLIER
+      ? Math.floor(Number(DATAWORKER_FAST_LOOKBACK_RETRY_MULTIPLIER))
+      : 4;
+    this.dataworkerFastStartBundle = DATAWORKER_FAST_START_BUNDLE ? Number(DATAWORKER_FAST_START_BUNDLE) : "latest";
+    if (typeof this.dataworkerFastStartBundle === "number") {
+      assert(
+        this.dataworkerFastStartBundle > 0,
+        `dataworkerFastStartBundle=${this.dataworkerFastStartBundle} should be > 0`
+      );
+      assert(
+        this.dataworkerFastStartBundle >= this.dataworkerFastLookbackCount,
+        `dataworkerFastStartBundle=${this.dataworkerFastStartBundle} should be >= dataworkerFastLookbackCount=${this.dataworkerFastLookbackCount}`
+      );
+    }
   }
 }

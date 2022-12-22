@@ -60,6 +60,10 @@ export interface L1Token {
   decimals: number;
 }
 
+export interface LpToken {
+  lastLpFeeUpdate: number;
+}
+
 export interface CrossChainContractsSet extends SortableEvent {
   l2ChainId: number;
   spokePool: string;
@@ -82,6 +86,6 @@ export interface PendingRootBundle {
   proposer: string;
   unclaimedPoolRebalanceLeafCount: number;
   challengePeriodEndTimestamp: number;
-  bundleEvaluationBlockNumbers?: number[];
+  bundleEvaluationBlockNumbers: number[];
   proposalBlockNumber?: number;
 }

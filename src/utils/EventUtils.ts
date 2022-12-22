@@ -1,5 +1,5 @@
 import { delay } from "@uma/financial-templates-lib";
-import { SortableEvent } from "../interfaces";
+import { DepositWithBlock, FillWithBlock, SortableEvent } from "../interfaces";
 import { Contract, Event, EventFilter, Promise } from "./";
 
 const defaultConcurrency = 200;
@@ -9,7 +9,7 @@ const retrySleepTime = 10;
 export function spreadEvent(event: Event) {
   const keys = Object.keys(event.args).filter((key: string) => isNaN(+key)); // Extract non-numeric keys.
 
-  let returnedObject: any = {};
+  const returnedObject: any = {};
   keys.forEach((key: string) => (returnedObject[key] = event.args[key]));
 
   // ID information, if included in an event, should be cast to a number rather than a BigNumber.
@@ -25,8 +25,19 @@ export function spreadEvent(event: Event) {
   return returnedObject;
 }
 
-export async function paginatedEventQuery(contract: Contract, filter: EventFilter, searchConfig: EventSearchConfig) {
-  let retryCounter = 0;
+export interface EventSearchConfig {
+  fromBlock: number;
+  toBlock: number;
+  maxBlockLookBack?: number;
+  concurrency?: number | null;
+}
+
+export async function paginatedEventQuery(
+  contract: Contract,
+  filter: EventFilter,
+  searchConfig: EventSearchConfig,
+  retryCount = 0
+): Promise<Event[]> {
   // If the max block look back is set to 0 then we dont need to do any pagination and can query over the whole range.
   if (searchConfig.maxBlockLookBack === 0)
     return await contract.queryFilter(filter, searchConfig.fromBlock, searchConfig.toBlock);
@@ -34,32 +45,45 @@ export async function paginatedEventQuery(contract: Contract, filter: EventFilte
   // Compute the number of queries needed. If there is no maxBlockLookBack set then we can execute the whole query in
   // one go. Else, the number of queries is the range over which we are searching, divided by the maxBlockLookBack,
   // rounded up. This gives us the number of queries we need to execute to traverse the whole block range.
-  let numberOfQueries = 1;
-  if (!searchConfig.maxBlockLookBack) searchConfig.maxBlockLookBack = searchConfig.toBlock - searchConfig.fromBlock;
-  else numberOfQueries = Math.ceil((searchConfig.toBlock - searchConfig.fromBlock) / searchConfig.maxBlockLookBack);
-
-  const promises = [];
-  for (let i = 0; i < numberOfQueries; i++) {
-    const fromBlock = searchConfig.fromBlock + i * searchConfig.maxBlockLookBack;
-    const toBlock = Math.min(searchConfig.fromBlock + (i + 1) * searchConfig.maxBlockLookBack, searchConfig.toBlock);
-    promises.push(contract.queryFilter(filter, fromBlock, toBlock));
-  }
+  const paginatedRanges = getPaginatedBlockRanges(searchConfig);
 
   try {
-    return (await Promise.all(promises, { concurrency: searchConfig.concurrency | defaultConcurrency })).flat(); // Default to 200 concurrent calls.
+    return (
+      await Promise.map(
+        paginatedRanges,
+        async ([fromBlock, toBlock]) => {
+          return contract.queryFilter(filter, fromBlock, toBlock);
+        },
+        { concurrency: searchConfig.concurrency | defaultConcurrency }
+      )
+    ).flat();
   } catch (error) {
-    if (retryCounter++ < maxRetries) {
+    if (retryCount < maxRetries) {
       await delay(retrySleepTime);
-      return await paginatedEventQuery(contract, filter, searchConfig);
+      return await paginatedEventQuery(contract, filter, searchConfig, retryCount + 1);
     } else throw error;
   }
 }
 
-export interface EventSearchConfig {
-  fromBlock: number;
-  toBlock: number | null;
-  maxBlockLookBack: number;
-  concurrency?: number | null;
+export function getPaginatedBlockRanges(searchConfig: EventSearchConfig): number[][] {
+  const nextSearchConfig = { fromBlock: searchConfig.fromBlock, toBlock: searchConfig.toBlock };
+
+  if (searchConfig.maxBlockLookBack !== undefined)
+    nextSearchConfig.toBlock = Math.min(searchConfig.toBlock, searchConfig.fromBlock + searchConfig.maxBlockLookBack);
+
+  if (searchConfig.maxBlockLookBack === 0) throw new Error("Cannot set maxBlockLookBack = 0");
+
+  const returnValue: number[][] = [];
+  while (nextSearchConfig.fromBlock <= searchConfig.toBlock) {
+    returnValue.push([nextSearchConfig.fromBlock, nextSearchConfig.toBlock]);
+    nextSearchConfig.fromBlock = nextSearchConfig.toBlock + 1;
+    if (searchConfig.maxBlockLookBack !== undefined)
+      nextSearchConfig.toBlock = Math.min(
+        searchConfig.toBlock,
+        nextSearchConfig.fromBlock + searchConfig.maxBlockLookBack
+      );
+  }
+  return returnValue;
 }
 
 export function spreadEventWithBlockNumber(event: Event): SortableEvent {
@@ -72,16 +96,30 @@ export function spreadEventWithBlockNumber(event: Event): SortableEvent {
   };
 }
 
+// This copies the array and sorts it, returning a new array with the new ordering.
 export function sortEventsAscending<T extends SortableEvent>(events: T[]): T[] {
-  return [...events].sort((ex, ey) => {
+  return sortEventsAscendingInPlace([...events]);
+}
+
+// This sorts the events in place, meaning it modifies the passed array and returns a reference to the same array.
+// Note: this method should only be used in cases where modifications are acceptable.
+export function sortEventsAscendingInPlace<T extends SortableEvent>(events: T[]): T[] {
+  return events.sort((ex, ey) => {
     if (ex.blockNumber !== ey.blockNumber) return ex.blockNumber - ey.blockNumber;
     if (ex.transactionIndex !== ey.transactionIndex) return ex.transactionIndex - ey.transactionIndex;
     return ex.logIndex - ey.logIndex;
   });
 }
 
+// This copies the array and sorts it, returning a new array with the new ordering.
 export function sortEventsDescending<T extends SortableEvent>(events: T[]): T[] {
-  return [...events].sort((ex, ey) => {
+  return sortEventsDescendingInPlace([...events]);
+}
+
+// This sorts the events in place, meaning it modifies the passed array and returns a reference to the same array.
+// Note: this method should only be used in cases where modifications are acceptable.
+export function sortEventsDescendingInPlace<T extends SortableEvent>(events: T[]): T[] {
+  return events.sort((ex, ey) => {
     if (ex.blockNumber !== ey.blockNumber) return ey.blockNumber - ex.blockNumber;
     if (ex.transactionIndex !== ey.transactionIndex) return ey.transactionIndex - ex.transactionIndex;
     return ey.logIndex - ex.logIndex;

@@ -2,7 +2,7 @@ import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolReb
 import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
 import { toBNWei, toWei, buildPoolRebalanceLeafTree, createSpyLogger } from "./utils";
 import { getContractFactory, hubPoolFixture, toBN, utf8ToHex } from "./utils";
-import { amountToLp, mockTreeRoot, refundProposalLiveness, totalBond } from "./constants";
+import { amountToLp, destinationChainId, mockTreeRoot, refundProposalLiveness, totalBond } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
 import { HubPoolClient, AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
@@ -22,9 +22,21 @@ const sampleRateModel = {
   R2: toWei("1.00").toString(),
 };
 
+const sampleSpokeTargetBalances = {
+  [originChainId]: {
+    target: toWei("100").toString(),
+    threshold: toWei("200").toString(),
+  },
+  [destinationChainId]: {
+    target: toWei("50").toString(),
+    threshold: toWei("100").toString(),
+  },
+};
+
 const tokenConfigToUpdate = JSON.stringify({
   rateModel: sampleRateModel,
-  transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
+  transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD.toString(),
+  spokeTargetBalances: sampleSpokeTargetBalances,
 });
 
 describe("AcrossConfigStoreClient", async function () {
@@ -223,6 +235,33 @@ describe("AcrossConfigStoreClient", async function () {
       expect(() =>
         configStoreClient.getTokenTransferThresholdForBlock(l2Token.address, initialUpdate.blockNumber)
       ).to.throw(/Could not find TransferThreshold/);
+    });
+
+    it("Get spoke pool balance threshold for block", async function () {
+      await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
+      await updateAllClients();
+      const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[0];
+      expect(
+        configStoreClient.getSpokeTargetBalancesForBlock(l1Token.address, originChainId, initialUpdate.blockNumber)
+      ).to.deep.equal({
+        target: toBN(sampleSpokeTargetBalances[originChainId].target),
+        threshold: toBN(sampleSpokeTargetBalances[originChainId].threshold),
+      });
+      // Block number when there is no config, should default to all 0s for back-compat.
+      expect(
+        configStoreClient.getSpokeTargetBalancesForBlock(l1Token.address, originChainId, initialUpdate.blockNumber - 1)
+      ).to.deep.equal({
+        target: toBN(0),
+        threshold: toBN(0),
+      });
+
+      // L1 token where there is no config, should default to all 0s.
+      expect(
+        configStoreClient.getSpokeTargetBalancesForBlock(l2Token.address, originChainId, initialUpdate.blockNumber)
+      ).to.deep.equal({
+        target: toBN(0),
+        threshold: toBN(0),
+      });
     });
   });
   describe("GlobalConfig", function () {

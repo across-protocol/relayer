@@ -4,9 +4,10 @@ coverage
 coverage.json
 typechain
 .DS_Store
-dump.rdb
+dump.rdb*
+.idea
 
-#Hardhat files
+# Hardhat files
 cache
 artifacts
 dist
