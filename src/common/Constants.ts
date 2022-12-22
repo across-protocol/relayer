@@ -66,13 +66,17 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
 };
 export const QUOTE_TIME_BUFFER = 12 * 5; // 5 blocks on Mainnet.
 
-// Optimism, ethereum can do infinity lookbacks. boba and Arbitrum limited to 100000 on infura.
+// Quicknode is the bottleneck here and imposes a 10k block limit on an event search.
+// Alchemy-Polygon imposes a 3500 block limit.
+// Note: a 0 value here leads to an infinite lookback, which would be useful and reduce RPC requests
+// if the RPC provider allows it. This is why the user should override these lookbacks if they are not using
+// Quicknode for example.
 export const CHAIN_MAX_BLOCK_LOOKBACK = {
-  1: 0, // Note: 0 gets defaulted to infinity lookback
-  10: 0,
+  1: 10000,
+  10: 10000, // Quick
   137: 3490,
   288: 4990,
-  42161: 99990,
+  42161: 10000,
 };
 
 export const BUNDLE_END_BLOCK_BUFFERS = {

@@ -36,27 +36,24 @@ export class CommonConfig {
     this.version = ACROSS_BOT_VERSION ?? "unknown";
 
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
-    this.maxRelayerLookBack = MAX_RELAYER_DEPOSIT_LOOK_BACK
-      ? Number(MAX_RELAYER_DEPOSIT_LOOK_BACK)
-      : Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK;
-
+    this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
     // `maxRelayerUnfilledDepositLookBack` informs relayer to ignore any unfilled deposits older than this amount of
     // of blocks from latest. This allows us to ignore any false positive unfilled deposits that occur because of how
     // `maxRelayerLookBack` is set. This can happen because block lookback per chain is not exactly equal to the same
     // amount of time looking back on the chains, so you might produce some deposits that look like they weren't filled.
     this.maxRelayerUnfilledDepositLookBack = this.maxRelayerLookBack / 4; // TODO: Allow caller
     // to modify what we divide `maxRelayerLookBack` values by.
-    this.hubPoolChainId = HUB_CHAIN_ID ? Number(HUB_CHAIN_ID) : 1;
+    this.hubPoolChainId = Number(HUB_CHAIN_ID ?? 1);
     this.spokePoolChains = CONFIGURED_NETWORKS ? JSON.parse(CONFIGURED_NETWORKS) : Constants.CHAIN_ID_LIST_INDICES;
-    this.pollingDelay = POLLING_DELAY ? Number(POLLING_DELAY) : 60;
+    this.pollingDelay = Number(POLLING_DELAY ?? 60);
     this.maxBlockLookBack = MAX_BLOCK_LOOK_BACK ? JSON.parse(MAX_BLOCK_LOOK_BACK) : {};
     if (Object.keys(this.maxBlockLookBack).length > 0)
       for (const chainId of this.spokePoolChains)
         assert(Object.keys(this.maxBlockLookBack).includes(chainId.toString()), "MAX_BLOCK_LOOK_BACK missing networks");
     else this.maxBlockLookBack = Constants.CHAIN_MAX_BLOCK_LOOKBACK;
-    this.maxTxWait = MAX_TX_WAIT_DURATION ? Number(MAX_TX_WAIT_DURATION) : 180; // 3 minutes
+    this.maxTxWait = Number(MAX_TX_WAIT_DURATION ?? 180); // 3 minutes
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
     this.redisUrl = REDIS_URL;
-    this.bundleRefundLookback = BUNDLE_REFUND_LOOKBACK ? Number(BUNDLE_REFUND_LOOKBACK) : 2;
+    this.bundleRefundLookback = Number(BUNDLE_REFUND_LOOKBACK ?? 2);
   }
 }
