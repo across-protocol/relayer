@@ -159,6 +159,8 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
   // Using bundle block number for chain from ProposeRootBundleEvent, find latest fill in the root bundle.
   let lastMatchingFillInSameBundle;
   if (rootBundleEndBlockContainingFirstFill !== undefined) {
+    // Can use spokeClient.queryFillsInBlockRange to get all fills in the `rootBundleEndBlockContainingFirstFill`
+    // if and only if `allValidFills` doesn't contain the block range.
     lastMatchingFillInSameBundle = getLastMatchingFillBeforeBlock(
       fill,
       sortEventsDescending(allMatchingFills),
