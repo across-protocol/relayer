@@ -43,16 +43,12 @@ export async function constructSpokePoolClientsWithLookback(
 
   // If initial lookback override is non-zero, then look up the l2 block number at that time, otherwise
   // use latest L2 block.
-  const fromBlocks = Object.fromEntries(
-    await Promise.all(
-      initialLookBackOverride > 0
-        ? spokePools.map((obj) => [
-            obj.chainId,
-            utils.findBlockAtOrOlder(obj.contract.provider, initialLookBackOverride),
-          ])
-        : spokePools.map((obj) => [obj.chainId, getDeployedBlockNumber("SpokePool", obj.chainId)])
-    )
+  const _fromBlocks = await Promise.all(
+    initialLookBackOverride > 0
+      ? spokePools.map((obj) => utils.findBlockAtOrOlder(obj.contract.provider, initialLookBackOverride))
+      : spokePools.map((obj) => getDeployedBlockNumber("SpokePool", obj.chainId))
   );
+  const fromBlocks = Object.fromEntries(spokePools.map((obj, index) => [obj.chainId, _fromBlocks[index]]));
 
   return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks);
 }

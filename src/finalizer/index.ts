@@ -179,17 +179,11 @@ export class FinalizerConfig extends DataworkerConfig {
     super(env);
 
     // By default, filters out any TokensBridged events younger than 5 days old and older than 10 days old.
-    this.optimisticRollupFinalizationWindow = FINALIZER_OROLLUP_FINALIZATION_WINDOW
-      ? Number(FINALIZER_OROLLUP_FINALIZATION_WINDOW)
-      : fiveDaysOfBlocks;
+    this.optimisticRollupFinalizationWindow = Number(FINALIZER_OROLLUP_FINALIZATION_WINDOW ?? fiveDaysOfBlocks);
     // By default, filters out any TokensBridged events younger than 1 days old and older than 2 days old.
-    this.polygonFinalizationWindow = FINALIZER_POLYGON_FINALIZATION_WINDOW
-      ? Number(FINALIZER_POLYGON_FINALIZATION_WINDOW)
-      : oneDayOfBlocks;
+    this.polygonFinalizationWindow = Number(FINALIZER_POLYGON_FINALIZATION_WINDOW ?? oneDayOfBlocks);
     // `maxFinalizerLookback` is how far we fetch events from, modifying the search config's 'fromBlock'
-    this.maxFinalizerLookback = FINALIZER_MAX_TOKENBRIDGE_LOOKBACK
-      ? Number(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK)
-      : FINALIZER_TOKENBRIDGE_LOOKBACK;
+    this.maxFinalizerLookback = Number(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK ?? FINALIZER_MAX_TOKENBRIDGE_LOOKBACK);
   }
 }
 
