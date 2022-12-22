@@ -18,11 +18,12 @@ import {
   buildPoolRebalanceLeaves,
 } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
-import { refundProposalLiveness, CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
-import { setupDataworker, setupFastDataworker } from "./fixtures/Dataworker.Fixture";
+import { refundProposalLiveness, CHAIN_ID_TEST_LIST } from "./constants";
+import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import { Deposit, Fill, RunningBalances } from "../src/interfaces";
-import { getRealizedLpFeeForFills, getRefundForFills, getRefund, EMPTY_MERKLE_ROOT } from "../src/utils";
+import { getRealizedLpFeeForFills, getRefundForFills, getRefund } from "../src/utils";
 import { compareAddresses } from "../src/utils";
+import { EMPTY_MERKLE_ROOT } from "@uma/common";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";

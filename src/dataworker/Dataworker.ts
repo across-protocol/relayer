@@ -1,15 +1,14 @@
 import {
   winston,
-  EMPTY_MERKLE_ROOT,
   sortEventsDescending,
   BigNumber,
   getRefund,
-  MerkleTree,
   toBN,
   sortEventsAscending,
   isKeyOf,
   isDefined,
 } from "../utils";
+import { MerkleTree, EMPTY_MERKLE_ROOT } from "@uma/common";
 import { toBNWei, getFillsInRange, ZERO_ADDRESS } from "../utils";
 import {
   DepositWithBlock,

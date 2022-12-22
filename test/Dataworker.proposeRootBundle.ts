@@ -4,7 +4,8 @@ import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient, MultiCallerCli
 import { amountToDeposit, destinationChainId, originChainId } from "./constants";
 import { CHAIN_ID_TEST_LIST } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
-import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT } from "../src/utils";
+import { MAX_UINT_VAL } from "../src/utils";
+import { EMPTY_MERKLE_ROOT } from '@uma/common';
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";

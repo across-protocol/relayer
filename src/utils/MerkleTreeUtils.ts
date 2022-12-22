@@ -1,6 +1,6 @@
 import { getParamType, utils } from ".";
-import { RelayData, PoolRebalanceLeaf, RelayerRefundLeaf, RelayerRefundLeafWithGroup } from "../interfaces";
-import { MerkleTree, EMPTY_MERKLE_ROOT } from "@across-protocol/contracts-v2";
+import { RelayData, PoolRebalanceLeaf, RelayerRefundLeaf } from "../interfaces";
+import { MerkleTree } from "@uma/common";
 
 export function buildSlowRelayTree(relays: RelayData[]) {
   const paramType = getParamType("MerkleLibTest", "verifySlowRelayFulfillment", "slowRelayFulfillment");
@@ -22,7 +22,7 @@ export function buildPoolRebalanceLeafTree(poolRebalanceLeaves: PoolRebalanceLea
 
   const paramType = getParamType("MerkleLibTest", "verifyPoolRebalance", "rebalance");
   const hashFn = (input: PoolRebalanceLeaf) => utils.keccak256(utils.defaultAbiCoder.encode([paramType!], [input]));
-  return new MerkleTree<PoolRebalanceLeaf>(poolRebalanceLeaves, hashFn);
+  return new MerkleTree(poolRebalanceLeaves, hashFn);
 }
 
 export function buildRelayerRefundTree(relayerRefundLeaves: RelayerRefundLeaf[]) {
@@ -34,7 +34,5 @@ export function buildRelayerRefundTree(relayerRefundLeaves: RelayerRefundLeaf[])
 
   const paramType = getParamType("MerkleLibTest", "verifyRelayerRefund", "refund");
   const hashFn = (input: RelayerRefundLeaf) => utils.keccak256(utils.defaultAbiCoder.encode([paramType!], [input]));
-  return new MerkleTree<RelayerRefundLeaf>(relayerRefundLeaves, hashFn);
+  return new MerkleTree(relayerRefundLeaves, hashFn);
 }
-
-export { MerkleTree, RelayerRefundLeaf, RelayerRefundLeafWithGroup, EMPTY_MERKLE_ROOT };

@@ -1,17 +1,15 @@
 /* eslint-disable no-process-exit */
-import { PoolRebalanceLeaf } from "../src/interfaces";
+import { PoolRebalanceLeaf, RelayerRefundLeaf } from "../src/interfaces";
 import {
   ethers,
   getSigner,
-  RelayerRefundLeaf,
-  MerkleTree,
   buildRelayerRefundTree,
-  EMPTY_MERKLE_ROOT,
   SpokePool,
   toBNWei,
   toBN,
   buildPoolRebalanceLeafTree,
 } from "../src/utils";
+import { MerkleTree, EMPTY_MERKLE_ROOT } from "@uma/common";
 
 function prettyRelayerRefundLeaf(leaves: RelayerRefundLeaf[]) {
   return leaves.map((leaf) => {

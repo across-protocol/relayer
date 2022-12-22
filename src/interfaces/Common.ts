@@ -1,4 +1,5 @@
-import { BigNumber, MerkleTree } from "../utils";
+import { BigNumber } from "../utils";
+import { MerkleTree } from "@uma/common";
 
 export interface SortableEvent {
   blockNumber: number;

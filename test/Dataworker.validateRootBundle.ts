@@ -5,7 +5,8 @@ import { amountToDeposit, destinationChainId, BUNDLE_END_BLOCK_BUFFER } from "./
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT, utf8ToHex } from "../src/utils";
+import { MAX_UINT_VAL, utf8ToHex } from "../src/utils";
+import { EMPTY_MERKLE_ROOT } from "@uma/common";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";

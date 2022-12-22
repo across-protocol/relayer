@@ -10,7 +10,7 @@
     "node": ">=12.9.0"
   },
   "dependencies": {
-    "@across-protocol/contracts-v2": "^1.0.5",
+    "@across-protocol/contracts-v2": "^2.0.2",
     "@across-protocol/sdk-v2": "^0.2.1",
     "@arbitrum/sdk": "^2.0.18",
     "@defi-wonderland/smock": "^2.0.7",
@@ -21,7 +21,7 @@
     "@google-cloud/storage": "^6.2.2",
     "@maticnetwork/maticjs": "^3.4.0-beta.0",
     "@maticnetwork/maticjs-ethers": "^1.0.2",
-    "@uma/common": "^2.19.0",
+    "@uma/common": "^2.29.0",
     "@uma/contracts-node": "^0.3.1",
     "@uma/financial-templates-lib": "^2.31.4",
     "@uma/sdk": "^0.25.0",

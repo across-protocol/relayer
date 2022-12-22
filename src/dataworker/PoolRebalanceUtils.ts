@@ -18,13 +18,13 @@ import {
   shortenHexString,
   shortenHexStrings,
   toBN,
-  MerkleTree,
   winston,
   toBNWei,
   formatFeePct,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "../utils";
+import { MerkleTree } from "@uma/common";
 
 export function updateRunningBalance(
   runningBalances: interfaces.RunningBalances,
