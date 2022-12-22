@@ -105,6 +105,10 @@ export function getFillDataForSlowFillFromPreviousRootBundle(
   hubPoolClient: HubPoolClient,
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ) {
+  // Can use spokeClient.queryFillsForDeposit(_fill, spokePoolClient.eventSearchConfig.fromBlock)
+  // if allValidFills doesn't contain the deposit's first fill to efficiently find the first fill for a deposit.
+  // Note that allValidFills should only include fills later than than eventSearchConfig.fromBlock.
+
   // Find the first fill chronologically for matched deposit for the input fill.
   const firstFillForSameDeposit = allValidFills.find(
     (_fill: FillWithBlock) => filledSameDeposit(_fill, fill) && isFirstFillForDeposit(_fill as Fill)
@@ -130,6 +134,8 @@ export function getFillDataForSlowFillFromPreviousRootBundle(
   // Using bundle block number for chain from ProposeRootBundleEvent, find latest fill in the root bundle.
   let lastMatchingFillInSameBundle;
   if (rootBundleEndBlockContainingFirstFill !== undefined) {
+    // Can use spokeClient.queryFillsInBlockRange to get all fills in the `rootBundleEndBlockContainingFirstFill`
+    // if and only if `allValidFills` doesn't contain the block range.
     lastMatchingFillInSameBundle = getLastMatchingFillBeforeBlock(
       fill,
       allValidFills,
@@ -244,8 +250,8 @@ export async function getLatestInvalidBundleStartBlocks(spokePoolClients: SpokeP
       // will emit an ERROR level log if it can't validate the pending bundle because the latestUnmatchedFill
       // block is manipulated too high.
       const unmatchedFills = destSpokeClient.getFillsForOriginChain(Number(originChainId)).filter((fill) => {
-        return fill.depositId < spokePoolClients[originChainId].earliestDepositId
-      })
+        return fill.depositId < spokePoolClients[originChainId].earliestDepositId;
+      });
       fillsOlderThanLookback.push(...unmatchedFills);
       const latestUnmatchedFill = _.findLast(
         destSpokeClient.getFillsForOriginChain(Number(originChainId)),
@@ -257,9 +263,15 @@ export async function getLatestInvalidBundleStartBlocks(spokePoolClients: SpokeP
   }
 
   const timerStart = Date.now();
-  const matchedDeposits = await Promise.all(fillsOlderThanLookback.map((fill) => {
-    return spokePoolClients[fill.originChainId].queryHistoricalDepositForFill(fill)
-  }))
-  console.log(`Time to load ${matchedDeposits.length} historical deposits: ${(Date.now()-timerStart)/1000}ms`/*, matchedDeposits*/)
+  const matchedDeposits = await Promise.all(
+    fillsOlderThanLookback.map((fill) => {
+      return spokePoolClients[fill.originChainId].queryHistoricalDepositForFill(fill);
+    })
+  );
+  console.log(
+    `Time to load ${matchedDeposits.length} historical deposits: ${
+      (Date.now() - timerStart) / 1000
+    }ms` /* , matchedDeposits*/
+  );
   return blocks;
 }
