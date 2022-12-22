@@ -105,6 +105,10 @@ export function getFillDataForSlowFillFromPreviousRootBundle(
   hubPoolClient: HubPoolClient,
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ) {
+  // Can use spokeClient.queryFillsForDeposit(_fill, spokePoolClient.eventSearchConfig.fromBlock)
+  // if allValidFills doesn't contain the deposit's first fill to efficiently find the first fill for a deposit.
+  // Note that allValidFills should only include fills later than than eventSearchConfig.fromBlock.
+
   // Find the first fill chronologically for matched deposit for the input fill.
   const firstFillForSameDeposit = allValidFills.find(
     (_fill: FillWithBlock) => filledSameDeposit(_fill, fill) && isFirstFillForDeposit(_fill as Fill)
@@ -130,6 +134,8 @@ export function getFillDataForSlowFillFromPreviousRootBundle(
   // Using bundle block number for chain from ProposeRootBundleEvent, find latest fill in the root bundle.
   let lastMatchingFillInSameBundle;
   if (rootBundleEndBlockContainingFirstFill !== undefined) {
+    // Can use spokeClient.queryFillsInBlockRange to get all fills in the `rootBundleEndBlockContainingFirstFill`
+    // if and only if `allValidFills` doesn't contain the block range.
     lastMatchingFillInSameBundle = getLastMatchingFillBeforeBlock(
       fill,
       allValidFills,
