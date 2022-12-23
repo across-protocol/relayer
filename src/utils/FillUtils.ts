@@ -151,7 +151,7 @@ export function getFillsInRange(
 // Returns all unfilled deposits over all spokePoolClients. Return values include the amount of the unfilled deposit.
 export function getUnfilledDeposits(
   spokePoolClients: SpokePoolClientsByChain,
-  maxUnfilledDepositLookBack: { [chainId: number]: number } = {}
+  maxUnfilledDepositLookBack: number
 ): { deposit: DepositWithBlock; unfilledAmount: BigNumber; fillCount: number; invalidFills: Fill[] }[] {
   const unfilledDeposits: {
     deposit: DepositWithBlock;
@@ -174,9 +174,8 @@ export function getUnfilledDeposits(
       const unfilledDepositsForDestinationChain = depositsForDestinationChain
         .filter((deposit) => {
           // If deposit is older than unfilled deposit lookback, ignore it
-          const lookback = maxUnfilledDepositLookBack[deposit.originChainId];
           const latestBlockForOriginChain = originClient.latestBlockNumber;
-          return lookback === undefined || deposit.originBlockNumber >= latestBlockForOriginChain - lookback;
+          return deposit.originBlockNumber >= latestBlockForOriginChain - maxUnfilledDepositLookBack;
         })
         .map((deposit) => {
           // eslint-disable-next-line no-console

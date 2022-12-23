@@ -73,6 +73,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [],
+        maxRelayerLookBack: 24 * 60 * 60,
         quoteTimeBuffer: 0,
         minDepositConfirmations: defaultMinDepositConfirmations,
       } as unknown as RelayerConfig

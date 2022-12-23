@@ -15,7 +15,13 @@ import {
   toBNWei,
 } from "./utils";
 import { simpleDeposit, fillRelay, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
-import { amountToLp, originChainId, amountToRelay, defaultMinDepositConfirmations } from "./constants";
+import {
+  amountToLp,
+  originChainId,
+  amountToRelay,
+  defaultMinDepositConfirmations,
+  DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
+} from "./constants";
 import {
   SpokePoolClient,
   HubPoolClient,
@@ -90,6 +96,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [],
+        maxRelayerLookBack: 24 * 60 * 60,
         quoteTimeBuffer: 0,
         minDepositConfirmations: defaultMinDepositConfirmations,
         acceptInvalidFills: false,
@@ -124,7 +131,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, configStoreClient, l1Token);
     const deposit2Complete = await buildDepositStruct(deposit2, hubPoolClient, configStoreClient, l1Token);
 
-    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients))
+    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients, DEFAULT_UNFILLED_DEPOSIT_LOOKBACK))
       .excludingEvery(["blockNumber", "originBlockNumber"])
       .to.deep.equal([
         { unfilledAmount: deposit1.amount, deposit: deposit1Complete, fillCount: 0, invalidFills: [] },
@@ -145,7 +152,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     const fill1 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete);
     await updateAllClients();
     // Validate the relayer correctly computes the unfilled amount.
-    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients))
+    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients, DEFAULT_UNFILLED_DEPOSIT_LOOKBACK))
       .excludingEvery(["blockNumber", "originBlockNumber"])
       .to.deep.equal([
         {
@@ -163,7 +170,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     await updateAllClients();
     // Deposit 1 should now be partially filled by all three fills. This should be correctly reflected.
     const unfilledAmount = deposit1.amount.sub(fill1.fillAmount.add(fill2.fillAmount).add(fill3.fillAmount));
-    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients))
+    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients, DEFAULT_UNFILLED_DEPOSIT_LOOKBACK))
       .excludingEvery(["blockNumber", "originBlockNumber"])
       .to.deep.equal([
         { unfilledAmount: unfilledAmount, deposit: deposit1Complete, fillCount: 3, invalidFills: [] },
@@ -174,7 +181,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     const fill4 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete, unfilledAmount);
     expect(fill4.totalFilledAmount).to.equal(deposit1.amount); // should be 100% filled at this point.
     await updateAllClients();
-    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients))
+    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients, DEFAULT_UNFILLED_DEPOSIT_LOOKBACK))
       .excludingEvery(["blockNumber", "originBlockNumber"])
       .to.deep.equal([
         { unfilledAmount: deposit2Complete.amount, deposit: deposit2Complete, fillCount: 0, invalidFills: [] },
@@ -190,7 +197,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, { ...deposit1Complete, depositId: 1337 });
     await updateAllClients();
     // The deposit should show up as unfilled, since the fill was incorrectly applied to the wrong deposit.
-    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients))
+    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients, DEFAULT_UNFILLED_DEPOSIT_LOOKBACK))
       .excludingEvery(["blockNumber", "originBlockNumber"])
       .to.deep.equal([
         { unfilledAmount: deposit1Complete.amount, deposit: deposit1Complete, fillCount: 0, invalidFills: [] },
@@ -208,7 +215,10 @@ describe("Relayer: Unfilled Deposits", async function () {
     await spokePool_1.speedUpDeposit(depositor.address, newRelayFeePct, deposit1.depositId, speedUpSignature);
     await updateAllClients();
 
-    const unfilledDeposits = getUnfilledDeposits(relayerInstance.clients.spokePoolClients);
+    const unfilledDeposits = getUnfilledDeposits(
+      relayerInstance.clients.spokePoolClients,
+      DEFAULT_UNFILLED_DEPOSIT_LOOKBACK
+    );
     // expect only one unfilled deposit
     expect(unfilledDeposits.length).to.eq(1);
     // expect unfilled deposit to have new relay fee
@@ -222,7 +232,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, configStoreClient, l1Token);
     const fill1 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete);
     await updateAllClients();
-    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients))
+    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients, DEFAULT_UNFILLED_DEPOSIT_LOOKBACK))
       .excludingEvery(["blockNumber", "originBlockNumber"])
       .to.deep.equal([
         {
@@ -239,7 +249,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     await spokePool_1.speedUpDeposit(depositor.address, newRelayerFeePct, deposit1.depositId, speedUpSignature);
     await updateAllClients();
     const depositWithSpeedUp = { ...deposit1Complete, newRelayerFeePct, speedUpSignature };
-    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients))
+    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients, DEFAULT_UNFILLED_DEPOSIT_LOOKBACK))
       .excludingEvery(["blockNumber", "originBlockNumber"])
       .to.deep.equal([
         {
@@ -267,7 +277,10 @@ describe("Relayer: Unfilled Deposits", async function () {
     await updateAllClients();
 
     // getUnfilledDeposit still returns the deposit as unfilled but with the invalid fill.
-    const unfilledDeposit = getUnfilledDeposits(relayerInstance.clients.spokePoolClients)[0];
+    const unfilledDeposit = getUnfilledDeposits(
+      relayerInstance.clients.spokePoolClients,
+      DEFAULT_UNFILLED_DEPOSIT_LOOKBACK
+    )[0];
     expect(unfilledDeposit.unfilledAmount).to.equal(deposit.amount);
     expect(unfilledDeposit.deposit.depositId).to.equal(deposit.depositId);
     expect(unfilledDeposit.invalidFills.length).to.equal(1);
