@@ -52,7 +52,6 @@ export async function constructSpokePoolClientsWithLookback(
     )
   );
   );
-  const fromBlocks = Object.fromEntries(spokePools.map((obj, index) => [obj.chainId, _fromBlocks[index]]));
 
   return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks);
 }
