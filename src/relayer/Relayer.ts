@@ -36,7 +36,7 @@ export class Relayer {
     // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
     const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = getUnfilledDeposits(
       this.clients.spokePoolClients,
-      this.config.maxRelayerUnfilledDepositLookBack
+      this.config.maxRelayerLookBack
     ).reduce((agg, curr) => {
       const unfilledAmountUsd = this.clients.profitClient.getFillAmountInUsd(curr.deposit, curr.unfilledAmount);
       if (!agg[curr.deposit.originChainId]) agg[curr.deposit.originChainId] = toBN(0);
@@ -82,10 +82,7 @@ export class Relayer {
     const latestHubPoolTime = this.clients.hubPoolClient.currentTime;
 
     // Require that all fillable deposits meet the minimum specified number of confirmations.
-    const unfilledDeposits = getUnfilledDeposits(
-      this.clients.spokePoolClients,
-      this.config.maxRelayerUnfilledDepositLookBack
-    )
+    const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients, this.config.maxRelayerLookBack)
       .filter((x) => {
         return (
           x.deposit.quoteTimestamp + this.config.quoteTimeBuffer <= latestHubPoolTime &&

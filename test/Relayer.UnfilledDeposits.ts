@@ -96,7 +96,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [],
-        maxRelayerUnfilledDepositLookBack: 24 * 60 * 60,
+        maxRelayerLookBack: 24 * 60 * 60,
         quoteTimeBuffer: 0,
         minDepositConfirmations: defaultMinDepositConfirmations,
         acceptInvalidFills: false,
