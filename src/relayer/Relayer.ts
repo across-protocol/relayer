@@ -20,16 +20,13 @@ export class Relayer {
   // Track by originChainId since depositId is issued on the origin chain.
   // Key is in the form of "chainId-depositId".
   private fullyFilledDeposits: { [key: string]: boolean } = {};
-  private readonly maxUnfilledDepositLookBack: { [chainId: number]: number } = {};
 
   constructor(
     readonly relayerAddress: string,
     readonly logger: winston.Logger,
     readonly clients: RelayerClients,
     readonly config: RelayerConfig
-  ) {
-    this.maxUnfilledDepositLookBack = config.maxRelayerUnfilledDepositLookBack ?? {};
-  }
+  ) {}
 
   async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
     // Fetch all unfilled deposits, order by total earnable fee.
@@ -39,7 +36,7 @@ export class Relayer {
     // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
     const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = getUnfilledDeposits(
       this.clients.spokePoolClients,
-      this.maxUnfilledDepositLookBack
+      this.config.maxRelayerLookBack
     ).reduce((agg, curr) => {
       const unfilledAmountUsd = this.clients.profitClient.getFillAmountInUsd(curr.deposit, curr.unfilledAmount);
       if (!agg[curr.deposit.originChainId]) agg[curr.deposit.originChainId] = toBN(0);
@@ -85,7 +82,7 @@ export class Relayer {
     const latestHubPoolTime = this.clients.hubPoolClient.currentTime;
 
     // Require that all fillable deposits meet the minimum specified number of confirmations.
-    const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients, this.maxUnfilledDepositLookBack)
+    const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients, this.config.maxRelayerLookBack)
       .filter((x) => {
         return (
           x.deposit.quoteTimestamp + this.config.quoteTimeBuffer <= latestHubPoolTime &&

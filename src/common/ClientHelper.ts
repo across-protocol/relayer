@@ -1,9 +1,17 @@
 import winston from "winston";
-import { getProvider, getDeployedContract, getDeploymentBlockNumber, Wallet, Contract } from "../utils";
+import {
+  getProvider,
+  getDeployedContract,
+  getDeploymentBlockNumber,
+  Wallet,
+  Contract,
+  getDeployedBlockNumber,
+} from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { createClient } from "redis4";
 import { SpokePoolClientsByChain } from "../interfaces";
+import { utils } from "@across-protocol/sdk-v2";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -25,7 +33,7 @@ export async function constructSpokePoolClientsWithLookback(
   configStoreClient: AcrossConfigStoreClient,
   config: CommonConfig,
   baseSigner: Wallet,
-  initialLookBackOverride: { [chainId: number]: number } = {}
+  initialLookBackOverride = 0
 ): Promise<SpokePoolClientsByChain> {
   // Set up Spoke signers and connect them to spoke pool contract objects:
   const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
@@ -33,22 +41,21 @@ export async function constructSpokePoolClientsWithLookback(
     return { chainId, contract: getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) };
   });
 
-  // For each spoke chain, look up its latest block and adjust by lookback configuration to determine
-  // fromBlock. If no lookback is set, fromBlock will be set to spoke pool's deployment block.
-  const fromBlocks: { [chainId: number]: number } = {};
-  const l2BlockNumbers = await Promise.all(
-    spokePools.map((obj: { contract: Contract }) => obj.contract.provider.getBlockNumber())
+  const fromBlocks = Object.fromEntries(
+    await Promise.all(
+      initialLookBackOverride > 0
+        ? spokePools.map(async (obj) => [
+            obj.chainId,
+            await utils.findBlockAtOrOlder(obj.contract.provider, initialLookBackOverride),
+          ])
+        : spokePools.map(async (obj) => [obj.chainId, await getDeployedBlockNumber("SpokePool", obj.chainId)])
+    )
   );
-  spokePools.forEach((obj: { chainId: number; contract: Contract }, index) => {
-    if (initialLookBackOverride[obj.chainId]) {
-      fromBlocks[obj.chainId] = l2BlockNumbers[index] - initialLookBackOverride[obj.chainId];
-    }
-  });
 
   return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks);
 }
 
-function getSpokePoolClientsForContract(
+export function getSpokePoolClientsForContract(
   logger: winston.Logger,
   configStoreClient: AcrossConfigStoreClient,
   config: CommonConfig,
@@ -79,57 +86,11 @@ function getSpokePoolClientsForContract(
   return spokePoolClients;
 }
 
-export async function constructSpokePoolClientsWithStartBlocks(
-  logger: winston.Logger,
-  configStoreClient: AcrossConfigStoreClient,
-  config: CommonConfig,
-  baseSigner: Wallet,
-  startBlockOverride: { [chainId: number]: number } = {},
-  toBlockOverride: { [chainId: number]: number } = {}
-): Promise<SpokePoolClientsByChain> {
-  // Set up Spoke signers and connect them to spoke pool contract objects:
-  const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
-  const spokePools = config.spokePoolChains.map((chainId) => {
-    return { chainId, contract: getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) };
-  });
-
-  // If no lookback is set, fromBlock will be set to spoke pool's deployment block.
-  const fromBlocks: { [chainId: number]: number } = {};
-  spokePools.forEach((obj: { chainId: number; contract: Contract }) => {
-    if (startBlockOverride[obj.chainId]) {
-      fromBlocks[obj.chainId] = startBlockOverride[obj.chainId];
-    }
-  });
-
-  return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks, toBlockOverride);
-}
-
 export async function updateSpokePoolClients(
   spokePoolClients: { [chainId: number]: SpokePoolClient },
   eventsToQuery?: string[]
-) {
+): Promise<void> {
   await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update(eventsToQuery)));
-}
-
-export async function constructSpokePoolClientsWithStartBlocksAndUpdate(
-  logger: winston.Logger,
-  configStoreClient: AcrossConfigStoreClient,
-  config: CommonConfig,
-  baseSigner: Wallet,
-  startBlockOverride: { [chainId: number]: number } = {},
-  endBlockOverride: { [chainId: number]: number } = {},
-  eventsToQuery?: string[]
-) {
-  const spokePoolClients = await constructSpokePoolClientsWithStartBlocks(
-    logger,
-    configStoreClient,
-    config,
-    baseSigner,
-    startBlockOverride,
-    endBlockOverride
-  );
-  await updateSpokePoolClients(spokePoolClients, eventsToQuery);
-  return spokePoolClients;
 }
 
 export async function constructClients(
