@@ -456,6 +456,7 @@ export class SpokePoolClient {
     const deposit = {
       amount: depositEvent.args.amount,
       originChainId: Number(depositEvent.args.originChainId),
+      destinationChainId: Number(depositEvent.args.destinationChainId),
       originToken: depositEvent.args.originToken,
       quoteTimestamp: depositEvent.args.quoteTimestamp,
     };

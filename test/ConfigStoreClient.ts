@@ -21,6 +21,12 @@ const sampleRateModel = {
   R1: toWei("0.08").toString(),
   R2: toWei("1.00").toString(),
 };
+const sampleRateModel2 = {
+  UBar: toWei("0.5").toString(),
+  R0: toWei("0.00").toString(),
+  R1: toWei("0.1").toString(),
+  R2: toWei("0.2").toString(),
+};
 
 const sampleSpokeTargetBalances = {
   [originChainId]: {
@@ -35,6 +41,7 @@ const sampleSpokeTargetBalances = {
 
 const tokenConfigToUpdate = JSON.stringify({
   rateModel: sampleRateModel,
+  routeRateModels: { "999-888": sampleRateModel2 },
   transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD.toString(),
   spokeTargetBalances: sampleSpokeTargetBalances,
 });
@@ -71,13 +78,17 @@ describe("AcrossConfigStoreClient", async function () {
 
     // Update ignores TokenConfig events that don't include all expected keys:
     await configStore.updateTokenConfig(l1Token.address, "gibberish");
-    await configStore.updateTokenConfig(l1Token.address, JSON.stringify({ rateModel: sampleRateModel }));
+    await configStore.updateTokenConfig(
+      l1Token.address,
+      JSON.stringify({ rateModel: sampleRateModel, routeRateModels: { "999-888": sampleRateModel2 } })
+    );
     await configStore.updateTokenConfig(
       l1Token.address,
       JSON.stringify({ transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD })
     );
     await configStoreClient.update();
     expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(1);
+    expect(configStoreClient.cumulativeRouteRateModelUpdates.length).to.equal(1);
     expect(configStoreClient.cumulativeTokenTransferUpdates.length).to.equal(1);
 
     // Add GlobalConfig events and check that updating pulls in events
@@ -112,18 +123,22 @@ describe("AcrossConfigStoreClient", async function () {
 
       const initialRateModelUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[0];
 
+      // Test with and without route rate model:
       expect(
-        configStoreClient.getRateModelForBlockNumber(l1Token.address, initialRateModelUpdate.blockNumber)
+        configStoreClient.getRateModelForBlockNumber(l1Token.address, 1, 2, initialRateModelUpdate.blockNumber)
       ).to.deep.equal(sampleRateModel);
+      expect(
+        configStoreClient.getRateModelForBlockNumber(l1Token.address, 999, 888, initialRateModelUpdate.blockNumber)
+      ).to.deep.equal(sampleRateModel2);
 
       // Block number when there is no rate model
       expect(() =>
-        configStoreClient.getRateModelForBlockNumber(l1Token.address, initialRateModelUpdate.blockNumber - 1)
+        configStoreClient.getRateModelForBlockNumber(l1Token.address, 1, 2, initialRateModelUpdate.blockNumber - 1)
       ).to.throw(/before first UpdatedRateModel event/);
 
       // L1 token where there is no rate model
       expect(() =>
-        configStoreClient.getRateModelForBlockNumber(l2Token.address, initialRateModelUpdate.blockNumber)
+        configStoreClient.getRateModelForBlockNumber(l2Token.address, 1, 2, initialRateModelUpdate.blockNumber)
       ).to.throw(/No updated rate model events for L1 token/);
     });
 
