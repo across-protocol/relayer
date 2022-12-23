@@ -16,12 +16,12 @@ import {
 
 import {
   L1TokenTransferThreshold,
-  Deposit,
   TokenConfig,
   GlobalConfigUpdate,
   ParsedTokenConfig,
   SpokeTargetBalanceUpdate,
   SpokePoolTargetBalance,
+  RouteRateModelUpdate,
 } from "../interfaces";
 
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
@@ -40,6 +40,7 @@ export class AcrossConfigStoreClient {
   private readonly blockFinder;
 
   public cumulativeRateModelUpdates: across.rateModel.RateModelEvent[] = [];
+  public cumulativeRouteRateModelUpdates: RouteRateModelUpdate[] = [];
   public cumulativeTokenTransferUpdates: L1TokenTransferThreshold[] = [];
   public cumulativeMaxRefundCountUpdates: GlobalConfigUpdate[] = [];
   public cumulativeMaxL1TokenCountUpdates: GlobalConfigUpdate[] = [];
@@ -63,7 +64,7 @@ export class AcrossConfigStoreClient {
   }
 
   async computeRealizedLpFeePct(
-    deposit: { quoteTimestamp: number; amount: BigNumber },
+    deposit: { quoteTimestamp: number; amount: BigNumber; destinationChainId: number; originChainId: number },
     l1Token: string
   ): Promise<{ realizedLpFeePct: BigNumber; quoteBlock: number }> {
     let quoteBlock = await this.getBlockNumber(deposit.quoteTimestamp);
@@ -74,7 +75,12 @@ export class AcrossConfigStoreClient {
     // Test SNX deposit was before the rate model update for SNX.
     if (quoteBlock === 14856066) quoteBlock = 14856211;
 
-    const rateModel = this.getRateModelForBlockNumber(l1Token, quoteBlock);
+    const rateModel = this.getRateModelForBlockNumber(
+      l1Token,
+      deposit.originChainId,
+      deposit.destinationChainId,
+      quoteBlock
+    );
 
     // There is one deposit on optimism that is right at the margin of when liquidity was first added.
     if (quoteBlock > 14718100 && quoteBlock < 14718107) quoteBlock = 14718107;
@@ -85,8 +91,28 @@ export class AcrossConfigStoreClient {
     return { realizedLpFeePct, quoteBlock };
   }
 
-  getRateModelForBlockNumber(l1Token: string, blockNumber: number | undefined = undefined): across.constants.RateModel {
-    return this.rateModelDictionary.getRateModelForBlockNumber(l1Token, blockNumber);
+  getRateModelForBlockNumber(
+    l1Token: string,
+    originChainId: number | string,
+    destinationChainId: number | string,
+    blockNumber: number | undefined = undefined
+  ): across.constants.RateModel {
+    // Use route-rate model if available, otherwise use default rate model for l1Token.
+    const route = `${originChainId}-${destinationChainId}`;
+    const routeRateModel = this.getRouteRateModelForBlockNumber(l1Token, route, blockNumber);
+    return routeRateModel ?? this.rateModelDictionary.getRateModelForBlockNumber(l1Token, blockNumber);
+  }
+
+  getRouteRateModelForBlockNumber(
+    l1Token: string,
+    route: string,
+    blockNumber: number | undefined = undefined
+  ): across.constants.RateModel | undefined {
+    const config = (sortEventsDescending(this.cumulativeRouteRateModelUpdates) as RouteRateModelUpdate[]).find(
+      (config) => config.blockNumber <= blockNumber && config.l1Token === l1Token
+    );
+    if (config?.routeRateModels[route] === undefined) return undefined;
+    return across.rateModel.parseAndReturnRateModelFromString(config.routeRateModels[route]);
   }
 
   getTokenTransferThresholdForBlock(l1Token: string, blockNumber: number = Number.MAX_SAFE_INTEGER): BigNumber {
@@ -174,6 +200,7 @@ export class AcrossConfigStoreClient {
           l1Token,
         });
 
+        // Store spokeTargetBalances
         if (parsedValue?.spokeTargetBalances) {
           // Note: cast is required because fromEntries always produces string keys, despite the function returning a
           // numerical key.
@@ -187,6 +214,18 @@ export class AcrossConfigStoreClient {
           this.cumulativeSpokeTargetBalanceUpdates.push({ ...args, spokeTargetBalances: targetBalances, l1Token });
         } else {
           this.cumulativeSpokeTargetBalanceUpdates.push({ ...args, spokeTargetBalances: {}, l1Token });
+        }
+
+        // Store route-specific rate models
+        if (parsedValue?.routeRateModels) {
+          const routeRateModels = Object.fromEntries(
+            Object.entries(parsedValue.routeRateModels).map(([path, routeRateModel]) => {
+              return [path, JSON.stringify(routeRateModel)];
+            })
+          );
+          this.cumulativeRouteRateModelUpdates.push({ ...args, routeRateModels, l1Token });
+        } else {
+          this.cumulativeRouteRateModelUpdates.push({ ...args, routeRateModels: {}, l1Token });
         }
       } catch (err) {
         continue;
