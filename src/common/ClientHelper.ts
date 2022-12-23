@@ -51,7 +51,6 @@ export async function constructSpokePoolClientsWithLookback(
         : spokePools.map(async (obj) => [obj.chainId, await getDeployedBlockNumber("SpokePool", obj.chainId)])
     )
   );
-  );
 
   return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks);
 }

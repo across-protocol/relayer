@@ -183,7 +183,7 @@ export class FinalizerConfig extends DataworkerConfig {
     // By default, filters out any TokensBridged events younger than 1 days old and older than 2 days old.
     this.polygonFinalizationWindow = Number(FINALIZER_POLYGON_FINALIZATION_WINDOW ?? oneDayOfBlocks);
     // `maxFinalizerLookback` is how far we fetch events from, modifying the search config's 'fromBlock'
-    this.maxFinalizerLookback = Number(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK ?? FINALIZER_MAX_TOKENBRIDGE_LOOKBACK);
+    this.maxFinalizerLookback = Number(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK ?? FINALIZER_TOKENBRIDGE_LOOKBACK);
   }
 }
 
