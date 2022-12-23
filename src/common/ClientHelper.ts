@@ -55,7 +55,7 @@ export async function constructSpokePoolClientsWithLookback(
   return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks);
 }
 
-function getSpokePoolClientsForContract(
+export function getSpokePoolClientsForContract(
   logger: winston.Logger,
   configStoreClient: AcrossConfigStoreClient,
   config: CommonConfig,

@@ -5,6 +5,7 @@ import {
   Clients,
   CommonConfig,
   constructClients,
+  getSpokePoolClientsForContract,
   getSpokePoolSigners,
   updateClients,
   updateSpokePoolClients,
@@ -195,14 +196,4 @@ export function getSpokePoolClientEventSearchConfigsForFastDataworker(
     fromBlocks,
     toBlocks,
   };
-}
-function getSpokePoolClientsForContract(
-  logger: winston.Logger,
-  configStoreClient: AcrossConfigStoreClient,
-  config: CommonConfig,
-  spokePools: { chainId: number; contract: ethers.Contract }[],
-  fromBlocks: { [chainId: number]: number },
-  toBlockOverride: { [chainId: number]: number }
-): SpokePoolClientsByChain | PromiseLike<SpokePoolClientsByChain> {
-  throw new Error("Function not implemented.");
 }
