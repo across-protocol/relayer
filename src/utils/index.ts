@@ -35,6 +35,7 @@ export * from "./Help";
 export * from "./LogUtils";
 export * from "./TypeUtils";
 export * from "./BigNumberUtils";
+export * from "./RedisUtils";
 
 export { ZERO_ADDRESS, MAX_SAFE_ALLOWANCE, MAX_UINT_VAL, replaceAddressCase } from "@uma/common";
 

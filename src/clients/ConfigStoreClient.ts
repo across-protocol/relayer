@@ -12,6 +12,8 @@ import {
   MakeOptional,
   toBN,
   max,
+  getBlockForTimestamp,
+  shouldCache,
 } from "../utils";
 
 import {
@@ -259,16 +261,7 @@ export class AcrossConfigStoreClient {
   }
 
   private async getBlockNumber(timestamp: number) {
-    if (!this.redisClient) return (await this.blockFinder.getBlockForTimestamp(timestamp)).number;
-    const key = `block_number_${timestamp}`;
-    const result = await this.redisClient.get(key);
-    if (result === null) {
-      const blockNumber = (await this.blockFinder.getBlockForTimestamp(timestamp)).number;
-      if (this.shouldCache(timestamp)) await this.redisClient.set(key, blockNumber.toString());
-      return blockNumber;
-    } else {
-      return parseInt(result);
-    }
+    return await getBlockForTimestamp(1, timestamp, getCurrentTime(), this.blockFinder, this.redisClient);
   }
 
   private async getUtilization(l1Token: string, blockNumber: number, amount: BigNumber, timestamp: number) {
@@ -277,17 +270,12 @@ export class AcrossConfigStoreClient {
     const result = await this.redisClient.get(key);
     if (result === null) {
       const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, blockNumber, amount);
-      if (this.shouldCache(timestamp)) await this.redisClient.set(key, `${current.toString()},${post.toString()}`);
+      if (shouldCache(getCurrentTime(), timestamp))
+        await this.redisClient.set(key, `${current.toString()},${post.toString()}`);
       return { current, post };
     } else {
       const [current, post] = result.split(",").map(BigNumber.from);
       return { current, post };
     }
-  }
-
-  // Avoid caching calls that are recent enough to be affected by things like reorgs.
-  private shouldCache(eventTimestamp: number) {
-    // Current time must be >= 5 minutes past the event timestamp for it to be stable enough to cache.
-    return getCurrentTime() - eventTimestamp >= 300;
   }
 }

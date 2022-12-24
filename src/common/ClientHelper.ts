@@ -6,6 +6,9 @@ import {
   Wallet,
   Contract,
   getDeployedBlockNumber,
+  getBlockForTimestamp,
+  Block,
+  getCurrentTime,
 } from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
@@ -42,35 +45,24 @@ export async function constructSpokePoolClientsWithLookback(
   });
   const blockFinders = Object.fromEntries(
     spokePools.map((obj) => {
-      return [obj.chainId, new BlockFinder(obj.contract.provider.getBlock.bind(obj.contract.provider))];
+      return [obj.chainId, new BlockFinder<Block>(obj.contract.provider.getBlock.bind(obj.contract.provider))];
     })
   );
-
-  // Get the block number for a given timestamp fresh from on-chain data if not found in redis cache.
-  const getBlockForTimestamp = async (chainId, timestamp, currentChainTime) => {
-    const blockFinder = blockFinders[chainId];
-    if (!configStoreClient.redisClient) return (await blockFinder.getBlockForTimestamp(timestamp)).number;
-    const key = `${chainId}_block_number_${timestamp}`;
-    const result = await configStoreClient.redisClient.get(key);
-    if (result === null) {
-      const blockNumber = (await blockFinder.getBlockForTimestamp(timestamp)).number;
-      // Avoid caching calls that are recent enough to be affected by things like reorgs.
-      // Current time must be >= 5 minutes past the event timestamp for it to be stable enough to cache.
-      if (currentChainTime - timestamp >= 300) await configStoreClient.redisClient.set(key, blockNumber.toString());
-      return blockNumber;
-    } else {
-      return parseInt(result);
-    }
-  };
+  const currentTime = getCurrentTime();
 
   const fromBlocks = Object.fromEntries(
     await Promise.all(
       initialLookBackOverride > 0
         ? spokePools.map(async (obj) => {
-            const latestBlockTime = (await obj.contract.provider.getBlock("latest")).timestamp;
             return [
               obj.chainId,
-              await getBlockForTimestamp(obj.chainId, latestBlockTime - initialLookBackOverride, latestBlockTime),
+              await getBlockForTimestamp(
+                obj.chainId,
+                currentTime - initialLookBackOverride,
+                currentTime,
+                blockFinders[obj.chainId],
+                configStoreClient.redisClient
+              ),
             ];
           })
         : spokePools.map(async (obj) => [obj.chainId, await getDeployedBlockNumber("SpokePool", obj.chainId)])
