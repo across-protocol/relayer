@@ -126,6 +126,13 @@ export function sortEventsDescendingInPlace<T extends SortableEvent>(events: T[]
   });
 }
 
+// Returns true if ex is older than ey.
+export function isEventOlder<T extends SortableEvent>(ex: T, ey: T): boolean {
+  if (ex.blockNumber !== ey.blockNumber) return ex.blockNumber < ey.blockNumber;
+  if (ex.transactionIndex !== ey.transactionIndex) return ex.transactionIndex < ey.transactionIndex;
+  return ex.logIndex < ey.logIndex;
+}
+
 export function getTransactionHashes(events: SortableEvent[]) {
   return [...new Set(events.map((e) => e.transactionHash))];
 }

@@ -238,7 +238,7 @@ export class HubPoolClient {
 
   getMostRecentProposedRootBundle(latestBlockToSearch: number) {
     return sortEventsDescending(this.proposedRootBundles).find(
-      (proposedRootBundle: ProposedRootBundle) => proposedRootBundle.blockNumber <= latestBlockToSearch
+      (proposedRootBundle: ProposedRootBundle) => proposedRootBundle.blockNumber < latestBlockToSearch
     ) as ProposedRootBundle;
   }
 

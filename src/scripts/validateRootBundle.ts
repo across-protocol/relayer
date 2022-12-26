@@ -18,6 +18,8 @@ import {
   startupLogLevel,
   Logger,
   getLatestInvalidBundleStartBlocks,
+  Contract,
+  isEventOlder,
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
@@ -25,10 +27,11 @@ import {
   updateDataworkerClients,
 } from "../dataworker/DataworkerClientHelper";
 import { BlockFinder } from "@uma/sdk";
-import { PendingRootBundle } from "../interfaces";
+import { PendingRootBundle, SortableEvent } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
 import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
+import * as uma from "@uma/contracts-node";
 
 config();
 let logger: winston.Logger;
@@ -56,6 +59,23 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
 
   await updateDataworkerClients(clients, false);
   const precedingProposeRootBundleEvent = clients.hubPoolClient.getMostRecentProposedRootBundle(priceRequestBlock);
+
+  // Find dispute transaction so we can gain additional confidence that the preceding root bundle is older than the
+  // dispute. This is a sanity test against the case where a dispute was submitted atomically following proposal
+  // in the same block.
+  const dvm = new Contract(
+    "0x8B1631ab830d11531aE83725fDa4D86012eCCd77",
+    uma.getAbi("Voting"),
+    clients.hubPoolClient.hubPool.provider
+  );
+  const filter = dvm.filters.PriceRequestAdded();
+  const disputes = await dvm.queryFilter(filter, priceRequestBlock, priceRequestBlock);
+  const dispute = disputes.find((e) => e.args.time.toString() === priceRequestTime.toString());
+  if (!dispute) throw new Error("Could not find PriceRequestAdded event on DVM matching price request time");
+
+  if (!isEventOlder(precedingProposeRootBundleEvent, dispute as SortableEvent))
+    throw new Error("Failed to identify root bundle directly preceding dispute");
+
   const rootBundle: PendingRootBundle = {
     poolRebalanceRoot: precedingProposeRootBundleEvent.poolRebalanceRoot,
     relayerRefundRoot: precedingProposeRootBundleEvent.relayerRefundRoot,
