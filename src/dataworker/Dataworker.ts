@@ -1062,7 +1062,7 @@ export class Dataworker {
     }
 
     const executedLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
-      this.clients.hubPoolClient.getMostRecentProposedRootBundle(this.clients.hubPoolClient.latestBlockNumber),
+      this.clients.hubPoolClient.getLatestProposedRootBundle(),
       this.clients.hubPoolClient.latestBlockNumber
     );
 

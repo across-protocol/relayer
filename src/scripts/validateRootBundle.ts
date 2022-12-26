@@ -20,6 +20,7 @@ import {
   getLatestInvalidBundleStartBlocks,
   Contract,
   isEventOlder,
+  sortEventsDescending,
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
@@ -57,12 +58,10 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
   );
   const priceRequestBlock = (await blockFinder.getBlockForTimestamp(priceRequestTime)).number;
 
-  await updateDataworkerClients(clients, false);
-  const precedingProposeRootBundleEvent = clients.hubPoolClient.getMostRecentProposedRootBundle(priceRequestBlock);
-
   // Find dispute transaction so we can gain additional confidence that the preceding root bundle is older than the
   // dispute. This is a sanity test against the case where a dispute was submitted atomically following proposal
-  // in the same block.
+  // in the same block. This also handles the edge case where multiple disputes and proposals are in the
+  // same block.
   const dvm = new Contract(
     "0x8B1631ab830d11531aE83725fDa4D86012eCCd77",
     uma.getAbi("Voting"),
@@ -73,8 +72,12 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
   const dispute = disputes.find((e) => e.args.time.toString() === priceRequestTime.toString());
   if (!dispute) throw new Error("Could not find PriceRequestAdded event on DVM matching price request time");
 
-  if (!isEventOlder(precedingProposeRootBundleEvent, dispute as SortableEvent))
-    throw new Error("Failed to identify root bundle directly preceding dispute");
+  await updateDataworkerClients(clients, false);
+  const precedingProposeRootBundleEvent = sortEventsDescending(clients.hubPoolClient.getProposedRootBundles()).find(
+    (e) => isEventOlder(e as SortableEvent, dispute as SortableEvent)
+  );
+
+  if (!precedingProposeRootBundleEvent) throw new Error("Failed to identify a root bundle preceding dispute");
 
   const rootBundle: PendingRootBundle = {
     poolRebalanceRoot: precedingProposeRootBundleEvent.poolRebalanceRoot,
