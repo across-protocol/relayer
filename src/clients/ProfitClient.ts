@@ -110,7 +110,6 @@ export class ProfitClient {
   }
 
   getTotalGasCost(chainId: number): BigNumber {
-    // TODO: Figure out where the mysterious BigNumber -> string conversion happens.
     return this.totalGasCosts[chainId] ? toBN(this.totalGasCosts[chainId]) : toBN(0);
   }
 
