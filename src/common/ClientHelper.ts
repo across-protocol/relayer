@@ -14,7 +14,7 @@ import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolCli
 import { CommonConfig } from "./Config";
 import { createClient } from "redis4";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { BlockFinder } from "@uma/sdk";
+import { BlockFinder } from "@uma/financial-templates-lib";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
