@@ -18,9 +18,8 @@ import {
   startupLogLevel,
   Logger,
   getLatestInvalidBundleStartBlocks,
-  Contract,
-  isEventOlder,
-  sortEventsDescending,
+  getDvmContract,
+  getDisputedProposal,
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
@@ -28,16 +27,15 @@ import {
   updateDataworkerClients,
 } from "../dataworker/DataworkerClientHelper";
 import { BlockFinder } from "@uma/sdk";
-import { PendingRootBundle, SortableEvent } from "../interfaces";
+import { PendingRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
 import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
-import * as uma from "@uma/contracts-node";
 
 config();
 let logger: winston.Logger;
 
-export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
+export async function validate(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
   logger = _logger;
   if (!process.env.REQUEST_TIME) {
     throw new Error("Must set environment variable 'REQUEST_TIME=<NUMBER>' to disputed price request time");
@@ -62,21 +60,14 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
   // dispute. This is a sanity test against the case where a dispute was submitted atomically following proposal
   // in the same block. This also handles the edge case where multiple disputes and proposals are in the
   // same block.
-  const dvm = new Contract(
-    "0x8B1631ab830d11531aE83725fDa4D86012eCCd77",
-    uma.getAbi("Voting"),
-    clients.hubPoolClient.hubPool.provider
-  );
-  const filter = dvm.filters.PriceRequestAdded();
-  const disputes = await dvm.queryFilter(filter, priceRequestBlock, priceRequestBlock);
-  const dispute = disputes.find((e) => e.args.time.toString() === priceRequestTime.toString());
-  if (!dispute) throw new Error("Could not find PriceRequestAdded event on DVM matching price request time");
-
+  const dvm = getDvmContract(clients.configStoreClient.configStore.provider);
   await updateDataworkerClients(clients, false);
-  const precedingProposeRootBundleEvent = sortEventsDescending(clients.hubPoolClient.getProposedRootBundles()).find(
-    (e) => isEventOlder(e as SortableEvent, dispute as SortableEvent)
+  const precedingProposeRootBundleEvent = await getDisputedProposal(
+    dvm,
+    clients.hubPoolClient,
+    priceRequestTime,
+    priceRequestBlock
   );
-
   if (!precedingProposeRootBundleEvent) throw new Error("Failed to identify a root bundle preceding dispute");
 
   const rootBundle: PendingRootBundle = {
@@ -163,7 +154,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
   });
 }
 
-export async function run(_logger: winston.Logger) {
+export async function run(_logger: winston.Logger): Promise<void> {
   const baseSigner: Wallet = await getSigner();
   await validate(_logger, baseSigner);
 }
