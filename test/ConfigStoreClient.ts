@@ -270,6 +270,12 @@ describe("AcrossConfigStoreClient", async function () {
     });
   });
   describe("GlobalConfig", function () {
+    it("Gets latest version", async function () {
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "6");
+      await updateAllClients();
+      const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[0];
+      expect(configStoreClient.configStoreVersion).to.equal("6");
+    });
     it("Get max refund count for block", async function () {
       await configStore.updateGlobalConfig(
         utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_RELAYER_REPAYMENT_LEAF_SIZE),

@@ -6,6 +6,7 @@ import {
   Wallet,
   Contract,
   getDeployedBlockNumber,
+  checkConfigStoreVersion,
 } from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
@@ -147,4 +148,5 @@ export async function constructClients(
 
 export async function updateClients(clients: Clients) {
   await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
+  checkConfigStoreVersion(clients.configStoreClient);
 }

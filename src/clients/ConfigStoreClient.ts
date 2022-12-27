@@ -32,6 +32,7 @@ import { createClient } from "redis4";
 export const GLOBAL_CONFIG_STORE_KEYS = {
   MAX_RELAYER_REPAYMENT_LEAF_SIZE: "MAX_RELAYER_REPAYMENT_LEAF_SIZE",
   MAX_POOL_REBALANCE_LEAF_SIZE: "MAX_POOL_REBALANCE_LEAF_SIZE",
+  VERSION: "VERSION",
 };
 
 type RedisClient = ReturnType<typeof createClient>;
@@ -45,6 +46,7 @@ export class AcrossConfigStoreClient {
   public cumulativeMaxRefundCountUpdates: GlobalConfigUpdate[] = [];
   public cumulativeMaxL1TokenCountUpdates: GlobalConfigUpdate[] = [];
   public cumulativeSpokeTargetBalanceUpdates: SpokeTargetBalanceUpdate[] = [];
+  public configStoreVersion = "0";
 
   private rateModelDictionary: across.rateModel.RateModelDictionary;
   public firstBlockToSearch: number;
@@ -245,6 +247,8 @@ export class AcrossConfigStoreClient {
         if (!isNaN(args.value)) this.cumulativeMaxRefundCountUpdates.push(args);
       } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE)) {
         if (!isNaN(args.value)) this.cumulativeMaxL1TokenCountUpdates.push(args);
+      } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION)) {
+        if (!isNaN(args.value)) this.configStoreVersion = args.value;
       } else {
         continue;
       }
