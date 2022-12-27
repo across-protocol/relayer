@@ -236,10 +236,8 @@ export class HubPoolClient {
     );
   }
 
-  getMostRecentProposedRootBundle(latestBlockToSearch: number) {
-    return sortEventsDescending(this.proposedRootBundles).find(
-      (proposedRootBundle: ProposedRootBundle) => proposedRootBundle.blockNumber <= latestBlockToSearch
-    ) as ProposedRootBundle;
+  getLatestProposedRootBundle() {
+    return sortEventsDescending(this.proposedRootBundles)[0] as ProposedRootBundle;
   }
 
   getFollowingRootBundle(currentRootBundle: ProposedRootBundle) {

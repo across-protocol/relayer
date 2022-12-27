@@ -18,6 +18,8 @@ import {
   startupLogLevel,
   Logger,
   getLatestInvalidBundleStartBlocks,
+  getDvmContract,
+  getDisputedProposal,
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
@@ -33,7 +35,7 @@ import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
 config();
 let logger: winston.Logger;
 
-export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
+export async function validate(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
   logger = _logger;
   if (!process.env.REQUEST_TIME) {
     throw new Error("Must set environment variable 'REQUEST_TIME=<NUMBER>' to disputed price request time");
@@ -54,8 +56,20 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
   );
   const priceRequestBlock = (await blockFinder.getBlockForTimestamp(priceRequestTime)).number;
 
+  // Find dispute transaction so we can gain additional confidence that the preceding root bundle is older than the
+  // dispute. This is a sanity test against the case where a dispute was submitted atomically following proposal
+  // in the same block. This also handles the edge case where multiple disputes and proposals are in the
+  // same block.
+  const dvm = getDvmContract(clients.configStoreClient.configStore.provider);
   await updateDataworkerClients(clients, false);
-  const precedingProposeRootBundleEvent = clients.hubPoolClient.getMostRecentProposedRootBundle(priceRequestBlock);
+  const precedingProposeRootBundleEvent = await getDisputedProposal(
+    dvm,
+    clients.hubPoolClient,
+    priceRequestTime,
+    priceRequestBlock
+  );
+  if (!precedingProposeRootBundleEvent) throw new Error("Failed to identify a root bundle preceding dispute");
+
   const rootBundle: PendingRootBundle = {
     poolRebalanceRoot: precedingProposeRootBundleEvent.poolRebalanceRoot,
     relayerRefundRoot: precedingProposeRootBundleEvent.relayerRefundRoot,
@@ -140,7 +154,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
   });
 }
 
-export async function run(_logger: winston.Logger) {
+export async function run(_logger: winston.Logger): Promise<void> {
   const baseSigner: Wallet = await getSigner();
   await validate(_logger, baseSigner);
 }
