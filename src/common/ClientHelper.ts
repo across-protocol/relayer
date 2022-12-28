@@ -45,7 +45,10 @@ export async function constructSpokePoolClientsWithLookback(
   });
   const blockFinders = Object.fromEntries(
     spokePools.map((obj) => {
-      return [obj.chainId, new BlockFinder<Block>(obj.contract.provider.getBlock.bind(obj.contract.provider))];
+      return [
+        obj.chainId,
+        new BlockFinder<Block>(obj.contract.provider.getBlock.bind(obj.contract.provider), [], obj.chainId),
+      ];
     })
   );
   const currentTime = getCurrentTime();
