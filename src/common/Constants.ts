@@ -4,7 +4,7 @@ export const CONFIG_STORE_VERSION = 0;
 
 // Do not change this value. Set 0 as the default version so that all timestamps before the first version update are
 // deemed valid by ConfigStoreClient.hasValidConfigStoreVersionForTimestamp().
-export const DEFAULT_CONFIG_STORE_VERSION = 1;
+export const DEFAULT_CONFIG_STORE_VERSION = 0;
 
 // Used for determining which block range corresponsd to which network. In order, the block ranges passed
 // in the HubPool's proposeRootBundle method should be: Mainnet, Optimism, Polygon, Boba, Arbitrum

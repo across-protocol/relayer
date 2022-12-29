@@ -181,7 +181,7 @@ export class AcrossConfigStoreClient {
     return this.isValidConfigStoreVersion(version);
   }
 
-  public isValidConfigStoreVersion(version: number): boolean {
+  isValidConfigStoreVersion(version: number): boolean {
     return CONFIG_STORE_VERSION >= version;
   }
 

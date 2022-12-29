@@ -1,4 +1,4 @@
-import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolRebalanceLeaves, assert } from "./utils";
+import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolRebalanceLeaves, hre } from "./utils";
 import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
 import { toBNWei, toWei, buildPoolRebalanceLeafTree, createSpyLogger } from "./utils";
 import { getContractFactory, hubPoolFixture, toBN, utf8ToHex } from "./utils";
@@ -301,7 +301,8 @@ describe("AcrossConfigStoreClient", async function () {
       expect(configStoreClient.configStoreVersion).to.equal(0);
 
       // Local config store version matches one in contract's global config:
-      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "0");
+      configStoreClient.setConfigStoreVersion(1);
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "1");
       const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[0];
       const initialUpdateTime = (await ethers.provider.getBlock(initialUpdate.blockNumber)).timestamp;
       await updateAllClients();
@@ -312,19 +313,9 @@ describe("AcrossConfigStoreClient", async function () {
       expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(0)).to.equal(true);
       expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(initialUpdateTime - 1)).to.equal(true);
 
-      // Update global config:
-      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "1");
-      const secondUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[1];
-      const secondUpdateTime = (await ethers.provider.getBlock(secondUpdate.blockNumber)).timestamp;
-      await updateAllClients();
-
-      // All times up until the second update are true since the local config version is 0.
-      expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(secondUpdateTime)).to.equal(false);
-      expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(secondUpdateTime - 1)).to.equal(true);
-
-      // Now pretend we bump the local version to 1:
-      configStoreClient.setConfigStoreVersion(1);
-      expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(secondUpdateTime)).to.equal(true);
+      // Now pretend we downgrade the local version such that it seems we are no longer up to date:
+      configStoreClient.setConfigStoreVersion(0);
+      expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(initialUpdateTime)).to.equal(false);
 
       // All previous times before the first update are still fine.
       expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(0)).to.equal(true);

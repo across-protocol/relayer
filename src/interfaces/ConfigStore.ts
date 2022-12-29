@@ -45,7 +45,7 @@ export interface TokenConfig extends SortableEvent {
 }
 
 export interface GlobalConfigUpdate extends SortableEvent {
-  value: string;
+  value: number;
 }
 
 export interface ConfigStoreVersionUpdate extends GlobalConfigUpdate {

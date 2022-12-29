@@ -1,4 +1,4 @@
-import { buildFillForRepaymentChain, lastSpyLogIncludes, hre, spyLogIncludes } from "./utils";
+import { buildFillForRepaymentChain, lastSpyLogIncludes, hre, spyLogIncludes, lastSpyLogLevel } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit } from "./utils";
 import { HubPoolClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, BUNDLE_END_BLOCK_BUFFER, createRandomBytes32 } from "./constants";
@@ -348,5 +348,6 @@ describe("Dataworker: Validate pending root bundle", async function () {
 
     expect(lastSpyLogIncludes(spy, "Skipping dispute")).to.be.true;
     expect(spy.getCall(-1).lastArg.reason).to.equal("out-of-date-config-store-version");
+    expect(lastSpyLogLevel(spy)).to.equal("error");
   });
 });

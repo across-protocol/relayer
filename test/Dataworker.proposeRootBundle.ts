@@ -1,4 +1,4 @@
-import { buildFillForRepaymentChain, lastSpyLogIncludes } from "./utils";
+import { buildFillForRepaymentChain, lastSpyLogIncludes, lastSpyLogLevel } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit, toBNWei } from "./utils";
 import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, originChainId, utf8ToHex } from "./constants";
@@ -240,5 +240,6 @@ describe("Dataworker: Propose root bundle", async function () {
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     expect(multiCallerClient.transactionCount()).to.equal(0);
     expect(lastSpyLogIncludes(spy, "Skipping proposal because missing updated ConfigStore version")).to.be.true;
+    expect(lastSpyLogLevel(spy)).to.equal("warn");
   });
 });

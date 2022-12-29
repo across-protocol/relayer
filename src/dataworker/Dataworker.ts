@@ -659,6 +659,8 @@ export class Dataworker {
       1,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
+    // If config store version isn't up to date, return early. This is a simple rule that is perhaps too aggressive
+    // but the proposer role is a specialized one and the user should always be using updated software.
     if (!this.clients.configStoreClient.hasValidConfigStoreVersionForTimestamp()) {
       this.logger.debug({
         at: "Dataworke#validate",
