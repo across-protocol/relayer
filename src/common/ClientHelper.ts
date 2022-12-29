@@ -6,12 +6,15 @@ import {
   Wallet,
   Contract,
   getDeployedBlockNumber,
+  getBlockForTimestamp,
+  Block,
+  getCurrentTime,
 } from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { createClient } from "redis4";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { utils } from "@across-protocol/sdk-v2";
+import { BlockFinder } from "@uma/financial-templates-lib";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -33,21 +36,42 @@ export async function constructSpokePoolClientsWithLookback(
   configStoreClient: AcrossConfigStoreClient,
   config: CommonConfig,
   baseSigner: Wallet,
-  initialLookBackOverride = 0
+  initialLookBackOverride: number,
+  hubPoolChainId: number
 ): Promise<SpokePoolClientsByChain> {
   // Set up Spoke signers and connect them to spoke pool contract objects:
   const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
   const spokePools = config.spokePoolChains.map((chainId) => {
     return { chainId, contract: getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) };
   });
+  const blockFinders = Object.fromEntries(
+    spokePools.map((obj) => {
+      if (obj.chainId === hubPoolChainId) return [hubPoolChainId, configStoreClient.blockFinder];
+      else
+        return [
+          obj.chainId,
+          new BlockFinder<Block>(obj.contract.provider.getBlock.bind(obj.contract.provider), [], obj.chainId),
+        ];
+    })
+  );
+  const currentTime = getCurrentTime();
 
   const fromBlocks = Object.fromEntries(
     await Promise.all(
       initialLookBackOverride > 0
-        ? spokePools.map(async (obj) => [
-            obj.chainId,
-            await utils.findBlockAtOrOlder(obj.contract.provider, initialLookBackOverride),
-          ])
+        ? spokePools.map(async (obj) => {
+            return [
+              obj.chainId,
+              await getBlockForTimestamp(
+                hubPoolChainId,
+                obj.chainId,
+                currentTime - initialLookBackOverride,
+                currentTime,
+                blockFinders[obj.chainId],
+                configStoreClient.redisClient
+              ),
+            ];
+          })
         : spokePools.map(async (obj) => [obj.chainId, await getDeployedBlockNumber("SpokePool", obj.chainId)])
     )
   );
@@ -111,7 +135,7 @@ export async function constructClients(
     // ProposeRootBundle in order to match a bundle block evaluation block range with a pending root bundle.
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
-  const hubPoolClient = new HubPoolClient(logger, hubPool, hubPoolClientSearchSettings);
+  const hubPoolClient = new HubPoolClient(logger, hubPool, config.hubPoolChainId, hubPoolClientSearchSettings);
 
   const rateModelClientSearchSettings = {
     fromBlock: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),

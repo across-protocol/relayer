@@ -30,7 +30,8 @@ export async function constructMonitorClients(
     commonClients.configStoreClient,
     config,
     baseSigner,
-    config.maxRelayerLookBack
+    config.maxRelayerLookBack,
+    config.hubPoolChainId
   );
   const bundleDataClient = new BundleDataClient(logger, commonClients, spokePoolClients, config.spokePoolChains);
 
