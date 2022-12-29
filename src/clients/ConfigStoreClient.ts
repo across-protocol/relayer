@@ -14,6 +14,8 @@ import {
   max,
 } from "../utils";
 
+import { CONFIG_STORE_VERSION } from "../common/Constants";
+
 import {
   L1TokenTransferThreshold,
   TokenConfig,
@@ -46,7 +48,7 @@ export class AcrossConfigStoreClient {
   public cumulativeMaxRefundCountUpdates: GlobalConfigUpdate[] = [];
   public cumulativeMaxL1TokenCountUpdates: GlobalConfigUpdate[] = [];
   public cumulativeSpokeTargetBalanceUpdates: SpokeTargetBalanceUpdate[] = [];
-  public configStoreVersion = "0";
+  public configStoreVersion = "-1";
 
   private rateModelDictionary: across.rateModel.RateModelDictionary;
   public firstBlockToSearch: number;
@@ -260,6 +262,13 @@ export class AcrossConfigStoreClient {
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.logger.debug({ at: "ConfigStore", message: "ConfigStore client updated!" });
+  }
+
+  public validateConfigStoreVersion() {
+    if (this.configStoreVersion !== CONFIG_STORE_VERSION)
+      throw new Error(
+        `Config store version mismatch: { on-chain: ${CONFIG_STORE_VERSION}, local: ${this.configStoreVersion} }`
+      );
   }
 
   private async getBlockNumber(timestamp: number) {

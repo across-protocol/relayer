@@ -24,6 +24,7 @@ import {
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { BundleDataClient, TokenClient } from "../../src/clients";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
+import { MockConfigStoreClient } from "../mocks/MockConfigStoreClient";
 
 async function _constructSpokePoolClientsWithLookback(
   spokePools: Contract[],
@@ -162,7 +163,7 @@ export async function setupDataworker(
   );
 
   const hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool);
-  const configStoreClient = new clients.AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
+  const configStoreClient = new MockConfigStoreClient(spyLogger, configStore, hubPoolClient);
 
   const multiCallerClient = new clients.MultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 
