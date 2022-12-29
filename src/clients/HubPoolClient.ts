@@ -38,6 +38,7 @@ export class HubPoolClient {
   constructor(
     readonly logger: winston.Logger,
     readonly hubPool: Contract,
+    readonly chainId: number = 1,
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
