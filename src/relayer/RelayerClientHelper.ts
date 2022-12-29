@@ -27,7 +27,8 @@ export async function constructRelayerClients(
     commonClients.configStoreClient,
     config,
     baseSigner,
-    config.maxRelayerLookBack
+    config.maxRelayerLookBack,
+    config.hubPoolChainId
   );
 
   const acrossApiClient = new AcrossApiClient(logger, commonClients.hubPoolClient, config.relayerTokens);

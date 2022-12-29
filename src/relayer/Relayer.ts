@@ -10,7 +10,6 @@ import {
 } from "../utils";
 import { createFormatFunction, etherscanLink, formatFeePct, toBN, toBNWei } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
-
 import { Deposit } from "../interfaces";
 import { RelayerConfig } from "./RelayerConfig";
 

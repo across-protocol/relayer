@@ -1,4 +1,4 @@
-import { winston, BigNumber, MAX_UINT_VAL } from "../utils";
+import { winston, BigNumber } from "../utils";
 import { l2TokensToL1TokenValidation } from "../common";
 import axios, { AxiosError } from "axios";
 import get from "lodash.get";
