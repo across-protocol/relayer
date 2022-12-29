@@ -147,7 +147,4 @@ export async function constructClients(
 
 export async function updateClients(clients: Clients) {
   await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
-
-  // This should throw an error if the version is unexpected.
-  clients.configStoreClient.validateConfigStoreVersion();
 }

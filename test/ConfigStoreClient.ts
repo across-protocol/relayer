@@ -271,11 +271,19 @@ describe("AcrossConfigStoreClient", async function () {
     });
   });
   describe("GlobalConfig", function () {
-    it("Gets latest version", async function () {
+    it("Gets config store version for time", async function () {
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "6");
       await updateAllClients();
       const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[0];
-      expect(configStoreClient.configStoreVersion).to.equal("6");
+      const initialUpdateTime = (await ethers.provider.getBlock(initialUpdate.blockNumber)).timestamp;
+      expect(configStoreClient.getConfigStoreVersionForTimestamp(initialUpdateTime)).to.equal(6);
+
+      // Time when there was no update
+      expect(configStoreClient.getConfigStoreVersionForTimestamp(initialUpdateTime-1)).to.equal(-1);
+
+      // Reverse lookup block for version.
+      expect(configStoreClient.getTimeForConfigStoreVersion(6)).to.equal(initialUpdateTime);
+      expect(() => configStoreClient.getTimeForConfigStoreVersion(5)).to.throw(/Could not find time for version/);
     });
     it("Get max refund count for block", async function () {
       await configStore.updateGlobalConfig(
@@ -285,7 +293,7 @@ describe("AcrossConfigStoreClient", async function () {
       await updateAllClients();
       const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[0];
       expect(configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(initialUpdate.blockNumber)).to.equal(
-        MAX_REFUNDS_PER_RELAYER_REFUND_LEAF.toString()
+        MAX_REFUNDS_PER_RELAYER_REFUND_LEAF
       );
 
       // Block number when there is no config
@@ -301,7 +309,7 @@ describe("AcrossConfigStoreClient", async function () {
       await updateAllClients();
       const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[0];
       expect(configStoreClient.getMaxL1TokenCountForPoolRebalanceLeafForBlock(initialUpdate.blockNumber)).to.equal(
-        MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF.toString()
+        MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF
       );
 
       // Block number when there is no config
@@ -309,13 +317,6 @@ describe("AcrossConfigStoreClient", async function () {
         configStoreClient.getMaxL1TokenCountForPoolRebalanceLeafForBlock(initialUpdate.blockNumber - 1)
       ).to.throw(/Could not find MaxL1TokenCount/);
     });
-  });
-  it("Throws if version is incorrect", () => {
-    expect(() => configStoreClient.validateConfigStoreVersion()).to.throw(/version mismatch/);
-
-    // Override the version to be correct.
-    configStoreClient.configStoreVersion = CONFIG_STORE_VERSION;
-    expect(() => configStoreClient.validateConfigStoreVersion()).to.not.throw();
   });
 });
 

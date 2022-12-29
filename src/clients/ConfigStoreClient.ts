@@ -12,6 +12,7 @@ import {
   MakeOptional,
   toBN,
   max,
+  sortEventsAscending,
 } from "../utils";
 
 import { CONFIG_STORE_VERSION } from "../common/Constants";
@@ -24,6 +25,7 @@ import {
   SpokeTargetBalanceUpdate,
   SpokePoolTargetBalance,
   RouteRateModelUpdate,
+  ConfigStoreVersionUpdate,
 } from "../interfaces";
 
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
@@ -48,7 +50,7 @@ export class AcrossConfigStoreClient {
   public cumulativeMaxRefundCountUpdates: GlobalConfigUpdate[] = [];
   public cumulativeMaxL1TokenCountUpdates: GlobalConfigUpdate[] = [];
   public cumulativeSpokeTargetBalanceUpdates: SpokeTargetBalanceUpdate[] = [];
-  public configStoreVersion = "-1";
+  public cumulativeConfigStoreVersionUpdates: ConfigStoreVersionUpdate[] = [];
 
   private rateModelDictionary: across.rateModel.RateModelDictionary;
   public firstBlockToSearch: number;
@@ -145,7 +147,7 @@ export class AcrossConfigStoreClient {
       (config) => config.blockNumber <= blockNumber
     );
     if (!config) throw new Error(`Could not find MaxRefundCount before block ${blockNumber}`);
-    return config.value;
+    return Number(config.value);
   }
 
   getMaxL1TokenCountForPoolRebalanceLeafForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number {
@@ -153,7 +155,23 @@ export class AcrossConfigStoreClient {
       (config) => config.blockNumber <= blockNumber
     );
     if (!config) throw new Error(`Could not find MaxL1TokenCount before block ${blockNumber}`);
-    return config.value;
+    return Number(config.value);
+  }
+
+  getConfigStoreVersionForTimestamp(timestamp: number = Number.MAX_SAFE_INTEGER): number {
+    const config = (sortEventsDescending(this.cumulativeConfigStoreVersionUpdates) as ConfigStoreVersionUpdate[]).find(
+      (config) => config.timestamp <= timestamp
+    );
+    if (!config) return -1;
+    return Number(config.value);
+  }
+
+  getTimeForConfigStoreVersion(version: number): number {
+    const config = (sortEventsAscending(this.cumulativeConfigStoreVersionUpdates) as ConfigStoreVersionUpdate[]).find(
+      (config) => config.value.toString() === version.toString()
+    );
+    if (!config) throw new Error(`Could not find time for version ${version}`);
+    return config.timestamp;
   }
 
   async update() {
@@ -170,6 +188,9 @@ export class AcrossConfigStoreClient {
       paginatedEventQuery(this.configStore, this.configStore.filters.UpdatedTokenConfig(), searchConfig),
       paginatedEventQuery(this.configStore, this.configStore.filters.UpdatedGlobalConfig(), searchConfig),
     ]);
+    const globalConfigUpdateTimes = (
+      await Promise.all(updatedGlobalConfigEvents.map((event) => this.configStore.provider.getBlock(event.blockNumber)))
+    ).map((block) => block.timestamp);
 
     // Save new TokenConfig updates.
     for (const event of updatedTokenConfigEvents) {
@@ -237,7 +258,8 @@ export class AcrossConfigStoreClient {
     }
 
     // Save new Global config updates.
-    for (const event of updatedGlobalConfigEvents) {
+    for (let i = 0; i < updatedGlobalConfigEvents.length; i++) {
+      const event = updatedGlobalConfigEvents[i];
       const args = {
         blockNumber: event.blockNumber,
         transactionIndex: event.transactionIndex,
@@ -250,7 +272,11 @@ export class AcrossConfigStoreClient {
       } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE)) {
         if (!isNaN(args.value)) this.cumulativeMaxL1TokenCountUpdates.push(args);
       } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION)) {
-        if (!isNaN(args.value)) this.configStoreVersion = args.value;
+        if (!isNaN(args.value))
+          this.cumulativeConfigStoreVersionUpdates.push({
+            ...args,
+            timestamp: globalConfigUpdateTimes[i],
+          });
       } else {
         continue;
       }
@@ -264,11 +290,8 @@ export class AcrossConfigStoreClient {
     this.logger.debug({ at: "ConfigStore", message: "ConfigStore client updated!" });
   }
 
-  public validateConfigStoreVersion() {
-    if (this.configStoreVersion !== CONFIG_STORE_VERSION)
-      throw new Error(
-        `Config store version mismatch: { on-chain: ${CONFIG_STORE_VERSION}, local: ${this.configStoreVersion} }`
-      );
+  public isValidConfigStoreVersion(version: number): boolean {
+    return version === CONFIG_STORE_VERSION;
   }
 
   private async getBlockNumber(timestamp: number) {

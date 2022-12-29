@@ -81,19 +81,37 @@ export class Relayer {
     // future.
     const latestHubPoolTime = this.clients.hubPoolClient.currentTime;
 
-    // Require that all fillable deposits meet the minimum specified number of confirmations.
+    const depositsWithIncorrectQuotes = [];
+    // Require that all fillable deposits meet the minimum specified number of confirmations and this relayer
+    // implementation supports the correct version at the time of the deposit.
     const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients, this.config.maxRelayerLookBack)
       .filter((x) => {
-        return (
+        const hasConfirmedEnough =  (
           x.deposit.quoteTimestamp + this.config.quoteTimeBuffer <= latestHubPoolTime &&
           x.deposit.originBlockNumber <=
             this.clients.spokePoolClients[x.deposit.originChainId].latestBlockNumber -
               mdcPerChain[x.deposit.originChainId]
         );
+        if (hasConfirmedEnough) {
+          const versionForQuoteTime = this.clients.configStoreClient.getConfigStoreVersionForTimestamp(
+            x.deposit.quoteTimestamp
+          );
+          if (!this.clients.configStoreClient.isValidConfigStoreVersion(versionForQuoteTime)) {
+            depositsWithIncorrectQuotes.push(x.deposit)
+            return false;
+          }
+          else return true;
+        }
       })
       .sort((a, b) =>
         a.unfilledAmount.mul(a.deposit.relayerFeePct).lt(b.unfilledAmount.mul(b.deposit.relayerFeePct)) ? 1 : -1
       );
+    if (depositsWithIncorrectQuotes.length > 0)
+      this.logger.warn({
+        at: "Relayer",
+        message: "Skipping some deposits because ConfigStoreVersion is not updated, are you using the latest code?",
+        depositsWithIncorrectQuotes: depositsWithIncorrectQuotes.length
+      });
     if (unfilledDeposits.length > 0) {
       this.logger.debug({ at: "Relayer", message: "Unfilled deposits found", number: unfilledDeposits.length });
     } else {

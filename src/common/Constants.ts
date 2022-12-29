@@ -1,4 +1,4 @@
-export const CONFIG_STORE_VERSION = "1";
+export const CONFIG_STORE_VERSION = 0;
 
 // Used for determining which block range corresponsd to which network. In order, the block ranges passed
 // in the HubPool's proposeRootBundle method should be: Mainnet, Optimism, Polygon, Boba, Arbitrum

@@ -1,7 +1,7 @@
 import { AcrossConfigStoreClient } from "../../src/clients";
 
 export class MockConfigStoreClient extends AcrossConfigStoreClient {
-  public validateConfigStoreVersion() {
-    // do nothing.
+  public isValidConfigStoreVersion(_version: number): boolean {
+    return true
   }
 }
