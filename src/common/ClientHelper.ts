@@ -36,7 +36,8 @@ export async function constructSpokePoolClientsWithLookback(
   configStoreClient: AcrossConfigStoreClient,
   config: CommonConfig,
   baseSigner: Wallet,
-  initialLookBackOverride = 0
+  initialLookBackOverride: number,
+  hubPoolChainId: number
 ): Promise<SpokePoolClientsByChain> {
   // Set up Spoke signers and connect them to spoke pool contract objects:
   const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
@@ -45,10 +46,12 @@ export async function constructSpokePoolClientsWithLookback(
   });
   const blockFinders = Object.fromEntries(
     spokePools.map((obj) => {
-      return [
-        obj.chainId,
-        new BlockFinder<Block>(obj.contract.provider.getBlock.bind(obj.contract.provider), [], obj.chainId),
-      ];
+      if (obj.chainId === hubPoolChainId) return [hubPoolChainId, configStoreClient.blockFinder];
+      else
+        return [
+          obj.chainId,
+          new BlockFinder<Block>(obj.contract.provider.getBlock.bind(obj.contract.provider), [], obj.chainId),
+        ];
     })
   );
   const currentTime = getCurrentTime();
@@ -60,6 +63,7 @@ export async function constructSpokePoolClientsWithLookback(
             return [
               obj.chainId,
               await getBlockForTimestamp(
+                hubPoolChainId,
                 obj.chainId,
                 currentTime - initialLookBackOverride,
                 currentTime,
@@ -131,7 +135,7 @@ export async function constructClients(
     // ProposeRootBundle in order to match a bundle block evaluation block range with a pending root bundle.
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
-  const hubPoolClient = new HubPoolClient(logger, hubPool, hubPoolClientSearchSettings);
+  const hubPoolClient = new HubPoolClient(logger, hubPool, config.hubPoolChainId, hubPoolClientSearchSettings);
 
   const rateModelClientSearchSettings = {
     fromBlock: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),

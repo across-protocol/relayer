@@ -39,7 +39,7 @@ export const GLOBAL_CONFIG_STORE_KEYS = {
 type RedisClient = ReturnType<typeof createClient>;
 
 export class AcrossConfigStoreClient {
-  private readonly blockFinder;
+  public readonly blockFinder;
 
   public cumulativeRateModelUpdates: across.rateModel.RateModelEvent[] = [];
   public cumulativeRouteRateModelUpdates: RouteRateModelUpdate[] = [];
@@ -261,7 +261,14 @@ export class AcrossConfigStoreClient {
   }
 
   private async getBlockNumber(timestamp: number) {
-    return await getBlockForTimestamp(1, timestamp, getCurrentTime(), this.blockFinder, this.redisClient);
+    return await getBlockForTimestamp(
+      this.hubPoolClient.chainId,
+      this.hubPoolClient.chainId,
+      timestamp,
+      getCurrentTime(),
+      this.blockFinder,
+      this.redisClient
+    );
   }
 
   private async getUtilization(l1Token: string, blockNumber: number, amount: BigNumber, timestamp: number) {

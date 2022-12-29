@@ -152,7 +152,8 @@ export async function constructFinalizerClients(_logger: winston.Logger, config,
     commonClients.configStoreClient,
     config,
     baseSigner,
-    config.maxFinalizerLookback
+    config.maxFinalizerLookback,
+    config.hubPoolChainId
   );
 
   return {
