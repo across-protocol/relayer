@@ -73,7 +73,7 @@ export async function setupDataworker(
   spokePoolClient_3: clients.SpokePoolClient;
   spokePoolClient_4: clients.SpokePoolClient;
   spokePoolClients: { [chainId: number]: clients.SpokePoolClient };
-  configStoreClient: clients.AcrossConfigStoreClient;
+  configStoreClient: MockConfigStoreClient;
   hubPoolClient: clients.HubPoolClient;
   dataworkerInstance: Dataworker;
   spyLogger: winston.Logger;
@@ -300,7 +300,7 @@ export async function setupFastDataworker(
   spokePoolClient_3: clients.SpokePoolClient;
   spokePoolClient_4: clients.SpokePoolClient;
   spokePoolClients: { [chainId: number]: clients.SpokePoolClient };
-  configStoreClient: clients.AcrossConfigStoreClient;
+  configStoreClient: MockConfigStoreClient;
   hubPoolClient: clients.HubPoolClient;
   dataworkerInstance: Dataworker;
   spyLogger: winston.Logger;

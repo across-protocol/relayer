@@ -1,7 +1,7 @@
 import { buildFillForRepaymentChain, lastSpyLogIncludes } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit, toBNWei } from "./utils";
 import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
-import { amountToDeposit, destinationChainId, originChainId } from "./constants";
+import { amountToDeposit, destinationChainId, originChainId, utf8ToHex } from "./constants";
 import { CHAIN_ID_TEST_LIST } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT } from "../src/utils";
@@ -10,13 +10,14 @@ import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT } from "../src/utils";
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { getDepositPath } from "../src/utils";
 import { FillWithBlock } from "../src/interfaces";
+import { MockConfigStoreClient } from "./mocks/MockConfigStoreClient";
 
 let spy: sinon.SinonSpy;
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
-let l1Token_1: Contract, hubPool: Contract;
+let l1Token_1: Contract, hubPool: Contract, configStore: Contract;
 let depositor: SignerWithAddress;
 
-let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
+let hubPoolClient: HubPoolClient, configStoreClient: MockConfigStoreClient;
 let dataworkerInstance: Dataworker, multiCallerClient: MultiCallerClient;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
@@ -31,6 +32,7 @@ describe("Dataworker: Propose root bundle", async function () {
       spokePool_2,
       erc20_2,
       configStoreClient,
+      configStore,
       hubPoolClient,
       l1Token_1,
       depositor,
@@ -210,5 +212,33 @@ describe("Dataworker: Propose root bundle", async function () {
     expect(dataworkerInstance.rootCache).to.not.deep.equal({});
     dataworkerInstance.clearCache();
     expect(dataworkerInstance.rootCache).to.deep.equal({});
+  });
+  it("Exits early if config store version is out of date", async function () {
+    // Set up test so that the latest version in the config store contract is higher than
+    // the version in the config store client.
+    const update = await configStore.updateGlobalConfig(utf8ToHex("VERSION"), "3");
+    const updateTime = (await configStore.provider.getBlock(update.blockNumber)).timestamp;
+    configStoreClient.setConfigStoreVersion(1);
+
+    // Now send a proposal after the update time. Dataworker should exit early.
+    await spokePool_1.setCurrentTime(updateTime + 1);
+    await updateAllClients();
+
+    const deposit = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token_1,
+      depositor,
+      destinationChainId,
+      amountToDeposit
+    );
+    await updateAllClients();
+    await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
+    await updateAllClients();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    expect(multiCallerClient.transactionCount()).to.equal(0);
+    expect(lastSpyLogIncludes(spy, "Skipping proposal because missing updated ConfigStore version")).to.be.true;
   });
 });

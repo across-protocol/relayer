@@ -5,14 +5,14 @@ import { getContractFactory, hubPoolFixture, toBN, utf8ToHex } from "./utils";
 import { amountToLp, destinationChainId, mockTreeRoot, refundProposalLiveness, totalBond } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
-import { HubPoolClient, AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
-import { CONFIG_STORE_VERSION } from "../src/common";
+import { HubPoolClient, GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
+import { MockConfigStoreClient } from "./mocks/MockConfigStoreClient";
 
 let spokePool: Contract, hubPool: Contract, l2Token: Contract;
 let configStore: Contract, l1Token: Contract, timer: Contract, weth: Contract;
 let owner: SignerWithAddress;
 
-let configStoreClient: AcrossConfigStoreClient, hubPoolClient: HubPoolClient;
+let configStoreClient: MockConfigStoreClient, hubPoolClient: HubPoolClient;
 
 // Same rate model used for across-v1 tests:
 // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L77
@@ -56,7 +56,8 @@ describe("AcrossConfigStoreClient", async function () {
 
     configStore = await (await getContractFactory("AcrossConfigStore", owner)).deploy();
     hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
-    configStoreClient = new AcrossConfigStoreClient(createSpyLogger().spyLogger, configStore, hubPoolClient);
+    configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore, hubPoolClient);
+    configStoreClient.setConfigStoreVersion(0);
 
     await setupTokensForWallet(spokePool, owner, [l1Token], weth, 100); // Seed owner to LP.
     await l1Token.approve(hubPool.address, amountToLp);
@@ -272,18 +273,62 @@ describe("AcrossConfigStoreClient", async function () {
   });
   describe("GlobalConfig", function () {
     it("Gets config store version for time", async function () {
+      // Can't set first update to 0:
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "0");
+      await updateAllClients();
+      expect(configStoreClient.cumulativeConfigStoreVersionUpdates.length).to.equal(0);
+
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "6");
       await updateAllClients();
-      const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[0];
+      const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[1];
       const initialUpdateTime = (await ethers.provider.getBlock(initialUpdate.blockNumber)).timestamp;
       expect(configStoreClient.getConfigStoreVersionForTimestamp(initialUpdateTime)).to.equal(6);
 
       // Time when there was no update
-      expect(configStoreClient.getConfigStoreVersionForTimestamp(initialUpdateTime-1)).to.equal(-1);
+      expect(configStoreClient.getConfigStoreVersionForTimestamp(initialUpdateTime - 1)).to.equal(0);
 
       // Reverse lookup block for version.
       expect(configStoreClient.getTimeForConfigStoreVersion(6)).to.equal(initialUpdateTime);
-      expect(() => configStoreClient.getTimeForConfigStoreVersion(5)).to.throw(/Could not find time for version/);
+      expect(configStoreClient.getTimeForConfigStoreVersion(5)).to.equal(0);
+
+      // Skip updates for versions that aren't greater than the previous version.
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "5");
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "6");
+      await updateAllClients();
+      expect(configStoreClient.cumulativeConfigStoreVersionUpdates.length).to.equal(1);
+    });
+    it("Validate config store version", async function () {
+      expect(configStoreClient.configStoreVersion).to.equal(0);
+
+      // Local config store version matches one in contract's global config:
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "0");
+      const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[0];
+      const initialUpdateTime = (await ethers.provider.getBlock(initialUpdate.blockNumber)).timestamp;
+      await updateAllClients();
+      expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(initialUpdateTime)).to.equal(true);
+
+      // Before any config store version updates, the version is always valid because the default config
+      // store version returned by the client is 0.
+      expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(0)).to.equal(true);
+      expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(initialUpdateTime - 1)).to.equal(true);
+
+      // Update global config:
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "1");
+      const secondUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[1];
+      const secondUpdateTime = (await ethers.provider.getBlock(secondUpdate.blockNumber)).timestamp;
+      await updateAllClients();
+
+      // All times up until the second update are true since the local config version is 0.
+      expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(secondUpdateTime)).to.equal(false);
+      expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(secondUpdateTime - 1)).to.equal(true);
+
+      // Now pretend we bump the local version to 1:
+      configStoreClient.setConfigStoreVersion(1);
+      expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(secondUpdateTime)).to.equal(true);
+
+      // All previous times before the first update are still fine.
+      expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(0)).to.equal(true);
+      expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(initialUpdateTime - 1)).to.equal(true);
     });
     it("Get max refund count for block", async function () {
       await configStore.updateGlobalConfig(

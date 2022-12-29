@@ -1,6 +1,14 @@
-import { HubPoolClient } from "../clients";
+import { AcrossConfigStoreClient, HubPoolClient } from "../clients";
 import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
-import { BigNumber, assign, getRealizedLpFeeForFills, getRefundForFills, sortEventsDescending, toBN } from "./";
+import {
+  BigNumber,
+  assign,
+  getRealizedLpFeeForFills,
+  getRefundForFills,
+  sortEventsDescending,
+  toBN,
+  winston,
+} from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 import _ from "lodash";
 
@@ -148,17 +156,20 @@ export function getFillsInRange(
   });
 }
 
+export type UnfilledDeposit = {
+  deposit: DepositWithBlock;
+  unfilledAmount: BigNumber;
+  fillCount: number;
+  invalidFills: Fill[];
+  requiresNewConfigStoreVersion: boolean;
+};
 // Returns all unfilled deposits over all spokePoolClients. Return values include the amount of the unfilled deposit.
 export function getUnfilledDeposits(
   spokePoolClients: SpokePoolClientsByChain,
-  maxUnfilledDepositLookBack: number
-): { deposit: DepositWithBlock; unfilledAmount: BigNumber; fillCount: number; invalidFills: Fill[] }[] {
-  const unfilledDeposits: {
-    deposit: DepositWithBlock;
-    unfilledAmount: BigNumber;
-    fillCount: number;
-    invalidFills: Fill[];
-  }[] = [];
+  maxUnfilledDepositLookBack: number,
+  configStoreClient: AcrossConfigStoreClient
+): UnfilledDeposit[] {
+  const unfilledDeposits: UnfilledDeposit[] = [];
   // Iterate over each chainId and check for unfilled deposits.
   const chainIds = Object.keys(spokePoolClients);
   for (const originChain of chainIds) {
@@ -186,7 +197,14 @@ export function getUnfilledDeposits(
     }
   }
 
-  return unfilledDeposits;
+  return unfilledDeposits.map((unfilledDeposit) => {
+    return {
+      ...unfilledDeposit,
+      requiresNewConfigStoreVersion: !configStoreClient.hasValidConfigStoreVersionForTimestamp(
+        unfilledDeposit.deposit.quoteTimestamp
+      ),
+    };
+  });
 }
 
 // Returns set of block numbers, keyed by chain ID, that represent the highest block number for

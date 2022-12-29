@@ -17,7 +17,7 @@ import {
   shouldCache,
 } from "../utils";
 
-import { CONFIG_STORE_VERSION } from "../common/Constants";
+import { CONFIG_STORE_VERSION, DEFAULT_CONFIG_STORE_VERSION } from "../common/Constants";
 
 import {
   L1TokenTransferThreshold,
@@ -164,7 +164,7 @@ export class AcrossConfigStoreClient {
     const config = (sortEventsDescending(this.cumulativeConfigStoreVersionUpdates) as ConfigStoreVersionUpdate[]).find(
       (config) => config.timestamp <= timestamp
     );
-    if (!config) return -1;
+    if (!config) return DEFAULT_CONFIG_STORE_VERSION;
     return Number(config.value);
   }
 
@@ -172,8 +172,17 @@ export class AcrossConfigStoreClient {
     const config = (sortEventsAscending(this.cumulativeConfigStoreVersionUpdates) as ConfigStoreVersionUpdate[]).find(
       (config) => config.value.toString() === version.toString()
     );
-    if (!config) throw new Error(`Could not find time for version ${version}`);
+    if (!config) return 0;
     return config.timestamp;
+  }
+
+  hasValidConfigStoreVersionForTimestamp(timestamp: number = Number.MAX_SAFE_INTEGER): boolean {
+    const version = this.getConfigStoreVersionForTimestamp(timestamp);
+    return this.isValidConfigStoreVersion(version);
+  }
+
+  public isValidConfigStoreVersion(version: number): boolean {
+    return CONFIG_STORE_VERSION >= version;
   }
 
   async update() {
@@ -274,11 +283,21 @@ export class AcrossConfigStoreClient {
       } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE)) {
         if (!isNaN(args.value)) this.cumulativeMaxL1TokenCountUpdates.push(args);
       } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION)) {
-        if (!isNaN(args.value))
+        // Skip version updates that aren't larger than the previous version. The first version must be > 0.
+        if (!isNaN(args.value)) {
+          if (this.cumulativeConfigStoreVersionUpdates.length === 0) {
+            if (Number(args.value) <= 0) continue;
+          } else if (
+            Number(args.value) <=
+            Number(this.cumulativeConfigStoreVersionUpdates[this.cumulativeConfigStoreVersionUpdates.length - 1].value)
+          ) {
+            continue;
+          }
           this.cumulativeConfigStoreVersionUpdates.push({
             ...args,
             timestamp: globalConfigUpdateTimes[i],
           });
+        }
       } else {
         continue;
       }
@@ -290,10 +309,6 @@ export class AcrossConfigStoreClient {
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.logger.debug({ at: "ConfigStore", message: "ConfigStore client updated!" });
-  }
-
-  public isValidConfigStoreVersion(version: number): boolean {
-    return version === CONFIG_STORE_VERSION;
   }
 
   private async getBlockNumber(timestamp: number) {
