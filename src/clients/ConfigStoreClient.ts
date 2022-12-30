@@ -61,7 +61,7 @@ export class AcrossConfigStoreClient {
 
   constructor(
     readonly logger: winston.Logger,
-    readonly configStore: Contract, // TODO: Rename to ConfigStore
+    readonly configStore: Contract,
     readonly hubPoolClient: HubPoolClient,
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
     readonly redisClient?: RedisClient
