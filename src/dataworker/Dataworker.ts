@@ -663,7 +663,7 @@ export class Dataworker {
     // but the proposer role is a specialized one and the user should always be using updated software.
     if (!this.clients.configStoreClient.hasValidConfigStoreVersionForTimestamp()) {
       this.logger.debug({
-        at: "Dataworke#validate",
+        at: "Dataworker#validate",
         message: "Cannot validate because missing updated ConfigStore version. Update to latest code.",
         latestVersionSupported: CONFIG_STORE_VERSION,
         latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
