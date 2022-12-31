@@ -273,6 +273,8 @@ describe("AcrossConfigStoreClient", async function () {
   });
   describe("GlobalConfig", function () {
     it("Gets config store version for time", async function () {
+      expect(configStoreClient.getConfigStoreVersionForTimestamp()).to.be.true;
+
       // Can't set first update to 0:
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "0");
       await updateAllClients();
@@ -280,16 +282,13 @@ describe("AcrossConfigStoreClient", async function () {
 
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "6");
       await updateAllClients();
+      expect(configStoreClient.getConfigStoreVersionForTimestamp()).to.be.false;
       const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[1];
       const initialUpdateTime = (await ethers.provider.getBlock(initialUpdate.blockNumber)).timestamp;
       expect(configStoreClient.getConfigStoreVersionForTimestamp(initialUpdateTime)).to.equal(6);
 
       // Time when there was no update
       expect(configStoreClient.getConfigStoreVersionForTimestamp(initialUpdateTime - 1)).to.equal(0);
-
-      // Reverse lookup block for version.
-      expect(configStoreClient.getTimeForConfigStoreVersion(6)).to.equal(initialUpdateTime);
-      expect(configStoreClient.getTimeForConfigStoreVersion(5)).to.equal(0);
 
       // Skip updates for versions that aren't greater than the previous version.
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "5");
@@ -306,6 +305,7 @@ describe("AcrossConfigStoreClient", async function () {
       const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[0];
       const initialUpdateTime = (await ethers.provider.getBlock(initialUpdate.blockNumber)).timestamp;
       await updateAllClients();
+      expect(configStoreClient.getConfigStoreVersionForTimestamp()).to.be.true;
       expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(initialUpdateTime)).to.equal(true);
 
       // Before any config store version updates, the version is always valid because the default config
@@ -315,6 +315,7 @@ describe("AcrossConfigStoreClient", async function () {
 
       // Now pretend we downgrade the local version such that it seems we are no longer up to date:
       configStoreClient.setConfigStoreVersion(0);
+      expect(configStoreClient.getConfigStoreVersionForTimestamp()).to.be.false;
       expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(initialUpdateTime)).to.equal(false);
 
       // All previous times before the first update are still fine.

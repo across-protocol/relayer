@@ -168,12 +168,8 @@ export class AcrossConfigStoreClient {
     return Number(config.value);
   }
 
-  getTimeForConfigStoreVersion(version: number): number {
-    const config = (sortEventsAscending(this.cumulativeConfigStoreVersionUpdates) as ConfigStoreVersionUpdate[]).find(
-      (config) => config.value.toString() === version.toString()
-    );
-    if (!config) return 0;
-    return config.timestamp;
+  hasLatestConfigStoreVersion(): boolean {
+    return this.hasValidConfigStoreVersionForTimestamp();
   }
 
   hasValidConfigStoreVersionForTimestamp(timestamp: number = Number.MAX_SAFE_INTEGER): boolean {
