@@ -279,21 +279,28 @@ export class AcrossConfigStoreClient {
       } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE)) {
         if (!isNaN(args.value)) this.cumulativeMaxL1TokenCountUpdates.push(args);
       } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION)) {
-        // Skip version updates that aren't larger than the previous version. The first version must be > 0.
-        if (!isNaN(args.value)) {
-          if (this.cumulativeConfigStoreVersionUpdates.length === 0) {
-            if (Number(args.value) <= 0) continue;
-          } else if (
-            Number(args.value) <=
-            Number(this.cumulativeConfigStoreVersionUpdates[this.cumulativeConfigStoreVersionUpdates.length - 1].value)
-          ) {
-            continue;
-          }
-          this.cumulativeConfigStoreVersionUpdates.push({
-            ...args,
-            timestamp: globalConfigUpdateTimes[i],
-          });
-        }
+        // If not a number, skip.
+        if (isNaN(args.value)) continue;
+        const value = Number(args.value);
+
+        // If not an integer, skip.
+        if (!Number.isInteger(value)) continue;
+
+        // Extract last version
+        const lastValue =
+          this.cumulativeConfigStoreVersionUpdates.length === 0
+            ? DEFAULT_CONFIG_STORE_VERSION
+            : Number(
+                this.cumulativeConfigStoreVersionUpdates[this.cumulativeConfigStoreVersionUpdates.length - 1].value
+              );
+
+        // If version is not > last version, skip.
+        if (value <= lastValue) continue;
+
+        this.cumulativeConfigStoreVersionUpdates.push({
+          ...args,
+          timestamp: globalConfigUpdateTimes[i],
+        });
       } else {
         continue;
       }
