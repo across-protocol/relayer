@@ -273,7 +273,7 @@ describe("AcrossConfigStoreClient", async function () {
   });
   describe("GlobalConfig", function () {
     it("Gets config store version for time", async function () {
-      expect(configStoreClient.getConfigStoreVersionForTimestamp()).to.be.true;
+      expect(configStoreClient.hasLatestConfigStoreVersion()).to.be.true;
 
       // Can't set first update to 0:
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "0");
