@@ -1,4 +1,4 @@
-import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolRebalanceLeaves, hre } from "./utils";
+import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolRebalanceLeaves } from "./utils";
 import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
 import { toBNWei, toWei, buildPoolRebalanceLeafTree, createSpyLogger } from "./utils";
 import { getContractFactory, hubPoolFixture, toBN, utf8ToHex } from "./utils";
@@ -7,6 +7,7 @@ import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_L
 import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
 import { HubPoolClient, GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
 import { MockConfigStoreClient } from "./mocks/MockConfigStoreClient";
+import { DEFAULT_CONFIG_STORE_VERSION } from "../src/common";
 
 let spokePool: Contract, hubPool: Contract, l2Token: Contract;
 let configStore: Contract, l1Token: Contract, timer: Contract, weth: Contract;
@@ -275,15 +276,21 @@ describe("AcrossConfigStoreClient", async function () {
     it("Gets config store version for time", async function () {
       expect(configStoreClient.hasLatestConfigStoreVersion()).to.be.true;
 
-      // Can't set first update to 0:
-      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "0");
+      // Can't set first update to same value as default version:
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), DEFAULT_CONFIG_STORE_VERSION);
+      await updateAllClients();
+      expect(configStoreClient.cumulativeConfigStoreVersionUpdates.length).to.equal(0);
+      expect(DEFAULT_CONFIG_STORE_VERSION).to.equal(0);
+
+      // Can't set update to non-integer:
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "1.6");
       await updateAllClients();
       expect(configStoreClient.cumulativeConfigStoreVersionUpdates.length).to.equal(0);
 
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "6");
       await updateAllClients();
       expect(configStoreClient.hasLatestConfigStoreVersion()).to.be.false;
-      const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[1];
+      const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[2];
       const initialUpdateTime = (await ethers.provider.getBlock(initialUpdate.blockNumber)).timestamp;
       expect(configStoreClient.getConfigStoreVersionForTimestamp(initialUpdateTime)).to.equal(6);
 
