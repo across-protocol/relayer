@@ -269,7 +269,7 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
         });
       }
       // Should be configurable via env. Temporary fix.
-      return attempt < 2;
+      return attempt < retries;
     };
 
   const constructorArgumentLists = getNodeUrlList(chainId).map((nodeUrl): [ethers.utils.ConnectionInfo, number] => [
