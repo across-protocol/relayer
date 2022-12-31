@@ -268,7 +268,8 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
           workers: nodeMaxConcurrency,
         });
       }
-      return true;
+      // Should be configurable via env. Temporary fix.
+      return attempt < 2;
     };
 
   const constructorArgumentLists = getNodeUrlList(chainId).map((nodeUrl): [ethers.utils.ConnectionInfo, number] => [
