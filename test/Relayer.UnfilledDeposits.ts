@@ -139,14 +139,12 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: deposit1Complete,
           fillCount: 0,
           invalidFills: [],
-          requiresNewConfigStoreVersion: false,
         },
         {
           unfilledAmount: deposit2.amount,
           deposit: deposit2Complete,
           fillCount: 0,
           invalidFills: [],
-          requiresNewConfigStoreVersion: false,
         },
       ]);
   });
@@ -178,14 +176,12 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: deposit1Complete,
           fillCount: 1,
           invalidFills: [],
-          requiresNewConfigStoreVersion: false,
         },
         {
           unfilledAmount: deposit2.amount,
           deposit: deposit2Complete,
           fillCount: 0,
           invalidFills: [],
-          requiresNewConfigStoreVersion: false,
         },
       ]);
 
@@ -209,14 +205,12 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: deposit1Complete,
           fillCount: 3,
           invalidFills: [],
-          requiresNewConfigStoreVersion: false,
         },
         {
           unfilledAmount: deposit2.amount,
           deposit: deposit2Complete,
           fillCount: 0,
           invalidFills: [],
-          requiresNewConfigStoreVersion: false,
         },
       ]);
 
@@ -238,7 +232,6 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: deposit2Complete,
           fillCount: 0,
           invalidFills: [],
-          requiresNewConfigStoreVersion: false,
         },
       ]);
   });
@@ -266,7 +259,6 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: deposit1Complete,
           fillCount: 0,
           invalidFills: [],
-          requiresNewConfigStoreVersion: false,
         },
       ]);
   });
@@ -314,7 +306,6 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: deposit1Complete,
           fillCount: 1,
           invalidFills: [],
-          requiresNewConfigStoreVersion: false,
         },
       ]);
 
@@ -338,7 +329,6 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: depositWithSpeedUp,
           fillCount: 1,
           invalidFills: [],
-          requiresNewConfigStoreVersion: false,
         },
       ]);
   });
