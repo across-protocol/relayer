@@ -3,6 +3,9 @@ import lodash from "lodash";
 import winston from "winston";
 import { isPromiseFulfulled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
+import { Logger } from "."
+
+const logger = Logger;
 
 // The async/queue library has a task-based interface for building a concurrent queue.
 // This is the type we pass to define a request "task".
@@ -151,6 +154,18 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     // Start at element 1 and begin comparing.
     // If _all_ values are equal, we have hit quorum, so return.
     if (values.slice(1).every(([, output]) => lodash.isEqual(values[0][1], output))) return values[0][1];
+    else {
+      logger.warn({
+        at: "ProviderUtils`",
+        message: "Not enough providers agreed to meet quorum, trying fallback providers",
+        disagreeingProviders: values
+          .slice(1)
+          .filter(([, output]) => !lodash.isEqual(values[0][1], output))
+          .map((value) => value[0].connection.url)
+          .concat(values[0][0].connection.url), // Add first provider that is compared to every other one.
+        erroringProviders: errors.map(([provider, errorText]) => formatProviderError(provider, errorText))
+      });
+    }
 
     const throwQuorumError = () => {
       const errorTexts = errors.map(([provider, errorText]) => formatProviderError(provider, errorText));
@@ -173,6 +188,13 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
         this._trySend(provider, method, params)
           .then((result): [ethers.providers.StaticJsonRpcProvider, any] => [provider, result])
           .catch((err) => {
+            const errString = err?.stack || err?.toString();
+            logger.debug({
+              at: "ProviderUtils`",
+              message: "Fallback provider failed",
+              provider: provider.connection.url,
+              errString
+            });
             errors.push([provider, err?.stack || err?.toString()]);
             throw new Error("No fallbacks during quorum search");
           })
@@ -185,23 +207,34 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     // Group the results by the count of that result.
     const counts = [...values, ...fallbackValues].reduce(
       (acc, curr) => {
-        const [, result] = curr;
+        const [provider, result] = curr;
 
         // Find the first result that matches the return value.
         const existingMatch = acc.find(([existingResult]) => lodash.isEqual(existingResult, result));
 
         // Increment the count if a match is found, else add a new element to the match array with a count of 1.
         if (existingMatch) existingMatch[1]++;
-        else acc.push([result, 1]);
+        else acc.push([[provider, result], 1]);
 
         // Return the same acc object because it was modified in place.
         return acc;
       },
-      [[undefined, 0]] as [any, number][] // Initialize with [undefined, 0] as the first element so something is always returned.
+      [[[undefined, undefined], 0]] as [any, number][] // Initialize with [undefined, 0] as the first element so something is always returned.
     );
 
     // Sort so the result with the highest count is first.
     counts.sort(([, a], [, b]) => b - a);
+
+    // Ideally we log the minority counts and providers that produced minority results.
+    const minorityCounts = counts.slice(1, counts.length-1);
+    if (minorityCounts.length > 0) {
+      logger.warn({
+        at: "ProviderUtils`",
+        message: "After querying fallback providers, there were still minority results",
+        majorityProvider: counts[0][0].connection.url,
+        minorityProviders: minorityCounts.map(([[provider]]) => provider.connection.url),
+      });
+    }
 
     // Extract the result by grabbing the first element.
     const [quorumResult, count] = counts[0];
