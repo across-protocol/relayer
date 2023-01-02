@@ -236,7 +236,7 @@ export class Dataworker {
 
     // If config store version isn't up to date, return early. This is a simple rule that is perhaps too aggressive
     // but the proposer role is a specialized one and the user should always be using updated software.
-    if (!this.clients.configStoreClient.hasLatestConfigStoreVersion()) {
+    if (!this.clients.configStoreClient.hasLatestConfigStoreVersion) {
       this.logger.warn({
         at: "Dataworker#propose",
         message: "Skipping proposal because missing updated ConfigStore version, are you using the latest code?",
@@ -661,7 +661,7 @@ export class Dataworker {
     )[1];
     // If config store version isn't up to date, return early. This is a simple rule that is perhaps too aggressive
     // but the proposer role is a specialized one and the user should always be using updated software.
-    if (!this.clients.configStoreClient.hasLatestConfigStoreVersion()) {
+    if (!this.clients.configStoreClient.hasLatestConfigStoreVersion) {
       this.logger.debug({
         at: "Dataworker#validate",
         message: "Cannot validate because missing updated ConfigStore version. Update to latest code.",

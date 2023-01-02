@@ -12,7 +12,6 @@ import {
   MakeOptional,
   toBN,
   max,
-  sortEventsAscending,
   getBlockForTimestamp,
   shouldCache,
 } from "../utils";
@@ -56,6 +55,8 @@ export class AcrossConfigStoreClient {
 
   private rateModelDictionary: across.rateModel.RateModelDictionary;
   public firstBlockToSearch: number;
+
+  public hasLatestConfigStoreVersion = false;
 
   public isUpdated = false;
 
@@ -166,10 +167,6 @@ export class AcrossConfigStoreClient {
     );
     if (!config) return DEFAULT_CONFIG_STORE_VERSION;
     return Number(config.value);
-  }
-
-  hasLatestConfigStoreVersion(): boolean {
-    return this.hasValidConfigStoreVersionForTimestamp();
   }
 
   hasValidConfigStoreVersionForTimestamp(timestamp: number = Number.MAX_SAFE_INTEGER): boolean {
@@ -308,6 +305,7 @@ export class AcrossConfigStoreClient {
 
     this.rateModelDictionary.updateWithEvents(this.cumulativeRateModelUpdates);
 
+    this.hasLatestConfigStoreVersion = this.hasValidConfigStoreVersionForTimestamp();
     this.isUpdated = true;
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
