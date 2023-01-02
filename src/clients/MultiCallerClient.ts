@@ -283,10 +283,14 @@ export class MultiCallerClient {
     return runTransaction(this.logger, target, "multicall", [callData]);
   }
 
-  private async simulateTransactionQueue(transactions: AugmentedTransaction[]): Promise<AugmentedTransaction[]> {
+  protected async simulateTxn(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
+    return await willSucceed(txn);
+  }
+
+  async simulateTransactionQueue(transactions: AugmentedTransaction[]): Promise<AugmentedTransaction[]> {
     // Simulate the transaction execution for the whole queue.
     const _transactionsSucceed = await Promise.all(
-      transactions.map((transaction: AugmentedTransaction) => willSucceed(transaction))
+      transactions.map((transaction: AugmentedTransaction) => this.simulateTxn(transaction))
     );
 
     // Filter out transactions that revert for expected reasons. For example, the "relay filled" error
