@@ -9,6 +9,7 @@ import {
   willSucceed,
   etherscanLink,
   TransactionResponse,
+  TransactionSimulationResult
 } from "../utils";
 
 import lodash from "lodash";
@@ -46,11 +47,7 @@ const unknownRevertReasonMethodsToIgnore = new Set([
 
 // Ignore the general unknown revert reason for specific methods or uniformly ignore specific revert reasons
 // for any contract method.
-const canIgnoreRevertReasons = (obj: {
-  succeed: boolean;
-  reason: string;
-  transaction: AugmentedTransaction;
-}): boolean => {
+const canIgnoreRevertReasons = (obj: TransactionSimulationResult): boolean => {
   // prettier-ignore
   return (
     !obj.succeed && (
