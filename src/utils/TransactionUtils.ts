@@ -2,6 +2,12 @@ import { AugmentedTransaction } from "../clients";
 import { winston, Contract, getContractInfoFromAddress, fetch, ethers } from "../utils";
 import { toBNWei, BigNumber, toBN, toGWei, TransactionResponse } from "../utils";
 
+export type TransactionSimulationResult = {
+  transaction: AugmentedTransaction;
+  succeed: boolean;
+  reason: string;
+};
+
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
 // of this method should be considerate of this and catch the response to deal with the error accordingly.
 export async function runTransaction(
@@ -50,9 +56,7 @@ export async function getGasPrice(provider: ethers.providers.Provider, priorityS
   } else return { gasPrice: scaleByNumber(feeData.gasPrice, priorityScaler) };
 }
 
-export async function willSucceed(
-  transaction: AugmentedTransaction
-): Promise<{ transaction: AugmentedTransaction; succeed: boolean; reason: string }> {
+export async function willSucceed(transaction: AugmentedTransaction): Promise<TransactionSimulationResult> {
   try {
     const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
     await transaction.contract.callStatic[transaction.method](...args);
