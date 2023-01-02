@@ -154,18 +154,6 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     // Start at element 1 and begin comparing.
     // If _all_ values are equal, we have hit quorum, so return.
     if (values.slice(1).every(([, output]) => lodash.isEqual(values[0][1], output))) return values[0][1];
-    else {
-      logger.warn({
-        at: "ProviderUtils`",
-        message: "Not enough providers agreed to meet quorum, trying fallback providers",
-        disagreeingProviders: values
-          .slice(1)
-          .filter(([, output]) => !lodash.isEqual(values[0][1], output))
-          .map((value) => value[0].connection.url)
-          .concat(values[0][0].connection.url), // Add first provider that is compared to every other one.
-        erroringProviders: errors.map(([provider, errorText]) => formatProviderError(provider, errorText)),
-      });
-    }
 
     const throwQuorumError = () => {
       const errorTexts = errors.map(([provider, errorText]) => formatProviderError(provider, errorText));
@@ -189,12 +177,6 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
           .then((result): [ethers.providers.StaticJsonRpcProvider, any] => [provider, result])
           .catch((err) => {
             const errString = err?.stack || err?.toString();
-            logger.debug({
-              at: "ProviderUtils`",
-              message: "Fallback provider failed",
-              provider: provider.connection.url,
-              errString,
-            });
             errors.push([provider, err?.stack || err?.toString()]);
             throw new Error("No fallbacks during quorum search");
           })
@@ -230,6 +212,19 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
 
     // If this count is less than we need for quorum, throw the quorum error.
     if (count < quorumThreshold) throwQuorumError();
+
+    // If we've achieved quorum, then we should still log the providers that mismatched with the quorum result.
+    const mismatchedProviders = [...values, ...fallbackValues]
+      .filter(([, result]) => !lodash.isEqual(result, quorumResult))
+      .map(([provider]) => provider.connection.url);
+    if (mismatchedProviders.length > 0 || errors.length > 0) {
+      logger.warn({
+        at: "ProviderUtils`",
+        message: "Some providers mismatched with the quorum result or failed",
+        mismatchedProviders,
+        erroringProviders: errors.map(([provider, errorText]) => formatProviderError(provider, errorText)),
+      });
+    }
 
     return quorumResult;
   }
