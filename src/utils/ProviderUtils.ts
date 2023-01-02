@@ -3,6 +3,9 @@ import lodash from "lodash";
 import winston from "winston";
 import { isPromiseFulfulled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
+import { Logger } from ".";
+
+const logger = Logger;
 
 // The async/queue library has a task-based interface for building a concurrent queue.
 // This is the type we pass to define a request "task".
@@ -208,6 +211,25 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
 
     // If this count is less than we need for quorum, throw the quorum error.
     if (count < quorumThreshold) throwQuorumError();
+
+    // If we've achieved quorum, then we should still log the providers that mismatched with the quorum result.
+    const mismatchedProviders = [...values, ...fallbackValues]
+      .filter(([, result]) => !lodash.isEqual(result, quorumResult))
+      .map(([provider]) => provider.connection.url);
+    const quorumProviders = [...values, ...fallbackValues]
+      .filter(([, result]) => lodash.isEqual(result, quorumResult))
+      .map(([provider]) => provider.connection.url);
+    if (mismatchedProviders.length > 0 || errors.length > 0) {
+      logger.warn({
+        at: "ProviderUtils`",
+        message: "Some providers mismatched with the quorum result or failed",
+        method,
+        params,
+        quorumProviders,
+        mismatchedProviders,
+        erroringProviders: errors.map(([provider, errorText]) => formatProviderError(provider, errorText)),
+      });
+    }
 
     return quorumResult;
   }
