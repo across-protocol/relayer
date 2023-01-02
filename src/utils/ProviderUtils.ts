@@ -176,7 +176,6 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
         this._trySend(provider, method, params)
           .then((result): [ethers.providers.StaticJsonRpcProvider, any] => [provider, result])
           .catch((err) => {
-            const errString = err?.stack || err?.toString();
             errors.push([provider, err?.stack || err?.toString()]);
             throw new Error("No fallbacks during quorum search");
           })
