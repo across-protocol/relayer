@@ -326,7 +326,7 @@ describe("AcrossConfigStoreClient", async function () {
 
       // Now pretend we downgrade the local version such that it seems we are no longer up to date:
       configStoreClient.setConfigStoreVersion(0);
-      expect(configStoreClient.hasLatestConfigStoreVersion).to.be.false;
+      await updateAllClients();
       expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(initialUpdateTime)).to.equal(false);
 
       // All previous times before the first update are still fine.
