@@ -31,6 +31,7 @@ import { PendingRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
 import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
+import { CONFIG_STORE_VERSION } from "../common";
 
 config();
 let logger: winston.Logger;
@@ -62,6 +63,17 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   // same block.
   const dvm = getDvmContract(clients.configStoreClient.configStore.provider);
   await updateDataworkerClients(clients, false);
+
+  if (!clients.configStoreClient.hasLatestConfigStoreVersion) {
+    logger.error({
+      at: "Dataworker#validate",
+      message: "Cannot validate because missing updated ConfigStore version. Update to latest code.",
+      latestVersionSupported: CONFIG_STORE_VERSION,
+      latestInConfigStore: clients.configStoreClient.getConfigStoreVersionForTimestamp(),
+    });
+    return;
+  }
+
   const precedingProposeRootBundleEvent = await getDisputedProposal(
     dvm,
     clients.hubPoolClient,

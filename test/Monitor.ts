@@ -86,6 +86,9 @@ describe("Monitor", async function () {
       CONFIGURED_NETWORKS: JSON.stringify(configuredNetworks),
     });
 
+    // Set the config store version to 0 to match the default version in the ConfigStoreClient.
+    process.env.CONFIG_STORE_VERSION = "0";
+
     const chainIds = [1, repaymentChainId, originChainId, destinationChainId];
     bundleDataClient = new BundleDataClient(
       spyLogger,
