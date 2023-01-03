@@ -153,7 +153,29 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
 
     // Start at element 1 and begin comparing.
     // If _all_ values are equal, we have hit quorum, so return.
-    if (values.slice(1).every(([, output]) => lodash.isEqual(values[0][1], output))) return values[0][1];
+    function compareResults(rpcResultA: any, rpcResultB: any): boolean {
+      const ignoreFilteredKeys = (ignoredKeys: string[]) => {
+        // This uses native JS spread to create a copy of the object and set ignored keys undefined rather than use
+        // lodash.pick because of performance reasons.
+        const copyA = { ...rpcResultA };
+        const copyB = { ...rpcResultB };
+        for (const key of ignoredKeys) {
+          copyA[key] = undefined;
+          copyB[key] = undefined;
+        }
+        return { copyA, copyB };
+      };
+
+      if (method === "eth_getBlockByNumber") {
+        // We've seen RPC's disagree on the miner field, for example when Polygon nodes updated software that
+        // led alchemy and quicknode to disagree on the the miner field's value.
+        const { copyA, copyB } = ignoreFilteredKeys(["miner"]);
+        return lodash.isEqual(copyA, copyB);
+      } else {
+        return lodash.isEqual(rpcResultA, rpcResultB);
+      }
+    }
+    if (values.slice(1).every(([, output]) => compareResults(values[0][1], output))) return values[0][1];
 
     const throwQuorumError = () => {
       const errorTexts = errors.map(([provider, errorText]) => formatProviderError(provider, errorText));
@@ -191,7 +213,7 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
         const [, result] = curr;
 
         // Find the first result that matches the return value.
-        const existingMatch = acc.find(([existingResult]) => lodash.isEqual(existingResult, result));
+        const existingMatch = acc.find(([existingResult]) => compareResults(existingResult, result));
 
         // Increment the count if a match is found, else add a new element to the match array with a count of 1.
         if (existingMatch) existingMatch[1]++;
