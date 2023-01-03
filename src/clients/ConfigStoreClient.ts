@@ -16,6 +16,8 @@ import {
   shouldCache,
 } from "../utils";
 
+import { CONFIG_STORE_VERSION, DEFAULT_CONFIG_STORE_VERSION } from "../common/Constants";
+
 import {
   L1TokenTransferThreshold,
   TokenConfig,
@@ -24,6 +26,7 @@ import {
   SpokeTargetBalanceUpdate,
   SpokePoolTargetBalance,
   RouteRateModelUpdate,
+  ConfigStoreVersionUpdate,
 } from "../interfaces";
 
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
@@ -34,6 +37,7 @@ import { createClient } from "redis4";
 export const GLOBAL_CONFIG_STORE_KEYS = {
   MAX_RELAYER_REPAYMENT_LEAF_SIZE: "MAX_RELAYER_REPAYMENT_LEAF_SIZE",
   MAX_POOL_REBALANCE_LEAF_SIZE: "MAX_POOL_REBALANCE_LEAF_SIZE",
+  VERSION: "VERSION",
 };
 
 type RedisClient = ReturnType<typeof createClient>;
@@ -47,15 +51,18 @@ export class AcrossConfigStoreClient {
   public cumulativeMaxRefundCountUpdates: GlobalConfigUpdate[] = [];
   public cumulativeMaxL1TokenCountUpdates: GlobalConfigUpdate[] = [];
   public cumulativeSpokeTargetBalanceUpdates: SpokeTargetBalanceUpdate[] = [];
+  public cumulativeConfigStoreVersionUpdates: ConfigStoreVersionUpdate[] = [];
 
   private rateModelDictionary: across.rateModel.RateModelDictionary;
   public firstBlockToSearch: number;
+
+  public hasLatestConfigStoreVersion = false;
 
   public isUpdated = false;
 
   constructor(
     readonly logger: winston.Logger,
-    readonly configStore: Contract, // TODO: Rename to ConfigStore
+    readonly configStore: Contract,
     readonly hubPoolClient: HubPoolClient,
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
     readonly redisClient?: RedisClient
@@ -143,7 +150,7 @@ export class AcrossConfigStoreClient {
       (config) => config.blockNumber <= blockNumber
     );
     if (!config) throw new Error(`Could not find MaxRefundCount before block ${blockNumber}`);
-    return config.value;
+    return Number(config.value);
   }
 
   getMaxL1TokenCountForPoolRebalanceLeafForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number {
@@ -151,7 +158,24 @@ export class AcrossConfigStoreClient {
       (config) => config.blockNumber <= blockNumber
     );
     if (!config) throw new Error(`Could not find MaxL1TokenCount before block ${blockNumber}`);
-    return config.value;
+    return Number(config.value);
+  }
+
+  getConfigStoreVersionForTimestamp(timestamp: number = Number.MAX_SAFE_INTEGER): number {
+    const config = (sortEventsDescending(this.cumulativeConfigStoreVersionUpdates) as ConfigStoreVersionUpdate[]).find(
+      (config) => config.timestamp <= timestamp
+    );
+    if (!config) return DEFAULT_CONFIG_STORE_VERSION;
+    return Number(config.value);
+  }
+
+  hasValidConfigStoreVersionForTimestamp(timestamp: number = Number.MAX_SAFE_INTEGER): boolean {
+    const version = this.getConfigStoreVersionForTimestamp(timestamp);
+    return this.isValidConfigStoreVersion(version);
+  }
+
+  isValidConfigStoreVersion(version: number): boolean {
+    return CONFIG_STORE_VERSION >= version;
   }
 
   async update() {
@@ -168,6 +192,9 @@ export class AcrossConfigStoreClient {
       paginatedEventQuery(this.configStore, this.configStore.filters.UpdatedTokenConfig(), searchConfig),
       paginatedEventQuery(this.configStore, this.configStore.filters.UpdatedGlobalConfig(), searchConfig),
     ]);
+    const globalConfigUpdateTimes = (
+      await Promise.all(updatedGlobalConfigEvents.map((event) => this.configStore.provider.getBlock(event.blockNumber)))
+    ).map((block) => block.timestamp);
 
     // Save new TokenConfig updates.
     for (const event of updatedTokenConfigEvents) {
@@ -235,7 +262,8 @@ export class AcrossConfigStoreClient {
     }
 
     // Save new Global config updates.
-    for (const event of updatedGlobalConfigEvents) {
+    for (let i = 0; i < updatedGlobalConfigEvents.length; i++) {
+      const event = updatedGlobalConfigEvents[i];
       const args = {
         blockNumber: event.blockNumber,
         transactionIndex: event.transactionIndex,
@@ -247,6 +275,29 @@ export class AcrossConfigStoreClient {
         if (!isNaN(args.value)) this.cumulativeMaxRefundCountUpdates.push(args);
       } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE)) {
         if (!isNaN(args.value)) this.cumulativeMaxL1TokenCountUpdates.push(args);
+      } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION)) {
+        // If not a number, skip.
+        if (isNaN(args.value)) continue;
+        const value = Number(args.value);
+
+        // If not an integer, skip.
+        if (!Number.isInteger(value)) continue;
+
+        // Extract last version
+        const lastValue =
+          this.cumulativeConfigStoreVersionUpdates.length === 0
+            ? DEFAULT_CONFIG_STORE_VERSION
+            : Number(
+                this.cumulativeConfigStoreVersionUpdates[this.cumulativeConfigStoreVersionUpdates.length - 1].value
+              );
+
+        // If version is not > last version, skip.
+        if (value <= lastValue) continue;
+
+        this.cumulativeConfigStoreVersionUpdates.push({
+          ...args,
+          timestamp: globalConfigUpdateTimes[i],
+        });
       } else {
         continue;
       }
@@ -254,6 +305,7 @@ export class AcrossConfigStoreClient {
 
     this.rateModelDictionary.updateWithEvents(this.cumulativeRateModelUpdates);
 
+    this.hasLatestConfigStoreVersion = this.hasValidConfigStoreVersionForTimestamp();
     this.isUpdated = true;
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
