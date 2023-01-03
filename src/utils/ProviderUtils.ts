@@ -236,10 +236,10 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
 
     // If we've achieved quorum, then we should still log the providers that mismatched with the quorum result.
     const mismatchedProviders = [...values, ...fallbackValues]
-      .filter(([, result]) => !lodash.isEqual(result, quorumResult))
+      .filter(([, result]) => !compareResults(result, quorumResult))
       .map(([provider]) => provider.connection.url);
     const quorumProviders = [...values, ...fallbackValues]
-      .filter(([, result]) => lodash.isEqual(result, quorumResult))
+      .filter(([, result]) => compareResults(result, quorumResult))
       .map(([provider]) => provider.connection.url);
     if (mismatchedProviders.length > 0 || errors.length > 0) {
       logger.warn({
