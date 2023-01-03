@@ -170,7 +170,11 @@ export class Monitor {
   }
 
   async reportUnfilledDeposits() {
-    const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients, this.monitorConfig.maxRelayerLookBack);
+    const unfilledDeposits = getUnfilledDeposits(
+      this.clients.spokePoolClients,
+      this.monitorConfig.maxRelayerLookBack,
+      this.clients.configStoreClient
+    );
 
     // Group unfilled amounts by chain id and token id.
     const unfilledAmountByChainAndToken: { [chainId: number]: { [tokenAddress: string]: BigNumber } } = {};

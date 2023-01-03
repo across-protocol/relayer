@@ -22,21 +22,15 @@ import {
   defaultMinDepositConfirmations,
   DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
 } from "./constants";
-import {
-  SpokePoolClient,
-  HubPoolClient,
-  AcrossConfigStoreClient,
-  MultiCallerClient,
-  TokenClient,
-  AcrossApiClient,
-} from "../src/clients";
+import { SpokePoolClient, HubPoolClient, MultiCallerClient, TokenClient, AcrossApiClient } from "../src/clients";
 import { MockInventoryClient, MockProfitClient } from "./mocks";
 
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
-import { getUnfilledDeposits, toBN } from "../src/utils";
+import { getUnfilledDeposits, toBN, utf8ToHex } from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import { BigNumber } from "ethers";
+import { MockConfigStoreClient } from "./mocks/MockConfigStoreClient";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, l1Token: Contract, configStore: Contract;
@@ -44,7 +38,7 @@ let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithA
 
 const { spy, spyLogger } = createSpyLogger();
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let configStoreClient: AcrossConfigStoreClient, hubPoolClient: HubPoolClient;
+let configStoreClient: MockConfigStoreClient, hubPoolClient: HubPoolClient;
 let multiCallerClient: MultiCallerClient, tokenClient: TokenClient;
 let profitClient: MockProfitClient;
 
@@ -64,7 +58,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
+    configStoreClient = new MockConfigStoreClient(spyLogger, configStore, hubPoolClient);
     spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1, configStoreClient, originChainId);
     spokePoolClient_2 = new SpokePoolClient(
       spyLogger,
@@ -131,11 +125,27 @@ describe("Relayer: Unfilled Deposits", async function () {
     const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, configStoreClient, l1Token);
     const deposit2Complete = await buildDepositStruct(deposit2, hubPoolClient, configStoreClient, l1Token);
 
-    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients, DEFAULT_UNFILLED_DEPOSIT_LOOKBACK))
+    expect(
+      getUnfilledDeposits(
+        relayerInstance.clients.spokePoolClients,
+        DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
+        configStoreClient
+      )
+    )
       .excludingEvery(["blockNumber", "originBlockNumber"])
       .to.deep.equal([
-        { unfilledAmount: deposit1.amount, deposit: deposit1Complete, fillCount: 0, invalidFills: [] },
-        { unfilledAmount: deposit2.amount, deposit: deposit2Complete, fillCount: 0, invalidFills: [] },
+        {
+          unfilledAmount: deposit1.amount,
+          deposit: deposit1Complete,
+          fillCount: 0,
+          invalidFills: [],
+        },
+        {
+          unfilledAmount: deposit2.amount,
+          deposit: deposit2Complete,
+          fillCount: 0,
+          invalidFills: [],
+        },
       ]);
   });
 
@@ -152,7 +162,13 @@ describe("Relayer: Unfilled Deposits", async function () {
     const fill1 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete);
     await updateAllClients();
     // Validate the relayer correctly computes the unfilled amount.
-    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients, DEFAULT_UNFILLED_DEPOSIT_LOOKBACK))
+    expect(
+      getUnfilledDeposits(
+        relayerInstance.clients.spokePoolClients,
+        DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
+        configStoreClient
+      )
+    )
       .excludingEvery(["blockNumber", "originBlockNumber"])
       .to.deep.equal([
         {
@@ -161,7 +177,12 @@ describe("Relayer: Unfilled Deposits", async function () {
           fillCount: 1,
           invalidFills: [],
         },
-        { unfilledAmount: deposit2.amount, deposit: deposit2Complete, fillCount: 0, invalidFills: [] },
+        {
+          unfilledAmount: deposit2.amount,
+          deposit: deposit2Complete,
+          fillCount: 0,
+          invalidFills: [],
+        },
       ]);
 
     // Partially fill the same deposit another two times.
@@ -170,21 +191,48 @@ describe("Relayer: Unfilled Deposits", async function () {
     await updateAllClients();
     // Deposit 1 should now be partially filled by all three fills. This should be correctly reflected.
     const unfilledAmount = deposit1.amount.sub(fill1.fillAmount.add(fill2.fillAmount).add(fill3.fillAmount));
-    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients, DEFAULT_UNFILLED_DEPOSIT_LOOKBACK))
+    expect(
+      getUnfilledDeposits(
+        relayerInstance.clients.spokePoolClients,
+        DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
+        configStoreClient
+      )
+    )
       .excludingEvery(["blockNumber", "originBlockNumber"])
       .to.deep.equal([
-        { unfilledAmount: unfilledAmount, deposit: deposit1Complete, fillCount: 3, invalidFills: [] },
-        { unfilledAmount: deposit2.amount, deposit: deposit2Complete, fillCount: 0, invalidFills: [] },
+        {
+          unfilledAmount: unfilledAmount,
+          deposit: deposit1Complete,
+          fillCount: 3,
+          invalidFills: [],
+        },
+        {
+          unfilledAmount: deposit2.amount,
+          deposit: deposit2Complete,
+          fillCount: 0,
+          invalidFills: [],
+        },
       ]);
 
     // Fill the reminding amount on the deposit. It should thus be removed from the unfilledDeposits list.
     const fill4 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete, unfilledAmount);
     expect(fill4.totalFilledAmount).to.equal(deposit1.amount); // should be 100% filled at this point.
     await updateAllClients();
-    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients, DEFAULT_UNFILLED_DEPOSIT_LOOKBACK))
+    expect(
+      getUnfilledDeposits(
+        relayerInstance.clients.spokePoolClients,
+        DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
+        configStoreClient
+      )
+    )
       .excludingEvery(["blockNumber", "originBlockNumber"])
       .to.deep.equal([
-        { unfilledAmount: deposit2Complete.amount, deposit: deposit2Complete, fillCount: 0, invalidFills: [] },
+        {
+          unfilledAmount: deposit2Complete.amount,
+          deposit: deposit2Complete,
+          fillCount: 0,
+          invalidFills: [],
+        },
       ]);
   });
 
@@ -197,10 +245,21 @@ describe("Relayer: Unfilled Deposits", async function () {
     await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, { ...deposit1Complete, depositId: 1337 });
     await updateAllClients();
     // The deposit should show up as unfilled, since the fill was incorrectly applied to the wrong deposit.
-    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients, DEFAULT_UNFILLED_DEPOSIT_LOOKBACK))
+    expect(
+      getUnfilledDeposits(
+        relayerInstance.clients.spokePoolClients,
+        DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
+        configStoreClient
+      )
+    )
       .excludingEvery(["blockNumber", "originBlockNumber"])
       .to.deep.equal([
-        { unfilledAmount: deposit1Complete.amount, deposit: deposit1Complete, fillCount: 0, invalidFills: [] },
+        {
+          unfilledAmount: deposit1Complete.amount,
+          deposit: deposit1Complete,
+          fillCount: 0,
+          invalidFills: [],
+        },
       ]);
   });
 
@@ -217,7 +276,8 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     const unfilledDeposits = getUnfilledDeposits(
       relayerInstance.clients.spokePoolClients,
-      DEFAULT_UNFILLED_DEPOSIT_LOOKBACK
+      DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
+      configStoreClient
     );
     // expect only one unfilled deposit
     expect(unfilledDeposits.length).to.eq(1);
@@ -232,7 +292,13 @@ describe("Relayer: Unfilled Deposits", async function () {
     const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, configStoreClient, l1Token);
     const fill1 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete);
     await updateAllClients();
-    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients, DEFAULT_UNFILLED_DEPOSIT_LOOKBACK))
+    expect(
+      getUnfilledDeposits(
+        relayerInstance.clients.spokePoolClients,
+        DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
+        configStoreClient
+      )
+    )
       .excludingEvery(["blockNumber", "originBlockNumber"])
       .to.deep.equal([
         {
@@ -249,7 +315,13 @@ describe("Relayer: Unfilled Deposits", async function () {
     await spokePool_1.speedUpDeposit(depositor.address, newRelayerFeePct, deposit1.depositId, speedUpSignature);
     await updateAllClients();
     const depositWithSpeedUp = { ...deposit1Complete, newRelayerFeePct, speedUpSignature };
-    expect(getUnfilledDeposits(relayerInstance.clients.spokePoolClients, DEFAULT_UNFILLED_DEPOSIT_LOOKBACK))
+    expect(
+      getUnfilledDeposits(
+        relayerInstance.clients.spokePoolClients,
+        DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
+        configStoreClient
+      )
+    )
       .excludingEvery(["blockNumber", "originBlockNumber"])
       .to.deep.equal([
         {
@@ -279,7 +351,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     // getUnfilledDeposit still returns the deposit as unfilled but with the invalid fill.
     const unfilledDeposit = getUnfilledDeposits(
       relayerInstance.clients.spokePoolClients,
-      DEFAULT_UNFILLED_DEPOSIT_LOOKBACK
+      DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
+      configStoreClient
     )[0];
     expect(unfilledDeposit.unfilledAmount).to.equal(deposit.amount);
     expect(unfilledDeposit.deposit.depositId).to.equal(deposit.depositId);
@@ -292,6 +365,31 @@ describe("Relayer: Unfilled Deposits", async function () {
     // same relayer.
 
     expect(lastSpyLogIncludes(spy, "Skipping deposit with invalid fills from the same relayer")).to.be.true;
+    expect(multiCallerClient.transactionCount()).to.equal(0);
+  });
+
+  it("Skip deposits we don't have updated config store version for", async function () {
+    // Set up test so that the latest version in the config store contract is higher than
+    // the version in the config store client.
+    const update = await configStore.updateGlobalConfig(utf8ToHex("VERSION"), "3");
+    const updateTime = (await configStore.provider.getBlock(update.blockNumber)).timestamp;
+    configStoreClient.setConfigStoreVersion(1);
+
+    // Now send a deposit after the update time. This deposit should be skipped as we don't have the latest
+    // version at the quote timestamp.
+    await spokePool_1.setCurrentTime(updateTime + 1);
+    await updateAllClients();
+    await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await updateAllClients();
+    const unfilledDeposits = getUnfilledDeposits(
+      relayerInstance.clients.spokePoolClients,
+      DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
+      configStoreClient
+    );
+    expect(unfilledDeposits.length).to.equal(1);
+    expect(unfilledDeposits[0].requiresNewConfigStoreVersion).to.be.true;
+
+    await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(multiCallerClient.transactionCount()).to.equal(0);
   });
 });

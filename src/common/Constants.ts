@@ -1,3 +1,13 @@
+import { utils } from "@across-protocol/sdk-v2";
+
+// This version should increase each time the ConfigStore's config changes, otherwise relayer and dataworker logic
+// will stop working to protect the user's funds.
+export const CONFIG_STORE_VERSION = utils.CONFIG_STORE_VERSION;
+
+// Do not change this value. Set 0 as the default version so that all timestamps before the first version update are
+// deemed valid by ConfigStoreClient.hasValidConfigStoreVersionForTimestamp().
+export const DEFAULT_CONFIG_STORE_VERSION = 0;
+
 // Used for determining which block range corresponsd to which network. In order, the block ranges passed
 // in the HubPool's proposeRootBundle method should be: Mainnet, Optimism, Polygon, Boba, Arbitrum
 export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];

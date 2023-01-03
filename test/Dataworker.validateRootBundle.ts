@@ -1,7 +1,7 @@
-import { buildFillForRepaymentChain, lastSpyLogIncludes, hre, spyLogIncludes } from "./utils";
+import { buildFillForRepaymentChain, lastSpyLogIncludes, hre, spyLogIncludes, lastSpyLogLevel } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit } from "./utils";
-import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
-import { amountToDeposit, destinationChainId, BUNDLE_END_BLOCK_BUFFER } from "./constants";
+import { HubPoolClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
+import { amountToDeposit, destinationChainId, BUNDLE_END_BLOCK_BUFFER, createRandomBytes32 } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
@@ -9,13 +9,14 @@ import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT, utf8ToHex } from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
+import { MockConfigStoreClient } from "./mocks/MockConfigStoreClient";
 
 let spy: sinon.SinonSpy;
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract;
-let l1Token_1: Contract, hubPool: Contract;
+let l1Token_1: Contract, hubPool: Contract, configStore: Contract;
 let depositor: SignerWithAddress, dataworker: SignerWithAddress;
 
-let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
+let hubPoolClient: HubPoolClient, configStoreClient: MockConfigStoreClient;
 let dataworkerInstance: Dataworker, multiCallerClient: MultiCallerClient;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
@@ -29,6 +30,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       erc20_1,
       spokePool_2,
       configStoreClient,
+      configStore,
       hubPoolClient,
       l1Token_1,
       depositor,
@@ -319,5 +321,33 @@ describe("Dataworker: Validate pending root bundle", async function () {
     } catch {}
 
     expect(success).to.be.true;
+  });
+  it("Exits early if config store version is out of date", async function () {
+    // Propose trivial bundle.
+    await updateAllClients();
+
+    const latestBlock = await hubPool.provider.getBlockNumber();
+    await hubPool.connect(dataworker).proposeRootBundle(
+      CHAIN_ID_TEST_LIST.map((_) => latestBlock),
+      CHAIN_ID_TEST_LIST.length,
+      createRandomBytes32(),
+      createRandomBytes32(),
+      createRandomBytes32()
+    );
+    await updateAllClients();
+
+    // Set up test so that the latest version in the config store contract is higher than
+    // the version in the config store client.
+    await configStore.updateGlobalConfig(utf8ToHex("VERSION"), "3");
+    configStoreClient.setConfigStoreVersion(1);
+    await updateAllClients();
+    // Mine blocks so root bundle end blocks are not within latest - buffer range
+    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) await hre.network.provider.send("evm_mine");
+    await updateAllClients();
+    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
+
+    expect(lastSpyLogIncludes(spy, "Skipping dispute")).to.be.true;
+    expect(spy.getCall(-1).lastArg.reason).to.equal("out-of-date-config-store-version");
+    expect(lastSpyLogLevel(spy)).to.equal("error");
   });
 });

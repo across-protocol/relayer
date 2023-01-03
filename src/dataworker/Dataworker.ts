@@ -39,7 +39,7 @@ import {
 } from "./DataworkerUtils";
 import { BalanceAllocator } from "../clients";
 import _ from "lodash";
-import { IGNORED_SPOKE_BUNDLES } from "../common";
+import { CONFIG_STORE_VERSION, IGNORED_SPOKE_BUNDLES } from "../common";
 import { isOvmChain, ovmWethTokens } from "../clients/bridges";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
@@ -47,7 +47,7 @@ import { isOvmChain, ovmWethTokens } from "../clients/bridges";
 // bundle. Any reasons in IGNORE_X we emit a "debug" level log for, and any reasons in ERROR_X we emit an "error"
 // level log for.
 const IGNORE_DISPUTE_REASONS = new Set(["bundle-end-block-buffer"]);
-const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback"]);
+const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback", "out-of-date-config-store-version"]);
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -230,6 +230,18 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker#propose",
         message: "Has pending proposal, cannot propose",
+      });
+      return;
+    }
+
+    // If config store version isn't up to date, return early. This is a simple rule that is perhaps too aggressive
+    // but the proposer role is a specialized one and the user should always be using updated software.
+    if (!this.clients.configStoreClient.hasLatestConfigStoreVersion) {
+      this.logger.warn({
+        at: "Dataworker#propose",
+        message: "Skipping proposal because missing updated ConfigStore version, are you using the latest code?",
+        latestVersionSupported: CONFIG_STORE_VERSION,
+        latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
       });
       return;
     }
@@ -453,7 +465,7 @@ export class Dataworker {
       latestInvalidBundleStartBlock
     );
     if (!valid) {
-      // In the case where the Dataworker lookback is improperly configured, emit an error level alert so bot runner
+      // In the case where the Dataworker config is improperly configured, emit an error level alert so bot runner
       // can get dataworker running ASAP.
       if (ERROR_DISPUTE_REASONS.has(reason)) {
         this.logger.error({
@@ -647,6 +659,20 @@ export class Dataworker {
       1,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
+    // If config store version isn't up to date, return early. This is a simple rule that is perhaps too aggressive
+    // but the proposer role is a specialized one and the user should always be using updated software.
+    if (!this.clients.configStoreClient.hasLatestConfigStoreVersion) {
+      this.logger.debug({
+        at: "Dataworker#validate",
+        message: "Cannot validate because missing updated ConfigStore version. Update to latest code.",
+        latestVersionSupported: CONFIG_STORE_VERSION,
+        latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
+      });
+      return {
+        valid: false,
+        reason: "out-of-date-config-store-version",
+      };
+    }
 
     // Compare roots with expected. The roots will be different if the block range start blocks were different
     // than the ones we constructed above when the original proposer submitted their proposal. The roots will also
@@ -850,6 +876,25 @@ export class Dataworker {
               spokeClientsEventSearchConfigs: Object.fromEntries(
                 Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.eventSearchConfig])
               ),
+            });
+            continue;
+          }
+
+          const endBlockForMainnet = getBlockRangeForChain(
+            blockNumberRanges,
+            1,
+            this.chainIdListForBundleEvaluationBlockNumbers
+          )[1];
+          const mainnetEndBlockTimestamp = (
+            await this.clients.hubPoolClient.hubPool.provider.getBlock(endBlockForMainnet)
+          ).timestamp;
+          if (!this.clients.configStoreClient.hasValidConfigStoreVersionForTimestamp(mainnetEndBlockTimestamp)) {
+            this.logger.debug({
+              at: "Dataworke#executeSlowRelayLeaves",
+              message: "Cannot validate because missing updated ConfigStore version. Update to latest code.",
+              mainnetEndBlockTimestamp,
+              latestVersionSupported: CONFIG_STORE_VERSION,
+              latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
             });
             continue;
           }
@@ -1301,6 +1346,20 @@ export class Dataworker {
             1,
             this.chainIdListForBundleEvaluationBlockNumbers
           )[1];
+          const mainnetEndBlockTimestamp = (
+            await this.clients.hubPoolClient.hubPool.provider.getBlock(endBlockForMainnet)
+          ).timestamp;
+          if (!this.clients.configStoreClient.hasValidConfigStoreVersionForTimestamp(mainnetEndBlockTimestamp)) {
+            this.logger.debug({
+              at: "Dataworke#executeRelayerRefundLeaves",
+              message: "Cannot validate because missing updated ConfigStore version. Update to latest code.",
+              mainnetEndBlockTimestamp,
+              latestVersionSupported: CONFIG_STORE_VERSION,
+              latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
+            });
+            continue;
+          }
+
           const allValidFillsInRange = getFillsInRange(
             allValidFills,
             blockNumberRanges,
