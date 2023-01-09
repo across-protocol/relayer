@@ -276,10 +276,19 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
   // Default to a max concurrency of 1000 requests per node.
   const nodeMaxConcurrency = Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "1000");
 
-  // Temporarily added to expose RPC rate-limiting.
-  const rpcRateLimited =
-    ({ nodeMaxConcurrency, logger }) =>
+  const sleep = async (duration: number): Promise<number> => {
+    const startMs = Date.now();
+    await new Promise((resolve) => setTimeout(resolve, duration));
+    return Date.now() - startMs;
+  };
+
+  // Custom delay + logging for RPC rate-limiting.
+  const rpcRateLimited = ({ nodeMaxConcurrency, logger }) =>
     async (attempt: number, url: string): Promise<boolean> => {
+
+      const baseDelay = 1000 * Math.pow(2, attempt); // ms; attempt = [0, 1, 2, ...]
+      const delayMs = await sleep(baseDelay + baseDelay * Math.random());
+
       if (logger) {
         // Make an effort to filter out any api keys.
         const regex = url.match(/https?:\/\/([\w.-]+)\/.*/);
@@ -287,9 +296,11 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
           at: "ProviderUtils#rpcRateLimited",
           message: `Got 429 on attempt ${attempt}.`,
           rpc: regex ? regex[1] : url,
-          workers: nodeMaxConcurrency,
+          retryAfter: `${delayMs} ms`,
+          workers: nodeMaxConcurrency
         });
       }
+
       return attempt < retries;
     };
 
@@ -298,6 +309,7 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
       url: nodeUrl,
       timeout,
       allowGzip: true,
+      throttleSlotInterval: 1,
       throttleCallback: rpcRateLimited({ nodeMaxConcurrency, logger }),
     },
     chainId,
