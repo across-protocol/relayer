@@ -283,9 +283,9 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
   };
 
   // Custom delay + logging for RPC rate-limiting.
-  const rpcRateLimited = ({ nodeMaxConcurrency, logger }) =>
+  const rpcRateLimited =
+    ({ nodeMaxConcurrency, logger }) =>
     async (attempt: number, url: string): Promise<boolean> => {
-
       const baseDelay = 1000 * Math.pow(2, attempt); // ms; attempt = [0, 1, 2, ...]
       const delayMs = await sleep(baseDelay + baseDelay * Math.random());
 
@@ -297,7 +297,7 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
           message: `Got 429 on attempt ${attempt}.`,
           rpc: regex ? regex[1] : url,
           retryAfter: `${delayMs} ms`,
-          workers: nodeMaxConcurrency
+          workers: nodeMaxConcurrency,
         });
       }
 
