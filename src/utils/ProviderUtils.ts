@@ -76,6 +76,39 @@ function createSendErrorWithMessage(message: string, sendError: any) {
   return { ...sendError, ...error };
 }
 
+function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): boolean {
+  // This function mutates rpcResults and deletes the ignored keys. It returns the deleted keys that we can re-add
+  // back after we do the comparison with unignored keys. This is a faster algorithm than cloning an object but it has
+  // some side effects such as the order of keys in the rpcResults object changing.
+  const deleteIgnoredKeys = (ignoredKeys: string[], rpcResults: any) => {
+    const ignoredMappings = {};
+    for (const key of ignoredKeys) {
+      ignoredMappings[key] = rpcResults[key];
+      delete rpcResults[key];
+    }
+    return ignoredMappings;
+  };
+  const addIgnoredFilteredKeys = (ignoredMappings: any, rpcResults: any) => {
+    for (const [key, value] of Object.entries(ignoredMappings)) {
+      rpcResults[key] = value;
+    }
+  };
+
+  if (method === "eth_getBlockByNumber") {
+    // We've seen RPC's disagree on the miner field, for example when Polygon nodes updated software that
+    // led alchemy and quicknode to disagree on the the miner field's value.
+    const ignoredKeys = ["miner"];
+    const ignoredMappingsA = deleteIgnoredKeys(ignoredKeys, rpcResultA);
+    const ignoredMappingsB = deleteIgnoredKeys(ignoredKeys, rpcResultB);
+    const result = lodash.isEqual(rpcResultA, rpcResultB);
+    addIgnoredFilteredKeys(ignoredMappingsA, rpcResultA);
+    addIgnoredFilteredKeys(ignoredMappingsB, rpcResultB);
+    return result;
+  } else {
+    return lodash.isEqual(rpcResultA, rpcResultB);
+  }
+}
+
 class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
   readonly providers: ethers.providers.StaticJsonRpcProvider[];
   constructor(
@@ -153,7 +186,7 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
 
     // Start at element 1 and begin comparing.
     // If _all_ values are equal, we have hit quorum, so return.
-    if (values.slice(1).every(([, output]) => lodash.isEqual(values[0][1], output))) return values[0][1];
+    if (values.slice(1).every(([, output]) => compareRpcResults(method, values[0][1], output))) return values[0][1];
 
     const throwQuorumError = () => {
       const errorTexts = errors.map(([provider, errorText]) => formatProviderError(provider, errorText));
@@ -191,7 +224,7 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
         const [, result] = curr;
 
         // Find the first result that matches the return value.
-        const existingMatch = acc.find(([existingResult]) => lodash.isEqual(existingResult, result));
+        const existingMatch = acc.find(([existingResult]) => compareRpcResults(method, existingResult, result));
 
         // Increment the count if a match is found, else add a new element to the match array with a count of 1.
         if (existingMatch) existingMatch[1]++;
@@ -214,10 +247,10 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
 
     // If we've achieved quorum, then we should still log the providers that mismatched with the quorum result.
     const mismatchedProviders = [...values, ...fallbackValues]
-      .filter(([, result]) => !lodash.isEqual(result, quorumResult))
+      .filter(([, result]) => !compareRpcResults(method, result, quorumResult))
       .map(([provider]) => provider.connection.url);
     const quorumProviders = [...values, ...fallbackValues]
-      .filter(([, result]) => lodash.isEqual(result, quorumResult))
+      .filter(([, result]) => compareRpcResults(method, result, quorumResult))
       .map(([provider]) => provider.connection.url);
     if (mismatchedProviders.length > 0 || errors.length > 0) {
       logger.warn({
