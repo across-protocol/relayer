@@ -243,8 +243,8 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
       .map(([provider]) => provider.connection.url);
     if (mismatchedProviders.length > 0 || errors.length > 0) {
       logger.warn({
-        at: "ProviderUtils`",
-        message: "Some providers mismatched with the quorum result or failed",
+        at: "ProviderUtils",
+        message: "Some providers mismatched with the quorum result or failed 🚸",
         method,
         params,
         quorumProviders,
