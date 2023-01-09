@@ -772,14 +772,14 @@ export class Monitor {
       decimalrequests.map(async ({ chainId, token }) => {
         if (token === ZERO_ADDRESS) return 18; // Assume all EVM chains have 18 decimal native tokens.
         if (this.decimals[chainId]?.[token]) return this.decimals[chainId][token];
-        const decimals = await new Contract(
+        const decimals: number = await new Contract(
           token,
           ERC20.abi,
           this.clients.spokePoolClients[chainId].spokePool.provider
         ).decimals();
         if (!this.decimals[chainId]) this.decimals[chainId] = {};
-        if (!this.decimals[chainId][token]) this.decimals[chainId][token] = decimals.toNumber();
-        return decimals.toNumber();
+        if (!this.decimals[chainId][token]) this.decimals[chainId][token] = decimals;
+        return decimals;
       })
     );
   }
