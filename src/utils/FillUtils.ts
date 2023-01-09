@@ -88,21 +88,18 @@ export function filledSameDeposit(fillA: Fill, fillB: Fill): boolean {
   );
 }
 
-export function getLastMatchingFillBeforeBlock(
-  fillToMatch: Fill,
-  allFills: FillWithBlock[],
-  lastBlock: number
-): FillWithBlock {
-  return sortEventsDescending(allFills).find(
-    (fill: FillWithBlock) => filledSameDeposit(fillToMatch, fill) && lastBlock >= fill.blockNumber
+export function getLastMatchingFillBeforeBlock(allMatchingFills: FillWithBlock[], lastBlock: number): FillWithBlock {
+  return sortEventsDescending(allMatchingFills).find(
+    (fill: FillWithBlock) => lastBlock >= fill.blockNumber
   ) as FillWithBlock;
 }
 
-export function getFillDataForSlowFillFromPreviousRootBundle(
+export async function getFillDataForSlowFillFromPreviousRootBundle(
   latestMainnetBlock: number,
   fill: FillWithBlock,
   allValidFills: FillWithBlock[],
   hubPoolClient: HubPoolClient,
+  spokePoolClientsByChain: SpokePoolClientsByChain,
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ) {
   // Can use spokeClient.queryFillsForDeposit(_fill, spokePoolClient.eventSearchConfig.fromBlock)
@@ -110,9 +107,23 @@ export function getFillDataForSlowFillFromPreviousRootBundle(
   // Note that allValidFills should only include fills later than than eventSearchConfig.fromBlock.
 
   // Find the first fill chronologically for matched deposit for the input fill.
-  const firstFillForSameDeposit = allValidFills.find(
-    (_fill: FillWithBlock) => filledSameDeposit(_fill, fill) && isFirstFillForDeposit(_fill as Fill)
-  );
+  const allMatchingFills = allValidFills.filter((_fill: FillWithBlock) => filledSameDeposit(_fill, fill));
+  let firstFillForSameDeposit = allMatchingFills.find((_fill) => isFirstFillForDeposit(_fill));
+
+  // If `allValidFills` doesn't contain the first fill for this deposit then we have to perform a historical query to
+  // find it. This is inefficient, but should be rare.
+  if (!firstFillForSameDeposit) {
+    // Note: allMatchingFills might have duplicate fills if there are multiple fills in the
+    // `firstFillForSameDeposit.blockNumber` but we don't care since we only need to find the first fill, of which
+    // there should be exactly 1, and the last fill in the same bundle.
+    allMatchingFills.push(
+      ...(await spokePoolClientsByChain[fill.originChainId].queryHistoricalMatchingFills(
+        fill,
+        firstFillForSameDeposit.blockNumber
+      ))
+    );
+    firstFillForSameDeposit = allMatchingFills.find((_fill) => isFirstFillForDeposit(_fill));
+  }
 
   // If there is no first fill for the same deposit, then throw an error.
   if (firstFillForSameDeposit === undefined) {
@@ -137,8 +148,7 @@ export function getFillDataForSlowFillFromPreviousRootBundle(
     // Can use spokeClient.queryFillsInBlockRange to get all fills in the `rootBundleEndBlockContainingFirstFill`
     // if and only if `allValidFills` doesn't contain the block range.
     lastMatchingFillInSameBundle = getLastMatchingFillBeforeBlock(
-      fill,
-      allValidFills,
+      allMatchingFills,
       rootBundleEndBlockContainingFirstFill
     );
   }

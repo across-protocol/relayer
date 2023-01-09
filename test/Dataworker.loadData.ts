@@ -6,6 +6,8 @@ import {
   getDefaultBlockRange,
   buildFillForRepaymentChain,
   getLastBlockNumber,
+  assert,
+  assertPromiseError,
 } from "./utils";
 import { SignerWithAddress, buildSlowRelayTree, enableRoutesOnHubPool } from "./utils";
 import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, buildSlowFill } from "./utils";
@@ -66,27 +68,27 @@ describe("Dataworker: Load data used in all functions", async function () {
 
   it("Default conditions", async function () {
     // Throws error if hub pool client is not updated.
-    expect(() => bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients)).to.throw(
-      /HubPoolClient not updated/
+    assertPromiseError(
+      bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients),
+      "HubPoolClient not updated"
     );
     await hubPoolClient.update();
 
     // Throws error if config store client not updated.
-    expect(() => bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients)).to.throw(
-      /ConfigStoreClient not updated/
+    assertPromiseError(
+      bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients),
+      "ConfigStoreClient not updated"
     );
     await configStoreClient.update();
 
     // Throws error if spoke pool clients not updated
-    expect(() => bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients)).to.throw(
-      /origin SpokePoolClient/
-    );
+    assertPromiseError(bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients), "origin SpokePoolClient");
     await spokePoolClient_1.update();
     await spokePoolClient_2.update();
 
     // Before any deposits, returns empty dictionaries.
     await updateAllClients();
-    expect(bundleDataClient.loadData(getDefaultBlockRange(1), spokePoolClients)).to.deep.equal({
+    expect(await bundleDataClient.loadData(getDefaultBlockRange(1), spokePoolClients)).to.deep.equal({
       unfilledDeposits: [],
       deposits: [],
       fillsToRefund: {},
@@ -144,7 +146,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
       const latestBlock = await hubPool.provider.getBlockNumber();
       const blockRange = CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
-      const expectedPoolRebalanceRoot = dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
+      const expectedPoolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
       await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
       for (const leaf of expectedPoolRebalanceRoot.leaves) {
         await hubPool.executeRootBundle(
@@ -207,7 +209,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
       const latestBlock = await hubPool.provider.getBlockNumber();
       const blockRange = CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
-      const expectedPoolRebalanceRoot = dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
+      const expectedPoolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
       await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
       for (const leaf of expectedPoolRebalanceRoot.leaves) {
         await hubPool.executeRootBundle(
@@ -250,7 +252,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       ).to.equal(getRefundForFills([fill1]));
       const latestBlock2 = await hubPool.provider.getBlockNumber();
       const blockRange2 = CHAIN_ID_TEST_LIST.map((_) => [latestBlock + 1, latestBlock2]);
-      const expectedPoolRebalanceRoot2 = dataworkerInstance.buildPoolRebalanceRoot(blockRange2, spokePoolClients);
+      const expectedPoolRebalanceRoot2 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange2, spokePoolClients);
       await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
       for (const leaf of expectedPoolRebalanceRoot2.leaves) {
         await hubPool.executeRootBundle(
@@ -286,7 +288,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     });
     it("Refunds in next bundle", async function () {
       // When there is no history of proposed root bundles:
-      const refunds = bundleDataClient.getNextBundleRefunds();
+      const refunds = await bundleDataClient.getNextBundleRefunds();
       expect(bundleDataClient.getRefundsFor(refunds, relayer.address, destinationChainId, erc20_2.address)).to.equal(
         getRefundForFills([fill1])
       );
@@ -300,7 +302,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       // Execute the bundle:
       const latestBlock = await hubPool.provider.getBlockNumber();
       const blockRange = CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
-      const expectedPoolRebalanceRoot = dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
+      const expectedPoolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
       await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
       for (const leaf of expectedPoolRebalanceRoot.leaves) {
         await hubPool.executeRootBundle(
@@ -327,7 +329,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       await updateAllClients();
       expect(
         bundleDataClient.getRefundsFor(
-          bundleDataClient.getNextBundleRefunds(),
+          await bundleDataClient.getNextBundleRefunds(),
           relayer.address,
           destinationChainId,
           erc20_2.address
@@ -344,7 +346,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       await updateAllClients();
       expect(
         bundleDataClient.getRefundsFor(
-          bundleDataClient.getNextBundleRefunds(),
+          await bundleDataClient.getNextBundleRefunds(),
           relayer.address,
           destinationChainId,
           erc20_2.address
@@ -387,7 +389,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     // Unfilled deposits are ignored.
     await updateAllClients();
-    const data1 = dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
+    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
     expect(data1.unfilledDeposits).to.deep.equal([]);
 
     // Two deposits with no fills per destination chain ID.
@@ -412,7 +414,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       amountToDeposit.mul(toBN(2))
     );
     await updateAllClients();
-    const data2 = dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(1), spokePoolClients);
+    const data2 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(1), spokePoolClients);
     expect(data2.unfilledDeposits).to.deep.equal([]);
 
     // Fills for 0 amount do not count do not make deposit eligible for slow fill:
@@ -420,7 +422,8 @@ describe("Dataworker: Load data used in all functions", async function () {
     await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 0);
     await updateAllClients();
     expect(
-      dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(2), spokePoolClients).unfilledDeposits
+      (await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(2), spokePoolClients))
+        .unfilledDeposits
     ).to.deep.equal([]);
 
     // Fills that don't match deposits do not affect unfilledAmount counter.
@@ -433,30 +436,29 @@ describe("Dataworker: Load data used in all functions", async function () {
     const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.5);
     const fill2 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 0.25);
     await updateAllClients();
-    const data3 = dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(3), spokePoolClients);
-    expect(data3.unfilledDeposits)
-      .excludingEvery(["logIndex", "transactionHash", "transactionIndex"])
-      .to.deep.equal([
-        {
-          unfilledAmount: amountToDeposit.sub(fill1.fillAmount),
-          deposit: deposit1,
-        },
-        {
-          unfilledAmount: amountToDeposit.sub(fill2.fillAmount),
-          deposit: deposit2,
-        },
-      ]);
+    const data3 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(3), spokePoolClients);
+    expect(data3.unfilledDeposits).to.deep.equal([
+      {
+        unfilledAmount: amountToDeposit.sub(fill1.fillAmount),
+        deposit: deposit1,
+      },
+      {
+        unfilledAmount: amountToDeposit.sub(fill2.fillAmount),
+        deposit: deposit2,
+      },
+    ]);
 
     // If block range does not cover fills, then unfilled deposits are not included.
     expect(
-      dataworkerInstance.clients.bundleDataClient.loadData(IMPOSSIBLE_BLOCK_RANGE, spokePoolClients).unfilledDeposits
+      (await dataworkerInstance.clients.bundleDataClient.loadData(IMPOSSIBLE_BLOCK_RANGE, spokePoolClients))
+        .unfilledDeposits
     ).to.deep.equal([]);
 
     // All deposits are fulfilled; unfilled deposits that are fully filled should be ignored.
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 1);
     await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 1);
     await updateAllClients();
-    const data5 = dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(4), spokePoolClients);
+    const data5 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(4), spokePoolClients);
     expect(data5.unfilledDeposits).to.deep.equal([]);
 
     // TODO: Add test where deposit has matched fills but none were the first ever fill for that deposit (i.e. where
@@ -482,10 +484,10 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     // One unfilled deposit that we're going to slow fill:
     await updateAllClients();
-    const data6 = dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
-    expect(data6.unfilledDeposits)
-      .excludingEvery(["logIndex", "transactionHash", "transactionIndex"])
-      .to.deep.equal([{ unfilledAmount: amountToDeposit.sub(fill3.fillAmount), deposit: deposit5 }]);
+    const data6 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
+    expect(data6.unfilledDeposits).to.deep.equal([
+      { unfilledAmount: amountToDeposit.sub(fill3.fillAmount), deposit: deposit5 },
+    ]);
 
     const slowRelays = buildSlowRelayLeaves([deposit5]);
     const tree = await buildSlowRelayTree(slowRelays);
@@ -494,7 +496,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     // The unfilled deposit has now been fully filled.
     await updateAllClients();
-    const data7 = dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(6), spokePoolClients);
+    const data7 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(6), spokePoolClients);
     expect(data7.unfilledDeposits).to.deep.equal([]);
   });
   it("Returns fills to refund", async function () {
@@ -532,7 +534,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     // Submit a valid fill.
     const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.5);
     await updateAllClients();
-    const data1 = dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
+    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
     expect(data1.fillsToRefund).to.deep.equal({
       [repaymentChainId]: {
         [repaymentToken.address]: {
@@ -546,7 +548,8 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     // If block range does not cover fills, then they are not included
     expect(
-      dataworkerInstance.clients.bundleDataClient.loadData(IMPOSSIBLE_BLOCK_RANGE, spokePoolClients).fillsToRefund
+      (await dataworkerInstance.clients.bundleDataClient.loadData(IMPOSSIBLE_BLOCK_RANGE, spokePoolClients))
+        .fillsToRefund
     ).to.deep.equal({});
 
     // Submit fills without matching deposits. These should be ignored by the client.
@@ -555,7 +558,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     // with all correct fill params except for the relayer fee %.
     await buildFill(spokePool_1, erc20_1, depositor, relayer, { ...deposit2, relayerFeePct: toBN(0) }, 0.5);
     await updateAllClients();
-    const data3 = dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(1), spokePoolClients);
+    const data3 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(1), spokePoolClients);
     expect(data3.fillsToRefund).to.deep.equal(data1.fillsToRefund);
 
     // Submit fills that match deposit in all properties except for realized lp fee % or l1 token. These should be
@@ -573,7 +576,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     // Note: This fill has identical deposit data to fill2 except for the destination token being different
     await buildFill(spokePool_1, erc20_2, depositor, relayer, deposit2, 0.25);
     await updateAllClients();
-    const data4 = dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(2), spokePoolClients);
+    const data4 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(2), spokePoolClients);
     expect(data4.fillsToRefund).to.deep.equal(data1.fillsToRefund);
 
     // Slow relay fills are added.
@@ -593,7 +596,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     await spokePool_1.relayRootBundle(tree.getHexRoot(), tree.getHexRoot());
     const slowFill3 = await buildSlowFill(spokePool_1, fill3, depositor, []);
     await updateAllClients();
-    const data5 = dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(3), spokePoolClients);
+    const data5 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(3), spokePoolClients);
     expect(data5.fillsToRefund).to.deep.equal({
       [slowFill3.destinationChainId]: {
         [erc20_1.address]: {
@@ -615,7 +618,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     const fill4 = await buildModifiedFill(spokePool_2, depositor, relayer, fill1, 2, 0.1);
     expect(fill4.totalFilledAmount.gt(fill4.fillAmount), "speed up fill didn't match original deposit").to.be.true;
     await updateAllClients();
-    const data6 = dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(4), spokePoolClients);
+    const data6 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(4), spokePoolClients);
     expect(data6.fillsToRefund).to.deep.equal({
       [slowFill3.destinationChainId]: {
         [erc20_1.address]: {
@@ -651,14 +654,14 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     // Should include all deposits, even those not matched by a relay
     await updateAllClients();
-    const data1 = dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
-    expect(data1.deposits)
-      .excludingEvery(["logIndex", "transactionHash", "transactionIndex"])
-      .to.deep.equal([{ ...deposit1, blockNumber: realizedLpFeePctData.quoteBlock, originBlockNumber: originBlock }]);
+    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
+    expect(data1.deposits).to.deep.equal([
+      { ...deposit1, blockNumber: realizedLpFeePctData.quoteBlock, originBlockNumber: originBlock },
+    ]);
 
     // If block range does not cover deposits, then they are not included
     expect(
-      dataworkerInstance.clients.bundleDataClient.loadData(IMPOSSIBLE_BLOCK_RANGE, spokePoolClients).deposits
+      (await dataworkerInstance.clients.bundleDataClient.loadData(IMPOSSIBLE_BLOCK_RANGE, spokePoolClients)).deposits
     ).to.deep.equal([]);
   });
 });

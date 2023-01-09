@@ -16,6 +16,7 @@ import {
   FillsToRefund,
   FillWithBlock,
   RootBundleRelayWithBlock,
+  SpokePoolClientsByChain,
   UnfilledDeposit,
 } from "../interfaces";
 import {
@@ -95,12 +96,12 @@ export class Dataworker {
     this.rootCache = {};
   }
 
-  buildSlowRelayRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
-    const { unfilledDeposits } = this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
+  async buildSlowRelayRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
+    const { unfilledDeposits } = await this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
     return _buildSlowRelayRoot(unfilledDeposits);
   }
 
-  buildRelayerRefundRoot(
+  async buildRelayerRefundRoot(
     blockRangesForChains: number[][],
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     poolRebalanceLeaves: PoolRebalanceLeaf[],
@@ -112,7 +113,7 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
 
-    const { fillsToRefund } = this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
+    const { fillsToRefund } = await this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
     const maxRefundCount = this.maxRefundCountOverride
       ? this.maxRefundCountOverride
       : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
@@ -127,8 +128,8 @@ export class Dataworker {
     );
   }
 
-  buildPoolRebalanceRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
-    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this.clients.bundleDataClient.loadData(
+  async buildPoolRebalanceRoot(blockRangesForChains: number[][], spokePoolClients: SpokePoolClientsByChain) {
+    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = await this.clients.bundleDataClient.loadData(
       blockRangesForChains,
       spokePoolClients
     );
@@ -144,7 +145,8 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     );
 
-    return this._getPoolRebalanceRoot(
+    return await this._getPoolRebalanceRoot(
+      spokePoolClients,
       blockRangesForChains,
       mainnetBundleEndBlock,
       fillsToRefund,
@@ -216,7 +218,7 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     usdThresholdToSubmitNewBundle?: BigNumber,
     submitProposals = true,
-    latestInvalidBundleStartBlock: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ) {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
@@ -260,19 +262,19 @@ export class Dataworker {
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // potential proposal
     if (
-      Object.keys(latestInvalidBundleStartBlock).length > 0 &&
+      Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
       blockRangesAreInvalidForSpokeClients(
         spokePoolClients,
         blockRangesForProposal,
         this.chainIdListForBundleEvaluationBlockNumbers,
-        latestInvalidBundleStartBlock
+        earliestBlocksInSpokePoolClients
       )
     ) {
       this.logger.warn({
         at: "Dataworke#propose",
         message: "Cannot propose bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
         rootBundleRanges: blockRangesForProposal,
-        latestInvalidBundleStartBlock,
+        earliestBlocksInSpokePoolClients,
         spokeClientsEventSearchConfigs: Object.fromEntries(
           Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.eventSearchConfig])
         ),
@@ -288,7 +290,7 @@ export class Dataworker {
 
     // Create roots using constructed block ranges.
     const timerStart = Date.now();
-    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this.clients.bundleDataClient.loadData(
+    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = await this.clients.bundleDataClient.loadData(
       blockRangesForProposal,
       spokePoolClients
     );
@@ -302,7 +304,8 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     );
     this.logger.debug({ at: "Dataworker", message: "Building pool rebalance root", blockRangesForProposal });
-    const poolRebalanceRoot = this._getPoolRebalanceRoot(
+    const poolRebalanceRoot = await this._getPoolRebalanceRoot(
+      spokePoolClients,
       blockRangesForProposal,
       mainnetBundleEndBlock,
       fillsToRefund,
@@ -414,7 +417,7 @@ export class Dataworker {
   async validatePendingRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     submitDisputes = true,
-    latestInvalidBundleStartBlock: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ) {
     if (
       !this.clients.hubPoolClient.isUpdated ||
@@ -462,7 +465,7 @@ export class Dataworker {
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
       spokePoolClients,
-      latestInvalidBundleStartBlock
+      earliestBlocksInSpokePoolClients
     );
     if (!valid) {
       // In the case where the Dataworker config is improperly configured, emit an error level alert so bot runner
@@ -495,7 +498,7 @@ export class Dataworker {
     widestPossibleExpectedBlockRange: number[][],
     rootBundle: PendingRootBundle,
     spokePoolClients: { [chainId: number]: SpokePoolClient },
-    latestInvalidBundleStartBlock: { [chainId: number]: number }
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number }
   ): Promise<
     // If valid is false, we get a reason and we might get expected trees.
     | {
@@ -624,19 +627,19 @@ export class Dataworker {
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // pending proposal. Log an error loudly so that user knows that disputer needs to increase its lookback.
     if (
-      Object.keys(latestInvalidBundleStartBlock).length > 0 &&
+      Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
       blockRangesAreInvalidForSpokeClients(
         spokePoolClients,
         blockRangesImpliedByBundleEndBlocks,
         this.chainIdListForBundleEvaluationBlockNumbers,
-        latestInvalidBundleStartBlock
+        earliestBlocksInSpokePoolClients
       )
     ) {
       this.logger.debug({
         at: "Dataworke#validate",
         message: "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
         rootBundleRanges: blockRangesImpliedByBundleEndBlocks,
-        latestInvalidBundleStartBlock,
+        earliestBlocksInSpokePoolClients,
         spokeClientsEventSearchConfigs: Object.fromEntries(
           Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.eventSearchConfig])
         ),
@@ -677,7 +680,7 @@ export class Dataworker {
     // Compare roots with expected. The roots will be different if the block range start blocks were different
     // than the ones we constructed above when the original proposer submitted their proposal. The roots will also
     // be different if the events on any of the contracts were different.
-    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this.clients.bundleDataClient.loadData(
+    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = await this.clients.bundleDataClient.loadData(
       blockRangesImpliedByBundleEndBlocks,
       spokePoolClients
     );
@@ -686,7 +689,8 @@ export class Dataworker {
       blockRangesImpliedByBundleEndBlocks,
       this.chainIdListForBundleEvaluationBlockNumbers
     );
-    const expectedPoolRebalanceRoot = this._getPoolRebalanceRoot(
+    const expectedPoolRebalanceRoot = await this._getPoolRebalanceRoot(
+      spokePoolClients,
       blockRangesImpliedByBundleEndBlocks,
       endBlockForMainnet,
       fillsToRefund,
@@ -792,7 +796,7 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
-    latestInvalidBundleStartBlock: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ) {
     this.logger.debug({
       at: "Dataworker#executeSlowRelayLeaves",
@@ -862,12 +866,12 @@ export class Dataworker {
           });
 
           if (
-            Object.keys(latestInvalidBundleStartBlock).length > 0 &&
+            Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
             blockRangesAreInvalidForSpokeClients(
               spokePoolClients,
               blockNumberRanges,
               this.chainIdListForBundleEvaluationBlockNumbers,
-              latestInvalidBundleStartBlock
+              earliestBlocksInSpokePoolClients
             )
           ) {
             this.logger.warn({
@@ -876,7 +880,7 @@ export class Dataworker {
                 "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
               chainId,
               rootBundleRanges: blockNumberRanges,
-              latestInvalidBundleStartBlock,
+              earliestBlocksInSpokePoolClients,
               spokeClientsEventSearchConfigs: Object.fromEntries(
                 Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.eventSearchConfig])
               ),
@@ -884,26 +888,7 @@ export class Dataworker {
             continue;
           }
 
-          const endBlockForMainnet = getBlockRangeForChain(
-            blockNumberRanges,
-            1,
-            this.chainIdListForBundleEvaluationBlockNumbers
-          )[1];
-          const mainnetEndBlockTimestamp = (
-            await this.clients.hubPoolClient.hubPool.provider.getBlock(endBlockForMainnet)
-          ).timestamp;
-          if (!this.clients.configStoreClient.hasValidConfigStoreVersionForTimestamp(mainnetEndBlockTimestamp)) {
-            this.logger.debug({
-              at: "Dataworke#executeSlowRelayLeaves",
-              message: "Cannot validate because missing updated ConfigStore version. Update to latest code.",
-              mainnetEndBlockTimestamp,
-              latestVersionSupported: CONFIG_STORE_VERSION,
-              latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
-            });
-            continue;
-          }
-
-          const { unfilledDeposits } = this.clients.bundleDataClient.loadData(
+          const { unfilledDeposits } = await this.clients.bundleDataClient.loadData(
             blockNumberRanges,
             spokePoolClients,
             false // Don't log this function's result since we're calling it once per chain per root bundle
@@ -1033,7 +1018,7 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
-    latestInvalidBundleStartBlock: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ) {
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
@@ -1086,7 +1071,7 @@ export class Dataworker {
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
       spokePoolClients,
-      latestInvalidBundleStartBlock
+      earliestBlocksInSpokePoolClients
     );
 
     if (!valid) {
@@ -1249,7 +1234,7 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
-    latestInvalidBundleStartBlock: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ) {
     this.logger.debug({
       at: "Dataworker#executeRelayerRefundLeaves",
@@ -1317,12 +1302,12 @@ export class Dataworker {
           });
 
           if (
-            Object.keys(latestInvalidBundleStartBlock).length > 0 &&
+            Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
             blockRangesAreInvalidForSpokeClients(
               spokePoolClients,
               blockNumberRanges,
               this.chainIdListForBundleEvaluationBlockNumbers,
-              latestInvalidBundleStartBlock
+              earliestBlocksInSpokePoolClients
             )
           ) {
             this.logger.warn({
@@ -1331,7 +1316,7 @@ export class Dataworker {
                 "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
               chainId,
               rootBundleRanges: blockNumberRanges,
-              latestInvalidBundleStartBlock,
+              earliestBlocksInSpokePoolClients,
               spokeClientsEventSearchConfigs: Object.fromEntries(
                 Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.eventSearchConfig])
               ),
@@ -1339,11 +1324,12 @@ export class Dataworker {
             continue;
           }
 
-          const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = this.clients.bundleDataClient.loadData(
-            blockNumberRanges,
-            spokePoolClients,
-            false // Don't log this function's result since we're calling it once per chain per root bundle
-          );
+          const { fillsToRefund, deposits, allValidFills, unfilledDeposits } =
+            await this.clients.bundleDataClient.loadData(
+              blockNumberRanges,
+              spokePoolClients,
+              false // Don't log this function's result since we're calling it once per chain per root bundle
+            );
 
           const endBlockForMainnet = getBlockRangeForChain(
             blockNumberRanges,
@@ -1369,7 +1355,8 @@ export class Dataworker {
             blockNumberRanges,
             this.chainIdListForBundleEvaluationBlockNumbers
           );
-          const expectedPoolRebalanceRoot = this._getPoolRebalanceRoot(
+          const expectedPoolRebalanceRoot = await this._getPoolRebalanceRoot(
+            spokePoolClients,
             blockNumberRanges,
             endBlockForMainnet,
             fillsToRefund,
@@ -1537,7 +1524,8 @@ export class Dataworker {
     }
   }
 
-  _getPoolRebalanceRoot(
+  async _getPoolRebalanceRoot(
+    spokePoolClients: SpokePoolClientsByChain,
     blockRangesForChains: number[][],
     mainnetBundleEndBlock: number,
     fillsToRefund: FillsToRefund,
@@ -1549,7 +1537,7 @@ export class Dataworker {
   ) {
     const key = JSON.stringify(blockRangesForChains);
     if (!this.rootCache[key]) {
-      this.rootCache[key] = _buildPoolRebalanceRoot(
+      this.rootCache[key] = await _buildPoolRebalanceRoot(
         mainnetBundleEndBlock,
         fillsToRefund,
         deposits,
@@ -1557,6 +1545,7 @@ export class Dataworker {
         allValidFillsInRange,
         unfilledDeposits,
         this.clients,
+        spokePoolClients,
         this.chainIdListForBundleEvaluationBlockNumbers,
         this.maxL1TokenCountOverride,
         this.tokenTransferThreshold,

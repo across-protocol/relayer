@@ -9,6 +9,7 @@ import {
   RunningBalances,
   UnfilledDeposit,
   SpokePoolTargetBalance,
+  SpokePoolClientsByChain,
 } from "../interfaces";
 import {
   assign,
@@ -154,10 +155,11 @@ export function computePoolRebalanceUsdVolume(leaves: PoolRebalanceLeaf[], clien
   }, toBN(0));
 }
 
-export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
+export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   mainnetBundleEndBlock: number,
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
+  spokePoolClientsByChain: SpokePoolClientsByChain,
   allValidFills: interfaces.FillWithBlock[],
   allValidFillsInRange: interfaces.FillWithBlock[],
   chainIdListForBundleEvaluationBlockNumbers: number[]
@@ -173,13 +175,14 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   // triggered a slow fill payment to be sent to the destination chain.
   allValidFillsInRange
     .filter((fill) => fill.totalFilledAmount.eq(fill.amount) && !fill.fillAmount.eq(fill.amount))
-    .forEach((fill: interfaces.FillWithBlock) => {
+    .map(async (fill: interfaces.FillWithBlock) => {
       const { lastMatchingFillInSameBundle, rootBundleEndBlockContainingFirstFill } =
-        getFillDataForSlowFillFromPreviousRootBundle(
+        await getFillDataForSlowFillFromPreviousRootBundle(
           hubPoolClient.latestBlockNumber,
           fill,
           allValidFills,
           hubPoolClient,
+          spokePoolClientsByChain,
           chainIdListForBundleEvaluationBlockNumbers
         );
 

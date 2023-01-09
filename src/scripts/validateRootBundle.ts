@@ -17,7 +17,6 @@ import {
   getSigner,
   startupLogLevel,
   Logger,
-  getLatestInvalidBundleStartBlocks,
   getDvmContract,
   getDisputedProposal,
   getBlockForTimestamp,
@@ -162,16 +161,6 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     toBlocks
   );
 
-  const latestInvalidBundleStartBlocks = getLatestInvalidBundleStartBlocks(spokePoolClients);
-  logger.debug({
-    at: "RootBundleValidator",
-    message:
-      "Identified latest invalid bundle start blocks per chain that we will use to filter root bundles that can be proposed and validated",
-    latestInvalidBundleStartBlocks,
-    fromBlocks,
-    toBlocks,
-  });
-
   const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
     dataworker.chainIdListForBundleEvaluationBlockNumbers,
     spokePoolClients,
@@ -186,7 +175,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     widestPossibleBlockRanges,
     rootBundle,
     spokePoolClients,
-    latestInvalidBundleStartBlocks
+    fromBlocks
   );
 
   logger.info({

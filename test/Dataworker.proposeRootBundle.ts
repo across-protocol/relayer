@@ -81,14 +81,14 @@ describe("Dataworker: Propose root bundle", async function () {
     const blockRange2 = CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock2]);
 
     // Construct expected roots before we propose new root so that last log contains logs about submitted txn.
-    const expectedPoolRebalanceRoot2 = dataworkerInstance.buildPoolRebalanceRoot(blockRange2, spokePoolClients);
-    const expectedRelayerRefundRoot2 = dataworkerInstance.buildRelayerRefundRoot(
+    const expectedPoolRebalanceRoot2 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange2, spokePoolClients);
+    const expectedRelayerRefundRoot2 = await dataworkerInstance.buildRelayerRefundRoot(
       blockRange2,
       spokePoolClients,
       expectedPoolRebalanceRoot2.leaves,
       expectedPoolRebalanceRoot2.runningBalances
     );
-    const expectedSlowRelayRefundRoot2 = dataworkerInstance.buildSlowRelayRoot(blockRange2, spokePoolClients);
+    const expectedSlowRelayRefundRoot2 = await dataworkerInstance.buildSlowRelayRoot(blockRange2, spokePoolClients);
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     const loadDataResults2 = getMostRecentLog(spy, "Finished loading spoke pool data");
     expect(loadDataResults2.blockRangesForChains).to.deep.equal(blockRange2);
@@ -160,8 +160,8 @@ describe("Dataworker: Propose root bundle", async function () {
       [latestBlock2 + 1, latestBlock4],
       [latestBlock2 + 1, latestBlock4],
     ];
-    const expectedPoolRebalanceRoot4 = dataworkerInstance.buildPoolRebalanceRoot(blockRange4, spokePoolClients);
-    const expectedRelayerRefundRoot4 = dataworkerInstance.buildRelayerRefundRoot(
+    const expectedPoolRebalanceRoot4 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange4, spokePoolClients);
+    const expectedRelayerRefundRoot4 = await dataworkerInstance.buildRelayerRefundRoot(
       blockRange4,
       spokePoolClients,
       expectedPoolRebalanceRoot4.leaves,
@@ -194,7 +194,7 @@ describe("Dataworker: Propose root bundle", async function () {
     // in a previous root bundle. This would be a case where there is excess slow fill payment sent to the spoke
     // pool and we need to send some back to the hub pool, because of this fill in the current block range that
     // came after the slow fill was sent.
-    const { allValidFills } = dataworkerInstance.clients.bundleDataClient.loadData(
+    const { allValidFills } = await dataworkerInstance.clients.bundleDataClient.loadData(
       loadDataResults4.blockRangesForChains,
       spokePoolClients
     );
