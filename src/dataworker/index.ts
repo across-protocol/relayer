@@ -1,4 +1,4 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, getDeploymentBlockNumber } from "../utils";
+import { processEndPollingLoop, winston, config, startupLogLevel, Wallet } from "../utils";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -45,13 +45,14 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       const loopStart = Date.now();
       await updateDataworkerClients(clients);
 
-      // We determine the spoke client's lookback dynamically:
+      // Determine the spoke client's lookback:
       // 1. We initiate the spoke client event search windows based on a start bundle's bundle block end numbers and
       //    how many bundles we want to look back from the start bundle blocks.
       // 2. For example, if the start bundle is 100 and the lookback is 16, then we will set the spoke client event
       //    search window's toBlocks equal to the 100th bundle's block evaluation numbers and the fromBlocks equal
       //    to the 84th bundle's block evaluation numbers.
-      // 3. Once we do all the querying, we figure out the earliest block that we’re able to validate per chain.
+      // 3. Once we do all the querying, we figure out the earliest block that we’re able to validate per chain. This
+      //    is simply equal to the first block queried per chain.
       // 4. If the earliest block we can validate is later than some target fully executed bundle's start blocks,
       //    then extend the SpokePoolClients' lookbacks and update again. Do this up to a specified # of retries.
       //    By dynamically increasing the range of Deposit events to at least cover the target bundle's
@@ -59,28 +60,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       //    the case where it can't validate a fill without loading an earlier block.
       // 5. If the bundle we’re trying to validate or propose requires an earlier block, then exit early and
       //    emit an alert. In the dispute flow, this alert should be ERROR level.
-
-      // The following code sets the target bundle's start blocks that we'll use as a threshold for determining
-      // whether to expand the lookback dynamically via a retry.
-      // Note: The reason why we pass -(1 + config.spokeRootsLookbackCount) into the function below is because we
-      // want to get the start blocks of the root bundle that is (spokeRootsLookbackCount) bundles from being
-      // from the latest bundle and we start with -2 because n=-1 would get that target spoke root's end blocks,
-      // not its start blocks so we want to start with n=-2 assuming config.spokeRootsLookbackCount = 1.
-      const nthFullyExecutedBundle = clients.hubPoolClient.getNthFullyExecutedRootBundle(
-        -(1 + (config.spokeRootsLookbackCount ?? 0))
-      );
-      const nthFullyExecutedBundleEndBlocks = nthFullyExecutedBundle?.bundleEvaluationBlockNumbers;
-      // Note: If bundle doesn't exist, then use the deployment blocks as the start blocks.
-      const bundleStartBlockMapping = Object.fromEntries(
-        dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, index) => {
-          return [
-            chainId,
-            nthFullyExecutedBundleEndBlocks
-              ? nthFullyExecutedBundleEndBlocks[index].toNumber() + 1
-              : getDeploymentBlockNumber("SpokePool", chainId),
-          ];
-        })
-      );
 
       // Get block range for spoke clients using the dataworker fast lookback bundle count.
       const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(

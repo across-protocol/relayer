@@ -311,7 +311,8 @@ export class BundleDataClient {
           }
         });
 
-        // Save any fills without matching deposits even after additional query for deposit.
+        // Mark fills without matching deposits, even after additional queries for deposit, as invalid.
+        // Mark fills with matching deposits as valid and add them to the list of fills to refund.
         const historicalDepositQueries = (
           await Promise.all(
             historicalDepositPromises.map(async (depositPromise, i) => {
@@ -319,16 +320,17 @@ export class BundleDataClient {
               return [await depositPromise, fillsForOriginChain[i]];
             })
           )
-        ).filter((x) => x !== undefined) as [Deposit | undefined, FillWithBlock][];
+        ).filter((x) => x !== undefined) as [DepositWithBlock | undefined, FillWithBlock][];
         const matchedHistoricalDeposits = historicalDepositQueries.filter((x) => x[0] !== undefined);
-        matchedHistoricalDeposits.forEach(([deposit]) => {
+        matchedHistoricalDeposits.forEach(([deposit, fillWithBlock]) => {
           this.historicalDepositCache[originChainId][deposit.depositId] = deposit;
+          addRefundForValidFill(fillWithBlock, deposit, blockRangeForChain);
         });
         const unmatchedHistoricalDeposits = historicalDepositQueries.filter((x) => x[0] === undefined);
         unmatchedHistoricalDeposits.forEach(([, fill]) => {
           allInvalidFills.push(fill);
         });
-        if (historicalDepositQueries.filter((x) => x !== undefined).length > 0)
+        if (historicalDepositQueries.length > 0)
           this.logger.debug({
             at: "BundleDataClient#loadData",
             message: `Sent additional RPC requests to find historical deposits for chain ${originChainId}`,

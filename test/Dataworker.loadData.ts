@@ -8,6 +8,7 @@ import {
   getLastBlockNumber,
   assert,
   assertPromiseError,
+  createSpyLogger,
 } from "./utils";
 import { SignerWithAddress, buildSlowRelayTree, enableRoutesOnHubPool } from "./utils";
 import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, buildSlowFill } from "./utils";
@@ -437,16 +438,18 @@ describe("Dataworker: Load data used in all functions", async function () {
     const fill2 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 0.25);
     await updateAllClients();
     const data3 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(3), spokePoolClients);
-    expect(data3.unfilledDeposits).to.deep.equal([
-      {
-        unfilledAmount: amountToDeposit.sub(fill1.fillAmount),
-        deposit: deposit1,
-      },
-      {
-        unfilledAmount: amountToDeposit.sub(fill2.fillAmount),
-        deposit: deposit2,
-      },
-    ]);
+    expect(data3.unfilledDeposits)
+      .excludingEvery(["logIndex", "transactionHash", "transactionIndex"])
+      .to.deep.equal([
+        {
+          unfilledAmount: amountToDeposit.sub(fill1.fillAmount),
+          deposit: deposit1,
+        },
+        {
+          unfilledAmount: amountToDeposit.sub(fill2.fillAmount),
+          deposit: deposit2,
+        },
+      ]);
 
     // If block range does not cover fills, then unfilled deposits are not included.
     expect(
@@ -485,9 +488,9 @@ describe("Dataworker: Load data used in all functions", async function () {
     // One unfilled deposit that we're going to slow fill:
     await updateAllClients();
     const data6 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
-    expect(data6.unfilledDeposits).to.deep.equal([
-      { unfilledAmount: amountToDeposit.sub(fill3.fillAmount), deposit: deposit5 },
-    ]);
+    expect(data6.unfilledDeposits)
+      .excludingEvery(["logIndex", "transactionHash", "transactionIndex"])
+      .to.deep.equal([{ unfilledAmount: amountToDeposit.sub(fill3.fillAmount), deposit: deposit5 }]);
 
     const slowRelays = buildSlowRelayLeaves([deposit5]);
     const tree = await buildSlowRelayTree(slowRelays);
@@ -655,13 +658,69 @@ describe("Dataworker: Load data used in all functions", async function () {
     // Should include all deposits, even those not matched by a relay
     await updateAllClients();
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
-    expect(data1.deposits).to.deep.equal([
-      { ...deposit1, blockNumber: realizedLpFeePctData.quoteBlock, originBlockNumber: originBlock },
-    ]);
+    expect(data1.deposits)
+      .excludingEvery(["logIndex", "transactionHash", "transactionIndex"])
+      .to.deep.equal([{ ...deposit1, blockNumber: realizedLpFeePctData.quoteBlock, originBlockNumber: originBlock }]);
 
     // If block range does not cover deposits, then they are not included
     expect(
       (await dataworkerInstance.clients.bundleDataClient.loadData(IMPOSSIBLE_BLOCK_RANGE, spokePoolClients)).deposits
     ).to.deep.equal([]);
+  });
+  it("Can fetch historical deposits older than SpokePoolClient's search range", async function () {
+    // Send a deposit and note its block number.
+    await updateAllClients();
+    const deposit1 = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token_1,
+      depositor,
+      destinationChainId,
+      amountToDeposit
+    );
+    const deposit1Block = await spokePool_1.provider.getBlockNumber();
+
+    // Construct a spoke pool client with a small search range that would not include the deposit.
+    spokePoolClient_1.firstBlockToSearch = deposit1Block + 1;
+    await updateAllClients();
+    expect(spokePoolClient_1.getDeposits().length).to.equal(0);
+
+    // Fills should be keyed by repayment chain and repayment token. For this test, make sure that the repayment chain
+    // ID is associated with some ERC20:
+    const repaymentToken = await deployNewToken(relayer);
+    await enableRoutesOnHubPool(hubPool, [
+      { destinationChainId: repaymentChainId, destinationToken: repaymentToken, l1Token: l1Token_1 },
+    ]);
+    await updateAllClients();
+
+    // Send a fill now and force the bundle data client to query for the historical deposit.
+    const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.5);
+    await updateAllClients();
+    expect(spokePoolClient_2.getFills().length).to.equal(1);
+
+    // For queryHistoricalDepositForFill to work we need to have a deployment block set for the spoke pool client.
+    const bundleData = await bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
+    expect(bundleData.fillsToRefund).to.deep.equal({
+      [repaymentChainId]: {
+        [repaymentToken.address]: {
+          fills: [fill1],
+          refunds: { [relayer.address]: getRefundForFills([fill1]) },
+          totalRefundAmount: getRefundForFills([fill1]),
+          realizedLpFees: getRealizedLpFeeForFills([fill1]),
+        },
+      },
+    });
+    expect(bundleData.deposits).to.deep.equal([]);
+    expect(bundleData.allValidFills.length).to.equal(1);
+    expect(bundleData.unfilledDeposits)
+      .excludingEvery(["logIndex", "transactionHash", "transactionIndex", "blockNumber", "originBlockNumber"])
+      .to.deep.equal([
+        {
+          unfilledAmount: amountToDeposit.sub(fill1.fillAmount),
+          deposit: { ...deposit1 },
+        },
+      ]);
   });
 });
