@@ -35,6 +35,12 @@ export class BundleDataClient {
     };
   } = {};
 
+  private historicalDepositCache: {
+    [chainId: string]: {
+      [depositId: string]: Deposit;
+    };
+  } = {};
+
   // eslint-disable-next-line no-useless-constructor
   constructor(
     readonly logger: winston.Logger,

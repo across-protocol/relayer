@@ -15,6 +15,7 @@ import {
   getRedisDepositKey,
   assert,
   filledSameDeposit,
+  sortEventsAscending,
 } from "../utils";
 import { toBN, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
@@ -56,6 +57,7 @@ export class SpokePoolClient {
   public lastDepositIdForSpokePool = Number.MAX_SAFE_INTEGER;
   public isUpdated = false;
   public firstBlockToSearch: number;
+  public firstBlockSearched: number;
   public latestBlockNumber: number | undefined;
   public deposits: { [DestinationChainId: number]: DepositWithBlock[] } = {};
   public fills: { [OriginChainId: number]: FillWithBlock[] } = {};
@@ -370,7 +372,7 @@ export class SpokePoolClient {
       searchConfig
     );
     const fills = query.map((event) => spreadEventWithBlockNumber(event) as FillWithBlock);
-    return fills.filter((_fill) => filledSameDeposit(_fill, matchingFill));
+    return sortEventsAscending(fills.filter((_fill) => filledSameDeposit(_fill, matchingFill)));
   }
 
   async update(eventsToQuery?: string[]) {
