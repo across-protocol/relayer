@@ -4,8 +4,8 @@ import { HubPoolClient } from "../clients";
 import { ProposedRootBundle, SortableEvent } from "../interfaces";
 import { BlockFinder } from "@uma/financial-templates-lib";
 
-export function getDvmContract(mainnetProvider: ethers.providers.Provider): Contract {
-  return new Contract("0x8B1631ab830d11531aE83725fDa4D86012eCCd77", uma.getAbi("Voting"), mainnetProvider);
+export async function getDvmContract(mainnetProvider: ethers.providers.Provider): Promise<Contract> {
+  return new Contract(await uma.getVotingAddress(1), uma.getAbi("Voting"), mainnetProvider);
 }
 export async function getDisputedProposal(
   dvm: Contract,
