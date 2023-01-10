@@ -1,6 +1,14 @@
 import { AcrossConfigStoreClient, HubPoolClient } from "../clients";
 import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
-import { BigNumber, assign, getRealizedLpFeeForFills, getRefundForFills, sortEventsDescending, toBN } from "./";
+import {
+  BigNumber,
+  assign,
+  getRealizedLpFeeForFills,
+  getRefundForFills,
+  sortEventsDescending,
+  toBN,
+  sortEventsAscending,
+} from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 import _ from "lodash";
 
@@ -108,21 +116,24 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
 
   // Find the first fill chronologically for matched deposit for the input fill.
   const allMatchingFills = allValidFills.filter((_fill: FillWithBlock) => filledSameDeposit(_fill, fill));
+  if (fill.destinationChainId === 1337) console.log(allMatchingFills)
   let firstFillForSameDeposit = allMatchingFills.find((_fill) => isFirstFillForDeposit(_fill));
 
   // If `allValidFills` doesn't contain the first fill for this deposit then we have to perform a historical query to
   // find it. This is inefficient, but should be rare.
   if (!firstFillForSameDeposit) {
+    console.log(`Historically querying for first fill for deposit ${fill.depositId} on chain ${fill.destinationChainId}`)
     // Note: allMatchingFills might have duplicate fills if there are multiple fills in the
     // `firstFillForSameDeposit.blockNumber` but we don't care since we only need to find the first fill, of which
     // there should be exactly 1, and the last fill in the same bundle.
     allMatchingFills.push(
-      ...(await spokePoolClientsByChain[fill.originChainId].queryHistoricalMatchingFills(
+      ...(await spokePoolClientsByChain[fill.destinationChainId].queryHistoricalMatchingFills(
         fill,
-        firstFillForSameDeposit.blockNumber
+        allMatchingFills[0].blockNumber
       ))
     );
-    firstFillForSameDeposit = allMatchingFills.find((_fill) => isFirstFillForDeposit(_fill));
+    firstFillForSameDeposit = sortEventsAscending(allMatchingFills).find((_fill) => isFirstFillForDeposit(_fill));
+    console.log(`Found first fill`, firstFillForSameDeposit, allMatchingFills)
   }
 
   // Find ending block number for chain from ProposeRootBundle event that should have included a slow fill

@@ -44,7 +44,7 @@ async function _constructSpokePoolClientsWithLookback(
       spokePoolChains[i],
       lookbackForAllChains === undefined
         ? undefined
-        : { fromBlock: latestBlocks[i] - lookbackForAllChains, toBlock: null },
+        : { fromBlock: latestBlocks[i] - lookbackForAllChains },
       deploymentBlocks && deploymentBlocks[spokePoolChains[i]]
     );
   });
