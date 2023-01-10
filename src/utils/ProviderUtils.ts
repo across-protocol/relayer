@@ -309,10 +309,15 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
   // Default to a max concurrency of 1000 requests per node.
   const nodeMaxConcurrency = Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "1000");
 
-  // Temporarily added to expose RPC rate-limiting.
+  // Custom delay + logging for RPC rate-limiting.
   const rpcRateLimited =
     ({ nodeMaxConcurrency, logger }) =>
     async (attempt: number, url: string): Promise<boolean> => {
+      // Implement a slightly aggressive expontential backoff to account for fierce paralellism.
+      // @todo: Start w/ maxConcurrency low and increase until 429 responses start arriving.
+      const baseDelay = 1000 * Math.pow(2, attempt); // ms; attempt = [0, 1, 2, ...]
+      const delayMs = baseDelay + baseDelay * Math.random();
+
       if (logger) {
         // Make an effort to filter out any api keys.
         const regex = url.match(/https?:\/\/([\w.-]+)\/.*/);
@@ -320,17 +325,23 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
           at: "ProviderUtils#rpcRateLimited",
           message: `Got 429 on attempt ${attempt}.`,
           rpc: regex ? regex[1] : url,
+          retryAfter: `${delayMs} ms`,
           workers: nodeMaxConcurrency,
         });
       }
+      await delay(delayMs);
+
       return attempt < retries;
     };
 
+  // See ethers ConnectionInfo for field descriptions.
+  // https://docs.ethers.org/v5/api/utils/web/#ConnectionInfo
   const constructorArgumentLists = getNodeUrlList(chainId).map((nodeUrl): [ethers.utils.ConnectionInfo, number] => [
     {
       url: nodeUrl,
       timeout,
       allowGzip: true,
+      throttleSlotInterval: 1, // Effectively disables ethers' internal backoff algorithm.
       throttleCallback: rpcRateLimited({ nodeMaxConcurrency, logger }),
     },
     chainId,
