@@ -118,6 +118,15 @@ export function getFillDataForSlowFillFromPreviousRootBundle(
     (_fill: FillWithBlock) => filledSameDeposit(_fill, fill) && isFirstFillForDeposit(_fill as Fill)
   );
 
+  // If there is no first fill for the same deposit, then throw an error.
+  if (firstFillForSameDeposit === undefined) {
+    // TODO: Use something similar to SpokePoolClient.queryHistoricalDepositForFill to look up all fills
+    // for the same deposit. I would add in PR#382 but its too complex so I'll leave for another PR.
+    throw new Error(
+      `FillUtils#getFillDataForSlowFillFromPreviousRootBundle: Cannot find first fill for for deposit ${fill.depositId} on chain ${fill.destinationChainId}, set a larger DATAWORKER_FAST_LOOKBACK_COUNT`
+    );
+  }
+
   // Find ending block number for chain from ProposeRootBundle event that should have included a slow fill
   // refund for this first fill. This will be undefined if there is no block range containing the first fill.
   const rootBundleEndBlockContainingFirstFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
