@@ -4,6 +4,8 @@ import {
   buildFillForRepaymentChain,
   enableRoutesOnHubPool,
   signForSpeedUp,
+  createSpyLogger,
+  assertPromiseError,
 } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
@@ -18,8 +20,8 @@ import {
   buildPoolRebalanceLeaves,
 } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
-import { refundProposalLiveness, CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
-import { setupDataworker, setupFastDataworker } from "./fixtures/Dataworker.Fixture";
+import { refundProposalLiveness, CHAIN_ID_TEST_LIST } from "./constants";
+import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import { Deposit, Fill, RunningBalances } from "../src/interfaces";
 import { getRealizedLpFeeForFills, getRefundForFills, getRefund, EMPTY_MERKLE_ROOT } from "../src/utils";
 import { compareAddresses } from "../src/utils";
@@ -526,6 +528,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
       // Partial fill deposit1
       const fill1 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.5, destinationChainId);
+      const fill1Block = await spokePool_2.provider.getBlockNumber();
       const unfilledAmount1 = deposit1.amount.sub(fill1.totalFilledAmount);
 
       // Partial fill deposit2
@@ -661,6 +664,27 @@ describe("Dataworker: Build merkle roots", async function () {
         )
       );
       await updateAllClients();
+
+      // Test that we can still look up the excess if the first fill for the same deposit as the one slow filed
+      //  is older than the spoke pool client's lookback window.
+      const shortRangeSpokePoolClient = new SpokePoolClient(
+        createSpyLogger().spyLogger,
+        spokePool_2,
+        configStoreClient,
+        destinationChainId,
+        { fromBlock: fill1Block + 1 }, // Set fromBlock to now, after first fill for same deposit as the slowFill1
+        spokePoolClients[destinationChainId].spokePoolDeploymentBlock
+      );
+      await shortRangeSpokePoolClient.update();
+      expect(shortRangeSpokePoolClient.getFills().length).to.equal(2); // We should only be able to see 2 fills
+      // for this deposit, even though there are 3.
+      assertPromiseError(
+        dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(3), {
+          ...spokePoolClients,
+          [destinationChainId]: shortRangeSpokePoolClient,
+        }),
+        "Cannot find first fill for for deposit"
+      );
 
       // The excess amount in the contract is now equal to the partial fill amount sent before the slow fill.
       // Again, now that the slowFill1 was sent, the unfilledAmount1 can be subtracted from running balances since its
