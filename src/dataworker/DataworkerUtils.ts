@@ -289,7 +289,7 @@ export function _buildRelayerRefundRoot(
   };
 }
 
-export async function _buildPoolRebalanceRoot(
+export function _buildPoolRebalanceRoot(
   mainnetBundleEndBlock: number,
   fillsToRefund: FillsToRefund,
   deposits: DepositWithBlock[],
@@ -297,7 +297,6 @@ export async function _buildPoolRebalanceRoot(
   allValidFillsInRange: FillWithBlock[],
   unfilledDeposits: UnfilledDeposit[],
   clients: DataworkerClients,
-  spokePoolClients: SpokePoolClientsByChain,
   chainIdListForBundleEvaluationBlockNumbers: number[],
   maxL1TokenCountOverride: number | undefined,
   tokenTransferThreshold: BigNumberForToken,
@@ -327,11 +326,10 @@ export async function _buildPoolRebalanceRoot(
   // For certain fills associated with another partial fill from a previous root bundle, we need to adjust running
   // balances because the prior partial fill would have triggered a refund to be sent to the spoke pool to refund
   // a slow fill.
-  const fillsTriggeringExcesses = await subtractExcessFromPreviousSlowFillsFromRunningBalances(
+  const fillsTriggeringExcesses = subtractExcessFromPreviousSlowFillsFromRunningBalances(
     mainnetBundleEndBlock,
     runningBalances,
     clients.hubPoolClient,
-    spokePoolClients,
     allValidFills,
     allValidFillsInRange,
     chainIdListForBundleEvaluationBlockNumbers
