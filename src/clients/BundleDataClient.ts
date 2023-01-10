@@ -293,12 +293,17 @@ export class BundleDataClient {
             // have been able to grab it from the destinationClient.getFillsForOriginChain call.
 
             // Matched deposit for fill was not found in spoke client. This situation should be rare so let's
-            // send some extra RPC requests to find it if it exists.
+            // send some extra RPC requests to blocks older than the spoke client's initial event search config
+            // to find the deposit if it exists.
             if (this.historicalDepositCache[originChainId] === undefined)
               this.historicalDepositCache[originChainId] = {};
             if (this.historicalDepositCache[originChainId][fillWithBlock.depositId] === undefined) {
               return originClient.queryHistoricalDepositForFill(fillWithBlock);
-            } else if (
+            }
+            // Older deposit for this deposit ID has already been matched with a fill so we know this fill must be
+            // valid if it can be validated against that deposit. We still need to validate the fill because we don't
+            // know if the other parts of the deposit hash match besides the depositID.
+            else if (
               originClient.validateFillForDeposit(
                 fillWithBlock,
                 this.historicalDepositCache[originChainId][fillWithBlock.depositId]
@@ -311,8 +316,8 @@ export class BundleDataClient {
           }
         });
 
-        // Mark fills without matching deposits, even after additional queries for deposit, as invalid.
-        // Mark fills with matching deposits as valid and add them to the list of fills to refund.
+        // In parallel, query for historical deposits if they exist for fills that didn't match with a deposit
+        // in the spoke pool client.
         const historicalDepositQueries = (
           await Promise.all(
             historicalDepositPromises.map(async (depositPromise, i) => {
@@ -321,15 +326,20 @@ export class BundleDataClient {
             })
           )
         ).filter((x) => x !== undefined) as [DepositWithBlock | undefined, FillWithBlock][];
+
+        // Mark fills with matching deposits as valid and add them to the list of fills to refund.
         const matchedHistoricalDeposits = historicalDepositQueries.filter((x) => x[0] !== undefined);
         matchedHistoricalDeposits.forEach(([deposit, fillWithBlock]) => {
           this.historicalDepositCache[originChainId][deposit.depositId] = deposit;
           addRefundForValidFill(fillWithBlock, deposit, blockRangeForChain);
         });
+
+        // Mark fills without matching deposits, even after additional queries for deposit, as invalid.
         const unmatchedHistoricalDeposits = historicalDepositQueries.filter((x) => x[0] === undefined);
         unmatchedHistoricalDeposits.forEach(([, fill]) => {
           allInvalidFills.push(fill);
         });
+
         if (historicalDepositQueries.length > 0)
           this.logger.debug({
             at: "BundleDataClient#loadData",
