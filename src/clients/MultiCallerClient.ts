@@ -49,28 +49,167 @@ export const unknownRevertReasonMethodsToIgnore = new Set([
 ]);
 
 export class MultiCallerClient {
-  private transactions: AugmentedTransaction[] = [];
+  private newMulticaller: boolean = false;
+  protected transactions: AugmentedTransaction[] = [];
+  protected txns: { [chainId: number]: AugmentedTransaction[] } = {};
+  protected valueTxns: { [chainId: number]: AugmentedTransaction[] } = {};
   // eslint-disable-next-line no-useless-constructor
+  // Legacy mode is a temporary feature to support transition to the updated multicaller implementation.
   constructor(
     readonly logger: winston.Logger,
-    readonly chunkSize: { [chainId: number]: number } = CHAIN_MULTICALL_CHUNK_SIZE
-  ) {}
+    readonly chunkSize: { [chainId: number]: number } = CHAIN_MULTICALL_CHUNK_SIZE,
+    newMulticaller = false
+  ) {
+    this.newMulticaller = newMulticaller || (process.env.NEW_MULTICALLER === "true");
+  }
 
-  // Adds all information associated with a transaction to the transaction queue. This is the intention of the
-  // caller to send a transaction. The transaction might not be executable, which should be filtered later.
-  enqueueTransaction(transaction: AugmentedTransaction) {
-    this.transactions.push(transaction);
+  // Adds all information associated with a transaction to the transaction queue.
+  enqueueTransaction(txn: AugmentedTransaction) {
+    if (this.newMulticaller) {
+      // Value transactions are sorted immediately because the UMA multicall implementation rejects them.
+      const txnQueue = txn.value && txn.value.gt(0) ? this.valueTxns : this.txns;
+      if (txnQueue[txn.chainId] === undefined) txnQueue[txn.chainId] = [];
+      txnQueue[txn.chainId].push(txn);
+
+    } else this.transactions.push(txn);
   }
 
   transactionCount() {
-    return this.transactions.length;
+    let nTxns = this.transactions.length;
+    Object.values(this.txns).forEach((txnQueue) => (nTxns += txnQueue.length));
+    Object.values(this.valueTxns).forEach((txnQueue) => (nTxns += txnQueue.length));
+    return nTxns;
   }
 
-  clearTransactionQueue() {
-    this.transactions = [];
+  clearTransactionQueue(chainId: number = null) {
+    if (this.newMulticaller) {
+      if (chainId) {
+        this.txns[chainId] = [];
+        this.valueTxns[chainId] = [];
+      } else {
+        this.txns = {};
+        this.valueTxns = {};
+      }
+    } else this.transactions = [];
   }
 
-  async executeTransactionQueue(simulationModeOn = false): Promise<string[]> {
+  async executeTransactionQueue(simulate = false): Promise<string[]> {
+    if (this.newMulticaller) {
+      // For compatibility with the existing implementation, flatten all txn hashes into a single array.
+      // To be resolved once the legacy implementation is removed and the callers have been updated.
+      const txnHashes: { [chainId: number]: string[] } = await this.executeTxnQueues(simulate);
+      return Array.from(Object.values(txnHashes)).flat();
+    }
+
+    return this.executeTxnQueueLegacy(simulate);
+  }
+
+  // For each chain, collate the enqueued transactions and process them in parallel.
+  async executeTxnQueues(simulate = false): Promise<{ [chainId: number]: string[] }> {
+    // @todo: This feels like a bodge...Find a better way to produce the set of chainIds that have enqueued txns.
+    const chainIds = [...new Set(Object.keys(this.valueTxns).concat(Object.keys(this.txns)))];
+
+    // One promise per chain for parallel execution.
+    const results = await Promise.allSettled(
+      chainIds
+        .filter((_chainId) => {
+          const chainId = Number(_chainId);
+          return (this.txns[chainId] ?? []).length > 0 || (this.valueTxns[chainId] ?? []).length > 0;
+        })
+        .map((_chainId) => {
+          const chainId = Number(_chainId);
+          return this.executeChainTxnQueue(chainId, simulate);
+        })
+    );
+
+    // Collate the results for each chain.
+    const txnHashes: { [chainId: number]: string[] } = Object.fromEntries(
+      results.map((result, idx) => {
+        const chainId = chainIds[idx];
+        switch (result.status) {
+          case "fulfilled":
+            const _txnHashes = result.value.map((txnResponse) => txnResponse.hash);
+            return [chainId, _txnHashes];
+          case "rejected":
+            return [chainId, result.reason];
+          default: // Should never occur; log if it ever does.
+            this.logger.warn({
+              at: "MultiCallerClient#executeTxnQueues",
+              message: "Unexpected transaction queue resulting status.",
+              result
+            });
+            return [chainId, "Unknown error"];
+        }
+      })
+    );
+
+    return txnHashes;
+  }
+
+  // For a single chain, simulate all potential multicall txns and group the ones that pass into multicall bundles.
+  // Then, submit a concatenated list of value txns + multicall bundles. Flush the existing queues on completion.
+  async executeChainTxnQueue(chainId: number, simulate = false): Promise<TransactionResponse[]> {
+    const chunkSize = this.chunkSize[chainId];
+    const multicallTxns: AugmentedTransaction[] = await this.buildMultiCallBundles(
+      this.txns[chainId],
+      this.chunkSize[chainId]
+    );
+
+    // Concatenate the new multicall txns onto any existing value txns and pass the queue off for submission.
+    const txnResponses: TransactionResponse[] = await this.executeTxnQueue(
+      chainId,
+      this.valueTxns[chainId].concat(multicallTxns),
+      simulate
+    );
+
+    // Flush out the currently enqueued transactions (for this chain only). Note that this is not async-safe; if the
+    // caller has enqueued additional transactions whilst awaiting executeTransactionQueue() then those will be lost.
+    this.clearTransactionQueue(chainId);
+
+    return txnResponses;
+  }
+
+  // @todo: Consider adding a "wait" argument to wait for n txn confirmations per txn.
+  private async executeTxnQueue(
+    chainId: number,
+    txnQueue: AugmentedTransaction[],
+    simulate = false
+  ): Promise<TransactionResponse[]> {
+    const networkName = getNetworkName(chainId);
+
+    this.logger.debug({
+      at: "MultiCallerClient#executeTxnQueue",
+      message: `${simulate ? "Simulating" : "Executing"} ${txnQueue.length} transaction(s) on ${networkName}.`,
+      txnQueue,
+    });
+
+    const txns = await this.simulateTransactionQueue(txnQueue);
+    if (txns.length === 0) {
+      this.logger.debug({
+        at: "MultiCallerClient#executeTxnQueue",
+        message: `No valid transactions in the ${networkName} queue.`,
+      });
+      return [];
+    }
+
+    if (simulate) {
+      let mrkdwn = "";
+      txns.forEach((txn, idx) => {
+        mrkdwn += `  *${idx + 1}*. ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
+      });
+      this.logger.info({
+        at: "MultiCallerClient#executeTxnQueue",
+        message: `${txns.length} ${networkName} transaction simulation(s) succeeded!`,
+        mrkdwn,
+      });
+      this.logger.info({ at: "MulticallerClient#executeTxnQueue", message: "Exiting simulation mode 🎮" });
+      return [];
+    }
+
+    return await this.submitTxns(chainId, txns);
+  }
+
+  async executeTxnQueueLegacy(simulationModeOn = false): Promise<string[]> {
     if (this.transactions.length === 0) return [];
     this.logger.debug({
       at: "MultiCallerClient",
@@ -254,6 +393,54 @@ export class MultiCallerClient {
     return await runTransaction(this.logger, contract, method, args, value, null, nonce);
   }
 
+  private async submitTxns(chainId: number, txnQueue: AugmentedTransaction[]): Promise<TransactionResponse[]> {
+    const networkName = getNetworkName(chainId);
+    const txnResponses: TransactionResponse[] = [];
+
+    this.logger.debug({
+      at: "MultiCallerClient#submitTxns",
+      message: "Processing transaction queue.",
+      txnQueue,
+    });
+
+    // Transactions are submitted sequentially to avoid nonce collisions. More
+    // advanced nonce management may permit them to be submitted in parallel.
+    let mrkdwn = "";
+    let idx = 1;
+    let nonce: number = null;
+    for (const txn of txnQueue) {
+      let response: TransactionResponse;
+      if (nonce !== null) this.logger.debug({ at: "MultiCallerClient#submitTxns", message: `Using nonce ${nonce}.` });
+
+      try {
+        response = await this.submitTxn(txn, nonce);
+      } catch (error) {
+        this.logger.info({
+          at: "MultiCallerClient#submitTxns",
+          message: `Transaction ${idx} submission on ${networkName} failed or timed out.`,
+          mrkdwn,
+          error,
+          notificationPath: "across-error",
+        });
+        return txnResponses;
+      }
+
+      nonce = response.nonce + 1;
+      mrkdwn += `  ${idx}. ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
+      mrkdwn += `  *Block Explorer:* ${etherscanLink(response.hash, txn.chainId)}\n`;
+      txnResponses.push(response);
+      ++idx;
+    }
+
+    this.logger.info({
+      at: "MultiCallerClient#submitTxns",
+      message: `Completed ${networkName} transaction submission! 🧙`,
+      mrkdwn,
+    });
+
+    return txnResponses;
+  }
+
   buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
     // Validate all transactions have the same chainId and target contract.
     const { chainId, contract } = transactions[0];
@@ -268,7 +455,13 @@ export class MultiCallerClient {
       });
       throw new Error("Multicall bundle data mismatch");
     }
-    let callData = transactions.map((tx) => tx.contract.interface.encodeFunctionData(tx.method, tx.args));
+
+    const mrkdwn: string[] = [];
+    let callData = transactions.map((txn, idx) => {
+      mrkdwn.push(`\n  *txn. ${idx + 1}:* ${txn.mrkdwn}`);
+      return txn.contract.interface.encodeFunctionData(txn.method, txn.args);
+    });
+
     // There should not be any duplicate call data blobs within this array. If there are there is likely an error.
     callData = [...new Set(callData)];
     this.logger.debug({
@@ -279,14 +472,31 @@ export class MultiCallerClient {
     });
 
     return {
+      chainId,
       contract,
       method: "multicall",
       args: [callData],
+      message: "Across multicall transaction",
+      mrkdwn: mrkdwn.join(""),
     } as AugmentedTransaction;
   }
 
   protected async simulateTxn(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
     return await willSucceed(txn);
+  }
+
+  async buildMultiCallBundles(
+    txns: AugmentedTransaction[],
+    chunkSize = DEFAULT_MULTICALL_CHUNK_SIZE
+  ): Promise<AugmentedTransaction[]> {
+    const txnChunks: AugmentedTransaction[][] = await lodash.chunk(
+      await this.simulateTransactionQueue(txns), chunkSize
+    );
+
+    return txnChunks.map((txnChunk: AugmentedTransaction[]) => {
+      // Don't wrap single transactions in a multicall.
+      return (txnChunk.length > 1) ? this.buildMultiCallBundle(txnChunk) : txnChunk[0];
+    });
   }
 
   async simulateTransactionQueue(transactions: AugmentedTransaction[]): Promise<AugmentedTransaction[]> {
