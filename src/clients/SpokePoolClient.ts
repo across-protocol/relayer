@@ -352,28 +352,6 @@ export class SpokePoolClient {
     return this.validateFillForDeposit(fillCopy, deposit) ? deposit : undefined;
   }
 
-  async queryHistoricalMatchingFills(fill: Fill, toBlock: number) {
-    const searchConfig = {
-      fromBlock: getDeploymentBlockNumber("SpokePool", this.chainId),
-      toBlock,
-      maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
-    };
-    return await this.queryFillsInBlockRange(fill, searchConfig);
-  }
-
-  async queryFillsInBlockRange(matchingFill: Fill, searchConfig: EventSearchConfig) {
-    // Filtering on the fill's depositor address, the only indexed deposit field in the FilledRelay event,
-    // should speed up this search a bit.
-    // TODO: Once depositId is indexed in FilledRelay event, filter on that as well.
-    const query = await paginatedEventQuery(
-      this.spokePool,
-      this.spokePool.filters.FilledRelay(matchingFill.depositor),
-      searchConfig
-    );
-    const fills = query.map((event) => spreadEventWithBlockNumber(event) as FillWithBlock);
-    return sortEventsAscending(fills.filter((_fill) => filledSameDeposit(_fill, matchingFill)));
-  }
-
   async update(eventsToQuery?: string[]) {
     if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
     const { NODE_MAX_CONCURRENCY } = process.env;
