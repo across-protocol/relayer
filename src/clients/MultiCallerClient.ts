@@ -80,7 +80,7 @@ export class MultiCallerClient {
   }
 
   async executeTransactionQueue(simulationModeOn = false): Promise<string[]> {
-    if (this.transactions.length === 0) return;
+    if (this.transactions.length === 0) return [];
     this.logger.debug({
       at: "MultiCallerClient",
       message: "Executing tx bundle",
