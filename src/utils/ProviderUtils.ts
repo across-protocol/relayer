@@ -315,7 +315,6 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
     async (attempt: number, url: string): Promise<boolean> => {
       const baseDelay = 1000 * Math.pow(2, attempt); // ms; attempt = [0, 1, 2, ...]
       const delayMs = baseDelay + baseDelay * Math.random();
-      await delay(delayMs);
 
       if (logger) {
         // Make an effort to filter out any api keys.
@@ -328,6 +327,7 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
           workers: nodeMaxConcurrency,
         });
       }
+      await delay(delayMs);
 
       return attempt < retries;
     };
