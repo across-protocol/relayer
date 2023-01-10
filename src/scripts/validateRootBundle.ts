@@ -61,7 +61,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   // dispute. This is a sanity test against the case where a dispute was submitted atomically following proposal
   // in the same block. This also handles the edge case where multiple disputes and proposals are in the
   // same block.
-  const dvm = getDvmContract(clients.configStoreClient.configStore.provider);
+  const dvm = await getDvmContract(clients.configStoreClient.configStore.provider);
   await updateDataworkerClients(clients, false);
 
   if (!clients.configStoreClient.hasLatestConfigStoreVersion) {
