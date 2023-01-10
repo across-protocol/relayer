@@ -309,6 +309,7 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
   // Default to a max concurrency of 1000 requests per node.
   const nodeMaxConcurrency = Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "1000");
 
+<<<<<<< HEAD
   // Custom delay + logging for RPC rate-limiting.
   const rpcRateLimited =
     ({ nodeMaxConcurrency, logger }) =>
@@ -332,12 +333,14 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
       return attempt < retries;
     };
 
+  // See ethers ConnectionInfo for field descriptions.
+  // https://docs.ethers.org/v5/api/utils/web/#ConnectionInfo
   const constructorArgumentLists = getNodeUrlList(chainId).map((nodeUrl): [ethers.utils.ConnectionInfo, number] => [
     {
       url: nodeUrl,
       timeout,
       allowGzip: true,
-      throttleSlotInterval: 1,
+      throttleSlotInterval: 1, // Effectively disables ethers' internal backoff algorithm.
       throttleCallback: rpcRateLimited({ nodeMaxConcurrency, logger }),
     },
     chainId,
