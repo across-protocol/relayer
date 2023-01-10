@@ -9,7 +9,7 @@ import {
   willSucceed,
   etherscanLink,
   TransactionResponse,
-  TransactionSimulationResult
+  TransactionSimulationResult,
 } from "../utils";
 
 import lodash from "lodash";
