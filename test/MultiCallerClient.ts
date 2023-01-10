@@ -7,12 +7,18 @@ import { TransactionResponse, TransactionSimulationResult } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { createSpyLogger, Contract, expect, winston, toBN } from "./utils";
 
+// @todo: Consider overriding MultiCallerClient.logSimulationFailres().
 class MockedMultiCallerClient extends MultiCallerClient {
   public failSimulate = "";
   public failSubmit = "";
+  public simulationFailures: TransactionSimulationResult[] = [];
 
   constructor(logger: winston.Logger) {
     super(logger);
+  }
+
+  clearSimulationFailures(): void {
+    this.simulationFailures = [];
   }
 
   protected override async simulateTxn(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
@@ -46,6 +52,10 @@ class MockedMultiCallerClient extends MultiCallerClient {
       hash: "0x4321",
     } as TransactionResponse;
   }
+
+  protected override logSimulationFailures(failures: TransactionSimulationResult[]): void {
+    this.simulationFailures = failures;
+  }
 }
 
 // encodeFunctionData is called from within MultiCallerClient.buildMultiCallBundle.
@@ -61,10 +71,15 @@ describe("MultiCallerClient", async function () {
   beforeEach(async function () {
     multiCaller.clearTransactionQueue();
     expect(multiCaller.transactionCount()).to.equal(0);
+
+    multiCaller.clearSimulationFailures();
+    expect(multiCaller.simulationFailures.length).to.equal(0);
   });
 
   it("Correctly excludes simulation failures", async function () {
     for (const fail of [true, false]) {
+      multiCaller.clearSimulationFailures();
+
       const txns: AugmentedTransaction[] = chainIds.map((_chainId) => {
         const chainId = Number(_chainId);
         return {
@@ -81,12 +96,17 @@ describe("MultiCallerClient", async function () {
       expect(txns.length).to.equal(chainIds.length);
       const result: AugmentedTransaction[] = await multiCaller.simulateTransactionQueue(txns);
       expect(result.length).to.equal(fail ? 0 : txns.length);
+
+      // Verify that the failed simulations were filtered out.
+      expect(multiCaller.simulationFailures.length).to.equal(fail ? txns.length : 0);
     }
   });
 
   it("Handles submission success & failure", async function () {
     for (const fail of ["Forced submission failure", ""]) {
       multiCaller.failSubmit = fail;
+      multiCaller.clearSimulationFailures();
+
       chainIds.forEach((_chainId) => {
         const chainId = Number(_chainId);
         multiCaller.enqueueTransaction({
@@ -106,6 +126,9 @@ describe("MultiCallerClient", async function () {
 
       const result: string[] = await multiCaller.executeTransactionQueue();
       expect(result.length).to.equal(fail ? 0 : chainIds.length);
+
+      // Simulation succeeded but submission failed => multiCaller.simulationFailures should be empty.
+      expect(multiCaller.simulationFailures.length).to.equal(0);
     }
   });
 });
