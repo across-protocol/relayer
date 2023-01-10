@@ -105,7 +105,7 @@ export async function getFinalizableTransactions(
         });
         return { status: POLYGON_MESSAGE_STATUS.CAN_EXIT };
       } catch (err) {
-        if (err.reason.includes("EXIT_ALREADY_PROCESSED"))
+        if (err?.reason?.includes("EXIT_ALREADY_PROCESSED"))
           return { status: POLYGON_MESSAGE_STATUS.EXIT_ALREADY_PROCESSED };
         else {
           logger.debug({
