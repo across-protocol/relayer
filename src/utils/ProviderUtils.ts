@@ -309,7 +309,6 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
   // Default to a max concurrency of 1000 requests per node.
   const nodeMaxConcurrency = Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "1000");
 
-<<<<<<< HEAD
   // Custom delay + logging for RPC rate-limiting.
   const rpcRateLimited =
     ({ nodeMaxConcurrency, logger }) =>
