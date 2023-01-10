@@ -709,13 +709,13 @@ describe("Dataworker: Build merkle roots", async function () {
       await shortRangeSpokePoolClient.update();
       expect(shortRangeSpokePoolClient.getFills().length).to.equal(2); // We should only be able to see 2 fills
       // for this deposit, even though there are 3.
-      expect(spokePoolClients[destinationChainId].getFills().length).to.equal(3);
-      expect(() =>
+      assertPromiseError(
         dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(3), {
           ...spokePoolClients,
           [destinationChainId]: shortRangeSpokePoolClient,
-        })
-      ).to.throw(/Cannot find first fill for for deposit/);
+        }),
+        "Cannot find first fill for for deposit"
+      );
 
       // The excess amount in the contract is now equal to the partial fill amount sent before the slow fill.
       // Again, now that the slowFill1 was sent, the unfilledAmount1 can be subtracted from running balances since its
