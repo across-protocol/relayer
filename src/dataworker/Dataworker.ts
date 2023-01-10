@@ -145,7 +145,8 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     );
 
-    return this._getPoolRebalanceRoot(
+    return await this._getPoolRebalanceRoot(
+      spokePoolClients,
       blockRangesForChains,
       mainnetBundleEndBlock,
       fillsToRefund,
@@ -303,7 +304,8 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     );
     this.logger.debug({ at: "Dataworker", message: "Building pool rebalance root", blockRangesForProposal });
-    const poolRebalanceRoot = this._getPoolRebalanceRoot(
+    const poolRebalanceRoot = await this._getPoolRebalanceRoot(
+      spokePoolClients,
       blockRangesForProposal,
       mainnetBundleEndBlock,
       fillsToRefund,
@@ -687,7 +689,8 @@ export class Dataworker {
       blockRangesImpliedByBundleEndBlocks,
       this.chainIdListForBundleEvaluationBlockNumbers
     );
-    const expectedPoolRebalanceRoot = this._getPoolRebalanceRoot(
+    const expectedPoolRebalanceRoot = await this._getPoolRebalanceRoot(
+      spokePoolClients,
       blockRangesImpliedByBundleEndBlocks,
       endBlockForMainnet,
       fillsToRefund,
@@ -1352,7 +1355,8 @@ export class Dataworker {
             blockNumberRanges,
             this.chainIdListForBundleEvaluationBlockNumbers
           );
-          const expectedPoolRebalanceRoot = this._getPoolRebalanceRoot(
+          const expectedPoolRebalanceRoot = await this._getPoolRebalanceRoot(
+            spokePoolClients,
             blockNumberRanges,
             endBlockForMainnet,
             fillsToRefund,
@@ -1520,7 +1524,8 @@ export class Dataworker {
     }
   }
 
-  _getPoolRebalanceRoot(
+  async _getPoolRebalanceRoot(
+    spokePoolClients: SpokePoolClientsByChain,
     blockRangesForChains: number[][],
     mainnetBundleEndBlock: number,
     fillsToRefund: FillsToRefund,
@@ -1532,7 +1537,7 @@ export class Dataworker {
   ) {
     const key = JSON.stringify(blockRangesForChains);
     if (!this.rootCache[key]) {
-      this.rootCache[key] = _buildPoolRebalanceRoot(
+      this.rootCache[key] = await _buildPoolRebalanceRoot(
         mainnetBundleEndBlock,
         fillsToRefund,
         deposits,
@@ -1540,6 +1545,7 @@ export class Dataworker {
         allValidFillsInRange,
         unfilledDeposits,
         this.clients,
+        spokePoolClients,
         this.chainIdListForBundleEvaluationBlockNumbers,
         this.maxL1TokenCountOverride,
         this.tokenTransferThreshold,
