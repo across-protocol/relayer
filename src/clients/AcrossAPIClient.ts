@@ -3,6 +3,7 @@ import axios, { AxiosError } from "axios";
 import get from "lodash.get";
 import { HubPoolClient } from "./HubPoolClient";
 import { constants as sdkConstants } from "@across-protocol/sdk-v2";
+import { CHAIN_ID_LIST_INDICES } from "../common";
 
 export interface DepositLimits {
   maxDeposit: BigNumber;
@@ -54,7 +55,11 @@ export class AcrossApiClient {
     const data = await Promise.all(
       tokensQuery.map((l1Token) => {
         const validDestinationChainForL1Token = getL2TokenAddresses(l1Token)
-          ? Number(Object.keys(getL2TokenAddresses(l1Token))[0])
+          ? Number(
+              Object.keys(getL2TokenAddresses(l1Token)).find(
+                (chainId) => Number(chainId) !== sdkConstants.CHAIN_IDs.MAINNET && CHAIN_ID_LIST_INDICES.includes(Number(chainId))
+              )
+            )
           : 10;
         return this.callLimits(l1Token, validDestinationChainForL1Token);
       })
