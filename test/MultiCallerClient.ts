@@ -50,7 +50,7 @@ class MockedMultiCallerClient extends MultiCallerClient {
 
 // encodeFunctionData is called from within MultiCallerClient.buildMultiCallBundle.
 function encodeFunctionData(method: string, args?: ReadonlyArray<any>): string {
-  return args.join("");
+  return args.join(" ");
 }
 
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
