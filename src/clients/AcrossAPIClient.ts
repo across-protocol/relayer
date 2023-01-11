@@ -1,8 +1,8 @@
-import { winston, BigNumber } from "../utils";
-import { l2TokensToL1TokenValidation } from "../common";
+import { winston, BigNumber, getL2TokenAddresses } from "../utils";
 import axios, { AxiosError } from "axios";
 import get from "lodash.get";
 import { HubPoolClient } from "./HubPoolClient";
+import { constants as sdkConstants } from "@across-protocol/sdk-v2";
 
 export interface DepositLimits {
   maxDeposit: BigNumber;
@@ -22,7 +22,10 @@ export class AcrossApiClient {
     readonly tokensQuery: string[] = [],
     readonly timeout: number = 60000
   ) {
-    if (Object.keys(tokensQuery).length === 0) this.tokensQuery = Object.keys(l2TokensToL1TokenValidation);
+    if (Object.keys(tokensQuery).length === 0)
+      this.tokensQuery = Object.entries(sdkConstants.TOKEN_SYMBOLS_MAP).map(
+        ([, details]) => details.addresses[sdkConstants.CHAIN_IDs.MAINNET]
+      );
   }
 
   async update(ignoreLimits: boolean): Promise<void> {
@@ -50,8 +53,8 @@ export class AcrossApiClient {
     // when deciding whether a relay will be refunded.
     const data = await Promise.all(
       tokensQuery.map((l1Token) => {
-        const validDestinationChainForL1Token = l2TokensToL1TokenValidation[l1Token]
-          ? Number(Object.keys(l2TokensToL1TokenValidation[l1Token])[0])
+        const validDestinationChainForL1Token = getL2TokenAddresses(l1Token)
+          ? Number(Object.keys(getL2TokenAddresses(l1Token))[0])
           : 10;
         return this.callLimits(l1Token, validDestinationChainForL1Token);
       })

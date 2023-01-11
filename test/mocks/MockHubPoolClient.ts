@@ -19,7 +19,7 @@ export class MockHubPoolClient extends HubPoolClient {
     return this.tokenInfoToReturn;
   }
 
-  getTokenInfoForL1Token(l1Token: string): L1Token {
+  getTokenInfoForL1Token(l1Token: string): L1Token | undefined {
     return this.l1TokensMock.find((token) => token.address === l1Token);
   }
 
