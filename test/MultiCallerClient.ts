@@ -38,7 +38,7 @@ class MockedMultiCallerClient extends MultiCallerClient {
 
     this.logger.debug({
       at: "MockMultiCallerClient#submitTxn",
-      message: "Transaction submission succeeded!.",
+      message: "Transaction submission succeeded!",
       txn,
     });
 
