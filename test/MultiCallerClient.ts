@@ -95,9 +95,7 @@ describe("MultiCallerClient", async function () {
           chainId: chainId,
           contract: {
             address: "0x1234",
-            interface: {
-              encodeFunctionData,
-            },
+            interface: { encodeFunctionData },
           },
           method: "test",
           args: ["0", "1", "2", "3"],
