@@ -57,7 +57,8 @@ export class AcrossApiClient {
         const validDestinationChainForL1Token = getL2TokenAddresses(l1Token)
           ? Number(
               Object.keys(getL2TokenAddresses(l1Token)).find(
-                (chainId) => Number(chainId) !== sdkConstants.CHAIN_IDs.MAINNET && CHAIN_ID_LIST_INDICES.includes(Number(chainId))
+                (chainId) =>
+                  Number(chainId) !== sdkConstants.CHAIN_IDs.MAINNET && CHAIN_ID_LIST_INDICES.includes(Number(chainId))
               )
             )
           : 10;
