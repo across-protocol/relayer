@@ -4,6 +4,7 @@ import {
   MultiCallerClient, // tested
 } from "../src/clients";
 import { TransactionSimulationResult } from "../src/utils";
+import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { createSpyLogger, Contract, expect, winston } from "./utils";
 
 class MockedMultiCallerClient extends MultiCallerClient {
@@ -26,8 +27,6 @@ class MockedMultiCallerClient extends MultiCallerClient {
     };
   }
 }
-
-const chainIds = [1, 10, 137, 288, 42161];
 
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
 const multiCaller: MockedMultiCallerClient = new MockedMultiCallerClient(spyLogger);
