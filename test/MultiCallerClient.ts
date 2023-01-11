@@ -32,9 +32,7 @@ class MockedMultiCallerClient extends MultiCallerClient {
     txn: AugmentedTransaction,
     nonce: number | null = null
   ): Promise<TransactionResponse> {
-    if (this.failSubmit !== "") {
-      return Promise.reject(this.failSubmit);
-    }
+    if (this.failSubmit !== "") return Promise.reject(this.failSubmit);
 
     this.logger.debug({
       at: "MockMultiCallerClient#submitTxn",
