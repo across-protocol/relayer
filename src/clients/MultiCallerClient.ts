@@ -261,12 +261,12 @@ export class MultiCallerClient {
   }
 
   buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
-    // Validate all transactions in the batch have the same target contract.
-    const target = transactions[0].contract;
-    if (transactions.every((tx) => tx.contract.address !== target.address)) {
+    // Validate all transactions have the same chainId and target contract.
+    const { chainId, contract } = transactions[0];
+    if (transactions.some((tx) => tx.contract.address !== contract.address || tx.chainId !== chainId)) {
       this.logger.error({
-        at: "MultiCallerClient",
-        message: "some transactions in the bundle contain different targets",
+        at: "MultiCallerClient#buildMultiCallBundle",
+        message: "Some transactions in the queue contain different target chain or contract address",
         transactions: transactions.map(({ contract, chainId }) => {
           return { target: getTarget(contract.address), chainId };
         }),
@@ -279,13 +279,13 @@ export class MultiCallerClient {
     callData = [...new Set(callData)];
     this.logger.debug({
       at: "MultiCallerClient",
-      message: "Made bundle",
-      target: getTarget(target.address),
+      message: `Made multicall bundle for ${getNetworkName(chainId)}.`,
+      target: getTarget(contract.address),
       callData,
     });
 
     return {
-      contract: target,
+      contract,
       method: "multicall",
       args: [callData],
     } as AugmentedTransaction;

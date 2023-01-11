@@ -108,4 +108,47 @@ describe("MultiCallerClient", async function () {
       expect(result.length).to.equal(fail ? 0 : chainIds.length);
     }
   });
+
+  it("Validates transaction data before multicall bundle generation", async function () {
+    const chainId = chainIds[0];
+
+    for (const badField of ["address", "chainId"]) {
+      const txns: AugmentedTransaction[] = [];
+
+      for (const idx of [1,2,3,4,5]) {
+        const txn = {
+          chainId: chainId,
+          contract: {
+            address: "0x1234",
+            interface: { encodeFunctionData },
+          } as Contract,
+          method: "test",
+          args: ["2"],
+          value: toBN(0),
+          message: `Test multicall candidate on chain ${chainId}`,
+        } as AugmentedTransaction;
+        txns.push(txn);
+      }
+
+      expect(txns.length).to.not.equal(0);
+      expect(() => multiCaller.buildMultiCallBundle(txns)).to.not.throw();
+
+      const badTxn: AugmentedTransaction = txns.pop();
+      switch (badField) {
+        case "address":
+          badTxn.contract = {
+            address: badTxn.contract.address.concat("badaddr"),
+            interface: { encodeFunctionData },
+          } as Contract;
+          break;
+
+        case "chainId":
+          badTxn.chainId += 1;
+          break;
+      }
+
+      txns.push(badTxn);
+      expect(() => multiCaller.buildMultiCallBundle(txns)).to.throw("Multicall bundle data mismatch");
+    }
+  });
 });
