@@ -76,8 +76,8 @@ export class MultiCallerClient {
     this.transactions = [];
   }
 
-  async executeTransactionQueue(simulationModeOn = false) {
-    if (this.transactions.length === 0) return;
+  async executeTransactionQueue(simulationModeOn = false): Promise<string[]> {
+    if (this.transactions.length === 0) return [];
     this.logger.debug({
       at: "MultiCallerClient",
       message: "Executing tx bundle",
@@ -89,7 +89,7 @@ export class MultiCallerClient {
       const transactions = await this.simulateTransactionQueue(this.transactions);
       if (transactions.length === 0) {
         this.logger.debug({ at: "MultiCallerClient", message: "No valid transactions in the queue." });
-        return;
+        return [];
       }
 
       const valueTransactions = transactions.filter((transaction) => transaction.value && transaction.value.gt(0));
@@ -147,7 +147,7 @@ export class MultiCallerClient {
         });
         this.logger.info({ at: "MultiCallerClient", message: "Exiting simulation mode 🎮", mrkdwn });
         this.clearTransactionQueue();
-        return;
+        return [];
       }
 
       const groupedValueTransactions: { [networkId: number]: AugmentedTransaction[] } = lodash.groupBy(
@@ -255,7 +255,7 @@ export class MultiCallerClient {
     }
   }
 
-  buildMultiCallBundle(transactions: AugmentedTransaction[]) {
+  buildMultiCallBundle(transactions: AugmentedTransaction[]): Promise<TransactionResponse> {
     // Validate all transactions in the batch have the same target contract.
     const target = transactions[0].contract;
     if (transactions.every((tx) => tx.contract.address !== target.address)) {
@@ -283,7 +283,7 @@ export class MultiCallerClient {
     return runTransaction(this.logger, target, "multicall", [callData]);
   }
 
-  private async simulateTransactionQueue(transactions: AugmentedTransaction[]) {
+  private async simulateTransactionQueue(transactions: AugmentedTransaction[]): Promise<AugmentedTransaction[]> {
     // Simulate the transaction execution for the whole queue.
     const _transactionsSucceed = await Promise.all(
       transactions.map((transaction: AugmentedTransaction) => willSucceed(transaction))
