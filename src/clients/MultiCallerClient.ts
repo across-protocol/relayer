@@ -255,6 +255,11 @@ export class MultiCallerClient {
     }
   }
 
+  protected async submitTxn(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
+    const { contract, method, args, value } = txn;
+    return await runTransaction(this.logger, contract, method, args, value, null, nonce);
+  }
+
   buildMultiCallBundle(transactions: AugmentedTransaction[]): Promise<TransactionResponse> {
     // Validate all transactions in the batch have the same target contract.
     const target = transactions[0].contract;
@@ -280,7 +285,11 @@ export class MultiCallerClient {
     });
 
     // This will either succeed and return the the transaction or throw an error.
-    return runTransaction(this.logger, target, "multicall", [callData]);
+    return this.submitTxn({
+      contract: target,
+      method: "multicall",
+      args: [callData],
+    } as AugmentedTransaction);
   }
 
   protected async simulateTxn(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
