@@ -21,11 +21,7 @@ class MockedMultiCallerClient extends MultiCallerClient {
   }
 
   simulationFailureCount(): number {
-    let nFailures = 0;
-    nFailures += this.loggedSimulationFailures.length;
-    nFailures += this.ignoredSimulationFailures.length;
-
-    return nFailures;
+    return this.loggedSimulationFailures.length + this.ignoredSimulationFailures.length;
   }
 
   clearSimulationFailures(): void {
