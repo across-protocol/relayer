@@ -43,7 +43,7 @@ const sampleSpokeTargetBalances = {
 
 const tokenConfigToUpdate = JSON.stringify({
   rateModel: sampleRateModel,
-  routeRateModels: { "999-888": sampleRateModel2 },
+  routeRateModel: { "999-888": sampleRateModel2 },
   transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD.toString(),
   spokeTargetBalances: sampleSpokeTargetBalances,
 });
@@ -83,7 +83,7 @@ describe("AcrossConfigStoreClient", async function () {
     await configStore.updateTokenConfig(l1Token.address, "gibberish");
     await configStore.updateTokenConfig(
       l1Token.address,
-      JSON.stringify({ rateModel: sampleRateModel, routeRateModels: { "999-888": sampleRateModel2 } })
+      JSON.stringify({ rateModel: sampleRateModel, routeRateModel: { "999-888": sampleRateModel2 } })
     );
     await configStore.updateTokenConfig(
       l1Token.address,

@@ -4,7 +4,7 @@ import { across } from "@uma/sdk";
 export interface ParsedTokenConfig {
   transferThreshold: string;
   rateModel: across.rateModel.RateModelDictionary;
-  routeRateModels?: {
+  routeRateModel?: {
     [path: string]: across.rateModel.RateModelDictionary;
   };
   spokeTargetBalances?: {
@@ -33,7 +33,7 @@ export interface SpokeTargetBalanceUpdate extends SortableEvent {
 }
 
 export interface RouteRateModelUpdate extends SortableEvent {
-  routeRateModels: {
+  routeRateModel: {
     [path: string]: string;
   };
   l1Token: string;
