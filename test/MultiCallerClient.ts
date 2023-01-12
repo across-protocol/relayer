@@ -120,7 +120,7 @@ describe("MultiCallerClient", async function () {
         multiCaller.enqueueTransaction({
           chainId: chainId,
           contract: {
-            address: "0x1234",
+            address,
             interface: { encodeFunctionData },
           },
           method: "test",
@@ -143,7 +143,7 @@ describe("MultiCallerClient", async function () {
   it("Correctly filters loggable vs. ignorable simulation failures", async function () {
     const txn: AugmentedTransaction = {
       chainId: chainIds[0],
-      contract: { address: "0x1234" },
+      contract: { address },
     } as AugmentedTransaction;
 
     // Verify that all known revert reasons are ignored.
