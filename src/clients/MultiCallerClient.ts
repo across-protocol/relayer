@@ -186,15 +186,7 @@ export class MultiCallerClient {
       // Construct multiCall transaction for each target chain.
       const multiCallTransactionsResult = await Promise.allSettled(
         Object.values(chunkedTransactions)
-          .map((transactions) =>
-            transactions.map((chunk) => {
-              try {
-                return this.submitTxn(this.buildMultiCallBundle(chunk));
-              } catch (err) {
-                return Promise.reject(err);
-              }
-            })
-          )
+          .map((transactions) => transactions.map((chunk) => this.submitTxn(this.buildMultiCallBundle(chunk))))
           .flat()
       );
 
