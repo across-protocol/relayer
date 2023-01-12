@@ -7,7 +7,6 @@ import { TransactionResponse, TransactionSimulationResult } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { createSpyLogger, Contract, expect, winston, toBN } from "./utils";
 
-// @todo: Consider overriding MultiCallerClient.logSimulationFailres().
 class MockedMultiCallerClient extends MultiCallerClient {
   public failSimulate = "";
   public failSubmit = "";
