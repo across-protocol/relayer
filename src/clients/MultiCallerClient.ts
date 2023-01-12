@@ -186,7 +186,7 @@ export class MultiCallerClient {
       // Construct multiCall transaction for each target chain.
       const multiCallTransactionsResult = await Promise.allSettled(
         Object.values(chunkedTransactions)
-          .map((transactions) => transactions.map((chunk) => this.buildMultiCallBundle(chunk)))
+          .map((transactions) => transactions.map((chunk) => this.submitTxn(this.buildMultiCallBundle(chunk))))
           .flat()
       );
 
@@ -260,7 +260,7 @@ export class MultiCallerClient {
     return await runTransaction(this.logger, contract, method, args, value, null, nonce);
   }
 
-  buildMultiCallBundle(transactions: AugmentedTransaction[]): Promise<TransactionResponse> {
+  buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
     // Validate all transactions in the batch have the same target contract.
     const target = transactions[0].contract;
     if (transactions.every((tx) => tx.contract.address !== target.address)) {
@@ -272,7 +272,7 @@ export class MultiCallerClient {
         }),
         notificationPath: "across-error",
       });
-      return Promise.reject("some transactions in the bundle contain different targets");
+      throw new Error("Multicall bundle data mismatch");
     }
     let callData = transactions.map((tx) => tx.contract.interface.encodeFunctionData(tx.method, tx.args));
     // There should not be any duplicate call data blobs within this array. If there are there is likely an error.
@@ -284,12 +284,11 @@ export class MultiCallerClient {
       callData,
     });
 
-    // This will either succeed and return the the transaction or throw an error.
-    return this.submitTxn({
+    return {
       contract: target,
       method: "multicall",
       args: [callData],
-    } as AugmentedTransaction);
+    } as AugmentedTransaction;
   }
 
   protected async simulateTxn(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
