@@ -8,7 +8,7 @@ import {
 } from "../src/clients";
 import { TransactionResponse, TransactionSimulationResult } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
-import { createSpyLogger, Contract, expect, winston, toBN } from "./utils";
+import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";
 
 class MockedMultiCallerClient extends MultiCallerClient {
   public failSimulate = "";
@@ -77,6 +77,7 @@ function encodeFunctionData(method: string, args?: ReadonlyArray<any>): string {
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
 const multiCaller: MockedMultiCallerClient = new MockedMultiCallerClient(spyLogger);
 const provider = new ethers.providers.StaticJsonRpcProvider("127.0.0.1");
+const address = randomAddress(); // Test contract address
 
 describe("MultiCallerClient", async function () {
   beforeEach(async function () {
@@ -93,9 +94,7 @@ describe("MultiCallerClient", async function () {
         const chainId = Number(_chainId);
         return {
           chainId: chainId,
-          contract: {
-            address: "0x1234",
-          },
+          contract: { address },
           message: `Test transaction on chain ${chainId}`,
           mrkdwn: `This transaction is expected to ${fail ? "fail" : "pass"} simulation.`,
         } as AugmentedTransaction;
@@ -121,7 +120,7 @@ describe("MultiCallerClient", async function () {
         multiCaller.enqueueTransaction({
           chainId: chainId,
           contract: {
-            address: "0x1234",
+            address,
             interface: { encodeFunctionData },
           },
           method: "test",
@@ -144,7 +143,7 @@ describe("MultiCallerClient", async function () {
   it("Correctly filters loggable vs. ignorable simulation failures", async function () {
     const txn: AugmentedTransaction = {
       chainId: chainIds[0],
-      contract: { address: "0x1234" },
+      contract: { address },
     } as AugmentedTransaction;
 
     // Verify that all known revert reasons are ignored.
@@ -183,6 +182,49 @@ describe("MultiCallerClient", async function () {
         expect(multiCaller.ignoredSimulationFailures.length).to.equal(0);
         expect(multiCaller.loggedSimulationFailures.length).to.equal(1);
       }
+    }
+  });
+
+  it("Validates transaction data before multicall bundle generation", async function () {
+    const chainId = chainIds[0];
+
+    for (const badField of ["address", "chainId"]) {
+      const txns: AugmentedTransaction[] = [];
+
+      for (const idx of [1, 2, 3, 4, 5]) {
+        const txn = {
+          chainId: chainId,
+          contract: {
+            address,
+            interface: { encodeFunctionData },
+          } as Contract,
+          method: "test",
+          args: ["2"],
+          value: toBN(0),
+          message: `Test multicall candidate on chain ${chainId}`,
+        } as AugmentedTransaction;
+        txns.push(txn);
+      }
+
+      expect(txns.length).to.not.equal(0);
+      expect(() => multiCaller.buildMultiCallBundle(txns)).to.not.throw();
+
+      const badTxn: AugmentedTransaction = txns.pop();
+      switch (badField) {
+        case "address":
+          badTxn.contract = {
+            address: randomAddress(),
+            interface: { encodeFunctionData },
+          } as Contract;
+          break;
+
+        case "chainId":
+          badTxn.chainId += 1;
+          break;
+      }
+
+      txns.push(badTxn);
+      expect(() => multiCaller.buildMultiCallBundle(txns)).to.throw("Multicall bundle data mismatch");
     }
   });
 });
