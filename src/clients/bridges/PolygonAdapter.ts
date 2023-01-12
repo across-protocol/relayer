@@ -14,7 +14,8 @@ import { SpokePoolClient } from "../../clients";
 import { BaseAdapter, polygonL1BridgeInterface, polygonL2BridgeInterface } from "./";
 import { polygonL1RootChainManagerInterface, atomicDepositorInterface } from "./";
 import { SortableEvent } from "../../interfaces";
-import { TOKEN_MAP, CHAIN_ID_NAMES } from "../../common";
+import { constants } from "@across-protocol/sdk-v2";
+const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
 // ether bridge = 0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30
 // erc20 bridge = 0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf
@@ -26,70 +27,70 @@ import { TOKEN_MAP, CHAIN_ID_NAMES } from "../../common";
 const l1RootChainManager = "0xA0c68C638235ee32657e8f720a23ceC1bFc77C77";
 
 const tokenToBridge = {
-  [TOKEN_MAP.USDC.addresses[CHAIN_ID_NAMES.MAINNET]]: {
+  [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
-    l2TokenAddress: TOKEN_MAP.USDC.addresses[CHAIN_ID_NAMES.POLYGON],
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.POLYGON],
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // USDC
-  [TOKEN_MAP.USDT.addresses[CHAIN_ID_NAMES.MAINNET]]: {
+  [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
-    l2TokenAddress: TOKEN_MAP.USDT.addresses[CHAIN_ID_NAMES.POLYGON],
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.POLYGON],
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // USDT
-  [TOKEN_MAP.DAI.addresses[CHAIN_ID_NAMES.MAINNET]]: {
+  [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
-    l2TokenAddress: TOKEN_MAP.DAI.addresses[CHAIN_ID_NAMES.POLYGON],
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.POLYGON],
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // DAI
-  [TOKEN_MAP.WBTC.addresses[CHAIN_ID_NAMES.MAINNET]]: {
+  [TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
-    l2TokenAddress: TOKEN_MAP.WBTC.addresses[CHAIN_ID_NAMES.POLYGON],
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.POLYGON],
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // WBTC
-  [TOKEN_MAP.UMA.addresses[CHAIN_ID_NAMES.MAINNET]]: {
+  [TOKEN_SYMBOLS_MAP.UMA.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
-    l2TokenAddress: TOKEN_MAP.UMA.addresses[CHAIN_ID_NAMES.POLYGON],
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.UMA.addresses[CHAIN_IDs.POLYGON],
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // UMA
-  [TOKEN_MAP.BADGER.addresses[CHAIN_ID_NAMES.MAINNET]]: {
+  [TOKEN_SYMBOLS_MAP.BADGER.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
-    l2TokenAddress: TOKEN_MAP.BADGER.addresses[CHAIN_ID_NAMES.POLYGON],
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.BADGER.addresses[CHAIN_IDs.POLYGON],
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // BADGER
-  [TOKEN_MAP.BAL.addresses[CHAIN_ID_NAMES.MAINNET]]: {
+  [TOKEN_SYMBOLS_MAP.BAL.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
-    l2TokenAddress: TOKEN_MAP.BAL.addresses[CHAIN_ID_NAMES.POLYGON],
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.BAL.addresses[CHAIN_IDs.POLYGON],
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // BAL
-  [TOKEN_MAP.ACX.addresses[CHAIN_ID_NAMES.MAINNET]]: {
+  [TOKEN_SYMBOLS_MAP.ACX.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
-    l2TokenAddress: TOKEN_MAP.ACX.addresses[CHAIN_ID_NAMES.POLYGON],
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.ACX.addresses[CHAIN_IDs.POLYGON],
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // ACX
-  [TOKEN_MAP.WETH.addresses[CHAIN_ID_NAMES.MAINNET]]: {
+  [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30",
-    l2TokenAddress: TOKEN_MAP.WETH.addresses[CHAIN_ID_NAMES.POLYGON],
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.POLYGON],
     l1Method: "LockedEther",
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // WETH
-  [TOKEN_MAP.MATIC.addresses[CHAIN_ID_NAMES.MAINNET]]: {
+  [TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x401f6c983ea34274ec46f84d70b31c151321188b",
     l2TokenAddress: ZERO_ADDRESS,
     l1Method: "NewDepositBlock",
@@ -134,13 +135,14 @@ export class PolygonAdapter extends BaseAdapter {
         if (l1Method === "LockedERC20") l1SearchFilter = [monitoredAddress, undefined, l1Token];
         if (l1Method === "LockedEther") l1SearchFilter = [undefined, monitoredAddress];
         if (l1Method === "NewDepositBlock")
-          l1SearchFilter = [monitoredAddress, TOKEN_MAP.MATIC.addresses[CHAIN_ID_NAMES.MAINNET]];
+          l1SearchFilter = [monitoredAddress, TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET]];
 
-        const l2Method = l1Token === TOKEN_MAP.MATIC.addresses[CHAIN_ID_NAMES.MAINNET] ? "TokenDeposited" : "Transfer";
+        const l2Method =
+          l1Token === TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET] ? "TokenDeposited" : "Transfer";
         let l2SearchFilter: (string | undefined)[] = [];
         if (l2Method === "Transfer") l2SearchFilter = [ZERO_ADDRESS, monitoredAddress];
         if (l2Method === "TokenDeposited")
-          l2SearchFilter = [TOKEN_MAP.MATIC.addresses[CHAIN_ID_NAMES.MAINNET], ZERO_ADDRESS, monitoredAddress];
+          l2SearchFilter = [TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET], ZERO_ADDRESS, monitoredAddress];
 
         promises.push(
           paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), l1SearchConfig),

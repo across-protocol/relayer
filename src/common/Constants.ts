@@ -1,7 +1,4 @@
-import { utils, constants } from "@across-protocol/sdk-v2";
-
-export const TOKEN_MAP = constants.TOKEN_SYMBOLS_MAP;
-export const CHAIN_ID_NAMES = constants.CHAIN_IDs;
+import { utils } from "@across-protocol/sdk-v2";
 
 // This version should increase each time the ConfigStore's config changes, otherwise relayer and dataworker logic
 // will stop working to protect the user's funds.
