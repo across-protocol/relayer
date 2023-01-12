@@ -52,7 +52,7 @@ const QUERY_HANDLERS: {
 };
 
 const { PriceClient } = priceClient;
-const { acrossApi, coingecko } = priceClient.adapters;
+const { acrossApi, coingecko, defiLlama } = priceClient.adapters;
 
 export class ProfitClient {
   private readonly priceClient;
@@ -85,6 +85,7 @@ export class ProfitClient {
     this.priceClient = new PriceClient(logger, [
       new acrossApi.PriceFeed(),
       new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
+      new defiLlama.PriceFeed(),
     ]);
 
     for (const chainId of this.enabledChainIds) {
