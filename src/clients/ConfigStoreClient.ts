@@ -245,6 +245,8 @@ export class AcrossConfigStoreClient {
             spokeTargetBalances: targetBalances,
             l1Token,
           });
+        } else {
+          this.cumulativeSpokeTargetBalanceUpdates.push({ ...passedArgs, spokeTargetBalances: {}, l1Token });
         }
 
         // Store route-specific rate models
@@ -255,6 +257,8 @@ export class AcrossConfigStoreClient {
             })
           );
           this.cumulativeRouteRateModelUpdates.push({ ...passedArgs, routeRateModel, l1Token });
+        } else {
+          this.cumulativeRouteRateModelUpdates.push({ ...passedArgs, routeRateModel: {}, l1Token });
         }
       } catch (err) {
         continue;
