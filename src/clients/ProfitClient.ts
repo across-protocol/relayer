@@ -7,10 +7,10 @@ import { priceClient, relayFeeCalculator } from "@across-protocol/sdk-v2";
 
 // We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
 // @todo: These don't belong in the ProfitClient; they should be relocated.
-export const MATIC = constants.TOKEN_MAP.MATIC.addresses[sdkConstants.CHAIN_IDs.MAINNET];
-export const USDC = constants.TOKEN_MAP.USDC.addresses[sdkConstants.CHAIN_IDs.MAINNET];
-export const WBTC = constants.TOKEN_MAP.WBTC.addresses[sdkConstants.CHAIN_IDs.MAINNET];
-export const WETH = constants.TOKEN_MAP.WETH.addresses[sdkConstants.CHAIN_IDs.MAINNET];
+export const MATIC = constants.TOKEN_MAP.MATIC.addresses[constants.CHAIN_ID_NAMES.MAINNET];
+export const USDC = constants.TOKEN_MAP.USDC.addresses[constants.CHAIN_ID_NAMES.MAINNET];
+export const WBTC = constants.TOKEN_MAP.WBTC.addresses[constants.CHAIN_ID_NAMES.MAINNET];
+export const WETH = constants.TOKEN_MAP.WETH.addresses[constants.CHAIN_ID_NAMES.MAINNET];
 
 // note: All FillProfit BigNumbers are scaled to 18 decimals unless specified otherwise.
 export type FillProfit = {
