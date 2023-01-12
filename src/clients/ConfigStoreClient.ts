@@ -330,7 +330,6 @@ export class AcrossConfigStoreClient {
     const result = await this.redisClient.get(key);
     if (result === null) {
       const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, blockNumber, amount);
-      // Expire key after 90 days.
       if (shouldCache(getCurrentTime(), timestamp))
         await setRedisKey(key, `${current.toString()},${post.toString()}`, this.redisClient, 60 * 60 * 24 * 90);
       return { current, post };
