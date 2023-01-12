@@ -115,7 +115,7 @@ describe("MultiCallerClient", async function () {
     for (const badField of ["address", "chainId"]) {
       const txns: AugmentedTransaction[] = [];
 
-      for (const idx of [1,2,3,4,5]) {
+      for (const idx of [1, 2, 3, 4, 5]) {
         const txn = {
           chainId: chainId,
           contract: {
