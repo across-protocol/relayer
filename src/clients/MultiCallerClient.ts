@@ -24,40 +24,29 @@ export interface AugmentedTransaction {
   value?: BigNumber;
 }
 
+// @todo: MultiCallerClient should be generic. For future, permit the class instantiator to supply their own
+// set of known failures that can be suppressed/ignored.
 // Use this list of Smart Contract revert reasons to filter out transactions that revert in the
 // Multicaller client's simulations but that we can ignore. Check for exact revert reason instead of using
 // .includes() to partially match reason string in order to not ignore errors thrown by non-contract reverts.
 // For example, a NodeJS error might result in a reason string that includes more than just the contract r
 // evert reason.
-const knownRevertReasons = new Set(["relay filled", "Already claimed"]);
+export const knownRevertReasons = new Set(["relay filled", "Already claimed"]);
 
 // The following reason potentially includes false positives of reverts that we should be alerted on, however
 // there is something likely broken in how the provider is interpreting contract reverts. Currently, there are
 // a lot of duplicate transaction sends that are reverting with this reason, for example, sending a transaction
 // to execute a relayer refund leaf takes a while to execute and ends up reverting because a duplicate transaction
 // mines before it. This situation leads to this revert reason which is spamming the Logger currently.
-const unknownRevertReason = "missing revert data in call exception; Transaction reverted without a reason string";
-const unknownRevertReasonMethodsToIgnore = new Set([
+export const unknownRevertReason =
+  "missing revert data in call exception; Transaction reverted without a reason string";
+export const unknownRevertReasonMethodsToIgnore = new Set([
   "fillRelay",
   "fillRelayWithUpdatedFee",
   "executeSlowRelayLeaf",
   "executeRelayerRefundLeaf",
   "executeRootBundle",
 ]);
-
-// Ignore the general unknown revert reason for specific methods or uniformly ignore specific revert reasons for any
-// contract method. Note: Check for exact revert reason instead of using .includes() to partially match reason string
-// in order to not ignore errors thrown by non-contract reverts. For example, a NodeJS error might result in a reason
-// string that includes more than just the contract revert reason.
-const canIgnoreRevertReasons = (obj: TransactionSimulationResult): boolean => {
-  // prettier-ignore
-  return (
-    !obj.succeed && (
-      knownRevertReasons.has(obj.reason) ||
-      (unknownRevertReasonMethodsToIgnore.has(obj.transaction.method) && obj.reason === unknownRevertReason)
-    )
-  );
-};
 
 export class MultiCallerClient {
   private transactions: AugmentedTransaction[] = [];
@@ -315,6 +304,20 @@ export class MultiCallerClient {
     return validTxns;
   }
 
+  // Ignore the general unknown revert reason for specific methods or uniformly ignore specific revert reasons for any
+  // contract method. Note: Check for exact revert reason instead of using .includes() to partially match reason string
+  // in order to not ignore errors thrown by non-contract reverts. For example, a NodeJS error might result in a reason
+  // string that includes more than just the contract revert reason.
+  protected canIgnoreRevertReason(txn: TransactionSimulationResult): boolean {
+    // prettier-ignore
+    return (
+      !txn.succeed && (
+        knownRevertReasons.has(txn.reason) ||
+        (unknownRevertReasonMethodsToIgnore.has(txn.transaction.method) && txn.reason === unknownRevertReason)
+      )
+    );
+  }
+
   // Filter out transactions that revert for non-critical, expected reasons. For example, the "relay filled" error may
   // will occur frequently if there are multiple relayers running at the same time. Similarly, the "already claimed"
   // error will occur if there are overlapping dataworker executor runs.
@@ -325,7 +328,7 @@ export class MultiCallerClient {
     const loggedFailures: TransactionSimulationResult[] = [];
 
     failures.forEach((failure) => {
-      (canIgnoreRevertReasons(failure) ? ignoredFailures : loggedFailures).push(failure);
+      (this.canIgnoreRevertReason(failure) ? ignoredFailures : loggedFailures).push(failure);
     });
 
     if (ignoredFailures.length > 0) {

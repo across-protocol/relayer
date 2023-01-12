@@ -2,6 +2,9 @@ import { ethers } from "ethers";
 import {
   AugmentedTransaction,
   MultiCallerClient, // tested
+  knownRevertReasons,
+  unknownRevertReason,
+  unknownRevertReasonMethodsToIgnore,
 } from "../src/clients";
 import { TransactionResponse, TransactionSimulationResult } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
@@ -10,14 +13,24 @@ import { createSpyLogger, Contract, expect, winston, toBN } from "./utils";
 class MockedMultiCallerClient extends MultiCallerClient {
   public failSimulate = "";
   public failSubmit = "";
-  public simulationFailures: TransactionSimulationResult[] = [];
+  public ignoredSimulationFailures: TransactionSimulationResult[] = [];
+  public loggedSimulationFailures: TransactionSimulationResult[] = [];
 
   constructor(logger: winston.Logger) {
     super(logger);
   }
 
+  simulationFailureCount(): number {
+    let nFailures = 0;
+    nFailures += this.loggedSimulationFailures.length;
+    nFailures += this.ignoredSimulationFailures.length;
+
+    return nFailures;
+  }
+
   clearSimulationFailures(): void {
-    this.simulationFailures = [];
+    this.ignoredSimulationFailures = [];
+    this.loggedSimulationFailures = [];
   }
 
   protected override async simulateTxn(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
@@ -52,8 +65,11 @@ class MockedMultiCallerClient extends MultiCallerClient {
     } as TransactionResponse;
   }
 
-  protected override logSimulationFailures(failures: TransactionSimulationResult[]): void {
-    this.simulationFailures = failures;
+  protected override logSimulationFailures(txns: TransactionSimulationResult[]): void {
+    this.clearSimulationFailures();
+    txns.forEach((txn) => {
+      (this.canIgnoreRevertReason(txn) ? this.ignoredSimulationFailures : this.loggedSimulationFailures).push(txn);
+    });
   }
 }
 
@@ -72,13 +88,11 @@ describe("MultiCallerClient", async function () {
     expect(multiCaller.transactionCount()).to.equal(0);
 
     multiCaller.clearSimulationFailures();
-    expect(multiCaller.simulationFailures.length).to.equal(0);
+    expect(multiCaller.simulationFailureCount()).to.equal(0);
   });
 
   it("Correctly excludes simulation failures", async function () {
     for (const fail of [true, false]) {
-      multiCaller.clearSimulationFailures();
-
       const txns: AugmentedTransaction[] = chainIds.map((_chainId) => {
         const chainId = Number(_chainId);
         return {
@@ -97,14 +111,14 @@ describe("MultiCallerClient", async function () {
       expect(result.length).to.equal(fail ? 0 : txns.length);
 
       // Verify that the failed simulations were filtered out.
-      expect(multiCaller.simulationFailures.length).to.equal(fail ? txns.length : 0);
+      expect(multiCaller.simulationFailureCount()).to.equal(fail ? txns.length : 0);
+      multiCaller.clearSimulationFailures();
     }
   });
 
   it("Handles submission success & failure", async function () {
     for (const fail of ["Forced submission failure", ""]) {
       multiCaller.failSubmit = fail;
-      multiCaller.clearSimulationFailures();
 
       chainIds.forEach((_chainId) => {
         const chainId = Number(_chainId);
@@ -127,7 +141,52 @@ describe("MultiCallerClient", async function () {
       expect(result.length).to.equal(fail ? 0 : chainIds.length);
 
       // Simulation succeeded but submission failed => multiCaller.simulationFailures should be empty.
-      expect(multiCaller.simulationFailures.length).to.equal(0);
+      expect(multiCaller.simulationFailureCount()).to.equal(0);
+    }
+  });
+
+  it("Correctly filters loggable vs. ignorable simulation failures", async function () {
+    const txn: AugmentedTransaction = {
+      chainId: chainIds[0],
+      contract: { address: "0x1234" },
+    } as AugmentedTransaction;
+
+    // Verify that all known revert reasons are ignored.
+    for (const revertReason of knownRevertReasons) {
+      multiCaller.failSimulate = revertReason;
+      txn.message = `Transaction simulation failure; expected to fail with: ${revertReason}.`;
+
+      const result: AugmentedTransaction[] = await multiCaller.simulateTransactionQueue([txn]);
+      expect(result.length).to.equal(0);
+      expect(multiCaller.ignoredSimulationFailures.length).to.equal(1);
+      expect(multiCaller.loggedSimulationFailures.length).to.equal(0);
+    }
+
+    // Verify that the defined "unknown" revert reason against known methods is ignored.
+    multiCaller.failSimulate = unknownRevertReason;
+    for (const method of unknownRevertReasonMethodsToIgnore) {
+      txn.method = method;
+      txn.message = `${txn.method} simulation; expected to fail with: ${unknownRevertReason}.`;
+
+      const result: AugmentedTransaction[] = await multiCaller.simulateTransactionQueue([txn]);
+      expect(result.length).to.equal(0);
+      expect(multiCaller.ignoredSimulationFailures.length).to.equal(1);
+      expect(multiCaller.loggedSimulationFailures.length).to.equal(0);
+    }
+
+    // Verify that unexpected revert reason against both known and "unknown" methods are logged.
+    for (const method of [...unknownRevertReasonMethodsToIgnore, "randomMethod"]) {
+      txn.method = method;
+
+      for (const revertReason of ["unexpected revert reasons", "should not be ignored!"]) {
+        multiCaller.failSimulate = revertReason;
+        txn.message = `${txn.method} simulation; expected to fail with: ${unknownRevertReason}.`;
+
+        const result: AugmentedTransaction[] = await multiCaller.simulateTransactionQueue([txn]);
+        expect(result.length).to.equal(0);
+        expect(multiCaller.ignoredSimulationFailures.length).to.equal(0);
+        expect(multiCaller.loggedSimulationFailures.length).to.equal(1);
+      }
     }
   });
 });
