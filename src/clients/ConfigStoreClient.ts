@@ -331,7 +331,7 @@ export class AcrossConfigStoreClient {
     if (result === null) {
       const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, blockNumber, amount);
       if (shouldCache(getCurrentTime(), timestamp))
-        await setRedisKey(key, `${current.toString()},${post.toString()}`, 60 * 60 * 24 * 90, this.redisClient);
+        await setRedisKey(key, `${current.toString()},${post.toString()}`, this.redisClient,  60 * 60 * 24 * 90);
       return { current, post };
     } else {
       const [current, post] = result.split(",").map(BigNumber.from);

@@ -11,8 +11,8 @@ export const REDIS_CACHEABLE_AGE = 300;
 export async function setRedisKey(
   key: string,
   val: string,
-  expirySeconds: number,
-  redisClient: RedisClient
+  redisClient: RedisClient,
+  expirySeconds = 0,
 ): Promise<void> {
   // EX: Expire key after expirySeconds.
   await redisClient.set(key, val, { EX: expirySeconds });
@@ -36,7 +36,7 @@ export async function getBlockForTimestamp(
     const blockNumber = (await blockFinder.getBlockForTimestamp(timestamp)).number;
     // Expire key after 90 days.
     if (shouldCache(timestamp, currentChainTime))
-      await setRedisKey(key, blockNumber.toString(), 60 * 60 * 24 * 90, redisClient);
+      await setRedisKey(key, blockNumber.toString(), redisClient, 60 * 60 * 24 * 90);
     return blockNumber;
   } else {
     return parseInt(result);
