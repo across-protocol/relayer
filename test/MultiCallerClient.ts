@@ -56,6 +56,7 @@ function encodeFunctionData(method: string, args?: ReadonlyArray<any>): string {
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
 const multiCaller: MockedMultiCallerClient = new MockedMultiCallerClient(spyLogger);
 const provider = new ethers.providers.StaticJsonRpcProvider("127.0.0.1");
+const address = randomAddress(); // Test contract address
 
 describe("MultiCallerClient", async function () {
   beforeEach(async function () {
@@ -69,9 +70,7 @@ describe("MultiCallerClient", async function () {
         const chainId = Number(_chainId);
         return {
           chainId: chainId,
-          contract: {
-            address: "0x1234",
-          },
+          contract: { address }
           message: `Test transaction on chain ${chainId}`,
           mrkdwn: `This transaction is expected to ${fail ? "fail" : "pass"} simulation.`,
         } as AugmentedTransaction;
@@ -111,7 +110,6 @@ describe("MultiCallerClient", async function () {
 
   it("Validates transaction data before multicall bundle generation", async function () {
     const chainId = chainIds[0];
-    const address = randomAddress();
 
     for (const badField of ["address", "chainId"]) {
       const txns: AugmentedTransaction[] = [];
