@@ -14,6 +14,7 @@ import {
   max,
   getBlockForTimestamp,
   shouldCache,
+  setRedisKey,
 } from "../utils";
 
 import { CONFIG_STORE_VERSION, DEFAULT_CONFIG_STORE_VERSION } from "../common/Constants";
@@ -334,7 +335,7 @@ export class AcrossConfigStoreClient {
     if (result === null) {
       const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, blockNumber, amount);
       if (shouldCache(getCurrentTime(), timestamp))
-        await this.redisClient.set(key, `${current.toString()},${post.toString()}`);
+        await setRedisKey(key, `${current.toString()},${post.toString()}`, this.redisClient, 60 * 60 * 24 * 90);
       return { current, post };
     } else {
       const [current, post] = result.split(",").map(BigNumber.from);
