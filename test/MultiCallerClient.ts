@@ -5,7 +5,7 @@ import {
 } from "../src/clients";
 import { TransactionResponse, TransactionSimulationResult } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
-import { createSpyLogger, Contract, expect, winston, toBN } from "./utils";
+import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";
 
 class MockedMultiCallerClient extends MultiCallerClient {
   public failSimulate = "";
@@ -111,6 +111,7 @@ describe("MultiCallerClient", async function () {
 
   it("Validates transaction data before multicall bundle generation", async function () {
     const chainId = chainIds[0];
+    const address = randomAddress();
 
     for (const badField of ["address", "chainId"]) {
       const txns: AugmentedTransaction[] = [];
@@ -119,7 +120,7 @@ describe("MultiCallerClient", async function () {
         const txn = {
           chainId: chainId,
           contract: {
-            address: "0x1234",
+            address,
             interface: { encodeFunctionData },
           } as Contract,
           method: "test",
@@ -137,7 +138,7 @@ describe("MultiCallerClient", async function () {
       switch (badField) {
         case "address":
           badTxn.contract = {
-            address: badTxn.contract.address.concat("badaddr"),
+            address: randomAddress(),
             interface: { encodeFunctionData },
           } as Contract;
           break;
