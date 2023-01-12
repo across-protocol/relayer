@@ -70,7 +70,7 @@ describe("MultiCallerClient", async function () {
         const chainId = Number(_chainId);
         return {
           chainId: chainId,
-          contract: { address }
+          contract: { address },
           message: `Test transaction on chain ${chainId}`,
           mrkdwn: `This transaction is expected to ${fail ? "fail" : "pass"} simulation.`,
         } as AugmentedTransaction;
