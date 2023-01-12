@@ -24,38 +24,29 @@ export interface AugmentedTransaction {
   value?: BigNumber;
 }
 
+// @todo: MultiCallerClient should be generic. For future, permit the class instantiator to supply their own
+// set of known failures that can be suppressed/ignored.
 // Use this list of Smart Contract revert reasons to filter out transactions that revert in the
 // Multicaller client's simulations but that we can ignore. Check for exact revert reason instead of using
 // .includes() to partially match reason string in order to not ignore errors thrown by non-contract reverts.
 // For example, a NodeJS error might result in a reason string that includes more than just the contract r
 // evert reason.
-const knownRevertReasons = new Set(["relay filled", "Already claimed"]);
+export const knownRevertReasons = new Set(["relay filled", "Already claimed"]);
 
 // The following reason potentially includes false positives of reverts that we should be alerted on, however
 // there is something likely broken in how the provider is interpreting contract reverts. Currently, there are
 // a lot of duplicate transaction sends that are reverting with this reason, for example, sending a transaction
 // to execute a relayer refund leaf takes a while to execute and ends up reverting because a duplicate transaction
 // mines before it. This situation leads to this revert reason which is spamming the Logger currently.
-const unknownRevertReason = "missing revert data in call exception; Transaction reverted without a reason string";
-const unknownRevertReasonMethodsToIgnore = new Set([
+export const unknownRevertReason =
+  "missing revert data in call exception; Transaction reverted without a reason string";
+export const unknownRevertReasonMethodsToIgnore = new Set([
   "fillRelay",
   "fillRelayWithUpdatedFee",
   "executeSlowRelayLeaf",
   "executeRelayerRefundLeaf",
   "executeRootBundle",
 ]);
-
-// Ignore the general unknown revert reason for specific methods or uniformly ignore specific revert reasons
-// for any contract method.
-const canIgnoreRevertReasons = (obj: TransactionSimulationResult): boolean => {
-  // prettier-ignore
-  return (
-    !obj.succeed && (
-      knownRevertReasons.has(obj.reason) ||
-      (unknownRevertReasonMethodsToIgnore.has(obj.transaction.method) && obj.reason === unknownRevertReason)
-    )
-  );
-};
 
 export class MultiCallerClient {
   private transactions: AugmentedTransaction[] = [];
@@ -296,55 +287,74 @@ export class MultiCallerClient {
   }
 
   async simulateTransactionQueue(transactions: AugmentedTransaction[]): Promise<AugmentedTransaction[]> {
+    const validTxns: AugmentedTransaction[] = [];
+    const invalidTxns: TransactionSimulationResult[] = [];
+
     // Simulate the transaction execution for the whole queue.
-    const _transactionsSucceed = await Promise.all(
+    const txnSimulations = await Promise.all(
       transactions.map((transaction: AugmentedTransaction) => this.simulateTxn(transaction))
     );
 
-    // Filter out transactions that revert for expected reasons. For example, the "relay filled" error
-    // will occur frequently if there are multiple relayers running at the same time because only one relay
-    // can go through. Similarly, the "already claimed" error will occur if the dataworker executor is running at a
-    // practical cadence of ~10 mins per run, because it takes ~5-7 mins per run, these runs can overlap and
-    // execution collisions can occur. These are non critical errors we can ignore to filter out the noise.
-    // TODO: Figure out less hacky way to reduce these errors rather than ignoring them.
+    txnSimulations.forEach((txn) => {
+      if (txn.succeed) validTxns.push(txn.transaction);
+      else invalidTxns.push(txn);
+    });
+    if (invalidTxns.length > 0) this.logSimulationFailures(invalidTxns);
 
-    // Note: Check for exact revert reason instead of using .includes() to partially match reason string in order
-    // to not ignore errors thrown by non-contract reverts. For example, a NodeJS error might result in a reason
-    // string that includes more than just the contract revert reason.
-    const transactionRevertsToIgnore = _transactionsSucceed.filter(
-      (txn) => !txn.succeed && canIgnoreRevertReasons(txn)
+    return validTxns;
+  }
+
+  // Ignore the general unknown revert reason for specific methods or uniformly ignore specific revert reasons for any
+  // contract method. Note: Check for exact revert reason instead of using .includes() to partially match reason string
+  // in order to not ignore errors thrown by non-contract reverts. For example, a NodeJS error might result in a reason
+  // string that includes more than just the contract revert reason.
+  protected canIgnoreRevertReason(txn: TransactionSimulationResult): boolean {
+    // prettier-ignore
+    return (
+      !txn.succeed && (
+        knownRevertReasons.has(txn.reason) ||
+        (unknownRevertReasonMethodsToIgnore.has(txn.transaction.method) && txn.reason === unknownRevertReason)
+      )
     );
-    const transactionRevertsToLog = _transactionsSucceed.filter((txn) => !txn.succeed && !canIgnoreRevertReasons(txn));
-    if (transactionRevertsToIgnore.length > 0)
-      this.logger.debug({
-        at: "MultiCallerClient",
-        message: `Filtering out ${transactionRevertsToIgnore.length} transactions with revert reasons we can ignore.`,
-        revertReasons: transactionRevertsToIgnore.map((txn) => txn.reason),
-        totalTransactions: _transactionsSucceed.length,
-      });
+  }
 
-    // If any transactions will revert then log the reason.
-    if (transactionRevertsToLog.length > 0)
+  // Filter out transactions that revert for non-critical, expected reasons. For example, the "relay filled" error may
+  // will occur frequently if there are multiple relayers running at the same time. Similarly, the "already claimed"
+  // error will occur if there are overlapping dataworker executor runs.
+  // @todo: Figure out a less hacky way to reduce these errors rather than ignoring them.
+  // @todo: Consider logging key txn information with the failures?
+  protected logSimulationFailures(failures: TransactionSimulationResult[]): void {
+    const ignoredFailures: TransactionSimulationResult[] = [];
+    const loggedFailures: TransactionSimulationResult[] = [];
+
+    failures.forEach((failure) => {
+      (this.canIgnoreRevertReason(failure) ? ignoredFailures : loggedFailures).push(failure);
+    });
+
+    if (ignoredFailures.length > 0) {
+      this.logger.debug({
+        at: "MultiCallerClient#LogSimulationFailures",
+        message: `Filtering out ${ignoredFailures.length} transactions with revert reasons we can ignore.`,
+        revertReasons: ignoredFailures.map((txn) => txn.reason),
+      });
+    }
+
+    // Log unexpected/noteworthy failures.
+    if (loggedFailures.length > 0) {
       this.logger.error({
-        at: "MultiCallerClient",
-        message: "Some transaction in the queue will revert!",
-        count: transactionRevertsToLog.length,
-        revertingTransactions: transactionRevertsToLog.map((transaction) => {
+        at: "MultiCallerClient#LogSimulationFailures",
+        message: `${loggedFailures.length} in the queue may revert!`,
+        revertingTransactions: loggedFailures.map((txn) => {
           return {
-            target: getTarget(transaction.transaction.contract.address),
-            args: transaction.transaction.args,
-            reason: transaction.reason,
-            message: transaction.transaction.message,
-            mrkdwn: transaction.transaction.mrkdwn,
+            target: getTarget(txn.transaction.contract.address),
+            args: txn.transaction.args,
+            reason: txn.reason,
+            message: txn.transaction.message,
+            mrkdwn: txn.transaction.mrkdwn,
           };
         }),
         notificationPath: "across-error",
       });
-
-    const validTransactions = _transactionsSucceed
-      .filter((txn) => txn.succeed)
-      .map((transaction) => transaction.transaction);
-
-    return validTransactions;
+    }
   }
 }
