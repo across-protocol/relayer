@@ -120,8 +120,8 @@ export class AcrossConfigStoreClient {
     const config = (sortEventsDescending(this.cumulativeRouteRateModelUpdates) as RouteRateModelUpdate[]).find(
       (config) => config.blockNumber <= blockNumber && config.l1Token === l1Token
     );
-    if (config?.routeRateModels[route] === undefined) return undefined;
-    return across.rateModel.parseAndReturnRateModelFromString(config.routeRateModels[route]);
+    if (config?.routeRateModel[route] === undefined) return undefined;
+    return across.rateModel.parseAndReturnRateModelFromString(config.routeRateModel[route]);
   }
 
   getTokenTransferThresholdForBlock(l1Token: string, blockNumber: number = Number.MAX_SAFE_INTEGER): BigNumber {
@@ -246,15 +246,15 @@ export class AcrossConfigStoreClient {
         }
 
         // Store route-specific rate models
-        if (parsedValue?.routeRateModels) {
-          const routeRateModels = Object.fromEntries(
-            Object.entries(parsedValue.routeRateModels).map(([path, routeRateModel]) => {
+        if (parsedValue?.routeRateModel) {
+          const routeRateModel = Object.fromEntries(
+            Object.entries(parsedValue.routeRateModel).map(([path, routeRateModel]) => {
               return [path, JSON.stringify(routeRateModel)];
             })
           );
-          this.cumulativeRouteRateModelUpdates.push({ ...args, routeRateModels, l1Token });
+          this.cumulativeRouteRateModelUpdates.push({ ...args, routeRateModel, l1Token });
         } else {
-          this.cumulativeRouteRateModelUpdates.push({ ...args, routeRateModels: {}, l1Token });
+          this.cumulativeRouteRateModelUpdates.push({ ...args, routeRateModel: {}, l1Token });
         }
       } catch (err) {
         continue;
