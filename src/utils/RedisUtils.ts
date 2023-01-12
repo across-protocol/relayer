@@ -12,10 +12,12 @@ export async function setRedisKey(
   key: string,
   val: string,
   redisClient: RedisClient,
-  expirySeconds = 0,
+  expirySeconds = 0
 ): Promise<void> {
-  // EX: Expire key after expirySeconds.
-  await redisClient.set(key, val, { EX: expirySeconds });
+  if (expirySeconds > 0) {
+    // EX: Expire key after expirySeconds.
+    await redisClient.set(key, val, { EX: expirySeconds });
+  } else await redisClient.set(key, val);
 }
 
 // Get the block number for a given timestamp fresh from on-chain data if not found in redis cache.
