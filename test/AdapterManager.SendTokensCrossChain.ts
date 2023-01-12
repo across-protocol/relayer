@@ -5,7 +5,7 @@ import { bnToHex, getL2TokenAddresses } from "../src/utils";
 import { SpokePoolClient } from "../src/clients";
 import { AdapterManager } from "../src/clients/bridges"; // Tested
 import * as interfaces from "../src/clients/bridges/ContractInterfaces";
-import { constants as sdkConstants } from "@across-protocol/sdk-v2";
+import { TOKEN_MAP, CHAIN_ID_NAMES } from "../src/common";
 
 let hubPoolClient: MockHubPoolClient;
 const mockSpokePoolClients: {
@@ -236,9 +236,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 });
 
 async function seedMocks() {
-  const allL1Tokens = Object.values(sdkConstants.TOKEN_SYMBOLS_MAP).map(
-    (details) => details.addresses[sdkConstants.CHAIN_IDs.MAINNET]
-  );
+  const allL1Tokens = Object.values(TOKEN_MAP).map((details) => details.addresses[CHAIN_ID_NAMES.MAINNET]);
   const tokenAddressMapping = Object.fromEntries(allL1Tokens.map((address) => [address, getL2TokenAddresses(address)]));
   hubPoolClient.setL1TokensToDestinationTokens(tokenAddressMapping);
 

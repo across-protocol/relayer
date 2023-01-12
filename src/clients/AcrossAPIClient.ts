@@ -2,8 +2,7 @@ import { winston, BigNumber, getL2TokenAddresses } from "../utils";
 import axios, { AxiosError } from "axios";
 import get from "lodash.get";
 import { HubPoolClient } from "./HubPoolClient";
-import { constants as sdkConstants } from "@across-protocol/sdk-v2";
-import { CHAIN_ID_LIST_INDICES } from "../common";
+import { CHAIN_ID_LIST_INDICES, CHAIN_ID_NAMES, TOKEN_MAP } from "../common";
 
 export interface DepositLimits {
   maxDeposit: BigNumber;
@@ -24,9 +23,7 @@ export class AcrossApiClient {
     readonly timeout: number = 60000
   ) {
     if (Object.keys(tokensQuery).length === 0)
-      this.tokensQuery = Object.entries(sdkConstants.TOKEN_SYMBOLS_MAP).map(
-        ([, details]) => details.addresses[sdkConstants.CHAIN_IDs.MAINNET]
-      );
+      this.tokensQuery = Object.entries(TOKEN_MAP).map(([, details]) => details.addresses[CHAIN_ID_NAMES.MAINNET]);
   }
 
   async update(ignoreLimits: boolean): Promise<void> {
@@ -58,7 +55,7 @@ export class AcrossApiClient {
           ? Number(
               Object.keys(getL2TokenAddresses(l1Token)).find(
                 (chainId) =>
-                  Number(chainId) !== sdkConstants.CHAIN_IDs.MAINNET && CHAIN_ID_LIST_INDICES.includes(Number(chainId))
+                  Number(chainId) !== CHAIN_ID_NAMES.MAINNET && CHAIN_ID_LIST_INDICES.includes(Number(chainId))
               )
             )
           : 10;

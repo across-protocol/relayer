@@ -3,14 +3,14 @@ import * as constants from "../common/Constants";
 import { assert, BigNumber, formatFeePct, max, winston, toBNWei, toBN, assign } from "../utils";
 import { HubPoolClient } from ".";
 import { Deposit, L1Token, SpokePoolClientsByChain } from "../interfaces";
-import { priceClient, relayFeeCalculator, constants as sdkConstants } from "@across-protocol/sdk-v2";
+import { priceClient, relayFeeCalculator } from "@across-protocol/sdk-v2";
 
 // We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
 // @todo: These don't belong in the ProfitClient; they should be relocated.
-export const MATIC = sdkConstants.TOKEN_SYMBOLS_MAP.MATIC.addresses[sdkConstants.CHAIN_IDs.MAINNET];
-export const USDC = sdkConstants.TOKEN_SYMBOLS_MAP.USDC.addresses[sdkConstants.CHAIN_IDs.MAINNET];
-export const WBTC = sdkConstants.TOKEN_SYMBOLS_MAP.WBTC.addresses[sdkConstants.CHAIN_IDs.MAINNET];
-export const WETH = sdkConstants.TOKEN_SYMBOLS_MAP.WETH.addresses[sdkConstants.CHAIN_IDs.MAINNET];
+export const MATIC = constants.TOKEN_MAP.MATIC.addresses[sdkConstants.CHAIN_IDs.MAINNET];
+export const USDC = constants.TOKEN_MAP.USDC.addresses[sdkConstants.CHAIN_IDs.MAINNET];
+export const WBTC = constants.TOKEN_MAP.WBTC.addresses[sdkConstants.CHAIN_IDs.MAINNET];
+export const WETH = constants.TOKEN_MAP.WETH.addresses[sdkConstants.CHAIN_IDs.MAINNET];
 
 // note: All FillProfit BigNumbers are scaled to 18 decimals unless specified otherwise.
 export type FillProfit = {
