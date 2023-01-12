@@ -310,7 +310,7 @@ export class MultiCallerClient {
       if (txn.succeed) validTxns.push(txn.transaction);
       else invalidTxns.push(txn);
     });
-    this.logSimulationFailures(invalidTxns);
+    if (invalidTxns.length > 0) this.logSimulationFailures(invalidTxns);
 
     return validTxns;
   }
