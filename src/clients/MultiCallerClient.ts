@@ -51,7 +51,10 @@ export const unknownRevertReasonMethodsToIgnore = new Set([
 export class MultiCallerClient {
   private transactions: AugmentedTransaction[] = [];
   // eslint-disable-next-line no-useless-constructor
-  constructor(readonly logger: winston.Logger) {}
+  constructor(
+    readonly logger: winston.Logger,
+    readonly chunkSize: { [chainId: number]: number } = CHAIN_MULTICALL_CHUNK_SIZE
+  ) {}
 
   // Adds all information associated with a transaction to the transaction queue. This is the intention of the
   // caller to send a transaction. The transaction might not be executable, which should be filtered later.
@@ -97,7 +100,7 @@ export class MultiCallerClient {
       const chunkedTransactions: { [chainId: number]: AugmentedTransaction[][] } = Object.fromEntries(
         Object.entries(groupedTransactions).map(([_chainId, transactions]) => {
           const chainId = Number(_chainId);
-          const chunkSize: number = CHAIN_MULTICALL_CHUNK_SIZE[chainId] || DEFAULT_MULTICALL_CHUNK_SIZE;
+          const chunkSize: number = this.chunkSize[chainId] || DEFAULT_MULTICALL_CHUNK_SIZE;
           if (transactions.length > chunkSize) {
             const dropped: Array<{ address: string; method: string; args: any[] }> = transactions
               .slice(chunkSize)
