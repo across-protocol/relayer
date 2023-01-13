@@ -20,13 +20,14 @@ import {
   getLatestInvalidBundleStartBlocks,
   getDvmContract,
   getDisputedProposal,
+  getBlockForTimestamp,
+  getCurrentTime,
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
   getSpokePoolClientEventSearchConfigsForFastDataworker,
   updateDataworkerClients,
 } from "../dataworker/DataworkerClientHelper";
-import { BlockFinder } from "@uma/sdk";
 import { PendingRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
@@ -51,11 +52,15 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     config,
   });
 
-  // Construct blockfinder to figure out which block corresponds with the disputed price request time.
-  const blockFinder = new BlockFinder(
-    clients.configStoreClient.configStore.provider.getBlock.bind(clients.configStoreClient.configStore.provider)
+  // Figure out which block corresponds with the disputed price request time.
+  const priceRequestBlock = await getBlockForTimestamp(
+    clients.hubPoolClient.chainId,
+    clients.hubPoolClient.chainId,
+    priceRequestTime,
+    getCurrentTime(),
+    clients.configStoreClient.blockFinder,
+    clients.configStoreClient.redisClient
   );
-  const priceRequestBlock = (await blockFinder.getBlockForTimestamp(priceRequestTime)).number;
 
   // Find dispute transaction so we can gain additional confidence that the preceding root bundle is older than the
   // dispute. This is a sanity test against the case where a dispute was submitted atomically following proposal
@@ -76,7 +81,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
 
   const precedingProposeRootBundleEvent = await getDisputedProposal(
     dvm,
-    clients.hubPoolClient,
+    clients.configStoreClient,
     priceRequestTime,
     priceRequestBlock
   );

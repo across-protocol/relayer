@@ -8,6 +8,18 @@ export type RedisClient = ReturnType<typeof createClient>;
 // Current time must be >= 5 minutes past the event timestamp for it to be stable enough to cache.
 export const REDIS_CACHEABLE_AGE = 300;
 
+export async function setRedisKey(
+  key: string,
+  val: string,
+  redisClient: RedisClient,
+  expirySeconds = 0
+): Promise<void> {
+  if (expirySeconds > 0) {
+    // EX: Expire key after expirySeconds.
+    await redisClient.set(key, val, { EX: expirySeconds });
+  } else await redisClient.set(key, val);
+}
+
 // Get the block number for a given timestamp fresh from on-chain data if not found in redis cache.
 export async function getBlockForTimestamp(
   hubPoolChainId: number,
@@ -24,7 +36,9 @@ export async function getBlockForTimestamp(
   const result = await redisClient.get(key);
   if (result === null) {
     const blockNumber = (await blockFinder.getBlockForTimestamp(timestamp)).number;
-    if (shouldCache(timestamp, currentChainTime)) await redisClient.set(key, blockNumber.toString());
+    // Expire key after 90 days.
+    if (shouldCache(timestamp, currentChainTime))
+      await setRedisKey(key, blockNumber.toString(), redisClient, 60 * 60 * 24 * 90);
     return blockNumber;
   } else {
     return parseInt(result);
