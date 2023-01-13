@@ -49,7 +49,7 @@ export const unknownRevertReasonMethodsToIgnore = new Set([
 ]);
 
 export class MultiCallerClient {
-  private newMulticaller: boolean = false;
+  private newMulticaller = false;
   protected transactions: AugmentedTransaction[] = [];
   protected txns: { [chainId: number]: AugmentedTransaction[] } = {};
   protected valueTxns: { [chainId: number]: AugmentedTransaction[] } = {};
@@ -60,7 +60,7 @@ export class MultiCallerClient {
     readonly chunkSize: { [chainId: number]: number } = CHAIN_MULTICALL_CHUNK_SIZE,
     newMulticaller = false
   ) {
-    this.newMulticaller = newMulticaller || (process.env.NEW_MULTICALLER === "true");
+    this.newMulticaller = newMulticaller || process.env.NEW_MULTICALLER === "true";
   }
 
   // Adds all information associated with a transaction to the transaction queue.
@@ -70,7 +70,6 @@ export class MultiCallerClient {
       const txnQueue = txn.value && txn.value.gt(0) ? this.valueTxns : this.txns;
       if (txnQueue[txn.chainId] === undefined) txnQueue[txn.chainId] = [];
       txnQueue[txn.chainId].push(txn);
-
     } else this.transactions.push(txn);
   }
 
@@ -128,15 +127,14 @@ export class MultiCallerClient {
         const chainId = chainIds[idx];
         switch (result.status) {
           case "fulfilled":
-            const _txnHashes = result.value.map((txnResponse) => txnResponse.hash);
-            return [chainId, _txnHashes];
+            return [chainId, result.value.map((txnResponse) => txnResponse.hash)];
           case "rejected":
             return [chainId, result.reason];
           default: // Should never occur; log if it ever does.
             this.logger.warn({
               at: "MultiCallerClient#executeTxnQueues",
               message: "Unexpected transaction queue resulting status.",
-              result
+              result,
             });
             return [chainId, "Unknown error"];
         }
@@ -490,12 +488,13 @@ export class MultiCallerClient {
     chunkSize = DEFAULT_MULTICALL_CHUNK_SIZE
   ): Promise<AugmentedTransaction[]> {
     const txnChunks: AugmentedTransaction[][] = await lodash.chunk(
-      await this.simulateTransactionQueue(txns), chunkSize
+      await this.simulateTransactionQueue(txns),
+      chunkSize
     );
 
     return txnChunks.map((txnChunk: AugmentedTransaction[]) => {
       // Don't wrap single transactions in a multicall.
-      return (txnChunk.length > 1) ? this.buildMultiCallBundle(txnChunk) : txnChunk[0];
+      return txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0];
     });
   }
 

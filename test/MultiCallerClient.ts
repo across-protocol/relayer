@@ -289,7 +289,7 @@ describe("MultiCallerClient", async function () {
     const chunkSize: { [chainId: number]: number } = Object.fromEntries(
       chainIds.map((_chainId, idx) => {
         const chainId = Number(_chainId);
-        return [ chainId, 2 + idx * 2 ];
+        return [chainId, 2 + idx * 2];
       })
     );
     const _multiCaller = new MockedMultiCallerClient(spyLogger, chunkSize);
@@ -321,7 +321,7 @@ describe("MultiCallerClient", async function () {
 
       txnQueue.slice(0, nFullBundles).forEach((txn) => {
         // If chunkSize is 1, no multiCall txns will be bundled.
-        expect(txn.method).to.equal(_chunkSize > 1 ? "multicall" : testMethod)
+        expect(txn.method).to.equal(_chunkSize > 1 ? "multicall" : testMethod);
       });
       // txnQueue deliberately has one "spare" txn appended, so it should never be bundled.
       txnQueue.slice(-1).forEach((txn) => expect(txn.method).to.equal(testMethod));
@@ -333,7 +333,6 @@ describe("MultiCallerClient", async function () {
 
     const nTxns = 5;
     for (let txn = 1; txn <= nTxns; ++txn) {
-
       for (const value of [0, 1]) {
         const txnType = value > 0 ? "value" : "multicall";
 
