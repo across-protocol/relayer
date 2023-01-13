@@ -1,4 +1,4 @@
-import { DEFAULT_MULTICALL_CHUNK_SIZE, CHAIN_MULTICALL_CHUNK_SIZE } from "../common";
+import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE } from "../common";
 import {
   winston,
   getNetworkName,
@@ -53,7 +53,7 @@ export class MultiCallerClient {
   // eslint-disable-next-line no-useless-constructor
   constructor(
     readonly logger: winston.Logger,
-    readonly chunkSize: { [chainId: number]: number } = CHAIN_MULTICALL_CHUNK_SIZE
+    readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE
   ) {}
 
   // Adds all information associated with a transaction to the transaction queue. This is the intention of the
