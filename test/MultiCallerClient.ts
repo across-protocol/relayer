@@ -16,8 +16,8 @@ class MockedMultiCallerClient extends MultiCallerClient {
   public ignoredSimulationFailures: TransactionSimulationResult[] = [];
   public loggedSimulationFailures: TransactionSimulationResult[] = [];
 
-  constructor(logger: winston.Logger) {
-    super(logger);
+  constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}) {
+    super(logger, chunkSize);
   }
 
   simulationFailureCount(): number {
