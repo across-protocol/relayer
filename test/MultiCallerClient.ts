@@ -17,7 +17,7 @@ class MockedMultiCallerClient extends MultiCallerClient {
   public loggedSimulationFailures: TransactionSimulationResult[] = [];
 
   constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}) {
-    super(logger, chunkSize, true);
+    super(logger, chunkSize);
   }
 
   private txnCount(txnQueue: { [chainId: number]: AugmentedTransaction[] }): number {
