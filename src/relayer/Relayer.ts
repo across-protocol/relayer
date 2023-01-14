@@ -94,11 +94,7 @@ export class Relayer {
     const latestHubPoolTime = this.clients.hubPoolClient.currentTime;
 
     // Require that all fillable deposits meet the minimum specified number of confirmations.
-    const confirmedUnfilledDeposits = getUnfilledDeposits(
-      this.clients.spokePoolClients,
-      this.config.maxRelayerLookBack,
-      this.clients.configStoreClient
-    )
+    const confirmedUnfilledDeposits = unfilledDeposits
       .filter((x) => {
         return (
           x.deposit.quoteTimestamp + this.config.quoteTimeBuffer <= latestHubPoolTime &&
