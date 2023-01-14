@@ -1,4 +1,4 @@
-import { DEFAULT_MULTICALL_CHUNK_SIZE, CHAIN_MULTICALL_CHUNK_SIZE } from "../common";
+import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE } from "../common";
 import {
   winston,
   getNetworkName,
@@ -57,7 +57,7 @@ export class MultiCallerClient {
   // Legacy mode is a temporary feature to support transition to the updated multicaller implementation.
   constructor(
     readonly logger: winston.Logger,
-    readonly chunkSize: { [chainId: number]: number } = CHAIN_MULTICALL_CHUNK_SIZE,
+    readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE,
     newMulticaller = false
   ) {
     this.newMulticaller = newMulticaller || process.env.NEW_MULTICALLER === "true";
