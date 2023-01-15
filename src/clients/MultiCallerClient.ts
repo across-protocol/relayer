@@ -156,7 +156,7 @@ export class MultiCallerClient {
     // Concatenate the new multicall txns onto any existing value txns and pass the queue off for submission.
     const txnResponses: TransactionResponse[] = await this.executeTxnQueue(
       chainId,
-      this.valueTxns[chainId].concat(multicallTxns),
+      (this.valueTxns[chainId] ?? []).concat(multicallTxns),
       simulate
     );
 
