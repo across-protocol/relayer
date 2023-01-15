@@ -241,9 +241,13 @@ export class AcrossConfigStoreClient {
               return [chainId, { target, threshold }];
             })
           ) as SpokeTargetBalanceUpdate["spokeTargetBalances"];
-          this.cumulativeSpokeTargetBalanceUpdates.push({ ...args, spokeTargetBalances: targetBalances, l1Token });
+          this.cumulativeSpokeTargetBalanceUpdates.push({
+            ...passedArgs,
+            spokeTargetBalances: targetBalances,
+            l1Token,
+          });
         } else {
-          this.cumulativeSpokeTargetBalanceUpdates.push({ ...args, spokeTargetBalances: {}, l1Token });
+          this.cumulativeSpokeTargetBalanceUpdates.push({ ...passedArgs, spokeTargetBalances: {}, l1Token });
         }
 
         // Store route-specific rate models
@@ -253,9 +257,9 @@ export class AcrossConfigStoreClient {
               return [path, JSON.stringify(routeRateModel)];
             })
           );
-          this.cumulativeRouteRateModelUpdates.push({ ...args, routeRateModel, l1Token });
+          this.cumulativeRouteRateModelUpdates.push({ ...passedArgs, routeRateModel, l1Token });
         } else {
-          this.cumulativeRouteRateModelUpdates.push({ ...args, routeRateModel: {}, l1Token });
+          this.cumulativeRouteRateModelUpdates.push({ ...passedArgs, routeRateModel: {}, l1Token });
         }
       } catch (err) {
         continue;

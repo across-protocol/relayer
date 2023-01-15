@@ -1,14 +1,6 @@
 import { AcrossConfigStoreClient, HubPoolClient } from "../clients";
 import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
-import {
-  BigNumber,
-  assign,
-  getRealizedLpFeeForFills,
-  getRefundForFills,
-  sortEventsDescending,
-  toBN,
-  winston,
-} from "./";
+import { BigNumber, assign, getRealizedLpFeeForFills, getRefundForFills, sortEventsDescending, toBN } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 import _ from "lodash";
 
