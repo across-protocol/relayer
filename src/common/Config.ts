@@ -23,7 +23,6 @@ export class CommonConfig {
   constructor(env: ProcessEnv) {
     const {
       MAX_RELAYER_DEPOSIT_LOOK_BACK,
-      CHAIN_MULTICALL_CHUNK_SIZE,
       CONFIGURED_NETWORKS,
       HUB_CHAIN_ID,
       POLLING_DELAY,
