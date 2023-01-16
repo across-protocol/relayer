@@ -129,14 +129,14 @@ export class MultiCallerClient {
           case "fulfilled":
             return [chainId, result.value.map((txnResponse) => txnResponse.hash)];
           case "rejected":
-            return [chainId, result.reason];
+            return [chainId, [result.reason]];
           default: // Should never occur; log if it ever does.
             this.logger.warn({
               at: "MultiCallerClient#executeTxnQueues",
               message: "Unexpected transaction queue resulting status.",
               result,
             });
-            return [chainId, "Unknown error"];
+            return [chainId, ["Unknown error"]];
         }
       })
     );
