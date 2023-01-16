@@ -1,4 +1,4 @@
-import { DEFAULT_MULTICALL_CHUNK_SIZE } from "../common";
+import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE } from "../common";
 import {
   winston,
   getNetworkName,
@@ -9,6 +9,7 @@ import {
   willSucceed,
   etherscanLink,
   TransactionResponse,
+  TransactionSimulationResult,
 } from "../utils";
 import lodash from "lodash";
 
@@ -22,20 +23,23 @@ export interface AugmentedTransaction {
   value?: BigNumber;
 }
 
+// @todo: MultiCallerClient should be generic. For future, permit the class instantiator to supply their own
+// set of known failures that can be suppressed/ignored.
 // Use this list of Smart Contract revert reasons to filter out transactions that revert in the
 // Multicaller client's simulations but that we can ignore. Check for exact revert reason instead of using
 // .includes() to partially match reason string in order to not ignore errors thrown by non-contract reverts.
 // For example, a NodeJS error might result in a reason string that includes more than just the contract r
 // evert reason.
-const knownRevertReasons = new Set(["relay filled", "Already claimed"]);
+export const knownRevertReasons = new Set(["relay filled", "Already claimed"]);
 
 // The following reason potentially includes false positives of reverts that we should be alerted on, however
 // there is something likely broken in how the provider is interpreting contract reverts. Currently, there are
 // a lot of duplicate transaction sends that are reverting with this reason, for example, sending a transaction
 // to execute a relayer refund leaf takes a while to execute and ends up reverting because a duplicate transaction
 // mines before it. This situation leads to this revert reason which is spamming the Logger currently.
-const unknownRevertReason = "missing revert data in call exception; Transaction reverted without a reason string";
-const unknownRevertReasonMethodsToIgnore = new Set([
+export const unknownRevertReason =
+  "missing revert data in call exception; Transaction reverted without a reason string";
+export const unknownRevertReasonMethodsToIgnore = new Set([
   "fillRelay",
   "fillRelayWithUpdatedFee",
   "executeSlowRelayLeaf",
@@ -43,26 +47,13 @@ const unknownRevertReasonMethodsToIgnore = new Set([
   "executeRootBundle",
 ]);
 
-// Ignore the general unknown revert reason for specific methods or uniformly ignore specific revert reasons
-// for any contract method.
-const canIgnoreRevertReasons = (obj: {
-  succeed: boolean;
-  reason: string;
-  transaction: AugmentedTransaction;
-}): boolean => {
-  // prettier-ignore
-  return (
-    !obj.succeed && (
-      knownRevertReasons.has(obj.reason) ||
-      (unknownRevertReasonMethodsToIgnore.has(obj.transaction.method) && obj.reason === unknownRevertReason)
-    )
-  );
-};
-
 export class MultiCallerClient {
   private transactions: AugmentedTransaction[] = [];
   // eslint-disable-next-line no-useless-constructor
-  constructor(readonly logger: winston.Logger, readonly multiCallChunkSize: { [chainId: number]: number } = {}) {}
+  constructor(
+    readonly logger: winston.Logger,
+    readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE
+  ) {}
 
   // Adds all information associated with a transaction to the transaction queue. This is the intention of the
   // caller to send a transaction. The transaction might not be executable, which should be filtered later.
@@ -78,75 +69,24 @@ export class MultiCallerClient {
     this.transactions = [];
   }
 
-  async executeTransactionQueue(simulationModeOn = false) {
+  async executeTransactionQueue(simulationModeOn = false): Promise<string[]> {
+    if (this.transactions.length === 0) return [];
+    this.logger.debug({
+      at: "MultiCallerClient",
+      message: "Executing tx bundle",
+      number: this.transactions.length,
+      simulationModeOn,
+    });
+
     try {
-      if (this.transactions.length === 0) return;
-      this.logger.debug({
-        at: "MultiCallerClient",
-        message: "Executing tx bundle",
-        number: this.transactions.length,
-        simulationModeOn,
-      });
-
-      // Simulate the transaction execution for the whole queue.
-      const _transactionsSucceed = await Promise.all(
-        this.transactions.map((transaction: AugmentedTransaction) => willSucceed(transaction))
-      );
-
-      // Filter out transactions that revert for expected reasons. For example, the "relay filled" error
-      // will occur frequently if there are multiple relayers running at the same time because only one relay
-      // can go through. Similarly, the "already claimed" error will occur if the dataworker executor is running at a
-      // practical cadence of ~10 mins per run, because it takes ~5-7 mins per run, these runs can overlap and
-      // execution collisions can occur. These are non critical errors we can ignore to filter out the noise.
-      // TODO: Figure out less hacky way to reduce these errors rather than ignoring them.
-
-      // Note: Check for exact revert reason instead of using .includes() to partially match reason string in order
-      // to not ignore errors thrown by non-contract reverts. For example, a NodeJS error might result in a reason
-      // string that includes more than just the contract revert reason.
-      const transactionRevertsToIgnore = _transactionsSucceed.filter(
-        (txn) => !txn.succeed && canIgnoreRevertReasons(txn)
-      );
-      const transactionRevertsToLog = _transactionsSucceed.filter(
-        (txn) => !txn.succeed && !canIgnoreRevertReasons(txn)
-      );
-      if (transactionRevertsToIgnore.length > 0)
-        this.logger.debug({
-          at: "MultiCallerClient",
-          message: `Filtering out ${transactionRevertsToIgnore.length} transactions with revert reasons we can ignore`,
-          revertReasons: transactionRevertsToIgnore.map((txn) => txn.reason),
-          totalTransactions: _transactionsSucceed.length,
-        });
-
-      // If any transactions will revert then log the reason.
-      if (transactionRevertsToLog.length > 0)
-        this.logger.error({
-          at: "MultiCallerClient",
-          message: "Some transaction in the queue will revert!",
-          count: transactionRevertsToLog.length,
-          revertingTransactions: transactionRevertsToLog.map((transaction) => {
-            return {
-              target: getTarget(transaction.transaction.contract.address),
-              args: transaction.transaction.args,
-              reason: transaction.reason,
-              message: transaction.transaction.message,
-              mrkdwn: transaction.transaction.mrkdwn,
-            };
-          }),
-          notificationPath: "across-error",
-        });
-
-      const validTransactions = _transactionsSucceed
-        .filter((txn) => txn.succeed)
-        .map((transaction) => transaction.transaction);
-      if (validTransactions.length === 0) {
-        this.logger.debug({ at: "MultiCallerClient", message: "No valid transactions in the queue" });
-        return;
+      const transactions = await this.simulateTransactionQueue(this.transactions);
+      if (transactions.length === 0) {
+        this.logger.debug({ at: "MultiCallerClient", message: "No valid transactions in the queue." });
+        return [];
       }
 
-      const valueTransactions = validTransactions.filter((transaction) => transaction.value && transaction.value.gt(0));
-      const nonValueTransactions = validTransactions.filter(
-        (transaction) => !transaction.value || transaction.value.eq(0)
-      );
+      const valueTransactions = transactions.filter((transaction) => transaction.value && transaction.value.gt(0));
+      const nonValueTransactions = transactions.filter((transaction) => !transaction.value || transaction.value.eq(0));
 
       // Group by target chain. Note that there is NO grouping by target contract. The relayer will only ever use this
       // MultiCallerClient to send multiple transactions to one target contract on a given target chain and so we dont
@@ -159,7 +99,7 @@ export class MultiCallerClient {
       const chunkedTransactions: { [chainId: number]: AugmentedTransaction[][] } = Object.fromEntries(
         Object.entries(groupedTransactions).map(([_chainId, transactions]) => {
           const chainId = Number(_chainId);
-          const chunkSize: number = this.multiCallChunkSize[chainId] ?? DEFAULT_MULTICALL_CHUNK_SIZE;
+          const chunkSize: number = this.chunkSize[chainId] || DEFAULT_MULTICALL_CHUNK_SIZE;
           if (transactions.length > chunkSize) {
             const dropped: Array<{ address: string; method: string; args: any[] }> = transactions
               .slice(chunkSize)
@@ -200,7 +140,7 @@ export class MultiCallerClient {
         });
         this.logger.info({ at: "MultiCallerClient", message: "Exiting simulation mode 🎮", mrkdwn });
         this.clearTransactionQueue();
-        return;
+        return [];
       }
 
       const groupedValueTransactions: { [networkId: number]: AugmentedTransaction[] } = lodash.groupBy(
@@ -239,7 +179,7 @@ export class MultiCallerClient {
       // Construct multiCall transaction for each target chain.
       const multiCallTransactionsResult = await Promise.allSettled(
         Object.values(chunkedTransactions)
-          .map((transactions) => transactions.map((chunk) => this.buildMultiCallBundle(chunk)))
+          .map((transactions) => transactions.map((chunk) => this.submitTxn(this.buildMultiCallBundle(chunk))))
           .flat()
       );
 
@@ -308,31 +248,115 @@ export class MultiCallerClient {
     }
   }
 
-  buildMultiCallBundle(transactions: AugmentedTransaction[]) {
-    // Validate all transactions in the batch have the same target contract.
-    const target = transactions[0].contract;
-    if (transactions.every((tx) => tx.contract.address !== target.address)) {
+  protected async submitTxn(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
+    const { contract, method, args, value } = txn;
+    return await runTransaction(this.logger, contract, method, args, value, null, nonce);
+  }
+
+  buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
+    // Validate all transactions have the same chainId and target contract.
+    const { chainId, contract } = transactions[0];
+    if (transactions.some((tx) => tx.contract.address !== contract.address || tx.chainId !== chainId)) {
       this.logger.error({
-        at: "MultiCallerClient",
-        message: "some transactions in the bundle contain different targets",
+        at: "MultiCallerClient#buildMultiCallBundle",
+        message: "Some transactions in the queue contain different target chain or contract address",
         transactions: transactions.map(({ contract, chainId }) => {
           return { target: getTarget(contract.address), chainId };
         }),
         notificationPath: "across-error",
       });
-      return Promise.reject("some transactions in the bundle contain different targets");
+      throw new Error("Multicall bundle data mismatch");
     }
     let callData = transactions.map((tx) => tx.contract.interface.encodeFunctionData(tx.method, tx.args));
     // There should not be any duplicate call data blobs within this array. If there are there is likely an error.
     callData = [...new Set(callData)];
     this.logger.debug({
       at: "MultiCallerClient",
-      message: "Made bundle",
-      target: getTarget(target.address),
+      message: `Made multicall bundle for ${getNetworkName(chainId)}.`,
+      target: getTarget(contract.address),
       callData,
     });
 
-    // This will either succeed and return the the transaction or throw an error.
-    return runTransaction(this.logger, target, "multicall", [callData]);
+    return {
+      contract,
+      method: "multicall",
+      args: [callData],
+    } as AugmentedTransaction;
+  }
+
+  protected async simulateTxn(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
+    return await willSucceed(txn);
+  }
+
+  async simulateTransactionQueue(transactions: AugmentedTransaction[]): Promise<AugmentedTransaction[]> {
+    const validTxns: AugmentedTransaction[] = [];
+    const invalidTxns: TransactionSimulationResult[] = [];
+
+    // Simulate the transaction execution for the whole queue.
+    const txnSimulations = await Promise.all(
+      transactions.map((transaction: AugmentedTransaction) => this.simulateTxn(transaction))
+    );
+
+    txnSimulations.forEach((txn) => {
+      if (txn.succeed) validTxns.push(txn.transaction);
+      else invalidTxns.push(txn);
+    });
+    if (invalidTxns.length > 0) this.logSimulationFailures(invalidTxns);
+
+    return validTxns;
+  }
+
+  // Ignore the general unknown revert reason for specific methods or uniformly ignore specific revert reasons for any
+  // contract method. Note: Check for exact revert reason instead of using .includes() to partially match reason string
+  // in order to not ignore errors thrown by non-contract reverts. For example, a NodeJS error might result in a reason
+  // string that includes more than just the contract revert reason.
+  protected canIgnoreRevertReason(txn: TransactionSimulationResult): boolean {
+    // prettier-ignore
+    return (
+      !txn.succeed && (
+        knownRevertReasons.has(txn.reason) ||
+        (unknownRevertReasonMethodsToIgnore.has(txn.transaction.method) && txn.reason === unknownRevertReason)
+      )
+    );
+  }
+
+  // Filter out transactions that revert for non-critical, expected reasons. For example, the "relay filled" error may
+  // will occur frequently if there are multiple relayers running at the same time. Similarly, the "already claimed"
+  // error will occur if there are overlapping dataworker executor runs.
+  // @todo: Figure out a less hacky way to reduce these errors rather than ignoring them.
+  // @todo: Consider logging key txn information with the failures?
+  protected logSimulationFailures(failures: TransactionSimulationResult[]): void {
+    const ignoredFailures: TransactionSimulationResult[] = [];
+    const loggedFailures: TransactionSimulationResult[] = [];
+
+    failures.forEach((failure) => {
+      (this.canIgnoreRevertReason(failure) ? ignoredFailures : loggedFailures).push(failure);
+    });
+
+    if (ignoredFailures.length > 0) {
+      this.logger.debug({
+        at: "MultiCallerClient#LogSimulationFailures",
+        message: `Filtering out ${ignoredFailures.length} transactions with revert reasons we can ignore.`,
+        revertReasons: ignoredFailures.map((txn) => txn.reason),
+      });
+    }
+
+    // Log unexpected/noteworthy failures.
+    if (loggedFailures.length > 0) {
+      this.logger.error({
+        at: "MultiCallerClient#LogSimulationFailures",
+        message: `${loggedFailures.length} in the queue may revert!`,
+        revertingTransactions: loggedFailures.map((txn) => {
+          return {
+            target: getTarget(txn.transaction.contract.address),
+            args: txn.transaction.args,
+            reason: txn.reason,
+            message: txn.transaction.message,
+            mrkdwn: txn.transaction.mrkdwn,
+          };
+        }),
+        notificationPath: "across-error",
+      });
+    }
   }
 }

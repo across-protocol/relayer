@@ -38,6 +38,7 @@ export class HubPoolClient {
   constructor(
     readonly logger: winston.Logger,
     readonly hubPool: Contract,
+    readonly chainId: number = 1,
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
@@ -236,10 +237,8 @@ export class HubPoolClient {
     );
   }
 
-  getMostRecentProposedRootBundle(latestBlockToSearch: number) {
-    return sortEventsDescending(this.proposedRootBundles).find(
-      (proposedRootBundle: ProposedRootBundle) => proposedRootBundle.blockNumber <= latestBlockToSearch
-    ) as ProposedRootBundle;
+  getLatestProposedRootBundle() {
+    return sortEventsDescending(this.proposedRootBundles)[0] as ProposedRootBundle;
   }
 
   getFollowingRootBundle(currentRootBundle: ProposedRootBundle) {

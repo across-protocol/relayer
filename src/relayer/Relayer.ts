@@ -10,9 +10,9 @@ import {
 } from "../utils";
 import { createFormatFunction, etherscanLink, formatFeePct, toBN, toBNWei } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
-
 import { Deposit } from "../interfaces";
 import { RelayerConfig } from "./RelayerConfig";
+import { CONFIG_STORE_VERSION } from "../common";
 
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
@@ -20,32 +20,41 @@ export class Relayer {
   // Track by originChainId since depositId is issued on the origin chain.
   // Key is in the form of "chainId-depositId".
   private fullyFilledDeposits: { [key: string]: boolean } = {};
-  private readonly maxUnfilledDepositLookBack: { [chainId: number]: number } = {};
 
   constructor(
     readonly relayerAddress: string,
     readonly logger: winston.Logger,
     readonly clients: RelayerClients,
     readonly config: RelayerConfig
-  ) {
-    this.maxUnfilledDepositLookBack = config.maxRelayerUnfilledDepositLookBack ?? {};
-  }
+  ) {}
 
   async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
     // Fetch all unfilled deposits, order by total earnable fee.
     // TODO: Note this does not consider the price of the token which will be added once the profitability module is
     // added to this bot.
 
-    // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
-    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = getUnfilledDeposits(
+    const unfilledDeposits = getUnfilledDeposits(
       this.clients.spokePoolClients,
-      this.maxUnfilledDepositLookBack
-    ).reduce((agg, curr) => {
-      const unfilledAmountUsd = this.clients.profitClient.getFillAmountInUsd(curr.deposit, curr.unfilledAmount);
-      if (!agg[curr.deposit.originChainId]) agg[curr.deposit.originChainId] = toBN(0);
-      agg[curr.deposit.originChainId] = agg[curr.deposit.originChainId].add(unfilledAmountUsd);
-      return agg;
-    }, {});
+      this.config.maxRelayerLookBack,
+      this.clients.configStoreClient
+    );
+    if (unfilledDeposits.some((x) => x.requiresNewConfigStoreVersion))
+      this.logger.warn({
+        at: "Relayer",
+        message: "Skipping some deposits because ConfigStore version is not updated, are you using the latest code?",
+        latestVersionSupported: CONFIG_STORE_VERSION,
+        latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
+      });
+
+    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = unfilledDeposits
+      .filter((x) => !x.requiresNewConfigStoreVersion)
+      // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
+      .reduce((agg, curr) => {
+        const unfilledAmountUsd = this.clients.profitClient.getFillAmountInUsd(curr.deposit, curr.unfilledAmount);
+        if (!agg[curr.deposit.originChainId]) agg[curr.deposit.originChainId] = toBN(0);
+        agg[curr.deposit.originChainId] = agg[curr.deposit.originChainId].add(unfilledAmountUsd);
+        return agg;
+      }, {});
 
     // Sort thresholds in ascending order.
     const minimumDepositConfirmationThresholds = Object.keys(this.config.minDepositConfirmations)
@@ -85,7 +94,7 @@ export class Relayer {
     const latestHubPoolTime = this.clients.hubPoolClient.currentTime;
 
     // Require that all fillable deposits meet the minimum specified number of confirmations.
-    const unfilledDeposits = getUnfilledDeposits(this.clients.spokePoolClients, this.maxUnfilledDepositLookBack)
+    const confirmedUnfilledDeposits = unfilledDeposits
       .filter((x) => {
         return (
           x.deposit.quoteTimestamp + this.config.quoteTimeBuffer <= latestHubPoolTime &&
@@ -97,8 +106,12 @@ export class Relayer {
       .sort((a, b) =>
         a.unfilledAmount.mul(a.deposit.relayerFeePct).lt(b.unfilledAmount.mul(b.deposit.relayerFeePct)) ? 1 : -1
       );
-    if (unfilledDeposits.length > 0) {
-      this.logger.debug({ at: "Relayer", message: "Unfilled deposits found", number: unfilledDeposits.length });
+    if (confirmedUnfilledDeposits.length > 0) {
+      this.logger.debug({
+        at: "Relayer",
+        message: "Unfilled deposits found",
+        number: confirmedUnfilledDeposits.length,
+      });
     } else {
       this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
     }
@@ -108,7 +121,7 @@ export class Relayer {
     // If not enough ballance add the shortfall to the shortfall tracker to produce an appropriate log. If the deposit
     // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
     // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
-    for (const { deposit, unfilledAmount, fillCount, invalidFills } of unfilledDeposits) {
+    for (const { deposit, unfilledAmount, fillCount, invalidFills } of confirmedUnfilledDeposits) {
       // Skip any L1 tokens that are not specified in the config.
       // If relayerTokens is an empty list, we'll assume that all tokens are supported.
       const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(deposit.originToken, deposit.originChainId);

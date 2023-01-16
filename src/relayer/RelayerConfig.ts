@@ -1,4 +1,4 @@
-import { BigNumber, toBNWei, assert, toBN, replaceAddressCase } from "../utils";
+import { BigNumber, toBNWei, assert, toBN, replaceAddressCase, ethers } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
 import { InventoryConfig } from "../interfaces";
@@ -10,7 +10,6 @@ export class RelayerConfig extends CommonConfig {
   readonly debugProfitability: boolean;
   // Whether token price fetch failures will be ignored when computing relay profitability.
   // If this is false, the relayer will throw an error when fetching prices fails.
-  readonly ignoreTokenPriceFailures: boolean;
   readonly sendingRelaysEnabled: boolean;
   readonly sendingSlowRelaysEnabled: boolean;
   readonly relayerTokens: string[];
@@ -36,7 +35,6 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_DESTINATION_CHAINS,
       DEBUG_PROFITABILITY,
       IGNORE_PROFITABILITY,
-      IGNORE_TOKEN_PRICE_FAILURES,
       RELAYER_GAS_MULTIPLIER,
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
@@ -53,7 +51,9 @@ export class RelayerConfig extends CommonConfig {
     // Empty means all chains.
     this.relayerDestinationChains = RELAYER_DESTINATION_CHAINS ? JSON.parse(RELAYER_DESTINATION_CHAINS) : [];
     // Empty means all tokens.
-    this.relayerTokens = RELAYER_TOKENS ? JSON.parse(RELAYER_TOKENS) : [];
+    this.relayerTokens = RELAYER_TOKENS
+      ? JSON.parse(RELAYER_TOKENS).map((token) => ethers.utils.getAddress(token))
+      : [];
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
@@ -87,7 +87,6 @@ export class RelayerConfig extends CommonConfig {
     }
     this.debugProfitability = DEBUG_PROFITABILITY === "true";
     this.ignoreProfitability = IGNORE_PROFITABILITY === "true";
-    this.ignoreTokenPriceFailures = IGNORE_TOKEN_PRICE_FAILURES === "true";
     this.relayerGasMultiplier = toBNWei(RELAYER_GAS_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MULTIPLIER);
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";

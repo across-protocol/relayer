@@ -24,6 +24,7 @@ import {
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { BundleDataClient, TokenClient } from "../../src/clients";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
+import { MockConfigStoreClient } from "../mocks/MockConfigStoreClient";
 
 async function _constructSpokePoolClientsWithLookback(
   spokePools: Contract[],
@@ -72,7 +73,7 @@ export async function setupDataworker(
   spokePoolClient_3: clients.SpokePoolClient;
   spokePoolClient_4: clients.SpokePoolClient;
   spokePoolClients: { [chainId: number]: clients.SpokePoolClient };
-  configStoreClient: clients.AcrossConfigStoreClient;
+  configStoreClient: MockConfigStoreClient;
   hubPoolClient: clients.HubPoolClient;
   dataworkerInstance: Dataworker;
   spyLogger: winston.Logger;
@@ -162,7 +163,7 @@ export async function setupDataworker(
   );
 
   const hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool);
-  const configStoreClient = new clients.AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
+  const configStoreClient = new MockConfigStoreClient(spyLogger, configStore, hubPoolClient);
 
   const multiCallerClient = new clients.MultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 
@@ -186,7 +187,7 @@ export async function setupDataworker(
     [repaymentChainId]: spokePoolClient_3,
     1: spokePoolClient_4,
   };
-  const profitClient = new clients.ProfitClient(spyLogger, hubPoolClient, spokePoolClients, false, [], true);
+  const profitClient = new clients.ProfitClient(spyLogger, hubPoolClient, spokePoolClients, false, []);
   const bundleDataClient = new BundleDataClient(
     spyLogger,
     {
@@ -299,7 +300,7 @@ export async function setupFastDataworker(
   spokePoolClient_3: clients.SpokePoolClient;
   spokePoolClient_4: clients.SpokePoolClient;
   spokePoolClients: { [chainId: number]: clients.SpokePoolClient };
-  configStoreClient: clients.AcrossConfigStoreClient;
+  configStoreClient: MockConfigStoreClient;
   hubPoolClient: clients.HubPoolClient;
   dataworkerInstance: Dataworker;
   spyLogger: winston.Logger;

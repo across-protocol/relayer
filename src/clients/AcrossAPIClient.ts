@@ -1,7 +1,8 @@
-import { winston, BigNumber, MAX_UINT_VAL } from "../utils";
+import { winston, BigNumber } from "../utils";
 import { l2TokensToL1TokenValidation } from "../common";
 import axios, { AxiosError } from "axios";
 import get from "lodash.get";
+import { HubPoolClient } from "./HubPoolClient";
 
 export interface DepositLimits {
   maxDeposit: BigNumber;
@@ -15,7 +16,12 @@ export class AcrossApiClient {
   public updatedLimits = false;
 
   // Note: Max vercel execution duration is 1 minute
-  constructor(readonly logger: winston.Logger, readonly tokensQuery: string[] = [], readonly timeout: number = 60000) {
+  constructor(
+    readonly logger: winston.Logger,
+    readonly hubPoolClient: HubPoolClient,
+    readonly tokensQuery: string[] = [],
+    readonly timeout: number = 60000
+  ) {
     if (Object.keys(tokensQuery).length === 0) this.tokensQuery = Object.keys(l2TokensToL1TokenValidation);
   }
 
@@ -25,11 +31,15 @@ export class AcrossApiClient {
       return;
     }
 
+    // Note: Skip tokens not currently enabled in HubPool as we won't be able to relay them.
+    if (!this.hubPoolClient.isUpdated) throw new Error("HubPoolClient must be updated before AcrossAPIClient");
+    const enabledTokens = this.hubPoolClient.getL1Tokens().map((token) => token.address);
+    const tokensQuery = this.tokensQuery.filter((token) => enabledTokens.includes(token));
     this.logger.debug({
       at: "AcrossAPIClient",
       message: "Querying /limits",
       timeout: this.timeout,
-      tokensQuery: this.tokensQuery,
+      tokensQuery,
       endpoint: this.endpoint,
     });
     this.updatedLimits = false;
@@ -39,15 +49,15 @@ export class AcrossApiClient {
     // liquidity is shared for all tokens and affects maxDeposit. We don't care about maxDepositInstant
     // when deciding whether a relay will be refunded.
     const data = await Promise.all(
-      this.tokensQuery.map((l1Token) => {
+      tokensQuery.map((l1Token) => {
         const validDestinationChainForL1Token = l2TokensToL1TokenValidation[l1Token]
           ? Number(Object.keys(l2TokensToL1TokenValidation[l1Token])[0])
           : 10;
         return this.callLimits(l1Token, validDestinationChainForL1Token);
       })
     );
-    for (let i = 0; i < this.tokensQuery.length; i++) {
-      const l1Token = this.tokensQuery[i];
+    for (let i = 0; i < tokensQuery.length; i++) {
+      const l1Token = tokensQuery[i];
       this.limits[l1Token] = data[i].maxDeposit;
     }
     this.logger.debug({

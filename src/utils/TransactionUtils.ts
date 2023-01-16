@@ -2,6 +2,12 @@ import { AugmentedTransaction } from "../clients";
 import { winston, Contract, getContractInfoFromAddress, fetch, ethers } from "../utils";
 import { toBNWei, BigNumber, toBN, toGWei, TransactionResponse } from "../utils";
 
+export type TransactionSimulationResult = {
+  transaction: AugmentedTransaction;
+  succeed: boolean;
+  reason: string;
+};
+
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
 // of this method should be considerate of this and catch the response to deal with the error accordingly.
 export async function runTransaction(
@@ -10,15 +16,28 @@ export async function runTransaction(
   method: string,
   args: any,
   value: BigNumber = toBN(0),
-  gasLimit: BigNumber | null = null
+  gasLimit: BigNumber | null = null,
+  nonce: number | null = null
 ): Promise<TransactionResponse> {
   try {
     const gas = await getGasPrice(contract.provider);
-    logger.debug({ at: "TxUtil", message: "Send tx", target: getTarget(contract.address), method, args, value, gas });
+    logger.debug({
+      at: "TxUtil",
+      message: "Send tx",
+      target: getTarget(contract.address),
+      method,
+      args,
+      value,
+      nonce,
+      gas,
+    });
     // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
-    // operation below deletes any null/undefined elements from this object. If the gasLimit is not specified, for example,
-    // then leave this up to ethers to compute.
-    const txConfig = Object.entries({ ...gas, value, gasLimit }).reduce((a, [k, v]) => (v ? ((a[k] = v), a) : a), {});
+    // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
+    // ethers will determine the correct values to use.
+    const txConfig = Object.entries({ ...gas, value, nonce, gasLimit }).reduce(
+      (a, [k, v]) => (v ? ((a[k] = v), a) : a),
+      {}
+    );
     return await contract[method](...args, txConfig);
   } catch (error) {
     logger.error({
@@ -50,9 +69,7 @@ export async function getGasPrice(provider: ethers.providers.Provider, priorityS
   } else return { gasPrice: scaleByNumber(feeData.gasPrice, priorityScaler) };
 }
 
-export async function willSucceed(
-  transaction: AugmentedTransaction
-): Promise<{ transaction: AugmentedTransaction; succeed: boolean; reason: string }> {
+export async function willSucceed(transaction: AugmentedTransaction): Promise<TransactionSimulationResult> {
   try {
     const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
     await transaction.contract.callStatic[transaction.method](...args);

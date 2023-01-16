@@ -27,10 +27,11 @@ export async function constructRelayerClients(
     commonClients.configStoreClient,
     config,
     baseSigner,
-    config.maxRelayerLookBack
+    config.maxRelayerLookBack,
+    config.hubPoolChainId
   );
 
-  const acrossApiClient = new AcrossApiClient(logger, config.relayerTokens);
+  const acrossApiClient = new AcrossApiClient(logger, commonClients.hubPoolClient, config.relayerTokens);
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients, commonClients.hubPoolClient);
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
@@ -42,7 +43,6 @@ export async function constructRelayerClients(
     spokePoolClients,
     config.ignoreProfitability,
     enabledChainIds,
-    config.ignoreTokenPriceFailures,
     config.minRelayerFeePct,
     config.debugProfitability,
     config.relayerGasMultiplier

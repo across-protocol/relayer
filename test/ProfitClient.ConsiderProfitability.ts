@@ -89,7 +89,6 @@ describe("ProfitClient: Consider relay profit", async function () {
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
     const ignoreProfitability = false;
-    const ignoreTokenPriceFailures = false;
     const debugProfitability = true;
 
     profitClient = new MockProfitClient(
@@ -98,7 +97,6 @@ describe("ProfitClient: Consider relay profit", async function () {
       spokePoolClients,
       ignoreProfitability,
       [],
-      ignoreTokenPriceFailures,
       minRelayerFeePct,
       debugProfitability
     );

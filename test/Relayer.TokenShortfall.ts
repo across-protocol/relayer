@@ -68,11 +68,12 @@ describe("Relayer: Token balance shortfall", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient(spyLogger),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient),
       },
       {
         relayerTokens: [],
         relayerDestinationChains: [],
+        maxRelayerLookBack: 24 * 60 * 60,
         quoteTimeBuffer: 0,
         minDepositConfirmations: defaultMinDepositConfirmations,
       } as unknown as RelayerConfig

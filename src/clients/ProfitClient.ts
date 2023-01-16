@@ -52,7 +52,7 @@ const QUERY_HANDLERS: {
 };
 
 const { PriceClient } = priceClient;
-const { acrossApi, coingecko } = priceClient.adapters;
+const { acrossApi, coingecko, defiLlama } = priceClient.adapters;
 
 export class ProfitClient {
   private readonly priceClient;
@@ -72,8 +72,6 @@ export class ProfitClient {
     spokePoolClients: SpokePoolClientsByChain,
     readonly ignoreProfitability: boolean,
     readonly enabledChainIds: number[],
-    // Default to throwing errors if fetching token prices fails.
-    readonly ignoreTokenPriceFailures: boolean = false,
     readonly minRelayerFeePct: BigNumber = toBNWei(constants.RELAYER_MIN_FEE_PCT),
     readonly debugProfitability: boolean = false,
     protected gasMultiplier: BigNumber = toBNWei(1)
@@ -87,6 +85,7 @@ export class ProfitClient {
     this.priceClient = new PriceClient(logger, [
       new acrossApi.PriceFeed(),
       new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
+      new defiLlama.PriceFeed(),
     ]);
 
     for (const chainId of this.enabledChainIds) {
@@ -324,9 +323,7 @@ export class ProfitClient {
         mrkdwn += `- Using last known ${l1Token.symbol} price of ${this.getPriceOfToken(l1Token.address)}.\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
-      if (!this.ignoreTokenPriceFailures) {
-        throw new Error(errMsg);
-      }
+      if (!this.ignoreProfitability) throw new Error(errMsg);
     }
   }
 

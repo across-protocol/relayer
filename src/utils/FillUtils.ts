@@ -1,4 +1,4 @@
-import { HubPoolClient } from "../clients";
+import { AcrossConfigStoreClient, HubPoolClient } from "../clients";
 import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
 import { BigNumber, assign, getRealizedLpFeeForFills, getRefundForFills, sortEventsDescending, toBN } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
@@ -94,7 +94,7 @@ export function getLastMatchingFillBeforeBlock(
   lastBlock: number
 ): FillWithBlock {
   return sortEventsDescending(allFills).find(
-    (fill: FillWithBlock) => !fill.isSlowRelay && filledSameDeposit(fillToMatch, fill) && lastBlock >= fill.blockNumber
+    (fill: FillWithBlock) => filledSameDeposit(fillToMatch, fill) && lastBlock >= fill.blockNumber
   ) as FillWithBlock;
 }
 
@@ -110,6 +110,15 @@ export function getFillDataForSlowFillFromPreviousRootBundle(
     (_fill: FillWithBlock) => filledSameDeposit(_fill, fill) && isFirstFillForDeposit(_fill as Fill)
   );
 
+  // If there is no first fill for the same deposit, then throw an error.
+  if (firstFillForSameDeposit === undefined) {
+    // TODO: Use something similar to SpokePoolClient.queryHistoricalDepositForFill to look up all fills
+    // for the same deposit. I would add in PR#382 but its too complex so I'll leave for another PR.
+    throw new Error(
+      `FillUtils#getFillDataForSlowFillFromPreviousRootBundle: Cannot find first fill for for deposit ${fill.depositId} on chain ${fill.destinationChainId}, set a larger DATAWORKER_FAST_LOOKBACK_COUNT`
+    );
+  }
+
   // Find ending block number for chain from ProposeRootBundle event that should have included a slow fill
   // refund for this first fill. This will be undefined if there is no block range containing the first fill.
   const rootBundleEndBlockContainingFirstFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
@@ -119,16 +128,16 @@ export function getFillDataForSlowFillFromPreviousRootBundle(
     chainIdListForBundleEvaluationBlockNumbers
   );
   // Using bundle block number for chain from ProposeRootBundleEvent, find latest fill in the root bundle.
-  let lastFillBeforeSlowFillIncludedInRoot;
+  let lastMatchingFillInSameBundle;
   if (rootBundleEndBlockContainingFirstFill !== undefined) {
-    lastFillBeforeSlowFillIncludedInRoot = getLastMatchingFillBeforeBlock(
+    lastMatchingFillInSameBundle = getLastMatchingFillBeforeBlock(
       fill,
       allValidFills,
       rootBundleEndBlockContainingFirstFill
     );
   }
   return {
-    lastFillBeforeSlowFillIncludedInRoot,
+    lastMatchingFillInSameBundle,
     rootBundleEndBlockContainingFirstFill,
   };
 }
@@ -148,17 +157,20 @@ export function getFillsInRange(
   });
 }
 
+export type UnfilledDeposit = {
+  deposit: DepositWithBlock;
+  unfilledAmount: BigNumber;
+  fillCount: number;
+  invalidFills: Fill[];
+  requiresNewConfigStoreVersion: boolean;
+};
 // Returns all unfilled deposits over all spokePoolClients. Return values include the amount of the unfilled deposit.
 export function getUnfilledDeposits(
   spokePoolClients: SpokePoolClientsByChain,
-  maxUnfilledDepositLookBack: { [chainId: number]: number } = {}
-): { deposit: DepositWithBlock; unfilledAmount: BigNumber; fillCount: number; invalidFills: Fill[] }[] {
-  const unfilledDeposits: {
-    deposit: DepositWithBlock;
-    unfilledAmount: BigNumber;
-    fillCount: number;
-    invalidFills: Fill[];
-  }[] = [];
+  maxUnfilledDepositLookBack: number,
+  configStoreClient: AcrossConfigStoreClient
+): UnfilledDeposit[] {
+  const unfilledDeposits: UnfilledDeposit[] = [];
   // Iterate over each chainId and check for unfilled deposits.
   const chainIds = Object.keys(spokePoolClients);
   for (const originChain of chainIds) {
@@ -174,9 +186,8 @@ export function getUnfilledDeposits(
       const unfilledDepositsForDestinationChain = depositsForDestinationChain
         .filter((deposit) => {
           // If deposit is older than unfilled deposit lookback, ignore it
-          const lookback = maxUnfilledDepositLookBack[deposit.originChainId];
           const latestBlockForOriginChain = originClient.latestBlockNumber;
-          return lookback === undefined || deposit.originBlockNumber >= latestBlockForOriginChain - lookback;
+          return deposit.originBlockNumber >= latestBlockForOriginChain - maxUnfilledDepositLookBack;
         })
         .map((deposit) => {
           // eslint-disable-next-line no-console
@@ -187,7 +198,18 @@ export function getUnfilledDeposits(
     }
   }
 
-  return unfilledDeposits;
+  // If the config store version is up to date, then we can return the unfilled deposits as is. Otherwise, we need to
+  // make sure we have a high enough version for each deposit.
+  if (configStoreClient.hasLatestConfigStoreVersion) return unfilledDeposits;
+  else
+    return unfilledDeposits.map((unfilledDeposit) => {
+      return {
+        ...unfilledDeposit,
+        requiresNewConfigStoreVersion: !configStoreClient.hasValidConfigStoreVersionForTimestamp(
+          unfilledDeposit.deposit.quoteTimestamp
+        ),
+      };
+    });
 }
 
 // Returns set of block numbers, keyed by chain ID, that represent the highest block number for

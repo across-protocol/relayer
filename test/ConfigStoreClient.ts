@@ -5,13 +5,15 @@ import { getContractFactory, hubPoolFixture, toBN, utf8ToHex } from "./utils";
 import { amountToLp, destinationChainId, mockTreeRoot, refundProposalLiveness, totalBond } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
-import { HubPoolClient, AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
+import { HubPoolClient, GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
+import { MockConfigStoreClient } from "./mocks/MockConfigStoreClient";
+import { DEFAULT_CONFIG_STORE_VERSION } from "../src/common";
 
 let spokePool: Contract, hubPool: Contract, l2Token: Contract;
 let configStore: Contract, l1Token: Contract, timer: Contract, weth: Contract;
 let owner: SignerWithAddress;
 
-let configStoreClient: AcrossConfigStoreClient, hubPoolClient: HubPoolClient;
+let configStoreClient: MockConfigStoreClient, hubPoolClient: HubPoolClient;
 
 // Same rate model used for across-v1 tests:
 // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L77
@@ -20,6 +22,12 @@ const sampleRateModel = {
   R0: toWei("0.00").toString(),
   R1: toWei("0.08").toString(),
   R2: toWei("1.00").toString(),
+};
+const sampleRateModel2 = {
+  UBar: toWei("0.5").toString(),
+  R0: toWei("0.00").toString(),
+  R1: toWei("0.1").toString(),
+  R2: toWei("0.2").toString(),
 };
 
 const sampleSpokeTargetBalances = {
@@ -35,6 +43,7 @@ const sampleSpokeTargetBalances = {
 
 const tokenConfigToUpdate = JSON.stringify({
   rateModel: sampleRateModel,
+  routeRateModel: { "999-888": sampleRateModel2 },
   transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD.toString(),
   spokeTargetBalances: sampleSpokeTargetBalances,
 });
@@ -48,7 +57,8 @@ describe("AcrossConfigStoreClient", async function () {
 
     configStore = await (await getContractFactory("AcrossConfigStore", owner)).deploy();
     hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
-    configStoreClient = new AcrossConfigStoreClient(createSpyLogger().spyLogger, configStore, hubPoolClient);
+    configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore, hubPoolClient);
+    configStoreClient.setConfigStoreVersion(0);
 
     await setupTokensForWallet(spokePool, owner, [l1Token], weth, 100); // Seed owner to LP.
     await l1Token.approve(hubPool.address, amountToLp);
@@ -71,13 +81,17 @@ describe("AcrossConfigStoreClient", async function () {
 
     // Update ignores TokenConfig events that don't include all expected keys:
     await configStore.updateTokenConfig(l1Token.address, "gibberish");
-    await configStore.updateTokenConfig(l1Token.address, JSON.stringify({ rateModel: sampleRateModel }));
+    await configStore.updateTokenConfig(
+      l1Token.address,
+      JSON.stringify({ rateModel: sampleRateModel, routeRateModel: { "999-888": sampleRateModel2 } })
+    );
     await configStore.updateTokenConfig(
       l1Token.address,
       JSON.stringify({ transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD })
     );
     await configStoreClient.update();
     expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(1);
+    expect(configStoreClient.cumulativeRouteRateModelUpdates.length).to.equal(1);
     expect(configStoreClient.cumulativeTokenTransferUpdates.length).to.equal(1);
 
     // Add GlobalConfig events and check that updating pulls in events
@@ -112,18 +126,22 @@ describe("AcrossConfigStoreClient", async function () {
 
       const initialRateModelUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[0];
 
+      // Test with and without route rate model:
       expect(
-        configStoreClient.getRateModelForBlockNumber(l1Token.address, initialRateModelUpdate.blockNumber)
+        configStoreClient.getRateModelForBlockNumber(l1Token.address, 1, 2, initialRateModelUpdate.blockNumber)
       ).to.deep.equal(sampleRateModel);
+      expect(
+        configStoreClient.getRateModelForBlockNumber(l1Token.address, 999, 888, initialRateModelUpdate.blockNumber)
+      ).to.deep.equal(sampleRateModel2);
 
       // Block number when there is no rate model
       expect(() =>
-        configStoreClient.getRateModelForBlockNumber(l1Token.address, initialRateModelUpdate.blockNumber - 1)
+        configStoreClient.getRateModelForBlockNumber(l1Token.address, 1, 2, initialRateModelUpdate.blockNumber - 1)
       ).to.throw(/before first UpdatedRateModel event/);
 
       // L1 token where there is no rate model
       expect(() =>
-        configStoreClient.getRateModelForBlockNumber(l2Token.address, initialRateModelUpdate.blockNumber)
+        configStoreClient.getRateModelForBlockNumber(l2Token.address, 1, 2, initialRateModelUpdate.blockNumber)
       ).to.throw(/No updated rate model events for L1 token/);
     });
 
@@ -255,6 +273,66 @@ describe("AcrossConfigStoreClient", async function () {
     });
   });
   describe("GlobalConfig", function () {
+    it("Gets config store version for time", async function () {
+      // Default false.
+      expect(configStoreClient.hasLatestConfigStoreVersion).to.be.false;
+
+      // Can't set first update to same value as default version:
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), DEFAULT_CONFIG_STORE_VERSION);
+      await updateAllClients();
+      expect(configStoreClient.cumulativeConfigStoreVersionUpdates.length).to.equal(0);
+      expect(DEFAULT_CONFIG_STORE_VERSION).to.equal(0);
+
+      // Now this is true since latest version in contract is 0, same as default.
+      expect(configStoreClient.hasLatestConfigStoreVersion).to.be.true;
+
+      // Can't set update to non-integer:
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "1.6");
+      await updateAllClients();
+      expect(configStoreClient.cumulativeConfigStoreVersionUpdates.length).to.equal(0);
+
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "6");
+      await updateAllClients();
+      expect(configStoreClient.hasLatestConfigStoreVersion).to.be.false;
+      const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[2];
+      const initialUpdateTime = (await ethers.provider.getBlock(initialUpdate.blockNumber)).timestamp;
+      expect(configStoreClient.getConfigStoreVersionForTimestamp(initialUpdateTime)).to.equal(6);
+
+      // Time when there was no update
+      expect(configStoreClient.getConfigStoreVersionForTimestamp(initialUpdateTime - 1)).to.equal(0);
+
+      // Skip updates for versions that aren't greater than the previous version.
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "5");
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "6");
+      await updateAllClients();
+      expect(configStoreClient.cumulativeConfigStoreVersionUpdates.length).to.equal(1);
+    });
+    it("Validate config store version", async function () {
+      expect(configStoreClient.configStoreVersion).to.equal(0);
+
+      // Local config store version matches one in contract's global config:
+      configStoreClient.setConfigStoreVersion(1);
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "1");
+      const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[0];
+      const initialUpdateTime = (await ethers.provider.getBlock(initialUpdate.blockNumber)).timestamp;
+      await updateAllClients();
+      expect(configStoreClient.hasLatestConfigStoreVersion).to.be.true;
+      expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(initialUpdateTime)).to.equal(true);
+
+      // Before any config store version updates, the version is always valid because the default config
+      // store version returned by the client is 0.
+      expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(0)).to.equal(true);
+      expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(initialUpdateTime - 1)).to.equal(true);
+
+      // Now pretend we downgrade the local version such that it seems we are no longer up to date:
+      configStoreClient.setConfigStoreVersion(0);
+      await updateAllClients();
+      expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(initialUpdateTime)).to.equal(false);
+
+      // All previous times before the first update are still fine.
+      expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(0)).to.equal(true);
+      expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(initialUpdateTime - 1)).to.equal(true);
+    });
     it("Get max refund count for block", async function () {
       await configStore.updateGlobalConfig(
         utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_RELAYER_REPAYMENT_LEAF_SIZE),
@@ -263,7 +341,7 @@ describe("AcrossConfigStoreClient", async function () {
       await updateAllClients();
       const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[0];
       expect(configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(initialUpdate.blockNumber)).to.equal(
-        MAX_REFUNDS_PER_RELAYER_REFUND_LEAF.toString()
+        MAX_REFUNDS_PER_RELAYER_REFUND_LEAF
       );
 
       // Block number when there is no config
@@ -279,7 +357,7 @@ describe("AcrossConfigStoreClient", async function () {
       await updateAllClients();
       const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[0];
       expect(configStoreClient.getMaxL1TokenCountForPoolRebalanceLeafForBlock(initialUpdate.blockNumber)).to.equal(
-        MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF.toString()
+        MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF
       );
 
       // Block number when there is no config

@@ -11,7 +11,13 @@ import {
   isDefined,
 } from "../utils";
 import { toBNWei, getFillsInRange, ZERO_ADDRESS } from "../utils";
-import { DepositWithBlock, FillsToRefund, FillWithBlock, UnfilledDeposit } from "../interfaces";
+import {
+  DepositWithBlock,
+  FillsToRefund,
+  FillWithBlock,
+  RootBundleRelayWithBlock,
+  UnfilledDeposit,
+} from "../interfaces";
 import {
   PendingRootBundle,
   TreeData,
@@ -33,7 +39,7 @@ import {
 } from "./DataworkerUtils";
 import { BalanceAllocator } from "../clients";
 import _ from "lodash";
-import { IGNORED_SPOKE_BUNDLES } from "../common";
+import { CONFIG_STORE_VERSION, IGNORED_SPOKE_BUNDLES } from "../common";
 import { isOvmChain, ovmWethTokens } from "../clients/bridges";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
@@ -41,7 +47,7 @@ import { isOvmChain, ovmWethTokens } from "../clients/bridges";
 // bundle. Any reasons in IGNORE_X we emit a "debug" level log for, and any reasons in ERROR_X we emit an "error"
 // level log for.
 const IGNORE_DISPUTE_REASONS = new Set(["bundle-end-block-buffer"]);
-const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback"]);
+const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback", "out-of-date-config-store-version"]);
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
@@ -150,6 +156,62 @@ export class Dataworker {
     );
   }
 
+  // This is a temporary fix: Currently, there appears to be a bug where proposing a root bundle before any
+  // RelayerRefundLeaves are executed results in an invalid bundle that gets self-disputed. This bug only seems
+  // to appear when the bundle has slow fills. Its possibly related to slow fill excesses?
+  shouldWaitToPropose(
+    mainnetBundleEndBlock: number,
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    bufferToPropose: number = this.bufferToPropose
+  ): { shouldWait: boolean; [key: string]: unknown } {
+    const mostRecentValidatedBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
+      this.clients.hubPoolClient.latestBlockNumber
+    );
+    // If there has never been a validated root bundle, then we can always propose a new one:
+    if (mostRecentValidatedBundle === undefined)
+      return {
+        shouldWait: false,
+      };
+
+    const expectedRootBundles = mostRecentValidatedBundle.poolRebalanceLeafCount;
+
+    const relayedRootBundles: { [chainId: string]: RootBundleRelayWithBlock } = Object.fromEntries(
+      Object.entries(spokePoolClients)
+        .map(([chainId, client]) => {
+          return [
+            chainId,
+            client
+              .getRootBundleRelays()
+              .find((bundle) => bundle.relayerRefundRoot === mostRecentValidatedBundle.relayerRefundRoot),
+          ];
+        })
+        .filter(([, rootBundle]) => rootBundle !== undefined)
+    );
+
+    // We should wait to propose until all root bundles have been relayed to spoke pools. Once they have all been
+    // relayed, wait bufferToPropose number of blocks after the mainnet bundle end block.
+    if (Object.entries(relayedRootBundles).length !== expectedRootBundles) {
+      return {
+        shouldWait: true,
+        mostRecentValidatedBundle: mostRecentValidatedBundle?.blockNumber,
+        expectedRootBundles,
+        relayedRootBundles,
+      };
+    } else {
+      const mainnetRelayedRootBundle = relayedRootBundles[1];
+      return {
+        shouldWait:
+          bufferToPropose > 0 ? mainnetBundleEndBlock - bufferToPropose < mainnetRelayedRootBundle.blockNumber : false,
+        mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
+        expectedRootBundles,
+        relayedRootBundles,
+        mainnetRelayedRootBundle,
+        bufferToPropose,
+        mainnetBundleEndBlock,
+      };
+    }
+  }
+
   async proposeRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     usdThresholdToSubmitNewBundle?: BigNumber,
@@ -168,6 +230,18 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker#propose",
         message: "Has pending proposal, cannot propose",
+      });
+      return;
+    }
+
+    // If config store version isn't up to date, return early. This is a simple rule that is perhaps too aggressive
+    // but the proposer role is a specialized one and the user should always be using updated software.
+    if (!this.clients.configStoreClient.hasLatestConfigStoreVersion) {
+      this.logger.warn({
+        at: "Dataworker#propose",
+        message: "Skipping proposal because missing updated ConfigStore version, are you using the latest code?",
+        latestVersionSupported: CONFIG_STORE_VERSION,
+        latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
       });
       return;
     }
@@ -268,57 +342,18 @@ export class Dataworker {
         });
     }
 
-    // This is a temporary fix: wait some time until we propose another root bundle. Currently, there appears to be a bug where proposing a
-    // root bundle immediately after executing all PoolRebalanceLeaves proposes an invalid bundle, but waiting
-    // a bit, possibly for cache to populate, works.
-    const _shouldWaitToPropose = async () => {
-      const mostRecentValidatedBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
-        await this.clients.hubPoolClient.hubPool.provider.getBlockNumber()
-      );
-      const mostRecentEthereumRootBundle = spokePoolClients[1]
-        .getRootBundleRelays()
-        .find((bundle) => bundle.relayerRefundRoot === mostRecentValidatedBundle?.relayerRefundRoot);
-      if (mostRecentValidatedBundle !== undefined && mostRecentEthereumRootBundle !== undefined) {
-        const executedLeavesInEthereumBundle = spokePoolClients[1]
-          .getRelayerRefundExecutions()
-          .filter((leaf) => leaf.rootBundleId === mostRecentEthereumRootBundle.rootBundleId);
-        if (executedLeavesInEthereumBundle.length === 0)
-          return {
-            value: true,
-            mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
-            mostRecentEthereumRootBundle: mostRecentEthereumRootBundle.rootBundleId,
-            earliestExecutedLeaf: undefined,
-            bufferInEthBlocks: this.bufferToPropose,
-          };
-        const earliestExecutedLeaf = sortEventsAscending([...executedLeavesInEthereumBundle])[0];
-        return {
-          value: mainnetBundleEndBlock - this.bufferToPropose < earliestExecutedLeaf.blockNumber,
-          mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
-          mostRecentEthereumRootBundle: mostRecentEthereumRootBundle.rootBundleId,
-          earliestExecutedLeaf: earliestExecutedLeaf.blockNumber,
-          bufferInEthBlocks: this.bufferToPropose,
-        };
-      } else
-        return {
-          value: true,
-          mostRecentValidatedBundle: mostRecentValidatedBundle?.blockNumber,
-          bufferInEthBlocks: this.bufferToPropose,
-        }; // If root bundle hasn't been relayed to ethereum spoke yet then exit early.
-      // Here we assume that there is always a RelayerRefundLeaf relayed to chain 1, which is a safe assumption.
-    };
-
-    const shouldWaitToPropose = await _shouldWaitToPropose();
-    if (this.bufferToPropose > 0 && shouldWaitToPropose.value) {
+    const shouldWaitToPropose = this.shouldWaitToPropose(mainnetBundleEndBlock, spokePoolClients);
+    if (shouldWaitToPropose.shouldWait) {
       this.logger.debug({
         at: "Dataworker#propose",
-        message: `Waiting to propose new bundle until new bundle end block (${mainnetBundleEndBlock}) is ${shouldWaitToPropose.bufferInEthBlocks} blocks past the latest Ethereum relayer refund leaf execution`,
+        message: "Waiting to propose new bundle until all refund roots have been relayed to spoke pools",
         shouldWaitToPropose,
       });
       return;
     } else
       this.logger.debug({
         at: "Dataworker#propose",
-        message: `Proceeding to propose new bundle; new bundle end block (${mainnetBundleEndBlock}) is at least ${shouldWaitToPropose.bufferInEthBlocks} blocks past the latest Ethereum relayer refund leaf execution`,
+        message: "Proceeding to propose new bundle; all refund roots have been relayed to spoke pools",
         shouldWaitToPropose,
       });
 
@@ -430,7 +465,7 @@ export class Dataworker {
       latestInvalidBundleStartBlock
     );
     if (!valid) {
-      // In the case where the Dataworker lookback is improperly configured, emit an error level alert so bot runner
+      // In the case where the Dataworker config is improperly configured, emit an error level alert so bot runner
       // can get dataworker running ASAP.
       if (ERROR_DISPUTE_REASONS.has(reason)) {
         this.logger.error({
@@ -624,6 +659,20 @@ export class Dataworker {
       1,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
+    // If config store version isn't up to date, return early. This is a simple rule that is perhaps too aggressive
+    // but the proposer role is a specialized one and the user should always be using updated software.
+    if (!this.clients.configStoreClient.hasLatestConfigStoreVersion) {
+      this.logger.debug({
+        at: "Dataworker#validate",
+        message: "Cannot validate because missing updated ConfigStore version. Update to latest code.",
+        latestVersionSupported: CONFIG_STORE_VERSION,
+        latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
+      });
+      return {
+        valid: false,
+        reason: "out-of-date-config-store-version",
+      };
+    }
 
     // Compare roots with expected. The roots will be different if the block range start blocks were different
     // than the ones we constructed above when the original proposer submitted their proposal. The roots will also
@@ -827,6 +876,25 @@ export class Dataworker {
               spokeClientsEventSearchConfigs: Object.fromEntries(
                 Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.eventSearchConfig])
               ),
+            });
+            continue;
+          }
+
+          const endBlockForMainnet = getBlockRangeForChain(
+            blockNumberRanges,
+            1,
+            this.chainIdListForBundleEvaluationBlockNumbers
+          )[1];
+          const mainnetEndBlockTimestamp = (
+            await this.clients.hubPoolClient.hubPool.provider.getBlock(endBlockForMainnet)
+          ).timestamp;
+          if (!this.clients.configStoreClient.hasValidConfigStoreVersionForTimestamp(mainnetEndBlockTimestamp)) {
+            this.logger.debug({
+              at: "Dataworke#executeSlowRelayLeaves",
+              message: "Cannot validate because missing updated ConfigStore version. Update to latest code.",
+              mainnetEndBlockTimestamp,
+              latestVersionSupported: CONFIG_STORE_VERSION,
+              latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
             });
             continue;
           }
@@ -1039,7 +1107,7 @@ export class Dataworker {
     }
 
     const executedLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
-      this.clients.hubPoolClient.getMostRecentProposedRootBundle(this.clients.hubPoolClient.latestBlockNumber),
+      this.clients.hubPoolClient.getLatestProposedRootBundle(),
       this.clients.hubPoolClient.latestBlockNumber
     );
 
@@ -1278,6 +1346,20 @@ export class Dataworker {
             1,
             this.chainIdListForBundleEvaluationBlockNumbers
           )[1];
+          const mainnetEndBlockTimestamp = (
+            await this.clients.hubPoolClient.hubPool.provider.getBlock(endBlockForMainnet)
+          ).timestamp;
+          if (!this.clients.configStoreClient.hasValidConfigStoreVersionForTimestamp(mainnetEndBlockTimestamp)) {
+            this.logger.debug({
+              at: "Dataworke#executeRelayerRefundLeaves",
+              message: "Cannot validate because missing updated ConfigStore version. Update to latest code.",
+              mainnetEndBlockTimestamp,
+              latestVersionSupported: CONFIG_STORE_VERSION,
+              latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
+            });
+            continue;
+          }
+
           const allValidFillsInRange = getFillsInRange(
             allValidFills,
             blockNumberRanges,

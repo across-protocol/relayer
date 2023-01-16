@@ -18,22 +18,26 @@ import {
   startupLogLevel,
   Logger,
   getLatestInvalidBundleStartBlocks,
+  getDvmContract,
+  getDisputedProposal,
+  getBlockForTimestamp,
+  getCurrentTime,
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
   getSpokePoolClientEventSearchConfigsForFastDataworker,
   updateDataworkerClients,
 } from "../dataworker/DataworkerClientHelper";
-import { BlockFinder } from "@uma/sdk";
 import { PendingRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
 import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
+import { CONFIG_STORE_VERSION } from "../common";
 
 config();
 let logger: winston.Logger;
 
-export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
+export async function validate(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
   logger = _logger;
   if (!process.env.REQUEST_TIME) {
     throw new Error("Must set environment variable 'REQUEST_TIME=<NUMBER>' to disputed price request time");
@@ -48,14 +52,41 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
     config,
   });
 
-  // Construct blockfinder to figure out which block corresponds with the disputed price request time.
-  const blockFinder = new BlockFinder(
-    clients.configStoreClient.configStore.provider.getBlock.bind(clients.configStoreClient.configStore.provider)
+  // Figure out which block corresponds with the disputed price request time.
+  const priceRequestBlock = await getBlockForTimestamp(
+    clients.hubPoolClient.chainId,
+    clients.hubPoolClient.chainId,
+    priceRequestTime,
+    getCurrentTime(),
+    clients.configStoreClient.blockFinder,
+    clients.configStoreClient.redisClient
   );
-  const priceRequestBlock = (await blockFinder.getBlockForTimestamp(priceRequestTime)).number;
 
+  // Find dispute transaction so we can gain additional confidence that the preceding root bundle is older than the
+  // dispute. This is a sanity test against the case where a dispute was submitted atomically following proposal
+  // in the same block. This also handles the edge case where multiple disputes and proposals are in the
+  // same block.
+  const dvm = await getDvmContract(clients.configStoreClient.configStore.provider);
   await updateDataworkerClients(clients, false);
-  const precedingProposeRootBundleEvent = clients.hubPoolClient.getMostRecentProposedRootBundle(priceRequestBlock);
+
+  if (!clients.configStoreClient.hasLatestConfigStoreVersion) {
+    logger.error({
+      at: "Dataworker#validate",
+      message: "Cannot validate because missing updated ConfigStore version. Update to latest code.",
+      latestVersionSupported: CONFIG_STORE_VERSION,
+      latestInConfigStore: clients.configStoreClient.getConfigStoreVersionForTimestamp(),
+    });
+    return;
+  }
+
+  const precedingProposeRootBundleEvent = await getDisputedProposal(
+    dvm,
+    clients.configStoreClient,
+    priceRequestTime,
+    priceRequestBlock
+  );
+  if (!precedingProposeRootBundleEvent) throw new Error("Failed to identify a root bundle preceding dispute");
+
   const rootBundle: PendingRootBundle = {
     poolRebalanceRoot: precedingProposeRootBundleEvent.poolRebalanceRoot,
     relayerRefundRoot: precedingProposeRootBundleEvent.relayerRefundRoot,
@@ -140,7 +171,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
   });
 }
 
-export async function run(_logger: winston.Logger) {
+export async function run(_logger: winston.Logger): Promise<void> {
   const baseSigner: Wallet = await getSigner();
   await validate(_logger, baseSigner);
 }

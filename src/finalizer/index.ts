@@ -10,12 +10,11 @@ import {
 } from "../utils";
 import { winston } from "../utils";
 import {
-  finalizeArbitrum,
-  getFinalizableMessages,
   getPosClient,
   getOptimismClient,
   multicallOptimismFinalizations,
   multicallPolygonFinalizations,
+  multicallArbitrumFinalizations,
 } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient } from "../clients";
@@ -79,10 +78,14 @@ export async function finalize(
       const olderTokensBridgedEvents = tokensBridged.filter(
         (e) => e.blockNumber < client.latestBlockNumber - optimisticRollupFinalizationWindow
       );
-      const finalizableMessages = await getFinalizableMessages(logger, olderTokensBridgedEvents, hubSigner);
-      for (const l2Message of finalizableMessages) {
-        await finalizeArbitrum(logger, l2Message.message, l2Message.info, hubPoolClient);
-      }
+      const finalizations = await multicallArbitrumFinalizations(
+        olderTokensBridgedEvents,
+        hubSigner,
+        hubPoolClient,
+        logger
+      );
+      finalizationsToBatch.callData.push(...finalizations.callData);
+      finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
     } else if (chainId === 137) {
       const posClient = await getPosClient(hubSigner);
       // Unlike the rollups, withdrawals process very quickly on polygon, so we can conservatively remove any events
@@ -149,7 +152,8 @@ export async function constructFinalizerClients(_logger: winston.Logger, config,
     commonClients.configStoreClient,
     config,
     baseSigner,
-    config.maxFinalizerLookback
+    config.maxFinalizerLookback,
+    config.hubPoolChainId
   );
 
   return {
@@ -176,17 +180,11 @@ export class FinalizerConfig extends DataworkerConfig {
     super(env);
 
     // By default, filters out any TokensBridged events younger than 5 days old and older than 10 days old.
-    this.optimisticRollupFinalizationWindow = FINALIZER_OROLLUP_FINALIZATION_WINDOW
-      ? Number(FINALIZER_OROLLUP_FINALIZATION_WINDOW)
-      : fiveDaysOfBlocks;
+    this.optimisticRollupFinalizationWindow = Number(FINALIZER_OROLLUP_FINALIZATION_WINDOW ?? fiveDaysOfBlocks);
     // By default, filters out any TokensBridged events younger than 1 days old and older than 2 days old.
-    this.polygonFinalizationWindow = FINALIZER_POLYGON_FINALIZATION_WINDOW
-      ? Number(FINALIZER_POLYGON_FINALIZATION_WINDOW)
-      : oneDayOfBlocks;
+    this.polygonFinalizationWindow = Number(FINALIZER_POLYGON_FINALIZATION_WINDOW ?? oneDayOfBlocks);
     // `maxFinalizerLookback` is how far we fetch events from, modifying the search config's 'fromBlock'
-    this.maxFinalizerLookback = FINALIZER_MAX_TOKENBRIDGE_LOOKBACK
-      ? JSON.parse(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK)
-      : FINALIZER_TOKENBRIDGE_LOOKBACK;
+    this.maxFinalizerLookback = Number(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK ?? FINALIZER_TOKENBRIDGE_LOOKBACK);
   }
 }
 

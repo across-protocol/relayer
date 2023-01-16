@@ -1,13 +1,11 @@
 import { BigNumber } from "../utils";
 import { SortableEvent } from "./Common";
-
+import { across } from "@uma/sdk";
 export interface ParsedTokenConfig {
   transferThreshold: string;
-  rateModel: {
-    UBar: string;
-    R0: string;
-    R1: string;
-    R2: string;
+  rateModel: across.rateModel.RateModelDictionary;
+  routeRateModel?: {
+    [path: string]: across.rateModel.RateModelDictionary;
   };
   spokeTargetBalances?: {
     [chainId: number]: {
@@ -34,6 +32,13 @@ export interface SpokeTargetBalanceUpdate extends SortableEvent {
   l1Token: string;
 }
 
+export interface RouteRateModelUpdate extends SortableEvent {
+  routeRateModel: {
+    [path: string]: string;
+  };
+  l1Token: string;
+}
+
 export interface TokenConfig extends SortableEvent {
   key: string;
   value: string;
@@ -41,4 +46,8 @@ export interface TokenConfig extends SortableEvent {
 
 export interface GlobalConfigUpdate extends SortableEvent {
   value: number;
+}
+
+export interface ConfigStoreVersionUpdate extends GlobalConfigUpdate {
+  timestamp: number;
 }

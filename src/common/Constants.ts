@@ -1,17 +1,21 @@
+import { utils } from "@across-protocol/sdk-v2";
+
+// This version should increase each time the ConfigStore's config changes, otherwise relayer and dataworker logic
+// will stop working to protect the user's funds.
+export const CONFIG_STORE_VERSION = utils.CONFIG_STORE_VERSION;
+
+// Do not change this value. Set 0 as the default version so that all timestamps before the first version update are
+// deemed valid by ConfigStoreClient.hasValidConfigStoreVersionForTimestamp().
+export const DEFAULT_CONFIG_STORE_VERSION = 0;
+
 // Used for determining which block range corresponsd to which network. In order, the block ranges passed
 // in the HubPool's proposeRootBundle method should be: Mainnet, Optimism, Polygon, Boba, Arbitrum
 export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
 
 export const RELAYER_MIN_FEE_PCT = 0.0003;
 
-// Target ~2 days per chain. Avg. block times: { 1: 12s, 10/42161: ~0.25s, 137: 2.5s, 288: 30s }
-export const MAX_RELAYER_DEPOSIT_LOOK_BACK: { [chainId: number]: number } = {
-  1: 14400,
-  10: 691200,
-  137: 69120,
-  288: 5760,
-  42161: 691200,
-};
+// Target ~4 hours
+export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 
 // Target ~4 days per chain. Should cover all events needed to construct pending bundle.
 export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
@@ -24,13 +28,7 @@ export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
 
 // Target ~14 days per chain. Should cover all events that could be finalized, so 2x the optimistic
 // rollup challenge period seems safe.
-export const FINALIZER_TOKENBRIDGE_LOOKBACK: { [chainId: number]: number } = {
-  1: 100800,
-  10: 4838400,
-  137: 483840,
-  288: 40320,
-  42161: 4838400,
-};
+export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 
 // Reorgs are anticipated on Ethereum and Polygon. We use different following distances when processing deposit
 // events based on the USD amount of the deposit. This protects the relayer from the worst case situation where it fills
@@ -78,13 +76,17 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
 };
 export const QUOTE_TIME_BUFFER = 12 * 5; // 5 blocks on Mainnet.
 
-// Optimism, ethereum can do infinity lookbacks. boba and Arbitrum limited to 100000 on infura.
+// Quicknode is the bottleneck here and imposes a 10k block limit on an event search.
+// Alchemy-Polygon imposes a 3500 block limit.
+// Note: a 0 value here leads to an infinite lookback, which would be useful and reduce RPC requests
+// if the RPC provider allows it. This is why the user should override these lookbacks if they are not using
+// Quicknode for example.
 export const CHAIN_MAX_BLOCK_LOOKBACK = {
-  1: 0, // Note: 0 gets defaulted to infinity lookback
-  10: 0,
+  1: 10000,
+  10: 10000, // Quick
   137: 3490,
   288: 4990,
-  42161: 99990,
+  42161: 10000,
 };
 
 export const BUNDLE_END_BLOCK_BUFFERS = {
