@@ -113,7 +113,7 @@ export class MultiCallerClient {
       chainIds
         .filter((_chainId) => {
           const chainId = Number(_chainId);
-          return (this.txns[chainId] ?? []).length > 0 || (this.valueTxns[chainId] ?? []).length > 0;
+          return this.txns[chainId]?.length > 0 || this.valueTxns[chainId]?.length > 0;
         })
         .map((_chainId) => {
           const chainId = Number(_chainId);
