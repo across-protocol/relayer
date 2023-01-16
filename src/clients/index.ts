@@ -7,5 +7,6 @@ export * from "./MultiCallerClient";
 export * from "./ProfitClient";
 export * from "./TokenClient";
 export * from "./TokenTransferClient";
+export * from "./TransactionClient";
 export * from "./InventoryClient";
 export * from "./AcrossAPIClient";
