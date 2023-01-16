@@ -52,11 +52,18 @@ export class CommonConfig {
     this.redisUrl = REDIS_URL;
     this.bundleRefundLookback = Number(BUNDLE_REFUND_LOOKBACK ?? 2);
 
-    this.multiCallChunkSize = CHAIN_MULTICALL_CHUNK_SIZE
-      ? JSON.parse(CHAIN_MULTICALL_CHUNK_SIZE)
-      : DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE;
-    Object(this.spokePoolChains).forEach((chainId) => {
-      this.multiCallChunkSize[chainId] = this.multiCallChunkSize[chainId] ?? DEFAULT_MULTICALL_CHUNK_SIZE;
-    });
+    // Multicall chunk size precedence: Environment, chain-specific config, global default.
+    this.multiCallChunkSize = Object.fromEntries(
+      Object(this.spokePoolChains).map((_chainId) => {
+        const chainId = Number(_chainId);
+        // prettier-ignore
+        const chunkSize = Number(
+          process.env[`CHAIN_${chainId}_MULTICALL_CHUNK_SIZE`]
+            ?? DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE[chainId]
+            ?? DEFAULT_MULTICALL_CHUNK_SIZE
+        );
+        return [chainId, chunkSize];
+      })
+    );
   }
 }
