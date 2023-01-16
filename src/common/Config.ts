@@ -58,7 +58,7 @@ export class CommonConfig {
         const chainId = Number(_chainId);
         // prettier-ignore
         const chunkSize = Number(
-          process.env[`CHAIN_${chainId}_MULTICALL_CHUNK_SIZE`]
+          process.env[`MULTICALL_CHUNK_SIZE_CHAIN_${chainId}`]
             ?? DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE[chainId]
             ?? DEFAULT_MULTICALL_CHUNK_SIZE
         );
