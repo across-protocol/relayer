@@ -61,7 +61,7 @@ export class CommonConfig {
             ?? DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE[chainId]
             ?? DEFAULT_MULTICALL_CHUNK_SIZE
         );
-        assert(chunkSize > 0, `Chain ${chainId} multicall chunk size must be greater than 0.`);
+        assert(chunkSize > 0, `Chain ${chainId} multicall chunk size (${chunkSize}) must be greater than 0.`);
         return [chainId, chunkSize];
       })
     );
