@@ -4,11 +4,23 @@ import { TransactionResponse, TransactionSimulationResult } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";
 
+const passResult = "pass";
+
 class MockedTransactionClient extends TransactionClient {
-  public failSubmit = "";
 
   constructor(logger: winston.Logger) {
     super(logger);
+  }
+
+  protected async _simulate(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
+    const result = txn.args[0]?.result;
+    const pass = !(result && result !== passResult);
+
+    return {
+      transaction: txn,
+      succeed: pass,
+      reason: pass ? null : result,
+    };
   }
 
   protected async _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
@@ -36,11 +48,32 @@ const txnClient: MockedTransactionClient = new MockedTransactionClient(spyLogger
 const provider = new ethers.providers.StaticJsonRpcProvider("127.0.0.1");
 const address = randomAddress(); // Test contract address
 const method = "testMethod";
-const passResult = "pass";
 
 describe("TransactionClient", async function () {
-  beforeEach(async function () {
-    txnClient.failSubmit = "";
+  beforeEach(async function () { });
+
+  it("Correctly excludes simulation failures", async function () {
+    for (const result of ["Forced simulation failure", passResult]) {
+      const fail = (result !== passResult);
+      const txns: AugmentedTransaction[] = chainIds.map((_chainId) => {
+        const chainId = Number(_chainId);
+        return {
+          chainId: chainId,
+          contract: { address },
+          args: [{ result }],
+          message: `Test transaction on chain ${chainId}`,
+          mrkdwn: `This transaction is expected to ${fail ? "fail" : "pass"} simulation.`,
+        } as AugmentedTransaction;
+      });
+
+      expect(txns.length).to.equal(chainIds.length);
+      const results: TransactionSimulationResult[] = await txnClient.simulate(txns);
+      expect(results.length).to.equal(txns.length);
+
+      // Verify that the failed simulations were filtered out.
+      expect(results.filter((txn) => txn.succeed).length).to.equal(fail ? 0 : txns.length);
+      expect(results.filter((txn) => !txn.succeed).length).to.equal(fail ? txns.length : 0);
+    }
   });
 
   it("Handles submission success & failure", async function () {
