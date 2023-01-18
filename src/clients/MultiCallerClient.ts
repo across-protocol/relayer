@@ -179,7 +179,7 @@ export class MultiCallerClient {
       results.forEach((result, idx) => {
         const { succeed, transaction: txn } = result;
         mrkdwn += `  *${idx + 1}. (${succeed} ? "Passed" : "Failed"})`;
-        mrkdwn +=` ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
+        mrkdwn += ` ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
       });
       this.logger.info({
         at: "MultiCallerClient#executeTxnQueue",

@@ -101,11 +101,7 @@ export const DEFAULT_RELAYER_GAS_MULTIPLIER = 1.2;
 
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 100;
 export const DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } = {
-  1: DEFAULT_MULTICALL_CHUNK_SIZE,
   10: 75,
-  137: DEFAULT_MULTICALL_CHUNK_SIZE,
-  288: DEFAULT_MULTICALL_CHUNK_SIZE,
-  42161: DEFAULT_MULTICALL_CHUNK_SIZE,
 };
 
 // The most critical failure mode that can happen in the inventory management module is a miss-mapping between L1 token

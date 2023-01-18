@@ -8,7 +8,7 @@ import {
 } from "../src/clients";
 import { TransactionResponse, TransactionSimulationResult } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
-import { MockedTransactionClient, passResult } from "./TransactionClient";
+import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
 import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";
 
 class MockedMultiCallerClient extends MultiCallerClient {
@@ -42,7 +42,6 @@ class MockedMultiCallerClient extends MultiCallerClient {
     this.ignoredSimulationFailures = [];
     this.loggedSimulationFailures = [];
   }
-
 
   protected override logSimulationFailures(txns: TransactionSimulationResult[]): void {
     this.clearSimulationFailures();
@@ -99,8 +98,8 @@ describe("MultiCallerClient", async function () {
   });
 
   it("Correctly excludes simulation failures", async function () {
-    for (const result of ["Forced simulation failure", passResult]) {
-      const fail = !(result === passResult);
+    for (const result of ["Forced simulation failure", txnClientPassResult]) {
+      const fail = !(result === txnClientPassResult);
       const txns: AugmentedTransaction[] = chainIds.map((_chainId) => {
         const chainId = Number(_chainId);
         return {
@@ -124,14 +123,13 @@ describe("MultiCallerClient", async function () {
 
   it("Handles submission success & failure", async function () {
     const nTxns = 4;
-    for (const result of ["Forced submission failure", passResult]) {
-      const fail = !(result === passResult);
+    for (const result of ["Forced submission failure", txnClientPassResult]) {
+      const fail = !(result === txnClientPassResult);
 
       for (const value of [0, 1]) {
         const txnType = value > 0 ? "value" : "multicall";
 
         for (let txn = 1; txn <= nTxns; ++txn) {
-
           chainIds.forEach((_chainId) => {
             const chainId = Number(_chainId);
             const txnRequest: AugmentedTransaction = {
@@ -292,36 +290,5 @@ describe("MultiCallerClient", async function () {
       // txnQueue deliberately has one "spare" txn appended, so it should never be bundled.
       txnQueue.slice(-1).forEach((txn) => expect(txn.method).to.equal(testMethod));
     }
-  });
-
-  it("Validates that successive transactions increment their nonce", async function () {
-    const chainId = chainIds[0];
-
-    const nTxns = 5;
-    for (let txn = 1; txn <= nTxns; ++txn) {
-      for (const value of [0, 1]) {
-        const txnType = value > 0 ? "value" : "multicall";
-
-        const txnRequest: AugmentedTransaction = {
-          chainId,
-          contract: {
-            address,
-            interface: { encodeFunctionData },
-          },
-          method: "test",
-          args: [],
-          value: toBN(value),
-        } as AugmentedTransaction;
-
-        multiCaller.enqueueTransaction(txnRequest);
-      }
-    }
-
-    const txnResponses: TransactionResponse[] = await multiCaller.executeChainTxnQueue(chainId);
-    let nonce = txnResponses[0].nonce;
-    txnResponses.slice(1).forEach((txnResponse) => {
-      expect(txnResponse.nonce).to.equal(nonce + 1);
-      nonce = txnResponse.nonce;
-    });
   });
 });

@@ -52,9 +52,9 @@ export class TransactionClient {
     // Transactions are submitted sequentially to avoid nonce collisions. More
     // advanced nonce management may permit them to be submitted in parallel.
     let mrkdwn = "";
-    let idx = 1;
     let nonce: number = null;
-    for (const txn of txns) {
+    for (let idx = 0; idx < txns.length; ++idx) {
+      const txn: AugmentedTransaction = txns[idx];
       let response: TransactionResponse;
       if (nonce !== null) this.logger.debug({ at: "TransactionClient#submit", message: `Using nonce ${nonce}.` });
 
@@ -63,7 +63,7 @@ export class TransactionClient {
       } catch (error) {
         this.logger.info({
           at: "TransactionClient#submit",
-          message: `Transaction ${idx} submission on ${networkName} failed or timed out.`,
+          message: `Transaction ${idx + 1} submission on ${networkName} failed or timed out.`,
           mrkdwn,
           error,
           notificationPath: "across-error",
@@ -72,10 +72,9 @@ export class TransactionClient {
       }
 
       nonce = response.nonce + 1;
-      mrkdwn += `  ${idx}. ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
+      mrkdwn += `  ${idx + 1}. ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
       mrkdwn += `  *Block Explorer:* ${etherscanLink(response.hash, txn.chainId)}\n`;
       txnResponses.push(response);
-      ++idx;
     }
 
     this.logger.info({
