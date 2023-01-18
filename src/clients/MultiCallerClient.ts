@@ -11,18 +11,8 @@ import {
   TransactionResponse,
   TransactionSimulationResult,
 } from "../utils";
-
+import { AugmentedTransaction } from "./TransactionClient";
 import lodash from "lodash";
-
-export interface AugmentedTransaction {
-  contract: Contract;
-  chainId: number;
-  method: string;
-  args: any[];
-  message: string;
-  mrkdwn: string;
-  value?: BigNumber;
-}
 
 // @todo: MultiCallerClient should be generic. For future, permit the class instantiator to supply their own
 // set of known failures that can be suppressed/ignored.

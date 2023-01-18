@@ -43,6 +43,25 @@ class MockedMultiCallerClient extends MultiCallerClient {
     this.loggedSimulationFailures = [];
   }
 
+  protected async _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
+    const result = txn.args[0]?.result;
+    if (result && result !== "pass") return Promise.reject(result);
+
+    const txnResponse = {
+      chainId: txn.chainId,
+      nonce: nonce ?? 1,
+      hash: "0x4321",
+    } as TransactionResponse;
+
+    this.logger.debug({
+      at: "MockMultiCallerClient#submitTxns",
+      message: "Transaction submission succeeded!",
+      txn: txnResponse,
+    });
+
+    return txnResponse;
+  }
+
   protected override async simulateTxn(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
     this.logger.debug({
       at: "MockMultiCallerClient#simulateTxn",
