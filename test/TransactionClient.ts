@@ -1,6 +1,6 @@
 import { ethers } from "ethers";
 import { AugmentedTransaction, TransactionClient } from "../src/clients";
-import { TransactionResponse } from "../src/utils";
+import { TransactionResponse, TransactionSimulationResult } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";
 
@@ -54,7 +54,7 @@ describe("TransactionClient", async function () {
 
   it("Correctly excludes simulation failures", async function () {
     for (const result of ["Forced simulation failure", passResult]) {
-      const fail = (result !== passResult);
+      const fail = result !== passResult;
       const txns: AugmentedTransaction[] = chainIds.map((_chainId) => {
         const chainId = Number(_chainId);
         return {
