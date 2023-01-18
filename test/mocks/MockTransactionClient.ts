@@ -9,9 +9,18 @@ export class MockedTransactionClient extends TransactionClient {
     super(logger);
   }
 
-  protected async _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
-    const result = txn.args[0]?.result;
-    if (result && result !== txnClientPassResult) return Promise.reject(result);
+  // Forced failures are appended to any list of transaction arguments.
+  txnFailureReason(txn: AugmentedTransaction): string {
+    return txn.args.slice(-1)[0]?.result;
+  }
+
+  txnFailure(txn: AugmentedTransaction): boolean {
+    const result = this.txnFailureReason(txn);
+    return result && result !== txnClientPassResult;
+  }
+
+  protected override async _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
+    if (this.txnFailure(txn)) return Promise.reject(this.txnFailureReason(txn));
 
     const txnResponse = {
       chainId: txn.chainId,
