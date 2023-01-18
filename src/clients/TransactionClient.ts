@@ -24,8 +24,8 @@ export class TransactionClient {
   // eslint-disable-next-line no-useless-constructor
   constructor(readonly logger: winston.Logger) {}
 
-  protected async _simulate(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
-    return await willSucceed(txn);
+  protected _simulate(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
+    return willSucceed(txn);
   }
 
   // Each transaction is simulated in isolation; but on-chain execution may produce different
