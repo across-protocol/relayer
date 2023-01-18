@@ -8,16 +8,16 @@ import {
 } from "../src/clients";
 import { TransactionResponse, TransactionSimulationResult } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
+import { MockedTransactionClient, passResult } from "./TransactionClient";
 import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";
 
 class MockedMultiCallerClient extends MultiCallerClient {
-  public failSimulate = "";
-  public failSubmit = "";
   public ignoredSimulationFailures: TransactionSimulationResult[] = [];
   public loggedSimulationFailures: TransactionSimulationResult[] = [];
 
   constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}) {
     super(logger, chunkSize, true);
+    this.txnClient = new MockedTransactionClient(logger);
   }
 
   private txnCount(txnQueue: { [chainId: number]: AugmentedTransaction[] }): number {
@@ -43,56 +43,6 @@ class MockedMultiCallerClient extends MultiCallerClient {
     this.loggedSimulationFailures = [];
   }
 
-  protected async _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
-    const result = txn.args[0]?.result;
-    if (result && result !== "pass") return Promise.reject(result);
-
-    const txnResponse = {
-      chainId: txn.chainId,
-      nonce: nonce ?? 1,
-      hash: "0x4321",
-    } as TransactionResponse;
-
-    this.logger.debug({
-      at: "MockMultiCallerClient#submitTxns",
-      message: "Transaction submission succeeded!",
-      txn: txnResponse,
-    });
-
-    return txnResponse;
-  }
-
-  protected override async simulateTxn(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
-    this.logger.debug({
-      at: "MockMultiCallerClient#simulateTxn",
-      message: `Forcing simulation ${this.failSimulate ? "failure" : "success"}.`,
-      txn,
-    });
-    return {
-      transaction: txn,
-      succeed: this.failSimulate === "",
-      reason: this.failSimulate ?? null,
-    };
-  }
-
-  protected override async submitTxn(
-    txn: AugmentedTransaction,
-    nonce: number | null = null
-  ): Promise<TransactionResponse> {
-    if (this.failSubmit !== "") return Promise.reject(this.failSubmit);
-
-    this.logger.debug({
-      at: "MockMultiCallerClient#submitTxn",
-      message: "Transaction submission succeeded!",
-      txn,
-    });
-
-    return {
-      chainId: txn.chainId,
-      nonce: nonce || 1,
-      hash: "0x4321",
-    } as TransactionResponse;
-  }
 
   protected override logSimulationFailures(txns: TransactionSimulationResult[]): void {
     this.clearSimulationFailures();
@@ -119,9 +69,6 @@ describe("MultiCallerClient", async function () {
 
     multiCaller.clearSimulationFailures();
     expect(multiCaller.simulationFailureCount()).to.equal(0);
-
-    multiCaller.failSimulate = "";
-    multiCaller.failSubmit = "";
   });
 
   it("Correctly enqueues value transactions", async function () {
@@ -152,21 +99,22 @@ describe("MultiCallerClient", async function () {
   });
 
   it("Correctly excludes simulation failures", async function () {
-    for (const fail of [true, false]) {
+    for (const result of ["Forced simulation failure", passResult]) {
+      const fail = !(result === passResult);
       const txns: AugmentedTransaction[] = chainIds.map((_chainId) => {
         const chainId = Number(_chainId);
         return {
           chainId: chainId,
           contract: { address },
+          args: [{ result }],
           message: `Test transaction on chain ${chainId}`,
           mrkdwn: `This transaction is expected to ${fail ? "fail" : "pass"} simulation.`,
         } as AugmentedTransaction;
       });
 
-      multiCaller.failSimulate = fail ? "Forced simulation failure" : "";
       expect(txns.length).to.equal(chainIds.length);
-      const result: AugmentedTransaction[] = await multiCaller.simulateTransactionQueue(txns);
-      expect(result.length).to.equal(fail ? 0 : txns.length);
+      const results: AugmentedTransaction[] = await multiCaller.simulateTransactionQueue(txns);
+      expect(results.length).to.equal(fail ? 0 : txns.length);
 
       // Verify that the failed simulations were filtered out.
       expect(multiCaller.simulationFailureCount()).to.equal(fail ? txns.length : 0);
@@ -176,14 +124,13 @@ describe("MultiCallerClient", async function () {
 
   it("Handles submission success & failure", async function () {
     const nTxns = 4;
-    for (const fail of ["Forced submission failure", ""]) {
-      multiCaller.failSubmit = fail;
+    for (const result of ["Forced submission failure", passResult]) {
+      const fail = !(result === passResult);
 
       for (const value of [0, 1]) {
         const txnType = value > 0 ? "value" : "multicall";
 
         for (let txn = 1; txn <= nTxns; ++txn) {
-          multiCaller.failSubmit = fail;
 
           chainIds.forEach((_chainId) => {
             const chainId = Number(_chainId);
@@ -194,7 +141,7 @@ describe("MultiCallerClient", async function () {
                 interface: { encodeFunctionData },
               },
               method: "test",
-              args: ["0", "1", "2", "3"],
+              args: [{ result }],
               value: toBN(value),
               message: `Test ${txnType} transaction (${txn}/${nTxns}) on chain ${chainId}`,
               mrkdwn: `Sample markdown string for chain ${chainId} ${txnType} transaction`,
@@ -208,8 +155,8 @@ describe("MultiCallerClient", async function () {
       expect(multiCaller.transactionCount()).to.equal(nTxns * 2 * chainIds.length);
 
       // Note: Half of the txns should be consolidated into a single multicall txn.
-      const result: string[] = await multiCaller.executeTransactionQueue();
-      expect(result.length).to.equal(fail ? 0 : (nTxns + 1) * chainIds.length);
+      const results: string[] = await multiCaller.executeTransactionQueue();
+      expect(results.length).to.equal(fail ? 0 : (nTxns + 1) * chainIds.length);
 
       // Simulation succeeded but submission failed => multiCaller.simulationFailures should be empty.
       expect(multiCaller.simulationFailureCount()).to.equal(0);
@@ -224,7 +171,7 @@ describe("MultiCallerClient", async function () {
 
     // Verify that all known revert reasons are ignored.
     for (const revertReason of knownRevertReasons) {
-      multiCaller.failSimulate = revertReason;
+      txn.args = [{ result: revertReason }];
       txn.message = `Transaction simulation failure; expected to fail with: ${revertReason}.`;
 
       const result: AugmentedTransaction[] = await multiCaller.simulateTransactionQueue([txn]);
@@ -234,7 +181,7 @@ describe("MultiCallerClient", async function () {
     }
 
     // Verify that the defined "unknown" revert reason against known methods is ignored.
-    multiCaller.failSimulate = unknownRevertReason;
+    txn.args = [{ result: unknownRevertReason }];
     for (const method of unknownRevertReasonMethodsToIgnore) {
       txn.method = method;
       txn.message = `${txn.method} simulation; expected to fail with: ${unknownRevertReason}.`;
@@ -250,7 +197,7 @@ describe("MultiCallerClient", async function () {
       txn.method = method;
 
       for (const revertReason of ["unexpected revert reasons", "should not be ignored!"]) {
-        multiCaller.failSimulate = revertReason;
+        txn.args = [{ result: revertReason }];
         txn.message = `${txn.method} simulation; expected to fail with: ${unknownRevertReason}.`;
 
         const result: AugmentedTransaction[] = await multiCaller.simulateTransactionQueue([txn]);

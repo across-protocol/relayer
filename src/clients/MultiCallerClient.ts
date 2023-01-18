@@ -11,7 +11,7 @@ import {
   TransactionResponse,
   TransactionSimulationResult,
 } from "../utils";
-import { AugmentedTransaction } from "./TransactionClient";
+import { AugmentedTransaction, TransactionClient } from "./TransactionClient";
 import lodash from "lodash";
 
 // @todo: MultiCallerClient should be generic. For future, permit the class instantiator to supply their own
@@ -40,10 +40,10 @@ export const unknownRevertReasonMethodsToIgnore = new Set([
 
 export class MultiCallerClient {
   private newMulticaller = false;
+  protected txnClient: TransactionClient;
   protected transactions: AugmentedTransaction[] = [];
   protected txns: { [chainId: number]: AugmentedTransaction[] } = {};
   protected valueTxns: { [chainId: number]: AugmentedTransaction[] } = {};
-  // eslint-disable-next-line no-useless-constructor
   // Legacy mode is a temporary feature to support transition to the updated multicaller implementation.
   constructor(
     readonly logger: winston.Logger,
@@ -51,6 +51,7 @@ export class MultiCallerClient {
     newMulticaller = false
   ) {
     this.newMulticaller = newMulticaller || process.env.NEW_MULTICALLER === "true";
+    this.txnClient = new TransactionClient(logger);
   }
 
   // Adds all information associated with a transaction to the transaction queue.
@@ -170,7 +171,25 @@ export class MultiCallerClient {
       txnQueue,
     });
 
-    const txns = await this.simulateTransactionQueue(txnQueue);
+    const results = await this.simulateTxns(txnQueue);
+    const txns = results.filter((result) => result.succeed).map((result) => result.transaction);
+
+    if (simulate) {
+      let mrkdwn = "";
+      results.forEach((result, idx) => {
+        const { succeed, transaction: txn } = result;
+        mrkdwn += `  *${idx + 1}. (${succeed} ? "Passed" : "Failed"})`;
+        mrkdwn +=` ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
+      });
+      this.logger.info({
+        at: "MultiCallerClient#executeTxnQueue",
+        message: `${txns.length}/${results.length} ${networkName} transaction simulation(s) succeeded!`,
+        mrkdwn,
+      });
+      this.logger.info({ at: "MulticallerClient#executeTxnQueue", message: "Exiting simulation mode 🎮" });
+      return [];
+    }
+
     if (txns.length === 0) {
       this.logger.debug({
         at: "MultiCallerClient#executeTxnQueue",
@@ -179,23 +198,10 @@ export class MultiCallerClient {
       return [];
     }
 
-    if (simulate) {
-      let mrkdwn = "";
-      txns.forEach((txn, idx) => {
-        mrkdwn += `  *${idx + 1}*. ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
-      });
-      this.logger.info({
-        at: "MultiCallerClient#executeTxnQueue",
-        message: `${txns.length} ${networkName} transaction simulation(s) succeeded!`,
-        mrkdwn,
-      });
-      this.logger.info({ at: "MulticallerClient#executeTxnQueue", message: "Exiting simulation mode 🎮" });
-      return [];
-    }
-
     return await this.submitTxns(chainId, txns);
   }
 
+  // @todo: Remove this method part of legacy cleanup
   async executeTxnQueueLegacy(simulationModeOn = false): Promise<string[]> {
     if (this.transactions.length === 0) return [];
     this.logger.debug({
@@ -375,57 +381,18 @@ export class MultiCallerClient {
     }
   }
 
+  // @todo: Remove this method part of legacy cleanup
   protected async submitTxn(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
     const { contract, method, args, value } = txn;
     return await runTransaction(this.logger, contract, method, args, value, null, nonce);
   }
 
-  private async submitTxns(chainId: number, txnQueue: AugmentedTransaction[]): Promise<TransactionResponse[]> {
-    const networkName = getNetworkName(chainId);
-    const txnResponses: TransactionResponse[] = [];
+  protected async simulateTxns(txns: AugmentedTransaction[]): Promise<TransactionSimulationResult[]> {
+    return await this.txnClient.simulate(txns);
+  }
 
-    this.logger.debug({
-      at: "MultiCallerClient#submitTxns",
-      message: "Processing transaction queue.",
-      txnQueue,
-    });
-
-    // Transactions are submitted sequentially to avoid nonce collisions. More
-    // advanced nonce management may permit them to be submitted in parallel.
-    let mrkdwn = "";
-    let idx = 1;
-    let nonce: number = null;
-    for (const txn of txnQueue) {
-      let response: TransactionResponse;
-      if (nonce !== null) this.logger.debug({ at: "MultiCallerClient#submitTxns", message: `Using nonce ${nonce}.` });
-
-      try {
-        response = await this.submitTxn(txn, nonce);
-      } catch (error) {
-        this.logger.info({
-          at: "MultiCallerClient#submitTxns",
-          message: `Transaction ${idx} submission on ${networkName} failed or timed out.`,
-          mrkdwn,
-          error,
-          notificationPath: "across-error",
-        });
-        return txnResponses;
-      }
-
-      nonce = response.nonce + 1;
-      mrkdwn += `  ${idx}. ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
-      mrkdwn += `  *Block Explorer:* ${etherscanLink(response.hash, txn.chainId)}\n`;
-      txnResponses.push(response);
-      ++idx;
-    }
-
-    this.logger.info({
-      at: "MultiCallerClient#submitTxns",
-      message: `Completed ${networkName} transaction submission! 🧙`,
-      mrkdwn,
-    });
-
-    return txnResponses;
+  protected async submitTxns(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {
+    return await this.txnClient.submit(chainId, txns);
   }
 
   buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
@@ -468,6 +435,7 @@ export class MultiCallerClient {
     } as AugmentedTransaction;
   }
 
+  // @todo: Remove this method part of legacy cleanup
   protected async simulateTxn(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
     return await willSucceed(txn);
   }
@@ -476,8 +444,9 @@ export class MultiCallerClient {
     txns: AugmentedTransaction[],
     chunkSize = DEFAULT_MULTICALL_CHUNK_SIZE
   ): Promise<AugmentedTransaction[]> {
+    // Enqueued multicall txns that fail simulation are silently dropped.
     const txnChunks: AugmentedTransaction[][] = await lodash.chunk(
-      await this.simulateTransactionQueue(txns),
+      (await this.simulateTxns(txns)).filter((txn) => txn.succeed).map((txn) => txn.transaction),
       chunkSize
     );
 
@@ -492,10 +461,7 @@ export class MultiCallerClient {
     const invalidTxns: TransactionSimulationResult[] = [];
 
     // Simulate the transaction execution for the whole queue.
-    const txnSimulations = await Promise.all(
-      transactions.map((transaction: AugmentedTransaction) => this.simulateTxn(transaction))
-    );
-
+    const txnSimulations = await this.simulateTxns(transactions);
     txnSimulations.forEach((txn) => {
       if (txn.succeed) validTxns.push(txn.transaction);
       else invalidTxns.push(txn);
