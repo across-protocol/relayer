@@ -36,9 +36,7 @@ export class BundleDataClient {
   } = {};
 
   private historicalDepositCache: {
-    [chainId: string]: {
-      [depositId: string]: Deposit;
-    };
+    [chainIdDepositId: string]: Deposit;
   } = {};
 
   // eslint-disable-next-line no-useless-constructor
@@ -59,6 +57,10 @@ export class BundleDataClient {
     // Always return a deep cloned copy of object stored in cache. Since JS passes by reference instead of value, we
     // want to minimize the risk that the programmer accidentally mutates data in the cache.
     return _.cloneDeep(this.loadDataCache[key]);
+  }
+
+  getUniqueDepositKey(x: Deposit | FillWithBlock): string {
+    return `${x.originChainId}-${x.depositId}`;
   }
 
   async getPendingRefundsFromValidBundles(bundleLookback: number): Promise<FillsToRefund[]> {
