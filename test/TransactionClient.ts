@@ -2,37 +2,12 @@ import { ethers } from "ethers";
 import { AugmentedTransaction, TransactionClient } from "../src/clients";
 import { TransactionResponse } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
+import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
 import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";
-
-class MockedTransactionClient extends TransactionClient {
-  constructor(logger: winston.Logger) {
-    super(logger);
-  }
-
-  protected async _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
-    const result = txn.args[0]?.result;
-    if (result && result !== "pass") return Promise.reject(result);
-
-    const txnResponse = {
-      chainId: txn.chainId,
-      nonce: nonce ?? 1,
-      hash: "0x4321",
-    } as TransactionResponse;
-
-    this.logger.debug({
-      at: "MockMultiCallerClient#submitTxns",
-      message: "Transaction submission succeeded!",
-      txn: txnResponse,
-    });
-
-    return txnResponse;
-  }
-}
 
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
 const address = randomAddress(); // Test contract address
 const method = "testMethod";
-const passResult = "pass";
 let txnClient: MockedTransactionClient;
 
 describe("TransactionClient", async function () {
@@ -45,7 +20,7 @@ describe("TransactionClient", async function () {
 
     const nTxns = 4;
     const txns: AugmentedTransaction[] = [];
-    for (const result of [passResult, "Forced submission failure", passResult]) {
+    for (const result of [txnClientPassResult, "Forced submission failure", txnClientPassResult]) {
       const txn: AugmentedTransaction = {
         chainId,
         contract: { address } as Contract,
