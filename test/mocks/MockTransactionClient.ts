@@ -11,7 +11,7 @@ export class MockedTransactionClient extends TransactionClient {
 
   protected async _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
     const result = txn.args[0]?.result;
-    if (result && result !== "pass") return Promise.reject(result);
+    if (result && result !== txnClientPassResult) return Promise.reject(result);
 
     const txnResponse = {
       chainId: txn.chainId,
