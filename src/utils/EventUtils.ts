@@ -51,12 +51,14 @@ export async function paginatedEventQuery(
     return (
       await Promise.map(
         paginatedRanges,
-        async ([fromBlock, toBlock]) => {
+        ([fromBlock, toBlock]) => {
           return contract.queryFilter(filter, fromBlock, toBlock);
         },
         { concurrency: searchConfig.concurrency | defaultConcurrency }
       )
-    ).flat();
+    )
+      .flat()
+      .filter((event) => event.blockNumber >= searchConfig.fromBlock && event.blockNumber <= searchConfig.toBlock);
   } catch (error) {
     if (retryCount < maxRetries) {
       await delay(retrySleepTime);
@@ -65,25 +67,35 @@ export async function paginatedEventQuery(
   }
 }
 
-export function getPaginatedBlockRanges(searchConfig: EventSearchConfig): number[][] {
-  const nextSearchConfig = { fromBlock: searchConfig.fromBlock, toBlock: searchConfig.toBlock };
+// Warning: this is a specialized function!! Its functionality is not obvious.
+// This function attempts to return block ranges to repeat ranges as much as possible. To do so, it may include blocks that
+// are outside the provided range. Its guarantee is that it will always include _at least_ the blocks requested.
+export function getPaginatedBlockRanges({
+  fromBlock,
+  toBlock,
+  maxBlockLookBack,
+}: EventSearchConfig): [number, number][] {
+  if (maxBlockLookBack === undefined) return [[fromBlock, toBlock]];
+  if (maxBlockLookBack === 0) throw new Error("Cannot set maxBlockLookBack = 0");
 
-  if (searchConfig.maxBlockLookBack !== undefined)
-    nextSearchConfig.toBlock = Math.min(searchConfig.toBlock, searchConfig.fromBlock + searchConfig.maxBlockLookBack);
+  // Floor the requestedFromBlock to the nearest smaller multiple of the maxBlockLookBack to enhance caching.
+  // This means that a range like 5 - 45 with a maxBlockLookBack of 20 would look like:
+  // 0-19, 20-39, 40-45.
+  // This allows us to get the max number of repeated node queries. The maximum number of "nonstandard" queries per
+  // call of this function is 1.
+  const flooredStartBlock = Math.floor(fromBlock / maxBlockLookBack) * maxBlockLookBack;
 
-  if (searchConfig.maxBlockLookBack === 0) throw new Error("Cannot set maxBlockLookBack = 0");
+  // Note: range is inclusive, so we have to add one to the number of blocks to query.
+  const iterations = Math.ceil((toBlock + 1 - flooredStartBlock) / maxBlockLookBack);
 
-  const returnValue: number[][] = [];
-  while (nextSearchConfig.fromBlock <= searchConfig.toBlock) {
-    returnValue.push([nextSearchConfig.fromBlock, nextSearchConfig.toBlock]);
-    nextSearchConfig.fromBlock = nextSearchConfig.toBlock + 1;
-    if (searchConfig.maxBlockLookBack !== undefined)
-      nextSearchConfig.toBlock = Math.min(
-        searchConfig.toBlock,
-        nextSearchConfig.fromBlock + searchConfig.maxBlockLookBack
-      );
+  const ranges: [number, number][] = [];
+  for (let i = 0; i < iterations; i++) {
+    const innerFromBlock = flooredStartBlock + maxBlockLookBack * i;
+    const innerToBlock = Math.min(innerFromBlock + maxBlockLookBack - 1, toBlock);
+    ranges.push([innerFromBlock, innerToBlock]);
   }
-  return returnValue;
+
+  return ranges;
 }
 
 export function spreadEventWithBlockNumber(event: Event): SortableEvent {
