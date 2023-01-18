@@ -5,7 +5,6 @@ import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";
 
 class MockedTransactionClient extends TransactionClient {
-  public failSubmit = "";
 
   constructor(logger: winston.Logger) {
     super(logger);
@@ -39,9 +38,7 @@ const method = "testMethod";
 const passResult = "pass";
 
 describe("TransactionClient", async function () {
-  beforeEach(async function () {
-    txnClient.failSubmit = "";
-  });
+  beforeEach(async function () {});
 
   it("Handles submission success & failure", async function () {
     const chainId = chainIds[0];
