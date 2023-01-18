@@ -36,9 +36,7 @@ export class BundleDataClient {
   } = {};
 
   private historicalDepositCache: {
-    [chainId: string]: {
-      [depositId: string]: Deposit;
-    };
+    [chainIdDepositId: string]: Deposit;
   } = {};
 
   // eslint-disable-next-line no-useless-constructor
@@ -59,6 +57,10 @@ export class BundleDataClient {
     // Always return a deep cloned copy of object stored in cache. Since JS passes by reference instead of value, we
     // want to minimize the risk that the programmer accidentally mutates data in the cache.
     return _.cloneDeep(this.loadDataCache[key]);
+  }
+
+  getUniqueDepositKey(x: Deposit | FillWithBlock): string {
+    return `${x.originChainId}-${x.depositId}`;
   }
 
   async getPendingRefundsFromValidBundles(bundleLookback: number): Promise<FillsToRefund[]> {
@@ -295,9 +297,7 @@ export class BundleDataClient {
             // Matched deposit for fill was not found in spoke client. This situation should be rare so let's
             // send some extra RPC requests to blocks older than the spoke client's initial event search config
             // to find the deposit if it exists.
-            if (this.historicalDepositCache[originChainId] === undefined)
-              this.historicalDepositCache[originChainId] = {};
-            if (this.historicalDepositCache[originChainId][fillWithBlock.depositId] === undefined) {
+            if (this.historicalDepositCache[this.getUniqueDepositKey(fillWithBlock)] === undefined) {
               return originClient.queryHistoricalDepositForFill(fillWithBlock);
             }
             // Older deposit for this deposit ID has already been matched with a fill so we know this fill must be
@@ -306,7 +306,7 @@ export class BundleDataClient {
             else if (
               originClient.validateFillForDeposit(
                 fillWithBlock,
-                this.historicalDepositCache[originChainId][fillWithBlock.depositId]
+                this.historicalDepositCache[this.getUniqueDepositKey(fillWithBlock)]
               ) === undefined
             )
               allInvalidFills.push(fillWithBlock);
@@ -330,7 +330,7 @@ export class BundleDataClient {
         // Mark fills with matching deposits as valid and add them to the list of fills to refund.
         const matchedHistoricalDeposits = historicalDepositQueries.filter((x) => x[0] !== undefined);
         matchedHistoricalDeposits.forEach(([deposit, fillWithBlock]) => {
-          this.historicalDepositCache[originChainId][deposit.depositId] = deposit;
+          this.historicalDepositCache[this.getUniqueDepositKey(fillWithBlock)] = deposit;
           addRefundForValidFill(fillWithBlock, deposit, blockRangeForChain);
         });
 
@@ -343,7 +343,7 @@ export class BundleDataClient {
         if (historicalDepositQueries.length > 0)
           this.logger.debug({
             at: "BundleDataClient#loadData",
-            message: `Sent additional RPC requests to find historical deposits for chain ${originChainId}`,
+            message: `Sent additional RPC requests to find historical deposits matching fills on chain ${destinationChainId} originating from ${originChainId}`,
             foundDepositIds: matchedHistoricalDeposits.map(([d]) => d.depositId),
             unfoundDepositIds: unmatchedHistoricalDeposits.map(([, f]) => f.depositId),
           });
