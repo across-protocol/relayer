@@ -1,3 +1,4 @@
+import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE } from "../common";
 import { assert } from "../utils";
 import * as Constants from "./Constants";
 
@@ -16,6 +17,7 @@ export class CommonConfig {
   readonly redisUrl: string | undefined;
   readonly bundleRefundLookback: number;
   readonly maxRelayerLookBack: number;
+  readonly multiCallChunkSize: { [chainId: number]: number };
   readonly version: string;
 
   constructor(env: ProcessEnv) {
@@ -48,5 +50,20 @@ export class CommonConfig {
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
     this.redisUrl = REDIS_URL;
     this.bundleRefundLookback = Number(BUNDLE_REFUND_LOOKBACK ?? 2);
+
+    // Multicall chunk size precedence: Environment, chain-specific config, global default.
+    this.multiCallChunkSize = Object.fromEntries(
+      Object(this.spokePoolChains).map((_chainId) => {
+        const chainId = Number(_chainId);
+        // prettier-ignore
+        const chunkSize = Number(
+          process.env[`MULTICALL_CHUNK_SIZE_CHAIN_${chainId}`]
+            ?? DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE[chainId]
+            ?? DEFAULT_MULTICALL_CHUNK_SIZE
+        );
+        assert(chunkSize > 0, `Chain ${chainId} multicall chunk size (${chunkSize}) must be greater than 0`);
+        return [chainId, chunkSize];
+      })
+    );
   }
 }
