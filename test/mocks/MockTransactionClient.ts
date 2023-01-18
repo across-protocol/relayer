@@ -20,7 +20,7 @@ export class MockedTransactionClient extends TransactionClient {
     return result && result !== txnClientPassResult;
   }
 
-  protected override async _simulate(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
+  protected override _simulate(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
     const fail = this.txnFailure(txn);
 
     this.logger.debug({
@@ -36,7 +36,7 @@ export class MockedTransactionClient extends TransactionClient {
     };
   }
 
-  protected override async _submit(
+  protected override _submit(
     txn: AugmentedTransaction,
     nonce: number | null = null
   ): Promise<TransactionResponse> {
