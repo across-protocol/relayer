@@ -36,10 +36,7 @@ export class MockedTransactionClient extends TransactionClient {
     };
   }
 
-  protected override _submit(
-    txn: AugmentedTransaction,
-    nonce: number | null = null
-  ): Promise<TransactionResponse> {
+  protected override _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
     if (this.txnFailure(txn)) return Promise.reject(this.txnFailureReason(txn));
 
     const _nonce = nonce ?? 1;
