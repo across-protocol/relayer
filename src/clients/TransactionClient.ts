@@ -36,7 +36,7 @@ export class TransactionClient {
 
   protected async _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
     const { contract, method, args, value } = txn;
-    return await runTransaction(this.logger, contract, method, args, value, null, nonce);
+    return runTransaction(this.logger, contract, method, args, value, null, nonce);
   }
 
   async submit(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {
