@@ -30,8 +30,8 @@ export class TransactionClient {
 
   // Each transaction is simulated in isolation; but on-chain execution may produce different
   // results due to execution sequence or intermediate changes in on-chain state.
-  async simulate(txns: AugmentedTransaction[]): Promise<TransactionSimulationResult[]> {
-    return await Promise.all(txns.map((txn: AugmentedTransaction) => this._simulate(txn)));
+ simulate(txns: AugmentedTransaction[]): Promise<TransactionSimulationResult[]> {
+    return Promise.all(txns.map((txn: AugmentedTransaction) => this._simulate(txn)));
   }
 
   protected async _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
