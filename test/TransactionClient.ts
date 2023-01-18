@@ -92,8 +92,6 @@ describe("TransactionClient", async function () {
 
     const txnResponses: TransactionResponse[] = await txnClient.submit(chainId, txns);
     let nonce = txnResponses[0].nonce;
-    txnResponses.slice(1).forEach((txnResponse) => {
-      expect(txnResponse.nonce).to.equal(++nonce);
-    });
+    txnResponses.slice(1).forEach((txnResponse) => expect(txnResponse.nonce).to.equal(++nonce));
   });
 });
