@@ -1,11 +1,10 @@
 import { ethers } from "ethers";
 import { AugmentedTransaction, TransactionClient } from "../src/clients";
-import { TransactionResponse, TransactionSimulationResult } from "../src/utils";
+import { TransactionResponse } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";
 
 class MockedTransactionClient extends TransactionClient {
-
   constructor(logger: winston.Logger) {
     super(logger);
   }
@@ -31,14 +30,15 @@ class MockedTransactionClient extends TransactionClient {
 }
 
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
-const txnClient: MockedTransactionClient = new MockedTransactionClient(spyLogger);
-const provider = new ethers.providers.StaticJsonRpcProvider("127.0.0.1");
 const address = randomAddress(); // Test contract address
 const method = "testMethod";
 const passResult = "pass";
+let txnClient: MockedTransactionClient;
 
 describe("TransactionClient", async function () {
-  beforeEach(async function () {});
+  beforeEach(async function () {
+    txnClient = new MockedTransactionClient(spyLogger);
+  });
 
   it("Handles submission success & failure", async function () {
     const chainId = chainIds[0];
