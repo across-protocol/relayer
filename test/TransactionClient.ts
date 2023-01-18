@@ -50,7 +50,7 @@ const address = randomAddress(); // Test contract address
 const method = "testMethod";
 
 describe("TransactionClient", async function () {
-  beforeEach(async function () { });
+  beforeEach(async function () {});
 
   it("Correctly excludes simulation failures", async function () {
     for (const result of ["Forced simulation failure", passResult]) {
