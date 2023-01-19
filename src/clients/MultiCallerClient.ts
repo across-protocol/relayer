@@ -11,7 +11,7 @@ import {
   TransactionResponse,
   TransactionSimulationResult,
 } from "../utils";
-import { AugmentedTransaction } from "./TransactionClient";
+import { AugmentedTransaction, TransactionClient } from "./TransactionClient";
 import lodash from "lodash";
 
 // @todo: MultiCallerClient should be generic. For future, permit the class instantiator to supply their own
@@ -40,11 +40,13 @@ export const unknownRevertReasonMethodsToIgnore = new Set([
 
 export class MultiCallerClient {
   private transactions: AugmentedTransaction[] = [];
-  // eslint-disable-next-line no-useless-constructor
+  protected txnClient: TransactionClient;
   constructor(
     readonly logger: winston.Logger,
     readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE
-  ) {}
+  ) {
+    this.txnClient = new TransactionClient(logger);
+  }
 
   // Adds all information associated with a transaction to the transaction queue. This is the intention of the
   // caller to send a transaction. The transaction might not be executable, which should be filtered later.
@@ -284,10 +286,7 @@ export class MultiCallerClient {
     const invalidTxns: TransactionSimulationResult[] = [];
 
     // Simulate the transaction execution for the whole queue.
-    const txnSimulations = await Promise.all(
-      transactions.map((transaction: AugmentedTransaction) => this.simulateTxn(transaction))
-    );
-
+    const txnSimulations = await this.txnClient.simulate(transactions);
     txnSimulations.forEach((txn) => {
       if (txn.succeed) validTxns.push(txn.transaction);
       else invalidTxns.push(txn);
