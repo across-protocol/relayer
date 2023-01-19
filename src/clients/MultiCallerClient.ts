@@ -43,7 +43,6 @@ export const unknownRevertReasonMethodsToIgnore = new Set([
 
 export class MultiCallerClient {
   private transactions: AugmentedTransaction[] = [];
-  private newMulticaller = false;
   protected txnClient: TransactionClient;
   protected txns: { [chainId: number]: AugmentedTransaction[] } = {};
   protected valueTxns: { [chainId: number]: AugmentedTransaction[] } = {};
@@ -51,7 +50,7 @@ export class MultiCallerClient {
   constructor(
     readonly logger: winston.Logger,
     readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE,
-    newMulticaller = false
+    readonly newMulticaller = false
   ) {
     this.newMulticaller = newMulticaller || process.env.NEW_MULTICALLER === "true";
     this.txnClient = new TransactionClient(logger);
