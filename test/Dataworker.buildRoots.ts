@@ -697,8 +697,8 @@ describe("Dataworker: Build merkle roots", async function () {
       );
       await updateAllClients();
 
-      // Test that we can still look up the excess if the first fill for the same deposit as the one slow filed
-      //  is older than the spoke pool client's lookback window.
+      // Test that we can still look up the excess if the first fill for the same deposit as the one slow filled
+      // is older than the spoke pool client's lookback window.
       const shortRangeSpokePoolClient = new SpokePoolClient(
         createSpyLogger().spyLogger,
         spokePool_2,
@@ -722,44 +722,32 @@ describe("Dataworker: Build merkle roots", async function () {
       // Again, now that the slowFill1 was sent, the unfilledAmount1 can be subtracted from running balances since its
       // no longer associated with an unfilled deposit.
       const excess = fill5.fillAmount;
-      // updateAndCheckExpectedPoolRebalanceCounters(
-      //   expectedRunningBalances,
-      //   expectedRealizedLpFees,
-      //   getRefundForFills([fill5]).sub(unfilledAmount1).sub(excess),
-      //   getRealizedLpFeeForFills([slowFill1, fill5]),
-      //   [fill5.destinationChainId],
-      //   [l1Token_1.address],
-      //   await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(3), spokePoolClients)
-      // );
-      // expect(spokePoolClients[destinationChainId].getFills().length).to.equal(3);
 
-      // Test that we can still look up the excess if the first fill for the same deposit as the one slow filed
-      //  is older than the spoke pool client's lookback window.
-      const shortRangeSpokePoolClient = new SpokePoolClient(
-        createSpyLogger().spyLogger,
-        spokePool_2,
-        configStoreClient,
-        destinationChainId, 
-        { fromBlock: fill1Block + 1 }, // Set fromBlock to now, after first fill for same deposit as the slowFill1
-        spokePoolClients[destinationChainId].spokePoolDeploymentBlock
-      )
-      await shortRangeSpokePoolClient.update();
-      console.log(`Trying to find `, fill1)
-      expect(shortRangeSpokePoolClient.getFills().length).to.equal(2); // We should only be able to see 2 fills
-      // for this deposit, even though there are 3.
-
-      // The excess amount should still be computed correctly.
-       updateAndCheckExpectedPoolRebalanceCounters(
+      // The Dataworker should strategically query for older deposits when they are older than beginning of a spoke pool
+      // client's range. Here we show that the same pool rebalance root is built with and without the short range spoke
+      // client.
+      const expectedResults = await dataworkerInstance.buildPoolRebalanceRoot(
+        getDefaultBlockRange(4),
+        spokePoolClients
+      );
+      const actualResults = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(4), {
+        ...spokePoolClients,
+        [destinationChainId]: shortRangeSpokePoolClient,
+      });
+      expect(expectedResults).to.deep.equal(actualResults);
+      updateAndCheckExpectedPoolRebalanceCounters(
         expectedRunningBalances,
         expectedRealizedLpFees,
         getRefundForFills([fill5]).sub(unfilledAmount1).sub(excess),
         getRealizedLpFeeForFills([slowFill1, fill5]),
         [fill5.destinationChainId],
         [l1Token_1.address],
-        await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(3), {...spokePoolClients, [destinationChainId]: shortRangeSpokePoolClient})
+        await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(4), {
+          ...spokePoolClients,
+          [destinationChainId]: shortRangeSpokePoolClient,
+        })
       );
 
-      return;
       // Before executing the last slow relay leaf, completely fill the deposit. This will leave the full slow fill
       // amount remaining in the spoke pool. We also need to subtract running balances by the unfilled amount
       // for deposit3, because its now fully filled. This means we need to subtract the unfilledAmount4 twice

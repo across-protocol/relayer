@@ -356,7 +356,6 @@ export class SpokePoolClient {
       toBlock,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
-    console.log(this.eventSearchConfig)
     return await this.queryFillsInBlockRange(fill, searchConfig);
   }
 
@@ -366,27 +365,25 @@ export class SpokePoolClient {
     // TODO: Once depositId is indexed in FilledRelay event, filter on that as well.
     const query = await paginatedEventQuery(
       this.spokePool,
-      this.spokePool.filters.FilledRelay(),
-      // this.spokePool.filters.FilledRelay(
-      //   matchingFill.amount.toString(),
-      //   undefined,
-      //   undefined,
-      //   matchingFill.repaymentChainId.toString(),
-      //   matchingFill.originChainId.toString(),
-      //   matchingFill.destinationChainId.toString(),
-      //   matchingFill.relayerFeePct.toString(),
-      //   undefined,
-      //   matchingFill.realizedLpFeePct.toString(),
-      //   matchingFill.depositId.toString(),
-      //   matchingFill.destinationToken,
-      //   undefined,
-      //   undefined,
-      //   matchingFill.recipient,
-      //   undefined
-      // ),
+      this.spokePool.filters.FilledRelay(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        matchingFill.depositor,
+        undefined,
+        undefined
+      ),
       searchConfig
     );
-    console.log(query)
     const fills = query.map((event) => spreadEventWithBlockNumber(event) as FillWithBlock);
     return sortEventsAscending(fills.filter((_fill) => filledSameDeposit(_fill, matchingFill)));
   }
