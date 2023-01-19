@@ -1,4 +1,4 @@
-export function isPromiseFulfulled<T>(
+export function isPromiseFulfilled<T>(
   promiseSettledResult: PromiseSettledResult<T>
 ): promiseSettledResult is PromiseFulfilledResult<T> {
   return promiseSettledResult.status === "fulfilled";
