@@ -46,7 +46,7 @@ export class MultiCallerClient {
   protected txnClient: TransactionClient;
   protected txns: { [chainId: number]: AugmentedTransaction[] } = {};
   protected valueTxns: { [chainId: number]: AugmentedTransaction[] } = {};
-  // Legacy mode is a temporary feature to support transition to the updated multicaller implementation.
+  // newMulticaller is temporary, to support transition to the updated multicaller implementation.
   constructor(
     readonly logger: winston.Logger,
     readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE,
