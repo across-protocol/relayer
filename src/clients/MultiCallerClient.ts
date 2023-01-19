@@ -41,9 +41,9 @@ export const unknownRevertReasonMethodsToIgnore = new Set([
 ]);
 
 export class MultiCallerClient {
+  private transactions: AugmentedTransaction[] = [];
   private newMulticaller = false;
-  protected txnClient: TransactionClient;
-  protected transactions: AugmentedTransaction[] = [];
+  private txnClient: TransactionClient;
   protected txns: { [chainId: number]: AugmentedTransaction[] } = {};
   protected valueTxns: { [chainId: number]: AugmentedTransaction[] } = {};
   // Legacy mode is a temporary feature to support transition to the updated multicaller implementation.
