@@ -68,8 +68,9 @@ export class MultiCallerClient {
   }
 
   transactionCount() {
-    return (Object.values(this.txns).concat(Object.values(this.valueTxns)))
-      .reduce((count, txnQueue) => count += txnQueue.length, 0);
+    return Object.values(this.txns)
+      .concat(Object.values(this.valueTxns))
+      .reduce((count, txnQueue) => (count += txnQueue.length), 0);
   }
 
   clearTransactionQueue(chainId: number = null) {
