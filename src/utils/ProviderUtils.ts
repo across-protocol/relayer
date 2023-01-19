@@ -174,7 +174,7 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     if (!results.every(isPromiseFulfilled)) {
       // Format the error so that it's very clear which providers failed and succeeded.
       const errorTexts = errors.map(([provider, errorText]) => formatProviderError(provider, errorText));
-      const successfulProviderUrls = results.filter(isPromiseFulfulled).map((result) => result.value[0].connection.url);
+      const successfulProviderUrls = results.filter(isPromiseFulfilled).map((result) => result.value[0].connection.url);
       throw createSendErrorWithMessage(
         `Not enough providers succeeded. Errors:\n${errorTexts.join("\n")}\n` +
           `Successful Providers:\n${successfulProviderUrls.join("\n")}`,
@@ -216,7 +216,7 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     );
 
     // This filters only the fallbacks that succeeded.
-    const fallbackValues = fallbackResults.filter(isPromiseFulfulled).map((promise) => promise.value);
+    const fallbackValues = fallbackResults.filter(isPromiseFulfilled).map((promise) => promise.value);
 
     // Group the results by the count of that result.
     const counts = [...values, ...fallbackValues].reduce(
