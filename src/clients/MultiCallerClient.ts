@@ -3,6 +3,8 @@ import {
   winston,
   getNetworkName,
   Contract,
+  isPromiseFulfulled,
+  isPromiseRejected,
   runTransaction,
   getTarget,
   BigNumber,
@@ -116,19 +118,15 @@ export class MultiCallerClient {
     const txnHashes: { [chainId: number]: string[] } = Object.fromEntries(
       results.map((result, idx) => {
         const chainId = chainIds[idx];
-        switch (result.status) {
-          case "fulfilled":
-            return [chainId, result.value.map((txnResponse) => txnResponse.hash)];
-          case "rejected":
-            return [chainId, [result.reason]];
-          default: // Should never occur; log if it ever does.
-            this.logger.warn({
-              at: "MultiCallerClient#executeTxnQueues",
-              message: "Unexpected transaction queue resulting status.",
-              result,
-            });
-            return [chainId, ["Unknown error"]];
-        }
+        if (isPromiseFulfulled(result)) return [chainId, result.value.map((txnResponse) => txnResponse.hash)];
+        else if (isPromiseRejected(result)) return [chainId, [result.reason]];
+
+        this.logger.warn({
+          at: "MultiCallerClient#executeTxnQueues",
+          message: "Unexpected transaction queue resulting status.",
+          result,
+        });
+        return [chainId, ["Unknown error"]];
       })
     );
 
