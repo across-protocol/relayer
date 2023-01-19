@@ -139,7 +139,7 @@ export class MultiCallerClient {
   // Then, submit a concatenated list of value txns + multicall bundles. Flush the existing queues on completion.
   async executeChainTxnQueue(chainId: number, simulate = false): Promise<TransactionResponse[]> {
     const multicallTxns: AugmentedTransaction[] =
-      this.txns[chainId].length > 0
+      this.txns[chainId]?.length > 0
         ? await this.buildMultiCallBundles(this.txns[chainId], this.chunkSize[chainId])
         : [];
 
