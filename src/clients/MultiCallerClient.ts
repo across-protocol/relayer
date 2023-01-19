@@ -1,5 +1,6 @@
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE } from "../common";
 import {
+  assert,
   winston,
   getNetworkName,
   Contract,
@@ -62,20 +63,21 @@ export class MultiCallerClient {
   }
 
   transactionCount() {
-    let nTxns = 0;
-    Object.values(this.txns).forEach((txnQueue) => (nTxns += txnQueue.length));
-    Object.values(this.valueTxns).forEach((txnQueue) => (nTxns += txnQueue.length));
-    return nTxns;
+    return Object.values(this.txns)
+      .concat(Object.values(this.valueTxns))
+      .reduce((count, txnQueue) => (count += txnQueue.length), 0);
   }
 
   clearTransactionQueue(chainId: number = null) {
-    if (chainId) {
-      this.txns[chainId] = [];
-      this.valueTxns[chainId] = [];
-    } else {
-      this.txns = {};
-      this.valueTxns = {};
-    }
+    if (this.newMulticaller) {
+      if (chainId !== null) {
+        this.txns[chainId] = [];
+        this.valueTxns[chainId] = [];
+      } else {
+        this.txns = {};
+        this.valueTxns = {};
+      }
+    } else this.transactions = [];
   }
 
   async executeTransactionQueue(simulate = false): Promise<string[]> {
@@ -108,14 +110,8 @@ export class MultiCallerClient {
       results.map((result, idx) => {
         const chainId = chainIds[idx];
         if (isPromiseFulfilled(result)) return [chainId, result.value.map((txnResponse) => txnResponse.hash)];
-        else if (isPromiseRejected(result)) return [chainId, [result.reason]];
-
-        this.logger.warn({
-          at: "MultiCallerClient#executeTxnQueues",
-          message: "Unexpected transaction queue resulting status.",
-          result,
-        });
-        return [chainId, ["Unknown error"]];
+        assert(isPromiseRejected(result), `Unexpected multicall result status: ${result?.status ?? "unknown"}`);
+        return [chainId, [result.reason]];
       })
     );
 
