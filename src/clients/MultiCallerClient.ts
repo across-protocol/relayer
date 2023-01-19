@@ -200,7 +200,7 @@ export class MultiCallerClient {
   }
 
   // @todo: Remove this method part of legacy cleanup
-  async executeTxnQueueLegacy(simulationModeOn = false): Promise<string[]> {
+  private async executeTxnQueueLegacy(simulationModeOn = false): Promise<string[]> {
     if (this.transactions.length === 0) return [];
     this.logger.debug({
       at: "MultiCallerClient",
