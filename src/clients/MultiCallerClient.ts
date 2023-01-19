@@ -75,7 +75,7 @@ export class MultiCallerClient {
 
   clearTransactionQueue(chainId: number = null) {
     if (this.newMulticaller) {
-      if (chainId) {
+      if (chainId !== null) {
         this.txns[chainId] = [];
         this.valueTxns[chainId] = [];
       } else {
