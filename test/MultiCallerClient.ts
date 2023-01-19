@@ -7,8 +7,8 @@ import {
   unknownRevertReasonMethodsToIgnore,
 } from "../src/clients";
 import { TransactionResponse, TransactionSimulationResult } from "../src/utils";
-import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
+import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";
 
 class MockedMultiCallerClient extends MultiCallerClient {
