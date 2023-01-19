@@ -20,20 +20,6 @@ class MockedMultiCallerClient extends MultiCallerClient {
     this.txnClient = new MockedTransactionClient(logger);
   }
 
-  private txnCount(txnQueue: { [chainId: number]: AugmentedTransaction[] }): number {
-    let nTxns = 0;
-    Object.values(txnQueue).forEach((txnQueue) => (nTxns += txnQueue.length));
-    return nTxns;
-  }
-
-  valueTxnCount(): number {
-    return this.txnCount(this.valueTxns);
-  }
-
-  multiCallTransactionCount(): number {
-    return this.txnCount(this.txns);
-  }
-
   simulationFailureCount(): number {
     return this.loggedSimulationFailures.length + this.ignoredSimulationFailures.length;
   }
