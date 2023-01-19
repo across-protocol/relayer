@@ -49,16 +49,19 @@ export async function paginatedEventQuery(
 
   try {
     return (
-      await Promise.map(
-        paginatedRanges,
-        ([fromBlock, toBlock]) => {
-          return contract.queryFilter(filter, fromBlock, toBlock);
-        },
-        { concurrency: searchConfig.concurrency | defaultConcurrency }
+      (
+        await Promise.map(
+          paginatedRanges,
+          ([fromBlock, toBlock]) => {
+            return contract.queryFilter(filter, fromBlock, toBlock);
+          },
+          { concurrency: searchConfig.concurrency | defaultConcurrency }
+        )
       )
-    )
-      .flat()
-      .filter((event) => event.blockNumber >= searchConfig.fromBlock && event.blockNumber <= searchConfig.toBlock);
+        .flat()
+        // Filter events by block number because ranges can include blocks that are not intended.
+        .filter((event) => event.blockNumber >= searchConfig.fromBlock && event.blockNumber <= searchConfig.toBlock)
+    );
   } catch (error) {
     if (retryCount < maxRetries) {
       await delay(retrySleepTime);
@@ -75,7 +78,10 @@ export function getPaginatedBlockRanges({
   toBlock,
   maxBlockLookBack,
 }: EventSearchConfig): [number, number][] {
+  // If the maxBlockLookBack is undefined, we can look back as far as we like. Just return the entire range.
   if (maxBlockLookBack === undefined) return [[fromBlock, toBlock]];
+
+  // A maxBlockLookBack of 0 is not allowed.
   if (maxBlockLookBack === 0) throw new Error("Cannot set maxBlockLookBack = 0");
 
   // Floor the requestedFromBlock to the nearest smaller multiple of the maxBlockLookBack to enhance caching.
