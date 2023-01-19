@@ -1,11 +1,12 @@
 import { expect, ethers, SignerWithAddress, createSpyLogger, winston } from "./utils";
 import { BigNumber, FakeContract, smock, toBN } from "./utils";
 import { MockHubPoolClient } from "./mocks";
-import { bnToHex } from "../src/utils";
+import { bnToHex, getL2TokenAddresses } from "../src/utils";
 import { SpokePoolClient } from "../src/clients";
 import { AdapterManager } from "../src/clients/bridges"; // Tested
-import { l2TokensToL1TokenValidation } from "../src/common";
 import * as interfaces from "../src/clients/bridges/ContractInterfaces";
+import { constants } from "@across-protocol/sdk-v2";
+const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
 let hubPoolClient: MockHubPoolClient;
 const mockSpokePoolClients: {
@@ -84,7 +85,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["usdc"], amountToSend);
     expect(l1OptimismBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens["usdc"], // l1 token
-      l2TokensToL1TokenValidation[mainnetTokens["usdc"]][chainId], // l2 token
+      getL2TokenAddresses(mainnetTokens["usdc"])[chainId], // l2 token
       amountToSend, // amount
       (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
       "0x" // data
@@ -93,7 +94,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["wbtc"], amountToSend);
     expect(l1OptimismBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens["wbtc"], // l1 token
-      l2TokensToL1TokenValidation[mainnetTokens["wbtc"]][chainId], // l2 token
+      getL2TokenAddresses(mainnetTokens["wbtc"])[chainId], // l2 token
       amountToSend, // amount
       (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
       "0x" // data
@@ -104,7 +105,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     // Note the target is the L1 dai optimism bridge.
     expect(l1OptimismDaiBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens["dai"], // l1 token
-      l2TokensToL1TokenValidation[mainnetTokens["dai"]][chainId], // l2 token
+      getL2TokenAddresses(mainnetTokens["dai"])[chainId], // l2 token
       amountToSend, // amount
       (adapterManager.adapters[chainId] as any)?.l2Gas, // l2Gas
       "0x" // data
@@ -157,7 +158,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["usdc"], amountToSend);
     expect(l1BobaBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens["usdc"], // l1 token
-      l2TokensToL1TokenValidation[mainnetTokens["usdc"]][chainId], // l2 token
+      getL2TokenAddresses(mainnetTokens["usdc"])[chainId], // l2 token
       amountToSend, // amount
       (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
       "0x" // data
@@ -166,7 +167,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["wbtc"], amountToSend);
     expect(l1BobaBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens["wbtc"], // l1 token
-      l2TokensToL1TokenValidation[mainnetTokens["wbtc"]][chainId], // l2 token
+      getL2TokenAddresses(mainnetTokens["wbtc"])[chainId], // l2 token
       amountToSend, // amount
       (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
       "0x" // data
@@ -176,7 +177,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["dai"], amountToSend);
     expect(l1BobaBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens["dai"], // l1 token
-      l2TokensToL1TokenValidation[mainnetTokens["dai"]][chainId], // l2 token
+      getL2TokenAddresses(mainnetTokens["dai"])[chainId], // l2 token
       amountToSend, // amount
       (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
       "0x" // data
@@ -236,7 +237,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 });
 
 async function seedMocks() {
-  hubPoolClient.setL1TokensToDestinationTokens(l2TokensToL1TokenValidation);
+  const allL1Tokens = Object.values(TOKEN_SYMBOLS_MAP).map((details) => details.addresses[CHAIN_IDs.MAINNET]);
+  const tokenAddressMapping = Object.fromEntries(allL1Tokens.map((address) => [address, getL2TokenAddresses(address)]));
+  hubPoolClient.setL1TokensToDestinationTokens(tokenAddressMapping);
 
   // Construct fake spoke pool clients. All the adapters need is a signer and a provider on each chain.
   for (const chainId of enabledChainIds) {

@@ -1,6 +1,6 @@
 import { ethers } from "ethers";
 import { AugmentedTransaction, TransactionClient } from "../../src/clients";
-import { TransactionResponse } from "../../src/utils";
+import { TransactionResponse, TransactionSimulationResult } from "../../src/utils";
 import { winston } from "../utils";
 
 export const txnClientPassResult = "pass";
@@ -18,6 +18,22 @@ export class MockedTransactionClient extends TransactionClient {
   txnFailure(txn: AugmentedTransaction): boolean {
     const result = this.txnFailureReason(txn);
     return result && result !== txnClientPassResult;
+  }
+
+  protected override async _simulate(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
+    const fail = this.txnFailure(txn);
+
+    this.logger.debug({
+      at: "MockMultiCallerClient#simulateTxn",
+      message: `Forcing simulation ${fail ? "failure" : "success"}.`,
+      txn,
+    });
+
+    return {
+      transaction: txn,
+      succeed: !fail,
+      reason: fail ? this.txnFailureReason(txn) : null,
+    };
   }
 
   protected override async _submit(
