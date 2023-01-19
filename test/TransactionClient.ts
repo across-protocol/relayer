@@ -1,6 +1,6 @@
 import { ethers } from "ethers";
 import { AugmentedTransaction, TransactionClient } from "../src/clients";
-import { TransactionResponse } from "../src/utils";
+import { TransactionResponse, TransactionSimulationResult } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
 import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";
@@ -13,6 +13,30 @@ let txnClient: MockedTransactionClient;
 describe("TransactionClient", async function () {
   beforeEach(async function () {
     txnClient = new MockedTransactionClient(spyLogger);
+  });
+
+  it("Correctly excludes simulation failures", async function () {
+    for (const result of ["Forced simulation failure", txnClientPassResult]) {
+      const fail = result !== txnClientPassResult;
+      const txns: AugmentedTransaction[] = chainIds.map((_chainId) => {
+        const chainId = Number(_chainId);
+        return {
+          chainId: chainId,
+          contract: { address },
+          args: [{ result }],
+          message: `Test transaction on chain ${chainId}`,
+          mrkdwn: `This transaction is expected to ${fail ? "fail" : "pass"} simulation.`,
+        } as AugmentedTransaction;
+      });
+
+      expect(txns.length).to.equal(chainIds.length);
+      const results: TransactionSimulationResult[] = await txnClient.simulate(txns);
+      expect(results.length).to.equal(txns.length);
+
+      // Verify that the failed simulations were filtered out.
+      expect(results.filter((txn) => txn.succeed).length).to.equal(fail ? 0 : txns.length);
+      expect(results.filter((txn) => !txn.succeed).length).to.equal(fail ? txns.length : 0);
+    }
   });
 
   it("Handles submission success & failure", async function () {
