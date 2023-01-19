@@ -1,5 +1,6 @@
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE } from "../common";
 import {
+  assert,
   winston,
   getNetworkName,
   Contract,
@@ -117,14 +118,8 @@ export class MultiCallerClient {
       results.map((result, idx) => {
         const chainId = chainIds[idx];
         if (isPromiseFulfilled(result)) return [chainId, result.value.map((txnResponse) => txnResponse.hash)];
-        else if (isPromiseRejected(result)) return [chainId, [result.reason]];
-
-        this.logger.warn({
-          at: "MultiCallerClient#executeTxnQueues",
-          message: "Unexpected transaction queue resulting status.",
-          result,
-        });
-        return [chainId, ["Unknown error"]];
+        assert(isPromiseRejected(result), `Unexpected multicall result status: ${result?.status ?? "unknown"}`);
+        return [chainId, [result.reason]];
       })
     );
 
