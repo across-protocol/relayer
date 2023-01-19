@@ -155,6 +155,8 @@ export class MultiCallerClient {
     return txnResponses;
   }
 
+  // Simulate the entire transaction queue and hand the ones that pass off to the TransactionClient for RPC submission.
+  // When simulation is requested, the simulation results are logged and the function returns early.
   // @todo: Consider adding a "wait" argument to wait for n txn confirmations per txn.
   private async executeTxnQueue(
     chainId: number,
