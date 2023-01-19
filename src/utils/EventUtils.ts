@@ -59,7 +59,7 @@ export async function paginatedEventQuery(
         )
       )
         .flat()
-        // Filter events by block number because ranges can include blocks that are not intended.
+        // Filter events by block number because ranges can include blocks that are outside the range specified for caching reasons.
         .filter((event) => event.blockNumber >= searchConfig.fromBlock && event.blockNumber <= searchConfig.toBlock)
     );
   } catch (error) {
@@ -70,9 +70,20 @@ export async function paginatedEventQuery(
   }
 }
 
-// Warning: this is a specialized function!! Its functionality is not obvious.
-// This function attempts to return block ranges to repeat ranges as much as possible. To do so, it may include blocks that
-// are outside the provided range. Its guarantee is that it will always include _at least_ the blocks requested.
+/**
+ * @dev Warning: this is a specialized function!! Its functionality is not obvious.
+ * This function attempts to return block ranges to repeat ranges as much as possible. To do so, it may include blocks that
+ * are outside the provided range. The guarantee is that it will always include _at least_ the blocks requested.
+ * @param eventSearchConfig contains fromBlock, toBlock, and maxBlockLookBack.
+ * The range is inclusive, so the results will include events in the fromBlock and in the toBlock.
+ * maxBlockLookback defined the maximum number of blocks to search. Because the range is inclusive, the maximum diff
+ * in the returned pairs is maxBlockLookBack - 1. This is a bit non-intuitive here, but this is meant so that this
+ * parameter more closely aligns with the more commonly understood definition of a max query range that node providers
+ * use.
+ * @returns an array of disjoint fromBlock, toBlock ranges that should be queried. These cover at least the entire
+ * input range, but can include blocks outside of the desired range, so results should be filtered. Results
+ * are ordered from smallest to largest.
+ */
 export function getPaginatedBlockRanges({
   fromBlock,
   toBlock,
@@ -82,7 +93,7 @@ export function getPaginatedBlockRanges({
   if (maxBlockLookBack === undefined) return [[fromBlock, toBlock]];
 
   // A maxBlockLookBack of 0 is not allowed.
-  if (maxBlockLookBack === 0) throw new Error("Cannot set maxBlockLookBack = 0");
+  if (maxBlockLookBack <= 0) throw new Error("Cannot set maxBlockLookBack <= 0");
 
   // Floor the requestedFromBlock to the nearest smaller multiple of the maxBlockLookBack to enhance caching.
   // This means that a range like 5 - 45 with a maxBlockLookBack of 20 would look like:
@@ -96,7 +107,12 @@ export function getPaginatedBlockRanges({
 
   const ranges: [number, number][] = [];
   for (let i = 0; i < iterations; i++) {
+    // Each inner range start is just a multiple of the maxBlockLookBack added to the start block.
     const innerFromBlock = flooredStartBlock + maxBlockLookBack * i;
+
+    // The innerFromBlock is just the max range from the innerFromBlock or the outer toBlock, whichever is smaller.
+    // The end block should never be larger than the outer toBlock. This is to avoid querying blocks that are in the
+    // future.
     const innerToBlock = Math.min(innerFromBlock + maxBlockLookBack - 1, toBlock);
     ranges.push([innerFromBlock, innerToBlock]);
   }
