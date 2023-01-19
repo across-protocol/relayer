@@ -425,11 +425,6 @@ export class MultiCallerClient {
     } as AugmentedTransaction;
   }
 
-  // @todo: Remove this method part of legacy cleanup
-  protected async simulateTxn(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
-    return await willSucceed(txn);
-  }
-
   async buildMultiCallBundles(
     txns: AugmentedTransaction[],
     chunkSize = DEFAULT_MULTICALL_CHUNK_SIZE
