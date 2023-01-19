@@ -1,5 +1,12 @@
-import { l2TokensToL1TokenValidation } from "../../common";
-import { BigNumber, winston, toBN, createFormatFunction, etherscanLink, Signer } from "../../utils";
+import {
+  BigNumber,
+  winston,
+  toBN,
+  createFormatFunction,
+  etherscanLink,
+  Signer,
+  getL2TokenAddresses,
+} from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter } from "./";
 import { OutstandingTransfers } from "../../interfaces/Bridge";
@@ -83,7 +90,7 @@ export class AdapterManager {
       // the bot can irrecoverably send the wrong token to the chain and loose money. It should crash if this is detected.
       const l2TokenForL1Token = this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId);
       if (!l2TokenForL1Token) throw new Error("No L2 token found for L1 token");
-      if (l2TokenForL1Token !== l2TokensToL1TokenValidation[l1Token][chainId]) throw new Error("Mismatch tokens!");
+      if (l2TokenForL1Token !== getL2TokenAddresses(l1Token)[chainId]) throw new Error("Mismatch tokens!");
       return l2TokenForL1Token;
     } catch (error) {
       this.logger.error({
