@@ -24,19 +24,19 @@ export class TransactionClient {
   // eslint-disable-next-line no-useless-constructor
   constructor(readonly logger: winston.Logger) {}
 
-  protected async _simulate(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
-    return await willSucceed(txn);
+  protected _simulate(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
+    return willSucceed(txn);
   }
 
   // Each transaction is simulated in isolation; but on-chain execution may produce different
   // results due to execution sequence or intermediate changes in on-chain state.
-  async simulate(txns: AugmentedTransaction[]): Promise<TransactionSimulationResult[]> {
-    return await Promise.all(txns.map((txn: AugmentedTransaction) => this._simulate(txn)));
+  simulate(txns: AugmentedTransaction[]): Promise<TransactionSimulationResult[]> {
+    return Promise.all(txns.map((txn: AugmentedTransaction) => this._simulate(txn)));
   }
 
   protected async _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
     const { contract, method, args, value } = txn;
-    return await runTransaction(this.logger, contract, method, args, value, null, nonce);
+    return runTransaction(this.logger, contract, method, args, value, null, nonce);
   }
 
   async submit(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {
