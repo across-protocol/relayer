@@ -101,11 +101,7 @@ export const DEFAULT_RELAYER_GAS_MULTIPLIER = 1.2;
 
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 100;
 export const DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } = {
-  1: DEFAULT_MULTICALL_CHUNK_SIZE,
   10: 75,
-  137: DEFAULT_MULTICALL_CHUNK_SIZE,
-  288: DEFAULT_MULTICALL_CHUNK_SIZE,
-  42161: DEFAULT_MULTICALL_CHUNK_SIZE,
 };
 
 // Maps chain ID to root bundle ID to ignore because the roots are known to be invalid from the perspective of the
