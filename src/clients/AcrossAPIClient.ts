@@ -53,13 +53,12 @@ export class AcrossApiClient {
     // when deciding whether a relay will be refunded.
     const data = await Promise.all(
       tokensQuery.map((l1Token) => {
-        const validDestinationChainForL1Token = getL2TokenAddresses(l1Token)
-          ? Number(
-              Object.keys(getL2TokenAddresses(l1Token)).find(
-                (chainId) => Number(chainId) !== CHAIN_IDs.MAINNET && CHAIN_ID_LIST_INDICES.includes(Number(chainId))
-              )
-            )
-          : 10;
+        const l2TokenAddresses = getL2TokenAddresses(l1Token);
+        const validDestinationChainForL1Token = Number(
+          Object.keys(l2TokenAddresses).find(
+            (chainId) => Number(chainId) !== CHAIN_IDs.MAINNET && CHAIN_ID_LIST_INDICES.includes(Number(chainId))
+          )
+        );
         return this.callLimits(l1Token, validDestinationChainForL1Token);
       })
     );
