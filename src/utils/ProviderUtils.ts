@@ -1,7 +1,7 @@
 import { ethers } from "ethers";
 import lodash from "lodash";
 import winston from "winston";
-import { isPromiseFulfulled, isPromiseRejected } from "./TypeGuards";
+import { isPromiseFulfilled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
 import { Logger } from ".";
 
@@ -171,7 +171,7 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
 
     const results = await Promise.allSettled(requiredProviders.map(tryWithFallback));
 
-    if (!results.every(isPromiseFulfulled)) {
+    if (!results.every(isPromiseFulfilled)) {
       // Format the error so that it's very clear which providers failed and succeeded.
       const errorTexts = errors.map(([provider, errorText]) => formatProviderError(provider, errorText));
       const successfulProviderUrls = results.filter(isPromiseFulfulled).map((result) => result.value[0].connection.url);
