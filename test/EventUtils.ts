@@ -31,7 +31,7 @@ describe("EventUtils", async function () {
     expect(getPaginatedBlockRanges({ fromBlock: 0, toBlock: 100, maxBlockLookBack: 50 })).to.deep.equal([
       [0, 49],
       [50, 99],
-      [100, 100]
+      [100, 100],
     ]);
 
     // Range divided by max block lookback with remainder:
