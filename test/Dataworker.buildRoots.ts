@@ -709,7 +709,7 @@ describe("Dataworker: Build merkle roots", async function () {
       await shortRangeSpokePoolClient.update();
       expect(shortRangeSpokePoolClient.getFills().length).to.equal(2); // We should only be able to see 2 fills
       // for this deposit, even though there are 3.
-      assertPromiseError(
+      await assertPromiseError(
         dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(3), {
           ...spokePoolClients,
           [destinationChainId]: shortRangeSpokePoolClient,
