@@ -3,7 +3,7 @@ import {
   winston,
   getNetworkName,
   Contract,
-  isPromiseFulfulled,
+  isPromiseFulfilled,
   isPromiseRejected,
   runTransaction,
   getTarget,
@@ -118,7 +118,7 @@ export class MultiCallerClient {
     const txnHashes: { [chainId: number]: string[] } = Object.fromEntries(
       results.map((result, idx) => {
         const chainId = chainIds[idx];
-        if (isPromiseFulfulled(result)) return [chainId, result.value.map((txnResponse) => txnResponse.hash)];
+        if (isPromiseFulfilled(result)) return [chainId, result.value.map((txnResponse) => txnResponse.hash)];
         else if (isPromiseRejected(result)) return [chainId, [result.reason]];
 
         this.logger.warn({
