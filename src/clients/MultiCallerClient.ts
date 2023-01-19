@@ -169,7 +169,7 @@ export class MultiCallerClient {
       txnQueue,
     });
 
-    const results = await this.simulateTxns(txnQueue);
+    const results = await this.txnClient.simulate(txnQueue);
     const txns = results.filter((result) => result.succeed).map((result) => result.transaction);
 
     if (simulate) {
@@ -196,7 +196,7 @@ export class MultiCallerClient {
       return [];
     }
 
-    return await this.submitTxns(chainId, txns);
+    return await this.txnClient.submit(chainId, txns);
   }
 
   // @todo: Remove this method part of legacy cleanup
@@ -385,14 +385,6 @@ export class MultiCallerClient {
     return await runTransaction(this.logger, contract, method, args, value, null, nonce);
   }
 
-  protected async simulateTxns(txns: AugmentedTransaction[]): Promise<TransactionSimulationResult[]> {
-    return await this.txnClient.simulate(txns);
-  }
-
-  protected async submitTxns(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {
-    return await this.txnClient.submit(chainId, txns);
-  }
-
   buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
     // Validate all transactions have the same chainId and target contract.
     const { chainId, contract } = transactions[0];
@@ -444,7 +436,7 @@ export class MultiCallerClient {
   ): Promise<AugmentedTransaction[]> {
     // Enqueued multicall txns that fail simulation are silently dropped.
     const txnChunks: AugmentedTransaction[][] = await lodash.chunk(
-      (await this.simulateTxns(txns)).filter((txn) => txn.succeed).map((txn) => txn.transaction),
+      (await this.txnClient.simulate(txns)).filter((txn) => txn.succeed).map((txn) => txn.transaction),
       chunkSize
     );
 
@@ -459,7 +451,7 @@ export class MultiCallerClient {
     const invalidTxns: TransactionSimulationResult[] = [];
 
     // Simulate the transaction execution for the whole queue.
-    const txnSimulations = await this.simulateTxns(transactions);
+    const txnSimulations = await this.txnClient.simulate(transactions);
     txnSimulations.forEach((txn) => {
       if (txn.succeed) validTxns.push(txn.transaction);
       else invalidTxns.push(txn);
