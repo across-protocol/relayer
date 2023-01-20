@@ -6,10 +6,8 @@ import {
   Contract,
   isPromiseFulfilled,
   isPromiseRejected,
-  runTransaction,
   getTarget,
   BigNumber,
-  willSucceed,
   etherscanLink,
   TransactionResponse,
   TransactionSimulationResult,
@@ -61,25 +59,19 @@ export class MultiCallerClient {
   }
 
   transactionCount() {
-    if (this.newMulticaller) {
-      return Object.values(this.txns)
-        .concat(Object.values(this.valueTxns))
-        .reduce((count, txnQueue) => (count += txnQueue.length), 0);
-    }
-
-    return this.transactions.length;
+    return Object.values(this.txns)
+      .concat(Object.values(this.valueTxns))
+      .reduce((count, txnQueue) => (count += txnQueue.length), 0);
   }
 
   clearTransactionQueue(chainId: number = null) {
-    if (this.newMulticaller) {
-      if (chainId !== null) {
-        this.txns[chainId] = [];
-        this.valueTxns[chainId] = [];
-      } else {
-        this.txns = {};
-        this.valueTxns = {};
-      }
-    } else this.transactions = [];
+    if (chainId !== null) {
+      this.txns[chainId] = [];
+      this.valueTxns[chainId] = [];
+    } else {
+      this.txns = {};
+      this.valueTxns = {};
+    }
   }
 
   async executeTransactionQueue(simulate = false): Promise<string[]> {
