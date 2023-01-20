@@ -113,7 +113,11 @@ export class MultiCallerClient {
         })
         .map((_chainId) => {
           const chainId = Number(_chainId);
-          return this.executeChainTxnQueue(chainId, simulate);
+          const txns: AugmentedTransaction[] = this.txns[chainId];
+          const valueTxns: AugmentedTransaction[] = this.valueTxns[chainId];
+
+          this.clearTransactionQueue(chainId);
+          return this.executeChainTxnQueue(chainId, txns, valueTxns, simulate);
         })
     );
 
@@ -132,22 +136,20 @@ export class MultiCallerClient {
 
   // For a single chain, simulate all potential multicall txns and group the ones that pass into multicall bundles.
   // Then, submit a concatenated list of value txns + multicall bundles. Flush the existing queues on completion.
-  async executeChainTxnQueue(chainId: number, simulate = false): Promise<TransactionResponse[]> {
-    const multicallTxns: AugmentedTransaction[] =
-      this.txns[chainId]?.length > 0
-        ? await this.buildMultiCallBundles(this.txns[chainId], this.chunkSize[chainId])
-        : [];
+  async executeChainTxnQueue(
+    chainId: number,
+    txns: AugmentedTransaction[] = [],
+    valueTxns: AugmentedTransaction[] = [],
+    simulate = false
+  ): Promise<TransactionResponse[]> {
+    const multicallTxns: AugmentedTransaction[] = await this.buildMultiCallBundles(txns, this.chunkSize[chainId]);
 
     // Concatenate the new multicall txns onto any existing value txns and pass the queue off for submission.
     const txnResponses: TransactionResponse[] = await this.executeTxnQueue(
       chainId,
-      (this.valueTxns[chainId] ?? []).concat(multicallTxns),
+      txns.concat(multicallTxns),
       simulate
     );
-
-    // Flush out the currently enqueued transactions (for this chain only). Note that this is not async-safe; if the
-    // caller has enqueued additional transactions whilst awaiting executeTransactionQueue() then those will be lost.
-    this.clearTransactionQueue(chainId);
 
     return txnResponses;
   }
