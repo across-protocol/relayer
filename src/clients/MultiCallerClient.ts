@@ -431,7 +431,7 @@ export class MultiCallerClient {
     chunkSize = DEFAULT_MULTICALL_CHUNK_SIZE
   ): Promise<AugmentedTransaction[]> {
     // Enqueued multicall txns that fail simulation are silently dropped.
-    const txnChunks: AugmentedTransaction[][] = await lodash.chunk(
+    const txnChunks: AugmentedTransaction[][] = lodash.chunk(
       (await this.txnClient.simulate(txns)).filter((txn) => txn.succeed).map((txn) => txn.transaction),
       chunkSize
     );
