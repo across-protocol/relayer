@@ -29,6 +29,18 @@ class MockedMultiCallerClient extends MultiCallerClient {
     this.loggedSimulationFailures = [];
   }
 
+  private txnCount(txnQueue: { [chainId: number]: AugmentedTransaction[] }): number {
+    return Object.values(txnQueue).reduce((count, txnQueue) => (count += txnQueue.length), 0);
+  }
+
+  valueTxnCount(): number {
+    return this.txnCount(this.valueTxns);
+  }
+
+  multiCallTransactionCount(): number {
+    return this.txnCount(this.txns);
+  }
+
   protected override logSimulationFailures(txns: TransactionSimulationResult[]): void {
     this.clearSimulationFailures();
     txns.forEach((txn) => {
@@ -43,6 +55,7 @@ function encodeFunctionData(method: string, args?: ReadonlyArray<any>): string {
 }
 
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
+process.env.NEW_MULTICALLER = "true"; // Temporarily override default configuration.
 const multiCaller: MockedMultiCallerClient = new MockedMultiCallerClient(spyLogger);
 const provider = new ethers.providers.StaticJsonRpcProvider("127.0.0.1");
 const address = randomAddress(); // Test contract address
@@ -54,6 +67,33 @@ describe("MultiCallerClient", async function () {
 
     multiCaller.clearSimulationFailures();
     expect(multiCaller.simulationFailureCount()).to.equal(0);
+  });
+
+  it("Correctly enqueues value transactions", async function () {
+    chainIds.forEach((chainId) => multiCaller.enqueueTransaction({ chainId, value: toBN(1) } as AugmentedTransaction));
+    expect(multiCaller.valueTxnCount()).to.equal(chainIds.length);
+    expect(multiCaller.transactionCount()).to.equal(chainIds.length);
+  });
+
+  it("Correctly enqueues non-value transactions", async function () {
+    [undefined, toBN(0)].forEach((value) => {
+      multiCaller.clearTransactionQueue();
+      expect(multiCaller.transactionCount()).to.equal(0);
+
+      chainIds.forEach((chainId) => multiCaller.enqueueTransaction({ chainId, value } as AugmentedTransaction));
+      expect(multiCaller.multiCallTransactionCount()).to.equal(chainIds.length);
+      expect(multiCaller.transactionCount()).to.equal(chainIds.length);
+    });
+  });
+
+  it("Correctly enqueues mixed transactions", async function () {
+    chainIds.forEach((chainId) => {
+      multiCaller.enqueueTransaction({ chainId } as AugmentedTransaction);
+      multiCaller.enqueueTransaction({ chainId, value: toBN(1) } as AugmentedTransaction);
+    });
+    expect(multiCaller.valueTxnCount()).to.equal(chainIds.length);
+    expect(multiCaller.multiCallTransactionCount()).to.equal(chainIds.length);
+    expect(multiCaller.transactionCount()).to.equal(2 * chainIds.length);
   });
 
   it("Correctly excludes simulation failures", async function () {
@@ -80,33 +120,40 @@ describe("MultiCallerClient", async function () {
     }
   });
 
-  // Temporarily skipped so as to avoid unnecessarily changing MultiCallerClient.executeTransactionQueue().
-  it.skip("Handles submission success & failure", async function () {
-    for (const result of ["Forced submission failure", ""]) {
+  it("Handles submission success & failure", async function () {
+    const nTxns = 4;
+    for (const result of ["Forced submission failure", txnClientPassResult]) {
       const fail = !(result === txnClientPassResult);
 
-      chainIds.forEach((_chainId) => {
-        const chainId = Number(_chainId);
-        multiCaller.enqueueTransaction({
-          chainId: chainId,
-          contract: {
-            address,
-            interface: { encodeFunctionData },
-          },
-          method: "test",
-          args: [{ result }],
-          value: toBN(0),
-          message: `Test transaction on chain ${chainId}`,
-          mrkdwn: `Sample markdown string for chain ${chainId} value transaction`,
-        } as AugmentedTransaction);
-      });
-      expect(multiCaller.transactionCount()).to.equal(chainIds.length);
+      for (const value of [0, 1]) {
+        const txnType = value > 0 ? "value" : "multicall";
 
+        for (let txn = 1; txn <= nTxns; ++txn) {
+          chainIds.forEach((_chainId) => {
+            const chainId = Number(_chainId);
+            const txnRequest: AugmentedTransaction = {
+              chainId: chainId,
+              contract: {
+                address,
+                interface: { encodeFunctionData },
+              },
+              method: "test",
+              args: [{ result }],
+              value: toBN(value),
+              message: `Test ${txnType} transaction (${txn}/${nTxns}) on chain ${chainId}`,
+              mrkdwn: `Sample markdown string for chain ${chainId} ${txnType} transaction`,
+            } as AugmentedTransaction;
+
+            multiCaller.enqueueTransaction(txnRequest);
+          });
+        }
+      }
+
+      expect(multiCaller.transactionCount()).to.equal(nTxns * 2 * chainIds.length);
+
+      // Note: Half of the txns should be consolidated into a single multicall txn.
       const results: string[] = await multiCaller.executeTransactionQueue();
-      expect(results.length).to.equal(fail ? 0 : chainIds.length);
-
-      // Simulation succeeded but submission failed => multiCaller.simulationFailures should be empty.
-      expect(multiCaller.simulationFailureCount()).to.equal(0);
+      expect(results.length).to.equal(fail ? 0 : (nTxns + 1) * chainIds.length);
     }
   });
 
@@ -196,5 +243,53 @@ describe("MultiCallerClient", async function () {
       txns.push(badTxn);
       expect(() => multiCaller.buildMultiCallBundle(txns)).to.throw("Multicall bundle data mismatch");
     }
+  });
+
+  it("Validates that multicall bundle generation respects chunk size configurations", async function () {
+    const chunkSize: { [chainId: number]: number } = Object.fromEntries(
+      chainIds.map((_chainId, idx) => {
+        const chainId = Number(_chainId);
+        return [chainId, 2 + idx * 2];
+      })
+    );
+    const _multiCaller = new MockedMultiCallerClient(spyLogger, chunkSize);
+
+    const testMethod = "test";
+    const nFullBundles = 3;
+    for (const chainId of chainIds) {
+      const multicallTxns: AugmentedTransaction[] = [];
+      const _chunkSize = chunkSize[chainId];
+
+      const sampleTxn = {
+        chainId,
+        contract: {
+          address,
+          interface: { encodeFunctionData },
+        } as Contract,
+        method: testMethod,
+        args: [],
+      } as AugmentedTransaction;
+
+      const nTxns = nFullBundles * _chunkSize + 1;
+      for (let txn = 0; txn < nTxns; ++txn) {
+        expect(sampleTxn.method).to.not.equal("multicall");
+        multicallTxns.push(sampleTxn);
+      }
+
+      const txnQueue: AugmentedTransaction[] = await _multiCaller.buildMultiCallBundles(multicallTxns, _chunkSize);
+      expect(txnQueue.length).to.equal(nFullBundles + 1);
+
+      txnQueue.slice(0, nFullBundles).forEach((txn) => {
+        // If chunkSize is 1, no multiCall txns will be bundled.
+        expect(txn.method).to.equal(_chunkSize > 1 ? "multicall" : testMethod);
+      });
+      // txnQueue deliberately has one "spare" txn appended, so it should never be bundled.
+      txnQueue.slice(-1).forEach((txn) => expect(txn.method).to.equal(testMethod));
+    }
+  });
+
+  after(async function () {
+    // Post-test env sanitisation to allow other tests to use the legacy MultiCallerClient. @todo: Remove.
+    process.env.NEW_MULTICALLER = "";
   });
 });
