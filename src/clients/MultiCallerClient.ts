@@ -172,7 +172,7 @@ export class MultiCallerClient {
 
     // Generate the complete set of txns to submit to the network. Anything that failed simulation is dropped.
     const txnRequests: AugmentedTransaction[] = _valueTxns.concat(
-      await this.buildMultiCallBundles(_txns, this.chunkSize[chainId])
+      this.buildMultiCallBundles(_txns, this.chunkSize[chainId])
     );
 
     const txnResponses: TransactionResponse[] =
@@ -407,12 +407,13 @@ export class MultiCallerClient {
     } as AugmentedTransaction;
   }
 
-  async buildMultiCallBundles(
+  buildMultiCallBundles(
     txns: AugmentedTransaction[],
     chunkSize = DEFAULT_MULTICALL_CHUNK_SIZE
-  ): Promise<AugmentedTransaction[]> {
-    const txnChunks: AugmentedTransaction[][] = lodash.chunk(txns, chunkSize);
+  ): AugmentedTransaction[] {
+    if (txns.length === 0) return [];
 
+    const txnChunks: AugmentedTransaction[][] = lodash.chunk(txns, chunkSize);
     return txnChunks.map((txnChunk: AugmentedTransaction[]) => {
       // Don't wrap single transactions in a multicall.
       return txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0];
