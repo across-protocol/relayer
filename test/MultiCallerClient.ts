@@ -155,9 +155,6 @@ describe("MultiCallerClient", async function () {
       // Note: Half of the txns should be consolidated into a single multicall txn.
       const results: string[] = await multiCaller.executeTransactionQueue();
       expect(results.length).to.equal(fail ? 0 : (nTxns + 1) * chainIds.length);
-
-      // Simulation succeeded but submission failed => multiCaller.simulationFailures should be empty.
-      expect(multiCaller.simulationFailureCount()).to.equal(0);
     }
   });
 

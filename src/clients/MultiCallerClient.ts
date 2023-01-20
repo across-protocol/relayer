@@ -135,69 +135,58 @@ export class MultiCallerClient {
   }
 
   // For a single chain, simulate all potential multicall txns and group the ones that pass into multicall bundles.
-  // Then, submit a concatenated list of value txns + multicall bundles. Flush the existing queues on completion.
+  // Then, submit a concatenated list of value txns + multicall bundles. If simulation was requested, log the results
+  // and return early.
   async executeChainTxnQueue(
     chainId: number,
     txns: AugmentedTransaction[] = [],
     valueTxns: AugmentedTransaction[] = [],
     simulate = false
   ): Promise<TransactionResponse[]> {
-    const multicallTxns: AugmentedTransaction[] = await this.buildMultiCallBundles(txns, this.chunkSize[chainId]);
-
-    // Concatenate the new multicall txns onto any existing value txns and pass the queue off for submission.
-    const txnResponses: TransactionResponse[] = await this.executeTxnQueue(
-      chainId,
-      txns.concat(multicallTxns),
-      simulate
-    );
-
-    return txnResponses;
-  }
-
-  // Simulate the entire transaction queue and hand the ones that pass off to the TransactionClient for RPC submission.
-  // When simulation is requested, the simulation results are logged and the function returns early.
-  // @todo: Consider adding a "wait" argument to wait for n txn confirmations per txn.
-  private async executeTxnQueue(
-    chainId: number,
-    txnQueue: AugmentedTransaction[],
-    simulate = false
-  ): Promise<TransactionResponse[]> {
     const networkName = getNetworkName(chainId);
 
+    const nTxns = txns.length + valueTxns.length;
     this.logger.debug({
       at: "MultiCallerClient#executeTxnQueue",
-      message: `${simulate ? "Simulating" : "Executing"} ${txnQueue.length} transaction(s) on ${networkName}.`,
-      txnQueue,
+      message: `${simulate ? "Simulating" : "Executing"} ${nTxns} transaction(s) on ${networkName}.`,
+      txns: valueTxns.concat(txns),
     });
 
-    const results = await this.txnClient.simulate(txnQueue);
-    const txns = results.filter((result) => result.succeed).map((result) => result.transaction);
+    const txnSims = await Promise.allSettled([
+      this.simulateTransactionQueue(txns),
+      this.simulateTransactionQueue(valueTxns)
+    ]);
+
+    let _txns: AugmentedTransaction[];
+    let  _valueTxns: AugmentedTransaction[];
+    [_txns, _valueTxns] = txnSims.map((result) => {
+      return (isPromiseFulfilled(result)) ? result.value : [] as AugmentedTransaction[];
+    });
 
     if (simulate) {
       let mrkdwn = "";
-      results.forEach((result, idx) => {
-        const { succeed, transaction: txn } = result;
-        mrkdwn += `  *${idx + 1}. (${succeed} ? "Passed" : "Failed"})`;
-        mrkdwn += ` ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
+      const successfulTxns = _valueTxns.concat(_txns);
+      successfulTxns.forEach((txn, idx) => {
+        mrkdwn += `  *${idx + 1}. ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
       });
       this.logger.info({
         at: "MultiCallerClient#executeTxnQueue",
-        message: `${txns.length}/${results.length} ${networkName} transaction simulation(s) succeeded!`,
+        message: `${successfulTxns.length}/${nTxns} ${networkName} transaction simulation(s) succeeded!`,
         mrkdwn,
       });
       this.logger.info({ at: "MulticallerClient#executeTxnQueue", message: "Exiting simulation mode 🎮" });
       return [];
     }
 
-    if (txns.length === 0) {
-      this.logger.debug({
-        at: "MultiCallerClient#executeTxnQueue",
-        message: `No valid transactions in the ${networkName} queue.`,
-      });
-      return [];
-    }
+    // Generate the complete set of txns to submit to the network. Anything that failed simulation is dropped.
+    const txnRequests: AugmentedTransaction[] = _valueTxns
+      .concat(await this.buildMultiCallBundles(_txns, this.chunkSize[chainId]));
 
-    return await this.txnClient.submit(chainId, txns);
+    const txnResponses: TransactionResponse[] = (txnRequests.length > 0)
+      ? await this.txnClient.submit(chainId, txnRequests)
+      : [];
+
+    return txnResponses;
   }
 
   // @todo: Remove this method part of legacy cleanup
@@ -430,11 +419,7 @@ export class MultiCallerClient {
     txns: AugmentedTransaction[],
     chunkSize = DEFAULT_MULTICALL_CHUNK_SIZE
   ): Promise<AugmentedTransaction[]> {
-    // Enqueued multicall txns that fail simulation are silently dropped.
-    const txnChunks: AugmentedTransaction[][] = lodash.chunk(
-      (await this.txnClient.simulate(txns)).filter((txn) => txn.succeed).map((txn) => txn.transaction),
-      chunkSize
-    );
+    const txnChunks: AugmentedTransaction[][] = lodash.chunk(txns, chunkSize);
 
     return txnChunks.map((txnChunk: AugmentedTransaction[]) => {
       // Don't wrap single transactions in a multicall.
