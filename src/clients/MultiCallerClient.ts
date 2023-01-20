@@ -101,7 +101,6 @@ export class MultiCallerClient {
 
   // For each chain, collate the enqueued transactions and process them in parallel.
   async executeTxnQueues(simulate = false): Promise<{ [chainId: number]: string[] }> {
-    // @todo: This feels like a bodge...Find a better way to produce the set of chainIds that have enqueued txns.
     const chainIds = [...new Set(Object.keys(this.valueTxns).concat(Object.keys(this.txns)))];
 
     // One promise per chain for parallel execution.
