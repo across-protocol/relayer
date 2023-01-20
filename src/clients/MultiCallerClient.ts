@@ -107,8 +107,8 @@ export class MultiCallerClient {
     const results = await Promise.allSettled(
       chainIds.map((_chainId) => {
         const chainId = Number(_chainId);
-        const txns: AugmentedTransaction[] = this.txns[chainId];
-        const valueTxns: AugmentedTransaction[] = this.valueTxns[chainId];
+        const txns: AugmentedTransaction[] | undefined = this.txns[chainId];
+        const valueTxns: AugmentedTransaction[] | undefined = this.valueTxns[chainId];
 
         this.clearTransactionQueue(chainId);
         return this.executeChainTxnQueue(chainId, txns, valueTxns, simulate);
