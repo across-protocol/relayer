@@ -14,6 +14,8 @@ import { SpokePoolClient } from "../../clients";
 import { BaseAdapter, polygonL1BridgeInterface, polygonL2BridgeInterface } from "./";
 import { polygonL1RootChainManagerInterface, atomicDepositorInterface } from "./";
 import { SortableEvent } from "../../interfaces";
+import { constants } from "@across-protocol/sdk-v2";
+const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
 // ether bridge = 0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30
 // erc20 bridge = 0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf
@@ -22,75 +24,73 @@ import { SortableEvent } from "../../interfaces";
 // When bridging ETH to Polygon we MUST send ETH which is then wrapped in the bridge to WETH. We are unable to send WETH
 // directly over the bridge, just like in the Optimism/Boba cases.
 
-const l1MaticAddress = "0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0";
-
 const l1RootChainManager = "0xA0c68C638235ee32657e8f720a23ceC1bFc77C77";
 
 const tokenToBridge = {
-  "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": {
+  [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
-    l2TokenAddress: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.POLYGON],
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // USDC
-  "0xdAC17F958D2ee523a2206206994597C13D831ec7": {
+  [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
-    l2TokenAddress: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.POLYGON],
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // USDT
-  "0x6B175474E89094C44Da98b954EedeAC495271d0F": {
+  [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
-    l2TokenAddress: "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063",
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.POLYGON],
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // DAI
-  "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": {
+  [TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
-    l2TokenAddress: "0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6",
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.POLYGON],
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // WBTC
-  "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828": {
+  [TOKEN_SYMBOLS_MAP.UMA.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
-    l2TokenAddress: "0x3066818837c5e6ed6601bd5a91b0762877a6b731",
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.UMA.addresses[CHAIN_IDs.POLYGON],
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // UMA
-  "0x3472A5A71965499acd81997a54BBA8D852C6E53d": {
+  [TOKEN_SYMBOLS_MAP.BADGER.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
-    l2TokenAddress: "0x1FcbE5937B0cc2adf69772D228fA4205aCF4D9b2",
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.BADGER.addresses[CHAIN_IDs.POLYGON],
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // BADGER
-  "0xba100000625a3754423978a60c9317c58a424e3D": {
+  [TOKEN_SYMBOLS_MAP.BAL.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
-    l2TokenAddress: "0x9a71012B13CA4d3D0Cdc72A177DF3ef03b0E76A3",
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.BAL.addresses[CHAIN_IDs.POLYGON],
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // BAL
-  "0x44108f0223A3C3028F5Fe7AEC7f9bb2E66beF82F": {
+  [TOKEN_SYMBOLS_MAP.ACX.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
-    l2TokenAddress: "0xF328b73B6c685831F238c30a23Fc19140CB4D8FC",
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.ACX.addresses[CHAIN_IDs.POLYGON],
     l1Method: "LockedERC20",
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // ACX
-  "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": {
+  [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30",
-    l2TokenAddress: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619",
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.POLYGON],
     l1Method: "LockedEther",
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // WETH
-  [l1MaticAddress]: {
+  [TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x401f6c983ea34274ec46f84d70b31c151321188b",
     l2TokenAddress: ZERO_ADDRESS,
     l1Method: "NewDepositBlock",
@@ -99,7 +99,7 @@ const tokenToBridge = {
   }, // MATIC
 } as const;
 
-type SupportedL1Token = keyof typeof tokenToBridge;
+type SupportedL1Token = string;
 
 const atomicDepositorAddress = "0x26eaf37ee5daf49174637bdcd2f7759a25206c34";
 
@@ -134,12 +134,15 @@ export class PolygonAdapter extends BaseAdapter {
         let l1SearchFilter: (string | undefined)[] = [];
         if (l1Method === "LockedERC20") l1SearchFilter = [monitoredAddress, undefined, l1Token];
         if (l1Method === "LockedEther") l1SearchFilter = [undefined, monitoredAddress];
-        if (l1Method === "NewDepositBlock") l1SearchFilter = [monitoredAddress, l1MaticAddress];
+        if (l1Method === "NewDepositBlock")
+          l1SearchFilter = [monitoredAddress, TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET]];
 
-        const l2Method = l1Token === l1MaticAddress ? "TokenDeposited" : "Transfer";
+        const l2Method =
+          l1Token === TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET] ? "TokenDeposited" : "Transfer";
         let l2SearchFilter: (string | undefined)[] = [];
         if (l2Method === "Transfer") l2SearchFilter = [ZERO_ADDRESS, monitoredAddress];
-        if (l2Method === "TokenDeposited") l2SearchFilter = [l1MaticAddress, ZERO_ADDRESS, monitoredAddress];
+        if (l2Method === "TokenDeposited")
+          l2SearchFilter = [TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET], ZERO_ADDRESS, monitoredAddress];
 
         promises.push(
           paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), l1SearchConfig),

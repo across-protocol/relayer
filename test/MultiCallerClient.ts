@@ -30,9 +30,7 @@ class MockedMultiCallerClient extends MultiCallerClient {
   }
 
   private txnCount(txnQueue: { [chainId: number]: AugmentedTransaction[] }): number {
-    let nTxns = 0;
-    Object.values(txnQueue).forEach((txnQueue) => (nTxns += txnQueue.length));
-    return nTxns;
+    return Object.values(txnQueue).reduce((count, txnQueue) => (count += txnQueue.length), 0);
   }
 
   valueTxnCount(): number {
@@ -57,6 +55,7 @@ function encodeFunctionData(method: string, args?: ReadonlyArray<any>): string {
 }
 
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
+process.env.NEW_MULTICALLER = "true"; // Temporarily override default configuration.
 const multiCaller: MockedMultiCallerClient = new MockedMultiCallerClient(spyLogger);
 const provider = new ethers.providers.StaticJsonRpcProvider("127.0.0.1");
 const address = randomAddress(); // Test contract address
@@ -155,9 +154,6 @@ describe("MultiCallerClient", async function () {
       // Note: Half of the txns should be consolidated into a single multicall txn.
       const results: string[] = await multiCaller.executeTransactionQueue();
       expect(results.length).to.equal(fail ? 0 : (nTxns + 1) * chainIds.length);
-
-      // Simulation succeeded but submission failed => multiCaller.simulationFailures should be empty.
-      expect(multiCaller.simulationFailureCount()).to.equal(0);
     }
   });
 
