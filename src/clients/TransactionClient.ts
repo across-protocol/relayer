@@ -71,8 +71,8 @@ export class TransactionClient {
       }
 
       nonce = response.nonce + 1;
-      mrkdwn += `  ${idx + 1}. ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
-      mrkdwn += `  *Block Explorer:* ${etherscanLink(response.hash, txn.chainId)}\n`;
+      const blockExplorer = etherscanLink(response.hash, txn.chainId);
+      mrkdwn += `  ${idx + 1}. ${txn.message || "No message"} (${blockExplorer}): ${txn.mrkdwn || "No markdown"}\n`;
       txnResponses.push(response);
     }
 
