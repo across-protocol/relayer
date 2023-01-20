@@ -46,7 +46,6 @@ export class TransactionClient {
     this.logger.debug({
       at: "TransactionClient#submit",
       message: `Processing ${txns.length} transactions.`,
-      txns,
     });
 
     // Transactions are submitted sequentially to avoid nonce collisions. More
