@@ -92,6 +92,9 @@ export function getPaginatedBlockRanges({
   // If the maxBlockLookBack is undefined, we can look back as far as we like. Just return the entire range.
   if (maxBlockLookBack === undefined) return [[fromBlock, toBlock]];
 
+  // If the fromBlock is > toBlock, then return no ranges.
+  if (fromBlock > toBlock) return [];
+
   // A maxBlockLookBack of 0 is not allowed.
   if (maxBlockLookBack <= 0) throw new Error("Cannot set maxBlockLookBack <= 0");
 

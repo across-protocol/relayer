@@ -11,9 +11,8 @@ describe("EventUtils", async function () {
     // zero lookback throws error
     expect(() => getPaginatedBlockRanges({ fromBlock: 0, toBlock: 4, maxBlockLookBack: 0 })).to.throw();
 
-    // toBlock > fromBlock errors.
-    console.log(getPaginatedBlockRanges({ fromBlock: 5, toBlock: 4, maxBlockLookBack: 2 }));
-    expect(() => getPaginatedBlockRanges({ fromBlock: 5, toBlock: 4, maxBlockLookBack: 2 })).to.throw();
+    // toBlock > fromBlock returns an empty array.
+    expect(getPaginatedBlockRanges({ fromBlock: 5, toBlock: 4, maxBlockLookBack: 2 })).to.deep.equal([]);
 
     // Lookback larger than range returns full range
     expect(getPaginatedBlockRanges({ fromBlock: 0, toBlock: 4, maxBlockLookBack: 6 })).to.deep.equal([[0, 4]]);
