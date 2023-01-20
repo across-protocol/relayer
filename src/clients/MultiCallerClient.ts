@@ -93,7 +93,7 @@ export class MultiCallerClient {
       // For compatibility with the existing implementation, flatten all txn hashes into a single array.
       // To be resolved once the legacy implementation is removed and the callers have been updated.
       const txnHashes: { [chainId: number]: string[] } = await this.executeTxnQueues(simulate);
-      return Array.from(Object.values(txnHashes)).flat();
+      return Object.values(txnHashes).flat();
     }
 
     return this.executeTxnQueueLegacy(simulate);
@@ -149,7 +149,6 @@ export class MultiCallerClient {
     this.logger.debug({
       at: "MultiCallerClient#executeTxnQueue",
       message: `${simulate ? "Simulating" : "Executing"} ${nTxns} transaction(s) on ${networkName}.`,
-      txns: valueTxns.concat(txns),
     });
 
     const txnSims = await Promise.allSettled([
