@@ -30,9 +30,7 @@ class MockedMultiCallerClient extends MultiCallerClient {
   }
 
   private txnCount(txnQueue: { [chainId: number]: AugmentedTransaction[] }): number {
-    let nTxns = 0;
-    Object.values(txnQueue).forEach((txnQueue) => (nTxns += txnQueue.length));
-    return nTxns;
+    return Object.values(txnQueue).reduce((count, txnQueue) => (count += txnQueue.length), 0);
   }
 
   valueTxnCount(): number {
