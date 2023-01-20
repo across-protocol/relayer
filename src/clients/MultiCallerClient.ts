@@ -151,10 +151,8 @@ export class MultiCallerClient {
       this.simulateTransactionQueue(valueTxns),
     ]);
 
-    let _txns: AugmentedTransaction[];
-    let _valueTxns: AugmentedTransaction[];
-    [_txns, _valueTxns] = txnSims.map((result) => {
-      return isPromiseFulfilled(result) ? result.value : ([] as AugmentedTransaction[]);
+    const [_txns, _valueTxns] = txnSims.map((result): AugmentedTransaction[] => {
+      return isPromiseFulfilled(result) ? result.value : [];
     });
 
     if (simulate) {
