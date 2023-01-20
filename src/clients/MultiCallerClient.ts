@@ -47,12 +47,12 @@ export class MultiCallerClient {
   protected txns: { [chainId: number]: AugmentedTransaction[] } = {};
   protected valueTxns: { [chainId: number]: AugmentedTransaction[] } = {};
   // newMulticaller is temporary, to support transition to the updated multicaller implementation.
+  protected newMulticaller: boolean;
   constructor(
     readonly logger: winston.Logger,
-    readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE,
-    readonly newMulticaller = false
+    readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE
   ) {
-    this.newMulticaller = newMulticaller || process.env.NEW_MULTICALLER === "true";
+    this.newMulticaller = process.env.NEW_MULTICALLER === "true";
     this.txnClient = new TransactionClient(logger);
   }
 
