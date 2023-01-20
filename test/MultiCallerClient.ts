@@ -55,6 +55,7 @@ function encodeFunctionData(method: string, args?: ReadonlyArray<any>): string {
 }
 
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
+process.env.NEW_MULTICALLER = "true"; // Temporarily override default configuration.
 const multiCaller: MockedMultiCallerClient = new MockedMultiCallerClient(spyLogger);
 const provider = new ethers.providers.StaticJsonRpcProvider("127.0.0.1");
 const address = randomAddress(); // Test contract address
