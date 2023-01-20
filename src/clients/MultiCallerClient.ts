@@ -105,19 +105,14 @@ export class MultiCallerClient {
 
     // One promise per chain for parallel execution.
     const results = await Promise.allSettled(
-      chainIds
-        .filter((_chainId) => {
-          const chainId = Number(_chainId);
-          return this.txns[chainId]?.length > 0 || this.valueTxns[chainId]?.length > 0;
-        })
-        .map((_chainId) => {
-          const chainId = Number(_chainId);
-          const txns: AugmentedTransaction[] = this.txns[chainId];
-          const valueTxns: AugmentedTransaction[] = this.valueTxns[chainId];
+      chainIds.map((_chainId) => {
+        const chainId = Number(_chainId);
+        const txns: AugmentedTransaction[] = this.txns[chainId];
+        const valueTxns: AugmentedTransaction[] = this.valueTxns[chainId];
 
-          this.clearTransactionQueue(chainId);
-          return this.executeChainTxnQueue(chainId, txns, valueTxns, simulate);
-        })
+        this.clearTransactionQueue(chainId);
+        return this.executeChainTxnQueue(chainId, txns, valueTxns, simulate);
+      })
     );
 
     // Collate the results for each chain.
@@ -142,9 +137,10 @@ export class MultiCallerClient {
     valueTxns: AugmentedTransaction[] = [],
     simulate = false
   ): Promise<TransactionResponse[]> {
-    const networkName = getNetworkName(chainId);
-
     const nTxns = txns.length + valueTxns.length;
+    if (nTxns === 0) return [];
+
+    const networkName = getNetworkName(chainId);
     this.logger.debug({
       at: "MultiCallerClient#executeTxnQueue",
       message: `${simulate ? "Simulating" : "Executing"} ${nTxns} transaction(s) on ${networkName}.`,
