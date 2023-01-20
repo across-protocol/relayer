@@ -287,4 +287,9 @@ describe("MultiCallerClient", async function () {
       txnQueue.slice(-1).forEach((txn) => expect(txn.method).to.equal(testMethod));
     }
   });
+
+  after(async function () {
+    // Post-test env sanitisation to allow other tests to use the legacy MultiCallerClient. @todo: Remove.
+    process.env.NEW_MULTICALLER = "";
+  });
 });
