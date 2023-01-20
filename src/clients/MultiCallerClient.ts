@@ -154,13 +154,13 @@ export class MultiCallerClient {
 
     const txnSims = await Promise.allSettled([
       this.simulateTransactionQueue(txns),
-      this.simulateTransactionQueue(valueTxns)
+      this.simulateTransactionQueue(valueTxns),
     ]);
 
     let _txns: AugmentedTransaction[];
-    let  _valueTxns: AugmentedTransaction[];
+    let _valueTxns: AugmentedTransaction[];
     [_txns, _valueTxns] = txnSims.map((result) => {
-      return (isPromiseFulfilled(result)) ? result.value : [] as AugmentedTransaction[];
+      return isPromiseFulfilled(result) ? result.value : ([] as AugmentedTransaction[]);
     });
 
     if (simulate) {
@@ -179,12 +179,12 @@ export class MultiCallerClient {
     }
 
     // Generate the complete set of txns to submit to the network. Anything that failed simulation is dropped.
-    const txnRequests: AugmentedTransaction[] = _valueTxns
-      .concat(await this.buildMultiCallBundles(_txns, this.chunkSize[chainId]));
+    const txnRequests: AugmentedTransaction[] = _valueTxns.concat(
+      await this.buildMultiCallBundles(_txns, this.chunkSize[chainId])
+    );
 
-    const txnResponses: TransactionResponse[] = (txnRequests.length > 0)
-      ? await this.txnClient.submit(chainId, txnRequests)
-      : [];
+    const txnResponses: TransactionResponse[] =
+      txnRequests.length > 0 ? await this.txnClient.submit(chainId, txnRequests) : [];
 
     return txnResponses;
   }
