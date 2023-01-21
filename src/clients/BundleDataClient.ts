@@ -290,10 +290,6 @@ export class BundleDataClient {
           if (matchedDeposit) {
             addRefundForValidFill(fillWithBlock, matchedDeposit, blockRangeForChain);
           } else {
-            // Note: If the fill's origin chain is set incorrectly (e.g. equal to the destination chain, or
-            // set to some unexpected chain), then we won't enter this branch because we wouldn't
-            // have been able to grab it from the destinationClient.getFillsForOriginChain call.
-
             // Matched deposit for fill was not found in spoke client. This situation should be rare so let's
             // send some extra RPC requests to blocks older than the spoke client's initial event search config
             // to find the deposit if it exists.
