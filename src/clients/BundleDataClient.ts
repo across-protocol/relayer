@@ -304,10 +304,10 @@ export class BundleDataClient {
             // valid if it can be validated against that deposit. We still need to validate the fill because we don't
             // know if the other parts of the deposit hash match besides the depositID.
             else if (
-              originClient.validateFillForDeposit(
+              !originClient.validateFillForDeposit(
                 fillWithBlock,
                 this.historicalDepositCache[this.getUniqueDepositKey(fillWithBlock)]
-              ) === undefined
+              )
             )
               allInvalidFills.push(fillWithBlock);
             else {
