@@ -55,10 +55,6 @@ export class BundleDataClient {
     return _.cloneDeep(this.loadDataCache[key]);
   }
 
-  getUniqueDepositKey(x: Deposit | FillWithBlock): string {
-    return `${x.originChainId}-${x.depositId}`;
-  }
-
   async getPendingRefundsFromValidBundles(bundleLookback: number): Promise<FillsToRefund[]> {
     const refunds = [];
     if (!this.clients.hubPoolClient.isUpdated || this.clients.hubPoolClient.latestBlockNumber === undefined)
