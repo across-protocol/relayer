@@ -1,4 +1,4 @@
-import { winston, BigNumber, toBN } from "../utils";
+import { winston, BigNumber, toBN, setRedisKey } from "../utils";
 import * as _ from "lodash";
 import {
   Deposit,
@@ -33,10 +33,6 @@ export class BundleDataClient {
       allValidFills: FillWithBlock[];
       deposits: DepositWithBlock[];
     };
-  } = {};
-
-  private historicalDepositCache: {
-    [chainIdDepositId: string]: Deposit;
   } = {};
 
   // eslint-disable-next-line no-useless-constructor
@@ -202,6 +198,7 @@ export class BundleDataClient {
     const allValidFills: FillWithBlock[] = [];
     const allInvalidFills: FillWithBlock[] = [];
 
+    // Save refund in-memory for validated fill.
     const addRefundForValidFill = (
       fillWithBlock: FillWithBlock,
       matchedDeposit: DepositWithBlock,
@@ -240,6 +237,24 @@ export class BundleDataClient {
 
       // Update total refund counter for convenience when constructing relayer refund leaves
       updateTotalRefundAmount(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
+    };
+
+    const validateFillAndSaveData = async (fill: FillWithBlock, blockRangeForChain: number[]): Promise<void> => {
+      const originClient = spokePoolClients[fill.originChainId];
+      const matchedDeposit = originClient.getDepositForFill(fill);
+      if (matchedDeposit) {
+        addRefundForValidFill(fill, matchedDeposit, blockRangeForChain);
+      } else {
+        // Matched deposit for fill was not found in spoke client. This situation should be rare so let's
+        // send some extra RPC requests to blocks older than the spoke client's initial event search config
+        // to find the deposit if it exists.
+        const historicalDeposit = await originClient.queryHistoricalDepositForFill(fill);
+        if (historicalDeposit) {
+          addRefundForValidFill(fill, historicalDeposit, blockRangeForChain);
+        } else {
+          allInvalidFills.push(fill);
+        }
+      }
     };
 
     const allChainIds = Object.keys(spokePoolClients).map(Number);
@@ -284,65 +299,7 @@ export class BundleDataClient {
         const fillsForOriginChain = destinationClient
           .getFillsForOriginChain(Number(originChainId))
           .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1]);
-        const historicalDepositPromises = fillsForOriginChain.map((fillWithBlock) => {
-          // If fill matches with a deposit, then its a valid fill.
-          const matchedDeposit = originClient.getDepositForFill(fillWithBlock);
-          if (matchedDeposit) {
-            addRefundForValidFill(fillWithBlock, matchedDeposit, blockRangeForChain);
-          } else {
-            // Matched deposit for fill was not found in spoke client. This situation should be rare so let's
-            // send some extra RPC requests to blocks older than the spoke client's initial event search config
-            // to find the deposit if it exists.
-            if (this.historicalDepositCache[this.getUniqueDepositKey(fillWithBlock)] === undefined) {
-              return originClient.queryHistoricalDepositForFill(fillWithBlock);
-            }
-            // Older deposit for this deposit ID has already been matched with a fill so we know this fill must be
-            // valid if it can be validated against that deposit. We still need to validate the fill because we don't
-            // know if the other parts of the deposit hash match besides the depositID.
-            else if (
-              !originClient.validateFillForDeposit(
-                fillWithBlock,
-                this.historicalDepositCache[this.getUniqueDepositKey(fillWithBlock)]
-              )
-            )
-              allInvalidFills.push(fillWithBlock);
-            else {
-              addRefundForValidFill(fillWithBlock, matchedDeposit, blockRangeForChain);
-            }
-          }
-        });
-
-        // In parallel, query for historical deposits if they exist for fills that didn't match with a deposit
-        // in the spoke pool client.
-        const historicalDepositQueries = (
-          await Promise.all(
-            historicalDepositPromises.map(async (depositPromise, i) => {
-              if (depositPromise === undefined) return;
-              return [await depositPromise, fillsForOriginChain[i]];
-            })
-          )
-        ).filter((x) => x !== undefined) as [DepositWithBlock | undefined, FillWithBlock][];
-
-        // Mark fills with matching deposits as valid and add them to the list of fills to refund.
-        const matchedHistoricalDeposits = historicalDepositQueries.filter((x) => x[0] !== undefined);
-        matchedHistoricalDeposits.forEach(([deposit, fillWithBlock]) => {
-          this.historicalDepositCache[this.getUniqueDepositKey(fillWithBlock)] = deposit;
-          addRefundForValidFill(fillWithBlock, deposit, blockRangeForChain);
-        });
-
-        // Mark fills without matching deposits, even after additional queries for deposit, as invalid.
-        const unmatchedHistoricalDeposits = historicalDepositQueries.filter((x) => x[0] === undefined);
-        unmatchedHistoricalDeposits.forEach(([, fill]) => {
-          allInvalidFills.push(fill);
-        });
-
-        if (historicalDepositQueries.length > 0)
-          this.logger.debug({
-            at: "BundleDataClient#loadData",
-            message: `Sent additional RPC requests to find historical deposits matching fills on chain ${destinationChainId} originating from ${originChainId}`,
-            foundDepositIds: matchedHistoricalDeposits.map(([d]) => d.depositId),
-            unfoundDepositIds: unmatchedHistoricalDeposits.map(([, f]) => f.depositId),
-          });
+        await Promise.all(fillsForOriginChain.map(async (fill) => validateFillAndSaveData(fill, blockRangeForChain)));
       }
     }
 
