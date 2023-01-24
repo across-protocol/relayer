@@ -245,7 +245,7 @@ describe("MultiCallerClient", async function () {
     }
   });
 
-  it("Validates that multicall bundle generation respects chunk size configurations", async function () {
+  it("Respects multicall bundle chunk size configurations", async function () {
     const chunkSize: { [chainId: number]: number } = Object.fromEntries(
       chainIds.map((_chainId, idx) => {
         const chainId = Number(_chainId);
@@ -286,6 +286,11 @@ describe("MultiCallerClient", async function () {
       // txnQueue deliberately has one "spare" txn appended, so it should never be bundled.
       txnQueue.slice(-1).forEach((txn) => expect(txn.method).to.equal(testMethod));
     }
+  });
+
+  it("Correctly handles 0-length input to multicall bundle generation", async function () {
+      const txnQueue: AugmentedTransaction[] = await multiCaller.buildMultiCallBundles([], 10);
+      expect(txnQueue.length).to.equal(0);
   });
 
   after(async function () {
