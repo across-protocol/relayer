@@ -411,8 +411,6 @@ export class MultiCallerClient {
     txns: AugmentedTransaction[],
     chunkSize = DEFAULT_MULTICALL_CHUNK_SIZE
   ): AugmentedTransaction[] {
-    if (txns.length === 0) return [];
-
     const txnChunks: AugmentedTransaction[][] = lodash.chunk(txns, chunkSize);
     return txnChunks.map((txnChunk: AugmentedTransaction[]) => {
       // Don't wrap single transactions in a multicall.
