@@ -289,8 +289,8 @@ describe("MultiCallerClient", async function () {
   });
 
   it("Correctly handles 0-length input to multicall bundle generation", async function () {
-      const txnQueue: AugmentedTransaction[] = await multiCaller.buildMultiCallBundles([], 10);
-      expect(txnQueue.length).to.equal(0);
+    const txnQueue: AugmentedTransaction[] = await multiCaller.buildMultiCallBundles([], 10);
+    expect(txnQueue.length).to.equal(0);
   });
 
   after(async function () {
