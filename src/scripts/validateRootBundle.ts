@@ -92,14 +92,14 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   } catch (_err) {
     logger.debug({
       at: "Dataworker#validate",
-      message: "No dispute found for request time, falling back to most recent root bundle before request time"
-    })
+      message: "No dispute found for request time, falling back to most recent root bundle before request time",
+    });
     // Timestamp doesn't correspond to a dispute, so find the most recent root bundle before the request time.
     precedingProposeRootBundleEvent = sortEventsDescending(clients.hubPoolClient.getProposedRootBundles()).find(
       (x) => x.blockNumber <= priceRequestBlock
     );
   }
-  if (!precedingProposeRootBundleEvent) throw new Error("No proposed root bundle found before request time")
+  if (!precedingProposeRootBundleEvent) throw new Error("No proposed root bundle found before request time");
 
   const rootBundle: PendingRootBundle = {
     poolRebalanceRoot: precedingProposeRootBundleEvent.poolRebalanceRoot,
@@ -125,8 +125,10 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   // Calculate the latest blocks we should query in the spoke pool client so we can efficiently reconstruct
   // older bundles. We do this by setting toBlocks equal to the bundle end blocks of the first validated bundle
   // following the target bundle.
-  const closestFollowingValidatedBundleIndex = clients.hubPoolClient.getValidatedRootBundles().findIndex((x) => x.blockNumber >= rootBundle.proposalBlockNumber);
-  const overriddenConfig = {...config, dataworkerFastStartBundle: closestFollowingValidatedBundleIndex + 1}
+  const closestFollowingValidatedBundleIndex = clients.hubPoolClient
+    .getValidatedRootBundles()
+    .findIndex((x) => x.blockNumber >= rootBundle.proposalBlockNumber);
+  const overriddenConfig = { ...config, dataworkerFastStartBundle: closestFollowingValidatedBundleIndex + 1 };
 
   const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
     overriddenConfig,
