@@ -41,6 +41,7 @@ let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let configStoreClient: MockConfigStoreClient, hubPoolClient: HubPoolClient;
 let multiCallerClient: MultiCallerClient, tokenClient: TokenClient;
 let profitClient: MockProfitClient;
+let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
 let relayerInstance: Relayer;
 
@@ -49,8 +50,16 @@ describe("Relayer: Unfilled Deposits", async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
     // Deploy the two spokePools and their associated tokens. Set the chainId to match to associated chainIds. The first
     // prop is the chainId set on the spoke pool. The second prop is the chain ID enabled in the route on the spokePool.
-    ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId));
-    ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
+    ({
+      spokePool: spokePool_1,
+      erc20: erc20_1,
+      deploymentBlock: spokePool1DeploymentBlock,
+    } = await deploySpokePoolWithToken(originChainId, destinationChainId));
+    ({
+      spokePool: spokePool_2,
+      erc20: erc20_2,
+      deploymentBlock: spokePool2DeploymentBlock,
+    } = await deploySpokePoolWithToken(destinationChainId, originChainId));
     ({ hubPool, l1Token_1: l1Token } = await deployAndConfigureHubPool(owner, [
       { l2ChainId: originChainId, spokePool: spokePool_1 },
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
@@ -59,14 +68,21 @@ describe("Relayer: Unfilled Deposits", async function () {
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
     configStoreClient = new MockConfigStoreClient(spyLogger, configStore, hubPoolClient);
-    spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1, configStoreClient, originChainId);
+    spokePoolClient_1 = new SpokePoolClient(
+      spyLogger,
+      spokePool_1,
+      configStoreClient,
+      originChainId,
+      undefined,
+      spokePool1DeploymentBlock
+    );
     spokePoolClient_2 = new SpokePoolClient(
       spyLogger,
       spokePool_2,
       configStoreClient,
       destinationChainId,
       { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
-      0
+      spokePool2DeploymentBlock
     );
 
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
@@ -132,7 +148,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         configStoreClient
       )
     )
-      .excludingEvery(["blockNumber", "originBlockNumber"])
+      .excludingEvery(["blockNumber", "originBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
           unfilledAmount: deposit1.amount,
@@ -169,7 +185,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         configStoreClient
       )
     )
-      .excludingEvery(["blockNumber", "originBlockNumber"])
+      .excludingEvery(["blockNumber", "originBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
           unfilledAmount: deposit1.amount.sub(fill1.fillAmount),
@@ -198,7 +214,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         configStoreClient
       )
     )
-      .excludingEvery(["blockNumber", "originBlockNumber"])
+      .excludingEvery(["blockNumber", "originBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
           unfilledAmount: unfilledAmount,
@@ -225,7 +241,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         configStoreClient
       )
     )
-      .excludingEvery(["blockNumber", "originBlockNumber"])
+      .excludingEvery(["blockNumber", "originBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
           unfilledAmount: deposit2Complete.amount,
@@ -252,7 +268,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         configStoreClient
       )
     )
-      .excludingEvery(["blockNumber", "originBlockNumber"])
+      .excludingEvery(["blockNumber", "originBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
           unfilledAmount: deposit1Complete.amount,
@@ -299,7 +315,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         configStoreClient
       )
     )
-      .excludingEvery(["blockNumber", "originBlockNumber"])
+      .excludingEvery(["blockNumber", "originBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
           unfilledAmount: deposit1.amount.sub(fill1.fillAmount),
@@ -322,7 +338,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         configStoreClient
       )
     )
-      .excludingEvery(["blockNumber", "originBlockNumber"])
+      .excludingEvery(["blockNumber", "originBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
           unfilledAmount: deposit1.amount.sub(fill1.fillAmount),

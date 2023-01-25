@@ -8,18 +8,40 @@ let erc20_2: Contract;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let tokenClient: TokenClient; // tested
+let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
 describe("TokenClient: Token shortfall", async function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
     ({ spy, spyLogger } = createSpyLogger());
     // Using deploySpokePoolWithToken will create two tokens and enable both of them as routes.
-    ({ spokePool: spokePool_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId));
-    ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
+    ({ spokePool: spokePool_1, deploymentBlock: spokePool1DeploymentBlock } = await deploySpokePoolWithToken(
+      originChainId,
+      destinationChainId
+    ));
+    ({
+      spokePool: spokePool_2,
+      erc20: erc20_2,
+      deploymentBlock: spokePool2DeploymentBlock,
+    } = await deploySpokePoolWithToken(destinationChainId, originChainId));
     const { hubPool } = await deployAndConfigureHubPool(owner, [], zeroAddress, zeroAddress);
 
-    spokePoolClient_1 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_1, null, originChainId);
-    spokePoolClient_2 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_2, null, destinationChainId);
+    spokePoolClient_1 = new SpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool_1,
+      null,
+      originChainId,
+      undefined,
+      spokePool1DeploymentBlock
+    );
+    spokePoolClient_2 = new SpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool_2,
+      null,
+      destinationChainId,
+      undefined,
+      spokePool2DeploymentBlock
+    );
 
     const spokePoolClients = { [destinationChainId]: spokePoolClient_1, [originChainId]: spokePoolClient_2 };
     const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);

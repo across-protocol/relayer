@@ -4,6 +4,7 @@ import { SpokePoolClient } from "../src/clients";
 
 let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer1: SignerWithAddress, relayer2: SignerWithAddress;
+let deploymentBlock: number;
 
 const originChainId2 = originChainId + 1;
 
@@ -12,10 +13,20 @@ let spokePoolClient: SpokePoolClient;
 describe("SpokePoolClient: Fills", async function () {
   beforeEach(async function () {
     [owner, depositor, relayer1, relayer2] = await ethers.getSigners();
-    ({ spokePool, erc20, destErc20, weth } = await deploySpokePoolWithToken(originChainId, destinationChainId));
+    ({ spokePool, erc20, destErc20, weth, deploymentBlock } = await deploySpokePoolWithToken(
+      originChainId,
+      destinationChainId
+    ));
     await spokePool.setChainId(destinationChainId); // The spoke pool for a fill should be at the destinationChainId.
 
-    spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool, null, destinationChainId);
+    spokePoolClient = new SpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool,
+      null,
+      destinationChainId,
+      undefined,
+      deploymentBlock
+    );
 
     await setupTokensForWallet(spokePool, relayer1, [erc20, destErc20], weth, 10);
     await setupTokensForWallet(spokePool, relayer2, [erc20, destErc20], weth, 10);

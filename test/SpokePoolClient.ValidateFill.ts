@@ -22,6 +22,7 @@ import { SpokePoolClient } from "../src/clients";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
+let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
 let spokePoolClient2: SpokePoolClient;
 let spokePoolClient1: SpokePoolClient;
@@ -30,11 +31,33 @@ describe("SpokePoolClient: Fill Validation", async function () {
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
     // Creat two spoke pools: one to act as the source and the other to act as the destination.
-    ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId));
-    ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
+    ({
+      spokePool: spokePool_1,
+      erc20: erc20_1,
+      deploymentBlock: spokePool1DeploymentBlock,
+    } = await deploySpokePoolWithToken(originChainId, destinationChainId));
+    ({
+      spokePool: spokePool_2,
+      erc20: erc20_2,
+      deploymentBlock: spokePool2DeploymentBlock,
+    } = await deploySpokePoolWithToken(destinationChainId, originChainId));
     const { spyLogger } = createSpyLogger();
-    spokePoolClient2 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_2, null, originChainId); // create spoke pool client on the "target" chain.
-    spokePoolClient1 = new SpokePoolClient(spyLogger, spokePool_1, null, destinationChainId);
+    spokePoolClient1 = new SpokePoolClient(
+      spyLogger,
+      spokePool_1,
+      null,
+      destinationChainId,
+      undefined,
+      spokePool1DeploymentBlock
+    );
+    spokePoolClient2 = new SpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool_2,
+      null,
+      originChainId,
+      undefined,
+      spokePool2DeploymentBlock
+    ); // create spoke pool client on the "target" chain.
 
     await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);
     await setupTokensForWallet(spokePool_2, relayer, [erc20_2], null, 10);
@@ -73,7 +96,9 @@ describe("SpokePoolClient: Fill Validation", async function () {
       createSpyLogger().spyLogger,
       spokePool_1,
       null,
-      destinationChainId
+      destinationChainId,
+      undefined,
+      spokePool1DeploymentBlock
     ); // create spoke pool client on the "target" chain.
     // expect(spokePoolClientForDestinationChain.getDepositForFill(fill_1)).to.equal(undefined);
     await spokePoolClientForDestinationChain.update();
@@ -93,7 +118,9 @@ describe("SpokePoolClient: Fill Validation", async function () {
         destinationToken: zeroAddress,
         realizedLpFeePct: toBN(0),
       })
-    ).to.deep.equal(expectedDeposit);
+    )
+      .excludingEvery(["logIndex", "transactionIndex", "transactionHash"])
+      .to.deep.equal(expectedDeposit);
   });
 
   it("Returns sped up deposit matched with fill", async function () {
@@ -118,7 +145,9 @@ describe("SpokePoolClient: Fill Validation", async function () {
       createSpyLogger().spyLogger,
       spokePool_1,
       null,
-      destinationChainId
+      destinationChainId,
+      undefined,
+      spokePool2DeploymentBlock
     ); // create spoke pool client on the "target" chain.
     await spokePoolClientForDestinationChain.update();
 
@@ -129,14 +158,18 @@ describe("SpokePoolClient: Fill Validation", async function () {
         destinationToken: zeroAddress,
         realizedLpFeePct: toBN(0),
       })
-    ).to.deep.equal(expectedDeposit);
+    )
+      .excludingEvery(["logIndex", "transactionIndex", "transactionHash"])
+      .to.deep.equal(expectedDeposit);
     expect(
       spokePoolClientForDestinationChain.getDepositForFill({
         ...fill_2,
         destinationToken: zeroAddress,
         realizedLpFeePct: toBN(0),
       })
-    ).to.deep.equal(expectedDeposit);
+    )
+      .excludingEvery(["logIndex", "transactionIndex", "transactionHash"])
+      .to.deep.equal(expectedDeposit);
   });
 
   it("Rejects fills that dont match the deposit data", async function () {

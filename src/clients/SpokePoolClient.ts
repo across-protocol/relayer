@@ -9,6 +9,11 @@ import {
   sortEventsAscendingInPlace,
   DefaultLogLevels,
   MakeOptional,
+  getDeploymentBlockNumber,
+  setRedisKey,
+  getDeposit,
+  setDeposit,
+  getRedisDepositKey,
 } from "../utils";
 import { toBN, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
@@ -44,7 +49,8 @@ export class SpokePoolClient {
   private tokensBridged: TokensBridged[] = [];
   private rootBundleRelays: RootBundleRelayWithBlock[] = [];
   private relayerRefundExecutions: RelayerRefundExecutionWithBlock[] = [];
-  public earliestDepositId: number = Number.MAX_SAFE_INTEGER;
+  public earliestDepositIdQueried = Number.MAX_SAFE_INTEGER;
+  public firstDepositIdForSpokePool = Number.MAX_SAFE_INTEGER;
   public isUpdated = false;
   public firstBlockToSearch: number;
   public latestBlockNumber: number | undefined;
@@ -58,8 +64,13 @@ export class SpokePoolClient {
     readonly configStoreClient: AcrossConfigStoreClient | null,
     readonly chainId: number,
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
-    readonly spokePoolDeploymentBlock: number = 0
+    public spokePoolDeploymentBlock: number = 0
   ) {
+    try {
+      this.spokePoolDeploymentBlock = getDeploymentBlockNumber("SpokePool", chainId);
+    } catch (err) {
+      // Probably a test environment. Ignore. Test should have set deployment block manually.
+    }
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
 
@@ -226,7 +237,7 @@ export class SpokePoolClient {
 
   // Ensure that each deposit element is included with the same value in the fill. This includes all elements defined
   // by the depositor as well as the realizedLpFeePct and the destinationToken, which are pulled from other clients.
-  validateFillForDeposit(fill: Fill, deposit: Deposit) {
+  validateFillForDeposit(fill: Fill, deposit: Deposit): boolean {
     // Note: this short circuits when a key is found where the comparison doesn't match.
     // TODO: if we turn on "strict" in the tsconfig, the elements of FILL_DEPOSIT_COMPARISON_KEYS will be automatically
     // validated against the fields in Fill and Deposit, generating an error if there is a discrepency.
@@ -237,6 +248,88 @@ export class SpokePoolClient {
 
   getDepositHash(event: Deposit | Fill) {
     return `${event.depositId}-${event.originChainId}`;
+  }
+
+  // TODO: Should unit test this binary search algorithm.
+  // Look for the block number of the event that emitted the deposit with the target deposit ID. We know that
+  // `numberOfDeposits` is strictly increasing for any SpokePool, so we can use a binary search to find the blockTag
+  // where `numberOfDeposits == targetDepositId`.
+  async binarySearchForBlockContainingDepositId(targetDepositId: number): Promise<number> {
+    let high = this.firstBlockToSearch;
+    let low = this.spokePoolDeploymentBlock;
+    do {
+      const mid = Math.floor((high + low) / 2);
+      const searchedDepositId = await this.spokePool.numberOfDeposits({ blockTag: mid });
+      if (targetDepositId > searchedDepositId) low = mid + 1;
+      else if (targetDepositId < searchedDepositId) high = mid - 1;
+      else return mid;
+    } while (low <= high);
+    throw new Error(
+      `Binary search between [${this.spokePoolDeploymentBlock}, ${this.firstBlockToSearch}] failed to find block containing deposit ID ${targetDepositId}`
+    );
+  }
+
+  // Load a deposit for a fill if the fill's deposit ID is less than this client's earliest searched
+  // deposit ID. This can be used by the Dataworker to determine whether to give a relayer a refund for a fill
+  // of a deposit older than its fixed lookback.
+  async queryHistoricalDepositForFill(fill: Fill): Promise<DepositWithBlock | undefined> {
+    if (fill.originChainId !== this.chainId) throw new Error("fill.originChainId !== this.chainid");
+    if (fill.depositId < this.firstDepositIdForSpokePool) return undefined;
+    if (fill.depositId >= this.earliestDepositIdQueried) return this.getDepositForFill(fill);
+
+    let deposit: DepositWithBlock, cachedDeposit: Deposit | undefined;
+    if (this.configStoreClient.redisClient) {
+      cachedDeposit = await getDeposit(getRedisDepositKey(fill), this.configStoreClient.redisClient);
+    }
+    if (cachedDeposit) {
+      deposit = cachedDeposit as DepositWithBlock;
+    } else {
+      // Binary search between spoke pool deployment block and earliest block searched to find the block range containing
+      // the deposited event, where numberOfDeposits incremented from depositId-1 to depositId.
+      const [blockBeforeDeposit, blockAfterDeposit] = await Promise.all([
+        this.binarySearchForBlockContainingDepositId(Math.max(fill.depositId - 1, this.firstDepositIdForSpokePool)),
+        this.binarySearchForBlockContainingDepositId(Math.min(fill.depositId + 1, this.earliestDepositIdQueried)),
+      ]);
+
+      const query = await paginatedEventQuery(
+        this.spokePool,
+        this.spokePool.filters.FundsDeposited(null, null, null, null, fill.depositId),
+        {
+          fromBlock: blockBeforeDeposit,
+          toBlock: blockAfterDeposit,
+          maxBlockLookBack: 0,
+        }
+      );
+      const event = (query as FundsDepositedEvent[]).find((deposit) => deposit.args.depositId === fill.depositId);
+      if (event === undefined)
+        throw new Error(
+          `Could not find deposit ID ${fill.depositId} for fill between blocks [${blockBeforeDeposit}, ${blockAfterDeposit}]`
+        );
+      const processedEvent: Omit<DepositWithBlock, "destinationToken" | "realizedLpFeePct"> =
+        spreadEventWithBlockNumber(event) as DepositWithBlock;
+      const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number } = await this.computeRealizedLpFeePct(
+        event
+      );
+      // Append the realizedLpFeePct.
+      // Append destination token and realized lp fee to deposit.
+      deposit = {
+        ...processedEvent,
+        realizedLpFeePct: dataForQuoteTime.realizedLpFeePct,
+        destinationToken: this.getDestinationTokenForDeposit(processedEvent),
+        blockNumber: dataForQuoteTime.quoteBlock,
+        originBlockNumber: event.blockNumber,
+      };
+      this.logger.debug({
+        at: "SpokePoolClient",
+        message: "Queried RPC for deposit older than SpokePoolClient's lookback",
+        deposit,
+      });
+      if (this.configStoreClient.redisClient)
+        await setDeposit(deposit, this.configStoreClient.redisClient, 30 * 24 * 60 * 60);
+    }
+
+    const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill
+    return this.validateFillForDeposit(fillCopy, deposit) ? deposit : undefined;
   }
 
   async update(eventsToQuery?: string[]) {
@@ -301,9 +394,12 @@ export class SpokePoolClient {
     });
 
     timerStart = Date.now();
-    const queryResults = await Promise.all(
-      eventSearchConfigs.map((config) => paginatedEventQuery(this.spokePool, config.filter, config.searchConfig))
-    );
+    const [_earliestDepositIdForSpokePool, ...queryResults] = await Promise.all([
+      this.spokePool.numberOfDeposits({ blockTag: this.spokePoolDeploymentBlock }),
+      ...eventSearchConfigs.map((config) => paginatedEventQuery(this.spokePool, config.filter, config.searchConfig)),
+    ]);
+
+    this.firstDepositIdForSpokePool = _earliestDepositIdForSpokePool;
     this.log("debug", `Time to query new events from RPC for ${this.chainId}: ${Date.now() - timerStart}ms`);
 
     // Sort all events to ensure they are stored in a consistent order.
@@ -341,7 +437,8 @@ export class SpokePoolClient {
         });
       for (const [index, event] of depositEvents.entries()) {
         // Append the realizedLpFeePct.
-        const processedEvent: Omit<Deposit, "destinationToken" | "realizedLpFeePct"> = spreadEvent(event);
+        const processedEvent: Omit<DepositWithBlock, "destinationToken" | "realizedLpFeePct"> =
+          spreadEventWithBlockNumber(event) as DepositWithBlock;
 
         // Append destination token and realized lp fee to deposit.
         const deposit = {
@@ -355,7 +452,7 @@ export class SpokePoolClient {
         assign(this.depositHashes, [this.getDepositHash(deposit)], deposit);
         assign(this.deposits, [deposit.destinationChainId], [deposit]);
 
-        if (deposit.depositId < this.earliestDepositId) this.earliestDepositId = deposit.depositId;
+        if (deposit.depositId < this.earliestDepositIdQueried) this.earliestDepositIdQueried = deposit.depositId;
       }
     }
 
