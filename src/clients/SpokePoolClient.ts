@@ -250,7 +250,6 @@ export class SpokePoolClient {
     return `${event.depositId}-${event.originChainId}`;
   }
 
-  // TODO: Should unit test this binary search algorithm.
   // Look for the block number of the event that emitted the deposit with the target deposit ID. We know that
   // `numberOfDeposits` is strictly increasing for any SpokePool, so we can use a binary search to find the blockTag
   // where `numberOfDeposits == targetDepositId`.
