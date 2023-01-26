@@ -42,6 +42,8 @@ const FILL_DEPOSIT_COMPARISON_KEYS = [
   "destinationToken",
 ] as const;
 
+type BINARY_SEARCH_FALLBACK = "LOW" | "HIGH" | "NONE";
+
 export class SpokePoolClient {
   private depositHashes: { [depositHash: string]: DepositWithBlock } = {};
   private depositHashesToFills: { [depositHash: string]: FillWithBlock[] } = {};
@@ -258,7 +260,10 @@ export class SpokePoolClient {
   // Look for the block number of the event that emitted the deposit with the target deposit ID. We know that
   // `numberOfDeposits` is strictly increasing for any SpokePool, so we can use a binary search to find the blockTag
   // where `numberOfDeposits == targetDepositId`.
-  async binarySearchForBlockContainingDepositId(targetDepositId: number): Promise<number> {
+  async binarySearchForBlockContainingDepositId(
+    targetDepositId: number,
+    fallback: BINARY_SEARCH_FALLBACK = "NONE"
+  ): Promise<number> {
     // After an update(), firstBlockToSearch increments to the toBlock+1 so clamp that at the latestBlockNumber to
     // avoid calling spokePool.numberOfDeposits for a block that doesn't exist yet.
     let high = this.latestBlockNumber
@@ -270,16 +275,20 @@ export class SpokePoolClient {
     if (low > high) throw new Error("Binary search failed because low > high");
     do {
       const mid = Math.floor((high + low) / 2);
-      console.log(`Searching between [${low}, ${high}] for deposit ID ${targetDepositId}, mid: ${mid}`);
       const searchedDepositId = await this.spokePool.numberOfDeposits({ blockTag: mid });
-      console.log(`Searched deposit ID: ${searchedDepositId}`);
       if (targetDepositId > searchedDepositId) low = mid + 1;
       else if (targetDepositId < searchedDepositId) high = mid - 1;
       else return mid;
     } while (low <= high);
-    throw new Error(
-      `Binary search between [${initLow}, ${initHigh}] failed to find block containing deposit ID ${targetDepositId}`
-    );
+    // Caller can use the fallback to determine what to do if the binary search fails. This way the binary search can
+    // return a block closer to the target block than initLow or initHigh
+    // Note: now that low > high, return high for LOW and low for HIGH
+    if (fallback === "LOW") return high;
+    else if (fallback === "HIGH") return low;
+    else
+      throw new Error(
+        `Binary search between [${initLow}, ${initHigh}] failed to find block containing deposit ID ${targetDepositId}`
+      );
   }
 
   // Load a deposit for a fill if the fill's deposit ID is less than this client's earliest searched
@@ -302,9 +311,13 @@ export class SpokePoolClient {
       // the deposited event. Find a block before and after the deposit event, which was emitted when
       // depositId incremented from fill.depositId to fill.depositId+1
       const [blockBeforeDeposit, blockAfterDeposit] = await Promise.all([
-        this.binarySearchForBlockContainingDepositId(fill.depositId),
-        this.binarySearchForBlockContainingDepositId(fill.depositId + 1),
+        // Ensure that `blockBeforeDeposit` returns and is less than the block where depositId incremented
+        // from depositId-1 to depositId. Similarly ensure that blockAfter deposit returns and is greater than
+        // the block where depositId incremented from depositId to depositId+1.
+        this.binarySearchForBlockContainingDepositId(fill.depositId, "LOW"),
+        this.binarySearchForBlockContainingDepositId(fill.depositId + 1, "HIGH"),
       ]);
+      assert(blockBeforeDeposit <= blockAfterDeposit, "blockBeforeDeposit > blockAfterDeposit");
 
       const query = await paginatedEventQuery(
         this.spokePool,

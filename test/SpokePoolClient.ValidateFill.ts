@@ -240,11 +240,69 @@ describe("SpokePoolClient: Fill Validation", async function () {
     expect(await spokePool_1.numberOfDeposits()).to.equal(5);
     const depositEvents = await spokePool_1.queryFilter("FundsDeposited");
     await spokePoolClient1.update();
-    console.log(depositEvents.map((e) => [e.blockNumber, e?.args?.depositId]));
 
-    // TODO: This test fails because the same block where depositID went from 3-->4 is also when depositID went from
+    // This test fails because the same block where depositID went from 3-->4 is also when depositID went from
     // 4-->5 so the test falls out of the while loop.
-    await spokePoolClient1.binarySearchForBlockContainingDepositId(4);
+    // await spokePoolClient1.binarySearchForBlockContainingDepositId(4);
+    assertPromiseError(
+      spokePoolClient1.binarySearchForBlockContainingDepositId(4),
+      "failed to find block containing deposit ID"
+    );
+    // We can avoid the error by instructing the binary search to fallback to the last set high or low block which should be greater than or
+    // less than the actual block we wanted.
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(4, "LOW")).to.be.lessThanOrEqual(
+      depositEvents[4].blockNumber
+    );
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(4, "HIGH")).to.be.greaterThanOrEqual(
+      depositEvents[4].blockNumber
+    );
+
+    // When looking for deposit ID 2, we will be able to find the actual block number which will be equal to the block
+    // that emitted deposit ID 1.
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(2, "LOW")).to.be.equal(
+      depositEvents[1].blockNumber
+    );
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(2, "HIGH")).to.be.equal(
+      depositEvents[1].blockNumber
+    );
+
+    // Deposit ID for 5 should work as expected.
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(5, "LOW")).to.be.equal(
+      depositEvents[4].blockNumber
+    );
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(5, "HIGH")).to.be.equal(
+      depositEvents[4].blockNumber
+    );
+
+    // If we add some blocks to the end of the binary search, then the results will be the same when searching for
+    // deposits in the same block.
+    await hre.network.provider.send("evm_mine");
+    await hre.network.provider.send("evm_mine");
+    await spokePoolClient1.update();
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(5, "LOW")).to.be.equal(
+      depositEvents[4].blockNumber
+    );
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(5, "HIGH")).to.be.equal(
+      depositEvents[4].blockNumber
+    );
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(4, "LOW")).to.be.lessThanOrEqual(
+      depositEvents[4].blockNumber
+    );
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(4, "HIGH")).to.be.greaterThanOrEqual(
+      depositEvents[4].blockNumber
+    );
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(3, "LOW")).to.be.lessThanOrEqual(
+      depositEvents[4].blockNumber
+    );
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(3, "HIGH")).to.be.greaterThanOrEqual(
+      depositEvents[4].blockNumber
+    );
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(2, "LOW")).to.be.equal(
+      depositEvents[1].blockNumber
+    );
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(2, "HIGH")).to.be.equal(
+      depositEvents[1].blockNumber
+    );
   });
 
   it("Ignores fills with deposit ID > latest deposit ID queried in spoke pool client", async function () {
