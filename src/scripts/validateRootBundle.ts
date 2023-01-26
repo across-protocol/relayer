@@ -23,6 +23,7 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   sortEventsDescending,
+  getDisputeForTimestamp,
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
@@ -81,18 +82,22 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   }
 
   // If request timestamp corresponds to a dispute, use that to easily find the associated root bundle.
+  const disputeEventForRequestTime = await getDisputeForTimestamp(
+    dvm,
+    clients.configStoreClient,
+    priceRequestTime,
+    priceRequestBlock
+  );
   let precedingProposeRootBundleEvent: ProposedRootBundle;
-  try {
-    precedingProposeRootBundleEvent = await getDisputedProposal(
-      dvm,
-      clients.configStoreClient,
-      priceRequestTime,
-      priceRequestBlock
-    );
-  } catch (_err) {
+  if (disputeEventForRequestTime !== undefined)
+    precedingProposeRootBundleEvent = getDisputedProposal(clients.configStoreClient, disputeEventForRequestTime);
+  if (disputeEventForRequestTime === undefined || precedingProposeRootBundleEvent === undefined) {
     logger.debug({
       at: "Dataworker#validate",
-      message: "No dispute found for request time, falling back to most recent root bundle before request time",
+      message:
+        "No bundle linked to dispute found for request time, falling back to most recent root bundle before request time",
+      foundDisputeEvent: disputeEventForRequestTime !== undefined,
+      foundProposedRootBundle: precedingProposeRootBundleEvent !== undefined,
     });
     // Timestamp doesn't correspond to a dispute, so find the most recent root bundle before the request time.
     precedingProposeRootBundleEvent = sortEventsDescending(clients.hubPoolClient.getProposedRootBundles()).find(
