@@ -216,19 +216,8 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Ignores fills with deposit ID < first deposit ID in spoke pool", async function () {
-    // Update deposit chain spoke pool client so client doesn't see deposit.
-    await spokePoolClient1.update();
-    const depositData = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    if (!depositData) throw new Error("Deposit data is null");
-    const expectedRealizedLpFeePct = await configStoreClient.computeRealizedLpFeePct(
-      {
-        quoteTimestamp: depositData.quoteTimestamp,
-        amount: depositData.amount,
-        destinationChainId: depositData.destinationChainId,
-        originChainId: depositData.originChainId,
-      },
-      l1Token.address
-    );
+    // For this test, the client should exit early based on the fill.depositId so we don't need to send
+    // a deposit on chain.
     await fillRelay(
       spokePool_2,
       erc20_2,
@@ -237,9 +226,9 @@ describe("SpokePoolClient: Fill Validation", async function () {
       relayer,
       0,
       originChainId,
-      depositData?.amount,
-      depositData?.amount,
-      expectedRealizedLpFeePct.realizedLpFeePct
+      toBNWei("1"),
+      toBNWei("1"),
+      toBNWei("0.01")
     );
     await spokePoolClient2.update();
     const [fill] = spokePoolClient2.getFills();
