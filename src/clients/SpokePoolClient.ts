@@ -264,12 +264,12 @@ export class SpokePoolClient {
   async binarySearchForBlockContainingDepositId(
     targetDepositId: number,
     fallback: BINARY_SEARCH_FALLBACK = "NONE",
-    low = this.spokePoolDeploymentBlock,
-    high = this.eventSearchConfig.fromBlock
+    initLow = this.spokePoolDeploymentBlock,
+    initHigh = this.eventSearchConfig.fromBlock
   ): Promise<number> {
-    assert(low <= high, "Binary search failed because low > high");
-    const initHigh = high;
-    const initLow = low;
+    assert(initLow <= initHigh, "Binary search failed because low > high");
+    let low = initLow;
+    let high = initHigh;
     do {
       const mid = Math.floor((high + low) / 2);
       const searchedDepositId = await this.spokePool.numberOfDeposits({ blockTag: mid });
