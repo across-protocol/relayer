@@ -292,8 +292,11 @@ export class SpokePoolClient {
   // deposit ID. This can be used by the Dataworker to determine whether to give a relayer a refund for a fill
   // of a deposit older than its fixed lookback.
   async queryHistoricalDepositForFill(fill: Fill): Promise<DepositWithBlock | undefined> {
-    if (!this.isUpdated) throw new Error("SpokePoolClient must be updated before querying historical deposits");
     if (fill.originChainId !== this.chainId) throw new Error("fill.originChainId !== this.chainid");
+
+    // We need to update client so that we know what the firstDepositIdForSpokePool is and the
+    // earliestDepositIdQueried is so that we can exit early.
+    if (!this.isUpdated) throw new Error("SpokePoolClient must be updated before querying historical deposits");
     if (fill.depositId < this.firstDepositIdForSpokePool) return undefined;
     if (fill.depositId >= this.earliestDepositIdQueried) return this.getDepositForFill(fill);
 
@@ -311,7 +314,8 @@ export class SpokePoolClient {
       const [blockBeforeDeposit, blockAfterDeposit] = await Promise.all([
         // Ensure that `blockBeforeDeposit` returns and is less than the block where depositId incremented
         // from depositId-1 to depositId. Similarly ensure that blockAfter deposit returns and is greater than
-        // the block where depositId incremented from depositId to depositId+1.
+        // the block where depositId incremented from depositId to depositId+1. We use the "LOW"/"HIGH" fallback
+        // options here to ensure that blockBeforeDeposit <= targetBlock <= blockAfterDeposit.
         this.binarySearchForBlockContainingDepositId(
           fill.depositId,
           "LOW",
