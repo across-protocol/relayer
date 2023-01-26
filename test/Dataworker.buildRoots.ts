@@ -5,6 +5,7 @@ import {
   enableRoutesOnHubPool,
   signForSpeedUp,
   createSpyLogger,
+  assertPromiseError,
 } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";

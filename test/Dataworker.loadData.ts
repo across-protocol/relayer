@@ -6,9 +6,7 @@ import {
   getDefaultBlockRange,
   buildFillForRepaymentChain,
   getLastBlockNumber,
-  assert,
   assertPromiseError,
-  createSpyLogger,
 } from "./utils";
 import { SignerWithAddress, buildSlowRelayTree, enableRoutesOnHubPool } from "./utils";
 import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, buildSlowFill } from "./utils";
@@ -69,21 +67,21 @@ describe("Dataworker: Load data used in all functions", async function () {
 
   it("Default conditions", async function () {
     // Throws error if hub pool client is not updated.
-    assertPromiseError(
+    await assertPromiseError(
       bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients),
       "HubPoolClient not updated"
     );
     await hubPoolClient.update();
 
     // Throws error if config store client not updated.
-    assertPromiseError(
+    await assertPromiseError(
       bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients),
       "ConfigStoreClient not updated"
     );
     await configStoreClient.update();
 
     // Throws error if spoke pool clients not updated
-    assertPromiseError(bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients), "origin SpokePoolClient");
+    await assertPromiseError(bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients), "origin SpokePoolClient");
     await spokePoolClient_1.update();
     await spokePoolClient_2.update();
 
