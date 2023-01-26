@@ -341,8 +341,10 @@ describe("SpokePoolClient: Fill Validation", async function () {
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(0)).to.equal(firstMidBlockInBinarySearch);
     // Importantly, this block should be < the actual block of deposit 0.
     expect(firstMidBlockInBinarySearch).to.be.lessThan(deposit0Block);
-    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(1)).to.be.lessThan(deposit1Block);
-    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(2)).to.be.lessThan(
+    // Similarly, the block returned for deposit ID 1 should be <= the actual block of deposit 1, and the block
+    // returned for deposit ID 2 should be less than the high block.
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(1)).to.be.lessThanOrEqual(deposit1Block);
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(2)).to.be.lessThanOrEqual(
       spokePoolClient1.eventSearchConfig.fromBlock
     );
 
@@ -365,22 +367,28 @@ describe("SpokePoolClient: Fill Validation", async function () {
 
     // This test fails because the same block where depositID went from 3-->4 is also when depositID went from
     // 4-->5 so the test falls out of the while loop.
-    // await spokePoolClient1.binarySearchForBlockContainingDepositId(4);
     await assertPromiseError(
       spokePoolClient1.binarySearchForBlockContainingDepositId(4),
       "failed to find block containing deposit ID"
     );
     // We can avoid the error by instructing the binary search to fallback to the last set high or low block which should be greater than or
-    // less than the actual block we wanted.
+    // less than the actual block we wanted. LOW returns the block before the the one where deposit ID flipped
+    // from 3 to 4. High should be greater than that block.
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(4, "LOW")).to.be.lessThanOrEqual(
-      depositEvents[4].blockNumber
+      depositEvents[3].blockNumber
     );
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(4, "HIGH")).to.be.greaterThanOrEqual(
-      depositEvents[4].blockNumber
+      depositEvents[3].blockNumber
+    );
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(3, "LOW")).to.be.lessThanOrEqual(
+      depositEvents[2].blockNumber
+    );
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(3, "HIGH")).to.be.greaterThanOrEqual(
+      depositEvents[2].blockNumber
     );
 
     // When looking for deposit ID 2, we will be able to find the actual block number which will be equal to the block
-    // that emitted deposit ID 1.
+    // that emitted deposit ID 1. This is because ID 2 was the first deposit in the multi-deposit block.
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(2, "LOW")).to.be.equal(
       depositEvents[1].blockNumber
     );
@@ -388,7 +396,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
       depositEvents[1].blockNumber
     );
 
-    // Deposit ID for 5 should work as expected.
+    // Deposit ID for 5 should also be identified exactly since its the current deposit ID.
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(5, "LOW")).to.be.equal(
       depositEvents[4].blockNumber
     );
@@ -409,16 +417,16 @@ describe("SpokePoolClient: Fill Validation", async function () {
       depositEvents[4].blockNumber
     );
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(4, "LOW")).to.be.lessThanOrEqual(
-      depositEvents[4].blockNumber
+      depositEvents[3].blockNumber
     );
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(4, "HIGH")).to.be.greaterThanOrEqual(
-      depositEvents[4].blockNumber
+      depositEvents[3].blockNumber
     );
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(3, "LOW")).to.be.lessThanOrEqual(
-      depositEvents[4].blockNumber
+      depositEvents[2].blockNumber
     );
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(3, "HIGH")).to.be.greaterThanOrEqual(
-      depositEvents[4].blockNumber
+      depositEvents[2].blockNumber
     );
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(2, "LOW")).to.be.equal(
       depositEvents[1].blockNumber

@@ -283,7 +283,6 @@ export class SpokePoolClient {
   // deposit ID. This can be used by the Dataworker to determine whether to give a relayer a refund for a fill
   // of a deposit older than its fixed lookback.
   async queryHistoricalDepositForFill(fill: Fill): Promise<DepositWithBlock | undefined> {
-    if (!this.isUpdated) throw new Error("SpokePoolClient must be updated before querying historical deposits");
     if (fill.originChainId !== this.chainId) throw new Error("fill.originChainId !== this.chainid");
 
     // We need to update client so that we know what the firstDepositIdForSpokePool is and the
