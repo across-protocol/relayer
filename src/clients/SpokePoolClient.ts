@@ -255,7 +255,8 @@ export class SpokePoolClient {
 
   // Look for the block number of the event that emitted the deposit with the target deposit ID. We know that
   // `numberOfDeposits` is strictly increasing for any SpokePool, so we can use a binary search to find the blockTag
-  // where `numberOfDeposits == targetDepositId`.
+  // where `numberOfDeposits == targetDepositId`. If we can't find the exact block and if fallback is set to LOW or
+  // HIGH, then we'll return the closest block before or after it.
   async binarySearchForBlockContainingDepositId(
     targetDepositId: number,
     initLow = this.spokePoolDeploymentBlock,
@@ -282,6 +283,7 @@ export class SpokePoolClient {
   // deposit ID. This can be used by the Dataworker to determine whether to give a relayer a refund for a fill
   // of a deposit older than its fixed lookback.
   async queryHistoricalDepositForFill(fill: Fill): Promise<DepositWithBlock | undefined> {
+    if (!this.isUpdated) throw new Error("SpokePoolClient must be updated before querying historical deposits");
     if (fill.originChainId !== this.chainId) throw new Error("fill.originChainId !== this.chainid");
 
     // We need to update client so that we know what the firstDepositIdForSpokePool is and the

@@ -324,26 +324,26 @@ describe("SpokePoolClient: Fill Validation", async function () {
     const deposit0Block = deposit0Event.blockNumber;
     const deposit1Block = deposit1Event.blockNumber;
 
-    // Need to update spokePoolClient so that firstBlockToSearch gets set to something higher than the deployment block.
-    assertPromiseError(spokePoolClient1.binarySearchForBlockContainingDepositId(0), "low > high");
-    await spokePoolClient1.update();
-
+    // Set spoke pool client's fromBlock to be the latest block so that the binary search defaults the "high" block
+    // to this. Otherwise the binary search should fail since the "high" block will default to the eventSearchConfig
+    // fromBlock = 0.
+    await assertPromiseError(
+      spokePoolClient1.binarySearchForBlockContainingDepositId(0),
+      "Binary search failed because low > high"
+    );
+    spokePoolClient1.eventSearchConfig.fromBlock = await spokePool_1.provider.getBlockNumber();
     // Searching for deposit ID 0 should cause the binary search to immediately exit and return the mid block
     // between the spoke pool deployment and the client's first block searched. This assumes the SpokePool's
     // numberOfDeposits started at 0.
     const firstMidBlockInBinarySearch = Math.floor(
-      ((await spokePool_1.provider.getBlockNumber()) + spokePool1DeploymentBlock) / 2
+      (spokePoolClient1.eventSearchConfig.fromBlock + spokePool1DeploymentBlock) / 2
     );
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(0)).to.equal(firstMidBlockInBinarySearch);
     // Importantly, this block should be < the actual block of deposit 0.
     expect(firstMidBlockInBinarySearch).to.be.lessThan(deposit0Block);
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(1)).to.be.lessThan(deposit1Block);
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(2)).to.be.lessThan(
-      spokePoolClient1.latestBlockNumber
-    );
-    assertPromiseError(
-      spokePoolClient1.binarySearchForBlockContainingDepositId(0),
-      "failed to find block containing deposit ID"
+      spokePoolClient1.eventSearchConfig.fromBlock
     );
 
     // Now send multiple deposits in the same block.
@@ -359,12 +359,14 @@ describe("SpokePoolClient: Fill Validation", async function () {
     await spokePool_1.connect(depositor).multicall(Array(3).fill(depositData.data));
     expect(await spokePool_1.numberOfDeposits()).to.equal(5);
     const depositEvents = await spokePool_1.queryFilter("FundsDeposited");
-    await spokePoolClient1.update();
+
+    // Set fromBlock to block later than deposits.
+    spokePoolClient1.eventSearchConfig.fromBlock = await spokePool_1.provider.getBlockNumber();
 
     // This test fails because the same block where depositID went from 3-->4 is also when depositID went from
     // 4-->5 so the test falls out of the while loop.
     // await spokePoolClient1.binarySearchForBlockContainingDepositId(4);
-    assertPromiseError(
+    await assertPromiseError(
       spokePoolClient1.binarySearchForBlockContainingDepositId(4),
       "failed to find block containing deposit ID"
     );
@@ -398,7 +400,8 @@ describe("SpokePoolClient: Fill Validation", async function () {
     // deposits in the same block.
     await hre.network.provider.send("evm_mine");
     await hre.network.provider.send("evm_mine");
-    await spokePoolClient1.update();
+    spokePoolClient1.eventSearchConfig.fromBlock = await spokePool_1.provider.getBlockNumber();
+
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(5, "LOW")).to.be.equal(
       depositEvents[4].blockNumber
     );
@@ -423,6 +426,47 @@ describe("SpokePoolClient: Fill Validation", async function () {
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(2, "HIGH")).to.be.equal(
       depositEvents[1].blockNumber
     );
+  });
+
+  it("Can fetch older deposit matching fill", async function () {
+    const depositData = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+
+    if (!depositData) throw new Error("Deposit data is null");
+    const expectedRealizedLpFeePct = await configStoreClient.computeRealizedLpFeePct(
+      {
+        quoteTimestamp: depositData.quoteTimestamp,
+        amount: depositData.amount,
+        destinationChainId: depositData.destinationChainId,
+        originChainId: depositData.originChainId,
+      },
+      l1Token.address
+    );
+    await fillRelay(
+      spokePool_2,
+      erc20_2,
+      depositor,
+      depositor,
+      relayer,
+      0,
+      originChainId,
+      depositData?.amount,
+      depositData?.amount,
+      expectedRealizedLpFeePct.realizedLpFeePct
+    );
+    await spokePoolClient2.update();
+    const [fill] = spokePoolClient2.getFills();
+
+    await assertPromiseError(spokePoolClient1.queryHistoricalDepositForFill(fill), "SpokePoolClient must be updated");
+
+    // Set event search config from block to latest block so client doesn't see event.
+    spokePoolClient1.eventSearchConfig.fromBlock = await spokePool_1.provider.getBlockNumber();
+    spokePoolClient1.firstBlockToSearch = spokePoolClient1.eventSearchConfig.fromBlock;
+    await spokePoolClient1.update();
+
+    // Client has 0 deposits in memory so querying historical deposit sends fresh RPC requests.
+    expect(spokePoolClient1.getDeposits().length).to.equal(0);
+    const historicalDeposit = await spokePoolClient1.queryHistoricalDepositForFill(fill);
+    expect(historicalDeposit?.depositId).to.deep.equal(depositData.depositId);
   });
 
   it("Ignores fills with deposit ID > latest deposit ID queried in spoke pool client", async function () {
