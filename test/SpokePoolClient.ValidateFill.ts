@@ -21,6 +21,9 @@ import {
   deployConfigStore,
   getLastBlockTime,
   buildDeposit,
+  hre,
+  assertPromiseError,
+  getDepositParams,
 } from "./utils";
 
 import { AcrossConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
@@ -186,6 +189,62 @@ describe("SpokePoolClient: Fill Validation", async function () {
     await spokePoolClient1.update();
     const [_deposit] = spokePoolClient1.getDeposits();
     expect(historicalDeposit).to.deep.equal(_deposit);
+  });
+
+  it("binary search for deposit ID", async function () {
+    // Make sure depositID0 isn't minted in the same block as the contract deployment.
+    await hre.network.provider.send("evm_mine");
+
+    // Send 2 deposits and mine blocks between them to ensure deposits are in different blocks.
+    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await hre.network.provider.send("evm_mine");
+    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await hre.network.provider.send("evm_mine");
+    const [deposit0Event, deposit1Event] = await spokePool_1.queryFilter("FundsDeposited");
+    const deposit0Block = deposit0Event.blockNumber;
+    const deposit1Block = deposit1Event.blockNumber;
+
+    // Need to update spokePoolClient so that firstBlockToSearch gets set to something higher than the deployment block.
+    assertPromiseError(spokePoolClient1.binarySearchForBlockContainingDepositId(0), "low > high");
+    await spokePoolClient1.update();
+
+    // Searching for deposit ID 0 should cause the binary search to immediately exit and return the mid block
+    // between the spoke pool deployment and the client's first block searched. This assumes the SpokePool's
+    // numberOfDeposits started at 0.
+    const firstMidBlockInBinarySearch = Math.floor(
+      ((await spokePool_1.provider.getBlockNumber()) + spokePool1DeploymentBlock) / 2
+    );
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(0)).to.equal(firstMidBlockInBinarySearch);
+    // Importantly, this block should be < the actual block of deposit 0.
+    expect(firstMidBlockInBinarySearch).to.be.lessThan(deposit0Block);
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(1)).to.be.lessThan(deposit1Block);
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(2)).to.be.lessThan(
+      spokePoolClient1.latestBlockNumber
+    );
+    assertPromiseError(
+      spokePoolClient1.binarySearchForBlockContainingDepositId(0),
+      "failed to find block containing deposit ID"
+    );
+
+    // Now send multiple deposits in the same block.
+    const depositParams = getDepositParams(
+      depositor.address,
+      erc20_1.address,
+      toBNWei("1"),
+      destinationChainId,
+      toBNWei("0.01"),
+      await spokePool_1.getCurrentTime()
+    );
+    const depositData = await spokePool_1.populateTransaction.deposit(...depositParams);
+    await spokePool_1.connect(depositor).multicall(Array(3).fill(depositData.data));
+    expect(await spokePool_1.numberOfDeposits()).to.equal(5);
+    const depositEvents = await spokePool_1.queryFilter("FundsDeposited");
+    await spokePoolClient1.update();
+    console.log(depositEvents.map((e) => [e.blockNumber, e?.args?.depositId]));
+
+    // TODO: This test fails because the same block where depositID went from 3-->4 is also when depositID went from
+    // 4-->5 so the test falls out of the while loop.
+    await spokePoolClient1.binarySearchForBlockContainingDepositId(4);
   });
 
   it("Ignores fills with deposit ID > latest deposit ID queried in spoke pool client", async function () {

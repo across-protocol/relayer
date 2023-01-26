@@ -14,6 +14,7 @@ import {
   getDeposit,
   setDeposit,
   getRedisDepositKey,
+  assert,
 } from "../utils";
 import { toBN, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
@@ -56,6 +57,7 @@ export class SpokePoolClient {
   public latestBlockNumber: number | undefined;
   public deposits: { [DestinationChainId: number]: DepositWithBlock[] } = {};
   public fills: { [OriginChainId: number]: FillWithBlock[] } = {};
+  public spokePoolDeploymentBlock: number;
 
   constructor(
     readonly logger: winston.Logger,
@@ -64,12 +66,15 @@ export class SpokePoolClient {
     readonly configStoreClient: AcrossConfigStoreClient | null,
     readonly chainId: number,
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
-    public spokePoolDeploymentBlock: number = 0
+    readonly fallbackSpokePoolDeploymentBlock: number = 0
   ) {
     try {
       this.spokePoolDeploymentBlock = getDeploymentBlockNumber("SpokePool", chainId);
     } catch (err) {
-      // Probably a test environment. Ignore. Test should have set deployment block manually.
+      // If getDeploymentBlockNumber fails then we're probably in a test environment and we can use the
+      // the fallback value. If the deployment block is set before the spoke pool's actual deployment, the update()
+      // method will likely fail when calling SpokePool.numberOfDeposits({ blockTag: this.spokePoolDeploymentBlock })
+      this.spokePoolDeploymentBlock = fallbackSpokePoolDeploymentBlock;
     }
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
@@ -254,17 +259,26 @@ export class SpokePoolClient {
   // `numberOfDeposits` is strictly increasing for any SpokePool, so we can use a binary search to find the blockTag
   // where `numberOfDeposits == targetDepositId`.
   async binarySearchForBlockContainingDepositId(targetDepositId: number): Promise<number> {
-    let high = this.firstBlockToSearch;
+    // After an update(), firstBlockToSearch increments to the toBlock+1 so clamp that at the latestBlockNumber to
+    // avoid calling spokePool.numberOfDeposits for a block that doesn't exist yet.
+    let high = this.latestBlockNumber
+      ? Math.min(this.firstBlockToSearch, this.latestBlockNumber)
+      : this.firstBlockToSearch;
     let low = this.spokePoolDeploymentBlock;
+    const initHigh = high;
+    const initLow = low;
+    if (low > high) throw new Error("Binary search failed because low > high");
     do {
       const mid = Math.floor((high + low) / 2);
+      console.log(`Searching between [${low}, ${high}] for deposit ID ${targetDepositId}, mid: ${mid}`);
       const searchedDepositId = await this.spokePool.numberOfDeposits({ blockTag: mid });
+      console.log(`Searched deposit ID: ${searchedDepositId}`);
       if (targetDepositId > searchedDepositId) low = mid + 1;
       else if (targetDepositId < searchedDepositId) high = mid - 1;
       else return mid;
     } while (low <= high);
     throw new Error(
-      `Binary search between [${this.spokePoolDeploymentBlock}, ${this.firstBlockToSearch}] failed to find block containing deposit ID ${targetDepositId}`
+      `Binary search between [${initLow}, ${initHigh}] failed to find block containing deposit ID ${targetDepositId}`
     );
   }
 
@@ -282,12 +296,14 @@ export class SpokePoolClient {
     }
     if (cachedDeposit) {
       deposit = cachedDeposit as DepositWithBlock;
+      assert(deposit.depositId === fill.depositId && deposit.originChainId === fill.originChainId);
     } else {
       // Binary search between spoke pool deployment block and earliest block searched to find the block range containing
-      // the deposited event, where numberOfDeposits incremented from depositId-1 to depositId.
+      // the deposited event. Find a block before and after the deposit event, which was emitted when
+      // depositId incremented from fill.depositId to fill.depositId+1
       const [blockBeforeDeposit, blockAfterDeposit] = await Promise.all([
-        this.binarySearchForBlockContainingDepositId(Math.max(fill.depositId - 1, this.firstDepositIdForSpokePool)),
-        this.binarySearchForBlockContainingDepositId(Math.min(fill.depositId + 1, this.earliestDepositIdQueried)),
+        this.binarySearchForBlockContainingDepositId(fill.depositId),
+        this.binarySearchForBlockContainingDepositId(fill.depositId + 1),
       ]);
 
       const query = await paginatedEventQuery(
