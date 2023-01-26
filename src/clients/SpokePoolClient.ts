@@ -259,20 +259,17 @@ export class SpokePoolClient {
 
   // Look for the block number of the event that emitted the deposit with the target deposit ID. We know that
   // `numberOfDeposits` is strictly increasing for any SpokePool, so we can use a binary search to find the blockTag
-  // where `numberOfDeposits == targetDepositId`.
+  // where `numberOfDeposits == targetDepositId`. If we can't find the exact block and if fallback is set to LOW or
+  // HIGH, then we'll return the closest block before or after it.
   async binarySearchForBlockContainingDepositId(
     targetDepositId: number,
-    fallback: BINARY_SEARCH_FALLBACK = "NONE"
+    fallback: BINARY_SEARCH_FALLBACK = "NONE",
+    low = this.spokePoolDeploymentBlock,
+    high = this.eventSearchConfig.fromBlock
   ): Promise<number> {
-    // After an update(), firstBlockToSearch increments to the toBlock+1 so clamp that at the latestBlockNumber to
-    // avoid calling spokePool.numberOfDeposits for a block that doesn't exist yet.
-    let high = this.latestBlockNumber
-      ? Math.min(this.firstBlockToSearch, this.latestBlockNumber)
-      : this.firstBlockToSearch;
-    let low = this.spokePoolDeploymentBlock;
+    assert(low <= high, "Binary search failed because low > high");
     const initHigh = high;
     const initLow = low;
-    if (low > high) throw new Error("Binary search failed because low > high");
     do {
       const mid = Math.floor((high + low) / 2);
       const searchedDepositId = await this.spokePool.numberOfDeposits({ blockTag: mid });
@@ -295,6 +292,7 @@ export class SpokePoolClient {
   // deposit ID. This can be used by the Dataworker to determine whether to give a relayer a refund for a fill
   // of a deposit older than its fixed lookback.
   async queryHistoricalDepositForFill(fill: Fill): Promise<DepositWithBlock | undefined> {
+    if (!this.isUpdated) throw new Error("SpokePoolClient must be updated before querying historical deposits");
     if (fill.originChainId !== this.chainId) throw new Error("fill.originChainId !== this.chainid");
     if (fill.depositId < this.firstDepositIdForSpokePool) return undefined;
     if (fill.depositId >= this.earliestDepositIdQueried) return this.getDepositForFill(fill);
@@ -314,8 +312,18 @@ export class SpokePoolClient {
         // Ensure that `blockBeforeDeposit` returns and is less than the block where depositId incremented
         // from depositId-1 to depositId. Similarly ensure that blockAfter deposit returns and is greater than
         // the block where depositId incremented from depositId to depositId+1.
-        this.binarySearchForBlockContainingDepositId(fill.depositId, "LOW"),
-        this.binarySearchForBlockContainingDepositId(fill.depositId + 1, "HIGH"),
+        this.binarySearchForBlockContainingDepositId(
+          fill.depositId,
+          "LOW",
+          this.spokePoolDeploymentBlock,
+          this.eventSearchConfig.fromBlock
+        ),
+        this.binarySearchForBlockContainingDepositId(
+          fill.depositId + 1,
+          "HIGH",
+          this.spokePoolDeploymentBlock,
+          this.eventSearchConfig.fromBlock
+        ),
       ]);
       assert(blockBeforeDeposit <= blockAfterDeposit, "blockBeforeDeposit > blockAfterDeposit");
 
