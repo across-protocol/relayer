@@ -41,6 +41,8 @@ const FILL_DEPOSIT_COMPARISON_KEYS = [
   "destinationToken",
 ] as const;
 
+type BINARY_SEARCH_FALLBACK = "LOW" | "HIGH" | "NONE";
+
 export class SpokePoolClient {
   private depositHashes: { [depositHash: string]: DepositWithBlock } = {};
   private depositHashesToFills: { [depositHash: string]: FillWithBlock[] } = {};
@@ -265,9 +267,7 @@ export class SpokePoolClient {
     let high = initHigh;
     do {
       const mid = Math.floor((high + low) / 2);
-      console.log(`Searching between [${low}, ${high}] for deposit ID ${targetDepositId}, mid: ${mid}`);
       const searchedDepositId = await this.spokePool.numberOfDeposits({ blockTag: mid });
-      console.log(`Searched deposit ID: ${searchedDepositId}`);
       if (targetDepositId > searchedDepositId) low = mid + 1;
       else if (targetDepositId < searchedDepositId) high = mid - 1;
       else return mid;
