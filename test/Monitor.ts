@@ -84,6 +84,7 @@ describe("Monitor", async function () {
       MONITOR_REPORT_INTERVAL: "10",
       MONITORED_RELAYERS: `["${depositor.address}"]`,
       CONFIGURED_NETWORKS: JSON.stringify(configuredNetworks),
+      POLLING_DELAY: "60",
     });
 
     // Set the config store version to 0 to match the default version in the ConfigStoreClient.
