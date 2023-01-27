@@ -68,16 +68,12 @@ export class SpokePoolClient {
     readonly configStoreClient: AcrossConfigStoreClient | null,
     readonly chainId: number,
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
-    readonly fallbackSpokePoolDeploymentBlock: number = 0
+    readonly fallbackSpokePoolDeploymentBlock: number
   ) {
-    try {
-      this.spokePoolDeploymentBlock = getDeploymentBlockNumber("SpokePool", chainId);
-    } catch (err) {
-      // If getDeploymentBlockNumber fails then we're probably in a test environment and we can use the
-      // the fallback value. If the deployment block is set before the spoke pool's actual deployment, the update()
-      // method will likely fail when calling SpokePool.numberOfDeposits({ blockTag: this.spokePoolDeploymentBlock })
-      this.spokePoolDeploymentBlock = fallbackSpokePoolDeploymentBlock;
-    }
+    this.spokePoolDeploymentBlock =
+      fallbackSpokePoolDeploymentBlock === undefined
+        ? getDeploymentBlockNumber("SpokePool", chainId)
+        : fallbackSpokePoolDeploymentBlock;
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
 
