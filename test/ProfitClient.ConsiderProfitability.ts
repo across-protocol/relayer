@@ -81,11 +81,11 @@ describe("ProfitClient: Consider relay profit", async function () {
   beforeEach(async function () {
     hubPoolClient = new MockHubPoolClient(null, null);
     const [owner] = await ethers.getSigners();
-    const { spokePool: spokePool_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId);
-    const { spokePool: spokePool_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId);
+    const { spokePool: spokePool_1, deploymentBlock: spokePool1DeploymentBlock } = await deploySpokePoolWithToken(originChainId, destinationChainId);
+    const { spokePool: spokePool_2, deploymentBlock: spokePool2DeploymentBlock } = await deploySpokePoolWithToken(destinationChainId, originChainId);
 
-    const spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(owner), null, originChainId);
-    const spokePoolClient_2 = new SpokePoolClient(spyLogger, spokePool_2.connect(owner), null, destinationChainId);
+    const spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(owner), null, originChainId, undefined, spokePool1DeploymentBlock);
+    const spokePoolClient_2 = new SpokePoolClient(spyLogger, spokePool_2.connect(owner), null, destinationChainId, undefined, spokePool2DeploymentBlock);
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
     const ignoreProfitability = false;
