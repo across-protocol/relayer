@@ -26,30 +26,12 @@ export function getRedisDepositKey(depositOrFill: Deposit | Fill) {
 }
 
 export async function setDeposit(deposit: Deposit, redisClient: RedisClient, expirySeconds = 0): Promise<void> {
-  await setRedisKey(
-    getRedisDepositKey(deposit),
-    JSON.stringify({
-      ...deposit,
-      amount: deposit.amount.toString(),
-      relayerFeePct: deposit.relayerFeePct.toString(),
-      realizedLpFeePct: deposit.realizedLpFeePct.toString(),
-    }),
-    redisClient,
-    expirySeconds
-  );
+  await setRedisKey(getRedisDepositKey(deposit), JSON.stringify(deposit), redisClient, expirySeconds);
 }
 
 export async function getDeposit(key: string, redisClient: RedisClient): Promise<Deposit | undefined> {
   const depositRaw = await redisClient.get(key);
-  if (depositRaw) {
-    const depositParsed = JSON.parse(depositRaw);
-    return {
-      ...depositParsed,
-      amount: toBN(depositParsed.amount),
-      relayerFeePct: toBN(depositParsed.relayerFeePct),
-      realizedLpFeePct: toBN(depositParsed.realizedLpFeePct),
-    };
-  }
+  if (depositRaw) return JSON.parse(depositRaw, objectWithBigNumberReviver);
 }
 
 // Get the block number for a given timestamp fresh from on-chain data if not found in redis cache.
@@ -79,4 +61,12 @@ export async function getBlockForTimestamp(
 
 export function shouldCache(eventTimestamp: number, latestTime: number): boolean {
   return latestTime - eventTimestamp >= REDIS_CACHEABLE_AGE;
+}
+
+// JSON.stringify(object) ends up stringfying BigNumber objects as "{type:BigNumber,hex...}" so we can pass
+// this reviver function as the second arg to JSON.parse to instruct it to correctly revive a stringified
+// object with BigNumber values.
+function objectWithBigNumberReviver(_: string, value: any) {
+  if (typeof value !== "object" || value?.type !== "BigNumber") return value;
+  return toBN(value.hex);
 }
