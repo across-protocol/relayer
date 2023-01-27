@@ -333,7 +333,7 @@ export class SpokePoolClient {
 
       const query = await paginatedEventQuery(
         this.spokePool,
-        this.spokePool.filters.FundsDeposited(null, null, null, null, fill.depositId),
+        this.spokePool.filters.FundsDeposited(null, null, null, null, fill.depositId, null, null, fill.depositor),
         {
           fromBlock: blockBeforeDeposit,
           toBlock: blockAfterDeposit,
