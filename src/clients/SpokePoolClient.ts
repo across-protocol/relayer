@@ -333,7 +333,9 @@ export class SpokePoolClient {
 
       const query = await paginatedEventQuery(
         this.spokePool,
-        this.spokePool.filters.FundsDeposited(null, null, null, null, fill.depositId, null, null, fill.depositor),
+        // TODO: When SpokePool V2 is deployed we can begin to filter on fill.depositId as well as fill.depositor,
+        // which should optimize the RPC request.
+        this.spokePool.filters.FundsDeposited(null, null, null, null, null, null, null, null, fill.depositor),
         {
           fromBlock: blockBeforeDeposit,
           toBlock: blockAfterDeposit,
