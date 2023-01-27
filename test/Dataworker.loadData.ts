@@ -770,7 +770,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     // Construct a spoke pool client with a small search range that would not include the deposit.
     spokePoolClient_1.firstBlockToSearch = deposit1Block + 1;
-    spokePoolClient_1.eventSearchConfig.fromBlock = spokePoolClient_1.firstBlockToSearch
+    spokePoolClient_1.eventSearchConfig.fromBlock = spokePoolClient_1.firstBlockToSearch;
     await updateAllClients();
     expect(spokePoolClient_1.getDeposits().length).to.equal(0);
 
