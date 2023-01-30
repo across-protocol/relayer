@@ -22,13 +22,15 @@ import {
   getDisputedProposal,
   getBlockForTimestamp,
   getCurrentTime,
+  sortEventsDescending,
+  getDisputeForTimestamp,
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
   getSpokePoolClientEventSearchConfigsForFastDataworker,
   updateDataworkerClients,
 } from "../dataworker/DataworkerClientHelper";
-import { PendingRootBundle } from "../interfaces";
+import { PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
 import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
@@ -79,13 +81,30 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     return;
   }
 
-  const precedingProposeRootBundleEvent = await getDisputedProposal(
+  // If request timestamp corresponds to a dispute, use that to easily find the associated root bundle.
+  const disputeEventForRequestTime = await getDisputeForTimestamp(
     dvm,
     clients.configStoreClient,
     priceRequestTime,
     priceRequestBlock
   );
-  if (!precedingProposeRootBundleEvent) throw new Error("Failed to identify a root bundle preceding dispute");
+  let precedingProposeRootBundleEvent: ProposedRootBundle;
+  if (disputeEventForRequestTime !== undefined)
+    precedingProposeRootBundleEvent = getDisputedProposal(clients.configStoreClient, disputeEventForRequestTime);
+  if (disputeEventForRequestTime === undefined || precedingProposeRootBundleEvent === undefined) {
+    logger.debug({
+      at: "Dataworker#validate",
+      message:
+        "No bundle linked to dispute found for request time, falling back to most recent root bundle before request time",
+      foundDisputeEvent: disputeEventForRequestTime !== undefined,
+      foundProposedRootBundle: precedingProposeRootBundleEvent !== undefined,
+    });
+    // Timestamp doesn't correspond to a dispute, so find the most recent root bundle before the request time.
+    precedingProposeRootBundleEvent = sortEventsDescending(clients.hubPoolClient.getProposedRootBundles()).find(
+      (x) => x.blockNumber <= priceRequestBlock
+    );
+  }
+  if (!precedingProposeRootBundleEvent) throw new Error("No proposed root bundle found before request time");
 
   const rootBundle: PendingRootBundle = {
     poolRebalanceRoot: precedingProposeRootBundleEvent.poolRebalanceRoot,
@@ -108,8 +127,16 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     throw new Error("Set DATAWORKER_FAST_LOOKBACK_COUNT > 0, otherwise script will take too long to run");
   }
 
+  // Calculate the latest blocks we should query in the spoke pool client so we can efficiently reconstruct
+  // older bundles. We do this by setting toBlocks equal to the bundle end blocks of the first validated bundle
+  // following the target bundle.
+  const closestFollowingValidatedBundleIndex = clients.hubPoolClient
+    .getValidatedRootBundles()
+    .findIndex((x) => x.blockNumber >= rootBundle.proposalBlockNumber);
+  const overriddenConfig = { ...config, dataworkerFastStartBundle: closestFollowingValidatedBundleIndex + 1 };
+
   const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
-    config,
+    overriddenConfig,
     clients,
     dataworker
   );

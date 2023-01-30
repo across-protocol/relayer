@@ -728,6 +728,10 @@ export class Dataworker {
         expectedBlockRanges: blockRangesImpliedByBundleEndBlocks,
         expectedPoolRebalanceLeaves: expectedPoolRebalanceRoot.leaves,
         expectedPoolRebalanceRoot: expectedPoolRebalanceRoot.tree.getHexRoot(),
+        expectedRelayerRefundLeaves: expectedRelayerRefundRoot.leaves,
+        expectedRelayerRefundRoot: expectedRelayerRefundRoot.tree.getHexRoot(),
+        expectedSlowRelayLeaves: expectedSlowRelayRoot.leaves,
+        expectedSlowRelayRoot: expectedSlowRelayRoot.tree.getHexRoot(),
         pendingRoot: rootBundle.poolRebalanceRoot,
         pendingPoolRebalanceLeafCount: rootBundle.unclaimedPoolRebalanceLeafCount,
       });
