@@ -302,6 +302,7 @@ export class SpokePoolClient {
     }
     if (cachedDeposit) {
       deposit = cachedDeposit as DepositWithBlock;
+      // Assert that cache hasn't been corrupted.
       assert(deposit.depositId === fill.depositId && deposit.originChainId === fill.originChainId);
     } else {
       // Binary search between spoke pool deployment block and earliest block searched to find the block range containing
