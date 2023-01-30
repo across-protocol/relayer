@@ -270,7 +270,7 @@ export class SpokePoolClient {
     } while (low <= high);
     // If we can't find a blockTag where `numberOfDeposits == targetDepositId`,
     // then its likely that the depositId was included in the same block as deposits that came after it. So we fallback
-    // to returning `low` if we exit the while loop, which should be the block where depositId incremented from 
+    // to returning `low` if we exit the while loop, which should be the block where depositId incremented from
     // `targetDepositId`.
     return low;
   }
@@ -301,13 +301,9 @@ export class SpokePoolClient {
       // depositId incremented from fill.depositId to fill.depositId+1
       const [blockBeforeDeposit, blockAfterDeposit] = await Promise.all([
         // Look for the block where depositId incremented from fill.depositId-1 to fill.depositId.
-        this.binarySearchForBlockContainingDepositId(
-          fill.depositId
-        ),
+        this.binarySearchForBlockContainingDepositId(fill.depositId),
         // Look for the block where depositId incremented from fill.depositId to fill.depositId+1.
-        this.binarySearchForBlockContainingDepositId(
-          fill.depositId + 1
-        ),
+        this.binarySearchForBlockContainingDepositId(fill.depositId + 1),
       ]);
       assert(blockBeforeDeposit <= blockAfterDeposit, "blockBeforeDeposit > blockAfterDeposit");
 
