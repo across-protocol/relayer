@@ -41,8 +41,6 @@ const FILL_DEPOSIT_COMPARISON_KEYS = [
   "destinationToken",
 ] as const;
 
-type BINARY_SEARCH_FALLBACK = "LOW" | "HIGH" | "NONE";
-
 export class SpokePoolClient {
   private depositHashes: { [depositHash: string]: DepositWithBlock } = {};
   private depositHashesToFills: { [depositHash: string]: FillWithBlock[] } = {};
@@ -60,7 +58,6 @@ export class SpokePoolClient {
   public latestBlockNumber: number | undefined;
   public deposits: { [DestinationChainId: number]: DepositWithBlock[] } = {};
   public fills: { [OriginChainId: number]: FillWithBlock[] } = {};
-  public spokePoolDeploymentBlock: number;
 
   constructor(
     readonly logger: winston.Logger,
@@ -256,8 +253,7 @@ export class SpokePoolClient {
 
   // Look for the block number of the event that emitted the deposit with the target deposit ID. We know that
   // `numberOfDeposits` is strictly increasing for any SpokePool, so we can use a binary search to find the blockTag
-  // where `numberOfDeposits == targetDepositId`. If we can't find the exact block and if fallback is set to LOW or
-  // HIGH, then we'll return the closest block before or after it.
+  // where `numberOfDeposits == targetDepositId`.
   async binarySearchForBlockContainingDepositId(
     targetDepositId: number,
     initLow = this.spokePoolDeploymentBlock,
