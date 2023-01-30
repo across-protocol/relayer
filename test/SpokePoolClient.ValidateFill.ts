@@ -367,81 +367,64 @@ describe("SpokePoolClient: Fill Validation", async function () {
     // Set fromBlock to block later than deposits.
     spokePoolClient1.eventSearchConfig.fromBlock = await spokePool_1.provider.getBlockNumber();
 
-    // This test fails because the same block where depositID went from 3-->4 is also when depositID went from
-    // 4-->5 so the test falls out of the while loop.
-    await assertPromiseError(
-      spokePoolClient1.binarySearchForBlockContainingDepositId(4),
-      "failed to find block containing deposit ID"
-    );
-    // We can avoid the error by instructing the binary search to fallback to the last set high or low block which should be greater than or
-    // less than the actual block we wanted. LOW returns the block before the the one where deposit ID flipped
-    // from 3 to 4. High should be greater than that block.
-    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(4, "LOW")).to.be.lessThanOrEqual(
+    // The binary search will now return the block where depositId incremented from the target-1 to the target, even
+    // if calling `numberOfDeposits()` at the returned block is > target. This is because of the multiple deposits
+    // in the same block.
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(4)).to.be.greaterThanOrEqual(
       depositEvents[3].blockNumber
     );
-    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(4, "HIGH")).to.be.greaterThanOrEqual(
-      depositEvents[3].blockNumber
-    );
-    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(4, "LOW")).to.be.lessThan(
-      await spokePoolClient1.binarySearchForBlockContainingDepositId(4, "HIGH")
-    );
-    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(3, "LOW")).to.be.lessThanOrEqual(
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(3)).to.be.greaterThanOrEqual(
       depositEvents[2].blockNumber
     );
-    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(3, "HIGH")).to.be.greaterThanOrEqual(
-      depositEvents[2].blockNumber
+
+    // Searching for deposit ID 5 should return same block as 4 and 3 since they were in same block:
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(5)).to.be.greaterThanOrEqual(
+      await spokePoolClient1.binarySearchForBlockContainingDepositId(4)
     );
-    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(3, "LOW")).to.be.lessThan(
-      await spokePoolClient1.binarySearchForBlockContainingDepositId(3, "HIGH")
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(5)).to.be.greaterThanOrEqual(
+      await spokePoolClient1.binarySearchForBlockContainingDepositId(3)
     );
-    // When looking for deposit ID 2, we will be able to find the actual block number which will be equal to the block
-    // that incremented the ID from 1 to 2. This was the first deposit in the multi-deposit block.
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(5)).to.be.lessThanOrEqual(
+      spokePoolClient1.eventSearchConfig.fromBlock
+    );
+
+    // Deposit ID 2 should be strictly less than deposit ID 3
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(2)).to.be.greaterThanOrEqual(
       depositEvents[1].blockNumber
     );
-
-    // Deposit ID for 5 should also be identified exactly since its the current deposit ID.
-    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(5)).to.be.greaterThanOrEqual(
-      depositEvents[4].blockNumber
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(2)).to.be.lessThan(
+      depositEvents[3].blockNumber
     );
 
     // If we add some blocks to the end of the binary search, then the results will be the same when searching for
     // deposits in the same block.
     await mineRandomBlocks();
     spokePoolClient1.eventSearchConfig.fromBlock = await spokePool_1.provider.getBlockNumber();
-    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(4, "LOW")).to.be.lessThanOrEqual(
+
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(4)).to.be.greaterThanOrEqual(
       depositEvents[3].blockNumber
     );
-    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(4, "HIGH")).to.be.greaterThanOrEqual(
-      depositEvents[3].blockNumber
-    );
-    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(3, "LOW")).to.be.lessThanOrEqual(
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(3)).to.be.greaterThanOrEqual(
       depositEvents[2].blockNumber
     );
-    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(3, "HIGH")).to.be.greaterThanOrEqual(
-      depositEvents[2].blockNumber
-    );
-
-    // Can't search for these "inner" deposits because they were in the multicall block.
-    await assertPromiseError(
-      spokePoolClient1.binarySearchForBlockContainingDepositId(4),
-      "failed to find block containing deposit ID"
-    );
-    await assertPromiseError(
-      spokePoolClient1.binarySearchForBlockContainingDepositId(3),
-      "failed to find block containing deposit ID"
-    );
-
-    // Searching for deposit ID's 2 and 5 should lead to a different binary search behavior because:
-    // - deposit ID 1-->2 happened at the first deposit in the multicall block.
-    // - deposit ID 4-->5 happened at the last deposit in the multicall block.
-    // - In both of these cases, the binary search should complete without having to resort to a fallback because
-    // there were queryable blockTags where ID == 2 or ID == 5.
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(5)).to.be.greaterThanOrEqual(
-      depositEvents[4].blockNumber
+      await spokePoolClient1.binarySearchForBlockContainingDepositId(4)
     );
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(5)).to.be.greaterThanOrEqual(
+      await spokePoolClient1.binarySearchForBlockContainingDepositId(3)
+    );
+
+    // Last deposit ID is now stricly less than last block in search range because there were more blocks mined since
+    // the deposit that incrementerd ID from 4 to 5.
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(5)).to.be.lessThan(
+      spokePoolClient1.eventSearchConfig.fromBlock
+    );
+
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(2)).to.be.greaterThanOrEqual(
       depositEvents[1].blockNumber
+    );
+    expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(2)).to.be.lessThan(
+      depositEvents[3].blockNumber
     );
   });
 
