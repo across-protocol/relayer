@@ -65,7 +65,7 @@ export class SpokePoolClient {
     readonly configStoreClient: AcrossConfigStoreClient | null,
     readonly chainId: number,
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
-    readonly spokePoolDeploymentBlock?: number
+    public spokePoolDeploymentBlock?: number
   ) {
     this.spokePoolDeploymentBlock =
       spokePoolDeploymentBlock === undefined
