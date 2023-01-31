@@ -45,6 +45,10 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   }
   const priceRequestTime = Number(process.env.REQUEST_TIME);
 
+  // Override default config with sensible defaults:
+  // - DATAWORKER_FAST_LOOKBACK_COUNT=8 balances limiting RPC requests with querying
+  // enough data to limit # of excess historical deposit queries.
+  process.env.DATAWORKER_FAST_LOOKBACK_COUNT = "8";
   const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
   logger[startupLogLevel(config)]({
     at: "RootBundleValidator",
@@ -132,10 +136,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   // plenty of events before and after the bundle.
   const overriddenConfig = {
     ...config,
-    dataworkerFastStartBundle: closestFollowingValidatedBundleIndex + 2,
-    // Override DATAWORKER_FAST_LOOKBACK_COUNT to a reasonable number that balances RPC requests with querying
-    // enough data to limit # of historical deposit queries.
-    dataworkerFastLookbackCount: 8,
+    dataworkerFastStartBundle: closestFollowingValidatedBundleIndex + 2
   };
 
   const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
