@@ -259,6 +259,13 @@ export class HubPoolClient {
     ) as ExecutedRootBundle[];
   }
 
+  getValidatedRootBundles(latestMainnetBlock: number = Number.MAX_SAFE_INTEGER): ProposedRootBundle[] {
+    return this.proposedRootBundles.filter((rootBundle: ProposedRootBundle) => {
+      if (rootBundle.blockNumber > latestMainnetBlock) return false;
+      return this.isRootBundleValid(rootBundle, latestMainnetBlock);
+    });
+  }
+
   getLatestFullyExecutedRootBundle(latestMainnetBlock: number): ProposedRootBundle | undefined {
     // Search for latest ProposeRootBundleExecuted event followed by all of its RootBundleExecuted event suggesting
     // that all pool rebalance leaves were executed. This ignores any proposed bundles that were partially executed.
