@@ -47,30 +47,12 @@ export async function paginatedEventQuery(
   // rounded up. This gives us the number of queries we need to execute to traverse the whole block range.
   const paginatedRanges = getPaginatedBlockRanges(searchConfig);
 
-  // const redisKeyGeneratorFn = redisKeyGenerator(contract.address, filter);
-
   try {
     return (
       (
-        await Promise.map(
-          paginatedRanges,
-          async ([fromBlock, toBlock]) => {
-            return contract.queryFilter(filter, fromBlock, toBlock);
-            // if (!redisClient) return contract.queryFilter(filter, fromBlock, toBlock);
-            // const key = redisKeyGeneratorFn(fromBlock, toBlock);
-            // const redisResponse = await redisClient.get(key);
-            // if (redisResponse !== null) return JSON.parse(redisResponse, bigNumberJsonReviver);
-            // const result = await contract.queryFilter(filter, fromBlock, toBlock);
-            // redisClient
-
-            // if (redisClient) {
-            // }
-            // const result: Event[] = await contract.queryFilter(filter, fromBlock, toBlock);
-            // if ()
-            // return result;
-          },
-          { concurrency: searchConfig.concurrency | defaultConcurrency }
-        )
+        await Promise.map(paginatedRanges, ([fromBlock, toBlock]) => contract.queryFilter(filter, fromBlock, toBlock), {
+          concurrency: searchConfig.concurrency | defaultConcurrency,
+        })
       )
         .flat()
         // Filter events by block number because ranges can include blocks that are outside the range specified for caching reasons.
