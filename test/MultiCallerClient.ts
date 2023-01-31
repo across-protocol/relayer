@@ -55,7 +55,6 @@ function encodeFunctionData(method: string, args?: ReadonlyArray<any>): string {
 }
 
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
-process.env.NEW_MULTICALLER = "true"; // Temporarily override default configuration.
 const multiCaller: MockedMultiCallerClient = new MockedMultiCallerClient(spyLogger);
 const provider = new ethers.providers.StaticJsonRpcProvider("127.0.0.1");
 const address = randomAddress(); // Test contract address
@@ -291,10 +290,5 @@ describe("MultiCallerClient", async function () {
   it("Correctly handles 0-length input to multicall bundle generation", async function () {
     const txnQueue: AugmentedTransaction[] = await multiCaller.buildMultiCallBundles([], 10);
     expect(txnQueue.length).to.equal(0);
-  });
-
-  after(async function () {
-    // Post-test env sanitisation to allow other tests to use the legacy MultiCallerClient. @todo: Remove.
-    process.env.NEW_MULTICALLER = "";
   });
 });

@@ -6,11 +6,8 @@ import {
   Contract,
   isPromiseFulfilled,
   isPromiseRejected,
-  runTransaction,
   getTarget,
   BigNumber,
-  willSucceed,
-  etherscanLink,
   TransactionResponse,
   TransactionSimulationResult,
 } from "../utils";
@@ -42,61 +39,45 @@ export const unknownRevertReasonMethodsToIgnore = new Set([
 ]);
 
 export class MultiCallerClient {
-  private transactions: AugmentedTransaction[] = [];
   protected txnClient: TransactionClient;
   protected txns: { [chainId: number]: AugmentedTransaction[] } = {};
   protected valueTxns: { [chainId: number]: AugmentedTransaction[] } = {};
-  // newMulticaller is temporary, to support transition to the updated multicaller implementation.
-  protected newMulticaller: boolean;
   constructor(
     readonly logger: winston.Logger,
     readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE
   ) {
-    this.newMulticaller = process.env.NEW_MULTICALLER === "true";
     this.txnClient = new TransactionClient(logger);
   }
 
   // Adds all information associated with a transaction to the transaction queue.
   enqueueTransaction(txn: AugmentedTransaction) {
-    if (this.newMulticaller) {
-      // Value transactions are sorted immediately because the UMA multicall implementation rejects them.
-      const txnQueue = txn.value && txn.value.gt(0) ? this.valueTxns : this.txns;
-      if (txnQueue[txn.chainId] === undefined) txnQueue[txn.chainId] = [];
-      txnQueue[txn.chainId].push(txn);
-    } else this.transactions.push(txn);
+    // Value transactions are sorted immediately because the UMA multicall implementation rejects them.
+    const txnQueue = txn.value && txn.value.gt(0) ? this.valueTxns : this.txns;
+    if (txnQueue[txn.chainId] === undefined) txnQueue[txn.chainId] = [];
+    txnQueue[txn.chainId].push(txn);
   }
 
   transactionCount() {
-    if (this.newMulticaller) {
-      return Object.values(this.txns)
-        .concat(Object.values(this.valueTxns))
-        .reduce((count, txnQueue) => (count += txnQueue.length), 0);
-    }
-
-    return this.transactions.length;
+    return Object.values(this.txns)
+      .concat(Object.values(this.valueTxns))
+      .reduce((count, txnQueue) => (count += txnQueue.length), 0);
   }
 
   clearTransactionQueue(chainId: number = null) {
-    if (this.newMulticaller) {
-      if (chainId !== null) {
-        this.txns[chainId] = [];
-        this.valueTxns[chainId] = [];
-      } else {
-        this.txns = {};
-        this.valueTxns = {};
-      }
-    } else this.transactions = [];
+    if (chainId !== null) {
+      this.txns[chainId] = [];
+      this.valueTxns[chainId] = [];
+    } else {
+      this.txns = {};
+      this.valueTxns = {};
+    }
   }
 
   async executeTransactionQueue(simulate = false): Promise<string[]> {
-    if (this.newMulticaller) {
-      // For compatibility with the existing implementation, flatten all txn hashes into a single array.
-      // To be resolved once the legacy implementation is removed and the callers have been updated.
-      const txnHashes: { [chainId: number]: string[] } = await this.executeTxnQueues(simulate);
-      return Object.values(txnHashes).flat();
-    }
-
-    return this.executeTxnQueueLegacy(simulate);
+    // For compatibility with the existing implementation, flatten all txn hashes into a single array.
+    // To be resolved once the legacy implementation is removed and the callers have been updated.
+    const txnHashes: { [chainId: number]: string[] } = await this.executeTxnQueues(simulate);
+    return Object.values(txnHashes).flat();
   }
 
   // For each chain, collate the enqueued transactions and process them in parallel.
@@ -179,192 +160,6 @@ export class MultiCallerClient {
       txnRequests.length > 0 ? await this.txnClient.submit(chainId, txnRequests) : [];
 
     return txnResponses;
-  }
-
-  // @todo: Remove this method part of legacy cleanup
-  private async executeTxnQueueLegacy(simulationModeOn = false): Promise<string[]> {
-    if (this.transactions.length === 0) return [];
-    this.logger.debug({
-      at: "MultiCallerClient",
-      message: "Executing tx bundle",
-      number: this.transactions.length,
-      simulationModeOn,
-    });
-
-    try {
-      const transactions = await this.simulateTransactionQueue(this.transactions);
-      if (transactions.length === 0) {
-        this.logger.debug({ at: "MultiCallerClient", message: "No valid transactions in the queue." });
-        return [];
-      }
-
-      const valueTransactions = transactions.filter((transaction) => transaction.value && transaction.value.gt(0));
-      const nonValueTransactions = transactions.filter((transaction) => !transaction.value || transaction.value.eq(0));
-
-      // Group by target chain. Note that there is NO grouping by target contract. The relayer will only ever use this
-      // MultiCallerClient to send multiple transactions to one target contract on a given target chain and so we dont
-      // need to group by target contract. This can be further refactored with another group by if this is needed.
-      const groupedTransactions: { [chainId: number]: AugmentedTransaction[] } = lodash.groupBy(
-        nonValueTransactions,
-        "chainId"
-      );
-
-      const chunkedTransactions: { [chainId: number]: AugmentedTransaction[][] } = Object.fromEntries(
-        Object.entries(groupedTransactions).map(([_chainId, transactions]) => {
-          const chainId = Number(_chainId);
-          const chunkSize: number = this.chunkSize[chainId] || DEFAULT_MULTICALL_CHUNK_SIZE;
-          if (transactions.length > chunkSize) {
-            const dropped: Array<{ address: string; method: string; args: any[] }> = transactions
-              .slice(chunkSize)
-              .map((txn) => {
-                return { address: txn.contract.address, method: txn.method, args: txn.args };
-              });
-            this.logger.info({
-              at: "MultiCallerClient#chunkedTransactions",
-              message: `Dropping ${dropped.length} transactions on chain ${chainId}.`,
-              dropped,
-            });
-          }
-          // Multi-chunks not attempted due to nonce reuse complications, but may return in future.
-          return [chainId, [transactions.slice(0, chunkSize)]];
-        })
-      );
-
-      if (simulationModeOn) {
-        this.logger.debug({
-          at: "MultiCallerClient",
-          message: "All transactions will succeed! Logging markdown messages.",
-        });
-        let mrkdwn = "";
-        valueTransactions.forEach((transaction, i) => {
-          mrkdwn += "*Transaction excluded from batches because it contained value:*\n";
-          mrkdwn += `  ${i + 1}. ${transaction.message || "0 message"}: ${transaction.mrkdwn || "0 mrkdwn"}\n`;
-        });
-        Object.entries(chunkedTransactions).forEach(([_chainId, transactions]) => {
-          const chainId = Number(_chainId);
-          mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
-          transactions.forEach((chunk, groupIndex) => {
-            chunk.forEach((transaction, chunkTxIndex) => {
-              mrkdwn +=
-                `  ${groupIndex + 1}-${chunkTxIndex + 1}. ${transaction.message || "0 message"}: ` +
-                `${transaction.mrkdwn || "0 mrkdwn"}\n`;
-            });
-          });
-        });
-        this.logger.info({ at: "MultiCallerClient", message: "Exiting simulation mode 🎮", mrkdwn });
-        this.clearTransactionQueue();
-        return [];
-      }
-
-      const groupedValueTransactions: { [networkId: number]: AugmentedTransaction[] } = lodash.groupBy(
-        valueTransactions,
-        "chainId"
-      );
-
-      this.logger.debug({
-        at: "MultiCallerClient",
-        message: "Executing transactions with msg.value excluded from batches by target chain",
-        txs: Object.entries(groupedValueTransactions).map(([chainId, transactions]) => ({
-          chainId: Number(chainId),
-          num: transactions.length,
-        })),
-      });
-
-      // Construct multiCall transaction for each target chain.
-      const valueTransactionsResult = await Promise.allSettled(
-        valueTransactions.map(async (transaction): Promise<TransactionResponse> => {
-          return await runTransaction(
-            this.logger,
-            transaction.contract,
-            transaction.method,
-            transaction.args,
-            transaction.value
-          );
-        })
-      );
-
-      this.logger.debug({
-        at: "MultiCallerClient",
-        message: "Executing transactions grouped by target chain",
-        txs: Object.entries(chunkedTransactions).map(([chainId, txns]) => ({ chainId, num: txns.length })),
-      });
-
-      // Construct multiCall transaction for each target chain.
-      const multiCallTransactionsResult = await Promise.allSettled(
-        Object.values(chunkedTransactions)
-          .map((transactions) => transactions.map((chunk) => this.submitTxn(this.buildMultiCallBundle(chunk))))
-          .flat()
-      );
-
-      // Each element in the bundle of receipts relates back to each set within the groupedTransactions. Produce log.
-      let mrkdwn = "";
-      const transactionHashes: string[] = [];
-      valueTransactionsResult.forEach((result, i) => {
-        const { chainId } = valueTransactions[i];
-        mrkdwn += "*Transaction excluded from batches because it contained value:*\n";
-        if (result.status === "rejected") {
-          mrkdwn += ` ⚠️ Transaction sent on ${getNetworkName(
-            chainId
-          )} failed or bot timed out waiting for transaction to mine, check logs for more details.\n`;
-          this.logger.debug({
-            at: "MultiCallerClient",
-            message: `Batch transaction sent on chain ${chainId} failed or bot timed out waiting for it to mine`,
-            error: result.reason,
-          });
-        } else {
-          mrkdwn += `  ${i + 1}.${valueTransactions[i].message || ""}: ` + `${valueTransactions[i].mrkdwn || ""}\n`;
-          const transactionHash = result.value.hash;
-          mrkdwn += "tx: " + etherscanLink(transactionHash, chainId) + "\n";
-          transactionHashes.push(transactionHash);
-        }
-      });
-      let flatIndex = 0;
-      Object.entries(chunkedTransactions).forEach(([_chainId, transactions]) => {
-        const chainId = Number(_chainId);
-        mrkdwn += `*Transactions sent in batch on ${getNetworkName(chainId)}:*\n`;
-        transactions.forEach((chunk, chunkIndex) => {
-          const settledPromise = multiCallTransactionsResult[flatIndex++];
-          if (settledPromise.status === "rejected") {
-            const rejectionError = (settledPromise as PromiseRejectedResult).reason;
-            mrkdwn += ` ⚠️ Transaction sent on ${getNetworkName(
-              chainId
-            )} failed or bot timed out waiting for transaction to mine, check logs for more details.\n`;
-            // If the `transactionReceipt` was rejected because of a timeout, there won't be an error log sent to
-            // winston, but it will show up as this debug log that the developer can look up.
-            this.logger.debug({
-              at: "MultiCallerClient",
-              message: `Batch transaction sent on chain ${chainId} failed or bot timed out waiting for it to mine`,
-              error: rejectionError,
-            });
-          } else {
-            chunk.forEach((transaction, groupTxIndex) => {
-              mrkdwn +=
-                `  ${chunkIndex + 1}-${groupTxIndex + 1}. ${transaction.message || ""}: ` +
-                `${transaction.mrkdwn || ""}\n`;
-            });
-            const transactionHash = (settledPromise as PromiseFulfilledResult<any>).value.hash;
-            mrkdwn += "tx: " + etherscanLink(transactionHash, chainId) + "\n";
-            transactionHashes.push(transactionHash);
-          }
-        });
-      });
-      this.logger.info({ at: "MultiCallerClient", message: "Multicall batch sent! 🧙", mrkdwn });
-      this.clearTransactionQueue();
-      return transactionHashes;
-    } catch (error) {
-      this.logger.error({
-        at: "MultiCallerClient",
-        message: "Error executing bundle. There might be an RPC error",
-        error,
-        notificationPath: "across-error",
-      });
-    }
-  }
-
-  // @todo: Remove this method part of legacy cleanup
-  protected async submitTxn(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
-    const { contract, method, args, value } = txn;
-    return await runTransaction(this.logger, contract, method, args, value, null, nonce);
   }
 
   buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
