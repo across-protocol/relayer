@@ -73,6 +73,7 @@ class CacheProvider extends ethers.providers.StaticJsonRpcProvider {
     const [{ fromBlock, toBlock }] = params;
 
     // Handle odd cases where the ordering is flipped, etc.
+    // toBlock/fromBlock is in hex, so it must be parsed before being compared to the first unsafe block.
     const latestQueriedBlock = Math.max(parseInt(fromBlock, 16), parseInt(toBlock, 16));
 
     // Handle cases where the input block numbers are not hex values ("latest", "pending", etc).
@@ -86,8 +87,6 @@ class CacheProvider extends ethers.providers.StaticJsonRpcProvider {
 
     // We ensure that the toBlock is not within the max reorg distance to avoid caching unstable information.
     const firstUnsafeBlockNumber = blockNumber - this.maxReorgDistance;
-
-    // toBlock is in hex, so it must be parsed before being compared to the first unsafe block.
     return latestQueriedBlock < firstUnsafeBlockNumber;
   }
 }
