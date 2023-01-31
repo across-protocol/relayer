@@ -8,7 +8,6 @@ import {
   isPromiseRejected,
   getTarget,
   BigNumber,
-  etherscanLink,
   TransactionResponse,
   TransactionSimulationResult,
 } from "../utils";
