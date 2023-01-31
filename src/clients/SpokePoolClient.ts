@@ -14,8 +14,6 @@ import {
   setDeposit,
   getRedisDepositKey,
   assert,
-  filledSameDeposit,
-  sortEventsAscending,
 } from "../utils";
 import { toBN, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
