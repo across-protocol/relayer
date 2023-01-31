@@ -26,6 +26,7 @@ const PROVIDER_CACHE_TTL = 3600;
 
 class CacheProvider extends ethers.providers.StaticJsonRpcProvider {
   public readonly getLogsCachePrefix: string;
+  public readonly maxReorgDistance: number;
 
   constructor(
     readonly redisClient?: RedisClient,
@@ -35,6 +36,8 @@ class CacheProvider extends ethers.providers.StaticJsonRpcProvider {
 
     if (MAX_REORG_DISTANCE[this.network.chainId] === undefined)
       throw new Error(`CacheProvider:constructor no MAX_REORG_DISTANCE for chain ${this.network.chainId}`);
+
+    this.maxReorgDistance = MAX_REORG_DISTANCE[this.network.chainId];
 
     // Pre-compute as much of the redis key as possible.
     this.getLogsCachePrefix = `${new URL(this.connection.url).hostname},${this.network.chainId}:eth_getLogs,`;
@@ -67,7 +70,14 @@ class CacheProvider extends ethers.providers.StaticJsonRpcProvider {
   private async shouldCache(method: string, params: Array<any>): Promise<boolean> {
     // Today, we only cache eth_getLogs. We could add other methods here, where convenient.
     if (method !== "eth_getLogs") return false;
-    const [{ toBlock }] = params;
+    const [{ fromBlock, toBlock }] = params;
+
+    // Handle odd cases where the ordering is flipped, etc.
+    const latestQueriedBlock = Math.max(parseInt(fromBlock, 16), parseInt(toBlock, 16));
+
+    // Handle cases where the input block numbers are not hex values ("latest", "pending", etc).
+    // This would result in the result of the above being NaN.
+    if (Number.isNaN(latestQueriedBlock)) return false;
 
     // Note: this method is an internal method provided by the BaseProvider. It allows the caller to specify a maxAge of
     // the block that is allowed. This means if a block has been retrieved withint the last n seconds, no provider
@@ -75,10 +85,10 @@ class CacheProvider extends ethers.providers.StaticJsonRpcProvider {
     const blockNumber = await super._getInternalBlockNumber(BLOCK_NUMBER_TTL * 1000);
 
     // We ensure that the toBlock is not within the max reorg distance to avoid caching unstable information.
-    const firstUnsafeBlockNumber = blockNumber - MAX_REORG_DISTANCE[this.network.chainId];
+    const firstUnsafeBlockNumber = blockNumber - this.maxReorgDistance;
 
     // toBlock is in hex, so it must be parsed before being compared to the first unsafe block.
-    return parseInt(toBlock, 16) < firstUnsafeBlockNumber;
+    return latestQueriedBlock < firstUnsafeBlockNumber;
   }
 }
 
