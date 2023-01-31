@@ -3,9 +3,84 @@ import lodash from "lodash";
 import winston from "winston";
 import { isPromiseFulfilled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
-import { Logger } from ".";
+import { Logger, RedisClient, setRedisKey } from ".";
 
 const logger = Logger;
+
+// This is the max distance on each chain that reorgs can happen.
+// Caching will not be allowed for queries whose responses depend on blocks closer than this many blocks.
+// This is intended to be conservative.
+const MAX_REORG_DISTANCE: { [chainId: number]: number } = {
+  1: 64,
+  10: 0,
+  137: 256,
+  288: 0,
+  42161: 0,
+};
+
+// This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance.
+const BLOCK_NUMBER_TTL = 60;
+
+// 1 hour TTL on the redis cache.
+const PROVIDER_CACHE_TTL = 3600;
+
+class CacheProvider extends ethers.providers.StaticJsonRpcProvider {
+  public readonly getLogsCachePrefix: string;
+
+  constructor(
+    readonly redisClient?: RedisClient,
+    ...jsonRpcConstructorParams: ConstructorParameters<typeof ethers.providers.StaticJsonRpcProvider>
+  ) {
+    super(...jsonRpcConstructorParams);
+
+    if (MAX_REORG_DISTANCE[this.network.chainId] === undefined)
+      throw new Error(`CacheProvider:constructor no MAX_REORG_DISTANCE for chain ${this.network.chainId}`);
+
+    // Pre-compute as much of the redis key as possible.
+    this.getLogsCachePrefix = `${new URL(this.connection.url).hostname},${this.network.chainId}:eth_getLogs,`;
+  }
+  override async send(method: string, params: Array<any>): Promise<any> {
+    if (this.redisClient && (await this.shouldCache(method, params))) {
+      const redisKey = this.buildRedisKey(method, params);
+
+      // Attempt to pull the result from the cache.
+      const redisResult = await this.redisClient.get(redisKey);
+
+      // If cache has the result, parse the json and return it.
+      if (redisResult) return JSON.parse(redisResult);
+
+      // Cache does not have the result. Query it directly and cache.
+      const result = await super.send(method, params);
+
+      // Commit result to redis.
+      await setRedisKey(redisKey, JSON.stringify(result), this.redisClient, PROVIDER_CACHE_TTL);
+    }
+
+    return await super.send(method, params);
+  }
+
+  private buildRedisKey(_: string, params: Array<any>) {
+    // Only handles eth_getLogs right now.
+    return this.getLogsCachePrefix + JSON.stringify(params);
+  }
+
+  private async shouldCache(method: string, params: Array<any>): Promise<boolean> {
+    // Today, we only cache eth_getLogs. We could add other methods here, where convenient.
+    if (method !== "eth_getLogs") return false;
+    const [{ toBlock }] = params;
+
+    // Note: this method is an internal method provided by the BaseProvider. It allows the caller to specify a maxAge of
+    // the block that is allowed. This means if a block has been retrieved withint the last n seconds, no provider
+    // query will be made.
+    const blockNumber = await super._getInternalBlockNumber(BLOCK_NUMBER_TTL * 1000);
+
+    // We ensure that the toBlock is not within the max reorg distance to avoid caching unstable information.
+    const firstUnsafeBlockNumber = blockNumber - MAX_REORG_DISTANCE[this.network.chainId];
+
+    // toBlock is in hex, so it must be parsed before being compared to the first unsafe block.
+    return parseInt(toBlock, 16) < firstUnsafeBlockNumber;
+  }
+}
 
 // The async/queue library has a task-based interface for building a concurrent queue.
 // This is the type we pass to define a request "task".
@@ -25,17 +100,14 @@ interface RateLimitTask {
 
 // This provider is a very small addition to the StaticJsonRpcProvider that ensures that no more than `maxConcurrency`
 // requests are ever in flight. It uses the async/queue library to manage this.
-class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
+class RateLimitedProvider extends CacheProvider {
   // The queue object that manages the tasks.
   private queue: QueueObject;
 
   // Takes the same arguments as the JsonRpcProvider, but it has an additional maxConcurrency value at the beginning
   // of the list.
-  constructor(
-    maxConcurrency: number,
-    ...jsonRpcConstructorParams: ConstructorParameters<typeof ethers.providers.StaticJsonRpcProvider>
-  ) {
-    super(...jsonRpcConstructorParams);
+  constructor(maxConcurrency: number, ...cacheConstructorParams: ConstructorParameters<typeof CacheProvider>) {
+    super(...cacheConstructorParams);
 
     // This sets up the queue. Each task is executed by calling the superclass's send method, which fires off the
     // request. This queue sends out requests concurrently, but stops once the concurrency limit is reached. The
@@ -49,6 +121,9 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
   }
 
   override async send(method: string, params: Array<any>): Promise<any> {
+    // Ignore rate limiting for eth_blockNumber calls. Otherwise, The internal blocknumber calls in the caching
+    // provider can hang.
+    if (method === "eth_blockNumber") return super.send(method, params);
     // This simply creates a promise and adds the arguments and resolve and reject handlers to the task.
     return new Promise<any>((resolve, reject) => {
       const task: RateLimitTask = {
@@ -117,12 +192,13 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     readonly nodeQuorumThreshold: number,
     readonly retries: number,
     readonly delay: number,
-    readonly maxConcurrency: number
+    readonly maxConcurrency: number,
+    redisClient?: RedisClient
   ) {
     // Initialize the super just with the chainId, which stops it from trying to immediately send out a .send before
     // this derived class is initialized.
     super(undefined, chainId);
-    this.providers = params.map((inputs) => new RateLimitedProvider(maxConcurrency, ...inputs));
+    this.providers = params.map((inputs) => new RateLimitedProvider(maxConcurrency, redisClient, ...inputs));
     if (this.nodeQuorumThreshold < 1 || !Number.isInteger(this.nodeQuorumThreshold))
       throw new Error(
         `nodeQuorum,Threshold cannot be < 1 and must be an integer. Currently set to ${this.nodeQuorumThreshold}`
@@ -292,7 +368,14 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
   }
 }
 
-export function getProvider(chainId: number, logger?: winston.Logger) {
+// Global provider cache to avoid creating multiple providers for the same chain.
+const providerCache: { [chainId: number]: RetryProvider } = {};
+
+export function getProvider(chainId: number, logger?: winston.Logger, redisClient?: RedisClient, useCache = true) {
+  if (useCache) {
+    const cachedProvider = providerCache[chainId];
+    if (cachedProvider) return cachedProvider;
+  }
   const { NODE_RETRIES, NODE_RETRY_DELAY, NODE_QUORUM, NODE_TIMEOUT, NODE_MAX_CONCURRENCY } = process.env;
 
   const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
@@ -347,14 +430,18 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
     chainId,
   ]);
 
-  return new RetryProvider(
+  const provider = new RetryProvider(
     constructorArgumentLists,
     chainId,
     nodeQuorumThreshold,
     retries,
     retryDelay,
-    nodeMaxConcurrency
+    nodeMaxConcurrency,
+    redisClient
   );
+
+  if (useCache) providerCache[chainId] = provider;
+  return provider;
 }
 
 export function getNodeUrlList(chainId: number): string[] {

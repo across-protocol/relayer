@@ -1,6 +1,7 @@
 import { Block } from ".";
 import { BlockFinder } from "@uma/financial-templates-lib";
 import { createClient } from "redis4";
+import winston from "winston";
 
 export type RedisClient = ReturnType<typeof createClient>;
 
@@ -47,4 +48,24 @@ export async function getBlockForTimestamp(
 
 export function shouldCache(eventTimestamp: number, latestTime: number): boolean {
   return latestTime - eventTimestamp >= REDIS_CACHEABLE_AGE;
+}
+
+// Make the redis client for a particular url essentially a singleton.
+const redisClients: { [url: string]: Promise<RedisClient> } = {};
+
+export function getRedis(url: string, logger?: winston.Logger) {
+  if (!redisClients[url]) {
+    const redisClient = createClient({ url });
+    redisClients[url] = redisClient.connect().then(async () => {
+      if (logger)
+        logger.debug({
+          at: "Dataworker#ClientHelper",
+          message: `Connected to redis server at ${url} successfully!`,
+          dbSize: await redisClient.dbSize(),
+        });
+      return redisClient;
+    });
+  }
+
+  return redisClients[url];
 }
