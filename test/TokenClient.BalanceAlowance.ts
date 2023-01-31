@@ -9,6 +9,7 @@ let erc20_1: Contract, weth_1: Contract, erc20_2: Contract, weth_2: Contract;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let owner: SignerWithAddress, spyLogger: winston.Logger;
 let tokenClient: TokenClient; // tested
+let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
 describe("TokenClient: Balance and Allowance", async function () {
   beforeEach(async function () {
@@ -19,16 +20,32 @@ describe("TokenClient: Balance and Allowance", async function () {
       spokePool: spokePool_1,
       erc20: erc20_1,
       weth: weth_1,
+      deploymentBlock: spokePool1DeploymentBlock,
     } = await deploySpokePoolWithToken(originChainId, destinationChainId));
     ({
       spokePool: spokePool_2,
       erc20: erc20_2,
       weth: weth_2,
+      deploymentBlock: spokePool2DeploymentBlock,
     } = await deploySpokePoolWithToken(destinationChainId, originChainId));
     const { hubPool } = await deployAndConfigureHubPool(owner, [], zeroAddress, zeroAddress);
 
-    spokePoolClient_1 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_1, null, originChainId);
-    spokePoolClient_2 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_2, null, destinationChainId);
+    spokePoolClient_1 = new SpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool_1,
+      null,
+      originChainId,
+      undefined,
+      spokePool1DeploymentBlock
+    );
+    spokePoolClient_2 = new SpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool_2,
+      null,
+      destinationChainId,
+      undefined,
+      spokePool2DeploymentBlock
+    );
 
     const spokePoolClients = { [destinationChainId]: spokePoolClient_1, [originChainId]: spokePoolClient_2 };
     const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);

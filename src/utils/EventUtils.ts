@@ -1,28 +1,10 @@
 import { delay } from "@uma/financial-templates-lib";
-import { DepositWithBlock, FillWithBlock, SortableEvent } from "../interfaces";
-import { Contract, Event, EventFilter, Promise, RedisClient, BigNumber } from "./";
-import util from "util";
-import { ethers } from "hardhat";
+import { SortableEvent } from "../interfaces";
+import { Contract, Event, EventFilter, Promise } from "./";
 
 const defaultConcurrency = 200;
 const maxRetries = 3;
 const retrySleepTime = 10;
-const printed = 0;
-
-// type SerializableEvent = Omit<Event, "decode" | "removeListener" | "getBlock" | "getTransaction" | "getTransactionReceipt">;
-
-// function bigNumberJsonReviver(key: string, value: any) {
-//   if (typeof value !== "object" || value === null || value?.type !== "BigNumber") return value;
-//   return BigNumber.from(value.hex);
-// }
-
-// function redisKeyGenerator(
-//   address: string,
-//   filter: EventFilter
-// ) {
-//   const prefix = `eth_getLogs:${contract.address},${JSON.stringify(filter.topics)},`;
-//   return (fromBlock: number, toBlock: number) => `${prefix},${fromBlock},${toBlock}`;
-// }
 
 export function spreadEvent(event: Event) {
   const keys = Object.keys(event.args).filter((key: string) => isNaN(+key)); // Extract non-numeric keys.

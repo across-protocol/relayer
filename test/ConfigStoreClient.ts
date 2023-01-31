@@ -279,20 +279,17 @@ describe("AcrossConfigStoreClient", async function () {
 
       // Can't set first update to same value as default version:
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), DEFAULT_CONFIG_STORE_VERSION);
-      await updateAllClients();
-      expect(configStoreClient.cumulativeConfigStoreVersionUpdates.length).to.equal(0);
-      expect(DEFAULT_CONFIG_STORE_VERSION).to.equal(0);
-
-      // Now this is true since latest version in contract is 0, same as default.
-      expect(configStoreClient.hasLatestConfigStoreVersion).to.be.true;
-
       // Can't set update to non-integer:
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "1.6");
-      await updateAllClients();
-      expect(configStoreClient.cumulativeConfigStoreVersionUpdates.length).to.equal(0);
-
+      // Set config store version to 6, making client think it doesn't have latest version, which is 0 in SDK.
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "6");
+      // Client ignores updates for versions that aren't greater than the previous version.
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "5");
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "6");
       await updateAllClients();
+
+      // There was only one legitimate update.
+      expect(configStoreClient.cumulativeConfigStoreVersionUpdates.length).to.equal(1);
       expect(configStoreClient.hasLatestConfigStoreVersion).to.be.false;
       const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[2];
       const initialUpdateTime = (await ethers.provider.getBlock(initialUpdate.blockNumber)).timestamp;
@@ -300,12 +297,6 @@ describe("AcrossConfigStoreClient", async function () {
 
       // Time when there was no update
       expect(configStoreClient.getConfigStoreVersionForTimestamp(initialUpdateTime - 1)).to.equal(0);
-
-      // Skip updates for versions that aren't greater than the previous version.
-      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "5");
-      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "6");
-      await updateAllClients();
-      expect(configStoreClient.cumulativeConfigStoreVersionUpdates.length).to.equal(1);
     });
     it("Validate config store version", async function () {
       expect(configStoreClient.configStoreVersion).to.equal(0);

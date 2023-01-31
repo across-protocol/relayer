@@ -384,7 +384,7 @@ export class MultiCallerClient {
 
     const mrkdwn: string[] = [];
     let callData = transactions.map((txn, idx) => {
-      mrkdwn.push(`\n  *txn. ${idx + 1}:* ${txn.mrkdwn}`);
+      mrkdwn.push(`\n  *txn. ${idx + 1}:* ${txn.message ?? "No message"}: ${txn.mrkdwn ?? "No markdown"}`);
       return txn.contract.interface.encodeFunctionData(txn.method, txn.args);
     });
 

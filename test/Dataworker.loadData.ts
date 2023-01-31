@@ -17,21 +17,14 @@ import {
   MultiCallerClient,
   BalanceAllocator,
 } from "../src/clients";
-import {
-  amountToDeposit,
-  repaymentChainId,
-  destinationChainId,
-  originChainId,
-  CHAIN_ID_TEST_LIST,
-  deposit,
-} from "./constants";
+import { amountToDeposit, repaymentChainId, destinationChainId, originChainId, CHAIN_ID_TEST_LIST } from "./constants";
 import { IMPOSSIBLE_BLOCK_RANGE } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { toBN, getRefundForFills, getRealizedLpFeeForFills, MAX_UINT_VAL } from "../src/utils";
 import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
-import { DepositWithBlock, Fill, FillWithBlock } from "../src/interfaces";
+import { DepositWithBlock, Fill } from "../src/interfaces";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, l1Token_2: Contract, hubPool: Contract;
@@ -441,16 +434,18 @@ describe("Dataworker: Load data used in all functions", async function () {
     const fill2 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 0.25);
     await updateAllClients();
     const data3 = dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(3), spokePoolClients);
-    expect(data3.unfilledDeposits).to.deep.equal([
-      {
-        unfilledAmount: amountToDeposit.sub(fill1.fillAmount),
-        deposit: deposit1,
-      },
-      {
-        unfilledAmount: amountToDeposit.sub(fill2.fillAmount),
-        deposit: deposit2,
-      },
-    ]);
+    expect(data3.unfilledDeposits)
+      .excludingEvery(["logIndex", "transactionHash", "transactionIndex"])
+      .to.deep.equal([
+        {
+          unfilledAmount: amountToDeposit.sub(fill1.fillAmount),
+          deposit: deposit1,
+        },
+        {
+          unfilledAmount: amountToDeposit.sub(fill2.fillAmount),
+          deposit: deposit2,
+        },
+      ]);
 
     // If block range does not cover fills, then unfilled deposits are not included.
     expect(
@@ -488,9 +483,9 @@ describe("Dataworker: Load data used in all functions", async function () {
     // One unfilled deposit that we're going to slow fill:
     await updateAllClients();
     const data6 = dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
-    expect(data6.unfilledDeposits).to.deep.equal([
-      { unfilledAmount: amountToDeposit.sub(fill3.fillAmount), deposit: deposit5 },
-    ]);
+    expect(data6.unfilledDeposits)
+      .excludingEvery(["logIndex", "transactionHash", "transactionIndex"])
+      .to.deep.equal([{ unfilledAmount: amountToDeposit.sub(fill3.fillAmount), deposit: deposit5 }]);
 
     const slowRelays = buildSlowRelayLeaves([deposit5]);
     const tree = await buildSlowRelayTree(slowRelays);
@@ -657,9 +652,9 @@ describe("Dataworker: Load data used in all functions", async function () {
     // Should include all deposits, even those not matched by a relay
     await updateAllClients();
     const data1 = dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
-    expect(data1.deposits).to.deep.equal([
-      { ...deposit1, blockNumber: realizedLpFeePctData.quoteBlock, originBlockNumber: originBlock },
-    ]);
+    expect(data1.deposits)
+      .excludingEvery(["logIndex", "transactionHash", "transactionIndex"])
+      .to.deep.equal([{ ...deposit1, blockNumber: realizedLpFeePctData.quoteBlock, originBlockNumber: originBlock }]);
 
     // If block range does not cover deposits, then they are not included
     expect(
