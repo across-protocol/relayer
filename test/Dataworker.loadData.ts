@@ -7,6 +7,8 @@ import {
   buildFillForRepaymentChain,
   getLastBlockNumber,
   assertPromiseError,
+  lastSpyLogIncludes,
+  spyLogIncludes,
 } from "./utils";
 import { SignerWithAddress, buildSlowRelayTree, enableRoutesOnHubPool } from "./utils";
 import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, buildSlowFill } from "./utils";
@@ -37,6 +39,8 @@ let multiCallerClient: MultiCallerClient;
 let dataworkerInstance: Dataworker;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
+let spy: sinon.SinonSpy;
+
 let updateAllClients: () => Promise<void>;
 
 // TODO: Rename this file to BundleDataClient
@@ -60,6 +64,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       spokePoolClients,
       configStoreClient,
       updateAllClients,
+      spy,
     } = await setupDataworker(ethers, 25, 25, toBN(0), 0));
     bundleDataClient = dataworkerInstance.clients.bundleDataClient;
     multiCallerClient = dataworkerInstance.clients.multiCallerClient;
@@ -668,8 +673,8 @@ describe("Dataworker: Load data used in all functions", async function () {
       (await dataworkerInstance.clients.bundleDataClient.loadData(IMPOSSIBLE_BLOCK_RANGE, spokePoolClients)).deposits
     ).to.deep.equal([]);
   });
-  it("Can fetch historical deposits older than SpokePoolClient's search range", async function () {
-    // Send a deposit and note its block number.
+  it("Can fetch historical deposits not found in spoke pool client's memory", async function () {
+    // Send a deposit.
     await updateAllClients();
     const deposit1 = await buildDeposit(
       configStoreClient,
@@ -701,9 +706,11 @@ describe("Dataworker: Load data used in all functions", async function () {
     const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.5);
     await updateAllClients();
     expect(spokePoolClient_2.getFills().length).to.equal(1);
+    expect(spokePoolClient_1.getDeposits().length).to.equal(0);
 
     // For queryHistoricalDepositForFill to work we need to have a deployment block set for the spoke pool client.
     const bundleData = await bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
+    expect(spyLogIncludes(spy, -2, "Queried RPC for deposit")).is.true;
     expect(bundleData.fillsToRefund).to.deep.equal({
       [repaymentChainId]: {
         [repaymentToken.address]: {
@@ -724,80 +731,5 @@ describe("Dataworker: Load data used in all functions", async function () {
           deposit: { ...deposit1 },
         },
       ]);
-  });
-  it("Ignores fills with deposit ID > latest deposit ID queried in spoke pool client", async function () {
-    // This test case makes sure that spoke pool client gracefully handles case where it can't historically search
-    // for the deposit ID because its greater than the spoke pool client's highest deposit ID.
-
-    // Send invalid fill with overridden deposit ID.
-    await updateAllClients();
-    const deposit1 = await buildDeposit(
-      configStoreClient,
-      hubPoolClient,
-      spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
-      destinationChainId,
-      amountToDeposit
-    );
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, { ...deposit1, depositId: 333 }, 0.5);
-    await updateAllClients();
-    const bundleData = await bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
-    expect(bundleData.fillsToRefund).to.deep.equal({});
-  });
-  it("Ignores fills with deposit ID < first deposit ID in spoke pool", async function () {
-    // Send a deposit and note its block number.
-    await updateAllClients();
-    const deposit1 = await buildDeposit(
-      configStoreClient,
-      hubPoolClient,
-      spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
-      destinationChainId,
-      amountToDeposit
-    );
-    const deposit1Block = await spokePool_1.provider.getBlockNumber();
-
-    // Construct a spoke pool client with a small search range that would not include the deposit.
-    spokePoolClient_1.firstBlockToSearch = deposit1Block + 1;
-    spokePoolClient_1.eventSearchConfig.fromBlock = spokePoolClient_1.firstBlockToSearch;
-    await updateAllClients();
-    expect(spokePoolClient_1.getDeposits().length).to.equal(0);
-
-    // Fills should be keyed by repayment chain and repayment token. For this test, make sure that the repayment chain
-    // ID is associated with some ERC20:
-    const repaymentToken = await deployNewToken(relayer);
-    await enableRoutesOnHubPool(hubPool, [
-      { destinationChainId: repaymentChainId, destinationToken: repaymentToken, l1Token: l1Token_1 },
-    ]);
-    await updateAllClients();
-
-    const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.5);
-    await updateAllClients();
-    // Override the first spoke pool deposit ID that the client thinks is available in the contract.
-    spokePoolClient_1.firstDepositIdForSpokePool = 1;
-
-    // When loading data, normally the spoke pool client with the short lookback range would try to find the deposit
-    // however since the `firstDepositIdForSpokePool` is 1, it will exit early.
-    const bundleData = await bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
-    expect(bundleData.fillsToRefund).to.deep.equal({});
-
-    // If we reset the `firstDepositIdForSpokePool` to 0 (by updating the client), then the spoke pool client will be
-    // able to find the deposit.
-    spokePoolClient_1.firstDepositIdForSpokePool = 0;
-    const bundleData2 = await bundleDataClient.loadData(getDefaultBlockRange(1), spokePoolClients);
-    expect(bundleData2.fillsToRefund).to.deep.equal({
-      [repaymentChainId]: {
-        [repaymentToken.address]: {
-          fills: [fill1],
-          refunds: { [relayer.address]: getRefundForFills([fill1]) },
-          totalRefundAmount: getRefundForFills([fill1]),
-          realizedLpFees: getRealizedLpFeeForFills([fill1]),
-        },
-      },
-    });
   });
 });

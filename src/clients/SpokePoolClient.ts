@@ -50,7 +50,9 @@ export class SpokePoolClient {
   private rootBundleRelays: RootBundleRelayWithBlock[] = [];
   private relayerRefundExecutions: RelayerRefundExecutionWithBlock[] = [];
   public earliestDepositIdQueried = Number.MAX_SAFE_INTEGER;
+  public latestDepositIdQueried = 0;
   public firstDepositIdForSpokePool = Number.MAX_SAFE_INTEGER;
+  public lastDepositIdForSpokePool = Number.MAX_SAFE_INTEGER;
   public isUpdated = false;
   public firstBlockToSearch: number;
   public latestBlockNumber: number | undefined;
@@ -255,7 +257,7 @@ export class SpokePoolClient {
   async binarySearchForBlockContainingDepositId(
     targetDepositId: number,
     initLow = this.spokePoolDeploymentBlock,
-    initHigh = this.eventSearchConfig.fromBlock
+    initHigh = this.latestBlockNumber
   ): Promise<number> {
     assert(initLow <= initHigh, "Binary search failed because low > high");
     let low = initLow;
@@ -274,17 +276,19 @@ export class SpokePoolClient {
     return low;
   }
 
-  // Load a deposit for a fill if the fill's deposit ID is less than this client's earliest searched
-  // deposit ID. This can be used by the Dataworker to determine whether to give a relayer a refund for a fill
-  // of a deposit older than its fixed lookback.
+  // Load a deposit for a fill if the fill's deposit ID is outside this client's search range.
+  // This can be used by the Dataworker to determine whether to give a relayer a refund for a fill
+  // of a deposit older or younger than its fixed lookback.
   async queryHistoricalDepositForFill(fill: Fill): Promise<DepositWithBlock | undefined> {
     if (fill.originChainId !== this.chainId) throw new Error("fill.originChainId !== this.chainid");
 
-    // We need to update client so that we know what the firstDepositIdForSpokePool is and the
-    // earliestDepositIdQueried is so that we can exit early.
+    // We need to update client so we know the first and last deposit ID's queried for this spoke pool client, as well
+    // as the global first and last deposit ID's for this spoke pool.
     if (!this.isUpdated) throw new Error("SpokePoolClient must be updated before querying historical deposits");
-    if (fill.depositId < this.firstDepositIdForSpokePool) return undefined;
-    if (fill.depositId >= this.earliestDepositIdQueried) return this.getDepositForFill(fill);
+    if (fill.depositId < this.firstDepositIdForSpokePool || fill.depositId > this.lastDepositIdForSpokePool)
+      return undefined;
+    if (fill.depositId >= this.earliestDepositIdQueried && fill.depositId <= this.latestDepositIdQueried)
+      return this.getDepositForFill(fill);
 
     let deposit: DepositWithBlock, cachedDeposit: Deposit | undefined;
     if (this.configStoreClient.redisClient) {
@@ -295,9 +299,6 @@ export class SpokePoolClient {
       // Assert that cache hasn't been corrupted.
       assert(deposit.depositId === fill.depositId && deposit.originChainId === fill.originChainId);
     } else {
-      // Binary search between spoke pool deployment block and earliest block searched to find the block range containing
-      // the deposited event. Find a block before and after the deposit event, which was emitted when
-      // depositId incremented from fill.depositId to fill.depositId+1
       const [blockBeforeDeposit, blockAfterDeposit] = await Promise.all([
         // Look for the block where depositId incremented from fill.depositId-1 to fill.depositId.
         this.binarySearchForBlockContainingDepositId(fill.depositId),
@@ -338,7 +339,7 @@ export class SpokePoolClient {
       };
       this.logger.debug({
         at: "SpokePoolClient",
-        message: "Queried RPC for deposit older than SpokePoolClient's lookback",
+        message: "Queried RPC for deposit outside SpokePoolClient's search range",
         deposit,
       });
       if (this.configStoreClient.redisClient)
@@ -411,12 +412,14 @@ export class SpokePoolClient {
     });
 
     timerStart = Date.now();
-    const [_earliestDepositIdForSpokePool, ...queryResults] = await Promise.all([
+    const [_earliestDepositIdForSpokePool, _latestDepositIdForSpokePool, ...queryResults] = await Promise.all([
       this.spokePool.numberOfDeposits({ blockTag: this.spokePoolDeploymentBlock }),
+      this.spokePool.numberOfDeposits(),
       ...eventSearchConfigs.map((config) => paginatedEventQuery(this.spokePool, config.filter, config.searchConfig)),
     ]);
 
     this.firstDepositIdForSpokePool = _earliestDepositIdForSpokePool;
+    this.lastDepositIdForSpokePool = _latestDepositIdForSpokePool;
     this.log("debug", `Time to query new events from RPC for ${this.chainId}: ${Date.now() - timerStart}ms`);
 
     // Sort all events to ensure they are stored in a consistent order.
@@ -470,6 +473,7 @@ export class SpokePoolClient {
         assign(this.deposits, [deposit.destinationChainId], [deposit]);
 
         if (deposit.depositId < this.earliestDepositIdQueried) this.earliestDepositIdQueried = deposit.depositId;
+        if (deposit.depositId > this.latestDepositIdQueried) this.latestDepositIdQueried = deposit.depositId;
       }
     }
 
