@@ -32,7 +32,8 @@ async function _constructSpokePoolClientsWithLookback(
   spyLogger: winston.Logger,
   signer: SignerWithAddress,
   configStoreClient: clients.AcrossConfigStoreClient,
-  lookbackForAllChains?: number
+  lookbackForAllChains?: number,
+  deploymentBlocks?: { [chainId: number]: number }
 ) {
   const latestBlocks = await Promise.all(spokePools.map((x) => x.provider.getBlockNumber()));
   return spokePools.map((pool, i) => {
@@ -43,7 +44,8 @@ async function _constructSpokePoolClientsWithLookback(
       spokePoolChains[i],
       lookbackForAllChains === undefined
         ? undefined
-        : { fromBlock: latestBlocks[i] - lookbackForAllChains, toBlock: null }
+        : { fromBlock: latestBlocks[i] - lookbackForAllChains, toBlock: null },
+      deploymentBlocks && deploymentBlocks[spokePoolChains[i]]
     );
   });
 }
@@ -105,6 +107,12 @@ export async function setupDataworker(
   const { spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId);
   const { spokePool: spokePool_3 } = await deploySpokePoolWithToken(repaymentChainId, 1);
   const { spokePool: spokePool_4 } = await deploySpokePoolWithToken(1, repaymentChainId);
+  const spokePoolDeploymentBlocks = {
+    [defaultOriginChainid]: await spokePool_1.provider.getBlockNumber(),
+    [defaultDestinationChainId]: await spokePool_2.provider.getBlockNumber(),
+    [repaymentChainId]: await spokePool_3.provider.getBlockNumber(),
+    [1]: await spokePool_4.provider.getBlockNumber(),
+  };
 
   const umaEcosystem = await setupUmaEcosystem(owner);
   const { hubPool, l1Token_1, l1Token_2 } = await deployAndConfigureHubPool(
@@ -174,8 +182,12 @@ export async function setupDataworker(
       spyLogger,
       relayer,
       configStoreClient,
-      lookbackForAllChains
+      lookbackForAllChains,
+      spokePoolDeploymentBlocks
     );
+  // @dev We need to override the deployment block since 1 is a public network with a much higher deployment block
+  // than we would expect in tests.
+  spokePoolClient_4.spokePoolDeploymentBlock = spokePoolDeploymentBlocks[1];
 
   const tokenClient = new TokenClient(spyLogger, relayer.address, {}, hubPoolClient);
 

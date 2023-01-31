@@ -1,5 +1,5 @@
 import { delay } from "@uma/financial-templates-lib";
-import { DepositWithBlock, FillWithBlock, SortableEvent } from "../interfaces";
+import { SortableEvent } from "../interfaces";
 import { Contract, Event, EventFilter, Promise } from "./";
 
 const defaultConcurrency = 200;

@@ -35,12 +35,22 @@ let spokePoolClients: { [chainId: number]: SpokePoolClient };
 let configStoreClient: AcrossConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
 let relayerInstance: Relayer;
 let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
+let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
 describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
-    ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId));
-    ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
+    ({
+      spokePool: spokePool_1,
+      erc20: erc20_1,
+      deploymentBlock: spokePool1DeploymentBlock,
+    } = await deploySpokePoolWithToken(originChainId, destinationChainId));
+    ({
+      spokePool: spokePool_2,
+      erc20: erc20_2,
+      deploymentBlock: spokePool2DeploymentBlock,
+    } = await deploySpokePoolWithToken(destinationChainId, originChainId));
+
     ({ hubPool, l1Token_1: l1Token } = await deployAndConfigureHubPool(owner, [
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
     ]));
@@ -57,12 +67,21 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     multiCallerClient = new MultiCallerClient(spyLogger);
 
-    spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(relayer), configStoreClient, originChainId);
+    spokePoolClient_1 = new SpokePoolClient(
+      spyLogger,
+      spokePool_1.connect(relayer),
+      configStoreClient,
+      originChainId,
+      undefined,
+      spokePool1DeploymentBlock
+    );
     spokePoolClient_2 = new SpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),
       configStoreClient,
-      destinationChainId
+      destinationChainId,
+      undefined,
+      spokePool2DeploymentBlock
     );
     spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);

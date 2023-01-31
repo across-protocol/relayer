@@ -26,12 +26,16 @@ export { winston, sinon };
 const assert = chai.assert;
 export { chai, assert };
 
-export function assertPromiseError(promise: Promise<unknown>, errMessage?: string): Promise<void> {
-  return promise
-    .then(() => assert.isTrue(false))
-    .catch((err) => assert.isTrue(errMessage ? err.message.includes(errMessage) : true));
+export async function assertPromiseError<T>(promise: Promise<T>, errMessage?: string): Promise<void> {
+  const SPECIAL_ERROR_MESSAGE = "Promise didn't fail";
+  try {
+    await promise;
+    throw new Error(SPECIAL_ERROR_MESSAGE);
+  } catch (err) {
+    if (err.message.includes(SPECIAL_ERROR_MESSAGE)) throw err;
+    if (errMessage) assert.isTrue(err.message.includes(errMessage));
+  }
 }
-
 export async function setupTokensForWallet(
   contractToApprove: utils.Contract,
   wallet: utils.SignerWithAddress,
@@ -71,6 +75,7 @@ const iterativelyReplaceBigNumbers = (obj: any) => {
 
 export async function deploySpokePoolWithToken(fromChainId = 0, toChainId = 0, enableRoute = true) {
   const { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(utils.ethers);
+  const deploymentBlock = await spokePool.provider.getBlockNumber();
 
   await spokePool.setChainId(fromChainId == 0 ? utils.originChainId : fromChainId);
 
@@ -79,7 +84,7 @@ export async function deploySpokePoolWithToken(fromChainId = 0, toChainId = 0, e
       { originToken: erc20.address, destinationChainId: toChainId == 0 ? utils.destinationChainId : toChainId },
       { originToken: weth.address, destinationChainId: toChainId == 0 ? utils.destinationChainId : toChainId },
     ]);
-  return { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20 };
+  return { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20, deploymentBlock };
 }
 
 export async function deployConfigStore(
@@ -235,14 +240,21 @@ export async function deploySpokePoolForIterativeTest(
   configStoreClient: AcrossConfigStoreClient,
   desiredChainId = 0
 ) {
-  const { spokePool } = await deploySpokePoolWithToken(desiredChainId, 0, false);
+  const { spokePool, deploymentBlock } = await deploySpokePoolWithToken(desiredChainId, 0, false);
 
   await configStoreClient.hubPoolClient.hubPool.setCrossChainContracts(
     utils.destinationChainId,
     mockAdapter.address,
     spokePool.address
   );
-  const spokePoolClient = new SpokePoolClient(logger, spokePool.connect(signer), configStoreClient, desiredChainId);
+  const spokePoolClient = new SpokePoolClient(
+    logger,
+    spokePool.connect(signer),
+    configStoreClient,
+    desiredChainId,
+    undefined,
+    deploymentBlock
+  );
 
   return { spokePool, spokePoolClient };
 }
@@ -613,6 +625,9 @@ export async function buildSlowFill(
   };
 }
 
+// We use the offset input to bypass the bundleClient's cache key, which is the bundle block range. So, to make sure
+// that the client requeries fresh blockchain state, we need to slightly offset the block range to produce a different
+// cache key.
 export function getDefaultBlockRange(toBlockOffset: number) {
   return DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) => [range[0], range[1] + toBlockOffset]);
 }
