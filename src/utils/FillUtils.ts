@@ -244,7 +244,7 @@ export function getLatestInvalidBundleStartBlocks(spokePoolClients: SpokePoolCli
       // block is manipulated too high.
       const latestUnmatchedFill = _.findLast(
         destSpokeClient.getFillsForOriginChain(Number(originChainId)),
-        (fill) => fill.depositId < spokePoolClients[originChainId].earliestDepositId
+        (fill) => fill.depositId < spokePoolClients[originChainId].earliestDepositIdQueried
       );
       if (latestUnmatchedFill !== undefined)
         blocks[destChainId] = Math.max(latestUnmatchedFill.blockNumber, blocks[destChainId]);
