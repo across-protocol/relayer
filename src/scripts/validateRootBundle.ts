@@ -122,17 +122,21 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     transactionHash: precedingProposeRootBundleEvent.transactionHash,
   });
 
-  if (config.dataworkerFastLookbackCount === 0) {
-    throw new Error("Set DATAWORKER_FAST_LOOKBACK_COUNT > 0, otherwise script will take too long to run");
-  }
-
   // Calculate the latest blocks we should query in the spoke pool client so we can efficiently reconstruct
   // older bundles. We do this by setting toBlocks equal to the bundle end blocks of the first validated bundle
   // following the target bundle.
   const closestFollowingValidatedBundleIndex = clients.hubPoolClient
     .getValidatedRootBundles()
     .findIndex((x) => x.blockNumber >= rootBundle.proposalBlockNumber);
-  const overriddenConfig = { ...config, dataworkerFastStartBundle: closestFollowingValidatedBundleIndex + 1 };
+  // As a buffer, set the start bundle 2 ahead of the closest following validated bundle so we can query
+  // plenty of events before and after the bundle.
+  const overriddenConfig = {
+    ...config,
+    dataworkerFastStartBundle: closestFollowingValidatedBundleIndex + 2,
+    // Override DATAWORKER_FAST_LOOKBACK_COUNT to a reasonable number that balances RPC requests with querying
+    // enough data to limit # of historical deposit queries.
+    dataworkerFastLookbackCount: 8,
+  };
 
   const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
     overriddenConfig,

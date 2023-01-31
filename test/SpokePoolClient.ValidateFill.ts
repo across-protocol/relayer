@@ -425,7 +425,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
 
     // Override the first spoke pool deposit ID that the client thinks is available in the contract.
     await spokePoolClient1.update();
-    // spokePoolClient1.firstDepositIdForSpokePool = 1;
+    spokePoolClient1.firstDepositIdForSpokePool = 1;
     expect(fill.depositId < spokePoolClient1.firstDepositIdForSpokePool).is.true;
     await spokePoolClient1.queryHistoricalDepositForFill(fill);
     expect(lastSpyLogIncludes(spy, "Queried RPC for deposit")).is.not.true;
