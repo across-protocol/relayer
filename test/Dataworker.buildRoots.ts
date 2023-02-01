@@ -5,7 +5,6 @@ import {
   enableRoutesOnHubPool,
   signForSpeedUp,
   createSpyLogger,
-  assertPromiseError,
   lastSpyLogIncludes,
 } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
@@ -19,7 +18,6 @@ import {
   originChainId,
   mockTreeRoot,
   buildPoolRebalanceLeaves,
-  merkleLibFixture,
 } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { refundProposalLiveness, CHAIN_ID_TEST_LIST } from "./constants";
