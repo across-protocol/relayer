@@ -125,11 +125,10 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
   let firstFillForSameDeposit = allMatchingFills.find((_fill) => isFirstFillForDeposit(_fill));
 
   // If `allValidFills` doesn't contain the first fill for this deposit then we have to perform a historical query to
-  // find it. This is inefficient, but should be rare.
+  // find it. This is inefficient, but should be rare. Save any other fills we find to the
+  // allMatchingFills array, at the end of this block, allMatchingFills should contain all fills for the same
+  // deposit as the input fill.
   if (!firstFillForSameDeposit) {
-    // Note: allMatchingFills might have duplicate fills if there are multiple fills in the
-    // `firstFillForSameDeposit.blockNumber` but we don't care since we only need to find the first fill, of which
-    // there should be exactly 1, and the last fill in the same bundle.
     const matchingFills = await spokePoolClientsByChain[fill.destinationChainId].queryHistoricalMatchingFills(
       fill,
       allMatchingFills[0].blockNumber
@@ -139,6 +138,7 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
       throw new Error(
         `FillUtils#getFillDataForSlowFillFromPreviousRootBundle: Cannot find first fill for for deposit ${fill.depositId} on chain ${fill.destinationChainId} after querying historical fills`
       );
+    // Add non-duplicate fills.
     allMatchingFills.push(
       ...matchingFills.filter(
         (_fill) => !allMatchingFills.find((existingFill) => existingFill.totalFilledAmount.eq(_fill.totalFilledAmount))
