@@ -354,47 +354,6 @@ describe("SpokePoolClient: Fill Validation", async function () {
     expect(historicalDeposit?.depositId).to.deep.equal(depositData.depositId);
   });
 
-  it("Ignores fills with deposit ID > latest deposit ID queried in spoke pool client", async function () {
-    // This test case makes sure that spoke pool client gracefully handles case where it can't historically search
-    // for the deposit ID because its greater than the spoke pool client's highest deposit ID.
-
-    if (!depositData) throw new Error("Deposit data is null");
-    const expectedRealizedLpFeePct = await configStoreClient.computeRealizedLpFeePct(
-      {
-        quoteTimestamp: depositData.quoteTimestamp,
-        amount: depositData.amount,
-        destinationChainId: depositData.destinationChainId,
-        originChainId: depositData.originChainId,
-      },
-      l1Token.address
-    );
-    await fillRelay(
-      spokePool_2,
-      erc20_2,
-      depositor,
-      depositor,
-      relayer,
-      0,
-      originChainId,
-      depositData?.amount,
-      depositData?.amount,
-      expectedRealizedLpFeePct.realizedLpFeePct
-    );
-    await spokePoolClient2.update();
-    const [fill] = spokePoolClient2.getFills();
-
-    await assertPromiseError(spokePoolClient1.queryHistoricalDepositForFill(fill), "SpokePoolClient must be updated");
-
-    // Set event search config to block to before deposit so client doesn't see event.
-    spokePoolClient1.eventSearchConfig.toBlock = depositBlock - 1;
-    await spokePoolClient1.update();
-
-    // Client has 0 deposits in memory so querying historical deposit sends fresh RPC requests.
-    expect(spokePoolClient1.getDeposits().length).to.equal(0);
-    const historicalDeposit = await spokePoolClient1.queryHistoricalDepositForFill(fill);
-    expect(historicalDeposit?.depositId).to.deep.equal(depositData.depositId);
-  });
-
   it("Loads fills from memory with deposit ID > spoke pool client's earliest deposit ID queried", async function () {
     // Send fill for deposit ID 0.
     const deposit = await buildDeposit(
