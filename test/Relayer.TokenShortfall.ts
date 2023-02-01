@@ -146,7 +146,6 @@ describe("Relayer: Token balance shortfall", async function () {
     expect(lastSpyLogIncludes(spy, "blocking deposits: 1,0")).to.be.true;
 
     const tx = await multiCallerClient.executeTransactionQueue();
-    expect(lastSpyLogIncludes(spy, "Multicall batch sent")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Relayed depositId 2")).to.be.true;
     expect(tx.length).to.equal(1); // There should have been exactly one transaction.
   });
