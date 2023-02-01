@@ -101,21 +101,21 @@ describe("InventoryClient: Refund chain selection", async function () {
     // Construct a small mock deposit of side 1 WETH. Post relay Optimism should have (20-1)/(140-1)=13.6%. This is still
     // above the threshold of 12 and so the bot should choose to be refunded on L1.
     sampleDepositData.amount = toWei(1);
-    expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
+    expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
     expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"136690647482014388"')).to.be.true; // (20-1)/(140-1)=0.136
 
     // Now consider a case where the relayer is filling a marginally larger relay of size 5 WETH. Now the post relay
     // allocation on optimism would be (20-5)/(140-5)=11%. This now below the target plus buffer of 12%. Relayer should
     // choose to refund on the L2.
     sampleDepositData.amount = toWei(5);
-    expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
+    expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
     expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"111111111111111111"')).to.be.true; // (20-5)/(140-5)=0.11
 
     // Now consider a bigger relay that should force refunds on the L2 chain. Set the relay size to 10 WETH. now post
     // relay allocation would be (20-10)/(140-10)=0.076. This is below the target threshold of 10% and so the bot should
     // set the refund on L2.
     sampleDepositData.amount = toWei(10);
-    expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
+    expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(10);
     expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"76923076923076923"')).to.be.true; // (20-10)/(140-10)=0.076
   });
 
@@ -152,7 +152,7 @@ describe("InventoryClient: Refund chain selection", async function () {
 
     sampleDepositData.destinationChainId = 42161;
     sampleDepositData.amount = toWei(1.69);
-    expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(42161);
+    expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(42161);
     expect(lastSpyLogIncludes(spy, 'chainShortfall":"15000000000000000000"')).to.be.true;
     expect(lastSpyLogIncludes(spy, 'chainVirtualBalance":"24800000000000000000"')).to.be.true; // (10+14.8)=24.8
     expect(lastSpyLogIncludes(spy, 'chainVirtualBalanceWithShortfall":"9800000000000000000"')).to.be.true; // 24.8-15=9.8
@@ -168,7 +168,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     // post relay is 9.8 - 5 = 4.8. cumulative virtual balance with shortfall post relay is 125 - 5 = 120. Expected post
     // relay allocation is 4.8/120 = 0.04. This is below the threshold of 0.05 so the bot should refund on the target.
     sampleDepositData.amount = toWei(5);
-    expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(42161);
+    expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(42161);
     // Check only the final step in the computation.
     expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"40000000000000000"')).to.be.true; // 4.8/120 = 0.04
 
@@ -179,7 +179,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     // post relay is 125 - 5 + 10 = 130. Expected post relay allocation is 14.8/130 = 0.11. This is above the threshold
     // of 0.05 so the bot should refund on L1.
     tokenClient.setTokenData(42161, l2TokensForWeth[42161], initialAllocation[42161][mainnetWeth].add(toWei(10)));
-    expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
+    expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
   });
 
   it("Correctly decides where to refund based on upcoming refunds", async function () {
@@ -196,7 +196,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     bundleDataClient.setReturnedNextBundleRefunds({
       10: createRefunds(owner.address, toWei(5), l2TokensForWeth[10]),
     });
-    expect(inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
+    expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.equal(1);
     expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"166666666666666666"')).to.be.true; // (20-5)/(140-5)=0.11
   });
 });

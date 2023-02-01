@@ -120,16 +120,16 @@ export class InventoryClient {
   }
 
   // Return the upcoming refunds (in pending and next bundles) on each chain.
-  getBundleRefunds(l1Token: string): { [chainId: string]: BigNumber } {
+  async getBundleRefunds(l1Token: string): Promise<{ [chainId: string]: BigNumber }> {
     // Increase virtual balance by pending relayer refunds from the latest valid bundles.
     // Allow caller to set how many bundles to look back for refunds. The default is set to 2 which means
     // we'll look back only at the two latest valid bundle unless the caller overrides.
-    const refundsToConsider: FillsToRefund[] = this.bundleDataClient.getPendingRefundsFromValidBundles(
+    const refundsToConsider: FillsToRefund[] = await this.bundleDataClient.getPendingRefundsFromValidBundles(
       this.bundleRefundLookback
     );
 
     // Consider refunds from next bundle to be proposed:
-    const nextBundleRefunds = this.bundleDataClient.getNextBundleRefunds();
+    const nextBundleRefunds = await this.bundleDataClient.getNextBundleRefunds();
     refundsToConsider.push(nextBundleRefunds);
 
     return Object.fromEntries(
@@ -153,7 +153,7 @@ export class InventoryClient {
   // number to the target threshold and:
   //     If this number of more than the target for the designation chain + rebalance overshoot then refund on L1.
   //     Else, the post fill amount is within the target, so refund on the destination chain.
-  determineRefundChainId(deposit: Deposit): number {
+  async determineRefundChainId(deposit: Deposit): Promise<number> {
     const destinationChainId = deposit.destinationChainId;
     if (!this.isInventoryManagementEnabled()) return destinationChainId;
     if (destinationChainId === 1) return 1; // Always refund on L1 if the transfer is to L1.
@@ -175,7 +175,7 @@ export class InventoryClient {
     let totalRefundsPerChain: { [chainId: string]: BigNumber } = {};
     try {
       // Consider any refunds from executed and to-be executed bundles.
-      totalRefundsPerChain = this.getBundleRefunds(l1Token);
+      totalRefundsPerChain = await this.getBundleRefunds(l1Token);
     } catch (e) {
       // Fallback to getting refunds on Mainnet if calculating bundle refunds goes wrong.
       // Inventory management can always rebalance from Mainnet to other chains easily if needed.

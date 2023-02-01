@@ -5,11 +5,11 @@ export class MockBundleDataClient extends BundleDataClient {
   private pendingBundleRefunds: FillsToRefund = {};
   private nextBundleRefunds: FillsToRefund = {};
 
-  getPendingRefundsFromValidBundles() {
+  async getPendingRefundsFromValidBundles() {
     return [this.pendingBundleRefunds];
   }
 
-  getNextBundleRefunds() {
+  async getNextBundleRefunds() {
     return this.nextBundleRefunds;
   }
 
