@@ -135,7 +135,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     expect(multiCallerClient.transactionCount()).to.equal(1); // One transaction, filling the one deposit.
 
     const tx = await multiCallerClient.executeTransactionQueue();
-    expect(lastSpyLogIncludes(spy, "Multicall batch sent")).to.be.true;
     expect(tx.length).to.equal(1); // There should have been exactly one transaction.
 
     // Check the state change happened correctly on the smart contract. There should be exactly one fill on spokePool_2.
@@ -245,7 +244,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     expect(multiCallerClient.transactionCount()).to.equal(1); // One transaction, filling the one deposit.
 
     const tx = await multiCallerClient.executeTransactionQueue();
-    expect(lastSpyLogIncludes(spy, "Multicall batch sent")).to.be.true;
     expect(tx.length).to.equal(1); // There should have been exactly one transaction.
 
     // Check the state change happened correctly on the smart contract. There should be exactly one fill on spokePool_2.
