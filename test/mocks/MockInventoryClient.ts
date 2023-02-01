@@ -4,7 +4,7 @@ export class MockInventoryClient extends InventoryClient {
   constructor() {
     super(null, null, null, null, null, null, null, null, null);
   }
-  determineRefundChainId(deposit: Deposit) {
+  async determineRefundChainId(_deposit: Deposit) {
     return 1;
   }
 }

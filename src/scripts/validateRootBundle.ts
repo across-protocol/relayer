@@ -17,7 +17,6 @@ import {
   getSigner,
   startupLogLevel,
   Logger,
-  getLatestInvalidBundleStartBlocks,
   getDvmContract,
   getDisputedProposal,
   getBlockForTimestamp,
@@ -46,6 +45,10 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   }
   const priceRequestTime = Number(process.env.REQUEST_TIME);
 
+  // Override default config with sensible defaults:
+  // - DATAWORKER_FAST_LOOKBACK_COUNT=8 balances limiting RPC requests with querying
+  // enough data to limit # of excess historical deposit queries.
+  process.env.DATAWORKER_FAST_LOOKBACK_COUNT = "8";
   const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
   logger[startupLogLevel(config)]({
     at: "RootBundleValidator",
@@ -123,17 +126,17 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     transactionHash: precedingProposeRootBundleEvent.transactionHash,
   });
 
-  if (config.dataworkerFastLookbackCount === 0) {
-    throw new Error("Set DATAWORKER_FAST_LOOKBACK_COUNT > 0, otherwise script will take too long to run");
-  }
-
   // Calculate the latest blocks we should query in the spoke pool client so we can efficiently reconstruct
   // older bundles. We do this by setting toBlocks equal to the bundle end blocks of the first validated bundle
   // following the target bundle.
   const closestFollowingValidatedBundleIndex = clients.hubPoolClient
     .getValidatedRootBundles()
-    .findIndex((x) => x.blockNumber >= rootBundle.proposalBlockNumber);
-  const overriddenConfig = { ...config, dataworkerFastStartBundle: closestFollowingValidatedBundleIndex + 1 };
+    .findIndex((x) => x.blockNumber > rootBundle.proposalBlockNumber);
+  // We want the bundle end of blocks following the target bundle so add +1 to the index.
+  const overriddenConfig = {
+    ...config,
+    dataworkerFastStartBundle: closestFollowingValidatedBundleIndex + 1,
+  };
 
   const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
     overriddenConfig,
@@ -162,16 +165,6 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     toBlocks
   );
 
-  const latestInvalidBundleStartBlocks = getLatestInvalidBundleStartBlocks(spokePoolClients);
-  logger.debug({
-    at: "RootBundleValidator",
-    message:
-      "Identified latest invalid bundle start blocks per chain that we will use to filter root bundles that can be proposed and validated",
-    latestInvalidBundleStartBlocks,
-    fromBlocks,
-    toBlocks,
-  });
-
   const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
     dataworker.chainIdListForBundleEvaluationBlockNumbers,
     spokePoolClients,
@@ -186,7 +179,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     widestPossibleBlockRanges,
     rootBundle,
     spokePoolClients,
-    latestInvalidBundleStartBlocks
+    fromBlocks
   );
 
   logger.info({

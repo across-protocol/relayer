@@ -49,6 +49,8 @@ describe("Dataworker: Execute pool rebalances", async function () {
   it("Simple lifecycle", async function () {
     await updateAllClients();
 
+    // Set to arbitrum so we can test that the dataworker sends ETH to the HubPool to test L1 --> Arbitrum message
+    // transfers.
     const destinationChainId = 42161;
 
     // Send a deposit and a fill so that dataworker builds simple roots.

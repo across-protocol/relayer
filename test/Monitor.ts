@@ -211,7 +211,7 @@ describe("Monitor", async function () {
       monitorInstance.clients.hubPoolClient.getL1Tokens(),
       TEST_NETWORK_NAMES
     );
-    monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
+    await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
     expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
     expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(getRefundForFills([fill1]));
 
@@ -225,7 +225,7 @@ describe("Monitor", async function () {
       monitorInstance.clients.hubPoolClient.getL1Tokens(),
       TEST_NETWORK_NAMES
     );
-    monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
+    await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
     expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
     expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(
       getRefundForFills([fill1])
@@ -248,7 +248,7 @@ describe("Monitor", async function () {
       monitorInstance.clients.hubPoolClient.getL1Tokens(),
       TEST_NETWORK_NAMES
     );
-    monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
+    await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
     expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
     expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
 
@@ -259,7 +259,7 @@ describe("Monitor", async function () {
       toBN(5),
       destinationChainId
     );
-    monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
+    await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
     expect(
       reports[depositor.address]["L1"][getNetworkName(destinationChainId)][BalanceType.PENDING_TRANSFERS]
     ).to.be.equal(toBN(5));
@@ -349,7 +349,7 @@ describe("Monitor", async function () {
 const executeBundle = async (hubPool: Contract) => {
   const latestBlock = await hubPool.provider.getBlockNumber();
   const blockRange = constants.CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
-  const expectedPoolRebalanceRoot = dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
+  const expectedPoolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
   await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
   for (const leaf of expectedPoolRebalanceRoot.leaves) {
     await hubPool.executeRootBundle(

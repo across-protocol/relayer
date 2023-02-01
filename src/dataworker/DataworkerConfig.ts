@@ -28,8 +28,6 @@ export class DataworkerConfig extends CommonConfig {
   // These variables allow the user to optimize dataworker run-time, which can slow down drastically because of all the
   // historical events it needs to fetch and parse.
   readonly dataworkerFastLookbackCount: number;
-  readonly dataworkerFastLookbackRetryCount: number;
-  readonly dataworkerFastLookbackRetryMultiplier: number;
   readonly dataworkerFastStartBundle: number | string;
 
   readonly bufferToPropose: number;
@@ -52,8 +50,6 @@ export class DataworkerConfig extends CommonConfig {
       FINALIZER_ENABLED,
       BUFFER_TO_PROPOSE,
       DATAWORKER_FAST_LOOKBACK_COUNT,
-      DATAWORKER_FAST_LOOKBACK_RETRIES,
-      DATAWORKER_FAST_LOOKBACK_RETRY_MULTIPLIER,
       DATAWORKER_FAST_START_BUNDLE,
     } = env;
     super(env);
@@ -116,15 +112,6 @@ export class DataworkerConfig extends CommonConfig {
         "dataworkerFastLookbackCount should be >= spokeRootsLookbackCount"
       );
 
-    // By default, if we need to load more data to construct the next bundle, we'll retry once and set a lookback
-    // to a very safe 16 * 4 = 64 bundles. This should cover at least the latest 10 days of events and take
-    // ~10 mins to run with quorum=2.
-    this.dataworkerFastLookbackRetryCount = DATAWORKER_FAST_LOOKBACK_RETRIES
-      ? Number(DATAWORKER_FAST_LOOKBACK_RETRIES)
-      : 1;
-    this.dataworkerFastLookbackRetryMultiplier = DATAWORKER_FAST_LOOKBACK_RETRY_MULTIPLIER
-      ? Math.floor(Number(DATAWORKER_FAST_LOOKBACK_RETRY_MULTIPLIER))
-      : 4;
     this.dataworkerFastStartBundle = DATAWORKER_FAST_START_BUNDLE ? Number(DATAWORKER_FAST_START_BUNDLE) : "latest";
     if (typeof this.dataworkerFastStartBundle === "number") {
       assert(

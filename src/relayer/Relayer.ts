@@ -180,7 +180,7 @@ export class Relayer {
 
       if (this.clients.tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
         if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount, l1Token)) {
-          this.fillRelay(deposit, unfilledAmount);
+          await this.fillRelay(deposit, unfilledAmount);
         } else {
           this.clients.profitClient.captureUnprofitableFill(deposit, unfilledAmount);
         }
@@ -197,7 +197,7 @@ export class Relayer {
     if (this.clients.profitClient.anyCapturedUnprofitableFills()) this.handleUnprofitableFill();
   }
 
-  fillRelay(deposit: Deposit, fillAmount: BigNumber) {
+  async fillRelay(deposit: Deposit, fillAmount: BigNumber) {
     // Skip deposits that this relayer has already filled completely before to prevent double filling (which is a waste
     // of gas as the second fill would fail).
     // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried
@@ -214,7 +214,7 @@ export class Relayer {
 
     try {
       // Fetch the repayment chain from the inventory client. Sanity check that it is one of the known chainIds.
-      const repaymentChain = this.clients.inventoryClient.determineRefundChainId(deposit);
+      const repaymentChain = await this.clients.inventoryClient.determineRefundChainId(deposit);
       if (!Object.keys(this.clients.spokePoolClients).includes(deposit.destinationChainId.toString()))
         throw new Error("Fatal error! Repayment chain set to a chain that is not part of the defined sets of chains!");
 
