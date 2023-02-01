@@ -6,6 +6,7 @@ import {
   signForSpeedUp,
   createSpyLogger,
   assertPromiseError,
+  lastSpyLogIncludes,
 } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
@@ -18,6 +19,7 @@ import {
   originChainId,
   mockTreeRoot,
   buildPoolRebalanceLeaves,
+  merkleLibFixture,
 } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { refundProposalLiveness, CHAIN_ID_TEST_LIST } from "./constants";
@@ -490,7 +492,7 @@ describe("Dataworker: Build merkle roots", async function () {
     });
   });
   describe("Build pool rebalance root", function () {
-    it.only("One L1 token full lifecycle: testing runningBalances and realizedLpFees counters", async function () {
+    it("One L1 token full lifecycle: testing runningBalances and realizedLpFees counters", async function () {
       // Helper function we'll use in this lifecycle test to keep track of updated counter variables.
       const updateAndCheckExpectedPoolRebalanceCounters = (
         expectedRunningBalances: RunningBalances,
@@ -697,10 +699,11 @@ describe("Dataworker: Build merkle roots", async function () {
       );
       await updateAllClients();
 
-      // Test that we can still look up the excess if the first fill for the same deposit as the one slow filled
-      // is older than the spoke pool client's lookback window.
+      // Test that we can still look up the excess if the first fill for the same deposit as the one slow filed
+      //  is older than the spoke pool client's lookback window.
+      const { spy, spyLogger } = createSpyLogger();
       const shortRangeSpokePoolClient = new SpokePoolClient(
-        createSpyLogger().spyLogger,
+        spyLogger,
         spokePool_2,
         configStoreClient,
         destinationChainId,
@@ -709,32 +712,19 @@ describe("Dataworker: Build merkle roots", async function () {
       );
       await shortRangeSpokePoolClient.update();
       expect(shortRangeSpokePoolClient.getFills().length).to.equal(2); // We should only be able to see 2 fills
-      // for this deposit, even though there are 3.
-      await assertPromiseError(
-        dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(3), {
-          ...spokePoolClients,
-          [destinationChainId]: shortRangeSpokePoolClient,
-        }),
-        "Cannot find first fill for for deposit"
-      );
+      await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(3), {
+        ...spokePoolClients,
+        [destinationChainId]: shortRangeSpokePoolClient,
+      });
+
+      // Should have queried for historical fills that it can no longer see.
+      expect(lastSpyLogIncludes(spy, "Queried RPC for matching fills up to block")).to.be.true;
 
       // The excess amount in the contract is now equal to the partial fill amount sent before the slow fill.
       // Again, now that the slowFill1 was sent, the unfilledAmount1 can be subtracted from running balances since its
       // no longer associated with an unfilled deposit.
       const excess = fill5.fillAmount;
 
-      // The Dataworker should strategically query for older deposits when they are older than beginning of a spoke pool
-      // client's range. Here we show that the same pool rebalance root is built with and without the short range spoke
-      // client.
-      const expectedResults = await dataworkerInstance.buildPoolRebalanceRoot(
-        getDefaultBlockRange(4),
-        spokePoolClients
-      );
-      const actualResults = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(4), {
-        ...spokePoolClients,
-        [destinationChainId]: shortRangeSpokePoolClient,
-      });
-      expect(expectedResults).to.deep.equal(actualResults);
       updateAndCheckExpectedPoolRebalanceCounters(
         expectedRunningBalances,
         expectedRealizedLpFees,
@@ -742,10 +732,7 @@ describe("Dataworker: Build merkle roots", async function () {
         getRealizedLpFeeForFills([slowFill1, fill5]),
         [fill5.destinationChainId],
         [l1Token_1.address],
-        await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(4), {
-          ...spokePoolClients,
-          [destinationChainId]: shortRangeSpokePoolClient,
-        })
+        await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(4), spokePoolClients)
       );
 
       // Before executing the last slow relay leaf, completely fill the deposit. This will leave the full slow fill
@@ -837,6 +824,86 @@ describe("Dataworker: Build merkle roots", async function () {
         [fill9.destinationChainId],
         [l1Token_1.address],
         await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(8), spokePoolClients)
+      );
+    });
+    it("Loads fills needed to compute slow fill excesses", async function () {
+      await updateAllClients();
+
+      // Send deposit
+      // Send first partial fill
+      const deposit1 = await buildDeposit(
+        configStoreClient,
+        hubPoolClient,
+        spokePool_1,
+        erc20_1,
+        l1Token_1,
+        depositor,
+        destinationChainId,
+        amountToDeposit
+      );
+      const fill1 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.5, destinationChainId);
+      const fill1Block = await spokePool_2.provider.getBlockNumber();
+
+      // Produce bundle and execute pool leaves. Should produce a slow fill. Don't execute it.
+      await updateAllClients();
+      const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(1), spokePoolClients);
+      await hubPool
+        .connect(dataworker)
+        .proposeRootBundle(
+          Array(CHAIN_ID_TEST_LIST.length).fill(fill1Block),
+          merkleRoot1.leaves.length,
+          merkleRoot1.tree.getHexRoot(),
+          mockTreeRoot,
+          mockTreeRoot
+        );
+
+      const pendingRootBundle = await hubPool.rootBundleProposal();
+      await timer.connect(dataworker).setCurrentTime(pendingRootBundle.challengePeriodEndTimestamp + 1);
+      for (let i = 0; i < merkleRoot1.leaves.length; i++) {
+        const leaf = merkleRoot1.leaves[i];
+        await hubPool
+          .connect(dataworker)
+          .executeRootBundle(
+            leaf.chainId,
+            leaf.groupIndex,
+            leaf.bundleLpFees,
+            leaf.netSendAmounts,
+            leaf.runningBalances,
+            i,
+            leaf.l1Tokens,
+            merkleRoot1.tree.getHexProof(leaf)
+          );
+      }
+
+      // Create new spoke client with a search range that would miss fill1.
+      const destinationChainSpokePoolClient = new SpokePoolClient(
+        createSpyLogger().spyLogger,
+        spokePool_2,
+        configStoreClient,
+        destinationChainId,
+        { fromBlock: fill1Block + 1 },
+        spokePoolClients[destinationChainId].spokePoolDeploymentBlock
+      );
+
+      // Send a second partial fill, this will produce an excess since a slow fill is already in flight for the deposit.
+      const fill2 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.5, destinationChainId);
+      await updateAllClients();
+      await destinationChainSpokePoolClient.update();
+      expect(destinationChainSpokePoolClient.getFills().length).to.equal(1);
+      const blockRange2 = Array(CHAIN_ID_TEST_LIST.length).fill([
+        fill1Block + 1,
+        await spokePool_2.provider.getBlockNumber(),
+      ]);
+      const merkleRoot2 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange2, {
+        ...spokePoolClients,
+        [destinationChainId]: destinationChainSpokePoolClient,
+      });
+      const l1TokenForFill = merkleRoot2.leaves[0].l1Tokens[0];
+
+      // New running balance should be fill1 + fill2 + slowFillAmount - excess and slowFillAmount == excess in this
+      // example where we partial fill 50% of the deposit both times.
+      expect(merkleRoot2.runningBalances[destinationChainId][l1TokenForFill]).to.equal(
+        getRefundForFills([fill1, fill2])
       );
     });
     it("Many L1 tokens, testing leaf order and root construction", async function () {

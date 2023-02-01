@@ -14,6 +14,8 @@ import {
   setDeposit,
   getRedisDepositKey,
   assert,
+  sortEventsAscending,
+  filledSameDeposit,
 } from "../utils";
 import { toBN, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
@@ -356,6 +358,12 @@ export class SpokePoolClient {
       toBlock,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
+    this.logger.debug({
+      at: "SpokePoolClient",
+      message: "Queried RPC for matching fills up to block",
+      fill,
+      toBlock,
+    });
     return await this.queryFillsInBlockRange(fill, searchConfig);
   }
 

@@ -96,9 +96,13 @@ export function filledSameDeposit(fillA: Fill, fillB: Fill): boolean {
   );
 }
 
-export function getLastMatchingFillBeforeBlock(allMatchingFills: FillWithBlock[], lastBlock: number): FillWithBlock {
-  return sortEventsDescending(allMatchingFills).find(
-    (fill: FillWithBlock) => lastBlock >= fill.blockNumber
+export function getLastMatchingFillBeforeBlock(
+  fillToMatch: Fill,
+  allFills: FillWithBlock[],
+  lastBlock: number
+): FillWithBlock {
+  return sortEventsDescending(allFills).find(
+    (fill: FillWithBlock) => filledSameDeposit(fillToMatch, fill) && lastBlock >= fill.blockNumber
   ) as FillWithBlock;
 }
 
@@ -115,7 +119,9 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
   // Note that allValidFills should only include fills later than than eventSearchConfig.fromBlock.
 
   // Find the first fill chronologically for matched deposit for the input fill.
-  const allMatchingFills = allValidFills.filter((_fill: FillWithBlock) => filledSameDeposit(_fill, fill));
+  const allMatchingFills = sortEventsAscending(
+    allValidFills.filter((_fill: FillWithBlock) => filledSameDeposit(_fill, fill))
+  );
   let firstFillForSameDeposit = allMatchingFills.find((_fill) => isFirstFillForDeposit(_fill));
 
   // If `allValidFills` doesn't contain the first fill for this deposit then we have to perform a historical query to
@@ -129,6 +135,10 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
       allMatchingFills[0].blockNumber
     );
     firstFillForSameDeposit = sortEventsAscending(matchingFills).find((_fill) => isFirstFillForDeposit(_fill));
+    if (firstFillForSameDeposit === undefined)
+      throw new Error(
+        `FillUtils#getFillDataForSlowFillFromPreviousRootBundle: Cannot find first fill for for deposit ${fill.depositId} on chain ${fill.destinationChainId} after querying historical fills`
+      );
     allMatchingFills.push(firstFillForSameDeposit);
   }
 
@@ -146,6 +156,7 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
     // Can use spokeClient.queryFillsInBlockRange to get all fills in the `rootBundleEndBlockContainingFirstFill`
     // if and only if `allValidFills` doesn't contain the block range.
     lastMatchingFillInSameBundle = getLastMatchingFillBeforeBlock(
+      fill,
       allMatchingFills,
       rootBundleEndBlockContainingFirstFill
     );
