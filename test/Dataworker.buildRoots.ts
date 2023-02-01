@@ -37,6 +37,8 @@ let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
 let dataworkerInstance: Dataworker;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
+let spy: sinon.SinonSpy;
+
 let updateAllClients: () => Promise<void>;
 
 describe("Dataworker: Build merkle roots", async function () {
@@ -57,6 +59,7 @@ describe("Dataworker: Build merkle roots", async function () {
       dataworker,
       timer,
       spokePoolClients,
+      spy,
       updateAllClients,
     } = await setupFastDataworker(ethers));
   });
@@ -828,7 +831,7 @@ describe("Dataworker: Build merkle roots", async function () {
       await updateAllClients();
 
       // Send deposit
-      // Send first partial fill
+      // Send two partial fills
       const deposit1 = await buildDeposit(
         configStoreClient,
         hubPoolClient,
@@ -840,7 +843,8 @@ describe("Dataworker: Build merkle roots", async function () {
         amountToDeposit
       );
       const fill1 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.5, destinationChainId);
-      const fill1Block = await spokePool_2.provider.getBlockNumber();
+      const fill2 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, destinationChainId);
+      const fill2Block = await spokePool_2.provider.getBlockNumber();
 
       // Produce bundle and execute pool leaves. Should produce a slow fill. Don't execute it.
       await updateAllClients();
@@ -848,7 +852,7 @@ describe("Dataworker: Build merkle roots", async function () {
       await hubPool
         .connect(dataworker)
         .proposeRootBundle(
-          Array(CHAIN_ID_TEST_LIST.length).fill(fill1Block),
+          Array(CHAIN_ID_TEST_LIST.length).fill(fill2Block),
           merkleRoot1.leaves.length,
           merkleRoot1.tree.getHexRoot(),
           mockTreeRoot,
@@ -879,17 +883,17 @@ describe("Dataworker: Build merkle roots", async function () {
         spokePool_2,
         configStoreClient,
         destinationChainId,
-        { fromBlock: fill1Block + 1 },
+        { fromBlock: fill2Block + 1 },
         spokePoolClients[destinationChainId].spokePoolDeploymentBlock
       );
 
-      // Send a second partial fill, this will produce an excess since a slow fill is already in flight for the deposit.
-      const fill2 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.5, destinationChainId);
+      // Send a third partial fill, this will produce an excess since a slow fill is already in flight for the deposit.
+      const fill3 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, destinationChainId);
       await updateAllClients();
       await destinationChainSpokePoolClient.update();
       expect(destinationChainSpokePoolClient.getFills().length).to.equal(1);
       const blockRange2 = Array(CHAIN_ID_TEST_LIST.length).fill([
-        fill1Block + 1,
+        fill2Block + 1,
         await spokePool_2.provider.getBlockNumber(),
       ]);
       const merkleRoot2 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange2, {
@@ -898,11 +902,18 @@ describe("Dataworker: Build merkle roots", async function () {
       });
       const l1TokenForFill = merkleRoot2.leaves[0].l1Tokens[0];
 
-      // New running balance should be fill1 + fill2 + slowFillAmount - excess and slowFillAmount == excess in this
-      // example where we partial fill 50% of the deposit both times.
+      // New running balance should be fill1 + fill2 + fill3 + slowFillAmount - excess
+      // excess should be the amount remaining after fill2. Since the slow fill was never
+      // executed, the excess should be equal to the slow fill amount so they should cancel out.
+      const expectedExcess = fill2.amount.sub(fill2.totalFilledAmount);
       expect(merkleRoot2.runningBalances[destinationChainId][l1TokenForFill]).to.equal(
-        getRefundForFills([fill1, fill2])
+        getRefundForFills([fill1, fill2, fill3])
       );
+
+      expect(lastSpyLogIncludes(spy, "Fills triggering excess returns from L2")).to.be.true;
+      expect(
+        spy.getCall(-1).lastArg.fillsTriggeringExcesses[destinationChainId][fill2.destinationToken][0].excess
+      ).to.equal(expectedExcess.toString());
     });
     it("Many L1 tokens, testing leaf order and root construction", async function () {
       // In this test, each L1 token will have one deposit and fill associated with it.

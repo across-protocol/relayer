@@ -336,7 +336,7 @@ export async function _buildPoolRebalanceRoot(
     allValidFillsInRange,
     chainIdListForBundleEvaluationBlockNumbers
   );
-  if (logger)
+  if (logger && Object.keys(fillsTriggeringExcesses).length > 0)
     logger.debug({
       at: "Dataworker#DataworkerUtils",
       message: "Fills triggering excess returns from L2",

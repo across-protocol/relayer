@@ -139,7 +139,11 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
       throw new Error(
         `FillUtils#getFillDataForSlowFillFromPreviousRootBundle: Cannot find first fill for for deposit ${fill.depositId} on chain ${fill.destinationChainId} after querying historical fills`
       );
-    allMatchingFills.push(firstFillForSameDeposit);
+    allMatchingFills.push(
+      ...matchingFills.filter(
+        (_fill) => !allMatchingFills.find((existingFill) => existingFill.totalFilledAmount.eq(_fill.totalFilledAmount))
+      )
+    );
   }
 
   // Find ending block number for chain from ProposeRootBundle event that should have included a slow fill
@@ -157,7 +161,7 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
     // if and only if `allValidFills` doesn't contain the block range.
     lastMatchingFillInSameBundle = getLastMatchingFillBeforeBlock(
       fill,
-      allMatchingFills,
+      sortEventsDescending(allMatchingFills),
       rootBundleEndBlockContainingFirstFill
     );
   }
