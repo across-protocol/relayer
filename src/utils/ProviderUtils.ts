@@ -163,20 +163,23 @@ class CacheProvider extends RateLimitedProvider {
 
     // Handle odd cases where the ordering is flipped, etc.
     // toBlock/fromBlock is in hex, so it must be parsed before being compared to the first unsafe block.
-    const latestQueriedBlock = Math.max(parseInt(fromBlock, 16), parseInt(toBlock, 16));
+    const fromBlockNumber = parseInt(fromBlock, 16);
+    const toBlockNumber = parseInt(toBlock, 16);
 
     // Handle cases where the input block numbers are not hex values ("latest", "pending", etc).
     // This would result in the result of the above being NaN.
-    if (Number.isNaN(latestQueriedBlock)) return false;
+    if (Number.isNaN(fromBlockNumber) || Number.isNaN(toBlockNumber)) return false;
+    if (toBlockNumber < fromBlockNumber)
+      throw new Error("CacheProvider::shouldCache toBlock cannot be smaller than fromBlock.");
 
     // Note: this method is an internal method provided by the BaseProvider. It allows the caller to specify a maxAge of
     // the block that is allowed. This means if a block has been retrieved withint the last n seconds, no provider
     // query will be made.
-    const blockNumber = await super._getInternalBlockNumber(BLOCK_NUMBER_TTL * 1000);
+    const currentBlockNumber = await super._getInternalBlockNumber(BLOCK_NUMBER_TTL * 1000);
 
     // We ensure that the toBlock is not within the max reorg distance to avoid caching unstable information.
-    const firstUnsafeBlockNumber = blockNumber - this.maxReorgDistance;
-    return latestQueriedBlock < firstUnsafeBlockNumber;
+    const firstUnsafeBlockNumber = currentBlockNumber - this.maxReorgDistance;
+    return toBlockNumber < firstUnsafeBlockNumber;
   }
 }
 
