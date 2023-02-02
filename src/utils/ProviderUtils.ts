@@ -57,6 +57,9 @@ class CacheProvider extends ethers.providers.StaticJsonRpcProvider {
 
       // Commit result to redis.
       await setRedisKey(redisKey, JSON.stringify(result), this.redisClient, PROVIDER_CACHE_TTL);
+
+      // Return the cached result.
+      return result;
     }
 
     return await super.send(method, params);
