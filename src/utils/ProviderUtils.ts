@@ -4,33 +4,119 @@ import winston from "winston";
 import { isPromiseFulfilled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
 import { Logger, RedisClient, setRedisKey } from ".";
+import { MAX_REORG_DISTANCE, PROVIDER_CACHE_TTL, BLOCK_NUMBER_TTL } from "../common";
 
 const logger = Logger;
 
-// This is the max distance on each chain that reorgs can happen.
-// Caching will not be allowed for queries whose responses depend on blocks closer than this many blocks.
-// This is intended to be conservative.
-const MAX_REORG_DISTANCE: { [chainId: number]: number } = {
-  1: 64,
-  10: 0,
-  137: 256,
-  288: 0,
-  42161: 0,
-};
+// The async/queue library has a task-based interface for building a concurrent queue.
+// This is the type we pass to define a request "task".
+interface RateLimitTask {
+  // These are the arguments to be passed to super.send().
+  sendArgs: [string, Array<any>];
 
-// This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance.
-const BLOCK_NUMBER_TTL = 60;
+  // These are the promise callbacks that will cause the initial send call made by the user to either return a result
+  // or fail.
+  resolve: (result: any) => void;
+  reject: (err: any) => void;
+}
 
-// 1 hour TTL on the redis cache.
-const PROVIDER_CACHE_TTL = 3600;
+// StaticJsonRpcProvider is used in place of JsonRpcProvider to avoid redundant eth_chainId queries prior to each
+// request. This is safe to use when the back-end provider is guaranteed not to change.
+// See https://docs.ethers.io/v5/api/providers/jsonrpc-provider/#StaticJsonRpcProvider
 
-class CacheProvider extends ethers.providers.StaticJsonRpcProvider {
+// This provider is a very small addition to the StaticJsonRpcProvider that ensures that no more than `maxConcurrency`
+// requests are ever in flight. It uses the async/queue library to manage this.
+class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
+  // The queue object that manages the tasks.
+  private queue: QueueObject;
+
+  // Takes the same arguments as the JsonRpcProvider, but it has an additional maxConcurrency value at the beginning
+  // of the list.
+  constructor(
+    maxConcurrency: number,
+    ...cacheConstructorParams: ConstructorParameters<typeof ethers.providers.StaticJsonRpcProvider>
+  ) {
+    super(...cacheConstructorParams);
+
+    // This sets up the queue. Each task is executed by calling the superclass's send method, which fires off the
+    // request. This queue sends out requests concurrently, but stops once the concurrency limit is reached. The
+    // maxConcurrency is configured here.
+    this.queue = createQueue(async ({ sendArgs, resolve, reject }: RateLimitTask) => {
+      await super
+        .send(...sendArgs)
+        .then(resolve)
+        .catch(reject);
+    }, maxConcurrency);
+  }
+
+  override async send(method: string, params: Array<any>): Promise<any> {
+    // This simply creates a promise and adds the arguments and resolve and reject handlers to the task.
+    return new Promise<any>((resolve, reject) => {
+      const task: RateLimitTask = {
+        sendArgs: [method, params],
+        resolve,
+        reject,
+      };
+      this.queue.push(task);
+    });
+  }
+}
+
+const defaultTimeout = 60 * 1000;
+
+function delay(s: number): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(resolve, Math.round(s * 1000)));
+}
+
+function formatProviderError(provider: ethers.providers.StaticJsonRpcProvider, rawErrorText: string) {
+  return `Provider ${provider.connection.url} failed with error: ${rawErrorText}`;
+}
+
+function createSendErrorWithMessage(message: string, sendError: any) {
+  const error = new Error(message);
+  return { ...sendError, ...error };
+}
+
+function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): boolean {
+  // This function mutates rpcResults and deletes the ignored keys. It returns the deleted keys that we can re-add
+  // back after we do the comparison with unignored keys. This is a faster algorithm than cloning an object but it has
+  // some side effects such as the order of keys in the rpcResults object changing.
+  const deleteIgnoredKeys = (ignoredKeys: string[], rpcResults: any) => {
+    const ignoredMappings = {};
+    for (const key of ignoredKeys) {
+      ignoredMappings[key] = rpcResults[key];
+      delete rpcResults[key];
+    }
+    return ignoredMappings;
+  };
+  const addIgnoredFilteredKeys = (ignoredMappings: any, rpcResults: any) => {
+    for (const [key, value] of Object.entries(ignoredMappings)) {
+      rpcResults[key] = value;
+    }
+  };
+
+  if (method === "eth_getBlockByNumber") {
+    // We've seen RPC's disagree on the miner field, for example when Polygon nodes updated software that
+    // led alchemy and quicknode to disagree on the the miner field's value.
+    const ignoredKeys = ["miner"];
+    const ignoredMappingsA = deleteIgnoredKeys(ignoredKeys, rpcResultA);
+    const ignoredMappingsB = deleteIgnoredKeys(ignoredKeys, rpcResultB);
+    const result = lodash.isEqual(rpcResultA, rpcResultB);
+    addIgnoredFilteredKeys(ignoredMappingsA, rpcResultA);
+    addIgnoredFilteredKeys(ignoredMappingsB, rpcResultB);
+    return result;
+  } else {
+    return lodash.isEqual(rpcResultA, rpcResultB);
+  }
+}
+
+class CacheProvider extends RateLimitedProvider {
   public readonly getLogsCachePrefix: string;
   public readonly maxReorgDistance: number;
 
   constructor(
     readonly redisClient?: RedisClient,
-    ...jsonRpcConstructorParams: ConstructorParameters<typeof ethers.providers.StaticJsonRpcProvider>
+    ...jsonRpcConstructorParams: ConstructorParameters<typeof RateLimitedProvider>
   ) {
     super(...jsonRpcConstructorParams);
 
@@ -94,108 +180,6 @@ class CacheProvider extends ethers.providers.StaticJsonRpcProvider {
   }
 }
 
-// The async/queue library has a task-based interface for building a concurrent queue.
-// This is the type we pass to define a request "task".
-interface RateLimitTask {
-  // These are the arguments to be passed to super.send().
-  sendArgs: [string, Array<any>];
-
-  // These are the promise callbacks that will cause the initial send call made by the user to either return a result
-  // or fail.
-  resolve: (result: any) => void;
-  reject: (err: any) => void;
-}
-
-// StaticJsonRpcProvider is used in place of JsonRpcProvider to avoid redundant eth_chainId queries prior to each
-// request. This is safe to use when the back-end provider is guaranteed not to change.
-// See https://docs.ethers.io/v5/api/providers/jsonrpc-provider/#StaticJsonRpcProvider
-
-// This provider is a very small addition to the StaticJsonRpcProvider that ensures that no more than `maxConcurrency`
-// requests are ever in flight. It uses the async/queue library to manage this.
-class RateLimitedProvider extends CacheProvider {
-  // The queue object that manages the tasks.
-  private queue: QueueObject;
-
-  // Takes the same arguments as the JsonRpcProvider, but it has an additional maxConcurrency value at the beginning
-  // of the list.
-  constructor(maxConcurrency: number, ...cacheConstructorParams: ConstructorParameters<typeof CacheProvider>) {
-    super(...cacheConstructorParams);
-
-    // This sets up the queue. Each task is executed by calling the superclass's send method, which fires off the
-    // request. This queue sends out requests concurrently, but stops once the concurrency limit is reached. The
-    // maxConcurrency is configured here.
-    this.queue = createQueue(async ({ sendArgs, resolve, reject }: RateLimitTask) => {
-      await super
-        .send(...sendArgs)
-        .then(resolve)
-        .catch(reject);
-    }, maxConcurrency);
-  }
-
-  override async send(method: string, params: Array<any>): Promise<any> {
-    // Ignore rate limiting for eth_blockNumber calls. Otherwise, The internal blocknumber calls in the caching
-    // provider can hang.
-    if (method === "eth_blockNumber") return super.send(method, params);
-    // This simply creates a promise and adds the arguments and resolve and reject handlers to the task.
-    return new Promise<any>((resolve, reject) => {
-      const task: RateLimitTask = {
-        sendArgs: [method, params],
-        resolve,
-        reject,
-      };
-      this.queue.push(task);
-    });
-  }
-}
-
-const defaultTimeout = 60 * 1000;
-
-function delay(s: number): Promise<void> {
-  return new Promise<void>((resolve) => setTimeout(resolve, Math.round(s * 1000)));
-}
-
-function formatProviderError(provider: ethers.providers.StaticJsonRpcProvider, rawErrorText: string) {
-  return `Provider ${provider.connection.url} failed with error: ${rawErrorText}`;
-}
-
-function createSendErrorWithMessage(message: string, sendError: any) {
-  const error = new Error(message);
-  return { ...sendError, ...error };
-}
-
-function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): boolean {
-  // This function mutates rpcResults and deletes the ignored keys. It returns the deleted keys that we can re-add
-  // back after we do the comparison with unignored keys. This is a faster algorithm than cloning an object but it has
-  // some side effects such as the order of keys in the rpcResults object changing.
-  const deleteIgnoredKeys = (ignoredKeys: string[], rpcResults: any) => {
-    const ignoredMappings = {};
-    for (const key of ignoredKeys) {
-      ignoredMappings[key] = rpcResults[key];
-      delete rpcResults[key];
-    }
-    return ignoredMappings;
-  };
-  const addIgnoredFilteredKeys = (ignoredMappings: any, rpcResults: any) => {
-    for (const [key, value] of Object.entries(ignoredMappings)) {
-      rpcResults[key] = value;
-    }
-  };
-
-  if (method === "eth_getBlockByNumber") {
-    // We've seen RPC's disagree on the miner field, for example when Polygon nodes updated software that
-    // led alchemy and quicknode to disagree on the the miner field's value.
-    const ignoredKeys = ["miner"];
-    const ignoredMappingsA = deleteIgnoredKeys(ignoredKeys, rpcResultA);
-    const ignoredMappingsB = deleteIgnoredKeys(ignoredKeys, rpcResultB);
-    const result = lodash.isEqual(rpcResultA, rpcResultB);
-    addIgnoredFilteredKeys(ignoredMappingsA, rpcResultA);
-    addIgnoredFilteredKeys(ignoredMappingsB, rpcResultB);
-    return result;
-  } else {
-    return lodash.isEqual(rpcResultA, rpcResultB);
-  }
-}
-
 class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
   readonly providers: ethers.providers.StaticJsonRpcProvider[];
   constructor(
@@ -210,7 +194,7 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     // Initialize the super just with the chainId, which stops it from trying to immediately send out a .send before
     // this derived class is initialized.
     super(undefined, chainId);
-    this.providers = params.map((inputs) => new RateLimitedProvider(maxConcurrency, redisClient, ...inputs));
+    this.providers = params.map((inputs) => new CacheProvider(redisClient, maxConcurrency, ...inputs));
     if (this.nodeQuorumThreshold < 1 || !Number.isInteger(this.nodeQuorumThreshold))
       throw new Error(
         `nodeQuorum,Threshold cannot be < 1 and must be an integer. Currently set to ${this.nodeQuorumThreshold}`

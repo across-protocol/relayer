@@ -121,3 +121,20 @@ export const IGNORED_SPOKE_BUNDLES = {
 // to correct the bundles such as 15049343 that missed some events.
 export const IGNORED_HUB_PROPOSED_BUNDLES: number[] = [];
 export const IGNORED_HUB_EXECUTED_BUNDLES: number[] = [];
+
+// This is the max distance on each chain that reorgs can happen.
+// Provider caching will not be allowed for queries whose responses depend on blocks closer than this many blocks.
+// This is intended to be conservative.
+export const MAX_REORG_DISTANCE: { [chainId: number]: number } = {
+  1: 64,
+  10: 0,
+  137: 256,
+  288: 0,
+  42161: 0,
+};
+
+// This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
+export const BLOCK_NUMBER_TTL = 60;
+
+// This is the TTL for the provider cache.
+export const PROVIDER_CACHE_TTL = 3600;
