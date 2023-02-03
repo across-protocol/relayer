@@ -7,8 +7,8 @@ import { Deposit, Fill } from "../interfaces";
 export type RedisClient = ReturnType<typeof createClient>;
 
 // Avoid caching calls that are recent enough to be affected by things like reorgs.
-// Current time must be >= 5 minutes past the event timestamp for it to be stable enough to cache.
-export const REDIS_CACHEABLE_AGE = 300;
+// Current time must be >= 15 minutes past the event timestamp for it to be stable enough to cache.
+export const REDIS_CACHEABLE_AGE = 15 * 60;
 
 // Make the redis client for a particular url essentially a singleton.
 const redisClients: { [url: string]: Promise<RedisClient> } = {};
@@ -46,8 +46,15 @@ export function getRedisDepositKey(depositOrFill: Deposit | Fill) {
   return `deposit_${depositOrFill.originChainId}_${depositOrFill.depositId}`;
 }
 
-export async function setDeposit(deposit: Deposit, redisClient: RedisClient, expirySeconds = 0): Promise<void> {
-  await setRedisKey(getRedisDepositKey(deposit), JSON.stringify(deposit), redisClient, expirySeconds);
+export async function setDeposit(
+  deposit: Deposit,
+  currentChainTime: number,
+  redisClient: RedisClient,
+  expirySeconds = 0
+): Promise<void> {
+  console.log(shouldCache(deposit.quoteTimestamp, currentChainTime), currentChainTime, deposit.quoteTimestamp);
+  if (shouldCache(deposit.quoteTimestamp, currentChainTime))
+    await setRedisKey(getRedisDepositKey(deposit), JSON.stringify(deposit), redisClient, expirySeconds);
 }
 
 export async function getDeposit(key: string, redisClient: RedisClient): Promise<Deposit | undefined> {

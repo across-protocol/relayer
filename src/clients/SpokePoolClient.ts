@@ -350,7 +350,14 @@ export class SpokePoolClient {
         deposit,
       });
       if (this.configStoreClient.redisClient)
-        await setDeposit(deposit, this.configStoreClient.redisClient, 24 * 60 * 60);
+        await setDeposit(
+          deposit,
+          (
+            await this.spokePool.provider.getBlock("latest")
+          ).timestamp,
+          this.configStoreClient.redisClient,
+          24 * 60 * 60
+        );
     }
 
     const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill
