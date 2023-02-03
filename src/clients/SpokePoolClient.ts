@@ -392,6 +392,7 @@ export class SpokePoolClient {
       ),
       searchConfig
     );
+    // Should we cache this query? Will it be automatically cached by https://github.com/across-protocol/relayer-v2/pull/440 ?
     const fills = query.map((event) => spreadEventWithBlockNumber(event) as FillWithBlock);
     return sortEventsAscending(fills.filter((_fill) => filledSameDeposit(_fill, matchingFill)));
   }
