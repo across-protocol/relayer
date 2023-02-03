@@ -246,13 +246,15 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     if (count < quorumThreshold) throwQuorumError();
 
     // If we've achieved quorum, then we should still log the providers that mismatched with the quorum result.
-    const mismatchedProviders = [...values, ...fallbackValues]
-      .filter(([, result]) => !compareRpcResults(method, result, quorumResult))
-      .map(([provider]) => provider.connection.url);
+    const mismatchedProviders = Object.fromEntries(
+      [...values, ...fallbackValues]
+        .filter(([, result]) => !compareRpcResults(method, result, quorumResult))
+        .map(([provider, result]) => [provider.connection.url, result])
+    );
     const quorumProviders = [...values, ...fallbackValues]
       .filter(([, result]) => compareRpcResults(method, result, quorumResult))
       .map(([provider]) => provider.connection.url);
-    if (mismatchedProviders.length > 0 || errors.length > 0) {
+    if (Object.keys(mismatchedProviders).length > 0 || errors.length > 0) {
       logger.warn({
         at: "ProviderUtils",
         message: "Some providers mismatched with the quorum result or failed 🚸",
