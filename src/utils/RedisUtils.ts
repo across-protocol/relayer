@@ -52,7 +52,6 @@ export async function setDeposit(
   redisClient: RedisClient,
   expirySeconds = 0
 ): Promise<void> {
-  console.log(shouldCache(deposit.quoteTimestamp, currentChainTime), currentChainTime, deposit.quoteTimestamp);
   if (shouldCache(deposit.quoteTimestamp, currentChainTime))
     await setRedisKey(getRedisDepositKey(deposit), JSON.stringify(deposit), redisClient, expirySeconds);
 }
