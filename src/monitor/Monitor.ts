@@ -217,7 +217,7 @@ export class Monitor {
     const reports = this.initializeBalanceReports(relayers, allL1Tokens, allChainNames);
 
     await this.updateCurrentRelayerBalances(reports);
-    this.updateLatestAndFutureRelayerRefunds(reports);
+    await this.updateLatestAndFutureRelayerRefunds(reports);
     this.updateUnknownTransfers(reports);
 
     for (const relayer of relayers) {
@@ -392,11 +392,10 @@ export class Monitor {
     }
   }
 
-  updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport) {
-    const validatedBundleRefunds: FillsToRefund[] = this.clients.bundleDataClient.getPendingRefundsFromValidBundles(
-      this.monitorConfig.bundleRefundLookback
-    );
-    const nextBundleRefunds = this.clients.bundleDataClient.getNextBundleRefunds();
+  async updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport) {
+    const validatedBundleRefunds: FillsToRefund[] =
+      await this.clients.bundleDataClient.getPendingRefundsFromValidBundles(this.monitorConfig.bundleRefundLookback);
+    const nextBundleRefunds = await this.clients.bundleDataClient.getNextBundleRefunds();
 
     // Calculate which fills have not yet been refunded for each monitored relayer.
     for (const refunds of validatedBundleRefunds) {
