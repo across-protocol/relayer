@@ -129,8 +129,10 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
   // allMatchingFills array, at the end of this block, allMatchingFills should contain all fills for the same
   // deposit as the input fill.
   if (!firstFillForSameDeposit) {
+    const depositForFill = spokePoolClientsByChain[fill.originChainId].getDepositForFill(fill);
     const matchingFills = await spokePoolClientsByChain[fill.destinationChainId].queryHistoricalMatchingFills(
       fill,
+      depositForFill,
       allMatchingFills[0].blockNumber
     );
     firstFillForSameDeposit = sortEventsAscending(matchingFills).find((_fill) => isFirstFillForDeposit(_fill));

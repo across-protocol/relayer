@@ -352,7 +352,7 @@ export class SpokePoolClient {
     return this.validateFillForDeposit(fillCopy, deposit) ? deposit : undefined;
   }
 
-  async queryHistoricalMatchingFills(fill: Fill, toBlock: number) {
+  async queryHistoricalMatchingFills(fill: Fill, deposit: Deposit, toBlock: number): Promise<FillWithBlock[]> {
     const searchConfig = {
       fromBlock: this.spokePoolDeploymentBlock,
       toBlock,
@@ -364,7 +364,9 @@ export class SpokePoolClient {
       fill,
       toBlock,
     });
-    return await this.queryFillsInBlockRange(fill, searchConfig);
+    return (await this.queryFillsInBlockRange(fill, searchConfig)).filter((_fill) =>
+      this.validateFillForDeposit(_fill, deposit)
+    );
   }
 
   async queryFillsInBlockRange(matchingFill: Fill, searchConfig: EventSearchConfig) {
