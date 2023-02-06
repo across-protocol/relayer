@@ -383,7 +383,15 @@ export function getProvider(chainId: number, logger?: winston.Logger, redisClien
     const cachedProvider = providerCache[chainId];
     if (cachedProvider) return cachedProvider;
   }
-  const { NODE_RETRIES, NODE_RETRY_DELAY, NODE_QUORUM, NODE_TIMEOUT, NODE_MAX_CONCURRENCY, DISABLE_PROVIDER_CACHING, PROVIDER_CACHE_NAMESPACE } = process.env;
+  const {
+    NODE_RETRIES,
+    NODE_RETRY_DELAY,
+    NODE_QUORUM,
+    NODE_TIMEOUT,
+    NODE_MAX_CONCURRENCY,
+    DISABLE_PROVIDER_CACHING,
+    PROVIDER_CACHE_NAMESPACE,
+  } = process.env;
 
   const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
 
