@@ -176,7 +176,7 @@ class CacheProvider extends RateLimitedProvider {
       throw new Error("CacheProvider::shouldCache toBlock cannot be smaller than fromBlock.");
 
     // Note: this method is an internal method provided by the BaseProvider. It allows the caller to specify a maxAge of
-    // the block that is allowed. This means if a block has been retrieved withint the last n seconds, no provider
+    // the block that is allowed. This means if a block has been retrieved within the last n seconds, no provider
     // query will be made.
     const currentBlockNumber = await super._getInternalBlockNumber(BLOCK_NUMBER_TTL * 1000);
 
@@ -414,7 +414,7 @@ export function getProvider(chainId: number, logger?: winston.Logger, redisClien
   // This environment variable allows the operator to namespace the cache. This is useful if multiple bots are using
   // the cache and the operator intends to have them not share.
   // It's also useful as a way to synthetically "flush" the provider cache by modifying this value.
-  // A reccomended naming strategy is "NAME_X" where NAME is a string name and 0 is a numerical value that can be
+  // A recommended naming strategy is "NAME_X" where NAME is a string name and 0 is a numerical value that can be
   // adjusted for the purpose of "flushing".
   const providerCacheNamespace = PROVIDER_CACHE_NAMESPACE || "DEFAULT_0";
 
