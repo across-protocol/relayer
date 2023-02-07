@@ -67,7 +67,9 @@ export class InventoryClient {
     const distribution: { [chainId: number]: BigNumber } = {};
     this.getEnabledChains().forEach((chainId) => {
       if (cumulativeBalance.gt(0))
-        distribution[chainId] = this.getBalanceOnChainForL1Token(chainId, l1Token).mul(this.scalar).div(cumulativeBalance);
+        distribution[chainId] = this.getBalanceOnChainForL1Token(chainId, l1Token)
+          .mul(this.scalar)
+          .div(cumulativeBalance);
     });
     return distribution;
   }
