@@ -3,8 +3,9 @@ import lodash from "lodash";
 import winston from "winston";
 import { isPromiseFulfilled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
-import { Logger, RedisClient, setRedisKey } from ".";
+import { RedisClient, setRedisKey } from "./RedisUtils";
 import { MAX_REORG_DISTANCE, PROVIDER_CACHE_TTL, BLOCK_NUMBER_TTL } from "../common";
+import { Logger } from ".";
 
 const logger = Logger;
 

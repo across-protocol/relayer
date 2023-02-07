@@ -15,11 +15,10 @@ import { AdapterManager, CrossChainTransferClient, weth9Abi } from "./bridges";
 import { Deposit, FillsToRefund, InventoryConfig } from "../interfaces";
 import lodash from "lodash";
 
-const scalar = toBN(10).pow(18);
-const formatWei = createFormatFunction(2, 4, false, 18);
-
 export class InventoryClient {
   private logDisabledManagement = false;
+  private readonly scalar: BigNumber;
+  private readonly formatWei: ReturnType<typeof createFormatFunction>;
 
   constructor(
     readonly relayer: string,
@@ -32,7 +31,10 @@ export class InventoryClient {
     readonly adapterManager: AdapterManager,
     readonly crossChainTransferClient: CrossChainTransferClient,
     readonly bundleRefundLookback = 2
-  ) {}
+  ) {
+    this.scalar = toBN(10).pow(18);
+    this.formatWei = createFormatFunction(2, 4, false, 18);
+  }
 
   // Get the total balance across all chains, considering any outstanding cross chain transfers as a virtual balance on that chain.
   getCumulativeBalance(l1Token: string): BigNumber {
@@ -65,7 +67,7 @@ export class InventoryClient {
     const distribution: { [chainId: number]: BigNumber } = {};
     this.getEnabledChains().forEach((chainId) => {
       if (cumulativeBalance.gt(0))
-        distribution[chainId] = this.getBalanceOnChainForL1Token(chainId, l1Token).mul(scalar).div(cumulativeBalance);
+        distribution[chainId] = this.getBalanceOnChainForL1Token(chainId, l1Token).mul(this.scalar).div(cumulativeBalance);
     });
     return distribution;
   }
@@ -86,7 +88,7 @@ export class InventoryClient {
     const shortfall = this.getTokenShortFall(l1Token, chainId) || toBN(0);
     const currentBalance = this.getBalanceOnChainForL1Token(chainId, l1Token).sub(shortfall);
     // Multiply by scalar to avoid rounding errors.
-    return currentBalance.mul(scalar).div(cumulativeBalance);
+    return currentBalance.mul(this.scalar).div(cumulativeBalance);
   }
 
   // Find how short a given chain is for a desired L1Token.
@@ -195,7 +197,7 @@ export class InventoryClient {
     // Compute what the balance will be on the target chain, considering this relay and the finalization of the
     // transfers that are currently flowing through the canonical bridge.
     const expectedPostRelayAllocation = chainVirtualBalanceWithShortfallPostRelay
-      .mul(scalar)
+      .mul(this.scalar)
       .div(cumulativeVirtualBalanceWithShortfallPostRelay);
 
     // If the post relay allocation, considering funds in transit, is larger than the target threshold then refund on L1
@@ -260,7 +262,7 @@ export class InventoryClient {
           const { thresholdPct, targetPct } = this.inventoryConfig.tokenConfig[l1Token][chainId];
           if (currentAllocPct.lt(thresholdPct)) {
             const deltaPct = targetPct.sub(currentAllocPct);
-            const amount = deltaPct.mul(cumulativeBalance).div(scalar);
+            const amount = deltaPct.mul(cumulativeBalance).div(this.scalar);
             const balance = this.tokenClient.getBalance(1, l1Token);
             // Divide by scalar because allocation percent was multiplied by it to avoid rounding errors.
             rebalancesRequired.push({
@@ -329,8 +331,8 @@ export class InventoryClient {
           const formatter = createFormatFunction(2, 4, false, decimals);
           mrkdwn +=
             ` - ${formatter(amount.toString())} ${symbol} rebalanced. This meets target allocation of ` +
-            `${formatWei(targetPct.mul(100).toString())}% (trigger of ` +
-            `${formatWei(thresholdPct.mul(100).toString())}%) of the total ` +
+            `${this.formatWei(targetPct.mul(100).toString())}% (trigger of ` +
+            `${this.formatWei(thresholdPct.mul(100).toString())}%) of the total ` +
             `${formatter(
               cumulativeBalance.toString()
             )} ${symbol} over all chains (ignoring hubpool repayments). This chain has a shortfall of ` +
@@ -355,7 +357,7 @@ export class InventoryClient {
             `${formatter(balance.toString())} on L1. There is currently ` +
             `${formatter(this.getBalanceOnChainForL1Token(chainId, l1Token).toString())} ${symbol} on ` +
             `${getNetworkName(chainId)} which is ` +
-            `${formatWei(tokenDistributionPerL1Token[l1Token][chainId].mul(100).toString())}% of the total ` +
+            `${this.formatWei(tokenDistributionPerL1Token[l1Token][chainId].mul(100).toString())}% of the total ` +
             `${formatter(cumulativeBalance.toString())} ${symbol}.` +
             " This chain's pending L1->L2 transfer amount is " +
             `${formatter(
@@ -461,9 +463,9 @@ export class InventoryClient {
         const formatter = createFormatFunction(2, 4, false, 18);
         mrkdwn +=
           ` - ${formatter(amount.toString())} WETH rebalanced. This meets target ETH balance of ` +
-          `${formatWei(unwrapWethTarget.toString())} (trigger of ` +
-          `${formatWei(unwrapWethThreshold.toString())} ETH), ` +
-          `current balance of ${formatWei(balance.toString())} ` +
+          `${this.formatWei(unwrapWethTarget.toString())} (trigger of ` +
+          `${this.formatWei(unwrapWethThreshold.toString())} ETH), ` +
+          `current balance of ${this.formatWei(balance.toString())} ` +
           `tx: ${etherscanLink(hash, chainId)}\n`;
       }
 
@@ -527,7 +529,7 @@ export class InventoryClient {
               .toString()
           ),
           tokenShortFalls: formatter(this.getTokenShortFall(l1Token, chainId).toString()),
-          proRataShare: formatWei(amount.mul(100).toString()) + "%",
+          proRataShare: this.formatWei(amount.mul(100).toString()) + "%",
         };
       });
     });
