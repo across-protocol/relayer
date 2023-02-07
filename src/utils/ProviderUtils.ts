@@ -390,8 +390,8 @@ export function getProvider(chainId: number, logger?: winston.Logger, redisClien
     NODE_QUORUM,
     NODE_TIMEOUT,
     NODE_MAX_CONCURRENCY,
-    DISABLE_PROVIDER_CACHING,
-    PROVIDER_CACHE_NAMESPACE,
+    NODE_DISABLE_PROVIDER_CACHING,
+    NODE_PROVIDER_CACHE_NAMESPACE,
   } = process.env;
 
   const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
@@ -409,15 +409,15 @@ export function getProvider(chainId: number, logger?: winston.Logger, redisClien
   const nodeMaxConcurrency = Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "1000");
 
   // Provider caching defaults to being enabled if a redis instance exists. It can be manually disabled by setting
-  // DISABLE_PROVIDER_CACHING=true.
-  const disableProviderCache = DISABLE_PROVIDER_CACHING !== "true";
+  // NODE_DISABLE_PROVIDER_CACHING=true.
+  const disableProviderCache = NODE_DISABLE_PROVIDER_CACHING !== "true";
 
   // This environment variable allows the operator to namespace the cache. This is useful if multiple bots are using
   // the cache and the operator intends to have them not share.
   // It's also useful as a way to synthetically "flush" the provider cache by modifying this value.
   // A recommended naming strategy is "NAME_X" where NAME is a string name and 0 is a numerical value that can be
   // adjusted for the purpose of "flushing".
-  const providerCacheNamespace = PROVIDER_CACHE_NAMESPACE || "DEFAULT_0";
+  const providerCacheNamespace = NODE_PROVIDER_CACHE_NAMESPACE || "DEFAULT_0";
 
   // Custom delay + logging for RPC rate-limiting.
   const rpcRateLimited =
