@@ -12,6 +12,7 @@ import {
   getDeploymentBlockNumber,
   getDeposit,
   setDeposit,
+  getNetworkName,
   getRedisDepositKey,
   assert,
   sortEventsAscending,
@@ -321,10 +322,14 @@ export class SpokePoolClient {
         }
       );
       const event = (query as FundsDepositedEvent[]).find((deposit) => deposit.args.depositId === fill.depositId);
-      if (event === undefined)
+      if (event === undefined) {
+        const srcChain = getNetworkName(fill.originChainId);
+        const dstChain = getNetworkName(fill.destinationChainId);
         throw new Error(
-          `Could not find deposit ID ${fill.depositId} for fill between blocks [${blockBeforeDeposit}, ${blockAfterDeposit}]`
+          `Could not find deposit ${fill.depositId} for ${dstChain} fill` +
+            ` between ${srcChain} blocks [${blockBeforeDeposit}, ${blockAfterDeposit}]`
         );
+      }
       const processedEvent: Omit<DepositWithBlock, "destinationToken" | "realizedLpFeePct"> =
         spreadEventWithBlockNumber(event) as DepositWithBlock;
       const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number } = await this.computeRealizedLpFeePct(
