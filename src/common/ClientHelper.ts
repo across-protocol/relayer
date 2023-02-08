@@ -9,10 +9,10 @@ import {
   getBlockForTimestamp,
   Block,
   getCurrentTime,
+  getRedis,
 } from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
-import { createClient } from "redis4";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { BlockFinder } from "@uma/financial-templates-lib";
 
@@ -23,10 +23,14 @@ export interface Clients {
   hubSigner?: Wallet;
 }
 
-export function getSpokePoolSigners(baseSigner: Wallet, config: CommonConfig): { [chainId: number]: Wallet } {
+export async function getSpokePoolSigners(
+  baseSigner: Wallet,
+  config: CommonConfig
+): Promise<{ [chainId: number]: Wallet }> {
+  const redisClient = config.redisUrl ? await getRedis(config.redisUrl) : undefined;
   return Object.fromEntries(
     config.spokePoolChains.map((chainId) => {
-      return [chainId, baseSigner.connect(getProvider(chainId))];
+      return [chainId, baseSigner.connect(getProvider(chainId, undefined, redisClient))];
     })
   );
 }
@@ -40,7 +44,7 @@ export async function constructSpokePoolClientsWithLookback(
   hubPoolChainId: number
 ): Promise<SpokePoolClientsByChain> {
   // Set up Spoke signers and connect them to spoke pool contract objects:
-  const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
+  const spokePoolSigners = await getSpokePoolSigners(baseSigner, config);
   const spokePools = config.spokePoolChains.map((chainId) => {
     return { chainId, contract: getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) };
   });
@@ -122,7 +126,9 @@ export async function constructClients(
   config: CommonConfig,
   baseSigner: Wallet
 ): Promise<Clients> {
-  const hubSigner = baseSigner.connect(getProvider(config.hubPoolChainId, logger));
+  const redisClient = config.redisUrl ? await getRedis(config.redisUrl) : undefined;
+
+  const hubSigner = baseSigner.connect(getProvider(config.hubPoolChainId, logger, redisClient));
 
   // Create contract instances for each chain for each required contract.
   const hubPool = getDeployedContract("HubPool", config.hubPoolChainId, hubSigner);
@@ -142,19 +148,6 @@ export async function constructClients(
     toBlock: undefined,
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
-
-  let redisClient: ReturnType<typeof createClient> | undefined;
-  if (config.redisUrl) {
-    redisClient = createClient({
-      url: config.redisUrl,
-    });
-    await redisClient.connect();
-    logger.debug({
-      at: "Dataworker#ClientHelper",
-      message: `Connected to redis server at ${config.redisUrl} successfully!`,
-      dbSize: await redisClient.dbSize(),
-    });
-  }
 
   const configStoreClient = new AcrossConfigStoreClient(
     logger,
