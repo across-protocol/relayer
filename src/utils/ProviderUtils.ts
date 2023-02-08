@@ -3,6 +3,8 @@ import lodash from "lodash";
 import winston from "winston";
 import { isPromiseFulfilled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
+import { RedisClient, setRedisKey } from "./RedisUtils";
+import { MAX_REORG_DISTANCE, PROVIDER_CACHE_TTL, BLOCK_NUMBER_TTL } from "../common";
 import { Logger } from ".";
 
 const logger = Logger;
@@ -33,9 +35,9 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
   // of the list.
   constructor(
     maxConcurrency: number,
-    ...jsonRpcConstructorParams: ConstructorParameters<typeof ethers.providers.StaticJsonRpcProvider>
+    ...cacheConstructorParams: ConstructorParameters<typeof ethers.providers.StaticJsonRpcProvider>
   ) {
-    super(...jsonRpcConstructorParams);
+    super(...cacheConstructorParams);
 
     // This sets up the queue. Each task is executed by calling the superclass's send method, which fires off the
     // request. This queue sends out requests concurrently, but stops once the concurrency limit is reached. The
@@ -109,6 +111,82 @@ function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): bo
   }
 }
 
+class CacheProvider extends RateLimitedProvider {
+  public readonly getLogsCachePrefix: string;
+  public readonly maxReorgDistance: number;
+
+  constructor(
+    providerCacheNamespace: string,
+    readonly redisClient?: RedisClient,
+    ...jsonRpcConstructorParams: ConstructorParameters<typeof RateLimitedProvider>
+  ) {
+    super(...jsonRpcConstructorParams);
+
+    if (MAX_REORG_DISTANCE[this.network.chainId] === undefined)
+      throw new Error(`CacheProvider:constructor no MAX_REORG_DISTANCE for chain ${this.network.chainId}`);
+
+    this.maxReorgDistance = MAX_REORG_DISTANCE[this.network.chainId];
+
+    // Pre-compute as much of the redis key as possible.
+    this.getLogsCachePrefix = `${providerCacheNamespace},${new URL(this.connection.url).hostname},${
+      this.network.chainId
+    }:eth_getLogs,`;
+  }
+  override async send(method: string, params: Array<any>): Promise<any> {
+    if (this.redisClient && (await this.shouldCache(method, params))) {
+      const redisKey = this.buildRedisKey(method, params);
+
+      // Attempt to pull the result from the cache.
+      const redisResult = await this.redisClient.get(redisKey);
+
+      // If cache has the result, parse the json and return it.
+      if (redisResult) return JSON.parse(redisResult);
+
+      // Cache does not have the result. Query it directly and cache.
+      const result = await super.send(method, params);
+
+      // Commit result to redis.
+      await setRedisKey(redisKey, JSON.stringify(result), this.redisClient, PROVIDER_CACHE_TTL);
+
+      // Return the cached result.
+      return result;
+    }
+
+    return await super.send(method, params);
+  }
+
+  private buildRedisKey(_: string, params: Array<any>) {
+    // Only handles eth_getLogs right now.
+    return this.getLogsCachePrefix + JSON.stringify(params);
+  }
+
+  private async shouldCache(method: string, params: Array<any>): Promise<boolean> {
+    // Today, we only cache eth_getLogs. We could add other methods here, where convenient.
+    if (method !== "eth_getLogs") return false;
+    const [{ fromBlock, toBlock }] = params;
+
+    // Handle odd cases where the ordering is flipped, etc.
+    // toBlock/fromBlock is in hex, so it must be parsed before being compared to the first unsafe block.
+    const fromBlockNumber = parseInt(fromBlock, 16);
+    const toBlockNumber = parseInt(toBlock, 16);
+
+    // Handle cases where the input block numbers are not hex values ("latest", "pending", etc).
+    // This would result in the result of the above being NaN.
+    if (Number.isNaN(fromBlockNumber) || Number.isNaN(toBlockNumber)) return false;
+    if (toBlockNumber < fromBlockNumber)
+      throw new Error("CacheProvider::shouldCache toBlock cannot be smaller than fromBlock.");
+
+    // Note: this method is an internal method provided by the BaseProvider. It allows the caller to specify a maxAge of
+    // the block that is allowed. This means if a block has been retrieved within the last n seconds, no provider
+    // query will be made.
+    const currentBlockNumber = await super._getInternalBlockNumber(BLOCK_NUMBER_TTL * 1000);
+
+    // We ensure that the toBlock is not within the max reorg distance to avoid caching unstable information.
+    const firstUnsafeBlockNumber = currentBlockNumber - this.maxReorgDistance;
+    return toBlockNumber < firstUnsafeBlockNumber;
+  }
+}
+
 class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
   readonly providers: ethers.providers.StaticJsonRpcProvider[];
   constructor(
@@ -117,12 +195,16 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     readonly nodeQuorumThreshold: number,
     readonly retries: number,
     readonly delay: number,
-    readonly maxConcurrency: number
+    readonly maxConcurrency: number,
+    providerCacheNamespace: string,
+    redisClient?: RedisClient
   ) {
     // Initialize the super just with the chainId, which stops it from trying to immediately send out a .send before
     // this derived class is initialized.
     super(undefined, chainId);
-    this.providers = params.map((inputs) => new RateLimitedProvider(maxConcurrency, ...inputs));
+    this.providers = params.map(
+      (inputs) => new CacheProvider(providerCacheNamespace, redisClient, maxConcurrency, ...inputs)
+    );
     if (this.nodeQuorumThreshold < 1 || !Number.isInteger(this.nodeQuorumThreshold))
       throw new Error(
         `nodeQuorum,Threshold cannot be < 1 and must be an integer. Currently set to ${this.nodeQuorumThreshold}`
@@ -294,8 +376,23 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
   }
 }
 
-export function getProvider(chainId: number, logger?: winston.Logger) {
-  const { NODE_RETRIES, NODE_RETRY_DELAY, NODE_QUORUM, NODE_TIMEOUT, NODE_MAX_CONCURRENCY } = process.env;
+// Global provider cache to avoid creating multiple providers for the same chain.
+const providerCache: { [chainId: number]: RetryProvider } = {};
+
+export function getProvider(chainId: number, logger?: winston.Logger, redisClient?: RedisClient, useCache = true) {
+  if (useCache) {
+    const cachedProvider = providerCache[chainId];
+    if (cachedProvider) return cachedProvider;
+  }
+  const {
+    NODE_RETRIES,
+    NODE_RETRY_DELAY,
+    NODE_QUORUM,
+    NODE_TIMEOUT,
+    NODE_MAX_CONCURRENCY,
+    NODE_DISABLE_PROVIDER_CACHING,
+    NODE_PROVIDER_CACHE_NAMESPACE,
+  } = process.env;
 
   const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
 
@@ -310,6 +407,17 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
 
   // Default to a max concurrency of 1000 requests per node.
   const nodeMaxConcurrency = Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "1000");
+
+  // Provider caching defaults to being enabled if a redis instance exists. It can be manually disabled by setting
+  // NODE_DISABLE_PROVIDER_CACHING=true.
+  const disableProviderCache = NODE_DISABLE_PROVIDER_CACHING !== "true";
+
+  // This environment variable allows the operator to namespace the cache. This is useful if multiple bots are using
+  // the cache and the operator intends to have them not share.
+  // It's also useful as a way to synthetically "flush" the provider cache by modifying this value.
+  // A recommended naming strategy is "NAME_X" where NAME is a string name and 0 is a numerical value that can be
+  // adjusted for the purpose of "flushing".
+  const providerCacheNamespace = NODE_PROVIDER_CACHE_NAMESPACE || "DEFAULT_0";
 
   // Custom delay + logging for RPC rate-limiting.
   const rpcRateLimited =
@@ -349,14 +457,19 @@ export function getProvider(chainId: number, logger?: winston.Logger) {
     chainId,
   ]);
 
-  return new RetryProvider(
+  const provider = new RetryProvider(
     constructorArgumentLists,
     chainId,
     nodeQuorumThreshold,
     retries,
     retryDelay,
-    nodeMaxConcurrency
+    nodeMaxConcurrency,
+    providerCacheNamespace,
+    disableProviderCache ? undefined : redisClient
   );
+
+  if (useCache) providerCache[chainId] = provider;
+  return provider;
 }
 
 export function getNodeUrlList(chainId: number): string[] {

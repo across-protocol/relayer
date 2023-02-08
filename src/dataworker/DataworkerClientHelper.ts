@@ -33,7 +33,7 @@ export async function constructDataworkerClients(
 
   // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
   const tokenClient = new TokenClient(logger, baseSigner.address, {}, commonClients.hubPoolClient);
-  const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
+  const spokePoolSigners = await getSpokePoolSigners(baseSigner, config);
   const spokePoolClientSearchSettings = Object.fromEntries(
     config.spokePoolChains.map((chainId) => {
       return [
@@ -99,7 +99,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
   toBlockOverride: { [chainId: number]: number } = {}
 ): Promise<SpokePoolClientsByChain> {
   // Set up Spoke signers and connect them to spoke pool contract objects:
-  const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
+  const spokePoolSigners = await getSpokePoolSigners(baseSigner, config);
   const spokePools = config.spokePoolChains.map((chainId) => {
     return { chainId, contract: getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) };
   });
