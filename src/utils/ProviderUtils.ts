@@ -129,7 +129,7 @@ class CacheProvider extends RateLimitedProvider {
     this.maxReorgDistance = MAX_REORG_DISTANCE[this.network.chainId];
 
     // Pre-compute as much of the redis key as possible.
-    const cachePrefix = `${providerCacheNamespace},${new URL(this.connection.url).hostname},${this.network.chainId}:`
+    const cachePrefix = `${providerCacheNamespace},${new URL(this.connection.url).hostname},${this.network.chainId}:`;
     this.getLogsCachePrefix = cachePrefix + "eth_getLogs,";
     this.callCachePrefix = cachePrefix + "eth_call,";
   }
@@ -186,8 +186,14 @@ class CacheProvider extends RateLimitedProvider {
 
       return this.canCacheInformationFromBlock(toBlock);
     } else if (method === "eth_call") {
-      if (Math.random() < 0.1) console.log(params);
-      return false;
+      // Block number is the second argument. Parse as hex.
+      const blockNumber = parseInt(params[1], 16);
+
+      // If the block number isn't present or is a text string, this will be NaN and we return false.
+      if (Number.isNaN(blockNumber)) return false;
+
+      // If the block is old enough to cache, cache the call.
+      return this.canCacheInformationFromBlock(blockNumber);
     }
   }
 
