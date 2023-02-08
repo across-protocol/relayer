@@ -113,6 +113,7 @@ function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): bo
 
 class CacheProvider extends RateLimitedProvider {
   public readonly getLogsCachePrefix: string;
+  public readonly callCachePrefix: string;
   public readonly maxReorgDistance: number;
 
   constructor(
@@ -128,9 +129,9 @@ class CacheProvider extends RateLimitedProvider {
     this.maxReorgDistance = MAX_REORG_DISTANCE[this.network.chainId];
 
     // Pre-compute as much of the redis key as possible.
-    this.getLogsCachePrefix = `${providerCacheNamespace},${new URL(this.connection.url).hostname},${
-      this.network.chainId
-    }:eth_getLogs,`;
+    const cachePrefix = `${providerCacheNamespace},${new URL(this.connection.url).hostname},${this.network.chainId}:`
+    this.getLogsCachePrefix = cachePrefix + "eth_getLogs,";
+    this.callCachePrefix = cachePrefix + "eth_call,";
   }
   override async send(method: string, params: Array<any>): Promise<any> {
     if (this.redisClient && (await this.shouldCache(method, params))) {
@@ -155,27 +156,42 @@ class CacheProvider extends RateLimitedProvider {
     return await super.send(method, params);
   }
 
-  private buildRedisKey(_: string, params: Array<any>) {
+  private buildRedisKey(method: string, params: Array<any>) {
     // Only handles eth_getLogs right now.
-    return this.getLogsCachePrefix + JSON.stringify(params);
+    switch (method) {
+      case "eth_getLogs":
+        return this.getLogsCachePrefix + JSON.stringify(params);
+      case "eth_call":
+        return this.callCachePrefix + JSON.stringify(params);
+      default:
+        throw new Error(`CacheProvider::buildRedisKey: invalid JSON-RPC method ${method}`);
+    }
   }
 
   private async shouldCache(method: string, params: Array<any>): Promise<boolean> {
     // Today, we only cache eth_getLogs. We could add other methods here, where convenient.
-    if (method !== "eth_getLogs") return false;
-    const [{ fromBlock, toBlock }] = params;
+    if (method === "eth_getLogs") {
+      const [{ fromBlock, toBlock }] = params;
 
-    // Handle odd cases where the ordering is flipped, etc.
-    // toBlock/fromBlock is in hex, so it must be parsed before being compared to the first unsafe block.
-    const fromBlockNumber = parseInt(fromBlock, 16);
-    const toBlockNumber = parseInt(toBlock, 16);
+      // Handle odd cases where the ordering is flipped, etc.
+      // toBlock/fromBlock is in hex, so it must be parsed before being compared to the first unsafe block.
+      const fromBlockNumber = parseInt(fromBlock, 16);
+      const toBlockNumber = parseInt(toBlock, 16);
 
-    // Handle cases where the input block numbers are not hex values ("latest", "pending", etc).
-    // This would result in the result of the above being NaN.
-    if (Number.isNaN(fromBlockNumber) || Number.isNaN(toBlockNumber)) return false;
-    if (toBlockNumber < fromBlockNumber)
-      throw new Error("CacheProvider::shouldCache toBlock cannot be smaller than fromBlock.");
+      // Handle cases where the input block numbers are not hex values ("latest", "pending", etc).
+      // This would result in the result of the above being NaN.
+      if (Number.isNaN(fromBlockNumber) || Number.isNaN(toBlockNumber)) return false;
+      if (toBlockNumber < fromBlockNumber)
+        throw new Error("CacheProvider::shouldCache toBlock cannot be smaller than fromBlock.");
 
+      return this.canCacheInformationFromBlock(toBlock);
+    } else if (method === "eth_call") {
+      if (Math.random() < 0.1) console.log(params);
+      return false;
+    }
+  }
+
+  private async canCacheInformationFromBlock(blockNumber: number) {
     // Note: this method is an internal method provided by the BaseProvider. It allows the caller to specify a maxAge of
     // the block that is allowed. This means if a block has been retrieved within the last n seconds, no provider
     // query will be made.
@@ -183,7 +199,7 @@ class CacheProvider extends RateLimitedProvider {
 
     // We ensure that the toBlock is not within the max reorg distance to avoid caching unstable information.
     const firstUnsafeBlockNumber = currentBlockNumber - this.maxReorgDistance;
-    return toBlockNumber < firstUnsafeBlockNumber;
+    return blockNumber < firstUnsafeBlockNumber;
   }
 }
 
