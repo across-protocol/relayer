@@ -410,7 +410,7 @@ export function getProvider(chainId: number, logger?: winston.Logger, redisClien
 
   // Provider caching defaults to being enabled if a redis instance exists. It can be manually disabled by setting
   // NODE_DISABLE_PROVIDER_CACHING=true.
-  const disableProviderCache = NODE_DISABLE_PROVIDER_CACHING !== "true";
+  const disableProviderCache = NODE_DISABLE_PROVIDER_CACHING === "true";
 
   // This environment variable allows the operator to namespace the cache. This is useful if multiple bots are using
   // the cache and the operator intends to have them not share.
