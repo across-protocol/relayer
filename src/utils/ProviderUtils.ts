@@ -157,7 +157,7 @@ class CacheProvider extends RateLimitedProvider {
   }
 
   private buildRedisKey(method: string, params: Array<any>) {
-    // Only handles eth_getLogs right now.
+    // Only handles eth_getLogs and eth_call right now.
     switch (method) {
       case "eth_getLogs":
         return this.getLogsCachePrefix + JSON.stringify(params);
@@ -169,7 +169,7 @@ class CacheProvider extends RateLimitedProvider {
   }
 
   private async shouldCache(method: string, params: Array<any>): Promise<boolean> {
-    // Today, we only cache eth_getLogs. We could add other methods here, where convenient.
+    // Today, we only cache eth_getLogs and eth_call.
     if (method === "eth_getLogs") {
       const [{ fromBlock, toBlock }] = params;
 
