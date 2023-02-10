@@ -15,6 +15,7 @@ import {
   DepositWithBlock,
   FillsToRefund,
   FillWithBlock,
+  ProposedRootBundle,
   RootBundleRelayWithBlock,
   SpokePoolClientsByChain,
   UnfilledDeposit,
@@ -815,14 +816,7 @@ export class Dataworker {
 
         // Filter out roots that are not in the latest N root bundles. This assumes that
         // relayerRefundRoot+slowFillRoot combinations are unique.
-        rootBundleRelays = rootBundleRelays.filter(
-          (rootBundle) =>
-            latestRootBundles.find(
-              (_rootBundle) =>
-                _rootBundle.relayerRefundRoot === rootBundle.relayerRefundRoot &&
-                _rootBundle.slowRelayRoot === rootBundle.slowRelayRoot
-            ) !== undefined
-        );
+        rootBundleRelays = this._getRelayedRootsFromBundles(latestRootBundles, rootBundleRelays);
 
         // Filter out empty slow fill roots:
         rootBundleRelays = rootBundleRelays.filter((rootBundle) => rootBundle.slowRelayRoot !== EMPTY_MERKLE_ROOT);
@@ -1264,14 +1258,7 @@ export class Dataworker {
 
         // Filter out roots that are not in the latest N root bundles. This assumes that
         // relayerRefundRoot+slowFillRoot combinations are unique.
-        rootBundleRelays = rootBundleRelays.filter(
-          (rootBundle) =>
-            latestRootBundles.find(
-              (_rootBundle) =>
-                _rootBundle.relayerRefundRoot === rootBundle.relayerRefundRoot &&
-                _rootBundle.slowRelayRoot === rootBundle.slowRelayRoot
-            ) !== undefined
-        );
+        rootBundleRelays = this._getRelayedRootsFromBundles(latestRootBundles, rootBundleRelays);
 
         // Filter out empty relayer refund root:
         rootBundleRelays = rootBundleRelays.filter((rootBundle) => rootBundle.relayerRefundRoot !== EMPTY_MERKLE_ROOT);
@@ -1585,5 +1572,21 @@ export class Dataworker {
 
     if (leaf.groupIndex === 0) requiredAmount = requiredAmount.add(toBNWei("0.02"));
     return requiredAmount;
+  }
+
+  // Filters out any root bundles that don't have a matching relayerRefundRoot+slowRelayRoot combination in the
+  // list of proposed root bundles `allRootBundleRelays`.
+  _getRelayedRootsFromBundles(
+    rootBundles: ProposedRootBundle[],
+    allRootBundleRelays: RootBundleRelayWithBlock[]
+  ): RootBundleRelayWithBlock[] {
+    return allRootBundleRelays.filter(
+      (rootBundle) =>
+        rootBundles.find(
+          (_rootBundle) =>
+            _rootBundle.relayerRefundRoot === rootBundle.relayerRefundRoot &&
+            _rootBundle.slowRelayRoot === rootBundle.slowRelayRoot
+        ) !== undefined
+    );
   }
 }
