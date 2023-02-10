@@ -7,7 +7,6 @@ import {
   Promise,
   EventFilter,
   sortEventsAscendingInPlace,
-  DefaultLogLevels,
   MakeOptional,
   getDeploymentBlockNumber,
   getDeposit,
@@ -16,7 +15,7 @@ import {
   getRedisDepositKey,
   assert,
 } from "../utils";
-import { toBN, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
+import { toBN, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
 import { AcrossConfigStoreClient } from "./ConfigStoreClient";
 import {
