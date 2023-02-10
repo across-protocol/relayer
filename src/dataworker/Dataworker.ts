@@ -800,6 +800,10 @@ export class Dataworker {
       message: "Executing slow relay leaves",
     });
 
+    let latestRootBundles = sortEventsDescending(this.clients.hubPoolClient.getValidatedRootBundles());
+    if (this.spokeRootsLookbackCount !== 0)
+      latestRootBundles = latestRootBundles.slice(0, this.spokeRootsLookbackCount);
+
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([_chainId, client]) => {
         const chainId = Number(_chainId);
@@ -809,9 +813,16 @@ export class Dataworker {
             : true && rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
         );
 
-        // Only grab the most recent n roots that have been sent if configured to do so.
-        if (this.spokeRootsLookbackCount !== 0)
-          rootBundleRelays = rootBundleRelays.slice(0, this.spokeRootsLookbackCount);
+        // Filter out roots that are not in the latest N root bundles. This assumes that
+        // relayerRefundRoot+slowFillRoot combinations are unique.
+        rootBundleRelays = rootBundleRelays.filter(
+          (rootBundle) =>
+            latestRootBundles.find(
+              (_rootBundle) =>
+                _rootBundle.relayerRefundRoot === rootBundle.relayerRefundRoot &&
+                _rootBundle.slowRelayRoot === rootBundle.slowRelayRoot
+            ) !== undefined
+        );
 
         // Filter out empty slow fill roots:
         rootBundleRelays = rootBundleRelays.filter((rootBundle) => rootBundle.slowRelayRoot !== EMPTY_MERKLE_ROOT);
@@ -1238,6 +1249,10 @@ export class Dataworker {
       message: "Executing relayer refund leaves",
     });
 
+    let latestRootBundles = sortEventsDescending(this.clients.hubPoolClient.getValidatedRootBundles());
+    if (this.spokeRootsLookbackCount !== 0)
+      latestRootBundles = latestRootBundles.slice(0, this.spokeRootsLookbackCount);
+
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([_chainId, client]) => {
         const chainId = Number(_chainId);
@@ -1247,9 +1262,16 @@ export class Dataworker {
             : true && rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
         );
 
-        // Only grab the most recent n roots that have been sent if configured to do so.
-        if (this.spokeRootsLookbackCount !== 0)
-          rootBundleRelays = rootBundleRelays.slice(0, this.spokeRootsLookbackCount);
+        // Filter out roots that are not in the latest N root bundles. This assumes that
+        // relayerRefundRoot+slowFillRoot combinations are unique.
+        rootBundleRelays = rootBundleRelays.filter(
+          (rootBundle) =>
+            latestRootBundles.find(
+              (_rootBundle) =>
+                _rootBundle.relayerRefundRoot === rootBundle.relayerRefundRoot &&
+                _rootBundle.slowRelayRoot === rootBundle.slowRelayRoot
+            ) !== undefined
+        );
 
         // Filter out empty relayer refund root:
         rootBundleRelays = rootBundleRelays.filter((rootBundle) => rootBundle.relayerRefundRoot !== EMPTY_MERKLE_ROOT);
