@@ -811,7 +811,7 @@ export class Dataworker {
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter((rootBundle) =>
           isKeyOf(chainId, IGNORED_SPOKE_BUNDLES)
             ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
-            : true && rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
+            : rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
         );
 
         // Filter out roots that are not in the latest N root bundles. This assumes that
@@ -1253,7 +1253,7 @@ export class Dataworker {
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter((rootBundle) =>
           isKeyOf(chainId, IGNORED_SPOKE_BUNDLES)
             ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
-            : true && rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
+            : rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
         );
 
         // Filter out roots that are not in the latest N root bundles. This assumes that
