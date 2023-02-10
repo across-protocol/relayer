@@ -50,13 +50,9 @@ export async function paginatedEventQuery(
   try {
     return (
       (
-        await Promise.map(
-          paginatedRanges,
-          ([fromBlock, toBlock]) => {
-            return contract.queryFilter(filter, fromBlock, toBlock);
-          },
-          { concurrency: searchConfig.concurrency | defaultConcurrency }
-        )
+        await Promise.map(paginatedRanges, ([fromBlock, toBlock]) => contract.queryFilter(filter, fromBlock, toBlock), {
+          concurrency: searchConfig.concurrency | defaultConcurrency,
+        })
       )
         .flat()
         // Filter events by block number because ranges can include blocks that are outside the range specified for caching reasons.
