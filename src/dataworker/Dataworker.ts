@@ -226,7 +226,7 @@ export class Dataworker {
     else {
       const poolRebalanceLeafExecutionBlocks = executedPoolRebalanceLeaves.map((execution) => execution.blockNumber);
       const mostRecentPoolRebalanceLeafExecutionBlock = Math.max(...poolRebalanceLeafExecutionBlocks);
-      if (mostRecentPoolRebalanceLeafExecutionBlock >= mainnetBundleEndBlock) {
+      if (mostRecentPoolRebalanceLeafExecutionBlock > mainnetBundleEndBlock) {
         return {
           shouldWait: true,
           poolRebalanceLeafExecutionBlocks,
