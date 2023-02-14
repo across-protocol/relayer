@@ -76,7 +76,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
   // Throw out most recent bundle as its leaves might not have executed.
   const validatedBundles = sortEventsDescending(clients.hubPoolClient.getValidatedRootBundles()).slice(1);
   const excesses: { [chainId: number]: { [l1Token: string]: string[] } } = {};
-  const bundlesToValidate = 10;
+  const bundlesToValidate = 8; // Roughly 2 days worth of bundles.
   for (let x = 0; x < bundlesToValidate; x++) {
     const mostRecentValidatedBundle = validatedBundles[x];
     console.group(
