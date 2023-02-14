@@ -221,6 +221,35 @@ export class Dataworker {
         mostRecentProposedRootBundle: mostRecentProposedRootBundle.transactionHash,
       };
     }
+    // If all leaves are executed, we should wait if the most recent execution came after the mainnet bundle end
+    // block.
+    else {
+      const poolRebalanceLeafExecutionBlocks = executedPoolRebalanceLeaves.map((execution) => execution.blockNumber);
+      const mostRecentPoolRebalanceLeafExecutionBlock = Math.max(...poolRebalanceLeafExecutionBlocks);
+      if (mostRecentPoolRebalanceLeafExecutionBlock <= mainnetBundleEndBlock) {
+        return {
+          shouldWait: true,
+          poolRebalanceLeafExecutionBlocks,
+          mainnetBundleEndBlock,
+          mostRecentProposedRootBundle: mostRecentProposedRootBundle.transactionHash,
+          expectedPoolRebalanceLeaves,
+          executedPoolRebalanceLeaves: executedPoolRebalanceLeaves.length,
+        };
+      }
+      // We should now only wait if the bufferToPropose is larger than the time between the mainnetBundleEndBlock
+      // and the latest proposal block.
+      else {
+        return {
+          shouldWait:
+            bufferToPropose > 0
+              ? mainnetBundleEndBlock - bufferToPropose < mostRecentProposedRootBundle.blockNumber
+              : false,
+          expectedPoolRebalanceLeaves,
+          bufferToPropose,
+          mainnetBundleEndBlock,
+        };
+      }
+    }
   }
 
   async proposeRootBundle(
