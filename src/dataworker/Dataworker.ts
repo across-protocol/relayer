@@ -1245,8 +1245,9 @@ export class Dataworker {
     });
 
     let latestRootBundles = sortEventsDescending(this.clients.hubPoolClient.getValidatedRootBundles());
-    if (this.spokeRootsLookbackCount !== 0)
+    if (this.spokeRootsLookbackCount !== 0) {
       latestRootBundles = latestRootBundles.slice(0, this.spokeRootsLookbackCount);
+    }
 
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([_chainId, client]) => {
@@ -1575,19 +1576,23 @@ export class Dataworker {
     return requiredAmount;
   }
 
-  // Filters out any root bundles that don't have a matching relayerRefundRoot+slowRelayRoot combination in the
-  // list of proposed root bundles `allRootBundleRelays`.
+  /**
+   * Filters out any root bundles that don't have a matching relayerRefundRoot+slowRelayRoot combination in the
+   * list of proposed root bundles `allRootBundleRelays`.
+   * @param targetRootBundles Root bundles whose relayed roots we want to find
+   * @param allRootBundleRelays All relayed roots to search
+   * @returns Relayed roots that originated from rootBundles contained in allRootBundleRelays
+   */
   _getRelayedRootsFromBundles(
-    rootBundles: ProposedRootBundle[],
+    targetRootBundles: ProposedRootBundle[],
     allRootBundleRelays: RootBundleRelayWithBlock[]
   ): RootBundleRelayWithBlock[] {
-    return allRootBundleRelays.filter(
-      (rootBundle) =>
-        rootBundles.find(
-          (_rootBundle) =>
-            _rootBundle.relayerRefundRoot === rootBundle.relayerRefundRoot &&
-            _rootBundle.slowRelayRoot === rootBundle.slowRelayRoot
-        ) !== undefined
+    return allRootBundleRelays.filter((rootBundle) =>
+      targetRootBundles.some(
+        (_rootBundle) =>
+          _rootBundle.relayerRefundRoot === rootBundle.relayerRefundRoot &&
+          _rootBundle.slowRelayRoot === rootBundle.slowRelayRoot
+      )
     );
   }
 }
