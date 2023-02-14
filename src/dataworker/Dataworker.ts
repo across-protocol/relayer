@@ -190,11 +190,11 @@ export class Dataworker {
       mainnetBundleEndBlock
     );
     const expectedPoolRebalanceLeaves = mostRecentProposedRootBundle.poolRebalanceLeafCount;
+    const poolRebalanceLeafExecutionBlocks = executedPoolRebalanceLeaves.map((execution) => execution.blockNumber);
 
     // If any leaves are unexecuted, we should wait. This can also happen if the most recent proposed root bundle
     // was disputed or is still pending in the challenge period.
     if (expectedPoolRebalanceLeaves !== executedPoolRebalanceLeaves.length) {
-      const poolRebalanceLeafExecutionBlocks = executedPoolRebalanceLeaves.map((execution) => execution.blockNumber);
       return {
         shouldWait: true,
         poolRebalanceLeafExecutionBlocks,
@@ -212,8 +212,8 @@ export class Dataworker {
           bufferToPropose > 0
             ? mainnetBundleEndBlock - bufferToPropose < mostRecentProposedRootBundle.blockNumber
             : false,
-        expectedPoolRebalanceLeaves,
         bufferToPropose,
+        poolRebalanceLeafExecutionBlocks,
         mainnetBundleEndBlock,
       };
     }

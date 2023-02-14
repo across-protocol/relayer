@@ -74,7 +74,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
   // Throw out most recent bundle as its leaves might not have executed.
   const validatedBundles = sortEventsDescending(clients.hubPoolClient.getValidatedRootBundles()).slice(1);
   const excesses: { [chainId: number]: { [l1Token: string]: string[] } } = {};
-  const bundlesToValidate = 5;
+  const bundlesToValidate = 10;
   for (let x = 0; x < bundlesToValidate; x++) {
     const mostRecentValidatedBundle = validatedBundles[x];
     console.group(
@@ -99,7 +99,6 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
       for (const leaf of poolRebalanceLeaves) {
         for (let i = 0; i < leaf.l1Tokens.length; i++) {
           const l1Token = leaf.l1Tokens[i];
-          if (leaf.chainId !== 137 || l1Token !== "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48") continue;
           const tokenInfo = clients.hubPoolClient.getTokenInfo(1, l1Token);
           if (!excesses[leaf.chainId]) {
             excesses[leaf.chainId] = {};
@@ -179,7 +178,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
               .add(runningBalance);
             excesses[leaf.chainId][tokenInfo.symbol].push(fromWei(excess.toString(), decimals));
 
-            // TODO: Why are excesses changing so much for each token?
+            // TODO: Why do excesses change between bundles only for Polygon (e.g. chain 137)?
             console.log(`- tokenBalance: ${fromWei(tokenBalanceAtBundleEndBlock.toString(), decimals)}`);
             console.log(`- netSendAmount: ${fromWei(netSendAmount.toString(), decimals)}`);
             console.log(`- executedRelayerRefund: ${fromWei(executedRelayerRefund.toString(), decimals)}`);
