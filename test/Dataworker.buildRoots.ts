@@ -35,7 +35,6 @@ let depositor: SignerWithAddress, relayer: SignerWithAddress, dataworker: Signer
 
 let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
 let dataworkerInstance: Dataworker;
-let spy: sinon.SinonSpy;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let spy: sinon.SinonSpy;
@@ -58,7 +57,6 @@ describe("Dataworker: Build merkle roots", async function () {
       relayer,
       dataworkerInstance,
       dataworker,
-      spy,
       timer,
       spokePoolClients,
       spy,
