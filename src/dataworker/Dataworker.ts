@@ -175,6 +175,14 @@ export class Dataworker {
     // are executed so we want to make sure that these are all older than the mainnet bundle end block which is
     // sometimes treated as the "latest" mainnet block.
     const mostRecentProposedRootBundle = this.clients.hubPoolClient.getLatestProposedRootBundle();
+
+    // If there has never been a validated root bundle, then we can always propose a new one:
+    if (mostRecentProposedRootBundle === undefined) {
+      return {
+        shouldWait: false,
+      };
+    }
+
     const executedPoolRebalanceLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
       mostRecentProposedRootBundle,
       mainnetBundleEndBlock
