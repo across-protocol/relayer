@@ -129,7 +129,12 @@ export class Dataworker {
     );
   }
 
-  async buildPoolRebalanceRoot(blockRangesForChains: number[][], spokePoolClients: SpokePoolClientsByChain) {
+  // This method is only used in testing and scripts, not to propose new bundles.
+  async buildPoolRebalanceRoot(
+    blockRangesForChains: number[][],
+    spokePoolClients: SpokePoolClientsByChain,
+    latestMainnetBlock?: number
+  ) {
     const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = await this.clients.bundleDataClient.loadData(
       blockRangesForChains,
       spokePoolClients
@@ -149,6 +154,7 @@ export class Dataworker {
     return await this._getPoolRebalanceRoot(
       spokePoolClients,
       blockRangesForChains,
+      latestMainnetBlock ?? mainnetBundleEndBlock,
       mainnetBundleEndBlock,
       fillsToRefund,
       deposits,
@@ -159,59 +165,60 @@ export class Dataworker {
     );
   }
 
-  // This is a temporary fix: Currently, there appears to be a bug where proposing a root bundle before any
-  // RelayerRefundLeaves are executed results in an invalid bundle that gets self-disputed. This bug only seems
-  // to appear when the bundle has slow fills. Its possibly related to slow fill excesses?
   shouldWaitToPropose(
     mainnetBundleEndBlock: number,
-    spokePoolClients: { [chainId: number]: SpokePoolClient },
     bufferToPropose: number = this.bufferToPropose
   ): { shouldWait: boolean; [key: string]: unknown } {
-    const mostRecentValidatedBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
-      this.clients.hubPoolClient.latestBlockNumber
+    // Wait until all pool rebalance leaf executions from previous bundle are older than the new mainnet
+    // bundle end block. This avoids any complications where a bundle is unable to determine the most recently
+    // validated bundle. The HubPoolClient treats a bundle as "validated" once all of its pool rebalance leaves
+    // are executed so we want to make sure that these are all older than the mainnet bundle end block which is
+    // sometimes treated as the "latest" mainnet block.
+    const mostRecentProposedRootBundle = this.clients.hubPoolClient.getLatestProposedRootBundle();
+    const executedPoolRebalanceLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
+      mostRecentProposedRootBundle,
+      mainnetBundleEndBlock
     );
-    // If there has never been a validated root bundle, then we can always propose a new one:
-    if (mostRecentValidatedBundle === undefined)
-      return {
-        shouldWait: false,
-      };
+    const expectedPoolRebalanceLeaves = mostRecentProposedRootBundle.poolRebalanceLeafCount;
 
-    const expectedRootBundles = mostRecentValidatedBundle.poolRebalanceLeafCount;
-
-    const relayedRootBundles: { [chainId: string]: RootBundleRelayWithBlock } = Object.fromEntries(
-      Object.entries(spokePoolClients)
-        .map(([chainId, client]) => {
-          return [
-            chainId,
-            client
-              .getRootBundleRelays()
-              .find((bundle) => bundle.relayerRefundRoot === mostRecentValidatedBundle.relayerRefundRoot),
-          ];
-        })
-        .filter(([, rootBundle]) => rootBundle !== undefined)
-    );
-
-    // We should wait to propose until all root bundles have been relayed to spoke pools. Once they have all been
-    // relayed, wait bufferToPropose number of blocks after the mainnet bundle end block.
-    if (Object.entries(relayedRootBundles).length !== expectedRootBundles) {
+    // If any leaves are unexecuted, we should wait. This can happen if the most recent proposed root bundle
+    // was disputed or is still pending in the challenge period.
+    if (expectedPoolRebalanceLeaves !== executedPoolRebalanceLeaves.length) {
       return {
         shouldWait: true,
-        mostRecentValidatedBundle: mostRecentValidatedBundle?.blockNumber,
-        expectedRootBundles,
-        relayedRootBundles,
+        mostRecentProposedRootBundle: mostRecentProposedRootBundle.transactionHash,
+        expectedPoolRebalanceLeaves,
+        executedPoolRebalanceLeaves: executedPoolRebalanceLeaves.length,
       };
-    } else {
-      const mainnetRelayedRootBundle = relayedRootBundles[1];
-      return {
-        shouldWait:
-          bufferToPropose > 0 ? mainnetBundleEndBlock - bufferToPropose < mainnetRelayedRootBundle.blockNumber : false,
-        mostRecentValidatedBundle: mostRecentValidatedBundle.blockNumber,
-        expectedRootBundles,
-        relayedRootBundles,
-        mainnetRelayedRootBundle,
-        bufferToPropose,
-        mainnetBundleEndBlock,
-      };
+    }
+    // If all leaves are executed, we should wait if the most recent execution came after the mainnet bundle end
+    // block.
+    else {
+      const poolRebalanceLeafExecutionBlocks = executedPoolRebalanceLeaves.map((execution) => execution.blockNumber);
+      const mostRecentPoolRebalanceLeafExecutionBlock = Math.max(...poolRebalanceLeafExecutionBlocks);
+      if (mostRecentPoolRebalanceLeafExecutionBlock <= mainnetBundleEndBlock) {
+        return {
+          shouldWait: true,
+          poolRebalanceLeafExecutionBlocks,
+          mainnetBundleEndBlock,
+          mostRecentProposedRootBundle: mostRecentProposedRootBundle.transactionHash,
+          expectedPoolRebalanceLeaves,
+          executedPoolRebalanceLeaves: executedPoolRebalanceLeaves.length,
+        };
+      }
+      // We should now only wait if the bufferToPropose is larger than the time between the mainnetBundleEndBlock
+      // and the latest proposal block.
+      else {
+        return {
+          shouldWait:
+            bufferToPropose > 0
+              ? mainnetBundleEndBlock - bufferToPropose < mostRecentProposedRootBundle.blockNumber
+              : false,
+          expectedPoolRebalanceLeaves,
+          bufferToPropose,
+          mainnetBundleEndBlock,
+        };
+      }
     }
   }
 
@@ -308,6 +315,7 @@ export class Dataworker {
     const poolRebalanceRoot = await this._getPoolRebalanceRoot(
       spokePoolClients,
       blockRangesForProposal,
+      this.clients.hubPoolClient.latestBlockNumber,
       mainnetBundleEndBlock,
       fillsToRefund,
       deposits,
@@ -346,18 +354,22 @@ export class Dataworker {
         });
     }
 
-    const shouldWaitToPropose = this.shouldWaitToPropose(mainnetBundleEndBlock, spokePoolClients);
+    // TODO: Validate running balances in potential new bundle and make sure that important invariants
+    // are not violated, such as a token balance being lower than the amount necessary to pay out all refunds,
+    // slow fills, and return funds to the HubPool. Can use logic similar to /src/scripts/validateRunningbalances.ts
+
+    const shouldWaitToPropose = this.shouldWaitToPropose(mainnetBundleEndBlock);
     if (shouldWaitToPropose.shouldWait) {
       this.logger.debug({
         at: "Dataworker#propose",
-        message: "Waiting to propose new bundle until all refund roots have been relayed to spoke pools",
+        message: "Waiting to propose new bundle",
         shouldWaitToPropose,
       });
       return;
     } else
       this.logger.debug({
         at: "Dataworker#propose",
-        message: "Proceeding to propose new bundle; all refund roots have been relayed to spoke pools",
+        message: "Proceeding to propose new bundle",
         shouldWaitToPropose,
       });
 
@@ -693,6 +705,7 @@ export class Dataworker {
     const expectedPoolRebalanceRoot = await this._getPoolRebalanceRoot(
       spokePoolClients,
       blockRangesImpliedByBundleEndBlocks,
+      rootBundle.proposalBlockNumber,
       endBlockForMainnet,
       fillsToRefund,
       deposits,
@@ -1537,6 +1550,7 @@ export class Dataworker {
   async _getPoolRebalanceRoot(
     spokePoolClients: SpokePoolClientsByChain,
     blockRangesForChains: number[][],
+    latestMainnetBlock: number,
     mainnetBundleEndBlock: number,
     fillsToRefund: FillsToRefund,
     deposits: DepositWithBlock[],
