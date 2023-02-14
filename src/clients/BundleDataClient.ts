@@ -206,8 +206,7 @@ export class BundleDataClient {
       allValidFills.push(fillWithBlock);
 
       // If fill is outside block range, we can skip it now since we're not going to add a refund for it.
-      if (fillWithBlock.blockNumber < blockRangeForChain[0])
-        return;
+      if (fillWithBlock.blockNumber < blockRangeForChain[0]) return;
 
       // Now create a copy of fill with block data removed, and use its data to update the fills to refund obj.
       const { blockNumber, transactionIndex, transactionHash, logIndex, ...fill } = fillWithBlock;
@@ -294,10 +293,7 @@ export class BundleDataClient {
         // return fill events that are younger than the bundle end block.
         const fillsForOriginChain = destinationClient
           .getFillsForOriginChain(Number(originChainId))
-          .filter(
-            (fillWithBlock) =>
-              fillWithBlock.blockNumber <= blockRangeForChain[1]
-          );
+          .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1]);
         await Promise.all(fillsForOriginChain.map(async (fill) => validateFillAndSaveData(fill, blockRangeForChain)));
       }
     }
