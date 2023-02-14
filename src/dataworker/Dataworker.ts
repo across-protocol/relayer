@@ -183,50 +183,39 @@ export class Dataworker {
       };
     }
 
+    // Look for any executed leaves up to mainnet bundle end block. If they have been executed but they are not later
+    // than the mainnet bundle end block, then we won't see them and we should wait.
     const executedPoolRebalanceLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
       mostRecentProposedRootBundle,
       mainnetBundleEndBlock
     );
     const expectedPoolRebalanceLeaves = mostRecentProposedRootBundle.poolRebalanceLeafCount;
 
-    // If any leaves are unexecuted, we should wait. This can happen if the most recent proposed root bundle
+    // If any leaves are unexecuted, we should wait. This can also happen if the most recent proposed root bundle
     // was disputed or is still pending in the challenge period.
     if (expectedPoolRebalanceLeaves !== executedPoolRebalanceLeaves.length) {
+      const poolRebalanceLeafExecutionBlocks = executedPoolRebalanceLeaves.map((execution) => execution.blockNumber);
       return {
         shouldWait: true,
+        poolRebalanceLeafExecutionBlocks,
+        mainnetBundleEndBlock,
         mostRecentProposedRootBundle: mostRecentProposedRootBundle.transactionHash,
         expectedPoolRebalanceLeaves,
         executedPoolRebalanceLeaves: executedPoolRebalanceLeaves.length,
       };
     }
-    // If all leaves are executed, we should wait if the most recent execution came after the mainnet bundle end
-    // block.
+    // We should now only wait if the bufferToPropose is larger than the time between the mainnetBundleEndBlock
+    // and the latest proposal block.
     else {
-      const poolRebalanceLeafExecutionBlocks = executedPoolRebalanceLeaves.map((execution) => execution.blockNumber);
-      const mostRecentPoolRebalanceLeafExecutionBlock = Math.max(...poolRebalanceLeafExecutionBlocks);
-      if (mostRecentPoolRebalanceLeafExecutionBlock > mainnetBundleEndBlock) {
-        return {
-          shouldWait: true,
-          poolRebalanceLeafExecutionBlocks,
-          mainnetBundleEndBlock,
-          mostRecentProposedRootBundle: mostRecentProposedRootBundle.transactionHash,
-          expectedPoolRebalanceLeaves,
-          executedPoolRebalanceLeaves: executedPoolRebalanceLeaves.length,
-        };
-      }
-      // We should now only wait if the bufferToPropose is larger than the time between the mainnetBundleEndBlock
-      // and the latest proposal block.
-      else {
-        return {
-          shouldWait:
-            bufferToPropose > 0
-              ? mainnetBundleEndBlock - bufferToPropose < mostRecentProposedRootBundle.blockNumber
-              : false,
-          expectedPoolRebalanceLeaves,
-          bufferToPropose,
-          mainnetBundleEndBlock,
-        };
-      }
+      return {
+        shouldWait:
+          bufferToPropose > 0
+            ? mainnetBundleEndBlock - bufferToPropose < mostRecentProposedRootBundle.blockNumber
+            : false,
+        expectedPoolRebalanceLeaves,
+        bufferToPropose,
+        mainnetBundleEndBlock,
+      };
     }
   }
 
