@@ -34,6 +34,8 @@ import {
   getDeployedContract,
   getDeploymentBlockNumber,
   sortEventsDescending,
+  paginatedEventQuery,
+  ZERO_ADDRESS,
 } from "../utils";
 import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { createDataworker } from "../dataworker";
@@ -159,6 +161,55 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
                   .sub(previousLeafExecution.refundAmounts.reduce((a, b) => a.add(b), toBN(0)));
               }
             }
+
+            // Make sure that previous root bundle's netSendAmount has been deposited into the spoke pool. We only
+            // perform this check for chains 10, 137, 288, and 42161 because transfers from the hub pool to spoke
+            // pools on those chains can take a variable amount of time, unlike transfers to the spoke pool on
+            // mainnet. Additionally, deposits to those chains emit transfer events where the from address
+            // is the zero address, making it easy to track.
+            if ([10, 137, 288, 42161].includes(leaf.chainId)) {
+              const _followingBlockNumber =
+                clients.hubPoolClient.getFollowingRootBundle(previousValidatedBundle)?.blockNumber ||
+                clients.hubPoolClient.latestBlockNumber;
+              const previousBundlePoolRebalanceLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(
+                previousValidatedBundle,
+                _followingBlockNumber
+              );
+              const previousBundleEndBlockForChain =
+                previousValidatedBundle.bundleEvaluationBlockNumbers[
+                  dataworker.chainIdListForBundleEvaluationBlockNumbers.indexOf(leaf.chainId)
+                ];
+              const previousPoolRebalanceLeaf = previousBundlePoolRebalanceLeaves.find(
+                (_leaf) => _leaf.chainId === leaf.chainId && _leaf.l1Tokens.includes(l1Token)
+              );
+              if (previousPoolRebalanceLeaf) {
+                const previousNetSendAmount =
+                  previousPoolRebalanceLeaf.netSendAmounts[previousPoolRebalanceLeaf.l1Tokens.indexOf(l1Token)];
+                console.log(`- previous net send amount: ${fromWei(previousNetSendAmount.toString(), decimals)}`);
+                if (previousNetSendAmount.gt(toBN(0))) {
+                  const depositsToSpokePool = (
+                    await paginatedEventQuery(
+                      l2TokenContract,
+                      l2TokenContract.filters.Transfer(ZERO_ADDRESS, spokePools[leaf.chainId].address),
+                      {
+                        fromBlock: previousBundleEndBlockForChain.toNumber(),
+                        toBlock: bundleEndBlockForChain.toNumber(),
+                        maxBlockLookBack: config.maxBlockLookBack[leaf.chainId],
+                      }
+                    )
+                  ).filter((e) => e.args.value.eq(previousNetSendAmount));
+                  if (depositsToSpokePool.length === 0) {
+                    console.log(
+                      `    - adding previous leaf's netSendAmount (${fromWei(
+                        previousNetSendAmount.toString(),
+                        decimals
+                      )}) to token balance because it did not arrive at spoke pool before bundle end block.`
+                    );
+                    tokenBalanceAtBundleEndBlock = tokenBalanceAtBundleEndBlock.add(previousNetSendAmount);
+                  }
+                }
+              }
+            }
           }
 
           const relayedRoot = spokePoolClients[leaf.chainId].getExecutedRefunds(
@@ -178,7 +229,6 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
               .add(runningBalance);
             excesses[leaf.chainId][tokenInfo.symbol].push(fromWei(excess.toString(), decimals));
 
-            // TODO: Why do excesses change between bundles only for Polygon (e.g. chain 137)?
             console.log(`- tokenBalance: ${fromWei(tokenBalanceAtBundleEndBlock.toString(), decimals)}`);
             console.log(`- netSendAmount: ${fromWei(netSendAmount.toString(), decimals)}`);
             console.log(`- executedRelayerRefund: ${fromWei(executedRelayerRefund.toString(), decimals)}`);
