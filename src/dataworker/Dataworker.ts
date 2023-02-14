@@ -802,8 +802,9 @@ export class Dataworker {
     });
 
     let latestRootBundles = sortEventsDescending(this.clients.hubPoolClient.getValidatedRootBundles());
-    if (this.spokeRootsLookbackCount !== 0)
+    if (this.spokeRootsLookbackCount !== 0) {
       latestRootBundles = latestRootBundles.slice(0, this.spokeRootsLookbackCount);
+    }
 
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([_chainId, client]) => {
