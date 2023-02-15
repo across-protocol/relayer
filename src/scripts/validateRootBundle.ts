@@ -135,7 +135,8 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   // We want the bundle end of blocks following the target bundle so add +1 to the index.
   const overriddenConfig = {
     ...config,
-    dataworkerFastStartBundle: closestFollowingValidatedBundleIndex + 1,
+    dataworkerFastStartBundle:
+      closestFollowingValidatedBundleIndex === -1 ? "latest" : closestFollowingValidatedBundleIndex + 1,
   };
 
   const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
