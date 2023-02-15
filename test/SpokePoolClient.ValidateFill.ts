@@ -156,6 +156,51 @@ describe("SpokePoolClient: Fill Validation", async function () {
       .to.deep.equal(expectedDeposit);
   });
 
+  it("Returns all fills that match deposit and fill", async function () {
+    const deposit = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId
+    );
+    const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit, 0.5);
+    let matchingFills = await spokePoolClient2.queryHistoricalMatchingFills(
+      fill1,
+      deposit,
+      await spokePool_2.provider.getBlockNumber()
+    );
+    expect(matchingFills.length).to.equal(1);
+
+    // Doesn't return any if fill isn't valid for deposit:
+    matchingFills = await spokePoolClient2.queryHistoricalMatchingFills(
+      fill1,
+      { ...deposit, depositId: deposit.depositId + 1 },
+      await spokePool_2.provider.getBlockNumber()
+    );
+    expect(matchingFills.length).to.equal(0);
+
+    // Ignores fills for same depositor in block range that aren't valid for deposit:
+    await buildFill(spokePool_2, erc20_2, depositor, relayer, { ...deposit, depositId: deposit.depositId + 1 }, 0.5);
+    matchingFills = await spokePoolClient2.queryHistoricalMatchingFills(
+      fill1,
+      deposit,
+      await spokePool_2.provider.getBlockNumber()
+    );
+    expect(matchingFills.length).to.equal(1);
+
+    // Matches with second valid fill
+    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit, 0.5);
+    matchingFills = await spokePoolClient2.queryHistoricalMatchingFills(
+      fill1,
+      deposit,
+      await spokePool_2.provider.getBlockNumber()
+    );
+    expect(matchingFills.length).to.equal(2);
+  });
+
   it("binary search for deposit ID", async function () {
     // @dev In this test we mine random counts of block between deposits to "fuzz" test the binary search algo
     // which can produce different results depending on the total search range and where deposit events fall.

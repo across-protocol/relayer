@@ -42,9 +42,7 @@ async function _constructSpokePoolClientsWithLookback(
       pool.connect(signer),
       configStoreClient,
       spokePoolChains[i],
-      lookbackForAllChains === undefined
-        ? undefined
-        : { fromBlock: latestBlocks[i] - lookbackForAllChains, toBlock: null },
+      lookbackForAllChains === undefined ? undefined : { fromBlock: latestBlocks[i] - lookbackForAllChains },
       deploymentBlocks && deploymentBlocks[spokePoolChains[i]]
     );
   });

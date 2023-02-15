@@ -1,6 +1,14 @@
 import { AcrossConfigStoreClient, HubPoolClient } from "../clients";
 import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
-import { BigNumber, assign, getRealizedLpFeeForFills, getRefundForFills, sortEventsDescending, toBN } from "./";
+import {
+  BigNumber,
+  assign,
+  getRealizedLpFeeForFills,
+  getRefundForFills,
+  sortEventsDescending,
+  toBN,
+  sortEventsAscending,
+} from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 import _ from "lodash";
 
@@ -98,24 +106,53 @@ export function getLastMatchingFillBeforeBlock(
   ) as FillWithBlock;
 }
 
-export function getFillDataForSlowFillFromPreviousRootBundle(
+export async function getFillDataForSlowFillFromPreviousRootBundle(
   latestMainnetBlock: number,
   fill: FillWithBlock,
   allValidFills: FillWithBlock[],
   hubPoolClient: HubPoolClient,
+  spokePoolClientsByChain: SpokePoolClientsByChain,
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ) {
-  // Find the first fill chronologically for matched deposit for the input fill.
-  const firstFillForSameDeposit = allValidFills.find(
-    (_fill: FillWithBlock) => filledSameDeposit(_fill, fill) && isFirstFillForDeposit(_fill as Fill)
-  );
+  // Can use spokeClient.queryFillsForDeposit(_fill, spokePoolClient.eventSearchConfig.fromBlock)
+  // if allValidFills doesn't contain the deposit's first fill to efficiently find the first fill for a deposit.
+  // Note that allValidFills should only include fills later than than eventSearchConfig.fromBlock.
 
-  // If there is no first fill for the same deposit, then throw an error.
-  if (firstFillForSameDeposit === undefined) {
-    // TODO: Use something similar to SpokePoolClient.queryHistoricalDepositForFill to look up all fills
-    // for the same deposit. I would add in PR#382 but its too complex so I'll leave for another PR.
-    throw new Error(
-      `FillUtils#getFillDataForSlowFillFromPreviousRootBundle: Cannot find first fill for for deposit ${fill.depositId} on chain ${fill.destinationChainId}, set a larger DATAWORKER_FAST_LOOKBACK_COUNT`
+  // Find the first fill chronologically for matched deposit for the input fill.
+  const allMatchingFills = sortEventsAscending(
+    allValidFills.filter((_fill: FillWithBlock) => filledSameDeposit(_fill, fill))
+  );
+  let firstFillForSameDeposit = allMatchingFills.find((_fill) => isFirstFillForDeposit(_fill));
+
+  // If `allValidFills` doesn't contain the first fill for this deposit then we have to perform a historical query to
+  // find it. This is inefficient, but should be rare. Save any other fills we find to the
+  // allMatchingFills array, at the end of this block, allMatchingFills should contain all fills for the same
+  // deposit as the input fill.
+  if (!firstFillForSameDeposit) {
+    const depositForFill = await spokePoolClientsByChain[fill.originChainId].queryHistoricalDepositForFill(fill);
+    const matchingFills = await spokePoolClientsByChain[fill.destinationChainId].queryHistoricalMatchingFills(
+      fill,
+      depositForFill,
+      allMatchingFills[0].blockNumber
+    );
+    spokePoolClientsByChain[fill.destinationChainId].logger.debug({
+      at: "FillUtils#getFillDataForSlowFillFromPreviousRootBundle",
+      message:
+        "Queried for fill that triggered a slow fill for a deposit that was fully filled, in order to compute slow fill excess",
+      fillThatCompletedDeposit: fill,
+      depositForFill,
+      matchingFills,
+    });
+    firstFillForSameDeposit = sortEventsAscending(matchingFills).find((_fill) => isFirstFillForDeposit(_fill));
+    if (firstFillForSameDeposit === undefined)
+      throw new Error(
+        `FillUtils#getFillDataForSlowFillFromPreviousRootBundle: Cannot find first fill for for deposit ${fill.depositId} on chain ${fill.destinationChainId} after querying historical fills`
+      );
+    // Add non-duplicate fills.
+    allMatchingFills.push(
+      ...matchingFills.filter(
+        (_fill) => !allMatchingFills.find((existingFill) => existingFill.totalFilledAmount.eq(_fill.totalFilledAmount))
+      )
     );
   }
 
@@ -132,7 +169,7 @@ export function getFillDataForSlowFillFromPreviousRootBundle(
   if (rootBundleEndBlockContainingFirstFill !== undefined) {
     lastMatchingFillInSameBundle = getLastMatchingFillBeforeBlock(
       fill,
-      allValidFills,
+      sortEventsDescending(allMatchingFills),
       rootBundleEndBlockContainingFirstFill
     );
   }

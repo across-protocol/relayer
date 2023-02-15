@@ -289,7 +289,7 @@ export function _buildRelayerRefundRoot(
   };
 }
 
-export function _buildPoolRebalanceRoot(
+export async function _buildPoolRebalanceRoot(
   mainnetBundleEndBlock: number,
   fillsToRefund: FillsToRefund,
   deposits: DepositWithBlock[],
@@ -297,6 +297,7 @@ export function _buildPoolRebalanceRoot(
   allValidFillsInRange: FillWithBlock[],
   unfilledDeposits: UnfilledDeposit[],
   clients: DataworkerClients,
+  spokePoolClients: SpokePoolClientsByChain,
   chainIdListForBundleEvaluationBlockNumbers: number[],
   maxL1TokenCountOverride: number | undefined,
   tokenTransferThreshold: BigNumberForToken,
@@ -326,15 +327,16 @@ export function _buildPoolRebalanceRoot(
   // For certain fills associated with another partial fill from a previous root bundle, we need to adjust running
   // balances because the prior partial fill would have triggered a refund to be sent to the spoke pool to refund
   // a slow fill.
-  const fillsTriggeringExcesses = subtractExcessFromPreviousSlowFillsFromRunningBalances(
+  const fillsTriggeringExcesses = await subtractExcessFromPreviousSlowFillsFromRunningBalances(
     mainnetBundleEndBlock,
     runningBalances,
     clients.hubPoolClient,
+    spokePoolClients,
     allValidFills,
     allValidFillsInRange,
     chainIdListForBundleEvaluationBlockNumbers
   );
-  if (logger)
+  if (logger && Object.keys(fillsTriggeringExcesses).length > 0)
     logger.debug({
       at: "Dataworker#DataworkerUtils",
       message: "Fills triggering excess returns from L2",
