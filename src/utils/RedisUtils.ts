@@ -1,4 +1,4 @@
-import { Block, toBN } from ".";
+import { assert, Block, toBN } from ".";
 import { BlockFinder } from "@uma/financial-templates-lib";
 import { createClient } from "redis4";
 import winston from "winston";
@@ -87,6 +87,8 @@ export async function getBlockForTimestamp(
 }
 
 export function shouldCache(eventTimestamp: number, latestTime: number): boolean {
+  assert(eventTimestamp.toString().length === 10, "eventTimestamp must be in seconds");
+  assert(latestTime.toString().length === 10, "eventTimestamp must be in seconds");
   return latestTime - eventTimestamp >= REDIS_CACHEABLE_AGE;
 }
 
