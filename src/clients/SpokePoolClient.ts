@@ -367,6 +367,7 @@ export class SpokePoolClient {
       at: "SpokePoolClient",
       message: "Queried RPC for matching fills up to block",
       fill,
+      deposit,
       toBlock,
     });
     return (await this.queryFillsInBlockRange(fill, searchConfig)).filter((_fill) =>
