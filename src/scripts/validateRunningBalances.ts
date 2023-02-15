@@ -76,7 +76,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
   // Throw out most recent bundle as its leaves might not have executed.
   const validatedBundles = sortEventsDescending(clients.hubPoolClient.getValidatedRootBundles()).slice(1);
   const excesses: { [chainId: number]: { [l1Token: string]: string[] } } = {};
-  const bundlesToValidate = 8; // Roughly 2 days worth of bundles.
+  const bundlesToValidate = 20; // Roughly 2 days worth of bundles.
   for (let x = 0; x < bundlesToValidate; x++) {
     const mostRecentValidatedBundle = validatedBundles[x];
     console.group(
@@ -215,32 +215,25 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
           const relayedRoot = spokePoolClients[leaf.chainId].getExecutedRefunds(
             mostRecentValidatedBundle.relayerRefundRoot
           );
+
+          let excess = toBN(tokenBalanceAtBundleEndBlock).add(netSendAmount).add(runningBalance);
+
           if (relayedRoot === undefined || relayedRoot[l2Token] === undefined) {
-            console.log(`No relayed root for chain ID ${leaf.chainId} and token ${l2Token}`);
+            console.log(`- No relayed root for chain ID ${leaf.chainId} and token ${l2Token}`);
           } else {
             const executedRelayerRefund = Object.values(relayedRoot[l2Token]).reduce((a, b) => a.add(b), toBN(0));
-
-            // Excess should theoretically be 0 but can be positive due to past accounting errors in computing running
-            // balances. If excess is negative, then that means L2 leaves are unexecuted and the protocol could be
-            // stuck.
-            const excess = toBN(tokenBalanceAtBundleEndBlock)
-              .add(netSendAmount)
-              .sub(executedRelayerRefund)
-              .add(runningBalance);
-            excesses[leaf.chainId][tokenInfo.symbol].push(fromWei(excess.toString(), decimals));
-
-            console.log(`- tokenBalance: ${fromWei(tokenBalanceAtBundleEndBlock.toString(), decimals)}`);
-            console.log(`- netSendAmount: ${fromWei(netSendAmount.toString(), decimals)}`);
+            excess = excess.sub(executedRelayerRefund);
             console.log(`- executedRelayerRefund: ${fromWei(executedRelayerRefund.toString(), decimals)}`);
-            console.log(
-              `- (tokenBalance + netSendAmount - executedRefund): ${fromWei(
-                tokenBalanceAtBundleEndBlock.add(netSendAmount).sub(executedRelayerRefund).toString(),
-                decimals
-              )}`
-            );
-            console.log(`- excess: ${fromWei(excess.toString(), decimals)}`);
-            console.log(`- runningBalance: ${fromWei(runningBalance.toString(), decimals)}`);
           }
+
+          // Excess should theoretically be 0 but can be positive due to past accounting errors in computing running
+          // balances. If excess is negative, then that means L2 leaves are unexecuted and the protocol could be
+          // stuck
+          excesses[leaf.chainId][tokenInfo.symbol].push(fromWei(excess.toString(), decimals));
+          console.log(`- tokenBalance: ${fromWei(tokenBalanceAtBundleEndBlock.toString(), decimals)}`);
+          console.log(`- netSendAmount: ${fromWei(netSendAmount.toString(), decimals)}`);
+          console.log(`- excess: ${fromWei(excess.toString(), decimals)}`);
+          console.log(`- runningBalance: ${fromWei(runningBalance.toString(), decimals)}`);
           console.groupEnd();
         }
       }
