@@ -1560,6 +1560,7 @@ export class Dataworker {
     const key = JSON.stringify(blockRangesForChains);
     if (!this.rootCache[key]) {
       this.rootCache[key] = await _buildPoolRebalanceRoot(
+        latestMainnetBlock,
         mainnetBundleEndBlock,
         fillsToRefund,
         deposits,

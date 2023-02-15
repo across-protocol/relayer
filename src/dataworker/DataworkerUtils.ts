@@ -290,6 +290,7 @@ export function _buildRelayerRefundRoot(
 }
 
 export async function _buildPoolRebalanceRoot(
+  latestMainnetBlock: number,
   mainnetBundleEndBlock: number,
   fillsToRefund: FillsToRefund,
   deposits: DepositWithBlock[],
