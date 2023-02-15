@@ -1252,226 +1252,225 @@ export class Dataworker {
       latestRootBundles = latestRootBundles.slice(0, this.spokeRootsLookbackCount);
     }
 
-    await Promise.all(
-      Object.entries(spokePoolClients).map(async ([_chainId, client]) => {
-        const chainId = Number(_chainId);
-        let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter((rootBundle) =>
-          isKeyOf(chainId, IGNORED_SPOKE_BUNDLES)
-            ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
-            : rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
-        );
+    // Execute each chain's leaves sequentially to take advantage of pool rebalance root caching. If we executed
+    // each chain in parallel, then we'd have to reconstruct identical pool rebalance root more times than necessary.
+    for (const [_chainId, client] of Object.entries(spokePoolClients)) {
+      const chainId = Number(_chainId);
+      let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter((rootBundle) =>
+        isKeyOf(chainId, IGNORED_SPOKE_BUNDLES)
+          ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
+          : rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
+      );
 
-        // Filter out roots that are not in the latest N root bundles. This assumes that
-        // relayerRefundRoot+slowFillRoot combinations are unique.
-        rootBundleRelays = this._getRelayedRootsFromBundles(latestRootBundles, rootBundleRelays);
+      // Filter out roots that are not in the latest N root bundles. This assumes that
+      // relayerRefundRoot+slowFillRoot combinations are unique.
+      rootBundleRelays = this._getRelayedRootsFromBundles(latestRootBundles, rootBundleRelays);
 
-        // Filter out empty relayer refund root:
-        rootBundleRelays = rootBundleRelays.filter((rootBundle) => rootBundle.relayerRefundRoot !== EMPTY_MERKLE_ROOT);
+      // Filter out empty relayer refund root:
+      rootBundleRelays = rootBundleRelays.filter((rootBundle) => rootBundle.relayerRefundRoot !== EMPTY_MERKLE_ROOT);
 
-        this.logger.debug({
-          at: "Dataworker#executeRelayerRefundLeaves",
-          message: `Evaluating ${rootBundleRelays.length} historical non-empty relayer refund root bundles on chain ${chainId}`,
+      this.logger.debug({
+        at: "Dataworker#executeRelayerRefundLeaves",
+        message: `Evaluating ${rootBundleRelays.length} historical non-empty relayer refund root bundles on chain ${chainId}`,
+      });
+
+      const executedLeavesForChain = client.getRelayerRefundExecutions();
+
+      for (const rootBundleRelay of sortEventsAscending(rootBundleRelays)) {
+        const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
+          if (bundle.relayerRefundRoot !== rootBundleRelay.relayerRefundRoot) return false;
+          const followingBlockNumber =
+            this.clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber ||
+            this.clients.hubPoolClient.latestBlockNumber;
+
+          if (followingBlockNumber === undefined) return false;
+
+          const leaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
+
+          // Only use this bundle if it had valid leaves returned (meaning it was at least partially executed).
+          return leaves.length > 0;
         });
 
-        const executedLeavesForChain = client.getRelayerRefundExecutions();
-
-        for (const rootBundleRelay of sortEventsAscending(rootBundleRelays)) {
-          const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
-            if (bundle.relayerRefundRoot !== rootBundleRelay.relayerRefundRoot) return false;
-            const followingBlockNumber =
-              this.clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber ||
-              this.clients.hubPoolClient.latestBlockNumber;
-
-            if (followingBlockNumber === undefined) return false;
-
-            const leaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
-
-            // Only use this bundle if it had valid leaves returned (meaning it was at least partially executed).
-            return leaves.length > 0;
+        if (!matchingRootBundle) {
+          this.logger.warn({
+            at: "Dataworke#executeRelayerRefundLeaves",
+            message: "Couldn't find a matching mainnet root bundle for a relayerRefundRoot on L2!",
+            chainId,
+            relayerRefundRoot: rootBundleRelay.relayerRefundRoot,
+            rootBundleId: rootBundleRelay.rootBundleId,
           });
+          continue;
+        }
 
-          if (!matchingRootBundle) {
-            this.logger.warn({
-              at: "Dataworke#executeRelayerRefundLeaves",
-              message: "Couldn't find a matching mainnet root bundle for a relayerRefundRoot on L2!",
-              chainId,
-              relayerRefundRoot: rootBundleRelay.relayerRefundRoot,
-              rootBundleId: rootBundleRelay.rootBundleId,
-            });
-            continue;
-          }
+        const prevRootBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
+          matchingRootBundle.blockNumber
+        );
 
-          const prevRootBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
-            matchingRootBundle.blockNumber
-          );
+        const blockNumberRanges = matchingRootBundle.bundleEvaluationBlockNumbers.map((endBlock, i) => {
+          const fromBlock = prevRootBundle?.bundleEvaluationBlockNumbers?.[i]
+            ? prevRootBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
+            : 0;
+          return [fromBlock, endBlock.toNumber()];
+        });
 
-          const blockNumberRanges = matchingRootBundle.bundleEvaluationBlockNumbers.map((endBlock, i) => {
-            const fromBlock = prevRootBundle?.bundleEvaluationBlockNumbers?.[i]
-              ? prevRootBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
-              : 0;
-            return [fromBlock, endBlock.toNumber()];
-          });
-
-          if (
-            Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
-            blockRangesAreInvalidForSpokeClients(
-              spokePoolClients,
-              blockNumberRanges,
-              this.chainIdListForBundleEvaluationBlockNumbers,
-              earliestBlocksInSpokePoolClients
-            )
-          ) {
-            this.logger.warn({
-              at: "Dataworke#executeRelayerRefundLeaves",
-              message:
-                "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
-              chainId,
-              rootBundleRanges: blockNumberRanges,
-              earliestBlocksInSpokePoolClients,
-              spokeClientsEventSearchConfigs: Object.fromEntries(
-                Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.eventSearchConfig])
-              ),
-            });
-            continue;
-          }
-
-          const { fillsToRefund, deposits, allValidFills, unfilledDeposits } =
-            await this.clients.bundleDataClient.loadData(
-              blockNumberRanges,
-              spokePoolClients,
-              false // Don't log this function's result since we're calling it once per chain per root bundle
-            );
-
-          const endBlockForMainnet = getBlockRangeForChain(
-            blockNumberRanges,
-            1,
-            this.chainIdListForBundleEvaluationBlockNumbers
-          )[1];
-          const mainnetEndBlockTimestamp = (
-            await this.clients.hubPoolClient.hubPool.provider.getBlock(endBlockForMainnet)
-          ).timestamp;
-          if (!this.clients.configStoreClient.hasValidConfigStoreVersionForTimestamp(mainnetEndBlockTimestamp)) {
-            this.logger.debug({
-              at: "Dataworke#executeRelayerRefundLeaves",
-              message: "Cannot validate because missing updated ConfigStore version. Update to latest code.",
-              mainnetEndBlockTimestamp,
-              latestVersionSupported: CONFIG_STORE_VERSION,
-              latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
-            });
-            continue;
-          }
-
-          const allValidFillsInRange = getFillsInRange(
-            allValidFills,
-            blockNumberRanges,
-            this.chainIdListForBundleEvaluationBlockNumbers
-          );
-          const expectedPoolRebalanceRoot = await this._getPoolRebalanceRoot(
+        if (
+          Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
+          blockRangesAreInvalidForSpokeClients(
             spokePoolClients,
             blockNumberRanges,
-            endBlockForMainnet,
-            fillsToRefund,
-            deposits,
-            allValidFills,
-            allValidFillsInRange,
-            unfilledDeposits,
-            false
-          );
-
-          const maxRefundCount = this.maxRefundCountOverride
-            ? this.maxRefundCountOverride
-            : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
-          const { tree, leaves } = _buildRelayerRefundRoot(
-            endBlockForMainnet,
-            fillsToRefund,
-            expectedPoolRebalanceRoot.leaves,
-            expectedPoolRebalanceRoot.runningBalances,
-            this.clients,
-            maxRefundCount,
-            this.tokenTransferThreshold
-          );
-
-          if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {
-            this.logger.warn({
-              at: "Dataworke#executeRelayerRefundLeaves",
-              message: "Constructed a different root for the block range!",
-              chainId,
-              rootBundleRelay,
-              mainnetRootBundleBlock: matchingRootBundle.blockNumber,
-              mainnetRootBundleTxn: matchingRootBundle.transactionHash,
-              publishedRelayerRefundRoot: rootBundleRelay.relayerRefundRoot,
-              constructedRelayerRefundRoot: tree.getHexRoot(),
-            });
-            continue;
-          }
-
-          const leavesForChain = leaves.filter((leaf) => leaf.chainId === Number(chainId));
-          const unexecutedLeaves = leavesForChain.filter((leaf) => {
-            const executedLeaf = executedLeavesForChain.find(
-              (event) => event.rootBundleId === rootBundleRelay.rootBundleId && event.leafId === leaf.leafId
-            );
-            // Only return true if no leaf was found in the list of executed leaves.
-            return !executedLeaf;
+            this.chainIdListForBundleEvaluationBlockNumbers,
+            earliestBlocksInSpokePoolClients
+          )
+        ) {
+          this.logger.warn({
+            at: "Dataworke#executeRelayerRefundLeaves",
+            message: "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
+            chainId,
+            rootBundleRanges: blockNumberRanges,
+            earliestBlocksInSpokePoolClients,
+            spokeClientsEventSearchConfigs: Object.fromEntries(
+              Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.eventSearchConfig])
+            ),
           });
-          if (unexecutedLeaves.length === 0) continue;
-
-          // Filter for leaves where the contract has the funding to send the required tokens.
-          const fundedLeaves = (
-            await Promise.all(
-              unexecutedLeaves.map(async (leaf) => {
-                const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
-                const refundSum = leaf.refundAmounts.reduce((acc, curr) => acc.add(curr), BigNumber.from(0));
-                const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
-                const success = await balanceAllocator.requestBalanceAllocation(
-                  leaf.chainId,
-                  isOvmChain(leaf.chainId) && ovmWethTokens.includes(leaf.l2TokenAddress)
-                    ? ovmWethTokens
-                    : [leaf.l2TokenAddress],
-                  client.spokePool.address,
-                  totalSent
-                );
-
-                if (!success) {
-                  this.logger.warn({
-                    at: "Dataworker#executeRelayerRefundLeaves",
-                    message: "Not executing relayer refund leaf on SpokePool due to lack of funds.",
-                    root: rootBundleRelay.relayerRefundRoot,
-                    bundle: rootBundleRelay.rootBundleId,
-                    leafId: leaf.leafId,
-                    token: l1TokenInfo?.symbol,
-                    chainId: leaf.chainId,
-                    amountToReturn: leaf.amountToReturn,
-                    refunds: leaf.refundAmounts,
-                  });
-                }
-
-                return success ? leaf : undefined;
-              })
-            )
-          ).filter(isDefined);
-
-          fundedLeaves.forEach((leaf) => {
-            const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
-
-            const mrkdwn = `rootBundleId: ${rootBundleRelay.rootBundleId}\nrelayerRefundRoot: ${
-              rootBundleRelay.relayerRefundRoot
-            }\nLeaf: ${leaf.leafId}\nchainId: ${chainId}\ntoken: ${
-              l1TokenInfo?.symbol
-            }\namount: ${leaf.amountToReturn.toString()}`;
-            if (submitExecution)
-              this.clients.multiCallerClient.enqueueTransaction({
-                contract: client.spokePool,
-                chainId: Number(chainId),
-                method: "executeRelayerRefundLeaf",
-                args: [rootBundleRelay.rootBundleId, leaf, tree.getHexProof(leaf)],
-                message: "Executed RelayerRefundLeaf 🌿!",
-                mrkdwn,
-              });
-            else this.logger.debug({ at: "Dataworker#executeRelayerRefundLeaves", message: mrkdwn });
-          });
+          continue;
         }
-      })
-    );
+
+        const { fillsToRefund, deposits, allValidFills, unfilledDeposits } =
+          await this.clients.bundleDataClient.loadData(
+            blockNumberRanges,
+            spokePoolClients,
+            false // Don't log this function's result since we're calling it once per chain per root bundle
+          );
+
+        const endBlockForMainnet = getBlockRangeForChain(
+          blockNumberRanges,
+          1,
+          this.chainIdListForBundleEvaluationBlockNumbers
+        )[1];
+        const mainnetEndBlockTimestamp = (
+          await this.clients.hubPoolClient.hubPool.provider.getBlock(endBlockForMainnet)
+        ).timestamp;
+        if (!this.clients.configStoreClient.hasValidConfigStoreVersionForTimestamp(mainnetEndBlockTimestamp)) {
+          this.logger.debug({
+            at: "Dataworke#executeRelayerRefundLeaves",
+            message: "Cannot validate because missing updated ConfigStore version. Update to latest code.",
+            mainnetEndBlockTimestamp,
+            latestVersionSupported: CONFIG_STORE_VERSION,
+            latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
+          });
+          continue;
+        }
+
+        const allValidFillsInRange = getFillsInRange(
+          allValidFills,
+          blockNumberRanges,
+          this.chainIdListForBundleEvaluationBlockNumbers
+        );
+        const expectedPoolRebalanceRoot = await this._getPoolRebalanceRoot(
+          spokePoolClients,
+          blockNumberRanges,
+          endBlockForMainnet,
+          fillsToRefund,
+          deposits,
+          allValidFills,
+          allValidFillsInRange,
+          unfilledDeposits,
+          false
+        );
+
+        const maxRefundCount = this.maxRefundCountOverride
+          ? this.maxRefundCountOverride
+          : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet);
+        const { tree, leaves } = _buildRelayerRefundRoot(
+          endBlockForMainnet,
+          fillsToRefund,
+          expectedPoolRebalanceRoot.leaves,
+          expectedPoolRebalanceRoot.runningBalances,
+          this.clients,
+          maxRefundCount,
+          this.tokenTransferThreshold
+        );
+
+        if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {
+          this.logger.warn({
+            at: "Dataworke#executeRelayerRefundLeaves",
+            message: "Constructed a different root for the block range!",
+            chainId,
+            rootBundleRelay,
+            mainnetRootBundleBlock: matchingRootBundle.blockNumber,
+            mainnetRootBundleTxn: matchingRootBundle.transactionHash,
+            publishedRelayerRefundRoot: rootBundleRelay.relayerRefundRoot,
+            constructedRelayerRefundRoot: tree.getHexRoot(),
+          });
+          continue;
+        }
+
+        const leavesForChain = leaves.filter((leaf) => leaf.chainId === Number(chainId));
+        const unexecutedLeaves = leavesForChain.filter((leaf) => {
+          const executedLeaf = executedLeavesForChain.find(
+            (event) => event.rootBundleId === rootBundleRelay.rootBundleId && event.leafId === leaf.leafId
+          );
+          // Only return true if no leaf was found in the list of executed leaves.
+          return !executedLeaf;
+        });
+        if (unexecutedLeaves.length === 0) continue;
+
+        // Filter for leaves where the contract has the funding to send the required tokens.
+        const fundedLeaves = (
+          await Promise.all(
+            unexecutedLeaves.map(async (leaf) => {
+              const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
+              const refundSum = leaf.refundAmounts.reduce((acc, curr) => acc.add(curr), BigNumber.from(0));
+              const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
+              const success = await balanceAllocator.requestBalanceAllocation(
+                leaf.chainId,
+                isOvmChain(leaf.chainId) && ovmWethTokens.includes(leaf.l2TokenAddress)
+                  ? ovmWethTokens
+                  : [leaf.l2TokenAddress],
+                client.spokePool.address,
+                totalSent
+              );
+
+              if (!success) {
+                this.logger.warn({
+                  at: "Dataworker#executeRelayerRefundLeaves",
+                  message: "Not executing relayer refund leaf on SpokePool due to lack of funds.",
+                  root: rootBundleRelay.relayerRefundRoot,
+                  bundle: rootBundleRelay.rootBundleId,
+                  leafId: leaf.leafId,
+                  token: l1TokenInfo?.symbol,
+                  chainId: leaf.chainId,
+                  amountToReturn: leaf.amountToReturn,
+                  refunds: leaf.refundAmounts,
+                });
+              }
+
+              return success ? leaf : undefined;
+            })
+          )
+        ).filter(isDefined);
+
+        fundedLeaves.forEach((leaf) => {
+          const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
+
+          const mrkdwn = `rootBundleId: ${rootBundleRelay.rootBundleId}\nrelayerRefundRoot: ${
+            rootBundleRelay.relayerRefundRoot
+          }\nLeaf: ${leaf.leafId}\nchainId: ${chainId}\ntoken: ${
+            l1TokenInfo?.symbol
+          }\namount: ${leaf.amountToReturn.toString()}`;
+          if (submitExecution)
+            this.clients.multiCallerClient.enqueueTransaction({
+              contract: client.spokePool,
+              chainId: Number(chainId),
+              method: "executeRelayerRefundLeaf",
+              args: [rootBundleRelay.rootBundleId, leaf, tree.getHexProof(leaf)],
+              message: "Executed RelayerRefundLeaf 🌿!",
+              mrkdwn,
+            });
+          else this.logger.debug({ at: "Dataworker#executeRelayerRefundLeaves", message: mrkdwn });
+        });
+      }
+    }
   }
 
   _proposeRootBundle(

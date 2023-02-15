@@ -137,10 +137,11 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
     );
     spokePoolClientsByChain[fill.destinationChainId].logger.debug({
       at: "FillUtils#getFillDataForSlowFillFromPreviousRootBundle",
-      message: "Queried for fill that triggered a slow fill for a deposit that was fully filled, in order to compute slow fill excess",
+      message:
+        "Queried for fill that triggered a slow fill for a deposit that was fully filled, in order to compute slow fill excess",
       fillThatCompletedDeposit: fill,
       depositForFill,
-      matchingFills
+      matchingFills,
     });
     firstFillForSameDeposit = sortEventsAscending(matchingFills).find((_fill) => isFirstFillForDeposit(_fill));
     if (firstFillForSameDeposit === undefined)
