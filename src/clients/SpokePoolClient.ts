@@ -363,13 +363,6 @@ export class SpokePoolClient {
       toBlock,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
-    this.logger.debug({
-      at: "SpokePoolClient",
-      message: "Queried RPC for matching fills up to block",
-      fill,
-      deposit,
-      toBlock,
-    });
     return (await this.queryFillsInBlockRange(fill, searchConfig)).filter((_fill) =>
       this.validateFillForDeposit(_fill, deposit)
     );
