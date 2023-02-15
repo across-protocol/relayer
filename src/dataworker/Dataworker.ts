@@ -15,6 +15,7 @@ import {
   DepositWithBlock,
   FillsToRefund,
   FillWithBlock,
+  ProposedRootBundle,
   RootBundleRelayWithBlock,
   SpokePoolClientsByChain,
   UnfilledDeposit,
@@ -800,18 +801,23 @@ export class Dataworker {
       message: "Executing slow relay leaves",
     });
 
+    let latestRootBundles = sortEventsDescending(this.clients.hubPoolClient.getValidatedRootBundles());
+    if (this.spokeRootsLookbackCount !== 0) {
+      latestRootBundles = latestRootBundles.slice(0, this.spokeRootsLookbackCount);
+    }
+
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([_chainId, client]) => {
         const chainId = Number(_chainId);
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter((rootBundle) =>
           isKeyOf(chainId, IGNORED_SPOKE_BUNDLES)
             ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
-            : true && rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
+            : rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
         );
 
-        // Only grab the most recent n roots that have been sent if configured to do so.
-        if (this.spokeRootsLookbackCount !== 0)
-          rootBundleRelays = rootBundleRelays.slice(0, this.spokeRootsLookbackCount);
+        // Filter out roots that are not in the latest N root bundles. This assumes that
+        // relayerRefundRoot+slowFillRoot combinations are unique.
+        rootBundleRelays = this._getRelayedRootsFromBundles(latestRootBundles, rootBundleRelays);
 
         // Filter out empty slow fill roots:
         rootBundleRelays = rootBundleRelays.filter((rootBundle) => rootBundle.slowRelayRoot !== EMPTY_MERKLE_ROOT);
@@ -1238,18 +1244,23 @@ export class Dataworker {
       message: "Executing relayer refund leaves",
     });
 
+    let latestRootBundles = sortEventsDescending(this.clients.hubPoolClient.getValidatedRootBundles());
+    if (this.spokeRootsLookbackCount !== 0) {
+      latestRootBundles = latestRootBundles.slice(0, this.spokeRootsLookbackCount);
+    }
+
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([_chainId, client]) => {
         const chainId = Number(_chainId);
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter((rootBundle) =>
           isKeyOf(chainId, IGNORED_SPOKE_BUNDLES)
             ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
-            : true && rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
+            : rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
         );
 
-        // Only grab the most recent n roots that have been sent if configured to do so.
-        if (this.spokeRootsLookbackCount !== 0)
-          rootBundleRelays = rootBundleRelays.slice(0, this.spokeRootsLookbackCount);
+        // Filter out roots that are not in the latest N root bundles. This assumes that
+        // relayerRefundRoot+slowFillRoot combinations are unique.
+        rootBundleRelays = this._getRelayedRootsFromBundles(latestRootBundles, rootBundleRelays);
 
         // Filter out empty relayer refund root:
         rootBundleRelays = rootBundleRelays.filter((rootBundle) => rootBundle.relayerRefundRoot !== EMPTY_MERKLE_ROOT);
@@ -1563,5 +1574,25 @@ export class Dataworker {
 
     if (leaf.groupIndex === 0) requiredAmount = requiredAmount.add(toBNWei("0.02"));
     return requiredAmount;
+  }
+
+  /**
+   * Filters out any root bundles that don't have a matching relayerRefundRoot+slowRelayRoot combination in the
+   * list of proposed root bundles `allRootBundleRelays`.
+   * @param targetRootBundles Root bundles whose relayed roots we want to find
+   * @param allRootBundleRelays All relayed roots to search
+   * @returns Relayed roots that originated from rootBundles contained in allRootBundleRelays
+   */
+  _getRelayedRootsFromBundles(
+    targetRootBundles: ProposedRootBundle[],
+    allRootBundleRelays: RootBundleRelayWithBlock[]
+  ): RootBundleRelayWithBlock[] {
+    return allRootBundleRelays.filter((rootBundle) =>
+      targetRootBundles.some(
+        (_rootBundle) =>
+          _rootBundle.relayerRefundRoot === rootBundle.relayerRefundRoot &&
+          _rootBundle.slowRelayRoot === rootBundle.slowRelayRoot
+      )
+    );
   }
 }
