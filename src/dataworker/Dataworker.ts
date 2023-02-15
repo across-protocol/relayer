@@ -1379,6 +1379,7 @@ export class Dataworker {
         const expectedPoolRebalanceRoot = await this._getPoolRebalanceRoot(
           spokePoolClients,
           blockNumberRanges,
+          matchingRootBundle.blockNumber,
           endBlockForMainnet,
           fillsToRefund,
           deposits,
