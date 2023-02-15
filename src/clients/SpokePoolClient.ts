@@ -15,6 +15,8 @@ import {
   getNetworkName,
   getRedisDepositKey,
   assert,
+  sortEventsAscending,
+  filledSameDeposit,
 } from "../utils";
 import { toBN, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
@@ -353,6 +355,46 @@ export class SpokePoolClient {
 
     const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill
     return this.validateFillForDeposit(fillCopy, deposit) ? deposit : undefined;
+  }
+
+  async queryHistoricalMatchingFills(fill: Fill, deposit: Deposit, toBlock: number): Promise<FillWithBlock[]> {
+    const searchConfig = {
+      fromBlock: this.spokePoolDeploymentBlock,
+      toBlock,
+      maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
+    };
+    return (await this.queryFillsInBlockRange(fill, searchConfig)).filter((_fill) =>
+      this.validateFillForDeposit(_fill, deposit)
+    );
+  }
+
+  async queryFillsInBlockRange(matchingFill: Fill, searchConfig: EventSearchConfig) {
+    // Filtering on the fill's depositor address, the only indexed deposit field in the FilledRelay event,
+    // should speed up this search a bit.
+    // TODO: Once depositId is indexed in FilledRelay event, filter on that as well.
+    const query = await paginatedEventQuery(
+      this.spokePool,
+      this.spokePool.filters.FilledRelay(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        matchingFill.depositor,
+        undefined,
+        undefined
+      ),
+      searchConfig
+    );
+    const fills = query.map((event) => spreadEventWithBlockNumber(event) as FillWithBlock);
+    return sortEventsAscending(fills.filter((_fill) => filledSameDeposit(_fill, matchingFill)));
   }
 
   async update(eventsToQuery?: string[]) {

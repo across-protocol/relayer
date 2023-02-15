@@ -9,6 +9,7 @@ import {
   RunningBalances,
   UnfilledDeposit,
   SpokePoolTargetBalance,
+  SpokePoolClientsByChain,
 } from "../interfaces";
 import {
   assign,
@@ -154,10 +155,11 @@ export function computePoolRebalanceUsdVolume(leaves: PoolRebalanceLeaf[], clien
   }, toBN(0));
 }
 
-export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
+export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   mainnetBundleEndBlock: number,
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
+  spokePoolClientsByChain: SpokePoolClientsByChain,
   allValidFills: interfaces.FillWithBlock[],
   allValidFillsInRange: interfaces.FillWithBlock[],
   chainIdListForBundleEvaluationBlockNumbers: number[]
@@ -171,66 +173,69 @@ export function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   // This assumption depends on the rule that slow fills can only be sent after a partial fill for a non zero amount
   // of the deposit. This is why "1 wei" fills are important, otherwise we'd never know which fills originally
   // triggered a slow fill payment to be sent to the destination chain.
-  allValidFillsInRange
-    .filter((fill) => fill.totalFilledAmount.eq(fill.amount) && !fill.fillAmount.eq(fill.amount))
-    .forEach((fill: interfaces.FillWithBlock) => {
-      const { lastMatchingFillInSameBundle, rootBundleEndBlockContainingFirstFill } =
-        getFillDataForSlowFillFromPreviousRootBundle(
+  await Promise.all(
+    allValidFillsInRange
+      .filter((fill) => fill.totalFilledAmount.eq(fill.amount) && !fill.fillAmount.eq(fill.amount))
+      .map(async (fill: interfaces.FillWithBlock) => {
+        const { lastMatchingFillInSameBundle, rootBundleEndBlockContainingFirstFill } =
+          await getFillDataForSlowFillFromPreviousRootBundle(
+            hubPoolClient.latestBlockNumber,
+            fill,
+            allValidFills,
+            hubPoolClient,
+            spokePoolClientsByChain,
+            chainIdListForBundleEvaluationBlockNumbers
+          );
+
+        // Now that we have the last fill sent in a previous root bundle that also sent a slow fill, we can compute
+        // the excess that we need to decrease running balances by. This excess only exists in the case where the
+        // current fill completed a deposit. There will be an excess if (1) the slow fill was never executed, and (2)
+        // the slow fill was executed, but not before some partial fills were sent.
+
+        // Note, if there is NO fill from a previous root bundle for the same deposit as this fill, then there has been
+        // no slow fill payment sent to the spoke pool yet, so we can exit early.
+        if (lastMatchingFillInSameBundle === undefined) return;
+
+        // If first fill for this deposit is in this epoch, then no slow fill has been sent so we can ignore this fill.
+        // We can check this by searching for a ProposeRootBundle event with a bundle block range that contains the
+        // first fill for this deposit. If it is the same as the ProposeRootBundle event containing the
+        // current fill, then the first fill is in the current bundle and we can exit early.
+        const rootBundleEndBlockContainingFullFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
           hubPoolClient.latestBlockNumber,
-          fill,
-          allValidFills,
-          hubPoolClient,
+          fill.blockNumber,
+          fill.destinationChainId,
           chainIdListForBundleEvaluationBlockNumbers
         );
+        if (rootBundleEndBlockContainingFirstFill === rootBundleEndBlockContainingFullFill) return;
 
-      // Now that we have the last fill sent in a previous root bundle that also sent a slow fill, we can compute
-      // the excess that we need to decrease running balances by. This excess only exists in the case where the
-      // current fill completed a deposit. There will be an excess if (1) the slow fill was never executed, and (2)
-      // the slow fill was executed, but not before some partial fills were sent.
+        // Recompute how much the matched root bundle sent for this slow fill.
+        const amountSentForSlowFill = lastMatchingFillInSameBundle.amount.sub(
+          lastMatchingFillInSameBundle.totalFilledAmount
+        );
 
-      // Note, if there is NO fill from a previous root bundle for the same deposit as this fill, then there has been
-      // no slow fill payment sent to the spoke pool yet, so we can exit early.
-      if (lastMatchingFillInSameBundle === undefined) return;
+        // If this fill is a slow fill, then the excess remaining in the contract is equal to the amount sent originally
+        // for this slow fill, and the amount filled. If this fill was not a slow fill, then that means the slow fill
+        // was never sent, so we need to send the full slow fill back.
+        const excess = fill.isSlowRelay ? amountSentForSlowFill.sub(fill.fillAmount) : amountSentForSlowFill;
+        if (excess.eq(toBN(0))) return;
 
-      // If first fill for this deposit is in this epoch, then no slow fill has been sent so we can ignore this fill.
-      // We can check this by searching for a ProposeRootBundle event with a bundle block range that contains the
-      // first fill for this deposit. If it is the same as the ProposeRootBundle event containing the
-      // current fill, then the first fill is in the current bundle and we can exit early.
-      const rootBundleEndBlockContainingFullFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
-        hubPoolClient.latestBlockNumber,
-        fill.blockNumber,
-        fill.destinationChainId,
-        chainIdListForBundleEvaluationBlockNumbers
-      );
-      if (rootBundleEndBlockContainingFirstFill === rootBundleEndBlockContainingFullFill) return;
+        // Log excesses for debugging since this logic is so complex.
+        if (excesses[fill.destinationChainId] === undefined) excesses[fill.destinationChainId] = {};
+        if (excesses[fill.destinationChainId][fill.destinationToken] === undefined)
+          excesses[fill.destinationChainId][fill.destinationToken] = [];
+        excesses[fill.destinationChainId][fill.destinationToken].push({
+          excess: excess.toString(),
+          lastMatchingFillInSameBundle,
+          rootBundleEndBlockContainingFirstFill,
+          rootBundleEndBlockContainingFullFill: rootBundleEndBlockContainingFullFill
+            ? rootBundleEndBlockContainingFullFill
+            : "N/A",
+          finalFill: fill,
+        });
 
-      // Recompute how much the matched root bundle sent for this slow fill.
-      const amountSentForSlowFill = lastMatchingFillInSameBundle.amount.sub(
-        lastMatchingFillInSameBundle.totalFilledAmount
-      );
-
-      // If this fill is a slow fill, then the excess remaining in the contract is equal to the amount sent originally
-      // for this slow fill, and the amount filled. If this fill was not a slow fill, then that means the slow fill
-      // was never sent, so we need to send the full slow fill back.
-      const excess = fill.isSlowRelay ? amountSentForSlowFill.sub(fill.fillAmount) : amountSentForSlowFill;
-      if (excess.eq(toBN(0))) return;
-
-      // Log excesses for debugging since this logic is so complex.
-      if (excesses[fill.destinationChainId] === undefined) excesses[fill.destinationChainId] = {};
-      if (excesses[fill.destinationChainId][fill.destinationToken] === undefined)
-        excesses[fill.destinationChainId][fill.destinationToken] = [];
-      excesses[fill.destinationChainId][fill.destinationToken].push({
-        excess: excess.toString(),
-        lastMatchingFillInSameBundle,
-        rootBundleEndBlockContainingFirstFill,
-        rootBundleEndBlockContainingFullFill: rootBundleEndBlockContainingFullFill
-          ? rootBundleEndBlockContainingFullFill
-          : "N/A",
-        finalFill: fill,
-      });
-
-      updateRunningBalanceForFill(mainnetBundleEndBlock, runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
-    });
+        updateRunningBalanceForFill(mainnetBundleEndBlock, runningBalances, hubPoolClient, fill, excess.mul(toBN(-1)));
+      })
+  );
 
   // Sort excess entries by block number, most recent first.
   Object.keys(excesses).forEach((chainId) => {

@@ -1,7 +1,6 @@
-import { winston, BigNumber, toBN, setRedisKey } from "../utils";
+import { winston, BigNumber, toBN } from "../utils";
 import * as _ from "lodash";
 import {
-  Deposit,
   DepositWithBlock,
   FillsToRefund,
   FillWithBlock,
