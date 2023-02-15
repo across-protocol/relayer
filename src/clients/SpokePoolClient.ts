@@ -17,6 +17,7 @@ import {
   assert,
   sortEventsAscending,
   filledSameDeposit,
+  getCurrentTime,
 } from "../utils";
 import { toBN, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
@@ -350,7 +351,7 @@ export class SpokePoolClient {
         deposit,
       });
       if (this.configStoreClient.redisClient)
-        await setDeposit(deposit, this.configStoreClient.redisClient, 24 * 60 * 60);
+        await setDeposit(deposit, getCurrentTime(), this.configStoreClient.redisClient, 24 * 60 * 60);
     }
 
     const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill
