@@ -23,7 +23,6 @@ import {
   winston,
   toBNWei,
   formatFeePct,
-  getRefund,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "../utils";
@@ -134,7 +133,7 @@ export function addSlowFillsToRunningBalances(
       runningBalances,
       unfilledDeposit.deposit.destinationChainId,
       l1TokenCounterpart,
-      getRefund(unfilledDeposit.unfilledAmount, unfilledDeposit.deposit.realizedLpFeePct)
+      unfilledDeposit.unfilledAmount
     );
   });
 }
@@ -210,9 +209,8 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         if (rootBundleEndBlockContainingFirstFill === rootBundleEndBlockContainingFullFill) return;
 
         // Recompute how much the matched root bundle sent for this slow fill.
-        const amountSentForSlowFill = getRefund(
-          lastMatchingFillInSameBundle.amount.sub(lastMatchingFillInSameBundle.totalFilledAmount),
-          lastMatchingFillInSameBundle.realizedLpFeePct
+        const amountSentForSlowFill = lastMatchingFillInSameBundle.amount.sub(
+          lastMatchingFillInSameBundle.totalFilledAmount
         );
 
         // If this fill is a slow fill, then the excess remaining in the contract is equal to the amount sent originally
