@@ -58,7 +58,7 @@ const { acrossApi, coingecko, defiLlama } = priceClient.adapters;
 
 export class ProfitClient {
   private readonly priceClient;
-  protected minRelayerFees: { [symbol: string]: { [dstChainId: number]: { [srcChainId: number]: BigNumber } } } = {};
+  protected minRelayerFees: { [route: string]: BigNumber } = {};
   protected tokenPrices: { [l1Token: string]: BigNumber } = {};
   private unprofitableFills: { [chainId: number]: { deposit: Deposit; fillAmount: BigNumber }[] } = {};
 
@@ -164,7 +164,8 @@ export class ProfitClient {
   // 0.1bps on USDC from Optimism to Arbitrum:
   //   - MIN_RELAYER_FEE_PCT_USDC_42161_10=0.00001
   minRelayerFeePct(token: string, srcChainId: number, dstChainId: number): BigNumber {
-    let minRelayerFeePct: BigNumber | undefined = this.minRelayerFees[token]?.[dstChainId]?.[srcChainId];
+    const routeKey = `${token}_${dstChainId}_${srcChainId}`;
+    let minRelayerFeePct = this.minRelayerFees[routeKey];
 
     if (!minRelayerFeePct) {
       const tokenOverride = `MIN_RELAYER_FEE_PCT_${token}`;
@@ -174,15 +175,10 @@ export class ProfitClient {
         ?? process.env[`${tokenOverride}_${dstChainId}`]
         ?? process.env[tokenOverride];
 
+      minRelayerFeePct = _minRelayerFeePct ? toBNWei(_minRelayerFeePct) : this.defaultRelayerFeePct;
+
       // Save the route for next time.
-      if (!this.minRelayerFees[token]) this.minRelayerFees[token] = {};
-      if (!this.minRelayerFees[token][dstChainId]) this.minRelayerFees[token][dstChainId] = {};
-
-      this.minRelayerFees[token][dstChainId][srcChainId] = _minRelayerFeePct
-        ? toBNWei(_minRelayerFeePct)
-        : this.defaultRelayerFeePct;
-
-      minRelayerFeePct = this.minRelayerFees[token][dstChainId][srcChainId];
+      this.minRelayerFees[routeKey] = minRelayerFeePct;
     }
 
     return minRelayerFeePct as BigNumber;
