@@ -58,6 +58,7 @@ const { acrossApi, coingecko, defiLlama } = priceClient.adapters;
 
 export class ProfitClient {
   private readonly priceClient;
+  protected minRelayerFees: { [symbol: string]: { [dstChainId: number]: { [srcChainId: number]: BigNumber } } } = {};
   protected tokenPrices: { [l1Token: string]: BigNumber } = {};
   private unprofitableFills: { [chainId: number]: { deposit: Deposit; fillAmount: BigNumber }[] } = {};
 
@@ -74,7 +75,7 @@ export class ProfitClient {
     spokePoolClients: SpokePoolClientsByChain,
     readonly ignoreProfitability: boolean,
     readonly enabledChainIds: number[],
-    readonly minRelayerFeePct: BigNumber = toBNWei(constants.RELAYER_MIN_FEE_PCT),
+    readonly defaultRelayerFeePct: BigNumber = toBNWei(constants.RELAYER_MIN_FEE_PCT),
     readonly debugProfitability: boolean = false,
     protected gasMultiplier: BigNumber = toBNWei(1)
   ) {
@@ -153,20 +154,60 @@ export class ProfitClient {
     this.unprofitableFills = {};
   }
 
+  // Allow the minimum relayer fee to be overridden based on:
+  // - Token
+  // - Bridge route (dst/src chain Ids + token)
+  // 0.8bps on USDC global default:
+  //   - MIN_RELAYER_FEE_PCT_USDC=0.00008
+  // 0.2bps on USDC from any to Arbitrum:
+  //   - MIN_RELAYER_FEE_PCT_USDC_42161=0.00002
+  // 0.1bps on USDC from Optimism to Arbitrum:
+  //   - MIN_RELAYER_FEE_PCT_USDC_42161_10=0.00001
+  minRelayerFeePct(token: string, srcChainId: number, dstChainId: number): BigNumber {
+    let minRelayerFeePct: BigNumber | undefined = this.minRelayerFees[token]?.[dstChainId]?.[srcChainId];
+
+    if (!minRelayerFeePct) {
+      const tokenOverride = `MIN_RELAYER_FEE_PCT_${token}`;
+      // prettier-ignore
+      const _minRelayerFeePct =
+        process.env[`${tokenOverride}_${dstChainId}_${srcChainId}`]
+        ?? process.env[`${tokenOverride}_${dstChainId}`]
+        ?? process.env[tokenOverride];
+
+      // Save the route for next time.
+      if (!this.minRelayerFees[token]) this.minRelayerFees[token] = {};
+      if (!this.minRelayerFees[token][dstChainId]) this.minRelayerFees[token][dstChainId] = {};
+
+      this.minRelayerFees[token][dstChainId][srcChainId] = _minRelayerFeePct
+        ? toBNWei(_minRelayerFeePct)
+        : this.defaultRelayerFeePct;
+
+      minRelayerFeePct = this.minRelayerFees[token][dstChainId][srcChainId];
+    }
+
+    return minRelayerFeePct as BigNumber;
+  }
+
   appliedRelayerFeePct(deposit: Deposit): BigNumber {
     // Return the maximum available relayerFeePct (max of Deposit and any SpeedUp).
     return max(toBN(deposit.relayerFeePct), deposit.newRelayerFeePct ? toBN(deposit.newRelayerFeePct) : toBN(0));
   }
 
-  calculateFillProfitability(deposit: Deposit, fillAmount: BigNumber, l1Token?: L1Token): FillProfit {
+  calculateFillProfitability(
+    deposit: Deposit,
+    fillAmount: BigNumber,
+    l1Token: L1Token,
+    minRelayerFeePct?: BigNumber
+  ): FillProfit {
+    const { destinationChainId: dstChainId, originChainId: srcChainId } = deposit;
     assert(fillAmount.gt(0), `Unexpected fillAmount: ${fillAmount}`);
     assert(
       Object.keys(GAS_TOKEN_BY_CHAIN_ID).includes(deposit.destinationChainId.toString()),
       `Unsupported destination chain ID: ${deposit.destinationChainId}`
     );
 
-    l1Token ??= this.hubPoolClient.getTokenInfoForDeposit(deposit);
-    assert(l1Token !== undefined, `No L1 token found for deposit ${JSON.stringify(deposit)}`);
+    minRelayerFeePct ??= this.minRelayerFeePct(l1Token.symbol, deposit.originChainId, deposit.destinationChainId);
+
     const tokenPriceUsd = this.getPriceOfToken(l1Token.address);
     if (tokenPriceUsd.lte(0)) throw new Error(`Unable to determine ${l1Token.symbol} L1 token price`);
 
@@ -193,7 +234,7 @@ export class ProfitClient {
     const netRelayerFeePct = netRelayerFeeUsd.mul(toBNWei(1)).div(relayerCapitalUsd);
 
     // If token price or gas cost is unknown, assume the relay is unprofitable.
-    const fillProfitable = tokenPriceUsd.gt(0) && gasCostUsd.gt(0) && netRelayerFeePct.gte(this.minRelayerFeePct);
+    const fillProfitable = tokenPriceUsd.gt(0) && gasCostUsd.gt(0) && netRelayerFeePct.gte(minRelayerFeePct);
 
     return {
       grossRelayerFeePct,
@@ -222,11 +263,12 @@ export class ProfitClient {
     return fillAmount.mul(tokenPriceInUsd).div(toBN(10).pow(l1TokenInfo.decimals));
   }
 
-  isFillProfitable(deposit: Deposit, fillAmount: BigNumber, l1Token?: L1Token): boolean {
+  isFillProfitable(deposit: Deposit, fillAmount: BigNumber, l1Token: L1Token): boolean {
+    const minRelayerFeePct = this.minRelayerFeePct(l1Token.symbol, deposit.originChainId, deposit.destinationChainId);
     let fill: FillProfit;
 
     try {
-      fill = this.calculateFillProfitability(deposit, fillAmount, l1Token);
+      fill = this.calculateFillProfitability(deposit, fillAmount, l1Token, minRelayerFeePct);
     } catch (err) {
       this.logger.debug({
         at: "ProfitClient#isFillProfitable",
@@ -234,7 +276,7 @@ export class ProfitClient {
         deposit,
         fillAmount,
       });
-      return this.ignoreProfitability && this.appliedRelayerFeePct(deposit).gte(this.minRelayerFeePct);
+      return this.ignoreProfitability && this.appliedRelayerFeePct(deposit).gte(minRelayerFeePct);
     }
 
     if (!fill.fillProfitable || this.debugProfitability) {
@@ -256,14 +298,14 @@ export class ProfitClient {
         gasCostUsd: fill.gasCostUsd,
         netRelayerFeeUsd: `${fill.netRelayerFeeUsd}`,
         netRelayerFeePct: `${formatFeePct(fill.netRelayerFeePct)}%`,
-        minRelayerFeePct: `${formatFeePct(this.minRelayerFeePct)}%`,
+        minRelayerFeePct: `${formatFeePct(minRelayerFeePct)}%`,
         fillProfitable: fill.fillProfitable,
       });
     }
 
     // If profitability is disabled, ensure _at least_ that the relayerFeePct >= minRelayerFeePct.
     // This is a temporary measure and can hopefully be removed (together with ignoreProfitability) in future.
-    return fill.fillProfitable || (this.ignoreProfitability && fill.grossRelayerFeePct.gte(this.minRelayerFeePct));
+    return fill.fillProfitable || (this.ignoreProfitability && fill.grossRelayerFeePct.gte(minRelayerFeePct));
   }
 
   captureUnprofitableFill(deposit: Deposit, fillAmount: BigNumber): void {
