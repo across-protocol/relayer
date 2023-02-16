@@ -199,7 +199,6 @@ export class ProfitClient {
     l1Token: L1Token,
     minRelayerFeePct?: BigNumber
   ): FillProfit {
-    const { destinationChainId: dstChainId, originChainId: srcChainId } = deposit;
     assert(fillAmount.gt(0), `Unexpected fillAmount: ${fillAmount}`);
     assert(
       Object.keys(GAS_TOKEN_BY_CHAIN_ID).includes(deposit.destinationChainId.toString()),
