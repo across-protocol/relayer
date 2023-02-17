@@ -115,7 +115,6 @@ describe("ProfitClient: Consider relay profit", async function () {
       spyLogger,
       hubPoolClient,
       spokePoolClients,
-      ignoreProfitability,
       [],
       minRelayerFeePct,
       debugProfitability

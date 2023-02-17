@@ -73,7 +73,6 @@ export class ProfitClient {
     readonly logger: winston.Logger,
     readonly hubPoolClient: HubPoolClient,
     spokePoolClients: SpokePoolClientsByChain,
-    readonly ignoreProfitability: boolean,
     readonly enabledChainIds: number[],
     readonly defaultMinRelayerFeePct: BigNumber = toBNWei(constants.RELAYER_MIN_FEE_PCT),
     readonly debugProfitability: boolean = false,
@@ -257,7 +256,7 @@ export class ProfitClient {
         deposit,
         fillAmount,
       });
-      return this.ignoreProfitability && this.appliedRelayerFeePct(deposit).gte(minRelayerFeePct);
+      return false;
     }
 
     if (!fill.fillProfitable || this.debugProfitability) {
@@ -284,9 +283,7 @@ export class ProfitClient {
       });
     }
 
-    // If profitability is disabled, ensure _at least_ that the relayerFeePct >= minRelayerFeePct.
-    // This is a temporary measure and can hopefully be removed (together with ignoreProfitability) in future.
-    return fill.fillProfitable || (this.ignoreProfitability && fill.grossRelayerFeePct.gte(minRelayerFeePct));
+    return fill.fillProfitable;
   }
 
   captureUnprofitableFill(deposit: Deposit, fillAmount: BigNumber): void {
@@ -348,7 +345,7 @@ export class ProfitClient {
         mrkdwn += `- Using last known ${l1Token.symbol} price of ${this.getPriceOfToken(l1Token.address)}.\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
-      if (!this.ignoreProfitability) throw new Error(errMsg);
+      throw new Error(errMsg);
     }
   }
 
