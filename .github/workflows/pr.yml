@@ -1,4 +1,4 @@
-name: Check PR
+name: Checks
 on: [push]
 jobs:
   lint:
@@ -15,6 +15,8 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: "yarn"
+      - name: Install packages
+        run: yarn install --frozen-lockfile
       - name: Lint
         run: yarn lint
   test:
@@ -35,6 +37,8 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: "yarn"
+      - name: Install packages
+        run: yarn install --frozen-lockfile
       - name: Build
         run: yarn build
       - name: Test
