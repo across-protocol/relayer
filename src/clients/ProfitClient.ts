@@ -189,8 +189,6 @@ export class ProfitClient {
       `Unsupported destination chain ID: ${deposit.destinationChainId}`
     );
 
-    minRelayerFeePct ??= this.minRelayerFeePct(l1Token.symbol, deposit.originChainId, deposit.destinationChainId);
-
     const tokenPriceUsd = this.getPriceOfToken(l1Token.address);
     if (tokenPriceUsd.lte(0)) throw new Error(`Unable to determine ${l1Token.symbol} L1 token price`);
 
