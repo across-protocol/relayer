@@ -340,6 +340,12 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
           mostRecentValidatedBundle.relayerRefundRoot
         );
 
+        // NOTE: There are several ways in which excess can be incorrect:
+        // - A relayer refund leaf from a bundle more than 2 bundles ago has not been executed.
+        // - A slow fill from a bundle more than 2 bundles ago has not been executed and has not been replaced
+        // by a partial fill.
+        // - A deposit from HubPool to Spoke took too long to arrive and those deposits are not trackable via
+        // Transfer events where the sender is 0x0.
         let excess = toBN(tokenBalanceAtBundleEndBlock).add(netSendAmount).add(runningBalance);
 
         if (relayedRoot === undefined || relayedRoot[l2Token] === undefined) {
