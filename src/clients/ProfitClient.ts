@@ -75,7 +75,7 @@ export class ProfitClient {
     spokePoolClients: SpokePoolClientsByChain,
     readonly ignoreProfitability: boolean,
     readonly enabledChainIds: number[],
-    readonly defaultRelayerFeePct: BigNumber = toBNWei(constants.RELAYER_MIN_FEE_PCT),
+    readonly defaultMinRelayerFeePct: BigNumber = toBNWei(constants.RELAYER_MIN_FEE_PCT),
     readonly debugProfitability: boolean = false,
     protected gasMultiplier: BigNumber = toBNWei(1)
   ) {
@@ -154,28 +154,16 @@ export class ProfitClient {
     this.unprofitableFills = {};
   }
 
-  // Allow the minimum relayer fee to be overridden based on:
-  // - Token
-  // - Bridge route (dst/src chain Ids + token)
-  // 0.8bps on USDC global default:
-  //   - MIN_RELAYER_FEE_PCT_USDC=0.00008
-  // 0.2bps on USDC from any to Arbitrum:
-  //   - MIN_RELAYER_FEE_PCT_USDC_42161=0.00002
+  // Allow the minimum relayer fee to be overridden per token/route:
   // 0.1bps on USDC from Optimism to Arbitrum:
   //   - MIN_RELAYER_FEE_PCT_USDC_42161_10=0.00001
-  minRelayerFeePct(token: string, srcChainId: number, dstChainId: number): BigNumber {
-    const routeKey = `${token}_${dstChainId}_${srcChainId}`;
+  minRelayerFeePct(symbol: string, srcChainId: number, dstChainId: number): BigNumber {
+    const routeKey = `${symbol}_${srcChainId}_${dstChainId}`;
     let minRelayerFeePct = this.minRelayerFees[routeKey];
 
     if (!minRelayerFeePct) {
-      const tokenOverride = `MIN_RELAYER_FEE_PCT_${token}`;
-      // prettier-ignore
-      const _minRelayerFeePct =
-        process.env[`${tokenOverride}_${dstChainId}_${srcChainId}`]
-        ?? process.env[`${tokenOverride}_${dstChainId}`]
-        ?? process.env[tokenOverride];
-
-      minRelayerFeePct = _minRelayerFeePct ? toBNWei(_minRelayerFeePct) : this.defaultRelayerFeePct;
+      const _minRelayerFeePct = process.env[`MIN_RELAYER_FEE_PCT_${routeKey}`];
+      minRelayerFeePct = _minRelayerFeePct ? toBNWei(_minRelayerFeePct) : this.defaultMinRelayerFeePct;
 
       // Save the route for next time.
       this.minRelayerFees[routeKey] = minRelayerFeePct;
