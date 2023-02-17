@@ -221,19 +221,6 @@ export class Dataworker {
         mostRecentProposedRootBundle: mostRecentProposedRootBundle.transactionHash,
       };
     }
-    // If all leaves are executed, we should wait if the most recent execution came after the mainnet bundle end
-    // block.
-    else {
-      return {
-        shouldWait:
-          bufferToPropose > 0
-            ? mainnetBundleEndBlock - bufferToPropose < mostRecentProposedRootBundle.blockNumber
-            : false,
-        bufferToPropose,
-        poolRebalanceLeafExecutionBlocks,
-        mainnetBundleEndBlock,
-      };
-    }
   }
 
   async proposeRootBundle(
