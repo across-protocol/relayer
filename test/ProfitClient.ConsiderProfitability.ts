@@ -281,37 +281,37 @@ describe("ProfitClient: Consider relay profit", async function () {
   });
 
   it("Allows per-route and per-token fee configuration", async function () {
-    process.env.MIN_RELAYER_FEE_PCT = "0.0003";
-    process.env.MIN_RELAYER_FEE_PCT_USDC = "0.0001";
-    process.env.MIN_RELAYER_FEE_PCT_USDC_42161_10 = "0.0000";
+    // Setup custom USDC pricing to Optimism.
+    chainIds.forEach((srcChainId) => {
+      process.env[`MIN_RELAYER_FEE_PCT_USDC_${srcChainId}_10`] = Math.random().toString();
+    });
 
-    ["USDC", "DAI", "WETH"].forEach((symbol) => {
-      const tokenOverride = `MIN_RELAYER_FEE_PCT_${symbol}`;
+    const envPrefix = `MIN_RELAYER_FEE_PCT`;
+    ["USDC", "DAI", "WETH", "WBTC"].forEach((symbol) => {
 
-      chainIds.forEach((dstChainId) => {
-        chainIds.forEach((srcChainId) => {
-          for (const envVar of [
-            `${tokenOverride}_${dstChainId}_${srcChainId}`,
-            `${tokenOverride}_${dstChainId}`,
-            `${tokenOverride}`,
-          ]) {
-            const _envVar: string | undefined = process.env[envVar];
-            const minRelayerFeePct: BigNumber | undefined = _envVar ? toBNWei(_envVar) : undefined;
-            if (minRelayerFeePct) {
-              spyLogger.debug({
-                message: `Expect relayerFeePct === ${minRelayerFeePct}`,
-                envVar,
-                symbol,
-                dstChainId,
-                srcChainId,
-              });
-              const computedMinRelayerFeePct = profitClient.minRelayerFeePct(symbol, srcChainId, dstChainId);
-              expect(computedMinRelayerFeePct.eq(minRelayerFeePct as BigNumber)).to.be.true;
-              break;
-            }
-          }
+      chainIds.forEach((srcChainId) => {
+        chainIds.forEach((dstChainId) => {
+          if (srcChainId === dstChainId) return;
+
+          let envVar = process.env[`${envPrefix}_${symbol}_${srcChainId}_${dstChainId}`];
+          const routeMinRelayerFeePct = envVar ? toBNWei(envVar) : minRelayerFeePct;
+          const computedMinRelayerFeePct = profitClient.minRelayerFeePct(symbol, srcChainId, dstChainId);
+          spyLogger.debug({
+            message: `Expect relayerFeePct === ${routeMinRelayerFeePct}`,
+            envVar,
+            symbol,
+            srcChainId,
+            dstChainId,
+            computedMinRelayerFeePct,
+          });
+          expect(computedMinRelayerFeePct.eq(routeMinRelayerFeePct as BigNumber)).to.be.true;
         });
       });
+    });
+
+    // Cleanup env
+    chainIds.forEach((srcChainId) => {
+      process.env[`MIN_RELAYER_FEE_PCT_USDC_${srcChainId}_10`] = undefined;
     });
   });
 
