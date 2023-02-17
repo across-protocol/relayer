@@ -190,6 +190,7 @@ export class Dataworker {
       mainnetBundleEndBlock
     );
     const expectedPoolRebalanceLeaves = mostRecentProposedRootBundle.poolRebalanceLeafCount;
+    if (expectedPoolRebalanceLeaves === 0) throw new Error("Pool rebalanc leaf count must be > 0");
     const poolRebalanceLeafExecutionBlocks = executedPoolRebalanceLeaves.map((execution) => execution.blockNumber);
 
     // If any leaves are unexecuted, we should wait. This can also happen if the most recent proposed root bundle
@@ -204,17 +205,20 @@ export class Dataworker {
         executedPoolRebalanceLeaves: executedPoolRebalanceLeaves.length,
       };
     }
-    // We should now only wait if the bufferToPropose is larger than the time between the mainnetBundleEndBlock
-    // and the latest proposal block.
+    // We should now only wait if not enough time (e.g. the bufferToPropose # of seconds) has passed since the last
+    // pool rebalance leaf was executed.
     else {
+      // `poolRebalanceLeafExecutionBlocks` must have at least one element so the following computation will produce
+      // a number.
+      const latestExecutedPoolRebalanceLeafBlock = Math.max(...poolRebalanceLeafExecutionBlocks);
+      const minimumMainnetBundleEndBlockToPropose = latestExecutedPoolRebalanceLeafBlock + bufferToPropose;
       return {
-        shouldWait:
-          bufferToPropose > 0
-            ? mainnetBundleEndBlock - bufferToPropose < mostRecentProposedRootBundle.blockNumber
-            : false,
+        shouldWait: mainnetBundleEndBlock < minimumMainnetBundleEndBlockToPropose,
         bufferToPropose,
         poolRebalanceLeafExecutionBlocks,
         mainnetBundleEndBlock,
+        minimumMainnetBundleEndBlockToPropose,
+        mostRecentProposedRootBundle: mostRecentProposedRootBundle.transactionHash,
       };
     }
   }
