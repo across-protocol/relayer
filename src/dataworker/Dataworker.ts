@@ -190,7 +190,7 @@ export class Dataworker {
       mainnetBundleEndBlock
     );
     const expectedPoolRebalanceLeaves = mostRecentProposedRootBundle.poolRebalanceLeafCount;
-    if (expectedPoolRebalanceLeaves === 0) throw new Error("Pool rebalanc leaf count must be > 0");
+    if (expectedPoolRebalanceLeaves === 0) throw new Error("Pool rebalance leaf count must be > 0");
     const poolRebalanceLeafExecutionBlocks = executedPoolRebalanceLeaves.map((execution) => execution.blockNumber);
 
     // If any leaves are unexecuted, we should wait. This can also happen if the most recent proposed root bundle

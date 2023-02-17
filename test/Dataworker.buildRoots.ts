@@ -444,7 +444,10 @@ describe("Dataworker: Build merkle roots", async function () {
         await setupTokensForWallet(spokePool_1, sortedAllSigners[i], [erc20_1]);
         fills.push(await buildFillForRepaymentChain(spokePool_1, sortedAllSigners[i], deposit1, 0.1, originChainId));
       }
-      const unfilledAmount = amountToDeposit.sub(fills[fills.length - 1].totalFilledAmount);
+      const unfilledAmount = getRefund(
+        amountToDeposit.sub(fills[fills.length - 1].totalFilledAmount),
+        deposit1.realizedLpFeePct
+      );
       const refundAmountPerFill = getRefund(deposit1.amount, deposit1.realizedLpFeePct)
         .mul(toBNWei("0.1"))
         .div(toBNWei("1"));
@@ -564,16 +567,16 @@ describe("Dataworker: Build merkle roots", async function () {
       // Partial fill deposit1
       const fill1 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.5, destinationChainId);
       const fill1Block = await spokePool_2.provider.getBlockNumber();
-      const unfilledAmount1 = deposit1.amount.sub(fill1.totalFilledAmount);
+      const unfilledAmount1 = getRefund(deposit1.amount.sub(fill1.totalFilledAmount), fill1.realizedLpFeePct);
 
       // Partial fill deposit2
       const fill2 = await buildFillForRepaymentChain(spokePool_1, depositor, deposit2, 0.3, originChainId);
       const fill3 = await buildFillForRepaymentChain(spokePool_1, depositor, deposit2, 0.2, originChainId);
-      const unfilledAmount3 = deposit2.amount.sub(fill3.totalFilledAmount);
+      const unfilledAmount3 = getRefund(deposit2.amount.sub(fill3.totalFilledAmount), fill3.realizedLpFeePct);
 
       // Partial fill deposit3
       const fill4 = await buildFillForRepaymentChain(spokePool_1, depositor, deposit3, 0.5, originChainId);
-      const unfilledAmount4 = deposit3.amount.sub(fill4.totalFilledAmount);
+      const unfilledAmount4 = getRefund(deposit3.amount.sub(fill4.totalFilledAmount), fill4.realizedLpFeePct);
       const blockOfLastFill = await hubPool.provider.getBlockNumber();
 
       // Prior to root bundle being executed, running balances should be:
@@ -724,7 +727,7 @@ describe("Dataworker: Build merkle roots", async function () {
       // The excess amount in the contract is now equal to the partial fill amount sent before the slow fill.
       // Again, now that the slowFill1 was sent, the unfilledAmount1 can be subtracted from running balances since its
       // no longer associated with an unfilled deposit.
-      const excess = fill5.fillAmount;
+      const excess = getRefund(fill5.fillAmount, fill5.realizedLpFeePct);
 
       updateAndCheckExpectedPoolRebalanceCounters(
         expectedRunningBalances,
@@ -905,7 +908,7 @@ describe("Dataworker: Build merkle roots", async function () {
       // New running balance should be fill1 + fill2 + fill3 + slowFillAmount - excess
       // excess should be the amount remaining after fill2. Since the slow fill was never
       // executed, the excess should be equal to the slow fill amount so they should cancel out.
-      const expectedExcess = fill2.amount.sub(fill2.totalFilledAmount);
+      const expectedExcess = getRefund(fill2.amount.sub(fill2.totalFilledAmount), fill2.realizedLpFeePct);
       expect(merkleRoot2.runningBalances[destinationChainId][l1TokenForFill]).to.equal(
         getRefundForFills([fill1, fill2, fill3])
       );
@@ -1196,7 +1199,7 @@ describe("Dataworker: Build merkle roots", async function () {
       // Submit a partial fill on destination chain. This tests that the previous running balance is added to
       // running balances modified by repayments, slow fills, and deposits.
       const fill = await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
-      const slowFillPayment = deposit.amount.sub(fill.totalFilledAmount);
+      const slowFillPayment = getRefund(deposit.amount.sub(fill.totalFilledAmount), deposit.realizedLpFeePct);
       await updateAllClients();
       expect(
         (await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(1), spokePoolClients)).leaves
