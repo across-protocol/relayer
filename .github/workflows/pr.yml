@@ -1,4 +1,4 @@
-name: Build/Lint/Test triggered on each PR
+name: Check PR
 on: [push]
 jobs:
   lint:
