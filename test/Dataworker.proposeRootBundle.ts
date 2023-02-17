@@ -1,6 +1,6 @@
 import { buildFillForRepaymentChain, lastSpyLogIncludes, lastSpyLogLevel } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit, toBNWei } from "./utils";
-import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
+import { HubPoolClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, originChainId, utf8ToHex } from "./constants";
 import { CHAIN_ID_TEST_LIST } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
