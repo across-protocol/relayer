@@ -15,6 +15,8 @@ export const DEFAULT_CONFIG_STORE_VERSION = 0;
 // of this list, so this list is simply the list of all possible Chain ID's that Across could support.
 export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
 
+export const DISABLED_CHAINS = [288];
+
 export const RELAYER_MIN_FEE_PCT = 0.0003;
 
 // Target ~4 hours
