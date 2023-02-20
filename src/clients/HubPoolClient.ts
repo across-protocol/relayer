@@ -9,7 +9,7 @@ import {
   MakeOptional,
 } from "../utils";
 import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
-import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
+import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES, DISABLED_CHAINS } from "../common";
 import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle, LpToken } from "../interfaces";
 import { ExecutedRootBundle, PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
@@ -331,6 +331,9 @@ export class HubPoolClient {
     // bundleEvaluationBlockNumbers array using CHAIN_ID_LIST. For each chainId, their starting block number is that
     // chain's bundleEvaluationBlockNumber + 1 in this past proposal event.
     const endBlock = this.getBundleEndBlockForChain(latestFullyExecutedPoolRebalanceRoot, chainId, chainIdList);
+
+    // If chain is disabled, re-use the endblock.
+    if (DISABLED_CHAINS.includes(chainId)) return endBlock;
 
     // If `chainId` either doesn't exist in the chainIdList, or is at an index that doesn't exist in the root bundle
     // event's bundle block range (e.g. bundle block range has two entries, chain ID list has three, and chain matches

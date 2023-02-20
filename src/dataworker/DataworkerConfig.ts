@@ -82,10 +82,8 @@ export class DataworkerConfig extends CommonConfig {
     if (this.executorEnabled)
       assert(this.spokeRootsLookbackCount > 0, "must set spokeRootsLookbackCount > 0 if executor enabled");
     else if (this.disputerEnabled || this.proposerEnabled)
-      assert(
-        this.spokeRootsLookbackCount === undefined || this.spokeRootsLookbackCount === 0,
-        "should set spokeRootsLookbackCount == 0 if executor disabled and proposer/disputer enabled"
-      );
+      // should set spokeRootsLookbackCount == 0 if executor disabled and proposer/disputer enabled
+      this.spokeRootsLookbackCount = 0;
     if (Object.keys(this.blockRangeEndBlockBuffer).length > 0)
       for (const chainId of this.spokePoolChains)
         assert(

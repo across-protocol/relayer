@@ -178,9 +178,6 @@ export class BundleDataClient {
 
     if (!this.clients.hubPoolClient.isUpdated) throw new Error("HubPoolClient not updated");
     if (!this.clients.configStoreClient.isUpdated) throw new Error("ConfigStoreClient not updated");
-    this.chainIdListForBundleEvaluationBlockNumbers.forEach((chainId) => {
-      if (!spokePoolClients[chainId]) throw new Error(`Missing spoke pool client for chain ${chainId}`);
-    });
     if (blockRangesForChains.length !== this.chainIdListForBundleEvaluationBlockNumbers.length)
       throw new Error(
         `Unexpected block range list length of ${blockRangesForChains.length}, should be ${this.chainIdListForBundleEvaluationBlockNumbers.length}`
