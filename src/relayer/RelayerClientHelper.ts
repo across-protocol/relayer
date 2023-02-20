@@ -35,8 +35,9 @@ export async function constructRelayerClients(
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients, commonClients.hubPoolClient);
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
-  const enabledChainIds =
-    config.relayerDestinationChains.length > 0 ? config.relayerDestinationChains : CHAIN_ID_LIST_INDICES;
+  const enabledChainIds = (
+    config.relayerDestinationChains.length > 0 ? config.relayerDestinationChains : CHAIN_ID_LIST_INDICES
+  ).filter((chainId) => !config.disabledChains.includes(chainId));
   const profitClient = new ProfitClient(
     logger,
     commonClients.hubPoolClient,

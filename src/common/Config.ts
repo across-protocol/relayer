@@ -9,6 +9,7 @@ export interface ProcessEnv {
 export class CommonConfig {
   readonly hubPoolChainId: number;
   readonly spokePoolChains: number[];
+  readonly disabledChains: number[];
   readonly pollingDelay: number;
   readonly maxBlockLookBack: { [key: number]: number };
   readonly nodeQuorumThreshold: number;
@@ -24,6 +25,7 @@ export class CommonConfig {
     const {
       MAX_RELAYER_DEPOSIT_LOOK_BACK,
       CONFIGURED_NETWORKS,
+      DISABLED_NETWORKS,
       HUB_CHAIN_ID,
       POLLING_DELAY,
       MAX_BLOCK_LOOK_BACK,
@@ -39,8 +41,11 @@ export class CommonConfig {
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
     this.hubPoolChainId = Number(HUB_CHAIN_ID ?? 1);
-    this.spokePoolChains = CONFIGURED_NETWORKS ? JSON.parse(CONFIGURED_NETWORKS) : Constants.CHAIN_ID_LIST_INDICES;
+    this.disabledChains = DISABLED_NETWORKS ? JSON.parse(DISABLED_NETWORKS) : Constants.DISABLED_CHAINS;
     this.pollingDelay = Number(POLLING_DELAY ?? 60);
+    this.spokePoolChains = (
+      CONFIGURED_NETWORKS ? JSON.parse(CONFIGURED_NETWORKS) : Constants.CHAIN_ID_LIST_INDICES
+    ).filter((chainId) => !this.disabledChains.includes(chainId));
     this.maxBlockLookBack = MAX_BLOCK_LOOK_BACK ? JSON.parse(MAX_BLOCK_LOOK_BACK) : {};
     if (Object.keys(this.maxBlockLookBack).length > 0)
       for (const chainId of this.spokePoolChains)
