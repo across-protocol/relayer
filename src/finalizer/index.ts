@@ -31,7 +31,7 @@ import {
   ProcessEnv,
   FINALIZER_TOKENBRIDGE_LOOKBACK,
   DISABLED_CHAINS,
-  CHAIN_ID_LIST_INDICES
+  CHAIN_ID_LIST_INDICES,
 } from "../common";
 import { Multicall2Ethers__factory } from "@uma/contracts-node";
 import { BlockFinder } from "@uma/financial-templates-lib";
