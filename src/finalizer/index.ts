@@ -173,7 +173,7 @@ export async function finalize(
         firstBlockToFinalize,
       });
       const olderTokensBridgedEvents = tokensBridged.filter((e) => e.blockNumber < firstBlockToFinalize);
-      const crossChainMessenger = getOptimismClient(chainId, hubSigner) as optimismSDK.CrossChainMessenger;
+      const crossChainMessenger = getOptimismClient(chainId, hubSigner) as bobaSDK.CrossChainMessenger;
       const finalizations = await multicallOptimismFinalizations(
         chainId,
         olderTokensBridgedEvents,
