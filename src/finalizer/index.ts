@@ -168,7 +168,6 @@ export async function finalize(
     }
   }
 
-  return;
   if (finalizationsToBatch.callData.length > 0) {
     try {
       // Note: We might want to slice these up in the future but I don't forsee us including enough events
