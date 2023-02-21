@@ -56,13 +56,11 @@ const slowRootCache = {};
 export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
   logger = _logger;
 
-  // Enable all networks so we can validate historical bundles. Comment this out if a disabled network has RPC issues
-  // for some reason.
-  process.env.DISABLED_NETWORKS = "[]";
-
   const { clients, dataworker, config } = await createDataworker(logger, baseSigner);
   await updateDataworkerClients(clients, false);
 
+  // Enable all networks so we can validate historical bundles. Comment this out if a disabled network has RPC issues
+  // for some reason.
   const spokePools = Object.fromEntries(
     dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
       return [chainId, getDeployedContract("SpokePool", chainId, baseSigner).connect(getProvider(chainId))];
