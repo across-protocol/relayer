@@ -284,7 +284,6 @@ export class ProfitClient {
     }
 
     return fill.fillProfitable;
-
   }
 
   captureUnprofitableFill(deposit: Deposit, fillAmount: BigNumber): void {
