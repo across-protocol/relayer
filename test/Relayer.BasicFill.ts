@@ -85,7 +85,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     );
     spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
-    profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, true, []); // Set relayer discount to 100%.
+    profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []); // Set relayer discount to 100%.
     profitClient.testInit();
 
     relayerInstance = new Relayer(
