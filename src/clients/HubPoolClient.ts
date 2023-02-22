@@ -92,11 +92,10 @@ export class HubPoolClient {
   }
 
   getL1TokenForDeposit(deposit: { originChainId: number; originToken: string }) {
-    let l1Token = null;
-    Object.keys(this.l1TokensToDestinationTokens).forEach((_l1Token) => {
-      if (this.l1TokensToDestinationTokens[_l1Token][deposit.originChainId] === deposit.originToken) l1Token = _l1Token;
+    const l1Token = Object.keys(this.l1TokensToDestinationTokens).find((_l1Token) => {
+      return this.l1TokensToDestinationTokens[_l1Token][deposit.originChainId] === deposit.originToken;
     });
-    if (l1Token === null)
+    if (!l1Token)
       throw new Error(
         `Could not find L1 Token for origin chain ${deposit.originChainId} and origin token ${deposit.originToken}!`
       );
