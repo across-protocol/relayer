@@ -33,6 +33,8 @@ export class MockProfitClient extends ProfitClient {
       "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E": toBNWei(1),
       "0x2B0d36FACD61B71CC05ab8F3D2355ec3631C0dd5": toBNWei(1),
       "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": toBNWei(1),
+      "0x9BcC604D4381C5b0Ad12Ff3Bf32bEdE063416BC7": toBNWei(1),
+      "0x683d9CDD3239E0e01E8dC6315fA50AD92aB71D2d": toBNWei(1),
     });
 
     this.setGasCosts({
