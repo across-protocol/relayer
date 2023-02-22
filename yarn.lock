@@ -11,6 +11,17 @@
     "@uma/common" "^2.17.0"
     hardhat "^2.9.3"
 
+"@across-protocol/boba-sdk@^1.0.4":
+  version "1.0.4"
+  resolved "https://registry.yarnpkg.com/@across-protocol/boba-sdk/-/boba-sdk-1.0.4.tgz#7f88b04b66598b097da169375908a8b368d87bc6"
+  integrity sha512-T/vZFqZNnFSdsmPGmUN90BsxjcDk+b1LnfBzwk/v1WmfUCuvYHNFU7Tp7iQBvQqv2wFL1U1H/lqWPhPoQgtJTA==
+  dependencies:
+    "@eth-optimism/contracts" "0.5.11"
+    "@eth-optimism/core-utils" "0.8.1"
+    lodash "^4.17.21"
+    merkletreejs "^0.2.27"
+    rlp "^2.2.7"
+
 "@across-protocol/contracts-v2@^1.0.5":
   version "1.0.5"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-1.0.5.tgz#32c4891126568b6b1556df8850ed0ea7408e3aaa"
@@ -401,6 +412,16 @@
     ethers "^5.7.0"
     hardhat "^2.9.6"
 
+"@eth-optimism/contracts@0.5.11":
+  version "0.5.11"
+  resolved "https://registry.yarnpkg.com/@eth-optimism/contracts/-/contracts-0.5.11.tgz#935a776be3f0d27dd26fa9e892c02c6b0fe86e93"
+  integrity sha512-W1xgY4qgJO9IHG1qOe98kjDMOH0mqpO3oiaSxeIFmzzshNiWGw3XSDbEvHqdsAapFYzfrmwavY3FAg7G5iqGEA==
+  dependencies:
+    "@eth-optimism/core-utils" "0.7.5"
+    "@ethersproject/abstract-provider" "^5.4.1"
+    "@ethersproject/abstract-signer" "^5.4.1"
+    "@ethersproject/hardware-wallets" "^5.4.0"
+
 "@eth-optimism/contracts@0.5.37":
   version "0.5.37"
   resolved "https://registry.yarnpkg.com/@eth-optimism/contracts/-/contracts-0.5.37.tgz#3aaca1ca1f49ef895d4165cc7bf29c8d1f5b0f56"
@@ -441,6 +462,33 @@
     "@ethersproject/web" "^5.7.0"
     bufio "^1.0.7"
     chai "^4.3.4"
+
+"@eth-optimism/core-utils@0.7.5":
+  version "0.7.5"
+  resolved "https://registry.yarnpkg.com/@eth-optimism/core-utils/-/core-utils-0.7.5.tgz#31b11171fdd816fd17459437f7ac67d26ebad422"
+  integrity sha512-rinXC0msmLipPAkxVzwkSGmmoCvd1WuYPYcBh3rKc5ZCroDZ0UpxTfjDwBB0lAWUQ04OH+/70RUFMENOn6WYUA==
+  dependencies:
+    "@ethersproject/abstract-provider" "^5.4.1"
+    "@ethersproject/bytes" "^5.5.0"
+    "@ethersproject/providers" "^5.4.5"
+    "@ethersproject/web" "^5.5.0"
+    chai "^4.3.4"
+    ethers "^5.4.5"
+    lodash "^4.17.21"
+
+"@eth-optimism/core-utils@0.8.1":
+  version "0.8.1"
+  resolved "https://registry.yarnpkg.com/@eth-optimism/core-utils/-/core-utils-0.8.1.tgz#ee7d8815f9ddb67ca3e2f3ec1d8515a46af5caf6"
+  integrity sha512-GJJvw9cBekvR1xH/f2jpgp6MnbWlMBaVm1h3BA0sEzmlaFufTG4ybGrHkL3nQT0Vqtjs3LYjaExkVmsUzpb7xg==
+  dependencies:
+    "@ethersproject/abstract-provider" "^5.5.1"
+    "@ethersproject/bytes" "^5.5.0"
+    "@ethersproject/providers" "^5.5.3"
+    "@ethersproject/transactions" "^5.5.0"
+    "@ethersproject/web" "^5.5.1"
+    bufio "^1.0.7"
+    chai "^4.3.4"
+    ethers "^5.5.4"
 
 "@eth-optimism/core-utils@0.8.3":
   version "0.8.3"
@@ -780,7 +828,7 @@
     "@ethersproject/transactions" "^5.6.2"
     "@ethersproject/web" "^5.6.1"
 
-"@ethersproject/abstract-provider@5.7.0", "@ethersproject/abstract-provider@^5.7.0":
+"@ethersproject/abstract-provider@5.7.0", "@ethersproject/abstract-provider@^5.4.1", "@ethersproject/abstract-provider@^5.7.0":
   version "5.7.0"
   resolved "https://registry.yarnpkg.com/@ethersproject/abstract-provider/-/abstract-provider-5.7.0.tgz#b0a8550f88b6bf9d51f90e4795d48294630cb9ef"
   integrity sha512-R41c9UkchKCpAqStMYUpdunjo3pkEvZC3FAwZn5S5MGbXoMQOHIdHItezTETxAO5bevtMApSyEhn9+CHcDsWBw==
@@ -1124,6 +1172,18 @@
     "@ethersproject/logger" "^5.7.0"
     "@ethersproject/properties" "^5.7.0"
     "@ethersproject/transactions" "^5.7.0"
+
+"@ethersproject/hardware-wallets@^5.4.0":
+  version "5.7.0"
+  resolved "https://registry.yarnpkg.com/@ethersproject/hardware-wallets/-/hardware-wallets-5.7.0.tgz#1c902fc255e2f108af44d4c1dc46ec2c34cb669c"
+  integrity sha512-DjMMXIisRc8xFvEoLoYz1w7JDOYmaz/a0X9sp7Zu668RR8U1zCAyj5ow25HLRW+TCzEC5XiFetTXqS5kXonFCQ==
+  dependencies:
+    "@ledgerhq/hw-app-eth" "5.27.2"
+    "@ledgerhq/hw-transport" "5.26.0"
+    "@ledgerhq/hw-transport-u2f" "5.26.0"
+    ethers "^5.7.0"
+  optionalDependencies:
+    "@ledgerhq/hw-transport-node-hid" "5.26.0"
 
 "@ethersproject/hardware-wallets@^5.5.0":
   version "5.6.0"
@@ -1596,7 +1656,7 @@
     bech32 "1.1.4"
     ws "7.4.6"
 
-"@ethersproject/providers@5.7.2", "@ethersproject/providers@^5.7.0":
+"@ethersproject/providers@5.7.2", "@ethersproject/providers@^5.4.5", "@ethersproject/providers@^5.7.0":
   version "5.7.2"
   resolved "https://registry.yarnpkg.com/@ethersproject/providers/-/providers-5.7.2.tgz#f8b1a4f275d7ce58cf0a2eec222269a08beb18cb"
   integrity sha512-g34EWZ1WWAVgr4aptGlVBF8mhl3VWjv+8hoAnzStu8Ah22VHBsuGzP17eb6xDVRzw895G4W7vvx60lFFur/1Rg==
@@ -2097,7 +2157,7 @@
     "@ethersproject/properties" "^5.6.0"
     "@ethersproject/strings" "^5.6.1"
 
-"@ethersproject/web@5.7.1", "@ethersproject/web@^5.7.0":
+"@ethersproject/web@5.7.1", "@ethersproject/web@^5.5.0", "@ethersproject/web@^5.7.0":
   version "5.7.1"
   resolved "https://registry.yarnpkg.com/@ethersproject/web/-/web-5.7.1.tgz#de1f285b373149bee5928f4eb7bcb87ee5fbb4ae"
   integrity sha512-Gueu8lSvyjBWL4cYsWsjh6MtMwM0+H4HvqFPZfB6dV8ctbP9zFAO73VG1cMWae0FLPCtz0peKPpZY8/ugJJX2w==
@@ -2929,6 +2989,22 @@
     fs-extra "^7.0.1"
     semver "^6.3.0"
     undici "^4.14.1"
+
+"@nomiclabs/hardhat-etherscan@^3.1.5":
+  version "3.1.6"
+  resolved "https://registry.yarnpkg.com/@nomiclabs/hardhat-etherscan/-/hardhat-etherscan-3.1.6.tgz#7e50aeb06501a0060655664599d9e35cfd475929"
+  integrity sha512-5WFIZeLLgWPiCJqm/4ie7UNXn7FXfzYmqnKwOKU2MLETGolzY1cueSYUTww/P8f+Zc9xfJLmzqSYcGLW/3j/IQ==
+  dependencies:
+    "@ethersproject/abi" "^5.1.2"
+    "@ethersproject/address" "^5.0.2"
+    cbor "^8.1.0"
+    chalk "^2.4.2"
+    debug "^4.1.1"
+    fs-extra "^7.0.1"
+    lodash "^4.17.11"
+    semver "^6.3.0"
+    table "^6.8.0"
+    undici "^5.14.0"
 
 "@nomiclabs/hardhat-truffle5@^2.0.0":
   version "2.0.5"
@@ -4398,6 +4474,42 @@
     "@google-cloud/storage" "^6.4.2"
     "@nomiclabs/hardhat-ethers" "^2.2.1"
     "@nomiclabs/hardhat-etherscan" "^3.0.0"
+    "@nomiclabs/hardhat-web3" "^2.0.0"
+    "@truffle/contract" "^4.6.5"
+    "@truffle/hdwallet-provider" eip1559-beta
+    "@types/ethereum-protocol" "^1.0.0"
+    "@umaprotocol/truffle-ledger-provider" "^1.0.5"
+    "@uniswap/v3-core" "^1.0.0-rc.2"
+    abi-decoder "github:UMAprotocol/abi-decoder"
+    bignumber.js "^8.0.1"
+    chalk-pipe "^3.0.0"
+    decimal.js "^10.2.1"
+    dotenv "^9.0.0"
+    eth-crypto "^2.4.0"
+    hardhat-deploy "0.9.1"
+    hardhat-gas-reporter "^1.0.4"
+    hardhat-typechain "^0.3.5"
+    lodash.uniqby "^4.7.0"
+    minimist "^1.2.0"
+    moment "^2.24.0"
+    node-metamask "github:UMAprotocol/node-metamask"
+    require-context "^1.1.0"
+    solidity-coverage "^0.7.13"
+    truffle-deploy-registry "^0.5.1"
+    web3 "^1.6.0"
+    winston "^3.2.1"
+
+"@uma/common@^2.30.1":
+  version "2.30.1"
+  resolved "https://registry.yarnpkg.com/@uma/common/-/common-2.30.1.tgz#90d8ad919912d6fb80395d1db24ba40675775377"
+  integrity sha512-Xa0N6UvsiORDoonUAnWkDI0y+hlB6jS0lPdtuJXisyf5K7JsPur49Z4hmPJQ67kzFzJ8GCSC5d0EsMnaY+VUxQ==
+  dependencies:
+    "@across-protocol/contracts" "^0.1.4"
+    "@ethersproject/bignumber" "^5.0.5"
+    "@google-cloud/kms" "^3.0.1"
+    "@google-cloud/storage" "^6.4.2"
+    "@nomiclabs/hardhat-ethers" "^2.2.1"
+    "@nomiclabs/hardhat-etherscan" "^3.1.5"
     "@nomiclabs/hardhat-web3" "^2.0.0"
     "@truffle/contract" "^4.6.5"
     "@truffle/hdwallet-provider" eip1559-beta
@@ -6586,7 +6698,7 @@ cbor@^5.0.2, cbor@^5.1.0, cbor@^5.2.0:
     bignumber.js "^9.0.1"
     nofilter "^1.0.4"
 
-cbor@^8.0.0:
+cbor@^8.0.0, cbor@^8.1.0:
   version "8.1.0"
   resolved "https://registry.yarnpkg.com/cbor/-/cbor-8.1.0.tgz#cfc56437e770b73417a2ecbfc9caf6b771af60d5"
   integrity sha512-DwGjNW9omn6EwP70aXsn7FQJx5kO12tX0bZkaTjzdVFM6/7nhA4t0EENocKGx6D2Bch9PE2KzCUf5SceBdeijg==
@@ -9041,7 +9153,7 @@ ethers@5.0.32:
     "@ethersproject/web" "5.0.14"
     "@ethersproject/wordlists" "5.0.10"
 
-ethers@5.7.2, ethers@^5.4.2, ethers@^5.4.6, ethers@^5.7.0, ethers@^5.7.2:
+ethers@5.7.2, ethers@^5.4.2, ethers@^5.4.5, ethers@^5.4.6, ethers@^5.7.0, ethers@^5.7.2:
   version "5.7.2"
   resolved "https://registry.yarnpkg.com/ethers/-/ethers-5.7.2.tgz#3a7deeabbb8c030d4126b24f84e525466145872e"
   integrity sha512-wswUsmWo1aOK8rR7DIKiWSw9DbLWe6x98Jrn8wcTflTVvaXhAMaB5zGAXy0GYQEQp9iO1iSHWVyARQm11zUtyg==
@@ -17052,6 +17164,17 @@ table@^6.0.9:
     string-width "^4.2.3"
     strip-ansi "^6.0.1"
 
+table@^6.8.0:
+  version "6.8.1"
+  resolved "https://registry.yarnpkg.com/table/-/table-6.8.1.tgz#ea2b71359fe03b017a5fbc296204471158080bdf"
+  integrity sha512-Y4X9zqrCftUhMeH2EptSSERdVKt/nEdijTOacGD/97EKjhQ/Qs8RTlEGABSJNNN8lac9kheH+af7yAkEWlgneA==
+  dependencies:
+    ajv "^8.0.1"
+    lodash.truncate "^4.4.2"
+    slice-ansi "^4.0.0"
+    string-width "^4.2.3"
+    strip-ansi "^6.0.1"
+
 tape@^4.4.0, tape@^4.6.3:
   version "4.15.1"
   resolved "https://registry.yarnpkg.com/tape/-/tape-4.15.1.tgz#88fb662965a11f9be1bddb04c11662d7eceb129e"
@@ -17701,6 +17824,13 @@ undici@^4.14.1:
   version "4.16.0"
   resolved "https://registry.yarnpkg.com/undici/-/undici-4.16.0.tgz#469bb87b3b918818d3d7843d91a1d08da357d5ff"
   integrity sha512-tkZSECUYi+/T1i4u+4+lwZmQgLXd4BLGlrc7KZPcLIW7Jpq99+Xpc30ONv7nS6F5UNOxp/HBZSSL9MafUrvJbw==
+
+undici@^5.14.0:
+  version "5.20.0"
+  resolved "https://registry.yarnpkg.com/undici/-/undici-5.20.0.tgz#6327462f5ce1d3646bcdac99da7317f455bcc263"
+  integrity sha512-J3j60dYzuo6Eevbawwp1sdg16k5Tf768bxYK4TUJRH7cBM4kFCbf3mOnM/0E3vQYXvpxITbbWmBafaDbxLDz3g==
+  dependencies:
+    busboy "^1.6.0"
 
 undici@^5.4.0:
   version "5.12.0"
