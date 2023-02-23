@@ -20,6 +20,7 @@ export async function runTransaction(
   gasLimit: BigNumber | null = null,
   nonce: number | null = null
 ): Promise<TransactionResponse> {
+  const chainId = (await contract.provider.getNetwork()).chainId;
   try {
     const priorityFeeScaler =
       Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) || undefined;
