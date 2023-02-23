@@ -1,4 +1,4 @@
-import { winston, processEndPollingLoop, processCrash, config, startupLogLevel, Wallet } from "../utils";
+import { winston, processEndPollingLoop, config, startupLogLevel, Wallet } from "../utils";
 import { Monitor } from "./Monitor";
 import { MonitorConfig } from "./MonitorConfig";
 import { constructMonitorClients } from "./MonitorClientHelper";

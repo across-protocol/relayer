@@ -57,13 +57,15 @@ export class Monitor {
   private spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
   private balanceCache: { [chainId: number]: { [token: string]: { [account: string]: BigNumber } } } = {};
   private decimals: { [chainId: number]: { [token: string]: number } } = {};
+  public monitorChains: number[];
 
   public constructor(
     readonly logger: winston.Logger,
     readonly monitorConfig: MonitorConfig,
-    readonly clients: MonitorClients
+    readonly clients: MonitorClients,
   ) {
-    for (const chainId of monitorConfig.spokePoolChains) {
+    this.monitorChains = Object.keys(clients.spokePoolClients).map((chainId) => Number(chainId));
+    for (const chainId of this.monitorChains) {
       this.spokePoolsBlocks[chainId] = { startingBlock: undefined, endingBlock: undefined };
     }
   }
@@ -87,7 +89,7 @@ export class Monitor {
       ])
     );
     const tokensPerChain = Object.fromEntries(
-      this.monitorConfig.spokePoolChains.map((chainId) => {
+      this.monitorChains.map((chainId) => {
         const l2Tokens = this.clients.hubPoolClient.getDestinationTokensToL1TokensForChainId(chainId);
         return [chainId, Object.keys(l2Tokens)];
       })
@@ -150,7 +152,7 @@ export class Monitor {
   }
 
   async checkUnknownRelayers() {
-    const chainIds = this.monitorConfig.spokePoolChains;
+    const chainIds = this.monitorChains;
     this.logger.debug({ at: "AcrossMonitor#UnknownRelayers", message: "Checking for unknown relayers", chainIds });
     for (const chainId of chainIds) {
       const fills = this.clients.spokePoolClients[chainId].getFillsWithBlockInRange(
@@ -212,7 +214,7 @@ export class Monitor {
   async reportRelayerBalances() {
     const relayers = this.monitorConfig.monitoredRelayers;
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
-    const chainIds = this.monitorConfig.spokePoolChains;
+    const chainIds = this.monitorChains;
     const allChainNames = chainIds.map(getNetworkName).concat([ALL_CHAINS_NAME, UNKNOWN_TRANSFERS_NAME]);
     const reports = this.initializeBalanceReports(relayers, allL1Tokens, allChainNames);
 
@@ -262,7 +264,7 @@ export class Monitor {
   // Update current balances of all tokens on each supported chain for each relayer.
   async updateCurrentRelayerBalances(relayerBalanceReport: RelayerBalanceReport) {
     for (const relayer of this.monitorConfig.monitoredRelayers) {
-      for (const chainId of this.monitorConfig.spokePoolChains) {
+      for (const chainId of this.monitorChains) {
         const l2ToL1Tokens = this.clients.hubPoolClient.getDestinationTokensToL1TokensForChainId(chainId);
 
         const l2TokenAddresses = Object.keys(l2ToL1Tokens);
@@ -361,7 +363,7 @@ export class Monitor {
     }
 
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
-    for (const chainId of this.monitorConfig.spokePoolChains) {
+    for (const chainId of this.monitorChains) {
       const spokePoolAddress = this.clients.spokePoolClients[chainId].spokePool.address;
       for (const l1Token of allL1Tokens) {
         const transferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
@@ -411,7 +413,7 @@ export class Monitor {
 
   updateCrossChainTransfers(relayer: string, relayerBalanceTable: RelayerBalanceTable) {
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
-    for (const chainId of this.monitorConfig.spokePoolChains) {
+    for (const chainId of this.monitorChains) {
       for (const l1Token of allL1Tokens) {
         const transferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
           relayer,
@@ -440,7 +442,7 @@ export class Monitor {
       const transfersPerChain: TransfersByChain = this.clients.tokenTransferClient.getTokenTransfers(relayer);
 
       let mrkdwn = "";
-      for (const chainId of this.monitorConfig.spokePoolChains) {
+      for (const chainId of this.monitorChains) {
         const spokePoolClient = this.clients.spokePoolClients[chainId];
         const transfersPerToken: TransfersByTokens = transfersPerChain[chainId];
         const l2ToL1Tokens = hubPoolClient.getDestinationTokensToL1TokensForChainId(chainId);
@@ -599,7 +601,7 @@ export class Monitor {
     relayer: string,
     balanceType: BalanceType
   ) {
-    for (const chainId of this.monitorConfig.spokePoolChains) {
+    for (const chainId of this.monitorChains) {
       const fillsToRefund = fillsToRefundPerChain[chainId];
       // Skip chains that don't have any refunds.
       if (fillsToRefund === undefined) continue;
@@ -697,7 +699,7 @@ export class Monitor {
   }
 
   private async computeSpokePoolsBlocks() {
-    for (const chainId of this.monitorConfig.spokePoolChains) {
+    for (const chainId of this.monitorChains) {
       const { startingBlock, endingBlock } = await this.computeStartingAndEndingBlock(
         this.clients.spokePoolClients[chainId].spokePool.provider,
         this.monitorConfig.spokePoolsBlocks[chainId]?.startingBlock,
