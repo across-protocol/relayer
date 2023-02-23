@@ -21,14 +21,12 @@ export async function runTransaction(
   nonce: number | null = null
 ): Promise<TransactionResponse> {
   try {
-    const priorityFeeScaler = Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) || undefined;
-    const maxFeePerGasScaler = Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) || undefined;
+    const priorityFeeScaler =
+      Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) || undefined;
+    const maxFeePerGasScaler =
+      Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) || undefined;
 
-    const gas = await getGasPrice(
-      contract.provider,
-      priorityFeeScaler,
-      maxFeePerGasScaler
-    );
+    const gas = await getGasPrice(contract.provider, priorityFeeScaler, maxFeePerGasScaler);
     logger.debug({
       at: "TxUtil",
       message: "Send tx",
