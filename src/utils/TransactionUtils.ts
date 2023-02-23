@@ -1,6 +1,7 @@
 import { AugmentedTransaction } from "../clients";
 import { winston, Contract, getContractInfoFromAddress, fetch, ethers } from "../utils";
 import { toBNWei, BigNumber, toBN, toGWei, TransactionResponse } from "../utils";
+require("dotenv").config();
 
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
@@ -19,8 +20,14 @@ export async function runTransaction(
   gasLimit: BigNumber | null = null,
   nonce: number | null = null
 ): Promise<TransactionResponse> {
+  const chainId = (await contract.provider.getNetwork()).chainId;
   try {
-    const gas = await getGasPrice(contract.provider);
+    const priorityFeeScaler =
+      Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) || undefined;
+    const maxFeePerGasScaler =
+      Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) || undefined;
+
+    const gas = await getGasPrice(contract.provider, priorityFeeScaler, maxFeePerGasScaler);
     logger.debug({
       at: "TxUtil",
       message: "Send tx",
