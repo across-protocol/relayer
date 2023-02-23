@@ -30,7 +30,6 @@ import {
   Clients,
   ProcessEnv,
   FINALIZER_TOKENBRIDGE_LOOKBACK,
-  DISABLED_CHAINS,
   CHAIN_ID_LIST_INDICES,
 } from "../common";
 import { Multicall2Ethers__factory } from "@uma/contracts-node";
@@ -215,6 +214,7 @@ export async function finalize(
 
 export async function constructFinalizerClients(_logger: winston.Logger, config, baseSigner: Wallet) {
   const commonClients = await constructClients(_logger, config, baseSigner);
+  await updateFinalizerClients(commonClients);
 
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
@@ -252,14 +252,13 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet):
   // Same config as Dataworker for now.
   const config = new FinalizerConfig(process.env);
 
+  logger[startupLogLevel(config)]({ at: "Finalizer#index", message: "Finalizer started 🏋🏿‍♀️", config });
   const { commonClients, spokePoolClients } = await constructFinalizerClients(logger, config, baseSigner);
 
   try {
-    logger[startupLogLevel(config)]({ at: "Finalizer#index", message: "Finalizer started 🏋🏿‍♀️", config });
 
     for (;;) {
       const loopStart = Date.now();
-      await updateFinalizerClients(commonClients);
       await updateSpokePoolClients(spokePoolClients, ["TokensBridged", "EnabledDepositRoute"]);
 
       if (config.finalizerEnabled)

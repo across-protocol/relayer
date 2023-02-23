@@ -25,6 +25,7 @@ export async function constructMonitorClients(
   baseSigner: Wallet
 ): Promise<MonitorClients> {
   const commonClients = await constructClients(logger, config, baseSigner);
+  await updateClients(commonClients);
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
     commonClients.configStoreClient,
@@ -36,8 +37,9 @@ export async function constructMonitorClients(
   const bundleDataClient = new BundleDataClient(logger, commonClients, spokePoolClients, config.spokePoolChains);
 
   // Need to update HubPoolClient to get latest tokens.
+  const spokePoolChains = Object.keys(spokePoolClients).map((chainId) => Number(chainId));
   const providerPerChain = Object.fromEntries(
-    config.spokePoolChains.map((chainId) => [chainId, spokePoolClients[chainId].spokePool.provider])
+    spokePoolChains.map((chainId) => [chainId, spokePoolClients[chainId].spokePool.provider])
   );
   const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
 
@@ -49,7 +51,7 @@ export async function constructMonitorClients(
     [baseSigner.address, ...spokePoolAddresses],
     commonClients.hubPoolClient.hubPool.address
   );
-  const crossChainTransferClient = new CrossChainTransferClient(logger, config.spokePoolChains, adapterManager);
+  const crossChainTransferClient = new CrossChainTransferClient(logger, spokePoolChains, adapterManager);
 
   return { ...commonClients, bundleDataClient, crossChainTransferClient, spokePoolClients, tokenTransferClient };
 }

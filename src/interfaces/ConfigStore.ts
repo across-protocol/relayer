@@ -51,3 +51,7 @@ export interface GlobalConfigUpdate extends SortableEvent {
 export interface ConfigStoreVersionUpdate extends GlobalConfigUpdate {
   timestamp: number;
 }
+
+export interface DisabledChainsUpdate extends SortableEvent {
+  chainIds: number[];
+}

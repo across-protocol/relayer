@@ -15,6 +15,7 @@ import {
   getBlockForTimestamp,
   shouldCache,
   setRedisKey,
+  assert,
 } from "../utils";
 
 import { CONFIG_STORE_VERSION, DEFAULT_CONFIG_STORE_VERSION } from "../common/Constants";
@@ -28,6 +29,7 @@ import {
   SpokePoolTargetBalance,
   RouteRateModelUpdate,
   ConfigStoreVersionUpdate,
+  DisabledChainsUpdate,
 } from "../interfaces";
 
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
@@ -39,6 +41,7 @@ export const GLOBAL_CONFIG_STORE_KEYS = {
   MAX_RELAYER_REPAYMENT_LEAF_SIZE: "MAX_RELAYER_REPAYMENT_LEAF_SIZE",
   MAX_POOL_REBALANCE_LEAF_SIZE: "MAX_POOL_REBALANCE_LEAF_SIZE",
   VERSION: "VERSION",
+  DISABLED_CHAINS: "DISABLED_CHAINS",
 };
 
 type RedisClient = ReturnType<typeof createClient>;
@@ -53,6 +56,7 @@ export class AcrossConfigStoreClient {
   public cumulativeMaxL1TokenCountUpdates: GlobalConfigUpdate[] = [];
   public cumulativeSpokeTargetBalanceUpdates: SpokeTargetBalanceUpdate[] = [];
   public cumulativeConfigStoreVersionUpdates: ConfigStoreVersionUpdate[] = [];
+  public cumulativeDisabledChainUpdates: DisabledChainsUpdate[] = [];
 
   private rateModelDictionary: across.rateModel.RateModelDictionary;
   public firstBlockToSearch: number;
@@ -160,6 +164,14 @@ export class AcrossConfigStoreClient {
     );
     if (!config) throw new Error(`Could not find MaxL1TokenCount before block ${blockNumber}`);
     return Number(config.value);
+  }
+
+  getDisabledChainsForTimestamp(blockNumber: number = Number.MAX_SAFE_INTEGER): number[] {
+    const config = sortEventsDescending(this.cumulativeDisabledChainUpdates).find(
+      (config) => config.blockNumber <= blockNumber
+    );
+    if (!config) return [];
+    return config.chainIds;
   }
 
   getConfigStoreVersionForTimestamp(timestamp: number = Number.MAX_SAFE_INTEGER): number {
@@ -303,6 +315,16 @@ export class AcrossConfigStoreClient {
           ...args,
           timestamp: globalConfigUpdateTimes[i],
         });
+      } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS)) {
+        try {
+          // If any chain ID's are not numbers then skip.
+          const chainIds = JSON.parse(args.value) as number[];
+          if (chainIds.some((chainId: number) => !isNaN(chainId))) continue;
+
+          this.cumulativeDisabledChainUpdates.push({ ...args, chainIds });
+        } catch (err) {
+          // Can't parse as number list, skip.
+        }
       } else {
         continue;
       }

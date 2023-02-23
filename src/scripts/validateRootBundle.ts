@@ -45,10 +45,6 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   }
   const priceRequestTime = Number(process.env.REQUEST_TIME);
 
-  // Enable all networks so we can validate historical bundles. Comment this out if a disabled network has RPC issues
-  // for some reason.
-  process.env.DISABLED_NETWORKS = "[]";
-
   // Override default config with sensible defaults:
   // - DATAWORKER_FAST_LOOKBACK_COUNT=8 balances limiting RPC requests with querying
   // enough data to limit # of excess historical deposit queries.

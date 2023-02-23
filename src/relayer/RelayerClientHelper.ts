@@ -21,6 +21,7 @@ export async function constructRelayerClients(
   baseSigner: Wallet
 ): Promise<RelayerClients> {
   const commonClients = await constructClients(logger, config, baseSigner);
+  await updateClients(commonClients);
 
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
@@ -37,7 +38,7 @@ export async function constructRelayerClients(
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
   const enabledChainIds = (
     config.relayerDestinationChains.length > 0 ? config.relayerDestinationChains : CHAIN_ID_LIST_INDICES
-  ).filter((chainId) => !config.disabledChains.includes(chainId));
+  ).filter((chainId) => Object.keys(spokePoolClients).includes(chainId.toString()));
   const profitClient = new ProfitClient(
     logger,
     commonClients.hubPoolClient,
@@ -48,6 +49,7 @@ export async function constructRelayerClients(
     config.debugProfitability,
     config.relayerGasMultiplier
   );
+  await profitClient.update();
 
   const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
     baseSigner.address,
@@ -72,8 +74,6 @@ export async function constructRelayerClients(
 }
 
 export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig) {
-  await updateClients(clients);
-  await clients.profitClient.update();
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
 
   // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter

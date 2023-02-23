@@ -82,7 +82,8 @@ export class Dataworker {
       Object.keys(blockRangeEndBlockBuffer).length > 0
     )
       this.logger.debug({
-        at: "Dataworker constructed with overridden config store settings",
+        at: "Dataworker#Constructor",
+        message: "Dataworker constructed with overridden config store settings",
         maxRefundCountOverride: this.maxRefundCountOverride,
         maxL1TokenCountOverride: this.maxL1TokenCountOverride,
         tokenTransferThreshold: this.tokenTransferThreshold,
