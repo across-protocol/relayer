@@ -51,7 +51,7 @@ export async function runTransaction(
       // If error is `nonce already been used` try to resubmit with new nonce
       const newNonce = await contract.signer.getTransactionCount();
       return await runTransaction(logger, contract, method, args, value, gasLimit, newNonce);
-    } else if (error?.code === "INSUFFICIENT_FUNDS") {
+    } else if (error?.code === "INSUFFICIENT_FUNDS" || error?.message.includes("intrinsic gas too low")) {
       // If error is `insufficient funds for intrinsic transaction cost` the gas price is probably spiking, just
       // resubmit to get the new gas price.
       return await runTransaction(logger, contract, method, args, value, gasLimit, nonce);
