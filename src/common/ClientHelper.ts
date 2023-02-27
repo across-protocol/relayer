@@ -41,19 +41,21 @@ export async function constructSpokePoolClientsWithLookback(
   config: CommonConfig,
   baseSigner: Wallet,
   initialLookBackOverride: number,
-  hubPoolChainId: number
+  hubPoolChainId: number,
+  includeDisabledChains = false
 ): Promise<SpokePoolClientsByChain> {
-  const disabledChains = [288]//configStoreClient.getDisabledChainsForTimestamp()
+  const disabledChains = includeDisabledChains ? [] : [288]; // configStoreClient.getDisabledChainsForTimestamp()
   const configWithDisabledChains = {
     ...config,
     spokePoolChains: config.spokePoolChains.filter((chainId) => !disabledChains.includes(chainId)),
   };
-  logger.debug({
-    at: "ClientHelper#constructSpokePoolClientsWithLookback",
-    message: "Disabled chains listed in config store",
-    disabledChains 
-  })
-  
+  if (disabledChains.length > 0)
+    logger.debug({
+      at: "ClientHelper#constructSpokePoolClientsWithLookback",
+      message: "Disabled chains listed in config store",
+      disabledChains,
+    });
+
   // Set up Spoke signers and connect them to spoke pool contract objects:
   const spokePoolSigners = await getSpokePoolSigners(baseSigner, configWithDisabledChains);
   const spokePools = configWithDisabledChains.spokePoolChains.map((chainId) => {

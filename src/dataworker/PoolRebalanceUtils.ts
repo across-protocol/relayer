@@ -389,26 +389,24 @@ export async function getWidestPossibleExpectedBlockRange(
   clients: DataworkerClients,
   latestMainnetBlock: number
 ): Promise<number[][]> {
-  const latestBlockNumbers = chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) =>
-    spokeClients[chainId] && Math.max(spokeClients[chainId].latestBlockNumber - endBlockBuffers[index], 0)
+  const latestBlockNumbers = chainIdListForBundleEvaluationBlockNumbers.map(
+    (chainId: number, index) =>
+      spokeClients[chainId] && Math.max(spokeClients[chainId].latestBlockNumber - endBlockBuffers[index], 0)
   );
   // We subtract a buffer from the end blocks to reduce the chance that network providers
   // for different bot runs produce different contract state because of variability near the HEAD of the network.
   // Reducing the latest block that we query also gives partially filled deposits slightly more buffer for relayers
   // to fully fill the deposit and reduces the chance that the data worker includes a slow fill payment that gets
   // filled during the challenge period.
-  const disabledChains = [288] //clients.configStoreClient.getDisabledChainsForTimestamp(latestMainnetBlock);
+  const disabledChains = [288]; // clients.configStoreClient.getDisabledChainsForTimestamp(latestMainnetBlock);
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => {
     if (disabledChains.includes(chainId)) {
       const lastEndBlockForDisabledChain = clients.hubPoolClient.getLatestBundleEndBlockForChain(
         chainIdListForBundleEvaluationBlockNumbers,
         latestMainnetBlock,
         chainId
-      )
-      return [
-        lastEndBlockForDisabledChain,
-        lastEndBlockForDisabledChain
-      ]
+      );
+      return [lastEndBlockForDisabledChain, lastEndBlockForDisabledChain];
     } else {
       return [
         clients.hubPoolClient.getNextBundleStartBlockNumber(
@@ -416,8 +414,8 @@ export async function getWidestPossibleExpectedBlockRange(
           latestMainnetBlock,
           chainId
         ),
-        latestBlockNumbers[index]
-      ]
+        latestBlockNumbers[index],
+      ];
     }
   });
 }

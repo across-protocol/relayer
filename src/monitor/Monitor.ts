@@ -62,7 +62,7 @@ export class Monitor {
   public constructor(
     readonly logger: winston.Logger,
     readonly monitorConfig: MonitorConfig,
-    readonly clients: MonitorClients,
+    readonly clients: MonitorClients
   ) {
     this.monitorChains = Object.keys(clients.spokePoolClients).map((chainId) => Number(chainId));
     for (const chainId of this.monitorChains) {
