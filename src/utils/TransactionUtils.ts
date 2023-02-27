@@ -47,13 +47,23 @@ export async function runTransaction(
     );
     return await contract[method](...args, txConfig);
   } catch (error) {
-    logger.error({
-      at: "TxUtil",
-      message: "Error executing tx",
-      error: JSON.stringify(error),
-      notificationPath: "across-error",
-    });
-    throw error;
+    if (error?.code === "NONCE_EXPIRED") {
+      // If error is `nonce already been used` try to resubmit with new nonce
+      const newNonce = await contract.signer.getTransactionCount();
+      return await runTransaction(logger, contract, method, args, value, gasLimit, newNonce);
+    } else if (error?.code === "INSUFFICIENT_FUNDS") {
+      // If error is `insufficient funds for intrinsic transaction cost` the gas price is probably spiking, just 
+      // resubmit to get the new gas price.
+      return await runTransaction(logger, contract, method, args, value, gasLimit, nonce);
+    } else {
+      logger.error({
+        at: "TxUtil",
+        message: "Error executing tx",
+        error: JSON.stringify(error),
+        notificationPath: "across-error",
+      });
+      throw error;
+    }
   }
 }
 
