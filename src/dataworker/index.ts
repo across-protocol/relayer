@@ -42,11 +42,10 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
   logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
 
   try {
-
     for (;;) {
       const loopStart = Date.now();
       await updateDataworkerClients(clients);
-      const disabledChains = [288]//clients.configStoreClient.getDisabledChainsForTimestamp()
+      const disabledChains = [288]; // clients.configStoreClient.getDisabledChainsForTimestamp()
       const configWithDisabledChains = {
         ...config,
         spokePoolChains: config.spokePoolChains.filter((chainId) => !disabledChains.includes(chainId)),
@@ -54,8 +53,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       logger.debug({
         at: "Dataworker#index",
         message: "Disabled chains listed in config store",
-        disabledChains 
-      })
+        disabledChains,
+      });
 
       // Determine the spoke client's lookback:
       // 1. We initiate the spoke client event search windows based on a start bundle's bundle block end numbers and

@@ -239,7 +239,9 @@ export async function constructFinalizerClients(_logger: winston.Logger, config,
     config,
     baseSigner,
     config.maxFinalizerLookback,
-    config.hubPoolChainId
+    config.hubPoolChainId,
+    true // Include disabled chains for finalizer if caller wants to finalize. This is useful if a chain is disabled
+    // but not all of its SpokePool withdrawals have finalized yet.
   );
 
   return {
