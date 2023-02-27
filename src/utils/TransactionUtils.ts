@@ -52,7 +52,7 @@ export async function runTransaction(
       const newNonce = await contract.signer.getTransactionCount();
       return await runTransaction(logger, contract, method, args, value, gasLimit, newNonce);
     } else if (error?.code === "INSUFFICIENT_FUNDS") {
-      // If error is `insufficient funds for intrinsic transaction cost` the gas price is probably spiking, just 
+      // If error is `insufficient funds for intrinsic transaction cost` the gas price is probably spiking, just
       // resubmit to get the new gas price.
       return await runTransaction(logger, contract, method, args, value, gasLimit, nonce);
     } else {
