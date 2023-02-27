@@ -343,6 +343,7 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
         method,
         params,
         quorumProviders,
+        quorumResult,
         mismatchedProviders,
         erroringProviders: errors.map(([provider, errorText]) => formatProviderError(provider, errorText)),
       });
