@@ -39,8 +39,8 @@ export class CommonConfig {
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
     this.hubPoolChainId = Number(HUB_CHAIN_ID ?? 1);
-    this.pollingDelay = Number(POLLING_DELAY ?? 60);
     this.spokePoolChains = CONFIGURED_NETWORKS ? JSON.parse(CONFIGURED_NETWORKS) : Constants.CHAIN_ID_LIST_INDICES;
+    this.pollingDelay = Number(POLLING_DELAY ?? 60);
     this.maxBlockLookBack = MAX_BLOCK_LOOK_BACK ? JSON.parse(MAX_BLOCK_LOOK_BACK) : {};
     if (Object.keys(this.maxBlockLookBack).length > 0)
       for (const chainId of this.spokePoolChains)
