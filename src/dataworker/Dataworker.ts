@@ -41,7 +41,7 @@ import {
 } from "./DataworkerUtils";
 import { BalanceAllocator } from "../clients";
 import _ from "lodash";
-import { CONFIG_STORE_VERSION, IGNORED_SPOKE_BUNDLES } from "../common";
+import { CONFIG_STORE_VERSION } from "../common";
 import { isOvmChain, ovmWethTokens } from "../clients/bridges";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
@@ -815,10 +815,8 @@ export class Dataworker {
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([_chainId, client]) => {
         const chainId = Number(_chainId);
-        let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter((rootBundle) =>
-          isKeyOf(chainId, IGNORED_SPOKE_BUNDLES)
-            ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
-            : rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
+        let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
+          (rootBundle) => rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
         );
 
         // Filter out roots that are not in the latest N root bundles. This assumes that
@@ -1253,10 +1251,8 @@ export class Dataworker {
     // each chain in parallel, then we'd have to reconstruct identical pool rebalance root more times than necessary.
     for (const [_chainId, client] of Object.entries(spokePoolClients)) {
       const chainId = Number(_chainId);
-      let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter((rootBundle) =>
-        isKeyOf(chainId, IGNORED_SPOKE_BUNDLES)
-          ? !IGNORED_SPOKE_BUNDLES[chainId].includes(rootBundle.rootBundleId)
-          : rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
+      let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
+        (rootBundle) => rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
       );
 
       // Filter out roots that are not in the latest N root bundles. This assumes that
