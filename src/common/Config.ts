@@ -19,6 +19,7 @@ export class CommonConfig {
   readonly maxRelayerLookBack: number;
   readonly multiCallChunkSize: { [chainId: number]: number };
   readonly version: string;
+  readonly disabledChainsOverride: number[];
 
   constructor(env: ProcessEnv) {
     const {
@@ -32,9 +33,11 @@ export class CommonConfig {
       REDIS_URL,
       BUNDLE_REFUND_LOOKBACK,
       ACROSS_BOT_VERSION,
+      DISABLED_CHAINS_OVERRIDE,
     } = env;
 
     this.version = ACROSS_BOT_VERSION ?? "unknown";
+    this.disabledChainsOverride = DISABLED_CHAINS_OVERRIDE ? JSON.parse(DISABLED_CHAINS_OVERRIDE) : [];
 
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
