@@ -37,7 +37,9 @@ export class CommonConfig {
     } = env;
 
     this.version = ACROSS_BOT_VERSION ?? "unknown";
-    this.disabledChainsOverride = DISABLED_CHAINS_OVERRIDE ? JSON.parse(DISABLED_CHAINS_OVERRIDE) : [];
+    this.disabledChainsOverride = DISABLED_CHAINS_OVERRIDE
+      ? JSON.parse(DISABLED_CHAINS_OVERRIDE).filter((x) => !isNaN(x) && Number.isInteger(x) && x !== 1)
+      : [];
 
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);

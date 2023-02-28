@@ -32,7 +32,7 @@ import {
 import { PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
-import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
+import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
 import { CONFIG_STORE_VERSION } from "../common";
 
 config();
@@ -157,10 +157,32 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     toBundleTxn: toBundle?.transactionHash,
   });
 
+  // Get disabled chains at mainnet bundle end block of root bundle that we're validating.
+  const disabledChains =
+    config.disabledChainsOverride.length > 0
+      ? config.disabledChainsOverride
+      : clients.configStoreClient.getDisabledChainsForBlock(
+          getBlockForChain(
+            rootBundle.bundleEvaluationBlockNumbers,
+            1,
+            dataworker.chainIdListForBundleEvaluationBlockNumbers
+          )
+        );
+  if (disabledChains.length > 0)
+    logger.debug({
+      at: "RootBundleValidator#index",
+      message: "Disabling constructing spoke pool clients for chains",
+      disabledChains,
+    });
+  const configWithDisabledChains = {
+    ...config,
+    spokePoolChains: config.spokePoolChains.filter((chainId) => !disabledChains.includes(chainId)),
+  };
+
   const spokePoolClients = await constructSpokePoolClientsForFastDataworker(
     logger,
     clients.configStoreClient,
-    config,
+    configWithDisabledChains,
     baseSigner,
     fromBlocks,
     toBlocks

@@ -54,7 +54,7 @@ export async function constructSpokePoolClientsWithLookback(
   if (disabledChains.length > 0)
     logger.debug({
       at: "ClientHelper#constructSpokePoolClientsWithLookback",
-      message: "Disabled chains listed in config store",
+      message: "Disabling constructing spoke pool clients for chains",
       disabledChains,
     });
 

@@ -412,6 +412,8 @@ export async function getWidestPossibleExpectedBlockRange(
   );
   const disabledChains = clients.configStoreClient.getDisabledChainsForBlock(mainnetBundleEndBlock);
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => {
+    // If chain is disabled, re-use the latest bundle end block for the chain as both the start
+    // and end block.
     if (disabledChains.includes(chainId)) {
       const lastEndBlockForDisabledChain = clients.hubPoolClient.getLatestBundleEndBlockForChain(
         chainIdListForBundleEvaluationBlockNumbers,
