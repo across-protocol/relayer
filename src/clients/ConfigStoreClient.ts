@@ -166,7 +166,7 @@ export class AcrossConfigStoreClient {
     return Number(config.value);
   }
 
-  getDisabledChainsForTimestamp(blockNumber: number = Number.MAX_SAFE_INTEGER): number[] {
+  getDisabledChainsForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number[] {
     const config = sortEventsDescending(this.cumulativeDisabledChainUpdates).find(
       (config) => config.blockNumber <= blockNumber
     );
@@ -317,13 +317,14 @@ export class AcrossConfigStoreClient {
         });
       } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS)) {
         try {
-          // If any chain ID's are not numbers then skip.
-          const chainIds = JSON.parse(args.value) as number[];
-          if (chainIds.some((chainId: number) => !isNaN(chainId))) continue;
+          // If any chain ID's are not numbers then ignore.
+          const chainIds = (JSON.parse(args.value) as number[]).filter(
+            (chainId: number) => !isNaN(chainId) && Number.isInteger(chainId) && chainId !== 1
+          );
 
           this.cumulativeDisabledChainUpdates.push({ ...args, chainIds });
         } catch (err) {
-          // Can't parse as number list, skip.
+          // Can't parse list, skip.
         }
       } else {
         continue;

@@ -44,7 +44,7 @@ export async function constructSpokePoolClientsWithLookback(
   hubPoolChainId: number,
   includeDisabledChains = false
 ): Promise<SpokePoolClientsByChain> {
-  const disabledChains = includeDisabledChains ? [] : [288]; // configStoreClient.getDisabledChainsForTimestamp()
+  const disabledChains = includeDisabledChains ? [] : configStoreClient.getDisabledChainsForBlock();
   const configWithDisabledChains = {
     ...config,
     spokePoolChains: config.spokePoolChains.filter((chainId) => !disabledChains.includes(chainId)),

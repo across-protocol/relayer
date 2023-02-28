@@ -356,6 +356,29 @@ describe("AcrossConfigStoreClient", async function () {
         configStoreClient.getMaxL1TokenCountForPoolRebalanceLeafForBlock(initialUpdate.blockNumber - 1)
       ).to.throw(/Could not find MaxL1TokenCount/);
     });
+    it("Get disabled chain IDs for block", async function () {
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS), JSON.stringify([19]));
+      await updateAllClients();
+      const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[0];
+      expect(configStoreClient.getDisabledChainsForBlock(initialUpdate.blockNumber)).to.deep.equal([19]);
+
+      // Block number when there is no valid config
+      expect(configStoreClient.getDisabledChainsForBlock(initialUpdate.blockNumber - 1)).to.deep.equal([]);
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS), "invalid value");
+      await updateAllClients();
+      const secondUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[1];
+      // If config store update can't parse the value then it will not count it as an update. The last known
+      // value will be used.
+      expect(configStoreClient.getDisabledChainsForBlock(secondUpdate.blockNumber)).to.deep.equal([19]);
+      await configStore.updateGlobalConfig(
+        utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS),
+        JSON.stringify([1.1, 21, "invalid value", 1])
+      );
+      await updateAllClients();
+      const thirdUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[2];
+      // If update can be parsed then only the valid integers will be used. Chain ID 1 is always thrown out.
+      expect(configStoreClient.getDisabledChainsForBlock(thirdUpdate.blockNumber)).to.deep.equal([21]);
+    });
   });
 });
 
