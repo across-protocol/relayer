@@ -51,16 +51,17 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       const disabledChains =
         config.disabledChainsOverride.length > 0
           ? config.disabledChainsOverride
-          : commonClients.configStoreClient.getDisabledChainsForBlock();
+          : clients.configStoreClient.getDisabledChainsForBlock();
+      if (disabledChains.length > 0)
+        logger.debug({
+          at: "Dataworker#index",
+          message: "Disabling constructing spoke pool clients for chains",
+          disabledChains,
+        });
       const configWithDisabledChains = {
         ...config,
         spokePoolChains: config.spokePoolChains.filter((chainId) => !disabledChains.includes(chainId)),
       };
-      logger.debug({
-        at: "Dataworker#index",
-        message: "Disabled chains listed in config store",
-        disabledChains,
-      });
 
       // Determine the spoke client's lookback:
       // 1. We initiate the spoke client event search windows based on a start bundle's bundle block end numbers and
