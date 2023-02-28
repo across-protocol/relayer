@@ -30,6 +30,7 @@ export class DataworkerConfig extends CommonConfig {
   readonly dataworkerFastStartBundle: number | string;
 
   readonly bufferToPropose: number;
+  readonly disabledChainsOverride: number[];
 
   constructor(env: ProcessEnv) {
     const {
@@ -49,9 +50,11 @@ export class DataworkerConfig extends CommonConfig {
       BUFFER_TO_PROPOSE,
       DATAWORKER_FAST_LOOKBACK_COUNT,
       DATAWORKER_FAST_START_BUNDLE,
+      DISABLED_CHAINS_OVERRIDE,
     } = env;
     super(env);
 
+    this.disabledChainsOverride = DISABLED_CHAINS_OVERRIDE ? JSON.parse(DISABLED_CHAINS_OVERRIDE) : [];
     this.bufferToPropose = BUFFER_TO_PROPOSE ? Number(BUFFER_TO_PROPOSE) : (20 * 60) / 15; // 20 mins of blocks;
     // Should we assert that the leaf count caps are > 0?
     this.maxPoolRebalanceLeafSizeOverride = MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE

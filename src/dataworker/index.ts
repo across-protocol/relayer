@@ -45,7 +45,10 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
     for (;;) {
       const loopStart = Date.now();
       await updateDataworkerClients(clients);
-      const disabledChains = [288]; // clients.configStoreClient.getDisabledChainsForTimestamp()
+      // Caller can optionally override the disabled chains list, which is useful for executing leaves or validating
+      // older bundles. The Caller should be careful when setting when running the disputer or proposer functionality
+      // as it can lead to proposing disputable bundles or disputing valid bundles.
+      const disabledChains = config.disabledChainsOverride ?? clients.configStoreClient.getDisabledChainsForBlock();
       const configWithDisabledChains = {
         ...config,
         spokePoolChains: config.spokePoolChains.filter((chainId) => !disabledChains.includes(chainId)),
