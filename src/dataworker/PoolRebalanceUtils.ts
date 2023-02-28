@@ -407,7 +407,7 @@ export async function getWidestPossibleExpectedBlockRange(
   // until its in a possible bundle range where X was disabled.
   const mainnetBundleEndBlock = getBlockForChain(
     latestPossibleBundleEndBlockNumbers,
-    1,
+    clients.hubPoolClient.chainId,
     chainIdListForBundleEvaluationBlockNumbers
   );
   const disabledChains = clients.configStoreClient.getDisabledChainsForBlock(mainnetBundleEndBlock);
