@@ -27,6 +27,7 @@ import {
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "../utils";
+import { getBlockForChain, getBlockRangeForChain } from "./DataworkerUtils";
 
 export function updateRunningBalance(
   runningBalances: interfaces.RunningBalances,
@@ -389,16 +390,27 @@ export async function getWidestPossibleExpectedBlockRange(
   clients: DataworkerClients,
   latestMainnetBlock: number
 ): Promise<number[][]> {
-  const latestBlockNumbers = chainIdListForBundleEvaluationBlockNumbers.map(
-    (chainId: number, index) =>
-      spokeClients[chainId] && Math.max(spokeClients[chainId].latestBlockNumber - endBlockBuffers[index], 0)
-  );
   // We subtract a buffer from the end blocks to reduce the chance that network providers
   // for different bot runs produce different contract state because of variability near the HEAD of the network.
   // Reducing the latest block that we query also gives partially filled deposits slightly more buffer for relayers
   // to fully fill the deposit and reduces the chance that the data worker includes a slow fill payment that gets
   // filled during the challenge period.
-  const disabledChains = clients.configStoreClient.getDisabledChainsForBlock(latestMainnetBlock);
+  const latestPossibleBundleEndBlockNumbers = chainIdListForBundleEvaluationBlockNumbers.map(
+    (chainId: number, index) =>
+      spokeClients[chainId] && Math.max(spokeClients[chainId].latestBlockNumber - endBlockBuffers[index], 0)
+  );
+
+  // Get the list of disabled chains at the time of the bundle end block for Mainnet. We don't use the latest block
+  // as the bundle only cares about events that have occurred up to the end blocks, and there could be a gap between
+  // the bundle end blocks and the latest blocks. Imagine a chain X was added to the disabled list at
+  // latestMainnetBlock and latestMainnetBlock > mainnetBundleEndBlock, then we shouldn't treat X as a disabled chain
+  // until its in a possible bundle range where X was disabled.
+  const mainnetBundleEndBlock = getBlockForChain(
+    latestPossibleBundleEndBlockNumbers,
+    1,
+    chainIdListForBundleEvaluationBlockNumbers
+  );
+  const disabledChains = clients.configStoreClient.getDisabledChainsForBlock(mainnetBundleEndBlock);
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => {
     if (disabledChains.includes(chainId)) {
       const lastEndBlockForDisabledChain = clients.hubPoolClient.getLatestBundleEndBlockForChain(
@@ -414,7 +426,7 @@ export async function getWidestPossibleExpectedBlockRange(
           latestMainnetBlock,
           chainId
         ),
-        latestBlockNumbers[index],
+        latestPossibleBundleEndBlockNumbers[index],
       ];
     }
   });
