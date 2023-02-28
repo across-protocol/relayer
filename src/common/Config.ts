@@ -11,7 +11,6 @@ export class CommonConfig {
   readonly spokePoolChains: number[];
   readonly pollingDelay: number;
   readonly maxBlockLookBack: { [key: number]: number };
-  readonly nodeQuorumThreshold: number;
   readonly maxTxWait: number;
   readonly sendingTransactionsEnabled: boolean;
   readonly redisUrl: string | undefined;
@@ -53,7 +52,7 @@ export class CommonConfig {
 
     // Multicall chunk size precedence: Environment, chain-specific config, global default.
     this.multiCallChunkSize = Object.fromEntries(
-      Object(this.spokePoolChains).map((_chainId) => {
+      this.spokePoolChains.map((_chainId) => {
         const chainId = Number(_chainId);
         // prettier-ignore
         const chunkSize = Number(
