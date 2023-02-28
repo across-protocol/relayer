@@ -382,7 +382,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
           transports: [new winston.transports.Console()],
         }),
         clients.configStoreClient,
-        configWithDisabledChains,
+        config,
         baseSigner,
         spokeClientFromBlocks,
         spokeClientToBlocks

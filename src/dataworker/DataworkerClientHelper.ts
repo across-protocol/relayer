@@ -98,9 +98,27 @@ export async function constructSpokePoolClientsWithStartBlocks(
   startBlockOverride: { [chainId: number]: number } = {},
   toBlockOverride: { [chainId: number]: number } = {}
 ): Promise<SpokePoolClientsByChain> {
+  // Caller can optionally override the disabled chains list, which is useful for executing leaves or validating
+  // older bundles. The Caller should be careful when setting when running the disputer or proposer functionality
+  // as it can lead to proposing disputable bundles or disputing valid bundles.
+  const disabledChains =
+    config.disabledChainsOverride.length > 0
+      ? config.disabledChainsOverride
+      : configStoreClient.getDisabledChainsForBlock();
+  const configWithDisabledChains = {
+    ...config,
+    spokePoolChains: config.spokePoolChains.filter((chainId) => !disabledChains.includes(chainId)),
+  };
+  if (disabledChains.length > 0)
+    logger.debug({
+      at: "DataworkerClientHelper#constructSpokePoolClientsWithStartBlocks",
+      message: "Disabling constructing spoke pool clients for chains",
+      disabledChains,
+    });
+
   // Set up Spoke signers and connect them to spoke pool contract objects:
-  const spokePoolSigners = await getSpokePoolSigners(baseSigner, config);
-  const spokePools = config.spokePoolChains.map((chainId) => {
+  const spokePoolSigners = await getSpokePoolSigners(baseSigner, configWithDisabledChains);
+  const spokePools = configWithDisabledChains.spokePoolChains.map((chainId) => {
     return { chainId, contract: getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) };
   });
 
@@ -112,7 +130,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
     }
   });
 
-  return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks, toBlockOverride);
+  return getSpokePoolClientsForContract(logger, configStoreClient, configWithDisabledChains, spokePools, fromBlocks, toBlockOverride);
 }
 
 // Constructs spoke pool clients with short lookback and validates that the Dataworker can use the data
