@@ -104,16 +104,6 @@ export const DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } =
   10: 75,
 };
 
-// Maps chain ID to root bundle ID to ignore because the roots are known to be invalid from the perspective of the
-// latest dataworker code, or there is no matching L1 root bundle, because the root bundle was relayed by an admin.
-export const IGNORED_SPOKE_BUNDLES = {
-  1: [357, 322, 321, 104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
-  10: [105, 104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
-  137: [105, 104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
-  288: [96, 93, 90, 85, 78, 72, 68, 67, 65, 2],
-  42161: [105, 104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
-};
-
 // List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals
 // with useless bundle block eval numbers and other data that isn't helpful for the dataworker to know. This does not
 // include any invalid bundles that got through, such as at blocks 15001113 or 15049343 which are missing
