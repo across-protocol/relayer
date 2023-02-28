@@ -63,7 +63,16 @@ export async function runTransaction(
         error: JSON.stringify(error),
         retriesRemaining,
       });
-      return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining);
+      return await runTransaction(
+        logger,
+        contract,
+        method,
+        args,
+        value,
+        gasLimit,
+        await contract.signer.getTransactionCount(),
+        retriesRemaining
+      );
     } else {
       logger.error({
         at: "TxUtil",
