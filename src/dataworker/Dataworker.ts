@@ -261,13 +261,7 @@ export class Dataworker {
     // Construct a list of ending block ranges for each chain that we want to include
     // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
-    const blockRangesForProposal = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      spokePoolClients,
-      getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
-      this.clients,
-      this.clients.hubPoolClient.latestBlockNumber
-    );
+    const blockRangesForProposal = await this._getWidestPossibleBlockRangeForNextBundle(spokePoolClients);
 
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // potential proposal
@@ -468,13 +462,7 @@ export class Dataworker {
       return;
     }
 
-    const widestPossibleExpectedBlockRange = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      spokePoolClients,
-      getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
-      this.clients,
-      this.clients.hubPoolClient.latestBlockNumber
-    );
+    const widestPossibleExpectedBlockRange = await this._getWidestPossibleBlockRangeForNextBundle(spokePoolClients);
     const { valid, reason } = await this.validateRootBundle(
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
@@ -1080,13 +1068,7 @@ export class Dataworker {
       return;
     }
 
-    const widestPossibleExpectedBlockRange = await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
-      this.chainIdListForBundleEvaluationBlockNumbers,
-      spokePoolClients,
-      getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
-      this.clients,
-      this.clients.hubPoolClient.latestBlockNumber
-    );
+    const widestPossibleExpectedBlockRange = await this._getWidestPossibleBlockRangeForNextBundle(spokePoolClients);
     const { valid, reason, expectedTrees } = await this.validateRootBundle(
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
@@ -1616,6 +1598,16 @@ export class Dataworker {
           _rootBundle.relayerRefundRoot === rootBundle.relayerRefundRoot &&
           _rootBundle.slowRelayRoot === rootBundle.slowRelayRoot
       )
+    );
+  }
+
+  async _getWidestPossibleBlockRangeForNextBundle(spokePoolClients: SpokePoolClientsByChain) {
+    return await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      spokePoolClients,
+      getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
+      this.clients,
+      this.clients.hubPoolClient.latestBlockNumber
     );
   }
 }

@@ -400,21 +400,11 @@ export async function getWidestPossibleExpectedBlockRange(
       spokeClients[chainId] && Math.max(spokeClients[chainId].latestBlockNumber - endBlockBuffers[index], 0)
   );
 
-  // Get the list of disabled chains at the time of the bundle end block for Mainnet. We don't use the latest block
-  // as the bundle only cares about events that have occurred up to the end blocks, and there could be a gap between
-  // the bundle end blocks and the latest blocks. Imagine a chain X was added to the disabled list at
-  // latestMainnetBlock and latestMainnetBlock > mainnetBundleEndBlock, then we shouldn't treat X as a disabled chain
-  // until its in a possible bundle range where X was disabled.
-  const mainnetBundleEndBlock = getBlockForChain(
-    latestPossibleBundleEndBlockNumbers,
-    clients.hubPoolClient.chainId,
-    chainIdListForBundleEvaluationBlockNumbers
-  );
-  const disabledChains = clients.configStoreClient.getDisabledChainsForBlock(mainnetBundleEndBlock);
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => {
-    // If chain is disabled, re-use the latest bundle end block for the chain as both the start
-    // and end block.
-    if (disabledChains.includes(chainId)) {
+    // If chain is disabled, which would be the case for any `latestPossibleBundleEndBlockNumbers` that
+    // is undefined because the `spokeClient` is undefined, re-use the latest bundle end block for the chain as
+    // both the start and end block.
+    if (latestPossibleBundleEndBlockNumbers[index] === undefined) {
       const lastEndBlockForDisabledChain = clients.hubPoolClient.getLatestBundleEndBlockForChain(
         chainIdListForBundleEvaluationBlockNumbers,
         latestMainnetBlock,
