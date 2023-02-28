@@ -130,7 +130,14 @@ export async function constructSpokePoolClientsWithStartBlocks(
     }
   });
 
-  return getSpokePoolClientsForContract(logger, configStoreClient, configWithDisabledChains, spokePools, fromBlocks, toBlockOverride);
+  return getSpokePoolClientsForContract(
+    logger,
+    configStoreClient,
+    configWithDisabledChains,
+    spokePools,
+    fromBlocks,
+    toBlockOverride
+  );
 }
 
 // Constructs spoke pool clients with short lookback and validates that the Dataworker can use the data
