@@ -45,23 +45,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
     for (;;) {
       const loopStart = Date.now();
       await updateDataworkerClients(clients);
-      // Caller can optionally override the disabled chains list, which is useful for executing leaves or validating
-      // older bundles. The Caller should be careful when setting when running the disputer or proposer functionality
-      // as it can lead to proposing disputable bundles or disputing valid bundles.
-      const disabledChains =
-        config.disabledChainsOverride.length > 0
-          ? config.disabledChainsOverride
-          : clients.configStoreClient.getDisabledChainsForBlock();
-      if (disabledChains.length > 0)
-        logger.debug({
-          at: "Dataworker#index",
-          message: "Disabling constructing spoke pool clients for chains",
-          disabledChains,
-        });
-      const configWithDisabledChains = {
-        ...config,
-        spokePoolChains: config.spokePoolChains.filter((chainId) => !disabledChains.includes(chainId)),
-      };
 
       // Determine the spoke client's lookback:
       // 1. We initiate the spoke client event search windows based on a start bundle's bundle block end numbers and
@@ -81,7 +64,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
 
       // Get block range for spoke clients using the dataworker fast lookback bundle count.
       const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
-        configWithDisabledChains,
+        config,
         clients,
         dataworker
       );
@@ -99,7 +82,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       const spokePoolClients = await constructSpokePoolClientsForFastDataworker(
         logger,
         clients.configStoreClient,
-        configWithDisabledChains,
+        config,
         baseSigner,
         fromBlocks,
         toBlocks
