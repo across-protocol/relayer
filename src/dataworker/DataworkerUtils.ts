@@ -10,13 +10,7 @@ import {
 } from "../interfaces";
 import { RelayData, RelayerRefundLeaf } from "../interfaces";
 import { RelayerRefundLeafWithGroup, RunningBalances, UnfilledDeposit } from "../interfaces";
-import {
-  buildPoolRebalanceLeafTree,
-  buildRelayerRefundTree,
-  buildSlowRelayTree,
-  getDeploymentBlockNumber,
-  winston,
-} from "../utils";
+import { buildPoolRebalanceLeafTree, buildRelayerRefundTree, buildSlowRelayTree, winston } from "../utils";
 import { getDepositPath, getFillsInRange, groupObjectCountsByProp, groupObjectCountsByTwoProps, toBN } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { addSlowFillsToRunningBalances, initializeRunningBalancesFromRelayerRepayments } from "./PoolRebalanceUtils";
@@ -134,10 +128,7 @@ export function blockRangesAreInvalidForSpokeClients(
 
     // Note: Math.max the from block with the deployment block of the spoke pool to handle the edge case for the first
     // bundle that set its start blocks equal 0.
-    const bundleRangeFromBlock = Math.max(
-      getDeploymentBlockNumber("SpokePool", Number(chainId)),
-      blockRangeForChain[0]
-    );
+    const bundleRangeFromBlock = Math.max(spokePoolClients[chainId].spokePoolDeploymentBlock, blockRangeForChain[0]);
     return (
       bundleRangeFromBlock <= latestInvalidBundleStartBlock[chainId] || bundleRangeToBlock > clientLastBlockQueried
     );
