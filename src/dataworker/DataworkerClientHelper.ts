@@ -110,11 +110,19 @@ export async function constructSpokePoolClientsWithStartBlocks(
   // eventually stop sending RPC requests for it, but we might need to reconstruct bundles (for the executor) for
   // a while even after we disable it.
 
+  // Caller can optionally override the disabled chains list, which is useful for executing leaves or validating
+  // older bundles. This is a useful override for handling the aforementioned rare case where a chain is disabled and
+  // then reenabled. The Caller should be careful when setting when running the disputer or proposer functionality
+  // as it can lead to proposing disputable bundles or disputing valid bundles.
+  const disabledChains =
+    config.disabledChainsOverride.length > 0
+      ? config.disabledChainsOverride
+      : configStoreClient.getDisabledChainsForBlock(startBlockOverride[1]);
+
   // In no cases do we want to override the disabled chain list for Dataworker functions. If we want to reconstruct
   // and older bundle, then the `startBlockOverride`-`toBlockOverride` should cover that older bundle's range,
   // and in that case if the chain was enabled at `startBlockOverride` then we will construct a spoke client
   // for it.
-  const disabledChains = configStoreClient.getDisabledChainsForBlock(startBlockOverride[1]);
   const configWithDisabledChains = {
     ...config,
     spokePoolChains: config.spokePoolChains.filter((chainId) => !disabledChains.includes(chainId)),
