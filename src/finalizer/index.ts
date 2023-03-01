@@ -85,9 +85,11 @@ export async function finalize(
     if (client === undefined) {
       logger.warn({
         at: "Finalizer",
-        message: `Skipping finalizations for ${getNetworkName(chainId)} because spoke pool client does not exist, is it disabled?`,
+        message: `Skipping finalizations for ${getNetworkName(
+          chainId
+        )} because spoke pool client does not exist, is it disabled?`,
         configuredChainIds,
-        availableChainIds: Object.keys(spokePoolClients)
+        availableChainIds: Object.keys(spokePoolClients),
       });
       continue;
     }
