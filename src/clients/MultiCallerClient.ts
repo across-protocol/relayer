@@ -3,11 +3,9 @@ import {
   assert,
   winston,
   getNetworkName,
-  Contract,
   isPromiseFulfilled,
   isPromiseRejected,
   getTarget,
-  BigNumber,
   TransactionResponse,
   TransactionSimulationResult,
 } from "../utils";
