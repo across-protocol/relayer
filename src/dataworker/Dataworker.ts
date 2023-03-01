@@ -7,7 +7,6 @@ import {
   MerkleTree,
   toBN,
   sortEventsAscending,
-  isKeyOf,
   isDefined,
 } from "../utils";
 import { toBNWei, getFillsInRange, ZERO_ADDRESS } from "../utils";
@@ -32,7 +31,12 @@ import {
 import { DataworkerClients, spokePoolClientsToProviders } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
-import { blockRangesAreInvalidForSpokeClients, getBlockRangeForChain } from "../dataworker/DataworkerUtils";
+import {
+  blockRangesAreInvalidForSpokeClients,
+  getBlockForChain,
+  getBlockRangeForChain,
+  getBundleBlockRanges,
+} from "../dataworker/DataworkerUtils";
 import {
   getEndBlockBuffers,
   _buildPoolRebalanceRoot,
@@ -261,7 +265,9 @@ export class Dataworker {
     // Construct a list of ending block ranges for each chain that we want to include
     // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
-    const blockRangesForProposal = await this._getWidestPossibleBlockRangeForNextBundle(spokePoolClients);
+    // Pass in `undefined` for the mainnet bundle end block because we want to use the latest disabled chains list
+    // to construct the bundle block range.
+    const blockRangesForProposal = await this._getWidestPossibleBlockRangeForNextBundle(spokePoolClients, undefined);
 
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // potential proposal
@@ -462,7 +468,15 @@ export class Dataworker {
       return;
     }
 
-    const widestPossibleExpectedBlockRange = await this._getWidestPossibleBlockRangeForNextBundle(spokePoolClients);
+    const mainnetBundleEndBlockForPendingRootBundle = getBlockForChain(
+      pendingRootBundle.bundleEvaluationBlockNumbers,
+      this.clients.hubPoolClient.chainId,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
+    const widestPossibleExpectedBlockRange = await this._getWidestPossibleBlockRangeForNextBundle(
+      spokePoolClients,
+      mainnetBundleEndBlockForPendingRootBundle
+    );
     const { valid, reason } = await this.validateRootBundle(
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
@@ -861,16 +875,12 @@ export class Dataworker {
             continue;
           }
 
-          const prevRootBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
-            matchingRootBundle.blockNumber
+          const blockNumberRanges = getBundleBlockRanges(
+            this.clients.hubPoolClient,
+            this.clients.configStoreClient,
+            matchingRootBundle,
+            this.chainIdListForBundleEvaluationBlockNumbers
           );
-
-          const blockNumberRanges = matchingRootBundle.bundleEvaluationBlockNumbers.map((endBlock, i) => {
-            const fromBlock = prevRootBundle?.bundleEvaluationBlockNumbers?.[i]
-              ? prevRootBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
-              : 0;
-            return [fromBlock, endBlock.toNumber()];
-          });
 
           if (
             Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
@@ -1066,7 +1076,15 @@ export class Dataworker {
       return;
     }
 
-    const widestPossibleExpectedBlockRange = await this._getWidestPossibleBlockRangeForNextBundle(spokePoolClients);
+    const mainnetBundleEndBlockForPendingRootBundle = getBlockForChain(
+      pendingRootBundle.bundleEvaluationBlockNumbers,
+      this.clients.hubPoolClient.chainId,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
+    const widestPossibleExpectedBlockRange = await this._getWidestPossibleBlockRangeForNextBundle(
+      spokePoolClients,
+      mainnetBundleEndBlockForPendingRootBundle
+    );
     const { valid, reason, expectedTrees } = await this.validateRootBundle(
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
@@ -1295,16 +1313,12 @@ export class Dataworker {
           continue;
         }
 
-        const prevRootBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
-          matchingRootBundle.blockNumber
+        const blockNumberRanges = getBundleBlockRanges(
+          this.clients.hubPoolClient,
+          this.clients.configStoreClient,
+          matchingRootBundle,
+          this.chainIdListForBundleEvaluationBlockNumbers
         );
-
-        const blockNumberRanges = matchingRootBundle.bundleEvaluationBlockNumbers.map((endBlock, i) => {
-          const fromBlock = prevRootBundle?.bundleEvaluationBlockNumbers?.[i]
-            ? prevRootBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
-            : 0;
-          return [fromBlock, endBlock.toNumber()];
-        });
 
         if (
           Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
@@ -1597,13 +1611,26 @@ export class Dataworker {
     );
   }
 
-  async _getWidestPossibleBlockRangeForNextBundle(spokePoolClients: SpokePoolClientsByChain) {
+  /**
+   * Returns widest possible block range for next bundle.
+   * @param spokePoolClients SpokePool clients to query. If one is undefined then the chain ID will be treated as
+   * disabled.
+   * @param mainnetBundleEndBlock Passed in to determine which disabled chain list to use (i.e. the list that is live
+   * at the time of this block). If this is undefined, then `getWidestPossibleExpectedBlockRange` will use the latest
+   * mainnet block minus the mainnet buffer as the mainnet bundle end block.
+   * @returns [number, number]: [startBlock, endBlock]
+   */
+  async _getWidestPossibleBlockRangeForNextBundle(
+    spokePoolClients: SpokePoolClientsByChain,
+    mainnetBundleEndBlock?: number
+  ) {
     return await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
       spokePoolClients,
       getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
-      this.clients.hubPoolClient.latestBlockNumber
+      this.clients.hubPoolClient.latestBlockNumber,
+      mainnetBundleEndBlock
     );
   }
 }

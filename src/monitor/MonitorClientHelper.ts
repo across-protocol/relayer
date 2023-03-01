@@ -8,6 +8,7 @@ import {
   updateSpokePoolClients,
   constructClients,
   constructSpokePoolClientsWithLookback,
+  CHAIN_ID_LIST_INDICES,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
 
@@ -26,6 +27,9 @@ export async function constructMonitorClients(
 ): Promise<MonitorClients> {
   const commonClients = await constructClients(logger, config, baseSigner);
   await updateClients(commonClients);
+
+  // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override
+  // the disabled chain list by setting the DISABLED_CHAINS_OVERRIDE environment variable.
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
     commonClients.configStoreClient,
@@ -34,7 +38,13 @@ export async function constructMonitorClients(
     config.maxRelayerLookBack,
     config.hubPoolChainId
   );
-  const bundleDataClient = new BundleDataClient(logger, commonClients, spokePoolClients, config.spokePoolChains);
+  const bundleDataClient = new BundleDataClient(
+    logger,
+    commonClients,
+    spokePoolClients,
+    CHAIN_ID_LIST_INDICES,
+    config.blockRangeEndBlockBuffer
+  );
 
   // Need to update HubPoolClient to get latest tokens.
   const spokePoolChains = Object.keys(spokePoolClients).map((chainId) => Number(chainId));

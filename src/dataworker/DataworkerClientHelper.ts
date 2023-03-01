@@ -49,7 +49,13 @@ export async function constructDataworkerClients(
 
   // TODO: Remove need to pass in spokePoolClients into BundleDataClient since we pass in empty {} here and pass in
   // clients for each class level call we make. Its more of a static class.
-  const bundleDataClient = new BundleDataClient(logger, commonClients, {}, CHAIN_ID_LIST_INDICES);
+  const bundleDataClient = new BundleDataClient(
+    logger,
+    commonClients,
+    {},
+    CHAIN_ID_LIST_INDICES,
+    config.blockRangeEndBlockBuffer
+  );
 
   // Disable profitability by default as only the relayer needs it.
   // The dataworker only needs price updates from ProfitClient to calculate bundle volume.
@@ -98,13 +104,17 @@ export async function constructSpokePoolClientsWithStartBlocks(
   startBlockOverride: { [chainId: number]: number } = {},
   toBlockOverride: { [chainId: number]: number } = {}
 ): Promise<SpokePoolClientsByChain> {
-  // Caller can optionally override the disabled chains list, which is useful for executing leaves or validating
-  // older bundles. The Caller should be careful when setting when running the disputer or proposer functionality
-  // as it can lead to proposing disputable bundles or disputing valid bundles.
-  const disabledChains =
-    config.disabledChainsOverride.length > 0
-      ? config.disabledChainsOverride
-      : configStoreClient.getDisabledChainsForBlock();
+  // By default, construct spoke clients for all chains that are not disabled at the time of the first block that we'll
+  // query. This does not handle the case where a chain was disabled at the start block and later un-disabled, but
+  // this case is very rare. This is a good solution for handling the case where a chain is disabled and we want to
+  // eventually stop sending RPC requests for it, but we might need to reconstruct bundles (for the executor) for
+  // a while even after we disable it.
+
+  // In no cases do we want to override the disabled chain list for Dataworker functions. If we want to reconstruct
+  // and older bundle, then the `startBlockOverride`-`toBlockOverride` should cover that older bundle's range,
+  // and in that case if the chain was enabled at `startBlockOverride` then we will construct a spoke client
+  // for it.
+  const disabledChains = configStoreClient.getDisabledChainsForBlock(startBlockOverride[1]);
   const configWithDisabledChains = {
     ...config,
     spokePoolChains: config.spokePoolChains.filter((chainId) => !disabledChains.includes(chainId)),

@@ -23,6 +23,8 @@ export async function constructRelayerClients(
   const commonClients = await constructClients(logger, config, baseSigner);
   await updateClients(commonClients);
 
+  // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override
+  // the disabled chain list by setting the DISABLED_CHAINS_OVERRIDE environment variable.
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
     commonClients.configStoreClient,
@@ -55,7 +57,13 @@ export async function constructRelayerClients(
     baseSigner.address,
   ]);
 
-  const bundleDataClient = new BundleDataClient(logger, commonClients, spokePoolClients, config.spokePoolChains);
+  const bundleDataClient = new BundleDataClient(
+    logger,
+    commonClients,
+    spokePoolClients,
+    CHAIN_ID_LIST_INDICES,
+    config.blockRangeEndBlockBuffer
+  );
   const crossChainTransferClient = new CrossChainTransferClient(logger, config.spokePoolChains, adapterManager);
   const inventoryClient = new InventoryClient(
     baseSigner.address,

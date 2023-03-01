@@ -19,11 +19,13 @@ export class CommonConfig {
   readonly multiCallChunkSize: { [chainId: number]: number };
   readonly version: string;
   readonly disabledChainsOverride: number[];
+  readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
 
   constructor(env: ProcessEnv) {
     const {
       MAX_RELAYER_DEPOSIT_LOOK_BACK,
       CONFIGURED_NETWORKS,
+      BLOCK_RANGE_END_BLOCK_BUFFER,
       HUB_CHAIN_ID,
       POLLING_DELAY,
       MAX_BLOCK_LOOK_BACK,
@@ -40,6 +42,9 @@ export class CommonConfig {
       ? JSON.parse(DISABLED_CHAINS_OVERRIDE).filter((x) => !isNaN(x) && Number.isInteger(x) && x !== 1)
       : [];
 
+    this.blockRangeEndBlockBuffer = BLOCK_RANGE_END_BLOCK_BUFFER
+      ? JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER)
+      : Constants.BUNDLE_END_BLOCK_BUFFERS;
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
     this.hubPoolChainId = Number(HUB_CHAIN_ID ?? 1);

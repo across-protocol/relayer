@@ -1,9 +1,11 @@
+import { AcrossConfigStoreClient, HubPoolClient } from "../clients";
 import {
   BigNumberForToken,
   DepositWithBlock,
   FillsToRefund,
   FillWithBlock,
   PoolRebalanceLeaf,
+  ProposedRootBundle,
   SpokePoolClientsByChain,
 } from "../interfaces";
 import { RelayData, RelayerRefundLeaf } from "../interfaces";
@@ -73,6 +75,37 @@ export function getBlockForChain(
   return blockForChain;
 }
 
+/**
+ * Return bundle block range for `rootBundle` whose bundle end blocks were included in the proposal.
+ * This amounts to reconstructing the bundle range start block.
+ * @param rootBundle Root bundle to return bundle block range for
+ * @returns blockRanges: number[][], [[startBlock, endBlock], [startBlock, endBlock], ...]
+ */
+export function getBundleBlockRanges(
+  hubPoolClient: HubPoolClient,
+  configStoreClient: AcrossConfigStoreClient,
+  rootBundle: ProposedRootBundle,
+  chainIdListForBundleEvaluationBlockNumbers: number[]
+): number[][] {
+  const prevRootBundle = hubPoolClient.getLatestFullyExecutedRootBundle(rootBundle.blockNumber);
+  const mainnetBundleEndBlockForMatchingRootBundle = getBlockForChain(
+    rootBundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
+    1,
+    chainIdListForBundleEvaluationBlockNumbers
+  );
+  // If chain is disabled for this bundle block range, end block should be same as previous bundle.
+  // Otherwise the range should be previous bundle's endBlock + 1 to current bundle's end block.
+  const disabledChains = configStoreClient.getDisabledChainsForBlock(mainnetBundleEndBlockForMatchingRootBundle);
+  return rootBundle.bundleEvaluationBlockNumbers.map((endBlock, i) => {
+    const chainId = chainIdListForBundleEvaluationBlockNumbers[i];
+    if (disabledChains.includes(chainId)) return [endBlock.toNumber(), endBlock.toNumber()];
+    const fromBlock = prevRootBundle?.bundleEvaluationBlockNumbers?.[i]
+      ? prevRootBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
+      : 0;
+    return [fromBlock, endBlock.toNumber()];
+  });
+}
+
 // Return true if we won't be able to construct a root bundle for the bundle block ranges ("blockRanges") because
 // the bundle wants to look up data for events that weren't in the spoke pool client's search range.
 export function blockRangesAreInvalidForSpokeClients(
@@ -82,11 +115,17 @@ export function blockRangesAreInvalidForSpokeClients(
   latestInvalidBundleStartBlock: { [chainId: number]: number }
 ): boolean {
   return Object.keys(spokePoolClients).some((chainId) => {
+    // If spoke pool client doesn't exist for chain then we clearly cannot query events for this chain.
+    if (spokePoolClients[chainId] === undefined) return false;
+
     const blockRangeForChain = getBlockRangeForChain(
       blockRanges,
       Number(chainId),
       chainIdListForBundleEvaluationBlockNumbers
     );
+    // If block range is 0 then chain is disabled, we don't need to query events for this chain.
+    if (blockRangeForChain[1] === blockRangeForChain[0]) return true;
+
     const clientLastBlockQueried =
       spokePoolClients[chainId].eventSearchConfig.toBlock ?? spokePoolClients[chainId].latestBlockNumber;
     const bundleRangeToBlock = blockRangeForChain[1];

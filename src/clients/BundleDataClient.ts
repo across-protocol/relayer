@@ -21,7 +21,14 @@ import {
   getUniqueDepositsInRange,
 } from "../utils";
 import { Clients } from "../common";
-import { getBlockRangeForChain, prettyPrintSpokePoolEvents } from "../dataworker/DataworkerUtils";
+import {
+  getBlockForChain,
+  getBlockRangeForChain,
+  getBundleBlockRanges,
+  getEndBlockBuffers,
+  prettyPrintSpokePoolEvents,
+} from "../dataworker/DataworkerUtils";
+import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 
 // @notice Shared client for computing data needed to construct or validate a bundle.
 export class BundleDataClient {
@@ -39,7 +46,8 @@ export class BundleDataClient {
     readonly logger: winston.Logger,
     readonly clients: Clients,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    readonly chainIdListForBundleEvaluationBlockNumbers: number[]
+    readonly chainIdListForBundleEvaluationBlockNumbers: number[],
+    readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {}
   ) {}
 
   // This should be called whenever it's possible that the loadData information for a block range could have changed.
@@ -73,18 +81,13 @@ export class BundleDataClient {
 
   // Return refunds from input bundle.
   async getPendingRefundsFromBundle(bundle: ProposedRootBundle): Promise<FillsToRefund> {
-    const hubPoolClient = this.clients.hubPoolClient;
-    // Look for the latest fully executed root bundle before the input bundle.
-    // This ensures that we skip over any disputed (invalid) bundles.
-    const previousValidBundle = hubPoolClient.getLatestFullyExecutedRootBundle(bundle.blockNumber);
-
     // Reconstruct latest bundle block range.
-    const bundleEvaluationBlockRanges: number[][] = bundle.bundleEvaluationBlockNumbers.map((endBlock, i) => {
-      const fromBlock = previousValidBundle?.bundleEvaluationBlockNumbers?.[i]
-        ? previousValidBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
-        : 0;
-      return [fromBlock, endBlock.toNumber()];
-    });
+    const bundleEvaluationBlockRanges = getBundleBlockRanges(
+      this.clients.hubPoolClient,
+      this.clients.configStoreClient,
+      bundle,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
     const { fillsToRefund } = await this.loadData(bundleEvaluationBlockRanges, this.spokePoolClients, false);
 
     // The latest proposed bundle's refund leaves might have already been partially or entirely executed.
@@ -98,23 +101,14 @@ export class BundleDataClient {
   // - Bundles that are pending liveness
   // - Not yet proposed bundles
   async getNextBundleRefunds(): Promise<FillsToRefund> {
-    const chainIds = Object.keys(this.spokePoolClients).map(Number);
-    const latestMainnetBlockNumber = this.clients.hubPoolClient.latestBlockNumber;
-    if (latestMainnetBlockNumber === undefined)
-      throw new Error("BundleDataClient::getNextBundleRefunds HubPoolClient not updated");
-    const futureBundleEvaluationBlockRanges: number[][] = chainIds.map((chainId) => {
-      const latestBlockNumber = this.spokePoolClients[chainId].latestBlockNumber;
-      if (latestBlockNumber === undefined)
-        throw new Error(`BundleDataClient::getNextBundleRefunds SpokePoolClient for chainId ${chainId} not updated`);
-      return [
-        this.clients.hubPoolClient.getNextBundleStartBlockNumber(
-          this.chainIdListForBundleEvaluationBlockNumbers,
-          latestMainnetBlockNumber,
-          chainId
-        ),
-        latestBlockNumber,
-      ];
-    });
+    const futureBundleEvaluationBlockRanges = await getWidestPossibleExpectedBlockRange(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.spokePoolClients,
+      getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
+      this.clients,
+      this.clients.hubPoolClient.latestBlockNumber,
+      this.clients.hubPoolClient.latestBlockNumber
+    );
     // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
     // (if any) has been fully executed.
     return (await this.loadData(futureBundleEvaluationBlockRanges, this.spokePoolClients, false)).fillsToRefund;
@@ -249,7 +243,15 @@ export class BundleDataClient {
       }
     };
 
-    const allChainIds = Object.keys(spokePoolClients).map(Number);
+    const mainnetBundleEndBlock = getBlockForChain(
+      blockRangesForChains.map(([, endBlock]) => endBlock),
+      1,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
+    const disabledChains = this.clients.configStoreClient.getDisabledChainsForBlock(mainnetBundleEndBlock);
+    const allChainIds = Object.keys(spokePoolClients)
+      .map(Number)
+      .filter((chainId) => !disabledChains.includes(chainId));
 
     for (const originChainId of allChainIds) {
       const originClient = spokePoolClients[originChainId];

@@ -27,7 +27,7 @@ import {
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "../utils";
-import { getBlockForChain, getBlockRangeForChain } from "./DataworkerUtils";
+import { Clients } from "../common";
 
 export function updateRunningBalance(
   runningBalances: interfaces.RunningBalances,
@@ -387,8 +387,9 @@ export async function getWidestPossibleExpectedBlockRange(
   chainIdListForBundleEvaluationBlockNumbers: number[],
   spokeClients: { [chainId: number]: SpokePoolClient },
   endBlockBuffers: number[],
-  clients: DataworkerClients,
-  latestMainnetBlock: number
+  clients: Clients,
+  latestMainnetBlock: number,
+  _mainnetBundleEndBlock?: number
 ): Promise<number[][]> {
   // We subtract a buffer from the end blocks to reduce the chance that network providers
   // for different bot runs produce different contract state because of variability near the HEAD of the network.
@@ -400,11 +401,19 @@ export async function getWidestPossibleExpectedBlockRange(
       spokeClients[chainId] && Math.max(spokeClients[chainId].latestBlockNumber - endBlockBuffers[index], 0)
   );
 
+  // Get the list of disabled chains at the time of the bundle end block for Mainnet.
+  const mainnetBundleEndBlock = _mainnetBundleEndBlock ?? latestPossibleBundleEndBlockNumbers[1];
+  // `mainnetBundleEndBlock` should never be undefined since there should always be a spoke pool client for chain 1.
+  if (mainnetBundleEndBlock === undefined)
+    throw new Error(
+      "PoolRebalanceUtils#getWidestPossibleExpectedBlockRange: Could not find bundle end block for mainnet."
+    );
+  const disabledChains = clients.configStoreClient.getDisabledChainsForBlock(mainnetBundleEndBlock);
+
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => {
-    // If chain is disabled, which would be the case for any `latestPossibleBundleEndBlockNumbers` that
-    // is undefined because the `spokeClient` is undefined, re-use the latest bundle end block for the chain as
-    // both the start and end block.
-    if (latestPossibleBundleEndBlockNumbers[index] === undefined) {
+    // If chain is disabled, re-use the latest bundle end block for the chain as both the start
+    // and end block.
+    if (disabledChains.includes(chainId)) {
       const lastEndBlockForDisabledChain = clients.hubPoolClient.getLatestBundleEndBlockForChain(
         chainIdListForBundleEvaluationBlockNumbers,
         latestMainnetBlock,

@@ -216,7 +216,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     // Bundle range length doesn't match expected chain ID list.
     await updateAllClients();
     await hubPool.proposeRootBundle(
-      [1],
+      Array(CHAIN_ID_TEST_LIST.length).fill(1).concat(1), // Add an extra chain.
       expectedPoolRebalanceRoot4.leaves.length,
       expectedPoolRebalanceRoot4.tree.getHexRoot(),
       expectedRelayerRefundRoot4.tree.getHexRoot(),

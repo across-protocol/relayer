@@ -82,6 +82,15 @@ export async function finalize(
   // on L1.
   for (const chainId of configuredChainIds) {
     const client = spokePoolClients[chainId];
+    if (client === undefined) {
+      logger.warn({
+        at: "Finalizer",
+        message: `Skipping finalizations for ${getNetworkName(chainId)} because spoke pool client does not exist, is it disabled?`,
+        configuredChainIds,
+        availableChainIds: Object.keys(spokePoolClients)
+      });
+      continue;
+    }
     const tokensBridged = client.getTokensBridged();
 
     if (chainId === 42161) {
@@ -215,6 +224,8 @@ export async function constructFinalizerClients(_logger: winston.Logger, config,
   const commonClients = await constructClients(_logger, config, baseSigner);
   await updateFinalizerClients(commonClients);
 
+  // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override
+  // the disabled chain list by setting the DISABLED_CHAINS_OVERRIDE environment variable.
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
     commonClients.configStoreClient,
