@@ -1,6 +1,7 @@
 import { AugmentedTransaction } from "../clients";
 import { winston, Contract, getContractInfoFromAddress, fetch, ethers } from "../utils";
 import { toBNWei, BigNumber, toBN, toGWei, TransactionResponse } from "../utils";
+require("dotenv").config();
 
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
@@ -17,10 +18,18 @@ export async function runTransaction(
   args: any,
   value: BigNumber = toBN(0),
   gasLimit: BigNumber | null = null,
-  nonce: number | null = null
+  nonce: number | null = null,
+  retriesRemaining = 2
 ): Promise<TransactionResponse> {
+  const chainId = (await contract.provider.getNetwork()).chainId;
+
   try {
-    const gas = await getGasPrice(contract.provider);
+    const priorityFeeScaler =
+      Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) || undefined;
+    const maxFeePerGasScaler =
+      Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) || undefined;
+
+    const gas = await getGasPrice(contract.provider, priorityFeeScaler, maxFeePerGasScaler);
     logger.debug({
       at: "TxUtil",
       message: "Send tx",
@@ -40,13 +49,31 @@ export async function runTransaction(
     );
     return await contract[method](...args, txConfig);
   } catch (error) {
-    logger.error({
-      at: "TxUtil",
-      message: "Error executing tx",
-      error: JSON.stringify(error),
-      notificationPath: "across-error",
-    });
-    throw error;
+    if (
+      retriesRemaining > 0 &&
+      (error?.code === "NONCE_EXPIRED" ||
+        error?.code === "INSUFFICIENT_FUNDS" ||
+        error?.message.includes("intrinsic gas too low"))
+    ) {
+      // If error is due to a nonce collision or gas underpricement then re-submit to fetch latest params.
+      retriesRemaining -= 1;
+      logger.debug({
+        at: "TxUtil",
+        message: "Retrying txn due to expected error",
+        error: JSON.stringify(error),
+        retriesRemaining,
+      });
+      return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining);
+    } else {
+      logger.error({
+        at: "TxUtil",
+        message: "Error executing tx",
+        retriesRemaining,
+        error: JSON.stringify(error),
+        notificationPath: "across-error",
+      });
+      throw error;
+    }
   }
 }
 
