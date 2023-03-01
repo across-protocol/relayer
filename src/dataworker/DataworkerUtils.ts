@@ -114,9 +114,11 @@ export function blockRangesAreInvalidForSpokeClients(
   chainIdListForBundleEvaluationBlockNumbers: number[],
   latestInvalidBundleStartBlock: { [chainId: number]: number }
 ): boolean {
-  return Object.keys(spokePoolClients).some((chainId) => {
+  if (blockRanges.length !== chainIdListForBundleEvaluationBlockNumbers.length)
+    throw new Error("DataworkerUtils#blockRangesAreInvalidForSpokeClients: Invalid bundle block range length");
+  return chainIdListForBundleEvaluationBlockNumbers.some((chainId) => {
     // If spoke pool client doesn't exist for chain then we clearly cannot query events for this chain.
-    if (spokePoolClients[chainId] === undefined) return false;
+    if (spokePoolClients[chainId] === undefined) return true;
 
     const blockRangeForChain = getBlockRangeForChain(
       blockRanges,
@@ -124,7 +126,7 @@ export function blockRangesAreInvalidForSpokeClients(
       chainIdListForBundleEvaluationBlockNumbers
     );
     // If block range is 0 then chain is disabled, we don't need to query events for this chain.
-    if (blockRangeForChain[1] === blockRangeForChain[0]) return true;
+    if (blockRangeForChain[1] === blockRangeForChain[0]) return false;
 
     const clientLastBlockQueried =
       spokePoolClients[chainId].eventSearchConfig.toBlock ?? spokePoolClients[chainId].latestBlockNumber;

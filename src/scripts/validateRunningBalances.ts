@@ -69,7 +69,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
   // Throw out most recent bundle as its leaves might not have executed.
   const validatedBundles = sortEventsDescending(clients.hubPoolClient.getValidatedRootBundles()).slice(1);
   const excesses: { [chainId: number]: { [l1Token: string]: string[] } } = {};
-  const bundlesToValidate = 20; // Roughly 2 days worth of bundles.
+  const bundlesToValidate = 5; // Roughly 2 days worth of bundles.
   for (let x = 0; x < bundlesToValidate; x++) {
     const mostRecentValidatedBundle = validatedBundles[x];
     console.group(
@@ -362,12 +362,18 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
       );
 
       // Reconstruct bundle block range for bundle.
+      const mainnetBundleEndBlock = getBlockForChain(
+        bundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
+        1,
+        dataworker.chainIdListForBundleEvaluationBlockNumbers
+      );
       const widestPossibleExpectedBlockRange = await getWidestPossibleExpectedBlockRange(
         dataworker.chainIdListForBundleEvaluationBlockNumbers,
         spokePoolClientsForBundle,
         getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
         clients,
-        bundle.blockNumber
+        bundle.blockNumber,
+        mainnetBundleEndBlock
       );
       const blockRangesImpliedByBundleEndBlocks = widestPossibleExpectedBlockRange.map((blockRange, index) => [
         blockRange[0],

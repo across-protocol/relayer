@@ -656,6 +656,7 @@ export class Dataworker {
         at: "Dataworke#validate",
         message: "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
         rootBundleRanges: blockRangesImpliedByBundleEndBlocks,
+        availableSpokePoolClients: Object.keys(spokePoolClients),
         earliestBlocksInSpokePoolClients,
         spokeClientsEventSearchConfigs: Object.fromEntries(
           Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.eventSearchConfig])
@@ -897,6 +898,7 @@ export class Dataworker {
                 "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
               chainId,
               rootBundleRanges: blockNumberRanges,
+              availableSpokePoolClients: Object.keys(spokePoolClients),
               earliestBlocksInSpokePoolClients,
               spokeClientsEventSearchConfigs: Object.fromEntries(
                 Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.eventSearchConfig])
@@ -1334,6 +1336,7 @@ export class Dataworker {
             message: "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
             chainId,
             rootBundleRanges: blockNumberRanges,
+            availableSpokePoolClients: Object.keys(spokePoolClients),
             earliestBlocksInSpokePoolClients,
             spokeClientsEventSearchConfigs: Object.fromEntries(
               Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.eventSearchConfig])
