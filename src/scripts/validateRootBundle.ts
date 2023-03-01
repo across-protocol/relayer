@@ -32,7 +32,7 @@ import {
 import { PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
-import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
+import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
 import { CONFIG_STORE_VERSION } from "../common";
 
 config();
