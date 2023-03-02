@@ -39,6 +39,12 @@ export function getEndBlockBuffers(
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number) => blockRangeEndBlockBuffer[chainId] ?? 0);
 }
 
+export function filterDisabledChains(disabledChains: number[]): number[] {
+  // If any chain ID's are not integers then ignore. UMIP-157 requires that this key cannot include
+  // the chain ID 1.
+  return disabledChains.filter((chainId: number) => !isNaN(chainId) && Number.isInteger(chainId) && chainId !== 1);
+}
+
 export function getBlockRangeForChain(
   blockRange: number[][],
   chain: number,
