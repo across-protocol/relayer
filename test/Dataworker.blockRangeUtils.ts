@@ -55,6 +55,7 @@ describe("Dataworker block range-related utility methods", async function () {
       spokePoolClients,
       defaultEndBlockBuffers,
       dataworkerClients,
+      latestMainnetBlock,
       latestMainnetBlock
     );
     expect(startingWidestBlocks).to.deep.equal(latestBlocks.map((endBlock) => [0, endBlock]));
@@ -66,6 +67,7 @@ describe("Dataworker block range-related utility methods", async function () {
       spokePoolClients,
       largeBuffers,
       dataworkerClients,
+      latestMainnetBlock,
       latestMainnetBlock
     );
     expect(zeroRange).to.deep.equal(latestBlocks.map((_) => [0, 0]));

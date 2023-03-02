@@ -35,7 +35,7 @@ import {
   blockRangesAreInvalidForSpokeClients,
   getBlockForChain,
   getBlockRangeForChain,
-  getBundleBlockRanges,
+  getImpliedBundleBlockRanges,
 } from "../dataworker/DataworkerUtils";
 import {
   getEndBlockBuffers,
@@ -265,9 +265,12 @@ export class Dataworker {
     // Construct a list of ending block ranges for each chain that we want to include
     // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
-    // Pass in `undefined` for the mainnet bundle end block because we want to use the latest disabled chains list
-    // to construct the bundle block range.
-    const blockRangesForProposal = await this._getWidestPossibleBlockRangeForNextBundle(spokePoolClients, undefined);
+    // Pass in `latest` for the mainnet bundle end block because we want to use the latest disabled chains list
+    // to construct the potential next bundle block range.
+    const blockRangesForProposal = await this._getWidestPossibleBlockRangeForNextBundle(
+      spokePoolClients,
+      this.clients.hubPoolClient.latestBlockNumber
+    );
 
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // potential proposal
@@ -876,7 +879,7 @@ export class Dataworker {
             continue;
           }
 
-          const blockNumberRanges = getBundleBlockRanges(
+          const blockNumberRanges = getImpliedBundleBlockRanges(
             this.clients.hubPoolClient,
             this.clients.configStoreClient,
             matchingRootBundle,
@@ -1315,7 +1318,7 @@ export class Dataworker {
           continue;
         }
 
-        const blockNumberRanges = getBundleBlockRanges(
+        const blockNumberRanges = getImpliedBundleBlockRanges(
           this.clients.hubPoolClient,
           this.clients.configStoreClient,
           matchingRootBundle,
@@ -1619,14 +1622,13 @@ export class Dataworker {
    * @param spokePoolClients SpokePool clients to query. If one is undefined then the chain ID will be treated as
    * disabled.
    * @param mainnetBundleEndBlock Passed in to determine which disabled chain list to use (i.e. the list that is live
-   * at the time of this block). If this is undefined, then `getWidestPossibleExpectedBlockRange` will use the latest
-   * mainnet block minus the mainnet buffer as the mainnet bundle end block.
+   * at the time of this block).
    * @returns [number, number]: [startBlock, endBlock]
    */
   async _getWidestPossibleBlockRangeForNextBundle(
     spokePoolClients: SpokePoolClientsByChain,
-    mainnetBundleEndBlock?: number
-  ) {
+    mainnetBundleEndBlock: number
+  ): Promise<number[][]> {
     return await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
       spokePoolClients,

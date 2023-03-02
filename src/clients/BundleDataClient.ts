@@ -24,7 +24,7 @@ import { Clients } from "../common";
 import {
   getBlockForChain,
   getBlockRangeForChain,
-  getBundleBlockRanges,
+  getImpliedBundleBlockRanges,
   getEndBlockBuffers,
   prettyPrintSpokePoolEvents,
 } from "../dataworker/DataworkerUtils";
@@ -82,7 +82,7 @@ export class BundleDataClient {
   // Return refunds from input bundle.
   async getPendingRefundsFromBundle(bundle: ProposedRootBundle): Promise<FillsToRefund> {
     // Reconstruct latest bundle block range.
-    const bundleEvaluationBlockRanges = getBundleBlockRanges(
+    const bundleEvaluationBlockRanges = getImpliedBundleBlockRanges(
       this.clients.hubPoolClient,
       this.clients.configStoreClient,
       bundle,

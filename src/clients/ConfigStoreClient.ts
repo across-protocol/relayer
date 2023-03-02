@@ -15,7 +15,6 @@ import {
   getBlockForTimestamp,
   shouldCache,
   setRedisKey,
-  assert,
 } from "../utils";
 
 import { CONFIG_STORE_VERSION, DEFAULT_CONFIG_STORE_VERSION } from "../common/Constants";
@@ -36,6 +35,7 @@ import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
 import { HubPoolClient } from "./HubPoolClient";
 import { createClient } from "redis4";
+import { filterDisabledChains } from "../dataworker/DataworkerUtils";
 
 export const GLOBAL_CONFIG_STORE_KEYS = {
   MAX_RELAYER_REPAYMENT_LEAF_SIZE: "MAX_RELAYER_REPAYMENT_LEAF_SIZE",
@@ -167,11 +167,10 @@ export class AcrossConfigStoreClient {
   }
 
   getDisabledChainsForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number[] {
-    const config = sortEventsDescending(this.cumulativeDisabledChainUpdates).find(
-      (config) => config.blockNumber <= blockNumber
+    return (
+      sortEventsDescending(this.cumulativeDisabledChainUpdates).find((config) => config.blockNumber <= blockNumber)
+        ?.chainIds ?? []
     );
-    if (!config) return [];
-    return config.chainIds;
   }
 
   getConfigStoreVersionForTimestamp(timestamp: number = Number.MAX_SAFE_INTEGER): number {
@@ -317,11 +316,7 @@ export class AcrossConfigStoreClient {
         });
       } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS)) {
         try {
-          // If any chain ID's are not numbers then ignore.
-          const chainIds = (JSON.parse(args.value) as number[]).filter(
-            (chainId: number) => !isNaN(chainId) && Number.isInteger(chainId) && chainId !== 1
-          );
-
+          const chainIds = filterDisabledChains(JSON.parse(args.value) as number[]);
           this.cumulativeDisabledChainUpdates.push({ ...args, chainIds });
         } catch (err) {
           // Can't parse list, skip.

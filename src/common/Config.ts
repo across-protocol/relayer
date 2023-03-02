@@ -1,4 +1,5 @@
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE } from "../common";
+import { filterDisabledChains } from "../dataworker/DataworkerUtils";
 import { assert } from "../utils";
 import * as Constants from "./Constants";
 
@@ -39,7 +40,7 @@ export class CommonConfig {
 
     this.version = ACROSS_BOT_VERSION ?? "unknown";
     this.disabledChainsOverride = DISABLED_CHAINS_OVERRIDE
-      ? JSON.parse(DISABLED_CHAINS_OVERRIDE).filter((x) => !isNaN(x) && Number.isInteger(x) && x !== 1)
+      ? filterDisabledChains(JSON.parse(DISABLED_CHAINS_OVERRIDE) as number[])
       : [];
 
     this.blockRangeEndBlockBuffer = BLOCK_RANGE_END_BLOCK_BUFFER

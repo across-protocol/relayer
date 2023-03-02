@@ -389,7 +389,7 @@ export async function getWidestPossibleExpectedBlockRange(
   endBlockBuffers: number[],
   clients: Clients,
   latestMainnetBlock: number,
-  _mainnetBundleEndBlock?: number
+  mainnetBundleEndBlock: number
 ): Promise<number[][]> {
   // We subtract a buffer from the end blocks to reduce the chance that network providers
   // for different bot runs produce different contract state because of variability near the HEAD of the network.
@@ -402,12 +402,6 @@ export async function getWidestPossibleExpectedBlockRange(
   );
 
   // Get the list of disabled chains at the time of the bundle end block for Mainnet.
-  const mainnetBundleEndBlock = _mainnetBundleEndBlock ?? latestPossibleBundleEndBlockNumbers[1];
-  // `mainnetBundleEndBlock` should never be undefined since there should always be a spoke pool client for chain 1.
-  if (mainnetBundleEndBlock === undefined)
-    throw new Error(
-      "PoolRebalanceUtils#getWidestPossibleExpectedBlockRange: Could not find bundle end block for mainnet."
-    );
   const disabledChains = clients.configStoreClient.getDisabledChainsForBlock(mainnetBundleEndBlock);
 
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => {
