@@ -111,6 +111,9 @@ export async function constructSpokePoolClientsWithStartBlocks(
   // where a chain is disabled and then reenabled. The Caller should be careful when setting when
   // running the disputer or proposer functionality as it can lead to proposing disputable bundles or
   // disputing valid bundles.
+
+  // Note: it's ok if startBlockOverride[1] is undefined, in that case we'll use the latest mainnet block
+  // as input into `getDisabledChainsForBlock`
   const disabledChains =
     config.disabledChainsOverride.length > 0
       ? config.disabledChainsOverride

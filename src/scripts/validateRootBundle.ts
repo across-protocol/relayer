@@ -48,7 +48,10 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   // Override default config with sensible defaults:
   // - DATAWORKER_FAST_LOOKBACK_COUNT=8 balances limiting RPC requests with querying
   // enough data to limit # of excess historical deposit queries.
+  // - SPOKE_ROOTS_LOOKBACK_COUNT unused in this script so set to something < DATAWORKER_FAST_LOOKBACK_COUNT
+  // to avoid configuration error.
   process.env.DATAWORKER_FAST_LOOKBACK_COUNT = "8";
+  process.env.SPOKE_ROOTS_LOOKBACK_COUNT = "0";
   const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
   logger[startupLogLevel(config)]({
     at: "RootBundleValidator",

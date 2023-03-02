@@ -31,22 +31,18 @@ import {
   ERC20,
   getProvider,
   EMPTY_MERKLE_ROOT,
-  getDeployedContract,
   getDeploymentBlockNumber,
   sortEventsDescending,
   paginatedEventQuery,
   ZERO_ADDRESS,
   getRefund,
 } from "../utils";
-import {
-  constructSpokePoolClientsForFastDataworker,
-  updateDataworkerClients,
-} from "../dataworker/DataworkerClientHelper";
+import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { createDataworker } from "../dataworker";
-import { SpokePoolClient } from "../clients";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
 import { ProposedRootBundle, RelayData, SpokePoolClientsByChain } from "../interfaces";
+import { constructSpokePoolClientsWithStartBlocks } from "../common";
 
 config();
 let logger: winston.Logger;
@@ -349,7 +345,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
     );
     const key = `${JSON.stringify(spokeClientFromBlocks)}-${JSON.stringify(spokeClientToBlocks)}`;
     if (!slowRootCache[key]) {
-      const spokePoolClientsForBundle = await constructSpokePoolClientsForFastDataworker(
+      const spokePoolClientsForBundle = await constructSpokePoolClientsWithStartBlocks(
         winston.createLogger({
           level: "warn", // Set to warn or higher so it doesn't produce extra logs
           transports: [new winston.transports.Console()],
@@ -395,38 +391,19 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
    * @returns A dictionary of chain ID to SpokePoolClient.
    */
   async function _createSpokePoolClients() {
-    const disabledChains =
-      config.disabledChainsOverride.length > 0
-        ? config.disabledChainsOverride
-        : clients.configStoreClient.getDisabledChainsForBlock();
-    if (disabledChains.length > 0)
-      logger.debug({
-        at: "Dataworker#index",
-        message: "Disabling constructing spoke pool clients for chains",
-        disabledChains,
-      });
-    const configWithDisabledChains = {
-      ...config,
-      spokePoolChains: config.spokePoolChains.filter((chainId) => !disabledChains.includes(chainId)),
-    };
-    const spokePools = Object.fromEntries(
-      configWithDisabledChains.spokePoolChains.map((chainId) => {
-        return [chainId, getDeployedContract("SpokePool", chainId, baseSigner).connect(getProvider(chainId))];
+    const spokePoolDeploymentBlocks = Object.fromEntries(
+      config.spokePoolChains.map((chainId) => {
+        return [chainId, getDeploymentBlockNumber("SpokePool", chainId)];
       })
     );
-    const spokePoolDeploymentBlocks = configWithDisabledChains.spokePoolChains.map((chainId) => {
-      return getDeploymentBlockNumber("SpokePool", chainId);
-    });
-    return Object.fromEntries(
-      configWithDisabledChains.spokePoolChains.map((chainId, i) => {
-        return [
-          chainId,
-          new SpokePoolClient(logger, spokePools[chainId], clients.configStoreClient, chainId, {
-            fromBlock: spokePoolDeploymentBlocks[i],
-            maxBlockLookBack: config.maxBlockLookBack[chainId],
-          }),
-        ];
-      })
+    return constructSpokePoolClientsWithStartBlocks(
+      logger,
+      clients.configStoreClient,
+      config,
+      baseSigner,
+      // Query events from deployment blocks to latest.
+      spokePoolDeploymentBlocks,
+      {}
     );
   }
 }
