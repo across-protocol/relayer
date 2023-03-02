@@ -197,7 +197,7 @@ export async function setupDataworker(
     [repaymentChainId]: spokePoolClient_3,
     1: spokePoolClient_4,
   };
-  const profitClient = new clients.ProfitClient(spyLogger, hubPoolClient, spokePoolClients, false, []);
+  const profitClient = new clients.ProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
   const bundleDataClient = new BundleDataClient(
     spyLogger,
     {
