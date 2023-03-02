@@ -243,23 +243,27 @@ export class BundleDataClient {
       }
     };
 
-    const mainnetBundleEndBlock = getBlockForChain(
-      blockRangesForChains.map(([, endBlock]) => endBlock),
-      1,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    );
-    const disabledChains = this.clients.configStoreClient.getDisabledChainsForBlock(mainnetBundleEndBlock);
-    const allChainIds = Object.keys(spokePoolClients)
-      .map(Number)
-      .filter((chainId) => !disabledChains.includes(chainId));
+    const isChainDisabled = (chainId: number): boolean => {
+      const blockRangeForChain = getBlockRangeForChain(
+        blockRangesForChains,
+        chainId,
+        this.chainIdListForBundleEvaluationBlockNumbers
+      );
+      return blockRangeForChain[0] === blockRangeForChain[1];
+    };
+
+    const allChainIds = Object.keys(spokePoolClients).map(Number);
 
     for (const originChainId of allChainIds) {
+      if (isChainDisabled(originChainId)) continue;
+
       const originClient = spokePoolClients[originChainId];
       if (!originClient.isUpdated) throw new Error(`origin SpokePoolClient on chain ${originChainId} not updated`);
 
       // Loop over all other SpokePoolClient's to find deposits whose destination chain is the selected origin chain.
       for (const destinationChainId of allChainIds) {
         if (originChainId === destinationChainId) continue;
+        if (isChainDisabled(destinationChainId)) continue;
 
         const destinationClient = spokePoolClients[destinationChainId];
         if (!destinationClient.isUpdated)
