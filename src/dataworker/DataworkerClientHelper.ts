@@ -3,23 +3,18 @@ import { DataworkerConfig } from "./DataworkerConfig";
 import {
   CHAIN_ID_LIST_INDICES,
   Clients,
-  CommonConfig,
   constructClients,
-  getSpokePoolClientsForContract,
-  getSpokePoolSigners,
+  constructSpokePoolClientsWithStartBlocks,
   updateClients,
   updateSpokePoolClients,
 } from "../common";
-import { Wallet, ethers, EventSearchConfig, getDeploymentBlockNumber, getDeployedContract, Contract } from "../utils";
-import { AcrossConfigStoreClient, BundleDataClient, ProfitClient, SpokePoolClient, TokenClient } from "../clients";
+import { Wallet } from "../utils";
+import { AcrossConfigStoreClient, BundleDataClient, ProfitClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
-import { SpokePoolClientsByChain } from "../interfaces";
 
 export interface DataworkerClients extends Clients {
   tokenClient: TokenClient;
-  spokePoolSigners: { [chainId: number]: Wallet };
-  spokePoolClientSearchSettings: { [chainId: number]: EventSearchConfig };
   bundleDataClient: BundleDataClient;
   profitClient?: ProfitClient;
 }
@@ -33,19 +28,6 @@ export async function constructDataworkerClients(
 
   // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
   const tokenClient = new TokenClient(logger, baseSigner.address, {}, commonClients.hubPoolClient);
-  const spokePoolSigners = await getSpokePoolSigners(baseSigner, config);
-  const spokePoolClientSearchSettings = Object.fromEntries(
-    config.spokePoolChains.map((chainId) => {
-      return [
-        chainId,
-        {
-          fromBlock: Number(getDeploymentBlockNumber("SpokePool", chainId)),
-          toBlock: null,
-          maxBlockLookBack: config.maxBlockLookBack[chainId],
-        },
-      ];
-    })
-  );
 
   // TODO: Remove need to pass in spokePoolClients into BundleDataClient since we pass in empty {} here and pass in
   // clients for each class level call we make. Its more of a static class.
@@ -67,8 +49,6 @@ export async function constructDataworkerClients(
     ...commonClients,
     bundleDataClient,
     tokenClient,
-    spokePoolSigners,
-    spokePoolClientSearchSettings,
     profitClient,
   };
 }
@@ -86,76 +66,6 @@ export async function updateDataworkerClients(clients: DataworkerClients, setAll
   // TODO: This should be refactored to check if the hubpool client has had one previous update run such that it has
   // L1 tokens within it.If it has we dont need to make it sequential like this.
   if (clients.profitClient) await clients.profitClient.update();
-}
-
-export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number]: SpokePoolClient }): {
-  [chainId: number]: ethers.providers.Provider;
-} {
-  return Object.fromEntries(
-    Object.entries(spokePoolClients).map(([chainId, client]) => [Number(chainId), client.spokePool.signer.provider!])
-  );
-}
-
-export async function constructSpokePoolClientsWithStartBlocks(
-  logger: winston.Logger,
-  configStoreClient: AcrossConfigStoreClient,
-  config: CommonConfig,
-  baseSigner: Wallet,
-  startBlockOverride: { [chainId: number]: number } = {},
-  toBlockOverride: { [chainId: number]: number } = {}
-): Promise<SpokePoolClientsByChain> {
-  // By default, construct spoke clients for all chains that are not disabled at the time of the first block that we'll
-  // query. This does not handle the case where a chain was disabled at the start block and later un-disabled, but
-  // this case is very rare. This is a good solution for handling the case where a chain is disabled and we want to
-  // eventually stop sending RPC requests for it, but we might need to reconstruct bundles (for the executor) for
-  // a while even after we disable it.
-
-  // Caller can optionally override the disabled chains list, which is useful for executing leaves or validating
-  // older bundles. This is a useful override for handling the aforementioned rare case where a chain is disabled and
-  // then reenabled. The Caller should be careful when setting when running the disputer or proposer functionality
-  // as it can lead to proposing disputable bundles or disputing valid bundles.
-  const disabledChains =
-    config.disabledChainsOverride.length > 0
-      ? config.disabledChainsOverride
-      : configStoreClient.getDisabledChainsForBlock(startBlockOverride[1]);
-
-  // In no cases do we want to override the disabled chain list for Dataworker functions. If we want to reconstruct
-  // and older bundle, then the `startBlockOverride`-`toBlockOverride` should cover that older bundle's range,
-  // and in that case if the chain was enabled at `startBlockOverride` then we will construct a spoke client
-  // for it.
-  const configWithDisabledChains = {
-    ...config,
-    spokePoolChains: config.spokePoolChains.filter((chainId) => !disabledChains.includes(chainId)),
-  };
-  if (disabledChains.length > 0)
-    logger.debug({
-      at: "DataworkerClientHelper#constructSpokePoolClientsWithStartBlocks",
-      message: "Disabling constructing spoke pool clients for chains",
-      disabledChains,
-    });
-
-  // Set up Spoke signers and connect them to spoke pool contract objects:
-  const spokePoolSigners = await getSpokePoolSigners(baseSigner, configWithDisabledChains);
-  const spokePools = configWithDisabledChains.spokePoolChains.map((chainId) => {
-    return { chainId, contract: getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) };
-  });
-
-  // If no lookback is set, fromBlock will be set to spoke pool's deployment block.
-  const fromBlocks: { [chainId: number]: number } = {};
-  spokePools.forEach((obj: { chainId: number; contract: Contract }) => {
-    if (startBlockOverride[obj.chainId]) {
-      fromBlocks[obj.chainId] = startBlockOverride[obj.chainId];
-    }
-  });
-
-  return getSpokePoolClientsForContract(
-    logger,
-    configStoreClient,
-    configWithDisabledChains,
-    spokePools,
-    fromBlocks,
-    toBlockOverride
-  );
 }
 
 // Constructs spoke pool clients with short lookback and validates that the Dataworker can use the data

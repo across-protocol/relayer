@@ -22,7 +22,7 @@ import * as constants from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { getNetworkName, getRefundForFills, MAX_UINT_VAL, toBN } from "../src/utils";
-import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
+import { spokePoolClientsToProviders } from "../src/common";
 import { MockAdapterManager } from "./mocks";
 import { BalanceType } from "../src/interfaces";
 

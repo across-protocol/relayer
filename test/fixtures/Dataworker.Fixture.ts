@@ -209,14 +209,9 @@ export async function setupDataworker(
     testChainIdList
   );
 
-  const defaultEventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 };
   const dataworkerClients: DataworkerClients = {
     bundleDataClient,
     tokenClient,
-    spokePoolSigners: Object.fromEntries([hubPoolChainId, ...testChainIdList].map((chainId) => [chainId, owner])),
-    spokePoolClientSearchSettings: Object.fromEntries(
-      testChainIdList.map((chainId) => [chainId, defaultEventSearchConfig])
-    ),
     hubPoolClient,
     multiCallerClient,
     configStoreClient,

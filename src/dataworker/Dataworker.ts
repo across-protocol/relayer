@@ -28,7 +28,7 @@ import {
   BigNumberForToken,
   RelayData,
 } from "../interfaces";
-import { DataworkerClients, spokePoolClientsToProviders } from "./DataworkerClientHelper";
+import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
 import {
@@ -45,7 +45,7 @@ import {
 } from "./DataworkerUtils";
 import { BalanceAllocator } from "../clients";
 import _ from "lodash";
-import { CONFIG_STORE_VERSION } from "../common";
+import { CONFIG_STORE_VERSION, spokePoolClientsToProviders } from "../common";
 import { isOvmChain, ovmWethTokens } from "../clients/bridges";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
@@ -1149,7 +1149,7 @@ export class Dataworker {
               requests.push({
                 tokens: [ZERO_ADDRESS],
                 amount: this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf),
-                holder: await this.clients.spokePoolSigners[hubPoolChainId].getAddress(),
+                holder: await this.clients.hubPoolClient.hubPool.signer.getAddress(),
                 chainId: hubPoolChainId,
               });
           }

@@ -5,7 +5,7 @@ import {
   getDeploymentBlockNumber,
   Wallet,
   Contract,
-  getDeployedBlockNumber,
+  ethers,
   getBlockForTimestamp,
   Block,
   getCurrentTime,
@@ -35,6 +35,14 @@ export async function getSpokePoolSigners(
   );
 }
 
+/**
+ * Construct spoke pool clients that query from [latest-lookback, latest]. Clients on chains that are disabled at
+ * latest-lookback will be set to undefined.
+ * @param baseSigner Signer to set for spoke pool contracts.
+ * @param initialLookBackOverride How far to lookback per chain. Specified in seconds.
+ * @param hubPoolChainId Mainnet chain ID.
+ * @returns Mapping of chainId to SpokePoolClient
+ */
 export async function constructSpokePoolClientsWithLookback(
   logger: winston.Logger,
   configStoreClient: AcrossConfigStoreClient,
@@ -43,17 +51,82 @@ export async function constructSpokePoolClientsWithLookback(
   initialLookBackOverride: number,
   hubPoolChainId: number
 ): Promise<SpokePoolClientsByChain> {
+  // Create blockfinders for each chain. We'll use the latter to find the first
+  // blocks that we should query per chain.
+  const blockFinders = Object.fromEntries(
+    config.spokePoolChains.map((chainId) => {
+      const providerForChain = getProvider(chainId);
+      if (chainId === hubPoolChainId) return [hubPoolChainId, configStoreClient.blockFinder];
+      else return [chainId, new BlockFinder<Block>(providerForChain.getBlock.bind(providerForChain), [], chainId)];
+    })
+  );
+  const currentTime = getCurrentTime();
+
+  const fromBlocks = Object.fromEntries(
+    await Promise.all(
+      config.spokePoolChains.map(async (chainId) => {
+        return [
+          chainId,
+          await getBlockForTimestamp(
+            hubPoolChainId,
+            chainId,
+            currentTime - initialLookBackOverride,
+            currentTime,
+            blockFinders[chainId],
+            configStoreClient.redisClient
+          ),
+        ];
+      })
+    )
+  );
+
+  // @dev: Set toBlocks = {} to construct spoke pool clients that query until the latest blocks.
+  return await constructSpokePoolClientsWithStartBlocks(logger, configStoreClient, config, baseSigner, fromBlocks, {});
+}
+
+/**
+ * Construct spoke pool clients that query from [startBlockOverride, toBlockOverride]. Clients on chains that are
+ * disabled at startBlockOverride will be set to undefined.
+ * @param baseSigner Signer to set for spoke pool contracts.
+ * @param startBlockOverride Mapping of chainId to from Blocks per chain to set in SpokePoolClients.
+ * @param toBlockOverride Mapping of chainId to toBlocks per chain to set in SpokePoolClients.
+ * @returns Mapping of chainId to SpokePoolClient
+ */
+export async function constructSpokePoolClientsWithStartBlocks(
+  logger: winston.Logger,
+  configStoreClient: AcrossConfigStoreClient,
+  config: CommonConfig,
+  baseSigner: Wallet,
+  startBlockOverride: { [chainId: number]: number } = {},
+  toBlockOverride: { [chainId: number]: number } = {}
+): Promise<SpokePoolClientsByChain> {
+  // By default, construct spoke clients for all chains that are not disabled at the time of the first block that we'll
+  // query. This does not handle the case where a chain was disabled at the start block and later un-disabled, but
+  // this case is very rare. This is a good solution for handling the case where a chain is disabled and we want to
+  // eventually stop sending RPC requests for it, but we might need to reconstruct bundles (for the executor) for
+  // a while even after we disable it.
+
+  // Caller can optionally override the disabled chains list, which is useful for executing leaves or validating
+  // older bundles, or monitoring older bundles. This is a useful override for handling the aforementioned rare case
+  // where a chain is disabled and then reenabled. The Caller should be careful when setting when
+  // running the disputer or proposer functionality as it can lead to proposing disputable bundles or
+  // disputing valid bundles.
   const disabledChains =
     config.disabledChainsOverride.length > 0
       ? config.disabledChainsOverride
-      : configStoreClient.getDisabledChainsForBlock();
+      : configStoreClient.getDisabledChainsForBlock(startBlockOverride[1]);
+
+  // In no cases do we want to override the disabled chain list for Dataworker functions. If we want to reconstruct
+  // and older bundle, then the `startBlockOverride`-`toBlockOverride` should cover that older bundle's range,
+  // and in that case if the chain was enabled at `startBlockOverride` then we will construct a spoke client
+  // for it.
   const configWithDisabledChains = {
     ...config,
     spokePoolChains: config.spokePoolChains.filter((chainId) => !disabledChains.includes(chainId)),
   };
   if (disabledChains.length > 0)
     logger.debug({
-      at: "ClientHelper#constructSpokePoolClientsWithLookback",
+      at: "DataworkerClientHelper#constructSpokePoolClientsWithStartBlocks",
       message: "Disabling constructing spoke pool clients for chains",
       disabledChains,
     });
@@ -63,41 +136,32 @@ export async function constructSpokePoolClientsWithLookback(
   const spokePools = configWithDisabledChains.spokePoolChains.map((chainId) => {
     return { chainId, contract: getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) };
   });
-  const blockFinders = Object.fromEntries(
-    spokePools.map((obj) => {
-      if (obj.chainId === hubPoolChainId) return [hubPoolChainId, configStoreClient.blockFinder];
-      else
-        return [
-          obj.chainId,
-          new BlockFinder<Block>(obj.contract.provider.getBlock.bind(obj.contract.provider), [], obj.chainId),
-        ];
-    })
-  );
-  const currentTime = getCurrentTime();
 
-  const fromBlocks = Object.fromEntries(
-    await Promise.all(
-      initialLookBackOverride > 0
-        ? spokePools.map(async (obj) => {
-            return [
-              obj.chainId,
-              await getBlockForTimestamp(
-                hubPoolChainId,
-                obj.chainId,
-                currentTime - initialLookBackOverride,
-                currentTime,
-                blockFinders[obj.chainId],
-                configStoreClient.redisClient
-              ),
-            ];
-          })
-        : spokePools.map(async (obj) => [obj.chainId, await getDeployedBlockNumber("SpokePool", obj.chainId)])
-    )
-  );
+  // If no lookback is set, fromBlock will be set to spoke pool's deployment block.
+  const fromBlocks: { [chainId: number]: number } = {};
+  spokePools.forEach((obj: { chainId: number; contract: Contract }) => {
+    if (startBlockOverride[obj.chainId]) {
+      fromBlocks[obj.chainId] = startBlockOverride[obj.chainId];
+    }
+  });
 
-  return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, fromBlocks);
+  return getSpokePoolClientsForContract(
+    logger,
+    configStoreClient,
+    configWithDisabledChains,
+    spokePools,
+    fromBlocks,
+    toBlockOverride
+  );
 }
 
+/**
+ * Constructs spoke pool clients using input configurations.
+ * @param spokePools Creates a client for each spoke pool in this mapping of chainId to contract.
+ * @param fromBlocks Mapping of chainId to fromBlocks per chain to set in SpokePoolClients.
+ * @param toBlocks Mapping of chainId to toBlocks per chain to set in SpokePoolClients.
+ * @returns Mapping of chainId to SpokePoolClient
+ */
 export function getSpokePoolClientsForContract(
   logger: winston.Logger,
   configStoreClient: AcrossConfigStoreClient,
@@ -179,4 +243,12 @@ export async function constructClients(
 
 export async function updateClients(clients: Clients) {
   await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
+}
+
+export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number]: SpokePoolClient }): {
+  [chainId: number]: ethers.providers.Provider;
+} {
+  return Object.fromEntries(
+    Object.entries(spokePoolClients).map(([chainId, client]) => [Number(chainId), client.spokePool.signer.provider!])
+  );
 }

@@ -26,7 +26,7 @@ import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { toBN, getRefundForFills, getRealizedLpFeeForFills, MAX_UINT_VAL } from "../src/utils";
-import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
+import { spokePoolClientsToProviders } from "../src/common";
 import { DepositWithBlock, Fill } from "../src/interfaces";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
