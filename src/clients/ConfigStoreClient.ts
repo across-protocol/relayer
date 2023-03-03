@@ -189,17 +189,15 @@ export class AcrossConfigStoreClient {
       (chainId) => !disabledChainsAtFromBlock.includes(chainId)
     );
 
+    // Update list of enabled chains with any of the candidate chains that have been removed from the
+    // disabled list during the block range.
     return sortEventsAscending(this.cumulativeDisabledChainUpdates)
       .reduce((enabledChains: number[], disabledChainUpdate) => {
         if (disabledChainUpdate.blockNumber > toBlock || disabledChainUpdate.blockNumber < fromBlock)
           return enabledChains;
-        // Update list of enabled chains with any chains that were un-disabled in the block range.
-        disabledChainsAtFromBlock.forEach((previouslyDisabledChainId) => {
-          if (
-            !disabledChainUpdate.chainIds.includes(previouslyDisabledChainId) &&
-            !enabledChainsAtFromBlock.includes(previouslyDisabledChainId)
-          )
-            enabledChains.push(previouslyDisabledChainId);
+        allPossibleChains.forEach((chainId) => {
+          if (!disabledChainUpdate.chainIds.includes(chainId) && !enabledChains.includes(chainId))
+            enabledChains.push(chainId);
         });
         return enabledChains;
       }, enabledChainsAtFromBlock)
