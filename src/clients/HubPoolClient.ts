@@ -335,13 +335,6 @@ export class HubPoolClient {
   getNextBundleStartBlockNumber(chainIdList: number[], latestMainnetBlock: number, chainId: number): number {
     const endBlock = this.getLatestBundleEndBlockForChain(chainIdList, latestMainnetBlock, chainId);
 
-  getNextBundleStartBlockNumber(chainIdList: number[], latestMainnetBlock: number, chainId: number): number {
-    const endBlock = this.getLatestBundleEndBlockForChain(chainIdList, latestMainnetBlock, chainId);
-
-    // If `chainId` either doesn't exist in the chainIdList, or is at an index that doesn't exist in the root bundle
-    // event's bundle block range (e.g. bundle block range has two entries, chain ID list has three, and chain matches
-    // third entry), return 0 to indicate we want to get all history for this chain that we haven't seen before.
-
     // This assumes that chain ID's are only added to the chain ID list over time, and that chains are never
     // deleted.
     return endBlock > 0 ? endBlock + 1 : 0;
