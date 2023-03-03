@@ -88,20 +88,19 @@ export function getImpliedBundleBlockRanges(
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ): number[][] {
   const prevRootBundle = hubPoolClient.getLatestFullyExecutedRootBundle(rootBundle.blockNumber);
-  const mainnetBundleEndBlockForMatchingRootBundle = getBlockForChain(
-    rootBundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
-    1,
-    chainIdListForBundleEvaluationBlockNumbers
-  );
   // If chain is disabled for this bundle block range, end block should be same as previous bundle.
   // Otherwise the range should be previous bundle's endBlock + 1 to current bundle's end block.
-  const disabledChains = configStoreClient.getDisabledChainsForBlock(mainnetBundleEndBlockForMatchingRootBundle);
   return rootBundle.bundleEvaluationBlockNumbers.map((endBlock, i) => {
     const chainId = chainIdListForBundleEvaluationBlockNumbers[i];
-    if (disabledChains.includes(chainId)) return [endBlock.toNumber(), endBlock.toNumber()];
     const fromBlock = prevRootBundle?.bundleEvaluationBlockNumbers?.[i]
       ? prevRootBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
       : 0;
+    const enabledChains = configStoreClient.getEnabledChainsInBlockRange(
+      fromBlock,
+      endBlock.toNumber(),
+      chainIdListForBundleEvaluationBlockNumbers
+    );
+    if (!enabledChains.includes(chainId)) return [endBlock.toNumber(), endBlock.toNumber()];
     return [fromBlock, endBlock.toNumber()];
   });
 }

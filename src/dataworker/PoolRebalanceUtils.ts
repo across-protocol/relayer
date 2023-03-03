@@ -391,30 +391,36 @@ export async function getWidestPossibleExpectedBlockRange(
   latestMainnetBlock: number,
   mainnetBundleEndBlock: number
 ): Promise<number[][]> {
-  // We subtract a buffer from the end blocks to reduce the chance that network providers
-  // for different bot runs produce different contract state because of variability near the HEAD of the network.
-  // Reducing the latest block that we query also gives partially filled deposits slightly more buffer for relayers
-  // to fully fill the deposit and reduces the chance that the data worker includes a slow fill payment that gets
-  // filled during the challenge period.
-  const latestPossibleBundleEndBlockNumbers = chainIdListForBundleEvaluationBlockNumbers.map(
-    (chainId: number, index) =>
-      spokeClients[chainId] && Math.max(spokeClients[chainId].latestBlockNumber - endBlockBuffers[index], 0)
+  // Get the list of enabled chains for the block range.
+  const enabledChains = clients.configStoreClient.getEnabledChainsInBlockRange(
+    clients.hubPoolClient.getNextBundleStartBlockNumber(
+      chainIdListForBundleEvaluationBlockNumbers,
+      mainnetBundleEndBlock,
+      1
+    ),
+    mainnetBundleEndBlock,
+    chainIdListForBundleEvaluationBlockNumbers
   );
-
-  // Get the list of disabled chains at the time of the bundle end block for Mainnet.
-  const disabledChains = clients.configStoreClient.getDisabledChainsForBlock(mainnetBundleEndBlock);
-
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => {
     // If chain is disabled, re-use the latest bundle end block for the chain as both the start
     // and end block.
-    if (disabledChains.includes(chainId)) {
+    if (!enabledChains.includes(chainId)) {
       const lastEndBlockForDisabledChain = clients.hubPoolClient.getLatestBundleEndBlockForChain(
         chainIdListForBundleEvaluationBlockNumbers,
-        latestMainnetBlock,
+        mainnetBundleEndBlock,
         chainId
       );
       return [lastEndBlockForDisabledChain, lastEndBlockForDisabledChain];
     } else {
+      // We subtract a buffer from the end blocks to reduce the chance that network providers
+      // for different bot runs produce different contract state because of variability near the HEAD of the network.
+      // Reducing the latest block that we query also gives partially filled deposits slightly more buffer for relayers
+      // to fully fill the deposit and reduces the chance that the data worker includes a slow fill payment that gets
+      // filled during the challenge period.
+      const latestPossibleBundleEndBlockNumbers = chainIdListForBundleEvaluationBlockNumbers.map(
+        (chainId: number, index) =>
+          spokeClients[chainId] && Math.max(spokeClients[chainId].latestBlockNumber - endBlockBuffers[index], 0)
+      );
       return [
         clients.hubPoolClient.getNextBundleStartBlockNumber(
           chainIdListForBundleEvaluationBlockNumbers,

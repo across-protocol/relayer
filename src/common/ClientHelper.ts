@@ -97,63 +97,43 @@ export async function constructSpokePoolClientsWithStartBlocks(
   configStoreClient: AcrossConfigStoreClient,
   config: CommonConfig,
   baseSigner: Wallet,
-  startBlockOverride: { [chainId: number]: number } = {},
+  startBlocks: { [chainId: number]: number },
   toBlockOverride: { [chainId: number]: number } = {}
 ): Promise<SpokePoolClientsByChain> {
-  // By default, construct spoke clients for all chains that are not disabled at the time of the first block that we'll
-  // query. This does not handle the case where a chain was disabled at the start block and later un-disabled, but
-  // this case is very rare. This is a good solution for handling the case where a chain is disabled and we want to
-  // eventually stop sending RPC requests for it, but we might need to reconstruct bundles (for the executor) for
-  // a while even after we disable it.
+  // Construct spoke pool clients for all chains that were enabled in block range.
 
   // Caller can optionally override the disabled chains list, which is useful for executing leaves or validating
-  // older bundles, or monitoring older bundles. This is a useful override for handling the aforementioned rare case
-  // where a chain is disabled and then reenabled. The Caller should be careful when setting when
+  // older bundles, or monitoring older bundles. The Caller should be careful when setting when
   // running the disputer or proposer functionality as it can lead to proposing disputable bundles or
   // disputing valid bundles.
 
-  // Note: it's ok if startBlockOverride[1] is undefined, in that case we'll use the latest mainnet block
-  // as input into `getDisabledChainsForBlock`
-  const disabledChains =
-    config.disabledChainsOverride.length > 0
-      ? config.disabledChainsOverride
-      : configStoreClient.getDisabledChainsForBlock(startBlockOverride[1]);
-
-  // In no cases do we want to override the disabled chain list for Dataworker functions. If we want to reconstruct
-  // and older bundle, then the `startBlockOverride`-`toBlockOverride` should cover that older bundle's range,
-  // and in that case if the chain was enabled at `startBlockOverride` then we will construct a spoke client
-  // for it.
-  const configWithDisabledChains = {
+  const enabledChains = configStoreClient
+    .getEnabledChainsInBlockRange(startBlocks[1], toBlockOverride[1], config.spokePoolChains)
+    .filter((chainId) => !config.disabledChainsOverride.includes(chainId));
+  logger.debug({
+    at: "ClientHelper#constructSpokePoolClientsWithStartBlocks",
+    message: "Enabled chains in block range",
+    blockRange: [startBlocks[1], toBlockOverride[1]],
+    enabledChains,
+    disabledChains: config.disabledChainsOverride,
+  });
+  const configWithEnabledChains = {
     ...config,
-    spokePoolChains: config.spokePoolChains.filter((chainId) => !disabledChains.includes(chainId)),
+    spokePoolChains: enabledChains,
   };
-  if (disabledChains.length > 0)
-    logger.debug({
-      at: "DataworkerClientHelper#constructSpokePoolClientsWithStartBlocks",
-      message: "Disabling constructing spoke pool clients for chains",
-      disabledChains,
-    });
 
   // Set up Spoke signers and connect them to spoke pool contract objects:
-  const spokePoolSigners = await getSpokePoolSigners(baseSigner, configWithDisabledChains);
-  const spokePools = configWithDisabledChains.spokePoolChains.map((chainId) => {
+  const spokePoolSigners = await getSpokePoolSigners(baseSigner, configWithEnabledChains);
+  const spokePools = configWithEnabledChains.spokePoolChains.map((chainId) => {
     return { chainId, contract: getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) };
-  });
-
-  // If no lookback is set, fromBlock will be set to spoke pool's deployment block.
-  const fromBlocks: { [chainId: number]: number } = {};
-  spokePools.forEach((obj: { chainId: number; contract: Contract }) => {
-    if (startBlockOverride[obj.chainId]) {
-      fromBlocks[obj.chainId] = startBlockOverride[obj.chainId];
-    }
   });
 
   return getSpokePoolClientsForContract(
     logger,
     configStoreClient,
-    configWithDisabledChains,
+    configWithEnabledChains,
     spokePools,
-    fromBlocks,
+    startBlocks,
     toBlockOverride
   );
 }

@@ -15,9 +15,10 @@ import {
   getBlockForTimestamp,
   shouldCache,
   setRedisKey,
+  sortEventsAscending,
 } from "../utils";
 
-import { CONFIG_STORE_VERSION, DEFAULT_CONFIG_STORE_VERSION } from "../common/Constants";
+import { CHAIN_ID_LIST_INDICES, CONFIG_STORE_VERSION, DEFAULT_CONFIG_STORE_VERSION } from "../common/Constants";
 
 import {
   L1TokenTransferThreshold,
@@ -164,6 +165,45 @@ export class AcrossConfigStoreClient {
     );
     if (!config) throw new Error(`Could not find MaxL1TokenCount before block ${blockNumber}`);
     return Number(config.value);
+  }
+
+  /**
+   * Returns list of chains that have been enabled at least once in the block range.
+   * If a chain was disabled in the block range, it will be included in the list provided it was enabled
+   * at some point in the block range.
+   * @param fromBlock Start block to search inclusive
+   * @param toBlock End block to search inclusive. Defaults to MAX_SAFE_INTEGER, so grabs all disabled chain events
+   * up until `latest`.
+   * @param allPossibleChains Returned list will be a subset of this list.
+   * @returns List of chain IDs that have been enabled at least once in the block range. Sorted from lowest to highest.
+   */
+  getEnabledChainsInBlockRange(
+    fromBlock,
+    toBlock = Number.MAX_SAFE_INTEGER,
+    allPossibleChains = CHAIN_ID_LIST_INDICES
+  ) {
+    if (toBlock < fromBlock) throw new Error(`Invalid block range: fromBlock ${fromBlock} > toBlock ${toBlock}`);
+    // Initiate list with all chains enabled at the fromBlock.
+    const disabledChainsAtFromBlock = this.getDisabledChainsForBlock(fromBlock);
+    const enabledChainsAtFromBlock = allPossibleChains.filter(
+      (chainId) => !disabledChainsAtFromBlock.includes(chainId)
+    );
+
+    return sortEventsAscending(this.cumulativeDisabledChainUpdates)
+      .reduce((enabledChains: number[], disabledChainUpdate) => {
+        if (disabledChainUpdate.blockNumber > toBlock || disabledChainUpdate.blockNumber < fromBlock)
+          return enabledChains;
+        // Update list of enabled chains with any chains that were un-disabled in the block range.
+        disabledChainsAtFromBlock.forEach((previouslyDisabledChainId) => {
+          if (
+            !disabledChainUpdate.chainIds.includes(previouslyDisabledChainId) &&
+            !enabledChainsAtFromBlock.includes(previouslyDisabledChainId)
+          )
+            enabledChains.push(previouslyDisabledChainId);
+        });
+        return enabledChains;
+      }, enabledChainsAtFromBlock)
+      .sort((a, b) => a - b);
   }
 
   getDisabledChainsForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number[] {
