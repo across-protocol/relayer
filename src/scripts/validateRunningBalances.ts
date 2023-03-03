@@ -31,7 +31,6 @@ import {
   ERC20,
   getProvider,
   EMPTY_MERKLE_ROOT,
-  getDeploymentBlockNumber,
   sortEventsDescending,
   paginatedEventQuery,
   ZERO_ADDRESS,
@@ -42,7 +41,7 @@ import { createDataworker } from "../dataworker";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
 import { ProposedRootBundle, RelayData, SpokePoolClientsByChain } from "../interfaces";
-import { constructSpokePoolClientsWithStartBlocks } from "../common";
+import { constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 
 config();
 let logger: winston.Logger;
@@ -55,17 +54,28 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
   const { clients, dataworker, config } = await createDataworker(logger, baseSigner);
   await updateDataworkerClients(clients, false);
 
+  // Throw out most recent bundle as its leaves might not have executed.
+  const validatedBundles = sortEventsDescending(clients.hubPoolClient.getValidatedRootBundles()).slice(1);
+  const excesses: { [chainId: number]: { [l1Token: string]: string[] } } = {};
+  const bundlesToValidate = 10; // Roughly 2 days worth of bundles.
+
   // Create spoke pool clients that only query events related to root bundle proposals and roots
-  // being sent to L2s.
-  const spokePoolClients = await _createSpokePoolClients();
+  // being sent to L2s. Clients will load events from the endblocks set in `oldestBundleToLookupEventsFor`.
+  const oldestBundleToLookupEventsFor = validatedBundles[bundlesToValidate + 4];
+  const _oldestBundleEndBlocks = oldestBundleToLookupEventsFor.bundleEvaluationBlockNumbers.map((x) => x.toNumber());
+  const oldestBundleEndBlocks = Object.fromEntries(
+    dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
+      return [
+        chainId,
+        getBlockForChain(_oldestBundleEndBlocks, chainId, dataworker.chainIdListForBundleEvaluationBlockNumbers),
+      ];
+    })
+  );
+  const spokePoolClients = await _createSpokePoolClients(oldestBundleEndBlocks);
   await Promise.all(
     Object.values(spokePoolClients).map((client) => client.update(["RelayedRootBundle", "ExecutedRelayerRefundRoot"]))
   );
 
-  // Throw out most recent bundle as its leaves might not have executed.
-  const validatedBundles = sortEventsDescending(clients.hubPoolClient.getValidatedRootBundles()).slice(1);
-  const excesses: { [chainId: number]: { [l1Token: string]: string[] } } = {};
-  const bundlesToValidate = 5; // Roughly 2 days worth of bundles.
   for (let x = 0; x < bundlesToValidate; x++) {
     const mostRecentValidatedBundle = validatedBundles[x];
     console.group(
@@ -347,7 +357,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
     if (!slowRootCache[key]) {
       const spokePoolClientsForBundle = await constructSpokePoolClientsWithStartBlocks(
         winston.createLogger({
-          level: "warn", // Set to warn or higher so it doesn't produce extra logs
+          level: "debug",
           transports: [new winston.transports.Console()],
         }),
         clients.configStoreClient,
@@ -356,6 +366,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
         spokeClientFromBlocks,
         spokeClientToBlocks
       );
+      await updateSpokePoolClients(spokePoolClientsForBundle);
 
       // Reconstruct bundle block range for bundle.
       const mainnetBundleEndBlock = getBlockForChain(
@@ -390,19 +401,13 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
    * @dev Clients are only created for chains not on disabled chain list.
    * @returns A dictionary of chain ID to SpokePoolClient.
    */
-  async function _createSpokePoolClients() {
-    const spokePoolDeploymentBlocks = Object.fromEntries(
-      config.spokePoolChains.map((chainId) => {
-        return [chainId, getDeploymentBlockNumber("SpokePool", chainId)];
-      })
-    );
+  async function _createSpokePoolClients(fromBlocks: { [chainId: number]: number }) {
     return constructSpokePoolClientsWithStartBlocks(
       logger,
       clients.configStoreClient,
       config,
       baseSigner,
-      // Query events from deployment blocks to latest.
-      spokePoolDeploymentBlocks,
+      fromBlocks,
       {}
     );
   }
