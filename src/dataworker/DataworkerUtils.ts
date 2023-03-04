@@ -125,6 +125,7 @@ export function blockRangesAreInvalidForSpokeClients(
       chainIdListForBundleEvaluationBlockNumbers
     );
     // If block range is 0 then chain is disabled, we don't need to query events for this chain.
+    if (isNaN(blockRangeForChain[1]) || isNaN(blockRangeForChain[0])) return true;
     if (blockRangeForChain[1] === blockRangeForChain[0]) return false;
 
     const clientLastBlockQueried =

@@ -45,16 +45,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
     for (;;) {
       const loopStart = Date.now();
       await updateDataworkerClients(clients);
-      const disabledChains = [288]; // clients.configStoreClient.getDisabledChainsForTimestamp()
-      const configWithDisabledChains = {
-        ...config,
-        spokePoolChains: config.spokePoolChains.filter((chainId) => !disabledChains.includes(chainId)),
-      };
-      logger.debug({
-        at: "Dataworker#index",
-        message: "Disabled chains listed in config store",
-        disabledChains,
-      });
 
       // Determine the spoke client's lookback:
       // 1. We initiate the spoke client event search windows based on a start bundle's bundle block end numbers and
@@ -74,7 +64,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
 
       // Get block range for spoke clients using the dataworker fast lookback bundle count.
       const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
-        configWithDisabledChains,
+        config,
         clients,
         dataworker
       );
@@ -92,7 +82,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       const spokePoolClients = await constructSpokePoolClientsForFastDataworker(
         logger,
         clients.configStoreClient,
-        configWithDisabledChains,
+        config,
         baseSigner,
         fromBlocks,
         toBlocks
