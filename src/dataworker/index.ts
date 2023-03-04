@@ -40,7 +40,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
   const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
   try {
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
-    
+
     for (;;) {
       const loopStart = Date.now();
       await updateDataworkerClients(clients);
