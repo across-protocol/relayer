@@ -107,6 +107,8 @@ export async function constructSpokePoolClientsWithStartBlocks(
   // running the disputer or proposer functionality as it can lead to proposing disputable bundles or
   // disputing valid bundles.
 
+  if (!configStoreClient.isUpdated)
+    throw new Error("Config store client must be updated before constructing spoke pool clients");
   const enabledChains = configStoreClient
     .getEnabledChainsInBlockRange(startBlocks[1], toBlockOverride[1], config.spokePoolChains)
     .filter((chainId) => !config.disabledChainsOverride.includes(chainId));
