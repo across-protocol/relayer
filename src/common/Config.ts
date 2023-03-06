@@ -9,7 +9,6 @@ export interface ProcessEnv {
 
 export class CommonConfig {
   readonly hubPoolChainId: number;
-  readonly spokePoolChains: number[];
   readonly pollingDelay: number;
   readonly maxBlockLookBack: { [key: number]: number };
   readonly maxTxWait: number;
@@ -19,13 +18,11 @@ export class CommonConfig {
   readonly maxRelayerLookBack: number;
   readonly multiCallChunkSize: { [chainId: number]: number };
   readonly version: string;
-  readonly disabledChainsOverride: number[];
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
 
   constructor(env: ProcessEnv) {
     const {
       MAX_RELAYER_DEPOSIT_LOOK_BACK,
-      CONFIGURED_NETWORKS,
       BLOCK_RANGE_END_BLOCK_BUFFER,
       HUB_CHAIN_ID,
       POLLING_DELAY,
@@ -35,25 +32,26 @@ export class CommonConfig {
       REDIS_URL,
       BUNDLE_REFUND_LOOKBACK,
       ACROSS_BOT_VERSION,
-      DISABLED_CHAINS_OVERRIDE,
     } = env;
 
     this.version = ACROSS_BOT_VERSION ?? "unknown";
-    this.disabledChainsOverride = DISABLED_CHAINS_OVERRIDE
-      ? filterDisabledChains(JSON.parse(DISABLED_CHAINS_OVERRIDE) as number[])
-      : [];
 
     this.blockRangeEndBlockBuffer = BLOCK_RANGE_END_BLOCK_BUFFER
       ? JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER)
       : Constants.BUNDLE_END_BLOCK_BUFFERS;
+    if (Object.keys(this.blockRangeEndBlockBuffer).length > 0)
+      for (const chainId of Constants.CHAIN_ID_LIST_INDICES)
+        assert(
+          Object.keys(this.blockRangeEndBlockBuffer).includes(chainId.toString()),
+          "BLOCK_RANGE_END_BLOCK_BUFFER missing networks"
+        );
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
     this.hubPoolChainId = Number(HUB_CHAIN_ID ?? 1);
     this.pollingDelay = Number(POLLING_DELAY ?? 60);
-    this.spokePoolChains = CONFIGURED_NETWORKS ? JSON.parse(CONFIGURED_NETWORKS) : Constants.CHAIN_ID_LIST_INDICES;
     this.maxBlockLookBack = MAX_BLOCK_LOOK_BACK ? JSON.parse(MAX_BLOCK_LOOK_BACK) : {};
     if (Object.keys(this.maxBlockLookBack).length > 0)
-      for (const chainId of this.spokePoolChains)
+      for (const chainId of Constants.CHAIN_ID_LIST_INDICES)
         assert(Object.keys(this.maxBlockLookBack).includes(chainId.toString()), "MAX_BLOCK_LOOK_BACK missing networks");
     else this.maxBlockLookBack = Constants.CHAIN_MAX_BLOCK_LOOKBACK;
     this.maxTxWait = Number(MAX_TX_WAIT_DURATION ?? 180); // 3 minutes
@@ -63,7 +61,7 @@ export class CommonConfig {
 
     // Multicall chunk size precedence: Environment, chain-specific config, global default.
     this.multiCallChunkSize = Object.fromEntries(
-      this.spokePoolChains.map((_chainId) => {
+      Constants.CHAIN_ID_LIST_INDICES.map((_chainId) => {
         const chainId = Number(_chainId);
         // prettier-ignore
         const chunkSize = Number(

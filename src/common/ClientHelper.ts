@@ -15,6 +15,7 @@ import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolCli
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { BlockFinder } from "@uma/financial-templates-lib";
+import { CHAIN_ID_LIST_INDICES } from "./Constants";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -25,11 +26,12 @@ export interface Clients {
 
 export async function getSpokePoolSigners(
   baseSigner: Wallet,
-  config: CommonConfig
+  spokePoolChains: number[],
+  redisUrl?: string
 ): Promise<{ [chainId: number]: Wallet }> {
-  const redisClient = config.redisUrl ? await getRedis(config.redisUrl) : undefined;
+  const redisClient = redisUrl ? await getRedis(redisUrl) : undefined;
   return Object.fromEntries(
-    config.spokePoolChains.map((chainId) => {
+    spokePoolChains.map((chainId) => {
       return [chainId, baseSigner.connect(getProvider(chainId, undefined, redisClient))];
     })
   );
@@ -51,10 +53,19 @@ export async function constructSpokePoolClientsWithLookback(
   initialLookBackOverride: number,
   hubPoolChainId: number
 ): Promise<SpokePoolClientsByChain> {
-  // Create blockfinders for each chain. We'll use the latter to find the first
-  // blocks that we should query per chain.
+  // Construct spoke pool clients for all chains that were enabled at least once in the block range.
+  // Caller can optionally override the disabled chains list, which is useful for executing leaves or validating
+  // older bundles, or monitoring older bundles. The Caller should be careful when setting when
+  // running the disputer or proposer functionality as it can lead to proposing disputable bundles or
+  // disputing valid bundles.
+
+  if (!configStoreClient.isUpdated)
+    throw new Error("Config store client must be updated before constructing spoke pool clients");
+
+  // Create blockfinders for each chain. We'll only use them to search blocks (and send RPC requests)
+  // on chains that are enabled between [currentTime - initialLookBackOverride, currentTime].
   const blockFinders = Object.fromEntries(
-    config.spokePoolChains.map((chainId) => {
+    CHAIN_ID_LIST_INDICES.map((chainId) => {
       const providerForChain = getProvider(chainId);
       if (chainId === hubPoolChainId) return [hubPoolChainId, configStoreClient.blockFinder];
       else return [chainId, new BlockFinder<Block>(providerForChain.getBlock.bind(providerForChain), [], chainId)];
@@ -62,28 +73,69 @@ export async function constructSpokePoolClientsWithLookback(
   );
   const currentTime = getCurrentTime();
 
+  // First, get lookback for Mainnet since we can assume that NODE_URL_1 is always defined.
+  const fromBlock_1 = await getBlockForTimestamp(
+    hubPoolChainId,
+    hubPoolChainId,
+    currentTime - initialLookBackOverride,
+    currentTime,
+    blockFinders[hubPoolChainId],
+    configStoreClient.redisClient
+  );
+
+  const enabledChains = getEnabledChainsInBlockRange(configStoreClient, fromBlock_1);
+
+  // Get full list of fromBlocks now for chains that are enabled. This way we don't send RPC requests to
+  // chains that are not enabled.
   const fromBlocks = Object.fromEntries(
     await Promise.all(
-      config.spokePoolChains.map(async (chainId) => {
-        return [
-          chainId,
-          await getBlockForTimestamp(
-            hubPoolChainId,
+      enabledChains.map(async (chainId) => {
+        if (chainId === 1) return [chainId, fromBlock_1];
+        else
+          return [
             chainId,
-            currentTime - initialLookBackOverride,
-            currentTime,
-            blockFinders[chainId],
-            configStoreClient.redisClient
-          ),
-        ];
+            await getBlockForTimestamp(
+              hubPoolChainId,
+              chainId,
+              currentTime - initialLookBackOverride,
+              currentTime,
+              blockFinders[chainId],
+              configStoreClient.redisClient
+            ),
+          ];
       })
     )
   );
 
   // @dev: Set toBlocks = {} to construct spoke pool clients that query until the latest blocks.
-  return await constructSpokePoolClientsWithStartBlocks(logger, configStoreClient, config, baseSigner, fromBlocks, {});
+  return await constructSpokePoolClientsWithStartBlocks(
+    logger,
+    configStoreClient,
+    config,
+    baseSigner,
+    fromBlocks,
+    {},
+    enabledChains
+  );
 }
 
+/**
+ * @notice Return list of enabled spoke pool chains in mainnet block range. These chains were all enabled at some point
+ * in the ConfigStore between [mainnetStartBlock, mainnetEndBlock]. Caller can override this list with
+ * process.env.SPOKE_POOL_CHAINS_OVERRIDE to force certain spoke pool clients to be constructed.
+ * @returns number[] List of enabled spoke pool chains.
+ */
+export function getEnabledChainsInBlockRange(
+  configStoreClient: AcrossConfigStoreClient,
+  mainnetStartBlock: number,
+  mainnetEndBlock?: number
+): number[] {
+  if (!configStoreClient.isUpdated)
+    throw new Error("Config store client must be updated before constructing spoke pool clients");
+  return process.env.SPOKE_POOL_CHAINS_OVERRIDE
+    ? JSON.parse(process.env.SPOKE_POOL_CHAINS_OVERRIDE)
+    : configStoreClient.getEnabledChainsInBlockRange(mainnetStartBlock, mainnetEndBlock);
+}
 /**
  * Construct spoke pool clients that query from [startBlockOverride, toBlockOverride]. Clients on chains that are
  * disabled at startBlockOverride will be set to undefined.
@@ -98,46 +150,27 @@ export async function constructSpokePoolClientsWithStartBlocks(
   config: CommonConfig,
   baseSigner: Wallet,
   startBlocks: { [chainId: number]: number },
-  toBlockOverride: { [chainId: number]: number } = {}
+  toBlockOverride: { [chainId: number]: number } = {},
+  enabledChains?: number[]
 ): Promise<SpokePoolClientsByChain> {
-  // Construct spoke pool clients for all chains that were enabled in block range.
-
-  // Caller can optionally override the disabled chains list, which is useful for executing leaves or validating
-  // older bundles, or monitoring older bundles. The Caller should be careful when setting when
-  // running the disputer or proposer functionality as it can lead to proposing disputable bundles or
-  // disputing valid bundles.
-
-  if (!configStoreClient.isUpdated)
-    throw new Error("Config store client must be updated before constructing spoke pool clients");
-  const enabledChains = configStoreClient
-    .getEnabledChainsInBlockRange(startBlocks[1], toBlockOverride[1], config.spokePoolChains)
-    .filter((chainId) => !config.disabledChainsOverride.includes(chainId));
+  if (!enabledChains) {
+    enabledChains = getEnabledChainsInBlockRange(configStoreClient, startBlocks[1], toBlockOverride[1]);
+  }
   logger.debug({
     at: "ClientHelper#constructSpokePoolClientsWithStartBlocks",
     message: "Enabled chains in block range",
-    blockRange: [startBlocks[1], toBlockOverride[1]],
+    startBlocks,
+    toBlockOverride,
     enabledChains,
-    disabledChains: config.disabledChainsOverride,
   });
-  const configWithEnabledChains = {
-    ...config,
-    spokePoolChains: enabledChains,
-  };
 
   // Set up Spoke signers and connect them to spoke pool contract objects:
-  const spokePoolSigners = await getSpokePoolSigners(baseSigner, configWithEnabledChains);
-  const spokePools = configWithEnabledChains.spokePoolChains.map((chainId) => {
+  const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains, config.redisUrl);
+  const spokePools = enabledChains.map((chainId) => {
     return { chainId, contract: getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) };
   });
 
-  return getSpokePoolClientsForContract(
-    logger,
-    configStoreClient,
-    configWithEnabledChains,
-    spokePools,
-    startBlocks,
-    toBlockOverride
-  );
+  return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, startBlocks, toBlockOverride);
 }
 
 /**

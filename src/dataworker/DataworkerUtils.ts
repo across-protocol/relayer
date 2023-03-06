@@ -95,6 +95,8 @@ export function getImpliedBundleBlockRanges(
     const fromBlock = prevRootBundle?.bundleEvaluationBlockNumbers?.[i]
       ? prevRootBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
       : 0;
+    // Don't let caller override the list of enabled chains when constructing an implied bundle block range,
+    // since this function is designed to reconstruct a historical bundle block range.
     const enabledChains = configStoreClient.getEnabledChainsInBlockRange(
       fromBlock,
       endBlock.toNumber(),

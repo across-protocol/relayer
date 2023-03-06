@@ -79,12 +79,6 @@ export class DataworkerConfig extends CommonConfig {
     else if (this.disputerEnabled || this.proposerEnabled)
       // should set spokeRootsLookbackCount == 0 if executor disabled and proposer/disputer enabled
       this.spokeRootsLookbackCount = 0;
-    if (Object.keys(this.blockRangeEndBlockBuffer).length > 0)
-      for (const chainId of this.spokePoolChains)
-        assert(
-          Object.keys(this.blockRangeEndBlockBuffer).includes(chainId.toString()),
-          "BLOCK_RANGE_END_BLOCK_BUFFER missing networks"
-        );
     this.sendingDisputesEnabled = SEND_DISPUTES === "true";
     this.sendingProposalsEnabled = SEND_PROPOSALS === "true";
     this.sendingExecutionsEnabled = SEND_EXECUTIONS === "true";

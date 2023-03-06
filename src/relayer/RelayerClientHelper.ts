@@ -63,13 +63,13 @@ export async function constructRelayerClients(
     CHAIN_ID_LIST_INDICES,
     config.blockRangeEndBlockBuffer
   );
-  const crossChainTransferClient = new CrossChainTransferClient(logger, config.spokePoolChains, adapterManager);
+  const crossChainTransferClient = new CrossChainTransferClient(logger, enabledChainIds, adapterManager);
   const inventoryClient = new InventoryClient(
     baseSigner.address,
     logger,
     config.inventoryConfig,
     tokenClient,
-    config.spokePoolChains,
+    enabledChainIds,
     commonClients.hubPoolClient,
     bundleDataClient,
     adapterManager,
