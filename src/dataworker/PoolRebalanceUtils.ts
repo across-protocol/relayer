@@ -397,7 +397,8 @@ export async function getWidestPossibleExpectedBlockRange(
       mainnetBundleEndBlock,
       1
     ),
-    mainnetBundleEndBlock
+    mainnetBundleEndBlock,
+    chainIdListForBundleEvaluationBlockNumbers
   );
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => {
     // If chain is disabled, re-use the latest bundle end block for the chain as both the start
