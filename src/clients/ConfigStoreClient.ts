@@ -170,6 +170,7 @@ export class AcrossConfigStoreClient {
    * Returns list of chains that have been enabled at least once in the block range.
    * If a chain was disabled in the block range, it will be included in the list provided it was enabled
    * at some point in the block range.
+   * @dev If fromBlock == toBlock then defaults to returning enabled chains at fromBlock
    * @param fromBlock Start block to search inclusive
    * @param toBlock End block to search inclusive. Defaults to MAX_SAFE_INTEGER, so grabs all disabled chain events
    * up until `latest`.
@@ -177,7 +178,7 @@ export class AcrossConfigStoreClient {
    * @returns List of chain IDs that have been enabled at least once in the block range. Sorted from lowest to highest.
    */
   getEnabledChainsInBlockRange(
-    fromBlock,
+    fromBlock: number,
     toBlock = Number.MAX_SAFE_INTEGER,
     allPossibleChains = CHAIN_ID_LIST_INDICES
   ) {
@@ -191,8 +192,9 @@ export class AcrossConfigStoreClient {
     // Update list of enabled chains with any of the candidate chains that have been removed from the
     // disabled list during the block range.
     return sortEventsAscending(this.cumulativeDisabledChainUpdates)
-      .filter((event) => event.blockNumber <= toBlock && event.blockNumber >= fromBlock)
       .reduce((enabledChains: number[], disabledChainUpdate) => {
+        if (disabledChainUpdate.blockNumber > toBlock || disabledChainUpdate.blockNumber < fromBlock)
+          return enabledChains;
         // If any of the possible chains are not listed in this disabled chain update and are not already in the
         // enabled chain list, then add them to the list.
         allPossibleChains.forEach((chainId) => {

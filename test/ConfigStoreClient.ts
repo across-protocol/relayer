@@ -377,8 +377,8 @@ describe("AcrossConfigStoreClient", async function () {
       );
       expect(configStoreClient.getEnabledChainsInBlockRange(0, events[0].blockNumber - 1, [])).to.deep.equal([]);
 
-      // When calling with no from block or to block, returns allPossibleChains
-      expect(configStoreClient.getEnabledChainsInBlockRange(undefined, undefined, allPossibleChains)).to.deep.equal(
+      // When calling with no to block, returns all enabled chains at from block.
+      expect(configStoreClient.getEnabledChainsInBlockRange(0, undefined, allPossibleChains)).to.deep.equal(
         allPossibleChains
       );
 
