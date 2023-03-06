@@ -83,12 +83,7 @@ export async function constructSpokePoolClientsWithLookback(
     configStoreClient.redisClient
   );
 
-  const enabledChains = getEnabledChainsInBlockRange(
-    configStoreClient,
-    fromBlock_1,
-    undefined,
-    config.spokePoolChainsOverride
-  );
+  const enabledChains = getEnabledChainsInBlockRange(configStoreClient, config.spokePoolChainsOverride, fromBlock_1);
 
   // Get full list of fromBlocks now for chains that are enabled. This way we don't send RPC requests to
   // chains that are not enabled.
@@ -132,13 +127,15 @@ export async function constructSpokePoolClientsWithLookback(
  */
 function getEnabledChainsInBlockRange(
   configStoreClient: AcrossConfigStoreClient,
+  spokePoolChainsOverride: number[],
   mainnetStartBlock: number,
-  mainnetEndBlock?: number,
-  spokePoolChainsOverride?: number[]
+  mainnetEndBlock?: number
 ): number[] {
   if (!configStoreClient.isUpdated)
     throw new Error("Config store client must be updated before constructing spoke pool clients");
-  return spokePoolChainsOverride ?? configStoreClient.getEnabledChainsInBlockRange(mainnetStartBlock, mainnetEndBlock);
+  return spokePoolChainsOverride.length > 0
+    ? spokePoolChainsOverride
+    : configStoreClient.getEnabledChainsInBlockRange(mainnetStartBlock, mainnetEndBlock);
 }
 /**
  * Construct spoke pool clients that query from [startBlockOverride, toBlockOverride]. Clients on chains that are
@@ -160,9 +157,9 @@ export async function constructSpokePoolClientsWithStartBlocks(
   if (!enabledChains) {
     enabledChains = getEnabledChainsInBlockRange(
       configStoreClient,
+      config.spokePoolChainsOverride,
       startBlocks[1],
-      toBlockOverride[1],
-      config.spokePoolChainsOverride
+      toBlockOverride[1]
     );
   }
   logger.debug({
