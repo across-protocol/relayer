@@ -83,7 +83,12 @@ export async function constructSpokePoolClientsWithLookback(
     configStoreClient.redisClient
   );
 
-  const enabledChains = getEnabledChainsInBlockRange(configStoreClient, fromBlock_1);
+  const enabledChains = getEnabledChainsInBlockRange(
+    configStoreClient,
+    fromBlock_1,
+    undefined,
+    config.spokePoolChainsOverride
+  );
 
   // Get full list of fromBlocks now for chains that are enabled. This way we don't send RPC requests to
   // chains that are not enabled.
@@ -125,16 +130,15 @@ export async function constructSpokePoolClientsWithLookback(
  * process.env.SPOKE_POOL_CHAINS_OVERRIDE to force certain spoke pool clients to be constructed.
  * @returns number[] List of enabled spoke pool chains.
  */
-export function getEnabledChainsInBlockRange(
+function getEnabledChainsInBlockRange(
   configStoreClient: AcrossConfigStoreClient,
   mainnetStartBlock: number,
-  mainnetEndBlock?: number
+  mainnetEndBlock?: number,
+  spokePoolChainsOverride?: number[]
 ): number[] {
   if (!configStoreClient.isUpdated)
     throw new Error("Config store client must be updated before constructing spoke pool clients");
-  return process.env.SPOKE_POOL_CHAINS_OVERRIDE
-    ? JSON.parse(process.env.SPOKE_POOL_CHAINS_OVERRIDE)
-    : configStoreClient.getEnabledChainsInBlockRange(mainnetStartBlock, mainnetEndBlock);
+  return spokePoolChainsOverride ?? configStoreClient.getEnabledChainsInBlockRange(mainnetStartBlock, mainnetEndBlock);
 }
 /**
  * Construct spoke pool clients that query from [startBlockOverride, toBlockOverride]. Clients on chains that are
@@ -154,7 +158,12 @@ export async function constructSpokePoolClientsWithStartBlocks(
   enabledChains?: number[]
 ): Promise<SpokePoolClientsByChain> {
   if (!enabledChains) {
-    enabledChains = getEnabledChainsInBlockRange(configStoreClient, startBlocks[1], toBlockOverride[1]);
+    enabledChains = getEnabledChainsInBlockRange(
+      configStoreClient,
+      startBlocks[1],
+      toBlockOverride[1],
+      config.spokePoolChainsOverride
+    );
   }
   logger.debug({
     at: "ClientHelper#constructSpokePoolClientsWithStartBlocks",

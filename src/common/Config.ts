@@ -12,6 +12,7 @@ export class CommonConfig {
   readonly pollingDelay: number;
   readonly maxBlockLookBack: { [key: number]: number };
   readonly maxTxWait: number;
+  readonly spokePoolChainsOverride: number[];
   readonly sendingTransactionsEnabled: boolean;
   readonly redisUrl: string | undefined;
   readonly bundleRefundLookback: number;
@@ -31,6 +32,7 @@ export class CommonConfig {
       SEND_TRANSACTIONS,
       REDIS_URL,
       BUNDLE_REFUND_LOOKBACK,
+      SPOKE_POOL_CHAINS_OVERRIDE,
       ACROSS_BOT_VERSION,
     } = env;
 
@@ -49,6 +51,7 @@ export class CommonConfig {
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
     this.hubPoolChainId = Number(HUB_CHAIN_ID ?? 1);
     this.pollingDelay = Number(POLLING_DELAY ?? 60);
+    this.spokePoolChainsOverride = SPOKE_POOL_CHAINS_OVERRIDE ? JSON.parse(SPOKE_POOL_CHAINS_OVERRIDE) : [];
     this.maxBlockLookBack = MAX_BLOCK_LOOK_BACK ? JSON.parse(MAX_BLOCK_LOOK_BACK) : {};
     if (Object.keys(this.maxBlockLookBack).length > 0)
       for (const chainId of Constants.CHAIN_ID_LIST_INDICES)

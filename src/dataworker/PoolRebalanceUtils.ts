@@ -27,7 +27,7 @@ import {
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "../utils";
-import { Clients, getEnabledChainsInBlockRange } from "../common";
+import { Clients } from "../common";
 
 export function updateRunningBalance(
   runningBalances: interfaces.RunningBalances,
@@ -391,8 +391,7 @@ export async function getWidestPossibleExpectedBlockRange(
   latestMainnetBlock: number,
   mainnetBundleEndBlock: number
 ): Promise<number[][]> {
-  const enabledChains = getEnabledChainsInBlockRange(
-    clients.configStoreClient,
+  const enabledChains = clients.configStoreClient.getEnabledChainsInBlockRange(
     clients.hubPoolClient.getNextBundleStartBlockNumber(
       chainIdListForBundleEvaluationBlockNumbers,
       mainnetBundleEndBlock,
