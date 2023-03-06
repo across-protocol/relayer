@@ -1,5 +1,4 @@
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE } from "../common";
-import { filterDisabledChains } from "../dataworker/DataworkerUtils";
 import { assert } from "../utils";
 import * as Constants from "./Constants";
 

@@ -36,7 +36,6 @@ import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
 import { HubPoolClient } from "./HubPoolClient";
 import { createClient } from "redis4";
-import { filterDisabledChains } from "../dataworker/DataworkerUtils";
 
 export const GLOBAL_CONFIG_STORE_KEYS = {
   MAX_RELAYER_REPAYMENT_LEAF_SIZE: "MAX_RELAYER_REPAYMENT_LEAF_SIZE",
@@ -354,7 +353,7 @@ export class AcrossConfigStoreClient {
         });
       } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS)) {
         try {
-          const chainIds = filterDisabledChains(JSON.parse(args.value) as number[]);
+          const chainIds = this.filterDisabledChains(JSON.parse(args.value) as number[]);
           this.cumulativeDisabledChainUpdates.push({ ...args, chainIds });
         } catch (err) {
           // Can't parse list, skip.
@@ -371,6 +370,12 @@ export class AcrossConfigStoreClient {
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.logger.debug({ at: "ConfigStore", message: "ConfigStore client updated!" });
+  }
+
+  filterDisabledChains(disabledChains: number[]): number[] {
+    // If any chain ID's are not integers then ignore. UMIP-157 requires that this key cannot include
+    // the chain ID 1.
+    return disabledChains.filter((chainId: number) => !isNaN(chainId) && Number.isInteger(chainId) && chainId !== 1);
   }
 
   private async getBlockNumber(timestamp: number) {
