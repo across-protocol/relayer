@@ -64,7 +64,7 @@ export class HubPoolClient {
     return this.disputedRootBundles;
   }
 
-  getSpokePoolForBlock(block: number, chain: number): string {
+  getSpokePoolForBlock(chain: number, block: number = Number.MAX_SAFE_INTEGER): string {
     if (!this.crossChainContracts[chain]) throw new Error(`No cross chain contracts set for ${chain}`);
     const mostRecentSpokePoolUpdateBeforeBlock = (
       sortEventsDescending(this.crossChainContracts[chain]) as CrossChainContractsSet[]

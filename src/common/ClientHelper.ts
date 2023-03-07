@@ -162,9 +162,9 @@ export async function constructSpokePoolClientsWithStartBlocks(
   const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains, config.redisUrl);
   const spokePools = await Promise.all(
     enabledChains.map(async (chainId) => {
-      // Assume that spoke pool hasn't changed since the start block for Mainnet. We might need to change this
-      // if we want to run any bots covering events on multiple spoke pools.
-      const latestSpokePool = configStoreClient.hubPoolClient.getSpokePoolForBlock(startBlocks[1], chainId);
+      // Grab latest spoke pool as of `toBlockOverride[1]`. If `toBlockOverride[1]` is undefined, then grabs current
+      // spoke pool.
+      const latestSpokePool = configStoreClient.hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
       const spokePoolContract = new Contract(latestSpokePool, SpokePool.abi, spokePoolSigners[chainId]);
       const spokePoolRegistrationBlock = configStoreClient.hubPoolClient.getSpokePoolActivationBlock(
         chainId,
