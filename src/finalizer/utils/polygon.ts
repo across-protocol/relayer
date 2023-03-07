@@ -6,6 +6,7 @@ import {
   groupObjectCountsByProp,
   Wallet,
   winston,
+  Contract
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
@@ -177,7 +178,7 @@ export async function multicallPolygonFinalizations(
   };
 }
 
-export function getMainnetTokenBridger(mainnetSigner: Wallet) {
+export function getMainnetTokenBridger(mainnetSigner: Wallet): Contract {
   return getDeployedContract("PolygonTokenBridger", 1, mainnetSigner);
 }
 
