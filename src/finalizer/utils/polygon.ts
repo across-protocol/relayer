@@ -6,7 +6,7 @@ import {
   groupObjectCountsByProp,
   Wallet,
   winston,
-  Contract
+  Contract,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
