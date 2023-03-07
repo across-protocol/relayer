@@ -356,6 +356,87 @@ describe("AcrossConfigStoreClient", async function () {
         configStoreClient.getMaxL1TokenCountForPoolRebalanceLeafForBlock(initialUpdate.blockNumber - 1)
       ).to.throw(/Could not find MaxL1TokenCount/);
     });
+    it("Get disabled chain IDs for block range", async function () {
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS), JSON.stringify([19]));
+      await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS), "invalid value");
+      await configStore.updateGlobalConfig(
+        utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS),
+        JSON.stringify([1.1, 21, "invalid value", 1])
+      );
+      await updateAllClients();
+      const events = await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig());
+      const allPossibleChains = [1, 19, 21, 23];
+
+      // When starting before first update, all chains were enabled once in range. Returns whatever is passed in as
+      // `allPossibleChains`
+      expect(
+        configStoreClient.getEnabledChainsInBlockRange(0, events[0].blockNumber - 1, allPossibleChains)
+      ).to.deep.equal(allPossibleChains);
+      expect(configStoreClient.getEnabledChainsInBlockRange(0, events[2].blockNumber, allPossibleChains)).to.deep.equal(
+        allPossibleChains
+      );
+      expect(configStoreClient.getEnabledChainsInBlockRange(0, events[0].blockNumber - 1, [])).to.deep.equal([]);
+
+      // When calling with no to block, returns all enabled chains at from block.
+      expect(configStoreClient.getEnabledChainsInBlockRange(0, undefined, allPossibleChains)).to.deep.equal(
+        allPossibleChains
+      );
+
+      // When starting at first update, 19 is disabled and not re-enabled until the third update. The second
+      // update is treated as a no-op since its not a valid chain ID list.
+      expect(
+        configStoreClient.getEnabledChainsInBlockRange(
+          events[0].blockNumber,
+          events[1].blockNumber - 1,
+          allPossibleChains
+        )
+      ).to.deep.equal([1, 21, 23]);
+      expect(
+        configStoreClient.getEnabledChainsInBlockRange(events[0].blockNumber, events[1].blockNumber, allPossibleChains)
+      ).to.deep.equal([1, 21, 23]);
+      expect(
+        configStoreClient.getEnabledChainsInBlockRange(
+          events[0].blockNumber,
+          events[2].blockNumber - 1,
+          allPossibleChains
+        )
+      ).to.deep.equal([1, 21, 23]);
+      expect(
+        configStoreClient.getEnabledChainsInBlockRange(events[0].blockNumber, events[2].blockNumber, allPossibleChains)
+      ).to.deep.equal(allPossibleChains);
+
+      // When starting at second update, the initial enabled chain list doesn't include 19 since the second update
+      // was a no-op.
+      expect(
+        configStoreClient.getEnabledChainsInBlockRange(
+          events[1].blockNumber,
+          events[2].blockNumber - 1,
+          allPossibleChains
+        )
+      ).to.deep.equal([1, 21, 23]);
+      expect(
+        configStoreClient.getEnabledChainsInBlockRange(events[1].blockNumber, events[2].blockNumber, allPossibleChains)
+      ).to.deep.equal(allPossibleChains);
+
+      // When starting at third update, 19 is enabled and 21 is disabled.
+      expect(
+        configStoreClient.getEnabledChainsInBlockRange(events[2].blockNumber, events[2].blockNumber, allPossibleChains)
+      ).to.deep.equal([1, 19, 23]);
+
+      // Throws if fromBlock > toBlock
+      expect(() => configStoreClient.getEnabledChainsInBlockRange(1, 0, allPossibleChains)).to.throw();
+
+      // Tests for `getDisabledChainsForBlock)
+      expect(configStoreClient.getDisabledChainsForBlock(events[0].blockNumber)).to.deep.equal([19]);
+
+      // Block number when there is no valid config
+      expect(configStoreClient.getDisabledChainsForBlock(events[0].blockNumber - 1)).to.deep.equal([]);
+      // If config store update can't parse the value then it will not count it as an update. The last known
+      // value will be used.
+      expect(configStoreClient.getDisabledChainsForBlock(events[1].blockNumber)).to.deep.equal([19]);
+      // If update can be parsed then only the valid integers will be used. Chain ID 1 is always thrown out.
+      expect(configStoreClient.getDisabledChainsForBlock(events[2].blockNumber)).to.deep.equal([21]);
+    });
   });
 });
 

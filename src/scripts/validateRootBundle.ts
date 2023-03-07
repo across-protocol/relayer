@@ -32,7 +32,7 @@ import {
 import { PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
-import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
+import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
 import { CONFIG_STORE_VERSION } from "../common";
 
 config();
@@ -48,7 +48,10 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   // Override default config with sensible defaults:
   // - DATAWORKER_FAST_LOOKBACK_COUNT=8 balances limiting RPC requests with querying
   // enough data to limit # of excess historical deposit queries.
+  // - SPOKE_ROOTS_LOOKBACK_COUNT unused in this script so set to something < DATAWORKER_FAST_LOOKBACK_COUNT
+  // to avoid configuration error.
   process.env.DATAWORKER_FAST_LOOKBACK_COUNT = "8";
+  process.env.SPOKE_ROOTS_LOOKBACK_COUNT = "1";
   const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
   logger[startupLogLevel(config)]({
     at: "RootBundleValidator",
@@ -166,12 +169,18 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     toBlocks
   );
 
+  const mainnetBundleEndBlock = getBlockForChain(
+    rootBundle.bundleEvaluationBlockNumbers,
+    1,
+    dataworker.chainIdListForBundleEvaluationBlockNumbers
+  );
   const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
     dataworker.chainIdListForBundleEvaluationBlockNumbers,
     spokePoolClients,
     getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
     clients,
-    priceRequestBlock
+    priceRequestBlock,
+    mainnetBundleEndBlock
   );
 
   // Validate the event:

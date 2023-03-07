@@ -15,9 +15,10 @@ import {
   getBlockForTimestamp,
   shouldCache,
   setRedisKey,
+  sortEventsAscending,
 } from "../utils";
 
-import { CONFIG_STORE_VERSION, DEFAULT_CONFIG_STORE_VERSION } from "../common/Constants";
+import { CHAIN_ID_LIST_INDICES, CONFIG_STORE_VERSION, DEFAULT_CONFIG_STORE_VERSION } from "../common/Constants";
 
 import {
   L1TokenTransferThreshold,
@@ -28,6 +29,7 @@ import {
   SpokePoolTargetBalance,
   RouteRateModelUpdate,
   ConfigStoreVersionUpdate,
+  DisabledChainsUpdate,
 } from "../interfaces";
 
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
@@ -39,6 +41,7 @@ export const GLOBAL_CONFIG_STORE_KEYS = {
   MAX_RELAYER_REPAYMENT_LEAF_SIZE: "MAX_RELAYER_REPAYMENT_LEAF_SIZE",
   MAX_POOL_REBALANCE_LEAF_SIZE: "MAX_POOL_REBALANCE_LEAF_SIZE",
   VERSION: "VERSION",
+  DISABLED_CHAINS: "DISABLED_CHAINS",
 };
 
 type RedisClient = ReturnType<typeof createClient>;
@@ -53,6 +56,7 @@ export class AcrossConfigStoreClient {
   public cumulativeMaxL1TokenCountUpdates: GlobalConfigUpdate[] = [];
   public cumulativeSpokeTargetBalanceUpdates: SpokeTargetBalanceUpdate[] = [];
   public cumulativeConfigStoreVersionUpdates: ConfigStoreVersionUpdate[] = [];
+  public cumulativeDisabledChainUpdates: DisabledChainsUpdate[] = [];
 
   private rateModelDictionary: across.rateModel.RateModelDictionary;
   public firstBlockToSearch: number;
@@ -160,6 +164,53 @@ export class AcrossConfigStoreClient {
     );
     if (!config) throw new Error(`Could not find MaxL1TokenCount before block ${blockNumber}`);
     return Number(config.value);
+  }
+
+  /**
+   * Returns list of chains that have been enabled at least once in the block range.
+   * If a chain was disabled in the block range, it will be included in the list provided it was enabled
+   * at some point in the block range.
+   * @dev If fromBlock == toBlock then defaults to returning enabled chains at fromBlock
+   * @param fromBlock Start block to search inclusive
+   * @param toBlock End block to search inclusive. Defaults to MAX_SAFE_INTEGER, so grabs all disabled chain events
+   * up until `latest`.
+   * @param allPossibleChains Returned list will be a subset of this list.
+   * @returns List of chain IDs that have been enabled at least once in the block range. Sorted from lowest to highest.
+   */
+  getEnabledChainsInBlockRange(
+    fromBlock: number,
+    toBlock = Number.MAX_SAFE_INTEGER,
+    allPossibleChains = CHAIN_ID_LIST_INDICES
+  ) {
+    if (toBlock < fromBlock) throw new Error(`Invalid block range: fromBlock ${fromBlock} > toBlock ${toBlock}`);
+    // Initiate list with all chains enabled at the fromBlock.
+    const disabledChainsAtFromBlock = this.getDisabledChainsForBlock(fromBlock);
+    const enabledChainsAtFromBlock = allPossibleChains.filter(
+      (chainId) => !disabledChainsAtFromBlock.includes(chainId)
+    );
+
+    // Update list of enabled chains with any of the candidate chains that have been removed from the
+    // disabled list during the block range.
+    return sortEventsAscending(this.cumulativeDisabledChainUpdates)
+      .reduce((enabledChains: number[], disabledChainUpdate) => {
+        if (disabledChainUpdate.blockNumber > toBlock || disabledChainUpdate.blockNumber < fromBlock)
+          return enabledChains;
+        // If any of the possible chains are not listed in this disabled chain update and are not already in the
+        // enabled chain list, then add them to the list.
+        allPossibleChains.forEach((chainId) => {
+          if (!disabledChainUpdate.chainIds.includes(chainId) && !enabledChains.includes(chainId))
+            enabledChains.push(chainId);
+        });
+        return enabledChains;
+      }, enabledChainsAtFromBlock)
+      .sort((a, b) => a - b);
+  }
+
+  getDisabledChainsForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number[] {
+    return (
+      sortEventsDescending(this.cumulativeDisabledChainUpdates).find((config) => config.blockNumber <= blockNumber)
+        ?.chainIds ?? []
+    );
   }
 
   getConfigStoreVersionForTimestamp(timestamp: number = Number.MAX_SAFE_INTEGER): number {
@@ -303,6 +354,13 @@ export class AcrossConfigStoreClient {
           ...args,
           timestamp: globalConfigUpdateTimes[i],
         });
+      } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS)) {
+        try {
+          const chainIds = this.filterDisabledChains(JSON.parse(args.value) as number[]);
+          this.cumulativeDisabledChainUpdates.push({ ...args, chainIds });
+        } catch (err) {
+          // Can't parse list, skip.
+        }
       } else {
         continue;
       }
@@ -315,6 +373,12 @@ export class AcrossConfigStoreClient {
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.logger.debug({ at: "ConfigStore", message: "ConfigStore client updated!" });
+  }
+
+  filterDisabledChains(disabledChains: number[]): number[] {
+    // If any chain ID's are not integers then ignore. UMIP-157 requires that this key cannot include
+    // the chain ID 1.
+    return disabledChains.filter((chainId: number) => !isNaN(chainId) && Number.isInteger(chainId) && chainId !== 1);
   }
 
   private async getBlockNumber(timestamp: number) {

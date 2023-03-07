@@ -49,11 +49,13 @@ describe("Dataworker block range-related utility methods", async function () {
       )
     );
     const latestMainnetBlock = hubPoolClient.latestBlockNumber;
+    if (latestMainnetBlock === undefined) throw new Error("hubPoolClient.latestBlockNumber is undefined");
     const startingWidestBlocks = await getWidestPossibleExpectedBlockRange(
       chainIdListForBundleEvaluationBlockNumbers,
       spokePoolClients,
       defaultEndBlockBuffers,
       dataworkerClients,
+      latestMainnetBlock,
       latestMainnetBlock
     );
     expect(startingWidestBlocks).to.deep.equal(latestBlocks.map((endBlock) => [0, endBlock]));
@@ -65,6 +67,7 @@ describe("Dataworker block range-related utility methods", async function () {
       spokePoolClients,
       largeBuffers,
       dataworkerClients,
+      latestMainnetBlock,
       latestMainnetBlock
     );
     expect(zeroRange).to.deep.equal(latestBlocks.map((_) => [0, 0]));
@@ -77,7 +80,12 @@ describe("Dataworker block range-related utility methods", async function () {
 
     // Look if bundle range from block is before the latest invalid
     // bundle start block. If so, then the range is invalid.
-    const mainnetDeploymentBlock = getDeployedBlockNumber("SpokePool", 1);
+    const mainnetDeploymentBlock = spokePoolClients[1].spokePoolDeploymentBlock;
+    if (mainnetDeploymentBlock === undefined) throw new Error("mainnetDeploymentBlock is undefined");
+    if (spokePoolClients[1].latestBlockNumber === undefined)
+      throw new Error("spokePoolClient[1].latestBlockNumber is undefined");
+    if (spokePoolClients[originChainId].latestBlockNumber === undefined)
+      throw new Error("spokePoolClient[originChainId].latestBlockNumber is undefined");
 
     // latestInvalidBundleStartBlock is only used if its greater than the spoke pool deployment block, so in the
     // following tests, set latestInvalidBundleStartBlock > deployment blocks.

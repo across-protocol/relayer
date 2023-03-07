@@ -1,4 +1,5 @@
 import { processEndPollingLoop, winston, config, startupLogLevel, Wallet } from "../utils";
+import { spokePoolClientsToProviders } from "../common";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -7,7 +8,6 @@ import {
   updateDataworkerClients,
   constructSpokePoolClientsForFastDataworker,
   getSpokePoolClientEventSearchConfigsForFastDataworker,
-  spokePoolClientsToProviders,
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
 config();

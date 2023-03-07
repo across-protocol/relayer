@@ -31,22 +31,17 @@ import {
   ERC20,
   getProvider,
   EMPTY_MERKLE_ROOT,
-  getDeployedContract,
-  getDeploymentBlockNumber,
   sortEventsDescending,
   paginatedEventQuery,
   ZERO_ADDRESS,
   getRefund,
 } from "../utils";
-import {
-  constructSpokePoolClientsForFastDataworker,
-  updateDataworkerClients,
-} from "../dataworker/DataworkerClientHelper";
+import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { createDataworker } from "../dataworker";
-import { SpokePoolClient } from "../clients";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
 import { ProposedRootBundle, RelayData, SpokePoolClientsByChain } from "../interfaces";
+import { constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 
 config();
 let logger: winston.Logger;
@@ -59,33 +54,28 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
   const { clients, dataworker, config } = await createDataworker(logger, baseSigner);
   await updateDataworkerClients(clients, false);
 
-  const spokePools = Object.fromEntries(
+  // Throw out most recent bundle as its leaves might not have executed.
+  const validatedBundles = sortEventsDescending(clients.hubPoolClient.getValidatedRootBundles()).slice(1);
+  const excesses: { [chainId: number]: { [l1Token: string]: string[] } } = {};
+  const bundlesToValidate = 10; // Roughly 2 days worth of bundles.
+
+  // Create spoke pool clients that only query events related to root bundle proposals and roots
+  // being sent to L2s. Clients will load events from the endblocks set in `oldestBundleToLookupEventsFor`.
+  const oldestBundleToLookupEventsFor = validatedBundles[bundlesToValidate + 4];
+  const _oldestBundleEndBlocks = oldestBundleToLookupEventsFor.bundleEvaluationBlockNumbers.map((x) => x.toNumber());
+  const oldestBundleEndBlocks = Object.fromEntries(
     dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
-      return [chainId, getDeployedContract("SpokePool", chainId, baseSigner).connect(getProvider(chainId))];
-    })
-  );
-  const spokePoolDeploymentBlocks = dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
-    return getDeploymentBlockNumber("SpokePool", chainId);
-  });
-  const spokePoolClients = Object.fromEntries(
-    dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {
       return [
         chainId,
-        new SpokePoolClient(logger, spokePools[chainId], clients.configStoreClient, chainId, {
-          fromBlock: spokePoolDeploymentBlocks[i],
-          maxBlockLookBack: config.maxBlockLookBack[chainId],
-        }),
+        getBlockForChain(_oldestBundleEndBlocks, chainId, dataworker.chainIdListForBundleEvaluationBlockNumbers),
       ];
     })
   );
+  const spokePoolClients = await _createSpokePoolClients(oldestBundleEndBlocks);
   await Promise.all(
     Object.values(spokePoolClients).map((client) => client.update(["RelayedRootBundle", "ExecutedRelayerRefundRoot"]))
   );
 
-  // Throw out most recent bundle as its leaves might not have executed.
-  const validatedBundles = sortEventsDescending(clients.hubPoolClient.getValidatedRootBundles()).slice(1);
-  const excesses: { [chainId: number]: { [l1Token: string]: string[] } } = {};
-  const bundlesToValidate = 20; // Roughly 2 days worth of bundles.
   for (let x = 0; x < bundlesToValidate; x++) {
     const mostRecentValidatedBundle = validatedBundles[x];
     console.group(
@@ -102,6 +92,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
       throw new Error("PoolRebalanceLeaves not executed for bundle");
 
     for (const leaf of poolRebalanceLeaves) {
+      if (spokePoolClients[leaf.chainId] === undefined) continue;
       for (let i = 0; i < leaf.l1Tokens.length; i++) {
         const l1Token = leaf.l1Tokens[i];
         const tokenInfo = clients.hubPoolClient.getTokenInfo(1, l1Token);
@@ -123,9 +114,12 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
             dataworker.chainIdListForBundleEvaluationBlockNumbers.indexOf(leaf.chainId)
           ];
         console.log(`- Bundle end block: ${bundleEndBlockForChain.toNumber()}`);
-        let tokenBalanceAtBundleEndBlock = await l2TokenContract.balanceOf(spokePools[leaf.chainId].address, {
-          blockTag: bundleEndBlockForChain.toNumber(),
-        });
+        let tokenBalanceAtBundleEndBlock = await l2TokenContract.balanceOf(
+          spokePoolClients[leaf.chainId].spokePool.address,
+          {
+            blockTag: bundleEndBlockForChain.toNumber(),
+          }
+        );
 
         // To paint a more accurate picture of the excess, we need to check that the previous bundle's leaf
         // has been executed by the time that we snapshot the spoke pool's token balance (at the bundle end block).
@@ -190,7 +184,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
                 const depositsToSpokePool = (
                   await paginatedEventQuery(
                     l2TokenContract,
-                    l2TokenContract.filters.Transfer(ZERO_ADDRESS, spokePools[leaf.chainId].address),
+                    l2TokenContract.filters.Transfer(ZERO_ADDRESS, spokePoolClients[leaf.chainId].spokePool.address),
                     {
                       fromBlock: previousBundleEndBlockForChain.toNumber(),
                       toBlock: bundleEndBlockForChain.toNumber(),
@@ -336,24 +330,24 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
   ): Promise<{ slowFills: RelayData[]; bundleSpokePoolClients: SpokePoolClientsByChain }> {
     // Construct custom spoke pool clients to query events needed to build slow roots.
     const spokeClientFromBlocks = Object.fromEntries(
-      dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
+      Object.keys(spokePoolClients).map((chainId) => {
         return [
           chainId,
           getBlockForChain(
             olderBundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
-            chainId,
+            Number(chainId),
             dataworker.chainIdListForBundleEvaluationBlockNumbers
           ),
         ];
       })
     );
     const spokeClientToBlocks = Object.fromEntries(
-      dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => {
+      Object.keys(spokePoolClients).map((chainId) => {
         return [
           chainId,
           getBlockForChain(
             futureBundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
-            chainId,
+            Number(chainId),
             dataworker.chainIdListForBundleEvaluationBlockNumbers
           ),
         ];
@@ -361,9 +355,9 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
     );
     const key = `${JSON.stringify(spokeClientFromBlocks)}-${JSON.stringify(spokeClientToBlocks)}`;
     if (!slowRootCache[key]) {
-      const spokePoolClientsForBundle = await constructSpokePoolClientsForFastDataworker(
+      const spokePoolClientsForBundle = await constructSpokePoolClientsWithStartBlocks(
         winston.createLogger({
-          level: "warn", // Set to warn or higher so it doesn't produce extra logs
+          level: "debug",
           transports: [new winston.transports.Console()],
         }),
         clients.configStoreClient,
@@ -372,14 +366,21 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
         spokeClientFromBlocks,
         spokeClientToBlocks
       );
+      await updateSpokePoolClients(spokePoolClientsForBundle);
 
       // Reconstruct bundle block range for bundle.
+      const mainnetBundleEndBlock = getBlockForChain(
+        bundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
+        1,
+        dataworker.chainIdListForBundleEvaluationBlockNumbers
+      );
       const widestPossibleExpectedBlockRange = await getWidestPossibleExpectedBlockRange(
         dataworker.chainIdListForBundleEvaluationBlockNumbers,
         spokePoolClientsForBundle,
         getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
         clients,
-        bundle.blockNumber
+        bundle.blockNumber,
+        mainnetBundleEndBlock
       );
       const blockRangesImpliedByBundleEndBlocks = widestPossibleExpectedBlockRange.map((blockRange, index) => [
         blockRange[0],
@@ -393,6 +394,22 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
       slowRootCache[key] = output;
       return output;
     } else return slowRootCache[key];
+  }
+
+  /**
+   * @notice Create SpokePool clients that are configured to query events from their deployment blocks.
+   * @dev Clients are only created for chains not on disabled chain list.
+   * @returns A dictionary of chain ID to SpokePoolClient.
+   */
+  async function _createSpokePoolClients(fromBlocks: { [chainId: number]: number }) {
+    return constructSpokePoolClientsWithStartBlocks(
+      logger,
+      clients.configStoreClient,
+      config,
+      baseSigner,
+      fromBlocks,
+      {}
+    );
   }
 }
 

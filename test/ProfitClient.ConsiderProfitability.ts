@@ -203,7 +203,8 @@ describe("ProfitClient: Consider relay profit", async function () {
       profitClient.setGasCosts(gasCost);
 
       spyLogger.debug({ message: `Verifying exception on token price lookup failure on chain ${chainId}.` });
-      profitClient.setTokenPrices({});
+      profitClient.setTokenPrices({ [l1Token.address]: toBN(0) });
+      // Setting price to 0 causes a downstream error in calculateFillProfitability.
       expect(() => profitClient.calculateFillProfitability(deposit, fillAmount, l1Token, minRelayerFeePct)).to.throw();
       setDefaultTokenPrices(profitClient);
 

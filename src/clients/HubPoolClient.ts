@@ -319,7 +319,7 @@ export class HubPoolClient {
     return bundleToReturn;
   }
 
-  getNextBundleStartBlockNumber(chainIdList: number[], latestMainnetBlock: number, chainId: number): number {
+  getLatestBundleEndBlockForChain(chainIdList: number[], latestMainnetBlock: number, chainId: number): number {
     const latestFullyExecutedPoolRebalanceRoot = this.getLatestFullyExecutedRootBundle(latestMainnetBlock);
 
     // If no event, then we can return a conservative default starting block like 0,
@@ -329,11 +329,11 @@ export class HubPoolClient {
     // Once this proposal event is found, determine its mapping of indices to chainId in its
     // bundleEvaluationBlockNumbers array using CHAIN_ID_LIST. For each chainId, their starting block number is that
     // chain's bundleEvaluationBlockNumber + 1 in this past proposal event.
-    const endBlock = this.getBundleEndBlockForChain(latestFullyExecutedPoolRebalanceRoot, chainId, chainIdList);
+    return this.getBundleEndBlockForChain(latestFullyExecutedPoolRebalanceRoot, chainId, chainIdList);
+  }
 
-    // If `chainId` either doesn't exist in the chainIdList, or is at an index that doesn't exist in the root bundle
-    // event's bundle block range (e.g. bundle block range has two entries, chain ID list has three, and chain matches
-    // third entry), return 0 to indicate we want to get all history for this chain that we haven't seen before.
+  getNextBundleStartBlockNumber(chainIdList: number[], latestMainnetBlock: number, chainId: number): number {
+    const endBlock = this.getLatestBundleEndBlockForChain(chainIdList, latestMainnetBlock, chainId);
 
     // This assumes that chain ID's are only added to the chain ID list over time, and that chains are never
     // deleted.
