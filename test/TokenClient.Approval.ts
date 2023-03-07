@@ -43,7 +43,6 @@ describe("TokenClient: Origin token approval", async function () {
       spokePool_1,
       null,
       originChainId,
-      undefined,
       spokePool1DeploymentBlock
     );
     spokePoolClient_2 = new SpokePoolClient(
@@ -51,7 +50,6 @@ describe("TokenClient: Origin token approval", async function () {
       spokePool_2,
       null,
       destinationChainId,
-      undefined,
       spokePool2DeploymentBlock
     );
 

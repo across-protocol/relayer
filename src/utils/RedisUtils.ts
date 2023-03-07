@@ -1,4 +1,4 @@
-import { assert, Block, toBN } from ".";
+import { assert, Block, getProvider, toBN } from ".";
 import { BlockFinder } from "@uma/financial-templates-lib";
 import { createClient } from "redis4";
 import winston from "winston";
@@ -12,6 +12,8 @@ export const REDIS_CACHEABLE_AGE = 15 * 60;
 
 // Make the redis client for a particular url essentially a singleton.
 const redisClients: { [url: string]: Promise<RedisClient> } = {};
+
+const blockFinders: { [chainId: number]: BlockFinder<Block> } = {};
 
 export function getRedis(url: string, logger?: winston.Logger) {
   if (!redisClients[url]) {
@@ -61,16 +63,25 @@ export async function getDeposit(key: string, redisClient: RedisClient): Promise
   if (depositRaw) return JSON.parse(depositRaw, objectWithBigNumberReviver);
 }
 
+export function getBlockFinder(chainId: number): BlockFinder<Block> {
+  if (!blockFinders[chainId]) {
+    const providerForChain = getProvider(chainId);
+    blockFinders[chainId] = new BlockFinder<Block>(providerForChain.getBlock.bind(providerForChain), [], chainId);
+  }
+  return blockFinders[chainId];
+}
+
 // Get the block number for a given timestamp fresh from on-chain data if not found in redis cache.
 export async function getBlockForTimestamp(
   hubPoolChainId: number,
   chainId: number,
   timestamp: number,
   currentChainTime: number,
-  blockFinder: BlockFinder<Block>,
-  redisClient?: RedisClient
+  redisClient?: RedisClient,
+  blockFinder?: BlockFinder<Block>
 ): Promise<number> {
-  if (!redisClient) return (await blockFinder.getBlockForTimestamp(timestamp)).number;
+  if (blockFinder === undefined) blockFinder = getBlockFinder(chainId);
+  if (redisClient === undefined) return (await blockFinder.getBlockForTimestamp(timestamp)).number;
   // We already cache blocks in the ConfigStore on the HubPool chain so re-use that key if the chainId
   // matches the HubPool's.
   const key = chainId === hubPoolChainId ? `block_number_${timestamp}` : `${chainId}_block_number_${timestamp}`;

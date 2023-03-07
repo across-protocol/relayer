@@ -66,7 +66,6 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     clients.hubPoolClient.chainId,
     priceRequestTime,
     getCurrentTime(),
-    clients.configStoreClient.blockFinder,
     clients.configStoreClient.redisClient
   );
 

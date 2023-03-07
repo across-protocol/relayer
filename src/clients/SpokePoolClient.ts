@@ -9,7 +9,6 @@ import {
   sortEventsAscendingInPlace,
   DefaultLogLevels,
   MakeOptional,
-  getDeploymentBlockNumber,
   getDeposit,
   setDeposit,
   getNetworkName,
@@ -69,13 +68,9 @@ export class SpokePoolClient {
     // Can be excluded. This disables some deposit validation.
     readonly configStoreClient: AcrossConfigStoreClient | null,
     readonly chainId: number,
-    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
-    public spokePoolDeploymentBlock?: number
+    public spokePoolDeploymentBlock: number,
+    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
   ) {
-    this.spokePoolDeploymentBlock =
-      spokePoolDeploymentBlock === undefined
-        ? getDeploymentBlockNumber("SpokePool", chainId)
-        : spokePoolDeploymentBlock;
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
 

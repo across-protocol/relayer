@@ -1,9 +1,7 @@
 import { setProofApi, use, POSClient } from "@maticnetwork/maticjs";
 import { Web3ClientPlugin } from "@maticnetwork/maticjs-ethers";
 import {
-  Contract,
   convertFromWei,
-  getCachedProvider,
   getDeployedContract,
   groupObjectCountsByProp,
   Wallet,

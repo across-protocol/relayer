@@ -66,12 +66,21 @@ export class HubPoolClient {
 
   getSpokePoolForBlock(block: number, chain: number): string {
     if (!this.crossChainContracts[chain]) throw new Error(`No cross chain contracts set for ${chain}`);
-    const mostRecentSpokePoolUpdatebeforeBlock = (
+    const mostRecentSpokePoolUpdateBeforeBlock = (
       sortEventsDescending(this.crossChainContracts[chain]) as CrossChainContractsSet[]
     ).find((crossChainContract) => crossChainContract.blockNumber <= block);
-    if (!mostRecentSpokePoolUpdatebeforeBlock)
+    if (!mostRecentSpokePoolUpdateBeforeBlock)
       throw new Error(`No cross chain contract found before block ${block} for chain ${chain}`);
-    else return mostRecentSpokePoolUpdatebeforeBlock.spokePool;
+    else return mostRecentSpokePoolUpdateBeforeBlock.spokePool;
+  }
+
+  getSpokePoolActivationBlock(chain: number, spokePool: string): number {
+    // Return first time that this spoke pool was registered in the HubPool as a cross chain contract. We can use
+    // this block as the oldest block that we should query for SpokePoolClient purposes.
+    const mostRecentSpokePoolUpdateBeforeBlock = this.crossChainContracts[chain].find(
+      (crossChainContract) => crossChainContract.spokePool === spokePool
+    );
+    return mostRecentSpokePoolUpdateBeforeBlock?.blockNumber;
   }
 
   getDestinationTokenForDeposit(deposit: { originChainId: number; originToken: string; destinationChainId: number }) {

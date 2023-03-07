@@ -7,15 +7,13 @@ import {
   Contract,
   ethers,
   getBlockForTimestamp,
-  Block,
   getCurrentTime,
   getRedis,
+  SpokePool,
 } from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { BlockFinder } from "@uma/financial-templates-lib";
-import { CHAIN_ID_LIST_INDICES } from "./Constants";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -62,24 +60,15 @@ export async function constructSpokePoolClientsWithLookback(
   if (!configStoreClient.isUpdated)
     throw new Error("Config store client must be updated before constructing spoke pool clients");
 
-  // Create blockfinders for each chain. We'll only use them to search blocks (and send RPC requests)
-  // on chains that are enabled between [currentTime - initialLookBackOverride, currentTime].
-  const blockFinders = Object.fromEntries(
-    CHAIN_ID_LIST_INDICES.map((chainId) => {
-      const providerForChain = getProvider(chainId, undefined, configStoreClient.redisClient);
-      if (chainId === hubPoolChainId) return [hubPoolChainId, configStoreClient.blockFinder];
-      else return [chainId, new BlockFinder<Block>(providerForChain.getBlock.bind(providerForChain), [], chainId)];
-    })
-  );
   const currentTime = getCurrentTime();
 
-  // First, get lookback for Mainnet since we can assume that NODE_URL_1 is always defined.
+  // Use the first block that we'll query on mainnet to figure out which chains were enabled between then
+  // and the the latest mainnet block. These chains were enabled via the ConfigStore.
   const fromBlock_1 = await getBlockForTimestamp(
     hubPoolChainId,
     hubPoolChainId,
     currentTime - initialLookBackOverride,
     currentTime,
-    blockFinders[hubPoolChainId],
     configStoreClient.redisClient
   );
 
@@ -99,7 +88,6 @@ export async function constructSpokePoolClientsWithLookback(
               chainId,
               currentTime - initialLookBackOverride,
               currentTime,
-              blockFinders[chainId],
               configStoreClient.redisClient
             ),
           ];
@@ -172,9 +160,28 @@ export async function constructSpokePoolClientsWithStartBlocks(
 
   // Set up Spoke signers and connect them to spoke pool contract objects:
   const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains, config.redisUrl);
-  const spokePools = enabledChains.map((chainId) => {
-    return { chainId, contract: getDeployedContract("SpokePool", chainId, spokePoolSigners[chainId]) };
-  });
+  const spokePools = await Promise.all(
+    enabledChains.map(async (chainId) => {
+      // Assume that spoke pool hasn't changed since the start block for Mainnet. We might need to change this
+      // if we want to run any bots covering events on multiple spoke pools.
+      const latestSpokePool = configStoreClient.hubPoolClient.getSpokePoolForBlock(startBlocks[1], chainId);
+      const spokePoolContract = new Contract(latestSpokePool, SpokePool.abi, spokePoolSigners[chainId]);
+      const spokePoolRegistrationBlock = configStoreClient.hubPoolClient.getSpokePoolActivationBlock(
+        chainId,
+        latestSpokePool
+      );
+      const time = (await configStoreClient.hubPoolClient.hubPool.provider.getBlock(spokePoolRegistrationBlock))
+        .timestamp;
+      const registrationBlock = await getBlockForTimestamp(
+        configStoreClient.hubPoolClient.chainId,
+        chainId,
+        time,
+        getCurrentTime(),
+        configStoreClient.redisClient
+      );
+      return { chainId, contract: spokePoolContract, registrationBlock };
+    })
+  );
 
   return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, startBlocks, toBlockOverride);
 }
@@ -190,17 +197,14 @@ export function getSpokePoolClientsForContract(
   logger: winston.Logger,
   configStoreClient: AcrossConfigStoreClient,
   config: CommonConfig,
-  spokePools: { chainId: number; contract: Contract }[],
+  spokePools: { chainId: number; contract: Contract; registrationBlock: number }[],
   fromBlocks: { [chainId: number]: number },
   toBlocks: { [chainId: number]: number } = {}
 ): SpokePoolClientsByChain {
   const spokePoolClients: SpokePoolClientsByChain = {};
-  spokePools.forEach(({ chainId, contract }) => {
-    const spokePoolDeploymentBlock = getDeploymentBlockNumber("SpokePool", chainId);
+  spokePools.forEach(({ chainId, contract, registrationBlock }) => {
     const spokePoolClientSearchSettings = {
-      fromBlock: fromBlocks[chainId]
-        ? Math.max(fromBlocks[chainId], spokePoolDeploymentBlock)
-        : spokePoolDeploymentBlock,
+      fromBlock: fromBlocks[chainId] ? Math.max(fromBlocks[chainId], registrationBlock) : registrationBlock,
       toBlock: toBlocks[chainId] ? toBlocks[chainId] : undefined,
       maxBlockLookBack: config.maxBlockLookBack[chainId],
     };
@@ -209,8 +213,8 @@ export function getSpokePoolClientsForContract(
       contract,
       configStoreClient,
       chainId,
-      spokePoolClientSearchSettings,
-      spokePoolDeploymentBlock
+      registrationBlock,
+      spokePoolClientSearchSettings
     );
   });
 
