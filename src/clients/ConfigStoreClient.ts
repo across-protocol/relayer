@@ -36,7 +36,6 @@ import {
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
 import { HubPoolClient } from "./HubPoolClient";
-import { createClient } from "redis4";
 
 export const GLOBAL_CONFIG_STORE_KEYS = {
   MAX_RELAYER_REPAYMENT_LEAF_SIZE: "MAX_RELAYER_REPAYMENT_LEAF_SIZE",
@@ -44,8 +43,6 @@ export const GLOBAL_CONFIG_STORE_KEYS = {
   VERSION: "VERSION",
   DISABLED_CHAINS: "DISABLED_CHAINS",
 };
-
-type RedisClient = ReturnType<typeof createClient>;
 
 export class AcrossConfigStoreClient {
   public readonly blockFinder;
@@ -122,7 +119,7 @@ export class AcrossConfigStoreClient {
     route: string,
     blockNumber: number | undefined = undefined
   ): across.constants.RateModel | undefined {
-    const config = (sortEventsDescending(this.cumulativeRouteRateModelUpdates) as RouteRateModelUpdate[]).find(
+    const config = this.cumulativeRouteRateModelUpdates.find(
       (config) => config.blockNumber <= blockNumber && config.l1Token === l1Token
     );
     if (config?.routeRateModel[route] === undefined) return undefined;
@@ -130,7 +127,7 @@ export class AcrossConfigStoreClient {
   }
 
   getTokenTransferThresholdForBlock(l1Token: string, blockNumber: number = Number.MAX_SAFE_INTEGER): BigNumber {
-    const config = (sortEventsDescending(this.cumulativeTokenTransferUpdates) as L1TokenTransferThreshold[]).find(
+    const config = this.cumulativeTokenTransferUpdates.find(
       (config) => config.blockNumber <= blockNumber && config.l1Token === l1Token
     );
     if (!config)
@@ -143,7 +140,7 @@ export class AcrossConfigStoreClient {
     chainId: number,
     blockNumber: number = Number.MAX_SAFE_INTEGER
   ): SpokePoolTargetBalance {
-    const config = (sortEventsDescending(this.cumulativeSpokeTargetBalanceUpdates) as SpokeTargetBalanceUpdate[]).find(
+    const config = this.cumulativeSpokeTargetBalanceUpdates.find(
       (config) => config.l1Token === l1Token && config.blockNumber <= blockNumber
     );
     const targetBalance = config?.spokeTargetBalances?.[chainId];
@@ -151,7 +148,7 @@ export class AcrossConfigStoreClient {
   }
 
   getMaxRefundCountForRelayerRefundLeafForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number {
-    const config = (sortEventsDescending(this.cumulativeMaxRefundCountUpdates) as GlobalConfigUpdate[]).find(
+    const config = this.cumulativeMaxRefundCountUpdates.find(
       (config) => config.blockNumber <= blockNumber
     );
     if (!config) throw new Error(`Could not find MaxRefundCount before block ${blockNumber}`);
@@ -159,7 +156,7 @@ export class AcrossConfigStoreClient {
   }
 
   getMaxL1TokenCountForPoolRebalanceLeafForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number {
-    const config = (sortEventsDescending(this.cumulativeMaxL1TokenCountUpdates) as GlobalConfigUpdate[]).find(
+    const config = this.cumulativeMaxL1TokenCountUpdates.find(
       (config) => config.blockNumber <= blockNumber
     );
     if (!config) throw new Error(`Could not find MaxL1TokenCount before block ${blockNumber}`);
@@ -208,13 +205,13 @@ export class AcrossConfigStoreClient {
 
   getDisabledChainsForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number[] {
     return (
-      sortEventsDescending(this.cumulativeDisabledChainUpdates).find((config) => config.blockNumber <= blockNumber)
+      this.cumulativeDisabledChainUpdates.find((config) => config.blockNumber <= blockNumber)
         ?.chainIds ?? []
     );
   }
 
   getConfigStoreVersionForTimestamp(timestamp: number = Number.MAX_SAFE_INTEGER): number {
-    const config = (sortEventsDescending(this.cumulativeConfigStoreVersionUpdates) as ConfigStoreVersionUpdate[]).find(
+    const config = this.cumulativeConfigStoreVersionUpdates.find(
       (config) => config.timestamp <= timestamp
     );
     if (!config) return DEFAULT_CONFIG_STORE_VERSION;
@@ -365,6 +362,16 @@ export class AcrossConfigStoreClient {
         continue;
       }
     }
+
+    // Sort the following events in descending order since we usually want to find the most recent update before
+    // some specified block.
+    this.cumulativeDisabledChainUpdates = sortEventsDescending(this.cumulativeDisabledChainUpdates);
+    this.cumulativeRouteRateModelUpdates = sortEventsDescending(this.cumulativeRouteRateModelUpdates);
+    this.cumulativeTokenTransferUpdates = sortEventsDescending(this.cumulativeTokenTransferUpdates);
+    this.cumulativeSpokeTargetBalanceUpdates = sortEventsDescending(this.cumulativeSpokeTargetBalanceUpdates);
+    this.cumulativeMaxRefundCountUpdates = sortEventsDescending(this.cumulativeMaxRefundCountUpdates);
+    this.cumulativeMaxL1TokenCountUpdates = sortEventsDescending(this.cumulativeMaxL1TokenCountUpdates);
+    this.cumulativeConfigStoreVersionUpdates = sortEventsDescending(this.cumulativeConfigStoreVersionUpdates);
 
     this.rateModelDictionary.updateWithEvents(this.cumulativeRateModelUpdates);
 
