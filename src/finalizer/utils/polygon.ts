@@ -1,18 +1,15 @@
 import { setProofApi, use, POSClient } from "@maticnetwork/maticjs";
 import { Web3ClientPlugin } from "@maticnetwork/maticjs-ethers";
 import {
-  BigNumber,
   Contract,
   convertFromWei,
-  ERC20,
+  getCachedProvider,
   getDeployedContract,
-  getProvider,
   groupObjectCountsByProp,
-  toBN,
   Wallet,
   winston,
 } from "../../utils";
-import { L1Token, TokensBridged } from "../../interfaces";
+import { TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
 import { Multicall2Call, Withdrawal } from "..";
 
@@ -49,7 +46,7 @@ export async function getPosClient(mainnetSigner: Wallet) {
       },
     },
     child: {
-      provider: mainnetSigner.connect(getProvider(CHAIN_ID)),
+      provider: mainnetSigner.connect(getCachedProvider(CHAIN_ID, true)),
       defaultConfig: {
         from: mainnetSigner.address,
       },

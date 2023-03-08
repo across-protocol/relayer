@@ -1,4 +1,4 @@
-import { getProvider, Wallet, winston, convertFromWei, groupObjectCountsByProp, Contract } from "../../utils";
+import { Wallet, winston, convertFromWei, groupObjectCountsByProp, Contract, ethers, getCachedProvider } from "../../utils";
 import { L2ToL1MessageStatus, L2TransactionReceipt, getL2Network, IL2ToL1MessageWriter } from "@arbitrum/sdk";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
@@ -35,7 +35,7 @@ export async function multicallArbitrumFinalizations(
 }
 
 export async function finalizeArbitrum(message: IL2ToL1MessageWriter): Promise<Multicall2Call> {
-  const l2Provider = getProvider(CHAIN_ID);
+  const l2Provider = getCachedProvider(CHAIN_ID, true);
   const proof = await message.getOutboxProof(l2Provider);
   const outbox = new Contract((await getL2Network(l2Provider)).ethBridge.outbox, outboxAbi);
   const eventData = (message as any).nitroWriter.event; // nitroWriter is a private property on the
@@ -109,7 +109,7 @@ export async function getMessageOutboxStatusAndProof(
   message: IL2ToL1MessageWriter;
   status: string;
 }> {
-  const l2Provider = getProvider(CHAIN_ID);
+  const l2Provider = getCachedProvider(CHAIN_ID, true);
   const receipt = await l2Provider.getTransactionReceipt(event.transactionHash);
   const l2Receipt = new L2TransactionReceipt(receipt);
 

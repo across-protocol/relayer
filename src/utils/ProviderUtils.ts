@@ -380,9 +380,26 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
 // Global provider cache to avoid creating multiple providers for the same chain.
 const providerCache: { [chainId: number]: RetryProvider } = {};
 
-export function getProvider(chainId: number, logger?: winston.Logger, redisClient?: RedisClient, useCache = true) {
+function getProviderCachekey(chainId: number, redisEnabled) {
+  return `${chainId}_${redisEnabled ? "cache" : "nocache"}`;
+}
+
+/**
+ * @notice should be used after `getProvider` has been called once to fetch an already cached provider.
+ * This will never return undefined since it will throw if the requested provider hasn't been cached.
+ * @param chainId 
+ * @param redisEnabled 
+ * @returns ethers.provider
+ */
+export function getCachedProvider(chainId: number, redisEnabled = true): RetryProvider {
+  if (!providerCache[getProviderCachekey(chainId, redisEnabled)])
+    throw new Error(`No cached provider for chainId ${chainId} and redisEnabled ${redisEnabled}`);
+  return providerCache[getProviderCachekey(chainId, redisEnabled)];
+}
+
+export function getProvider(chainId: number, logger?: winston.Logger, redisClient?: RedisClient, useCache = true): RetryProvider {
   if (useCache) {
-    const cachedProvider = providerCache[chainId];
+    const cachedProvider = providerCache[getProviderCachekey(chainId, redisClient !== undefined)];
     if (cachedProvider) return cachedProvider;
   }
   const {
@@ -469,7 +486,7 @@ export function getProvider(chainId: number, logger?: winston.Logger, redisClien
     disableProviderCache ? undefined : redisClient
   );
 
-  if (useCache) providerCache[chainId] = provider;
+  if (useCache) providerCache[getProviderCachekey(chainId, redisClient !== undefined)] = provider;
   return provider;
 }
 
