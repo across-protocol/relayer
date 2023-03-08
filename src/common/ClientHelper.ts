@@ -8,7 +8,6 @@ import {
   ethers,
   getBlockForTimestamp,
   getCurrentTime,
-  getRedis,
   SpokePool,
 } from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
