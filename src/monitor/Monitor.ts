@@ -29,7 +29,7 @@ import {
   winston,
   ZERO_ADDRESS,
 } from "../utils";
-import axios, { AxiosError } from "axios";
+import { request, gql } from "graphql-request";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -104,11 +104,18 @@ export class Monitor {
     const currentTime = getCurrentTime();
 
     // TODO: Filter on `created_gt: lookback` to filter out proposals created after the lookback
-    const lookback = currentTime - this.monitorConfig.maxRelayerLookBack;
-    const query = JSON.stringify({
-      query: `{
-        proposals(first: 3, skip: 0, where: {space_in: ["acrossprotocol.eth"]}, orderBy: "created", orderDirection: desc) {
-          id
+    // const lookback = currentTime - this.monitorConfig.maxRelayerLookBack;
+    // Use the variables feature https://github.com/jasonkuhrt/graphql-request#using-graphql-document-variables
+    const query = gql`
+      {
+        proposals(
+          first: 3
+          skip: 0
+          where: { space_in: ["acrossprotocol.eth"] }
+          orderBy: "created"
+          orderDirection: desc
+        ) {
+        id
           title
           body
           choices
@@ -125,12 +132,11 @@ export class Monitor {
             id
             name
           }
-        }
+        } 
       }
-      `,
-    });
+    `;
     const endpoint = "https://hub.snapshot.org/graphql"
-    const response = await axios.post(endpoint, { query })
+    const response = await request(endpoint, query)
     console.log(response)
   }
 

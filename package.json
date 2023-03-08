@@ -31,6 +31,8 @@
     "bluebird": "^3.7.2",
     "dotenv": "^16.0.3",
     "ethers": "^5.7.0",
+    "graphql": "^16.6.0",
+    "graphql-request": "^5.2.0",
     "hardhat": "^2.9.0",
     "hardhat-deploy": "^0.11.11",
     "lodash": "^4.17.21",
