@@ -9,7 +9,6 @@ export interface BotModes {
   utilizationEnabled: boolean; // Monitors pool utilization ratio
   unknownRootBundleCallersEnabled: boolean; // Monitors relay related events triggered by non-whitelisted addresses
   unknownRelayerCallersEnabled: boolean;
-  snapshotReportEnabled: boolean;
 }
 
 export class MonitorConfig extends CommonConfig {
@@ -51,7 +50,6 @@ export class MonitorConfig extends CommonConfig {
       BALANCES_ENABLED,
       MONITORED_BALANCES,
       STUCK_REBALANCES_ENABLED,
-      SNAPSHOT_REPORT_ENABLED
     } = env;
 
     this.botModes = {
@@ -61,7 +59,6 @@ export class MonitorConfig extends CommonConfig {
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       unknownRelayerCallersEnabled: UNKNOWN_RELAYER_CALLERS_ENABLED === "true",
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
-      snapshotReportEnabled: SNAPSHOT_REPORT_ENABLED === "true",
     };
 
     // Used to monitor activities not from whitelisted data workers or relayers.

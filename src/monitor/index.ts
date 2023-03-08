@@ -38,12 +38,6 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Wallet) {
         logger.debug({ at: "AcrossMonitor", message: "Report disabled" });
       }
 
-      if (config.botModes.snapshotReportEnabled) {
-        await acrossMonitor.checkForSnapshotProposals()
-      } else {
-        logger.debug({ at: "AcrossMonitor", message: "Snapshot Report disabled" });
-      }
-
       if (config.botModes.balancesEnabled) await acrossMonitor.checkBalances();
       else logger.debug({ at: "AcrossMonitor", message: "CheckBalances monitor disabled" });
 

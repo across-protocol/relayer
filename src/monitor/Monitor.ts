@@ -19,7 +19,6 @@ import {
   ethers,
   etherscanLink,
   etherscanLinks,
-  getCurrentTime,
   getNativeTokenSymbol,
   getNetworkName,
   getUnfilledDeposits,
@@ -29,7 +28,6 @@ import {
   winston,
   ZERO_ADDRESS,
 } from "../utils";
-import { request, gql } from "graphql-request";
 
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -97,48 +95,6 @@ export class Monitor {
       })
     );
     await this.clients.tokenTransferClient.update(searchConfigs, tokensPerChain);
-  }
-
-  async checkForSnapshotProposals() {
-    // Check for proposals started
-    const currentTime = getCurrentTime();
-
-    // TODO: Filter on `created_gt: lookback` to filter out proposals created after the lookback
-    // const lookback = currentTime - this.monitorConfig.maxRelayerLookBack;
-    // Use the variables feature https://github.com/jasonkuhrt/graphql-request#using-graphql-document-variables
-    const query = gql`
-      {
-        proposals(
-          first: 3
-          skip: 0
-          where: { space_in: ["acrossprotocol.eth"], plugins_contains: "safeSnap" }
-          orderBy: "created"
-          orderDirection: desc
-        ) {
-          id
-          title
-          body
-          choices
-          start
-          end
-          snapshot
-          state
-          scores
-          scores_by_strategy
-          scores_total
-          scores_updated
-          author
-          plugins
-          space {
-            id
-            name
-          }
-        } 
-      }
-    `;
-    const endpoint = "https://hub.snapshot.org/graphql"
-    const response = await request(endpoint, query)
-    console.log(response)
   }
 
   async checkUtilization() {
