@@ -13,7 +13,6 @@ export class CommonConfig {
   readonly maxTxWait: number;
   readonly spokePoolChainsOverride: number[];
   readonly sendingTransactionsEnabled: boolean;
-  readonly redisUrl: string | undefined;
   readonly bundleRefundLookback: number;
   readonly maxRelayerLookBack: number;
   readonly multiCallChunkSize: { [chainId: number]: number };
@@ -29,7 +28,6 @@ export class CommonConfig {
       MAX_BLOCK_LOOK_BACK,
       MAX_TX_WAIT_DURATION,
       SEND_TRANSACTIONS,
-      REDIS_URL,
       BUNDLE_REFUND_LOOKBACK,
       SPOKE_POOL_CHAINS_OVERRIDE,
       ACROSS_BOT_VERSION,
@@ -58,7 +56,6 @@ export class CommonConfig {
     else this.maxBlockLookBack = Constants.CHAIN_MAX_BLOCK_LOOKBACK;
     this.maxTxWait = Number(MAX_TX_WAIT_DURATION ?? 180); // 3 minutes
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
-    this.redisUrl = REDIS_URL;
     this.bundleRefundLookback = Number(BUNDLE_REFUND_LOOKBACK ?? 2);
 
     // Multicall chunk size precedence: Environment, chain-specific config, global default.

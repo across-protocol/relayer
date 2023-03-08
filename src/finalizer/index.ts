@@ -92,8 +92,7 @@ export async function finalize(
         hubPoolClient.chainId,
         chainId,
         getCurrentTime() - optimisticRollupFinalizationWindow,
-        getCurrentTime(),
-        configStoreClient.redisClient
+        getCurrentTime()
       );
       logger.debug({
         at: "Finalizer",
@@ -116,8 +115,7 @@ export async function finalize(
         hubPoolClient.chainId,
         chainId,
         getCurrentTime() - polygonFinalizationWindow,
-        getCurrentTime(),
-        configStoreClient.redisClient
+        getCurrentTime()
       );
       logger.debug({
         at: "Finalizer",
@@ -142,8 +140,7 @@ export async function finalize(
         hubPoolClient.chainId,
         chainId,
         getCurrentTime() - optimisticRollupFinalizationWindow,
-        getCurrentTime(),
-        configStoreClient.redisClient
+        getCurrentTime()
       );
       logger.debug({
         at: "Finalizer",
@@ -167,8 +164,7 @@ export async function finalize(
         hubPoolClient.chainId,
         chainId,
         getCurrentTime() - optimisticRollupFinalizationWindow,
-        getCurrentTime(),
-        configStoreClient.redisClient
+        getCurrentTime()
       );
       logger.debug({
         at: "Finalizer",

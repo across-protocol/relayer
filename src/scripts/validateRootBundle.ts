@@ -65,8 +65,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     clients.hubPoolClient.chainId,
     clients.hubPoolClient.chainId,
     priceRequestTime,
-    getCurrentTime(),
-    clients.configStoreClient.redisClient
+    getCurrentTime()
   );
 
   // Find dispute transaction so we can gain additional confidence that the preceding root bundle is older than the

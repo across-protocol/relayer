@@ -22,12 +22,11 @@ export interface Clients {
   hubSigner?: Wallet;
 }
 
-export async function getSpokePoolSigners(
+async function getSpokePoolSigners(
   baseSigner: Wallet,
-  spokePoolChains: number[],
-  redisUrl?: string
+  spokePoolChains: number[]
 ): Promise<{ [chainId: number]: Wallet }> {
-  const redisClient = redisUrl ? await getRedis(redisUrl) : undefined;
+  const redisClient = await getRedis();
   return Object.fromEntries(
     spokePoolChains.map((chainId) => {
       return [chainId, baseSigner.connect(getProvider(chainId, undefined, redisClient))];
@@ -68,8 +67,7 @@ export async function constructSpokePoolClientsWithLookback(
     hubPoolChainId,
     hubPoolChainId,
     currentTime - initialLookBackOverride,
-    currentTime,
-    configStoreClient.redisClient
+    currentTime
   );
 
   const enabledChains = getEnabledChainsInBlockRange(configStoreClient, config.spokePoolChainsOverride, fromBlock_1);
@@ -83,13 +81,7 @@ export async function constructSpokePoolClientsWithLookback(
         else
           return [
             chainId,
-            await getBlockForTimestamp(
-              hubPoolChainId,
-              chainId,
-              currentTime - initialLookBackOverride,
-              currentTime,
-              configStoreClient.redisClient
-            ),
+            await getBlockForTimestamp(hubPoolChainId, chainId, currentTime - initialLookBackOverride, currentTime),
           ];
       })
     )
@@ -159,7 +151,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
   });
 
   // Set up Spoke signers and connect them to spoke pool contract objects:
-  const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains, config.redisUrl);
+  const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains);
   const spokePools = await Promise.all(
     enabledChains.map(async (chainId) => {
       // Grab latest spoke pool as of `toBlockOverride[1]`. If `toBlockOverride[1]` is undefined, then grabs current
@@ -176,8 +168,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
         configStoreClient.hubPoolClient.chainId,
         chainId,
         time,
-        getCurrentTime(),
-        configStoreClient.redisClient
+        getCurrentTime()
       );
       return { chainId, contract: spokePoolContract, registrationBlock };
     })
@@ -233,7 +224,7 @@ export async function constructClients(
   config: CommonConfig,
   baseSigner: Wallet
 ): Promise<Clients> {
-  const redisClient = config.redisUrl ? await getRedis(config.redisUrl) : undefined;
+  const redisClient = await getRedis();
 
   const hubSigner = baseSigner.connect(getProvider(config.hubPoolChainId, logger, redisClient));
 

@@ -1,8 +1,10 @@
 import { assert, Block, getProvider, toBN } from ".";
+import { REDIS_URL_DEFAULT } from "../common/Constants";
 import { BlockFinder } from "@uma/financial-templates-lib";
 import { createClient } from "redis4";
 import winston from "winston";
 import { Deposit, Fill } from "../interfaces";
+require("dotenv").config();
 
 export type RedisClient = ReturnType<typeof createClient>;
 
@@ -10,23 +12,28 @@ export type RedisClient = ReturnType<typeof createClient>;
 // Current time must be >= 15 minutes past the event timestamp for it to be stable enough to cache.
 export const REDIS_CACHEABLE_AGE = 15 * 60;
 
+export const REDIS_URL = process.env.REDIS_URL || REDIS_URL_DEFAULT;
+
 // Make the redis client for a particular url essentially a singleton.
-const redisClients: { [url: string]: Promise<RedisClient> } = {};
+const redisClients: { [url: string]: RedisClient } = {};
 
 const blockFinders: { [chainId: number]: BlockFinder<Block> } = {};
 
-export function getRedis(url: string, logger?: winston.Logger) {
+export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promise<RedisClient | undefined> {
   if (!redisClients[url]) {
-    const redisClient = createClient({ url });
-    redisClients[url] = redisClient.connect().then(async () => {
+    try {
+      const redisClient = createClient({ url });
+      await redisClient.connect();
       if (logger)
         logger.debug({
           at: "Dataworker#ClientHelper",
           message: `Connected to redis server at ${url} successfully!`,
           dbSize: await redisClient.dbSize(),
         });
-      return redisClient;
-    });
+      redisClients[url] = redisClient;
+    } catch (err) {
+      // No redis client at URL
+    }
   }
 
   return redisClients[url];
@@ -77,9 +84,9 @@ export async function getBlockForTimestamp(
   chainId: number,
   timestamp: number,
   currentChainTime: number,
-  redisClient?: RedisClient,
   blockFinder?: BlockFinder<Block>
 ): Promise<number> {
+  const redisClient = await getRedis();
   if (blockFinder === undefined) blockFinder = getBlockFinder(chainId, redisClient);
   if (redisClient === undefined) return (await blockFinder.getBlockForTimestamp(timestamp)).number;
   // We already cache blocks in the ConfigStore on the HubPool chain so re-use that key if the chainId

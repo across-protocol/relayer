@@ -29,8 +29,7 @@ export async function getDisputeForTimestamp(
           configStoreClient.hubPoolClient.chainId,
           configStoreClient.hubPoolClient.chainId,
           disputeRequestTimestamp,
-          getCurrentTime(),
-          configStoreClient.redisClient
+          getCurrentTime()
         );
   const disputes = await dvm.queryFilter(filter, priceRequestBlock, priceRequestBlock);
   return disputes.find((e) => e.args.time.toString() === disputeRequestTimestamp.toString()) as SortableEvent;
