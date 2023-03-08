@@ -66,7 +66,7 @@ export async function constructSpokePoolClientsWithLookback(
   // on chains that are enabled between [currentTime - initialLookBackOverride, currentTime].
   const blockFinders = Object.fromEntries(
     CHAIN_ID_LIST_INDICES.map((chainId) => {
-      const providerForChain = getProvider(chainId);
+      const providerForChain = getProvider(chainId, undefined, configStoreClient.redisClient);
       if (chainId === hubPoolChainId) return [hubPoolChainId, configStoreClient.blockFinder];
       else return [chainId, new BlockFinder<Block>(providerForChain.getBlock.bind(providerForChain), [], chainId)];
     })
