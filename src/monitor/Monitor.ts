@@ -111,11 +111,11 @@ export class Monitor {
         proposals(
           first: 3
           skip: 0
-          where: { space_in: ["acrossprotocol.eth"] }
+          where: { space_in: ["acrossprotocol.eth"], plugins_contains: "safeSnap" }
           orderBy: "created"
           orderDirection: desc
         ) {
-        id
+          id
           title
           body
           choices
@@ -128,6 +128,7 @@ export class Monitor {
           scores_total
           scores_updated
           author
+          plugins
           space {
             id
             name
