@@ -3,7 +3,7 @@ import lodash from "lodash";
 import winston from "winston";
 import { isPromiseFulfilled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
-import { RedisClient, setRedisKey } from "./RedisUtils";
+import { getRedis, RedisClient, setRedisKey } from "./RedisUtils";
 import { MAX_REORG_DISTANCE, PROVIDER_CACHE_TTL, BLOCK_NUMBER_TTL } from "../common";
 import { Logger } from ".";
 
@@ -397,12 +397,13 @@ export function getCachedProvider(chainId: number, redisEnabled = true): RetryPr
   return providerCache[getProviderCacheKey(chainId, redisEnabled)];
 }
 
-export function getProvider(
-  chainId: number,
-  logger?: winston.Logger,
-  redisClient?: RedisClient,
-  useCache = true
-): RetryProvider {
+/**
+ * @notice Returns retry provider for specified chain ID. Optimistically tries to instantiate the provider
+ * with a redis client attached so that all RPC requests are cached. Will load the provider from an in memory
+ * "provider cache" if this function was called once before with the same chain ID.
+ */
+export async function getProvider(chainId: number, logger?: winston.Logger, useCache = true): Promise<RetryProvider> {
+  const redisClient = await getRedis(logger);
   if (useCache) {
     const cachedProvider = providerCache[getProviderCacheKey(chainId, redisClient !== undefined)];
     if (cachedProvider) return cachedProvider;

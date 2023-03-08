@@ -26,11 +26,12 @@ async function getSpokePoolSigners(
   baseSigner: Wallet,
   spokePoolChains: number[]
 ): Promise<{ [chainId: number]: Wallet }> {
-  const redisClient = await getRedis();
   return Object.fromEntries(
-    spokePoolChains.map((chainId) => {
-      return [chainId, baseSigner.connect(getProvider(chainId, undefined, redisClient))];
-    })
+    await Promise.all(
+      spokePoolChains.map(async (chainId) => {
+        return [chainId, baseSigner.connect(await getProvider(chainId, undefined))];
+      })
+    )
   );
 }
 
@@ -224,9 +225,7 @@ export async function constructClients(
   config: CommonConfig,
   baseSigner: Wallet
 ): Promise<Clients> {
-  const redisClient = await getRedis();
-
-  const hubSigner = baseSigner.connect(getProvider(config.hubPoolChainId, logger, redisClient));
+  const hubSigner = baseSigner.connect(await getProvider(config.hubPoolChainId, logger));
 
   // Create contract instances for each chain for each required contract.
   const hubPool = getDeployedContract("HubPool", config.hubPoolChainId, hubSigner);
@@ -251,8 +250,7 @@ export async function constructClients(
     logger,
     configStore,
     hubPoolClient,
-    rateModelClientSearchSettings,
-    redisClient
+    rateModelClientSearchSettings
   );
 
   const multiCallerClient = new MultiCallerClient(logger, config.multiCallChunkSize);

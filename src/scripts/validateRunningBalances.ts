@@ -106,7 +106,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
         console.group(`Leaf for chain ID ${leaf.chainId} and token ${tokenInfo.symbol} (${l1Token})`);
         const decimals = tokenInfo.decimals;
         const l2Token = clients.hubPoolClient.getDestinationTokenForL1Token(l1Token, leaf.chainId);
-        const l2TokenContract = new Contract(l2Token, ERC20.abi, getProvider(leaf.chainId));
+        const l2TokenContract = new Contract(l2Token, ERC20.abi, await getProvider(leaf.chainId));
         const runningBalance = leaf.runningBalances[i];
         const netSendAmount = leaf.netSendAmounts[i];
         const bundleEndBlockForChain =

@@ -9,6 +9,7 @@ import {
   etherscanLink,
   getBlockForTimestamp,
   getCurrentTime,
+  getRedis,
 } from "../utils";
 import { winston } from "../utils";
 import {
@@ -275,10 +276,11 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet):
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }
   } catch (error) {
-    if (commonClients.configStoreClient.redisClient !== undefined) {
+    const redisClient = await getRedis(logger);
+    if (redisClient !== undefined) {
       // If this throws an exception, it will mask the underlying error.
       logger.debug("Disconnecting from redis server.");
-      commonClients.configStoreClient.redisClient.disconnect();
+      redisClient.disconnect();
     }
     throw error;
   }
