@@ -1,4 +1,12 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, getRedis } from "../utils";
+import {
+  processEndPollingLoop,
+  winston,
+  config,
+  startupLogLevel,
+  Wallet,
+  getRedis,
+  disconnectRedisClient,
+} from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
@@ -39,12 +47,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
       if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) break;
     }
   } catch (error) {
-    const redisClient = await getRedis(logger);
-    if (redisClient !== undefined) {
-      // If this throws an exception, it will mask the underlying error.
-      logger.debug("Disconnecting from redis server.");
-      redisClient.disconnect();
-    }
+    await disconnectRedisClient(logger);
     throw error;
   }
 }

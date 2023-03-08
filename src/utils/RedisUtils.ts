@@ -119,6 +119,15 @@ export async function getBlockForTimestamp(
   }
 }
 
+export async function disconnectRedisClient(logger?: winston.Logger): Promise<void> {
+  const redisClient = await getRedis(logger);
+  if (redisClient !== undefined) {
+    // todo understand why redisClient isn't GCed automagically.
+    logger.debug("Disconnecting from redis server.");
+    redisClient.disconnect();
+  }
+}
+
 export function shouldCache(eventTimestamp: number, latestTime: number): boolean {
   assert(eventTimestamp.toString().length === 10, "eventTimestamp must be in seconds");
   assert(latestTime.toString().length === 10, "eventTimestamp must be in seconds");

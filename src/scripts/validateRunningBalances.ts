@@ -35,6 +35,7 @@ import {
   paginatedEventQuery,
   ZERO_ADDRESS,
   getRefund,
+  disconnectRedisClient,
 } from "../utils";
 import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { createDataworker } from "../dataworker";
@@ -416,6 +417,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
 export async function run(_logger: winston.Logger): Promise<void> {
   const baseSigner: Wallet = await getSigner();
   await runScript(_logger, baseSigner);
+  await disconnectRedisClient(logger);
 }
 
 // eslint-disable-next-line no-process-exit

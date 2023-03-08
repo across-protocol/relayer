@@ -1,4 +1,12 @@
-import { winston, processEndPollingLoop, config, startupLogLevel, Wallet, getRedis } from "../utils";
+import {
+  winston,
+  processEndPollingLoop,
+  config,
+  startupLogLevel,
+  Wallet,
+  getRedis,
+  disconnectRedisClient,
+} from "../utils";
 import { Monitor } from "./Monitor";
 import { MonitorConfig } from "./MonitorConfig";
 import { constructMonitorClients } from "./MonitorClientHelper";
@@ -44,12 +52,7 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Wallet) {
       if (await processEndPollingLoop(logger, "Monitor", config.pollingDelay)) break;
     }
   } catch (error) {
-    const redisClient = await getRedis(logger);
-    if (redisClient !== undefined) {
-      // If this throws an exception, it will mask the underlying error.
-      logger.debug("Disconnecting from redis server.");
-      redisClient.disconnect();
-    }
+    await disconnectRedisClient(logger);
     throw error;
   }
 }
