@@ -8,9 +8,9 @@ import {
   getNetworkName,
   etherscanLink,
   Block,
-  getProvider,
   getBlockForTimestamp,
   getCurrentTime,
+  getCachedProvider,
 } from "../utils";
 import { winston } from "../utils";
 import {
@@ -63,7 +63,10 @@ export async function finalize(
 ): Promise<void> {
   const blockFinders = Object.fromEntries(
     configuredChainIds.map((chainId) => {
-      return [chainId, new BlockFinder<Block>(hubSigner.provider.getBlock.bind(getProvider(chainId)), [], chainId)];
+      return [
+        chainId,
+        new BlockFinder<Block>(hubSigner.provider.getBlock.bind(getCachedProvider(chainId, true)), [], chainId),
+      ];
     })
   );
 
