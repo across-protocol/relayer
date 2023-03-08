@@ -380,7 +380,7 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
 // Global provider cache to avoid creating multiple providers for the same chain.
 const providerCache: { [chainId: number]: RetryProvider } = {};
 
-function getProviderCachekey(chainId: number, redisEnabled) {
+function getProviderCacheKey(chainId: number, redisEnabled) {
   return `${chainId}_${redisEnabled ? "cache" : "nocache"}`;
 }
 
@@ -392,9 +392,9 @@ function getProviderCachekey(chainId: number, redisEnabled) {
  * @returns ethers.provider
  */
 export function getCachedProvider(chainId: number, redisEnabled = true): RetryProvider {
-  if (!providerCache[getProviderCachekey(chainId, redisEnabled)])
+  if (!providerCache[getProviderCacheKey(chainId, redisEnabled)])
     throw new Error(`No cached provider for chainId ${chainId} and redisEnabled ${redisEnabled}`);
-  return providerCache[getProviderCachekey(chainId, redisEnabled)];
+  return providerCache[getProviderCacheKey(chainId, redisEnabled)];
 }
 
 export function getProvider(
@@ -404,7 +404,7 @@ export function getProvider(
   useCache = true
 ): RetryProvider {
   if (useCache) {
-    const cachedProvider = providerCache[getProviderCachekey(chainId, redisClient !== undefined)];
+    const cachedProvider = providerCache[getProviderCacheKey(chainId, redisClient !== undefined)];
     if (cachedProvider) return cachedProvider;
   }
   const {
@@ -491,7 +491,7 @@ export function getProvider(
     disableProviderCache ? undefined : redisClient
   );
 
-  if (useCache) providerCache[getProviderCachekey(chainId, redisClient !== undefined)] = provider;
+  if (useCache) providerCache[getProviderCacheKey(chainId, redisClient !== undefined)] = provider;
   return provider;
 }
 
