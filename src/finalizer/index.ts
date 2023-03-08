@@ -9,7 +9,6 @@ import {
   etherscanLink,
   getBlockForTimestamp,
   getCurrentTime,
-  getCachedProvider,
 } from "../utils";
 import { winston } from "../utils";
 import {

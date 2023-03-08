@@ -387,8 +387,7 @@ export class AcrossConfigStoreClient {
       this.hubPoolClient.chainId,
       timestamp,
       getCurrentTime(),
-      this.redisClient,
-      this.blockFinder
+      this.redisClient
     );
   }
 

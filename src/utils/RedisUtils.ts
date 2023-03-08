@@ -63,9 +63,9 @@ export async function getDeposit(key: string, redisClient: RedisClient): Promise
   if (depositRaw) return JSON.parse(depositRaw, objectWithBigNumberReviver);
 }
 
-export function getBlockFinder(chainId: number): BlockFinder<Block> {
+export function getBlockFinder(chainId: number, redisClient?: RedisClient): BlockFinder<Block> {
   if (!blockFinders[chainId]) {
-    const providerForChain = getProvider(chainId);
+    const providerForChain = getProvider(chainId, undefined, redisClient);
     blockFinders[chainId] = new BlockFinder<Block>(providerForChain.getBlock.bind(providerForChain), [], chainId);
   }
   return blockFinders[chainId];
@@ -80,7 +80,7 @@ export async function getBlockForTimestamp(
   redisClient?: RedisClient,
   blockFinder?: BlockFinder<Block>
 ): Promise<number> {
-  if (blockFinder === undefined) blockFinder = getBlockFinder(chainId);
+  if (blockFinder === undefined) blockFinder = getBlockFinder(chainId, undefined, redisClient);
   if (redisClient === undefined) return (await blockFinder.getBlockForTimestamp(timestamp)).number;
   // We already cache blocks in the ConfigStore on the HubPool chain so re-use that key if the chainId
   // matches the HubPool's.

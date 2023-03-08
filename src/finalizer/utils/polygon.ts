@@ -1,13 +1,6 @@
 import { setProofApi, use, POSClient } from "@maticnetwork/maticjs";
 import { Web3ClientPlugin } from "@maticnetwork/maticjs-ethers";
-import {
-  convertFromWei,
-  getDeployedContract,
-  groupObjectCountsByProp,
-  Wallet,
-  winston,
-  Contract,
-} from "../../utils";
+import { convertFromWei, getDeployedContract, groupObjectCountsByProp, Wallet, winston, Contract } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
 import { Multicall2Call, Withdrawal } from "..";
