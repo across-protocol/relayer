@@ -55,22 +55,22 @@ export class AcrossApiClient {
     // when deciding whether a relay will be refunded.
     const mainnetSpokePoolClient = this.spokePoolClients[this.hubPoolClient.chainId];
     if (!mainnetSpokePoolClient.isUpdated)
-      throw new Error(`Mainnet SpokePoolClient for chainId must be updated before AcrossAPIClient`);
+      throw new Error("Mainnet SpokePoolClient for chainId must be updated before AcrossAPIClient");
     const data = await Promise.all(
       tokensQuery.map((l1Token) => {
         const l2TokenAddresses = getL2TokenAddresses(l1Token);
-        const validDestinationChainForL1Token = 
-          Object.keys(l2TokenAddresses).find(
-            (chainId) => {
-              return mainnetSpokePoolClient.isDepositRouteEnabled(l1Token, Number(chainId)) && Number(chainId) !== CHAIN_IDs.MAINNET && CHAIN_ID_LIST_INDICES.includes(Number(chainId))
-            }
-          )
-        ;
+        const validDestinationChainForL1Token = Object.keys(l2TokenAddresses).find((chainId) => {
+          return (
+            mainnetSpokePoolClient.isDepositRouteEnabled(l1Token, Number(chainId)) &&
+            Number(chainId) !== CHAIN_IDs.MAINNET &&
+            CHAIN_ID_LIST_INDICES.includes(Number(chainId));
+          );
+        });
         // No valid deposit routes from mainnet for this token. We won't record a limit for it.
         if (validDestinationChainForL1Token === undefined) return undefined;
         return this.callLimits(l1Token, Number(validDestinationChainForL1Token));
       })
-    )
+    );
     for (let i = 0; i < tokensQuery.length; i++) {
       if (data[i] === undefined) continue;
       const l1Token = tokensQuery[i];
