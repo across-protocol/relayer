@@ -63,7 +63,7 @@ export class AcrossApiClient {
           return (
             mainnetSpokePoolClient.isDepositRouteEnabled(l1Token, Number(chainId)) &&
             Number(chainId) !== CHAIN_IDs.MAINNET &&
-            CHAIN_ID_LIST_INDICES.includes(Number(chainId));
+            CHAIN_ID_LIST_INDICES.includes(Number(chainId))
           );
         });
         // No valid deposit routes from mainnet for this token. We won't record a limit for it.
