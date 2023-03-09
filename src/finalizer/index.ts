@@ -7,10 +7,10 @@ import {
   ethers,
   getNetworkName,
   etherscanLink,
-  Block,
   getBlockForTimestamp,
   getCurrentTime,
-  getCachedProvider,
+  getRedis,
+  disconnectRedisClient,
 } from "../utils";
 import { winston } from "../utils";
 import {
@@ -21,7 +21,7 @@ import {
   multicallArbitrumFinalizations,
 } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { HubPoolClient } from "../clients";
+import { AcrossConfigStoreClient } from "../clients";
 import { DataworkerConfig } from "../dataworker/DataworkerConfig";
 import {
   constructClients,
@@ -32,7 +32,6 @@ import {
   FINALIZER_TOKENBRIDGE_LOOKBACK,
 } from "../common";
 import { Multicall2Ethers__factory } from "@uma/contracts-node";
-import { BlockFinder } from "@uma/financial-templates-lib";
 import * as optimismSDK from "@eth-optimism/sdk";
 import * as bobaSDK from "@across-protocol/boba-sdk";
 config();
@@ -55,21 +54,13 @@ const oneDaySeconds = 24 * 60 * 60;
 export async function finalize(
   logger: winston.Logger,
   hubSigner: Wallet,
-  hubPoolClient: HubPoolClient,
+  configStoreClient: AcrossConfigStoreClient,
   spokePoolClients: SpokePoolClientsByChain,
   configuredChainIds: number[],
   optimisticRollupFinalizationWindow: number = 5 * oneDaySeconds,
   polygonFinalizationWindow: number = oneDaySeconds
 ): Promise<void> {
-  const blockFinders = Object.fromEntries(
-    configuredChainIds.map((chainId) => {
-      return [
-        chainId,
-        new BlockFinder<Block>(hubSigner.provider.getBlock.bind(getCachedProvider(chainId, true)), [], chainId),
-      ];
-    })
-  );
-
+  const hubPoolClient = configStoreClient.hubPoolClient;
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
   const multicall2 = new Contract(
@@ -103,8 +94,7 @@ export async function finalize(
         hubPoolClient.chainId,
         chainId,
         getCurrentTime() - optimisticRollupFinalizationWindow,
-        getCurrentTime(),
-        blockFinders[chainId]
+        getCurrentTime()
       );
       logger.debug({
         at: "Finalizer",
@@ -127,8 +117,7 @@ export async function finalize(
         hubPoolClient.chainId,
         chainId,
         getCurrentTime() - polygonFinalizationWindow,
-        getCurrentTime(),
-        blockFinders[chainId]
+        getCurrentTime()
       );
       logger.debug({
         at: "Finalizer",
@@ -153,8 +142,7 @@ export async function finalize(
         hubPoolClient.chainId,
         chainId,
         getCurrentTime() - optimisticRollupFinalizationWindow,
-        getCurrentTime(),
-        blockFinders[chainId]
+        getCurrentTime()
       );
       logger.debug({
         at: "Finalizer",
@@ -178,8 +166,7 @@ export async function finalize(
         hubPoolClient.chainId,
         chainId,
         getCurrentTime() - optimisticRollupFinalizationWindow,
-        getCurrentTime(),
-        blockFinders[chainId]
+        getCurrentTime()
       );
       logger.debug({
         at: "Finalizer",
@@ -279,7 +266,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet):
         await finalize(
           logger,
           commonClients.hubSigner,
-          commonClients.hubPoolClient,
+          commonClients.configStoreClient,
           spokePoolClients,
           config.finalizerChains
         );
@@ -290,11 +277,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet):
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }
   } catch (error) {
-    if (commonClients.configStoreClient.redisClient !== undefined) {
-      // If this throws an exception, it will mask the underlying error.
-      logger.debug("Disconnecting from redis server.");
-      commonClients.configStoreClient.redisClient.disconnect();
-    }
+    await disconnectRedisClient(logger);
     throw error;
   }
 }

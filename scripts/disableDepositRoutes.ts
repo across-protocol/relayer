@@ -1,5 +1,5 @@
 /* eslint-disable no-process-exit */
-import { getSigner, winston, Logger, runTransaction } from "../src/utils";
+import { getSigner, winston, Logger } from "../src/utils";
 import {
   CHAIN_ID_LIST_INDICES,
   CommonConfig,
@@ -7,7 +7,6 @@ import {
   constructSpokePoolClientsWithStartBlocks,
   updateClients,
 } from "../src/common";
-import { PopulatedTransaction } from "ethers";
 const args = require("minimist")(process.argv.slice(2), {
   number: ["chainId"],
 });
