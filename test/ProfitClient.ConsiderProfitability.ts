@@ -95,7 +95,6 @@ describe("ProfitClient: Consider relay profit", async function () {
       spokePool_1.connect(owner),
       null,
       originChainId,
-      undefined,
       spokePool1DeploymentBlock
     );
     const spokePoolClient_2 = new SpokePoolClient(
@@ -103,7 +102,6 @@ describe("ProfitClient: Consider relay profit", async function () {
       spokePool_2.connect(owner),
       null,
       destinationChainId,
-      undefined,
       spokePool2DeploymentBlock
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };

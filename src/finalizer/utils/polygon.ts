@@ -1,13 +1,13 @@
 import { setProofApi, use, POSClient } from "@maticnetwork/maticjs";
 import { Web3ClientPlugin } from "@maticnetwork/maticjs-ethers";
 import {
-  Contract,
   convertFromWei,
-  getCachedProvider,
   getDeployedContract,
   groupObjectCountsByProp,
   Wallet,
   winston,
+  Contract,
+  getCachedProvider,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
@@ -179,7 +179,7 @@ export async function multicallPolygonFinalizations(
   };
 }
 
-export function getMainnetTokenBridger(mainnetSigner: Wallet) {
+export function getMainnetTokenBridger(mainnetSigner: Wallet): Contract {
   return getDeployedContract("PolygonTokenBridger", 1, mainnetSigner);
 }
 

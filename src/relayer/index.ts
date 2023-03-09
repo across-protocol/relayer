@@ -1,4 +1,12 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, Wallet } from "../utils";
+import {
+  processEndPollingLoop,
+  winston,
+  config,
+  startupLogLevel,
+  Wallet,
+  getRedis,
+  disconnectRedisClient,
+} from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
@@ -39,11 +47,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
       if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) break;
     }
   } catch (error) {
-    if (relayerClients !== undefined && relayerClients.configStoreClient.redisClient !== undefined) {
-      // todo understand why redisClient isn't GCed automagically.
-      logger.debug("Disconnecting from redis server.");
-      relayerClients.configStoreClient.redisClient.disconnect();
-    }
+    await disconnectRedisClient(logger);
     throw error;
   }
 }
