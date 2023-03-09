@@ -9,7 +9,6 @@ import {
   sortEventsAscendingInPlace,
   DefaultLogLevels,
   MakeOptional,
-  getDeploymentBlockNumber,
   getDeposit,
   setDeposit,
   getNetworkName,
@@ -18,6 +17,7 @@ import {
   sortEventsAscending,
   filledSameDeposit,
   getCurrentTime,
+  getRedis,
 } from "../utils";
 import { toBN, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
@@ -69,13 +69,9 @@ export class SpokePoolClient {
     // Can be excluded. This disables some deposit validation.
     readonly configStoreClient: AcrossConfigStoreClient | null,
     readonly chainId: number,
-    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
-    public spokePoolDeploymentBlock?: number
+    public spokePoolDeploymentBlock: number,
+    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
   ) {
-    this.spokePoolDeploymentBlock =
-      spokePoolDeploymentBlock === undefined
-        ? getDeploymentBlockNumber("SpokePool", chainId)
-        : spokePoolDeploymentBlock;
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
 
@@ -295,8 +291,9 @@ export class SpokePoolClient {
       return this.getDepositForFill(fill);
 
     let deposit: DepositWithBlock, cachedDeposit: Deposit | undefined;
-    if (this.configStoreClient.redisClient) {
-      cachedDeposit = await getDeposit(getRedisDepositKey(fill), this.configStoreClient.redisClient);
+    const redisClient = await getRedis(this.logger);
+    if (redisClient) {
+      cachedDeposit = await getDeposit(getRedisDepositKey(fill), redisClient);
     }
     if (cachedDeposit) {
       deposit = cachedDeposit as DepositWithBlock;
@@ -350,8 +347,7 @@ export class SpokePoolClient {
         message: "Queried RPC for deposit outside SpokePoolClient's search range",
         deposit,
       });
-      if (this.configStoreClient.redisClient)
-        await setDeposit(deposit, getCurrentTime(), this.configStoreClient.redisClient, 24 * 60 * 60);
+      if (redisClient) await setDeposit(deposit, getCurrentTime(), redisClient, 24 * 60 * 60);
     }
 
     const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill

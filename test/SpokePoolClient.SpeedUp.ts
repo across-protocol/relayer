@@ -16,14 +16,7 @@ describe("SpokePoolClient: SpeedUp", async function () {
     [owner, depositor] = await ethers.getSigners();
     ({ spokePool, erc20, destErc20, weth, deploymentBlock } = await deploySpokePoolWithToken(originChainId));
     await enableRoutes(spokePool, [{ originToken: erc20.address, destinationChainId: destinationChainId2 }]);
-    spokePoolClient = new SpokePoolClient(
-      createSpyLogger().spyLogger,
-      spokePool,
-      null,
-      originChainId,
-      undefined,
-      deploymentBlock
-    );
+    spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool, null, originChainId, deploymentBlock);
 
     await setupTokensForWallet(spokePool, depositor, [erc20, destErc20], weth, 10);
   });

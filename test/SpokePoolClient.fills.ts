@@ -24,7 +24,6 @@ describe("SpokePoolClient: Fills", async function () {
       spokePool,
       null,
       destinationChainId,
-      undefined,
       deploymentBlock
     );
 

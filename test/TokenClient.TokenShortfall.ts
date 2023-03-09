@@ -31,7 +31,6 @@ describe("TokenClient: Token shortfall", async function () {
       spokePool_1,
       null,
       originChainId,
-      undefined,
       spokePool1DeploymentBlock
     );
     spokePoolClient_2 = new SpokePoolClient(
@@ -39,7 +38,6 @@ describe("TokenClient: Token shortfall", async function () {
       spokePool_2,
       null,
       destinationChainId,
-      undefined,
       spokePool2DeploymentBlock
     );
 

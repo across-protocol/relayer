@@ -79,6 +79,8 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
 };
 export const QUOTE_TIME_BUFFER = 12 * 5; // 5 blocks on Mainnet.
 
+export const REDIS_URL_DEFAULT = "redis://localhost:6379";
+
 // Quicknode is the bottleneck here and imposes a 10k block limit on an event search.
 // Alchemy-Polygon imposes a 3500 block limit.
 // Note: a 0 value here leads to an infinite lookback, which would be useful and reduce RPC requests
