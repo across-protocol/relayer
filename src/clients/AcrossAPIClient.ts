@@ -72,7 +72,14 @@ export class AcrossApiClient {
       })
     );
     for (let i = 0; i < tokensQuery.length; i++) {
-      if (data[i] === undefined) continue;
+      if (data[i] === undefined) {
+        this.logger.debug({
+          at: "AcrossAPIClient",
+          message: "No valid deposit routes for token, skipping",
+          token: tokensQuery[i],
+        });
+        continue;
+      }
       const l1Token = tokensQuery[i];
       this.limits[l1Token] = data[i].maxDeposit;
     }
