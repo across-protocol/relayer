@@ -75,7 +75,7 @@ export class AcrossApiClient {
       if (data[i] === undefined) {
         this.logger.debug({
           at: "AcrossAPIClient",
-          message: "No valid deposit routes for token, skipping",
+          message: "No valid deposit routes for enabled LP token, skipping",
           token: tokensQuery[i],
         });
         continue;
