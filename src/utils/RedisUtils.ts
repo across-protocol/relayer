@@ -32,7 +32,11 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
         });
       redisClients[url] = redisClient;
     } catch (err) {
-      // No redis client at URL
+      if (logger)
+        logger.debug({
+          at: "Dataworker#ClientHelper",
+          message: `Failed to connec to redis server at ${url}.`,
+        });
     }
   }
 
