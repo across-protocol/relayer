@@ -23,6 +23,7 @@ import {
   getCurrentTime,
   sortEventsDescending,
   getDisputeForTimestamp,
+  disconnectRedisClient,
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
@@ -65,9 +66,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     clients.hubPoolClient.chainId,
     clients.hubPoolClient.chainId,
     priceRequestTime,
-    getCurrentTime(),
-    clients.configStoreClient.blockFinder,
-    clients.configStoreClient.redisClient
+    getCurrentTime()
   );
 
   // Find dispute transaction so we can gain additional confidence that the preceding root bundle is older than the
@@ -204,7 +203,8 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
 export async function run(_logger: winston.Logger): Promise<void> {
   const baseSigner: Wallet = await getSigner();
   await validate(_logger, baseSigner);
+  await disconnectRedisClient(logger);
 }
 
 // eslint-disable-next-line no-process-exit
-run(Logger).then(() => process.exit(0));
+run(Logger).then(async () => process.exit(0));

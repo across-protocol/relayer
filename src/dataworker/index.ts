@@ -1,4 +1,12 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, Wallet } from "../utils";
+import {
+  processEndPollingLoop,
+  winston,
+  config,
+  startupLogLevel,
+  Wallet,
+  getRedis,
+  disconnectRedisClient,
+} from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
@@ -133,12 +141,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
     }
   } catch (error) {
-    if (clients.configStoreClient.redisClient !== undefined) {
-      // todo understand why redisClient isn't GCed automagically.
-      logger.debug("Disconnecting from redis server.");
-      clients.configStoreClient.redisClient.disconnect();
-    }
-
+    await disconnectRedisClient(logger);
     throw error;
   }
 }

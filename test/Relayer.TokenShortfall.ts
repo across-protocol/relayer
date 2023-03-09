@@ -59,7 +59,6 @@ describe("Relayer: Token balance shortfall", async function () {
       spokePool_1.connect(relayer),
       configStoreClient,
       originChainId,
-      undefined,
       spokePool1DeploymentBlock
     );
     spokePoolClient_2 = new SpokePoolClient(
@@ -67,7 +66,6 @@ describe("Relayer: Token balance shortfall", async function () {
       spokePool_2.connect(relayer),
       configStoreClient,
       destinationChainId,
-      undefined,
       spokePool2DeploymentBlock
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
