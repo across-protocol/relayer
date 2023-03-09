@@ -72,7 +72,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       spokePool_1.connect(relayer),
       configStoreClient,
       originChainId,
-      undefined,
       spokePool1DeploymentBlock
     );
     spokePoolClient_2 = new SpokePoolClient(
@@ -80,7 +79,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       spokePool_2.connect(relayer),
       configStoreClient,
       destinationChainId,
-      undefined,
       spokePool2DeploymentBlock
     );
     spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };

@@ -73,7 +73,6 @@ describe("Relayer: Unfilled Deposits", async function () {
       spokePool_1,
       configStoreClient,
       originChainId,
-      undefined,
       spokePool1DeploymentBlock
     );
     spokePoolClient_2 = new SpokePoolClient(
@@ -81,8 +80,8 @@ describe("Relayer: Unfilled Deposits", async function () {
       spokePool_2,
       configStoreClient,
       destinationChainId,
-      { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 },
-      spokePool2DeploymentBlock
+      spokePool2DeploymentBlock,
+      { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
     );
 
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };

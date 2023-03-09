@@ -35,6 +35,7 @@ import {
   paginatedEventQuery,
   ZERO_ADDRESS,
   getRefund,
+  disconnectRedisClient,
 } from "../utils";
 import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { createDataworker } from "../dataworker";
@@ -106,7 +107,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
         console.group(`Leaf for chain ID ${leaf.chainId} and token ${tokenInfo.symbol} (${l1Token})`);
         const decimals = tokenInfo.decimals;
         const l2Token = clients.hubPoolClient.getDestinationTokenForL1Token(l1Token, leaf.chainId);
-        const l2TokenContract = new Contract(l2Token, ERC20.abi, getProvider(leaf.chainId));
+        const l2TokenContract = new Contract(l2Token, ERC20.abi, await getProvider(leaf.chainId));
         const runningBalance = leaf.runningBalances[i];
         const netSendAmount = leaf.netSendAmounts[i];
         const bundleEndBlockForChain =
@@ -416,6 +417,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
 export async function run(_logger: winston.Logger): Promise<void> {
   const baseSigner: Wallet = await getSigner();
   await runScript(_logger, baseSigner);
+  await disconnectRedisClient(logger);
 }
 
 // eslint-disable-next-line no-process-exit

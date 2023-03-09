@@ -711,8 +711,8 @@ describe("Dataworker: Build merkle roots", async function () {
         spokePool_2,
         configStoreClient,
         destinationChainId,
-        { fromBlock: fill1Block + 1 }, // Set fromBlock to now, after first fill for same deposit as the slowFill1
-        spokePoolClients[destinationChainId].spokePoolDeploymentBlock
+        spokePoolClients[destinationChainId].spokePoolDeploymentBlock,
+        { fromBlock: fill1Block + 1 } // Set fromBlock to now, after first fill for same deposit as the slowFill1
       );
       await shortRangeSpokePoolClient.update();
       expect(shortRangeSpokePoolClient.getFills().length).to.equal(2); // We should only be able to see 2 fills
@@ -886,8 +886,8 @@ describe("Dataworker: Build merkle roots", async function () {
         spokePool_2,
         configStoreClient,
         destinationChainId,
-        { fromBlock: fill2Block + 1 },
-        spokePoolClients[destinationChainId].spokePoolDeploymentBlock
+        spokePoolClients[destinationChainId].spokePoolDeploymentBlock,
+        { fromBlock: fill2Block + 1 }
       );
 
       // Send a third partial fill, this will produce an excess since a slow fill is already in flight for the deposit.
