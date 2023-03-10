@@ -27,7 +27,7 @@ import { MockInventoryClient, MockProfitClient } from "./mocks";
 
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
-import { getUnfilledDeposits, toBN, utf8ToHex } from "../src/utils";
+import { getUnfilledDeposits, toBN, UnfilledDeposit, utf8ToHex } from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import { BigNumber } from "ethers";
 import { MockConfigStoreClient } from "./mocks/MockConfigStoreClient";
@@ -126,10 +126,9 @@ describe("Relayer: Unfilled Deposits", async function () {
     await l1Token.approve(hubPool.address, amountToLp);
     await hubPool.addLiquidity(l1Token.address, amountToLp);
 
-    await updateAllClients();
-
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
     await spokePool_2.setCurrentTime(await getLastBlockTime(spokePool_2.provider));
+    await updateAllClients();
   });
 
   it("Correctly fetches unfilled deposits", async function () {
@@ -162,6 +161,47 @@ describe("Relayer: Unfilled Deposits", async function () {
           invalidFills: [],
         },
       ]);
+  });
+
+  it("Correctly defers deposits with future quote timestamps", async function () {
+    const delta = await spokePool_1.depositQuoteTimeBuffer(); // seconds
+
+    const _getUnfilledDeposits = () => {
+      return (unfilledDeposits = getUnfilledDeposits(
+        relayerInstance.clients.spokePoolClients,
+        DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
+        configStoreClient
+      ));
+    };
+
+    let unfilledDeposits: UnfilledDeposit[] = null;
+
+    const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+
+    await spokePool_1.setCurrentTime(deposit1.quoteTimestamp + delta);
+    const deposit2 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+
+    // One deposit is eligible.
+    await spokePool_1.setCurrentTime(deposit1.quoteTimestamp);
+    await updateAllClients();
+    unfilledDeposits = _getUnfilledDeposits();
+    expect(unfilledDeposits.length).to.eq(1);
+    expect(unfilledDeposits[0].deposit.depositId).to.equal(deposit1.depositId);
+
+    // Still only one deposit.
+    await spokePool_1.setCurrentTime(deposit2.quoteTimestamp - 1);
+    await updateAllClients();
+    unfilledDeposits = _getUnfilledDeposits();
+    expect(unfilledDeposits.length).to.equal(1);
+    expect(unfilledDeposits[0].deposit.depositId).to.equal(deposit1.depositId);
+
+    // Step slightly beyond the future quoteTimestamp; now both deposits are eligible.
+    await spokePool_1.setCurrentTime(deposit2.quoteTimestamp);
+    await updateAllClients();
+    unfilledDeposits = _getUnfilledDeposits();
+    expect(unfilledDeposits.length).to.equal(2);
+    expect(unfilledDeposits[0].deposit.depositId).to.equal(deposit1.depositId);
+    expect(unfilledDeposits[1].deposit.depositId).to.equal(deposit2.depositId);
   });
 
   it("Correctly fetches partially filled deposits", async function () {
@@ -279,27 +319,55 @@ describe("Relayer: Unfilled Deposits", async function () {
   });
 
   it("Correctly selects unfilled deposit with updated fee", async function () {
+    const delta = await spokePool_1.depositQuoteTimeBuffer(); // seconds
+    let unfilledDeposits: UnfilledDeposit[];
+
     // perform simple deposit
     const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+
+    // Add an "early" deposit
+    await spokePool_1.setCurrentTime(deposit1.quoteTimestamp + delta);
+    const deposit2 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    await spokePool_1.setCurrentTime(deposit1.quoteTimestamp);
     await updateAllClients();
 
-    // update fee before deposit filled
+    // update fee before either deposit is filled
     const newRelayFeePct = toBNWei(0.1337);
-    const speedUpSignature = await signForSpeedUp(depositor, deposit1, newRelayFeePct);
-    await spokePool_1.speedUpDeposit(depositor.address, newRelayFeePct, deposit1.depositId, speedUpSignature);
-    await updateAllClients();
+    for (const deposit of [deposit1, deposit2]) {
+      const speedUpSignature = await signForSpeedUp(depositor, deposit, newRelayFeePct);
+      await spokePool_1.speedUpDeposit(depositor.address, newRelayFeePct, deposit.depositId, speedUpSignature);
+    }
+    await spokePoolClient_1.update();
 
-    const unfilledDeposits = getUnfilledDeposits(
+    unfilledDeposits = getUnfilledDeposits(
       relayerInstance.clients.spokePoolClients,
       DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
       configStoreClient
     );
+
     // expect only one unfilled deposit
     expect(unfilledDeposits.length).to.eq(1);
+    expect(unfilledDeposits[0].deposit.depositId).to.equal(deposit1.depositId);
     // expect unfilled deposit to have new relay fee
     expect(unfilledDeposits[0].deposit.newRelayerFeePct).to.deep.eq(newRelayFeePct);
     // Old relayer fee pct is unchanged as this is what's included in relay hash
     expect(unfilledDeposits[0].deposit.relayerFeePct).to.deep.eq(deposit1.relayerFeePct);
+
+    // Cycle forward to the next deposit
+    await spokePool_1.setCurrentTime(deposit2.quoteTimestamp);
+    await updateAllClients();
+
+    unfilledDeposits = getUnfilledDeposits(
+      relayerInstance.clients.spokePoolClients,
+      DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
+      configStoreClient
+    );
+
+    expect(unfilledDeposits.length).to.eq(2);
+    expect(unfilledDeposits[1].deposit.depositId).to.equal(deposit2.depositId);
+    // The new relayer fee was still applied to the early deposit.
+    expect(unfilledDeposits[1].deposit.relayerFeePct).to.deep.eq(deposit2.relayerFeePct);
+    expect(unfilledDeposits[1].deposit.newRelayerFeePct).to.deep.eq(newRelayFeePct);
   });
 
   it("Does not double fill deposit when updating fee after fill", async function () {
