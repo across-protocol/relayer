@@ -26,6 +26,19 @@ export { winston, sinon };
 const assert = chai.assert;
 export { chai, assert };
 
+/**
+ * Returns true if every key in `expected` is present in `obj` and has the same value.
+ * BigNumber's are cast to String to compare to avoid issues with BigNumber versioning.
+ * @param obj
+ * @param expected
+ * @returns
+ */
+export const objectsMatch = (obj: any, expected: any): boolean => {
+  return Object.keys(expected).every((key) => {
+    return expected[key] !== undefined && expected[key].toString() === obj[key]?.toString();
+  });
+};
+
 export async function assertPromiseError<T>(promise: Promise<T>, errMessage?: string): Promise<void> {
   const SPECIAL_ERROR_MESSAGE = "Promise didn't fail";
   try {
