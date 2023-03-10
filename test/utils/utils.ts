@@ -29,15 +29,29 @@ export { chai, assert };
 /**
  * Returns true if every key in `expected` is present in `obj` and has the same value.
  * BigNumber's are cast to String to compare to avoid issues with BigNumber versioning.
- * @param obj
- * @param expected
+ * Works with nested objects.
+ * @param x object to compare
+ * @param y object to compare
+ * @param {omitKeys} keys to omit from comparison
  * @returns
  */
-export const objectsMatch = (obj: any, expected: any): boolean => {
-  return Object.keys(expected).every((key) => {
-    return expected[key] !== undefined && expected[key].toString() === obj[key]?.toString();
-  });
-};
+export function deepEqualsWithBigNumber(x: any, y: any, omitKeys?: string[]): boolean {
+  if (x.toString() === y.toString()) {
+    return true;
+  } else if (typeof x == "object" && x != null && typeof y == "object" && y != null) {
+    const omittedKeysInX = omitKeys?.filter((key) => x.hasOwn(key)).length ?? 0;
+    const omittedKeysInY = omitKeys?.filter((key) => y.hasOwn(key)).length ?? 0;
+    if (Object.keys(x).length - omittedKeysInX !== Object.keys(y).length - omittedKeysInY) return false;
+
+    for (const prop in x) {
+      if (omitKeys?.includes(prop)) continue;
+      if (y.hasOwn(prop)) return deepEqualsWithBigNumber(x[prop], y[prop]);
+      else return false;
+    }
+
+    return true;
+  } else return false;
+}
 
 export async function assertPromiseError<T>(promise: Promise<T>, errMessage?: string): Promise<void> {
   const SPECIAL_ERROR_MESSAGE = "Promise didn't fail";
