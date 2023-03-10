@@ -56,7 +56,7 @@ describe("Dataworker block range-related utility methods", async function () {
       defaultEndBlockBuffers,
       dataworkerClients,
       latestMainnetBlock,
-      latestMainnetBlock
+      chainIdListForBundleEvaluationBlockNumbers
     );
     expect(startingWidestBlocks).to.deep.equal(latestBlocks.map((endBlock) => [0, endBlock]));
 
@@ -68,7 +68,7 @@ describe("Dataworker block range-related utility methods", async function () {
       largeBuffers,
       dataworkerClients,
       latestMainnetBlock,
-      latestMainnetBlock
+      chainIdListForBundleEvaluationBlockNumbers
     );
     expect(zeroRange).to.deep.equal(latestBlocks.map((_) => [0, 0]));
   });

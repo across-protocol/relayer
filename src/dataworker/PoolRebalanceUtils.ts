@@ -389,20 +389,15 @@ export async function getWidestPossibleExpectedBlockRange(
   endBlockBuffers: number[],
   clients: Clients,
   latestMainnetBlock: number,
-  mainnetBundleEndBlock: number
+  enabledChains: number[]
 ): Promise<number[][]> {
-  // A chain is only enabled for a bundle range if it was not disabled at the time of the mainnet bundle end block.
-  const enabledChains = clients.configStoreClient.getEnabledChains(
-    mainnetBundleEndBlock,
-    chainIdListForBundleEvaluationBlockNumbers
-  );
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => {
     // If chain is disabled, re-use the latest bundle end block for the chain as both the start
     // and end block.
     if (!enabledChains.includes(chainId)) {
       const lastEndBlockForDisabledChain = clients.hubPoolClient.getLatestBundleEndBlockForChain(
         chainIdListForBundleEvaluationBlockNumbers,
-        mainnetBundleEndBlock,
+        latestMainnetBlock,
         chainId
       );
       return [lastEndBlockForDisabledChain, lastEndBlockForDisabledChain];
