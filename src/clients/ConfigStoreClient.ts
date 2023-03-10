@@ -16,6 +16,7 @@ import {
   shouldCache,
   setRedisKey,
   sortEventsAscending,
+  getRedis,
 } from "../utils";
 
 import { CHAIN_ID_LIST_INDICES, CONFIG_STORE_VERSION, DEFAULT_CONFIG_STORE_VERSION } from "../common/Constants";
@@ -69,8 +70,7 @@ export class AcrossConfigStoreClient {
     readonly logger: winston.Logger,
     readonly configStore: Contract,
     readonly hubPoolClient: HubPoolClient,
-    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
-    readonly redisClient?: RedisClient
+    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
     this.blockFinder = new BlockFinder(this.configStore.provider.getBlock.bind(this.configStore.provider));
@@ -204,6 +204,12 @@ export class AcrossConfigStoreClient {
         return enabledChains;
       }, enabledChainsAtFromBlock)
       .sort((a, b) => a - b);
+  }
+
+  getEnabledChains(block = Number.MAX_SAFE_INTEGER, allPossibleChains = CHAIN_ID_LIST_INDICES): number[] {
+    // Get most recent disabled chain list before the block specified.
+    const currentlyDisabledChains = this.getDisabledChainsForBlock(block);
+    return allPossibleChains.filter((chainId) => !currentlyDisabledChains.includes(chainId));
   }
 
   getDisabledChainsForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number[] {
@@ -387,19 +393,19 @@ export class AcrossConfigStoreClient {
       this.hubPoolClient.chainId,
       timestamp,
       getCurrentTime(),
-      this.blockFinder,
-      this.redisClient
+      this.blockFinder
     );
   }
 
   private async getUtilization(l1Token: string, blockNumber: number, amount: BigNumber, timestamp: number) {
-    if (!this.redisClient) return await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, blockNumber, amount);
+    const redisClient = await getRedis(this.logger);
+    if (!redisClient) return await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, blockNumber, amount);
     const key = `utilization_${l1Token}_${blockNumber}_${amount.toString()}`;
-    const result = await this.redisClient.get(key);
+    const result = await redisClient.get(key);
     if (result === null) {
       const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, blockNumber, amount);
       if (shouldCache(getCurrentTime(), timestamp))
-        await setRedisKey(key, `${current.toString()},${post.toString()}`, this.redisClient, 60 * 60 * 24 * 90);
+        await setRedisKey(key, `${current.toString()},${post.toString()}`, redisClient, 60 * 60 * 24 * 90);
       return { current, post };
     } else {
       const [current, post] = result.split(",").map(BigNumber.from);

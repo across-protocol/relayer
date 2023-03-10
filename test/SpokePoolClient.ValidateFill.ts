@@ -75,7 +75,6 @@ describe("SpokePoolClient: Fill Validation", async function () {
       spokePool_1,
       configStoreClient,
       originChainId,
-      undefined,
       spokePool1DeploymentBlock
     );
     spokePoolClient2 = new SpokePoolClient(
@@ -83,7 +82,6 @@ describe("SpokePoolClient: Fill Validation", async function () {
       spokePool_2,
       null,
       destinationChainId,
-      undefined,
       spokePool2DeploymentBlock
     );
 
@@ -130,7 +128,6 @@ describe("SpokePoolClient: Fill Validation", async function () {
       spokePool_1,
       null,
       destinationChainId,
-      undefined,
       spokePool1DeploymentBlock
     ); // create spoke pool client on the "target" chain.
     // expect(spokePoolClientForDestinationChain.getDepositForFill(fill_1)).to.equal(undefined);
@@ -523,7 +520,6 @@ describe("SpokePoolClient: Fill Validation", async function () {
       spokePool_1,
       null,
       destinationChainId,
-      undefined,
       spokePool2DeploymentBlock
     ); // create spoke pool client on the "target" chain.
     await spokePoolClientForDestinationChain.update();

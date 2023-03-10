@@ -16,14 +16,7 @@ describe("SpokePoolClient: SpeedUp", async function () {
     [owner, depositor] = await ethers.getSigners();
     ({ spokePool, erc20, destErc20, weth, deploymentBlock } = await deploySpokePoolWithToken(originChainId));
     await enableRoutes(spokePool, [{ originToken: erc20.address, destinationChainId: destinationChainId2 }]);
-    spokePoolClient = new SpokePoolClient(
-      createSpyLogger().spyLogger,
-      spokePool,
-      null,
-      originChainId,
-      undefined,
-      deploymentBlock
-    );
+    spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool, null, originChainId, deploymentBlock);
 
     await setupTokensForWallet(spokePool, depositor, [erc20, destErc20], weth, 10);
   });
@@ -51,6 +44,41 @@ describe("SpokePoolClient: SpeedUp", async function () {
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0]).to.deep.contain(expectedDepositData);
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId).length).to.equal(1);
   });
+
+  it("Fetches speedup data associated with an early deposit", async function () {
+    const delta = await spokePool.depositQuoteTimeBuffer();
+    const now = Number(await spokePool.getCurrentTime());
+
+    await spokePool.setCurrentTime(now + delta);
+    const deposit = await simpleDeposit(spokePool, erc20, depositor, depositor, destinationChainId);
+
+    await spokePool.setCurrentTime(now);
+    await spokePoolClient.update();
+
+    // Before speedup should return the normal deposit object.
+    expect(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock)).to.deep.equal(deposit);
+
+    const newRelayFeePct = toBNWei(0.1337);
+    const speedUpSignature = await signForSpeedUp(depositor, deposit as DepositWithBlock, newRelayFeePct);
+    await spokePool.speedUpDeposit(depositor.address, newRelayFeePct, deposit.depositId, speedUpSignature);
+    await spokePoolClient.update();
+
+    // Deposit is not returned until we reach deposit.quoteTimestamp.
+    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId).length).to.equal(0);
+    await spokePool.setCurrentTime(deposit.quoteTimestamp);
+    await spokePoolClient.update();
+
+    // After speedup should return the appended object with the new fee information and signature.
+    const expectedDepositData = { ...deposit, speedUpSignature, newRelayerFeePct: newRelayFeePct };
+    expect(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock)).to.deep.equal(
+      expectedDepositData
+    );
+
+    // Fetching deposits for the depositor should contain the correct fees.
+    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId).length).to.equal(1);
+    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0]).to.deep.contain(expectedDepositData);
+  });
+
   it("Selects the highest speedup option when multiple are presented", async function () {
     const deposit = await simpleDeposit(spokePool, erc20, depositor, depositor, destinationChainId);
 

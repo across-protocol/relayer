@@ -1,3 +1,4 @@
+import { groupBy } from "lodash";
 import {
   spreadEvent,
   assign,
@@ -9,7 +10,6 @@ import {
   sortEventsAscendingInPlace,
   DefaultLogLevels,
   MakeOptional,
-  getDeploymentBlockNumber,
   getDeposit,
   setDeposit,
   getNetworkName,
@@ -18,6 +18,7 @@ import {
   sortEventsAscending,
   filledSameDeposit,
   getCurrentTime,
+  getRedis,
 } from "../utils";
 import { toBN, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
@@ -46,6 +47,7 @@ const FILL_DEPOSIT_COMPARISON_KEYS = [
 ] as const;
 
 export class SpokePoolClient {
+  private currentTime: number;
   private depositHashes: { [depositHash: string]: DepositWithBlock } = {};
   private depositHashesToFills: { [depositHash: string]: FillWithBlock[] } = {};
   private speedUps: { [depositorAddress: string]: { [depositId: number]: SpeedUp[] } } = {};
@@ -53,6 +55,7 @@ export class SpokePoolClient {
   private tokensBridged: TokensBridged[] = [];
   private rootBundleRelays: RootBundleRelayWithBlock[] = [];
   private relayerRefundExecutions: RelayerRefundExecutionWithBlock[] = [];
+  private earlyDeposits: FundsDepositedEvent[] = [];
   public earliestDepositIdQueried = Number.MAX_SAFE_INTEGER;
   public latestDepositIdQueried = 0;
   public firstDepositIdForSpokePool = Number.MAX_SAFE_INTEGER;
@@ -69,13 +72,9 @@ export class SpokePoolClient {
     // Can be excluded. This disables some deposit validation.
     readonly configStoreClient: AcrossConfigStoreClient | null,
     readonly chainId: number,
-    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
-    public spokePoolDeploymentBlock?: number
+    public spokePoolDeploymentBlock: number,
+    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
   ) {
-    this.spokePoolDeploymentBlock =
-      spokePoolDeploymentBlock === undefined
-        ? getDeploymentBlockNumber("SpokePool", chainId)
-        : spokePoolDeploymentBlock;
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
 
@@ -295,8 +294,9 @@ export class SpokePoolClient {
       return this.getDepositForFill(fill);
 
     let deposit: DepositWithBlock, cachedDeposit: Deposit | undefined;
-    if (this.configStoreClient.redisClient) {
-      cachedDeposit = await getDeposit(getRedisDepositKey(fill), this.configStoreClient.redisClient);
+    const redisClient = await getRedis(this.logger);
+    if (redisClient) {
+      cachedDeposit = await getDeposit(getRedisDepositKey(fill), redisClient);
     }
     if (cachedDeposit) {
       deposit = cachedDeposit as DepositWithBlock;
@@ -350,8 +350,7 @@ export class SpokePoolClient {
         message: "Queried RPC for deposit outside SpokePoolClient's search range",
         deposit,
       });
-      if (this.configStoreClient.redisClient)
-        await setDeposit(deposit, getCurrentTime(), this.configStoreClient.redisClient, 24 * 60 * 60);
+      if (redisClient) await setDeposit(deposit, getCurrentTime(), redisClient, 24 * 60 * 60);
     }
 
     const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill
@@ -407,7 +406,13 @@ export class SpokePoolClient {
     );
 
     // Require that all Deposits meet the minimum specified number of confirmations.
-    this.latestBlockNumber = await this.spokePool.provider.getBlockNumber();
+    const [latestBlockNumber, currentTime] = await Promise.all([
+      this.spokePool.provider.getBlockNumber(),
+      this.spokePool.getCurrentTime(),
+    ]);
+    this.latestBlockNumber = latestBlockNumber;
+    this.currentTime = currentTime;
+
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
       toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
@@ -485,11 +490,23 @@ export class SpokePoolClient {
     // is heavy as there is a fair bit of block number lookups that need to happen. Note this call REQUIRES that the
     // hubPoolClient is updated on the first before this call as this needed the the L1 token mapping to each L2 token.
     if (eventsToQuery.includes("FundsDeposited")) {
-      const depositEvents = queryResults[eventsToQuery.indexOf("FundsDeposited")] as FundsDepositedEvent[];
+      const allDeposits = [
+        ...(queryResults[eventsToQuery.indexOf("FundsDeposited")] as FundsDepositedEvent[]),
+        ...this.earlyDeposits,
+      ];
+      const { earlyDeposits = [], depositEvents = [] } = groupBy(allDeposits, (depositEvent) => {
+        if (depositEvent.args.quoteTimestamp > this.currentTime) {
+          this.logger.debug({ at: "SpokePoolClient#update", message: "Deferring early deposit event.", depositEvent });
+          return "earlyDeposits";
+        } else return "depositEvents";
+      });
+      this.earlyDeposits = earlyDeposits;
+
       if (depositEvents.length > 0)
         this.log("debug", `Fetching realizedLpFeePct for ${depositEvents.length} deposits on chain ${this.chainId}`, {
           numDeposits: depositEvents.length,
         });
+
       const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number }[] = await Promise.map(
         depositEvents,
         async (event) => {

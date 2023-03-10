@@ -72,7 +72,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       spokePool_1.connect(relayer),
       configStoreClient,
       originChainId,
-      undefined,
       spokePool1DeploymentBlock
     );
     spokePoolClient_2 = new SpokePoolClient(
@@ -80,7 +79,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       spokePool_2.connect(relayer),
       configStoreClient,
       destinationChainId,
-      undefined,
       spokePool2DeploymentBlock
     );
     spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
@@ -99,7 +97,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
       },
       {
         relayerTokens: [],
@@ -178,7 +176,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
       },
       {
         relayerTokens: [],
@@ -214,7 +212,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
       },
       {
         relayerTokens: [],
@@ -302,7 +300,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
       },
       {
         relayerTokens: [],

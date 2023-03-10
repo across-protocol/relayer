@@ -21,7 +21,7 @@ export async function run(): Promise<void> {
   if (!Object.keys(args).includes("to")) throw new Error("Define `to` as where you want to send funds to");
   if (!Object.keys(args).includes("chainId")) throw new Error("Define `chainId` as the chain you want to connect on");
   const baseSigner = await getSigner();
-  const connectedSigner = baseSigner.connect(getProvider(Number(args.chainId)));
+  const connectedSigner = baseSigner.connect(await getProvider(Number(args.chainId)));
   console.log("Connected to account", connectedSigner.address);
   const recipient = args.to;
   const token = args.token;

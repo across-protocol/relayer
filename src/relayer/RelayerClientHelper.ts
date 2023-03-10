@@ -34,7 +34,12 @@ export async function constructRelayerClients(
     config.hubPoolChainId
   );
 
-  const acrossApiClient = new AcrossApiClient(logger, commonClients.hubPoolClient, config.relayerTokens);
+  const acrossApiClient = new AcrossApiClient(
+    logger,
+    commonClients.hubPoolClient,
+    spokePoolClients,
+    config.relayerTokens
+  );
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients, commonClients.hubPoolClient);
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.

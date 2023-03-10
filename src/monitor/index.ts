@@ -1,4 +1,12 @@
-import { winston, processEndPollingLoop, config, startupLogLevel, Wallet } from "../utils";
+import {
+  winston,
+  processEndPollingLoop,
+  config,
+  startupLogLevel,
+  Wallet,
+  getRedis,
+  disconnectRedisClient,
+} from "../utils";
 import { Monitor } from "./Monitor";
 import { MonitorConfig } from "./MonitorConfig";
 import { constructMonitorClients } from "./MonitorClientHelper";
@@ -44,11 +52,7 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Wallet) {
       if (await processEndPollingLoop(logger, "Monitor", config.pollingDelay)) break;
     }
   } catch (error) {
-    if (clients !== undefined && clients.configStoreClient.redisClient !== undefined) {
-      // todo understand why redisClient isn't GCed automagically.
-      logger.debug("Disconnecting from redis server.");
-      clients.configStoreClient.redisClient.disconnect();
-    }
+    await disconnectRedisClient(logger);
     throw error;
   }
 }

@@ -252,7 +252,6 @@ export async function deploySpokePoolForIterativeTest(
     spokePool.connect(signer),
     configStoreClient,
     desiredChainId,
-    undefined,
     deploymentBlock
   );
 
