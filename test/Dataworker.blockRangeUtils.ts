@@ -60,6 +60,22 @@ describe("Dataworker block range-related utility methods", async function () {
     );
     expect(startingWidestBlocks).to.deep.equal(latestBlocks.map((endBlock) => [0, endBlock]));
 
+    // Sets end block to start block if chain is not on enabled chain list.
+    const disabledChainEndBlocks = await getWidestPossibleExpectedBlockRange(
+      chainIdListForBundleEvaluationBlockNumbers,
+      spokePoolClients,
+      defaultEndBlockBuffers,
+      dataworkerClients,
+      latestMainnetBlock,
+      chainIdListForBundleEvaluationBlockNumbers.slice(1)
+    );
+    expect(disabledChainEndBlocks).to.deep.equal(
+      latestBlocks.map((endBlock, i) => {
+        if (i === 0) return [0, 0];
+        else return [0, endBlock];
+      })
+    );
+
     // End block defaults to 0 if buffer is too large
     const largeBuffers = Array(chainIdListForBundleEvaluationBlockNumbers.length).fill(1000);
     const zeroRange = await getWidestPossibleExpectedBlockRange(
