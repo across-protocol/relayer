@@ -402,7 +402,7 @@ export async function getWidestPossibleExpectedBlockRange(
     if (!enabledChains.includes(chainId)) {
       const lastEndBlockForDisabledChain = clients.hubPoolClient.getLatestBundleEndBlockForChain(
         chainIdListForBundleEvaluationBlockNumbers,
-        mainnetBundleEndBlock,
+        latestMainnetBlock,
         chainId
       );
       return [lastEndBlockForDisabledChain, lastEndBlockForDisabledChain];
