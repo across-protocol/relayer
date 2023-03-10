@@ -470,7 +470,10 @@ export function generateMarkdownForRootBundle(
   // Create helpful logs to send to slack transport
   let bundleBlockRangePretty = "";
   chainIdListForBundleEvaluationBlockNumbers.forEach((chainId, index) => {
-    bundleBlockRangePretty += `\n\t\t${chainId}: ${JSON.stringify(bundleBlockRange[index])}`;
+    const isChainDisabled = bundleBlockRange[index][0] === bundleBlockRange[index][1];
+    bundleBlockRangePretty += `\n\t\t${chainId}: ${JSON.stringify(bundleBlockRange[index])}${
+      isChainDisabled ? " 🥶" : ""
+    }`;
   });
 
   const convertTokenListFromWei = (chainId: number, tokenAddresses: string[], weiVals: string[]) => {
