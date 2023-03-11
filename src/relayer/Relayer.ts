@@ -174,6 +174,7 @@ export class Relayer {
           limit: this.clients.acrossApiClient.getLimit(l1Token.address),
           unfilledAmount: unfilledAmount.toString(),
           l1Token: l1Token.address,
+          deposit,
         });
         continue;
       }
