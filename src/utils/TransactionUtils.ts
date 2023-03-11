@@ -53,6 +53,7 @@ export async function runTransaction(
       retriesRemaining > 0 &&
       (error?.code === "NONCE_EXPIRED" ||
         error?.code === "INSUFFICIENT_FUNDS" ||
+        error?.code === "REPLACEMENT_UNDERPRICED" ||
         error?.message.includes("intrinsic gas too low"))
     ) {
       // If error is due to a nonce collision or gas underpricement then re-submit to fetch latest params.
