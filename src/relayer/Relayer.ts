@@ -172,9 +172,12 @@ export class Relayer {
           at: "Relayer",
           message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
           limit: this.clients.acrossApiClient.getLimit(l1Token.address),
-          unfilledAmount: unfilledAmount.toString(),
           l1Token: l1Token.address,
-          deposit,
+          depositId: deposit.depositId,
+          amount: deposit.amount,
+          unfilledAmount: unfilledAmount.toString(),
+          originChainId: deposit.originChainId,
+          transactionHash: deposit.transactionHash,
         });
         continue;
       }
