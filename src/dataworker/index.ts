@@ -139,7 +139,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
             // all mainnet leaves.
             mainnetLeaf.netSendAmounts.map(async (amount, index) => {
               const tokenForNetSendAmount = mainnetLeaf.l1Tokens[index];
-              if (amount.gt(0))
+              if (!amount.eq(0))
                 await balanceAllocator.addBalance(
                   1,
                   tokenForNetSendAmount,
