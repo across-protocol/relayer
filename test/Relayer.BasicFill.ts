@@ -97,7 +97,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
       },
       {
         relayerTokens: [],
@@ -176,7 +176,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
       },
       {
         relayerTokens: [],
@@ -212,7 +212,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
       },
       {
         relayerTokens: [],
@@ -300,7 +300,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
       },
       {
         relayerTokens: [],

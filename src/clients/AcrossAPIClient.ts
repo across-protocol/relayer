@@ -4,6 +4,7 @@ import get from "lodash.get";
 import { HubPoolClient } from "./HubPoolClient";
 import { CHAIN_ID_LIST_INDICES } from "../common";
 import { constants } from "@across-protocol/sdk-v2";
+import { SpokePoolClientsByChain } from "../interfaces";
 const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
 export interface DepositLimits {
@@ -21,6 +22,7 @@ export class AcrossApiClient {
   constructor(
     readonly logger: winston.Logger,
     readonly hubPoolClient: HubPoolClient,
+    readonly spokePoolClients: SpokePoolClientsByChain,
     readonly tokensQuery: string[] = [],
     readonly timeout: number = 60000
   ) {
@@ -51,18 +53,33 @@ export class AcrossApiClient {
     // - Store the max deposit limit for each L1 token. DestinationChainId doesn't matter since HubPool
     // liquidity is shared for all tokens and affects maxDeposit. We don't care about maxDepositInstant
     // when deciding whether a relay will be refunded.
+    const mainnetSpokePoolClient = this.spokePoolClients[this.hubPoolClient.chainId];
+    if (!mainnetSpokePoolClient.isUpdated)
+      throw new Error("Mainnet SpokePoolClient for chainId must be updated before AcrossAPIClient");
     const data = await Promise.all(
       tokensQuery.map((l1Token) => {
         const l2TokenAddresses = getL2TokenAddresses(l1Token);
-        const validDestinationChainForL1Token = Number(
-          Object.keys(l2TokenAddresses).find(
-            (chainId) => Number(chainId) !== CHAIN_IDs.MAINNET && CHAIN_ID_LIST_INDICES.includes(Number(chainId))
-          )
-        );
-        return this.callLimits(l1Token, validDestinationChainForL1Token);
+        const validDestinationChainForL1Token = Object.keys(l2TokenAddresses).find((chainId) => {
+          return (
+            mainnetSpokePoolClient.isDepositRouteEnabled(l1Token, Number(chainId)) &&
+            Number(chainId) !== CHAIN_IDs.MAINNET &&
+            CHAIN_ID_LIST_INDICES.includes(Number(chainId))
+          );
+        });
+        // No valid deposit routes from mainnet for this token. We won't record a limit for it.
+        if (validDestinationChainForL1Token === undefined) return undefined;
+        return this.callLimits(l1Token, Number(validDestinationChainForL1Token));
       })
     );
     for (let i = 0; i < tokensQuery.length; i++) {
+      if (data[i] === undefined) {
+        this.logger.debug({
+          at: "AcrossAPIClient",
+          message: "No valid deposit routes for enabled LP token, skipping",
+          token: tokensQuery[i],
+        });
+        continue;
+      }
       const l1Token = tokensQuery[i];
       this.limits[l1Token] = data[i].maxDeposit;
     }
