@@ -269,7 +269,7 @@ export class Dataworker {
     // to construct the potential next bundle block range.
     const blockRangesForProposal = await this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
-      this.clients.hubPoolClient.latestBlockNumber
+      this.clients.hubPoolClient.latestBlockNumber - this.blockRangeEndBlockBuffer[1]
     );
 
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
