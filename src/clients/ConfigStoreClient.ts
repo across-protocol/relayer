@@ -206,6 +206,12 @@ export class AcrossConfigStoreClient {
       .sort((a, b) => a - b);
   }
 
+  getEnabledChains(block = Number.MAX_SAFE_INTEGER, allPossibleChains = CHAIN_ID_LIST_INDICES): number[] {
+    // Get most recent disabled chain list before the block specified.
+    const currentlyDisabledChains = this.getDisabledChainsForBlock(block);
+    return allPossibleChains.filter((chainId) => !currentlyDisabledChains.includes(chainId));
+  }
+
   getDisabledChainsForBlock(blockNumber: number = Number.MAX_SAFE_INTEGER): number[] {
     return (
       sortEventsDescending(this.cumulativeDisabledChainUpdates).find((config) => config.blockNumber <= blockNumber)

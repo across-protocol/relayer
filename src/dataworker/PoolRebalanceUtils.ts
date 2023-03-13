@@ -389,24 +389,15 @@ export async function getWidestPossibleExpectedBlockRange(
   endBlockBuffers: number[],
   clients: Clients,
   latestMainnetBlock: number,
-  mainnetBundleEndBlock: number
+  enabledChains: number[]
 ): Promise<number[][]> {
-  const enabledChains = clients.configStoreClient.getEnabledChainsInBlockRange(
-    clients.hubPoolClient.getNextBundleStartBlockNumber(
-      chainIdListForBundleEvaluationBlockNumbers,
-      mainnetBundleEndBlock,
-      1
-    ),
-    mainnetBundleEndBlock,
-    chainIdListForBundleEvaluationBlockNumbers
-  );
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => {
     // If chain is disabled, re-use the latest bundle end block for the chain as both the start
     // and end block.
     if (!enabledChains.includes(chainId)) {
       const lastEndBlockForDisabledChain = clients.hubPoolClient.getLatestBundleEndBlockForChain(
         chainIdListForBundleEvaluationBlockNumbers,
-        mainnetBundleEndBlock,
+        latestMainnetBlock,
         chainId
       );
       return [lastEndBlockForDisabledChain, lastEndBlockForDisabledChain];
@@ -479,7 +470,10 @@ export function generateMarkdownForRootBundle(
   // Create helpful logs to send to slack transport
   let bundleBlockRangePretty = "";
   chainIdListForBundleEvaluationBlockNumbers.forEach((chainId, index) => {
-    bundleBlockRangePretty += `\n\t\t${chainId}: ${JSON.stringify(bundleBlockRange[index])}`;
+    const isChainDisabled = bundleBlockRange[index][0] === bundleBlockRange[index][1];
+    bundleBlockRangePretty += `\n\t\t${chainId}: ${JSON.stringify(bundleBlockRange[index])}${
+      isChainDisabled ? " 🥶" : ""
+    }`;
   });
 
   const convertTokenListFromWei = (chainId: number, tokenAddresses: string[], weiVals: string[]) => {
