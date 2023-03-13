@@ -139,12 +139,21 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
             // all mainnet leaves.
             mainnetLeaf.netSendAmounts.map(async (amount, index) => {
               const tokenForNetSendAmount = mainnetLeaf.l1Tokens[index];
-              if (!amount.eq(0))
+              // If netSendAmount is positive, balance should be added to the spoke pools.
+              if (amount.gt(0))
                 await balanceAllocator.addBalance(
                   1,
                   tokenForNetSendAmount,
                   spokePoolClients[1].spokePool.address,
                   amount
+                );
+              // Otherwise if netSendAmount is negative, balance should be added to HubPool.
+              else if (amount.lt(0))
+                await balanceAllocator.addBalance(
+                  1,
+                  tokenForNetSendAmount,
+                  clients.hubPoolClient.hubPool.address,
+                  amount.mul(-1)
                 );
             });
 
@@ -172,11 +181,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
             );
           }
 
-          // Clear balances so when pool rebalance leaf executor runs again, it captures new incoming balances from
-          // the mainnet spoke leaves.
-          balanceAllocator.clearBalances();
-
-          // Question: do we also have to .clearUsed() on the balanceAllocator?
+          // Question: Do we need to modify the balanceAllocator's used or balance mappings at this point?
 
           // Try to execute pool rebalance leaves with new balances. The leaves should be the same so we don't
           // need to reconstruct them.
