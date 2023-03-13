@@ -16,6 +16,7 @@ import {
   FillWithBlock,
   ProposedRootBundle,
   RootBundleRelayWithBlock,
+  SlowFill,
   SpokePoolClientsByChain,
   UnfilledDeposit,
 } from "../interfaces";
@@ -47,6 +48,7 @@ import { BalanceAllocator } from "../clients";
 import _ from "lodash";
 import { CONFIG_STORE_VERSION, spokePoolClientsToProviders } from "../common";
 import { isOvmChain, ovmWethTokens } from "../clients/bridges";
+import { filter } from "bluebird";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -849,8 +851,6 @@ export class Dataworker {
           message: `Evaluating ${rootBundleRelays.length} historical non-empty slow roots relayed to chain ${chainId}`,
         });
 
-        const sortedFills = client.getFills();
-
         const slowFillsForChain = client.getFills().filter((fill) => fill.isSlowRelay);
         for (const rootBundleRelay of sortEventsAscending(rootBundleRelays)) {
           const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
@@ -941,99 +941,124 @@ export class Dataworker {
           });
           if (unexecutedLeaves.length === 0) continue;
 
-          const leavesWithLatestFills = unexecutedLeaves.map((leaf) => {
-            // Start with the most recent fills and search backwards.
-            const fill = _.findLast(sortedFills, (fill) => {
-              return (
-                fill.depositId === leaf.depositId &&
-                fill.originChainId === leaf.originChainId &&
-                fill.depositor === leaf.depositor &&
-                fill.destinationChainId === leaf.destinationChainId &&
-                fill.destinationToken === leaf.destinationToken &&
-                fill.amount.eq(leaf.amount) &&
-                fill.realizedLpFeePct.eq(leaf.realizedLpFeePct) &&
-                fill.relayerFeePct.eq(leaf.relayerFeePct) &&
-                fill.recipient === leaf.recipient
-              );
-            });
-
-            return { ...leaf, fill };
-          });
-
-          // Filter for leaves where the contract has the funding to send the required tokens.
-          const fundedLeaves = (
-            await Promise.all(
-              leavesWithLatestFills.map(async (leaf) => {
-                // Check if fill was a full fill. If so, execution is unnecessary.
-                if (leaf.fill && leaf.fill.totalFilledAmount.eq(leaf.fill.amount)) {
-                  return undefined;
-                }
-
-                // If the most recent fill is not found, just make the most conservative assumption: a 0-sized fill.
-                const amountFilled = leaf.fill ? leaf.fill.totalFilledAmount : BigNumber.from(0);
-
-                // Note: the getRefund function just happens to perform the same math we need.
-                // A refund is the total fill amount minus LP fees, which is the same as the payout for a slow relay!
-                const amountRequired = getRefund(leaf.amount.sub(amountFilled), leaf.realizedLpFeePct);
-                const success = await balanceAllocator.requestBalanceAllocation(
-                  leaf.destinationChainId,
-                  isOvmChain(leaf.destinationChainId) && ovmWethTokens.includes(leaf.destinationToken)
-                    ? ovmWethTokens
-                    : [leaf.destinationToken],
-                  client.spokePool.address,
-                  amountRequired
-                );
-
-                if (!success) {
-                  this.logger.warn({
-                    at: "Dataworker#executeSlowRelayLeaves",
-                    message: "Not executing slow relay leaf due to lack of funds in SpokePool",
-                    root: rootBundleRelay.slowRelayRoot,
-                    bundle: rootBundleRelay.rootBundleId,
-                    depositId: leaf.depositId,
-                    fromChain: leaf.originChainId,
-                    chainId: leaf.destinationChainId,
-                    token: leaf.destinationToken,
-                    amount: leaf.amount,
-                  });
-                }
-
-                return success ? leaf : undefined;
-              })
-            )
-          ).filter(isDefined);
-
-          fundedLeaves.forEach((leaf) => {
-            const mrkdwn = `rootBundleId: ${rootBundleRelay.rootBundleId}\nslowRelayRoot: ${
-              rootBundleRelay.slowRelayRoot
-            }\nOrigin chain: ${leaf.originChainId}\nDestination chain:${leaf.destinationChainId}\nDeposit Id: ${
-              leaf.depositId
-            }\namount: ${leaf.amount.toString()}`;
-            if (submitExecution)
-              this.clients.multiCallerClient.enqueueTransaction({
-                contract: client.spokePool,
-                chainId: Number(chainId),
-                method: "executeSlowRelayLeaf",
-                args: [
-                  leaf.depositor,
-                  leaf.recipient,
-                  leaf.destinationToken,
-                  leaf.amount,
-                  leaf.originChainId,
-                  leaf.realizedLpFeePct,
-                  leaf.relayerFeePct,
-                  leaf.depositId,
-                  rootBundleRelay.rootBundleId,
-                  tree.getHexProof(leaf),
-                ],
-                message: "Executed SlowRelayLeaf 🌿!",
-                mrkdwn,
-              });
-            else this.logger.debug({ at: "Dataworker#executeSlowRelayLeaves", message: mrkdwn });
-          });
+          await this._executeSlowFillLeaf(
+            unexecutedLeaves,
+            balanceAllocator,
+            client,
+            tree,
+            submitExecution,
+            rootBundleRelay.rootBundleId
+          );
         }
       })
     );
+  }
+
+  async _executeSlowFillLeaf(
+    leaves: RelayData[],
+    balanceAllocator: BalanceAllocator,
+    client: SpokePoolClient,
+    slowRelayTree: MerkleTree<RelayData>,
+    submitExecution,
+    rootBundleId?: number
+  ) {
+    const chainId = leaves[0].destinationChainId;
+    if (chainId !== client.chainId) throw new Error("Leaf chainId does not match spoke pool client chainId");
+
+    const sortedFills = client.getFills();
+    const leavesWithLatestFills = leaves.map((leaf) => {
+      // Start with the most recent fills and search backwards.
+      const fill = _.findLast(sortedFills, (fill) => {
+        return (
+          fill.depositId === leaf.depositId &&
+          fill.originChainId === leaf.originChainId &&
+          fill.depositor === leaf.depositor &&
+          fill.destinationChainId === leaf.destinationChainId &&
+          fill.destinationToken === leaf.destinationToken &&
+          fill.amount.eq(leaf.amount) &&
+          fill.realizedLpFeePct.eq(leaf.realizedLpFeePct) &&
+          fill.relayerFeePct.eq(leaf.relayerFeePct) &&
+          fill.recipient === leaf.recipient
+        );
+      });
+
+      return { ...leaf, fill };
+    });
+
+    // Filter for leaves where the contract has the funding to send the required tokens.
+    const fundedLeaves = (
+      await Promise.all(
+        leavesWithLatestFills.map(async (leaf) => {
+          if (leaf.destinationChainId !== chainId) throw new Error("Leaf chainId does not match input chainId");
+
+          // Check if fill was a full fill. If so, execution is unnecessary.
+          if (leaf.fill && leaf.fill.totalFilledAmount.eq(leaf.fill.amount)) {
+            return undefined;
+          }
+
+          // If the most recent fill is not found, just make the most conservative assumption: a 0-sized fill.
+          const amountFilled = leaf.fill ? leaf.fill.totalFilledAmount : BigNumber.from(0);
+
+          // Note: the getRefund function just happens to perform the same math we need.
+          // A refund is the total fill amount minus LP fees, which is the same as the payout for a slow relay!
+          const amountRequired = getRefund(leaf.amount.sub(amountFilled), leaf.realizedLpFeePct);
+          const success = await balanceAllocator.requestBalanceAllocation(
+            leaf.destinationChainId,
+            isOvmChain(leaf.destinationChainId) && ovmWethTokens.includes(leaf.destinationToken)
+              ? ovmWethTokens
+              : [leaf.destinationToken],
+            client.spokePool.address,
+            amountRequired
+          );
+
+          if (!success) {
+            this.logger.warn({
+              at: "Dataworker#executeSlowRelayLeaves",
+              message: "Not executing slow relay leaf due to lack of funds in SpokePool",
+              root: slowRelayTree.getHexRoot(),
+              bundle: rootBundleId,
+              depositId: leaf.depositId,
+              fromChain: leaf.originChainId,
+              chainId: leaf.destinationChainId,
+              token: leaf.destinationToken,
+              amount: leaf.amount,
+            });
+          }
+
+          return success ? leaf : undefined;
+        })
+      )
+    ).filter(isDefined);
+
+    fundedLeaves.forEach((leaf) => {
+      const mrkdwn = `rootBundleId: ${rootBundleId}\nslowRelayRoot: ${slowRelayTree.getHexRoot()}\nOrigin chain: ${
+        leaf.originChainId
+      }\nDestination chain:${leaf.destinationChainId}\nDeposit Id: ${
+        leaf.depositId
+      }\namount: ${leaf.amount.toString()}`;
+      if (submitExecution)
+        this.clients.multiCallerClient.enqueueTransaction({
+          contract: client.spokePool,
+          chainId: Number(chainId),
+          method: "executeSlowRelayLeaf",
+          args: [
+            leaf.depositor,
+            leaf.recipient,
+            leaf.destinationToken,
+            leaf.amount,
+            leaf.originChainId,
+            leaf.realizedLpFeePct,
+            leaf.relayerFeePct,
+            leaf.depositId,
+            slowRelayTree.getHexRoot(),
+            slowRelayTree.getHexProof(leaf),
+          ],
+          message: "Executed SlowRelayLeaf 🌿!",
+          mrkdwn,
+          unpermissioned: true,
+        });
+      else this.logger.debug({ at: "Dataworker#executeSlowRelayLeaves", message: mrkdwn });
+    });
   }
 
   async executePoolRebalanceLeaves(
@@ -1130,57 +1155,12 @@ export class Dataworker {
     );
     if (unexecutedLeaves.length === 0) return;
 
-    // Filter for leaves where the contract has the funding to send the required tokens.
-    const fundedLeaves = (
-      await Promise.all(
-        unexecutedLeaves.map(async (leaf) => {
-          const requests = leaf.netSendAmounts.map((amount, i) => ({
-            amount: amount.gte(0) ? amount : BigNumber.from(0),
-            tokens: [leaf.l1Tokens[i]],
-            holder: this.clients.hubPoolClient.hubPool.address,
-            chainId: hubPoolChainId,
-          }));
-
-          if (leaf.chainId === 42161) {
-            const hubPoolBalance = await this.clients.hubPoolClient.hubPool.provider.getBalance(
-              this.clients.hubPoolClient.hubPool.address
-            );
-            if (hubPoolBalance.lt(this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf)))
-              requests.push({
-                tokens: [ZERO_ADDRESS],
-                amount: this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf),
-                holder: await this.clients.hubPoolClient.hubPool.signer.getAddress(),
-                chainId: hubPoolChainId,
-              });
-          }
-
-          const success = await balanceAllocator.requestBalanceAllocations(requests);
-
-          if (!success) {
-            // Note: this is an error because the HubPool should generally not run out of funds to put into
-            // netSendAmounts. This means that no new bundles can be proposed until this leaf is funded.
-            this.logger.error({
-              at: "Dataworker#executePoolRebalanceLeaves",
-              message: "Not executing pool rebalance leaf on HubPool due to lack of funds to send.",
-              root: expectedTrees.poolRebalanceTree.tree.getHexRoot(),
-              leafId: leaf.leafId,
-              rebalanceChain: leaf.chainId,
-              chainId: hubPoolChainId,
-              token: leaf.l1Tokens,
-              netSendAmounts: leaf.netSendAmounts,
-            });
-          }
-          return success ? leaf : undefined;
-        })
-      )
-    ).filter(isDefined);
-
     // Call `exchangeRateCurrent` on the HubPool before accumulating fees from the executed bundle leaves. This is to
     // address the situation where `addLiquidity` and `removeLiquidity` have not been called for an L1 token for a
     // while, which are the other methods that trigger an internal call to `_exchangeRateCurrent()`. Calling
     // this method triggers a recompounding of fees before new fees come in.
     const compoundedFeesForL1Token: string[] = [];
-    fundedLeaves.forEach((leaf) => {
+    unexecutedLeaves.forEach((leaf) => {
       leaf.l1Tokens.forEach((l1Token, i) => {
         // Exit early if lp fees are 0
         if (leaf.bundleLpFees[i].eq(toBN(0))) return;
@@ -1208,30 +1188,141 @@ export class Dataworker {
             mrkdwn: `Updated exchange rate for l1 token: ${
               this.clients.hubPoolClient.getTokenInfo(1, l1Token)?.symbol
             }`,
+            unpermissioned: true,
           });
         }
       });
     });
 
-    const hubPoolBalance = await this.clients.hubPoolClient.hubPool.provider.getBalance(
-      this.clients.hubPoolClient.hubPool.address
+    // First, execute mainnet pool rebalance leaves. Then try to execute any relayer refund and slow leaves for the
+    // expected relayed root hash, then proceed with remaining pool rebalance leaves. This is an optimization that
+    // takes advantage of the fact that mainnet transfers between HubPool and SpokePool are atomic.
+    const mainnetLeaf = unexecutedLeaves.find((leaf) => leaf.chainId === hubPoolChainId);
+    if (mainnetLeaf) {
+      await this._executePoolRebalanceLeaves(
+        [mainnetLeaf],
+        balanceAllocator,
+        expectedTrees.poolRebalanceTree.tree,
+        submitExecution
+      );
+
+      // Now, execute refund and slow fill leaves for Mainnet using new funds.
+      await this._executeSlowFillLeaf(
+        expectedTrees.slowRelayTree.leaves.filter((leaf) => leaf.destinationChainId === hubPoolChainId),
+        balanceAllocator,
+        spokePoolClients[1],
+        expectedTrees.slowRelayTree.tree,
+        submitExecution
+      );
+      await this._executeRelayerRefundLeaves(
+        expectedTrees.relayerRefundTree.leaves.filter((leaf) => leaf.chainId === hubPoolChainId),
+        balanceAllocator,
+        spokePoolClients[1],
+        expectedTrees.relayerRefundTree.tree,
+        submitExecution
+      );
+    }
+
+    // Perform similar funding checks for remaining non-mainnet pool rebalance leaves.
+    await this._executePoolRebalanceLeaves(
+      unexecutedLeaves.filter((leaf) => leaf.chainId !== hubPoolChainId),
+      balanceAllocator,
+      expectedTrees.poolRebalanceTree.tree,
+      submitExecution
     );
+  }
+
+  async _executePoolRebalanceLeaves(
+    leaves: PoolRebalanceLeaf[],
+    balanceAllocator: BalanceAllocator,
+    tree: MerkleTree<PoolRebalanceLeaf>,
+    submitExecution: boolean
+  ) {
+    const hubPoolChainId = this.clients.hubPoolClient.chainId;
+    const fundedLeaves = (
+      await Promise.all(
+        leaves
+          .filter((leaf) => leaf.chainId !== hubPoolChainId)
+          .map(async (leaf) => {
+            const requests = leaf.netSendAmounts.map((amount, i) => ({
+              amount: amount.gte(0) ? amount : BigNumber.from(0),
+              tokens: [leaf.l1Tokens[i]],
+              holder: this.clients.hubPoolClient.hubPool.address,
+              chainId: hubPoolChainId,
+            }));
+
+            if (leaf.chainId === 42161) {
+              const hubPoolBalance = await this.clients.hubPoolClient.hubPool.provider.getBalance(
+                this.clients.hubPoolClient.hubPool.address
+              );
+              if (hubPoolBalance.lt(this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf)))
+                requests.push({
+                  tokens: [ZERO_ADDRESS],
+                  amount: this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf),
+                  holder: await this.clients.hubPoolClient.hubPool.signer.getAddress(),
+                  chainId: hubPoolChainId,
+                });
+            }
+
+            const success = await balanceAllocator.requestBalanceAllocations(requests);
+
+            if (!success) {
+              // Note: this is an error because the HubPool should generally not run out of funds to put into
+              // netSendAmounts. This means that no new bundles can be proposed until this leaf is funded.
+              this.logger.error({
+                at: "Dataworker#executePoolRebalanceLeaves",
+                message: "Not executing pool rebalance leaf on HubPool due to lack of funds to send.",
+                root: tree.getHexRoot(),
+                leafId: leaf.leafId,
+                rebalanceChain: leaf.chainId,
+                chainId: hubPoolChainId,
+                token: leaf.l1Tokens,
+                netSendAmounts: leaf.netSendAmounts,
+              });
+            } else {
+              // Add balance to spoke pool on mainnet since we know it will be sent atomically.
+              if (leaf.chainId === hubPoolChainId) {
+                await Promise.all(
+                  leaf.netSendAmounts.map(async (amount, i) => {
+                    if (amount.gt(0)) {
+                      await balanceAllocator.addBalance(
+                        leaf.chainId,
+                        leaf.l1Tokens[i],
+                        this.clients.hubPoolClient.hubPool.address,
+                        amount
+                      );
+                    }
+                  })
+                );
+              }
+            }
+            return success ? leaf : undefined;
+          })
+      )
+    ).filter(isDefined);
+
+    let hubPoolBalance;
+    if (fundedLeaves.some((leaf) => leaf.chainId === 42161)) {
+      hubPoolBalance = await this.clients.hubPoolClient.hubPool.provider.getBalance(
+        this.clients.hubPoolClient.hubPool.address
+      );
+    }
     fundedLeaves.forEach((leaf) => {
-      const proof = expectedTrees.poolRebalanceTree.tree.getHexProof(leaf);
-      const mrkdwn = `Root hash: ${expectedTrees.poolRebalanceTree.tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${
-        leaf.chainId
-      }`;
+      const proof = tree.getHexProof(leaf);
+      const mrkdwn = `Root hash: ${tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${leaf.chainId}`;
       if (submitExecution) {
-        if (leaf.chainId === 42161 && hubPoolBalance.lt(this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf))) {
-          this.clients.multiCallerClient.enqueueTransaction({
-            contract: this.clients.hubPoolClient.hubPool,
-            chainId: hubPoolChainId,
-            method: "loadEthForL2Calls",
-            args: [],
-            message: "Loaded ETH for message to Arbitrum 📨!",
-            mrkdwn,
-            value: this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf),
-          });
+        if (leaf.chainId === 42161) {
+          if (hubPoolBalance.lt(this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf))) {
+            this.clients.multiCallerClient.enqueueTransaction({
+              contract: this.clients.hubPoolClient.hubPool,
+              chainId: hubPoolChainId,
+              method: "loadEthForL2Calls",
+              args: [],
+              message: "Loaded ETH for message to Arbitrum 📨!",
+              mrkdwn,
+              value: this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf),
+            });
+          }
         }
         this.clients.multiCallerClient.enqueueTransaction({
           contract: this.clients.hubPoolClient.hubPool,
@@ -1249,6 +1340,7 @@ export class Dataworker {
           ],
           message: "Executed PoolRebalanceLeaf 🌿!",
           mrkdwn,
+          unpermissioned: true,
         });
       } else this.logger.debug({ at: "Dataworker#executePoolRebalanceLeaves", message: mrkdwn });
     });
@@ -1429,62 +1521,92 @@ export class Dataworker {
         });
         if (unexecutedLeaves.length === 0) continue;
 
-        // Filter for leaves where the contract has the funding to send the required tokens.
-        const fundedLeaves = (
-          await Promise.all(
-            unexecutedLeaves.map(async (leaf) => {
-              const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
-              const refundSum = leaf.refundAmounts.reduce((acc, curr) => acc.add(curr), BigNumber.from(0));
-              const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
-              const success = await balanceAllocator.requestBalanceAllocation(
-                leaf.chainId,
-                isOvmChain(leaf.chainId) && ovmWethTokens.includes(leaf.l2TokenAddress)
-                  ? ovmWethTokens
-                  : [leaf.l2TokenAddress],
-                client.spokePool.address,
-                totalSent
-              );
-
-              if (!success) {
-                this.logger.warn({
-                  at: "Dataworker#executeRelayerRefundLeaves",
-                  message: "Not executing relayer refund leaf on SpokePool due to lack of funds.",
-                  root: rootBundleRelay.relayerRefundRoot,
-                  bundle: rootBundleRelay.rootBundleId,
-                  leafId: leaf.leafId,
-                  token: l1TokenInfo?.symbol,
-                  chainId: leaf.chainId,
-                  amountToReturn: leaf.amountToReturn,
-                  refunds: leaf.refundAmounts,
-                });
-              }
-
-              return success ? leaf : undefined;
-            })
-          )
-        ).filter(isDefined);
-
-        fundedLeaves.forEach((leaf) => {
-          const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
-
-          const mrkdwn = `rootBundleId: ${rootBundleRelay.rootBundleId}\nrelayerRefundRoot: ${
-            rootBundleRelay.relayerRefundRoot
-          }\nLeaf: ${leaf.leafId}\nchainId: ${chainId}\ntoken: ${
-            l1TokenInfo?.symbol
-          }\namount: ${leaf.amountToReturn.toString()}`;
-          if (submitExecution)
-            this.clients.multiCallerClient.enqueueTransaction({
-              contract: client.spokePool,
-              chainId: Number(chainId),
-              method: "executeRelayerRefundLeaf",
-              args: [rootBundleRelay.rootBundleId, leaf, tree.getHexProof(leaf)],
-              message: "Executed RelayerRefundLeaf 🌿!",
-              mrkdwn,
-            });
-          else this.logger.debug({ at: "Dataworker#executeRelayerRefundLeaves", message: mrkdwn });
-        });
+        await this._executeRelayerRefundLeaves(
+          unexecutedLeaves,
+          balanceAllocator,
+          client,
+          tree,
+          submitExecution,
+          rootBundleRelay.rootBundleId
+        );
       }
     }
+  }
+
+  async _executeRelayerRefundLeaves(
+    leaves: RelayerRefundLeaf[],
+    balanceAllocator: BalanceAllocator,
+    client: SpokePoolClient,
+    relayerRefundTree: MerkleTree<RelayerRefundLeaf>,
+    submitExecution: boolean,
+    rootBundleId?: number
+  ) {
+    const chainId = leaves[0].chainId;
+    if (chainId !== client.chainId) throw new Error("Leaf chainId does not match spoke pool client chainId");
+    // Filter for leaves where the contract has the funding to send the required tokens.
+    const fundedLeaves = (
+      await Promise.all(
+        leaves.map(async (leaf) => {
+          if (leaf.chainId !== chainId) throw new Error("Leaf chainId does not match input chainId");
+          const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
+          const refundSum = leaf.refundAmounts.reduce((acc, curr) => acc.add(curr), BigNumber.from(0));
+          const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
+          const success = await balanceAllocator.requestBalanceAllocation(
+            leaf.chainId,
+            isOvmChain(leaf.chainId) && ovmWethTokens.includes(leaf.l2TokenAddress)
+              ? ovmWethTokens
+              : [leaf.l2TokenAddress],
+            client.spokePool.address,
+            totalSent
+          );
+
+          if (!success) {
+            this.logger.warn({
+              at: "Dataworker#executeRelayerRefundLeaves",
+              message: "Not executing relayer refund leaf on SpokePool due to lack of funds.",
+              root: relayerRefundTree.getHexRoot(),
+              bundle: rootBundleId,
+              leafId: leaf.leafId,
+              token: l1TokenInfo?.symbol,
+              chainId: leaf.chainId,
+              amountToReturn: leaf.amountToReturn,
+              refunds: leaf.refundAmounts,
+            });
+          } else {
+            // If mainnet leaf, then allocate balance to the HubPool since it will be atomically transferred.
+            if (leaf.chainId === 1 && leaf.amountToReturn.gt(0)) {
+              await balanceAllocator.addBalance(
+                leaf.chainId,
+                leaf.l2TokenAddress,
+                this.clients.hubPoolClient.hubPool.address,
+                leaf.amountToReturn
+              );
+            }
+          }
+
+          return success ? leaf : undefined;
+        })
+      )
+    ).filter(isDefined);
+
+    fundedLeaves.forEach((leaf) => {
+      const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
+
+      const mrkdwn = `rootBundleId: ${rootBundleId}\nrelayerRefundRoot: ${relayerRefundTree.getHexRoot()}\nLeaf: ${
+        leaf.leafId
+      }\nchainId: ${chainId}\ntoken: ${l1TokenInfo?.symbol}\namount: ${leaf.amountToReturn.toString()}`;
+      if (submitExecution)
+        this.clients.multiCallerClient.enqueueTransaction({
+          contract: client.spokePool,
+          chainId: Number(chainId),
+          method: "executeRelayerRefundLeaf",
+          args: [rootBundleId, leaf, relayerRefundTree.getHexProof(leaf)],
+          message: "Executed RelayerRefundLeaf 🌿!",
+          mrkdwn,
+          unpermissioned: true,
+        });
+      else this.logger.debug({ at: "Dataworker#executeRelayerRefundLeaves", message: mrkdwn });
+    });
   }
 
   _proposeRootBundle(
