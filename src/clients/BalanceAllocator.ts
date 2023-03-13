@@ -110,6 +110,11 @@ export class BalanceAllocator {
     this.used[chainId][token][holder] = used.add(amount);
   }
 
+  async addBalance(chainId: number, token: string, holder: string, amount: BigNumber) {
+    const balance = await this.getBalance(chainId, token, holder);
+    this.balances[chainId][token][holder] = balance.add(amount);
+  }
+
   clearUsed() {
     this.used = {};
   }

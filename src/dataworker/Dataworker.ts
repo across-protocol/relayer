@@ -55,6 +55,12 @@ import { isOvmChain, ovmWethTokens } from "../clients/bridges";
 const IGNORE_DISPUTE_REASONS = new Set(["bundle-end-block-buffer"]);
 const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback", "out-of-date-config-store-version"]);
 
+type BundleRoots = {
+  poolRebalanceTree: TreeData<PoolRebalanceLeaf>;
+  relayerRefundTree: TreeData<RelayerRefundLeaf>;
+  slowRelayTree: TreeData<RelayData>;
+};
+
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
 export class Dataworker {
@@ -267,7 +273,7 @@ export class Dataworker {
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
     // Pass in `latest` for the mainnet bundle end block because we want to use the latest disabled chains list
     // to construct the potential next bundle block range.
-    const blockRangesForProposal = await this._getWidestPossibleBlockRangeForNextBundle(
+    const blockRangesForProposal = this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
       this.clients.hubPoolClient.latestBlockNumber - this.blockRangeEndBlockBuffer[1]
     );
@@ -476,7 +482,7 @@ export class Dataworker {
       this.clients.hubPoolClient.chainId,
       this.chainIdListForBundleEvaluationBlockNumbers
     );
-    const widestPossibleExpectedBlockRange = await this._getWidestPossibleBlockRangeForNextBundle(
+    const widestPossibleExpectedBlockRange = this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
       mainnetBundleEndBlockForPendingRootBundle
     );
@@ -524,21 +530,13 @@ export class Dataworker {
     | {
         valid: false;
         reason: string;
-        expectedTrees?: {
-          poolRebalanceTree: TreeData<PoolRebalanceLeaf>;
-          relayerRefundTree: TreeData<RelayerRefundLeaf>;
-          slowRelayTree: TreeData<RelayData>;
-        };
+        expectedTrees?: BundleRoots;
       }
     // If valid is true, we don't get a reason, and we always get expected trees.
     | {
         valid: true;
         reason: undefined;
-        expectedTrees: {
-          poolRebalanceTree: TreeData<PoolRebalanceLeaf>;
-          relayerRefundTree: TreeData<RelayerRefundLeaf>;
-          slowRelayTree: TreeData<RelayData>;
-        };
+        expectedTrees: BundleRoots;
       }
   > {
     // If pool rebalance root is empty, always dispute. There should never be a bundle with an empty rebalance root.
@@ -818,11 +816,13 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
+    chainIds: number[] = []
   ) {
     this.logger.debug({
       at: "Dataworker#executeSlowRelayLeaves",
-      message: "Executing slow relay leaves",
+      message:
+        chainIds.length > 0 ? `Executing slow relay leaves for chains: ${chainIds}` : "Executing slow relay leaves",
     });
 
     let latestRootBundles = sortEventsDescending(this.clients.hubPoolClient.getValidatedRootBundles());
@@ -833,6 +833,8 @@ export class Dataworker {
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([_chainId, client]) => {
         const chainId = Number(_chainId);
+        if (chainIds.length > 0 && !chainIds.includes(chainId)) return;
+
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
           (rootBundle) => rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
         );
@@ -1037,98 +1039,19 @@ export class Dataworker {
   }
 
   async executePoolRebalanceLeaves(
+    unexecutedLeaves: PoolRebalanceLeaf[],
+    expectedTrees: BundleRoots,
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
-    submitExecution = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ) {
+    submitExecution = true
+  ): Promise<void> {
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
       message: "Executing pool rebalance leaves",
+      unexecutedLeaves,
     });
 
-    if (
-      !this.clients.hubPoolClient.isUpdated ||
-      this.clients.hubPoolClient.currentTime === undefined ||
-      this.clients.hubPoolClient.latestBlockNumber === undefined
-    )
-      throw new Error("HubPoolClient not updated");
-    const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
-
-    // Exit early if a bundle is not pending.
-    const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundle();
-    if (pendingRootBundle === undefined) {
-      this.logger.debug({
-        at: "Dataworker#executePoolRebalanceLeaves",
-        message: "No pending proposal, nothing to execute",
-      });
-      return;
-    }
-
-    this.logger.debug({
-      at: "Dataworker#executePoolRebalanceLeaves",
-      message: "Found pending proposal",
-      pendingRootBundle,
-    });
-
-    // Exit early if challenge period timestamp has not passed:
-    if (this.clients.hubPoolClient.currentTime <= pendingRootBundle.challengePeriodEndTimestamp) {
-      this.logger.debug({
-        at: "Dataworke#executePoolRebalanceLeaves",
-        message: `Challenge period not passed, cannot execute until ${pendingRootBundle.challengePeriodEndTimestamp}`,
-        expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
-      });
-      return;
-    }
-
-    const mainnetBundleEndBlockForPendingRootBundle = getBlockForChain(
-      pendingRootBundle.bundleEvaluationBlockNumbers,
-      this.clients.hubPoolClient.chainId,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    );
-    const widestPossibleExpectedBlockRange = await this._getWidestPossibleBlockRangeForNextBundle(
-      spokePoolClients,
-      mainnetBundleEndBlockForPendingRootBundle
-    );
-    const { valid, reason, expectedTrees } = await this.validateRootBundle(
-      hubPoolChainId,
-      widestPossibleExpectedBlockRange,
-      pendingRootBundle,
-      spokePoolClients,
-      earliestBlocksInSpokePoolClients
-    );
-
-    if (!valid) {
-      this.logger.error({
-        at: "Dataworke#executePoolRebalanceLeaves",
-        message: "Found invalid proposal after challenge period!",
-        reason,
-        notificationPath: "across-error",
-      });
-      return;
-    }
-
-    if (valid && !expectedTrees) {
-      this.logger.error({
-        at: "Dataworke#executePoolRebalanceLeaves",
-        message:
-          "Found valid proposal, but no trees could be generated. This probably means that the proposal was never evaluated during liveness due to an odd block range!",
-        reason,
-        notificationPath: "across-error",
-      });
-      return;
-    }
-
-    const executedLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
-      this.clients.hubPoolClient.getLatestProposedRootBundle(),
-      this.clients.hubPoolClient.latestBlockNumber
-    );
-
-    // Filter out previously executed leaves.
-    const unexecutedLeaves = expectedTrees.poolRebalanceTree.leaves.filter((leaf) =>
-      executedLeaves.every(({ leafId }) => leafId !== leaf.leafId)
-    );
-    if (unexecutedLeaves.length === 0) return;
+    const hubPoolChainId = this.clients.hubPoolClient.chainId;
 
     // Filter for leaves where the contract has the funding to send the required tokens.
     const fundedLeaves = (
@@ -1254,15 +1177,118 @@ export class Dataworker {
     });
   }
 
+  async getExecutablePoolRebalanceLeaves(
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+  ): Promise<{
+    unexecutedLeaves: PoolRebalanceLeaf[];
+    expectedTrees: BundleRoots;
+  }> {
+    this.logger.debug({
+      at: "Dataworker#getExecutablePoolRebalanceLeaves",
+      message: "Validating pending root bundle and getting executable pool rebalance leaves",
+    });
+
+    if (
+      !this.clients.hubPoolClient.isUpdated ||
+      this.clients.hubPoolClient.currentTime === undefined ||
+      this.clients.hubPoolClient.latestBlockNumber === undefined
+    )
+      throw new Error("HubPoolClient not updated");
+
+    // Exit early if a bundle is not pending.
+    const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundle();
+    if (pendingRootBundle === undefined) {
+      this.logger.debug({
+        at: "Dataworker#getExecutablePoolRebalanceLeaves",
+        message: "No pending proposal, nothing to execute",
+      });
+      return;
+    }
+
+    this.logger.debug({
+      at: "Dataworker#getExecutablePoolRebalanceLeaves",
+      message: "Found pending proposal",
+      pendingRootBundle,
+    });
+
+    // Exit early if challenge period timestamp has not passed:
+    if (this.clients.hubPoolClient.currentTime <= pendingRootBundle.challengePeriodEndTimestamp) {
+      this.logger.debug({
+        at: "Dataworke#getExecutablePoolRebalanceLeaves",
+        message: `Challenge period not passed, cannot execute until ${pendingRootBundle.challengePeriodEndTimestamp}`,
+        expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
+      });
+      return;
+    }
+
+    const mainnetBundleEndBlockForPendingRootBundle = getBlockForChain(
+      pendingRootBundle.bundleEvaluationBlockNumbers,
+      this.clients.hubPoolClient.chainId,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
+    const widestPossibleExpectedBlockRange = this._getWidestPossibleBlockRangeForNextBundle(
+      spokePoolClients,
+      mainnetBundleEndBlockForPendingRootBundle
+    );
+    const { valid, reason, expectedTrees } = await this.validateRootBundle(
+      this.clients.hubPoolClient.chainId,
+      widestPossibleExpectedBlockRange,
+      pendingRootBundle,
+      spokePoolClients,
+      earliestBlocksInSpokePoolClients
+    );
+
+    if (!valid) {
+      this.logger.error({
+        at: "Dataworke#getExecutablePoolRebalanceLeaves",
+        message: "Found invalid proposal after challenge period!",
+        reason,
+        notificationPath: "across-error",
+      });
+      return;
+    }
+
+    if (valid && !expectedTrees) {
+      this.logger.error({
+        at: "Dataworke#getExecutablePoolRebalanceLeaves",
+        message:
+          "Found valid proposal, but no trees could be generated. This probably means that the proposal was never evaluated during liveness due to an odd block range!",
+        reason,
+        notificationPath: "across-error",
+      });
+      return;
+    }
+
+    const executedLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
+      this.clients.hubPoolClient.getLatestProposedRootBundle(),
+      this.clients.hubPoolClient.latestBlockNumber
+    );
+
+    // Filter out previously executed leaves.
+    const unexecutedLeaves = expectedTrees.poolRebalanceTree.leaves.filter((leaf) =>
+      executedLeaves.every(({ leafId }) => leafId !== leaf.leafId)
+    );
+
+    return {
+      unexecutedLeaves,
+      expectedTrees,
+    };
+  }
+
   async executeRelayerRefundLeaves(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
+    chainIds: number[] = []
   ) {
     this.logger.debug({
       at: "Dataworker#executeRelayerRefundLeaves",
-      message: "Executing relayer refund leaves",
+      message:
+        chainIds.length > 0
+          ? `Executing relayer refund leaves for chains: ${chainIds}`
+          : "Executing relayer refund leaves",
     });
 
     let latestRootBundles = sortEventsDescending(this.clients.hubPoolClient.getValidatedRootBundles());
@@ -1274,6 +1300,8 @@ export class Dataworker {
     // each chain in parallel, then we'd have to reconstruct identical pool rebalance root more times than necessary.
     for (const [_chainId, client] of Object.entries(spokePoolClients)) {
       const chainId = Number(_chainId);
+      if (chainIds.length > 0 && !chainIds.includes(chainId)) return;
+
       let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
         (rootBundle) => rootBundle.blockNumber >= client.eventSearchConfig.fromBlock
       );
@@ -1625,11 +1653,11 @@ export class Dataworker {
    * at the time of this block).
    * @returns [number, number]: [startBlock, endBlock]
    */
-  async _getWidestPossibleBlockRangeForNextBundle(
+  _getWidestPossibleBlockRangeForNextBundle(
     spokePoolClients: SpokePoolClientsByChain,
     mainnetBundleEndBlock: number
-  ): Promise<number[][]> {
-    return await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
+  ): number[][] {
+    return PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
       spokePoolClients,
       getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),

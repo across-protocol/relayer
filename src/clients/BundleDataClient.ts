@@ -22,7 +22,6 @@ import {
 } from "../utils";
 import { Clients } from "../common";
 import {
-  getBlockForChain,
   getBlockRangeForChain,
   getImpliedBundleBlockRanges,
   getEndBlockBuffers,
@@ -101,7 +100,7 @@ export class BundleDataClient {
   // - Bundles that are pending liveness
   // - Not yet proposed bundles
   async getNextBundleRefunds(): Promise<FillsToRefund> {
-    const futureBundleEvaluationBlockRanges = await getWidestPossibleExpectedBlockRange(
+    const futureBundleEvaluationBlockRanges = getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
       this.spokePoolClients,
       getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),

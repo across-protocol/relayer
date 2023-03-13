@@ -61,9 +61,7 @@ export function getBlockForChain(
 ): number {
   const indexForChain = chainIdListForBundleEvaluationBlockNumbers.indexOf(chain);
   if (indexForChain === -1)
-    throw new Error(
-      `Could not find chain ${chain} in chain ID list ${this.chainIdListForBundleEvaluationBlockNumbers}`
-    );
+    throw new Error(`Could not find chain ${chain} in chain ID list ${chainIdListForBundleEvaluationBlockNumbers}`);
   const blockForChain = bundleEvaluationBlockNumbers[indexForChain];
   if (blockForChain === undefined) throw new Error(`Invalid block range for chain ${chain}`);
   return blockForChain;

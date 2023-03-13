@@ -7,7 +7,7 @@ import {
   getRedis,
   disconnectRedisClient,
 } from "../utils";
-import { spokePoolClientsToProviders } from "../common";
+import { spokePoolClientsToProviders, updateSpokePoolClients } from "../common";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -112,26 +112,99 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       if (config.executorEnabled) {
         const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
 
-        await dataworker.executePoolRebalanceLeaves(
+        // First, execute the mainnet pool rebalance leaf and mainnet spoke leaves because they should always
+        // be atomically executable. Then, try to execute other pool rebalance leaves. This is an optimization
+        // because the mainnet spoke leaves will return funds to Mainnet atomically that could make executing
+        // other pool rebalance possible.
+        const executablePoolRebalanceRoot = await dataworker.getExecutablePoolRebalanceLeaves(
           spokePoolClients,
-          balanceAllocator,
-          config.sendingExecutionsEnabled,
           fromBlocks
         );
 
-        // Execute slow relays before relayer refunds to give them priority for any L2 funds.
-        await dataworker.executeSlowRelayLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          config.sendingExecutionsEnabled,
-          fromBlocks
-        );
-        await dataworker.executeRelayerRefundLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          config.sendingExecutionsEnabled,
-          fromBlocks
-        );
+        // Either execute pool rebalance leaves or relayer refund leaves for non-Mainnet spoke pools.
+        if (executablePoolRebalanceRoot) {
+          const mainnetLeaf = executablePoolRebalanceRoot.unexecutedLeaves.find((leaf) => leaf.chainId === 1);
+          if (mainnetLeaf) {
+            await dataworker.executePoolRebalanceLeaves(
+              [mainnetLeaf],
+              executablePoolRebalanceRoot.expectedTrees,
+              spokePoolClients,
+              balanceAllocator,
+              config.sendingExecutionsEnabled
+            );
+
+            // Simulate what the new balance would be like when added to the spoke pools. This will inform
+            // executor as to which leaves it can execute. This is so we don't have to actually execute the pool
+            // rebalance leaf before executing the other leaves. This way we can atomically execute
+            // all mainnet leaves.
+            mainnetLeaf.netSendAmounts.map(async (amount, index) => {
+              const tokenForNetSendAmount = mainnetLeaf.l1Tokens[index];
+              if (amount.gt(0))
+                await balanceAllocator.addBalance(
+                  1,
+                  tokenForNetSendAmount,
+                  spokePoolClients[1].spokePool.address,
+                  amount
+                );
+            });
+
+            // Update mainnet spoke pool clients with new roots:
+            spokePoolClients[1].eventSearchConfig.toBlock =
+              await spokePoolClients[1].spokePool.provider.getBlockNumber();
+            await updateSpokePoolClients({ 1: spokePoolClients[1] }, ["RelayedRootBundle"]);
+
+            // Only execute slow relays and relayer refunds for mainnet leaves. This should always be executable (if
+            // there are any) if they are depending on funds to be sent from the HubPool after we execute the
+            // pool rebalance leaf. Execute slow relays before relayer refunds to give them priority for any L2 funds.
+            await dataworker.executeSlowRelayLeaves(
+              spokePoolClients,
+              balanceAllocator,
+              config.sendingExecutionsEnabled,
+              fromBlocks,
+              [1]
+            );
+            await dataworker.executeRelayerRefundLeaves(
+              spokePoolClients,
+              balanceAllocator,
+              config.sendingExecutionsEnabled,
+              fromBlocks,
+              [1]
+            );
+          }
+
+          // Clear balances so when pool rebalance leaf executor runs again, it captures new incoming balances from
+          // the mainnet spoke leaves.
+          balanceAllocator.clearBalances();
+
+          // Question: do we also have to .clearUsed() on the balanceAllocator?
+
+          // Try to execute pool rebalance leaves with new balances. The leaves should be the same so we don't
+          // need to reconstruct them.
+          await dataworker.executePoolRebalanceLeaves(
+            executablePoolRebalanceRoot.unexecutedLeaves.filter((leaf) => leaf.chainId !== 1),
+            executablePoolRebalanceRoot.expectedTrees,
+            spokePoolClients,
+            balanceAllocator,
+            config.sendingExecutionsEnabled
+          );
+
+          // No need to execute other spoke root leaves yet on this run as the roots are not relayed atomically
+          // on any chain other than Mainnet, where the HubPool is located.
+        } else {
+          // Execute slow relays before relayer refunds to give them priority for any L2 funds.
+          await dataworker.executeSlowRelayLeaves(
+            spokePoolClients,
+            balanceAllocator,
+            config.sendingExecutionsEnabled,
+            fromBlocks
+          );
+          await dataworker.executeRelayerRefundLeaves(
+            spokePoolClients,
+            balanceAllocator,
+            config.sendingExecutionsEnabled,
+            fromBlocks
+          );
+        }
       } else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
 
       await clients.multiCallerClient.executeTransactionQueue();

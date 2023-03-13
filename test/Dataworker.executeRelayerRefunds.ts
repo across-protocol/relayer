@@ -77,7 +77,13 @@ describe("Dataworker: Execute relayer refunds", async function () {
     // Advance time and execute rebalance leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
+    const expectedPoolRebalanceRoot1 = await dataworkerInstance.getExecutablePoolRebalanceLeaves(spokePoolClients);
+    await dataworkerInstance.executePoolRebalanceLeaves(
+      expectedPoolRebalanceRoot1.unexecutedLeaves,
+      expectedPoolRebalanceRoot1.expectedTrees,
+      spokePoolClients,
+      new BalanceAllocator(providers)
+    );
     await multiCallerClient.executeTransactionQueue();
 
     // TEST 3:
@@ -91,7 +97,8 @@ describe("Dataworker: Execute relayer refunds", async function () {
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
+    const expectedPoolRebalanceRoot2 = await dataworkerInstance.getExecutablePoolRebalanceLeaves(spokePoolClients);
+    expect(expectedPoolRebalanceRoot2).to.be.undefined;
 
     // TEST 4:
     // Submit another fill and check that dataworker proposes another root:
@@ -105,7 +112,13 @@ describe("Dataworker: Execute relayer refunds", async function () {
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
-    await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
+    const expectedPoolRebalanceRoot3 = await dataworkerInstance.getExecutablePoolRebalanceLeaves(spokePoolClients);
+    await dataworkerInstance.executePoolRebalanceLeaves(
+      expectedPoolRebalanceRoot3.unexecutedLeaves,
+      expectedPoolRebalanceRoot3.expectedTrees,
+      spokePoolClients,
+      new BalanceAllocator(providers)
+    );
 
     // Should be 1 leaf since this is _only_ a second partial fill repayment and doesn't involve the deposit chain.
     await multiCallerClient.executeTransactionQueue();
