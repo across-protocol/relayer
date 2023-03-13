@@ -13,7 +13,7 @@
     "@across-protocol/boba-sdk": "^1.0.4",
     "@across-protocol/contracts-v2": "^1.0.5",
     "@across-protocol/sdk-v2": "^0.3.7",
-    "@arbitrum/sdk": "^2.0.18",
+    "@arbitrum/sdk": "^3.1.1",
     "@defi-wonderland/smock": "^2.0.7",
     "@eth-optimism/sdk": "^1.6.0",
     "@ethersproject/abstract-provider": "^5.7.0",
