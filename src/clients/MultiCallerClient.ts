@@ -163,7 +163,7 @@ export class MultiCallerClient {
 
     // Generate the complete set of txns to submit to the network. Anything that failed simulation is dropped.
     const txnRequests: AugmentedTransaction[] = _valueTxns.concat(
-      this.buildMultiCallBundles(chainId, _txns, this.chunkSize[chainId])
+      this.buildMultiCallBundles(_txns, this.chunkSize[chainId])
     );
 
     const txnResponses: TransactionResponse[] =
@@ -263,11 +263,9 @@ export class MultiCallerClient {
   }
 
   buildMultiCallBundles(
-    chainId: number,
     txns: AugmentedTransaction[],
     chunkSize = DEFAULT_MULTICALL_CHUNK_SIZE
   ): AugmentedTransaction[] {
-    if (txns.some((txn) => txn.chainId !== chainId)) throw new Error("Transaction chainId mismatch");
     // We can support sending multiple transactions to different contracts via an external multisender
     // contract.
     const multicallerTxnChunks = lodash.chunk(
@@ -286,8 +284,6 @@ export class MultiCallerClient {
       // Don't wrap single transactions in a multicall.
       return txnChunk.length > 1 ? this.buildMultiSenderBundle(txnChunk) : txnChunk[0];
     });
-    // Send multicaller txns first always since they could contain msg.value, whereas multicaller txns are risky
-    // to use with multicaller logic
     return [...multicallerTxnBundle, ...multisenderTxnBundle];
   }
 

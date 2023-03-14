@@ -1207,7 +1207,8 @@ export class Dataworker {
         submitExecution
       );
 
-      // Now, execute refund and slow fill leaves for Mainnet using new funds.
+      // Now, execute refund and slow fill leaves for Mainnet using new funds. These methods will return early if there
+      // are no relevant leaves to execute.
       await this._executeSlowFillLeaf(
         expectedTrees.slowRelayTree.leaves.filter((leaf) => leaf.destinationChainId === hubPoolChainId),
         balanceAllocator,
