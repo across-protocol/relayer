@@ -14,8 +14,8 @@ class MockedMultiCallerClient extends MultiCallerClient {
   public ignoredSimulationFailures: TransactionSimulationResult[] = [];
   public loggedSimulationFailures: TransactionSimulationResult[] = [];
 
-  constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}, multisend?: Contract) {
-    super(logger, chunkSize, multisend);
+  constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}, public multisend?: Contract) {
+    super(logger, chunkSize);
     this.txnClient = new MockedTransactionClient(logger);
   }
 
@@ -30,6 +30,11 @@ class MockedMultiCallerClient extends MultiCallerClient {
 
   private txnCount(txnQueue: { [chainId: number]: AugmentedTransaction[] }): number {
     return Object.values(txnQueue).reduce((count, txnQueue) => (count += txnQueue.length), 0);
+  }
+
+  getMultisender(_: any): Contract {
+    if (!this.multisend) throw new Error("No multisender contract set");
+    return this.multisend;
   }
 
   valueTxnCount(): number {
@@ -299,12 +304,12 @@ describe("MultiCallerClient", async function () {
 
   it("Correctly handles unpermissioned transactions", async function () {
     const _multisender = new ethers.ContractFactory(
-      hre.artifacts.readArtifactSync("Multicall2").abi,
-      hre.artifacts.readArtifactSync("Multicall2").bytecode,
+      hre.artifacts.readArtifactSync("Multicall3").abi,
+      hre.artifacts.readArtifactSync("Multicall3").bytecode,
       (await ethers.getSigners())[0]
     );
     const multisender = await _multisender.deploy();
-    const multicallerWithMultisend = new MultiCallerClient(spyLogger, {}, multisender);
+    const multicallerWithMultisend = new MockedMultiCallerClient(spyLogger, {}, multisender);
 
     // Test returned result of `buildMultiSenderBundle`. Need to check target, expected method, data, etc.
     const unpermissionedTransactions: AugmentedTransaction[] = [
