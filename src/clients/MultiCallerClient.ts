@@ -143,6 +143,38 @@ export class MultiCallerClient {
       return isPromiseFulfilled(result) ? result.value : [];
     });
 
+    // Generate the complete set of txns to submit to the network. Anything that failed simulation is dropped.
+    const txnRequests: AugmentedTransaction[] = _valueTxns.concat(
+      this.buildMultiCallBundles(_txns, this.chunkSize[chainId])
+    );
+
+    // Simulate the final bundle that will be sent via Multicall2 or Multicaller. This is an extra sanity check
+    // that gives us confidence even if any of the individual transactions are allowed to fail in individual
+    // simulations. The batched transactions should always succeed in simulation.
+    const batchTxns = await this.txnClient.simulate(txnRequests);
+    batchTxns.forEach((batchTxn, i) => {
+      if (!batchTxn.succeed) {
+        this.logger.error({
+          at: "MultiCallerClient#executeChainTxnQueue",
+          message: `Failed to simulate ${networkName} transaction batch!`,
+          batchTxn: {
+            ...batchTxn.transaction,
+            contract: batchTxn.transaction.contract.address,
+          },
+        });
+        throw new Error("Failed to simulate transaction batch!");
+      } else {
+        this.logger.debug({
+          at: "MultiCallerClient#executeTxnQueue",
+          message: `Successfully simulated ${networkName} transaction batch!`,
+          batchTxn: {
+            ...batchTxn.transaction,
+            contract: batchTxn.transaction.contract.address,
+          },
+        });
+      }
+    });
+
     if (simulate) {
       let mrkdwn = "";
       const successfulTxns = _valueTxns.concat(_txns);
@@ -157,11 +189,6 @@ export class MultiCallerClient {
       this.logger.info({ at: "MulticallerClient#executeTxnQueue", message: "Exiting simulation mode 🎮" });
       return [];
     }
-
-    // Generate the complete set of txns to submit to the network. Anything that failed simulation is dropped.
-    const txnRequests: AugmentedTransaction[] = _valueTxns.concat(
-      this.buildMultiCallBundles(_txns, this.chunkSize[chainId])
-    );
 
     const txnResponses: TransactionResponse[] =
       txnRequests.length > 0 ? await this.txnClient.submit(chainId, txnRequests) : [];
@@ -214,7 +241,7 @@ export class MultiCallerClient {
       chainId,
       contract: multisender,
       method: "aggregate",
-      args: callData,
+      args: [callData],
       message: "Across multicall transaction",
       mrkdwn: mrkdwn.join(""),
     } as AugmentedTransaction;

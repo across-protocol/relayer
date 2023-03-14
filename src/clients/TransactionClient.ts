@@ -20,6 +20,7 @@ export interface AugmentedTransaction {
   value?: BigNumber;
   unpermissioned?: boolean; // If false, the transaction must be sent from the enqueuer of the method.
   // If true, then can be sent from the MakerDAO multisender contract.
+  canFailInSimulation?: boolean;
 }
 
 export class TransactionClient {

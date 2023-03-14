@@ -106,6 +106,12 @@ export async function getGasPrice(provider: ethers.providers.Provider, priorityS
 }
 
 export async function willSucceed(transaction: AugmentedTransaction): Promise<TransactionSimulationResult> {
+  if (transaction.canFailInSimulation)
+    return {
+      transaction,
+      succeed: true,
+      reason: null,
+    };
   try {
     const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
     await transaction.contract.callStatic[transaction.method](...args);
