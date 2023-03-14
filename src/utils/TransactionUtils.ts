@@ -9,7 +9,7 @@ export type TransactionSimulationResult = {
   reason: string;
 };
 
-const txnRetryErrors = ["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"];
+const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);
 
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
 // of this method should be considerate of this and catch the response to deal with the error accordingly.
@@ -53,7 +53,7 @@ export async function runTransaction(
   } catch (error) {
     if (
       retriesRemaining > 0 &&
-      (txnRetryErrors.includes(error?.code) || error?.message.includes("intrinsic gas too low"))
+      (txnRetryErrors.has(error?.code) || error?.message.includes("intrinsic gas too low"))
     ) {
       // If error is due to a nonce collision or gas underpricement then re-submit to fetch latest params.
       retriesRemaining -= 1;
