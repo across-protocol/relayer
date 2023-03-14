@@ -9,11 +9,9 @@ import {
   TransactionResponse,
   TransactionSimulationResult,
   Contract,
-  Wallet,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "./TransactionClient";
 import lodash from "lodash";
-import { Multicall2Ethers__factory } from "@uma/contracts-node";
 
 // @todo: MultiCallerClient should be generic. For future, permit the class instantiator to supply their own
 // set of known failures that can be suppressed/ignored.
@@ -47,8 +45,8 @@ export class MultiCallerClient {
   protected valueTxns: { [chainId: number]: AugmentedTransaction[] } = {};
   constructor(
     readonly logger: winston.Logger,
-    readonly mainnetSigner: Wallet,
-    readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE
+    readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE,
+    readonly multisender?: Contract,
   ) {
     this.txnClient = new TransactionClient(logger);
   }
@@ -166,14 +164,11 @@ export class MultiCallerClient {
     return txnResponses;
   }
 
-  getMultiSender(): Contract {
-    return new Contract(mainnetMultiCall2Address, Multicall2Ethers__factory.abi, this.mainnetSigner);
-  }
-
   buildMultiSenderBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
+    if (this.multisender === undefined) throw new Error("Multisender contract not set");
     // Validate all transactions have the same chainId and can be sent from multisender.
     // For now this only works with mainnet transactions.
-    const { chainId, contract } = transactions[0];
+    const { chainId } = transactions[0];
     if (transactions.some((tx) => !tx.unpermissioned || tx.chainId !== 1)) {
       this.logger.error({
         at: "MultiCallerClient#buildMultiSenderBundle",
@@ -200,13 +195,13 @@ export class MultiCallerClient {
     this.logger.debug({
       at: "MultiCallerClient",
       message: `Made multisender bundle for ${getNetworkName(chainId)}.`,
-      multisender: this.getMultiSender().address,
+      multisender: this.multisender.address,
       callData,
     });
 
     return {
       chainId,
-      contract,
+      contract: this.multisender,
       method: "aggregate",
       args: callData,
       message: "Across multicall transaction",
@@ -261,7 +256,7 @@ export class MultiCallerClient {
   ): AugmentedTransaction[] {
     // On Mainnet we can support sending multiple transactions to different contracts via an external multisender
     // contract.
-    if (chainId === 1) {
+    if (chainId === 1 && this.multisender !== undefined) {
       const multicallerTxnChunks = lodash.chunk(
         txns.filter((txn) => !txn.unpermissioned),
         chunkSize

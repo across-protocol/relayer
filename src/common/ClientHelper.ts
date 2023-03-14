@@ -9,10 +9,12 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   SpokePool,
+  getSigner,
 } from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
+import { Multicall2Ethers__factory } from "@uma/contracts-node";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -252,7 +254,12 @@ export async function constructClients(
     rateModelClientSearchSettings
   );
 
-  const multiCallerClient = new MultiCallerClient(logger, hubSigner, config.multiCallChunkSize);
+  const multisender = new Contract(
+    "0x5ba1e12693dc8f9c48aad8770482f4739beed696",
+    Multicall2Ethers__factory.abi,
+    hubSigner
+  )
+  const multiCallerClient = new MultiCallerClient(logger, config.multiCallChunkSize, multisender);
 
   return { hubPoolClient, configStoreClient, multiCallerClient, hubSigner };
 }

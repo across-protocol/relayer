@@ -7,15 +7,15 @@ import {
 } from "../src/clients";
 import { TransactionSimulationResult } from "../src/utils";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
-import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
-import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";
+import { CHAIN_ID_TEST_LIST as chainIds, hre } from "./constants";
+import { createSpyLogger, Contract, expect, randomAddress, winston, toBN, ethers } from "./utils";
 
 class MockedMultiCallerClient extends MultiCallerClient {
   public ignoredSimulationFailures: TransactionSimulationResult[] = [];
   public loggedSimulationFailures: TransactionSimulationResult[] = [];
 
-  constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}) {
-    super(logger, chunkSize);
+  constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}, multisend?: Contract,) {
+    super(logger,chunkSize, multisend);
     this.txnClient = new MockedTransactionClient(logger);
   }
 
@@ -276,7 +276,7 @@ describe("MultiCallerClient", async function () {
         multicallTxns.push(sampleTxn);
       }
 
-      const txnQueue = _multiCaller.buildMultiCallBundles(multicallTxns, _chunkSize);
+      const txnQueue: AugmentedTransaction[] = await _multiCaller.buildMultiCallBundles(chainId, multicallTxns, _chunkSize);
       expect(txnQueue.length).to.equal(nFullBundles + 1);
 
       txnQueue.slice(0, nFullBundles).forEach((txn) => {
@@ -289,7 +289,17 @@ describe("MultiCallerClient", async function () {
   });
 
   it("Correctly handles 0-length input to multicall bundle generation", async function () {
-    const txnQueue = multiCaller.buildMultiCallBundles([], 10);
+    const txnQueue: AugmentedTransaction[] = await multiCaller.buildMultiCallBundles(1, [], 10);
     expect(txnQueue.length).to.equal(0);
   });
+
+  it.only("Correctly handles unpermissioned transactions", async function() {
+    const _multisender = new ethers.ContractFactory(
+      hre.artifacts.readArtifactSync("Multicall2").abi,
+      hre.artifacts.readArtifactSync("Multicall2").bytecode,
+      (await ethers.getSigners())[0]
+    );
+    const multisender = await _multisender.deploy();
+    const multicallerWithMultisend = new MultiCallerClient(spyLogger, {}, multisender);
+  })
 });
