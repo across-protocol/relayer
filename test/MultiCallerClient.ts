@@ -32,8 +32,7 @@ class MockedMultiCallerClient extends MultiCallerClient {
     return Object.values(txnQueue).reduce((count, txnQueue) => (count += txnQueue.length), 0);
   }
 
-  getMultisender(_: any): Contract {
-    if (!this.multisend) throw new Error("No multisender contract set");
+  getMultisender(_: any): Contract | undefined {
     return this.multisend;
   }
 
