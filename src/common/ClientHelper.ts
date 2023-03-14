@@ -258,7 +258,7 @@ export async function constructClients(
     "0x5ba1e12693dc8f9c48aad8770482f4739beed696",
     Multicall2Ethers__factory.abi,
     hubSigner
-  )
+  );
   const multiCallerClient = new MultiCallerClient(logger, config.multiCallChunkSize, multisender);
 
   return { hubPoolClient, configStoreClient, multiCallerClient, hubSigner };

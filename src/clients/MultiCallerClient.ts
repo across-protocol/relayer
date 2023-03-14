@@ -46,7 +46,7 @@ export class MultiCallerClient {
   constructor(
     readonly logger: winston.Logger,
     readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE,
-    readonly multisender?: Contract,
+    readonly multisender?: Contract
   ) {
     this.txnClient = new TransactionClient(logger);
   }
@@ -254,6 +254,7 @@ export class MultiCallerClient {
     txns: AugmentedTransaction[],
     chunkSize = DEFAULT_MULTICALL_CHUNK_SIZE
   ): AugmentedTransaction[] {
+    if (txns.some((txn) => txn.chainId !== chainId)) throw new Error("Transaction chainId mismatch");
     // On Mainnet we can support sending multiple transactions to different contracts via an external multisender
     // contract.
     if (chainId === 1 && this.multisender !== undefined) {

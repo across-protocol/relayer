@@ -14,8 +14,8 @@ class MockedMultiCallerClient extends MultiCallerClient {
   public ignoredSimulationFailures: TransactionSimulationResult[] = [];
   public loggedSimulationFailures: TransactionSimulationResult[] = [];
 
-  constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}, multisend?: Contract,) {
-    super(logger,chunkSize, multisend);
+  constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}, multisend?: Contract) {
+    super(logger, chunkSize, multisend);
     this.txnClient = new MockedTransactionClient(logger);
   }
 
@@ -276,7 +276,11 @@ describe("MultiCallerClient", async function () {
         multicallTxns.push(sampleTxn);
       }
 
-      const txnQueue: AugmentedTransaction[] = await _multiCaller.buildMultiCallBundles(chainId, multicallTxns, _chunkSize);
+      const txnQueue: AugmentedTransaction[] = await _multiCaller.buildMultiCallBundles(
+        chainId,
+        multicallTxns,
+        _chunkSize
+      );
       expect(txnQueue.length).to.equal(nFullBundles + 1);
 
       txnQueue.slice(0, nFullBundles).forEach((txn) => {
@@ -293,7 +297,7 @@ describe("MultiCallerClient", async function () {
     expect(txnQueue.length).to.equal(0);
   });
 
-  it.only("Correctly handles unpermissioned transactions", async function() {
+  it.only("Correctly handles unpermissioned transactions", async function () {
     const _multisender = new ethers.ContractFactory(
       hre.artifacts.readArtifactSync("Multicall2").abi,
       hre.artifacts.readArtifactSync("Multicall2").bytecode,
@@ -301,5 +305,45 @@ describe("MultiCallerClient", async function () {
     );
     const multisender = await _multisender.deploy();
     const multicallerWithMultisend = new MultiCallerClient(spyLogger, {}, multisender);
-  })
+
+    // Test returned result of `buildMultiSenderBundle`. Need to check target, expected method, data, etc.
+    const unpermissionedTransactions: AugmentedTransaction[] = [
+      {
+        chainId: 1,
+        unpermissioned: true,
+        contract: {
+          address,
+          interface: { encodeFunctionData },
+        } as Contract,
+        method: "test",
+        args: [],
+      } as AugmentedTransaction,
+    ];
+    let multisendTransaction = multicallerWithMultisend.buildMultiSenderBundle(unpermissionedTransactions);
+    expect(multisendTransaction.method).to.equal("aggregate");
+    expect(multisendTransaction.contract.address).to.equal(multisender.address);
+    expect(multisendTransaction.args[0].target).to.equal(address);
+    expect(multisendTransaction.args[0].callData).to.equal(encodeFunctionData("test()", []));
+
+    const secondAddress = randomAddress();
+    unpermissionedTransactions.push({
+      chainId: 1,
+      unpermissioned: true,
+      contract: {
+        address: secondAddress,
+        interface: { encodeFunctionData },
+      } as Contract,
+      method: "test2",
+      args: [11],
+    } as AugmentedTransaction);
+    const expectedEncodedData = encodeFunctionData("test2(uint256)", [11]);
+    multisendTransaction = multicallerWithMultisend.buildMultiSenderBundle(unpermissionedTransactions);
+    expect(multisendTransaction.method).to.equal("aggregate");
+    expect(multisendTransaction.contract.address).to.equal(multisender.address);
+    expect(multisendTransaction.args[1].target).to.equal(secondAddress);
+    expect(multisendTransaction.args[1].callData).to.equal(expectedEncodedData);
+
+    // Test that `buildMultiCallBundles` returns correct list (and order) of transactions
+    // given a list of transactions that can be bundled together.
+  });
 });
