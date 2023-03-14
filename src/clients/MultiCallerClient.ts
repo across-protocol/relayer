@@ -152,7 +152,7 @@ export class MultiCallerClient {
     // that gives us confidence even if any of the individual transactions are allowed to fail in individual
     // simulations. The batched transactions should always succeed in simulation.
     const batchTxns = await this.txnClient.simulate(txnRequests);
-    batchTxns.forEach((batchTxn, i) => {
+    batchTxns.forEach((batchTxn) => {
       if (!batchTxn.succeed) {
         this.logger.error({
           at: "MultiCallerClient#executeChainTxnQueue",

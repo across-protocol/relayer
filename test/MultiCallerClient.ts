@@ -362,8 +362,9 @@ describe("MultiCallerClient", async function () {
     let multisendTransaction = multicallerWithMultisend.buildMultiSenderBundle(unpermissionedTransactions);
     expect(multisendTransaction.method).to.equal("aggregate");
     expect(multisendTransaction.contract.address).to.equal(multisender.address);
-    expect(multisendTransaction.args[0].target).to.equal(address);
-    expect(multisendTransaction.args[0].callData).to.equal(encodeFunctionData("test()", []));
+    expect(multisendTransaction.args[0].length).to.equal(1);
+    expect(multisendTransaction.args[0][0].target).to.equal(address);
+    expect(multisendTransaction.args[0][0].callData).to.equal(encodeFunctionData("test()", []));
 
     const secondAddress = randomAddress();
     unpermissionedTransactions.push({
@@ -379,8 +380,9 @@ describe("MultiCallerClient", async function () {
     multisendTransaction = multicallerWithMultisend.buildMultiSenderBundle(unpermissionedTransactions);
     expect(multisendTransaction.method).to.equal("aggregate");
     expect(multisendTransaction.contract.address).to.equal(multisender.address);
-    expect(multisendTransaction.args[1].target).to.equal(secondAddress);
-    expect(multisendTransaction.args[1].callData).to.equal(encodeFunctionData("test2(uint256)", [11]));
+    expect(multisendTransaction.args[0].length).to.equal(2);
+    expect(multisendTransaction.args[0][1].target).to.equal(secondAddress);
+    expect(multisendTransaction.args[0][1].callData).to.equal(encodeFunctionData("test2(uint256)", [11]));
 
     // Test that `buildMultiCallBundles` returns correct list (and order) of transactions
     // given a list of transactions that can be bundled together.
@@ -412,9 +414,9 @@ describe("MultiCallerClient", async function () {
 
     expect(bundle[0].method).to.equal("multicall");
     expect(bundle[1].method).to.equal("aggregate");
-    expect(bundle[1].args[0].target).to.equal(address);
-    expect(bundle[1].args[1].target).to.equal(secondAddress);
-    expect(bundle[1].args[0].callData).to.equal(encodeFunctionData("test()", []));
-    expect(bundle[1].args[1].callData).to.equal(encodeFunctionData("test2(uint256)", [11]));
+    expect(bundle[1].args[0][0].target).to.equal(address);
+    expect(bundle[1].args[0][1].target).to.equal(secondAddress);
+    expect(bundle[1].args[0][0].callData).to.equal(encodeFunctionData("test()", []));
+    expect(bundle[1].args[0][1].callData).to.equal(encodeFunctionData("test2(uint256)", [11]));
   });
 });
