@@ -962,6 +962,7 @@ export class Dataworker {
     submitExecution,
     rootBundleId?: number
   ) {
+    if (leaves.length === 0) return;
     const chainId = leaves[0].destinationChainId;
     if (chainId !== client.chainId) throw new Error("Leaf chainId does not match spoke pool client chainId");
 
@@ -1541,6 +1542,7 @@ export class Dataworker {
     submitExecution: boolean,
     rootBundleId?: number
   ) {
+    if (leaves.length === 0) return;
     const chainId = leaves[0].chainId;
     if (chainId !== client.chainId) throw new Error("Leaf chainId does not match spoke pool client chainId");
     // Filter for leaves where the contract has the funding to send the required tokens.

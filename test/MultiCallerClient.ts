@@ -297,7 +297,7 @@ describe("MultiCallerClient", async function () {
     expect(txnQueue.length).to.equal(0);
   });
 
-  it.only("Correctly handles unpermissioned transactions", async function () {
+  it("Correctly handles unpermissioned transactions", async function () {
     const _multisender = new ethers.ContractFactory(
       hre.artifacts.readArtifactSync("Multicall2").abi,
       hre.artifacts.readArtifactSync("Multicall2").bytecode,
@@ -336,14 +336,46 @@ describe("MultiCallerClient", async function () {
       method: "test2",
       args: [11],
     } as AugmentedTransaction);
-    const expectedEncodedData = encodeFunctionData("test2(uint256)", [11]);
     multisendTransaction = multicallerWithMultisend.buildMultiSenderBundle(unpermissionedTransactions);
     expect(multisendTransaction.method).to.equal("aggregate");
     expect(multisendTransaction.contract.address).to.equal(multisender.address);
     expect(multisendTransaction.args[1].target).to.equal(secondAddress);
-    expect(multisendTransaction.args[1].callData).to.equal(expectedEncodedData);
+    expect(multisendTransaction.args[1].callData).to.equal(encodeFunctionData("test2(uint256)", [11]));
 
     // Test that `buildMultiCallBundles` returns correct list (and order) of transactions
     // given a list of transactions that can be bundled together.
+    const permissionedTransaction = [
+      {
+        chainId: 1,
+        contract: {
+          address: address,
+          interface: { encodeFunctionData },
+        } as Contract,
+        method: "test",
+        args: [],
+      },
+      {
+        chainId: 1,
+        contract: {
+          address: address,
+          interface: { encodeFunctionData },
+        } as Contract,
+        method: "test",
+        args: [],
+      },
+    ] as AugmentedTransaction[];
+    const bundle = multicallerWithMultisend.buildMultiCallBundles(1, [
+      ...permissionedTransaction,
+      ...unpermissionedTransactions,
+    ]);
+    expect(bundle.length).to.equal(2);
+
+    // Importantly, `multicall` should come first.
+    expect(bundle[0].method).to.equal("multicall");
+    expect(bundle[1].method).to.equal("aggregate");
+    expect(bundle[1].args[0].target).to.equal(address);
+    expect(bundle[1].args[1].target).to.equal(secondAddress);
+    expect(bundle[1].args[0].callData).to.equal(encodeFunctionData("test()", []));
+    expect(bundle[1].args[1].callData).to.equal(encodeFunctionData("test2(uint256)", [11]));
   });
 });
