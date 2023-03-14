@@ -269,7 +269,7 @@ export class Dataworker {
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
     // Pass in `latest` for the mainnet bundle end block because we want to use the latest disabled chains list
     // to construct the potential next bundle block range.
-    const blockRangesForProposal = await this._getWidestPossibleBlockRangeForNextBundle(
+    const blockRangesForProposal = this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
       this.clients.hubPoolClient.latestBlockNumber - this.blockRangeEndBlockBuffer[1]
     );
@@ -478,7 +478,7 @@ export class Dataworker {
       this.clients.hubPoolClient.chainId,
       this.chainIdListForBundleEvaluationBlockNumbers
     );
-    const widestPossibleExpectedBlockRange = await this._getWidestPossibleBlockRangeForNextBundle(
+    const widestPossibleExpectedBlockRange = this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
       mainnetBundleEndBlockForPendingRootBundle
     );
@@ -1118,7 +1118,7 @@ export class Dataworker {
       this.clients.hubPoolClient.chainId,
       this.chainIdListForBundleEvaluationBlockNumbers
     );
-    const widestPossibleExpectedBlockRange = await this._getWidestPossibleBlockRangeForNextBundle(
+    const widestPossibleExpectedBlockRange = this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
       mainnetBundleEndBlockForPendingRootBundle
     );
@@ -1166,40 +1166,7 @@ export class Dataworker {
     // address the situation where `addLiquidity` and `removeLiquidity` have not been called for an L1 token for a
     // while, which are the other methods that trigger an internal call to `_exchangeRateCurrent()`. Calling
     // this method triggers a recompounding of fees before new fees come in.
-    const compoundedFeesForL1Token: string[] = [];
-    unexecutedLeaves.forEach((leaf) => {
-      leaf.l1Tokens.forEach((l1Token, i) => {
-        // Exit early if lp fees are 0
-        if (leaf.bundleLpFees[i].eq(toBN(0))) return;
-
-        // Exit early if we already compounded fees for this l1 token on this loop
-        if (compoundedFeesForL1Token.includes(l1Token)) return;
-        else compoundedFeesForL1Token.push(l1Token);
-
-        // Exit early if we recently compounded fees
-        const lastestFeesCompoundedTime =
-          this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.lastLpFeeUpdate ?? 0;
-        if (
-          this.clients.hubPoolClient.currentTime === undefined ||
-          this.clients.hubPoolClient.currentTime - lastestFeesCompoundedTime <= 86400
-        )
-          return;
-
-        if (submitExecution) {
-          this.clients.multiCallerClient.enqueueTransaction({
-            contract: this.clients.hubPoolClient.hubPool,
-            chainId: hubPoolChainId,
-            method: "exchangeRateCurrent",
-            args: [l1Token],
-            message: "Updated exchange rate ♻️!",
-            mrkdwn: `Updated exchange rate for l1 token: ${
-              this.clients.hubPoolClient.getTokenInfo(1, l1Token)?.symbol
-            }`,
-            unpermissioned: true,
-          });
-        }
-      });
-    });
+    await this._updateExchangeRates(unexecutedLeaves, submitExecution);
 
     // First, execute mainnet pool rebalance leaves. Then try to execute any relayer refund and slow leaves for the
     // expected relayed root hash, then proceed with remaining pool rebalance leaves. This is an optimization that
@@ -1363,6 +1330,43 @@ export class Dataworker {
           canFailInSimulation: leaf.chainId !== hubPoolChainId,
         });
       } else this.logger.debug({ at: "Dataworker#executePoolRebalanceLeaves", message: mrkdwn });
+    });
+  }
+
+  async _updateExchangeRates(leaves: PoolRebalanceLeaf[], submitExecution: boolean) {
+    const compoundedFeesForL1Token: string[] = [];
+    leaves.forEach((leaf) => {
+      leaf.l1Tokens.forEach((l1Token, i) => {
+        // Exit early if lp fees are 0
+        if (leaf.bundleLpFees[i].eq(toBN(0))) return;
+
+        // Exit early if we already compounded fees for this l1 token on this loop
+        if (compoundedFeesForL1Token.includes(l1Token)) return;
+        else compoundedFeesForL1Token.push(l1Token);
+
+        // Exit early if we recently compounded fees
+        const lastestFeesCompoundedTime =
+          this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.lastLpFeeUpdate ?? 0;
+        if (
+          this.clients.hubPoolClient.currentTime === undefined ||
+          this.clients.hubPoolClient.currentTime - lastestFeesCompoundedTime <= 86400
+        )
+          return;
+
+        if (submitExecution) {
+          this.clients.multiCallerClient.enqueueTransaction({
+            contract: this.clients.hubPoolClient.hubPool,
+            chainId: this.clients.hubPoolClient.chainId,
+            method: "exchangeRateCurrent",
+            args: [l1Token],
+            message: "Updated exchange rate ♻️!",
+            mrkdwn: `Updated exchange rate for l1 token: ${
+              this.clients.hubPoolClient.getTokenInfo(1, l1Token)?.symbol
+            }`,
+            unpermissioned: true,
+          });
+        }
+      });
     });
   }
 
@@ -1771,11 +1775,11 @@ export class Dataworker {
    * at the time of this block).
    * @returns [number, number]: [startBlock, endBlock]
    */
-  async _getWidestPossibleBlockRangeForNextBundle(
+  _getWidestPossibleBlockRangeForNextBundle(
     spokePoolClients: SpokePoolClientsByChain,
     mainnetBundleEndBlock: number
-  ): Promise<number[][]> {
-    return await PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
+  ): number[][] {
+    return PoolRebalanceUtils.getWidestPossibleExpectedBlockRange(
       this.chainIdListForBundleEvaluationBlockNumbers,
       spokePoolClients,
       getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),

@@ -383,14 +383,14 @@ export function getRunningBalanceForL1Token(
 // when evaluating  pending root bundle. The block end numbers must be less than the latest blocks for each chain ID
 // (because we can't evaluate events in the future), and greater than the the expected start blocks, which are the
 // greater of 0 and the latest bundle end block for an executed root bundle proposal + 1.
-export async function getWidestPossibleExpectedBlockRange(
+export function getWidestPossibleExpectedBlockRange(
   chainIdListForBundleEvaluationBlockNumbers: number[],
   spokeClients: { [chainId: number]: SpokePoolClient },
   endBlockBuffers: number[],
   clients: Clients,
   latestMainnetBlock: number,
   enabledChains: number[]
-): Promise<number[][]> {
+): number[][] {
   // TODO: This shouldn't be `async`.
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => {
     // If chain is disabled, re-use the latest bundle end block for the chain as both the start
