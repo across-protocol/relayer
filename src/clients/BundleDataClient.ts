@@ -107,7 +107,10 @@ export class BundleDataClient {
       getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
       this.clients,
       this.clients.hubPoolClient.latestBlockNumber,
-      this.clients.hubPoolClient.latestBlockNumber
+      this.clients.configStoreClient.getEnabledChains(
+        this.clients.hubPoolClient.latestBlockNumber,
+        this.chainIdListForBundleEvaluationBlockNumbers
+      )
     );
     // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
     // (if any) has been fully executed.
