@@ -51,10 +51,7 @@ export async function runTransaction(
     );
     return await contract[method](...args, txConfig);
   } catch (error) {
-    if (
-      retriesRemaining > 0 &&
-      (txnRetryErrors.has(error?.code) || error?.message.includes("intrinsic gas too low"))
-    ) {
+    if (retriesRemaining > 0 && (txnRetryErrors.has(error?.code) || error?.message.includes("intrinsic gas too low"))) {
       // If error is due to a nonce collision or gas underpricement then re-submit to fetch latest params.
       retriesRemaining -= 1;
       logger.debug({
