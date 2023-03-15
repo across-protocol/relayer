@@ -121,8 +121,16 @@ export class BalanceAllocator {
     this.used[chainId][token][holder] = used.add(amount);
   }
 
-  async addBalance(chainId: number, token: string, holder: string, amount: BigNumber) {
+  /**
+   * @notice Manually add balance to the balance entry for the holder for the token and chain ID.
+   * Caller should be careful in calling this function otherwise the user of this client
+   * could be led to think that the holder has more on-chain balance than it actually has.
+   * @param amount Amount to increase balance by. Can be negative.
+   */
+  async addBalance(chainId: number, token: string, holder: string, amount: BigNumber): Promise<void> {
     const balance = await this.getBalance(chainId, token, holder);
+    // @dev No need to check if balances entry is defined since `getBalance` guarantees
+    // that it is set for [chainId][token][holder].
     this.balances[chainId][token][holder] = balance.add(amount);
   }
 

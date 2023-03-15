@@ -153,25 +153,18 @@ export class MultiCallerClient {
     // simulations. The batched transactions should always succeed in simulation.
     const batchTxns = await this.txnClient.simulate(txnRequests);
     batchTxns.forEach((batchTxn) => {
+      this.logger[batchTxn.succeed ? "debug" : "error"]({
+        at: "MultiCallerClient#executeChainTxnQueue",
+        message: batchTxn.succeed
+          ? `Successfully simulated ${networkName} transaction batch!`
+          : `Failed to simulate ${networkName} transaction batch!`,
+        batchTxn: {
+          ...batchTxn.transaction,
+          contract: batchTxn.transaction.contract.address,
+        },
+      });
       if (!batchTxn.succeed) {
-        this.logger.error({
-          at: "MultiCallerClient#executeChainTxnQueue",
-          message: `Failed to simulate ${networkName} transaction batch!`,
-          batchTxn: {
-            ...batchTxn.transaction,
-            contract: batchTxn.transaction.contract.address,
-          },
-        });
         throw new Error("Failed to simulate transaction batch!");
-      } else {
-        this.logger.debug({
-          at: "MultiCallerClient#executeTxnQueue",
-          message: `Successfully simulated ${networkName} transaction batch!`,
-          batchTxn: {
-            ...batchTxn.transaction,
-            contract: batchTxn.transaction.contract.address,
-          },
-        });
       }
     });
 
