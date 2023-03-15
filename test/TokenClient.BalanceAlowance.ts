@@ -1,4 +1,11 @@
-import { deploySpokePoolWithToken, expect, ethers, Contract, SignerWithAddress } from "./utils";
+import {
+  deploySpokePoolWithToken,
+  expect,
+  ethers,
+  Contract,
+  SignerWithAddress,
+  deepEqualsWithBigNumber,
+} from "./utils";
 import { createSpyLogger, winston, originChainId, destinationChainId, toBNWei } from "./utils";
 import { deployAndConfigureHubPool, zeroAddress } from "./utils";
 
@@ -53,7 +60,7 @@ describe("TokenClient: Balance and Allowance", async function () {
 
   it("Fetches all associated balances and allowances", async function () {
     await updateAllClients();
-    expect(tokenClient.getAllTokenData()).to.deep.equal({
+    const expectedData = {
       [originChainId]: {
         [erc20_1.address]: { balance: toBNWei(0), allowance: toBNWei(0) },
         [weth_1.address]: { balance: toBNWei(0), allowance: toBNWei(0) },
@@ -62,7 +69,8 @@ describe("TokenClient: Balance and Allowance", async function () {
         [erc20_2.address]: { balance: toBNWei(0), allowance: toBNWei(0) },
         [weth_2.address]: { balance: toBNWei(0), allowance: toBNWei(0) },
       },
-    });
+    };
+    expect(deepEqualsWithBigNumber(tokenClient.getAllTokenData(), expectedData)).to.be.true;
 
     // Check some balance/allowances directly.
     expect(tokenClient.getBalance(originChainId, erc20_1.address)).to.equal(toBNWei(0));
@@ -77,7 +85,7 @@ describe("TokenClient: Balance and Allowance", async function () {
     await weth_2.deposit({ value: toBNWei(1337) });
 
     await updateAllClients();
-    expect(tokenClient.getAllTokenData()).to.deep.equal({
+    const expectedData1 = {
       [originChainId]: {
         [erc20_1.address]: { balance: toBNWei(42069), allowance: toBNWei(0) },
         [weth_1.address]: { balance: toBNWei(0), allowance: toBNWei(420420) },
@@ -86,7 +94,8 @@ describe("TokenClient: Balance and Allowance", async function () {
         [erc20_2.address]: { balance: toBNWei(0), allowance: toBNWei(6969) },
         [weth_2.address]: { balance: toBNWei(1337), allowance: toBNWei(0) },
       },
-    });
+    };
+    expect(deepEqualsWithBigNumber(tokenClient.getAllTokenData(), expectedData1)).to.be.true;
     expect(tokenClient.getBalance(originChainId, erc20_1.address)).to.equal(toBNWei(42069));
     expect(tokenClient.getAllowanceOnChain(originChainId, weth_1.address)).to.equal(toBNWei(420420));
     expect(tokenClient.getAllowanceOnChain(destinationChainId, erc20_2.address)).to.equal(toBNWei(6969));

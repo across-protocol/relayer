@@ -1,4 +1,13 @@
-import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet, signForSpeedUp, toBNWei } from "./utils";
+import {
+  expect,
+  ethers,
+  Contract,
+  SignerWithAddress,
+  setupTokensForWallet,
+  signForSpeedUp,
+  toBNWei,
+  deepEqualsWithBigNumber,
+} from "./utils";
 import { deploySpokePoolWithToken, enableRoutes, simpleDeposit, originChainId, createSpyLogger } from "./utils";
 import { depositRelayerFeePct, destinationChainId } from "./constants";
 
@@ -36,12 +45,21 @@ describe("SpokePoolClient: SpeedUp", async function () {
 
     // After speedup should return the appended object with the new fee information and signature.
     const expectedDepositData = { ...deposit, speedUpSignature, newRelayerFeePct: newRelayFeePct };
-    expect(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock)).to.deep.equal(
-      expectedDepositData
-    );
+    expect(
+      deepEqualsWithBigNumber(
+        spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock),
+        expectedDepositData
+      )
+    ).to.be.true;
 
     // Fetching deposits for the depositor should contain the correct fees.
-    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0]).to.deep.contain(expectedDepositData);
+    expect(
+      deepEqualsWithBigNumber(
+        spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0],
+        expectedDepositData,
+        ["blockNumber", "logIndex", "originBlockNumber", "transactionHash", "transactionIndex"]
+      )
+    ).to.be.true;
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId).length).to.equal(1);
   });
 
@@ -70,13 +88,20 @@ describe("SpokePoolClient: SpeedUp", async function () {
 
     // After speedup should return the appended object with the new fee information and signature.
     const expectedDepositData = { ...deposit, speedUpSignature, newRelayerFeePct: newRelayFeePct };
-    expect(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock)).to.deep.equal(
-      expectedDepositData
-    );
-
+    expect(
+      deepEqualsWithBigNumber(
+        spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock),
+        expectedDepositData
+      )
+    ).to.be.true;
     // Fetching deposits for the depositor should contain the correct fees.
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId).length).to.equal(1);
-    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0]).to.deep.contain(expectedDepositData);
+    expect(
+      deepEqualsWithBigNumber(
+        spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0],
+        expectedDepositData
+      )
+    ).to.be.true;
   });
 
   it("Selects the highest speedup option when multiple are presented", async function () {
@@ -88,8 +113,18 @@ describe("SpokePoolClient: SpeedUp", async function () {
     await spokePool.speedUpDeposit(depositor.address, newLowerRelayFeePct, deposit.depositId, speedUpSignature);
     await spokePoolClient.update();
     // below the original fee should equal the original deposit with no signature.
-    expect(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock)).to.deep.equal(deposit);
-    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0]).to.deep.contain(deposit);
+    expect(
+      deepEqualsWithBigNumber(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock), deposit)
+    ).to.be.true;
+    expect(
+      deepEqualsWithBigNumber(spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0], deposit, [
+        "blockNumber",
+        "logIndex",
+        "originBlockNumber",
+        "transactionHash",
+        "transactionIndex",
+      ])
+    ).to.be.true;
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId).length).to.equal(1);
     expect(spokePoolClient.getDeposits()[0].speedUpSignature).to.deep.equal(undefined);
 
@@ -109,10 +144,19 @@ describe("SpokePoolClient: SpeedUp", async function () {
       speedUpSignature: speedUpFasterSignature,
       newRelayerFeePct: speedupFaster,
     };
-    expect(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock)).to.deep.contain(
-      expectedDepositData
-    );
-    expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0]).to.deep.contain(expectedDepositData);
+    expect(
+      deepEqualsWithBigNumber(
+        spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock),
+        expectedDepositData
+      )
+    ).to.be.true;
+    expect(
+      deepEqualsWithBigNumber(
+        spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0],
+        expectedDepositData,
+        ["blockNumber", "logIndex", "originBlockNumber", "transactionHash", "transactionIndex"]
+      )
+    ).to.be.true;
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId).length).to.equal(1);
   });
   it("Receives a speed up for a correct depositor but invalid deposit Id", async function () {
