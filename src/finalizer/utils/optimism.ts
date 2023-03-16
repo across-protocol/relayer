@@ -72,7 +72,7 @@ export async function getMessageStatuses(
   crossChainMessages: CrossChainMessageWithEvent[],
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER
 ): Promise<CrossChainMessageWithStatus[]> {
-  if (chainId === 10) {
+  if (chainId === 288) {
     const statuses = await Promise.all(
       crossChainMessages.map((message) => {
         return (crossChainMessenger as bobaSDK.CrossChainMessenger).getMessageStatus(
