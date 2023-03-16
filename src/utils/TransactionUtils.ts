@@ -1,5 +1,6 @@
 import { AugmentedTransaction } from "../clients";
-import { winston, Contract, getContractInfoFromAddress, fetch, ethers } from "../utils";
+import { winston, Contract, getContractInfoFromAddress, fetch, ethers, hre, Wallet } from "../utils";
+import { multicall3Addresses } from "../common";
 import { toBNWei, BigNumber, toBN, toGWei, TransactionResponse } from "../utils";
 require("dotenv").config();
 
@@ -22,6 +23,11 @@ const txnRetryable = (error?: unknown): boolean => {
 
   return (error as Error)?.message?.includes("intrinsic gas too low");
 };
+
+export function getMultisender(chainId: number, baseSigner: Wallet): Contract | undefined {
+  if (!multicall3Addresses[chainId] || !this.baseSigner) return undefined;
+  return new Contract(multicall3Addresses[chainId], hre.artifacts.readArtifactSync("Multicall3"), baseSigner);
+}
 
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
 // of this method should be considerate of this and catch the response to deal with the error accordingly.

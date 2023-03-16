@@ -1,9 +1,4 @@
-import {
-  DEFAULT_MULTICALL_CHUNK_SIZE,
-  DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE,
-  multicall3Addresses,
-  Multicall2Call,
-} from "../common";
+import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE, Multicall2Call } from "../common";
 import {
   assert,
   winston,
@@ -15,10 +10,10 @@ import {
   TransactionSimulationResult,
   Contract,
   Wallet,
+  getMultisender,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "./TransactionClient";
 import lodash from "lodash";
-import { getAbi } from "@uma/contracts-node";
 
 // @todo: MultiCallerClient should be generic. For future, permit the class instantiator to supply their own
 // set of known failures that can be suppressed/ignored.
@@ -189,15 +184,14 @@ export class MultiCallerClient {
     return txnResponses;
   }
 
-  getMultisender(chainId: number): Contract | undefined {
-    if (!multicall3Addresses[chainId] || !this.baseSigner) return undefined;
-    return new Contract(multicall3Addresses[chainId], getAbi("Multicall2"), this.baseSigner);
+  _getMultisender(chainId: number): Contract | undefined {
+    return getMultisender(chainId, this.baseSigner);
   }
 
   buildMultiSenderBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
     // Validate all transactions have the same chainId and can be sent from multisender.
     const { chainId } = transactions[0];
-    const multisender = this.getMultisender(chainId);
+    const multisender = this._getMultisender(chainId);
     if (!multisender) throw new Error("Multisender not available for this chain");
 
     if (transactions.some((tx) => !tx.unpermissioned || tx.chainId !== chainId)) {
@@ -290,7 +284,7 @@ export class MultiCallerClient {
     // If we can't construct multisender contract, then multicall everything. If any of the transactions
     // is for a contract that can't be multicalled, then this function will throw. This client should only be
     // used on contracts that extend Multicaller.
-    if (this.getMultisender(chainId) === undefined) {
+    if (this._getMultisender(chainId) === undefined) {
       const txnChunks = lodash.chunk(txns, chunkSize);
       return txnChunks.map((txnChunk) => {
         // Don't wrap single transactions in a multicall.

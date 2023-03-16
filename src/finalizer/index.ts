@@ -9,6 +9,7 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   disconnectRedisClient,
+  getMultisender,
 } from "../utils";
 import { winston } from "../utils";
 import {
@@ -28,10 +29,8 @@ import {
   Clients,
   ProcessEnv,
   FINALIZER_TOKENBRIDGE_LOOKBACK,
-  multicall3Addresses,
   Multicall2Call,
 } from "../common";
-import { getAbi } from "@uma/contracts-node";
 import * as optimismSDK from "@eth-optimism/sdk";
 import * as bobaSDK from "@across-protocol/boba-sdk";
 config();
@@ -58,7 +57,7 @@ export async function finalize(
   const hubPoolClient = configStoreClient.hubPoolClient;
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
-  const multicall2 = new Contract(multicall3Addresses[1], getAbi("Multicall2"), hubPoolClient.hubPool.signer);
+  const multicall2 = getMultisender(1, hubPoolClient.hubPool.signer);
   const finalizationsToBatch: { callData: Multicall2Call[]; withdrawals: Withdrawal[] } = {
     callData: [],
     withdrawals: [],
