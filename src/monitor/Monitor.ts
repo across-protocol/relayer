@@ -413,14 +413,8 @@ export class Monitor {
                 chainId: this.clients.hubPoolClient.chainId,
                 method: "loadEthForL2Calls",
                 args: [],
-                message: `Loaded ${ethers.utils.formatUnits(
-                  deficit,
-                  decimals
-                )} ETH in HubPool 🫡 (sender: ${signerAddress})!`,
-                mrkdwn: `Loaded ${ethers.utils.formatUnits(
-                  deficit,
-                  decimals
-                )} ETH in HubPool 🫡 (sender: ${signerAddress})!`,
+                message: "Reloaded ETH in HubPool 🫡!",
+                mrkdwn: `Loaded ${ethers.utils.formatUnits(deficit, decimals)} ETH from ${signerAddress}.`,
                 value: deficit,
               });
             } else {
@@ -432,10 +426,10 @@ export class Monitor {
                 const receipt = await tx.wait();
                 this.logger.info({
                   at: "Monitor#refillBalances",
-                  message: `Sent ${ethers.utils.formatUnits(
+                  message: `Reloaded ${ethers.utils.formatUnits(
                     deficit,
                     decimals
-                  )} ETH to ${account} 🚀 (sender: ${signerAddress})!`,
+                  )} ETH for ${account} from ${signerAddress} 🫡!`,
                   transactionHash: receipt.transactionHash,
                 });
               } else {
@@ -450,12 +444,10 @@ export class Monitor {
                   chainId: chainId,
                   method: "transfer",
                   args: [account, deficit],
-                  message: `Sent ${ethers.utils.formatUnits(deficit, decimals)} ${symbol} on ${getNetworkName(
-                    chainId
-                  )} to ${account} 🫡 (sender: ${signerAddress})!`,
+                  message: "Reloaded ERC20 🫡!",
                   mrkdwn: `Sent ${ethers.utils.formatUnits(deficit, decimals)} ${symbol} on ${getNetworkName(
                     chainId
-                  )} to ${account} 🫡 (sender: ${signerAddress})!`,
+                  )} to ${account} from ${signerAddress}!`,
                 });
               }
             }
