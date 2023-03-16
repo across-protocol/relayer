@@ -207,7 +207,7 @@ export class MultiCallerClient {
     }
 
     const mrkdwn: string[] = [];
-    let callData: Multicall2Call[] = transactions.map((txn, idx) => {
+    const callData: Multicall2Call[] = transactions.map((txn, idx) => {
       mrkdwn.push(`\n  *txn. ${idx + 1}:* ${txn.message ?? "No message"}: ${txn.mrkdwn ?? "No markdown"}`);
       return {
         target: txn.contract.address,
@@ -215,8 +215,6 @@ export class MultiCallerClient {
       };
     });
 
-    // There should not be any duplicate call data blobs within this array. If there are there is likely an error.
-    callData = [...new Set(callData)];
     this.logger.debug({
       at: "MultiCallerClient",
       message: `Made multisender bundle for ${getNetworkName(chainId)}.`,
