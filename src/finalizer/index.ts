@@ -3,7 +3,6 @@ import {
   config,
   startupLogLevel,
   processEndPollingLoop,
-  Contract,
   getNetworkName,
   etherscanLink,
   getBlockForTimestamp,

@@ -7,8 +7,9 @@ import {
 } from "../src/clients";
 import { TransactionSimulationResult } from "../src/utils";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
-import { CHAIN_ID_TEST_LIST as chainIds, hre } from "./constants";
-import { createSpyLogger, Contract, expect, randomAddress, winston, toBN, ethers } from "./utils";
+import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
+import { createSpyLogger, Contract, expect, randomAddress, winston, toBN, ethers, smock } from "./utils";
+import { getAbi } from "@uma/contracts-node";
 
 class MockedMultiCallerClient extends MultiCallerClient {
   public ignoredSimulationFailures: TransactionSimulationResult[] = [];
@@ -298,13 +299,8 @@ describe("MultiCallerClient", async function () {
   });
 
   it("Correctly handles unpermissioned transactions", async function () {
-    const _multisender = new ethers.ContractFactory(
-      hre.artifacts.readArtifactSync("Multicall3").abi,
-      hre.artifacts.readArtifactSync("Multicall3").bytecode,
-      (await ethers.getSigners())[0]
-    );
-    const multisender = await _multisender.deploy();
-    const multicallerWithMultisend = new MockedMultiCallerClient(spyLogger, {}, multisender);
+    const fakeMultisender = await smock.fake(getAbi("Multicall2"), { address: randomAddress() });
+    const multicallerWithMultisend = new MockedMultiCallerClient(spyLogger, {}, fakeMultisender as unknown as Contract);
 
     // Can't pass any transactions to multisender bundler that are permissioned or different chains:
     expect(() =>
@@ -361,7 +357,7 @@ describe("MultiCallerClient", async function () {
     ];
     let multisendTransaction = multicallerWithMultisend.buildMultiSenderBundle(unpermissionedTransactions);
     expect(multisendTransaction.method).to.equal("aggregate");
-    expect(multisendTransaction.contract.address).to.equal(multisender.address);
+    expect(multisendTransaction.contract.address).to.equal(fakeMultisender.address);
     expect(multisendTransaction.args[0].length).to.equal(1);
     expect(multisendTransaction.args[0][0].target).to.equal(address);
     expect(multisendTransaction.args[0][0].callData).to.equal(encodeFunctionData("test()", []));
@@ -379,7 +375,7 @@ describe("MultiCallerClient", async function () {
     } as AugmentedTransaction);
     multisendTransaction = multicallerWithMultisend.buildMultiSenderBundle(unpermissionedTransactions);
     expect(multisendTransaction.method).to.equal("aggregate");
-    expect(multisendTransaction.contract.address).to.equal(multisender.address);
+    expect(multisendTransaction.contract.address).to.equal(fakeMultisender.address);
     expect(multisendTransaction.args[0].length).to.equal(2);
     expect(multisendTransaction.args[0][1].target).to.equal(secondAddress);
     expect(multisendTransaction.args[0][1].callData).to.equal(encodeFunctionData("test2(uint256)", [11]));

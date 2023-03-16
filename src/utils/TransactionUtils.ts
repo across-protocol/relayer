@@ -1,7 +1,8 @@
 import { AugmentedTransaction } from "../clients";
-import { winston, Contract, getContractInfoFromAddress, fetch, ethers, hre, Wallet } from "../utils";
+import { winston, Contract, getContractInfoFromAddress, fetch, ethers, Wallet } from "../utils";
 import { multicall3Addresses } from "../common";
 import { toBNWei, BigNumber, toBN, toGWei, TransactionResponse } from "../utils";
+import { getAbi } from "@uma/contracts-node";
 require("dotenv").config();
 
 export type TransactionSimulationResult = {
@@ -25,8 +26,11 @@ const txnRetryable = (error?: unknown): boolean => {
 };
 
 export function getMultisender(chainId: number, baseSigner: Wallet): Contract | undefined {
-  if (!multicall3Addresses[chainId] || !this.baseSigner) return undefined;
-  return new Contract(multicall3Addresses[chainId], hre.artifacts.readArtifactSync("Multicall3"), baseSigner);
+  if (!multicall3Addresses[chainId] || !baseSigner) return undefined;
+  // The Multicall2 ABI is backwards compatible with the Multicall3 ABI and we call
+  // aggregate() on it which exists on both contracts. Once Multicall3 is exported by @uma/contracts-node
+  // we can import that ABI instead and get access to the new functions.
+  return new Contract(multicall3Addresses[chainId], getAbi("Multicall2"), baseSigner);
 }
 
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
