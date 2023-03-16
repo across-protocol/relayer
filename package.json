@@ -23,7 +23,7 @@
     "@maticnetwork/maticjs": "^3.4.0-beta.0",
     "@maticnetwork/maticjs-ethers": "^1.0.2",
     "@uma/common": "^2.30.1",
-    "@uma/contracts-node": "^0.3.1",
+    "@uma/contracts-node": "^0.4.12",
     "@uma/financial-templates-lib": "^2.32.1",
     "@uma/sdk": "^0.25.0",
     "async": "^3.2.4",

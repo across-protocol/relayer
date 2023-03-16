@@ -4125,25 +4125,15 @@
   resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.4.6.tgz#470d5fd2fd3b7fd2a622d4d56989a7b98915ca12"
   integrity sha512-DOdZCEjNJFhVnXI0ufOT6aBMWHK4GglTseYHCRSi8qIGCqblNc2cwehz0bpnbowv7441JVN7QxEy0LsmHeMcFw==
 
-"@uma/contracts-node@^0.3.1":
-  version "0.3.2"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.2.tgz#884b00b2c6bf983c9f136d5f8a0749c5ff4e08cd"
-  integrity sha512-Ncl7Kv2nxuY/wV5oczH2Nf6XCS7dJLad9DlzMI3jwPMPU98YT8ChHydcDe6ZiL0SAVTg7FgpIyh7lX0B7nV9Aw==
-
-"@uma/contracts-node@^0.3.18":
+"@uma/contracts-node@^0.3.18", "@uma/contracts-node@^0.3.9":
   version "0.3.18"
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.18.tgz#40e053ff6bc66f7ae7ce6c5d203a3200cf9ed928"
   integrity sha512-ENFYjvVnyplKZF1G5YxOfpm0Ob1nOKtKcwX+TtfOiQGLNMVed8azV8tTSAWlJG/5SZkekX9Y5xZSP5YfcmMj0A==
 
-"@uma/contracts-node@^0.3.9":
-  version "0.3.9"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.9.tgz#d3b64080f47cda4f1d8aacaaddebadbb880137a4"
-  integrity sha512-fvHofU/9Zg35snmuayQHumlvJz5f0omsxNgckLHWEFzKXb7RLKBSJRksxeH1NQEthia6jc1UQBnn6T2lucXJMw==
-
-"@uma/contracts-node@^0.4.6":
-  version "0.4.6"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.6.tgz#e0638eab28ab7b5808088fec347f53377b284f3d"
-  integrity sha512-B8g5rw7ZnV3D2z12HBUTLtFO1ylGp2KqBphrOEmR1IfxULn1rYdy3e5H5yMxSEVq/nNgwQMrU+JnMSGXO7GTSQ==
+"@uma/contracts-node@^0.4.12", "@uma/contracts-node@^0.4.6":
+  version "0.4.12"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.12.tgz#c445b6db82d36f1eab5d7aa6b212cc97a799e9ec"
+  integrity sha512-oDbNSlM81Zrx6V5OTsJTpi0QJ8z89CtXN5HabHcsQ8mvGqR+Hu6MCa5aHzRxxnB02MxtnxY2o0OT3Gdn0oRkcw==
 
 "@uma/core@^2.18.0":
   version "2.26.0"
