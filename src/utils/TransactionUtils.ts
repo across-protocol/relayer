@@ -27,10 +27,7 @@ const txnRetryable = (error?: unknown): boolean => {
 
 export function getMultisender(chainId: number, baseSigner: Wallet): Contract | undefined {
   if (!multicall3Addresses[chainId] || !baseSigner) return undefined;
-  // The Multicall2 ABI is backwards compatible with the Multicall3 ABI and we call
-  // aggregate() on it which exists on both contracts. Once Multicall3 is exported by @uma/contracts-node
-  // we can import that ABI instead and get access to the new functions.
-  return new Contract(multicall3Addresses[chainId], getAbi("Multicall2"), baseSigner);
+  return new Contract(multicall3Addresses[chainId], getAbi("Multicall3"), baseSigner);
 }
 
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers

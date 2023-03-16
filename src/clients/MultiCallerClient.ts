@@ -143,7 +143,7 @@ export class MultiCallerClient {
       this.buildMultiCallBundles(_txns, this.chunkSize[chainId])
     );
 
-    // Simulate the final bundle that will be sent via Multicall2 or Multicaller. This is an extra sanity check
+    // Simulate the final bundle that will be sent via Multicall3 or Multicaller. This is an extra sanity check
     // that gives us confidence even if any of the individual transactions are allowed to fail in individual
     // simulations. The batched transactions should always succeed in simulation.
     const batchTxns = await this.txnClient.simulate(txnRequests);

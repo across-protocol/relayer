@@ -299,7 +299,7 @@ describe("MultiCallerClient", async function () {
   });
 
   it("Correctly handles unpermissioned transactions", async function () {
-    const fakeMultisender = await smock.fake(getAbi("Multicall2"), { address: randomAddress() });
+    const fakeMultisender = await smock.fake(getAbi("Multicall3"), { address: randomAddress() });
     const multicallerWithMultisend = new MockedMultiCallerClient(spyLogger, {}, fakeMultisender as unknown as Contract);
 
     // Can't pass any transactions to multisender bundler that are permissioned or different chains:
