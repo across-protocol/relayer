@@ -4,6 +4,7 @@ import { ethers, ZERO_ADDRESS } from "../utils";
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
   balancesEnabled: boolean;
+  refillBalancesEnabled: boolean;
   reportEnabled: boolean;
   stuckRebalancesEnabled: boolean;
   utilizationEnabled: boolean; // Monitors pool utilization ratio
@@ -24,6 +25,14 @@ export class MonitorConfig extends CommonConfig {
   readonly whitelistedRelayers: string[];
   readonly knownV1Addresses: string[];
   readonly botModes: BotModes;
+  readonly refillEnabledBalances: {
+    chainId: number;
+    isHubPool: boolean;
+    account: string;
+    token: string;
+    target: number;
+    trigger: number;
+  }[] = [];
   readonly monitoredBalances: {
     chainId: number;
     warnThreshold: number | null;
@@ -49,11 +58,14 @@ export class MonitorConfig extends CommonConfig {
       KNOWN_V1_ADDRESSES,
       BALANCES_ENABLED,
       MONITORED_BALANCES,
+      REFILL_BALANCES,
+      REFILL_BALANCES_ENABLED,
       STUCK_REBALANCES_ENABLED,
     } = env;
 
     this.botModes = {
       balancesEnabled: BALANCES_ENABLED === "true",
+      refillBalancesEnabled: REFILL_BALANCES_ENABLED === "true",
       reportEnabled: MONITOR_REPORT_ENABLED === "true",
       utilizationEnabled: UTILIZATION_ENABLED === "true",
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
@@ -68,6 +80,28 @@ export class MonitorConfig extends CommonConfig {
     // Used to monitor balances, activities, etc. from the specified relayers.
     this.monitoredRelayers = parseAddressesOptional(MONITORED_RELAYERS);
     this.knownV1Addresses = parseAddressesOptional(KNOWN_V1_ADDRESSES);
+
+    // Used to send tokens if available in wallet to balances under target balances.
+    this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(
+      ({ chainId, account, isHubPool, target, trigger, token }) => {
+        if (Number.isNaN(target) || target <= 0) throw new Error("target must be > 0");
+        if (Number.isNaN(trigger) || trigger <= 0) throw new Error("target must be > 0");
+        if (trigger >= target) throw new Error("trigger must be < target");
+        return {
+          // Required fields:
+          chainId,
+          account,
+          target,
+          trigger,
+          // Optional fields that will set to defaults:
+          isHubPool: Boolean(isHubPool),
+          token: !token || token === "0x0" || token === ZERO_ADDRESS ? ZERO_ADDRESS : token,
+        };
+      }
+    );
+    // Should only have 1 HubPool.
+    if (Object.values(this.refillEnabledBalances).filter((x) => x.isHubPool).length > 1)
+      throw new Error("REFILL_BALANCES should only have 1 account marked isHubPool as true");
 
     // Default pool utilization threshold at 90%.
     this.utilizationThreshold = UTILIZATION_THRESHOLD ? Number(UTILIZATION_THRESHOLD) : 90;

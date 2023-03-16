@@ -1,3 +1,5 @@
+import { BalanceAllocator } from "../clients";
+import { spokePoolClientsToProviders } from "../common";
 import {
   BalanceType,
   BundleAction,
@@ -21,6 +23,7 @@ import {
   etherscanLinks,
   getNativeTokenSymbol,
   getNetworkName,
+  getSigner,
   getUnfilledDeposits,
   providers,
   toBN,
@@ -50,6 +53,8 @@ interface CategorizedTransfers {
   other: TokenTransfer[];
 }
 
+type BalanceRequest = { chainId: number; token: string; account: string };
+
 export class Monitor {
   // Block range to search is only defined on calling update().
   private hubPoolStartingBlock: number | undefined = undefined;
@@ -57,6 +62,7 @@ export class Monitor {
   private spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
   private balanceCache: { [chainId: number]: { [token: string]: { [account: string]: BigNumber } } } = {};
   private decimals: { [chainId: number]: { [token: string]: number } } = {};
+  private balanceAllocator: BalanceAllocator;
   public monitorChains: number[];
 
   public constructor(
@@ -68,6 +74,7 @@ export class Monitor {
     for (const chainId of this.monitorChains) {
       this.spokePoolsBlocks[chainId] = { startingBlock: undefined, endingBlock: undefined };
     }
+    this.balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(clients.spokePoolClients));
   }
 
   public async update() {
@@ -296,7 +303,7 @@ export class Monitor {
     const decimalValues = await this._getDecimals(monitoredBalances);
     const alerts = (
       await Promise.all(
-        this.monitorConfig.monitoredBalances.map(
+        monitoredBalances.map(
           async (
             { chainId, token, account, warnThreshold, errorThreshold },
             i
@@ -337,6 +344,147 @@ export class Monitor {
         "Some balance(s) are below the configured threshold!\n" + alerts.map(({ text }) => text).join("\n");
       this.logger[maxAlertlevel]({ at: "Monitor", message: "Balance(s) below threshold", mrkdwn: mrkdwn });
     }
+  }
+
+  /**
+   * @notice Checks if any accounts on refill balances list are under their target, if so tries to refill them.
+   * This functionality compliments the report-only mode of `checkBalances`. Its expected that some accounts are
+   * listed in `monitorBalances`. These accounts might also be listed in `refillBalances` with a higher target than
+   * the `monitorBalances` target. This function will ensure that `checkBalances` will rarely alert for those
+   * balances.
+   */
+  async refillBalances() {
+    const { refillEnabledBalances } = this.monitorConfig;
+
+    // Check for current balances.
+    const currentBalances = await this._getBalances(refillEnabledBalances);
+    const decimalValues = await this._getDecimals(refillEnabledBalances);
+    this.logger.debug({
+      at: "Monitor#refillBalances",
+      message: "Checking balances for refilling",
+      currentBalances: refillEnabledBalances.map(({ chainId, token, account, target }, i) => {
+        return {
+          chainId,
+          token,
+          account,
+          currentBalance: currentBalances[i].toString(),
+          target: ethers.utils.parseUnits(target.toString(), decimalValues[i]),
+        };
+      }),
+    });
+
+    // Compare current balances with triggers and send tokens if signer has enough balance.
+    const signerAddress = await this.clients.hubPoolClient.hubPool.signer.getAddress();
+    await Promise.all(
+      refillEnabledBalances.map(async ({ chainId, isHubPool, token, account, target, trigger }, i) => {
+        const currentBalance = currentBalances[i];
+        const decimals = decimalValues[i];
+        const balanceTrigger = ethers.utils.parseUnits(trigger.toString(), decimals);
+        const isBelowTrigger = currentBalance.lt(balanceTrigger);
+        if (isBelowTrigger) {
+          // Fill balance back to target, not trigger.
+          const balanceTarget = ethers.utils.parseUnits(target.toString(), decimals);
+          const deficit = balanceTarget.sub(currentBalance);
+          const canRefill = await this.balanceAllocator.requestBalanceAllocation(
+            chainId,
+            [token],
+            signerAddress,
+            deficit
+          );
+          if (canRefill) {
+            this.logger.debug({
+              at: "Monitor#refillBalances",
+              message: "Balance below trigger and can refill to target",
+              from: signerAddress,
+              to: account,
+              balanceTrigger,
+              balanceTarget,
+              deficit,
+              token,
+              chainId,
+            });
+            // There are three cases:
+            // 1. The account is the HubPool. In which case we need to call a special function to load ETH into it.
+            // 2. The account is not a HubPool and we want to load ETH.
+            if (isHubPool) {
+              // Note: We ignore the `token` if the account is HubPool because we can't call the method with other tokens.
+              this.clients.multiCallerClient.enqueueTransaction({
+                contract: this.clients.hubPoolClient.hubPool,
+                chainId: this.clients.hubPoolClient.chainId,
+                method: "loadEthForL2Calls",
+                args: [],
+                message: `Loaded ${ethers.utils.formatUnits(
+                  deficit,
+                  decimals
+                )} ETH in HubPool 🫡 (sender: ${signerAddress})!`,
+                mrkdwn: `Loaded ${ethers.utils.formatUnits(
+                  deficit,
+                  decimals
+                )} ETH in HubPool 🫡 (sender: ${signerAddress})!`,
+                value: deficit,
+              });
+            } else {
+              if (token === ZERO_ADDRESS) {
+                // Note: We don't multicall sending ETH as its not a contract call.
+                const tx = await (
+                  await this.clients.spokePoolClients[chainId].spokePool.signer
+                ).sendTransaction({ to: account, value: deficit });
+                const receipt = await tx.wait();
+                this.logger.info({
+                  at: "Monitor#refillBalances",
+                  message: `Sent ${ethers.utils.formatUnits(
+                    deficit,
+                    decimals
+                  )} ETH to ${account} 🚀 (sender: ${signerAddress})!`,
+                  transactionHash: receipt.transactionHash,
+                });
+              } else {
+                const erc20 = new Contract(
+                  "ERC20",
+                  ERC20.abi,
+                  this.clients.spokePoolClients[chainId].spokePool.provider
+                );
+                const symbol = await erc20.symbol();
+                this.clients.multiCallerClient.enqueueTransaction({
+                  contract: new Contract("ERC20", ERC20.abi, this.clients.spokePoolClients[chainId].spokePool.provider),
+                  chainId: chainId,
+                  method: "transfer",
+                  args: [account, deficit],
+                  message: `Sent ${ethers.utils.formatUnits(deficit, decimals)} ${symbol} on ${getNetworkName(
+                    chainId
+                  )} to ${account} 🫡 (sender: ${signerAddress})!`,
+                  mrkdwn: `Sent ${ethers.utils.formatUnits(deficit, decimals)} ${symbol} on ${getNetworkName(
+                    chainId
+                  )} to ${account} 🫡 (sender: ${signerAddress})!`,
+                });
+              }
+            }
+          } else {
+            this.logger.warn({
+              at: "Monitor#refillBalances",
+              message: "Cannot refill balance to target",
+              from: signerAddress,
+              to: account,
+              balanceTrigger,
+              balanceTarget,
+              deficit,
+              token,
+              chainId,
+            });
+          }
+        } else {
+          this.logger.debug({
+            at: "Monitor#refillBalances",
+            message: "Balance is above trigger",
+            account,
+            balanceTrigger,
+            currentBalance: currentBalance.toString(),
+            token,
+            chainId,
+          });
+        }
+      })
+    );
   }
 
   // We approximate stuck rebalances by checking if there are still any pending cross chain transfers to any SpokePools
@@ -743,9 +891,7 @@ export class Monitor {
   }
 
   // Returns balances from cache or from provider if there's a cache miss.
-  private async _getBalances(
-    balanceRequests: { chainId: number; token: string; account: string }[]
-  ): Promise<BigNumber[]> {
+  private async _getBalances(balanceRequests: BalanceRequest[]): Promise<BigNumber[]> {
     return await Promise.all(
       balanceRequests.map(async ({ chainId, token, account }) => {
         if (this.balanceCache[chainId]?.[token]?.[account]) return this.balanceCache[chainId][token][account];
