@@ -57,7 +57,7 @@ export async function finalize(
   const hubPoolClient = configStoreClient.hubPoolClient;
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
-  const multicall2 = getMultisender(1, hubPoolClient.hubPool.signer);
+  const multicall2 = getMultisender(1, hubSigner);
   const finalizationsToBatch: { callData: Multicall2Call[]; withdrawals: Withdrawal[] } = {
     callData: [],
     withdrawals: [],
