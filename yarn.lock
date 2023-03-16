@@ -790,7 +790,7 @@
     "@ethersproject/logger" "^5.0.8"
     "@ethersproject/properties" "^5.0.7"
 
-"@ethersproject/abstract-signer@5.7.0", "@ethersproject/abstract-signer@^5.7.0":
+"@ethersproject/abstract-signer@5.7.0", "@ethersproject/abstract-signer@^5.4.0", "@ethersproject/abstract-signer@^5.7.0":
   version "5.7.0"
   resolved "https://registry.yarnpkg.com/@ethersproject/abstract-signer/-/abstract-signer-5.7.0.tgz#13f4f32117868452191a4649723cb086d2b596b2"
   integrity sha512-a16V8bq1/Cz+TGCkE2OPMTOUDLS3grCpdjoJCYNnVBbdYEMSgKrU0+B90s8b6H+ByYTBZN7a3g76jdIJi7UfKQ==
@@ -1341,7 +1341,7 @@
     bech32 "1.1.4"
     ws "7.2.3"
 
-"@ethersproject/providers@5.7.2", "@ethersproject/providers@^5.4.5", "@ethersproject/providers@^5.7.0":
+"@ethersproject/providers@5.7.2", "@ethersproject/providers@^5.4.2", "@ethersproject/providers@^5.4.5", "@ethersproject/providers@^5.7.0":
   version "5.7.2"
   resolved "https://registry.yarnpkg.com/@ethersproject/providers/-/providers-5.7.2.tgz#f8b1a4f275d7ce58cf0a2eec222269a08beb18cb"
   integrity sha512-g34EWZ1WWAVgr4aptGlVBF8mhl3VWjv+8hoAnzStu8Ah22VHBsuGzP17eb6xDVRzw895G4W7vvx60lFFur/1Rg==
@@ -1854,20 +1854,6 @@
     google-auth-library "^7.14.0"
     retry-request "^4.2.2"
     teeny-request "^7.0.0"
-
-"@google-cloud/datastore@^6.6.0":
-  version "6.6.2"
-  resolved "https://registry.yarnpkg.com/@google-cloud/datastore/-/datastore-6.6.2.tgz#0240869f942350b194e8c2eea6588b83f20c412c"
-  integrity sha512-gQxSusM1gREtUogVqtl/KuoFrstYns8ZxY3guso2Mg2eJ+ygJwWdxXmG23T+aSbzkofh2OF3Mz0p3a+0F9KoPg==
-  dependencies:
-    "@google-cloud/promisify" "^2.0.0"
-    arrify "^2.0.1"
-    concat-stream "^2.0.0"
-    extend "^3.0.2"
-    google-gax "^2.24.1"
-    is "^3.3.0"
-    split-array-stream "^2.0.0"
-    stream-events "^1.0.5"
 
 "@google-cloud/datastore@^7.0.0":
   version "7.0.0"
@@ -4096,17 +4082,17 @@
   resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.3.18.tgz#dc6afcfa401c07d8d08be53eff4a97ca8eb06c79"
   integrity sha512-eneJdzpxe+UFAmZufL7MAnQ/gX1c9reU12iUpfcBcNscNDoQcHw82P4KTmzIQ2zqHvvnMmvE/uLOsZ5OXGGJBw==
 
-"@uma/contracts-frontend@^0.3.9":
-  version "0.3.9"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.3.9.tgz#c1c00192c52c432df1a9030920890ba4deb7b4ae"
-  integrity sha512-Tzt+XqUfGdLJslI5ewSiQJ/kRvQmE9E+PXayM190Otk5nInNvmjmF4yppPaZPoESz/uBTkmzEPf7i+xo6xldJw==
+"@uma/contracts-frontend@^0.4.12":
+  version "0.4.12"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.4.12.tgz#c92cd707201ca18ca91c55ff61f979afe7580bd2"
+  integrity sha512-e0gfqSJZOY8fHtSIvAIJr+JKX/70ductElJedTqgwEfeWn08l1u8aEecxET9uaVP3kbhVgSbQBbRH8BkxXJm4w==
 
 "@uma/contracts-frontend@^0.4.6":
   version "0.4.6"
   resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.4.6.tgz#470d5fd2fd3b7fd2a622d4d56989a7b98915ca12"
   integrity sha512-DOdZCEjNJFhVnXI0ufOT6aBMWHK4GglTseYHCRSi8qIGCqblNc2cwehz0bpnbowv7441JVN7QxEy0LsmHeMcFw==
 
-"@uma/contracts-node@^0.3.18", "@uma/contracts-node@^0.3.9":
+"@uma/contracts-node@^0.3.18":
   version "0.3.18"
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.18.tgz#40e053ff6bc66f7ae7ce6c5d203a3200cf9ed928"
   integrity sha512-ENFYjvVnyplKZF1G5YxOfpm0Ob1nOKtKcwX+TtfOiQGLNMVed8azV8tTSAWlJG/5SZkekX9Y5xZSP5YfcmMj0A==
@@ -4204,22 +4190,6 @@
     mocha "^8.3.0"
     node-fetch "^2.6.1"
 
-"@uma/sdk@^0.25.0":
-  version "0.25.0"
-  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.25.0.tgz#20b472fac51894fe4998c14e645044c98632eea1"
-  integrity sha512-if4zozUVxarIpzhvZkJX07UFW03Kggv8Tgb8IN7WBZ8YbNN5AII0j6lGXRn4dX/vamW6/q3r/bQS7defvp/weg==
-  dependencies:
-    "@google-cloud/datastore" "^6.6.0"
-    "@types/lodash-es" "^4.17.5"
-    "@uma/contracts-frontend" "^0.3.9"
-    "@uma/contracts-node" "^0.3.9"
-    axios "^0.24.0"
-    bn.js "^4.11.9"
-    decimal.js "^10.3.1"
-    highland "^2.13.5"
-    immer "^9.0.7"
-    lodash-es "^4.17.21"
-
 "@uma/sdk@^0.29.3":
   version "0.29.3"
   resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.29.3.tgz#5ce510b80285df42db8cea671c44c68f1b7cab7a"
@@ -4245,6 +4215,25 @@
     "@types/lodash-es" "^4.17.5"
     "@uma/contracts-frontend" "^0.4.6"
     "@uma/contracts-node" "^0.4.6"
+    axios "^0.24.0"
+    bluebird "^3.7.2"
+    bn.js "^4.11.9"
+    decimal.js "^10.3.1"
+    highland "^2.13.5"
+    immer "^9.0.7"
+    lodash-es "^4.17.21"
+
+"@uma/sdk@^0.32.7":
+  version "0.32.7"
+  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.32.7.tgz#f469729c68273d85cd1cc9e95900a529be97cf2a"
+  integrity sha512-4JTa+RJlvyeYluLPI+MsZpv4TlkJcwHqXNv6cAojyzhEumt270+4GHJ8i4GKkmBLyrkhmlSt1g21dCj/S3lYUA==
+  dependencies:
+    "@ethersproject/abstract-signer" "^5.4.0"
+    "@ethersproject/providers" "^5.4.2"
+    "@google-cloud/datastore" "^7.0.0"
+    "@types/lodash-es" "^4.17.5"
+    "@uma/contracts-frontend" "^0.4.12"
+    "@uma/contracts-node" "^0.4.12"
     axios "^0.24.0"
     bluebird "^3.7.2"
     bn.js "^4.11.9"
