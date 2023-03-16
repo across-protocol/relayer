@@ -82,23 +82,26 @@ export class MonitorConfig extends CommonConfig {
     this.knownV1Addresses = parseAddressesOptional(KNOWN_V1_ADDRESSES);
 
     // Used to send tokens if available in wallet to balances under target balances.
-    this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(
-      ({ chainId, account, isHubPool, target, trigger, token }) => {
-        if (Number.isNaN(target) || target <= 0) throw new Error("target must be > 0");
-        if (Number.isNaN(trigger) || trigger <= 0) throw new Error("target must be > 0");
-        if (trigger >= target) throw new Error("trigger must be < target");
-        return {
-          // Required fields:
-          chainId,
-          account,
-          target,
-          trigger,
-          // Optional fields that will set to defaults:
-          isHubPool: Boolean(isHubPool),
-          token: !token || token === "0x0" || token === ZERO_ADDRESS ? ZERO_ADDRESS : token,
-        };
-      }
-    );
+    if (REFILL_BALANCES) {
+      this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(
+        ({ chainId, account, isHubPool, target, trigger, token }) => {
+          if (Number.isNaN(target) || target <= 0) throw new Error("target must be > 0");
+          if (Number.isNaN(trigger) || trigger <= 0) throw new Error("target must be > 0");
+          if (trigger >= target) throw new Error("trigger must be < target");
+          return {
+            // Required fields:
+            chainId,
+            account,
+            target,
+            trigger,
+            // Optional fields that will set to defaults:
+            isHubPool: Boolean(isHubPool),
+            token: !token || token === "0x0" || token === ZERO_ADDRESS ? ZERO_ADDRESS : token,
+          };
+        }
+      );
+    }
+
     // Should only have 1 HubPool.
     if (Object.values(this.refillEnabledBalances).filter((x) => x.isHubPool).length > 1)
       throw new Error("REFILL_BALANCES should only have 1 account marked isHubPool as true");
