@@ -963,8 +963,7 @@ export class Dataworker {
     rootBundleId?: number
   ) {
     if (leaves.length === 0) return;
-    const chainId = leaves[0].destinationChainId;
-    if (chainId !== client.chainId) throw new Error("Leaf chainId does not match spoke pool client chainId");
+    const chainId = client.chainId;
 
     const sortedFills = client.getFills();
     const leavesWithLatestFills = leaves.map((leaf) => {
@@ -1566,8 +1565,7 @@ export class Dataworker {
     rootBundleId: number
   ) {
     if (leaves.length === 0) return;
-    const chainId = leaves[0].chainId;
-    if (chainId !== client.chainId) throw new Error("Leaf chainId does not match spoke pool client chainId");
+    const chainId = client.chainId;
     // Filter for leaves where the contract has the funding to send the required tokens.
     const fundedLeaves = (
       await Promise.all(
