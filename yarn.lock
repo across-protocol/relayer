@@ -77,10 +77,10 @@
     lodash.get "^4.4.2"
     superstruct "^0.15.4"
 
-"@arbitrum/sdk@^3.1.1":
-  version "3.1.1"
-  resolved "https://registry.yarnpkg.com/@arbitrum/sdk/-/sdk-3.1.1.tgz#f1cd96351dcae138ec8a6359926c1b1a81989463"
-  integrity sha512-nM97/qPIqJCa6xisZEiyWNKzhgBjlTeHeURu/yDF2r8OXfTV9oqfFlE3BtkcTZYzZXOlJsngMcISwRMXIKXbvQ==
+"@arbitrum/sdk@^3.1.2":
+  version "3.1.2"
+  resolved "https://registry.yarnpkg.com/@arbitrum/sdk/-/sdk-3.1.2.tgz#c1ded298778c141b6d8d0342a507a4f94af02757"
+  integrity sha512-QcS5t6GDCLyY+u0WaYPIjBd2U9hmDbzGc8gLMyiUxpP7w4bOWs6ZGBGUw2N6oLOMLI5IEq9ZbRZEC/Ejsy/URg==
   dependencies:
     "@ethersproject/address" "^5.0.8"
     "@ethersproject/bignumber" "^5.1.1"
