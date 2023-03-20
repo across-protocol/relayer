@@ -1171,11 +1171,11 @@ export class Dataworker {
     // First, execute mainnet pool rebalance leaves. Then try to execute any relayer refund and slow leaves for the
     // expected relayed root hash, then proceed with remaining pool rebalance leaves. This is an optimization that
     // takes advantage of the fact that mainnet transfers between HubPool and SpokePool are atomic.
-    const mainnetLeaf = unexecutedLeaves.find((leaf) => leaf.chainId === hubPoolChainId);
-    if (mainnetLeaf) {
+    const mainnetLeaves = unexecutedLeaves.filter((leaf) => leaf.chainId === hubPoolChainId);
+    if (mainnetLeaves.length > 0) {
       await this._executePoolRebalanceLeaves(
         spokePoolClients,
-        [mainnetLeaf],
+        mainnetLeaves,
         balanceAllocator,
         expectedTrees.poolRebalanceTree.tree,
         submitExecution
