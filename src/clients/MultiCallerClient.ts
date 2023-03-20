@@ -232,12 +232,20 @@ export class MultiCallerClient {
     } as AugmentedTransaction;
   }
 
-  buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
-    // Validate all transactions have the same chainId and target contract.
+  buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction[] {
+    // Split transactions by target contract if they are not all the same.
+    const targetContractAddresses = [...new Set(transactions.map((tx) => tx.contract.address))];
+    return targetContractAddresses.map((target) => {
+      return this._buildMultiCallBundle(transactions.filter((tx) => tx.contract.address === target));
+    });
+  }
+
+  _buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
+    // Validate all transactions have the same chainId.
     const { chainId, contract } = transactions[0];
     if (transactions.some((tx) => tx.contract.address !== contract.address || tx.chainId !== chainId)) {
       this.logger.error({
-        at: "MultiCallerClient#buildMultiCallBundle",
+        at: "MultiCallerClient#_buildMultiCallBundle",
         message: "Some transactions in the queue contain different target chain or contract address",
         transactions: transactions.map(({ contract, chainId }) => {
           return { target: getTarget(contract.address), chainId };
@@ -283,21 +291,30 @@ export class MultiCallerClient {
     // is for a contract that can't be multicalled, then this function will throw. This client should only be
     // used on contracts that extend Multicaller.
     if (this._getMultisender(chainId) === undefined) {
-      const txnChunks = lodash.chunk(txns, chunkSize);
-      return txnChunks.map((txnChunk) => {
-        // Don't wrap single transactions in a multicall.
-        return txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0];
-      });
+      // Sort transactions by contract address so we can reduce chance that we need to split them again
+      // to make Multicall work.
+      const txnChunks = lodash.chunk(
+        txns.sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
+        chunkSize
+      );
+      return txnChunks
+        .map((txnChunk) => {
+          // Don't wrap single transactions in a multicall.
+          return txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0];
+        })
+        .flat();
     } else {
       // We can support sending multiple transactions to different contracts via an external multisender
       // contract.
       const multicallerTxnChunks = lodash.chunk(
-        txns.filter((txn) => !txn.unpermissioned),
+        txns.filter((txn) => !txn.unpermissioned).sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
         chunkSize
       );
-      const multicallerTxnBundle = multicallerTxnChunks.map((txnChunk) => {
-        return txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0];
-      });
+      const multicallerTxnBundle = multicallerTxnChunks
+        .map((txnChunk) => {
+          return txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0];
+        })
+        .flat();
       const multisenderTxnChunks = lodash.chunk(
         txns.filter((txn) => txn.unpermissioned),
         chunkSize

@@ -227,7 +227,7 @@ describe("MultiCallerClient", async function () {
       }
 
       expect(txns.length).to.not.equal(0);
-      expect(() => multiCaller.buildMultiCallBundle(txns)).to.not.throw();
+      expect(() => multiCaller._buildMultiCallBundle(txns)).to.not.throw();
 
       const badTxn = txns.pop() as AugmentedTransaction;
       switch (badField) {
@@ -244,8 +244,50 @@ describe("MultiCallerClient", async function () {
       }
 
       txns.push(badTxn);
-      expect(() => multiCaller.buildMultiCallBundle(txns)).to.throw("Multicall bundle data mismatch");
+      expect(() => multiCaller._buildMultiCallBundle(txns)).to.throw("Multicall bundle data mismatch");
     }
+  });
+
+  it("buildMultiCallBundle can handle transactions to different target contracts", async function () {
+    const chainId = chainIds[0];
+    const txns = [
+      {
+        chainId: chainId,
+        contract: {
+          address,
+          interface: { encodeFunctionData },
+        } as Contract,
+        method: "test3",
+        args: ["3"],
+        value: toBN(1),
+        message: `Test3 multicall candidate on chain ${chainId}`,
+      },
+      {
+        chainId: chainId,
+        contract: {
+          address,
+          interface: { encodeFunctionData },
+        } as Contract,
+        method: "test2",
+        args: ["2"],
+        value: toBN(0),
+        message: `Test2 multicall candidate on chain ${chainId}`,
+      },
+      {
+        chainId: chainId,
+        contract: {
+          address: randomAddress(),
+          interface: { encodeFunctionData },
+        } as Contract,
+        method: "test1",
+        args: ["1"],
+        message: `Test1 multicall candidate on chain ${chainId}`,
+      },
+    ] as AugmentedTransaction[];
+
+    // Should return one AugmentedTransaction per unique target, so two in total.
+    expect(() => multiCaller.buildMultiCallBundle(txns)).to.not.throw();
+    expect(multiCaller.buildMultiCallBundle(txns).length).to.equal(2);
   });
 
   it("Respects multicall bundle chunk size configurations", async function () {
