@@ -3258,7 +3258,7 @@
     "@typescript-eslint/types" "4.33.0"
     eslint-visitor-keys "^2.0.0"
 
-"@uma/common@^2.17.0", "@uma/common@^2.19.0", "@uma/common@^2.28.0", "@uma/common@^2.28.4", "@uma/common@^2.29.1", "@uma/common@^2.31.0":
+"@uma/common@^2.17.0", "@uma/common@^2.19.0", "@uma/common@^2.28.0", "@uma/common@^2.28.4", "@uma/common@^2.31.0":
   version "2.31.0"
   resolved "https://registry.yarnpkg.com/@uma/common/-/common-2.31.0.tgz#826f12a713a813ce5735a9a74f743414cc57b62c"
   integrity sha512-F/0SblGAdsfqwxA259PQ+ST+UEARbjZiV8vZZBCxFIaoJqdpUEeay+xC0yQjI5iOAQU/Gmrcvd/DgBbkRRtURw==
@@ -3299,25 +3299,20 @@
   resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.3.18.tgz#dc6afcfa401c07d8d08be53eff4a97ca8eb06c79"
   integrity sha512-eneJdzpxe+UFAmZufL7MAnQ/gX1c9reU12iUpfcBcNscNDoQcHw82P4KTmzIQ2zqHvvnMmvE/uLOsZ5OXGGJBw==
 
-"@uma/contracts-frontend@^0.4.12":
-  version "0.4.12"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.4.12.tgz#c92cd707201ca18ca91c55ff61f979afe7580bd2"
-  integrity sha512-e0gfqSJZOY8fHtSIvAIJr+JKX/70ductElJedTqgwEfeWn08l1u8aEecxET9uaVP3kbhVgSbQBbRH8BkxXJm4w==
-
-"@uma/contracts-frontend@^0.4.6":
-  version "0.4.6"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.4.6.tgz#470d5fd2fd3b7fd2a622d4d56989a7b98915ca12"
-  integrity sha512-DOdZCEjNJFhVnXI0ufOT6aBMWHK4GglTseYHCRSi8qIGCqblNc2cwehz0bpnbowv7441JVN7QxEy0LsmHeMcFw==
+"@uma/contracts-frontend@^0.4.13":
+  version "0.4.13"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.4.13.tgz#742b1a3a17888efa96bd766006465cdb7845c50c"
+  integrity sha512-inCUtvRiF1HDxGALMFaFrD72CgS1wZPdYpdvXyeZy/XAzrg7QLRNAWJrlR4mfWtHyK01a/ZqiVarwLVEy53hZA==
 
 "@uma/contracts-node@^0.3.18":
   version "0.3.18"
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.18.tgz#40e053ff6bc66f7ae7ce6c5d203a3200cf9ed928"
   integrity sha512-ENFYjvVnyplKZF1G5YxOfpm0Ob1nOKtKcwX+TtfOiQGLNMVed8azV8tTSAWlJG/5SZkekX9Y5xZSP5YfcmMj0A==
 
-"@uma/contracts-node@^0.4.12", "@uma/contracts-node@^0.4.6":
-  version "0.4.12"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.12.tgz#c445b6db82d36f1eab5d7aa6b212cc97a799e9ec"
-  integrity sha512-oDbNSlM81Zrx6V5OTsJTpi0QJ8z89CtXN5HabHcsQ8mvGqR+Hu6MCa5aHzRxxnB02MxtnxY2o0OT3Gdn0oRkcw==
+"@uma/contracts-node@^0.4.12", "@uma/contracts-node@^0.4.13":
+  version "0.4.13"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.13.tgz#448153a7fb772aba8d337bac415966bf345b97f3"
+  integrity sha512-rfDgYLnOSTmJi/nsi2NHTFM8hHnhmuKXfikXE5HknRphI8+4Zh/HT4n33njwBHrIOHechols3rXxQpm8dsKBTw==
 
 "@uma/core@^2.18.0":
   version "2.26.0"
@@ -3365,18 +3360,18 @@
     "@uniswap/v3-core" "^1.0.0-rc.2"
     "@uniswap/v3-periphery" "^1.0.0-beta.23"
 
-"@uma/financial-templates-lib@^2.32.1":
-  version "2.32.1"
-  resolved "https://registry.yarnpkg.com/@uma/financial-templates-lib/-/financial-templates-lib-2.32.1.tgz#e5118c80bd4696dd16335c5019f6a303aba431fb"
-  integrity sha512-KGd4vXj7NvV0/lh9kLqzUFFrZfBM+5dgXq6XfyawrStCnuacGTYnIWZ5iF1DZIBVDYnzzJe4mA0ZfMKK2gLA+w==
+"@uma/financial-templates-lib@^2.32.8":
+  version "2.32.8"
+  resolved "https://registry.yarnpkg.com/@uma/financial-templates-lib/-/financial-templates-lib-2.32.8.tgz#dbd66ac3a5fb6ae59f6c29e0b0eda0a7f90a68af"
+  integrity sha512-KgZZPIX398XIpDheMPGrRgNgBqbcbNM1eotyie5C54CihZ9IRLJ0cHHTpnrKe0ufm3rXDw4TDqbYKb2tAr051w==
   dependencies:
     "@ethersproject/bignumber" "^5.4.2"
     "@google-cloud/logging-winston" "^4.1.1"
     "@google-cloud/trace-agent" "^5.1.6"
     "@pagerduty/pdjs" "^2.2.4"
-    "@uma/common" "^2.29.1"
-    "@uma/contracts-node" "^0.4.6"
-    "@uma/sdk" "^0.32.1"
+    "@uma/common" "^2.31.0"
+    "@uma/contracts-node" "^0.4.13"
+    "@uma/sdk" "^0.32.8"
     "@uniswap/sdk" "^2.0.5"
     bluebird "^3.7.2"
     bn.js "^4.11.9"
@@ -3423,34 +3418,17 @@
     immer "^9.0.7"
     lodash-es "^4.17.21"
 
-"@uma/sdk@^0.32.1":
-  version "0.32.1"
-  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.32.1.tgz#c5ca68ec5d80adabdaad6462878cb86223de2d02"
-  integrity sha512-hTcNnxjN59XLEtdf5W+WcOL55VpCd0FZd5G5h2pEGEhds6YAwtmxIJrM8G7FJHnQENw27BHzZmIKIkkwDc+/Cw==
-  dependencies:
-    "@google-cloud/datastore" "^7.0.0"
-    "@types/lodash-es" "^4.17.5"
-    "@uma/contracts-frontend" "^0.4.6"
-    "@uma/contracts-node" "^0.4.6"
-    axios "^0.24.0"
-    bluebird "^3.7.2"
-    bn.js "^4.11.9"
-    decimal.js "^10.3.1"
-    highland "^2.13.5"
-    immer "^9.0.7"
-    lodash-es "^4.17.21"
-
-"@uma/sdk@^0.32.7":
-  version "0.32.7"
-  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.32.7.tgz#f469729c68273d85cd1cc9e95900a529be97cf2a"
-  integrity sha512-4JTa+RJlvyeYluLPI+MsZpv4TlkJcwHqXNv6cAojyzhEumt270+4GHJ8i4GKkmBLyrkhmlSt1g21dCj/S3lYUA==
+"@uma/sdk@^0.32.7", "@uma/sdk@^0.32.8":
+  version "0.32.8"
+  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.32.8.tgz#239f9990ea44e24cb5e7a0c51542fb65ba61747e"
+  integrity sha512-L6T4qlZeS3Af8lNVsq2o1YadtYN75X0NFk7sERvQaenk61jnFW8bHCAqfZwdkEjeQztlA4Jt3AYfY5hyGihOeg==
   dependencies:
     "@ethersproject/abstract-signer" "^5.4.0"
     "@ethersproject/providers" "^5.4.2"
     "@google-cloud/datastore" "^7.0.0"
     "@types/lodash-es" "^4.17.5"
-    "@uma/contracts-frontend" "^0.4.12"
-    "@uma/contracts-node" "^0.4.12"
+    "@uma/contracts-frontend" "^0.4.13"
+    "@uma/contracts-node" "^0.4.13"
     axios "^0.24.0"
     bluebird "^3.7.2"
     bn.js "^4.11.9"
@@ -4947,12 +4925,7 @@ bn.js@^4.0.0, bn.js@^4.1.0, bn.js@^4.10.0, bn.js@^4.11.0, bn.js@^4.11.6, bn.js@^
   resolved "https://registry.yarnpkg.com/bn.js/-/bn.js-4.12.0.tgz#775b3f278efbb9718eec7361f483fb36fbbfea88"
   integrity sha512-c98Bf3tPniI+scsdk237ku1Dc3ujXQTSgyiPUDEOe7tRkhrqridvh8klBv0HCEso1OLOYcHuCv/cS6DNxKH+ZA==
 
-bn.js@^5.0.0, bn.js@^5.1.1, bn.js@^5.1.2, bn.js@^5.1.3, bn.js@^5.2.0:
-  version "5.2.0"
-  resolved "https://registry.yarnpkg.com/bn.js/-/bn.js-5.2.0.tgz#358860674396c6997771a9d051fcc1b57d4ae002"
-  integrity sha512-D7iWRBvnZE8ecXiLj/9wbxH7Tk79fAh8IHaTNq1RWRixsS02W+5qS+iE9yq6RYl0asXx5tw0bLhmT5pIfbSquw==
-
-bn.js@^5.2.1:
+bn.js@^5.0.0, bn.js@^5.1.1, bn.js@^5.1.2, bn.js@^5.1.3, bn.js@^5.2.0, bn.js@^5.2.1:
   version "5.2.1"
   resolved "https://registry.yarnpkg.com/bn.js/-/bn.js-5.2.1.tgz#0bc527a6a0d18d0aa8d5b0538ce4a77dccfa7b70"
   integrity sha512-eXRvHzWyYPBuB4NBy0cmYQjGitUrtqwbvlzP3G6VFnNRbsZQIxQ10PbKKHt8gZ/HW/D/747aDl+QkDqg3KQLMQ==
