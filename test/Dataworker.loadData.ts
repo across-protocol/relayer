@@ -9,6 +9,7 @@ import {
   assertPromiseError,
   lastSpyLogIncludes,
   spyLogIncludes,
+  deepEqualsWithBigNumber,
 } from "./utils";
 import { SignerWithAddress, buildSlowRelayTree, enableRoutesOnHubPool } from "./utils";
 import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, buildSlowFill } from "./utils";
@@ -606,7 +607,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     const slowFill3 = await buildSlowFill(spokePool_1, fill3, depositor, []);
     await updateAllClients();
     const data5 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(3), spokePoolClients);
-    expect(data5.fillsToRefund).to.deep.equal({
+    const expectedData5 = {
       [slowFill3.destinationChainId]: {
         [erc20_1.address]: {
           fills: [slowFill3], // Slow fill gets added to fills list
@@ -621,14 +622,15 @@ describe("Dataworker: Load data used in all functions", async function () {
           realizedLpFees: getRealizedLpFeeForFills([fill1, fill3]),
         },
       },
-    });
+    };
+    expect(deepEqualsWithBigNumber(data5.fillsToRefund, expectedData5)).to.be.true;
 
     // Speed up relays are included. Re-use the same fill information
     const fill4 = await buildModifiedFill(spokePool_2, depositor, relayer, fill1, 2, 0.1);
     expect(fill4.totalFilledAmount.gt(fill4.fillAmount), "speed up fill didn't match original deposit").to.be.true;
     await updateAllClients();
     const data6 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(4), spokePoolClients);
-    expect(data6.fillsToRefund).to.deep.equal({
+    const expectedData6 = {
       [slowFill3.destinationChainId]: {
         [erc20_1.address]: {
           fills: [slowFill3],
@@ -643,7 +645,8 @@ describe("Dataworker: Load data used in all functions", async function () {
           realizedLpFees: getRealizedLpFeeForFills([fill1, fill3, fill4]),
         },
       },
-    });
+    };
+    expect(deepEqualsWithBigNumber(data6.fillsToRefund, expectedData6)).to.be.true;
   });
   it("Returns deposits", async function () {
     await updateAllClients();
