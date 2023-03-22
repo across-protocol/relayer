@@ -11,7 +11,7 @@ export type TransactionSimulationResult = {
 
 type EthersError = Error & {
   code: string;
-  params: Record<any, any>;
+  reason: string;
 };
 
 const isEthersError = (error?: unknown): error is EthersError =>
