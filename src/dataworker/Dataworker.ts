@@ -1268,11 +1268,11 @@ export class Dataworker {
               await Promise.all(
                 leaf.netSendAmounts.map(async (amount, i) => {
                   if (amount.gt(0)) {
-                    await balanceAllocator.addBalance(
+                    await balanceAllocator.addUsed(
                       leaf.chainId,
                       leaf.l1Tokens[i],
                       spokePoolClients[leaf.chainId].spokePool.address,
-                      amount
+                      amount.mul(-1)
                     );
                   }
                 })
@@ -1598,11 +1598,11 @@ export class Dataworker {
           } else {
             // If mainnet leaf, then allocate balance to the HubPool since it will be atomically transferred.
             if (leaf.chainId === this.clients.hubPoolClient.chainId && leaf.amountToReturn.gt(0)) {
-              await balanceAllocator.addBalance(
+              await balanceAllocator.addUsed(
                 leaf.chainId,
                 leaf.l2TokenAddress,
                 this.clients.hubPoolClient.hubPool.address,
-                leaf.amountToReturn
+                leaf.amountToReturn.mul(-1)
               );
             }
           }
