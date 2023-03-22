@@ -402,6 +402,7 @@ export class Monitor {
               deficit,
               token,
               chainId,
+              isHubPool,
             });
             // There are three cases:
             // 1. The account is the HubPool. In which case we need to call a special function to load ETH into it.
@@ -480,11 +481,12 @@ export class Monitor {
       })
     );
     const rejections = promises.filter((promise) => promise.status === "rejected");
-    this.logger.warn({
-      at: "Monitor#refillBalances",
-      message: "Some refill transactions rejected for unknown reasons",
-      rejections,
-    });
+    if (rejections.length > 0)
+      this.logger.warn({
+        at: "Monitor#refillBalances",
+        message: "Some refill transactions rejected for unknown reasons",
+        rejections,
+      });
   }
 
   // We approximate stuck rebalances by checking if there are still any pending cross chain transfers to any SpokePools

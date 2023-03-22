@@ -44,6 +44,8 @@ const { spy, spyLogger } = createSpyLogger();
 
 const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "Unknown", ALL_CHAINS_NAME];
 
+let defaultMonitorEnvVars;
+
 describe("Monitor", async function () {
   beforeEach(async function () {
     ({
@@ -71,7 +73,7 @@ describe("Monitor", async function () {
 
     const configuredNetworks = [1, repaymentChainId, originChainId, destinationChainId];
 
-    const monitorConfig = new MonitorConfig({
+    defaultMonitorEnvVars = {
       STARTING_BLOCK_NUMBER: "0",
       ENDING_BLOCK_NUMBER: "100",
       UTILIZATION_ENABLED: "true",
@@ -84,7 +86,8 @@ describe("Monitor", async function () {
       MONITOR_REPORT_INTERVAL: "10",
       MONITORED_RELAYERS: `["${depositor.address}"]`,
       CONFIGURED_NETWORKS: JSON.stringify(configuredNetworks),
-    });
+    };
+    const monitorConfig = new MonitorConfig(defaultMonitorEnvVars);
 
     // Set the config store version to 0 to match the default version in the ConfigStoreClient.
     process.env.CONFIG_STORE_VERSION = "0";
@@ -346,6 +349,48 @@ describe("Monitor", async function () {
   });
 
   it("Monitor should send token refills", async function () {
+    const refillConfig = [
+      {
+        account: depositor.address,
+        isHubPool: false,
+        chainId: originChainId,
+        trigger: 1,
+        target: 10,
+        token: l2Token.address,
+      },
+      {
+        account: hubPool.address,
+        isHubPool: true,
+        chainId: hubPoolClient.chainId,
+        trigger: 1,
+        target: 2,
+      },
+      {
+        account: depositor.address,
+        isHubPool: false,
+        chainId: originChainId,
+        trigger: 1,
+        target: 2,
+      },
+    ];
+    const monitorEnvs = {
+      ...defaultMonitorEnvVars,
+      REFILL_BALANCES: JSON.stringify(refillConfig),
+    };
+    const _monitorConfig = new MonitorConfig(monitorEnvs);
+    const _monitor = new Monitor(spyLogger, _monitorConfig, {
+      bundleDataClient,
+      configStoreClient,
+      multiCallerClient,
+      hubPoolClient,
+      spokePoolClients,
+      tokenTransferClient,
+      crossChainTransferClient,
+    });
+    await _monitor.update();
+
+    await _monitor.refillBalances();
+
     // Send ETH
     // - If below threshold
     // - Has enough balance
