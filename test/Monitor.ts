@@ -344,6 +344,19 @@ describe("Monitor", async function () {
 
     expect(lastSpyLogIncludes(spy, `Transfers that are not fills for relayer ${depositor.address} 🦨`)).to.be.true;
   });
+
+  it("Monitor should send token refills", async function () {
+    // Send ETH
+    // - If below threshold
+    // - Has enough balance
+    // - Is HubPool versus is not HubPool
+    // Send ERC20
+    // - If below threshold
+    // - Has enough balance
+    // Sends all txns through Multisend in a single txn (per ERC20) to multiple txns.
+    // - ETH txns are always sent separately as they can't be multicalled
+    // Doesn't fail if one txn fails and others succeed
+  });
 });
 
 const executeBundle = async (hubPool: Contract) => {

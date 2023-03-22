@@ -85,8 +85,10 @@ export class MonitorConfig extends CommonConfig {
     if (REFILL_BALANCES) {
       this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(
         ({ chainId, account, isHubPool, target, trigger, token }) => {
-          if (Number.isNaN(target) || target <= 0) throw new Error("target must be > 0");
-          if (Number.isNaN(trigger) || trigger <= 0) throw new Error("target must be > 0");
+          if (Number.isNaN(target) || target <= 0)
+            throw new Error(`target for ${chainId}, ${account}, and ${token} must be > 0, got ${target}`);
+          if (Number.isNaN(trigger) || trigger <= 0)
+            throw new Error(`trigger for ${chainId}, ${account}, and ${token} must be > 0, got ${trigger}`);
           if (trigger >= target) throw new Error("trigger must be < target");
           return {
             // Required fields:

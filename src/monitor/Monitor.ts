@@ -353,7 +353,7 @@ export class Monitor {
    * the `monitorBalances` target. This function will ensure that `checkBalances` will rarely alert for those
    * balances.
    */
-  async refillBalances() {
+  async refillBalances(): Promise<void> {
     const { refillEnabledBalances } = this.monitorConfig;
 
     // Check for current balances.
@@ -375,12 +375,12 @@ export class Monitor {
 
     // Compare current balances with triggers and send tokens if signer has enough balance.
     const signerAddress = await this.clients.hubPoolClient.hubPool.signer.getAddress();
-    await Promise.all(
+    const promises = await Promise.allSettled(
       refillEnabledBalances.map(async ({ chainId, isHubPool, token, account, target, trigger }, i) => {
         const currentBalance = currentBalances[i];
         const decimals = decimalValues[i];
         const balanceTrigger = ethers.utils.parseUnits(trigger.toString(), decimals);
-        const isBelowTrigger = currentBalance.lt(balanceTrigger);
+        const isBelowTrigger = currentBalance.lte(balanceTrigger);
         if (isBelowTrigger) {
           // Fill balance back to target, not trigger.
           const balanceTarget = ethers.utils.parseUnits(target.toString(), decimals);
@@ -416,6 +416,7 @@ export class Monitor {
                 message: "Reloaded ETH in HubPool 🫡!",
                 mrkdwn: `Loaded ${ethers.utils.formatUnits(deficit, decimals)} ETH from ${signerAddress}.`,
                 value: deficit,
+                // unpermissioned: true
               });
             } else {
               if (token === ZERO_ADDRESS) {
@@ -448,6 +449,7 @@ export class Monitor {
                   mrkdwn: `Sent ${ethers.utils.formatUnits(deficit, decimals)} ${symbol} on ${getNetworkName(
                     chainId
                   )} to ${account} from ${signerAddress}!`,
+                  // unpermissioned: true
                 });
               }
             }
@@ -477,6 +479,12 @@ export class Monitor {
         }
       })
     );
+    const rejections = promises.filter((promise) => promise.status === "rejected");
+    this.logger.warn({
+      at: "Monitor#refillBalances",
+      message: "Some refill transactions rejected for unknown reasons",
+      rejections,
+    });
   }
 
   // We approximate stuck rebalances by checking if there are still any pending cross chain transfers to any SpokePools
