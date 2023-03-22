@@ -13,7 +13,7 @@
     "@across-protocol/boba-sdk": "^1.0.4",
     "@across-protocol/contracts-v2": "^1.0.5",
     "@across-protocol/sdk-v2": "^0.3.7",
-    "@arbitrum/sdk": "^3.1.1",
+    "@arbitrum/sdk": "^3.1.2",
     "@defi-wonderland/smock": "^2.3.4",
     "@eth-optimism/sdk": "^2.0.0",
     "@ethersproject/abstract-provider": "^5.7.0",
@@ -38,7 +38,7 @@
     "minimist": "^1.2.6",
     "node-fetch": "2.6.7",
     "redis4": "npm:redis@^4.1.0",
-    "ts-node": "^10.1.0",
+    "ts-node": "^10.9.1",
     "winston": "^3.8.2"
   },
   "files": [
