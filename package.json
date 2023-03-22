@@ -88,7 +88,7 @@
     "pretty-quick": "^2.0.1",
     "sinon": "^9.0.2",
     "solhint": "^3.3.6",
-    "solidity-coverage": "^0.7.16",
+    "solidity-coverage": "^0.8.2",
     "typechain": "^8.1.0",
     "typescript": "^4.5.2"
   },
