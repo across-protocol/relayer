@@ -13,7 +13,7 @@
     "@across-protocol/boba-sdk": "^1.0.4",
     "@across-protocol/contracts-v2": "^1.0.5",
     "@across-protocol/sdk-v2": "^0.3.7",
-    "@arbitrum/sdk": "^3.1.1",
+    "@arbitrum/sdk": "^3.1.2",
     "@defi-wonderland/smock": "^2.3.4",
     "@eth-optimism/sdk": "^2.0.1",
     "@ethersproject/abstract-provider": "^5.7.0",
@@ -24,7 +24,7 @@
     "@maticnetwork/maticjs-ethers": "^1.0.2",
     "@uma/common": "^2.31.0",
     "@uma/contracts-node": "^0.4.12",
-    "@uma/financial-templates-lib": "^2.32.1",
+    "@uma/financial-templates-lib": "^2.32.8",
     "@uma/sdk": "^0.32.7",
     "async": "^3.2.4",
     "axios": "^1.2.0",
@@ -38,7 +38,7 @@
     "minimist": "^1.2.6",
     "node-fetch": "2.6.7",
     "redis4": "npm:redis@^4.1.0",
-    "ts-node": "^10.1.0",
+    "ts-node": "^10.9.1",
     "winston": "^3.8.2"
   },
   "files": [
@@ -88,7 +88,7 @@
     "pretty-quick": "^2.0.1",
     "sinon": "^9.0.2",
     "solhint": "^3.3.6",
-    "solidity-coverage": "^0.7.16",
+    "solidity-coverage": "^0.8.2",
     "typechain": "^8.1.0",
     "typescript": "^4.5.2"
   },
