@@ -98,7 +98,7 @@ export class BalanceAllocator {
       // If it exists, skip the assignment so the value doesn't change after being set.
       if (!this.balances?.[chainId]?.[token]?.[holder]) {
         // Note: cannot use assign because it breaks the BigNumber object.
-        if (!this.balances[chainId]) this.balances[chainId] = {};
+        this.balances[chainId] ??= {};
         if (!this.balances[chainId][token]) this.balances[chainId][token] = {};
         this.balances[chainId][token][holder] = balance;
       }
