@@ -7200,7 +7200,7 @@ eth-ens-namehash@2.0.8, eth-ens-namehash@^2.0.8:
     idna-uts46-hx "^2.3.1"
     js-sha3 "^0.5.7"
 
-eth-gas-reporter@^0.2.24:
+eth-gas-reporter@^0.2.25:
   version "0.2.25"
   resolved "https://registry.yarnpkg.com/eth-gas-reporter/-/eth-gas-reporter-0.2.25.tgz#546dfa946c1acee93cb1a94c2a1162292d6ff566"
   integrity sha512-1fRgyE4xUB8SoqLgN3eDfpDfwEfRxh2Sz1b7wzFbyQA+9TekMmvSjjoRu9SKcSVyK+vLkLIsVbJDsTWjw195OQ==
@@ -8941,13 +8941,13 @@ hardhat-deploy@^0.11.11, hardhat-deploy@^0.11.2:
     qs "^6.9.4"
     zksync-web3 "^0.7.8"
 
-hardhat-gas-reporter@^1.0.4, hardhat-gas-reporter@^1.0.8:
-  version "1.0.8"
-  resolved "https://registry.yarnpkg.com/hardhat-gas-reporter/-/hardhat-gas-reporter-1.0.8.tgz#93ce271358cd748d9c4185dbb9d1d5525ec145e0"
-  integrity sha512-1G5thPnnhcwLHsFnl759f2tgElvuwdkzxlI65fC9PwxYMEe9cmjkVAAWTf3/3y8uP6ZSPiUiOW8PgZnykmZe0g==
+hardhat-gas-reporter@^1.0.4, hardhat-gas-reporter@^1.0.8, hardhat-gas-reporter@^1.0.9:
+  version "1.0.9"
+  resolved "https://registry.yarnpkg.com/hardhat-gas-reporter/-/hardhat-gas-reporter-1.0.9.tgz#9a2afb354bc3b6346aab55b1c02ca556d0e16450"
+  integrity sha512-INN26G3EW43adGKBNzYWOlI3+rlLnasXTwW79YNnUhXPDa+yHESgt639dJEs37gCjhkbNKcRRJnomXEuMFBXJg==
   dependencies:
     array-uniq "1.0.3"
-    eth-gas-reporter "^0.2.24"
+    eth-gas-reporter "^0.2.25"
     sha1 "^1.1.1"
 
 hardhat-typechain@^0.3.5:
@@ -13228,12 +13228,7 @@ prettier@^1.14.3:
   resolved "https://registry.yarnpkg.com/prettier/-/prettier-1.19.1.tgz#f7d7f5ff8a9cd872a7be4ca142095956a60797cb"
   integrity sha512-s7PoyDv/II1ObgQunCbB9PdLmUcBZcnWOcxDh7O0N/UwDEsHyqkW+Qh28jW+mVuCdx7gLB0BotYI1Y6uI9iyew==
 
-prettier@^2.1.2, prettier@^2.3.2:
-  version "2.6.2"
-  resolved "https://registry.yarnpkg.com/prettier/-/prettier-2.6.2.tgz#e26d71a18a74c3d0f0597f55f01fb6c06c206032"
-  integrity sha512-PkUpF+qoXTqhOeWL9fu7As8LXsIUZ1WYaJiY/a7McAQzxjk82OF0tibkFXVCDImZtWxbvojFjerkiLb0/q8mew==
-
-prettier@^2.3.1:
+prettier@^2.1.2, prettier@^2.3.1, prettier@^2.3.2:
   version "2.7.1"
   resolved "https://registry.yarnpkg.com/prettier/-/prettier-2.7.1.tgz#e235806850d057f97bb08368a4f7d899f7760c64"
   integrity sha512-ujppO+MkdPqoVINuDFDRLClm7D78qbDt0/NR+wp5FqEZOoTNAjPHWj17QRhu7geIHJfcNhRk1XVQmF8Bp3ye+g==
@@ -15819,10 +15814,10 @@ typechain@^3.0.0:
     ts-essentials "^6.0.3"
     ts-generator "^0.1.1"
 
-typechain@^8.1.0:
-  version "8.1.0"
-  resolved "https://registry.yarnpkg.com/typechain/-/typechain-8.1.0.tgz#fc4902ce596519cb2ccfd012e4ddf92a9945b569"
-  integrity sha512-5jToLgKTjHdI1VKqs/K8BLYy42Sr3o8bV5ojh4MnR9ExHO83cyyUdw+7+vMJCpKXUiVUvARM4qmHTFuyaCMAZQ==
+typechain@^8.1.1:
+  version "8.1.1"
+  resolved "https://registry.yarnpkg.com/typechain/-/typechain-8.1.1.tgz#9c2e8012c2c4c586536fc18402dcd7034c4ff0bd"
+  integrity sha512-uF/sUvnXTOVF2FHKhQYnxHk4su4JjZR8vr4mA2mBaRwHTbwh0jIlqARz9XJr1tA0l7afJGvEa1dTSi4zt039LQ==
   dependencies:
     "@types/prettier" "^2.1.1"
     debug "^4.3.1"
