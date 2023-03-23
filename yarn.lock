@@ -364,10 +364,10 @@
     minimatch "^3.0.4"
     strip-json-comments "^3.1.1"
 
-"@eth-optimism/contracts-bedrock@0.13.0":
-  version "0.13.0"
-  resolved "https://registry.yarnpkg.com/@eth-optimism/contracts-bedrock/-/contracts-bedrock-0.13.0.tgz#25d9e4b504b14814b9e7de17259035d05c82e7e9"
-  integrity sha512-FS7IQJ/6kSOjGvukBA5eaNyd2Y6f3lL/gjw88Znyw/mVPNrbfXY+tKK03WHafsxcGGiF3Otamd2vPfn4AmupWQ==
+"@eth-optimism/contracts-bedrock@0.13.1":
+  version "0.13.1"
+  resolved "https://registry.yarnpkg.com/@eth-optimism/contracts-bedrock/-/contracts-bedrock-0.13.1.tgz#52cd561c9f996d3695a8a6ba8b8996d6f1d893f6"
+  integrity sha512-Jgw8PkV90S0+06AxjI13lULdxO9eHzPvBOTSIxdig8V/EXykJdENGXk83JE3oKBaK5umMcT/44qk73ilxnP7kQ==
   dependencies:
     "@eth-optimism/core-utils" "^0.12.0"
     "@openzeppelin/contracts" "4.7.3"
@@ -497,13 +497,13 @@
     merkletreejs "^0.2.27"
     rlp "^2.2.7"
 
-"@eth-optimism/sdk@^2.0.0":
-  version "2.0.0"
-  resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-2.0.0.tgz#bf8a011524d7def64adf29bf6c2289cfb6561071"
-  integrity sha512-Y7jXmrKWjtjW6Uy0h9yuyDID9Tqm4JtaW5ph9GUBbDYTMet3bssetUbRycAZ9YfLqIxf0fBb6QrZIn5ON4gtZw==
+"@eth-optimism/sdk@^2.0.1":
+  version "2.0.1"
+  resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-2.0.1.tgz#d215adb49033de3db2c37b54f418ae1c55dcf556"
+  integrity sha512-sTgAvtnAda7Se+r0CLptKb0tk18YzJ7XEZB9h3QsCCPYn1DzWnKLHhKdeKcyiHL5JYZ5/dz28fD7U4wF4ch/fQ==
   dependencies:
     "@eth-optimism/contracts" "0.5.40"
-    "@eth-optimism/contracts-bedrock" "0.13.0"
+    "@eth-optimism/contracts-bedrock" "0.13.1"
     "@eth-optimism/core-utils" "0.12.0"
     lodash "^4.17.21"
     merkletreejs "^0.2.27"
@@ -7200,7 +7200,7 @@ eth-ens-namehash@2.0.8, eth-ens-namehash@^2.0.8:
     idna-uts46-hx "^2.3.1"
     js-sha3 "^0.5.7"
 
-eth-gas-reporter@^0.2.24:
+eth-gas-reporter@^0.2.25:
   version "0.2.25"
   resolved "https://registry.yarnpkg.com/eth-gas-reporter/-/eth-gas-reporter-0.2.25.tgz#546dfa946c1acee93cb1a94c2a1162292d6ff566"
   integrity sha512-1fRgyE4xUB8SoqLgN3eDfpDfwEfRxh2Sz1b7wzFbyQA+9TekMmvSjjoRu9SKcSVyK+vLkLIsVbJDsTWjw195OQ==
@@ -8941,13 +8941,13 @@ hardhat-deploy@^0.11.11, hardhat-deploy@^0.11.2:
     qs "^6.9.4"
     zksync-web3 "^0.7.8"
 
-hardhat-gas-reporter@^1.0.4, hardhat-gas-reporter@^1.0.8:
-  version "1.0.8"
-  resolved "https://registry.yarnpkg.com/hardhat-gas-reporter/-/hardhat-gas-reporter-1.0.8.tgz#93ce271358cd748d9c4185dbb9d1d5525ec145e0"
-  integrity sha512-1G5thPnnhcwLHsFnl759f2tgElvuwdkzxlI65fC9PwxYMEe9cmjkVAAWTf3/3y8uP6ZSPiUiOW8PgZnykmZe0g==
+hardhat-gas-reporter@^1.0.4, hardhat-gas-reporter@^1.0.8, hardhat-gas-reporter@^1.0.9:
+  version "1.0.9"
+  resolved "https://registry.yarnpkg.com/hardhat-gas-reporter/-/hardhat-gas-reporter-1.0.9.tgz#9a2afb354bc3b6346aab55b1c02ca556d0e16450"
+  integrity sha512-INN26G3EW43adGKBNzYWOlI3+rlLnasXTwW79YNnUhXPDa+yHESgt639dJEs37gCjhkbNKcRRJnomXEuMFBXJg==
   dependencies:
     array-uniq "1.0.3"
-    eth-gas-reporter "^0.2.24"
+    eth-gas-reporter "^0.2.25"
     sha1 "^1.1.1"
 
 hardhat-typechain@^0.3.5:
