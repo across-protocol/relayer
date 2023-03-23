@@ -260,7 +260,7 @@ export class SpokePoolClient {
   async binarySearchForBlockContainingDepositId(
     targetDepositId: number,
     initLow = this.spokePoolDeploymentBlock,
-    initHigh = this.latestBlockNumber-1 // Calling eth_call at 'latest' doesn't use quorum. Moreover, we 
+    initHigh = this.latestBlockNumber - 1 // Calling eth_call at 'latest' doesn't use quorum. Moreover, we
     // will never realistically be looking for the "latest" block using this function, so its safe to set
     // this earlier than latest.
   ): Promise<number> {
