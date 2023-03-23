@@ -15,7 +15,7 @@ type EthersError = Error & {
 };
 
 const isEthersError = (error?: unknown): error is EthersError =>
-  (error as EthersError)?.code in Object.values(ethers.utils.Logger.errors);
+  (error as EthersError)?.code in ethers.utils.Logger.errors;
 const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);
 const txnRetryable = (error?: unknown): boolean => {
   if (isEthersError(error)) return txnRetryErrors.has(error.code);
