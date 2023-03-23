@@ -95,11 +95,11 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
 };
 
 export const BUNDLE_END_BLOCK_BUFFERS = {
-  1: 100, // At 15s/block, 100 blocks = 20 mins
-  10: 3000, // At a conservative 10 TPS, 300 seconds = 3000 transactions. And 1 block per txn.
-  137: 1500, // At 1s/block, 25 mins seconds = 1500 blocks
-  288: 50, // At 30s/block, 50 blocks = 25 mins
-  42161: 3000, // At a conservative 10 TPS, 300 seconds = 3000 transactions. And 1 block per txn.
+  1: 25, // At 12s/block, 25 blocks = 5 mins
+  10: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
+  137: 750, // At 2s/block, 25 mins = 25 * 60 / 2 = 750 blocks
+  288: 5, // At 60s/block, 50 blocks = 25 mins
+  42161: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
 };
 
 export const DEFAULT_RELAYER_GAS_MULTIPLIER = 1.2;
