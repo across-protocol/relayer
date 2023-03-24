@@ -415,6 +415,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
     NODE_MAX_CONCURRENCY,
     NODE_DISABLE_PROVIDER_CACHING,
     NODE_PROVIDER_CACHE_NAMESPACE,
+    NODE_LOG_EVERY_N_RATE_LIMIT_ERRORS,
   } = process.env;
 
   const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
@@ -442,7 +443,10 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
   // adjusted for the purpose of "flushing".
   const providerCacheNamespace = NODE_PROVIDER_CACHE_NAMESPACE || "DEFAULT_0";
 
+  const logEveryNRateLimitErrors = Number(NODE_LOG_EVERY_N_RATE_LIMIT_ERRORS || "100");
+
   // Custom delay + logging for RPC rate-limiting.
+  let rateLimitLogCounter = 0;
   const rpcRateLimited =
     ({ nodeMaxConcurrency, logger }) =>
     async (attempt: number, url: string): Promise<boolean> => {
@@ -451,7 +455,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
       const baseDelay = 1000 * Math.pow(2, attempt); // ms; attempt = [0, 1, 2, ...]
       const delayMs = baseDelay + baseDelay * Math.random();
 
-      if (logger) {
+      if (logger && ++rateLimitLogCounter % logEveryNRateLimitErrors === 0) {
         // Make an effort to filter out any api keys.
         const regex = url.match(/https?:\/\/([\w.-]+)\/.*/);
         logger.debug({
