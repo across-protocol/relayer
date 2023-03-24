@@ -288,9 +288,10 @@ export class SpokePoolClient {
 
   // Look for the block number of the event that emitted the deposit with the target deposit ID. We know that
   // `numberOfDeposits` is strictly increasing for any SpokePool, so we can use a binary search to find the blockTag
-  // where `numberOfDeposits == targetDepositId`.
+  // where `targetDepositIdLow <= numberOfDeposits <= targetDepositIdHigh`.
   async binarySearchForBlockContainingDepositId(
-    targetDepositId: number,
+    targetDepositIdLow: number,
+    targetDepositIdHigh: number,
     initLow = this.spokePoolDeploymentBlock,
     initHigh = this.latestBlockNumber
   ): Promise<number | undefined> {
@@ -300,13 +301,9 @@ export class SpokePoolClient {
     do {
       const mid = Math.floor((high + low) / 2);
       const searchedDepositId = await this.spokePool.numberOfDeposits({ blockTag: mid });
-      if (targetDepositId > searchedDepositId) {
-        low = mid + 1;
-      } else if (targetDepositId < searchedDepositId) {
-        high = mid - 1;
-      } else {
-        return mid;
-      }
+      if (targetDepositIdLow > searchedDepositId) low = mid + 1;
+      else if (targetDepositIdHigh < searchedDepositId) high = mid - 1;
+      else return mid;
     } while (low <= high);
     // If we can't find a blockTag where `numberOfDeposits == targetDepositId`,
     // then its likely that the depositId was included in the same block as deposits that came after it. So we fallback
@@ -319,9 +316,8 @@ export class SpokePoolClient {
   // This can be used by the Dataworker to determine whether to give a relayer a refund for a fill
   // of a deposit older or younger than its fixed lookback.
   async queryHistoricalDepositForFill(fill: Fill): Promise<DepositWithBlock | undefined> {
-    if (fill.originChainId !== this.chainId) {
-      throw new Error("fill.originChainId !== this.chainid");
-    }
+    const start = Date.now();
+    if (fill.originChainId !== this.chainId) throw new Error("fill.originChainId !== this.chainid");
 
     // We need to update client so we know the first and last deposit ID's queried for this spoke pool client, as well
     // as the global first and last deposit ID's for this spoke pool.
@@ -345,11 +341,12 @@ export class SpokePoolClient {
       // Assert that cache hasn't been corrupted.
       assert(deposit.depositId === fill.depositId && deposit.originChainId === fill.originChainId);
     } else {
+      // A 100 deposit buffer should be pretty wide per range and cut down on number of eth_calls
+      // made by the binary search.
+      const binarySearchMargin = 144; // 12 hours of deposits averaging 5 mins per deposit.
       const [blockBeforeDeposit, blockAfterDeposit] = await Promise.all([
-        // Look for the block where depositId incremented from fill.depositId-1 to fill.depositId.
-        this.binarySearchForBlockContainingDepositId(fill.depositId),
-        // Look for the block where depositId incremented from fill.depositId to fill.depositId+1.
-        this.binarySearchForBlockContainingDepositId(fill.depositId + 1),
+        this.binarySearchForBlockContainingDepositId(fill.depositId - binarySearchMargin, fill.depositId),
+        this.binarySearchForBlockContainingDepositId(fill.depositId + 1, fill.depositId + binarySearchMargin),
       ]);
       if (!blockBeforeDeposit || !blockAfterDeposit) {
         return undefined;
@@ -364,7 +361,7 @@ export class SpokePoolClient {
         {
           fromBlock: blockBeforeDeposit,
           toBlock: blockAfterDeposit,
-          maxBlockLookBack: 0,
+          maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
         }
       );
       const event = (query as FundsDepositedEvent[]).find((deposit) => deposit.args.depositId === fill.depositId);
@@ -402,6 +399,7 @@ export class SpokePoolClient {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill
+    console.log(`Time elapsed for queryHistoricalDepositForFill: ${Date.now() - start}ms`);
     return this.validateFillForDeposit(fillCopy, deposit) ? deposit : undefined;
   }
 

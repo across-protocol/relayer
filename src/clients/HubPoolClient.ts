@@ -25,6 +25,7 @@ export class HubPoolClient {
   private l1Tokens: L1Token[] = []; // L1Tokens and their associated info.
   private lpTokens: { [token: string]: LpToken } = {};
   private proposedRootBundles: ProposedRootBundle[] = [];
+  private reverseProposedRootBundles: ProposedRootBundle[] = [];
   private canceledRootBundles: CancelledRootBundle[] = [];
   private disputedRootBundles: DisputedRootBundle[] = [];
   private executedRootBundles: ExecutedRootBundle[] = [];
@@ -226,26 +227,24 @@ export class HubPoolClient {
     chainIdList: number[]
   ): number | undefined {
     let endingBlockNumber: number | undefined;
-    for (const rootBundle of sortEventsAscending(this.proposedRootBundles)) {
+    // Search proposed root bundles in reverse chronological order.
+    for (const rootBundle of this.reverseProposedRootBundles) {
       const nextRootBundle = this.getFollowingRootBundle(rootBundle);
       if (!this.isRootBundleValid(rootBundle, nextRootBundle ? nextRootBundle.blockNumber : latestMainnetBlock)) {
         continue;
       }
 
+      // 0 is the default value bundleEvalBlockNumber.
       const bundleEvalBlockNumber = this.getBundleEndBlockForChain(
         rootBundle as ProposedRootBundle,
         chain,
         chainIdList
       );
 
-      // If chain list doesn't contain chain, then bundleEvalBlockNumber returns 0 and the following check
-      // always fails.
-      if (bundleEvalBlockNumber >= block) {
-        endingBlockNumber = bundleEvalBlockNumber;
-        // Since events are sorted from oldest to newest, and bundle block ranges should only increase, exit as soon
-        // as we find the first block range that contains the target block.
-        break;
-      }
+      // Since we're iterating from newest to oldest, bundleEvalBlockNumber is only decreasing, and if the
+      // bundleEvalBlockNumber is smaller than the target block, then we should return the last set `endingBlockNumber`.
+      if (bundleEvalBlockNumber <= block) break;
+      endingBlockNumber = bundleEvalBlockNumber;
     }
     return endingBlockNumber;
   }
@@ -253,7 +252,7 @@ export class HubPoolClient {
   // TODO: This might not be necessary since the cumulative root bundle count doesn't grow fast enough, but consider
   // using _.findLast/_.find instead of resorting the arrays if these functions begin to take a lot time.
   getProposedRootBundlesInBlockRange(startingBlock: number, endingBlock: number): ProposedRootBundle[] {
-    return sortEventsDescending(this.proposedRootBundles).filter(
+    return this.reverseProposedRootBundles.filter(
       (bundle: ProposedRootBundle) => bundle.blockNumber >= startingBlock && bundle.blockNumber <= endingBlock
     );
   }
@@ -271,20 +270,19 @@ export class HubPoolClient {
   }
 
   getLatestProposedRootBundle(): ProposedRootBundle {
-    return sortEventsDescending(this.proposedRootBundles)[0] as ProposedRootBundle;
+    return this.proposedRootBundles[this.proposedRootBundles.length - 1] as ProposedRootBundle;
   }
 
   getFollowingRootBundle(currentRootBundle: ProposedRootBundle): ProposedRootBundle {
-    return sortEventsAscending(this.proposedRootBundles).find(
-      (_rootBundle: ProposedRootBundle) => _rootBundle.blockNumber > currentRootBundle.blockNumber
-    ) as ProposedRootBundle;
+    const index = this.reverseProposedRootBundles.findIndex(
+      (bundle) => bundle.blockNumber === currentRootBundle.blockNumber
+    );
+    if (index === 0) return undefined;
+    return this.reverseProposedRootBundles[index - 1];
   }
 
-  getExecutedLeavesForRootBundle(
-    rootBundle: ProposedRootBundle,
-    latestMainnetBlockToSearch: number
-  ): ExecutedRootBundle[] {
-    return sortEventsAscending(this.executedRootBundles).filter(
+  getExecutedLeavesForRootBundle(rootBundle: ProposedRootBundle, latestMainnetBlockToSearch: number): ExecutedRootBundle[] {
+    return this.executedRootBundles.filter(
       (executedLeaf: ExecutedRootBundle) =>
         executedLeaf.blockNumber <= latestMainnetBlockToSearch &&
         // Note: We can use > instead of >= here because a leaf can never be executed in same block as its root
@@ -307,10 +305,8 @@ export class HubPoolClient {
   getLatestFullyExecutedRootBundle(latestMainnetBlock: number): ProposedRootBundle | undefined {
     // Search for latest ProposeRootBundleExecuted event followed by all of its RootBundleExecuted event suggesting
     // that all pool rebalance leaves were executed. This ignores any proposed bundles that were partially executed.
-    return _.findLast(this.proposedRootBundles, (rootBundle: ProposedRootBundle) => {
-      if (rootBundle.blockNumber > latestMainnetBlock) {
-        return false;
-      }
+    return this.reverseProposedRootBundles.find((rootBundle: ProposedRootBundle) => {
+      if (rootBundle.blockNumber > latestMainnetBlock) return false;
       return this.isRootBundleValid(rootBundle, latestMainnetBlock);
     });
   }
@@ -530,13 +526,17 @@ export class HubPoolClient {
         .map((event) => spreadEventWithBlockNumber(event) as ExecutedRootBundle)
     );
 
+    // TODO: Consider storing all of the above methods in descending order for reducing the number of times
+    // you need to resort the events. As a shortcut, store an extra set of events sorted in reverse chronological order.
+    this.reverseProposedRootBundles = sortEventsDescending(this.proposedRootBundles);
+
     // If the contract's current rootBundleProposal() value has an unclaimedPoolRebalanceLeafCount > 0, then
     // it means that either the root bundle proposal is in the challenge period and can be disputed, or it has
     // passed the challenge period and pool rebalance leaves can be executed. Once all leaves are executed, the
     // unclaimed count will drop to 0 and at that point there is nothing more that we can do with this root bundle
     // besides proposing another one.
     if (pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount > 0) {
-      const mostRecentProposedRootBundle = sortEventsDescending(this.proposedRootBundles)[0];
+      const mostRecentProposedRootBundle = this.reverseProposedRootBundles[0];
       this.pendingRootBundle = {
         poolRebalanceRoot: pendingRootBundleProposal.poolRebalanceRoot,
         relayerRefundRoot: pendingRootBundleProposal.relayerRefundRoot,

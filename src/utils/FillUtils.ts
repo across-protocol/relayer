@@ -171,12 +171,14 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
 
   // Find ending block number for chain from ProposeRootBundle event that should have included a slow fill
   // refund for this first fill. This will be undefined if there is no block range containing the first fill.
+  const start = Date.now();
   const rootBundleEndBlockContainingFirstFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
     latestMainnetBlock,
     firstFillForSameDeposit.blockNumber,
     firstFillForSameDeposit.destinationChainId,
     chainIdListForBundleEvaluationBlockNumbers
   );
+  console.log(`Time to get root bundle end block: ${Date.now() - start}ms`);
   // Using bundle block number for chain from ProposeRootBundleEvent, find latest fill in the root bundle.
   let lastMatchingFillInSameBundle: FillWithBlock;
   if (rootBundleEndBlockContainingFirstFill !== undefined) {
