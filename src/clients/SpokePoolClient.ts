@@ -46,6 +46,9 @@ const FILL_DEPOSIT_COMPARISON_KEYS = [
   "destinationToken",
 ] as const;
 
+// These events are numerous and we should use a fixed lookback when querying them.
+const FIXED_LOOKBACK_EVENTS = ["FundsDeposited", "FilledRelay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
+
 export class SpokePoolClient {
   private currentTime: number;
   private depositHashes: { [depositHash: string]: DepositWithBlock } = {};
@@ -452,11 +455,10 @@ export class SpokePoolClient {
       // passed in to the Config object. However, certain types of have special rules that could change their
       // search ranges:
       let searchConfigToUse = searchConfig;
-      // These events always are queried from when Across' spoke pools were first deployed.
+      // The full history of these events always needs to be queried.
       if (eventName === "EnabledDepositRoute") searchConfigToUse = depositRouteSearchConfig;
-      // These events can be loaded from the `cachedData` so they use a potentially modified `depositEventSearchConfig`.
-      else if (eventName === "FundsDeposited" || eventName === "FilledRelay")
-        searchConfigToUse = depositEventSearchConfig;
+      // These events are numerous and we should use a fixed lookback when querying them.
+      else if (FIXED_LOOKBACK_EVENTS.includes(eventName)) searchConfigToUse = depositEventSearchConfig;
 
       return {
         filter: this._queryableEventNames()[eventName],
