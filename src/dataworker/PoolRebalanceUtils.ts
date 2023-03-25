@@ -185,7 +185,6 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   // This assumption depends on the rule that slow fills can only be sent after a partial fill for a non zero amount
   // of the deposit. This is why "1 wei" fills are important, otherwise we'd never know which fills originally
   // triggered a slow fill payment to be sent to the destination chain.
-  console.log(`Calculating excesses for bundle with mainnet bundle end block ${mainnetBundleEndBlock}`);
   await Promise.all(
     allValidFillsInRange
       .filter((fill) => fill.totalFilledAmount.eq(fill.amount) && !fill.fillAmount.eq(fill.amount))

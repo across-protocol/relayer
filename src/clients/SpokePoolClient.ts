@@ -342,8 +342,9 @@ export class SpokePoolClient {
       assert(deposit.depositId === fill.depositId && deposit.originChainId === fill.originChainId);
     } else {
       // A 100 deposit buffer should be pretty wide per range and cut down on number of eth_calls
-      // made by the binary search.
-      const binarySearchMargin = 144; // 12 hours of deposits averaging 5 mins per deposit.
+      // made by the binary search. This trades off for  more eth_getLogs calls in the following
+      // paginatedEventQuery call with a wider block range.
+      const binarySearchMargin = 150; // ~12 hours of deposits averaging 5 mins per deposit.
       const [blockBeforeDeposit, blockAfterDeposit] = await Promise.all([
         this.binarySearchForBlockContainingDepositId(fill.depositId - binarySearchMargin, fill.depositId),
         this.binarySearchForBlockContainingDepositId(fill.depositId + 1, fill.depositId + binarySearchMargin),
@@ -388,9 +389,10 @@ export class SpokePoolClient {
         originBlockNumber: event.blockNumber,
       };
       this.logger.debug({
-        at: "SpokePoolClient",
+        at: "SpokePoolClient#queryHistoricalDepositForFill",
         message: "Queried RPC for deposit outside SpokePoolClient's search range",
         deposit,
+        elapsedMs: Date.now() - start,
       });
       if (redisClient) {
         await setDeposit(deposit, getCurrentTime(), redisClient, 24 * 60 * 60);
@@ -399,7 +401,6 @@ export class SpokePoolClient {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill
-    console.log(`Time elapsed for queryHistoricalDepositForFill: ${Date.now() - start}ms`);
     return this.validateFillForDeposit(fillCopy, deposit) ? deposit : undefined;
   }
 

@@ -243,7 +243,10 @@ export class HubPoolClient {
 
       // Since we're iterating from newest to oldest, bundleEvalBlockNumber is only decreasing, and if the
       // bundleEvalBlockNumber is smaller than the target block, then we should return the last set `endingBlockNumber`.
-      if (bundleEvalBlockNumber <= block) break;
+      if (bundleEvalBlockNumber <= block) {
+        if (bundleEvalBlockNumber === block) endingBlockNumber = bundleEvalBlockNumber;
+        break;
+      }
       endingBlockNumber = bundleEvalBlockNumber;
     }
     return endingBlockNumber;
