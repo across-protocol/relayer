@@ -288,10 +288,9 @@ export class SpokePoolClient {
 
   // Look for the block number of the event that emitted the deposit with the target deposit ID. We know that
   // `numberOfDeposits` is strictly increasing for any SpokePool, so we can use a binary search to find the blockTag
-  // where `targetDepositIdLow <= numberOfDeposits <= targetDepositIdHigh`.
+  // where `numberOfDeposits == targetDepositId`.
   async binarySearchForBlockContainingDepositId(
-    targetDepositIdLow: number,
-    targetDepositIdHigh: number,
+    targetDepositId: number,
     initLow = this.spokePoolDeploymentBlock,
     initHigh = this.latestBlockNumber
   ): Promise<number | undefined> {
@@ -301,8 +300,8 @@ export class SpokePoolClient {
     do {
       const mid = Math.floor((high + low) / 2);
       const searchedDepositId = await this.spokePool.numberOfDeposits({ blockTag: mid });
-      if (targetDepositIdLow > searchedDepositId) low = mid + 1;
-      else if (targetDepositIdHigh < searchedDepositId) high = mid - 1;
+      if (targetDepositId > searchedDepositId) low = mid + 1;
+      else if (targetDepositId < searchedDepositId) high = mid - 1;
       else return mid;
     } while (low <= high);
     // If we can't find a blockTag where `numberOfDeposits == targetDepositId`,
@@ -341,13 +340,9 @@ export class SpokePoolClient {
       // Assert that cache hasn't been corrupted.
       assert(deposit.depositId === fill.depositId && deposit.originChainId === fill.originChainId);
     } else {
-      // A 100 deposit buffer should be pretty wide per range and cut down on number of eth_calls
-      // made by the binary search. This trades off for  more eth_getLogs calls in the following
-      // paginatedEventQuery call with a wider block range.
-      const binarySearchMargin = 150; // ~12 hours of deposits averaging 5 mins per deposit.
       const [blockBeforeDeposit, blockAfterDeposit] = await Promise.all([
-        this.binarySearchForBlockContainingDepositId(fill.depositId - binarySearchMargin, fill.depositId),
-        this.binarySearchForBlockContainingDepositId(fill.depositId + 1, fill.depositId + binarySearchMargin),
+        this.binarySearchForBlockContainingDepositId(fill.depositId),
+        this.binarySearchForBlockContainingDepositId(fill.depositId + 1),
       ]);
       if (!blockBeforeDeposit || !blockAfterDeposit) {
         return undefined;
