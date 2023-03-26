@@ -49,6 +49,15 @@ const FILL_DEPOSIT_COMPARISON_KEYS = [
   "destinationToken",
 ] as const;
 
+// These events are numerous and we should use a fixed lookback when querying them.
+const FIXED_LOOKBACK_EVENTS = [
+  "FundsDeposited",
+  "FilledRelay",
+  "RelayedRootBundle",
+  "ExecutedRelayerRefundRoot",
+  "TokensBridged",
+];
+
 export class SpokePoolClient {
   private currentTime: number;
   private depositHashes: { [depositHash: string]: DepositWithBlock } = {};
@@ -292,23 +301,43 @@ export class SpokePoolClient {
   async binarySearchForBlockContainingDepositId(
     targetDepositId: number,
     initLow = this.spokePoolDeploymentBlock,
-    initHigh = this.latestBlockNumber
-  ): Promise<number | undefined> {
+    initHigh = this.latestBlockNumber,
+    maxSearches: number = Number.MAX_SAFE_INTEGER
+  ): Promise<number> {
+    return (await this._binarySearchForBlockContainingDepositId(targetDepositId, initLow, initHigh, maxSearches)).mid;
+  }
+
+  async _binarySearchForBlockContainingDepositId(
+    targetDepositId: number,
+    initLow: number,
+    initHigh: number,
+    maxSearches: number
+  ): Promise<{
+    low: number;
+    mid: number;
+    high: number;
+  }> {
     assert(initLow <= initHigh, "Binary search failed because low > high");
     let low = initLow;
     let high = initHigh;
+    let i = 0;
     do {
       const mid = Math.floor((high + low) / 2);
       const searchedDepositId = await this.spokePool.numberOfDeposits({ blockTag: mid });
+
+      // Caller can set maxSearches to minimize number of binary searches and eth_call requests.
+      // Caller then needs to make a subsequent search between the latest [low, high].
+      if (i++ >= maxSearches) return { low, mid, high };
+
       if (targetDepositId > searchedDepositId) low = mid + 1;
       else if (targetDepositId < searchedDepositId) high = mid - 1;
-      else return mid;
+      else return { low, mid, high };
     } while (low <= high);
     // If we can't find a blockTag where `numberOfDeposits == targetDepositId`,
     // then its likely that the depositId was included in the same block as deposits that came after it. So we fallback
     // to returning `low` if we exit the while loop, which should be the block where depositId incremented from
     // `targetDepositId`.
-    return low;
+    return { low, mid: low, high };
   }
 
   // Load a deposit for a fill if the fill's deposit ID is outside this client's search range.
@@ -340,23 +369,25 @@ export class SpokePoolClient {
       // Assert that cache hasn't been corrupted.
       assert(deposit.depositId === fill.depositId && deposit.originChainId === fill.originChainId);
     } else {
-      const [blockBeforeDeposit, blockAfterDeposit] = await Promise.all([
-        this.binarySearchForBlockContainingDepositId(fill.depositId),
-        this.binarySearchForBlockContainingDepositId(fill.depositId + 1),
-      ]);
-      if (!blockBeforeDeposit || !blockAfterDeposit) {
-        return undefined;
-      }
-      assert(blockBeforeDeposit <= blockAfterDeposit, "blockBeforeDeposit > blockAfterDeposit");
-
+      // Binary search for block where SpokePool.numberOfDeposits === fill.depositId. Stop searches after a maximum
+      // # of searches to limit number of eth_call requests. Make an eth_getLogs call on the remaining block range
+      // (i.e. the [low, high] remaining from the binary search) to find the target deposit ID.
+      // @dev Limiting between 5-10 searches empirically performs best when there are ~300,000 deposits
+      // for a spoke pool and we're looking for a deposit <5 days older than HEAD.
+      const searchBounds = await this._binarySearchForBlockContainingDepositId(
+        fill.depositId,
+        this.spokePoolDeploymentBlock,
+        this.latestBlockNumber,
+        7
+      );
       const query = await paginatedEventQuery(
         this.spokePool,
         // TODO: When SpokePool V2 is deployed we can begin to filter on fill.depositId as well as fill.depositor,
         // which should optimize the RPC request.
         this.spokePool.filters.FundsDeposited(null, null, null, null, null, null, null, null, fill.depositor),
         {
-          fromBlock: blockBeforeDeposit,
-          toBlock: blockAfterDeposit,
+          fromBlock: searchBounds.low,
+          toBlock: searchBounds.high,
           maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
         }
       );
@@ -366,7 +397,7 @@ export class SpokePoolClient {
         const dstChain = getNetworkName(fill.destinationChainId);
         throw new Error(
           `Could not find deposit ${fill.depositId} for ${dstChain} fill` +
-            ` between ${srcChain} blocks [${blockBeforeDeposit}, ${blockAfterDeposit}]`
+            ` between ${srcChain} blocks [${searchBounds.low}, ${searchBounds.high}]`
         );
       }
       const processedEvent: Omit<DepositWithBlock, "destinationToken" | "realizedLpFeePct"> =

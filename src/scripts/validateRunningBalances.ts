@@ -94,9 +94,8 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
     }
 
     for (const leaf of poolRebalanceLeaves) {
-      if (spokePoolClients[leaf.chainId] === undefined) {
-        continue;
-      }
+      if (leaf.chainId !== 42161) continue;
+      if (spokePoolClients[leaf.chainId] === undefined) continue;
       for (let i = 0; i < leaf.l1Tokens.length; i++) {
         const l1Token = leaf.l1Tokens[i];
         const tokenInfo = clients.hubPoolClient.getTokenInfo(1, l1Token);
@@ -214,7 +213,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
             // Not many bundles are expected to have slow fills so we can load them as necessary.
             const { slowFills, bundleSpokePoolClients } = await _constructSlowRootForBundle(
               previousValidatedBundle,
-              validatedBundles[x + 1 + 2],
+              validatedBundles[x + 1 + 4],
               mostRecentValidatedBundle
             );
             // Compute how much the slow fill will execute by checking if any partial fills were sent after
@@ -258,7 +257,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
           // Not many bundles are expected to have slow fills so we can load them as necessary.
           const { slowFills, bundleSpokePoolClients } = await _constructSlowRootForBundle(
             mostRecentValidatedBundle,
-            validatedBundles[x + 1 + 1],
+            validatedBundles[x + 1 + 4],
             mostRecentValidatedBundle
           );
           const slowFillsForPoolRebalanceLeaf = slowFills.filter(
