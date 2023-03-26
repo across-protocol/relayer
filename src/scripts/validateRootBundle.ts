@@ -176,12 +176,14 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     1,
     dataworker.chainIdListForBundleEvaluationBlockNumbers
   );
-  const widestPossibleBlockRanges = getWidestPossibleExpectedBlockRange(
+
+  // Get widest possible block range that could be used at time of root bundle proposal.
+  const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
     dataworker.chainIdListForBundleEvaluationBlockNumbers,
     spokePoolClients,
     getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
     clients,
-    priceRequestBlock,
+    mainnetBundleEndBlock,
     clients.configStoreClient.getEnabledChains(
       mainnetBundleEndBlock,
       dataworker.chainIdListForBundleEvaluationBlockNumbers
