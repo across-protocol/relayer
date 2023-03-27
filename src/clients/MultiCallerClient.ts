@@ -234,9 +234,9 @@ export class MultiCallerClient {
 
   buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction[] {
     // Split transactions by target contract if they are not all the same.
-    const targetContractAddresses = [...new Set(transactions.map((tx) => tx.contract.address))];
-    return targetContractAddresses.map((target) => {
-      return this._buildMultiCallBundle(transactions.filter((tx) => tx.contract.address === target));
+    const txnsGroupedByTarget = lodash.groupBy(transactions, (txn) => txn.contract.address);
+    return Object(txnsGroupedByTarget).values((txns) => {
+      return this._buildMultiCallBundle(txns);
     });
   }
 
@@ -287,6 +287,11 @@ export class MultiCallerClient {
     if (txns.length === 0) return [];
     const { chainId } = txns[0];
 
+    const { multicallerTxns = [], multisenderTxns = [] } = lodash.groupBy(txns, (txn) => {
+      if (txn.unpermissioned) return "multisenderTxns";
+      else return "multicallerTxns";
+    });
+
     // If we can't construct multisender contract, then multicall everything. If any of the transactions
     // is for a contract that can't be multicalled, then this function will throw. This client should only be
     // used on contracts that extend Multicaller.
@@ -294,7 +299,7 @@ export class MultiCallerClient {
       // Sort transactions by contract address so we can reduce chance that we need to split them again
       // to make Multicall work.
       const txnChunks = lodash.chunk(
-        txns.sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
+        multicallerTxns.concat(multisenderTxns).sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
         chunkSize
       );
       return txnChunks
@@ -307,7 +312,7 @@ export class MultiCallerClient {
       // We can support sending multiple transactions to different contracts via an external multisender
       // contract.
       const multicallerTxnChunks = lodash.chunk(
-        txns.filter((txn) => !txn.unpermissioned).sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
+        multicallerTxns.sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
         chunkSize
       );
       const multicallerTxnBundle = multicallerTxnChunks
@@ -315,10 +320,7 @@ export class MultiCallerClient {
           return txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0];
         })
         .flat();
-      const multisenderTxnChunks = lodash.chunk(
-        txns.filter((txn) => txn.unpermissioned),
-        chunkSize
-      );
+      const multisenderTxnChunks = lodash.chunk(multisenderTxns, chunkSize);
       const multisenderTxnBundle = multisenderTxnChunks.map((txnChunk) => {
         return txnChunk.length > 1 ? this.buildMultiSenderBundle(txnChunk) : txnChunk[0];
       });
