@@ -146,19 +146,19 @@ export class MultiCallerClient {
     // Simulate the final bundle that will be sent via Multicall3 or Multicaller. This is an extra sanity check
     // that gives us confidence even if any of the individual transactions are allowed to fail in individual
     // simulations. The batched transactions should always succeed in simulation.
-    const batchTxns = await this.txnClient.simulate(txnRequests);
-    batchTxns.forEach((batchTxn) => {
-      this.logger[batchTxn.succeed ? "debug" : "error"]({
+    const batchSimResults = await this.txnClient.simulate(txnRequests);
+    batchSimResults.forEach((result) => {
+      this.logger[result.succeed ? "debug" : "error"]({
         at: "MultiCallerClient#executeChainTxnQueue",
-        message: batchTxn.succeed
+        message: result.succeed
           ? `Successfully simulated ${networkName} transaction batch!`
           : `Failed to simulate ${networkName} transaction batch!`,
         batchTxn: {
-          ...batchTxn.transaction,
-          contract: batchTxn.transaction.contract.address,
+          ...result.transaction,
+          contract: result.transaction.contract.address,
         },
       });
-      if (!batchTxn.succeed) {
+      if (!result.succeed) {
         throw new Error("Failed to simulate transaction batch!");
       }
     });
