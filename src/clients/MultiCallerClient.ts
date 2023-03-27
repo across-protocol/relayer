@@ -235,7 +235,7 @@ export class MultiCallerClient {
   buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction[] {
     // Split transactions by target contract if they are not all the same.
     const txnsGroupedByTarget = lodash.groupBy(transactions, (txn) => txn.contract.address);
-    return Object(txnsGroupedByTarget).values((txns) => {
+    return Object.values(txnsGroupedByTarget).map((txns) => {
       return this._buildMultiCallBundle(txns);
     });
   }
