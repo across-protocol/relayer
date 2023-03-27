@@ -378,7 +378,7 @@ export class SpokePoolClient {
         fill.depositId,
         this.spokePoolDeploymentBlock,
         this.latestBlockNumber,
-        7
+        5
       );
       const query = await paginatedEventQuery(
         this.spokePool,
