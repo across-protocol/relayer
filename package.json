@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@across-protocol/boba-sdk": "^1.0.4",
-    "@across-protocol/contracts-v2": "^1.0.5",
+    "@across-protocol/contracts-v2": "^2.0.2",
     "@across-protocol/sdk-v2": "^0.3.7",
     "@arbitrum/sdk": "^3.1.2",
     "@defi-wonderland/smock": "^2.3.4",
