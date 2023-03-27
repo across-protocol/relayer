@@ -67,6 +67,20 @@ export interface SlowFill {
   recipient: string;
 }
 
+export interface RefundRequest {
+  relayer: string;
+  refundToken: string;
+  amount: BigNumber;
+  originChainId: number;
+  destinationChainId: number;
+  realizedLpFeePct: BigNumber;
+  depositId: number;
+  fillBlock: BigNumber;
+  previousIdenticalRequests: BigNumber;
+}
+
+export interface RefundRequestWithBlock extends RefundRequest, SortableEvent {}
+
 export interface RootBundleRelay {
   rootBundleId: number;
   relayerRefundRoot: string;
