@@ -1,5 +1,4 @@
-import { ethers } from "ethers";
-import { AugmentedTransaction, TransactionClient } from "../src/clients";
+import { AugmentedTransaction } from "../src/clients";
 import { TransactionResponse, TransactionSimulationResult } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
@@ -85,7 +84,9 @@ describe("TransactionClient", async function () {
         contract: { address } as Contract,
         method,
         args: [],
-      } as AugmentedTransaction;
+        message: "",
+        mrkdwn: "",
+      };
       txns.push(txnRequest);
     }
 
