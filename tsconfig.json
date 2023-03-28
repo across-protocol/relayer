@@ -8,7 +8,8 @@
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["./src", "index.ts"],
+  "strict": true,
+  "include": ["./src", "index.ts", "./scripts"],
   "files": ["./hardhat.config.ts"],
   "watchOptions": {
     "watchFile": "useFsEventsOnParentDirectory",

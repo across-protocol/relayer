@@ -3,9 +3,16 @@
   "bracketSpacing": true,
   "explicitTypes": "preserve",
   "tabWidth": 2,
-  "singleQuote": false,
-  "trailingComma": "es5",
   "overrides": [
+    {
+      "files": "*.sol",
+      "options": {
+        "tabWidth": 4,
+        "useTabs": false,
+        "singleQuote": false,
+        "explicitTypes": "always"
+      }
+    },
     {
       "files": "*.md",
       "options": {

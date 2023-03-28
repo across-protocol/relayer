@@ -2,7 +2,7 @@ module.exports = {
   env: {
     browser: true,
     es2021: true,
-    node: true
+    node: true,
   },
   extends: [
     "eslint:recommended",
@@ -10,15 +10,12 @@ module.exports = {
     "plugin:@typescript-eslint/recommended",
     "plugin:prettier/recommended",
   ],
-  parser: '@typescript-eslint/parser',
+  parser: "@typescript-eslint/parser",
   parserOptions: {
-    ecmaVersion: 'latest',
-    sourceType: 'module'
+    ecmaVersion: "latest",
+    sourceType: "module",
   },
-  plugins: [
-    "prettier", 
-    '@typescript-eslint'
-  ],
+  plugins: ["prettier", "@typescript-eslint"],
   rules: {
     "prettier/prettier": ["warn"],
     indent: 0, // avoid conflict with prettier's indent system
@@ -27,5 +24,5 @@ module.exports = {
     semi: ["error", "always"],
     "spaced-comment": ["error", "always", { exceptions: ["-", "+"] }],
     "no-console": 0,
-  }
-}
+  },
+};
