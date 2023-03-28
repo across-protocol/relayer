@@ -318,6 +318,7 @@ export class SpokePoolClient {
     high: number;
   }> {
     assert(initLow <= initHigh, "Binary search failed because low > high");
+    assert(maxSearches > 0, "maxSearches must be > 0");
     let low = initLow;
     let high = initHigh;
     let i = 0;
@@ -326,11 +327,15 @@ export class SpokePoolClient {
       const searchedDepositId = await this.spokePool.numberOfDeposits({ blockTag: mid });
 
       // Caller can set maxSearches to minimize number of binary searches and eth_call requests.
-      // Caller then needs to make a subsequent search between the latest [low, high].
-      if (i++ >= maxSearches) return { low, mid, high };
+      // Caller then needs to make a subsequent search between the latest [low, high]. If we
+      // exit the binary search early this way, then we should add/subtract 1 to high/low since
+      // low and high are updated in the following lines to be mid+1 or mid-1.
+      if (i++ >= maxSearches) return { low: low - 1, mid, high: high + 1 };
 
       if (targetDepositId > searchedDepositId) low = mid + 1;
       else if (targetDepositId < searchedDepositId) high = mid - 1;
+      // If we exit the binary search because we found exactly the mid, then no need to update
+      // low and high.
       else return { low, mid, high };
     } while (low <= high);
     // If we can't find a blockTag where `numberOfDeposits == targetDepositId`,
@@ -375,7 +380,7 @@ export class SpokePoolClient {
       // @dev Limiting between 5-10 searches empirically performs best when there are ~300,000 deposits
       // for a spoke pool and we're looking for a deposit <5 days older than HEAD.
       const searchBounds = await this._binarySearchForBlockContainingDepositId(
-        fill.depositId - 1,
+        fill.depositId,
         this.spokePoolDeploymentBlock,
         this.latestBlockNumber,
         10
