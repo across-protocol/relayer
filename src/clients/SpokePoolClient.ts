@@ -375,10 +375,10 @@ export class SpokePoolClient {
       // @dev Limiting between 5-10 searches empirically performs best when there are ~300,000 deposits
       // for a spoke pool and we're looking for a deposit <5 days older than HEAD.
       const searchBounds = await this._binarySearchForBlockContainingDepositId(
-        fill.depositId,
+        fill.depositId - 1,
         this.spokePoolDeploymentBlock,
         this.latestBlockNumber,
-        5
+        10
       );
       const query = await paginatedEventQuery(
         this.spokePool,
