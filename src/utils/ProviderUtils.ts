@@ -429,7 +429,6 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
   // Default to a node quorum of 1 node.
   const nodeQuorumThreshold = Number(process.env[`NODE_QUORUM_${chainId}`] || NODE_QUORUM || "1");
 
-  // Default to a max concurrency of 1000 requests per node.
   const nodeMaxConcurrency = Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY || "25");
 
   // Provider caching defaults to being enabled if a redis instance exists. It can be manually disabled by setting
