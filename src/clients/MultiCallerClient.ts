@@ -287,10 +287,26 @@ export class MultiCallerClient {
     if (txns.length === 0) return [];
     const { chainId } = txns[0];
 
-    const { multicallerTxns = [], multisenderTxns = [] } = lodash.groupBy(txns, (txn) => {
+    const {
+      multicallerTxns = [],
+      multisenderTxns = [],
+      unsendableTxns = [],
+    } = lodash.groupBy(txns, (txn) => {
       if (txn.unpermissioned) return "multisenderTxns";
-      else return "multicallerTxns";
+      else if (txn.contract.multicall) return "multicallerTxns";
+      else return "unsendableTxns";
     });
+
+    // We should never get here but log any transactions that are sent to an ABI that doesn't have
+    // multicall() and are not flagged to be sent to a Multisender.
+    if (unsendableTxns.length > 0) {
+      this.logger.error({
+        at: "MultiCallerClient#buildMultiCallBundles",
+        message: "Found transactions targeting a non-multicall and non-multisend contract!",
+        unsendableTxns,
+        notificationPath: "across-error",
+      });
+    }
 
     // If we can't construct multisender contract, then multicall everything. If any of the transactions
     // is for a contract that can't be multicalled, then this function will throw. This client should only be
