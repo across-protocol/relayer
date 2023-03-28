@@ -9,6 +9,20 @@ export type TransactionSimulationResult = {
   reason: string;
 };
 
+type EthersError = Error & {
+  code: string;
+  reason: string;
+};
+
+const isEthersError = (error?: unknown): error is EthersError =>
+  (error as EthersError)?.code in ethers.utils.Logger.errors;
+const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);
+const txnRetryable = (error?: unknown): boolean => {
+  if (isEthersError(error)) return txnRetryErrors.has(error.code);
+
+  return (error as Error)?.message?.includes("intrinsic gas too low");
+};
+
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
 // of this method should be considerate of this and catch the response to deal with the error accordingly.
 export async function runTransaction(
@@ -49,12 +63,7 @@ export async function runTransaction(
     );
     return await contract[method](...args, txConfig);
   } catch (error) {
-    if (
-      retriesRemaining > 0 &&
-      (error?.code === "NONCE_EXPIRED" ||
-        error?.code === "INSUFFICIENT_FUNDS" ||
-        error?.message.includes("intrinsic gas too low"))
-    ) {
+    if (retriesRemaining > 0 && txnRetryable(error)) {
       // If error is due to a nonce collision or gas underpricement then re-submit to fetch latest params.
       retriesRemaining -= 1;
       logger.debug({

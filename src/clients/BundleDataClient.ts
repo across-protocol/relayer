@@ -337,6 +337,7 @@ export class BundleDataClient {
         message: "Finished loading spoke pool data and found some invalid fills in range",
         blockRangesForChains,
         allInvalidFillsInRangeByDestinationChain: spokeEventsReadable.allInvalidFillsInRangeByDestinationChain,
+        allInvalidFills,
       });
 
     this.loadDataCache[key] = { fillsToRefund, deposits, unfilledDeposits, allValidFills };
