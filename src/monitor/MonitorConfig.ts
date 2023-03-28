@@ -84,11 +84,11 @@ export class MonitorConfig extends CommonConfig {
     // Used to send tokens if available in wallet to balances under target balances.
     if (REFILL_BALANCES) {
       this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(
-        ({ chainId, account, isHubPool, target, trigger, token }) => {
+        ({ chainId, account, isHubPool, target, trigger }) => {
           if (Number.isNaN(target) || target <= 0)
-            throw new Error(`target for ${chainId}, ${account}, and ${token} must be > 0, got ${target}`);
+            throw new Error(`target for ${chainId} and ${account} must be > 0, got ${target}`);
           if (Number.isNaN(trigger) || trigger <= 0)
-            throw new Error(`trigger for ${chainId}, ${account}, and ${token} must be > 0, got ${trigger}`);
+            throw new Error(`trigger for ${chainId} and ${account} must be > 0, got ${trigger}`);
           if (trigger >= target) throw new Error("trigger must be < target");
           return {
             // Required fields:
@@ -98,7 +98,8 @@ export class MonitorConfig extends CommonConfig {
             trigger,
             // Optional fields that will set to defaults:
             isHubPool: Boolean(isHubPool),
-            token: !token || token === "0x0" || token === ZERO_ADDRESS ? ZERO_ADDRESS : token,
+            // Fields that are always set to defaults:
+            token: ZERO_ADDRESS,
           };
         }
       );

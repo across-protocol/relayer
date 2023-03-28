@@ -347,7 +347,7 @@ export class Monitor {
   }
 
   /**
-   * @notice Checks if any accounts on refill balances list are under their target, if so tries to refill them.
+   * @notice Checks if any accounts on refill balances list are under their ETH target, if so tries to refill them.
    * This functionality compliments the report-only mode of `checkBalances`. Its expected that some accounts are
    * listed in `monitorBalances`. These accounts might also be listed in `refillBalances` with a higher target than
    * the `monitorBalances` target. This function will ensure that `checkBalances` will rarely alert for those
@@ -417,42 +417,21 @@ export class Monitor {
                 message: "Reloaded ETH in HubPool 🫡!",
                 mrkdwn: `Loaded ${ethers.utils.formatUnits(deficit, decimals)} ETH from ${signerAddress}.`,
                 value: deficit,
-                // unpermissioned: true
               });
             } else {
-              if (token === ZERO_ADDRESS) {
-                // Note: We don't multicall sending ETH as its not a contract call.
-                const tx = await (
-                  await this.clients.spokePoolClients[chainId].spokePool.signer
-                ).sendTransaction({ to: account, value: deficit });
-                const receipt = await tx.wait();
-                this.logger.info({
-                  at: "Monitor#refillBalances",
-                  message: `Reloaded ${ethers.utils.formatUnits(
-                    deficit,
-                    decimals
-                  )} ETH for ${account} from ${signerAddress} 🫡!`,
-                  transactionHash: receipt.transactionHash,
-                });
-              } else {
-                const erc20 = new Contract(
-                  "ERC20",
-                  ERC20.abi,
-                  this.clients.spokePoolClients[chainId].spokePool.provider
-                );
-                const symbol = await erc20.symbol();
-                this.clients.multiCallerClient.enqueueTransaction({
-                  contract: new Contract("ERC20", ERC20.abi, this.clients.spokePoolClients[chainId].spokePool.provider),
-                  chainId: chainId,
-                  method: "transfer",
-                  args: [account, deficit],
-                  message: "Reloaded ERC20 🫡!",
-                  mrkdwn: `Sent ${ethers.utils.formatUnits(deficit, decimals)} ${symbol} on ${getNetworkName(
-                    chainId
-                  )} to ${account} from ${signerAddress}!`,
-                  // unpermissioned: true
-                });
-              }
+              // Note: We don't multicall sending ETH as its not a contract call.
+              const tx = await (
+                await this.clients.spokePoolClients[chainId].spokePool.signer
+              ).sendTransaction({ to: account, value: deficit });
+              const receipt = await tx.wait();
+              this.logger.info({
+                at: "Monitor#refillBalances",
+                message: `Reloaded ${ethers.utils.formatUnits(
+                  deficit,
+                  decimals
+                )} ETH for ${account} from ${signerAddress} 🫡!`,
+                transactionHash: receipt.transactionHash,
+              });
             }
           } else {
             this.logger.warn({

@@ -351,14 +351,6 @@ describe("Monitor", async function () {
   it("Monitor should send token refills", async function () {
     const refillConfig = [
       {
-        account: depositor.address,
-        isHubPool: false,
-        chainId: originChainId,
-        trigger: 1,
-        target: 10,
-        token: l2Token.address,
-      },
-      {
         account: hubPool.address,
         isHubPool: true,
         chainId: hubPoolClient.chainId,
@@ -366,7 +358,7 @@ describe("Monitor", async function () {
         target: 2,
       },
       {
-        account: depositor.address,
+        account: spokePool_1.address,
         isHubPool: false,
         chainId: originChainId,
         trigger: 1,
@@ -389,18 +381,14 @@ describe("Monitor", async function () {
     });
     await _monitor.update();
 
+    expect(await spokePool_1.provider.getBalance(spokePool_1.address)).to.equal(0);
+
     await _monitor.refillBalances();
 
-    // Send ETH
-    // - If below threshold
-    // - Has enough balance
-    // - Is HubPool versus is not HubPool
-    // Send ERC20
-    // - If below threshold
-    // - Has enough balance
-    // Sends all txns through Multisend in a single txn (per ERC20) to multiple txns.
-    // - ETH txns are always sent separately as they can't be multicalled
-    // Doesn't fail if one txn fails and others succeed
+    expect(multiCallerClient.transactionCount()).to.equal(1);
+    await multiCallerClient.executeTransactionQueue();
+
+    expect(await spokePool_1.provider.getBalance(spokePool_1.address)).to.equal(toBNWei("2"));
   });
 });
 
