@@ -1,9 +1,10 @@
 import * as optimismSDK from "@eth-optimism/sdk";
 import * as bobaSDK from "@across-protocol/boba-sdk";
-import { Multicall2Call, Withdrawal } from "..";
+import { Withdrawal } from "..";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { L1Token, TokensBridged } from "../../interfaces";
 import { convertFromWei, ethers, getNodeUrlList, groupObjectCountsByProp, Wallet, winston } from "../../utils";
+import { Multicall2Call } from "../../common";
 
 type OVM_CHAIN_ID = 10 | 288;
 type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger | bobaSDK.CrossChainMessenger;

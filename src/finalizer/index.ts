@@ -3,14 +3,12 @@ import {
   config,
   startupLogLevel,
   processEndPollingLoop,
-  Contract,
-  ethers,
   getNetworkName,
   etherscanLink,
   getBlockForTimestamp,
   getCurrentTime,
-  getRedis,
   disconnectRedisClient,
+  getMultisender,
 } from "../utils";
 import { winston } from "../utils";
 import {
@@ -30,17 +28,12 @@ import {
   Clients,
   ProcessEnv,
   FINALIZER_TOKENBRIDGE_LOOKBACK,
+  Multicall2Call,
 } from "../common";
-import { Multicall2Ethers__factory } from "@uma/contracts-node";
 import * as optimismSDK from "@eth-optimism/sdk";
 import * as bobaSDK from "@across-protocol/boba-sdk";
 config();
 let logger: winston.Logger;
-
-export interface Multicall2Call {
-  callData: ethers.utils.BytesLike;
-  target: string;
-}
 
 export interface Withdrawal {
   l2ChainId: number;
@@ -63,11 +56,7 @@ export async function finalize(
   const hubPoolClient = configStoreClient.hubPoolClient;
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
-  const multicall2 = new Contract(
-    "0x5ba1e12693dc8f9c48aad8770482f4739beed696",
-    Multicall2Ethers__factory.abi,
-    hubPoolClient.hubPool.signer
-  );
+  const multicall2 = getMultisender(1, hubSigner);
   const finalizationsToBatch: { callData: Multicall2Call[]; withdrawals: Withdrawal[] } = {
     callData: [],
     withdrawals: [],

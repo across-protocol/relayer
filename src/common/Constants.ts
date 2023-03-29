@@ -1,4 +1,5 @@
 import { utils } from "@across-protocol/sdk-v2";
+import { ethers } from "../utils";
 
 // This version should increase each time the ConfigStore's config changes, otherwise relayer and dataworker logic
 // will stop working to protect the user's funds.
@@ -133,3 +134,16 @@ export const BLOCK_NUMBER_TTL = 60;
 
 // This is the TTL for the provider cache.
 export const PROVIDER_CACHE_TTL = 3600;
+
+// Multicall3 Constants:
+export const multicall3Addresses = {
+  1: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  10: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  137: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  288: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  42161: "0xcA11bde05977b3631167028862bE2a173976CA11",
+};
+export type Multicall2Call = {
+  callData: ethers.utils.BytesLike;
+  target: string;
+};
