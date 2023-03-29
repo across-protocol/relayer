@@ -96,7 +96,7 @@ describe("Dataworker block range-related utility methods", async function () {
 
     // Look if bundle range from block is before the latest invalid
     // bundle start block. If so, then the range is invalid.
-    const mainnetDeploymentBlock = spokePoolClients[1].spokePoolDeploymentBlock;
+    const mainnetDeploymentBlock = spokePoolClients[1].deploymentBlock;
     if (mainnetDeploymentBlock === undefined) throw new Error("mainnetDeploymentBlock is undefined");
     if (spokePoolClients[1].latestBlockNumber === undefined)
       throw new Error("spokePoolClient[1].latestBlockNumber is undefined");

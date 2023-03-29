@@ -75,7 +75,7 @@ export class SpokePoolClient {
     // Can be excluded. This disables some deposit validation.
     readonly configStoreClient: AcrossConfigStoreClient | null,
     readonly chainId: number,
-    public spokePoolDeploymentBlock: number,
+    public deploymentBlock: number,
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
@@ -262,7 +262,7 @@ export class SpokePoolClient {
   // where `numberOfDeposits == targetDepositId`.
   async binarySearchForBlockContainingDepositId(
     targetDepositId: number,
-    initLow = this.spokePoolDeploymentBlock,
+    initLow = this.deploymentBlock,
     initHigh = this.latestBlockNumber
   ): Promise<number> {
     assert(initLow <= initHigh, "Binary search failed because low > high");
@@ -362,7 +362,7 @@ export class SpokePoolClient {
 
   async queryHistoricalMatchingFills(fill: Fill, deposit: Deposit, toBlock: number): Promise<FillWithBlock[]> {
     const searchConfig = {
-      fromBlock: this.spokePoolDeploymentBlock,
+      fromBlock: this.deploymentBlock,
       toBlock,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
@@ -429,11 +429,9 @@ export class SpokePoolClient {
     // other event queries to not double search over the same event ranges.
     const depositRouteSearchConfig = { ...searchConfig }; // shallow copy.
     if (!this.isUpdated) {
-      depositRouteSearchConfig.fromBlock = this.spokePoolDeploymentBlock;
+      depositRouteSearchConfig.fromBlock = this.deploymentBlock;
       // note: Assumes no deposit occurred in the deployment block.
-      this.firstDepositIdForSpokePool = await this.spokePool.numberOfDeposits({
-        blockTag: this.spokePoolDeploymentBlock
-      });
+      this.firstDepositIdForSpokePool = await this.spokePool.numberOfDeposits({ blockTag: this.deploymentBlock });
     }
 
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
