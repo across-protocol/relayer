@@ -3024,7 +3024,42 @@
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.14.tgz#cd2b7b2b0b1a5391b3cb7f9c1977ed1fb9b9f6d1"
   integrity sha512-euguQJvZIByasP76mvNyDfKWqkqyExwHbWmBIpoC1TkFdGyO4sexCDPogNOeEpi3QZwwEaBp3k4o4htu19+tcQ==
 
-"@uma/core@^2.18.0", "@uma/core@^2.41.0":
+"@uma/contracts-node@^0.4.13":
+  version "0.4.13"
+  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.13.tgz#448153a7fb772aba8d337bac415966bf345b97f3"
+  integrity sha512-rfDgYLnOSTmJi/nsi2NHTFM8hHnhmuKXfikXE5HknRphI8+4Zh/HT4n33njwBHrIOHechols3rXxQpm8dsKBTw==
+
+"@uma/core@^2.18.0":
+  version "2.26.0"
+  resolved "https://registry.yarnpkg.com/@uma/core/-/core-2.26.0.tgz#ac500ce9376fcc16b7b5de54586cbefcbf07e278"
+  integrity sha512-3c6nEeyoL6l1yE3KTCtQ2arm/j9n1KgdB2JrYi0TbEQLRtB/m/Hm08sSZhis0Yhq/d+azH9pDm8aVI566YlpUg==
+  dependencies:
+    "@maticnetwork/fx-portal" "^1.0.4"
+    "@openzeppelin/contracts" "4.4.2"
+    "@uma/common" "^2.19.0"
+    "@uniswap/lib" "4.0.1-alpha"
+    "@uniswap/v2-core" "1.0.0"
+    "@uniswap/v2-periphery" "1.1.0-beta.0"
+    "@uniswap/v3-core" "^1.0.0-rc.2"
+    "@uniswap/v3-periphery" "^1.0.0-beta.23"
+
+"@uma/core@^2.38.0":
+  version "2.38.0"
+  resolved "https://registry.yarnpkg.com/@uma/core/-/core-2.38.0.tgz#67e1d246509a663a0703b70666e78f4ec410183f"
+  integrity sha512-Vb1CU8YsXBS71DHoKMYnWk3/NVeU3lhoT8D/s5b1OraOLr1MOToXAJpT0IEGA+fvpchwRFpN0qY5gMUY8MhkBg==
+  dependencies:
+    "@gnosis.pm/safe-contracts" "^1.3.0"
+    "@gnosis.pm/zodiac" "1.0.3"
+    "@maticnetwork/fx-portal" "^1.0.4"
+    "@openzeppelin/contracts" "4.4.2"
+    "@uma/common" "^2.28.0"
+    "@uniswap/lib" "4.0.1-alpha"
+    "@uniswap/v2-core" "1.0.0"
+    "@uniswap/v2-periphery" "1.1.0-beta.0"
+    "@uniswap/v3-core" "^1.0.0-rc.2"
+    "@uniswap/v3-periphery" "^1.0.0-beta.23"
+
+"@uma/core@^2.41.0":
   version "2.43.2"
   resolved "https://registry.yarnpkg.com/@uma/core/-/core-2.43.2.tgz#b4dc17594f6ff8b57720f6451043e8ee91841942"
   integrity sha512-/v+dMemV/SYvJveO2gXFfmhl/fwypjEAn/KlehcaHvGsyUKGHXT55tSLuBvE2qdtL+l8+YGXXUV98J5OR5T0Qw==

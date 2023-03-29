@@ -11,7 +11,8 @@ import {
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
-import { Multicall2Call, Withdrawal } from "..";
+import { Withdrawal } from "..";
+import { Multicall2Call } from "../../common";
 
 // Note!!: This client will only work for PoS tokens. Matic also has Plasma tokens which have a different finalization
 // process entirely.

@@ -2,7 +2,8 @@ import { Wallet, winston, convertFromWei, groupObjectCountsByProp, Contract, get
 import { L2ToL1MessageStatus, L2TransactionReceipt, getL2Network, L2ToL1MessageWriter } from "@arbitrum/sdk";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
-import { Multicall2Call, Withdrawal } from "..";
+import { Withdrawal } from "..";
+import { Multicall2Call } from "../../common";
 
 const CHAIN_ID = 42161;
 
