@@ -50,7 +50,7 @@ const FILL_DEPOSIT_COMPARISON_KEYS = [
 const FIXED_LOOKBACK_EVENTS = ["FundsDeposited", "FilledRelay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
 
 export class SpokePoolClient {
-  private currentTime: number;
+  private currentTime = 0;
   private depositHashes: { [depositHash: string]: DepositWithBlock } = {};
   private depositHashesToFills: { [depositHash: string]: FillWithBlock[] } = {};
   private speedUps: { [depositorAddress: string]: { [depositId: number]: SpeedUp[] } } = {};
@@ -65,7 +65,7 @@ export class SpokePoolClient {
   public lastDepositIdForSpokePool = Number.MAX_SAFE_INTEGER;
   public isUpdated = false;
   public firstBlockToSearch: number;
-  public latestBlockNumber: number | undefined;
+  public latestBlockNumber = 0;
   public deposits: { [DestinationChainId: number]: DepositWithBlock[] } = {};
   public fills: { [OriginChainId: number]: FillWithBlock[] } = {};
 
