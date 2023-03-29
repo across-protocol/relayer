@@ -1,4 +1,3 @@
-import { ethers } from "ethers";
 import {
   AugmentedTransaction,
   MultiCallerClient, // tested
@@ -6,7 +5,7 @@ import {
   unknownRevertReason,
   unknownRevertReasonMethodsToIgnore,
 } from "../src/clients";
-import { TransactionResponse, TransactionSimulationResult } from "../src/utils";
+import { TransactionSimulationResult } from "../src/utils";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";
@@ -50,13 +49,12 @@ class MockedMultiCallerClient extends MultiCallerClient {
 }
 
 // encodeFunctionData is called from within MultiCallerClient.buildMultiCallBundle.
-function encodeFunctionData(method: string, args?: ReadonlyArray<any>): string {
+function encodeFunctionData(_method: string, args: ReadonlyArray<any> = []): string {
   return args.join(" ");
 }
 
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
 const multiCaller: MockedMultiCallerClient = new MockedMultiCallerClient(spyLogger);
-const provider = new ethers.providers.StaticJsonRpcProvider("127.0.0.1");
 const address = randomAddress(); // Test contract address
 
 describe("MultiCallerClient", async function () {
@@ -101,7 +99,7 @@ describe("MultiCallerClient", async function () {
       const txns: AugmentedTransaction[] = chainIds.map((_chainId) => {
         const chainId = Number(_chainId);
         return {
-          chainId: chainId,
+          chainId,
           contract: { address },
           args: [{ result }],
           message: `Test transaction on chain ${chainId}`,
@@ -131,17 +129,17 @@ describe("MultiCallerClient", async function () {
           chainIds.forEach((_chainId) => {
             const chainId = Number(_chainId);
             const txnRequest: AugmentedTransaction = {
-              chainId: chainId,
+              chainId,
               contract: {
                 address,
                 interface: { encodeFunctionData },
-              },
+              } as Contract,
               method: "test",
               args: [{ result }],
               value: toBN(value),
               message: `Test ${txnType} transaction (${txn}/${nTxns}) on chain ${chainId}`,
               mrkdwn: `Sample markdown string for chain ${chainId} ${txnType} transaction`,
-            } as AugmentedTransaction;
+            };
 
             multiCaller.enqueueTransaction(txnRequest);
           });
@@ -157,7 +155,7 @@ describe("MultiCallerClient", async function () {
   });
 
   it("Correctly filters loggable vs. ignorable simulation failures", async function () {
-    const txn: AugmentedTransaction = {
+    const txn = {
       chainId: chainIds[0],
       contract: { address },
     } as AugmentedTransaction;
@@ -167,7 +165,7 @@ describe("MultiCallerClient", async function () {
       txn.args = [{ result: revertReason }];
       txn.message = `Transaction simulation failure; expected to fail with: ${revertReason}.`;
 
-      const result: AugmentedTransaction[] = await multiCaller.simulateTransactionQueue([txn]);
+      const result = await multiCaller.simulateTransactionQueue([txn]);
       expect(result.length).to.equal(0);
       expect(multiCaller.ignoredSimulationFailures.length).to.equal(1);
       expect(multiCaller.loggedSimulationFailures.length).to.equal(0);
@@ -179,7 +177,7 @@ describe("MultiCallerClient", async function () {
       txn.method = method;
       txn.message = `${txn.method} simulation; expected to fail with: ${unknownRevertReason}.`;
 
-      const result: AugmentedTransaction[] = await multiCaller.simulateTransactionQueue([txn]);
+      const result = await multiCaller.simulateTransactionQueue([txn]);
       expect(result.length).to.equal(0);
       expect(multiCaller.ignoredSimulationFailures.length).to.equal(1);
       expect(multiCaller.loggedSimulationFailures.length).to.equal(0);
@@ -193,7 +191,7 @@ describe("MultiCallerClient", async function () {
         txn.args = [{ result: revertReason }];
         txn.message = `${txn.method} simulation; expected to fail with: ${unknownRevertReason}.`;
 
-        const result: AugmentedTransaction[] = await multiCaller.simulateTransactionQueue([txn]);
+        const result = await multiCaller.simulateTransactionQueue([txn]);
         expect(result.length).to.equal(0);
         expect(multiCaller.ignoredSimulationFailures.length).to.equal(0);
         expect(multiCaller.loggedSimulationFailures.length).to.equal(1);
@@ -207,9 +205,9 @@ describe("MultiCallerClient", async function () {
     for (const badField of ["address", "chainId"]) {
       const txns: AugmentedTransaction[] = [];
 
-      for (const idx of [1, 2, 3, 4, 5]) {
-        const txn = {
-          chainId: chainId,
+      for (const _idx of [1, 2, 3, 4, 5]) {
+        const txn: AugmentedTransaction = {
+          chainId,
           contract: {
             address,
             interface: { encodeFunctionData },
@@ -218,14 +216,15 @@ describe("MultiCallerClient", async function () {
           args: ["2"],
           value: toBN(0),
           message: `Test multicall candidate on chain ${chainId}`,
-        } as AugmentedTransaction;
+          mrkdwn: "",
+        };
         txns.push(txn);
       }
 
       expect(txns.length).to.not.equal(0);
       expect(() => multiCaller.buildMultiCallBundle(txns)).to.not.throw();
 
-      const badTxn: AugmentedTransaction = txns.pop();
+      const badTxn = txns.pop() as AugmentedTransaction;
       switch (badField) {
         case "address":
           badTxn.contract = {
@@ -259,7 +258,7 @@ describe("MultiCallerClient", async function () {
       const multicallTxns: AugmentedTransaction[] = [];
       const _chunkSize = chunkSize[chainId];
 
-      const sampleTxn = {
+      const sampleTxn: AugmentedTransaction = {
         chainId,
         contract: {
           address,
@@ -267,7 +266,9 @@ describe("MultiCallerClient", async function () {
         } as Contract,
         method: testMethod,
         args: [],
-      } as AugmentedTransaction;
+        message: "",
+        mrkdwn: "",
+      };
 
       const nTxns = nFullBundles * _chunkSize + 1;
       for (let txn = 0; txn < nTxns; ++txn) {
@@ -275,7 +276,7 @@ describe("MultiCallerClient", async function () {
         multicallTxns.push(sampleTxn);
       }
 
-      const txnQueue: AugmentedTransaction[] = await _multiCaller.buildMultiCallBundles(multicallTxns, _chunkSize);
+      const txnQueue = _multiCaller.buildMultiCallBundles(multicallTxns, _chunkSize);
       expect(txnQueue.length).to.equal(nFullBundles + 1);
 
       txnQueue.slice(0, nFullBundles).forEach((txn) => {
@@ -288,7 +289,7 @@ describe("MultiCallerClient", async function () {
   });
 
   it("Correctly handles 0-length input to multicall bundle generation", async function () {
-    const txnQueue: AugmentedTransaction[] = await multiCaller.buildMultiCallBundles([], 10);
+    const txnQueue = multiCaller.buildMultiCallBundles([], 10);
     expect(txnQueue.length).to.equal(0);
   });
 });
