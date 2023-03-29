@@ -257,7 +257,7 @@ export async function constructClients(
   return { hubPoolClient, configStoreClient, multiCallerClient, hubSigner };
 }
 
-export async function updateClients(clients: Clients) {
+export async function updateClients(clients: Clients): Promise<void> {
   await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
 }
 
@@ -265,6 +265,11 @@ export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number
   [chainId: number]: ethers.providers.Provider;
 } {
   return Object.fromEntries(
-    Object.entries(spokePoolClients).map(([chainId, client]) => [Number(chainId), client.spokePool.signer.provider!])
+    Object.entries(spokePoolClients)
+      .map(([chainId, client]): [number, ethers.providers.Provider] => [
+        Number(chainId),
+        client.spokePool.signer.provider,
+      ])
+      .filter(([, provider]) => !!provider)
   );
 }
