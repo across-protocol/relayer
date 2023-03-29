@@ -420,7 +420,7 @@ export class SpokePoolClient {
 
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
-      toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
+      toBlock: this.eventSearchConfig.toBlock || latestBlockNumber,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
 
@@ -499,7 +499,7 @@ export class SpokePoolClient {
         ...this.earlyDeposits,
       ];
       const { earlyDeposits = [], depositEvents = [] } = groupBy(allDeposits, (depositEvent) => {
-        if (depositEvent.args.quoteTimestamp > this.currentTime) {
+        if (depositEvent.args.quoteTimestamp > currentTime) {
           this.logger.debug({ at: "SpokePoolClient#update", message: "Deferring early deposit event.", depositEvent });
           return "earlyDeposits";
         } else return "depositEvents";
@@ -609,6 +609,8 @@ export class SpokePoolClient {
       }
     }
 
+    this.currentTime = currentTime;
+    this.latestBlockNumber = latestBlockNumber;
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.isUpdated = true;
