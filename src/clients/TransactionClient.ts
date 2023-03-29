@@ -14,7 +14,7 @@ export interface AugmentedTransaction {
   contract: Contract;
   chainId: number;
   method: string;
-  args: any[];
+  args: unknown[];
   message: string;
   mrkdwn: string;
   value?: BigNumber;

@@ -48,20 +48,20 @@ export class MultiCallerClient {
   }
 
   // Adds all information associated with a transaction to the transaction queue.
-  enqueueTransaction(txn: AugmentedTransaction) {
+  enqueueTransaction(txn: AugmentedTransaction): void {
     // Value transactions are sorted immediately because the UMA multicall implementation rejects them.
     const txnQueue = txn.value && txn.value.gt(0) ? this.valueTxns : this.txns;
     if (txnQueue[txn.chainId] === undefined) txnQueue[txn.chainId] = [];
     txnQueue[txn.chainId].push(txn);
   }
 
-  transactionCount() {
+  transactionCount(): number {
     return Object.values(this.txns)
       .concat(Object.values(this.valueTxns))
       .reduce((count, txnQueue) => (count += txnQueue.length), 0);
   }
 
-  clearTransactionQueue(chainId: number = null) {
+  clearTransactionQueue(chainId: number = null): void {
     if (chainId !== null) {
       this.txns[chainId] = [];
       this.valueTxns[chainId] = [];
