@@ -19,7 +19,6 @@ import {
   filledSameDeposit,
   getCurrentTime,
   getRedis,
-  sortEventsDescending,
 } from "../utils";
 import { toBN, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
@@ -139,7 +138,7 @@ export class SpokePoolClient {
   }
 
   getLatestRootBundleId() {
-    return sortEventsDescending(this.rootBundleRelays)[0]?.rootBundleId ?? 0;
+    return this.rootBundleRelays[this.rootBundleRelays.length - 1]?.rootBundleId ?? 0;
   }
 
   getRelayerRefundExecutions() {

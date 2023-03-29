@@ -9,12 +9,10 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   SpokePool,
-  getSigner,
 } from "../utils";
 import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { Multicall2Ethers__factory } from "@uma/contracts-node";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;

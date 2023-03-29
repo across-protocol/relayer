@@ -16,7 +16,6 @@ import {
   FillWithBlock,
   ProposedRootBundle,
   RootBundleRelayWithBlock,
-  SlowFill,
   SpokePoolClientsByChain,
   UnfilledDeposit,
 } from "../interfaces";
@@ -48,7 +47,6 @@ import { BalanceAllocator } from "../clients";
 import _ from "lodash";
 import { CONFIG_STORE_VERSION, spokePoolClientsToProviders } from "../common";
 import { isOvmChain, ovmWethTokens } from "../clients/bridges";
-import { filter } from "bluebird";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
