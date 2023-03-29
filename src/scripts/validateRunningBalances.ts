@@ -277,7 +277,8 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
         );
 
         // NOTE: There are several ways in which excess can be incorrect:
-        // - A relayer refund leaf from a bundle more than 2 bundles ago has not been executed.
+        // - A relayer refund leaf from a bundle more than 2 bundles ago has not been executed or never
+        //   arrived at the L2.
         // - A slow fill from a bundle more than 2 bundles ago has not been executed and has not been replaced
         // by a partial fill.
         // - A deposit from HubPool to Spoke took too long to arrive and those deposits are not trackable via
@@ -323,6 +324,19 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
     message: "Historical excesses",
     excesses,
   });
+  const unexpectedExcess = Object.entries(excesses).some(([, tokenExcesses]) => {
+    return Object.entries(tokenExcesses).some(([, excesses]) => {
+      return excesses.some((excess) => {
+        Number(excess) !== 0;
+      });
+    });
+  });
+  if (unexpectedExcess) {
+    logger.error({
+      at: "validateRunningBalances#index",
+      message: "Unexpected excess found",
+    });
+  }
 
   /**
    *
