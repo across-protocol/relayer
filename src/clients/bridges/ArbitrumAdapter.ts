@@ -8,6 +8,7 @@ import {
   winston,
   BigNumberish,
   isDefined,
+  TransactionResponse,
 } from "../../utils";
 import { toBN, toWei, paginatedEventQuery, Promise, Event } from "../../utils";
 import { SpokePoolClient } from "../../clients";
@@ -15,6 +16,7 @@ import { BaseAdapter } from "./BaseAdapter";
 import { arbitrumL2Erc20GatewayInterface, arbitrumL1Erc20GatewayInterface } from "./ContractInterfaces";
 import { SortableEvent } from "../../interfaces";
 import { constants } from "@across-protocol/sdk-v2";
+import { OutstandingTransfers } from "../../interfaces/Bridge";
 const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
 // These values are obtained from Arbitrum's gateway router contract.
@@ -65,7 +67,7 @@ export class ArbitrumAdapter extends BaseAdapter {
     super(spokePoolClients, 42161, monitoredAddresses, logger);
   }
 
-  async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
+  async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
@@ -124,11 +126,11 @@ export class ArbitrumAdapter extends BaseAdapter {
           // TODO: typing here is a little janky. To get these right, we'll probably need to rework how we're sorting
           // these different types of events into the array to get stronger guarantees when extracting them.
           const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-            amount?: BigNumberish;
-            _amount?: BigNumberish;
+            amount: BigNumberish;
+            _amount: BigNumberish;
           };
           return {
-            amount: eventSpread[index % 2 === 0 ? "_amount" : "amount"]!,
+            amount: eventSpread[index % 2 === 0 ? "_amount" : "amount"],
             ...eventSpread,
           };
         });
@@ -140,7 +142,7 @@ export class ArbitrumAdapter extends BaseAdapter {
     return this.computeOutstandingCrossChainTransfers(validTokens);
   }
 
-  async checkTokenApprovals(address: string, l1Tokens: string[]) {
+  async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     // Note we send the approvals to the L1 Bridge but actually send outbound transfers to the L1 Gateway Router.
     // Note that if the token trying to be approved is not configured in this client (i.e. not in the l1Gateways object)
     // then this will pass null into the checkAndSendTokenApprovals. This method gracefully deals with this case.
@@ -153,7 +155,12 @@ export class ArbitrumAdapter extends BaseAdapter {
     await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
   }
 
-  async sendTokenToTargetChain(address: string, l1Token: string, l2Token: string, amount: BigNumber) {
+  async sendTokenToTargetChain(
+    address: string,
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumber
+  ): Promise<TransactionResponse> {
     this.log("Bridging tokens", { l1Token, l2Token, amount });
     const args = [
       l1Token, // token
@@ -170,11 +177,11 @@ export class ArbitrumAdapter extends BaseAdapter {
     return new Contract(l1Gateways[l1Token], arbitrumL1Erc20GatewayInterface, this.getSigner(1));
   }
 
-  getL1GatewayRouter() {
+  getL1GatewayRouter(): Contract {
     return new Contract(l1GatewayRouter, arbitrumL1Erc20GatewayInterface, this.getSigner(1));
   }
 
-  getL2Bridge(l1Token: SupportedL1Token) {
+  getL2Bridge(l1Token: SupportedL1Token): Contract {
     return new Contract(l2Gateways[l1Token], arbitrumL2Erc20GatewayInterface, this.getSigner(this.chainId));
   }
 
