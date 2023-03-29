@@ -416,7 +416,7 @@ export class SpokePoolClient {
     if (latestBlockNumber < this.latestBlockNumber)
       throw new Error(`SpokePoolClient::update: latestBlockNumber ${latestBlockNumber} < ${this.latestBlockNumber}`);
     else if (currentTime < this.currentTime)
-      throw new Error(`SpokePoolClient::update: currentTime: ${currentTime} < ${this.currentTime}`);
+      throw new Error(`SpokePoolClient::update: currentTime ${currentTime} < ${this.currentTime}`);
 
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
