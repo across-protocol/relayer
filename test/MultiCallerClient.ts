@@ -138,7 +138,7 @@ describe("MultiCallerClient", async function () {
               contract: {
                 address,
                 interface: { encodeFunctionData },
-                multicall: 1
+                multicall: 1,
               } as unknown as Contract,
               method: "test",
               args: [{ result }],
@@ -311,7 +311,7 @@ describe("MultiCallerClient", async function () {
         contract: {
           address,
           interface: { encodeFunctionData },
-          multicall: 1
+          multicall: 1,
         } as unknown as Contract,
         method: testMethod,
         args: [],
@@ -432,7 +432,7 @@ describe("MultiCallerClient", async function () {
         contract: {
           address: address,
           interface: { encodeFunctionData },
-          multicall: 1
+          multicall: 1,
         } as unknown as Contract,
         method: "test",
         args: [],
@@ -442,7 +442,7 @@ describe("MultiCallerClient", async function () {
         contract: {
           address: address,
           interface: { encodeFunctionData },
-          multicall: 1
+          multicall: 1,
         } as unknown as Contract,
         method: "test",
         args: [],
