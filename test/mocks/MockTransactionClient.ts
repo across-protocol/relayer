@@ -17,7 +17,7 @@ export class MockedTransactionClient extends TransactionClient {
 
   txnFailure(txn: AugmentedTransaction): boolean {
     const result = this.txnFailureReason(txn);
-    return result && result !== txnClientPassResult;
+    return result !== undefined && result !== txnClientPassResult;
   }
 
   protected override async _simulate(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
@@ -32,7 +32,7 @@ export class MockedTransactionClient extends TransactionClient {
     return {
       transaction: txn,
       succeed: !fail,
-      reason: fail ? this.txnFailureReason(txn) : null,
+      reason: fail ? this.txnFailureReason(txn) : "",
     };
   }
 
