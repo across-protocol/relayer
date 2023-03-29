@@ -395,7 +395,12 @@ export class AcrossConfigStoreClient {
     );
   }
 
-  private async getUtilization(l1Token: string, blockNumber: number, amount: BigNumber, timestamp: number) {
+  private async getUtilization(
+    l1Token: string,
+    blockNumber: number,
+    amount: BigNumber,
+    timestamp: number
+  ): Promise<{ current: BigNumber; post: BigNumber }> {
     const redisClient = await getRedis(this.logger);
     if (!redisClient) return await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, blockNumber, amount);
     const key = `utilization_${l1Token}_${blockNumber}_${amount.toString()}`;

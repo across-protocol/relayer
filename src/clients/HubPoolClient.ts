@@ -160,8 +160,8 @@ export class HubPoolClient {
     quoteBlockNumber: number,
     relaySize: BigNumber
   ): Promise<{
-    current: BigNumberish;
-    post: BigNumberish;
+    current: BigNumber;
+    post: BigNumber;
   }> {
     const overrides = { blockTag: quoteBlockNumber };
     const [current, post] = await Promise.all([
