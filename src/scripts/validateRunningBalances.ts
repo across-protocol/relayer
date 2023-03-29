@@ -375,7 +375,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
         1,
         dataworker.chainIdListForBundleEvaluationBlockNumbers
       );
-      const widestPossibleExpectedBlockRange = await getWidestPossibleExpectedBlockRange(
+      const widestPossibleExpectedBlockRange = getWidestPossibleExpectedBlockRange(
         dataworker.chainIdListForBundleEvaluationBlockNumbers,
         spokePoolClientsForBundle,
         getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
