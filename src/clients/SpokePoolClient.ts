@@ -428,7 +428,13 @@ export class SpokePoolClient {
     // the first run then set the from block to the deployment block of the spoke pool. Else, use the same config as the
     // other event queries to not double search over the same event ranges.
     const depositRouteSearchConfig = { ...searchConfig }; // shallow copy.
-    if (!this.isUpdated) depositRouteSearchConfig.fromBlock = this.spokePoolDeploymentBlock;
+    if (!this.isUpdated) {
+      depositRouteSearchConfig.fromBlock = this.spokePoolDeploymentBlock;
+      // note: Assumes no deposit occurred in the deployment block.
+      this.firstDepositIdForSpokePool = await this.spokePool.numberOfDeposits({
+        blockTag: this.spokePoolDeploymentBlock
+      });
+    }
 
     if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
@@ -437,8 +443,6 @@ export class SpokePoolClient {
     // we only need to search for new events after the last cached event searched. We will then update the cache with
     // all blocks (cached + newly fetched) older than the "latestBlockToCache".
     const depositEventSearchConfig = { ...searchConfig };
-
-    let timerStart = Date.now();
 
     this.log("debug", `Updating SpokePool client for chain ${this.chainId}`, {
       searchConfig,
@@ -468,21 +472,15 @@ export class SpokePoolClient {
       };
     });
 
-    timerStart = Date.now();
-    const [_earliestDepositIdForSpokePool, _latestDepositIdForSpokePool, ...queryResults] = await Promise.all([
-      this.spokePool.numberOfDeposits({ blockTag: this.spokePoolDeploymentBlock }),
+    const timerStart = Date.now();
+    const [latestDepositIdForSpokePool, ...queryResults] = await Promise.all([
       this.spokePool.numberOfDeposits(),
       ...eventSearchConfigs.map((config) => paginatedEventQuery(this.spokePool, config.filter, config.searchConfig)),
     ]);
-
-    this.firstDepositIdForSpokePool = _earliestDepositIdForSpokePool;
-    this.lastDepositIdForSpokePool = _latestDepositIdForSpokePool;
     this.log("debug", `Time to query new events from RPC for ${this.chainId}: ${Date.now() - timerStart}ms`);
 
     // Sort all events to ensure they are stored in a consistent order.
-    queryResults.forEach((events) => {
-      sortEventsAscendingInPlace(events);
-    });
+    queryResults.forEach((events) => sortEventsAscendingInPlace(events));
 
     if (eventsToQuery.includes("TokensBridged"))
       for (const event of queryResults[eventsToQuery.indexOf("TokensBridged")]) {
@@ -609,9 +607,11 @@ export class SpokePoolClient {
       }
     }
 
+    // Next iteration should start off from where this one ended.
     this.currentTime = currentTime;
     this.latestBlockNumber = latestBlockNumber;
-    this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
+    this.lastDepositIdForSpokePool = latestDepositIdForSpokePool;
+    this.firstBlockToSearch = searchConfig.toBlock + 1;
 
     this.isUpdated = true;
     this.log("debug", `SpokePool client for chain ${this.chainId} updated!`, {
