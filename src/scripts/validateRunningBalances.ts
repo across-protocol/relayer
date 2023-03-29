@@ -78,10 +78,9 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
   );
 
   for (let x = 0; x < bundlesToValidate; x++) {
+    let mrkdwn = "";
     const mostRecentValidatedBundle = validatedBundles[x];
-    console.group(
-      `Bundle #${x} proposed at block ${mostRecentValidatedBundle.blockNumber} (${mostRecentValidatedBundle.transactionHash})`
-    );
+    mrkdwn += `Bundle proposed at ${mostRecentValidatedBundle.transactionHash}`;
     const followingBlockNumber =
       clients.hubPoolClient.getFollowingRootBundle(mostRecentValidatedBundle)?.blockNumber ||
       clients.hubPoolClient.latestBlockNumber;
@@ -104,7 +103,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
           excesses[leaf.chainId][tokenInfo.symbol] = [];
         }
 
-        console.group(`Leaf for chain ID ${leaf.chainId} and token ${tokenInfo.symbol} (${l1Token})`);
+        mrkdwn += `\n\tLeaf for chain ID ${leaf.chainId} and token ${tokenInfo.symbol} (${l1Token})`;
         const decimals = tokenInfo.decimals;
         const l2Token = clients.hubPoolClient.getDestinationTokenForL1Token(l1Token, leaf.chainId);
         const l2TokenContract = new Contract(l2Token, ERC20.abi, await getProvider(leaf.chainId));
@@ -114,7 +113,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
           mostRecentValidatedBundle.bundleEvaluationBlockNumbers[
             dataworker.chainIdListForBundleEvaluationBlockNumbers.indexOf(leaf.chainId)
           ];
-        console.log(`- Bundle end block: ${bundleEndBlockForChain.toNumber()}`);
+        mrkdwn += `\n\t\t- Bundle end block: ${bundleEndBlockForChain.toNumber()}`;
         let tokenBalanceAtBundleEndBlock = await l2TokenContract.balanceOf(
           spokePoolClients[leaf.chainId].spokePool.address,
           {
@@ -135,20 +134,16 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
             .getRelayerRefundExecutions()
             .find((e) => e.rootBundleId === previousRelayedRootBundle.rootBundleId && e.l2TokenAddress === l2Token);
           if (previousLeafExecution) {
-            console.log(`- previous relayer refund leaf execution: ${previousLeafExecution.blockNumber}`);
+            mrkdwn += `\n\t\t- Previous leaf executed at block ${previousLeafExecution.blockNumber}`;
             const previousLeafExecutedAfterBundleEndBlockForChain =
               previousLeafExecution.blockNumber > bundleEndBlockForChain.toNumber();
-            console.log(
-              `    - previous relayer refund leaf executed after bundle end block for chain: ${previousLeafExecutedAfterBundleEndBlockForChain}`
-            );
+            mrkdwn += `\n\t\t- Previous relayer refund leaf executed after bundle end block for chain: ${previousLeafExecutedAfterBundleEndBlockForChain}`;
             if (previousLeafExecutedAfterBundleEndBlockForChain) {
               const previousLeafRefundAmount = previousLeafExecution.refundAmounts.reduce((a, b) => a.add(b), toBN(0));
-              console.log(
-                `    - subtracting previous leaf's amountToReturn (${fromWei(
-                  previousLeafExecution.amountToReturn.toString(),
-                  decimals
-                )}) and refunds (${fromWei(previousLeafRefundAmount.toString(), decimals)}) from token balance`
-              );
+              mrkdwn += `\n\t\t- Subtracting previous leaf's amountToReturn (${fromWei(
+                previousLeafExecution.amountToReturn.toString(),
+                decimals
+              )}) and refunds (${fromWei(previousLeafRefundAmount.toString(), decimals)}) from token balance`;
               tokenBalanceAtBundleEndBlock = tokenBalanceAtBundleEndBlock
                 .sub(previousLeafExecution.amountToReturn)
                 .sub(previousLeafExecution.refundAmounts.reduce((a, b) => a.add(b), toBN(0)));
@@ -178,7 +173,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
             if (previousPoolRebalanceLeaf) {
               const previousNetSendAmount =
                 previousPoolRebalanceLeaf.netSendAmounts[previousPoolRebalanceLeaf.l1Tokens.indexOf(l1Token)];
-              console.log(`- previous net send amount: ${fromWei(previousNetSendAmount.toString(), decimals)}`);
+              mrkdwn += `\n\t\t- Previous net send amount: ${fromWei(previousNetSendAmount.toString(), decimals)}`;
               if (previousNetSendAmount.gt(toBN(0))) {
                 // This part might fail if the token is ETH since deposits of ETH do not emit Transfer events, so
                 // in these cases the `tokenBalanceAtBundleEndBlock` might look artificially higher for this bundle.
@@ -194,12 +189,10 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
                   )
                 ).filter((e) => e.args.value.eq(previousNetSendAmount));
                 if (depositsToSpokePool.length === 0) {
-                  console.log(
-                    `    - adding previous leaf's netSendAmount (${fromWei(
-                      previousNetSendAmount.toString(),
-                      decimals
-                    )}) to token balance because it did not arrive at spoke pool before bundle end block.`
-                  );
+                  mrkdwn += `\n\t\t- Adding previous leaf's netSendAmount (${fromWei(
+                    previousNetSendAmount.toString(),
+                    decimals
+                  )}) to token balance because it did not arrive at spoke pool before bundle end block.`;
                   tokenBalanceAtBundleEndBlock = tokenBalanceAtBundleEndBlock.add(previousNetSendAmount);
                 }
               }
@@ -235,12 +228,10 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
                     amountSentForSlowFillLeftUnexecuted,
                     slowFillForChain.realizedLpFeePct
                   );
-                  console.log(
-                    `- subtracting leftover amount from previous bundle's unexecuted slow fill: ${fromWei(
-                      deductionForSlowFill.toString(),
-                      decimals
-                    )}`
-                  );
+                  mrkdwn += `\n\t\t- subtracting leftover amount from previous bundle's unexecuted slow fill: ${fromWei(
+                    deductionForSlowFill.toString(),
+                    decimals
+                  )}`;
                   tokenBalanceAtBundleEndBlock = tokenBalanceAtBundleEndBlock.sub(deductionForSlowFill);
                 }
               }
@@ -271,9 +262,10 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
               );
               if (amountSentForSlowFill.gt(0)) {
                 const deductionForSlowFill = getRefund(amountSentForSlowFill, slowFillForChain.realizedLpFeePct);
-                console.log(
-                  `- subtracting amount sent for slow fill: ${fromWei(deductionForSlowFill.toString(), decimals)}`
-                );
+                mrkdwn += `\n\t\t- subtracting amount sent for slow fill: ${fromWei(
+                  deductionForSlowFill.toString(),
+                  decimals
+                )}`;
                 tokenBalanceAtBundleEndBlock = tokenBalanceAtBundleEndBlock.sub(deductionForSlowFill);
               }
             }
@@ -293,29 +285,44 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
         let excess = toBN(tokenBalanceAtBundleEndBlock).add(netSendAmount).add(runningBalance);
 
         if (relayedRoot === undefined || relayedRoot[l2Token] === undefined) {
-          console.log(`- No relayed root for chain ID ${leaf.chainId} and token ${l2Token}`);
+          if (!netSendAmount.eq(0)) {
+            // We shouldn't get here for any bundle since we start with the i-1'th most recent bundle.
+            // If so, then a relayed root message might have gotten stuck in a canonical bridge and we will
+            // want to know about it.
+            throw new Error(`No relayed root for chain ID ${leaf.chainId} and token ${l2Token}`);
+          }
         } else {
           const executedRelayerRefund = Object.values(relayedRoot[l2Token]).reduce((a, b) => a.add(b), toBN(0));
           excess = excess.sub(executedRelayerRefund);
-          console.log(`- executedRelayerRefund: ${fromWei(executedRelayerRefund.toString(), decimals)}`);
+          mrkdwn += `\n\t\t- executedRelayerRefund: ${fromWei(executedRelayerRefund.toString(), decimals)}`;
         }
 
         // Excess should theoretically be 0 but can be positive due to past accounting errors in computing running
         // balances. If excess is negative, then that means L2 leaves are unexecuted and the protocol could be
         // stuck
         excesses[leaf.chainId][tokenInfo.symbol].push(fromWei(excess.toString(), decimals));
-        console.log(`- tokenBalance: ${fromWei(tokenBalanceAtBundleEndBlock.toString(), decimals)}`);
-        console.log(`- netSendAmount: ${fromWei(netSendAmount.toString(), decimals)}`);
-        console.log(`- excess: ${fromWei(excess.toString(), decimals)}`);
-        console.log(`- runningBalance: ${fromWei(runningBalance.toString(), decimals)}`);
-        console.groupEnd();
+        mrkdwn += `\n\t\t - tokenBalance: ${fromWei(tokenBalanceAtBundleEndBlock.toString(), decimals)}`;
+        mrkdwn += `\n\t\t - netSendAmount: ${fromWei(netSendAmount.toString(), decimals)}`;
+        mrkdwn += `\n\t\t - excess: ${fromWei(excess.toString(), decimals)}`;
+        mrkdwn += `\n\t\t - runningBalance: ${fromWei(runningBalance.toString(), decimals)}`;
       }
     }
-    console.groupEnd();
+    logger.debug({
+      at: "validateRunningBalances#index",
+      message: `Bundle #${x} proposed at block ${mostRecentValidatedBundle.blockNumber}`,
+      mrkdwn,
+    });
+    // This script is often run locally, log it to console:
+    console.log(mrkdwn);
   }
+
   // Print out historical excesses for chain ID and token to make it easy to see if excesses have changed.
   // They should never change.
-  console.log("Historical excesses:", excesses);
+  logger.debug({
+    at: "validateRunningBalances#index",
+    message: "Historical excesses",
+    excesses,
+  });
 
   /**
    *
