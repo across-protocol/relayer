@@ -61,7 +61,7 @@ type RootBundle = {
   tree: MerkleTree<RelayData>;
 };
 
-type PoolRebalanceRoot = {
+export type PoolRebalanceRoot = {
   runningBalances: RunningBalances;
   realizedLpFees: RunningBalances;
   leaves: PoolRebalanceLeaf[];

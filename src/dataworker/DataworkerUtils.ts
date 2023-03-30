@@ -19,6 +19,7 @@ import {
   winston,
 } from "../utils";
 import { getDepositPath, getFillsInRange, groupObjectCountsByProp, groupObjectCountsByTwoProps, toBN } from "../utils";
+import { PoolRebalanceRoot } from "./Dataworker";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { addSlowFillsToRunningBalances, initializeRunningBalancesFromRelayerRepayments } from "./PoolRebalanceUtils";
 import { addLastRunningBalance, constructPoolRebalanceLeaves } from "./PoolRebalanceUtils";
