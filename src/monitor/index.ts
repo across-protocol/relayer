@@ -25,6 +25,8 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Wallet) {
     const acrossMonitor = new Monitor(logger, config, clients);
 
     for (;;) {
+      const loopStart = Date.now();
+
       await acrossMonitor.update();
 
       if (config.botModes.utilizationEnabled) await acrossMonitor.checkUtilization();
@@ -46,8 +48,18 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Wallet) {
         logger.debug({ at: "AcrossMonitor", message: "Report disabled" });
       }
 
+      if (config.botModes.refillBalancesEnabled) {
+        await acrossMonitor.refillBalances();
+      } else {
+        logger.debug({ at: "AcrossMonitor", message: "Refiller disabled" });
+      }
+
       if (config.botModes.balancesEnabled) await acrossMonitor.checkBalances();
       else logger.debug({ at: "AcrossMonitor", message: "CheckBalances monitor disabled" });
+
+      await clients.multiCallerClient.executeTransactionQueue();
+
+      logger.debug({ at: "Monitor#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
 
       if (await processEndPollingLoop(logger, "Monitor", config.pollingDelay)) break;
     }
