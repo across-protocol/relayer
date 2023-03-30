@@ -106,12 +106,8 @@ export function getSpokePoolClientEventSearchConfigsForFastDataworker(
 ): {
   fromBundle: ProposedRootBundle;
   toBundle: ProposedRootBundle;
-  fromBlocks: {
-    [k: string]: number;
-  };
-  toBlocks: {
-    [k: string]: number;
-  };
+  fromBlocks: { [k: string]: number };
+  toBlocks: { [k: string]: number };
 } {
   const toBundle =
     config.dataworkerFastStartBundle === "latest"

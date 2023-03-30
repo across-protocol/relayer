@@ -356,12 +356,7 @@ export async function _buildPoolRebalanceRoot(
   maxL1TokenCountOverride: number | undefined,
   tokenTransferThreshold: BigNumberForToken,
   logger?: winston.Logger
-): Promise<{
-  runningBalances: RunningBalances;
-  realizedLpFees: RunningBalances;
-  leaves: PoolRebalanceLeaf[];
-  tree: MerkleTree<PoolRebalanceLeaf>;
-}> {
+): Promise<PoolRebalanceRoot> {
   // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
   // slow relay refunds. They are decreased by the amount of funds already held by the SpokePool. Balances are keyed
   // by the SpokePool's network and L1 token equivalent of the L2 token to refund.
