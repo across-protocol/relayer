@@ -312,7 +312,7 @@ export class MultiCallerClient {
     // If we can't construct multisender contract, then multicall everything. If any of the transactions
     // is for a contract that can't be multicalled, then this function will throw. This client should only be
     // used on contracts that extend Multicaller.
-    if (await this._getMultisender(chainId) === undefined) {
+    if ((await this._getMultisender(chainId)) === undefined) {
       // Sort transactions by contract address so we can reduce chance that we need to split them again
       // to make Multicall work.
       const txnChunks = lodash.chunk(
@@ -338,9 +338,11 @@ export class MultiCallerClient {
         })
         .flat();
       const multisenderTxnChunks = lodash.chunk(multisenderTxns, chunkSize);
-      const multisenderTxnBundle = await Promise.all(multisenderTxnChunks.map(async (txnChunk) => {
-        return txnChunk.length > 1 ? await this.buildMultiSenderBundle(txnChunk) : txnChunk[0];
-      }));
+      const multisenderTxnBundle = await Promise.all(
+        multisenderTxnChunks.map(async (txnChunk) => {
+          return txnChunk.length > 1 ? await this.buildMultiSenderBundle(txnChunk) : txnChunk[0];
+        })
+      );
       return [...multicallerTxnBundle, ...multisenderTxnBundle];
     }
   }

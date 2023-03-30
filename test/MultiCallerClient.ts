@@ -8,7 +8,17 @@ import {
 import { TransactionSimulationResult } from "../src/utils";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
-import { createSpyLogger, Contract, expect, randomAddress, winston, toBN, ethers, smock } from "./utils";
+import {
+  createSpyLogger,
+  Contract,
+  expect,
+  randomAddress,
+  winston,
+  toBN,
+  ethers,
+  smock,
+  assertPromiseError,
+} from "./utils";
 import { getAbi } from "@uma/contracts-node";
 
 class MockedMultiCallerClient extends MultiCallerClient {
@@ -347,7 +357,7 @@ describe("MultiCallerClient", async function () {
     const multicallerWithMultisend = new MockedMultiCallerClient(spyLogger, {}, fakeMultisender as unknown as Contract);
 
     // Can't pass any transactions to multisender bundler that are permissioned or different chains:
-    expect(await 
+    assertPromiseError(
       multicallerWithMultisend.buildMultiSenderBundle([
         {
           chainId: 1,
@@ -359,9 +369,10 @@ describe("MultiCallerClient", async function () {
           method: "test",
           args: [],
         },
-      ] as AugmentedTransaction[])
-    ).to.throw("Multisender bundle data mismatch");
-    expect(await 
+      ] as AugmentedTransaction[]),
+      "Multisender bundle data mismatch"
+    );
+    assertPromiseError(
       multicallerWithMultisend.buildMultiSenderBundle([
         {
           chainId: 1,
@@ -383,8 +394,9 @@ describe("MultiCallerClient", async function () {
           method: "test",
           args: [],
         },
-      ] as AugmentedTransaction[])
-    ).to.throw("Multisender bundle data mismatch");
+      ] as AugmentedTransaction[]),
+      "Multisender bundle data mismatch"
+    );
 
     // Test returned result of `buildMultiSenderBundle`. Need to check target, expected method, data, etc.
     const unpermissionedTransactions: AugmentedTransaction[] = [
