@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-types */
 import { Provider } from "@ethersproject/abstract-provider";
 import { Signer } from "@ethersproject/abstract-signer";
 import { SpokePoolClient } from "../../clients";
@@ -10,18 +11,31 @@ import {
   EventSearchConfig,
   DefaultLogLevels,
   MakeOptional,
+  AnyObject,
+  BigNumber,
 } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
 import { OutstandingTransfers } from "../../interfaces/Bridge";
+import { SortableEvent } from "../../interfaces";
 
+interface DepositEvent extends SortableEvent {
+  amount: BigNumber;
+  to: string;
+}
+
+interface Events {
+  [address: string]: {
+    [l1Token: string]: DepositEvent[];
+  };
+}
 export class BaseAdapter {
   chainId: number;
   baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
 
-  l1DepositInitiatedEvents: { [address: string]: { [l1Token: string]: any[] } } = {};
-  l2DepositFinalizedEvents: { [address: string]: { [l1Token: string]: any[] } } = {};
-  l2DepositFinalizedEvents_DepositAdapter: { [address: string]: { [l1Token: string]: any[] } } = {};
+  l1DepositInitiatedEvents: Events = {};
+  l2DepositFinalizedEvents: Events = {};
+  l2DepositFinalizedEvents_DepositAdapter: Events = {};
 
   constructor(
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
@@ -69,11 +83,11 @@ export class BaseAdapter {
     };
   }
 
-  getSearchConfig(chainId: number) {
+  getSearchConfig(chainId: number): MakeOptional<EventSearchConfig, "toBlock"> {
     return { ...this.spokePoolClients[chainId].eventSearchConfig };
   }
 
-  async checkAndSendTokenApprovals(address: string, l1Tokens: string[], associatedL1Bridges: string[]) {
+  async checkAndSendTokenApprovals(address: string, l1Tokens: string[], associatedL1Bridges: string[]): Promise<void> {
     this.log("Checking and sending token approvals", { l1Tokens, associatedL1Bridges });
     const tokensToApprove: { l1Token: Contract; targetContract: string }[] = [];
     const l1TokenContracts = l1Tokens.map((l1Token) => new Contract(l1Token, ERC20.abi, this.getSigner(1)));
@@ -175,15 +189,15 @@ export class BaseAdapter {
     return outstandingTransfers;
   }
 
-  log(message: string, data?: any, level: DefaultLogLevels = "debug") {
+  log(message: string, data?: AnyObject, level: DefaultLogLevels = "debug"): void {
     this.logger[level]({ at: this.getName(), message, ...data });
   }
 
-  getName() {
+  getName(): string {
     return `${getNetworkName(this.chainId)}Adapter`;
   }
 
-  isWeth(l1Token: string) {
+  isWeth(l1Token: string): boolean {
     return l1Token.toLowerCase() === "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
   }
 }

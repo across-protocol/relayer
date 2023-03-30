@@ -9,11 +9,15 @@ import {
   runTransaction,
   isDefined,
   DefaultLogLevels,
+  TransactionResponse,
+  AnyObject,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { AdapterManager, CrossChainTransferClient, weth9Abi } from "./bridges";
 import { Deposit, FillsToRefund, InventoryConfig } from "../interfaces";
 import lodash from "lodash";
+
+type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: BigNumber } };
 
 export class InventoryClient {
   private logDisabledManagement = false;
@@ -75,8 +79,8 @@ export class InventoryClient {
   }
 
   // Get the distribution of all tokens, spread over all chains.
-  getTokenDistributionPerL1Token() {
-    const distributionPerL1Token: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
+  getTokenDistributionPerL1Token(): TokenDistributionPerL1Token {
+    const distributionPerL1Token: TokenDistributionPerL1Token = {};
     this.getL1Tokens().forEach((l1Token) => (distributionPerL1Token[l1Token] = this.getChainDistribution(l1Token)));
     return distributionPerL1Token;
   }
@@ -118,7 +122,7 @@ export class InventoryClient {
   }
 
   // Decrement Tokens Balance And Increment Cross Chain Transfer
-  trackCrossChainTransfer(l1Token: string, rebalance: BigNumber, chainId: number | string) {
+  trackCrossChainTransfer(l1Token: string, rebalance: BigNumber, chainId: number | string): void {
     this.tokenClient.decrementLocalBalance(1, l1Token, rebalance);
     this.crossChainTransferClient.increaseOutstandingTransfer(this.relayer, l1Token, rebalance, Number(chainId));
   }
@@ -225,7 +229,7 @@ export class InventoryClient {
 
   // Trigger a rebalance if the current balance on any L2 chain, including shortfalls, is less than the threshold
   // allocation.
-  async rebalanceInventoryIfNeeded() {
+  async rebalanceInventoryIfNeeded(): Promise<void> {
     // Note: these types are just used inside this method, so they are declared in-line.
     type Rebalance = {
       chainId: number;
@@ -380,7 +384,7 @@ export class InventoryClient {
     }
   }
 
-  async unwrapWeth() {
+  async unwrapWeth(): Promise<void> {
     // Note: these types are just used inside this method, so they are declared in-line.
     type ChainInfo = {
       chainId: number;
@@ -493,7 +497,7 @@ export class InventoryClient {
     }
   }
 
-  constructConsideringRebalanceDebugLog(distribution: { [l1Token: string]: { [chainId: number]: BigNumber } }) {
+  constructConsideringRebalanceDebugLog(distribution: { [l1Token: string]: { [chainId: number]: BigNumber } }): void {
     const logData: {
       [symbol: string]: {
         [chainId: number]: {
@@ -543,36 +547,40 @@ export class InventoryClient {
     });
   }
 
-  async sendTokenCrossChain(chainId: number | string, l1Token: string, amount: BigNumber) {
+  async sendTokenCrossChain(
+    chainId: number | string,
+    l1Token: string,
+    amount: BigNumber
+  ): Promise<TransactionResponse> {
     return await this.adapterManager.sendTokenCrossChain(this.relayer, Number(chainId), l1Token, amount);
   }
 
-  async _unwrapWeth(chainId: number, _l2Weth: string, amount: BigNumber) {
+  async _unwrapWeth(chainId: number, _l2Weth: string, amount: BigNumber): Promise<TransactionResponse> {
     const l2Signer = this.tokenClient.spokePoolClients[chainId].spokePool.signer;
     const l2Weth = new Contract(_l2Weth, weth9Abi, l2Signer);
     this.log("Unwrapping WETH", { amount: amount.toString() });
     return await runTransaction(this.logger, l2Weth, "withdraw", [amount]);
   }
 
-  async setL1TokenApprovals() {
+  async setL1TokenApprovals(): Promise<void> {
     if (!this.isInventoryManagementEnabled()) return;
     const l1Tokens = this.getL1Tokens();
     this.log("Checking token approvals", { l1Tokens });
     await this.adapterManager.setL1TokenApprovals(this.relayer, l1Tokens);
   }
 
-  async wrapL2EthIfAboveThreshold() {
+  async wrapL2EthIfAboveThreshold(): Promise<void> {
     if (!this.isInventoryManagementEnabled()) return;
     this.log("Checking ETH->WETH Wrap status");
     await this.adapterManager.wrapEthIfAboveThreshold(this.inventoryConfig.wrapEtherThreshold);
   }
 
-  async update() {
+  async update(): Promise<void> {
     if (!this.isInventoryManagementEnabled()) return;
     await this.crossChainTransferClient.update(this.getL1Tokens());
   }
 
-  isInventoryManagementEnabled() {
+  isInventoryManagementEnabled(): boolean {
     if (this?.inventoryConfig?.tokenConfig) return true;
     // Use logDisabledManagement to avoid spamming the logs on every check if this module is enabled.
     else if (this.logDisabledManagement == false) this.log("Inventory Management Disabled");
@@ -580,7 +588,7 @@ export class InventoryClient {
     return false;
   }
 
-  log(message: string, data?: any, level: DefaultLogLevels = "debug") {
+  log(message: string, data?: AnyObject, level: DefaultLogLevels = "debug"): void {
     if (this.logger) this.logger[level]({ at: "InventoryClient", message, ...data });
   }
 }

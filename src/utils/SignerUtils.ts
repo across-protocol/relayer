@@ -1,5 +1,8 @@
 import { Wallet, retrieveGckmsKeys, getGckmsConfig } from "./";
-const args = require("minimist")(process.argv.slice(2));
+// const args = require("minimist")(process.argv.slice(2));
+
+import minimist from "minimist";
+const args = minimist(process.argv.slice(2));
 
 export async function getSigner(): Promise<Wallet> {
   if (!Object.keys(args).includes("wallet")) throw new Error("Must define mnemonic, privatekey or gckms for wallet");
