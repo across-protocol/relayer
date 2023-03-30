@@ -33,7 +33,7 @@ class MockedMultiCallerClient extends MultiCallerClient {
     return Object.values(txnQueue).reduce((count, txnQueue) => (count += txnQueue.length), 0);
   }
 
-  _getMultisender(_: any): Contract | undefined {
+  async _getMultisender(_: any): Promise<Contract | undefined> {
     return this.multisend;
   }
 
@@ -347,7 +347,7 @@ describe("MultiCallerClient", async function () {
     const multicallerWithMultisend = new MockedMultiCallerClient(spyLogger, {}, fakeMultisender as unknown as Contract);
 
     // Can't pass any transactions to multisender bundler that are permissioned or different chains:
-    expect(() =>
+    expect(await 
       multicallerWithMultisend.buildMultiSenderBundle([
         {
           chainId: 1,
@@ -361,7 +361,7 @@ describe("MultiCallerClient", async function () {
         },
       ] as AugmentedTransaction[])
     ).to.throw("Multisender bundle data mismatch");
-    expect(() =>
+    expect(await 
       multicallerWithMultisend.buildMultiSenderBundle([
         {
           chainId: 1,
@@ -399,7 +399,7 @@ describe("MultiCallerClient", async function () {
         args: [],
       } as AugmentedTransaction,
     ];
-    let multisendTransaction = multicallerWithMultisend.buildMultiSenderBundle(unpermissionedTransactions);
+    let multisendTransaction = await multicallerWithMultisend.buildMultiSenderBundle(unpermissionedTransactions);
     expect(multisendTransaction.method).to.equal("aggregate");
     expect(multisendTransaction.contract.address).to.equal(fakeMultisender.address);
     expect(multisendTransaction.args[0].length).to.equal(1);
@@ -417,7 +417,7 @@ describe("MultiCallerClient", async function () {
       method: "test2",
       args: [11],
     } as AugmentedTransaction);
-    multisendTransaction = multicallerWithMultisend.buildMultiSenderBundle(unpermissionedTransactions);
+    multisendTransaction = await multicallerWithMultisend.buildMultiSenderBundle(unpermissionedTransactions);
     expect(multisendTransaction.method).to.equal("aggregate");
     expect(multisendTransaction.contract.address).to.equal(fakeMultisender.address);
     expect(multisendTransaction.args[0].length).to.equal(2);
@@ -448,7 +448,7 @@ describe("MultiCallerClient", async function () {
         args: [],
       },
     ] as AugmentedTransaction[];
-    const bundle = multicallerWithMultisend.buildMultiCallBundles([
+    const bundle = await multicallerWithMultisend.buildMultiCallBundles([
       ...permissionedTransaction,
       ...unpermissionedTransactions,
     ]);
