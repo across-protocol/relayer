@@ -15,6 +15,7 @@ import { MockInventoryClient } from "./mocks";
 
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
+import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -54,7 +55,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
     configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
 
-    multiCallerClient = new MultiCallerClient(spyLogger); // leave out the gasEstimator for now.
+    multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 
     spokePoolClient_1 = new SpokePoolClient(
       spyLogger,
