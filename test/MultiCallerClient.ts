@@ -20,13 +20,14 @@ import {
   assertPromiseError,
 } from "./utils";
 import { getAbi } from "@uma/contracts-node";
+import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 
-class MockedMultiCallerClient extends MultiCallerClient {
+class DummyMultiCallerClient extends MockedMultiCallerClient {
   public ignoredSimulationFailures: TransactionSimulationResult[] = [];
   public loggedSimulationFailures: TransactionSimulationResult[] = [];
 
   constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}, public multisend?: Contract) {
-    super(logger, chunkSize);
+    super(logger, chunkSize, multisend);
     this.txnClient = new MockedTransactionClient(logger);
   }
 
@@ -41,10 +42,6 @@ class MockedMultiCallerClient extends MultiCallerClient {
 
   private txnCount(txnQueue: { [chainId: number]: AugmentedTransaction[] }): number {
     return Object.values(txnQueue).reduce((count, txnQueue) => (count += txnQueue.length), 0);
-  }
-
-  async _getMultisender(_: any): Promise<Contract | undefined> {
-    return this.multisend;
   }
 
   valueTxnCount(): number {
@@ -69,7 +66,7 @@ function encodeFunctionData(_method: string, args: ReadonlyArray<any> = []): str
 }
 
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
-const multiCaller: MockedMultiCallerClient = new MockedMultiCallerClient(spyLogger);
+const multiCaller: DummyMultiCallerClient = new DummyMultiCallerClient(spyLogger);
 const address = randomAddress(); // Test contract address
 
 describe("MultiCallerClient", async function () {
@@ -308,7 +305,7 @@ describe("MultiCallerClient", async function () {
         return [chainId, 2 + idx * 2];
       })
     );
-    const _multiCaller = new MockedMultiCallerClient(spyLogger, chunkSize);
+    const _multiCaller = new DummyMultiCallerClient(spyLogger, chunkSize);
 
     const testMethod = "test";
     const nFullBundles = 3;
@@ -354,7 +351,7 @@ describe("MultiCallerClient", async function () {
 
   it("Correctly handles unpermissioned transactions", async function () {
     const fakeMultisender = await smock.fake(getAbi("Multicall3"), { address: randomAddress() });
-    const multicallerWithMultisend = new MockedMultiCallerClient(spyLogger, {}, fakeMultisender as unknown as Contract);
+    const multicallerWithMultisend = new DummyMultiCallerClient(spyLogger, {}, fakeMultisender as unknown as Contract);
 
     // Can't pass any transactions to multisender bundler that are permissioned or different chains:
     assertPromiseError(
