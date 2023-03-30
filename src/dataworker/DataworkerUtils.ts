@@ -10,7 +10,14 @@ import {
 } from "../interfaces";
 import { RelayData, RelayerRefundLeaf } from "../interfaces";
 import { RelayerRefundLeafWithGroup, RunningBalances, UnfilledDeposit } from "../interfaces";
-import { buildPoolRebalanceLeafTree, buildRelayerRefundTree, buildSlowRelayTree, winston } from "../utils";
+import {
+  AnyObject,
+  buildPoolRebalanceLeafTree,
+  buildRelayerRefundTree,
+  buildSlowRelayTree,
+  MerkleTree,
+  winston,
+} from "../utils";
 import { getDepositPath, getFillsInRange, groupObjectCountsByProp, groupObjectCountsByTwoProps, toBN } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { addSlowFillsToRunningBalances, initializeRunningBalancesFromRelayerRepayments } from "./PoolRebalanceUtils";
@@ -151,7 +158,7 @@ export function prettyPrintSpokePoolEvents(
   allRelayerRefunds: { repaymentChain: string; repaymentToken: string }[],
   unfilledDeposits: UnfilledDeposit[],
   allInvalidFills: FillWithBlock[]
-) {
+): AnyObject {
   const allInvalidFillsInRange = getFillsInRange(
     allInvalidFills,
     blockRangesForChains,
@@ -188,7 +195,10 @@ export function prettyPrintSpokePoolEvents(
   };
 }
 
-export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]) {
+export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
+  leaves: RelayData[];
+  tree: MerkleTree<RelayData>;
+} {
   const slowRelayLeaves: RelayData[] = unfilledDeposits.map(
     (deposit: UnfilledDeposit): RelayData => ({
       depositor: deposit.deposit.depositor,
@@ -225,7 +235,10 @@ export function _buildRelayerRefundRoot(
   clients: DataworkerClients,
   maxRefundCount: number,
   tokenTransferThresholdOverrides: BigNumberForToken
-) {
+): {
+  leaves: RelayerRefundLeaf[];
+  tree: MerkleTree<RelayerRefundLeaf>;
+} {
   const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
 
   // We'll construct a new leaf for each { repaymentChainId, L2TokenAddress } unique combination.
@@ -343,7 +356,12 @@ export async function _buildPoolRebalanceRoot(
   maxL1TokenCountOverride: number | undefined,
   tokenTransferThreshold: BigNumberForToken,
   logger?: winston.Logger
-) {
+): Promise<{
+  runningBalances: RunningBalances;
+  realizedLpFees: RunningBalances;
+  leaves: PoolRebalanceLeaf[];
+  tree: MerkleTree<PoolRebalanceLeaf>;
+}> {
   // Running balances are the amount of tokens that we need to send to each SpokePool to pay for all instant and
   // slow relay refunds. They are decreased by the amount of funds already held by the SpokePool. Balances are keyed
   // by the SpokePool's network and L1 token equivalent of the L2 token to refund.
