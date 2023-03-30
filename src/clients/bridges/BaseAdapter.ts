@@ -83,12 +83,7 @@ export class BaseAdapter {
     };
   }
 
-  getSearchConfig(chainId: number): {
-    fromBlock: number;
-    maxBlockLookBack?: number;
-    concurrency?: number;
-    toBlock?: number;
-  } {
+  getSearchConfig(chainId: number): EventSearchConfig {
     return { ...this.spokePoolClients[chainId].eventSearchConfig };
   }
 
