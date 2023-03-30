@@ -186,7 +186,7 @@ export class MultiCallerClient {
   }
 
   async _getMultisender(chainId: number): Promise<Contract | undefined> {
-    return getMultisender(chainId, this.baseSigner.connect(await getProvider(chainId, undefined)));
+    return getMultisender(chainId, this.baseSigner.connect(await getProvider(chainId)));
   }
 
   async buildMultiSenderBundle(transactions: AugmentedTransaction[]): Promise<AugmentedTransaction> {
