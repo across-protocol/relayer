@@ -7,7 +7,6 @@ export class MockedSpokePoolClient extends SpokePoolClient {
 
   setDepositIds(_depositIds: number[]) {
     this.depositIds = [];
-    console.log(_depositIds);
     if (_depositIds.length === 0) return;
     let lastDepositId = _depositIds[0];
     for (let i = 0; i < _depositIds.length; i++) {

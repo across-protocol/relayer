@@ -335,7 +335,7 @@ export class SpokePoolClient {
       // Since we're actually looking for a block where deposit count > targetDepositId, set high = high + 1 instead of
       // high. This catches the case where the deposit counter increased from targetDepositId to targetDepositId + 1
       // at the last mid block, in which case we want the high block to be included in the next search.
-      if (i++ >= maxSearches) return { low: low, mid, high: Math.min(high + 1, initHigh) };
+      if (i++ >= maxSearches) return { low, mid, high };
 
       if (targetDepositId > searchedDepositId) low = mid + 1;
       else if (targetDepositId < searchedDepositId) high = mid - 1;
@@ -383,13 +383,13 @@ export class SpokePoolClient {
       // Assert that cache hasn't been corrupted.
       assert(deposit.depositId === fill.depositId && deposit.originChainId === fill.originChainId);
     } else {
-      // Binary search for block where SpokePool.numberOfDeposits === fill.depositId. Stop searches after a maximum
+      // Binary search for block where SpokePool.numberOfDeposits incremented to fill.depositId + 1. Stop searches after a maximum
       // # of searches to limit number of eth_call requests. Make an eth_getLogs call on the remaining block range
       // (i.e. the [low, high] remaining from the binary search) to find the target deposit ID.
       // @dev Limiting between 5-10 searches empirically performs best when there are ~300,000 deposits
       // for a spoke pool and we're looking for a deposit <5 days older than HEAD.
       const searchBounds = await this._binarySearchForBlockContainingDepositId(
-        fill.depositId,
+        fill.depositId + 1,
         this.spokePoolDeploymentBlock,
         this.latestBlockNumber,
         10

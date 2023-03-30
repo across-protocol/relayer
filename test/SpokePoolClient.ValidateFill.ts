@@ -324,20 +324,32 @@ describe("SpokePoolClient: Fill Validation", async function () {
     );
 
     const initLow = 0;
-    const initHigh = 100;
-    const seedDepositIds = Array(initHigh - initLow)
-      .fill(0)
-      .map((_, i) => initLow + i);
-    fuzzClient.setDepositIds(seedDepositIds);
-    const target = 27;
-    const results = await fuzzClient._binarySearchForBlockContainingDepositId(target, initLow, initHigh, 3);
+    const initHigh = 500_000;
+    const depositIds = Array(initHigh - initLow + 1).fill(0);
 
-    console.log(results, seedDepositIds);
-    expect(results.low >= initLow).to.be.true;
-    expect(results.high <= initHigh).to.be.true;
-    expect(results.mid <= results.high && results.mid >= results.low).to.be.true;
-    expect(seedDepositIds[results.low] <= target).to.be.true;
-    expect(seedDepositIds[results.high] >= target).to.be.true;
+    const testIterations = 100;
+    for (let i = 0; i < testIterations; i++) {
+      // Randomize deposit ID's between initLow and initHigh. ID's should only increase
+      // and will do so 50% of the time. The other 50% of the time they will stay the same.
+      for (let j = 1; j < depositIds.length; j++) {
+        const increment = Math.random() > 0.5 ? 1 : 0;
+        depositIds[j] = depositIds[j - 1] + increment;
+      }
+      fuzzClient.setDepositIds(depositIds);
+
+      // Randomize target between highest and lowest values in deposit IDs.
+      const target = Math.floor(Math.random() * (depositIds[depositIds.length - 1] - initLow)) + initLow;
+
+      // Randomize max # of searches between 1 and 15
+      const maxSearches = Math.floor(Math.random() * 14) + 1;
+      const results = await fuzzClient._binarySearchForBlockContainingDepositId(target, initLow, initHigh, maxSearches);
+
+      expect(results.low >= initLow).to.be.true;
+      expect(results.high <= initHigh).to.be.true;
+      expect(results.mid <= results.high && results.mid >= results.low).to.be.true;
+      expect(depositIds[results.low] <= target).to.be.true;
+      expect(depositIds[results.high] >= target).to.be.true;
+    }
   });
 
   it("Can fetch older deposit matching fill", async function () {
