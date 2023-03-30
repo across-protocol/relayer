@@ -24,6 +24,7 @@ import {
   toBNWei,
   formatFeePct,
   getRefund,
+  AnyObject,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "../utils";
@@ -165,7 +166,7 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   allValidFills: interfaces.FillWithBlock[],
   allValidFillsInRange: interfaces.FillWithBlock[],
   chainIdListForBundleEvaluationBlockNumbers: number[]
-) {
+): Promise<AnyObject> {
   const excesses = {};
   // We need to subtract excess from any fills that might replaced a slow fill sent to the fill destination chain.
   // This can only happen if the fill was the last fill for a deposit. Otherwise, its still possible that the slow fill
@@ -460,10 +461,13 @@ export function generateMarkdownForRootBundle(
   chainIdListForBundleEvaluationBlockNumbers: number[],
   hubPoolChainId: number,
   bundleBlockRange: number[][],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   poolRebalanceLeaves: any[],
   poolRebalanceRoot: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   relayerRefundLeaves: any[],
   relayerRefundRoot: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   slowRelayLeaves: any[],
   slowRelayRoot: string
 ): string {
