@@ -252,7 +252,7 @@ export async function constructClients(
     rateModelClientSearchSettings
   );
 
-  const multiCallerClient = new MultiCallerClient(logger, config.multiCallChunkSize);
+  const multiCallerClient = new MultiCallerClient(logger, config.multiCallChunkSize, hubSigner);
 
   return { hubPoolClient, configStoreClient, multiCallerClient, hubSigner };
 }

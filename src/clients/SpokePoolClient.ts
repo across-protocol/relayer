@@ -139,6 +139,10 @@ export class SpokePoolClient {
     return this.rootBundleRelays;
   }
 
+  getLatestRootBundleId(): number {
+    return this.rootBundleRelays[this.rootBundleRelays.length - 1]?.rootBundleId ?? 0;
+  }
+
   getRelayerRefundExecutions(): RelayerRefundExecutionWithBlock[] {
     return this.relayerRefundExecutions;
   }

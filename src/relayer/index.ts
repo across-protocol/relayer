@@ -1,12 +1,4 @@
-import {
-  processEndPollingLoop,
-  winston,
-  config,
-  startupLogLevel,
-  Wallet,
-  getRedis,
-  disconnectRedisClient,
-} from "../utils";
+import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClient } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
