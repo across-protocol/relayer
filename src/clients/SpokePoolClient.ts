@@ -406,11 +406,6 @@ export class SpokePoolClient {
 
   async update(eventsToQuery?: string[]) {
     if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
-    const { NODE_MAX_CONCURRENCY } = process.env;
-    // Default to a max concurrency of 1000 requests per node.
-    const nodeMaxConcurrency = Number(
-      process.env[`NODE_MAX_CONCURRENCY_${this.chainId}`] || NODE_MAX_CONCURRENCY || "1000"
-    );
 
     // Require that all Deposits meet the minimum specified number of confirmations.
     const [latestBlockNumber, currentTime] = await Promise.all([
@@ -515,10 +510,7 @@ export class SpokePoolClient {
 
       const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number }[] = await Promise.map(
         depositEvents,
-        async (event) => {
-          return this.computeRealizedLpFeePct(event);
-        },
-        { concurrency: nodeMaxConcurrency }
+        async (event) => this.computeRealizedLpFeePct(event)
       );
 
       // Now add any newly fetched events from RPC.
