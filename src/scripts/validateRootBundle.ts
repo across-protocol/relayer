@@ -173,7 +173,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     1,
     dataworker.chainIdListForBundleEvaluationBlockNumbers
   );
-  const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
+  const widestPossibleBlockRanges = getWidestPossibleExpectedBlockRange(
     dataworker.chainIdListForBundleEvaluationBlockNumbers,
     spokePoolClients,
     getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),

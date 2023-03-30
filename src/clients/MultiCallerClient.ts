@@ -1,4 +1,4 @@
-import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE } from "../common";
+import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE, Multicall2Call } from "../common";
 import {
   assert,
   winston,
@@ -8,6 +8,9 @@ import {
   getTarget,
   TransactionResponse,
   TransactionSimulationResult,
+  Contract,
+  Wallet,
+  getMultisender,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "./TransactionClient";
 import lodash from "lodash";
@@ -42,7 +45,8 @@ export class MultiCallerClient {
   protected valueTxns: { [chainId: number]: AugmentedTransaction[] } = {};
   constructor(
     readonly logger: winston.Logger,
-    readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE
+    readonly chunkSize: { [chainId: number]: number } = DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE,
+    readonly baseSigner?: Wallet
   ) {
     this.txnClient = new TransactionClient(logger);
   }
@@ -134,6 +138,31 @@ export class MultiCallerClient {
       return isPromiseFulfilled(result) ? result.value : [];
     });
 
+    // Generate the complete set of txns to submit to the network. Anything that failed simulation is dropped.
+    const txnRequests: AugmentedTransaction[] = _valueTxns.concat(
+      this.buildMultiCallBundles(_txns, this.chunkSize[chainId])
+    );
+
+    // Simulate the final bundle that will be sent via Multicall3 or Multicaller. This is an extra sanity check
+    // that gives us confidence even if any of the individual transactions are allowed to fail in individual
+    // simulations. The batched transactions should always succeed in simulation.
+    const batchSimResults = await this.txnClient.simulate(txnRequests);
+    batchSimResults.forEach((result) => {
+      this.logger[result.succeed ? "debug" : "error"]({
+        at: "MultiCallerClient#executeChainTxnQueue",
+        message: result.succeed
+          ? `Successfully simulated ${networkName} transaction batch!`
+          : `Failed to simulate ${networkName} transaction batch!`,
+        batchTxn: {
+          ...result.transaction,
+          contract: result.transaction.contract.address,
+        },
+      });
+      if (!result.succeed) {
+        throw new Error("Failed to simulate transaction batch!");
+      }
+    });
+
     if (simulate) {
       let mrkdwn = "";
       const successfulTxns = _valueTxns.concat(_txns);
@@ -149,23 +178,74 @@ export class MultiCallerClient {
       return [];
     }
 
-    // Generate the complete set of txns to submit to the network. Anything that failed simulation is dropped.
-    const txnRequests: AugmentedTransaction[] = _valueTxns.concat(
-      this.buildMultiCallBundles(_txns, this.chunkSize[chainId])
-    );
-
     const txnResponses: TransactionResponse[] =
       txnRequests.length > 0 ? await this.txnClient.submit(chainId, txnRequests) : [];
 
     return txnResponses;
   }
 
-  buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
-    // Validate all transactions have the same chainId and target contract.
+  _getMultisender(chainId: number): Contract | undefined {
+    return getMultisender(chainId, this.baseSigner);
+  }
+
+  buildMultiSenderBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
+    // Validate all transactions have the same chainId and can be sent from multisender.
+    const { chainId } = transactions[0];
+    const multisender = this._getMultisender(chainId);
+    if (!multisender) throw new Error("Multisender not available for this chain");
+
+    if (transactions.some((tx) => !tx.unpermissioned || tx.chainId !== chainId)) {
+      this.logger.error({
+        at: "MultiCallerClient#buildMultiSenderBundle",
+        message: "Some transactions in the queue contain different target chain or are permissioned",
+        transactions: transactions.map(({ contract, chainId, unpermissioned }) => {
+          return { target: getTarget(contract.address), unpermissioned: Boolean(unpermissioned), chainId };
+        }),
+        notificationPath: "across-error",
+      });
+      throw new Error("Multisender bundle data mismatch");
+    }
+
+    const mrkdwn: string[] = [];
+    const callData: Multicall2Call[] = transactions.map((txn, idx) => {
+      mrkdwn.push(`\n  *txn. ${idx + 1}:* ${txn.message ?? "No message"}: ${txn.mrkdwn ?? "No markdown"}`);
+      return {
+        target: txn.contract.address,
+        callData: txn.contract.interface.encodeFunctionData(txn.method, txn.args),
+      };
+    });
+
+    this.logger.debug({
+      at: "MultiCallerClient",
+      message: `Made multisender bundle for ${getNetworkName(chainId)}.`,
+      multisender: multisender.address,
+      callData,
+    });
+
+    return {
+      chainId,
+      contract: multisender,
+      method: "aggregate",
+      args: [callData],
+      message: "Across multicall transaction",
+      mrkdwn: mrkdwn.join(""),
+    } as AugmentedTransaction;
+  }
+
+  buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction[] {
+    // Split transactions by target contract if they are not all the same.
+    const txnsGroupedByTarget = lodash.groupBy(transactions, (txn) => txn.contract.address);
+    return Object.values(txnsGroupedByTarget).map((txns) => {
+      return this._buildMultiCallBundle(txns);
+    });
+  }
+
+  _buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
+    // Validate all transactions have the same chainId.
     const { chainId, contract } = transactions[0];
     if (transactions.some((tx) => tx.contract.address !== contract.address || tx.chainId !== chainId)) {
       this.logger.error({
-        at: "MultiCallerClient#buildMultiCallBundle",
+        at: "MultiCallerClient#_buildMultiCallBundle",
         message: "Some transactions in the queue contain different target chain or contract address",
         transactions: transactions.map(({ contract, chainId }) => {
           return { target: getTarget(contract.address), chainId };
@@ -204,11 +284,64 @@ export class MultiCallerClient {
     txns: AugmentedTransaction[],
     chunkSize = DEFAULT_MULTICALL_CHUNK_SIZE
   ): AugmentedTransaction[] {
-    const txnChunks: AugmentedTransaction[][] = lodash.chunk(txns, chunkSize);
-    return txnChunks.map((txnChunk: AugmentedTransaction[]) => {
-      // Don't wrap single transactions in a multicall.
-      return txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0];
+    if (txns.length === 0) return [];
+    const { chainId } = txns[0];
+
+    const {
+      multicallerTxns = [],
+      multisenderTxns = [],
+      unsendableTxns = [],
+    } = lodash.groupBy(txns, (txn) => {
+      if (txn.unpermissioned) return "multisenderTxns";
+      else if (txn.contract.multicall) return "multicallerTxns";
+      else return "unsendableTxns";
     });
+
+    // We should never get here but log any transactions that are sent to an ABI that doesn't have
+    // multicall() and are not flagged to be sent to a Multisender.
+    if (unsendableTxns.length > 0) {
+      this.logger.error({
+        at: "MultiCallerClient#buildMultiCallBundles",
+        message: "Found transactions targeting a non-multicall and non-multisend contract!",
+        unsendableTxns,
+        notificationPath: "across-error",
+      });
+    }
+
+    // If we can't construct multisender contract, then multicall everything. If any of the transactions
+    // is for a contract that can't be multicalled, then this function will throw. This client should only be
+    // used on contracts that extend Multicaller.
+    if (this._getMultisender(chainId) === undefined) {
+      // Sort transactions by contract address so we can reduce chance that we need to split them again
+      // to make Multicall work.
+      const txnChunks = lodash.chunk(
+        multicallerTxns.concat(multisenderTxns).sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
+        chunkSize
+      );
+      return txnChunks
+        .map((txnChunk) => {
+          // Don't wrap single transactions in a multicall.
+          return txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0];
+        })
+        .flat();
+    } else {
+      // We can support sending multiple transactions to different contracts via an external multisender
+      // contract.
+      const multicallerTxnChunks = lodash.chunk(
+        multicallerTxns.sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
+        chunkSize
+      );
+      const multicallerTxnBundle = multicallerTxnChunks
+        .map((txnChunk) => {
+          return txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0];
+        })
+        .flat();
+      const multisenderTxnChunks = lodash.chunk(multisenderTxns, chunkSize);
+      const multisenderTxnBundle = multisenderTxnChunks.map((txnChunk) => {
+        return txnChunk.length > 1 ? this.buildMultiSenderBundle(txnChunk) : txnChunk[0];
+      });
+      return [...multicallerTxnBundle, ...multisenderTxnBundle];
+    }
   }
 
   async simulateTransactionQueue(transactions: AugmentedTransaction[]): Promise<AugmentedTransaction[]> {
