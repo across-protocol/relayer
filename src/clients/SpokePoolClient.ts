@@ -422,7 +422,6 @@ export class SpokePoolClient {
       toBlock: this.eventSearchConfig.toBlock || latestBlockNumber,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
-
     if (searchConfig.fromBlock > searchConfig.toBlock) {
       this.log("warn", `Invalid update() searchConfig.`, { searchConfig });
       return; // If the starting block is greater than the ending block return.
