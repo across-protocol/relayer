@@ -420,14 +420,16 @@ export class SpokePoolClient {
       toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
+    if (searchConfig.fromBlock > searchConfig.toBlock) {
+      this.log("warn", `Invalid update() searchConfig.`, { searchConfig });
+      return; // If the starting block is greater than the ending block return.
+    }
 
     // Deposit route search config should always go from the deployment block to ensure we fetch all routes. If this is
     // the first run then set the from block to the deployment block of the spoke pool. Else, use the same config as the
     // other event queries to not double search over the same event ranges.
     const depositRouteSearchConfig = { ...searchConfig }; // shallow copy.
     if (!this.isUpdated) depositRouteSearchConfig.fromBlock = this.spokePoolDeploymentBlock;
-
-    if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
 
     // Try to reduce the number of web3 requests sent to query FundsDeposited and FilledRelay events since there are
     // expected to be so many. We will first try to load existing cached events if they exist and if they do, then
