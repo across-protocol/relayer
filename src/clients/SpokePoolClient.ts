@@ -443,7 +443,7 @@ export class SpokePoolClient {
       // - EnabledDepositRoute: The full history is always required, so override the requested fromBlock.
       if (eventName === "EnabledDepositRoute") {
         _searchConfig = { ...searchConfig }; // shallow copy.
-        if (!this.isUpdated) _searchConfig.fromBlock = this.spokePoolDeploymentBlock;
+        if (!this.isUpdated) _searchConfig.fromBlock = this.deploymentBlock;
       }
 
       return {
