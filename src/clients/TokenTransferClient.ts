@@ -22,14 +22,14 @@ export class TokenTransferClient {
     readonly monitoredAddresses: string[]
   ) {}
 
-  getTokenTransfers(address: string) {
+  getTokenTransfers(address: string): TransfersByChain {
     return this.tokenTransfersByAddress[address];
   }
 
   async update(
     searchConfigByChainIds: { [chainId: number]: EventSearchConfig },
     tokenByChainIds: { [chainId: number]: string[] }
-  ) {
+  ): Promise<void> {
     this.logger.debug({
       at: "TokenTransferClient",
       message: "Updating TokenTransferClient client",

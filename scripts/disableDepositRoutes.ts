@@ -7,8 +7,10 @@ import {
   constructSpokePoolClientsWithStartBlocks,
   updateClients,
 } from "../src/common";
-const args = require("minimist")(process.argv.slice(2), {
-  number: ["chainId"],
+
+import minimist from "minimist";
+const args = minimist(process.argv.slice(2), {
+  string: ["chainId"],
 });
 
 export async function run(logger: winston.Logger): Promise<void> {

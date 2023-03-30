@@ -1,4 +1,4 @@
-import { BigNumber, winston, assign, toBN, DefaultLogLevels } from "../../utils";
+import { BigNumber, winston, assign, toBN, DefaultLogLevels, AnyObject } from "../../utils";
 import { AdapterManager } from "./AdapterManager";
 import { OutstandingTransfers } from "../../interfaces/Bridge";
 
@@ -30,7 +30,7 @@ export class CrossChainTransferClient {
     return this.getEnabledChains().filter((chainId) => chainId !== 1);
   }
 
-  increaseOutstandingTransfer(address: string, l1Token: string, rebalance: BigNumber, chainId: number) {
+  increaseOutstandingTransfer(address: string, l1Token: string, rebalance: BigNumber, chainId: number): void {
     if (!this.outstandingCrossChainTransfers[chainId]) {
       this.outstandingCrossChainTransfers[chainId] = {};
     }
@@ -53,7 +53,7 @@ export class CrossChainTransferClient {
     ).add(rebalance);
   }
 
-  async update(l1Tokens: string[]) {
+  async update(l1Tokens: string[]): Promise<void> {
     const monitoredChains = this.getEnabledL2Chains(); // Use all chainIds except L1.
     this.log("Updating cross chain transfers", { monitoredChains });
 
@@ -69,7 +69,7 @@ export class CrossChainTransferClient {
     this.log("Updated cross chain transfers", { outstandingCrossChainTransfers: this.outstandingCrossChainTransfers });
   }
 
-  log(message: string, data?: any, level: DefaultLogLevels = "debug") {
+  log(message: string, data?: AnyObject, level: DefaultLogLevels = "debug"): void {
     if (this.logger) this.logger[level]({ at: "CrossChainTransferClient", message, ...data });
   }
 }

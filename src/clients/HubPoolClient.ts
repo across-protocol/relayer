@@ -7,6 +7,7 @@ import {
   sortEventsAscending,
   EventSearchConfig,
   MakeOptional,
+  BigNumberish,
 } from "../utils";
 import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
 import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
@@ -15,9 +16,12 @@ import { ExecutedRootBundle, PendingRootBundle, ProposedRootBundle } from "../in
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
 import _ from "lodash";
 
+type L1TokensToDestinationTokens = {
+  [l1Token: string]: { [destinationChainId: number]: string };
+};
 export class HubPoolClient {
   // L1Token -> destinationChainId -> destinationToken
-  private l1TokensToDestinationTokens: { [l1Token: string]: { [destinationChainId: number]: string } } = {};
+  private l1TokensToDestinationTokens: L1TokensToDestinationTokens = {};
   private l1Tokens: L1Token[] = []; // L1Tokens and their associated info.
   private lpTokens: { [token: string]: LpToken } = {};
   private proposedRootBundles: ProposedRootBundle[] = [];
@@ -44,23 +48,23 @@ export class HubPoolClient {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
 
-  hasPendingProposal() {
+  hasPendingProposal(): boolean {
     return this.pendingRootBundle !== undefined;
   }
 
-  getPendingRootBundle() {
+  getPendingRootBundle(): PendingRootBundle {
     return this.pendingRootBundle;
   }
 
-  getProposedRootBundles() {
+  getProposedRootBundles(): ProposedRootBundle[] {
     return this.proposedRootBundles;
   }
 
-  getCancelledRootBundles() {
+  getCancelledRootBundles(): CancelledRootBundle[] {
     return this.canceledRootBundles;
   }
 
-  getDisputedRootBundles() {
+  getDisputedRootBundles(): DisputedRootBundle[] {
     return this.disputedRootBundles;
   }
 
@@ -83,7 +87,11 @@ export class HubPoolClient {
     return mostRecentSpokePoolUpdateBeforeBlock?.blockNumber;
   }
 
-  getDestinationTokenForDeposit(deposit: { originChainId: number; originToken: string; destinationChainId: number }) {
+  getDestinationTokenForDeposit(deposit: {
+    originChainId: number;
+    originToken: string;
+    destinationChainId: number;
+  }): string {
     const l1Token = this.getL1TokenForDeposit(deposit);
     const destinationToken = this.getDestinationTokenForL1Token(l1Token, deposit.destinationChainId);
     if (!destinationToken)
@@ -96,11 +104,11 @@ export class HubPoolClient {
     return destinationToken;
   }
 
-  getL1TokensToDestinationTokens() {
+  getL1TokensToDestinationTokens(): L1TokensToDestinationTokens {
     return this.l1TokensToDestinationTokens;
   }
 
-  getL1TokenForDeposit(deposit: { originChainId: number; originToken: string }) {
+  getL1TokenForDeposit(deposit: { originChainId: number; originToken: string }): string {
     const l1Token = Object.keys(this.l1TokensToDestinationTokens).find((_l1Token) => {
       return this.l1TokensToDestinationTokens[_l1Token][deposit.originChainId] === deposit.originToken;
     });
@@ -111,7 +119,7 @@ export class HubPoolClient {
     return l1Token;
   }
 
-  getL1TokenCounterpartAtBlock(l2ChainId: number, l2Token: string, block: number) {
+  getL1TokenCounterpartAtBlock(l2ChainId: number, l2Token: string, block: number): string {
     const l1Token = Object.keys(this.l1TokensToDestinationTokensWithBlock).find((_l1Token) => {
       // If this token doesn't exist on this L2, return false.
       if (this.l1TokensToDestinationTokensWithBlock[_l1Token][l2ChainId] === undefined) return false;
@@ -128,26 +136,33 @@ export class HubPoolClient {
     return l1Token;
   }
 
-  getDestinationTokenForL1Token(l1Token: string, destinationChainId: number) {
+  getDestinationTokenForL1Token(l1Token: string, destinationChainId: number): string {
     return this.l1TokensToDestinationTokens[l1Token][destinationChainId];
   }
 
-  l2TokenEnabledForL1Token(l1Token: string, destinationChainId: number) {
+  l2TokenEnabledForL1Token(l1Token: string, destinationChainId: number): boolean {
     return this.l1TokensToDestinationTokens[l1Token][destinationChainId] != undefined;
   }
-  getDestinationTokensToL1TokensForChainId(chainId: number) {
+  getDestinationTokensToL1TokensForChainId(chainId: number): { [destinationToken: string]: L1Token } {
     return Object.fromEntries(
       this.l1Tokens
-        .map((l1Token) => [this.getDestinationTokenForL1Token(l1Token.address, chainId), l1Token])
+        .map((l1Token): [string, L1Token] => [this.getDestinationTokenForL1Token(l1Token.address, chainId), l1Token])
         .filter((entry) => entry[0] !== undefined)
     );
   }
 
-  async getCurrentPoolUtilization(l1Token: string) {
+  async getCurrentPoolUtilization(l1Token: string): Promise<BigNumberish> {
     return await this.hubPool.callStatic.liquidityUtilizationCurrent(l1Token);
   }
 
-  async getPostRelayPoolUtilization(l1Token: string, quoteBlockNumber: number, relaySize: BigNumber) {
+  async getPostRelayPoolUtilization(
+    l1Token: string,
+    quoteBlockNumber: number,
+    relaySize: BigNumber
+  ): Promise<{
+    current: BigNumber;
+    post: BigNumber;
+  }> {
     const overrides = { blockTag: quoteBlockNumber };
     const [current, post] = await Promise.all([
       this.hubPool.callStatic.liquidityUtilizationCurrent(l1Token, overrides),
@@ -156,7 +171,7 @@ export class HubPoolClient {
     return { current, post };
   }
 
-  getL1Tokens() {
+  getL1Tokens(): L1Token[] {
     return this.l1Tokens;
   }
 
@@ -227,35 +242,38 @@ export class HubPoolClient {
 
   // TODO: This might not be necessary since the cumulative root bundle count doesn't grow fast enough, but consider
   // using _.findLast/_.find instead of resorting the arrays if these functions begin to take a lot time.
-  getProposedRootBundlesInBlockRange(startingBlock: number, endingBlock: number) {
+  getProposedRootBundlesInBlockRange(startingBlock: number, endingBlock: number): ProposedRootBundle[] {
     return sortEventsDescending(this.proposedRootBundles).filter(
       (bundle: ProposedRootBundle) => bundle.blockNumber >= startingBlock && bundle.blockNumber <= endingBlock
     );
   }
 
-  getCancelledRootBundlesInBlockRange(startingBlock: number, endingBlock: number) {
+  getCancelledRootBundlesInBlockRange(startingBlock: number, endingBlock: number): CancelledRootBundle[] {
     return sortEventsDescending(this.canceledRootBundles).filter(
       (bundle: CancelledRootBundle) => bundle.blockNumber >= startingBlock && bundle.blockNumber <= endingBlock
     );
   }
 
-  getDisputedRootBundlesInBlockRange(startingBlock: number, endingBlock: number) {
+  getDisputedRootBundlesInBlockRange(startingBlock: number, endingBlock: number): DisputedRootBundle[] {
     return sortEventsDescending(this.disputedRootBundles).filter(
       (bundle: DisputedRootBundle) => bundle.blockNumber >= startingBlock && bundle.blockNumber <= endingBlock
     );
   }
 
-  getLatestProposedRootBundle() {
+  getLatestProposedRootBundle(): ProposedRootBundle {
     return sortEventsDescending(this.proposedRootBundles)[0] as ProposedRootBundle;
   }
 
-  getFollowingRootBundle(currentRootBundle: ProposedRootBundle) {
+  getFollowingRootBundle(currentRootBundle: ProposedRootBundle): ProposedRootBundle {
     return sortEventsAscending(this.proposedRootBundles).find(
       (_rootBundle: ProposedRootBundle) => _rootBundle.blockNumber > currentRootBundle.blockNumber
     ) as ProposedRootBundle;
   }
 
-  getExecutedLeavesForRootBundle(rootBundle: ProposedRootBundle, latestMainnetBlockToSearch: number) {
+  getExecutedLeavesForRootBundle(
+    rootBundle: ProposedRootBundle,
+    latestMainnetBlockToSearch: number
+  ): ExecutedRootBundle[] {
     return sortEventsAscending(this.executedRootBundles).filter(
       (executedLeaf: ExecutedRootBundle) =>
         executedLeaf.blockNumber <= latestMainnetBlockToSearch &&
@@ -375,7 +393,7 @@ export class HubPoolClient {
     } else return toBN(0);
   }
 
-  async update() {
+  async update(): Promise<void> {
     this.latestBlockNumber = await this.hubPool.provider.getBlockNumber();
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,

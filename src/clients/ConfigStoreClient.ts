@@ -36,7 +36,6 @@ import {
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
 import { HubPoolClient } from "./HubPoolClient";
-import { createClient } from "redis4";
 
 export const GLOBAL_CONFIG_STORE_KEYS = {
   MAX_RELAYER_REPAYMENT_LEAF_SIZE: "MAX_RELAYER_REPAYMENT_LEAF_SIZE",
@@ -44,8 +43,6 @@ export const GLOBAL_CONFIG_STORE_KEYS = {
   VERSION: "VERSION",
   DISABLED_CHAINS: "DISABLED_CHAINS",
 };
-
-type RedisClient = ReturnType<typeof createClient>;
 
 export class AcrossConfigStoreClient {
   public readonly blockFinder;
@@ -181,7 +178,7 @@ export class AcrossConfigStoreClient {
     fromBlock: number,
     toBlock = Number.MAX_SAFE_INTEGER,
     allPossibleChains = CHAIN_ID_LIST_INDICES
-  ) {
+  ): number[] {
     if (toBlock < fromBlock) throw new Error(`Invalid block range: fromBlock ${fromBlock} > toBlock ${toBlock}`);
     // Initiate list with all chains enabled at the fromBlock.
     const disabledChainsAtFromBlock = this.getDisabledChainsForBlock(fromBlock);
@@ -236,7 +233,7 @@ export class AcrossConfigStoreClient {
     return CONFIG_STORE_VERSION >= version;
   }
 
-  async update() {
+  async update(): Promise<void> {
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
       toBlock: this.eventSearchConfig.toBlock || (await this.configStore.provider.getBlockNumber()),
@@ -277,6 +274,7 @@ export class AcrossConfigStoreClient {
         const l1Token = args.key;
 
         // Drop value and key before passing args.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { value, key, ...passedArgs } = args;
         this.cumulativeRateModelUpdates.push({ ...passedArgs, rateModel: rateModelForToken, l1Token });
 
@@ -397,7 +395,12 @@ export class AcrossConfigStoreClient {
     );
   }
 
-  private async getUtilization(l1Token: string, blockNumber: number, amount: BigNumber, timestamp: number) {
+  private async getUtilization(
+    l1Token: string,
+    blockNumber: number,
+    amount: BigNumber,
+    timestamp: number
+  ): Promise<{ current: BigNumber; post: BigNumber }> {
     const redisClient = await getRedis(this.logger);
     if (!redisClient) return await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, blockNumber, amount);
     const key = `utilization_${l1Token}_${blockNumber}_${amount.toString()}`;

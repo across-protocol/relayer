@@ -114,7 +114,7 @@ export class Monitor {
           l1Token: l1Token.address,
           chainId: this.monitorConfig.hubPoolChainId,
           poolCollateralSymbol: this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token.address).symbol,
-          utilization: toBN(utilization),
+          utilization: toBN(utilization.toString()),
         };
       })
     );
