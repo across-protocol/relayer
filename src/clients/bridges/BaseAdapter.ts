@@ -83,7 +83,7 @@ export class BaseAdapter {
     };
   }
 
-  getSearchConfig(chainId: number): EventSearchConfig {
+  getSearchConfig(chainId: number): MakeOptional<EventSearchConfig, "toBlock"> {
     return { ...this.spokePoolClients[chainId].eventSearchConfig };
   }
 
