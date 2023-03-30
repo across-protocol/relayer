@@ -407,6 +407,13 @@ export class SpokePoolClient {
   async update(eventsToQuery?: string[]) {
     if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
 
+    // Find the earliest known depositId. This assumes no deposits were placed in the deployment block.
+    if (this.firstDepositIdForSpokePool === Number.MAX_SAFE_INTEGER) {
+      const firstDepositId: number = await this.spokePool.numberOfDeposits({ blockTag: this.deploymentBlock });
+      if (!isNaN(firstDepositId) && firstDepositId >= 0 && firstDepositId < this.firstDepositIdForSpokePool)
+        this.firstDepositIdForSpokePool = firstDepositId;
+    }
+
     // Require that all Deposits meet the minimum specified number of confirmations.
     const [latestBlockNumber, currentTime] = await Promise.all([
       this.spokePool.provider.getBlockNumber(),
