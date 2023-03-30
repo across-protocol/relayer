@@ -1,9 +1,8 @@
-/* eslint-disable no-process-exit */
 import { ethers, getSigner, getProvider, ERC20, ZERO_ADDRESS, toBN } from "../src/utils";
 import { askYesNoQuestion } from "./utils";
-const args = require("minimist")(process.argv.slice(2), {
-  string: ["token", "to", "amount"],
-  number: ["chainId"],
+import minimist from "minimist";
+const args = minimist(process.argv.slice(2), {
+  string: ["token", "to", "amount", "chainId"],
 });
 
 // Example run:

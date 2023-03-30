@@ -1,5 +1,4 @@
 import { BigNumber, ERC20, ethers, ZERO_ADDRESS, min } from "../utils";
-import lodash from "lodash";
 
 // This type is used to map used and current balances of different users.
 export interface BalanceMap {
@@ -91,7 +90,7 @@ export class BalanceAllocator {
     return this.requestBalanceAllocations([{ chainId, tokens, holder, amount }]);
   }
 
-  async getBalance(chainId: number, token: string, holder: string) {
+  async getBalance(chainId: number, token: string, holder: string): Promise<BigNumber> {
     if (!this.balances?.[chainId]?.[token]?.[holder]) {
       const balance = await this._queryBalance(chainId, token, holder);
       // To avoid inconsitencies, we recheck the balances value after the query.
@@ -106,7 +105,7 @@ export class BalanceAllocator {
     return this.balances[chainId][token][holder];
   }
 
-  getUsed(chainId: number, token: string, holder: string) {
+  getUsed(chainId: number, token: string, holder: string): BigNumber {
     if (!this.used?.[chainId]?.[token]?.[holder]) {
       // Note: cannot use assign because it breaks the BigNumber object.
       if (!this.used[chainId]) this.used[chainId] = {};
@@ -116,16 +115,16 @@ export class BalanceAllocator {
     return this.used[chainId][token][holder];
   }
 
-  addUsed(chainId: number, token: string, holder: string, amount: BigNumber) {
+  addUsed(chainId: number, token: string, holder: string, amount: BigNumber): void {
     const used = this.getUsed(chainId, token, holder);
     this.used[chainId][token][holder] = used.add(amount);
   }
 
-  clearUsed() {
+  clearUsed(): void {
     this.used = {};
   }
 
-  clearBalances() {
+  clearBalances(): void {
     this.balances = {};
   }
 
