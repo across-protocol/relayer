@@ -31,6 +31,7 @@ import { getUnfilledDeposits, toBN, UnfilledDeposit, utf8ToHex } from "../src/ut
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import { BigNumber } from "ethers";
 import { MockConfigStoreClient } from "./mocks/MockConfigStoreClient";
+import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, l1Token: Contract, configStore: Contract;
@@ -85,7 +86,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     );
 
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
-    multiCallerClient = new MultiCallerClient(spyLogger);
+    multiCallerClient = new MockedMultiCallerClient(spyLogger);
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     profitClient.testInit();
