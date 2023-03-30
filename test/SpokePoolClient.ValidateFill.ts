@@ -29,6 +29,7 @@ import {
 } from "./utils";
 
 import { AcrossConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
+import { MockedSpokePoolClient } from "./mocks/MockSpokePoolClient";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract, hubPool: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
@@ -311,6 +312,32 @@ describe("SpokePoolClient: Fill Validation", async function () {
     expect(await spokePoolClient1.binarySearchForBlockContainingDepositId(2)).to.be.lessThan(
       depositEvents[3].blockNumber
     );
+  });
+
+  it("Fuzz: binary search for deposit ID", async function () {
+    const fuzzClient = new MockedSpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool_2,
+      null,
+      destinationChainId,
+      spokePool2DeploymentBlock
+    );
+
+    const initLow = 0;
+    const initHigh = 100;
+    const seedDepositIds = Array(initHigh - initLow)
+      .fill(0)
+      .map((_, i) => initLow + i);
+    fuzzClient.setDepositIds(seedDepositIds);
+    const target = 27;
+    const results = await fuzzClient._binarySearchForBlockContainingDepositId(target, initLow, initHigh, 3);
+
+    console.log(results, seedDepositIds);
+    expect(results.low >= initLow).to.be.true;
+    expect(results.high <= initHigh).to.be.true;
+    expect(results.mid <= results.high && results.mid >= results.low).to.be.true;
+    expect(seedDepositIds[results.low] <= target).to.be.true;
+    expect(seedDepositIds[results.high] >= target).to.be.true;
   });
 
   it("Can fetch older deposit matching fill", async function () {

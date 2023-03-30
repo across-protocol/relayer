@@ -307,6 +307,9 @@ export class SpokePoolClient {
     return (await this._binarySearchForBlockContainingDepositId(targetDepositId, initLow, initHigh, maxSearches)).mid;
   }
 
+  // We want to find the block that satisfies these conditions:
+  // - the previous block had deposit count <= targetDepositId
+  // - this block has a deposit count > targetDepositId.
   async _binarySearchForBlockContainingDepositId(
     targetDepositId: number,
     initLow: number,
@@ -324,13 +327,15 @@ export class SpokePoolClient {
     let i = 0;
     do {
       const mid = Math.floor((high + low) / 2);
-      const searchedDepositId = await this.spokePool.numberOfDeposits({ blockTag: mid });
+      const searchedDepositId = await this._getDepositIdAtBlock(mid);
 
       // Caller can set maxSearches to minimize number of binary searches and eth_call requests.
-      // Caller then needs to make a subsequent search between the latest [low, high]. If we
-      // exit the binary search early this way, then we should add/subtract 1 to high/low since
-      // low and high are updated in the following lines to be mid+1 or mid-1.
-      if (i++ >= maxSearches) return { low: low - 1, mid, high: high + 1 };
+      // Caller then needs to make a subsequent search between the latest [low, high].
+
+      // Since we're actually looking for a block where deposit count > targetDepositId, set high = high + 1 instead of
+      // high. This catches the case where the deposit counter increased from targetDepositId to targetDepositId + 1
+      // at the last mid block, in which case we want the high block to be included in the next search.
+      if (i++ >= maxSearches) return { low: low, mid, high: Math.min(high + 1, initHigh) };
 
       if (targetDepositId > searchedDepositId) low = mid + 1;
       else if (targetDepositId < searchedDepositId) high = mid - 1;
@@ -343,6 +348,10 @@ export class SpokePoolClient {
     // to returning `low` if we exit the while loop, which should be the block where depositId incremented from
     // `targetDepositId`.
     return { low, mid: low, high };
+  }
+
+  async _getDepositIdAtBlock(blockTag: number): Promise<number> {
+    return await this.spokePool.numberOfDeposits({ blockTag });
   }
 
   // Load a deposit for a fill if the fill's deposit ID is outside this client's search range.
