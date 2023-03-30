@@ -50,7 +50,7 @@ describe("Dataworker block range-related utility methods", async function () {
     );
     const latestMainnetBlock = hubPoolClient.latestBlockNumber;
     if (latestMainnetBlock === undefined) throw new Error("hubPoolClient.latestBlockNumber is undefined");
-    const startingWidestBlocks = await getWidestPossibleExpectedBlockRange(
+    const startingWidestBlocks = getWidestPossibleExpectedBlockRange(
       chainIdListForBundleEvaluationBlockNumbers,
       spokePoolClients,
       defaultEndBlockBuffers,
@@ -61,7 +61,7 @@ describe("Dataworker block range-related utility methods", async function () {
     expect(startingWidestBlocks).to.deep.equal(latestBlocks.map((endBlock) => [0, endBlock]));
 
     // Sets end block to start block if chain is not on enabled chain list.
-    const disabledChainEndBlocks = await getWidestPossibleExpectedBlockRange(
+    const disabledChainEndBlocks = getWidestPossibleExpectedBlockRange(
       chainIdListForBundleEvaluationBlockNumbers,
       spokePoolClients,
       defaultEndBlockBuffers,
@@ -78,7 +78,7 @@ describe("Dataworker block range-related utility methods", async function () {
 
     // End block defaults to 0 if buffer is too large
     const largeBuffers = Array(chainIdListForBundleEvaluationBlockNumbers.length).fill(1000);
-    const zeroRange = await getWidestPossibleExpectedBlockRange(
+    const zeroRange = getWidestPossibleExpectedBlockRange(
       chainIdListForBundleEvaluationBlockNumbers,
       spokePoolClients,
       largeBuffers,
