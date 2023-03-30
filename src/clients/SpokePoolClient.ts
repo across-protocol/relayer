@@ -338,7 +338,7 @@ export class SpokePoolClient {
       if (i++ >= maxSearches) return { low, mid, high };
 
       if (targetDepositId > searchedDepositId) low = mid + 1;
-      else if (targetDepositId < searchedDepositId) high = mid - 1;
+      else if (targetDepositId + 1 < searchedDepositId) high = mid - 1;
       // If we exit the binary search because we found exactly the mid, then no need to update
       // low and high.
       else return { low, mid, high };
@@ -389,10 +389,10 @@ export class SpokePoolClient {
       // @dev Limiting between 5-10 searches empirically performs best when there are ~300,000 deposits
       // for a spoke pool and we're looking for a deposit <5 days older than HEAD.
       const searchBounds = await this._binarySearchForBlockContainingDepositId(
-        fill.depositId + 1,
+        fill.depositId,
         this.spokePoolDeploymentBlock,
         this.latestBlockNumber,
-        10
+        8
       );
       const query = await paginatedEventQuery(
         this.spokePool,
