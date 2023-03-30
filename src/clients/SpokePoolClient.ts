@@ -428,8 +428,8 @@ export class SpokePoolClient {
     let timerStart = Date.now();
 
     // If caller requests specific events, then only query those. Otherwise, default to looking up all known events.
-    const queryableEvents = Object.keys(this._queryableEventNames());
-    eventsToQuery ??= queryableEvents;
+    const queryableEventNames = Object.keys(this._queryableEventNames());
+    eventsToQuery ??= queryableEventNames;
 
     const eventSearchConfigs = eventsToQuery.map((eventName) => {
       if (!queryableEventNames.includes(eventName))
