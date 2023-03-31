@@ -59,6 +59,7 @@ export class SpokePoolClient {
   private rootBundleRelays: RootBundleRelayWithBlock[] = [];
   private relayerRefundExecutions: RelayerRefundExecutionWithBlock[] = [];
   private earlyDeposits: FundsDepositedEvent[] = [];
+  private queryableEventNames: string[] = [];
   public earliestDepositIdQueried = Number.MAX_SAFE_INTEGER;
   public latestDepositIdQueried = 0;
   public firstDepositIdForSpokePool = Number.MAX_SAFE_INTEGER;
@@ -79,6 +80,7 @@ export class SpokePoolClient {
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
+    this.queryableEventNames = Object.keys(this._queryableEventNames());
   }
 
   _queryableEventNames(): { [eventName: string]: EventFilter } {
@@ -404,9 +406,7 @@ export class SpokePoolClient {
     return sortEventsAscending(fills.filter((_fill) => filledSameDeposit(_fill, matchingFill)));
   }
 
-  async update(eventsToQuery?: string[]) {
-    if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
-
+  async _update(eventsToQuery: string[]) {
     // Find the earliest known depositId. This assumes no deposits were placed in the deployment block.
     if (this.firstDepositIdForSpokePool === Number.MAX_SAFE_INTEGER) {
       const firstDepositId: number = await this.spokePool.numberOfDeposits({ blockTag: this.deploymentBlock });
@@ -414,7 +414,6 @@ export class SpokePoolClient {
         this.firstDepositIdForSpokePool = firstDepositId;
     }
 
-    // Require that all Deposits meet the minimum specified number of confirmations.
     const [latestBlockNumber, currentTime] = await Promise.all([
       this.spokePool.provider.getBlockNumber(),
       this.spokePool.getCurrentTime(),
@@ -430,16 +429,12 @@ export class SpokePoolClient {
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
     if (searchConfig.fromBlock > searchConfig.toBlock) {
-      this.log("warn", `Invalid update() searchConfig.`, { searchConfig });
+      this.log("warn", "Invalid update() searchConfig.", { searchConfig });
       return; // If the starting block is greater than the ending block return.
     }
 
-    // If caller requests specific events, then only query those. Otherwise, default to looking up all known events.
-    const queryableEventNames = Object.keys(this._queryableEventNames());
-    eventsToQuery ??= queryableEventNames;
-
     const eventSearchConfigs = eventsToQuery.map((eventName) => {
-      if (!queryableEventNames.includes(eventName))
+      if (!this.queryableEventNames.includes(eventName))
         throw new Error(`SpokePoolClient: Cannot query unrecognised SpokePool event name: ${eventName}`);
 
       const _searchConfig = { ...searchConfig }; // shallow copy
@@ -448,7 +443,7 @@ export class SpokePoolClient {
       // However, certain events have special overriding requirements to their search ranges:
       // - EnabledDepositRoute: The full history is always required, so override the requested fromBlock.
       if (eventName === "EnabledDepositRoute" && !this.isUpdated) {
-        _searchConfig.fromBlock = this.spokePoolDeploymentBlock;
+        _searchConfig.fromBlock = this.deploymentBlock;
       }
 
       return {
@@ -468,10 +463,24 @@ export class SpokePoolClient {
       this.spokePool.numberOfDeposits(),
       ...eventSearchConfigs.map((config) => paginatedEventQuery(this.spokePool, config.filter, config.searchConfig)),
     ]);
-    this.log("debug", `Time to query new events from RPC for ${this.chainId}: ${Date.now() - timerStart}ms`);
+    this.log("debug", `Time to query new events from RPC for ${this.chainId}: ${Date.now() - timerStart} ms`);
 
     // Sort all events to ensure they are stored in a consistent order.
     queryResults.forEach((events) => sortEventsAscendingInPlace(events));
+
+    // Next iteration should start off from where this one ended.
+    this.currentTime = currentTime;
+    this.latestBlockNumber = latestBlockNumber;
+    this.lastDepositIdForSpokePool = latestDepositIdForSpokePool;
+    this.firstBlockToSearch = searchConfig.toBlock + 1;
+
+    return queryResults;
+  }
+
+  async update(eventsToQuery: string[] = this.queryableEventNames) {
+    if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
+
+    const queryResults = await this._update(eventsToQuery);
 
     if (eventsToQuery.includes("TokensBridged"))
       for (const event of queryResults[eventsToQuery.indexOf("TokensBridged")]) {
@@ -488,7 +497,7 @@ export class SpokePoolClient {
         ...this.earlyDeposits,
       ];
       const { earlyDeposits = [], depositEvents = [] } = groupBy(allDeposits, (depositEvent) => {
-        if (depositEvent.args.quoteTimestamp > currentTime) {
+        if (depositEvent.args.quoteTimestamp > this.currentTime) {
           this.logger.debug({ at: "SpokePoolClient#update", message: "Deferring early deposit event.", depositEvent });
           return "earlyDeposits";
         } else return "depositEvents";
@@ -595,15 +604,8 @@ export class SpokePoolClient {
       }
     }
 
-    // Next iteration should start off from where this one ended.
-    this.currentTime = currentTime;
-    this.latestBlockNumber = latestBlockNumber;
-    this.lastDepositIdForSpokePool = latestDepositIdForSpokePool;
-    this.firstBlockToSearch = searchConfig.toBlock + 1;
-
     this.isUpdated = true;
     this.log("debug", `SpokePool client for chain ${this.chainId} updated!`, {
-      eventSearchConfigs,
       nextFirstBlockToSearch: this.firstBlockToSearch,
     });
   }
