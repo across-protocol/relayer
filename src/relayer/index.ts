@@ -1,14 +1,14 @@
 import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClient } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
-import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
+import { constructRelayerClients, RelayerClients, updateRelayerClients } from "./RelayerClientHelper";
 config();
 let logger: winston.Logger;
 
 export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
   logger = _logger;
   const config = new RelayerConfig(process.env);
-  let relayerClients;
+  let relayerClients: RelayerClients;
 
   try {
     logger[startupLogLevel(config)]({ at: "Relayer#index", message: "Relayer started 🏃‍♂️", config });
