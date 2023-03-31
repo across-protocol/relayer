@@ -1,11 +1,12 @@
 import { delay } from "@uma/financial-templates-lib";
 import { SortableEvent } from "../interfaces";
-import { AnyObject, Contract, Event, EventFilter, Promise } from "./";
+import { Contract, Event, EventFilter, Promise } from "./";
 
 const maxRetries = 3;
 const retrySleepTime = 10;
 
-export function spreadEvent(event: Event): AnyObject {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function spreadEvent(event: Event): any {
   const keys = Object.keys(event.args).filter((key: string) => isNaN(+key)); // Extract non-numeric keys.
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
