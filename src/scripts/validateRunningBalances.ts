@@ -328,7 +328,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
     return Object.entries(tokenExcesses).some(([, excesses]) => {
       // We only care that the latest excesses are 0, because sometimes excesses can appear in historical bundles
       // due to ordering of executing leaves. As long as the excess resets back to 0 eventually it is fine.
-      return Number(excesses[0]) !== 0;
+      return Number(excesses[0]).toFixed(6) !== "0.000000";
     });
   });
   if (unexpectedExcess) {
