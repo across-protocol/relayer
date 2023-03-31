@@ -3,7 +3,8 @@ import { winston, Contract, getContractInfoFromAddress, fetch, ethers, Wallet } 
 import { multicall3Addresses } from "../common";
 import { toBNWei, BigNumber, toBN, toGWei, TransactionResponse } from "../utils";
 import { getAbi } from "@uma/contracts-node";
-require("dotenv").config();
+import dotenv from "dotenv";
+dotenv.config();
 
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
@@ -36,7 +37,7 @@ export async function runTransaction(
   logger: winston.Logger,
   contract: Contract,
   method: string,
-  args: any,
+  args: unknown,
   value: BigNumber = toBN(0),
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
@@ -68,7 +69,7 @@ export async function runTransaction(
       (a, [k, v]) => (v ? ((a[k] = v), a) : a),
       {}
     );
-    return await contract[method](...args, txConfig);
+    return await contract[method](...(args as Array<unknown>), txConfig);
   } catch (error) {
     if (retriesRemaining > 0 && txnRetryable(error)) {
       // If error is due to a nonce collision or gas underpricement then re-submit to fetch latest params.
@@ -96,7 +97,15 @@ export async function runTransaction(
 // TODO: add in gasPrice when the SDK has this for the given chainId. TODO: improve how we fetch prices.
 // For now this method will extract the provider's Fee data from the associated network and scale it by a priority
 // scaler. This works on both mainnet and L2's by the utility switching the response structure accordingly.
-export async function getGasPrice(provider: ethers.providers.Provider, priorityScaler = 1.2, maxFeePerGasScaler = 3) {
+export async function getGasPrice(
+  provider: ethers.providers.Provider,
+  priorityScaler = 1.2,
+  maxFeePerGasScaler = 3
+): Promise<{
+  maxFeePerGas?: ethers.BigNumber;
+  maxPriorityFeePerGas?: ethers.BigNumber;
+  gasPrice?: ethers.BigNumber;
+}> {
   const [feeData, chainInfo] = await Promise.all([provider.getFeeData(), provider.getNetwork()]);
   if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
     // Polygon, for some or other reason, does not correctly return an appropriate maxPriorityFeePerGas. Set the
@@ -128,7 +137,15 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   }
 }
 
-export function getTarget(targetAddress: string) {
+export function getTarget(targetAddress: string):
+  | {
+      chainId: number;
+      contractName: string;
+      targetAddress: string;
+    }
+  | {
+      targetAddress: string;
+    } {
   try {
     return { targetAddress, ...getContractInfoFromAddress(targetAddress) };
   } catch (error) {
