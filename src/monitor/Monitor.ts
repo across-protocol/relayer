@@ -23,7 +23,6 @@ import {
   etherscanLinks,
   getNativeTokenSymbol,
   getNetworkName,
-  getSigner,
   getUnfilledDeposits,
   providers,
   toBN,
@@ -77,7 +76,7 @@ export class Monitor {
     this.balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(clients.spokePoolClients));
   }
 
-  public async update() {
+  public async update(): Promise<void> {
     // Clear balance cache at the start of each update.
     // Note: decimals don't need to be cleared because they shouldn't ever change.
     this.balanceCache = {};
@@ -104,7 +103,7 @@ export class Monitor {
     await this.clients.tokenTransferClient.update(searchConfigs, tokensPerChain);
   }
 
-  async checkUtilization() {
+  async checkUtilization(): Promise<void> {
     this.logger.debug({ at: "AcrossMonitor#Utilization", message: "Checking for pool utilization ratio" });
     const l1Tokens = this.clients.hubPoolClient.getL1Tokens();
     const l1TokenUtilizations = await Promise.all(
@@ -158,7 +157,7 @@ export class Monitor {
     }
   }
 
-  async checkUnknownRelayers() {
+  async checkUnknownRelayers(): Promise<void> {
     const chainIds = this.monitorChains;
     this.logger.debug({ at: "AcrossMonitor#UnknownRelayers", message: "Checking for unknown relayers", chainIds });
     for (const chainId of chainIds) {
@@ -178,7 +177,7 @@ export class Monitor {
     }
   }
 
-  async reportUnfilledDeposits() {
+  async reportUnfilledDeposits(): Promise<void> {
     const unfilledDeposits = getUnfilledDeposits(
       this.clients.spokePoolClients,
       this.monitorConfig.maxRelayerLookBack,
@@ -218,7 +217,7 @@ export class Monitor {
     }
   }
 
-  async reportRelayerBalances() {
+  async reportRelayerBalances(): Promise<void> {
     const relayers = this.monitorConfig.monitoredRelayers;
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
     const chainIds = this.monitorChains;
@@ -269,7 +268,7 @@ export class Monitor {
   }
 
   // Update current balances of all tokens on each supported chain for each relayer.
-  async updateCurrentRelayerBalances(relayerBalanceReport: RelayerBalanceReport) {
+  async updateCurrentRelayerBalances(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const chainId of this.monitorChains) {
         const l2ToL1Tokens = this.clients.hubPoolClient.getDestinationTokensToL1TokensForChainId(chainId);
@@ -297,7 +296,7 @@ export class Monitor {
     }
   }
 
-  async checkBalances() {
+  async checkBalances(): Promise<void> {
     const { monitoredBalances } = this.monitorConfig;
     const balances = await this._getBalances(monitoredBalances);
     const decimalValues = await this._getDecimals(monitoredBalances);
@@ -473,7 +472,7 @@ export class Monitor {
   // transfers stuck for longer than 1 bundle and the current time is within the last bundle execution + grace period.
   // But this should be okay as we should address any stuck transactions immediately so realistically no transfers
   // should stay unstuck for longer than one bundle.
-  async checkStuckRebalances() {
+  async checkStuckRebalances(): Promise<void> {
     const hubPoolClient = this.clients.hubPoolClient;
     const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(hubPoolClient.latestBlockNumber);
     // This case shouldn't happen outside of tests as Across V2 has already launched.
@@ -523,7 +522,7 @@ export class Monitor {
     }
   }
 
-  async updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport) {
+  async updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
     const validatedBundleRefunds: FillsToRefund[] =
       await this.clients.bundleDataClient.getPendingRefundsFromValidBundles(this.monitorConfig.bundleRefundLookback);
     const nextBundleRefunds = await this.clients.bundleDataClient.getNextBundleRefunds();
@@ -540,7 +539,7 @@ export class Monitor {
     }
   }
 
-  updateCrossChainTransfers(relayer: string, relayerBalanceTable: RelayerBalanceTable) {
+  updateCrossChainTransfers(relayer: string, relayerBalanceTable: RelayerBalanceTable): void {
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
     for (const chainId of this.monitorChains) {
       for (const l1Token of allL1Tokens) {
@@ -563,7 +562,7 @@ export class Monitor {
     }
   }
 
-  updateUnknownTransfers(relayerBalanceReport: RelayerBalanceReport) {
+  updateUnknownTransfers(relayerBalanceReport: RelayerBalanceReport): void {
     const hubPoolClient = this.clients.hubPoolClient;
 
     for (const relayer of this.monitorConfig.monitoredRelayers) {
@@ -679,21 +678,21 @@ export class Monitor {
     return { bond, v1, other, all: allUnknownOutgoingTransfers };
   }
 
-  formatCategorizedTransfers(transfers: CategorizedTransfers, decimals: number, chainId: number) {
+  formatCategorizedTransfers(transfers: CategorizedTransfers, decimals: number, chainId: number): string {
     let mrkdwn = this.formatKnownTransfers(transfers.bond, decimals, "bond");
     mrkdwn += this.formatKnownTransfers(transfers.v1, decimals, "v1");
     mrkdwn += this.formatOtherTransfers(transfers.other, decimals, chainId);
     return mrkdwn + "\n";
   }
 
-  formatKnownTransfers(transfers: TokenTransfer[], decimals: number, transferType: string) {
+  formatKnownTransfers(transfers: TokenTransfer[], decimals: number, transferType: string): string {
     if (transfers.length === 0) return "";
 
     const totalAmount = this.getTotalTransferAmount(transfers);
     return `${transferType}: ${convertFromWei(totalAmount.toString(), decimals)}\n`;
   }
 
-  formatOtherTransfers(transfers: TokenTransfer[], decimals: number, chainId: number) {
+  formatOtherTransfers(transfers: TokenTransfer[], decimals: number, chainId: number): string {
     if (transfers.length === 0) return "";
 
     const totalAmount = this.getTotalTransferAmount(transfers);
@@ -703,11 +702,11 @@ export class Monitor {
     return mrkdwn;
   }
 
-  getTotalTransferAmount(transfers: TokenTransfer[]) {
+  getTotalTransferAmount(transfers: TokenTransfer[]): BigNumber {
     return transfers.map((transfer) => transfer.value).reduce((a, b) => a.add(b));
   }
 
-  initializeBalanceReports(relayers: string[], allL1Tokens: L1Token[], allChainNames: string[]) {
+  initializeBalanceReports(relayers: string[], allL1Tokens: L1Token[], allChainNames: string[]): RelayerBalanceReport {
     const reports: RelayerBalanceReport = {};
     for (const relayer of relayers) {
       reports[relayer] = {};
