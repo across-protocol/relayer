@@ -48,9 +48,6 @@ const FILL_DEPOSIT_COMPARISON_KEYS = [
   "destinationToken",
 ] as const;
 
-// These events are numerous and we should use a fixed lookback when querying them.
-const FIXED_LOOKBACK_EVENTS = ["FundsDeposited", "FilledRelay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
-
 export class SpokePoolClient {
   private currentTime: number;
   private depositHashes: { [depositHash: string]: DepositWithBlock } = {};
