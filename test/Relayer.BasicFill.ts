@@ -24,6 +24,7 @@ import { MockInventoryClient, MockProfitClient } from "./mocks";
 
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
+import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -65,7 +66,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
     configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
 
-    multiCallerClient = new MultiCallerClient(spyLogger);
+    multiCallerClient = new MockedMultiCallerClient(spyLogger);
 
     spokePoolClient_1 = new SpokePoolClient(
       spyLogger,
