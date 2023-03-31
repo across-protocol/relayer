@@ -425,46 +425,35 @@ export class SpokePoolClient {
       return; // If the starting block is greater than the ending block return.
     }
 
-    // Deposit route search config should always go from the deployment block to ensure we fetch all routes. If this is
-    // the first run then set the from block to the deployment block of the spoke pool. Else, use the same config as the
-    // other event queries to not double search over the same event ranges.
-    const depositRouteSearchConfig = { ...searchConfig }; // shallow copy.
-    if (!this.isUpdated) depositRouteSearchConfig.fromBlock = this.spokePoolDeploymentBlock;
-
-    // Try to reduce the number of web3 requests sent to query FundsDeposited and FilledRelay events since there are
-    // expected to be so many. We will first try to load existing cached events if they exist and if they do, then
-    // we only need to search for new events after the last cached event searched. We will then update the cache with
-    // all blocks (cached + newly fetched) older than the "latestBlockToCache".
-    const depositEventSearchConfig = { ...searchConfig };
-
     let timerStart = Date.now();
 
-    this.log("debug", `Updating SpokePool client for chain ${this.chainId}`, {
-      searchConfig,
-      depositRouteSearchConfig,
-      depositEventSearchConfig,
-      spokePool: this.spokePool.address,
-    });
+    // If caller requests specific events, then only query those. Otherwise, default to looking up all known events.
+    const queryableEventNames = Object.keys(this._queryableEventNames());
+    eventsToQuery ??= queryableEventNames;
 
-    // If caller specifies which events to query, then only query those. This can be used by bots to limit web3
-    // requests. Otherwise, default to looking up all events.
-    if (eventsToQuery === undefined) eventsToQuery = Object.keys(this._queryableEventNames());
     const eventSearchConfigs = eventsToQuery.map((eventName) => {
-      if (!Object.keys(this._queryableEventNames()).includes(eventName))
-        throw new Error("Unknown event to query in SpokePoolClient");
-      // By default, an event's query range can be overridden (usually shortened) by the `eventSearchConfig`
-      // passed in to the Config object. However, certain types of have special rules that could change their
-      // search ranges:
-      let searchConfigToUse = searchConfig;
-      // The full history of these events always needs to be queried.
-      if (eventName === "EnabledDepositRoute") searchConfigToUse = depositRouteSearchConfig;
-      // These events are numerous and we should use a fixed lookback when querying them.
-      else if (FIXED_LOOKBACK_EVENTS.includes(eventName)) searchConfigToUse = depositEventSearchConfig;
+      if (!queryableEventNames.includes(eventName))
+        throw new Error(`SpokePoolClient: Cannot query unrecognised SpokePool event name: ${eventName}`);
+
+      const _searchConfig = { ...searchConfig }; // shallow copy
+
+      // By default, an event's query range is controlled by the `eventSearchConfig` passed in during instantiation.
+      // However, certain events have special overriding requirements to their search ranges:
+      // - EnabledDepositRoute: The full history is always required, so override the requested fromBlock.
+      if (eventName === "EnabledDepositRoute" && !this.isUpdated) {
+        _searchConfig.fromBlock = this.spokePoolDeploymentBlock;
+      }
 
       return {
         filter: this._queryableEventNames()[eventName],
-        searchConfig: searchConfigToUse,
+        searchConfig: _searchConfig,
       };
+    });
+
+    this.log("debug", `Updating SpokePool client for chain ${this.chainId}`, {
+      eventsToQuery,
+      eventSearchConfigs,
+      spokePool: this.spokePool.address,
     });
 
     timerStart = Date.now();
@@ -609,9 +598,7 @@ export class SpokePoolClient {
 
     this.isUpdated = true;
     this.log("debug", `SpokePool client for chain ${this.chainId} updated!`, {
-      searchConfig,
-      depositRouteSearchConfig,
-      depositEventSearchConfig,
+      eventSearchConfigs,
       nextFirstBlockToSearch: this.firstBlockToSearch,
     });
   }
