@@ -6,7 +6,7 @@ export function getAmountToReturnForRelayerRefundLeaf(
   transferThreshold: BigNumber,
   spokePoolTargetBalance: SpokePoolTargetBalance,
   runningBalanceForLeaf: BigNumber
-) {
+): BigNumber {
   const netSendAmountForLeaf = getNetSendAmountForL1Token(
     transferThreshold,
     spokePoolTargetBalance,
@@ -15,7 +15,7 @@ export function getAmountToReturnForRelayerRefundLeaf(
   return netSendAmountForLeaf.mul(toBN(-1)).gt(toBN(0)) ? netSendAmountForLeaf.mul(toBN(-1)) : toBN(0);
 }
 
-export function sortRefundAddresses(refunds: Refund) {
+export function sortRefundAddresses(refunds: Refund): string[] {
   const deepCopy = { ...refunds };
   return [...Object.keys(deepCopy)].sort((addressA, addressB) => {
     if (deepCopy[addressA].gt(deepCopy[addressB])) return -1;
@@ -28,7 +28,7 @@ export function sortRefundAddresses(refunds: Refund) {
 
 // Sort leaves by chain ID and then L2 token address in ascending order. Assign leaves unique, ascending ID's
 // beginning from 0.
-export function sortRelayerRefundLeaves(relayerRefundLeaves: RelayerRefundLeafWithGroup[]) {
+export function sortRelayerRefundLeaves(relayerRefundLeaves: RelayerRefundLeafWithGroup[]): RelayerRefundLeaf[] {
   return [...relayerRefundLeaves]
     .sort((leafA, leafB) => {
       if (leafA.chainId !== leafB.chainId) {
