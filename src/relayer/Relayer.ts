@@ -201,7 +201,7 @@ export class Relayer {
     if (this.clients.profitClient.anyCapturedUnprofitableFills()) this.handleUnprofitableFill();
   }
 
-  async fillRelay(deposit: Deposit, fillAmount: BigNumber) {
+  async fillRelay(deposit: Deposit, fillAmount: BigNumber): Promise<void> {
     // Skip deposits that this relayer has already filled completely before to prevent double filling (which is a waste
     // of gas as the second fill would fail).
     // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried
@@ -267,7 +267,7 @@ export class Relayer {
     }
   }
 
-  zeroFillDeposit(deposit: Deposit) {
+  zeroFillDeposit(deposit: Deposit): void {
     const repaymentChainId = 1; // Always refund zero fills on L1 to not send dust over the chain unnecessarily.
     const fillAmount = toBN(1); // 1 wei; smallest fill size possible.
     this.logger.debug({ at: "Relayer", message: "Zero filling", deposit, repaymentChain: repaymentChainId });
