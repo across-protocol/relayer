@@ -409,18 +409,20 @@ export class SpokePoolClient {
   async _update(eventsToQuery: string[]) {
     // Find the earliest known depositId. This assumes no deposits were placed in the deployment block.
     if (this.firstDepositIdForSpokePool === Number.MAX_SAFE_INTEGER) {
-      const firstDepositId: number = await this.spokePool.numberOfDeposits({ blockTag: this.deploymentBlock });
-      if (!isNaN(firstDepositId) && firstDepositId >= 0 && firstDepositId < this.firstDepositIdForSpokePool)
-        this.firstDepositIdForSpokePool = firstDepositId;
+      const firstDepositId = await this.spokePool.numberOfDeposits({ blockTag: this.deploymentBlock });
+      if (isNaN(firstDepositId))
+        throw new Error(`SpokePoolClient::update: Invalid first deposit id (${firstDepositId})`);
+
+      this.firstDepositIdForSpokePool = firstDepositId;
     }
 
     const [latestBlockNumber, currentTime] = await Promise.all([
       this.spokePool.provider.getBlockNumber(),
       this.spokePool.getCurrentTime(),
     ]);
-    if (latestBlockNumber < this.latestBlockNumber)
+    if (isNaN(latestBlockNumber) || latestBlockNumber < this.latestBlockNumber)
       throw new Error(`SpokePoolClient::update: latestBlockNumber ${latestBlockNumber} < ${this.latestBlockNumber}`);
-    else if (currentTime < this.currentTime)
+    else if (isNaN(currentTime) || currentTime < this.currentTime)
       throw new Error(`SpokePoolClient::update: currentTime ${currentTime} < ${this.currentTime}`);
 
     const searchConfig = {
