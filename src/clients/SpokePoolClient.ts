@@ -6,6 +6,7 @@ import {
   BigNumber,
   EventSearchConfig,
   Promise,
+  Event,
   EventFilter,
   sortEventsAscendingInPlace,
   DefaultLogLevels,
@@ -406,7 +407,7 @@ export class SpokePoolClient {
     return sortEventsAscending(fills.filter((_fill) => filledSameDeposit(_fill, matchingFill)));
   }
 
-  async _update(eventsToQuery: string[]) {
+  async _update(eventsToQuery: string[]): Promise<Event[][]> {
     // Find the earliest known depositId. This assumes no deposits were placed in the deployment block.
     if (this.firstDepositIdForSpokePool === Number.MAX_SAFE_INTEGER) {
       const firstDepositId = await this.spokePool.numberOfDeposits({ blockTag: this.deploymentBlock });
@@ -432,7 +433,7 @@ export class SpokePoolClient {
     };
     if (searchConfig.fromBlock > searchConfig.toBlock) {
       this.log("warn", "Invalid update() searchConfig.", { searchConfig });
-      return; // If the starting block is greater than the ending block return.
+      return []; // If the starting block is greater than the ending block return.
     }
 
     const eventSearchConfigs = eventsToQuery.map((eventName) => {
@@ -479,10 +480,14 @@ export class SpokePoolClient {
     return queryResults;
   }
 
-  async update(eventsToQuery: string[] = this.queryableEventNames) {
+  async update(eventsToQuery: string[] = this.queryableEventNames): Promise<void> {
     if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
 
     const queryResults = await this._update(eventsToQuery);
+    if (queryResults.length === 0) {
+      this.isUpdated = true;
+      return;
+    }
 
     if (eventsToQuery.includes("TokensBridged"))
       for (const event of queryResults[eventsToQuery.indexOf("TokensBridged")]) {
