@@ -1,4 +1,4 @@
-import { groupBy } from "lodash";
+import { groupBy, random } from "lodash";
 import { SpokePoolClient } from "../src/clients";
 import { RefundRequest, RefundRequestWithBlock } from "../src/interfaces/SpokePool";
 import {
@@ -14,10 +14,6 @@ import {
   toBN,
   toBNWei,
 } from "./utils";
-
-function randomInt(min = 0, max = Number.MAX_SAFE_INTEGER): number {
-  return Math.floor(Math.random() * (max - min) + min);
-}
 
 let spokePool: Contract, originToken: Contract, refundToken: Contract;
 let relayer: SignerWithAddress;
@@ -44,7 +40,7 @@ describe("SpokePoolClient: Refund Requests", async function () {
       destinationChainId,
       realizedLpFeePct: toBNWei(".0001"),
       // depositId should be individually.
-      fillBlock: toBN(randomInt()),
+      fillBlock: toBN(random(1, 100_000)),
       previousIdenticalRequests: toBN(0),
     } as RefundRequest;
 
@@ -59,8 +55,8 @@ describe("SpokePoolClient: Refund Requests", async function () {
 
     const withBlockTemplate = {
       transactionIndex: 0,
-      logIndex: randomInt(),
-      transactionHash: ethers.utils.id(`Across-v2-$${randomInt()}`),
+      logIndex: random(1, 10),
+      transactionHash: ethers.utils.id(`Across-v2-${random(1, 100_000)}`),
     };
     requestBlockTemplate = { ...requestTemplate, ...withBlockTemplate } as RefundRequestWithBlock;
   });
@@ -68,8 +64,8 @@ describe("SpokePoolClient: Refund Requests", async function () {
   it("Correctly fetches refund requests", async function () {
     const refundRequests: RefundRequestWithBlock[] = [];
     for (let _idx = 0; _idx < 5; ++_idx) {
-      const blockNumber = randomInt(deploymentBlock, spokePoolClient.latestBlockNumber);
-      refundRequests.push({ ...requestBlockTemplate, depositId: randomInt(), blockNumber });
+      const blockNumber = random(deploymentBlock, spokePoolClient.latestBlockNumber as number);
+      refundRequests.push({ ...requestBlockTemplate, depositId: random(1, 100), blockNumber });
       ++requestBlockTemplate.transactionIndex;
     }
 
@@ -91,7 +87,7 @@ describe("SpokePoolClient: Refund Requests", async function () {
 
     const refundRequests: RefundRequestWithBlock[] = [];
     for (let blockNumber = deploymentBlock; blockNumber <= latestBlockNumber; ++blockNumber) {
-      refundRequests.push({ ...requestBlockTemplate, depositId: randomInt(), blockNumber });
+      refundRequests.push({ ...requestBlockTemplate, depositId: random(1, 100), blockNumber });
     }
 
     // @todo: SpokePool.requestRefund() does not exist yet. Temporarily force the request events in via the back door.
