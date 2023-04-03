@@ -10,14 +10,16 @@ import {
   sortEventsAscending,
 } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
-import _ from "lodash";
 
 export function getRefundInformationFromFill(
   fill: Fill,
   hubPoolClient: HubPoolClient,
   blockRangesForChains: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[]
-) {
+): {
+  chainToSendRefundTo: number;
+  repaymentToken: string;
+} {
   // Handle slow relay where repaymentChainId = 0. Slow relays always pay recipient on destination chain.
   // So, save the slow fill under the destination chain, and save the fast fill under its repayment chain.
   const chainToSendRefundTo = fill.isSlowRelay ? fill.destinationChainId : fill.repaymentChainId;
@@ -44,7 +46,7 @@ export function assignValidFillToFillsToRefund(
   fill: Fill,
   chainToSendRefundTo: number,
   repaymentToken: string
-) {
+): void {
   assign(fillsToRefund, [chainToSendRefundTo, repaymentToken, "fills"], [fill]);
 }
 
@@ -53,7 +55,7 @@ export function updateTotalRealizedLpFeePct(
   fill: Fill,
   chainToSendRefundTo: number,
   repaymentToken: string
-) {
+): void {
   const refundObj = fillsToRefund[chainToSendRefundTo][repaymentToken];
   refundObj.realizedLpFees = refundObj.realizedLpFees
     ? refundObj.realizedLpFees.add(getRealizedLpFeeForFills([fill]))
@@ -65,7 +67,7 @@ export function updateTotalRefundAmount(
   fill: Fill,
   chainToSendRefundTo: number,
   repaymentToken: string
-) {
+): void {
   // Don't count slow relays in total refund amount, since we use this amount to conveniently construct
   // relayer refund leaves.
   if (fill.isSlowRelay) return;
@@ -113,7 +115,10 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
   hubPoolClient: HubPoolClient,
   spokePoolClientsByChain: SpokePoolClientsByChain,
   chainIdListForBundleEvaluationBlockNumbers: number[]
-) {
+): Promise<{
+  lastMatchingFillInSameBundle: FillWithBlock;
+  rootBundleEndBlockContainingFirstFill: number;
+}> {
   // Can use spokeClient.queryFillsForDeposit(_fill, spokePoolClient.eventSearchConfig.fromBlock)
   // if allValidFills doesn't contain the deposit's first fill to efficiently find the first fill for a deposit.
   // Note that allValidFills should only include fills later than than eventSearchConfig.fromBlock.
@@ -165,7 +170,7 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
     chainIdListForBundleEvaluationBlockNumbers
   );
   // Using bundle block number for chain from ProposeRootBundleEvent, find latest fill in the root bundle.
-  let lastMatchingFillInSameBundle;
+  let lastMatchingFillInSameBundle: FillWithBlock;
   if (rootBundleEndBlockContainingFirstFill !== undefined) {
     lastMatchingFillInSameBundle = getLastMatchingFillBeforeBlock(
       fill,
@@ -183,7 +188,7 @@ export function getFillsInRange(
   fills: FillWithBlock[],
   blockRangesForChains: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[]
-) {
+): FillWithBlock[] {
   return fills.filter((fill) => {
     const blockRangeForChain = getBlockRangeForChain(
       blockRangesForChains,

@@ -11,7 +11,7 @@ export function updateUnfilledDepositsWithMatchedDeposit(
   matchedFill: Fill,
   matchedDeposit: Deposit,
   unfilledDepositsForOriginChain: UnfilledDepositsForOriginChain
-) {
+): void {
   const depositUnfilledAmount = matchedFill.amount.sub(matchedFill.totalFilledAmount);
   const depositKey = `${matchedDeposit.originChainId}+${matchedFill.depositId}`;
   assign(
@@ -31,7 +31,7 @@ export function updateUnfilledDepositsWithMatchedDeposit(
 
 export function flattenAndFilterUnfilledDepositsByOriginChain(
   unfilledDepositsForOriginChain: UnfilledDepositsForOriginChain
-) {
+): UnfilledDeposit[] {
   return (
     Object.values(unfilledDepositsForOriginChain)
       .map((_unfilledDeposits: UnfilledDeposit[]): UnfilledDeposit => {

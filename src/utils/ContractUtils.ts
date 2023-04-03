@@ -26,10 +26,10 @@ export function castSpokePoolName(networkId: number): string {
   return `${networkName}_SpokePool`;
 }
 
-export function getParamType(contractName: string, functionName: string, paramName: string) {
-  const artifact: any = typechain[`${[contractName]}__factory`];
-  const fragment = artifact.abi.find((fragment) => fragment.name === functionName);
-  return fragment!.inputs.find((input) => input.name === paramName) || "";
+export function getParamType(contractName: string, functionName: string, paramName: string): string {
+  const artifact = typechain[`${[contractName]}__factory`];
+  const fragment = artifact.abi.find((fragment: { name: string }) => fragment.name === functionName);
+  return fragment.inputs.find((input: { name: string }) => input.name === paramName) || "";
 }
 
 export function getDeploymentBlockNumber(contractName: string, networkId: number): number {

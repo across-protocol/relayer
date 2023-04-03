@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ethers } from "ethers";
 import lodash from "lodash";
 import winston from "winston";
@@ -13,7 +14,7 @@ const logger = Logger;
 // This is the type we pass to define a request "task".
 interface RateLimitTask {
   // These are the arguments to be passed to super.send().
-  sendArgs: [string, Array<any>];
+  sendArgs: [string, Array<unknown>];
 
   // These are the promise callbacks that will cause the initial send call made by the user to either return a result
   // or fail.
