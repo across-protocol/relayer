@@ -142,12 +142,10 @@ export class SpokePoolClient {
     return this.getFills().filter((fill) => fill.blockNumber >= startingBlock && fill.blockNumber <= endingBlock);
   }
 
-  getRefundRequests(
-    filter: EventSearchConfig = { fromBlock: this.spokePoolDeploymentBlock, toBlock: this.latestBlockNumber }
-  ): RefundRequestWithBlock[] {
-    return this.refundRequests.filter(
-      (refundRequest) => refundRequest.blockNumber >= filter.fromBlock && refundRequest.blockNumber <= filter.toBlock
-    );
+  getRefundRequests(fromBlock?: number, toBlock?: number): RefundRequestWithBlock[] {
+    return fromBlock !== undefined && toBlock !== undefined
+      ? this.refundRequests.filter((request) => request.blockNumber >= fromBlock && request.blockNumber <= toBlock)
+      : this.refundRequests;
   }
 
   getRootBundleRelays() {
