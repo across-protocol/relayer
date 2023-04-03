@@ -95,7 +95,8 @@ describe("SpokePoolClient: Refund Requests", async function () {
     spokePoolClient.refundRequests = spokePoolClient.refundRequests.concat(refundRequests);
     await spokePoolClient.update();
 
-    const refundFilter = { fromBlock: deploymentBlock + 1, toBlock: latestBlockNumber - 1 };
+    const fromBlock = deploymentBlock + 1;
+    const toBlock = latestBlockNumber - 1;
     const { filteredRequests = [], excludedRequests = [] } = groupBy(refundRequests, (refundRequest) => {
       return refundRequest.blockNumber > deploymentBlock && refundRequest.blockNumber < latestBlockNumber
         ? "filteredRequests"
@@ -103,7 +104,7 @@ describe("SpokePoolClient: Refund Requests", async function () {
     });
 
     expect(spokePoolClient.getRefundRequests()).to.have.deep.members(refundRequests);
-    expect(spokePoolClient.getRefundRequests(refundFilter)).to.have.deep.members(filteredRequests);
-    expect(spokePoolClient.getRefundRequests(refundFilter)).to.not.have.deep.members(excludedRequests);
+    expect(spokePoolClient.getRefundRequests(fromBlock, toBlock)).to.have.deep.members(filteredRequests);
+    expect(spokePoolClient.getRefundRequests(fromBlock, toBlock)).to.not.have.deep.members(excludedRequests);
   });
 });
