@@ -22,7 +22,7 @@ export function createSpyLogger(): {
   const spyLogger = winston.createLogger({
     level: "debug",
     format: winston.format.combine(winston.format(bigNumberFormatter)(), winston.format.json()),
-    transports: transports,
+    transports,
   });
 
   return { spy, spyLogger };
