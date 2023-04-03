@@ -1496,10 +1496,10 @@
   dependencies:
     "@openzeppelin/contracts" "^4.2.0"
 
-"@maticnetwork/maticjs-ethers@^1.0.2":
-  version "1.0.2"
-  resolved "https://registry.yarnpkg.com/@maticnetwork/maticjs-ethers/-/maticjs-ethers-1.0.2.tgz#3adcf4d83862fb3f8f51f76d383c6490c3eb1d27"
-  integrity sha512-WIjlMPffSZA3RGqKbTXLxfyMuampeyfVwLah3LaT0UON4UZlehOeWSPQ6BImaukrdJS1GQQODASnLc1B2nnCPQ==
+"@maticnetwork/maticjs-ethers@^1.0.3":
+  version "1.0.3"
+  resolved "https://registry.yarnpkg.com/@maticnetwork/maticjs-ethers/-/maticjs-ethers-1.0.3.tgz#29dc7740f07d2f295535633e2c2e7f9fa0e21d90"
+  integrity sha512-paGulmLG62We/pyOVH3Q7mZd/E/SGFKa+rXtyvpoMB8v5oFn/yTtoKvLWyIoZ8zBi4JrjSegKL+/US5+OibYwQ==
   dependencies:
     ethers "^5.5.1"
 
@@ -12555,10 +12555,10 @@ prettier@^1.14.3:
   resolved "https://registry.yarnpkg.com/prettier/-/prettier-1.19.1.tgz#f7d7f5ff8a9cd872a7be4ca142095956a60797cb"
   integrity sha512-s7PoyDv/II1ObgQunCbB9PdLmUcBZcnWOcxDh7O0N/UwDEsHyqkW+Qh28jW+mVuCdx7gLB0BotYI1Y6uI9iyew==
 
-prettier@^2.1.2, prettier@^2.3.1, prettier@^2.3.2:
-  version "2.7.1"
-  resolved "https://registry.yarnpkg.com/prettier/-/prettier-2.7.1.tgz#e235806850d057f97bb08368a4f7d899f7760c64"
-  integrity sha512-ujppO+MkdPqoVINuDFDRLClm7D78qbDt0/NR+wp5FqEZOoTNAjPHWj17QRhu7geIHJfcNhRk1XVQmF8Bp3ye+g==
+prettier@^2.1.2, prettier@^2.3.1, prettier@^2.8.7:
+  version "2.8.7"
+  resolved "https://registry.yarnpkg.com/prettier/-/prettier-2.8.7.tgz#bb79fc8729308549d28fe3a98fce73d2c0656450"
+  integrity sha512-yPngTo3aXUUmyuTjeTUT75txrf+aMh9FiD7q9ZE/i6r0bPb22g4FsE6Y338PQX1bmfy08i9QQCB7/rcUAVntfw==
 
 pretty-quick@^3.1.3:
   version "3.1.3"
