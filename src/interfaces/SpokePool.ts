@@ -3,7 +3,6 @@ import { SortableEvent } from "./Common";
 import { SpokePoolClient } from "../clients";
 
 // TODO: see if there's a way to get typechain to directly export this event type.
-// eslint-disable-next-line node/no-missing-import
 export type { FundsDepositedEvent } from "@across-protocol/contracts-v2/dist/typechain/SpokePool";
 
 export interface Deposit {

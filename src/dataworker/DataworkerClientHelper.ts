@@ -114,7 +114,7 @@ export function getSpokePoolClientEventSearchConfigsForFastDataworker(
       ? undefined
       : clients.hubPoolClient.getNthFullyExecutedRootBundle(Number(config.dataworkerFastStartBundle));
   const fromBundle =
-    config.dataworkerFastLookbackCount >= config.dataworkerFastStartBundle
+    config.dataworkerFastLookbackCount >= Number(config.dataworkerFastStartBundle)
       ? undefined
       : clients.hubPoolClient.getNthFullyExecutedRootBundle(-config.dataworkerFastLookbackCount, toBundle?.blockNumber);
 
