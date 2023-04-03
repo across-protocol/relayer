@@ -78,6 +78,7 @@ export class SpokePoolClient {
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
+    this.currentTime = getCurrentTime();
   }
 
   _queryableEventNames(): { [eventName: string]: EventFilter } {
@@ -271,8 +272,8 @@ export class SpokePoolClient {
   async binarySearchForBlockContainingDepositId(
     targetDepositId: number,
     initLow = this.spokePoolDeploymentBlock,
-    initHigh = this.latestBlockNumber
-  ): Promise<number> {
+    initHigh = this.latestBlockNumber as number
+  ): Promise<number | undefined> {
     assert(initLow <= initHigh, "Binary search failed because low > high");
     let low = initLow;
     let high = initHigh;
@@ -320,6 +321,9 @@ export class SpokePoolClient {
         // Look for the block where depositId incremented from fill.depositId to fill.depositId+1.
         this.binarySearchForBlockContainingDepositId(fill.depositId + 1),
       ]);
+      if (!blockBeforeDeposit || !blockAfterDeposit) {
+        return undefined;
+      }
       assert(blockBeforeDeposit <= blockAfterDeposit, "blockBeforeDeposit > blockAfterDeposit");
 
       const query = await paginatedEventQuery(
@@ -622,7 +626,7 @@ export class SpokePoolClient {
   }
 
   public hubPoolClient(): HubPoolClient {
-    return this.configStoreClient?.hubPoolClient;
+    return this.configStoreClient?.hubPoolClient as HubPoolClient;
   }
 
   private async computeRealizedLpFeePct(depositEvent: FundsDepositedEvent) {

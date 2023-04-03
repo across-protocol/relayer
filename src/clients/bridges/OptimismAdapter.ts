@@ -150,7 +150,7 @@ export class OptimismAdapter extends BaseAdapter {
     else return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args);
   }
 
-  async wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse> {
+  async wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse | null> {
     const ethBalance = await this.getSigner(this.chainId).getBalance();
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(this.chainId);

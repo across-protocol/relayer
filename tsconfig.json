@@ -6,9 +6,9 @@
     "outDir": "./dist",
     "declaration": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "strict": true
   },
-  "strict": true,
   "include": ["./src", "index.ts", "./scripts"],
   "files": ["./hardhat.config.ts"],
   "watchOptions": {

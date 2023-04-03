@@ -28,7 +28,7 @@ export async function run(): Promise<void> {
   if (!Object.keys(args).includes("amount")) throw new Error("Define `amount` as how much you want to unwrap");
   const baseSigner = await getSigner();
   const connectedSigner = baseSigner.connect(await getProvider(Number(args.chainId)));
-  const token = WETH_ADDRESSES[Number(args.chainId)];
+  const token = WETH_ADDRESSES[Number(args.chainId) as keyof typeof WETH_ADDRESSES];
   const weth = new ethers.Contract(token, WETH9.abi, connectedSigner);
   const decimals = 18;
   const amountFromWei = ethers.utils.formatUnits(args.amount, decimals);

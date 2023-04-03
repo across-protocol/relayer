@@ -214,7 +214,8 @@ export class ProfitClient {
     const netRelayerFeePct = netRelayerFeeUsd.mul(toBNWei(1)).div(relayerCapitalUsd);
 
     // If token price or gas cost is unknown, assume the relay is unprofitable.
-    const fillProfitable = tokenPriceUsd.gt(0) && gasCostUsd.gt(0) && netRelayerFeePct.gte(minRelayerFeePct);
+    const fillProfitable =
+      tokenPriceUsd.gt(0) && gasCostUsd.gt(0) && (!minRelayerFeePct || netRelayerFeePct.gte(minRelayerFeePct));
 
     return {
       grossRelayerFeePct,
