@@ -12,7 +12,7 @@
   "dependencies": {
     "@across-protocol/boba-sdk": "^1.0.4",
     "@across-protocol/contracts-v2": "^2.0.2",
-    "@across-protocol/sdk-v2": "^0.4.1",
+    "@across-protocol/sdk-v2": "^0.4.2",
     "@arbitrum/sdk": "^3.1.2",
     "@defi-wonderland/smock": "^2.3.4",
     "@eth-optimism/sdk": "^2.0.1",
