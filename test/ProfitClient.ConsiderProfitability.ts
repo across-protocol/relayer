@@ -285,7 +285,7 @@ describe("ProfitClient: Consider relay profit", async function () {
   it("Allows per-route and per-token fee configuration", async function () {
     // Setup custom USDC pricing to Optimism.
     chainIds.forEach((srcChainId) => {
-      process.env[`MIN_RELAYER_FEE_PCT_USDC_${srcChainId}_10`] = Math.random().toString();
+      process.env[`MIN_RELAYER_FEE_PCT_USDC_${srcChainId}_10`] = Math.random().toPrecision(10).toString();
     });
 
     const envPrefix = "MIN_RELAYER_FEE_PCT";
