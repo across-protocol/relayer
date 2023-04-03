@@ -94,7 +94,7 @@ export class SpokePoolClient {
       FundsDeposited: this.spokePool.filters.FundsDeposited(),
       RequestedSpeedUpDeposit: this.spokePool.filters.RequestedSpeedUpDeposit(),
       FilledRelay: this.spokePool.filters.FilledRelay(),
-      // RefundRequested: this.spokePool.filters.refundRequested(), // @todo update contracts-v2
+      // RefundRequested: this.spokePool.filters.refundRequested(), @todo update contracts-v2
       EnabledDepositRoute: this.spokePool.filters.EnabledDepositRoute(),
       TokensBridged: this.spokePool.filters.TokensBridged(),
       RelayedRootBundle: this.spokePool.filters.RelayedRootBundle(),
