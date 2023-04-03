@@ -4,6 +4,7 @@ import { multicall3Addresses } from "../common";
 import { toBNWei, BigNumber, toBN, toGWei, TransactionResponse } from "../utils";
 import { getAbi } from "@uma/contracts-node";
 import dotenv from "dotenv";
+import { FeeData } from "@ethersproject/abstract-provider";
 dotenv.config();
 
 export type TransactionSimulationResult = {
@@ -101,11 +102,7 @@ export async function getGasPrice(
   provider: ethers.providers.Provider,
   priorityScaler = 1.2,
   maxFeePerGasScaler = 3
-): Promise<{
-  maxFeePerGas?: ethers.BigNumber;
-  maxPriorityFeePerGas?: ethers.BigNumber;
-  gasPrice?: ethers.BigNumber;
-}> {
+): Promise<Partial<FeeData>> {
   const [feeData, chainInfo] = await Promise.all([provider.getFeeData(), provider.getNetwork()]);
   if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
     // Polygon, for some or other reason, does not correctly return an appropriate maxPriorityFeePerGas. Set the
