@@ -1496,10 +1496,10 @@
   dependencies:
     "@openzeppelin/contracts" "^4.2.0"
 
-"@maticnetwork/maticjs-ethers@^1.0.2":
-  version "1.0.2"
-  resolved "https://registry.yarnpkg.com/@maticnetwork/maticjs-ethers/-/maticjs-ethers-1.0.2.tgz#3adcf4d83862fb3f8f51f76d383c6490c3eb1d27"
-  integrity sha512-WIjlMPffSZA3RGqKbTXLxfyMuampeyfVwLah3LaT0UON4UZlehOeWSPQ6BImaukrdJS1GQQODASnLc1B2nnCPQ==
+"@maticnetwork/maticjs-ethers@^1.0.3":
+  version "1.0.3"
+  resolved "https://registry.yarnpkg.com/@maticnetwork/maticjs-ethers/-/maticjs-ethers-1.0.3.tgz#29dc7740f07d2f295535633e2c2e7f9fa0e21d90"
+  integrity sha512-paGulmLG62We/pyOVH3Q7mZd/E/SGFKa+rXtyvpoMB8v5oFn/yTtoKvLWyIoZ8zBi4JrjSegKL+/US5+OibYwQ==
   dependencies:
     ethers "^5.5.1"
 
