@@ -1,6 +1,6 @@
 import { groupBy, random } from "lodash";
 import { SpokePoolClient } from "../src/clients";
-import { RefundRequest, RefundRequestWithBlock } from "../src/interfaces/SpokePool";
+import { RefundRequest, RefundRequestWithBlock } from "../src/interfaces";
 import {
   createSpyLogger,
   expect,
