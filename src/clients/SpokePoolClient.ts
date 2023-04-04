@@ -32,9 +32,9 @@ import {
   FillWithBlock,
   TokensBridged,
   FundsDepositedEvent,
-} from "../interfaces/SpokePool";
-import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
-import { HubPoolClient } from "./HubPoolClient";
+} from "../interfaces";
+import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces";
+
 
 const FILL_DEPOSIT_COMPARISON_KEYS = [
   "amount",

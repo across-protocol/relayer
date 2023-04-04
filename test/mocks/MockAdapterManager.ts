@@ -2,7 +2,7 @@ import { AdapterManager } from "../../src/clients/bridges";
 import { BigNumber, TransactionResponse } from "../../src/utils";
 
 import { createRandomBytes32 } from "../utils";
-import { OutstandingTransfers } from "../../src/interfaces/Bridge";
+import { OutstandingTransfers } from "../../src/interfaces";
 
 export class MockAdapterManager extends AdapterManager {
   public tokensSentCrossChain: {
