@@ -440,8 +440,10 @@ export class SpokePoolClient {
       // By default, an event's query range is controlled by the `eventSearchConfig` passed in during instantiation.
       // However, certain events have special overriding requirements to their search ranges:
       // - EnabledDepositRoute: The full history is always required, so override the requested fromBlock.
-      if (eventName === "EnabledDepositRoute" && !this.isUpdated) {
-        _searchConfig.fromBlock = this.spokePoolDeploymentBlock;
+      if (eventName === "EnabledDepositRoute") {
+        // EnabledDepositRoute events are rare, so we can dramatically increase the block range per query.
+        _searchConfig.maxBlockLookBack *= 10;
+        if (!this.isUpdated) _searchConfig.fromBlock = this.spokePoolDeploymentBlock;
       }
 
       return {
