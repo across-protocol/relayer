@@ -434,6 +434,7 @@ export class SpokePoolClient {
       return; // If the starting block is greater than the ending block return.
     }
 
+
     let timerStart = Date.now();
 
     // If caller requests specific events, then only query those. Otherwise, default to looking up all known events.
