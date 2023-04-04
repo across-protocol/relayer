@@ -47,6 +47,8 @@ export type Fill = interfaces.Fill;
 export type FillWithBlock = interfaces.FillWithBlock;
 export type SpeedUp = interfaces.SpeedUp;
 export type SlowFill = interfaces.SlowFill;
+export type RefundRequest = interfaces.RefundRequest;
+export type RefundRequestWithBlock = interfaces.RefundRequestWithBlock;
 export type RootBundleRelay = interfaces.RootBundleRelay;
 export type RootBundleRelayWithBlock = interfaces.RootBundleRelayWithBlock;
 export type RelayerRefundExecution = interfaces.RelayerRefundExecution;
@@ -58,3 +60,7 @@ export type Refund = interfaces.Refund;
 export type FillsToRefund = interfaces.FillsToRefund;
 export type RunningBalances = interfaces.RunningBalances;
 export type TokensBridged = interfaces.TokensBridged;
+
+export type UbaInflow = interfaces.UbaInflow;
+export type UbaOutflow = interfaces.UbaOutflow;
+export type UbaFlow = interfaces.UbaFlow;
