@@ -16,7 +16,7 @@ import { BaseAdapter, polygonL1BridgeInterface, polygonL2BridgeInterface } from 
 import { polygonL1RootChainManagerInterface, atomicDepositorInterface } from "./";
 import { SortableEvent } from "../../interfaces";
 import { constants } from "@across-protocol/sdk-v2";
-import { OutstandingTransfers } from "../../interfaces/Bridge";
+import { OutstandingTransfers } from "../../interfaces";
 const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
 // ether bridge = 0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30

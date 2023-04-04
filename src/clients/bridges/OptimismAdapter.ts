@@ -12,7 +12,7 @@ import { spreadEventWithBlockNumber, assign, Promise, winston } from "../../util
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter, weth9Abi, ovmL1BridgeInterface, ovmL2BridgeInterface, atomicDepositorInterface } from "./";
 import { SortableEvent } from "../../interfaces";
-import { OutstandingTransfers } from "../../interfaces/Bridge";
+import { OutstandingTransfers } from "../../interfaces";
 
 const customL1OptimismBridgeAddresses = {
   "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f", // DAI

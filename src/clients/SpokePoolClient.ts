@@ -34,7 +34,7 @@ import {
   FundsDepositedEvent,
 } from "../interfaces";
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces";
-
+import { HubPoolClient } from ".";
 
 const FILL_DEPOSIT_COMPARISON_KEYS = [
   "amount",
