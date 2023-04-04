@@ -32,8 +32,8 @@ import {
   SpeedUp,
   TokensBridged,
   FundsDepositedEvent,
-} from "../interfaces/SpokePool";
-import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
+} from "../interfaces";
+import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces";
 
 const FILL_DEPOSIT_COMPARISON_KEYS = [
   "amount",

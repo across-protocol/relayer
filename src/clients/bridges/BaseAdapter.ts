@@ -12,7 +12,7 @@ import {
   MakeOptional,
 } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
-import { OutstandingTransfers } from "../../interfaces/Bridge";
+import { OutstandingTransfers } from "../../interfaces";
 
 export class BaseAdapter {
   chainId: number;
