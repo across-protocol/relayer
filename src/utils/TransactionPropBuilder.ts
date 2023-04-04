@@ -1,5 +1,5 @@
 import { BigNumber } from "../utils";
-import { Deposit } from "../interfaces/SpokePool";
+import { Deposit } from "../interfaces";
 export function buildFillRelayProps(deposit: Deposit, repaymentChainId: number, maxFillAmount: BigNumber) {
   // Validate all keys are present.
   for (const key in deposit)
