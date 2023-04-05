@@ -190,7 +190,8 @@ export async function finalize(
           transactionHash: etherscanLink(txn.transactionHash, 1),
         });
       });
-    } catch (error) {
+    } catch (_error) {
+      const error = _error as Error;
       logger.warn({
         at: "Finalizer",
         message: "Error creating aggregateTx",

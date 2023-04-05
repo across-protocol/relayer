@@ -5,16 +5,12 @@ import { toBNWei, BigNumber, toBN, toGWei, TransactionResponse } from "../utils"
 import { getAbi } from "@uma/contracts-node";
 import dotenv from "dotenv";
 import { FeeData } from "@ethersproject/abstract-provider";
+import { EthersError } from "../interfaces";
 dotenv.config();
 
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
   succeed: boolean;
-  reason: string;
-};
-
-type EthersError = Error & {
-  code: string;
   reason: string;
 };
 
@@ -129,7 +125,8 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
     const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
     await transaction.contract.callStatic[transaction.method](...args);
     return { transaction, succeed: true, reason: null };
-  } catch (error) {
+  } catch (_error) {
+    const error = _error as EthersError;
     return { transaction, succeed: false, reason: error.reason };
   }
 }
