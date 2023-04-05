@@ -120,7 +120,7 @@ export class AcrossConfigStoreClient {
     blockNumber: number | undefined = undefined
   ): across.constants.RateModel | undefined {
     const config = (sortEventsDescending(this.cumulativeRouteRateModelUpdates) as RouteRateModelUpdate[]).find(
-      (config) => config.blockNumber <= blockNumber && config.l1Token === l1Token
+      (config) => config.blockNumber <= (blockNumber ?? 0) && config.l1Token === l1Token
     );
     if (config?.routeRateModel[route] === undefined) return undefined;
     return across.rateModel.parseAndReturnRateModelFromString(config.routeRateModel[route]);
@@ -385,7 +385,7 @@ export class AcrossConfigStoreClient {
     return disabledChains.filter((chainId: number) => !isNaN(chainId) && Number.isInteger(chainId) && chainId !== 1);
   }
 
-  private async getBlockNumber(timestamp: number) {
+  private async getBlockNumber(timestamp: number): Promise<number | undefined> {
     return await getBlockForTimestamp(
       this.hubPoolClient.chainId,
       this.hubPoolClient.chainId,

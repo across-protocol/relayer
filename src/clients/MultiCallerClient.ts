@@ -66,7 +66,7 @@ export class MultiCallerClient {
       .reduce((count, txnQueue) => (count += txnQueue.length), 0);
   }
 
-  clearTransactionQueue(chainId: number = null): void {
+  clearTransactionQueue(chainId: number | null = null): void {
     if (chainId !== null) {
       this.txns[chainId] = [];
       this.valueTxns[chainId] = [];
@@ -186,7 +186,7 @@ export class MultiCallerClient {
   }
 
   async _getMultisender(chainId: number): Promise<Contract | undefined> {
-    return getMultisender(chainId, this.baseSigner.connect(await getProvider(chainId)));
+    return this.baseSigner ? getMultisender(chainId, this.baseSigner.connect(await getProvider(chainId))) : undefined;
   }
 
   async buildMultiSenderBundle(transactions: AugmentedTransaction[]): Promise<AugmentedTransaction> {

@@ -1,6 +1,6 @@
 import minimist from "minimist";
 import { CommonConfig } from "./src/common";
-import { config, delay, getSigner, help, Logger, processCrash, usage, winston } from "./src/utils";
+import { AnyObject, config, delay, getSigner, help, Logger, processCrash, usage, winston } from "./src/utils";
 import { runRelayer } from "./src/relayer";
 import { runDataworker } from "./src/dataworker";
 import { runMonitor } from "./src/monitor";
@@ -40,7 +40,7 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
         await cmds[cmd](logger, await getSigner());
       } catch (error) {
         // eslint-disable-next-line no-process-exit
-        if (await processCrash(logger, cmd, config.pollingDelay, error)) process.exit(1);
+        if (await processCrash(logger, cmd, config.pollingDelay, error as AnyObject)) process.exit(1);
       }
     } while (config.pollingDelay !== 0);
   }

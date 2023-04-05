@@ -130,8 +130,8 @@ export class ArbitrumAdapter extends BaseAdapter {
             _amount: BigNumberish;
           };
           return {
-            amount: eventSpread[index % 2 === 0 ? "_amount" : "amount"],
             ...eventSpread,
+            amount: eventSpread[index % 2 === 0 ? "_amount" : "amount"],
           };
         });
         const eventsStorage = index % 2 === 0 ? this.l1DepositInitiatedEvents : this.l2DepositFinalizedEvents;

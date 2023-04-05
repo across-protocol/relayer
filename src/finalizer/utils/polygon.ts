@@ -9,7 +9,7 @@ import {
   Contract,
   getCachedProvider,
 } from "../../utils";
-import { TokensBridged } from "../../interfaces";
+import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
 import { Withdrawal } from "..";
 import { Multicall2Call } from "../../common";
@@ -102,7 +102,8 @@ export async function getFinalizableTransactions(
           payload,
         });
         return { status: POLYGON_MESSAGE_STATUS.CAN_EXIT };
-      } catch (err) {
+      } catch (_err) {
+        const err = _err as EthersError;
         if (err?.reason?.includes("EXIT_ALREADY_PROCESSED"))
           return { status: POLYGON_MESSAGE_STATUS.EXIT_ALREADY_PROCESSED };
         else {

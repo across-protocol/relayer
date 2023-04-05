@@ -52,7 +52,7 @@ export class HubPoolClient {
     return this.pendingRootBundle !== undefined;
   }
 
-  getPendingRootBundle(): PendingRootBundle {
+  getPendingRootBundle(): PendingRootBundle | undefined {
     return this.pendingRootBundle;
   }
 
@@ -78,7 +78,7 @@ export class HubPoolClient {
     else return mostRecentSpokePoolUpdateBeforeBlock.spokePool;
   }
 
-  getSpokePoolActivationBlock(chain: number, spokePool: string): number {
+  getSpokePoolActivationBlock(chain: number, spokePool: string): number | undefined {
     // Return first time that this spoke pool was registered in the HubPool as a cross chain contract. We can use
     // this block as the oldest block that we should query for SpokePoolClient purposes.
     const mostRecentSpokePoolUpdateBeforeBlock = this.crossChainContracts[chain].find(
