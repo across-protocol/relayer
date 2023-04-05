@@ -180,7 +180,7 @@ export class ProfitClient {
     deposit: Deposit,
     fillAmount: BigNumber,
     l1Token: L1Token,
-    minRelayerFeePct?: BigNumber
+    minRelayerFeePct: BigNumber
   ): FillProfit {
     assert(fillAmount.gt(0), `Unexpected fillAmount: ${fillAmount}`);
     assert(
