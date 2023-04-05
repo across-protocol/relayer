@@ -1,5 +1,5 @@
 import { BigNumber, BigNumberish } from "../utils";
-import { Deposit } from "../interfaces/SpokePool";
+import { Deposit } from "../interfaces";
 export function buildFillRelayProps(
   deposit: Deposit,
   repaymentChainId: number,

@@ -15,7 +15,8 @@ import {
   BigNumber,
 } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
-import { OutstandingTransfers } from "../../interfaces/Bridge";
+
+import { OutstandingTransfers } from "../../interfaces";
 import { SortableEvent } from "../../interfaces";
 
 interface DepositEvent extends SortableEvent {
