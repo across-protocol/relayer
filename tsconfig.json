@@ -9,6 +9,7 @@
     "resolveJsonModule": true,
     "strict": true,
     "strictNullChecks": false,
+    "noImplicitAny": false,
   },
   "include": ["./src", "index.ts", "./scripts"],
   "files": ["./hardhat.config.ts"],
