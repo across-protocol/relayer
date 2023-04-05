@@ -452,7 +452,9 @@ export class SpokePoolClient {
       if (eventName === "EnabledDepositRoute") {
         // EnabledDepositRoute events are rare, so we can dramatically increase the block range per query.
         _searchConfig.maxBlockLookBack *= 10;
-        if (!this.isUpdated) _searchConfig.fromBlock = this.spokePoolDeploymentBlock;
+        if (!this.isUpdated) {
+            _searchConfig.fromBlock = this.spokePoolDeploymentBlock;
+        }
       }
 
       return {
