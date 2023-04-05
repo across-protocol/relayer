@@ -80,7 +80,6 @@ export class SpokePoolClient {
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
-    this.currentTime = getCurrentTime();
   }
 
   _queryableEventNames(): { [eventName: string]: EventFilter } {
