@@ -61,6 +61,7 @@ export type FillsToRefund = interfaces.FillsToRefund;
 export type RunningBalances = interfaces.RunningBalances;
 export type TokensBridged = interfaces.TokensBridged;
 
+// UBA interfaces
 export type UbaInflow = interfaces.UbaInflow;
 export type UbaOutflow = interfaces.UbaOutflow;
 export type UbaFlow = interfaces.UbaFlow;
