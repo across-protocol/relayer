@@ -280,7 +280,7 @@ export class SpokePoolClient {
   async binarySearchForBlockContainingDepositId(
     targetDepositId: number,
     initLow = this.spokePoolDeploymentBlock,
-    initHigh = this.latestBlockNumber as number
+    initHigh = this.latestBlockNumber
   ): Promise<number | undefined> {
     assert(initLow <= initHigh, "Binary search failed because low > high");
     let low = initLow;
