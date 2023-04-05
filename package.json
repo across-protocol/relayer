@@ -22,7 +22,7 @@
     "@google-cloud/storage": "^6.2.2",
     "@maticnetwork/maticjs": "^3.4.0-beta.0",
     "@maticnetwork/maticjs-ethers": "^1.0.3",
-    "@uma/common": "^2.31.0",
+    "@uma/common": "^2.32.0",
     "@uma/contracts-node": "^0.4.13",
     "@uma/financial-templates-lib": "^2.32.9",
     "@uma/sdk": "^0.32.7",
