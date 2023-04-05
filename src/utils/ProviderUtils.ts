@@ -8,7 +8,7 @@ import {
   MAX_REORG_DISTANCE,
   PROVIDER_CACHE_TTL,
   PROVIDER_CACHE_TTL_MODIFIER as ttl_modifier,
-  BLOCK_NUMBER_TTL
+  BLOCK_NUMBER_TTL,
 } from "../common";
 import { Logger } from ".";
 
