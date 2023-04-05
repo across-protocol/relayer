@@ -137,9 +137,9 @@ export class SpokePoolClient {
   }
 
   getRefundRequests(fromBlock?: number, toBlock?: number): RefundRequestWithBlock[] {
-    return fromBlock !== undefined && toBlock !== undefined
-      ? this.refundRequests.filter((request) => request.blockNumber >= fromBlock && request.blockNumber <= toBlock)
-      : this.refundRequests;
+    return isNan(fromBlock) || isNaN(toBlock)
+      ? this.refundRequests
+      : this.refundRequests.filter((request) => request.blockNumber >= fromBlock && request.blockNumber <= toBlock);
   }
 
   getRootBundleRelays() {
