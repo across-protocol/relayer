@@ -1,6 +1,6 @@
 import { BigNumber, winston, assign, toBN, DefaultLogLevels } from "../../utils";
 import { AdapterManager } from "./AdapterManager";
-import { OutstandingTransfers } from "../../interfaces/Bridge";
+import { OutstandingTransfers } from "../../interfaces";
 
 export class CrossChainTransferClient {
   private outstandingCrossChainTransfers: { [chainId: number]: OutstandingTransfers } = {};

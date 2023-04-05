@@ -28,12 +28,13 @@ import {
   Deposit,
   DepositWithBlock,
   Fill,
-  SpeedUp,
   FillWithBlock,
+  RefundRequestWithBlock,
+  SpeedUp,
   TokensBridged,
   FundsDepositedEvent,
-} from "../interfaces/SpokePool";
-import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces/SpokePool";
+} from "../interfaces";
+import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces";
 
 const FILL_DEPOSIT_COMPARISON_KEYS = [
   "amount",
@@ -70,6 +71,7 @@ export class SpokePoolClient {
   public latestBlockNumber = 0;
   public deposits: { [DestinationChainId: number]: DepositWithBlock[] } = {};
   public fills: { [OriginChainId: number]: FillWithBlock[] } = {};
+  public refundRequests: RefundRequestWithBlock[] = [];
 
   constructor(
     readonly logger: winston.Logger,
@@ -89,6 +91,7 @@ export class SpokePoolClient {
       FundsDeposited: this.spokePool.filters.FundsDeposited(),
       RequestedSpeedUpDeposit: this.spokePool.filters.RequestedSpeedUpDeposit(),
       FilledRelay: this.spokePool.filters.FilledRelay(),
+      // RefundRequested: this.spokePool.filters.refundRequested(), @todo update contracts-v2
       EnabledDepositRoute: this.spokePool.filters.EnabledDepositRoute(),
       TokensBridged: this.spokePool.filters.TokensBridged(),
       RelayedRootBundle: this.spokePool.filters.RelayedRootBundle(),
@@ -134,6 +137,12 @@ export class SpokePoolClient {
 
   getFillsWithBlockInRange(startingBlock: number, endingBlock: number): FillWithBlock[] {
     return this.getFills().filter((fill) => fill.blockNumber >= startingBlock && fill.blockNumber <= endingBlock);
+  }
+
+  getRefundRequests(fromBlock?: number, toBlock?: number): RefundRequestWithBlock[] {
+    return isNaN(fromBlock) || isNaN(toBlock)
+      ? this.refundRequests
+      : this.refundRequests.filter((request) => request.blockNumber >= fromBlock && request.blockNumber <= toBlock);
   }
 
   getRootBundleRelays() {
@@ -576,6 +585,22 @@ export class SpokePoolClient {
         const fill = spreadEventWithBlockNumber(event) as FillWithBlock;
         assign(this.fills, [fill.originChainId], [fill]);
         assign(this.depositHashesToFills, [this.getDepositHash(fill)], [fill]);
+      }
+    }
+
+    // @note: In Across 2.5, callers will simultaneously request [FundsDeposited, FilledRelay, RefundsRequested].
+    // The list of events is always pre-sorted, so rather than splitting them out individually, it might make sense to
+    // evaluate them as a single group, to avoid having to re-merge and sequence again afterwards.
+    if (eventsToQuery.includes("RefundRequested")) {
+      const refundRequests = queryResults[eventsToQuery.indexOf("RefundRequested")];
+
+      if (refundRequests.length > 0) {
+        this.log("debug", `Found ${refundRequests.length} new relayer refund requests on chain ${this.chainId}`, {
+          earliestEvent: refundRequests[0].blockNumber,
+        });
+      }
+      for (const refundRequest of refundRequests) {
+        this.refundRequests.push(spreadEventWithBlockNumber(refundRequest) as RefundRequestWithBlock);
       }
     }
 
