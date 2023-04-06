@@ -1,10 +1,8 @@
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE, Multicall2Call } from "../common";
 import {
-  assert,
   winston,
   getNetworkName,
   isPromiseFulfilled,
-  isPromiseRejected,
   getTarget,
   TransactionResponse,
   TransactionSimulationResult,
@@ -84,7 +82,7 @@ export class MultiCallerClient {
   }
 
   // For each chain, collate the enqueued transactions and process them in parallel.
-  async executeTxnQueues(simulate = false): Promise<{ [chainId: number]: string[] }> {
+  async executeTxnQueues(simulate = false): Promise<Record<number, string[]>> {
     const chainIds = [...new Set(Object.keys(this.valueTxns).concat(Object.keys(this.txns)))];
 
     // One promise per chain for parallel execution.
@@ -100,16 +98,42 @@ export class MultiCallerClient {
     );
 
     // Collate the results for each chain.
-    const txnHashes: { [chainId: number]: string[] } = Object.fromEntries(
+    const txnHashes: Record<number, { result: string[]; isError: boolean }> = Object.fromEntries(
       results.map((result, idx) => {
         const chainId = chainIds[idx];
-        if (isPromiseFulfilled(result)) return [chainId, result.value.map((txnResponse) => txnResponse.hash)];
-        assert(isPromiseRejected(result), `Unexpected multicall result status: ${result?.status ?? "unknown"}`);
-        return [chainId, [result.reason]];
+        if (isPromiseFulfilled(result)) {
+          return [chainId, { result: result.value.map((txnResponse) => txnResponse.hash), isError: false }];
+        } else {
+          return [chainId, { result: result.reason, isError: true }];
+        }
       })
     );
 
-    return txnHashes;
+    // We need to iterate over the results to determine if any of the transactions failed.
+    // If any of the transactions failed, we need to log the results and throw an error. However, we want to
+    // only log the results once, so we need to collate the results into a single object.
+    const { failed } = Object.entries(txnHashes).reduce(
+      (accumulator, [chainId, { result, isError }]) => {
+        const reference = isError ? "failed" : "succeeded";
+        accumulator[reference].chains.push(chainId);
+        accumulator[reference].count += result.length;
+        return accumulator;
+      },
+      { succeeded: { chains: [], count: 0 }, failed: { chains: [], count: 0 } }
+    );
+
+    // If any of the transactions failed, log the results and throw an error.
+    if (failed.count > 0) {
+      // Log the results.
+      this.logger.error({
+        at: "MultiCallerClient#executeTxnQueues",
+        message: `Failed to execute ${failed.count} transaction(s) on chain(s) ${failed.chains.join(", ")}`,
+        error: txnHashes,
+      });
+      throw new Error(`Failed to execute ${failed.count} transaction(s) on chain(s) ${failed.chains.join(", ")}`);
+    }
+    // Recombine the results into a single object that match the legacy implementation.
+    return Object.fromEntries(Object.entries(txnHashes).map(([chainId, { result }]) => [chainId, result]));
   }
 
   // For a single chain, simulate all potential multicall txns and group the ones that pass into multicall bundles.
