@@ -497,7 +497,13 @@ export class SpokePoolClient {
       ];
       const { earlyDeposits = [], depositEvents = [] } = groupBy(allDeposits, (depositEvent) => {
         if (depositEvent.args.quoteTimestamp > this.currentTime) {
-          this.logger.debug({ at: "SpokePoolClient#update", message: "Deferring early deposit event.", depositEvent });
+          const { args, transactionHash } = depositEvent;
+          this.logger.debug({
+            at: "SpokePoolClient#update",
+            message: "Deferring early deposit event.",
+            currentTime: this.currentTime,
+            deposit: { args, transactionHash }
+          });
           return "earlyDeposits";
         } else return "depositEvents";
       });
