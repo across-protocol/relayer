@@ -152,7 +152,7 @@ export function prettyPrintSpokePoolEvents(
   chainIdListForBundleEvaluationBlockNumbers: number[],
   deposits: DepositWithBlock[],
   allValidFills: FillWithBlock[],
-  allRelayerRefunds: { repaymentChain: string; repaymentToken: string }[],
+  allRelayerRefunds: { repaymentChain: number; repaymentToken: string }[],
   unfilledDeposits: UnfilledDeposit[],
   allInvalidFills: FillWithBlock[]
 ): AnyObject {

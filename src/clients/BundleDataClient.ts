@@ -182,7 +182,7 @@ export class BundleDataClient {
 
     const unfilledDepositsForOriginChain: UnfilledDepositsForOriginChain = {};
     const fillsToRefund: FillsToRefund = {};
-    const allRelayerRefunds: { repaymentChain: string; repaymentToken: string }[] = [];
+    const allRelayerRefunds: { repaymentChain: number; repaymentToken: string }[] = [];
     const deposits: DepositWithBlock[] = [];
     const allValidFills: FillWithBlock[] = [];
     const allInvalidFills: FillWithBlock[] = [];
@@ -215,7 +215,7 @@ export class BundleDataClient {
       // Fills to refund includes both slow and non-slow fills and they both should increase the
       // total realized LP fee %.
       assignValidFillToFillsToRefund(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
-      allRelayerRefunds.push({ repaymentToken, repaymentChain: String(chainToSendRefundTo) });
+      allRelayerRefunds.push({ repaymentToken, repaymentChain: chainToSendRefundTo });
       updateTotalRealizedLpFeePct(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
 
       // Save deposit as one that is eligible for a slow fill, since there is a fill
