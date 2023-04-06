@@ -112,25 +112,19 @@ export class MultiCallerClient {
     // We need to iterate over the results to determine if any of the transactions failed.
     // If any of the transactions failed, we need to log the results and throw an error. However, we want to
     // only log the results once, so we need to collate the results into a single object.
-    const { failed } = Object.entries(txnHashes).reduce(
-      (accumulator, [chainId, { result, isError }]) => {
-        const reference = isError ? "failed" : "succeeded";
-        accumulator[reference].chains.push(chainId);
-        accumulator[reference].count += result.length;
-        return accumulator;
-      },
-      { succeeded: { chains: [], count: 0 }, failed: { chains: [], count: 0 } }
-    );
+    const failedChains = Object.entries(txnHashes)
+      .filter(([, { isError }]) => isError)
+      .map(([chainId]) => chainId)
+      .filter((chainId, idx, arr) => arr.indexOf(chainId) === idx);
 
-    // If any of the transactions failed, log the results and throw an error.
-    if (failed.count > 0) {
+    if (failedChains.length > 0) {
       // Log the results.
       this.logger.error({
         at: "MultiCallerClient#executeTxnQueues",
-        message: `Failed to execute ${failed.count} transaction(s) on chain(s) ${failed.chains.join(", ")}`,
+        message: `Failed to execute ${failedChains.length} transaction(s) on chain(s) ${failedChains.join(", ")}`,
         error: txnHashes,
       });
-      throw new Error(`Failed to execute ${failed.count} transaction(s) on chain(s) ${failed.chains.join(", ")}`);
+      throw new Error(`Failed to execute ${failedChains.length} transaction(s) on chain(s) ${failedChains.join(", ")}`);
     }
     // Recombine the results into a single object that match the legacy implementation.
     return Object.fromEntries(Object.entries(txnHashes).map(([chainId, { result }]) => [chainId, result]));
