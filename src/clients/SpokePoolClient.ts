@@ -502,7 +502,7 @@ export class SpokePoolClient {
             at: "SpokePoolClient#update",
             message: "Deferring early deposit event.",
             currentTime: this.currentTime,
-            deposit: { args, transactionHash }
+            deposit: { args, transactionHash },
           });
           return "earlyDeposits";
         } else return "depositEvents";
