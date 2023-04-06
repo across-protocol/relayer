@@ -432,8 +432,12 @@ export class SpokePoolClient {
     ]);
     if (isNaN(latestBlockNumber) || latestBlockNumber < this.latestBlockNumber)
       throw new Error(`SpokePoolClient::update: latestBlockNumber ${latestBlockNumber} < ${this.latestBlockNumber}`);
-    else if (isNaN(currentTime) || currentTime < this.currentTime)
-      throw new Error(`SpokePoolClient::update: currentTime ${currentTime} < ${this.currentTime}`);
+    else if (!BigNumber.isBigNumber(currentTime) || currentTime < toBN(this.currentTime)) {
+      const errMsg = BigNumber.isBigNumber(currentTime)
+        ? `currentTime: ${currentTime} < ${toBN(this.currentTime)}`
+        : `currentTime is not a BigNumber: ${JSON.stringify(currentTime)}`;
+      throw new Error(`SpokePoolClient::update: ${errMsg}`);
+    }
 
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
@@ -481,7 +485,7 @@ export class SpokePoolClient {
     queryResults.forEach((events) => sortEventsAscendingInPlace(events));
 
     // Next iteration should start off from where this one ended.
-    this.currentTime = currentTime;
+    this.currentTime = currentTime.toNumber(); // currentTime is uint32
     this.latestBlockNumber = latestBlockNumber;
     this.lastDepositIdForSpokePool = latestDepositIdForSpokePool;
     this.firstBlockToSearch = searchConfig.toBlock + 1;
