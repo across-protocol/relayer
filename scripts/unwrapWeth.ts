@@ -1,4 +1,4 @@
-import { ethers, getSigner, getProvider, WETH9, toBN } from "../src/utils";
+import { ethers, getSigner, getProvider, WETH9, toBN, isKeyOf } from "../src/utils";
 import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
 
@@ -27,8 +27,10 @@ export async function run(): Promise<void> {
   if (!Object.keys(args).includes("chainId")) throw new Error("Define `chainId` as the chain you want to connect on");
   if (!Object.keys(args).includes("amount")) throw new Error("Define `amount` as how much you want to unwrap");
   const baseSigner = await getSigner();
-  const connectedSigner = baseSigner.connect(await getProvider(Number(args.chainId)));
-  const token = WETH_ADDRESSES[Number(args.chainId) as keyof typeof WETH_ADDRESSES];
+  const chainId = Number(args.chainId);
+  const connectedSigner = baseSigner.connect(await getProvider(chainId));
+  if (!isKeyOf(chainId, WETH_ADDRESSES)) throw new Error("chainId does not have a defined WETH address");
+  const token = WETH_ADDRESSES[chainId];
   const weth = new ethers.Contract(token, WETH9.abi, connectedSigner);
   const decimals = 18;
   const amountFromWei = ethers.utils.formatUnits(args.amount, decimals);
