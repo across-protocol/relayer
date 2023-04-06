@@ -45,12 +45,12 @@ export class BaseAdapter {
   // Note: this must be called after the SpokePoolClients are updated.
   getUpdatedSearchConfigs(): { l1SearchConfig: EventSearchConfig; l2SearchConfig: EventSearchConfig } {
     // Update search range based on the latest data from corresponding SpokePoolClients' search ranges.
-    // This needs to be called before fetching any events because spokePoolClients need to be updated first so
-    // latestBlockNumber is defined.
     const l1LatestBlock = this.spokePoolClients[1].latestBlockNumber;
     const l2LatestBlock = this.spokePoolClients[this.chainId].latestBlockNumber;
-    if (l1LatestBlock === undefined || l2LatestBlock === undefined)
+    if (l1LatestBlock === 0 || l2LatestBlock === 0) {
       throw new Error("Spoke pool clients don't have an updated block number");
+    }
+
     return {
       l1SearchConfig: {
         ...this.baseL1SearchConfig,

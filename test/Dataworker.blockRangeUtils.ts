@@ -98,10 +98,11 @@ describe("Dataworker block range-related utility methods", async function () {
     // bundle start block. If so, then the range is invalid.
     const mainnetDeploymentBlock = spokePoolClients[1].deploymentBlock;
     if (mainnetDeploymentBlock === undefined) throw new Error("mainnetDeploymentBlock is undefined");
-    if (spokePoolClients[1].latestBlockNumber === undefined)
-      throw new Error("spokePoolClient[1].latestBlockNumber is undefined");
-    if (spokePoolClients[originChainId].latestBlockNumber === undefined)
-      throw new Error("spokePoolClient[originChainId].latestBlockNumber is undefined");
+    if (spokePoolClients[1].latestBlockNumber === 0) {
+      throw new Error(`Chain ${spokePoolClients[1].chainId} SpokePoolClient has not been updated`);
+    } else if (spokePoolClients[originChainId].latestBlockNumber === 0) {
+      throw new Error(`Chain ${originChainId} SpokePoolClient has not been updated`);
+    }
 
     // latestInvalidBundleStartBlock is only used if its greater than the spoke pool deployment block, so in the
     // following tests, set latestInvalidBundleStartBlock > deployment blocks.
