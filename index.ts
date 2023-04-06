@@ -25,7 +25,7 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
   // todo Make the mode of operation an operand, rather than an option.
   // i.e. ts-node ./index.ts [options] <relayer|...>
   // Note: ts does not produce a narrow type from Object.keys, so we have to help.
-  const cmd = (Object.keys(cmds) as (keyof typeof cmds)[]).find((_cmd) => !!args[_cmd]);
+  const cmd = Object.keys(cmds).find((_cmd) => !!args[_cmd]);
 
   if (cmd === "help") cmds[cmd](); // no return
   else if (cmd === undefined) usage(""); // no return
