@@ -1051,7 +1051,7 @@ export class Dataworker {
             leaf.realizedLpFeePct,
             leaf.relayerFeePct,
             leaf.depositId,
-            slowRelayTree.getHexRoot(),
+            rootBundleId,
             slowRelayTree.getHexProof(leaf),
           ],
           message: "Executed SlowRelayLeaf 🌿!",
