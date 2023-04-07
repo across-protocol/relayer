@@ -6,11 +6,13 @@ import {
   runTransaction,
   toBN,
   BigNumberish,
+  TransactionResponse,
 } from "../../utils";
 import { spreadEventWithBlockNumber, assign, Promise, winston } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter, weth9Abi, ovmL1BridgeInterface, ovmL2BridgeInterface, atomicDepositorInterface } from "./";
 import { SortableEvent } from "../../interfaces";
+import { OutstandingTransfers } from "../../interfaces";
 
 const customL1OptimismBridgeAddresses = {
   "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f", // DAI
@@ -28,7 +30,7 @@ const ovmL2StandardBridgeAddress = "0x4200000000000000000000000000000000000010";
 const wethOptimismAddress = "0x4200000000000000000000000000000000000006";
 const wethBobaAddress = "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000";
 export const ovmWethTokens = [wethOptimismAddress, wethBobaAddress];
-export const isOvmChain = (chainId: number) => [10, 288].includes(chainId);
+export const isOvmChain = (chainId: number): boolean => [10, 288].includes(chainId);
 
 const atomicDepositorAddress = "0x26eaf37ee5daf49174637bdcd2f7759a25206c34";
 
@@ -49,7 +51,7 @@ export class OptimismAdapter extends BaseAdapter {
     this.l2Gas = isOptimism ? 200000 : 1300000;
   }
 
-  async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
+  async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
@@ -124,7 +126,12 @@ export class OptimismAdapter extends BaseAdapter {
     return this.computeOutstandingCrossChainTransfers(l1Tokens);
   }
 
-  async sendTokenToTargetChain(address: string, l1Token: string, l2Token: string, amount: BigNumber) {
+  async sendTokenToTargetChain(
+    address: string,
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumber
+  ): Promise<TransactionResponse> {
     let method = "depositERC20";
     let args = [l1Token, l2Token, amount, this.l2Gas, "0x"];
 
@@ -143,7 +150,7 @@ export class OptimismAdapter extends BaseAdapter {
     else return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args);
   }
 
-  async wrapEthIfAboveThreshold(threshold: BigNumber) {
+  async wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse | null> {
     const ethBalance = await this.getSigner(this.chainId).getBalance();
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(this.chainId);
@@ -155,13 +162,13 @@ export class OptimismAdapter extends BaseAdapter {
     return null;
   }
 
-  async checkTokenApprovals(address: string, l1Tokens: string[]) {
+  async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     // We need to approve the Atomic depositor to bridge WETH to optimism via the ETH route.
     const associatedL1Bridges = l1Tokens.map((l1Token) => this.getL1TokenGateway(l1Token).address);
     await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
   }
 
-  getL1Bridge(l1Token: string) {
+  getL1Bridge(l1Token: string): Contract {
     const l1BridgeAddress = this.isOptimism
       ? this.hasCustomL1Bridge(l1Token)
         ? customL1OptimismBridgeAddresses[l1Token]
@@ -170,12 +177,12 @@ export class OptimismAdapter extends BaseAdapter {
     return new Contract(l1BridgeAddress, ovmL1BridgeInterface, this.getSigner(1));
   }
 
-  getL1TokenGateway(l1Token: string) {
+  getL1TokenGateway(l1Token: string): Contract {
     if (this.isWeth(l1Token)) return new Contract(atomicDepositorAddress, atomicDepositorInterface, this.getSigner(1));
     else return this.getL1Bridge(l1Token);
   }
 
-  getL2Bridge(l1Token: string) {
+  getL2Bridge(l1Token: string): Contract {
     const l2BridgeAddress = this.isOptimism
       ? this.hasCustomL2Bridge(l1Token)
         ? customOvmBridgeAddresses[l1Token]

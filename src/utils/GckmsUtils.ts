@@ -26,7 +26,7 @@ const { GCP_STORAGE_CONFIG } = process.env;
 // - retryOptions: object that allows the caller to specify how the library retries.
 const storageConfig = GCP_STORAGE_CONFIG ? JSON.parse(GCP_STORAGE_CONFIG) : undefined;
 
-export function getGckmsConfig(keys) {
+export function getGckmsConfig(keys: string[]): KeyConfig[] {
   let configOverride: GckmsConfig = {};
   if (process.env.GCKMS_CONFIG) {
     configOverride = JSON.parse(process.env.GCKMS_CONFIG);
@@ -40,8 +40,8 @@ export function getGckmsConfig(keys) {
     }
   }
 
-  const keyConfigs = keys.map((keyName) => {
-    return configOverride["mainnet"][keyName] || {}; // Hardcode to "mainnet" network. This makes no impact key retrieval.
+  const keyConfigs = keys.map((keyName: string): KeyConfig => {
+    return (configOverride["mainnet"][keyName] || {}) as KeyConfig; // Hardcode to "mainnet" network. This makes no impact key retrieval.
   });
 
   return keyConfigs;

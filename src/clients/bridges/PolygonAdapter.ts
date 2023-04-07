@@ -8,6 +8,7 @@ import {
   Event,
   isDefined,
   BigNumberish,
+  TransactionResponse,
 } from "../../utils";
 import { ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery, Promise } from "../../utils";
 import { SpokePoolClient } from "../../clients";
@@ -15,6 +16,7 @@ import { BaseAdapter, polygonL1BridgeInterface, polygonL2BridgeInterface } from 
 import { polygonL1RootChainManagerInterface, atomicDepositorInterface } from "./";
 import { SortableEvent } from "../../interfaces";
 import { constants } from "@across-protocol/sdk-v2";
+import { OutstandingTransfers } from "../../interfaces";
 const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
 // ether bridge = 0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30
@@ -113,7 +115,7 @@ export class PolygonAdapter extends BaseAdapter {
   }
 
   // On polygon a bridge transaction looks like a transfer from address(0) to the target.
-  async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
+  async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
@@ -177,6 +179,7 @@ export class PolygonAdapter extends BaseAdapter {
             [amount in typeof amountProp]?: BigNumberish;
           } & { depositReceiver: string };
           return {
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
             amount: eventSpread[amountProp]!,
             to: eventSpread["depositReceiver"],
             ...eventSpread,
@@ -193,7 +196,12 @@ export class PolygonAdapter extends BaseAdapter {
     return this.computeOutstandingCrossChainTransfers(validTokens);
   }
 
-  async sendTokenToTargetChain(address: string, l1Token: string, l2Token: string, amount: BigNumber) {
+  async sendTokenToTargetChain(
+    address: string,
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumber
+  ): Promise<TransactionResponse> {
     let method = "depositFor";
     // note that the amount is the bytes 32 encoding of the amount.
     let args = [address, l1Token, bnToHex(amount)];
@@ -207,7 +215,7 @@ export class PolygonAdapter extends BaseAdapter {
     return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args);
   }
 
-  async checkTokenApprovals(address: string, l1Tokens: string[]) {
+  async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     const associatedL1Bridges = l1Tokens
       .map((l1Token) => {
         if (this.isWeth(l1Token)) return this.getL1TokenGateway(l1Token)?.address;

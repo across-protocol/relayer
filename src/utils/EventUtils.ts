@@ -5,9 +5,11 @@ import { Contract, Event, EventFilter, Promise } from "./";
 const maxRetries = 3;
 const retrySleepTime = 10;
 
-export function spreadEvent(event: Event) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function spreadEvent(event: Event): any {
   const keys = Object.keys(event.args).filter((key: string) => isNaN(+key)); // Extract non-numeric keys.
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const returnedObject: any = {};
   keys.forEach((key: string) => (returnedObject[key] = event.args[key]));
 
@@ -160,6 +162,6 @@ export function isEventOlder<T extends SortableEvent>(ex: T, ey: T): boolean {
   return ex.logIndex < ey.logIndex;
 }
 
-export function getTransactionHashes(events: SortableEvent[]) {
+export function getTransactionHashes(events: SortableEvent[]): string[] {
   return [...new Set(events.map((e) => e.transactionHash))];
 }

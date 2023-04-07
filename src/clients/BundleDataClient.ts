@@ -22,7 +22,6 @@ import {
 } from "../utils";
 import { Clients } from "../common";
 import {
-  getBlockForChain,
   getBlockRangeForChain,
   getImpliedBundleBlockRanges,
   getEndBlockBuffers,
@@ -30,16 +29,17 @@ import {
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 
+type DataCacheValue = {
+  unfilledDeposits: UnfilledDeposit[];
+  fillsToRefund: FillsToRefund;
+  allValidFills: FillWithBlock[];
+  deposits: DepositWithBlock[];
+};
+type DataCache = Record<string, DataCacheValue>;
+
 // @notice Shared client for computing data needed to construct or validate a bundle.
 export class BundleDataClient {
-  private loadDataCache: {
-    [key: string]: {
-      unfilledDeposits: UnfilledDeposit[];
-      fillsToRefund: FillsToRefund;
-      allValidFills: FillWithBlock[];
-      deposits: DepositWithBlock[];
-    };
-  } = {};
+  private loadDataCache: DataCache = {};
 
   // eslint-disable-next-line no-useless-constructor
   constructor(
@@ -52,11 +52,11 @@ export class BundleDataClient {
 
   // This should be called whenever it's possible that the loadData information for a block range could have changed.
   // For instance, if the spoke or hub clients have been updated, it probably makes sense to clear this to be safe.
-  clearCache() {
+  clearCache(): void {
     this.loadDataCache = {};
   }
 
-  loadDataFromCache(key: string) {
+  loadDataFromCache(key: string): DataCacheValue {
     // Always return a deep cloned copy of object stored in cache. Since JS passes by reference instead of value, we
     // want to minimize the risk that the programmer accidentally mutates data in the cache.
     return _.cloneDeep(this.loadDataCache[key]);
@@ -142,7 +142,7 @@ export class BundleDataClient {
     return allRefunds;
   }
 
-  getRefundsFor(bundleRefunds: FillsToRefund, relayer: string, chainId: number, token: string) {
+  getRefundsFor(bundleRefunds: FillsToRefund, relayer: string, chainId: number, token: string): BigNumber {
     if (!bundleRefunds[chainId] || !bundleRefunds[chainId][token]) return BigNumber.from(0);
     const allRefunds = bundleRefunds[chainId][token].refunds;
     return allRefunds && allRefunds[relayer] ? allRefunds[relayer] : BigNumber.from(0);
@@ -182,7 +182,7 @@ export class BundleDataClient {
 
     const unfilledDepositsForOriginChain: UnfilledDepositsForOriginChain = {};
     const fillsToRefund: FillsToRefund = {};
-    const allRelayerRefunds: any[] = [];
+    const allRelayerRefunds: { repaymentChain: number; repaymentToken: string }[] = [];
     const deposits: DepositWithBlock[] = [];
     const allValidFills: FillWithBlock[] = [];
     const allInvalidFills: FillWithBlock[] = [];
@@ -203,6 +203,7 @@ export class BundleDataClient {
       if (fillWithBlock.blockNumber < blockRangeForChain[0]) return;
 
       // Now create a copy of fill with block data removed, and use its data to update the fills to refund obj.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { blockNumber, transactionIndex, transactionHash, logIndex, ...fill } = fillWithBlock;
       const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
         fill,

@@ -12,6 +12,7 @@ import { Wallet } from "../utils";
 import { AcrossConfigStoreClient, BundleDataClient, ProfitClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
+import { ProposedRootBundle, SpokePoolClientsByChain } from "../interfaces";
 
 export interface DataworkerClients extends Clients {
   tokenClient: TokenClient;
@@ -53,7 +54,7 @@ export async function constructDataworkerClients(
   };
 }
 
-export async function updateDataworkerClients(clients: DataworkerClients, setAllowances = true) {
+export async function updateDataworkerClients(clients: DataworkerClients, setAllowances = true): Promise<void> {
   await updateClients(clients);
 
   // Token client needs updated hub pool client to pull bond token data.
@@ -78,7 +79,7 @@ export async function constructSpokePoolClientsForFastDataworker(
   baseSigner: Wallet,
   startBlocks: { [chainId: number]: number },
   endBlocks: { [chainId: number]: number }
-) {
+): Promise<SpokePoolClientsByChain> {
   const spokePoolClients = await constructSpokePoolClientsWithStartBlocks(
     logger,
     configStoreClient,
@@ -102,13 +103,18 @@ export function getSpokePoolClientEventSearchConfigsForFastDataworker(
   config: DataworkerConfig,
   clients: DataworkerClients,
   dataworker: Dataworker
-) {
+): {
+  fromBundle: ProposedRootBundle;
+  toBundle: ProposedRootBundle;
+  fromBlocks: { [k: string]: number };
+  toBlocks: { [k: string]: number };
+} {
   const toBundle =
     config.dataworkerFastStartBundle === "latest"
       ? undefined
       : clients.hubPoolClient.getNthFullyExecutedRootBundle(Number(config.dataworkerFastStartBundle));
   const fromBundle =
-    config.dataworkerFastLookbackCount >= config.dataworkerFastStartBundle
+    config.dataworkerFastLookbackCount >= Number(config.dataworkerFastStartBundle)
       ? undefined
       : clients.hubPoolClient.getNthFullyExecutedRootBundle(-config.dataworkerFastLookbackCount, toBundle?.blockNumber);
 

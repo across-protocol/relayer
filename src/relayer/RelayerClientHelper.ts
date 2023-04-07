@@ -85,7 +85,7 @@ export async function constructRelayerClients(
   return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient, acrossApiClient };
 }
 
-export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig) {
+export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig): Promise<void> {
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
 
   // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter

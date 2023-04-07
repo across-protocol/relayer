@@ -190,7 +190,8 @@ export async function finalize(
           transactionHash: etherscanLink(txn.transactionHash, 1),
         });
       });
-    } catch (error) {
+    } catch (_error) {
+      const error = _error as Error;
       logger.warn({
         at: "Finalizer",
         message: "Error creating aggregateTx",
@@ -201,7 +202,14 @@ export async function finalize(
   }
 }
 
-export async function constructFinalizerClients(_logger: winston.Logger, config, baseSigner: Wallet) {
+export async function constructFinalizerClients(
+  _logger: winston.Logger,
+  config: FinalizerConfig,
+  baseSigner: Wallet
+): Promise<{
+  commonClients: Clients;
+  spokePoolClients: SpokePoolClientsByChain;
+}> {
   const commonClients = await constructClients(_logger, config, baseSigner);
   await updateFinalizerClients(commonClients);
 

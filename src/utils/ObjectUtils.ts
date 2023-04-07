@@ -1,7 +1,9 @@
+/* eslint-disable @typescript-eslint/explicit-module-boundary-types */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // Append value along the keyPath to object. For example assign(deposits, ['1337', '31337'], [{depositId:1}]) will create
 // deposits = {1337:{31337:[{depositId:1}]}}. Note that if the path into the object exists then this will append. This
 // function respects the destination type; if it is an object then deep merge and if an array effectively will push.
-export function assign(obj: any, keyPath: any[], value: any) {
+export function assign(obj: any, keyPath: any[], value: any): void {
   const lastKeyIndex = keyPath.length - 1;
   for (let i = 0; i < lastKeyIndex; ++i) {
     const key = keyPath[i];
@@ -24,7 +26,7 @@ export function groupObjectCountsByThreeProps(
   primaryProp: string,
   secondaryProp: string,
   tertiaryProp: string
-) {
+): any {
   return objects.reduce((result, obj) => {
     result[obj[primaryProp]] = result[obj[primaryProp]] ?? {};
     result[obj[primaryProp]][obj[secondaryProp]] = result[obj[primaryProp]][obj[secondaryProp]] ?? {};
@@ -34,7 +36,11 @@ export function groupObjectCountsByThreeProps(
     return result;
   }, {});
 }
-export function groupObjectCountsByTwoProps(objects: any[], primaryProp: string, getSecondaryProp: (obj) => string) {
+export function groupObjectCountsByTwoProps(
+  objects: any[],
+  primaryProp: string,
+  getSecondaryProp: (obj: any) => string
+): any {
   return objects.reduce((result, obj) => {
     result[obj[primaryProp]] = result[obj[primaryProp]] ?? {};
     const existingCount = result[obj[primaryProp]][getSecondaryProp(obj)];
@@ -43,7 +49,7 @@ export function groupObjectCountsByTwoProps(objects: any[], primaryProp: string,
   }, {});
 }
 
-export function groupObjectCountsByProp(objects: any[], getProp: (obj) => string) {
+export function groupObjectCountsByProp(objects: any[], getProp: (obj: any) => string): any {
   return objects.reduce((result, obj) => {
     const existingCount = result[getProp(obj)];
     result[getProp(obj)] = existingCount === undefined ? 1 : existingCount + 1;

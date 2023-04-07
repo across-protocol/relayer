@@ -1,4 +1,3 @@
-/* eslint-disable no-process-exit */
 import { PoolRebalanceLeaf } from "../src/interfaces";
 import {
   ethers,

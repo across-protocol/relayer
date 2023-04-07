@@ -1,12 +1,4 @@
-import {
-  processEndPollingLoop,
-  winston,
-  config,
-  startupLogLevel,
-  Wallet,
-  getRedis,
-  disconnectRedisClient,
-} from "../utils";
+import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClient } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
@@ -16,12 +8,20 @@ import {
   updateDataworkerClients,
   constructSpokePoolClientsForFastDataworker,
   getSpokePoolClientEventSearchConfigsForFastDataworker,
+  DataworkerClients,
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
 config();
 let logger: winston.Logger;
 
-export async function createDataworker(_logger: winston.Logger, baseSigner: Wallet) {
+export async function createDataworker(
+  _logger: winston.Logger,
+  baseSigner: Wallet
+): Promise<{
+  config: DataworkerConfig;
+  clients: DataworkerClients;
+  dataworker: Dataworker;
+}> {
   const config = new DataworkerConfig(process.env);
   const clients = await constructDataworkerClients(_logger, config, baseSigner);
 
