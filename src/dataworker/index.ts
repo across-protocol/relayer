@@ -96,18 +96,22 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       );
 
       // Validate and dispute pending proposal before proposing a new one
-      if (config.disputerEnabled)
+      if (config.disputerEnabled) {
         await dataworker.validatePendingRootBundle(spokePoolClients, config.sendingDisputesEnabled, fromBlocks);
-      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
+      } else {
+        logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
+      }
 
-      if (config.proposerEnabled)
+      if (config.proposerEnabled) {
         await dataworker.proposeRootBundle(
           spokePoolClients,
           config.rootBundleExecutionThreshold,
           config.sendingProposalsEnabled,
           fromBlocks
         );
-      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
+      } else {
+        logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
+      }
 
       if (config.executorEnabled) {
         const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
@@ -132,13 +136,17 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           config.sendingExecutionsEnabled,
           fromBlocks
         );
-      } else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
+      } else {
+        logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
+      }
 
       await clients.multiCallerClient.executeTransactionQueue();
 
       logger.debug({ at: "Dataworker#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
 
-      if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
+      if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) {
+        break;
+      }
     }
   } catch (error) {
     await disconnectRedisClient(logger);

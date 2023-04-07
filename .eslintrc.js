@@ -23,6 +23,7 @@ module.exports = {
     "linebreak-style": ["error", "unix"],
     quotes: ["error", "double", { avoidEscape: true }],
     semi: ["error", "always"],
+    curly: ["error", "all"],
     "spaced-comment": ["error", "always", { exceptions: ["-", "+"] }],
     "no-console": 2,
     camelcase: "off",

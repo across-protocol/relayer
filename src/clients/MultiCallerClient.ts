@@ -54,7 +54,9 @@ export class MultiCallerClient {
   enqueueTransaction(txn: AugmentedTransaction): void {
     // Value transactions are sorted immediately because the UMA multicall implementation rejects them.
     const txnQueue = txn.value && txn.value.gt(0) ? this.valueTxns : this.txns;
-    if (txnQueue[txn.chainId] === undefined) txnQueue[txn.chainId] = [];
+    if (txnQueue[txn.chainId] === undefined) {
+      txnQueue[txn.chainId] = [];
+    }
     txnQueue[txn.chainId].push(txn);
   }
 
@@ -139,7 +141,9 @@ export class MultiCallerClient {
     simulate = false
   ): Promise<TransactionResponse[]> {
     const nTxns = txns.length + valueTxns.length;
-    if (nTxns === 0) return [];
+    if (nTxns === 0) {
+      return [];
+    }
 
     const networkName = getNetworkName(chainId);
     this.logger.debug({
@@ -210,7 +214,9 @@ export class MultiCallerClient {
     // Validate all transactions have the same chainId and can be sent from multisender.
     const { chainId } = transactions[0];
     const multisender = await this._getMultisender(chainId);
-    if (!multisender) throw new Error("Multisender not available for this chain");
+    if (!multisender) {
+      throw new Error("Multisender not available for this chain");
+    }
 
     if (transactions.some((tx) => !tx.unpermissioned || tx.chainId !== chainId)) {
       this.logger.error({
@@ -302,7 +308,9 @@ export class MultiCallerClient {
     txns: AugmentedTransaction[],
     chunkSize = DEFAULT_MULTICALL_CHUNK_SIZE
   ): Promise<AugmentedTransaction[]> {
-    if (txns.length === 0) return [];
+    if (txns.length === 0) {
+      return [];
+    }
     const { chainId } = txns[0];
 
     const {
@@ -310,9 +318,13 @@ export class MultiCallerClient {
       multisenderTxns = [],
       unsendableTxns = [],
     } = lodash.groupBy(txns, (txn) => {
-      if (txn.unpermissioned) return "multisenderTxns";
-      else if (txn.contract.multicall) return "multicallerTxns";
-      else return "unsendableTxns";
+      if (txn.unpermissioned) {
+        return "multisenderTxns";
+      } else if (txn.contract.multicall) {
+        return "multicallerTxns";
+      } else {
+        return "unsendableTxns";
+      }
     });
 
     // We should never get here but log any transactions that are sent to an ABI that doesn't have
@@ -371,10 +383,15 @@ export class MultiCallerClient {
     // Simulate the transaction execution for the whole queue.
     const txnSimulations = await this.txnClient.simulate(transactions);
     txnSimulations.forEach((txn) => {
-      if (txn.succeed) validTxns.push(txn.transaction);
-      else invalidTxns.push(txn);
+      if (txn.succeed) {
+        validTxns.push(txn.transaction);
+      } else {
+        invalidTxns.push(txn);
+      }
     });
-    if (invalidTxns.length > 0) this.logSimulationFailures(invalidTxns);
+    if (invalidTxns.length > 0) {
+      this.logSimulationFailures(invalidTxns);
+    }
 
     return validTxns;
   }

@@ -19,10 +19,13 @@ export function getDeployedContract(contractName: string, networkId: number, sig
 // contract factory name. For example, if the network is "mainnet" then the contract is called Ethereum_SpokePool.
 export function castSpokePoolName(networkId: number): string {
   let networkName = getNetworkName(networkId);
-  if (networkName == "Mainnet" || networkName == "Rinkeby" || networkName == "Kovan" || networkName == "Goerli")
+  if (networkName == "Mainnet" || networkName == "Rinkeby" || networkName == "Kovan" || networkName == "Goerli") {
     return "Ethereum_SpokePool";
+  }
 
-  if (networkName.includes("-")) networkName = networkName.substring(0, networkName.indexOf("-"));
+  if (networkName.includes("-")) {
+    networkName = networkName.substring(0, networkName.indexOf("-"));
+  }
   return `${networkName}_SpokePool`;
 }
 

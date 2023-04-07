@@ -53,10 +53,13 @@ export function getBlockRangeForChain(
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ): number[] {
   const indexForChain = chainIdListForBundleEvaluationBlockNumbers.indexOf(chain);
-  if (indexForChain === -1)
+  if (indexForChain === -1) {
     throw new Error(`Could not find chain ${chain} in chain ID list ${chainIdListForBundleEvaluationBlockNumbers}`);
+  }
   const blockRangeForChain = blockRange[indexForChain];
-  if (!blockRangeForChain || blockRangeForChain.length !== 2) throw new Error(`Invalid block range for chain ${chain}`);
+  if (!blockRangeForChain || blockRangeForChain.length !== 2) {
+    throw new Error(`Invalid block range for chain ${chain}`);
+  }
   return blockRangeForChain;
 }
 
@@ -66,10 +69,13 @@ export function getBlockForChain(
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ): number {
   const indexForChain = chainIdListForBundleEvaluationBlockNumbers.indexOf(chain);
-  if (indexForChain === -1)
+  if (indexForChain === -1) {
     throw new Error(`Could not find chain ${chain} in chain ID list ${chainIdListForBundleEvaluationBlockNumbers}`);
+  }
   const blockForChain = bundleEvaluationBlockNumbers[indexForChain];
-  if (blockForChain === undefined) throw new Error(`Invalid block range for chain ${chain}`);
+  if (blockForChain === undefined) {
+    throw new Error(`Invalid block range for chain ${chain}`);
+  }
   return blockForChain;
 }
 
@@ -106,7 +112,9 @@ export function getImpliedBundleBlockRanges(
     const fromBlock = prevRootBundle?.bundleEvaluationBlockNumbers?.[i]
       ? prevRootBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
       : 0;
-    if (!enabledChains.includes(chainId)) return [endBlock.toNumber(), endBlock.toNumber()];
+    if (!enabledChains.includes(chainId)) {
+      return [endBlock.toNumber(), endBlock.toNumber()];
+    }
     return [fromBlock, endBlock.toNumber()];
   });
 }
@@ -119,8 +127,9 @@ export function blockRangesAreInvalidForSpokeClients(
   chainIdListForBundleEvaluationBlockNumbers: number[],
   latestInvalidBundleStartBlock: { [chainId: number]: number }
 ): boolean {
-  if (blockRanges.length !== chainIdListForBundleEvaluationBlockNumbers.length)
+  if (blockRanges.length !== chainIdListForBundleEvaluationBlockNumbers.length) {
     throw new Error("DataworkerUtils#blockRangesAreInvalidForSpokeClients: Invalid bundle block range length");
+  }
   return chainIdListForBundleEvaluationBlockNumbers.some((chainId) => {
     const blockRangeForChain = getBlockRangeForChain(
       blockRanges,
@@ -128,11 +137,17 @@ export function blockRangesAreInvalidForSpokeClients(
       chainIdListForBundleEvaluationBlockNumbers
     );
     // If block range is 0 then chain is disabled, we don't need to query events for this chain.
-    if (isNaN(blockRangeForChain[1]) || isNaN(blockRangeForChain[0])) return true;
-    if (blockRangeForChain[1] === blockRangeForChain[0]) return false;
+    if (isNaN(blockRangeForChain[1]) || isNaN(blockRangeForChain[0])) {
+      return true;
+    }
+    if (blockRangeForChain[1] === blockRangeForChain[0]) {
+      return false;
+    }
 
     // If spoke pool client doesn't exist for enabled chain then we clearly cannot query events for this chain.
-    if (spokePoolClients[chainId] === undefined) return true;
+    if (spokePoolClients[chainId] === undefined) {
+      return true;
+    }
 
     const clientLastBlockQueried =
       spokePoolClients[chainId].eventSearchConfig.toBlock ?? spokePoolClients[chainId].latestBlockNumber;
@@ -214,8 +229,11 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
   // The { Deposit ID, origin chain ID } is guaranteed to be unique so we can sort on them.
   const sortedLeaves = [...slowRelayLeaves].sort((relayA, relayB) => {
     // Note: Smaller ID numbers will come first
-    if (relayA.originChainId === relayB.originChainId) return relayA.depositId - relayB.depositId;
-    else return relayA.originChainId - relayB.originChainId;
+    if (relayA.originChainId === relayB.originChainId) {
+      return relayA.depositId - relayB.depositId;
+    } else {
+      return relayA.originChainId - relayB.originChainId;
+    }
   });
 
   return {
@@ -243,7 +261,9 @@ export function _buildRelayerRefundRoot(
     const repaymentChainId = Number(_repaymentChainId);
     Object.entries(fillsForChain).forEach(([l2TokenAddress, fillsForToken]) => {
       const refunds = fillsForToken.refunds;
-      if (refunds === undefined) return;
+      if (refunds === undefined) {
+        return;
+      }
 
       // We need to sort leaves deterministically so that the same root is always produced from the same _loadData
       // return value, so sort refund addresses by refund amount (descending) and then address (ascending).
@@ -272,7 +292,7 @@ export function _buildRelayerRefundRoot(
         spokePoolTargetBalance,
         runningBalances[repaymentChainId][l1TokenCounterpart]
       );
-      for (let i = 0; i < sortedRefundAddresses.length; i += maxRefundCount)
+      for (let i = 0; i < sortedRefundAddresses.length; i += maxRefundCount) {
         relayerRefundLeaves.push({
           groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
           // L2 token address
@@ -283,6 +303,7 @@ export function _buildRelayerRefundRoot(
           l2TokenAddress,
           refundAddresses: sortedRefundAddresses.slice(i, i + maxRefundCount),
         });
+      }
     });
   });
 
@@ -290,7 +311,9 @@ export function _buildRelayerRefundRoot(
   // since we need to return tokens from SpokePool to HubPool.
   poolRebalanceLeaves.forEach((leaf) => {
     leaf.netSendAmounts.forEach((netSendAmount, index) => {
-      if (netSendAmount.gte(toBN(0))) return;
+      if (netSendAmount.gte(toBN(0))) {
+        return;
+      }
 
       const l2TokenCounterpart = clients.hubPoolClient.getDestinationTokenForL1Token(
         leaf.l1Tokens[index],
@@ -302,8 +325,9 @@ export function _buildRelayerRefundRoot(
           (relayerRefundLeaf) =>
             relayerRefundLeaf.chainId === leaf.chainId && relayerRefundLeaf.l2TokenAddress === l2TokenCounterpart
         )
-      )
+      ) {
         return;
+      }
       const transferThreshold =
         tokenTransferThresholdOverrides[leaf.l1Tokens[index]] ||
         clients.configStoreClient.getTokenTransferThresholdForBlock(leaf.l1Tokens[index], endBlockForMainnet);
@@ -387,12 +411,13 @@ export async function _buildPoolRebalanceRoot(
     allValidFillsInRange,
     chainIdListForBundleEvaluationBlockNumbers
   );
-  if (logger && Object.keys(fillsTriggeringExcesses).length > 0)
+  if (logger && Object.keys(fillsTriggeringExcesses).length > 0) {
     logger.debug({
       at: "Dataworker#DataworkerUtils",
       message: "Fills triggering excess returns from L2",
       fillsTriggeringExcesses,
     });
+  }
 
   // Map each deposit event to its L1 token and origin chain ID and subtract deposited amounts from running
   // balances. Note that we do not care if the deposit is matched with a fill for this epoch or not since all

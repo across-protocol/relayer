@@ -56,8 +56,9 @@ export async function constructSpokePoolClientsWithLookback(
   // running the disputer or proposer functionality as it can lead to proposing disputable bundles or
   // disputing valid bundles.
 
-  if (!configStoreClient.isUpdated)
+  if (!configStoreClient.isUpdated) {
     throw new Error("Config store client must be updated before constructing spoke pool clients");
+  }
 
   const currentTime = getCurrentTime();
 
@@ -77,12 +78,14 @@ export async function constructSpokePoolClientsWithLookback(
   const fromBlocks = Object.fromEntries(
     await Promise.all(
       enabledChains.map(async (chainId) => {
-        if (chainId === 1) return [chainId, fromBlock_1];
-        else
+        if (chainId === 1) {
+          return [chainId, fromBlock_1];
+        } else {
           return [
             chainId,
             await getBlockForTimestamp(hubPoolChainId, chainId, currentTime - initialLookBackOverride, currentTime),
           ];
+        }
       })
     )
   );
@@ -111,8 +114,9 @@ function getEnabledChainsInBlockRange(
   mainnetStartBlock: number,
   mainnetEndBlock?: number
 ): number[] {
-  if (!configStoreClient.isUpdated)
+  if (!configStoreClient.isUpdated) {
     throw new Error("Config store client must be updated before constructing spoke pool clients");
+  }
   return spokePoolChainsOverride.length > 0
     ? spokePoolChainsOverride
     : configStoreClient.getEnabledChainsInBlockRange(mainnetStartBlock, mainnetEndBlock);

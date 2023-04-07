@@ -81,10 +81,14 @@ export class AcrossConfigStoreClient {
     let quoteBlock = await this.getBlockNumber(deposit.quoteTimestamp);
 
     // There is one deposit on optimism for DAI that is right before the DAI rate model was added.
-    if (quoteBlock === 14830339) quoteBlock = 14830390;
+    if (quoteBlock === 14830339) {
+      quoteBlock = 14830390;
+    }
 
     // Test SNX deposit was before the rate model update for SNX.
-    if (quoteBlock === 14856066) quoteBlock = 14856211;
+    if (quoteBlock === 14856066) {
+      quoteBlock = 14856211;
+    }
 
     const rateModel = this.getRateModelForBlockNumber(
       l1Token,
@@ -94,7 +98,9 @@ export class AcrossConfigStoreClient {
     );
 
     // There is one deposit on optimism that is right at the margin of when liquidity was first added.
-    if (quoteBlock > 14718100 && quoteBlock < 14718107) quoteBlock = 14718107;
+    if (quoteBlock > 14718100 && quoteBlock < 14718107) {
+      quoteBlock = 14718107;
+    }
 
     const { current, post } = await this.getUtilization(l1Token, quoteBlock, deposit.amount, deposit.quoteTimestamp);
     const realizedLpFeePct = lpFeeCalculator.calculateRealizedLpFeePct(rateModel, current, post);
@@ -122,7 +128,9 @@ export class AcrossConfigStoreClient {
     const config = (sortEventsDescending(this.cumulativeRouteRateModelUpdates) as RouteRateModelUpdate[]).find(
       (config) => config.blockNumber <= (blockNumber ?? 0) && config.l1Token === l1Token
     );
-    if (config?.routeRateModel[route] === undefined) return undefined;
+    if (config?.routeRateModel[route] === undefined) {
+      return undefined;
+    }
     return across.rateModel.parseAndReturnRateModelFromString(config.routeRateModel[route]);
   }
 
@@ -130,8 +138,9 @@ export class AcrossConfigStoreClient {
     const config = (sortEventsDescending(this.cumulativeTokenTransferUpdates) as L1TokenTransferThreshold[]).find(
       (config) => config.blockNumber <= blockNumber && config.l1Token === l1Token
     );
-    if (!config)
+    if (!config) {
       throw new Error(`Could not find TransferThreshold for L1 token ${l1Token} before block ${blockNumber}`);
+    }
     return config.transferThreshold;
   }
 
@@ -151,7 +160,9 @@ export class AcrossConfigStoreClient {
     const config = (sortEventsDescending(this.cumulativeMaxRefundCountUpdates) as GlobalConfigUpdate[]).find(
       (config) => config.blockNumber <= blockNumber
     );
-    if (!config) throw new Error(`Could not find MaxRefundCount before block ${blockNumber}`);
+    if (!config) {
+      throw new Error(`Could not find MaxRefundCount before block ${blockNumber}`);
+    }
     return Number(config.value);
   }
 
@@ -159,7 +170,9 @@ export class AcrossConfigStoreClient {
     const config = (sortEventsDescending(this.cumulativeMaxL1TokenCountUpdates) as GlobalConfigUpdate[]).find(
       (config) => config.blockNumber <= blockNumber
     );
-    if (!config) throw new Error(`Could not find MaxL1TokenCount before block ${blockNumber}`);
+    if (!config) {
+      throw new Error(`Could not find MaxL1TokenCount before block ${blockNumber}`);
+    }
     return Number(config.value);
   }
 
@@ -179,7 +192,9 @@ export class AcrossConfigStoreClient {
     toBlock = Number.MAX_SAFE_INTEGER,
     allPossibleChains = CHAIN_ID_LIST_INDICES
   ): number[] {
-    if (toBlock < fromBlock) throw new Error(`Invalid block range: fromBlock ${fromBlock} > toBlock ${toBlock}`);
+    if (toBlock < fromBlock) {
+      throw new Error(`Invalid block range: fromBlock ${fromBlock} > toBlock ${toBlock}`);
+    }
     // Initiate list with all chains enabled at the fromBlock.
     const disabledChainsAtFromBlock = this.getDisabledChainsForBlock(fromBlock);
     const enabledChainsAtFromBlock = allPossibleChains.filter(
@@ -190,13 +205,15 @@ export class AcrossConfigStoreClient {
     // disabled list during the block range.
     return sortEventsAscending(this.cumulativeDisabledChainUpdates)
       .reduce((enabledChains: number[], disabledChainUpdate) => {
-        if (disabledChainUpdate.blockNumber > toBlock || disabledChainUpdate.blockNumber < fromBlock)
+        if (disabledChainUpdate.blockNumber > toBlock || disabledChainUpdate.blockNumber < fromBlock) {
           return enabledChains;
+        }
         // If any of the possible chains are not listed in this disabled chain update and are not already in the
         // enabled chain list, then add them to the list.
         allPossibleChains.forEach((chainId) => {
-          if (!disabledChainUpdate.chainIds.includes(chainId) && !enabledChains.includes(chainId))
+          if (!disabledChainUpdate.chainIds.includes(chainId) && !enabledChains.includes(chainId)) {
             enabledChains.push(chainId);
+          }
         });
         return enabledChains;
       }, enabledChainsAtFromBlock)
@@ -220,7 +237,9 @@ export class AcrossConfigStoreClient {
     const config = (sortEventsDescending(this.cumulativeConfigStoreVersionUpdates) as ConfigStoreVersionUpdate[]).find(
       (config) => config.timestamp <= timestamp
     );
-    if (!config) return DEFAULT_CONFIG_STORE_VERSION;
+    if (!config) {
+      return DEFAULT_CONFIG_STORE_VERSION;
+    }
     return Number(config.value);
   }
 
@@ -239,10 +258,14 @@ export class AcrossConfigStoreClient {
       toBlock: this.eventSearchConfig.toBlock || (await this.configStore.provider.getBlockNumber()),
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
-    if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than
+    if (searchConfig.fromBlock > searchConfig.toBlock) {
+      return;
+    } // If the starting block is greater than
 
     this.logger.debug({ at: "ConfigStore", message: "Updating ConfigStore client", searchConfig });
-    if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
+    if (searchConfig.fromBlock > searchConfig.toBlock) {
+      return;
+    } // If the starting block is greater than the ending block return.
     const [updatedTokenConfigEvents, updatedGlobalConfigEvents] = await Promise.all([
       paginatedEventQuery(this.configStore, this.configStore.filters.UpdatedTokenConfig(), searchConfig),
       paginatedEventQuery(this.configStore, this.configStore.filters.UpdatedGlobalConfig(), searchConfig),
@@ -332,16 +355,24 @@ export class AcrossConfigStoreClient {
       };
 
       if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_RELAYER_REPAYMENT_LEAF_SIZE)) {
-        if (!isNaN(args.value)) this.cumulativeMaxRefundCountUpdates.push(args);
+        if (!isNaN(args.value)) {
+          this.cumulativeMaxRefundCountUpdates.push(args);
+        }
       } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE)) {
-        if (!isNaN(args.value)) this.cumulativeMaxL1TokenCountUpdates.push(args);
+        if (!isNaN(args.value)) {
+          this.cumulativeMaxL1TokenCountUpdates.push(args);
+        }
       } else if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION)) {
         // If not a number, skip.
-        if (isNaN(args.value)) continue;
+        if (isNaN(args.value)) {
+          continue;
+        }
         const value = Number(args.value);
 
         // If not an integer, skip.
-        if (!Number.isInteger(value)) continue;
+        if (!Number.isInteger(value)) {
+          continue;
+        }
 
         // Extract last version
         const lastValue =
@@ -352,7 +383,9 @@ export class AcrossConfigStoreClient {
               );
 
         // If version is not > last version, skip.
-        if (value <= lastValue) continue;
+        if (value <= lastValue) {
+          continue;
+        }
 
         this.cumulativeConfigStoreVersionUpdates.push({
           ...args,
@@ -402,13 +435,16 @@ export class AcrossConfigStoreClient {
     timestamp: number
   ): Promise<{ current: BigNumber; post: BigNumber }> {
     const redisClient = await getRedis(this.logger);
-    if (!redisClient) return await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, blockNumber, amount);
+    if (!redisClient) {
+      return await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, blockNumber, amount);
+    }
     const key = `utilization_${l1Token}_${blockNumber}_${amount.toString()}`;
     const result = await redisClient.get(key);
     if (result === null) {
       const { current, post } = await this.hubPoolClient.getPostRelayPoolUtilization(l1Token, blockNumber, amount);
-      if (shouldCache(getCurrentTime(), timestamp))
+      if (shouldCache(getCurrentTime(), timestamp)) {
         await setRedisKey(key, `${current.toString()},${post.toString()}`, redisClient, 60 * 60 * 24 * 90);
+      }
       return { current, post };
     } else {
       const [current, post] = result.split(",").map(BigNumber.from);

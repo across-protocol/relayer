@@ -259,7 +259,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet):
       const loopStart = Date.now();
       await updateSpokePoolClients(spokePoolClients, ["TokensBridged", "EnabledDepositRoute"]);
 
-      if (config.finalizerEnabled)
+      if (config.finalizerEnabled) {
         await finalize(
           logger,
           commonClients.hubSigner,
@@ -267,11 +267,15 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet):
           spokePoolClients,
           config.finalizerChains
         );
-      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
+      } else {
+        logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
+      }
 
       logger.debug({ at: "Finalizer#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
 
-      if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
+      if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) {
+        break;
+      }
     }
   } catch (error) {
     await disconnectRedisClient(logger);
