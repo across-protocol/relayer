@@ -13,7 +13,11 @@ async function askQuestion(query: string) {
 
 export async function askYesNoQuestion(query: string): Promise<boolean> {
   const ans = (await askQuestion(`${query} (y/n) `)) as string;
-  if (ans.toLowerCase() === "y") return true;
-  if (ans.toLowerCase() === "n") return false;
+  if (ans.toLowerCase() === "y") {
+    return true;
+  }
+  if (ans.toLowerCase() === "n") {
+    return false;
+  }
   return askYesNoQuestion(query);
 }

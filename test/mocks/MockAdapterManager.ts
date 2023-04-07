@@ -11,7 +11,9 @@ export class MockAdapterManager extends AdapterManager {
 
   public mockedOutstandingCrossChainTransfers: { [chainId: number]: OutstandingTransfers } = {};
   async sendTokenCrossChain(address: string, chainId: number, l1Token: string, amount: BigNumber) {
-    if (!this.tokensSentCrossChain[chainId]) this.tokensSentCrossChain[chainId] = {};
+    if (!this.tokensSentCrossChain[chainId]) {
+      this.tokensSentCrossChain[chainId] = {};
+    }
     const hash = createRandomBytes32();
     this.tokensSentCrossChain[chainId][l1Token] = { amount, hash };
     return { hash } as TransactionResponse;
@@ -25,9 +27,13 @@ export class MockAdapterManager extends AdapterManager {
   }
 
   setMockedOutstandingCrossChainTransfers(chainId: number, address: string, l1Token: string, amount: BigNumber) {
-    if (!this.mockedOutstandingCrossChainTransfers[chainId]) this.mockedOutstandingCrossChainTransfers[chainId] = {};
+    if (!this.mockedOutstandingCrossChainTransfers[chainId]) {
+      this.mockedOutstandingCrossChainTransfers[chainId] = {};
+    }
     const transfers = this.mockedOutstandingCrossChainTransfers[chainId];
-    if (!transfers[address]) transfers[address] = {};
+    if (!transfers[address]) {
+      transfers[address] = {};
+    }
     transfers[address][l1Token] = { totalAmount: amount, depositTxHashes: [] };
   }
 }

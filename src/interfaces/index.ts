@@ -3,6 +3,7 @@ import { interfaces } from "@across-protocol/sdk-v2";
 export * from "./InventoryManagement";
 export * from "./SpokePool";
 export * from "./Token";
+export * from "./Error";
 export * from "./Report";
 
 // Bridge interfaces

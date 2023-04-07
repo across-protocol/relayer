@@ -38,22 +38,27 @@ export class CommonConfig {
     this.blockRangeEndBlockBuffer = BLOCK_RANGE_END_BLOCK_BUFFER
       ? JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER)
       : Constants.BUNDLE_END_BLOCK_BUFFERS;
-    if (Object.keys(this.blockRangeEndBlockBuffer).length > 0)
-      for (const chainId of Constants.CHAIN_ID_LIST_INDICES)
+    if (Object.keys(this.blockRangeEndBlockBuffer).length > 0) {
+      for (const chainId of Constants.CHAIN_ID_LIST_INDICES) {
         assert(
           Object.keys(this.blockRangeEndBlockBuffer).includes(chainId.toString()),
           "BLOCK_RANGE_END_BLOCK_BUFFER missing networks"
         );
+      }
+    }
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
     this.hubPoolChainId = Number(HUB_CHAIN_ID ?? 1);
     this.pollingDelay = Number(POLLING_DELAY ?? 60);
     this.spokePoolChainsOverride = SPOKE_POOL_CHAINS_OVERRIDE ? JSON.parse(SPOKE_POOL_CHAINS_OVERRIDE) : [];
     this.maxBlockLookBack = MAX_BLOCK_LOOK_BACK ? JSON.parse(MAX_BLOCK_LOOK_BACK) : {};
-    if (Object.keys(this.maxBlockLookBack).length > 0)
-      for (const chainId of Constants.CHAIN_ID_LIST_INDICES)
+    if (Object.keys(this.maxBlockLookBack).length > 0) {
+      for (const chainId of Constants.CHAIN_ID_LIST_INDICES) {
         assert(Object.keys(this.maxBlockLookBack).includes(chainId.toString()), "MAX_BLOCK_LOOK_BACK missing networks");
-    else this.maxBlockLookBack = Constants.CHAIN_MAX_BLOCK_LOOKBACK;
+      }
+    } else {
+      this.maxBlockLookBack = Constants.CHAIN_MAX_BLOCK_LOOKBACK;
+    }
     this.maxTxWait = Number(MAX_TX_WAIT_DURATION ?? 180); // 3 minutes
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
     this.bundleRefundLookback = Number(BUNDLE_REFUND_LOOKBACK ?? 2);

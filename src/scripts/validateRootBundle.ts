@@ -94,8 +94,9 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     priceRequestBlock
   );
   let precedingProposeRootBundleEvent: ProposedRootBundle;
-  if (disputeEventForRequestTime !== undefined)
+  if (disputeEventForRequestTime !== undefined) {
     precedingProposeRootBundleEvent = getDisputedProposal(clients.configStoreClient, disputeEventForRequestTime);
+  }
   if (disputeEventForRequestTime === undefined || precedingProposeRootBundleEvent === undefined) {
     logger.debug({
       at: "Dataworker#validate",
@@ -109,7 +110,9 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
       (x) => x.blockNumber <= priceRequestBlock
     );
   }
-  if (!precedingProposeRootBundleEvent) throw new Error("No proposed root bundle found before request time");
+  if (!precedingProposeRootBundleEvent) {
+    throw new Error("No proposed root bundle found before request time");
+  }
 
   const rootBundle: PendingRootBundle = {
     poolRebalanceRoot: precedingProposeRootBundleEvent.poolRebalanceRoot,
