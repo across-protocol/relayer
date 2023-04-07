@@ -43,8 +43,8 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
         // todo: Support a void signer for monitor mode (only) if no wallet was supplied.
         await cmds[cmd](logger, await getSigner());
       } catch (error) {
-        // eslint-disable-next-line no-process-exit
         if (await processCrash(logger, cmd, config.pollingDelay, error as AnyObject)) {
+          // eslint-disable-next-line no-process-exit
           process.exit(1);
         }
       }
