@@ -7,8 +7,10 @@ import {
   constructSpokePoolClientsWithStartBlocks,
   updateClients,
 } from "../src/common";
-const args = require("minimist")(process.argv.slice(2), {
-  number: ["chainId"],
+
+import minimist from "minimist";
+const args = minimist(process.argv.slice(2), {
+  string: ["chainId"],
 });
 
 export async function run(logger: winston.Logger): Promise<void> {
@@ -52,7 +54,8 @@ export async function run(logger: winston.Logger): Promise<void> {
     for (const originToken of Object.keys(depositRoutesForChain)) {
       // If chainId is the one we want to disable, disable every route to every other chain from it.
       if (chainId === chainToDisable) {
-        for (const destinationChainId of Object.keys(depositRoutesForChain[originToken])) {
+        for (const _destinationChainId of Object.keys(depositRoutesForChain[originToken])) {
+          const destinationChainId = Number(_destinationChainId);
           routesToDisable.push({
             originChainId: chainId,
             destinationChainId: Number(destinationChainId),

@@ -24,6 +24,7 @@ import {
   toBNWei,
   formatFeePct,
   getRefund,
+  AnyObject,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "../utils";
@@ -34,7 +35,7 @@ export function updateRunningBalance(
   l2ChainId: number,
   l1Token: string,
   updateAmount: BigNumber
-) {
+): void {
   // Initialize dictionary if empty.
   if (!runningBalances[l2ChainId]) runningBalances[l2ChainId] = {};
   const runningBalance = runningBalances[l2ChainId][l1Token];
@@ -48,7 +49,7 @@ export function updateRunningBalanceForFill(
   hubPoolClient: HubPoolClient,
   fill: interfaces.FillWithBlock,
   updateAmount: BigNumber
-) {
+): void {
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
     fill.destinationChainId,
     fill.destinationToken,
@@ -62,7 +63,7 @@ export function updateRunningBalanceForDeposit(
   hubPoolClient: HubPoolClient,
   deposit: interfaces.DepositWithBlock,
   updateAmount: BigNumber
-) {
+): void {
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
     deposit.originChainId,
     deposit.originToken,
@@ -75,7 +76,7 @@ export function addLastRunningBalance(
   latestMainnetBlock: number,
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient
-) {
+): void {
   Object.keys(runningBalances).forEach((repaymentChainId) => {
     Object.keys(runningBalances[repaymentChainId]).forEach((l1TokenAddress) => {
       const lastRunningBalance = hubPoolClient.getRunningBalanceBeforeBlockForChain(
@@ -95,7 +96,7 @@ export function initializeRunningBalancesFromRelayerRepayments(
   latestMainnetBlock: number,
   hubPoolClient: HubPoolClient,
   fillsToRefund: interfaces.FillsToRefund
-) {
+): void {
   Object.entries(fillsToRefund).forEach(([_repaymentChainId, fillsForChain]) => {
     const repaymentChainId = Number(_repaymentChainId);
     Object.entries(fillsForChain).forEach(
@@ -124,7 +125,7 @@ export function addSlowFillsToRunningBalances(
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
   unfilledDeposits: UnfilledDeposit[]
-) {
+): void {
   unfilledDeposits.forEach((unfilledDeposit) => {
     const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
       unfilledDeposit.deposit.originChainId,
@@ -165,7 +166,7 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   allValidFills: interfaces.FillWithBlock[],
   allValidFillsInRange: interfaces.FillWithBlock[],
   chainIdListForBundleEvaluationBlockNumbers: number[]
-) {
+): Promise<AnyObject> {
   const excesses = {};
   // We need to subtract excess from any fills that might replaced a slow fill sent to the fill destination chain.
   // This can only happen if the fill was the last fill for a deposit. Otherwise, its still possible that the slow fill
@@ -260,7 +261,7 @@ export function constructPoolRebalanceLeaves(
   configStoreClient: AcrossConfigStoreClient,
   maxL1TokenCount?: number,
   tokenTransferThreshold?: BigNumberForToken
-) {
+): interfaces.PoolRebalanceLeaf[] {
   // Create one leaf per L2 chain ID. First we'll create a leaf with all L1 tokens for each chain ID, and then
   // we'll split up any leaves with too many L1 tokens.
   const leaves: interfaces.PoolRebalanceLeaf[] = [];
@@ -336,7 +337,7 @@ export function constructPoolRebalanceLeaves(
 export function computeDesiredTransferAmountToSpoke(
   runningBalance: BigNumber,
   spokePoolTargetBalance: SpokePoolTargetBalance
-) {
+): BigNumber {
   // Transfer is always desired if hub owes spoke.
   if (runningBalance.gte(0)) return runningBalance;
 
@@ -428,7 +429,7 @@ export function generateMarkdownForDisputeInvalidBundleBlocks(
   pendingRootBundle: PendingRootBundle,
   widestExpectedBlockRange: number[][],
   buffers: number[]
-) {
+): string {
   const getBlockRangePretty = (blockRange: number[][] | number[]) => {
     let bundleBlockRangePretty = "";
     chainIdListForBundleEvaluationBlockNumbers.forEach((chainId, index) => {
@@ -444,7 +445,7 @@ export function generateMarkdownForDisputeInvalidBundleBlocks(
   );
 }
 
-export function generateMarkdownForDispute(pendingRootBundle: PendingRootBundle) {
+export function generateMarkdownForDispute(pendingRootBundle: PendingRootBundle): string {
   return (
     "Disputed pending root bundle:" +
     `\n\tPoolRebalance leaf count: ${pendingRootBundle.unclaimedPoolRebalanceLeafCount}` +
@@ -460,10 +461,13 @@ export function generateMarkdownForRootBundle(
   chainIdListForBundleEvaluationBlockNumbers: number[],
   hubPoolChainId: number,
   bundleBlockRange: number[][],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   poolRebalanceLeaves: any[],
   poolRebalanceRoot: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   relayerRefundLeaves: any[],
   relayerRefundRoot: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   slowRelayLeaves: any[],
   slowRelayRoot: string
 ): string {
@@ -562,7 +566,7 @@ export function prettyPrintLeaves(
   tree: MerkleTree<PoolRebalanceLeaf> | MerkleTree<RelayerRefundLeaf> | MerkleTree<RelayData>,
   leaves: PoolRebalanceLeaf[] | RelayerRefundLeaf[] | RelayData[],
   logType = "Pool rebalance"
-) {
+): void {
   leaves.forEach((leaf, index) => {
     const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
       // Check if leaf value is list of BN's or single BN.

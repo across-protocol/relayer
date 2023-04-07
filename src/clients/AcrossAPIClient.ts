@@ -1,10 +1,10 @@
 import { winston, BigNumber, getL2TokenAddresses } from "../utils";
 import axios, { AxiosError } from "axios";
-import get from "lodash.get";
 import { HubPoolClient } from "./HubPoolClient";
 import { CHAIN_ID_LIST_INDICES } from "../common";
 import { constants } from "@across-protocol/sdk-v2";
 import { SpokePoolClientsByChain } from "../interfaces";
+import _ from "lodash";
 const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
 export interface DepositLimits {
@@ -72,7 +72,8 @@ export class AcrossApiClient {
       })
     );
     for (let i = 0; i < tokensQuery.length; i++) {
-      if (data[i] === undefined) {
+      const resolvedData = data[i];
+      if (resolvedData === undefined) {
         this.logger.debug({
           at: "AcrossAPIClient",
           message: "No valid deposit routes for enabled LP token, skipping",
@@ -81,7 +82,7 @@ export class AcrossApiClient {
         continue;
       }
       const l1Token = tokensQuery[i];
-      this.limits[l1Token] = data[i].maxDeposit;
+      this.limits[l1Token] = resolvedData.maxDeposit;
     }
     this.logger.debug({
       at: "AcrossAPIClient",
@@ -109,7 +110,7 @@ export class AcrossApiClient {
       const result = await axios(url, { timeout, params });
       return result.data;
     } catch (err) {
-      const msg = get(err, "response.data", get(err, "response.statusText", (err as AxiosError).message));
+      const msg = _.get(err, "response.data", _.get(err, "response.statusText", (err as AxiosError).message));
       this.logger.warn({
         at: "AcrossAPIClient",
         message: "Failed to get /limits, setting limit to 0",

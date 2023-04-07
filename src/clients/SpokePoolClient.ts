@@ -19,6 +19,7 @@ import {
   filledSameDeposit,
   getCurrentTime,
   getRedis,
+  AnyObject,
 } from "../utils";
 import { toBN, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
@@ -34,6 +35,7 @@ import {
   FundsDepositedEvent,
 } from "../interfaces";
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces";
+import { HubPoolClient } from ".";
 
 const FILL_DEPOSIT_COMPARISON_KEYS = [
   "amount",
@@ -46,9 +48,6 @@ const FILL_DEPOSIT_COMPARISON_KEYS = [
   "destinationChainId",
   "destinationToken",
 ] as const;
-
-// These events are numerous and we should use a fixed lookback when querying them.
-const FIXED_LOOKBACK_EVENTS = ["FundsDeposited", "FilledRelay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
 
 export class SpokePoolClient {
   private currentTime: number;
@@ -142,19 +141,23 @@ export class SpokePoolClient {
       : this.refundRequests.filter((request) => request.blockNumber >= fromBlock && request.blockNumber <= toBlock);
   }
 
-  getRootBundleRelays() {
+  getRootBundleRelays(): RootBundleRelayWithBlock[] {
     return this.rootBundleRelays;
   }
 
-  getLatestRootBundleId() {
+  getLatestRootBundleId(): number {
     return this.rootBundleRelays[this.rootBundleRelays.length - 1]?.rootBundleId ?? 0;
   }
 
-  getRelayerRefundExecutions() {
+  getRelayerRefundExecutions(): RelayerRefundExecutionWithBlock[] {
     return this.relayerRefundExecutions;
   }
 
-  getExecutedRefunds(relayerRefundRoot: string) {
+  getExecutedRefunds(relayerRefundRoot: string): {
+    [tokenAddress: string]: {
+      [relayer: string]: BigNumber;
+    };
+  } {
     const bundle = this.getRootBundleRelays().find((bundle) => bundle.relayerRefundRoot === relayerRefundRoot);
     if (bundle === undefined) {
       return {};
@@ -179,7 +182,7 @@ export class SpokePoolClient {
     return executedRefunds;
   }
 
-  appendMaxSpeedUpSignatureToDeposit(deposit: DepositWithBlock) {
+  appendMaxSpeedUpSignatureToDeposit(deposit: DepositWithBlock): DepositWithBlock {
     const maxSpeedUp = this.speedUps[deposit.depositor]?.[deposit.depositId]?.reduce((prev, current) =>
       prev.newRelayerFeePct.gt(current.newRelayerFeePct) ? prev : current
     );
@@ -194,6 +197,7 @@ export class SpokePoolClient {
   }
 
   getDepositForFill(fill: Fill): DepositWithBlock | undefined {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill.
     const depositWithMatchingDepositId = this.depositHashes[this.getDepositHash(fill)];
     if (depositWithMatchingDepositId === undefined) return undefined;
@@ -266,7 +270,7 @@ export class SpokePoolClient {
     });
   }
 
-  getDepositHash(event: Deposit | Fill) {
+  getDepositHash(event: Deposit | Fill): string {
     return `${event.depositId}-${event.originChainId}`;
   }
 
@@ -277,7 +281,7 @@ export class SpokePoolClient {
     targetDepositId: number,
     initLow = this.spokePoolDeploymentBlock,
     initHigh = this.latestBlockNumber
-  ): Promise<number> {
+  ): Promise<number | undefined> {
     assert(initLow <= initHigh, "Binary search failed because low > high");
     let low = initLow;
     let high = initHigh;
@@ -325,6 +329,9 @@ export class SpokePoolClient {
         // Look for the block where depositId incremented from fill.depositId to fill.depositId+1.
         this.binarySearchForBlockContainingDepositId(fill.depositId + 1),
       ]);
+      if (!blockBeforeDeposit || !blockAfterDeposit) {
+        return undefined;
+      }
       assert(blockBeforeDeposit <= blockAfterDeposit, "blockBeforeDeposit > blockAfterDeposit");
 
       const query = await paginatedEventQuery(
@@ -369,6 +376,7 @@ export class SpokePoolClient {
       if (redisClient) await setDeposit(deposit, getCurrentTime(), redisClient, 24 * 60 * 60);
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill
     return this.validateFillForDeposit(fillCopy, deposit) ? deposit : undefined;
   }
@@ -384,7 +392,7 @@ export class SpokePoolClient {
     );
   }
 
-  async queryFillsInBlockRange(matchingFill: Fill, searchConfig: EventSearchConfig) {
+  async queryFillsInBlockRange(matchingFill: Fill, searchConfig: EventSearchConfig): Promise<FillWithBlock[]> {
     // Filtering on the fill's depositor address, the only indexed deposit field in the FilledRelay event,
     // should speed up this search a bit.
     // TODO: Once depositId is indexed in FilledRelay event, filter on that as well.
@@ -413,7 +421,7 @@ export class SpokePoolClient {
     return sortEventsAscending(fills.filter((_fill) => filledSameDeposit(_fill, matchingFill)));
   }
 
-  async update(eventsToQuery?: string[]) {
+  async update(eventsToQuery?: string[]): Promise<void> {
     if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
 
     // Require that all Deposits meet the minimum specified number of confirmations.
@@ -556,7 +564,7 @@ export class SpokePoolClient {
       }
 
       // Traverse all deposit events and update them with associated speedups, If they exist.
-      for (const [_destinationChainId, deposits] of Object.entries(this.deposits)) {
+      for (const [, deposits] of Object.entries(this.deposits)) {
         for (const [index, deposit] of deposits.entries()) {
           deposits[index] = this.appendMaxSpeedUpSignatureToDeposit(deposit);
         }
@@ -634,7 +642,7 @@ export class SpokePoolClient {
     });
   }
 
-  static getExecutedRefundLeafL2Token(chainId: number, eventL2Token: string) {
+  static getExecutedRefundLeafL2Token(chainId: number, eventL2Token: string): string {
     // If execution of WETH refund leaf occurred on an OVM spoke pool, then we'll convert its l2Token from the native
     // token address to the wrapped token address. This is because the OVM_SpokePool modifies the l2TokenAddress prop
     // in _bridgeTokensToHubPool before emitting the ExecutedRelayerRefundLeaf event.
@@ -647,8 +655,8 @@ export class SpokePoolClient {
     else return eventL2Token;
   }
 
-  public hubPoolClient() {
-    return this.configStoreClient?.hubPoolClient;
+  public hubPoolClient(): HubPoolClient {
+    return this.configStoreClient?.hubPoolClient as HubPoolClient;
   }
 
   private async computeRealizedLpFeePct(depositEvent: FundsDepositedEvent) {
@@ -675,7 +683,7 @@ export class SpokePoolClient {
     return hubPoolClient.getDestinationTokenForDeposit(deposit);
   }
 
-  private log(level: DefaultLogLevels, message: string, data?: any) {
+  private log(level: DefaultLogLevels, message: string, data?: AnyObject) {
     this.logger[level]({ at: "SpokePoolClient", chainId: this.chainId, message, ...data });
   }
 }

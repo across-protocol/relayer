@@ -4,7 +4,9 @@ import { BlockFinder } from "@uma/financial-templates-lib";
 import { createClient } from "redis4";
 import winston from "winston";
 import { Deposit, Fill } from "../interfaces";
-require("dotenv").config();
+import dotenv from "dotenv";
+import { BigNumberish } from "@across-protocol/sdk-v2/dist/utils";
+dotenv.config();
 
 export type RedisClient = ReturnType<typeof createClient>;
 
@@ -55,7 +57,7 @@ export async function setRedisKey(
   } else await redisClient.set(key, val);
 }
 
-export function getRedisDepositKey(depositOrFill: Deposit | Fill) {
+export function getRedisDepositKey(depositOrFill: Deposit | Fill): string {
   return `deposit_${depositOrFill.originChainId}_${depositOrFill.depositId}`;
 }
 
@@ -141,7 +143,7 @@ export function shouldCache(eventTimestamp: number, latestTime: number): boolean
 // JSON.stringify(object) ends up stringfying BigNumber objects as "{type:BigNumber,hex...}" so we can pass
 // this reviver function as the second arg to JSON.parse to instruct it to correctly revive a stringified
 // object with BigNumber values.
-function objectWithBigNumberReviver(_: string, value: any) {
+function objectWithBigNumberReviver(_: string, value: { type: string; hex: BigNumberish }) {
   if (typeof value !== "object" || value?.type !== "BigNumber") return value;
   return toBN(value.hex);
 }

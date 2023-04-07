@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   winston,
   getNetworkName,
@@ -54,7 +55,7 @@ export class TransactionClient {
     // Transactions are submitted sequentially to avoid nonce collisions. More
     // advanced nonce management may permit them to be submitted in parallel.
     let mrkdwn = "";
-    let nonce: number = null;
+    let nonce: number | null = null;
     for (let idx = 0; idx < txns.length; ++idx) {
       const txn: AugmentedTransaction = txns[idx];
       let response: TransactionResponse;

@@ -9,7 +9,7 @@ import {
   Contract,
   getCachedProvider,
 } from "../../utils";
-import { TokensBridged } from "../../interfaces";
+import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
 import { Withdrawal } from "..";
 import { Multicall2Call } from "../../common";
@@ -32,7 +32,7 @@ export interface PolygonTokensBridged extends TokensBridged {
   payload: string;
 }
 
-export async function getPosClient(mainnetSigner: Wallet) {
+export async function getPosClient(mainnetSigner: Wallet): Promise<POSClient> {
   // Following from https://maticnetwork.github.io/matic.js/docs/pos
   use(Web3ClientPlugin);
   setProofApi("https://apis.matic.network/");
@@ -59,7 +59,7 @@ export async function getFinalizableTransactions(
   logger: winston.Logger,
   tokensBridged: TokensBridged[],
   posClient: POSClient
-) {
+): Promise<PolygonTokensBridged[]> {
   // First look up which L2 transactions were checkpointed to mainnet.
   const isCheckpointed = await Promise.all(
     tokensBridged.map((event) => posClient.exitUtil.isCheckPointed(event.transactionHash))
@@ -102,7 +102,8 @@ export async function getFinalizableTransactions(
           payload,
         });
         return { status: POLYGON_MESSAGE_STATUS.CAN_EXIT };
-      } catch (err) {
+      } catch (_err) {
+        const err = _err as EthersError;
         if (err?.reason?.includes("EXIT_ALREADY_PROCESSED"))
           return { status: POLYGON_MESSAGE_STATUS.EXIT_ALREADY_PROCESSED };
         else {
@@ -150,6 +151,7 @@ export async function multicallPolygonFinalizations(
   const callData = await Promise.all(finalizableMessages.map((event) => finalizePolygon(posClient, event)));
   const tokensInFinalizableMessages = getL2TokensToFinalize(
     finalizableMessages.map((polygonTokensBridged) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { payload, ...tokensBridged } = polygonTokensBridged;
       return tokensBridged;
     })
@@ -198,7 +200,7 @@ export async function retrieveTokenFromMainnetTokenBridger(
   };
 }
 
-export function getL2TokensToFinalize(events: TokensBridged[]) {
+export function getL2TokensToFinalize(events: TokensBridged[]): string[] {
   const l2TokenCountInBridgeEvents = events.reduce((l2TokenDictionary, event) => {
     l2TokenDictionary[event.l2TokenAddress] = true;
     return l2TokenDictionary;
