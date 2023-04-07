@@ -7,7 +7,6 @@ import {
   buildFillForRepaymentChain,
   getLastBlockNumber,
   assertPromiseError,
-  lastSpyLogIncludes,
   spyLogIncludes,
   deepEqualsWithBigNumber,
 } from "./utils";
@@ -153,7 +152,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       await updateAllClients();
 
       const latestBlock = await hubPool.provider.getBlockNumber();
-      const blockRange = CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
+      const blockRange = CHAIN_ID_TEST_LIST.map(() => [0, latestBlock]);
       const expectedPoolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
       await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
       for (const leaf of expectedPoolRebalanceRoot.leaves) {
@@ -216,7 +215,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       await updateAllClients();
 
       const latestBlock = await hubPool.provider.getBlockNumber();
-      const blockRange = CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
+      const blockRange = CHAIN_ID_TEST_LIST.map(() => [0, latestBlock]);
       const expectedPoolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
       await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
       for (const leaf of expectedPoolRebalanceRoot.leaves) {
@@ -259,7 +258,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         )
       ).to.equal(getRefundForFills([fill1]));
       const latestBlock2 = await hubPool.provider.getBlockNumber();
-      const blockRange2 = CHAIN_ID_TEST_LIST.map((_) => [latestBlock + 1, latestBlock2]);
+      const blockRange2 = CHAIN_ID_TEST_LIST.map(() => [latestBlock + 1, latestBlock2]);
       const expectedPoolRebalanceRoot2 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange2, spokePoolClients);
       await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
       for (const leaf of expectedPoolRebalanceRoot2.leaves) {
@@ -309,7 +308,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
       // Execute the bundle:
       const latestBlock = await hubPool.provider.getBlockNumber();
-      const blockRange = CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
+      const blockRange = CHAIN_ID_TEST_LIST.map(() => [0, latestBlock]);
       const expectedPoolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
       await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
       for (const leaf of expectedPoolRebalanceRoot.leaves) {

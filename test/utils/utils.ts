@@ -93,13 +93,6 @@ export function createSpyLogger() {
   return { spy, spyLogger };
 }
 
-const iterativelyReplaceBigNumbers = (obj: any) => {
-  Object.keys(obj).forEach((key) => {
-    if (BigNumber.isBigNumber(obj[key])) obj[key] = obj[key].toString();
-    else if (typeof obj[key] === "object" && obj[key] !== null) iterativelyReplaceBigNumbers(obj[key]);
-  });
-};
-
 export async function deploySpokePoolWithToken(fromChainId = 0, toChainId = 0, enableRoute = true) {
   const { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(utils.ethers);
   const deploymentBlock = await spokePool.provider.getBlockNumber();
@@ -610,9 +603,9 @@ export async function constructPoolRebalanceTree(runningBalances: RunningBalance
     Object.keys(runningBalances).map((x) => Number(x)), // Where funds are getting sent.
     Object.values(runningBalances).map((runningBalanceForL1Token) => Object.keys(runningBalanceForL1Token)), // l1Tokens.
     Object.values(realizedLpFees).map((realizedLpForL1Token) => Object.values(realizedLpForL1Token)), // bundleLpFees.
-    Object.values(runningBalances).map((_) => Object.values(_).map((_) => toBNWei(-100))), // netSendAmounts.
-    Object.values(runningBalances).map((_) => Object.values(_).map((_) => toBNWei(100))), // runningBalances.
-    Object.keys(runningBalances).map((_) => 0) // group index
+    Object.values(runningBalances).map((_) => Object.values(_).map(() => toBNWei(-100))), // netSendAmounts.
+    Object.values(runningBalances).map((_) => Object.values(_).map(() => toBNWei(100))), // runningBalances.
+    Object.keys(runningBalances).map(() => 0) // group index
   );
   const tree = await utils.buildPoolRebalanceLeafTree(leaves);
 

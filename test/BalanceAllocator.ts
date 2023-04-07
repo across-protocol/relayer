@@ -1,5 +1,5 @@
 import { BalanceAllocator, BalanceMap } from "../src/clients/BalanceAllocator";
-import { BigNumber, ethers } from "../src/utils";
+import { BigNumber } from "../src/utils";
 import { randomAddress, chai } from "./utils";
 const { expect } = chai;
 
@@ -29,7 +29,6 @@ describe("BalanceAllocator", async function () {
   const testToken2 = randomAddress();
 
   const testAccount1 = randomAddress();
-  const testAccount2 = randomAddress();
 
   beforeEach(async function () {
     balanceAllocator = new TestBalanceAllocator();

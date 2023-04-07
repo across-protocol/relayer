@@ -5,7 +5,7 @@ import { createClient } from "redis4";
 import winston from "winston";
 import { Deposit, Fill } from "../interfaces";
 import dotenv from "dotenv";
-import { BigNumberish } from "@across-protocol/sdk-v2/dist/utils";
+import { BigNumberish } from "../utils";
 dotenv.config();
 
 export type RedisClient = ReturnType<typeof createClient>;

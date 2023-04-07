@@ -12,7 +12,7 @@ let hubPoolClient: MockHubPoolClient;
 const mockSpokePoolClients: {
   [chainId: number]: SpokePoolClient;
 } = {};
-let relayer: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger, amountToSend: BigNumber;
+let relayer: SignerWithAddress, spyLogger: winston.Logger, amountToSend: BigNumber;
 let adapterManager: AdapterManager; // tested
 
 // Atomic depositor
