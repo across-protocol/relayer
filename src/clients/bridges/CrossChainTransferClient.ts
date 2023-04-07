@@ -70,6 +70,8 @@ export class CrossChainTransferClient {
   }
 
   log(message: string, data?: AnyObject, level: DefaultLogLevels = "debug"): void {
-    if (this.logger) this.logger[level]({ at: "CrossChainTransferClient", message, ...data });
+    if (this.logger) {
+      this.logger[level]({ at: "CrossChainTransferClient", message, ...data });
+    }
   }
 }

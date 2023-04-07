@@ -70,16 +70,23 @@ export function updateTotalRefundAmount(
 ): void {
   // Don't count slow relays in total refund amount, since we use this amount to conveniently construct
   // relayer refund leaves.
-  if (fill.isSlowRelay) return;
+  if (fill.isSlowRelay) {
+    return;
+  }
   const refundObj = fillsToRefund[chainToSendRefundTo][repaymentToken];
   const refund = getRefundForFills([fill]);
   refundObj.totalRefundAmount = refundObj.totalRefundAmount ? refundObj.totalRefundAmount.add(refund) : refund;
 
   // Instantiate dictionary if it doesn't exist.
-  if (!refundObj.refunds) assign(fillsToRefund, [chainToSendRefundTo, repaymentToken, "refunds"], {});
+  if (!refundObj.refunds) {
+    assign(fillsToRefund, [chainToSendRefundTo, repaymentToken, "refunds"], {});
+  }
 
-  if (refundObj.refunds[fill.relayer]) refundObj.refunds[fill.relayer] = refundObj.refunds[fill.relayer].add(refund);
-  else refundObj.refunds[fill.relayer] = refund;
+  if (refundObj.refunds[fill.relayer]) {
+    refundObj.refunds[fill.relayer] = refundObj.refunds[fill.relayer].add(refund);
+  } else {
+    refundObj.refunds[fill.relayer] = refund;
+  }
 }
 
 export function isFirstFillForDeposit(fill: Fill): boolean {
@@ -149,10 +156,11 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
       matchingFills,
     });
     firstFillForSameDeposit = sortEventsAscending(matchingFills).find((_fill) => isFirstFillForDeposit(_fill));
-    if (firstFillForSameDeposit === undefined)
+    if (firstFillForSameDeposit === undefined) {
       throw new Error(
         `FillUtils#getFillDataForSlowFillFromPreviousRootBundle: Cannot find first fill for for deposit ${fill.depositId} on chain ${fill.destinationChainId} after querying historical fills`
       );
+    }
     // Add non-duplicate fills.
     allMatchingFills.push(
       ...matchingFills.filter(
@@ -218,7 +226,9 @@ export function getUnfilledDeposits(
   for (const originChain of chainIds) {
     const originClient = spokePoolClients[originChain];
     for (const destinationChain of chainIds) {
-      if (originChain === destinationChain) continue;
+      if (originChain === destinationChain) {
+        continue;
+      }
       // Find all unfilled deposits for the current loops originChain -> destinationChain. Note that this also
       // validates that the deposit is filled "correctly" for the given deposit information. This includes validation
       // of the all deposit -> relay props, the realizedLpFeePct and the origin->destination token mapping.
@@ -242,8 +252,9 @@ export function getUnfilledDeposits(
 
   // If the config store version is up to date, then we can return the unfilled deposits as is. Otherwise, we need to
   // make sure we have a high enough version for each deposit.
-  if (configStoreClient.hasLatestConfigStoreVersion) return unfilledDeposits;
-  else
+  if (configStoreClient.hasLatestConfigStoreVersion) {
+    return unfilledDeposits;
+  } else {
     return unfilledDeposits.map((unfilledDeposit) => {
       return {
         ...unfilledDeposit,
@@ -252,4 +263,5 @@ export function getUnfilledDeposits(
         ),
       };
     });
+  }
 }

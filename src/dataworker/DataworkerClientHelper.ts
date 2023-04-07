@@ -61,12 +61,16 @@ export async function updateDataworkerClients(clients: DataworkerClients, setAll
   await clients.tokenClient.update();
 
   // Run approval on hub pool.
-  if (setAllowances) await clients.tokenClient.setBondTokenAllowance();
+  if (setAllowances) {
+    await clients.tokenClient.setBondTokenAllowance();
+  }
 
   // Must come after hubPoolClient.
   // TODO: This should be refactored to check if the hubpool client has had one previous update run such that it has
   // L1 tokens within it.If it has we dont need to make it sequential like this.
-  if (clients.profitClient) await clients.profitClient.update();
+  if (clients.profitClient) {
+    await clients.profitClient.update();
+  }
 }
 
 // Constructs spoke pool clients with short lookback and validates that the Dataworker can use the data

@@ -27,8 +27,12 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
   // Note: ts does not produce a narrow type from Object.keys, so we have to help.
   const cmd = Object.keys(cmds).find((_cmd) => !!args[_cmd]);
 
-  if (cmd === "help") cmds[cmd](); // no return
-  else if (cmd === undefined) usage(""); // no return
+  if (cmd === "help") {
+    cmds[cmd]();
+  } // no return
+  else if (cmd === undefined) {
+    usage("");
+  } // no return
   else if (typeof args["wallet"] !== "string" || args["wallet"].length === 0) {
     // todo: Update usage() to provide a hint that wallet is missing/malformed.
     usage(""); // no return
@@ -40,7 +44,9 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
         await cmds[cmd](logger, await getSigner());
       } catch (error) {
         // eslint-disable-next-line no-process-exit
-        if (await processCrash(logger, cmd, config.pollingDelay, error as AnyObject)) process.exit(1);
+        if (await processCrash(logger, cmd, config.pollingDelay, error as AnyObject)) {
+          process.exit(1);
+        }
       }
     } while (config.pollingDelay !== 0);
   }

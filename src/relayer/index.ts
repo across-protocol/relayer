@@ -36,7 +36,9 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
       relayerClients.profitClient.clearUnprofitableFills();
       relayerClients.tokenClient.clearTokenShortfall();
 
-      if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) break;
+      if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) {
+        break;
+      }
     }
   } catch (error) {
     await disconnectRedisClient(logger);

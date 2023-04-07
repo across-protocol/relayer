@@ -127,24 +127,34 @@ export class PolygonAdapter extends BaseAdapter {
         // Skip the token if we can't find the corresponding bridge.
         // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
         // rather than maintaining a list of native bridge-supported tokens.
-        if (!this.isSupportedToken(l1Token)) continue;
+        if (!this.isSupportedToken(l1Token)) {
+          continue;
+        }
 
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Token = this.getL2Token(l1Token);
 
         const l1Method = tokenToBridge[l1Token].l1Method;
         let l1SearchFilter: (string | undefined)[] = [];
-        if (l1Method === "LockedERC20") l1SearchFilter = [monitoredAddress, undefined, l1Token];
-        if (l1Method === "LockedEther") l1SearchFilter = [undefined, monitoredAddress];
-        if (l1Method === "NewDepositBlock")
+        if (l1Method === "LockedERC20") {
+          l1SearchFilter = [monitoredAddress, undefined, l1Token];
+        }
+        if (l1Method === "LockedEther") {
+          l1SearchFilter = [undefined, monitoredAddress];
+        }
+        if (l1Method === "NewDepositBlock") {
           l1SearchFilter = [monitoredAddress, TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET]];
+        }
 
         const l2Method =
           l1Token === TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET] ? "TokenDeposited" : "Transfer";
         let l2SearchFilter: (string | undefined)[] = [];
-        if (l2Method === "Transfer") l2SearchFilter = [ZERO_ADDRESS, monitoredAddress];
-        if (l2Method === "TokenDeposited")
+        if (l2Method === "Transfer") {
+          l2SearchFilter = [ZERO_ADDRESS, monitoredAddress];
+        }
+        if (l2Method === "TokenDeposited") {
           l2SearchFilter = [TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET], ZERO_ADDRESS, monitoredAddress];
+        }
 
         promises.push(
           paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), l1SearchConfig),
@@ -218,8 +228,12 @@ export class PolygonAdapter extends BaseAdapter {
   async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     const associatedL1Bridges = l1Tokens
       .map((l1Token) => {
-        if (this.isWeth(l1Token)) return this.getL1TokenGateway(l1Token)?.address;
-        if (!this.isSupportedToken(l1Token)) return null;
+        if (this.isWeth(l1Token)) {
+          return this.getL1TokenGateway(l1Token)?.address;
+        }
+        if (!this.isSupportedToken(l1Token)) {
+          return null;
+        }
         return this.getL1Bridge(l1Token).address;
       })
       .filter(isDefined);
@@ -231,8 +245,11 @@ export class PolygonAdapter extends BaseAdapter {
   }
 
   getL1TokenGateway(l1Token: string): Contract {
-    if (this.isWeth(l1Token)) return new Contract(atomicDepositorAddress, atomicDepositorInterface, this.getSigner(1));
-    else return new Contract(l1RootChainManager, polygonL1RootChainManagerInterface, this.getSigner(1));
+    if (this.isWeth(l1Token)) {
+      return new Contract(atomicDepositorAddress, atomicDepositorInterface, this.getSigner(1));
+    } else {
+      return new Contract(l1RootChainManager, polygonL1RootChainManagerInterface, this.getSigner(1));
+    }
   }
 
   // Note that on polygon we dont query events on the L2 bridge. rather, we look for mint events on the L2 token.

@@ -64,8 +64,9 @@ export class BaseAdapter {
     // latestBlockNumber is defined.
     const l1LatestBlock = this.spokePoolClients[1].latestBlockNumber;
     const l2LatestBlock = this.spokePoolClients[this.chainId].latestBlockNumber;
-    if (l1LatestBlock === undefined || l2LatestBlock === undefined)
+    if (l1LatestBlock === undefined || l2LatestBlock === undefined) {
       throw new Error("Spoke pool clients don't have an updated block number");
+    }
     return {
       l1SearchConfig: {
         ...this.baseL1SearchConfig,
@@ -97,15 +98,18 @@ export class BaseAdapter {
         // If there is not both a l1TokenContract and associatedL1Bridges[index] then return a number that wont send
         // an approval transaction. For example not every chain has a bridge contract for every token. In this case
         // we clearly dont want to send any approval transactions.
-        if (l1TokenContract && associatedL1Bridges[index])
+        if (l1TokenContract && associatedL1Bridges[index]) {
           return l1TokenContract.allowance(address, associatedL1Bridges[index]);
-        else return null;
+        } else {
+          return null;
+        }
       })
     );
 
     allowances.forEach((allowance, index) => {
-      if (allowance && allowance.lt(toBN(MAX_SAFE_ALLOWANCE)))
+      if (allowance && allowance.lt(toBN(MAX_SAFE_ALLOWANCE))) {
         tokensToApprove.push({ l1Token: l1TokenContracts[index], targetContract: associatedL1Bridges[index] });
+      }
     });
 
     if (tokensToApprove.length == 0) {
@@ -130,7 +134,9 @@ export class BaseAdapter {
 
     for (const monitoredAddress of this.monitoredAddresses) {
       // Skip if there are no deposit events for this address at all.
-      if (this.l1DepositInitiatedEvents[monitoredAddress] === undefined) continue;
+      if (this.l1DepositInitiatedEvents[monitoredAddress] === undefined) {
+        continue;
+      }
 
       if (outstandingTransfers[monitoredAddress] === undefined) {
         outstandingTransfers[monitoredAddress] = {};
@@ -141,7 +147,9 @@ export class BaseAdapter {
 
       for (const l1Token of l1Tokens) {
         // Skip if there has been no deposits for this token.
-        if (this.l1DepositInitiatedEvents[monitoredAddress][l1Token] === undefined) continue;
+        if (this.l1DepositInitiatedEvents[monitoredAddress][l1Token] === undefined) {
+          continue;
+        }
 
         // It's okay to not have any finalization events. In that case, all deposits are outstanding.
         if (this.l2DepositFinalizedEvents[monitoredAddress][l1Token] === undefined) {
@@ -176,7 +184,9 @@ export class BaseAdapter {
         });
 
         // Short circuit early if there are no pending deposits.
-        if (pendingDeposits.length === 0) continue;
+        if (pendingDeposits.length === 0) {
+          continue;
+        }
 
         const totalAmount = pendingDeposits.reduce((acc, curr) => acc.add(curr.amount), toBN(0));
         const depositTxHashes = pendingDeposits.map((deposit) => deposit.transactionHash);

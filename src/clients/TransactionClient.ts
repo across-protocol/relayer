@@ -59,7 +59,9 @@ export class TransactionClient {
     for (let idx = 0; idx < txns.length; ++idx) {
       const txn: AugmentedTransaction = txns[idx];
       let response: TransactionResponse;
-      if (nonce !== null) this.logger.debug({ at: "TransactionClient#submit", message: `Using nonce ${nonce}.` });
+      if (nonce !== null) {
+        this.logger.debug({ at: "TransactionClient#submit", message: `Using nonce ${nonce}.` });
+      }
 
       try {
         response = await this._submit(txn, nonce);

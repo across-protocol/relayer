@@ -7,17 +7,27 @@ export function assign(obj: any, keyPath: any[], value: any): void {
   const lastKeyIndex = keyPath.length - 1;
   for (let i = 0; i < lastKeyIndex; ++i) {
     const key = keyPath[i];
-    if (!(key in obj)) obj[key] = {};
+    if (!(key in obj)) {
+      obj[key] = {};
+    }
     obj = obj[key];
   }
   // If the object at the deep path does not exist then set to the value.
-  if (!obj[keyPath[lastKeyIndex]] || typeof obj[keyPath[lastKeyIndex]] == "string") obj[keyPath[lastKeyIndex]] = value;
+  if (!obj[keyPath[lastKeyIndex]] || typeof obj[keyPath[lastKeyIndex]] == "string") {
+    obj[keyPath[lastKeyIndex]] = value;
+  }
   // If the object at the deep path is an array then append array wise.
-  else if (Array.isArray(value)) obj[keyPath[lastKeyIndex]] = [...obj[keyPath[lastKeyIndex]], ...value];
+  else if (Array.isArray(value)) {
+    obj[keyPath[lastKeyIndex]] = [...obj[keyPath[lastKeyIndex]], ...value];
+  }
   // If the value is false bool then set to false. This special case is needed as {...false} = {} which causes issues.
-  else if (value === false) obj[keyPath[lastKeyIndex]] = false;
+  else if (value === false) {
+    obj[keyPath[lastKeyIndex]] = false;
+  }
   // If the object at the deep path is an object then append object wise.
-  else obj[keyPath[lastKeyIndex]] = { ...obj[keyPath[lastKeyIndex]], ...value };
+  else {
+    obj[keyPath[lastKeyIndex]] = { ...obj[keyPath[lastKeyIndex]], ...value };
+  }
 }
 
 // Refactor to be more generalized with N props

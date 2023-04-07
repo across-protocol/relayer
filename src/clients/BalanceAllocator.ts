@@ -46,9 +46,13 @@ export class BalanceAllocator {
     // Construct a map of available balances for all requests, taking into account used and balances.
     const availableBalances: BalanceMap = {};
     for (const request of requestsWithBalances) {
-      if (!availableBalances[request.chainId]) availableBalances[request.chainId] = {};
+      if (!availableBalances[request.chainId]) {
+        availableBalances[request.chainId] = {};
+      }
       for (const token of request.tokens) {
-        if (!availableBalances[request.chainId][token]) availableBalances[request.chainId][token] = {};
+        if (!availableBalances[request.chainId][token]) {
+          availableBalances[request.chainId][token] = {};
+        }
         availableBalances[request.chainId][token][request.holder] = request.balances[token].sub(
           this.getUsed(request.chainId, token, request.holder)
         );
@@ -60,12 +64,15 @@ export class BalanceAllocator {
       const remainingAmount = request.tokens.reduce((acc, token) => {
         const availableBalance = availableBalances[request.chainId][token][request.holder];
         const amountToDeduct = min(acc, availableBalance);
-        if (amountToDeduct.gt(0))
+        if (amountToDeduct.gt(0)) {
           availableBalances[request.chainId][token][request.holder] = availableBalance.sub(amountToDeduct);
+        }
         return acc.sub(amountToDeduct);
       }, request.amount);
       // If there is a remaining amount, the entire group will fail, so return false.
-      if (remainingAmount.gt(0)) return false;
+      if (remainingAmount.gt(0)) {
+        return false;
+      }
     }
 
     // If the entire group is successful commit to using these tokens.
@@ -98,7 +105,9 @@ export class BalanceAllocator {
       if (!this.balances?.[chainId]?.[token]?.[holder]) {
         // Note: cannot use assign because it breaks the BigNumber object.
         this.balances[chainId] ??= {};
-        if (!this.balances[chainId][token]) this.balances[chainId][token] = {};
+        if (!this.balances[chainId][token]) {
+          this.balances[chainId][token] = {};
+        }
         this.balances[chainId][token][holder] = balance;
       }
     }
@@ -108,8 +117,12 @@ export class BalanceAllocator {
   getUsed(chainId: number, token: string, holder: string): BigNumber {
     if (!this.used?.[chainId]?.[token]?.[holder]) {
       // Note: cannot use assign because it breaks the BigNumber object.
-      if (!this.used[chainId]) this.used[chainId] = {};
-      if (!this.used[chainId][token]) this.used[chainId][token] = {};
+      if (!this.used[chainId]) {
+        this.used[chainId] = {};
+      }
+      if (!this.used[chainId][token]) {
+        this.used[chainId][token] = {};
+      }
       this.used[chainId][token][holder] = BigNumber.from(0);
     }
     return this.used[chainId][token][holder];

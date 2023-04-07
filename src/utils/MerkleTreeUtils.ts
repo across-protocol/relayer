@@ -16,8 +16,9 @@ export function buildPoolRebalanceLeafTree(poolRebalanceLeaves: PoolRebalanceLea
     if (
       poolRebalanceLeaves[i].l1Tokens.length !== poolRebalanceLeaves[i].bundleLpFees.length ||
       poolRebalanceLeaves[i].netSendAmounts.length !== poolRebalanceLeaves[i].runningBalances.length
-    )
+    ) {
       throw new Error("Provided lef arrays are not of equal length");
+    }
   }
 
   const paramType = getParamType("MerkleLibTest", "verifyPoolRebalance", "rebalance");
@@ -28,8 +29,9 @@ export function buildPoolRebalanceLeafTree(poolRebalanceLeaves: PoolRebalanceLea
 export function buildRelayerRefundTree(relayerRefundLeaves: RelayerRefundLeaf[]): MerkleTree<RelayerRefundLeaf> {
   for (let i = 0; i < relayerRefundLeaves.length; i++) {
     // The 2 provided parallel arrays must be of equal length.
-    if (relayerRefundLeaves[i].refundAddresses.length !== relayerRefundLeaves[i].refundAmounts.length)
+    if (relayerRefundLeaves[i].refundAddresses.length !== relayerRefundLeaves[i].refundAmounts.length) {
       throw new Error("Provided lef arrays are not of equal length");
+    }
   }
 
   const paramType = getParamType("MerkleLibTest", "verifyRelayerRefund", "refund");
