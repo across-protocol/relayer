@@ -85,11 +85,15 @@ export class MonitorConfig extends CommonConfig {
     if (REFILL_BALANCES) {
       this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(
         ({ chainId, account, isHubPool, target, trigger }) => {
-          if (Number.isNaN(target) || target <= 0)
+          if (Number.isNaN(target) || target <= 0) {
             throw new Error(`target for ${chainId} and ${account} must be > 0, got ${target}`);
-          if (Number.isNaN(trigger) || trigger <= 0)
+          }
+          if (Number.isNaN(trigger) || trigger <= 0) {
             throw new Error(`trigger for ${chainId} and ${account} must be > 0, got ${trigger}`);
-          if (trigger >= target) throw new Error("trigger must be < target");
+          }
+          if (trigger >= target) {
+            throw new Error("trigger must be < target");
+          }
           return {
             // Required fields:
             chainId,
@@ -106,14 +110,19 @@ export class MonitorConfig extends CommonConfig {
     }
 
     // Should only have 1 HubPool.
-    if (Object.values(this.refillEnabledBalances).filter((x) => x.isHubPool).length > 1)
+    if (Object.values(this.refillEnabledBalances).filter((x) => x.isHubPool).length > 1) {
       throw new Error("REFILL_BALANCES should only have 1 account marked isHubPool as true");
+    }
 
     // Default pool utilization threshold at 90%.
     this.utilizationThreshold = UTILIZATION_THRESHOLD ? Number(UTILIZATION_THRESHOLD) : 90;
 
-    if (this.utilizationThreshold > 100) throw new Error("UTILIZATION_THRESHOLD must be <= 100");
-    if (this.utilizationThreshold < 0) throw new Error("UTILIZATION_THRESHOLD must be >= 0");
+    if (this.utilizationThreshold > 100) {
+      throw new Error("UTILIZATION_THRESHOLD must be <= 100");
+    }
+    if (this.utilizationThreshold < 0) {
+      throw new Error("UTILIZATION_THRESHOLD must be >= 0");
+    }
 
     // In serverless mode use block range from environment to fetch for latest events.
     this.hubPoolStartingBlock = STARTING_BLOCK_NUMBER ? Number(STARTING_BLOCK_NUMBER) : undefined;
@@ -122,20 +131,23 @@ export class MonitorConfig extends CommonConfig {
     if (MONITORED_BALANCES) {
       this.monitoredBalances = JSON.parse(MONITORED_BALANCES).map(
         ({ errorThreshold, warnThreshold, account, token, chainId }) => {
-          if (!errorThreshold && !warnThreshold)
+          if (!errorThreshold && !warnThreshold) {
             throw new Error("Must provide either an errorThreshold or a warnThreshold");
+          }
 
           let parsedErrorThreshold: number | null = null;
           if (errorThreshold) {
-            if (Number.isNaN(Number(errorThreshold)))
+            if (Number.isNaN(Number(errorThreshold))) {
               throw new Error(`errorThreshold value: ${errorThreshold} cannot be converted to a number`);
+            }
             parsedErrorThreshold = Number(errorThreshold);
           }
 
           let parsedWarnThreshold: number | null = null;
           if (warnThreshold) {
-            if (Number.isNaN(Number(errorThreshold)))
+            if (Number.isNaN(Number(errorThreshold))) {
               throw new Error(`warnThreshold value: ${warnThreshold} cannot be converted to a number`);
+            }
             parsedWarnThreshold = Number(warnThreshold);
           }
 

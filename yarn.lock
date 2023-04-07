@@ -2706,10 +2706,10 @@
   dependencies:
     "@types/node" "*"
 
-"@types/mocha@^9.0.0":
-  version "9.1.0"
-  resolved "https://registry.yarnpkg.com/@types/mocha/-/mocha-9.1.0.tgz#baf17ab2cca3fcce2d322ebc30454bff487efad5"
-  integrity sha512-QCWHkbMv4Y5U9oW10Uxbr45qMMSzl4OzijsozynUAgx3kEHUdXB00udx2dWDQ7f2TU2a2uuiFaRZjCe3unPpeg==
+"@types/mocha@^10.0.1":
+  version "10.0.1"
+  resolved "https://registry.yarnpkg.com/@types/mocha/-/mocha-10.0.1.tgz#2f4f65bb08bc368ac39c96da7b2f09140b26851b"
+  integrity sha512-/fvYntiO1GeICvqbQ3doGDIP97vWmvFt83GKguJ6prmQM2iXZfFcq6YE8KteFyRtX2/h5Hf91BYvPodJKFYv5Q==
 
 "@types/node-fetch@^2.5.5":
   version "2.6.1"
@@ -2900,11 +2900,6 @@
   resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.3.18.tgz#dc6afcfa401c07d8d08be53eff4a97ca8eb06c79"
   integrity sha512-eneJdzpxe+UFAmZufL7MAnQ/gX1c9reU12iUpfcBcNscNDoQcHw82P4KTmzIQ2zqHvvnMmvE/uLOsZ5OXGGJBw==
 
-"@uma/contracts-frontend@^0.4.13":
-  version "0.4.13"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.4.13.tgz#742b1a3a17888efa96bd766006465cdb7845c50c"
-  integrity sha512-inCUtvRiF1HDxGALMFaFrD72CgS1wZPdYpdvXyeZy/XAzrg7QLRNAWJrlR4mfWtHyK01a/ZqiVarwLVEy53hZA==
-
 "@uma/contracts-frontend@^0.4.15":
   version "0.4.15"
   resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.4.15.tgz#0fd6647e9d41c4d705bd1a4409a340e3c0f5a098"
@@ -2988,25 +2983,6 @@
     "@uma/contracts-frontend" "^0.3.18"
     "@uma/contracts-node" "^0.3.18"
     axios "^0.24.0"
-    bn.js "^4.11.9"
-    decimal.js "^10.3.1"
-    highland "^2.13.5"
-    immer "^9.0.7"
-    lodash-es "^4.17.21"
-
-"@uma/sdk@^0.32.7":
-  version "0.32.8"
-  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.32.8.tgz#239f9990ea44e24cb5e7a0c51542fb65ba61747e"
-  integrity sha512-L6T4qlZeS3Af8lNVsq2o1YadtYN75X0NFk7sERvQaenk61jnFW8bHCAqfZwdkEjeQztlA4Jt3AYfY5hyGihOeg==
-  dependencies:
-    "@ethersproject/abstract-signer" "^5.4.0"
-    "@ethersproject/providers" "^5.4.2"
-    "@google-cloud/datastore" "^7.0.0"
-    "@types/lodash-es" "^4.17.5"
-    "@uma/contracts-frontend" "^0.4.13"
-    "@uma/contracts-node" "^0.4.13"
-    axios "^0.24.0"
-    bluebird "^3.7.2"
     bn.js "^4.11.9"
     decimal.js "^10.3.1"
     highland "^2.13.5"

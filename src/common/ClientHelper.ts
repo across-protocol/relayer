@@ -56,8 +56,9 @@ export async function constructSpokePoolClientsWithLookback(
   // running the disputer or proposer functionality as it can lead to proposing disputable bundles or
   // disputing valid bundles.
 
-  if (!configStoreClient.isUpdated)
+  if (!configStoreClient.isUpdated) {
     throw new Error("Config store client must be updated before constructing spoke pool clients");
+  }
 
   const currentTime = getCurrentTime();
 
@@ -77,12 +78,14 @@ export async function constructSpokePoolClientsWithLookback(
   const fromBlocks = Object.fromEntries(
     await Promise.all(
       enabledChains.map(async (chainId) => {
-        if (chainId === 1) return [chainId, fromBlock_1];
-        else
+        if (chainId === 1) {
+          return [chainId, fromBlock_1];
+        } else {
           return [
             chainId,
             await getBlockForTimestamp(hubPoolChainId, chainId, currentTime - initialLookBackOverride, currentTime),
           ];
+        }
       })
     )
   );
@@ -111,8 +114,9 @@ function getEnabledChainsInBlockRange(
   mainnetStartBlock: number,
   mainnetEndBlock?: number
 ): number[] {
-  if (!configStoreClient.isUpdated)
+  if (!configStoreClient.isUpdated) {
     throw new Error("Config store client must be updated before constructing spoke pool clients");
+  }
   return spokePoolChainsOverride.length > 0
     ? spokePoolChainsOverride
     : configStoreClient.getEnabledChainsInBlockRange(mainnetStartBlock, mainnetEndBlock);
@@ -257,7 +261,7 @@ export async function constructClients(
   return { hubPoolClient, configStoreClient, multiCallerClient, hubSigner };
 }
 
-export async function updateClients(clients: Clients) {
+export async function updateClients(clients: Clients): Promise<void> {
   await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
 }
 
@@ -265,6 +269,11 @@ export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number
   [chainId: number]: ethers.providers.Provider;
 } {
   return Object.fromEntries(
-    Object.entries(spokePoolClients).map(([chainId, client]) => [Number(chainId), client.spokePool.signer.provider!])
+    Object.entries(spokePoolClients)
+      .map(([chainId, client]): [number, ethers.providers.Provider] => [
+        Number(chainId),
+        client.spokePool.signer.provider,
+      ])
+      .filter(([, provider]) => !!provider)
   );
 }

@@ -1,9 +1,9 @@
-/* eslint-disable no-process-exit */
-import { ethers, getSigner, getProvider, WETH9, toBN } from "../src/utils";
+import { ethers, getSigner, getProvider, WETH9, toBN, isKeyOf } from "../src/utils";
 import { askYesNoQuestion } from "./utils";
-const args = require("minimist")(process.argv.slice(2), {
-  string: ["amount"],
-  number: ["chainId"],
+import minimist from "minimist";
+
+const args = minimist(process.argv.slice(2), {
+  string: ["amount", "chainId"],
   boolean: ["wrap"],
 });
 
@@ -24,11 +24,19 @@ const WETH_ADDRESSES = {
 };
 
 export async function run(): Promise<void> {
-  if (!Object.keys(args).includes("chainId")) throw new Error("Define `chainId` as the chain you want to connect on");
-  if (!Object.keys(args).includes("amount")) throw new Error("Define `amount` as how much you want to unwrap");
+  if (!Object.keys(args).includes("chainId")) {
+    throw new Error("Define `chainId` as the chain you want to connect on");
+  }
+  if (!Object.keys(args).includes("amount")) {
+    throw new Error("Define `amount` as how much you want to unwrap");
+  }
   const baseSigner = await getSigner();
-  const connectedSigner = baseSigner.connect(await getProvider(Number(args.chainId)));
-  const token = WETH_ADDRESSES[Number(args.chainId)];
+  const chainId = Number(args.chainId);
+  const connectedSigner = baseSigner.connect(await getProvider(chainId));
+  if (!isKeyOf(chainId, WETH_ADDRESSES)) {
+    throw new Error("chainId does not have a defined WETH address");
+  }
+  const token = WETH_ADDRESSES[chainId];
   const weth = new ethers.Contract(token, WETH9.abi, connectedSigner);
   const decimals = 18;
   const amountFromWei = ethers.utils.formatUnits(args.amount, decimals);
@@ -47,7 +55,9 @@ export async function run(): Promise<void> {
     }
     console.log(`Wrap ${amountFromWei} ETH`);
     // Check the user is ok with the info provided. else abort.
-    if (!(await askYesNoQuestion("\nConfirm that you want to execute this transaction?"))) process.exit(0);
+    if (!(await askYesNoQuestion("\nConfirm that you want to execute this transaction?"))) {
+      process.exit(0);
+    }
     console.log("sending...");
     const tx = await weth.deposit({ value: args.amount });
     const receipt = await tx.wait();
@@ -62,7 +72,9 @@ export async function run(): Promise<void> {
     }
     console.log(`Unwrap ${amountFromWei} WETH`);
     // Check the user is ok with the info provided. else abort.
-    if (!(await askYesNoQuestion("\nConfirm that you want to execute this transaction?"))) process.exit(0);
+    if (!(await askYesNoQuestion("\nConfirm that you want to execute this transaction?"))) {
+      process.exit(0);
+    }
     console.log("sending...");
     const tx = await weth.withdraw(args.amount);
     const receipt = await tx.wait();

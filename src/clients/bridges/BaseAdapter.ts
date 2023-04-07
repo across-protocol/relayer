@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-types */
 import { Provider } from "@ethersproject/abstract-provider";
 import { Signer } from "@ethersproject/abstract-signer";
 import { SpokePoolClient } from "../../clients";
@@ -10,18 +11,32 @@ import {
   EventSearchConfig,
   DefaultLogLevels,
   MakeOptional,
+  AnyObject,
+  BigNumber,
 } from "../../utils";
 import { etherscanLink, getNetworkName, MAX_UINT_VAL, runTransaction } from "../../utils";
-import { OutstandingTransfers } from "../../interfaces";
 
+import { OutstandingTransfers } from "../../interfaces";
+import { SortableEvent } from "../../interfaces";
+
+interface DepositEvent extends SortableEvent {
+  amount: BigNumber;
+  to: string;
+}
+
+interface Events {
+  [address: string]: {
+    [l1Token: string]: DepositEvent[];
+  };
+}
 export class BaseAdapter {
   chainId: number;
   baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
   baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
 
-  l1DepositInitiatedEvents: { [address: string]: { [l1Token: string]: any[] } } = {};
-  l2DepositFinalizedEvents: { [address: string]: { [l1Token: string]: any[] } } = {};
-  l2DepositFinalizedEvents_DepositAdapter: { [address: string]: { [l1Token: string]: any[] } } = {};
+  l1DepositInitiatedEvents: Events = {};
+  l2DepositFinalizedEvents: Events = {};
+  l2DepositFinalizedEvents_DepositAdapter: Events = {};
 
   constructor(
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
@@ -47,8 +62,9 @@ export class BaseAdapter {
     // Update search range based on the latest data from corresponding SpokePoolClients' search ranges.
     const l1LatestBlock = this.spokePoolClients[1].latestBlockNumber;
     const l2LatestBlock = this.spokePoolClients[this.chainId].latestBlockNumber;
+
     if (l1LatestBlock === 0 || l2LatestBlock === 0) {
-      throw new Error("Spoke pool clients don't have an updated block number");
+      throw new Error("One or more SpokePoolClients have not been updated");
     }
 
     return {
@@ -69,11 +85,11 @@ export class BaseAdapter {
     };
   }
 
-  getSearchConfig(chainId: number) {
+  getSearchConfig(chainId: number): MakeOptional<EventSearchConfig, "toBlock"> {
     return { ...this.spokePoolClients[chainId].eventSearchConfig };
   }
 
-  async checkAndSendTokenApprovals(address: string, l1Tokens: string[], associatedL1Bridges: string[]) {
+  async checkAndSendTokenApprovals(address: string, l1Tokens: string[], associatedL1Bridges: string[]): Promise<void> {
     this.log("Checking and sending token approvals", { l1Tokens, associatedL1Bridges });
     const tokensToApprove: { l1Token: Contract; targetContract: string }[] = [];
     const l1TokenContracts = l1Tokens.map((l1Token) => new Contract(l1Token, ERC20.abi, this.getSigner(1)));
@@ -82,15 +98,18 @@ export class BaseAdapter {
         // If there is not both a l1TokenContract and associatedL1Bridges[index] then return a number that wont send
         // an approval transaction. For example not every chain has a bridge contract for every token. In this case
         // we clearly dont want to send any approval transactions.
-        if (l1TokenContract && associatedL1Bridges[index])
+        if (l1TokenContract && associatedL1Bridges[index]) {
           return l1TokenContract.allowance(address, associatedL1Bridges[index]);
-        else return null;
+        } else {
+          return null;
+        }
       })
     );
 
     allowances.forEach((allowance, index) => {
-      if (allowance && allowance.lt(toBN(MAX_SAFE_ALLOWANCE)))
+      if (allowance && allowance.lt(toBN(MAX_SAFE_ALLOWANCE))) {
         tokensToApprove.push({ l1Token: l1TokenContracts[index], targetContract: associatedL1Bridges[index] });
+      }
     });
 
     if (tokensToApprove.length == 0) {
@@ -115,7 +134,9 @@ export class BaseAdapter {
 
     for (const monitoredAddress of this.monitoredAddresses) {
       // Skip if there are no deposit events for this address at all.
-      if (this.l1DepositInitiatedEvents[monitoredAddress] === undefined) continue;
+      if (this.l1DepositInitiatedEvents[monitoredAddress] === undefined) {
+        continue;
+      }
 
       if (outstandingTransfers[monitoredAddress] === undefined) {
         outstandingTransfers[monitoredAddress] = {};
@@ -126,7 +147,9 @@ export class BaseAdapter {
 
       for (const l1Token of l1Tokens) {
         // Skip if there has been no deposits for this token.
-        if (this.l1DepositInitiatedEvents[monitoredAddress][l1Token] === undefined) continue;
+        if (this.l1DepositInitiatedEvents[monitoredAddress][l1Token] === undefined) {
+          continue;
+        }
 
         // It's okay to not have any finalization events. In that case, all deposits are outstanding.
         if (this.l2DepositFinalizedEvents[monitoredAddress][l1Token] === undefined) {
@@ -161,7 +184,9 @@ export class BaseAdapter {
         });
 
         // Short circuit early if there are no pending deposits.
-        if (pendingDeposits.length === 0) continue;
+        if (pendingDeposits.length === 0) {
+          continue;
+        }
 
         const totalAmount = pendingDeposits.reduce((acc, curr) => acc.add(curr.amount), toBN(0));
         const depositTxHashes = pendingDeposits.map((deposit) => deposit.transactionHash);
@@ -175,15 +200,15 @@ export class BaseAdapter {
     return outstandingTransfers;
   }
 
-  log(message: string, data?: any, level: DefaultLogLevels = "debug") {
+  log(message: string, data?: AnyObject, level: DefaultLogLevels = "debug"): void {
     this.logger[level]({ at: this.getName(), message, ...data });
   }
 
-  getName() {
+  getName(): string {
     return `${getNetworkName(this.chainId)}Adapter`;
   }
 
-  isWeth(l1Token: string) {
+  isWeth(l1Token: string): boolean {
     return l1Token.toLowerCase() === "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
   }
 }

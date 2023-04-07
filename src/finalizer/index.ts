@@ -190,7 +190,8 @@ export async function finalize(
           transactionHash: etherscanLink(txn.transactionHash, 1),
         });
       });
-    } catch (error) {
+    } catch (_error) {
+      const error = _error as Error;
       logger.warn({
         at: "Finalizer",
         message: "Error creating aggregateTx",
@@ -201,7 +202,14 @@ export async function finalize(
   }
 }
 
-export async function constructFinalizerClients(_logger: winston.Logger, config, baseSigner: Wallet) {
+export async function constructFinalizerClients(
+  _logger: winston.Logger,
+  config: FinalizerConfig,
+  baseSigner: Wallet
+): Promise<{
+  commonClients: Clients;
+  spokePoolClients: SpokePoolClientsByChain;
+}> {
   const commonClients = await constructClients(_logger, config, baseSigner);
   await updateFinalizerClients(commonClients);
 
@@ -251,7 +259,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet):
       const loopStart = Date.now();
       await updateSpokePoolClients(spokePoolClients, ["TokensBridged", "EnabledDepositRoute"]);
 
-      if (config.finalizerEnabled)
+      if (config.finalizerEnabled) {
         await finalize(
           logger,
           commonClients.hubSigner,
@@ -259,11 +267,15 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet):
           spokePoolClients,
           config.finalizerChains
         );
-      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
+      } else {
+        logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
+      }
 
       logger.debug({ at: "Finalizer#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
 
-      if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
+      if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) {
+        break;
+      }
     }
   } catch (error) {
     await disconnectRedisClient(logger);
