@@ -95,8 +95,12 @@ export class AdapterManager {
       // That the line below is critical. if the hubpoolClient returns the wrong destination token for the L1 token then
       // the bot can irrecoverably send the wrong token to the chain and loose money. It should crash if this is detected.
       const l2TokenForL1Token = this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId);
-      if (!l2TokenForL1Token) throw new Error("No L2 token found for L1 token");
-      if (l2TokenForL1Token !== getL2TokenAddresses(l1Token)[chainId]) throw new Error("Mismatch tokens!");
+      if (!l2TokenForL1Token) {
+        throw new Error("No L2 token found for L1 token");
+      }
+      if (l2TokenForL1Token !== getL2TokenAddresses(l1Token)[chainId]) {
+        throw new Error("Mismatch tokens!");
+      }
       return l2TokenForL1Token;
     } catch (error) {
       this.logger.error({

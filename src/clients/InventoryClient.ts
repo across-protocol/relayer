@@ -70,10 +70,11 @@ export class InventoryClient {
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
     const distribution: { [chainId: number]: BigNumber } = {};
     this.getEnabledChains().forEach((chainId) => {
-      if (cumulativeBalance.gt(0))
+      if (cumulativeBalance.gt(0)) {
         distribution[chainId] = this.getBalanceOnChainForL1Token(chainId, l1Token)
           .mul(this.scalar)
           .div(cumulativeBalance);
+      }
     });
     return distribution;
   }
@@ -89,7 +90,9 @@ export class InventoryClient {
   getCurrentAllocationPct(l1Token: string, chainId: number): BigNumber {
     // If there is nothing over all chains, return early.
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
-    if (cumulativeBalance.eq(0)) return toBN(0);
+    if (cumulativeBalance.eq(0)) {
+      return toBN(0);
+    }
 
     const shortfall = this.getTokenShortFall(l1Token, chainId) || toBN(0);
     const currentBalance = this.getBalanceOnChainForL1Token(chainId, l1Token).sub(shortfall);
@@ -163,16 +166,21 @@ export class InventoryClient {
   //     Else, the post fill amount is within the target, so refund on the destination chain.
   async determineRefundChainId(deposit: Deposit): Promise<number> {
     const destinationChainId = deposit.destinationChainId;
-    if (!this.isInventoryManagementEnabled()) return destinationChainId;
-    if (destinationChainId === 1) return 1; // Always refund on L1 if the transfer is to L1.
+    if (!this.isInventoryManagementEnabled()) {
+      return destinationChainId;
+    }
+    if (destinationChainId === 1) {
+      return 1;
+    } // Always refund on L1 if the transfer is to L1.
     const l1Token = this.hubPoolClient.getL1TokenForDeposit(deposit);
 
     // If there is no inventory config for this token or this token and destination chain the return the destination chain.
     if (
       this.inventoryConfig.tokenConfig[l1Token] === undefined ||
       this.inventoryConfig.tokenConfig?.[l1Token]?.[destinationChainId] === undefined
-    )
+    ) {
       return destinationChainId;
+    }
     const chainShortfall = this.getTokenShortFall(l1Token, destinationChainId);
     const chainVirtualBalance = this.getBalanceOnChainForL1Token(destinationChainId, l1Token);
     const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
@@ -248,14 +256,18 @@ export class InventoryClient {
     const unexecutedRebalances: Rebalance[] = [];
     const executedTransactions: ExecutedRebalance[] = [];
     try {
-      if (!this.isInventoryManagementEnabled()) return;
+      if (!this.isInventoryManagementEnabled()) {
+        return;
+      }
       const tokenDistributionPerL1Token = this.getTokenDistributionPerL1Token();
       this.constructConsideringRebalanceDebugLog(tokenDistributionPerL1Token);
 
       // First, compute the rebalances that we would do assuming we have sufficient tokens on L1.
       for (const l1Token of Object.keys(tokenDistributionPerL1Token)) {
         const cumulativeBalance = this.getCumulativeBalance(l1Token);
-        if (cumulativeBalance.eq(0)) continue;
+        if (cumulativeBalance.eq(0)) {
+          continue;
+        }
 
         for (const chainId of this.getEnabledL2Chains()) {
           // Skip if there's no configuration for l1Token on chainId. This is the case for BOBA and BADGER
@@ -331,8 +343,9 @@ export class InventoryClient {
         mrkdwn += `*Rebalances sent to ${getNetworkName(chainId)}:*\n`;
         for (const { l1Token, amount, targetPct, thresholdPct, cumulativeBalance, hash } of rebalances) {
           const tokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
-          if (!tokenInfo)
+          if (!tokenInfo) {
             throw new Error(`InventoryClient::rebalanceInventoryIfNeeded no L1 token info for token ${l1Token}`);
+          }
           const { symbol, decimals } = tokenInfo;
           const formatter = createFormatFunction(2, 4, false, decimals);
           mrkdwn +=
@@ -353,8 +366,9 @@ export class InventoryClient {
         mrkdwn += `*Insufficient amount to rebalance to ${getNetworkName(chainId)}:*\n`;
         for (const { l1Token, balance, cumulativeBalance, amount } of rebalances) {
           const tokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
-          if (!tokenInfo)
+          if (!tokenInfo) {
             throw new Error(`InventoryClient::rebalanceInventoryIfNeeded no L1 token info for token ${l1Token}`);
+          }
           const { symbol, decimals } = tokenInfo;
           const formatter = createFormatFunction(2, 4, false, decimals);
           mrkdwn +=
@@ -374,7 +388,9 @@ export class InventoryClient {
         }
       }
 
-      if (mrkdwn) this.log("Executed Inventory rebalances 📒", { mrkdwn }, "info");
+      if (mrkdwn) {
+        this.log("Executed Inventory rebalances 📒", { mrkdwn }, "info");
+      }
     } catch (error) {
       this.log(
         "Something errored during inventory rebalance",
@@ -400,7 +416,9 @@ export class InventoryClient {
     const executedTransactions: ExecutedUnwrap[] = [];
 
     try {
-      if (!this.isInventoryManagementEnabled()) return;
+      if (!this.isInventoryManagementEnabled()) {
+        return;
+      }
       const l1Weth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 
       const chains = await Promise.all(
@@ -411,7 +429,9 @@ export class InventoryClient {
             const unwrapWethTarget = this.inventoryConfig.tokenConfig[l1Weth][chainId.toString()]?.unwrapWethTarget;
 
             // Ignore chains where ETH isn't the native gas token. Returning null will result in these being filtered.
-            if (chainId === 137 || unwrapWethThreshold === undefined || unwrapWethTarget === undefined) return null;
+            if (chainId === 137 || unwrapWethThreshold === undefined || unwrapWethTarget === undefined) {
+              return null;
+            }
             return { chainId, unwrapWethThreshold, unwrapWethTarget };
           })
           // This filters out all nulls, which removes any chains that are meant to be ignored.
@@ -434,9 +454,13 @@ export class InventoryClient {
         if (balance.lt(unwrapWethThreshold)) {
           const amountToUnwrap = unwrapWethTarget.sub(balance);
           const unwrap = { chainInfo, amount: amountToUnwrap };
-          if (l2WethBalance.gte(amountToUnwrap)) unwrapsRequired.push(unwrap);
+          if (l2WethBalance.gte(amountToUnwrap)) {
+            unwrapsRequired.push(unwrap);
+          }
           // Extract unexecutable rebalances for logging.
-          else unexecutedUnwraps.push(unwrap);
+          else {
+            unexecutedUnwraps.push(unwrap);
+          }
         }
       });
 
@@ -487,7 +511,9 @@ export class InventoryClient {
           )} WETH balance.\n`;
       }
 
-      if (mrkdwn) this.log("Executed WETH unwraps 🎁", { mrkdwn }, "info");
+      if (mrkdwn) {
+        this.log("Executed WETH unwraps 🎁", { mrkdwn }, "info");
+      }
     } catch (error) {
       this.log(
         "Something errored during WETH unwrapping",
@@ -512,12 +538,15 @@ export class InventoryClient {
     const cumulativeBalances: { [symbol: string]: string } = {};
     Object.entries(distribution).forEach(([l1Token, distributionForToken]) => {
       const tokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
-      if (tokenInfo === undefined)
+      if (tokenInfo === undefined) {
         throw new Error(
           `InventoryClient::constructConsideringRebalanceDebugLog info not found for L1 token ${l1Token}`
         );
+      }
       const { symbol, decimals } = tokenInfo;
-      if (!logData[symbol]) logData[symbol] = {};
+      if (!logData[symbol]) {
+        logData[symbol] = {};
+      }
       const formatter = createFormatFunction(2, 4, false, decimals);
       cumulativeBalances[symbol] = formatter(this.getCumulativeBalance(l1Token).toString());
       Object.entries(distributionForToken).forEach(([_chainId, amount]) => {
@@ -563,32 +592,44 @@ export class InventoryClient {
   }
 
   async setL1TokenApprovals(): Promise<void> {
-    if (!this.isInventoryManagementEnabled()) return;
+    if (!this.isInventoryManagementEnabled()) {
+      return;
+    }
     const l1Tokens = this.getL1Tokens();
     this.log("Checking token approvals", { l1Tokens });
     await this.adapterManager.setL1TokenApprovals(this.relayer, l1Tokens);
   }
 
   async wrapL2EthIfAboveThreshold(): Promise<void> {
-    if (!this.isInventoryManagementEnabled()) return;
+    if (!this.isInventoryManagementEnabled()) {
+      return;
+    }
     this.log("Checking ETH->WETH Wrap status");
     await this.adapterManager.wrapEthIfAboveThreshold(this.inventoryConfig.wrapEtherThreshold);
   }
 
   async update(): Promise<void> {
-    if (!this.isInventoryManagementEnabled()) return;
+    if (!this.isInventoryManagementEnabled()) {
+      return;
+    }
     await this.crossChainTransferClient.update(this.getL1Tokens());
   }
 
   isInventoryManagementEnabled(): boolean {
-    if (this?.inventoryConfig?.tokenConfig) return true;
+    if (this?.inventoryConfig?.tokenConfig) {
+      return true;
+    }
     // Use logDisabledManagement to avoid spamming the logs on every check if this module is enabled.
-    else if (this.logDisabledManagement == false) this.log("Inventory Management Disabled");
+    else if (this.logDisabledManagement == false) {
+      this.log("Inventory Management Disabled");
+    }
     this.logDisabledManagement = true;
     return false;
   }
 
   log(message: string, data?: AnyObject, level: DefaultLogLevels = "debug"): void {
-    if (this.logger) this.logger[level]({ at: "InventoryClient", message, ...data });
+    if (this.logger) {
+      this.logger[level]({ at: "InventoryClient", message, ...data });
+    }
   }
 }

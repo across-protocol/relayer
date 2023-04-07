@@ -26,19 +26,21 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
     try {
       const redisClient = createClient({ url });
       await redisClient.connect();
-      if (logger)
+      if (logger) {
         logger.debug({
           at: "Dataworker#ClientHelper",
           message: `Connected to redis server at ${url} successfully!`,
           dbSize: await redisClient.dbSize(),
         });
+      }
       redisClients[url] = redisClient;
     } catch (err) {
-      if (logger)
+      if (logger) {
         logger.debug({
           at: "Dataworker#ClientHelper",
           message: `Failed to connec to redis server at ${url}.`,
         });
+      }
     }
   }
 
@@ -54,7 +56,9 @@ export async function setRedisKey(
   if (expirySeconds > 0) {
     // EX: Expire key after expirySeconds.
     await redisClient.set(key, val, { EX: expirySeconds });
-  } else await redisClient.set(key, val);
+  } else {
+    await redisClient.set(key, val);
+  }
 }
 
 export function getRedisDepositKey(depositOrFill: Deposit | Fill): string {
@@ -67,13 +71,16 @@ export async function setDeposit(
   redisClient: RedisClient,
   expirySeconds = 0
 ): Promise<void> {
-  if (shouldCache(deposit.quoteTimestamp, currentChainTime))
+  if (shouldCache(deposit.quoteTimestamp, currentChainTime)) {
     await setRedisKey(getRedisDepositKey(deposit), JSON.stringify(deposit), redisClient, expirySeconds);
+  }
 }
 
 export async function getDeposit(key: string, redisClient: RedisClient): Promise<Deposit | undefined> {
   const depositRaw = await redisClient.get(key);
-  if (depositRaw) return JSON.parse(depositRaw, objectWithBigNumberReviver);
+  if (depositRaw) {
+    return JSON.parse(depositRaw, objectWithBigNumberReviver);
+  }
 }
 
 /**
@@ -105,11 +112,15 @@ export async function getBlockForTimestamp(
   currentChainTime: number,
   blockFinder?: BlockFinder<Block>
 ): Promise<number> {
-  if (blockFinder === undefined) blockFinder = await getBlockFinder(chainId);
+  if (blockFinder === undefined) {
+    blockFinder = await getBlockFinder(chainId);
+  }
   const redisClient = await getRedis();
 
   // If no redis client, then request block from blockFinder. Otherwise try to load from redis cache.
-  if (redisClient === undefined) return (await blockFinder.getBlockForTimestamp(timestamp)).number;
+  if (redisClient === undefined) {
+    return (await blockFinder.getBlockForTimestamp(timestamp)).number;
+  }
   // We already cache blocks in the ConfigStore on the HubPool chain so re-use that key if the chainId
   // matches the HubPool's.
   const key = chainId === hubPoolChainId ? `block_number_${timestamp}` : `${chainId}_block_number_${timestamp}`;
@@ -117,8 +128,9 @@ export async function getBlockForTimestamp(
   if (result === null) {
     const blockNumber = (await blockFinder.getBlockForTimestamp(timestamp)).number;
     // Expire key after 90 days.
-    if (shouldCache(timestamp, currentChainTime))
+    if (shouldCache(timestamp, currentChainTime)) {
       await setRedisKey(key, blockNumber.toString(), redisClient, 60 * 60 * 24 * 90);
+    }
     return blockNumber;
   } else {
     return parseInt(result);
@@ -144,6 +156,8 @@ export function shouldCache(eventTimestamp: number, latestTime: number): boolean
 // this reviver function as the second arg to JSON.parse to instruct it to correctly revive a stringified
 // object with BigNumber values.
 function objectWithBigNumberReviver(_: string, value: { type: string; hex: BigNumberish }) {
-  if (typeof value !== "object" || value?.type !== "BigNumber") return value;
+  if (typeof value !== "object" || value?.type !== "BigNumber") {
+    return value;
+  }
   return toBN(value.hex);
 }

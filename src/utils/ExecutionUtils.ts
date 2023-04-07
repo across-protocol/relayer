@@ -29,7 +29,9 @@ export async function processCrash(
     notificationPath: "across-error",
   });
   await delay(5);
-  if (pollingDelay === 0) return true;
+  if (pollingDelay === 0) {
+    return true;
+  }
 
   return false;
 }

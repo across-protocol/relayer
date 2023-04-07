@@ -69,13 +69,17 @@ export class HubPoolClient {
   }
 
   getSpokePoolForBlock(chain: number, block: number = Number.MAX_SAFE_INTEGER): string {
-    if (!this.crossChainContracts[chain]) throw new Error(`No cross chain contracts set for ${chain}`);
+    if (!this.crossChainContracts[chain]) {
+      throw new Error(`No cross chain contracts set for ${chain}`);
+    }
     const mostRecentSpokePoolUpdateBeforeBlock = (
       sortEventsDescending(this.crossChainContracts[chain]) as CrossChainContractsSet[]
     ).find((crossChainContract) => crossChainContract.blockNumber <= block);
-    if (!mostRecentSpokePoolUpdateBeforeBlock)
+    if (!mostRecentSpokePoolUpdateBeforeBlock) {
       throw new Error(`No cross chain contract found before block ${block} for chain ${chain}`);
-    else return mostRecentSpokePoolUpdateBeforeBlock.spokePool;
+    } else {
+      return mostRecentSpokePoolUpdateBeforeBlock.spokePool;
+    }
   }
 
   getSpokePoolActivationBlock(chain: number, spokePool: string): number | undefined {
@@ -94,13 +98,14 @@ export class HubPoolClient {
   }): string {
     const l1Token = this.getL1TokenForDeposit(deposit);
     const destinationToken = this.getDestinationTokenForL1Token(l1Token, deposit.destinationChainId);
-    if (!destinationToken)
+    if (!destinationToken) {
       this.logger.error({
         at: "HubPoolClient",
         message: "No destination token found",
         deposit,
         notificationPath: "across-error",
       });
+    }
     return destinationToken;
   }
 
@@ -112,27 +117,31 @@ export class HubPoolClient {
     const l1Token = Object.keys(this.l1TokensToDestinationTokens).find((_l1Token) => {
       return this.l1TokensToDestinationTokens[_l1Token][deposit.originChainId] === deposit.originToken;
     });
-    if (!l1Token)
+    if (!l1Token) {
       throw new Error(
         `Could not find L1 Token for origin chain ${deposit.originChainId} and origin token ${deposit.originToken}!`
       );
+    }
     return l1Token;
   }
 
   getL1TokenCounterpartAtBlock(l2ChainId: number, l2Token: string, block: number): string {
     const l1Token = Object.keys(this.l1TokensToDestinationTokensWithBlock).find((_l1Token) => {
       // If this token doesn't exist on this L2, return false.
-      if (this.l1TokensToDestinationTokensWithBlock[_l1Token][l2ChainId] === undefined) return false;
+      if (this.l1TokensToDestinationTokensWithBlock[_l1Token][l2ChainId] === undefined) {
+        return false;
+      }
 
       // Find the last mapping published before the target block.
       return sortEventsDescending(this.l1TokensToDestinationTokensWithBlock[_l1Token][l2ChainId]).find(
         (mapping: DestinationTokenWithBlock) => mapping.l2Token === l2Token && mapping.blockNumber <= block
       );
     });
-    if (!l1Token)
+    if (!l1Token) {
       throw new Error(
         `Could not find L1 token mapping for chain ${l2ChainId} and L2 token ${l2Token} equal to or earlier than block ${block}!`
       );
+    }
     return l1Token;
   }
 
@@ -219,8 +228,9 @@ export class HubPoolClient {
     let endingBlockNumber: number | undefined;
     for (const rootBundle of sortEventsAscending(this.proposedRootBundles)) {
       const nextRootBundle = this.getFollowingRootBundle(rootBundle);
-      if (!this.isRootBundleValid(rootBundle, nextRootBundle ? nextRootBundle.blockNumber : latestMainnetBlock))
+      if (!this.isRootBundleValid(rootBundle, nextRootBundle ? nextRootBundle.blockNumber : latestMainnetBlock)) {
         continue;
+      }
 
       const bundleEvalBlockNumber = this.getBundleEndBlockForChain(
         rootBundle as ProposedRootBundle,
@@ -287,7 +297,9 @@ export class HubPoolClient {
 
   getValidatedRootBundles(latestMainnetBlock: number = Number.MAX_SAFE_INTEGER): ProposedRootBundle[] {
     return this.proposedRootBundles.filter((rootBundle: ProposedRootBundle) => {
-      if (rootBundle.blockNumber > latestMainnetBlock) return false;
+      if (rootBundle.blockNumber > latestMainnetBlock) {
+        return false;
+      }
       return this.isRootBundleValid(rootBundle, latestMainnetBlock);
     });
   }
@@ -296,15 +308,21 @@ export class HubPoolClient {
     // Search for latest ProposeRootBundleExecuted event followed by all of its RootBundleExecuted event suggesting
     // that all pool rebalance leaves were executed. This ignores any proposed bundles that were partially executed.
     return _.findLast(this.proposedRootBundles, (rootBundle: ProposedRootBundle) => {
-      if (rootBundle.blockNumber > latestMainnetBlock) return false;
+      if (rootBundle.blockNumber > latestMainnetBlock) {
+        return false;
+      }
       return this.isRootBundleValid(rootBundle, latestMainnetBlock);
     });
   }
 
   getEarliestFullyExecutedRootBundle(latestMainnetBlock: number, startBlock = 0): ProposedRootBundle | undefined {
     return this.proposedRootBundles.find((rootBundle: ProposedRootBundle) => {
-      if (rootBundle.blockNumber > latestMainnetBlock) return false;
-      if (rootBundle.blockNumber < startBlock) return false;
+      if (rootBundle.blockNumber > latestMainnetBlock) {
+        return false;
+      }
+      if (rootBundle.blockNumber < startBlock) {
+        return false;
+      }
       return this.isRootBundleValid(rootBundle, latestMainnetBlock);
     });
   }
@@ -314,8 +332,12 @@ export class HubPoolClient {
   // `startBlock` can be used to set the starting point from which we look forwards or backwards, depending
   // on whether n is positive or negative.
   getNthFullyExecutedRootBundle(n: number, startBlock?: number): ProposedRootBundle | undefined {
-    if (n === 0) throw new Error("n cannot be 0");
-    if (!this.latestBlockNumber) throw new Error("HubPoolClient::getNthFullyExecutedRootBundle client not updated");
+    if (n === 0) {
+      throw new Error("n cannot be 0");
+    }
+    if (!this.latestBlockNumber) {
+      throw new Error("HubPoolClient::getNthFullyExecutedRootBundle client not updated");
+    }
 
     let bundleToReturn: ProposedRootBundle | undefined;
 
@@ -351,7 +373,9 @@ export class HubPoolClient {
 
     // If no event, then we can return a conservative default starting block like 0,
     // or we could throw an Error.
-    if (!latestFullyExecutedPoolRebalanceRoot) return 0;
+    if (!latestFullyExecutedPoolRebalanceRoot) {
+      return 0;
+    }
 
     // Once this proposal event is found, determine its mapping of indices to chainId in its
     // bundleEvaluationBlockNumbers array using CHAIN_ID_LIST. For each chainId, their starting block number is that
@@ -384,13 +408,16 @@ export class HubPoolClient {
       // meets this condition.
       if (
         mostRecentExecutedRootBundleEvent.l1Tokens.length !== mostRecentExecutedRootBundleEvent.runningBalances.length
-      )
+      ) {
         throw new Error("runningBalances and L1 token of ExecutedRootBundle event are not same length");
+      }
       const indexOfL1Token = mostRecentExecutedRootBundleEvent.l1Tokens
         .map((l1Token) => l1Token.toLowerCase())
         .indexOf(l1Token.toLowerCase());
       return mostRecentExecutedRootBundleEvent.runningBalances[indexOfL1Token];
-    } else return toBN(0);
+    } else {
+      return toBN(0);
+    }
   }
 
   async update(): Promise<void> {
@@ -401,7 +428,9 @@ export class HubPoolClient {
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
     this.logger.debug({ at: "HubPoolClient", message: "Updating HubPool client", searchConfig });
-    if (searchConfig.fromBlock > searchConfig.toBlock) return; // If the starting block is greater than the ending block return.
+    if (searchConfig.fromBlock > searchConfig.toBlock) {
+      return;
+    } // If the starting block is greater than the ending block return.
 
     const [
       poolRebalanceRouteEvents,
@@ -470,8 +499,11 @@ export class HubPoolClient {
     ]);
     for (const info of tokenInfo) {
       if (!this.l1Tokens.find((token) => token.symbol === info.symbol)) {
-        if (info.decimals > 0 && info.decimals <= 18) this.l1Tokens.push(info);
-        else throw new Error(`Unsupported HubPool token: ${JSON.stringify(info)}`);
+        if (info.decimals > 0 && info.decimals <= 18) {
+          this.l1Tokens.push(info);
+        } else {
+          throw new Error(`Unsupported HubPool token: ${JSON.stringify(info)}`);
+        }
       }
     }
 
@@ -555,11 +587,15 @@ export class HubPoolClient {
   ): number {
     const bundleEvaluationBlockNumbers: BigNumber[] = proposeRootBundleEvent.bundleEvaluationBlockNumbers;
     const chainIdIndex = chainIdList.indexOf(chainId);
-    if (chainIdIndex === -1) return 0;
+    if (chainIdIndex === -1) {
+      return 0;
+    }
     // Sometimes, the root bundle event's chain ID list will update from bundle to bundle, so we need to check that
     // the bundle evaluation block number list is long enough to contain this index. We assume that chain ID's
     // are only added to the bundle block list, never deleted.
-    if (chainIdIndex >= bundleEvaluationBlockNumbers.length) return 0;
+    if (chainIdIndex >= bundleEvaluationBlockNumbers.length) {
+      return 0;
+    }
     return bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
   }
 }

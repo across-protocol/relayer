@@ -292,7 +292,9 @@ describe("ProfitClient: Consider relay profit", async function () {
     ["USDC", "DAI", "WETH", "WBTC"].forEach((symbol) => {
       chainIds.forEach((srcChainId) => {
         chainIds.forEach((dstChainId) => {
-          if (srcChainId === dstChainId) return;
+          if (srcChainId === dstChainId) {
+            return;
+          }
 
           const envVar = `${envPrefix}_${symbol}_${srcChainId}_${dstChainId}`;
           const routeFee = process.env[envVar];
@@ -308,7 +310,9 @@ describe("ProfitClient: Consider relay profit", async function () {
           });
 
           // Cleanup env as we go.
-          if (routeFee) process.env[envVar] = undefined;
+          if (routeFee) {
+            process.env[envVar] = undefined;
+          }
 
           expect(computedMinRelayerFeePct.eq(routeMinRelayerFeePct)).to.be.true;
         });

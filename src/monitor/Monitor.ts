@@ -167,7 +167,9 @@ export class Monitor {
       );
       for (const fill of fills) {
         // Skip notifications for known relay caller addresses.
-        if (this.monitorConfig.whitelistedRelayers.includes(fill.relayer)) continue;
+        if (this.monitorConfig.whitelistedRelayers.includes(fill.relayer)) {
+          continue;
+        }
 
         const mrkdwn =
           `An unknown relayer ${etherscanLink(fill.relayer, chainId)}` +
@@ -200,7 +202,9 @@ export class Monitor {
     let mrkdwn = "";
     for (const [chainIdStr, amountByToken] of Object.entries(unfilledAmountByChainAndToken)) {
       // Skipping chains with no unfilled deposits.
-      if (!amountByToken) continue;
+      if (!amountByToken) {
+        continue;
+      }
 
       const chainId = parseInt(chainIdStr);
       mrkdwn += `*Destination: ${getNetworkName(chainId)}*\n`;
@@ -311,10 +315,12 @@ export class Monitor {
             const decimals = decimalValues[i];
             let trippedThreshold: { level: "warn" | "error"; threshold: number } | null = null;
 
-            if (warnThreshold !== null && balance.lt(ethers.utils.parseUnits(warnThreshold.toString(), decimals)))
+            if (warnThreshold !== null && balance.lt(ethers.utils.parseUnits(warnThreshold.toString(), decimals))) {
               trippedThreshold = { level: "warn", threshold: warnThreshold };
-            if (errorThreshold !== null && balance.lt(ethers.utils.parseUnits(errorThreshold.toString(), decimals)))
+            }
+            if (errorThreshold !== null && balance.lt(ethers.utils.parseUnits(errorThreshold.toString(), decimals))) {
               trippedThreshold = { level: "error", threshold: errorThreshold };
+            }
             if (trippedThreshold !== null) {
               const symbol =
                 token === ZERO_ADDRESS
@@ -459,12 +465,13 @@ export class Monitor {
       })
     );
     const rejections = promises.filter((promise) => promise.status === "rejected");
-    if (rejections.length > 0)
+    if (rejections.length > 0) {
       this.logger.warn({
         at: "Monitor#refillBalances",
         message: "Some refill transactions rejected for unknown reasons",
         rejections,
       });
+    }
   }
 
   // We approximate stuck rebalances by checking if there are still any pending cross chain transfers to any SpokePools
@@ -582,7 +589,9 @@ export class Monitor {
           const tokenInfo = hubPoolClient.getL1TokenInfoForL2Token(l2Token, chainId);
           const transfers = transfersPerToken[l2Token];
           // Skip if there has been no transfers of this token.
-          if (!transfers) continue;
+          if (!transfers) {
+            continue;
+          }
 
           let totalOutgoingAmount = toBN(0);
           // Filter v2 fills and bond payments from outgoing transfers.
@@ -686,14 +695,18 @@ export class Monitor {
   }
 
   formatKnownTransfers(transfers: TokenTransfer[], decimals: number, transferType: string): string {
-    if (transfers.length === 0) return "";
+    if (transfers.length === 0) {
+      return "";
+    }
 
     const totalAmount = this.getTotalTransferAmount(transfers);
     return `${transferType}: ${convertFromWei(totalAmount.toString(), decimals)}\n`;
   }
 
   formatOtherTransfers(transfers: TokenTransfer[], decimals: number, chainId: number): string {
-    if (transfers.length === 0) return "";
+    if (transfers.length === 0) {
+      return "";
+    }
 
     const totalAmount = this.getTotalTransferAmount(transfers);
     let mrkdwn = `other: ${convertFromWei(totalAmount.toString(), decimals)}\n`;
@@ -732,12 +745,16 @@ export class Monitor {
     for (const chainId of this.monitorChains) {
       const fillsToRefund = fillsToRefundPerChain[chainId];
       // Skip chains that don't have any refunds.
-      if (fillsToRefund === undefined) continue;
+      if (fillsToRefund === undefined) {
+        continue;
+      }
 
       for (const tokenAddress of Object.keys(fillsToRefund)) {
         // Skip token if there are no refunds (although there are valid fills).
         // This is an edge case that shouldn't usually happen.
-        if (fillsToRefund[tokenAddress].refunds === undefined) continue;
+        if (fillsToRefund[tokenAddress].refunds === undefined) {
+          continue;
+        }
 
         const totalRefundAmount = fillsToRefund[tokenAddress].refunds[relayer];
         const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
@@ -874,7 +891,9 @@ export class Monitor {
   private async _getBalances(balanceRequests: BalanceRequest[]): Promise<BigNumber[]> {
     return await Promise.all(
       balanceRequests.map(async ({ chainId, token, account }) => {
-        if (this.balanceCache[chainId]?.[token]?.[account]) return this.balanceCache[chainId][token][account];
+        if (this.balanceCache[chainId]?.[token]?.[account]) {
+          return this.balanceCache[chainId][token][account];
+        }
         const balance =
           token === ZERO_ADDRESS
             ? await this.clients.spokePoolClients[chainId].spokePool.provider.getBalance(account)
@@ -886,8 +905,12 @@ export class Monitor {
                 account,
                 { blockTag: this.clients.spokePoolClients[chainId].latestBlockNumber }
               );
-        if (!this.balanceCache[chainId]) this.balanceCache[chainId] = {};
-        if (!this.balanceCache[chainId][token]) this.balanceCache[chainId][token] = {};
+        if (!this.balanceCache[chainId]) {
+          this.balanceCache[chainId] = {};
+        }
+        if (!this.balanceCache[chainId][token]) {
+          this.balanceCache[chainId][token] = {};
+        }
         this.balanceCache[chainId][token][account] = balance;
         return balance;
       })
@@ -897,15 +920,23 @@ export class Monitor {
   private async _getDecimals(decimalrequests: { chainId: number; token: string }[]): Promise<number[]> {
     return await Promise.all(
       decimalrequests.map(async ({ chainId, token }) => {
-        if (token === ZERO_ADDRESS) return 18; // Assume all EVM chains have 18 decimal native tokens.
-        if (this.decimals[chainId]?.[token]) return this.decimals[chainId][token];
+        if (token === ZERO_ADDRESS) {
+          return 18;
+        } // Assume all EVM chains have 18 decimal native tokens.
+        if (this.decimals[chainId]?.[token]) {
+          return this.decimals[chainId][token];
+        }
         const decimals: number = await new Contract(
           token,
           ERC20.abi,
           this.clients.spokePoolClients[chainId].spokePool.provider
         ).decimals();
-        if (!this.decimals[chainId]) this.decimals[chainId] = {};
-        if (!this.decimals[chainId][token]) this.decimals[chainId][token] = decimals;
+        if (!this.decimals[chainId]) {
+          this.decimals[chainId] = {};
+        }
+        if (!this.decimals[chainId][token]) {
+          this.decimals[chainId][token] = decimals;
+        }
         return decimals;
       })
     );

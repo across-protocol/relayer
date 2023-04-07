@@ -14,8 +14,9 @@ const args = minimist(process.argv.slice(2), {
 });
 
 export async function run(logger: winston.Logger): Promise<void> {
-  if (!Object.keys(args).includes("chainId"))
+  if (!Object.keys(args).includes("chainId")) {
     throw new Error("Define `chainId` as the chain you want to disable routes to/from");
+  }
   const chainToDisable = args.chainId;
   const baseSigner = await getSigner();
   const config = new CommonConfig(process.env);
@@ -65,13 +66,14 @@ export async function run(logger: winston.Logger): Promise<void> {
         }
         // Otherwise, disable any routes where the disabled chain is the destination.
       } else {
-        if (depositRoutesForChain[originToken][chainToDisable] !== undefined)
+        if (depositRoutesForChain[originToken][chainToDisable] !== undefined) {
           routesToDisable.push({
             originChainId: chainId,
             destinationChainId: chainToDisable,
             originToken,
             depositsEnabled: depositRoutesForChain[originToken][chainToDisable],
           });
+        }
       }
     }
   }

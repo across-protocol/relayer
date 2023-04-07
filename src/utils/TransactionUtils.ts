@@ -18,13 +18,17 @@ const isEthersError = (error?: unknown): error is EthersError =>
   (error as EthersError)?.code in ethers.utils.Logger.errors;
 const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);
 const txnRetryable = (error?: unknown): boolean => {
-  if (isEthersError(error)) return txnRetryErrors.has(error.code);
+  if (isEthersError(error)) {
+    return txnRetryErrors.has(error.code);
+  }
 
   return (error as Error)?.message?.includes("intrinsic gas too low");
 };
 
 export function getMultisender(chainId: number, baseSigner: Wallet): Contract | undefined {
-  if (!multicall3Addresses[chainId] || !baseSigner) return undefined;
+  if (!multicall3Addresses[chainId] || !baseSigner) {
+    return undefined;
+  }
   return new Contract(multicall3Addresses[chainId], getAbi("Multicall3"), baseSigner);
 }
 
@@ -103,24 +107,29 @@ export async function getGasPrice(
   if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
     // Polygon, for some or other reason, does not correctly return an appropriate maxPriorityFeePerGas. Set the
     // maxPriorityFeePerGas to the maxFeePerGas * 5 for now as a temp workaround.
-    if (chainInfo.chainId === 137)
+    if (chainInfo.chainId === 137) {
       feeData.maxPriorityFeePerGas = toGWei((await getPolygonPriorityFee()).fastest.toString());
-    if (feeData.maxPriorityFeePerGas.gt(feeData.maxFeePerGas))
+    }
+    if (feeData.maxPriorityFeePerGas.gt(feeData.maxFeePerGas)) {
       feeData.maxFeePerGas = scaleByNumber(feeData.maxPriorityFeePerGas, 1.5);
+    }
     return {
       maxFeePerGas: scaleByNumber(feeData.maxFeePerGas, priorityScaler * maxFeePerGasScaler), // scale up the maxFeePerGas. Any extra paid on this is refunded.
       maxPriorityFeePerGas: scaleByNumber(feeData.maxPriorityFeePerGas, priorityScaler),
     };
-  } else return { gasPrice: scaleByNumber(feeData.gasPrice, priorityScaler) };
+  } else {
+    return { gasPrice: scaleByNumber(feeData.gasPrice, priorityScaler) };
+  }
 }
 
 export async function willSucceed(transaction: AugmentedTransaction): Promise<TransactionSimulationResult> {
-  if (transaction.canFailInSimulation)
+  if (transaction.canFailInSimulation) {
     return {
       transaction,
       succeed: true,
       reason: null,
     };
+  }
   try {
     const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
     await transaction.contract.callStatic[transaction.method](...args);

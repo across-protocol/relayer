@@ -11,14 +11,23 @@ class TestBalanceAllocator extends BalanceAllocator {
   mockBalances: BalanceMap = {};
   setMockBalances(chainId: number, token: string, holder: string, balance?: BigNumber) {
     // Note: cannot use assign because it breaks the BigNumber object.
-    if (!this.mockBalances[chainId]) this.mockBalances[chainId] = {};
-    if (!this.mockBalances[chainId][token]) this.mockBalances[chainId][token] = {};
-    if (!balance) delete this.mockBalances[chainId][token][holder];
-    else this.mockBalances[chainId][token][holder] = balance;
+    if (!this.mockBalances[chainId]) {
+      this.mockBalances[chainId] = {};
+    }
+    if (!this.mockBalances[chainId][token]) {
+      this.mockBalances[chainId][token] = {};
+    }
+    if (!balance) {
+      delete this.mockBalances[chainId][token][holder];
+    } else {
+      this.mockBalances[chainId][token][holder] = balance;
+    }
   }
 
   protected _queryBalance(chainId: number, token: string, holder: string): Promise<BigNumber> {
-    if (!this.mockBalances[chainId]?.[token]?.[holder]) throw new Error("No balance!");
+    if (!this.mockBalances[chainId]?.[token]?.[holder]) {
+      throw new Error("No balance!");
+    }
     return Promise.resolve(this.mockBalances[chainId][token][holder]);
   }
 }

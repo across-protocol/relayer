@@ -25,12 +25,16 @@ export class TokenClient {
   }
 
   getBalance(chainId: number, token: string): BigNumber {
-    if (!this._hasTokenPairData(chainId, token)) return toBN(0);
+    if (!this._hasTokenPairData(chainId, token)) {
+      return toBN(0);
+    }
     return this.tokenData[chainId][token].balance;
   }
 
   getAllowanceOnChain(chainId: number, token: string): BigNumber {
-    if (!this._hasTokenPairData(chainId, token)) return toBN(0);
+    if (!this._hasTokenPairData(chainId, token)) {
+      return toBN(0);
+    }
     return this.tokenData[chainId][token].allowance;
   }
 
@@ -113,7 +117,9 @@ export class TokenClient {
     Object.entries(this.tokenData).forEach(([_chainId, tokenMap]) => {
       const chainId = Number(_chainId);
       Object.entries(tokenMap).forEach(([token, { balance, allowance }]) => {
-        if (balance.gt(0) && allowance.lt(MAX_SAFE_ALLOWANCE)) tokensToApprove.push({ chainId, token });
+        if (balance.gt(0) && allowance.lt(MAX_SAFE_ALLOWANCE)) {
+          tokensToApprove.push({ chainId, token });
+        }
       });
     });
     if (tokensToApprove.length === 0) {
@@ -135,7 +141,9 @@ export class TokenClient {
   }
 
   async setBondTokenAllowance(): Promise<void> {
-    if (!this.bondToken) throw new Error("TokenClient::setBondTokenAllowance bond token not initialized");
+    if (!this.bondToken) {
+      throw new Error("TokenClient::setBondTokenAllowance bond token not initialized");
+    }
     const ownerAddress = await this.hubPoolClient.hubPool.signer.getAddress();
     const currentCollateralAllowance: BigNumber = await this.bondToken.allowance(
       ownerAddress,
@@ -151,7 +159,9 @@ export class TokenClient {
         `to spend ${await this.bondToken.symbol()} ${etherscanLink(this.bondToken.address, 1)}. ` +
         `tx ${etherscanLink(tx.hash, 1)}\n`;
       this.logger.info({ at: "hubPoolClient", message: "Approved bond tokens! 💰", mrkdwn });
-    } else this.logger.debug({ at: "hubPoolClient", message: "Bond token approval set" });
+    } else {
+      this.logger.debug({ at: "hubPoolClient", message: "Bond token approval set" });
+    }
   }
 
   async update(): Promise<void> {
@@ -164,8 +174,11 @@ export class TokenClient {
 
     this.bondToken = new Contract(bondToken, ERC20.abi, this.hubPoolClient.hubPool.signer);
 
-    for (const { chainId, tokenData } of balanceInfo)
-      for (const token of Object.keys(tokenData)) assign(this.tokenData, [chainId, token], tokenData[token]);
+    for (const { chainId, tokenData } of balanceInfo) {
+      for (const token of Object.keys(tokenData)) {
+        assign(this.tokenData, [chainId, token], tokenData[token]);
+      }
+    }
 
     this.logger.debug({ at: "TokenBalanceClient", message: "TokenBalance client updated!" });
   }
@@ -194,8 +207,9 @@ export class TokenClient {
 
   private _hasTokenPairData(chainId: number, token: string) {
     const hasData = !!this.tokenData?.[chainId]?.[token];
-    if (!hasData)
+    if (!hasData) {
       this.logger.warn({ at: "TokenBalanceClient", message: `No data on ${getNetworkName(chainId)} -> ${token}` });
+    }
     return hasData;
   }
 }

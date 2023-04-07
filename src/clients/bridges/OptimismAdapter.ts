@@ -145,9 +145,11 @@ export class OptimismAdapter extends BaseAdapter {
 
     // For some reason ethers will often underestimate the amount of gas Boba bridge needs for a deposit. If this
     // OptimismAdapter is connected to Boba then manually set the gasLimit to 250k which works consistently.
-    if (this.chainId === 288)
+    if (this.chainId === 288) {
       return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args, toBN(0), toBN(250000));
-    else return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args);
+    } else {
+      return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args);
+    }
   }
 
   async wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse | null> {
@@ -178,8 +180,11 @@ export class OptimismAdapter extends BaseAdapter {
   }
 
   getL1TokenGateway(l1Token: string): Contract {
-    if (this.isWeth(l1Token)) return new Contract(atomicDepositorAddress, atomicDepositorInterface, this.getSigner(1));
-    else return this.getL1Bridge(l1Token);
+    if (this.isWeth(l1Token)) {
+      return new Contract(atomicDepositorAddress, atomicDepositorInterface, this.getSigner(1));
+    } else {
+      return this.getL1Bridge(l1Token);
+    }
   }
 
   getL2Bridge(l1Token: string): Contract {

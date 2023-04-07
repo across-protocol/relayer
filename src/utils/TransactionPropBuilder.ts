@@ -6,8 +6,11 @@ export function buildFillRelayProps(
   maxFillAmount: BigNumber
 ): (string | number | BigNumber)[] {
   // Validate all keys are present.
-  for (const key in deposit)
-    if (deposit[key] == undefined) throw new Error(`Missing or undefined value in props! ${key}`);
+  for (const key in deposit) {
+    if (deposit[key] == undefined) {
+      throw new Error(`Missing or undefined value in props! ${key}`);
+    }
+  }
 
   return [
     deposit.depositor,
@@ -29,8 +32,11 @@ export function buildFillRelayWithUpdatedFeeProps(
   maxFillAmount: BigNumber
 ): BigNumberish[] {
   // Validate all keys are present.
-  for (const key in deposit)
-    if (deposit[key] == undefined) throw new Error(`Missing or undefined value in props! ${key}`);
+  for (const key in deposit) {
+    if (deposit[key] == undefined) {
+      throw new Error(`Missing or undefined value in props! ${key}`);
+    }
+  }
 
   return [
     deposit.depositor,

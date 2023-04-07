@@ -65,7 +65,9 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await updateAllClients();
     await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
     // Mine blocks so event blocks are less than latest minus buffer.
-    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) await hre.network.provider.send("evm_mine");
+    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) {
+      await hre.network.provider.send("evm_mine");
+    }
     await updateAllClients();
     const latestBlock2 = await hubPool.provider.getBlockNumber();
     const blockRange2 = CHAIN_ID_TEST_LIST.map(() => [0, latestBlock2]);
@@ -117,7 +119,9 @@ describe("Dataworker: Validate pending root bundle", async function () {
         expectedPoolRebalanceRoot2.tree.getHexProof(leaf)
       );
     }
-    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) await hre.network.provider.send("evm_mine");
+    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) {
+      await hre.network.provider.send("evm_mine");
+    }
     await updateAllClients();
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     await multiCallerClient.executeTransactionQueue();
@@ -151,7 +155,9 @@ describe("Dataworker: Validate pending root bundle", async function () {
       expectedSlowRelayRefundRoot4.tree.getHexRoot()
     );
     // Mine blocks so root bundle end blocks are not within latest - buffer range
-    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) await hre.network.provider.send("evm_mine");
+    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) {
+      await hre.network.provider.send("evm_mine");
+    }
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(lastSpyLogIncludes(spy, "Pending root bundle matches with expected")).to.be.true;
@@ -342,7 +348,9 @@ describe("Dataworker: Validate pending root bundle", async function () {
     configStoreClient.setConfigStoreVersion(1);
     await updateAllClients();
     // Mine blocks so root bundle end blocks are not within latest - buffer range
-    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) await hre.network.provider.send("evm_mine");
+    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) {
+      await hre.network.provider.send("evm_mine");
+    }
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
 

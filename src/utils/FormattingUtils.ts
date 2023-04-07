@@ -16,7 +16,9 @@ export const fromWei = utils.fromWei;
 // @todo: Backport support for decimal points to @across-protocol/sdk-v2
 export const toBN = (num: BigNumberish): BN => {
   // If the string version of the num contains a `.` then it is a number which needs to be parsed to a string int.
-  if (num.toString().includes(".")) return BigNumber.from(parseInt(num.toString()));
+  if (num.toString().includes(".")) {
+    return BigNumber.from(parseInt(num.toString()));
+  }
   return BigNumber.from(num.toString());
 };
 

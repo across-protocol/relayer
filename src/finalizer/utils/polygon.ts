@@ -71,8 +71,9 @@ export async function getFinalizableTransactions(
   const checkpointedTokensBridged = tokensBridged
     .filter((_, i) => isCheckpointed[i])
     .map((_tokensBridged) => {
-      if (logIndexesForMessage[_tokensBridged.transactionHash] === undefined)
+      if (logIndexesForMessage[_tokensBridged.transactionHash] === undefined) {
         logIndexesForMessage[_tokensBridged.transactionHash] = 0;
+      }
       return {
         logIndex: logIndexesForMessage[_tokensBridged.transactionHash]++,
         event: _tokensBridged,
@@ -104,9 +105,9 @@ export async function getFinalizableTransactions(
         return { status: POLYGON_MESSAGE_STATUS.CAN_EXIT };
       } catch (_err) {
         const err = _err as EthersError;
-        if (err?.reason?.includes("EXIT_ALREADY_PROCESSED"))
+        if (err?.reason?.includes("EXIT_ALREADY_PROCESSED")) {
           return { status: POLYGON_MESSAGE_STATUS.EXIT_ALREADY_PROCESSED };
-        else {
+        } else {
           logger.debug({
             at: "PolygonFinalizer",
             message: "Exit will fail for unknown reason",

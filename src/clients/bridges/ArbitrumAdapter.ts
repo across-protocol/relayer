@@ -79,7 +79,9 @@ export class ArbitrumAdapter extends BaseAdapter {
         // Skip the token if we can't find the corresponding bridge.
         // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
         // rather than maintaining a list of native bridge-supported tokens.
-        if (!this.isSupportedToken(l1Token)) continue;
+        if (!this.isSupportedToken(l1Token)) {
+          continue;
+        }
 
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
@@ -148,7 +150,9 @@ export class ArbitrumAdapter extends BaseAdapter {
     // then this will pass null into the checkAndSendTokenApprovals. This method gracefully deals with this case.
     const associatedL1Bridges = l1Tokens
       .map((l1Token) => {
-        if (!this.isSupportedToken(l1Token)) return null;
+        if (!this.isSupportedToken(l1Token)) {
+          return null;
+        }
         return this.getL1Bridge(l1Token).address;
       })
       .filter(isDefined);

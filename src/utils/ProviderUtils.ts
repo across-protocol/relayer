@@ -123,8 +123,9 @@ class CacheProvider extends RateLimitedProvider {
   ) {
     super(...jsonRpcConstructorParams);
 
-    if (MAX_REORG_DISTANCE[this.network.chainId] === undefined)
+    if (MAX_REORG_DISTANCE[this.network.chainId] === undefined) {
       throw new Error(`CacheProvider:constructor no MAX_REORG_DISTANCE for chain ${this.network.chainId}`);
+    }
 
     this.maxReorgDistance = MAX_REORG_DISTANCE[this.network.chainId];
 
@@ -141,7 +142,9 @@ class CacheProvider extends RateLimitedProvider {
       const redisResult = await this.redisClient.get(redisKey);
 
       // If cache has the result, parse the json and return it.
-      if (redisResult) return JSON.parse(redisResult);
+      if (redisResult) {
+        return JSON.parse(redisResult);
+      }
 
       // Cache does not have the result. Query it directly and cache.
       const result = await super.send(method, params);
@@ -163,7 +166,9 @@ class CacheProvider extends RateLimitedProvider {
 
   private async shouldCache(method: string, params: Array<any>): Promise<boolean> {
     // Today, we only cache eth_getLogs. We could add other methods here, where convenient.
-    if (method !== "eth_getLogs") return false;
+    if (method !== "eth_getLogs") {
+      return false;
+    }
     const [{ fromBlock, toBlock }] = params;
 
     // Handle odd cases where the ordering is flipped, etc.
@@ -173,9 +178,12 @@ class CacheProvider extends RateLimitedProvider {
 
     // Handle cases where the input block numbers are not hex values ("latest", "pending", etc).
     // This would result in the result of the above being NaN.
-    if (Number.isNaN(fromBlockNumber) || Number.isNaN(toBlockNumber)) return false;
-    if (toBlockNumber < fromBlockNumber)
+    if (Number.isNaN(fromBlockNumber) || Number.isNaN(toBlockNumber)) {
+      return false;
+    }
+    if (toBlockNumber < fromBlockNumber) {
       throw new Error("CacheProvider::shouldCache toBlock cannot be smaller than fromBlock.");
+    }
 
     // Note: this method is an internal method provided by the BaseProvider. It allows the caller to specify a maxAge of
     // the block that is allowed. This means if a block has been retrieved within the last n seconds, no provider
@@ -206,17 +214,22 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     this.providers = params.map(
       (inputs) => new CacheProvider(providerCacheNamespace, redisClient, maxConcurrency, ...inputs)
     );
-    if (this.nodeQuorumThreshold < 1 || !Number.isInteger(this.nodeQuorumThreshold))
+    if (this.nodeQuorumThreshold < 1 || !Number.isInteger(this.nodeQuorumThreshold)) {
       throw new Error(
         `nodeQuorum,Threshold cannot be < 1 and must be an integer. Currently set to ${this.nodeQuorumThreshold}`
       );
-    if (this.retries < 0 || !Number.isInteger(this.retries))
+    }
+    if (this.retries < 0 || !Number.isInteger(this.retries)) {
       throw new Error(`retries cannot be < 0 and must be an integer. Currently set to ${this.retries}`);
-    if (this.delay < 0) throw new Error(`delay cannot be < 0. Currently set to ${this.delay}`);
-    if (this.nodeQuorumThreshold > this.providers.length)
+    }
+    if (this.delay < 0) {
+      throw new Error(`delay cannot be < 0. Currently set to ${this.delay}`);
+    }
+    if (this.nodeQuorumThreshold > this.providers.length) {
       throw new Error(
         `nodeQuorumThreshold (${this.nodeQuorumThreshold}) must be <= the number of providers (${this.providers.length})`
       );
+    }
   }
 
   override async send(method: string, params: Array<any>): Promise<any> {
@@ -269,7 +282,9 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
 
     // Start at element 1 and begin comparing.
     // If _all_ values are equal, we have hit quorum, so return.
-    if (values.slice(1).every(([, output]) => compareRpcResults(method, values[0][1], output))) return values[0][1];
+    if (values.slice(1).every(([, output]) => compareRpcResults(method, values[0][1], output))) {
+      return values[0][1];
+    }
 
     const throwQuorumError = () => {
       const errorTexts = errors.map(([provider, errorText]) => formatProviderError(provider, errorText));
@@ -284,7 +299,9 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     };
 
     // Exit early if there are no fallback providers left.
-    if (fallbackProviders.length === 0) throwQuorumError();
+    if (fallbackProviders.length === 0) {
+      throwQuorumError();
+    }
 
     // Try each fallback provider in parallel.
     const fallbackResults = await Promise.allSettled(
@@ -310,8 +327,11 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
         const existingMatch = acc.find(([existingResult]) => compareRpcResults(method, existingResult, result));
 
         // Increment the count if a match is found, else add a new element to the match array with a count of 1.
-        if (existingMatch) existingMatch[1]++;
-        else acc.push([result, 1]);
+        if (existingMatch) {
+          existingMatch[1]++;
+        } else {
+          acc.push([result, 1]);
+        }
 
         // Return the same acc object because it was modified in place.
         return acc;
@@ -326,7 +346,9 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     const [quorumResult, count] = counts[0];
 
     // If this count is less than we need for quorum, throw the quorum error.
-    if (count < quorumThreshold) throwQuorumError();
+    if (count < quorumThreshold) {
+      throwQuorumError();
+    }
 
     // If we've achieved quorum, then we should still log the providers that mismatched with the quorum result.
     const mismatchedProviders = Object.fromEntries(
@@ -364,13 +386,19 @@ class RetryProvider extends ethers.providers.StaticJsonRpcProvider {
     // Only use quorum if this is a historical query that doesn't depend on the current block number.
 
     // All logs queries should use quorum.
-    if (method === "eth_getLogs") return this.nodeQuorumThreshold;
+    if (method === "eth_getLogs") {
+      return this.nodeQuorumThreshold;
+    }
 
     // getBlockByNumber should only use the quorum if it's not asking for the latest block.
-    if (method === "eth_getBlockByNumber" && params[0] !== "latest") return this.nodeQuorumThreshold;
+    if (method === "eth_getBlockByNumber" && params[0] !== "latest") {
+      return this.nodeQuorumThreshold;
+    }
 
     // eth_call should only use quorum for queries at a specific past block.
-    if (method === "eth_call" && params[1] !== "latest") return this.nodeQuorumThreshold;
+    if (method === "eth_call" && params[1] !== "latest") {
+      return this.nodeQuorumThreshold;
+    }
 
     // All other calls should use quorum 1 to avoid errors due to sync differences.
     return 1;
@@ -392,8 +420,9 @@ function getProviderCacheKey(chainId: number, redisEnabled) {
  * @returns ethers.provider
  */
 export function getCachedProvider(chainId: number, redisEnabled = true): RetryProvider {
-  if (!providerCache[getProviderCacheKey(chainId, redisEnabled)])
+  if (!providerCache[getProviderCacheKey(chainId, redisEnabled)]) {
     throw new Error(`No cached provider for chainId ${chainId} and redisEnabled ${redisEnabled}`);
+  }
   return providerCache[getProviderCacheKey(chainId, redisEnabled)];
 }
 
@@ -406,7 +435,9 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
   const redisClient = await getRedis(logger);
   if (useCache) {
     const cachedProvider = providerCache[getProviderCacheKey(chainId, redisClient !== undefined)];
-    if (cachedProvider) return cachedProvider;
+    if (cachedProvider) {
+      return cachedProvider;
+    }
   }
   const {
     NODE_RETRIES,
@@ -495,7 +526,9 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
     disableProviderCache ? undefined : redisClient
   );
 
-  if (useCache) providerCache[getProviderCacheKey(chainId, redisClient !== undefined)] = provider;
+  if (useCache) {
+    providerCache[getProviderCacheKey(chainId, redisClient !== undefined)] = provider;
+  }
   return provider;
 }
 
@@ -503,8 +536,9 @@ export function getNodeUrlList(chainId: number): string[] {
   const retryConfigKey = `NODE_URLS_${chainId}`;
   if (process.env[retryConfigKey]) {
     const nodeUrls = JSON.parse(process.env[retryConfigKey]) || [];
-    if (nodeUrls?.length === 0)
+    if (nodeUrls?.length === 0) {
       throw new Error(`Provided ${retryConfigKey}, but parsing it as json did not result in an array of urls.`);
+    }
     return nodeUrls;
   }
 
