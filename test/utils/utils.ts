@@ -41,16 +41,25 @@ export function deepEqualsWithBigNumber(x: any, y: any, omitKeys?: string[]): bo
   } else if (typeof x == "object" && x != null && typeof y == "object" && y != null) {
     const omittedKeysInX = omitKeys?.filter((key) => x.hasOwn(key)).length ?? 0;
     const omittedKeysInY = omitKeys?.filter((key) => y.hasOwn(key)).length ?? 0;
-    if (Object.keys(x).length - omittedKeysInX !== Object.keys(y).length - omittedKeysInY) return false;
+    if (Object.keys(x).length - omittedKeysInX !== Object.keys(y).length - omittedKeysInY) {
+      return false;
+    }
 
     for (const prop in x) {
-      if (omitKeys?.includes(prop)) continue;
-      if (y.hasOwn(prop)) return deepEqualsWithBigNumber(x[prop], y[prop]);
-      else return false;
+      if (omitKeys?.includes(prop)) {
+        continue;
+      }
+      if (y.hasOwn(prop)) {
+        return deepEqualsWithBigNumber(x[prop], y[prop]);
+      } else {
+        return false;
+      }
     }
 
     return true;
-  } else return false;
+  } else {
+    return false;
+  }
 }
 
 export async function assertPromiseError<T>(promise: Promise<T>, errMessage?: string): Promise<void> {
@@ -59,8 +68,12 @@ export async function assertPromiseError<T>(promise: Promise<T>, errMessage?: st
     await promise;
     throw new Error(SPECIAL_ERROR_MESSAGE);
   } catch (err) {
-    if (err.message.includes(SPECIAL_ERROR_MESSAGE)) throw err;
-    if (errMessage) assert.isTrue(err.message.includes(errMessage));
+    if (err.message.includes(SPECIAL_ERROR_MESSAGE)) {
+      throw err;
+    }
+    if (errMessage) {
+      assert.isTrue(err.message.includes(errMessage));
+    }
   }
 }
 export async function setupTokensForWallet(
@@ -76,7 +89,9 @@ export async function setupTokensForWallet(
       token.connect(wallet).approve(contractToApprove.address, utils.amountToDeposit.mul(seedMultiplier))
     )
   );
-  if (weth) await weth.connect(wallet).approve(contractToApprove.address, utils.amountToDeposit);
+  if (weth) {
+    await weth.connect(wallet).approve(contractToApprove.address, utils.amountToDeposit);
+  }
 }
 
 export function createSpyLogger() {
@@ -95,8 +110,11 @@ export function createSpyLogger() {
 
 const iterativelyReplaceBigNumbers = (obj: any) => {
   Object.keys(obj).forEach((key) => {
-    if (BigNumber.isBigNumber(obj[key])) obj[key] = obj[key].toString();
-    else if (typeof obj[key] === "object" && obj[key] !== null) iterativelyReplaceBigNumbers(obj[key]);
+    if (BigNumber.isBigNumber(obj[key])) {
+      obj[key] = obj[key].toString();
+    } else if (typeof obj[key] === "object" && obj[key] !== null) {
+      iterativelyReplaceBigNumbers(obj[key]);
+    }
   });
 };
 
@@ -106,11 +124,12 @@ export async function deploySpokePoolWithToken(fromChainId = 0, toChainId = 0, e
 
   await spokePool.setChainId(fromChainId == 0 ? utils.originChainId : fromChainId);
 
-  if (enableRoute)
+  if (enableRoute) {
     await utils.enableRoutes(spokePool, [
       { originToken: erc20.address, destinationChainId: toChainId == 0 ? utils.destinationChainId : toChainId },
       { originToken: weth.address, destinationChainId: toChainId == 0 ? utils.destinationChainId : toChainId },
     ]);
+  }
   return { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20, deploymentBlock };
 }
 
@@ -123,7 +142,7 @@ export async function deployConfigStore(
   transferThreshold: BigNumber = DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
 ) {
   const configStore = await (await utils.getContractFactory("AcrossConfigStore", signer)).deploy();
-  for (const token of tokensToAdd)
+  for (const token of tokensToAdd) {
     await configStore.updateTokenConfig(
       token.address,
       JSON.stringify({
@@ -131,6 +150,7 @@ export async function deployConfigStore(
         transferThreshold: transferThreshold.toString(),
       })
     );
+  }
   await configStore.updateGlobalConfig(
     utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE),
     maxL1TokensPerPoolRebalanceLeaf.toString()
@@ -305,7 +325,9 @@ export async function deploySingleTokenAcrossSetOfChains(
   // enable the pool rebalance route for the l1Token and newly deployed token.
   for (const [index, spokePool] of spokePools.entries()) {
     for (const otherSpokePool of spokePools) {
-      if (spokePool === otherSpokePool) continue;
+      if (spokePool === otherSpokePool) {
+        continue;
+      }
       await utils.enableRoutes(spokePool.contract, [
         { originToken: tokens[index].address, destinationChainId: await otherSpokePool.chainId },
       ]);
@@ -337,8 +359,9 @@ export async function deployIterativeSpokePoolsAndToken(
 
   // For each count of numSpokePools deploy a new spoke pool. Set the chainId to the index in the array. Note that we
   // start at index of 1 here. spokePool with a chainId of 0 is not a good idea.
-  for (let i = 1; i < numSpokePools + 1; i++)
+  for (let i = 1; i < numSpokePools + 1; i++) {
     spokePools.push(await deploySpokePoolForIterativeTest(logger, signer, mockAdapter, configStoreClient, i));
+  }
 
   // For each count of numTokens deploy a new token. This will also set it as an enabled route over all chains.
   for (let i = 1; i < numTokens + 1; i++) {
@@ -347,7 +370,9 @@ export async function deployIterativeSpokePoolsAndToken(
       await utils.getContractFactory("ExpandedERC20", signer)
     ).deploy("Yeet Coin L1", "Coin", 18);
     await associatedL1Token.addMember(TokenRolesEnum.MINTER, signer.address);
-    if (!l1TokenToL2Tokens[associatedL1Token.address]) l1TokenToL2Tokens[associatedL1Token.address] = [];
+    if (!l1TokenToL2Tokens[associatedL1Token.address]) {
+      l1TokenToL2Tokens[associatedL1Token.address] = [];
+    }
     l1TokenToL2Tokens[associatedL1Token.address] = await deploySingleTokenAcrossSetOfChains(
       signer,
       spokePools.map((spokePool, index) => ({ contract: spokePool.spokePool, chainId: index + 1 })),
@@ -487,7 +512,7 @@ export async function buildModifiedFill(
     spokePool.chainId(),
   ]);
   const lastEvent = events[events.length - 1];
-  if (lastEvent.args)
+  if (lastEvent.args) {
     return {
       amount: lastEvent.args.amount,
       totalFilledAmount: lastEvent.args.totalFilledAmount,
@@ -505,7 +530,9 @@ export async function buildModifiedFill(
       isSlowRelay: lastEvent.args.isSlowRelay,
       destinationChainId: Number(destinationChainId),
     };
-  else return null;
+  } else {
+    return null;
+  }
 }
 
 export async function buildFillForRepaymentChain(
@@ -543,7 +570,7 @@ export async function buildFillForRepaymentChain(
     spokePool.chainId(),
   ]);
   const lastEvent = events[events.length - 1];
-  if (lastEvent.args)
+  if (lastEvent.args) {
     return {
       amount: lastEvent.args.amount,
       totalFilledAmount: lastEvent.args.totalFilledAmount,
@@ -561,7 +588,9 @@ export async function buildFillForRepaymentChain(
       isSlowRelay: lastEvent.args.isSlowRelay,
       destinationChainId: Number(destinationChainId),
     };
-  else return null;
+  } else {
+    return null;
+  }
 }
 
 // Returns expected leaves ordered by origin chain ID and then deposit ID(ascending). Ordering is implemented
@@ -582,9 +611,11 @@ export function buildSlowRelayLeaves(deposits: Deposit[]) {
       };
     }) // leaves should be ordered by origin chain ID and then deposit ID (ascending).
     .sort((relayA, relayB) => {
-      if (relayA.originChainId !== relayB.originChainId)
+      if (relayA.originChainId !== relayB.originChainId) {
         return Number(relayA.originChainId) - Number(relayB.originChainId);
-      else return Number(relayA.depositId) - Number(relayB.depositId);
+      } else {
+        return Number(relayA.depositId) - Number(relayB.depositId);
+      }
     });
 }
 

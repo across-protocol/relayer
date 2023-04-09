@@ -85,7 +85,7 @@ export async function constructRelayerClients(
   return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient, acrossApiClient };
 }
 
-export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig) {
+export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig): Promise<void> {
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
 
   // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
@@ -116,5 +116,7 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   // Update the token client after the inventory client has done its wrapping of L2 ETH to ensure latest WETH ballance.
   // The token client needs route data, so wait for update before checking approvals.
   await clients.tokenClient.update();
-  if (config.sendingRelaysEnabled) await clients.tokenClient.setOriginTokenApprovals();
+  if (config.sendingRelaysEnabled) {
+    await clients.tokenClient.setOriginTokenApprovals();
+  }
 }

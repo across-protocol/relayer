@@ -17,13 +17,14 @@ export function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Wallet): OVM
       l2SignerOrProvider: hubSigner.connect(new ethers.providers.JsonRpcProvider(getNodeUrlList(chainId)[0])),
       contracts: { ...bobaSDK.CONTRACT_ADDRESSES[1] }, // Override with Boba system addresses
     });
-  } else
+  } else {
     return new optimismSDK.CrossChainMessenger({
       l1ChainId: 1,
       l2ChainId: chainId,
       l1SignerOrProvider: hubSigner.connect(new ethers.providers.JsonRpcProvider(getNodeUrlList(1)[0])),
       l2SignerOrProvider: hubSigner.connect(new ethers.providers.JsonRpcProvider(getNodeUrlList(chainId)[0])),
     });
+  }
 }
 
 export interface CrossChainMessageWithEvent {
@@ -119,14 +120,15 @@ export async function getOptimismFinalizableMessages(
     message: `${chainId === 10 ? "Optimism" : "Boba"} message statuses`,
     statusesGrouped: groupObjectCountsByProp(messageStatuses, (message: CrossChainMessageWithStatus) => message.status),
   });
-  if (chainId == 10)
+  if (chainId == 10) {
     return messageStatuses.filter(
       (message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]
     );
-  else
+  } else {
     return messageStatuses.filter(
       (message) => message.status === bobaSDK.MessageStatus[bobaSDK.MessageStatus.READY_FOR_RELAY]
     );
+  }
 }
 
 export function getL1TokenInfoForOptimismToken(

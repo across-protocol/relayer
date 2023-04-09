@@ -55,17 +55,25 @@ import { isOvmChain, ovmWethTokens } from "../clients/bridges";
 const IGNORE_DISPUTE_REASONS = new Set(["bundle-end-block-buffer"]);
 const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback", "out-of-date-config-store-version"]);
 
+// Create a type for storing a collection of roots
+type RootBundle = {
+  leaves: RelayData[];
+  tree: MerkleTree<RelayData>;
+};
+
+export type PoolRebalanceRoot = {
+  runningBalances: RunningBalances;
+  realizedLpFees: RunningBalances;
+  leaves: PoolRebalanceLeaf[];
+  tree: MerkleTree<PoolRebalanceLeaf>;
+};
+
+type PoolRebalanceRootCache = Record<string, PoolRebalanceRoot>;
+
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.
 export class Dataworker {
-  rootCache: {
-    [key: string]: {
-      runningBalances: RunningBalances;
-      realizedLpFees: RunningBalances;
-      leaves: PoolRebalanceLeaf[];
-      tree: MerkleTree<PoolRebalanceLeaf>;
-    };
-  } = {};
+  rootCache: PoolRebalanceRootCache = {};
 
   // eslint-disable-next-line no-useless-constructor
   constructor(
@@ -84,7 +92,7 @@ export class Dataworker {
       maxL1TokenCountOverride !== undefined ||
       Object.keys(tokenTransferThreshold).length > 0 ||
       Object.keys(blockRangeEndBlockBuffer).length > 0
-    )
+    ) {
       this.logger.debug({
         at: "Dataworker#Constructor",
         message: "Dataworker constructed with overridden config store settings",
@@ -93,16 +101,20 @@ export class Dataworker {
         tokenTransferThreshold: this.tokenTransferThreshold,
         blockRangeEndBlockBuffer: this.blockRangeEndBlockBuffer,
       });
+    }
   }
 
   // This should be called whenever it's possible that the loadData information for a block range could have changed.
   // For instance, if the spoke or hub clients have been updated, it probably makes sense to clear this to be safe.
-  clearCache() {
+  clearCache(): void {
     this.clients.bundleDataClient.clearCache();
     this.rootCache = {};
   }
 
-  async buildSlowRelayRoot(blockRangesForChains: number[][], spokePoolClients: { [chainId: number]: SpokePoolClient }) {
+  async buildSlowRelayRoot(
+    blockRangesForChains: number[][],
+    spokePoolClients: { [chainId: number]: SpokePoolClient }
+  ): Promise<RootBundle> {
     const { unfilledDeposits } = await this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
     return _buildSlowRelayRoot(unfilledDeposits);
   }
@@ -112,7 +124,10 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     poolRebalanceLeaves: PoolRebalanceLeaf[],
     runningBalances: RunningBalances
-  ) {
+  ): Promise<{
+    leaves: RelayerRefundLeaf[];
+    tree: MerkleTree<RelayerRefundLeaf>;
+  }> {
     const endBlockForMainnet = getBlockRangeForChain(
       blockRangesForChains,
       1,
@@ -139,7 +154,7 @@ export class Dataworker {
     blockRangesForChains: number[][],
     spokePoolClients: SpokePoolClientsByChain,
     latestMainnetBlock?: number
-  ) {
+  ): Promise<PoolRebalanceRoot> {
     const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = await this.clients.bundleDataClient.loadData(
       blockRangesForChains,
       spokePoolClients
@@ -195,7 +210,9 @@ export class Dataworker {
       mainnetBundleEndBlock
     );
     const expectedPoolRebalanceLeaves = mostRecentProposedRootBundle.poolRebalanceLeafCount;
-    if (expectedPoolRebalanceLeaves === 0) throw new Error("Pool rebalance leaf count must be > 0");
+    if (expectedPoolRebalanceLeaves === 0) {
+      throw new Error("Pool rebalance leaf count must be > 0");
+    }
     const poolRebalanceLeafExecutionBlocks = executedPoolRebalanceLeaves.map((execution) => execution.blockNumber);
 
     // If any leaves are unexecuted, we should wait. This can also happen if the most recent proposed root bundle
@@ -233,15 +250,16 @@ export class Dataworker {
     usdThresholdToSubmitNewBundle?: BigNumber,
     submitProposals = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ) {
+  ): Promise<void> {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
     // safe strategy but could lead to new roots failing to be proposed until ALL networks are healthy.
 
     // Check if a bundle is pending.
-    if (!this.clients.hubPoolClient.isUpdated || !this.clients.hubPoolClient.latestBlockNumber)
+    if (!this.clients.hubPoolClient.isUpdated || !this.clients.hubPoolClient.latestBlockNumber) {
       throw new Error("HubPoolClient not updated");
+    }
     if (this.clients.hubPoolClient.hasPendingProposal()) {
       this.logger.debug({
         at: "Dataworker#propose",
@@ -350,13 +368,14 @@ export class Dataworker {
           leaves: poolRebalanceRoot.leaves,
         });
         return;
-      } else
+      } else {
         this.logger.debug({
           at: "Dataworker",
           message: "Root bundle USD volume exceeds threshold! 💚",
           usdThresholdToSubmitNewBundle,
           totalUsdRefund,
         });
+      }
     }
 
     // TODO: Validate running balances in potential new bundle and make sure that important invariants
@@ -371,12 +390,13 @@ export class Dataworker {
         shouldWaitToPropose,
       });
       return;
-    } else
+    } else {
       this.logger.debug({
         at: "Dataworker#propose",
         message: "Proceeding to propose new bundle",
         shouldWaitToPropose,
       });
+    }
 
     this.logger.debug({ at: "Dataworker", message: "Building relayer refund root", blockRangesForProposal });
     const relayerRefundRoot = _buildRelayerRefundRoot(
@@ -419,7 +439,7 @@ export class Dataworker {
       relayerRefundRoot: relayerRefundRoot.tree.getHexRoot(),
       slowRelayRoot: slowRelayRoot.tree.getHexRoot(),
     });
-    if (submitProposals)
+    if (submitProposals) {
       this._proposeRootBundle(
         hubPoolChainId,
         blockRangesForProposal,
@@ -430,19 +450,21 @@ export class Dataworker {
         slowRelayRoot.leaves,
         slowRelayRoot.tree.getHexRoot()
       );
+    }
   }
 
   async validatePendingRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     submitDisputes = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ) {
+  ): Promise<void> {
     if (
       !this.clients.hubPoolClient.isUpdated ||
       this.clients.hubPoolClient.currentTime === undefined ||
       this.clients.hubPoolClient.latestBlockNumber === undefined
-    )
+    ) {
       throw new Error("HubPoolClient not updated");
+    }
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
     // Exit early if a bundle is not pending.
@@ -508,7 +530,9 @@ export class Dataworker {
           message: "Submitting dispute 🤏🏼",
           mrkdwn: reason,
         });
-        if (submitDisputes) this._submitDisputeWithMrkdwn(hubPoolChainId, reason);
+        if (submitDisputes) {
+          this._submitDisputeWithMrkdwn(hubPoolChainId, reason);
+        }
       }
     }
   }
@@ -819,7 +843,7 @@ export class Dataworker {
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ) {
+  ): Promise<void> {
     this.logger.debug({
       at: "Dataworker#executeSlowRelayLeaves",
       message: "Executing slow relay leaves",
@@ -852,13 +876,17 @@ export class Dataworker {
         const slowFillsForChain = client.getFills().filter((fill) => fill.isSlowRelay);
         for (const rootBundleRelay of sortEventsAscending(rootBundleRelays)) {
           const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
-            if (bundle.slowRelayRoot !== rootBundleRelay.slowRelayRoot) return false;
+            if (bundle.slowRelayRoot !== rootBundleRelay.slowRelayRoot) {
+              return false;
+            }
 
             const followingBlockNumber =
               this.clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber ||
               this.clients.hubPoolClient.latestBlockNumber;
 
-            if (!followingBlockNumber) return false;
+            if (!followingBlockNumber) {
+              return false;
+            }
 
             const leaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
 
@@ -937,7 +965,9 @@ export class Dataworker {
             // Only return true if no leaf was found in the list of executed leaves.
             return !executedLeaf;
           });
-          if (unexecutedLeaves.length === 0) continue;
+          if (unexecutedLeaves.length === 0) {
+            continue;
+          }
 
           await this._executeSlowFillLeaf(
             unexecutedLeaves,
@@ -957,10 +987,12 @@ export class Dataworker {
     balanceAllocator: BalanceAllocator,
     client: SpokePoolClient,
     slowRelayTree: MerkleTree<RelayData>,
-    submitExecution,
+    submitExecution: boolean,
     rootBundleId?: number
-  ) {
-    if (leaves.length === 0) return;
+  ): Promise<void> {
+    if (leaves.length === 0) {
+      return;
+    }
     const chainId = client.chainId;
 
     const sortedFills = client.getFills();
@@ -987,7 +1019,9 @@ export class Dataworker {
     const fundedLeaves = (
       await Promise.all(
         leavesWithLatestFills.map(async (leaf) => {
-          if (leaf.destinationChainId !== chainId) throw new Error("Leaf chainId does not match input chainId");
+          if (leaf.destinationChainId !== chainId) {
+            throw new Error("Leaf chainId does not match input chainId");
+          }
 
           // Check if fill was a full fill. If so, execution is unnecessary.
           if (leaf.fill && leaf.fill.totalFilledAmount.eq(leaf.fill.amount)) {
@@ -1037,7 +1071,7 @@ export class Dataworker {
       }\nDestination chain:${leaf.destinationChainId}\nDeposit Id: ${
         leaf.depositId
       }\namount: ${leaf.amount.toString()}`;
-      if (submitExecution)
+      if (submitExecution) {
         this.clients.multiCallerClient.enqueueTransaction({
           contract: client.spokePool,
           chainId: Number(chainId),
@@ -1051,7 +1085,7 @@ export class Dataworker {
             leaf.realizedLpFeePct,
             leaf.relayerFeePct,
             leaf.depositId,
-            slowRelayTree.getHexRoot(),
+            rootBundleId,
             slowRelayTree.getHexProof(leaf),
           ],
           message: "Executed SlowRelayLeaf 🌿!",
@@ -1061,7 +1095,9 @@ export class Dataworker {
           // pool rebalance leaf.
           canFailInSimulation: leaf.destinationChainId === this.clients.hubPoolClient.chainId,
         });
-      else this.logger.debug({ at: "Dataworker#executeSlowRelayLeaves", message: mrkdwn });
+      } else {
+        this.logger.debug({ at: "Dataworker#executeSlowRelayLeaves", message: mrkdwn });
+      }
     });
   }
 
@@ -1070,7 +1106,7 @@ export class Dataworker {
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ) {
+  ): Promise<void> {
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
       message: "Executing pool rebalance leaves",
@@ -1080,8 +1116,9 @@ export class Dataworker {
       !this.clients.hubPoolClient.isUpdated ||
       this.clients.hubPoolClient.currentTime === undefined ||
       this.clients.hubPoolClient.latestBlockNumber === undefined
-    )
+    ) {
       throw new Error("HubPoolClient not updated");
+    }
     const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
 
     // Exit early if a bundle is not pending.
@@ -1157,7 +1194,9 @@ export class Dataworker {
     const unexecutedLeaves = expectedTrees.poolRebalanceTree.leaves.filter((leaf) =>
       executedLeaves.every(({ leafId }) => leafId !== leaf.leafId)
     );
-    if (unexecutedLeaves.length === 0) return;
+    if (unexecutedLeaves.length === 0) {
+      return;
+    }
 
     // Call `exchangeRateCurrent` on the HubPool before accumulating fees from the executed bundle leaves. This is to
     // address the situation where `addLiquidity` and `removeLiquidity` have not been called for an L1 token for a
@@ -1215,12 +1254,14 @@ export class Dataworker {
   }
 
   async _executePoolRebalanceLeaves(
-    spokePoolClients,
+    spokePoolClients: {
+      [chainId: number]: SpokePoolClient;
+    },
     leaves: PoolRebalanceLeaf[],
     balanceAllocator: BalanceAllocator,
     tree: MerkleTree<PoolRebalanceLeaf>,
     submitExecution: boolean
-  ) {
+  ): Promise<void> {
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
     const fundedLeaves = (
       await Promise.all(
@@ -1236,13 +1277,14 @@ export class Dataworker {
             const hubPoolBalance = await this.clients.hubPoolClient.hubPool.provider.getBalance(
               this.clients.hubPoolClient.hubPool.address
             );
-            if (hubPoolBalance.lt(this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf)))
+            if (hubPoolBalance.lt(this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf))) {
               requests.push({
                 tokens: [ZERO_ADDRESS],
                 amount: this._getRequiredEthForArbitrumPoolRebalanceLeaf(leaf),
                 holder: await this.clients.hubPoolClient.hubPool.signer.getAddress(),
                 chainId: hubPoolChainId,
               });
+            }
           }
 
           const success = await balanceAllocator.requestBalanceAllocations(requests.filter((req) => req.amount.gt(0)));
@@ -1326,20 +1368,27 @@ export class Dataworker {
           // from relayer refund leaves.
           canFailInSimulation: leaf.chainId !== hubPoolChainId,
         });
-      } else this.logger.debug({ at: "Dataworker#executePoolRebalanceLeaves", message: mrkdwn });
+      } else {
+        this.logger.debug({ at: "Dataworker#executePoolRebalanceLeaves", message: mrkdwn });
+      }
     });
   }
 
-  async _updateExchangeRates(leaves: PoolRebalanceLeaf[], submitExecution: boolean) {
+  async _updateExchangeRates(leaves: PoolRebalanceLeaf[], submitExecution: boolean): Promise<void> {
     const compoundedFeesForL1Token: string[] = [];
     leaves.forEach((leaf) => {
       leaf.l1Tokens.forEach((l1Token, i) => {
         // Exit early if lp fees are 0
-        if (leaf.bundleLpFees[i].eq(toBN(0))) return;
+        if (leaf.bundleLpFees[i].eq(toBN(0))) {
+          return;
+        }
 
         // Exit early if we already compounded fees for this l1 token on this loop
-        if (compoundedFeesForL1Token.includes(l1Token)) return;
-        else compoundedFeesForL1Token.push(l1Token);
+        if (compoundedFeesForL1Token.includes(l1Token)) {
+          return;
+        } else {
+          compoundedFeesForL1Token.push(l1Token);
+        }
 
         // Exit early if we recently compounded fees
         const lastestFeesCompoundedTime =
@@ -1347,8 +1396,9 @@ export class Dataworker {
         if (
           this.clients.hubPoolClient.currentTime === undefined ||
           this.clients.hubPoolClient.currentTime - lastestFeesCompoundedTime <= 86400
-        )
+        ) {
           return;
+        }
 
         if (submitExecution) {
           this.clients.multiCallerClient.enqueueTransaction({
@@ -1372,7 +1422,7 @@ export class Dataworker {
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ) {
+  ): Promise<void> {
     this.logger.debug({
       at: "Dataworker#executeRelayerRefundLeaves",
       message: "Executing relayer refund leaves",
@@ -1407,12 +1457,16 @@ export class Dataworker {
 
       for (const rootBundleRelay of sortEventsAscending(rootBundleRelays)) {
         const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
-          if (bundle.relayerRefundRoot !== rootBundleRelay.relayerRefundRoot) return false;
+          if (bundle.relayerRefundRoot !== rootBundleRelay.relayerRefundRoot) {
+            return false;
+          }
           const followingBlockNumber =
             this.clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber ||
             this.clients.hubPoolClient.latestBlockNumber;
 
-          if (followingBlockNumber === undefined) return false;
+          if (followingBlockNumber === undefined) {
+            return false;
+          }
 
           const leaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
 
@@ -1540,7 +1594,9 @@ export class Dataworker {
           // Only return true if no leaf was found in the list of executed leaves.
           return !executedLeaf;
         });
-        if (unexecutedLeaves.length === 0) continue;
+        if (unexecutedLeaves.length === 0) {
+          continue;
+        }
 
         await this._executeRelayerRefundLeaves(
           unexecutedLeaves,
@@ -1561,14 +1617,18 @@ export class Dataworker {
     relayerRefundTree: MerkleTree<RelayerRefundLeaf>,
     submitExecution: boolean,
     rootBundleId: number
-  ) {
-    if (leaves.length === 0) return;
+  ): Promise<void> {
+    if (leaves.length === 0) {
+      return;
+    }
     const chainId = client.chainId;
     // Filter for leaves where the contract has the funding to send the required tokens.
     const fundedLeaves = (
       await Promise.all(
         leaves.map(async (leaf) => {
-          if (leaf.chainId !== chainId) throw new Error("Leaf chainId does not match input chainId");
+          if (leaf.chainId !== chainId) {
+            throw new Error("Leaf chainId does not match input chainId");
+          }
           const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
           const refundSum = leaf.refundAmounts.reduce((acc, curr) => acc.add(curr), BigNumber.from(0));
           const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
@@ -1616,7 +1676,7 @@ export class Dataworker {
       const mrkdwn = `rootBundleId: ${rootBundleId}\nrelayerRefundRoot: ${relayerRefundTree.getHexRoot()}\nLeaf: ${
         leaf.leafId
       }\nchainId: ${chainId}\ntoken: ${l1TokenInfo?.symbol}\namount: ${leaf.amountToReturn.toString()}`;
-      if (submitExecution)
+      if (submitExecution) {
         this.clients.multiCallerClient.enqueueTransaction({
           contract: client.spokePool,
           chainId: Number(chainId),
@@ -1629,20 +1689,22 @@ export class Dataworker {
           // pool rebalance leaf.
           canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,
         });
-      else this.logger.debug({ at: "Dataworker#executeRelayerRefundLeaves", message: mrkdwn });
+      } else {
+        this.logger.debug({ at: "Dataworker#executeRelayerRefundLeaves", message: mrkdwn });
+      }
     });
   }
 
   _proposeRootBundle(
     hubPoolChainId: number,
     bundleBlockRange: number[][],
-    poolRebalanceLeaves: any[],
+    poolRebalanceLeaves: PoolRebalanceLeaf[],
     poolRebalanceRoot: string,
-    relayerRefundLeaves: any[],
+    relayerRefundLeaves: RelayerRefundLeaf[],
     relayerRefundRoot: string,
-    slowRelayLeaves: any[],
+    slowRelayLeaves: RelayData[],
     slowRelayRoot: string
-  ) {
+  ): void {
     try {
       const bundleEndBlocks = bundleBlockRange.map((block) => block[1]);
       this.clients.multiCallerClient.enqueueTransaction({
@@ -1674,7 +1736,7 @@ export class Dataworker {
     }
   }
 
-  _submitDisputeWithMrkdwn(hubPoolChainId: number, mrkdwn: string) {
+  _submitDisputeWithMrkdwn(hubPoolChainId: number, mrkdwn: string): void {
     try {
       this.clients.multiCallerClient.enqueueTransaction({
         contract: this.clients.hubPoolClient.hubPool, // target contract
@@ -1705,7 +1767,7 @@ export class Dataworker {
     allValidFillsInRange: FillWithBlock[],
     unfilledDeposits: UnfilledDeposit[],
     logSlowFillExcessData = false
-  ) {
+  ): Promise<PoolRebalanceRoot> {
     const key = JSON.stringify(blockRangesForChains);
     if (!this.rootCache[key]) {
       this.rootCache[key] = await _buildPoolRebalanceRoot(
@@ -1728,7 +1790,7 @@ export class Dataworker {
     return _.cloneDeep(this.rootCache[key]);
   }
 
-  _getRequiredEthForArbitrumPoolRebalanceLeaf(leaf: PoolRebalanceLeaf) {
+  _getRequiredEthForArbitrumPoolRebalanceLeaf(leaf: PoolRebalanceLeaf): BigNumber {
     // For arbitrum, the bot needs enough ETH to pay for each L1 -> L2 message.
     // The following executions trigger an L1 -> L2 message:
     // 1. The first arbitrum leaf for a particular set of roots. This means the roots must be sent and is
@@ -1739,7 +1801,9 @@ export class Dataworker {
       BigNumber.from(0)
     );
 
-    if (leaf.groupIndex === 0) requiredAmount = requiredAmount.add(toBNWei("0.02"));
+    if (leaf.groupIndex === 0) {
+      requiredAmount = requiredAmount.add(toBNWei("0.02"));
+    }
     return requiredAmount;
   }
 

@@ -58,13 +58,15 @@ export class DataworkerConfig extends CommonConfig {
       ? Number(MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE)
       : undefined;
     this.spokeRootsLookbackCount = SPOKE_ROOTS_LOOKBACK_COUNT ? Number(SPOKE_ROOTS_LOOKBACK_COUNT) : undefined;
-    if (this.maxPoolRebalanceLeafSizeOverride !== undefined)
+    if (this.maxPoolRebalanceLeafSizeOverride !== undefined) {
       assert(this.maxPoolRebalanceLeafSizeOverride > 0, "Max leaf count set to 0");
+    }
     this.maxRelayerRepaymentLeafSizeOverride = MAX_RELAYER_REPAYMENT_LEAF_SIZE_OVERRIDE
       ? Number(MAX_RELAYER_REPAYMENT_LEAF_SIZE_OVERRIDE)
       : undefined;
-    if (this.maxRelayerRepaymentLeafSizeOverride !== undefined)
+    if (this.maxRelayerRepaymentLeafSizeOverride !== undefined) {
       assert(this.maxRelayerRepaymentLeafSizeOverride > 0, "Max leaf count set to 0");
+    }
     this.tokenTransferThresholdOverride = TOKEN_TRANSFER_THRESHOLD_OVERRIDE
       ? JSON.parse(TOKEN_TRANSFER_THRESHOLD_OVERRIDE)
       : {};
@@ -74,11 +76,12 @@ export class DataworkerConfig extends CommonConfig {
     this.disputerEnabled = DISPUTER_ENABLED === "true";
     this.proposerEnabled = PROPOSER_ENABLED === "true";
     this.executorEnabled = EXECUTOR_ENABLED === "true";
-    if (this.executorEnabled)
+    if (this.executorEnabled) {
       assert(this.spokeRootsLookbackCount > 0, "must set spokeRootsLookbackCount > 0 if executor enabled");
-    else if (this.disputerEnabled || this.proposerEnabled)
+    } else if (this.disputerEnabled || this.proposerEnabled) {
       // should set spokeRootsLookbackCount == 0 if executor disabled and proposer/disputer enabled
       this.spokeRootsLookbackCount = 0;
+    }
     this.sendingDisputesEnabled = SEND_DISPUTES === "true";
     this.sendingProposalsEnabled = SEND_PROPOSALS === "true";
     this.sendingExecutionsEnabled = SEND_EXECUTIONS === "true";
@@ -93,11 +96,12 @@ export class DataworkerConfig extends CommonConfig {
       ? Math.floor(Number(DATAWORKER_FAST_LOOKBACK_COUNT))
       : 16;
     assert(this.dataworkerFastLookbackCount > 0, "dataworkerFastLookbackCount should be > 0");
-    if (this.spokeRootsLookbackCount !== undefined)
+    if (this.spokeRootsLookbackCount !== undefined) {
       assert(
         this.dataworkerFastLookbackCount >= this.spokeRootsLookbackCount,
         "dataworkerFastLookbackCount should be >= spokeRootsLookbackCount"
       );
+    }
 
     this.dataworkerFastStartBundle = DATAWORKER_FAST_START_BUNDLE ? Number(DATAWORKER_FAST_START_BUNDLE) : "latest";
     if (typeof this.dataworkerFastStartBundle === "number") {

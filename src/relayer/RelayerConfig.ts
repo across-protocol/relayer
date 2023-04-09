@@ -76,8 +76,9 @@ export class RelayerConfig extends CommonConfig {
           );
           this.inventoryConfig.tokenConfig[l1Token][chainId].targetPct = toBNWei(targetPct).div(100);
           this.inventoryConfig.tokenConfig[l1Token][chainId].thresholdPct = toBNWei(thresholdPct).div(100);
-          if (unwrapWethThreshold !== undefined)
+          if (unwrapWethThreshold !== undefined) {
             this.inventoryConfig.tokenConfig[l1Token][chainId].unwrapWethThreshold = toBNWei(unwrapWethThreshold);
+          }
           this.inventoryConfig.tokenConfig[l1Token][chainId].unwrapWethTarget = unwrapWethTarget
             ? toBNWei(unwrapWethTarget)
             : toBNWei(2);
