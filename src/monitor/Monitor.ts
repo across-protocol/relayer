@@ -58,7 +58,7 @@ export class Monitor {
   // Block range to search is only defined on calling update().
   private hubPoolStartingBlock: number | undefined = undefined;
   private hubPoolEndingBlock: number | undefined = undefined;
-  private spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
+  private spokePoolsBlocks: Record<number, { startingBlock?: number; endingBlock?: number }> = {};
   private balanceCache: { [chainId: number]: { [token: string]: { [account: string]: BigNumber } } } = {};
   private decimals: { [chainId: number]: { [token: string]: number } } = {};
   private balanceAllocator: BalanceAllocator;
@@ -859,8 +859,8 @@ export class Monitor {
   // Compute the starting and ending block for each chain giving the provider and the config values
   private async computeStartingAndEndingBlock(
     provider: providers.Provider,
-    configuredStartingBlock: number | undefined,
-    configuredEndingBlock: number | undefined
+    configuredStartingBlock?: number,
+    configuredEndingBlock?: number
   ) {
     // In serverless mode (pollingDelay === 0) use block range from environment (or just the latest block if not
     // provided) to fetch for latest events.
@@ -871,8 +871,8 @@ export class Monitor {
     let finalEndingBlock: number;
 
     if (this.monitorConfig.pollingDelay === 0) {
-      finalStartingBlock = configuredStartingBlock !== undefined ? configuredStartingBlock : latestBlockNumber;
-      finalEndingBlock = configuredEndingBlock !== undefined ? configuredEndingBlock : latestBlockNumber;
+      finalStartingBlock = configuredStartingBlock ?? latestBlockNumber;
+      finalEndingBlock = configuredEndingBlock ?? latestBlockNumber;
     } else {
       finalStartingBlock = configuredEndingBlock ? configuredEndingBlock + 1 : latestBlockNumber;
       finalEndingBlock = latestBlockNumber;
