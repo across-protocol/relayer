@@ -448,7 +448,7 @@ export class SpokePoolClient {
     return sortEventsAscending(fills.filter((_fill) => filledSameDeposit(_fill, matchingFill)));
   }
 
-  async _update(eventsToQuery: string[]): Promise<Event[][]> {
+  protected async _update(eventsToQuery: string[]): Promise<Event[][]> {
     // Find the earliest known depositId. This assumes no deposits were placed in the deployment block.
     if (this.firstDepositIdForSpokePool === Number.MAX_SAFE_INTEGER) {
       const firstDepositId = await this.spokePool.numberOfDeposits({ blockTag: this.deploymentBlock });
