@@ -21,7 +21,6 @@ import {
   deployConfigStore,
   getLastBlockTime,
   buildDeposit,
-  hre,
   assertPromiseError,
   getDepositParams,
   mineRandomBlocks,
@@ -317,7 +316,9 @@ describe("SpokePoolClient: Fill Validation", async function () {
   it("Can fetch older deposit matching fill", async function () {
     const depositData = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
-    if (!depositData) throw new Error("Deposit data is null");
+    if (!depositData) {
+      throw new Error("Deposit data is null");
+    }
     const expectedRealizedLpFeePct = await configStoreClient.computeRealizedLpFeePct(
       {
         quoteTimestamp: depositData.quoteTimestamp,
@@ -359,7 +360,9 @@ describe("SpokePoolClient: Fill Validation", async function () {
     const depositData = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 
-    if (!depositData) throw new Error("Deposit data is null");
+    if (!depositData) {
+      throw new Error("Deposit data is null");
+    }
     const expectedRealizedLpFeePct = await configStoreClient.computeRealizedLpFeePct(
       {
         quoteTimestamp: depositData.quoteTimestamp,

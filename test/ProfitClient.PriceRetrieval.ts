@@ -1,4 +1,3 @@
-import { priceClient } from "@across-protocol/sdk-v2";
 import { L1Token } from "../src/interfaces";
 import { expect, createSpyLogger, winston, BigNumber, toBN, toBNWei } from "./utils";
 

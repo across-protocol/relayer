@@ -11,7 +11,7 @@ export function updateUnfilledDepositsWithMatchedDeposit(
   matchedFill: Fill,
   matchedDeposit: Deposit,
   unfilledDepositsForOriginChain: UnfilledDepositsForOriginChain
-) {
+): void {
   const depositUnfilledAmount = matchedFill.amount.sub(matchedFill.totalFilledAmount);
   const depositKey = `${matchedDeposit.originChainId}+${matchedFill.depositId}`;
   assign(
@@ -31,20 +31,23 @@ export function updateUnfilledDepositsWithMatchedDeposit(
 
 export function flattenAndFilterUnfilledDepositsByOriginChain(
   unfilledDepositsForOriginChain: UnfilledDepositsForOriginChain
-) {
+): UnfilledDeposit[] {
   return (
     Object.values(unfilledDepositsForOriginChain)
       .map((_unfilledDeposits: UnfilledDeposit[]): UnfilledDeposit => {
         // Remove deposits with no matched fills.
-        if (_unfilledDeposits.length === 0) return { unfilledAmount: toBN(0), deposit: undefined };
+        if (_unfilledDeposits.length === 0) {
+          return { unfilledAmount: toBN(0), deposit: undefined };
+        }
         // Remove deposits where there isn't a fill with fillAmount == totalFilledAmount && fillAmount > 0. This ensures
         // that we'll only be slow relaying deposits where the first fill (i.e. the one with
         // fillAmount == totalFilledAmount) is in this epoch. We assume that we already included slow fills in a
         // previous epoch for these ignored deposits.
         if (
           !_unfilledDeposits.some((_unfilledDeposit: UnfilledDeposit) => _unfilledDeposit.hasFirstPartialFill === true)
-        )
+        ) {
           return { unfilledAmount: toBN(0), deposit: undefined };
+        }
         // For each deposit, identify the smallest unfilled amount remaining after a fill since each fill can
         // only decrease the unfilled amount.
         _unfilledDeposits.sort((unfilledDepositA, unfilledDepositB) =>

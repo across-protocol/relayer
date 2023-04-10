@@ -1,5 +1,5 @@
 import { BalanceAllocator, BalanceMap } from "../src/clients/BalanceAllocator";
-import { BigNumber, ethers } from "../src/utils";
+import { BigNumber } from "../src/utils";
 import { randomAddress, chai } from "./utils";
 const { expect } = chai;
 
@@ -11,14 +11,23 @@ class TestBalanceAllocator extends BalanceAllocator {
   mockBalances: BalanceMap = {};
   setMockBalances(chainId: number, token: string, holder: string, balance?: BigNumber) {
     // Note: cannot use assign because it breaks the BigNumber object.
-    if (!this.mockBalances[chainId]) this.mockBalances[chainId] = {};
-    if (!this.mockBalances[chainId][token]) this.mockBalances[chainId][token] = {};
-    if (!balance) delete this.mockBalances[chainId][token][holder];
-    else this.mockBalances[chainId][token][holder] = balance;
+    if (!this.mockBalances[chainId]) {
+      this.mockBalances[chainId] = {};
+    }
+    if (!this.mockBalances[chainId][token]) {
+      this.mockBalances[chainId][token] = {};
+    }
+    if (!balance) {
+      delete this.mockBalances[chainId][token][holder];
+    } else {
+      this.mockBalances[chainId][token][holder] = balance;
+    }
   }
 
   protected _queryBalance(chainId: number, token: string, holder: string): Promise<BigNumber> {
-    if (!this.mockBalances[chainId]?.[token]?.[holder]) throw new Error("No balance!");
+    if (!this.mockBalances[chainId]?.[token]?.[holder]) {
+      throw new Error("No balance!");
+    }
     return Promise.resolve(this.mockBalances[chainId][token][holder]);
   }
 }
@@ -29,7 +38,6 @@ describe("BalanceAllocator", async function () {
   const testToken2 = randomAddress();
 
   const testAccount1 = randomAddress();
-  const testAccount2 = randomAddress();
 
   beforeEach(async function () {
     balanceAllocator = new TestBalanceAllocator();

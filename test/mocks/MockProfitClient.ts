@@ -7,8 +7,11 @@ export class MockProfitClient extends ProfitClient {
   }
 
   getPriceOfToken(l1Token: string): BigNumber {
-    if (this.tokenPrices[l1Token] === undefined) return toBNWei(1);
-    else return this.tokenPrices[l1Token];
+    if (this.tokenPrices[l1Token] === undefined) {
+      return toBNWei(1);
+    } else {
+      return this.tokenPrices[l1Token];
+    }
   }
 
   setGasCosts(gasCosts: { [chainId: number]: BigNumber }): void {

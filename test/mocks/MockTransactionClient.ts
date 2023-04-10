@@ -40,7 +40,9 @@ export class MockedTransactionClient extends TransactionClient {
     txn: AugmentedTransaction,
     nonce: number | null = null
   ): Promise<TransactionResponse> {
-    if (this.txnFailure(txn)) return Promise.reject(this.txnFailureReason(txn));
+    if (this.txnFailure(txn)) {
+      return Promise.reject(this.txnFailureReason(txn));
+    }
 
     const _nonce = nonce ?? 1;
     const txnResponse = {

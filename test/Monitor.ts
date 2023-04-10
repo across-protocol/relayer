@@ -394,7 +394,7 @@ describe("Monitor", async function () {
 
 const executeBundle = async (hubPool: Contract) => {
   const latestBlock = await hubPool.provider.getBlockNumber();
-  const blockRange = constants.CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
+  const blockRange = constants.CHAIN_ID_TEST_LIST.map(() => [0, latestBlock]);
   const expectedPoolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
   await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
   for (const leaf of expectedPoolRebalanceRoot.leaves) {

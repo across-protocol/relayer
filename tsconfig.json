@@ -6,9 +6,12 @@
     "outDir": "./dist",
     "declaration": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "strict": true,
+    "strictNullChecks": false,
+    "noImplicitAny": false
   },
-  "include": ["./src", "index.ts"],
+  "include": ["./src", "index.ts", "./scripts"],
   "files": ["./hardhat.config.ts"],
   "watchOptions": {
     "watchFile": "useFsEventsOnParentDirectory",

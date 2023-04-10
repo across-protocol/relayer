@@ -41,7 +41,8 @@ export class MockHubPoolClient extends HubPoolClient {
     this.returnedL1TokenForDeposit = l1Token;
   }
 
-  getL1TokenForDeposit(deposit: Deposit) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  getL1TokenForDeposit(_deposit: Deposit) {
     return this.returnedL1TokenForDeposit;
   }
 }

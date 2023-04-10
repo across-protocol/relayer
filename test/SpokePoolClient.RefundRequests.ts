@@ -15,7 +15,7 @@ import {
   toBNWei,
 } from "./utils";
 
-let spokePool: Contract, originToken: Contract, refundToken: Contract;
+let spokePool: Contract, refundToken: Contract;
 let relayer: SignerWithAddress;
 let deploymentBlock: number;
 let spokePoolClient: SpokePoolClient;
@@ -26,7 +26,6 @@ describe("SpokePoolClient: Refund Requests", async function () {
     [relayer] = await ethers.getSigners();
     ({
       spokePool,
-      erc20: originToken,
       weth: refundToken,
       deploymentBlock,
     } = await deploySpokePoolWithToken(originChainId, destinationChainId));

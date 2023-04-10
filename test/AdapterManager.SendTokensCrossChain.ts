@@ -12,7 +12,7 @@ let hubPoolClient: MockHubPoolClient;
 const mockSpokePoolClients: {
   [chainId: number]: SpokePoolClient;
 } = {};
-let relayer: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger, amountToSend: BigNumber;
+let relayer: SignerWithAddress, spyLogger: winston.Logger, amountToSend: BigNumber;
 let adapterManager: AdapterManager; // tested
 
 // Atomic depositor
@@ -42,7 +42,7 @@ const mainnetTokens = {
 describe("AdapterManager: Send tokens cross-chain", async function () {
   beforeEach(async function () {
     [relayer] = await ethers.getSigners();
-    ({ spy, spyLogger } = createSpyLogger());
+    ({ spyLogger } = createSpyLogger());
 
     hubPoolClient = new MockHubPoolClient(null, null);
     await seedMocks();
@@ -243,7 +243,9 @@ async function seedMocks() {
 
   // Construct fake spoke pool clients. All the adapters need is a signer and a provider on each chain.
   for (const chainId of enabledChainIds) {
-    if (!mockSpokePoolClients[chainId]) mockSpokePoolClients[chainId] = {} as unknown as SpokePoolClient;
+    if (!mockSpokePoolClients[chainId]) {
+      mockSpokePoolClients[chainId] = {} as unknown as SpokePoolClient;
+    }
     mockSpokePoolClients[chainId] = {
       spokePool: {
         provider: ethers.provider,
@@ -273,6 +275,8 @@ async function constructChainSpecificFakes() {
 
 async function makeFake(contractName: string, address: string) {
   contractName = contractName + "Interface";
-  if (!interfaces[contractName]) throw new Error(`${contractName} is not a valid contract name`);
+  if (!interfaces[contractName]) {
+    throw new Error(`${contractName} is not a valid contract name`);
+  }
   return await smock.fake(interfaces[contractName], { address });
 }

@@ -19,6 +19,7 @@ import {
   filledSameDeposit,
   getCurrentTime,
   getRedis,
+  AnyObject,
 } from "../utils";
 import { toBN, ZERO_ADDRESS, winston, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
@@ -34,6 +35,7 @@ import {
   FundsDepositedEvent,
 } from "../interfaces";
 import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces";
+import { HubPoolClient } from ".";
 
 const FILL_DEPOSIT_COMPARISON_KEYS = [
   "amount",
@@ -46,9 +48,6 @@ const FILL_DEPOSIT_COMPARISON_KEYS = [
   "destinationChainId",
   "destinationToken",
 ] as const;
-
-// These events are numerous and we should use a fixed lookback when querying them.
-const FIXED_LOOKBACK_EVENTS = ["FundsDeposited", "FilledRelay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
 
 export class SpokePoolClient {
   private currentTime: number;
@@ -142,19 +141,23 @@ export class SpokePoolClient {
       : this.refundRequests.filter((request) => request.blockNumber >= fromBlock && request.blockNumber <= toBlock);
   }
 
-  getRootBundleRelays() {
+  getRootBundleRelays(): RootBundleRelayWithBlock[] {
     return this.rootBundleRelays;
   }
 
-  getLatestRootBundleId() {
+  getLatestRootBundleId(): number {
     return this.rootBundleRelays[this.rootBundleRelays.length - 1]?.rootBundleId ?? 0;
   }
 
-  getRelayerRefundExecutions() {
+  getRelayerRefundExecutions(): RelayerRefundExecutionWithBlock[] {
     return this.relayerRefundExecutions;
   }
 
-  getExecutedRefunds(relayerRefundRoot: string) {
+  getExecutedRefunds(relayerRefundRoot: string): {
+    [tokenAddress: string]: {
+      [relayer: string]: BigNumber;
+    };
+  } {
     const bundle = this.getRootBundleRelays().find((bundle) => bundle.relayerRefundRoot === relayerRefundRoot);
     if (bundle === undefined) {
       return {};
@@ -166,26 +169,32 @@ export class SpokePoolClient {
     const executedRefunds: { [tokenAddress: string]: { [relayer: string]: BigNumber } } = {};
     for (const refundLeaf of executedRefundLeaves) {
       const tokenAddress = refundLeaf.l2TokenAddress;
-      if (executedRefunds[tokenAddress] === undefined) executedRefunds[tokenAddress] = {};
+      if (executedRefunds[tokenAddress] === undefined) {
+        executedRefunds[tokenAddress] = {};
+      }
       const executedTokenRefunds = executedRefunds[tokenAddress];
 
       for (let i = 0; i < refundLeaf.refundAddresses.length; i++) {
         const relayer = refundLeaf.refundAddresses[i];
         const refundAmount = refundLeaf.refundAmounts[i];
-        if (executedTokenRefunds[relayer] === undefined) executedTokenRefunds[relayer] = BigNumber.from(0);
+        if (executedTokenRefunds[relayer] === undefined) {
+          executedTokenRefunds[relayer] = BigNumber.from(0);
+        }
         executedTokenRefunds[relayer] = executedTokenRefunds[relayer].add(refundAmount);
       }
     }
     return executedRefunds;
   }
 
-  appendMaxSpeedUpSignatureToDeposit(deposit: DepositWithBlock) {
+  appendMaxSpeedUpSignatureToDeposit(deposit: DepositWithBlock): DepositWithBlock {
     const maxSpeedUp = this.speedUps[deposit.depositor]?.[deposit.depositId]?.reduce((prev, current) =>
       prev.newRelayerFeePct.gt(current.newRelayerFeePct) ? prev : current
     );
 
     // Only if there is a speedup and the new relayer fee is greater than the current relayer fee, save the new fee.
-    if (!maxSpeedUp || maxSpeedUp.newRelayerFeePct.lte(deposit.relayerFeePct)) return deposit;
+    if (!maxSpeedUp || maxSpeedUp.newRelayerFeePct.lte(deposit.relayerFeePct)) {
+      return deposit;
+    }
     return {
       ...deposit,
       speedUpSignature: maxSpeedUp.depositorSignature,
@@ -194,9 +203,12 @@ export class SpokePoolClient {
   }
 
   getDepositForFill(fill: Fill): DepositWithBlock | undefined {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill.
     const depositWithMatchingDepositId = this.depositHashes[this.getDepositHash(fill)];
-    if (depositWithMatchingDepositId === undefined) return undefined;
+    if (depositWithMatchingDepositId === undefined) {
+      return undefined;
+    }
     return this.validateFillForDeposit(fillCopy, depositWithMatchingDepositId)
       ? depositWithMatchingDepositId
       : undefined;
@@ -215,8 +227,11 @@ export class SpokePoolClient {
 
     const { validFills, invalidFills } = fillsForDeposit.reduce(
       (groupedFills: { validFills: Fill[]; invalidFills: Fill[] }, fill: Fill) => {
-        if (this.validateFillForDeposit(fill, deposit)) groupedFills.validFills.push(fill);
-        else groupedFills.invalidFills.push(fill);
+        if (this.validateFillForDeposit(fill, deposit)) {
+          groupedFills.validFills.push(fill);
+        } else {
+          groupedFills.invalidFills.push(fill);
+        }
         return groupedFills;
       },
       { validFills: [], invalidFills: [] }
@@ -224,7 +239,7 @@ export class SpokePoolClient {
 
     // Log any invalid deposits with same deposit id but different params.
     const invalidFillsForDeposit = invalidFills.filter((x) => x.depositId === deposit.depositId);
-    if (invalidFillsForDeposit.length > 0)
+    if (invalidFillsForDeposit.length > 0) {
       this.logger.warn({
         at: "SpokePoolClient",
         chainId: this.chainId,
@@ -232,6 +247,7 @@ export class SpokePoolClient {
         deposit,
         invalidFills: Object.fromEntries(invalidFillsForDeposit.map((x) => [x.relayer, x])),
       });
+    }
 
     // If all fills are invalid we can consider this unfilled.
     if (validFills.length === 0) {
@@ -266,7 +282,7 @@ export class SpokePoolClient {
     });
   }
 
-  getDepositHash(event: Deposit | Fill) {
+  getDepositHash(event: Deposit | Fill): string {
     return `${event.depositId}-${event.originChainId}`;
   }
 
@@ -277,16 +293,20 @@ export class SpokePoolClient {
     targetDepositId: number,
     initLow = this.spokePoolDeploymentBlock,
     initHigh = this.latestBlockNumber
-  ): Promise<number> {
+  ): Promise<number | undefined> {
     assert(initLow <= initHigh, "Binary search failed because low > high");
     let low = initLow;
     let high = initHigh;
     do {
       const mid = Math.floor((high + low) / 2);
       const searchedDepositId = await this.spokePool.numberOfDeposits({ blockTag: mid });
-      if (targetDepositId > searchedDepositId) low = mid + 1;
-      else if (targetDepositId < searchedDepositId) high = mid - 1;
-      else return mid;
+      if (targetDepositId > searchedDepositId) {
+        low = mid + 1;
+      } else if (targetDepositId < searchedDepositId) {
+        high = mid - 1;
+      } else {
+        return mid;
+      }
     } while (low <= high);
     // If we can't find a blockTag where `numberOfDeposits == targetDepositId`,
     // then its likely that the depositId was included in the same block as deposits that came after it. So we fallback
@@ -299,15 +319,21 @@ export class SpokePoolClient {
   // This can be used by the Dataworker to determine whether to give a relayer a refund for a fill
   // of a deposit older or younger than its fixed lookback.
   async queryHistoricalDepositForFill(fill: Fill): Promise<DepositWithBlock | undefined> {
-    if (fill.originChainId !== this.chainId) throw new Error("fill.originChainId !== this.chainid");
+    if (fill.originChainId !== this.chainId) {
+      throw new Error("fill.originChainId !== this.chainid");
+    }
 
     // We need to update client so we know the first and last deposit ID's queried for this spoke pool client, as well
     // as the global first and last deposit ID's for this spoke pool.
-    if (!this.isUpdated) throw new Error("SpokePoolClient must be updated before querying historical deposits");
-    if (fill.depositId < this.firstDepositIdForSpokePool || fill.depositId > this.lastDepositIdForSpokePool)
+    if (!this.isUpdated) {
+      throw new Error("SpokePoolClient must be updated before querying historical deposits");
+    }
+    if (fill.depositId < this.firstDepositIdForSpokePool || fill.depositId > this.lastDepositIdForSpokePool) {
       return undefined;
-    if (fill.depositId >= this.earliestDepositIdQueried && fill.depositId <= this.latestDepositIdQueried)
+    }
+    if (fill.depositId >= this.earliestDepositIdQueried && fill.depositId <= this.latestDepositIdQueried) {
       return this.getDepositForFill(fill);
+    }
 
     let deposit: DepositWithBlock, cachedDeposit: Deposit | undefined;
     const redisClient = await getRedis(this.logger);
@@ -325,6 +351,9 @@ export class SpokePoolClient {
         // Look for the block where depositId incremented from fill.depositId to fill.depositId+1.
         this.binarySearchForBlockContainingDepositId(fill.depositId + 1),
       ]);
+      if (!blockBeforeDeposit || !blockAfterDeposit) {
+        return undefined;
+      }
       assert(blockBeforeDeposit <= blockAfterDeposit, "blockBeforeDeposit > blockAfterDeposit");
 
       const query = await paginatedEventQuery(
@@ -366,9 +395,12 @@ export class SpokePoolClient {
         message: "Queried RPC for deposit outside SpokePoolClient's search range",
         deposit,
       });
-      if (redisClient) await setDeposit(deposit, getCurrentTime(), redisClient, 24 * 60 * 60);
+      if (redisClient) {
+        await setDeposit(deposit, getCurrentTime(), redisClient, 24 * 60 * 60);
+      }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill
     return this.validateFillForDeposit(fillCopy, deposit) ? deposit : undefined;
   }
@@ -384,7 +416,7 @@ export class SpokePoolClient {
     );
   }
 
-  async queryFillsInBlockRange(matchingFill: Fill, searchConfig: EventSearchConfig) {
+  async queryFillsInBlockRange(matchingFill: Fill, searchConfig: EventSearchConfig): Promise<FillWithBlock[]> {
     // Filtering on the fill's depositor address, the only indexed deposit field in the FilledRelay event,
     // should speed up this search a bit.
     // TODO: Once depositId is indexed in FilledRelay event, filter on that as well.
@@ -413,8 +445,10 @@ export class SpokePoolClient {
     return sortEventsAscending(fills.filter((_fill) => filledSameDeposit(_fill, matchingFill)));
   }
 
-  async update(eventsToQuery?: string[]) {
-    if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) throw new Error("RateModel not updated");
+  async update(eventsToQuery?: string[]): Promise<void> {
+    if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) {
+      throw new Error("RateModel not updated");
+    }
 
     // Require that all Deposits meet the minimum specified number of confirmations.
     const [latestBlockNumber, currentTime] = await Promise.all([
@@ -430,7 +464,7 @@ export class SpokePoolClient {
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
     if (searchConfig.fromBlock > searchConfig.toBlock) {
-      this.log("warn", `Invalid update() searchConfig.`, { searchConfig });
+      this.log("warn", "Invalid update() searchConfig.", { searchConfig });
       return; // If the starting block is greater than the ending block return.
     }
 
@@ -441,8 +475,9 @@ export class SpokePoolClient {
     eventsToQuery ??= queryableEventNames;
 
     const eventSearchConfigs = eventsToQuery.map((eventName) => {
-      if (!queryableEventNames.includes(eventName))
+      if (!queryableEventNames.includes(eventName)) {
         throw new Error(`SpokePoolClient: Cannot query unrecognised SpokePool event name: ${eventName}`);
+      }
 
       const _searchConfig = { ...searchConfig }; // shallow copy
 
@@ -485,10 +520,11 @@ export class SpokePoolClient {
       sortEventsAscendingInPlace(events);
     });
 
-    if (eventsToQuery.includes("TokensBridged"))
+    if (eventsToQuery.includes("TokensBridged")) {
       for (const event of queryResults[eventsToQuery.indexOf("TokensBridged")]) {
         this.tokensBridged.push(spreadEventWithBlockNumber(event) as TokensBridged);
       }
+    }
 
     // For each depositEvent, compute the realizedLpFeePct. Note this means that we are only finding this value on the
     // new deposits that were found in the searchConfig (new from the previous run). This is important as this operation
@@ -501,16 +537,25 @@ export class SpokePoolClient {
       ];
       const { earlyDeposits = [], depositEvents = [] } = groupBy(allDeposits, (depositEvent) => {
         if (depositEvent.args.quoteTimestamp > this.currentTime) {
-          this.logger.debug({ at: "SpokePoolClient#update", message: "Deferring early deposit event.", depositEvent });
+          const { args, transactionHash } = depositEvent;
+          this.logger.debug({
+            at: "SpokePoolClient#update",
+            message: "Deferring early deposit event.",
+            currentTime: this.currentTime,
+            deposit: { args, transactionHash },
+          });
           return "earlyDeposits";
-        } else return "depositEvents";
+        } else {
+          return "depositEvents";
+        }
       });
       this.earlyDeposits = earlyDeposits;
 
-      if (depositEvents.length > 0)
+      if (depositEvents.length > 0) {
         this.log("debug", `Fetching realizedLpFeePct for ${depositEvents.length} deposits on chain ${this.chainId}`, {
           numDeposits: depositEvents.length,
         });
+      }
 
       const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number }[] = await Promise.map(
         depositEvents,
@@ -518,10 +563,11 @@ export class SpokePoolClient {
       );
 
       // Now add any newly fetched events from RPC.
-      if (depositEvents.length > 0)
+      if (depositEvents.length > 0) {
         this.log("debug", `Using ${depositEvents.length} newly queried deposit events for chain ${this.chainId}`, {
           earliestEvent: depositEvents[0].blockNumber,
         });
+      }
       for (const [index, event] of depositEvents.entries()) {
         // Append the realizedLpFeePct.
         const processedEvent: Omit<DepositWithBlock, "destinationToken" | "realizedLpFeePct"> =
@@ -539,8 +585,12 @@ export class SpokePoolClient {
         assign(this.depositHashes, [this.getDepositHash(deposit)], deposit);
         assign(this.deposits, [deposit.destinationChainId], [deposit]);
 
-        if (deposit.depositId < this.earliestDepositIdQueried) this.earliestDepositIdQueried = deposit.depositId;
-        if (deposit.depositId > this.latestDepositIdQueried) this.latestDepositIdQueried = deposit.depositId;
+        if (deposit.depositId < this.earliestDepositIdQueried) {
+          this.earliestDepositIdQueried = deposit.depositId;
+        }
+        if (deposit.depositId > this.latestDepositIdQueried) {
+          this.latestDepositIdQueried = deposit.depositId;
+        }
       }
     }
 
@@ -554,7 +604,7 @@ export class SpokePoolClient {
       }
 
       // Traverse all deposit events and update them with associated speedups, If they exist.
-      for (const [_destinationChainId, deposits] of Object.entries(this.deposits)) {
+      for (const [, deposits] of Object.entries(this.deposits)) {
         for (const [index, deposit] of deposits.entries()) {
           deposits[index] = this.appendMaxSpeedUpSignatureToDeposit(deposit);
         }
@@ -564,10 +614,11 @@ export class SpokePoolClient {
     if (eventsToQuery.includes("FilledRelay")) {
       const fillEvents = queryResults[eventsToQuery.indexOf("FilledRelay")];
 
-      if (fillEvents.length > 0)
+      if (fillEvents.length > 0) {
         this.log("debug", `Using ${fillEvents.length} newly queried fill events for chain ${this.chainId}`, {
           earliestEvent: fillEvents[0].blockNumber,
         });
+      }
       for (const event of fillEvents) {
         const fill = spreadEventWithBlockNumber(event) as FillWithBlock;
         assign(this.fills, [fill.originChainId], [fill]);
@@ -632,26 +683,30 @@ export class SpokePoolClient {
     });
   }
 
-  static getExecutedRefundLeafL2Token(chainId: number, eventL2Token: string) {
+  static getExecutedRefundLeafL2Token(chainId: number, eventL2Token: string): string {
     // If execution of WETH refund leaf occurred on an OVM spoke pool, then we'll convert its l2Token from the native
     // token address to the wrapped token address. This is because the OVM_SpokePool modifies the l2TokenAddress prop
     // in _bridgeTokensToHubPool before emitting the ExecutedRelayerRefundLeaf event.
     // Here is the contract code referenced:
     // - https://github.com/across-protocol/contracts-v2/blob/954528a4620863d1c868e54a370fd8556d5ed05c/contracts/Ovm_SpokePool.sol#L142
-    if (chainId === 10 && eventL2Token.toLowerCase() === "0xdeaddeaddeaddeaddeaddeaddeaddeaddead0000")
+    if (chainId === 10 && eventL2Token.toLowerCase() === "0xdeaddeaddeaddeaddeaddeaddeaddeaddead0000") {
       return "0x4200000000000000000000000000000000000006";
-    else if (chainId === 288 && eventL2Token.toLowerCase() === "0x4200000000000000000000000000000000000006")
+    } else if (chainId === 288 && eventL2Token.toLowerCase() === "0x4200000000000000000000000000000000000006") {
       return "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000";
-    else return eventL2Token;
+    } else {
+      return eventL2Token;
+    }
   }
 
-  public hubPoolClient() {
-    return this.configStoreClient?.hubPoolClient;
+  public hubPoolClient(): HubPoolClient {
+    return this.configStoreClient?.hubPoolClient as HubPoolClient;
   }
 
   private async computeRealizedLpFeePct(depositEvent: FundsDepositedEvent) {
     const hubPoolClient = this.hubPoolClient();
-    if (!hubPoolClient || !this.configStoreClient) return { realizedLpFeePct: toBN(0), quoteBlock: 0 }; // If there is no rate model client return 0.
+    if (!hubPoolClient || !this.configStoreClient) {
+      return { realizedLpFeePct: toBN(0), quoteBlock: 0 };
+    } // If there is no rate model client return 0.
     const deposit = {
       amount: depositEvent.args.amount,
       originChainId: Number(depositEvent.args.originChainId),
@@ -669,11 +724,13 @@ export class SpokePoolClient {
     destinationChainId: number;
   }): string {
     const hubPoolClient = this.hubPoolClient();
-    if (!hubPoolClient) return ZERO_ADDRESS; // If there is no rate model client return address(0).
+    if (!hubPoolClient) {
+      return ZERO_ADDRESS;
+    } // If there is no rate model client return address(0).
     return hubPoolClient.getDestinationTokenForDeposit(deposit);
   }
 
-  private log(level: DefaultLogLevels, message: string, data?: any) {
+  private log(level: DefaultLogLevels, message: string, data?: AnyObject) {
     this.logger[level]({ at: "SpokePoolClient", chainId: this.chainId, message, ...data });
   }
 }
