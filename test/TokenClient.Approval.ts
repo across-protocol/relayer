@@ -1,4 +1,4 @@
-import { deploySpokePoolWithToken, expect, ethers, Contract, SignerWithAddress, MAX_UINT_VAL, toBN } from "./utils";
+import { deploySpokePoolWithToken, expect, ethers, Contract, SignerWithAddress, MAX_UINT_VAL } from "./utils";
 import { createSpyLogger, winston, originChainId, destinationChainId, lastSpyLogIncludes } from "./utils";
 import { deployAndConfigureHubPool, zeroAddress, getContractFactory, utf8ToHex, toBNWei } from "./utils";
 import { TokenClient, SpokePoolClient, HubPoolClient } from "../src/clients";
@@ -43,7 +43,6 @@ describe("TokenClient: Origin token approval", async function () {
       spokePool_1,
       null,
       originChainId,
-      undefined,
       spokePool1DeploymentBlock
     );
     spokePoolClient_2 = new SpokePoolClient(
@@ -51,7 +50,6 @@ describe("TokenClient: Origin token approval", async function () {
       spokePool_2,
       null,
       destinationChainId,
-      undefined,
       spokePool2DeploymentBlock
     );
 

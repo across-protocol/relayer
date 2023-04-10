@@ -1,22 +1,22 @@
-import { ethers } from "ethers";
 import {
   AugmentedTransaction,
-  MultiCallerClient, // tested
   knownRevertReasons,
   unknownRevertReason,
   unknownRevertReasonMethodsToIgnore,
 } from "../src/clients";
-import { TransactionResponse, TransactionSimulationResult } from "../src/utils";
+import { TransactionSimulationResult } from "../src/utils";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
-import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";
+import { createSpyLogger, Contract, expect, randomAddress, winston, toBN, smock, assertPromiseError } from "./utils";
+import { getAbi } from "@uma/contracts-node";
+import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 
-class MockedMultiCallerClient extends MultiCallerClient {
+class DummyMultiCallerClient extends MockedMultiCallerClient {
   public ignoredSimulationFailures: TransactionSimulationResult[] = [];
   public loggedSimulationFailures: TransactionSimulationResult[] = [];
 
-  constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}) {
-    super(logger, chunkSize);
+  constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}, public multisend?: Contract) {
+    super(logger, chunkSize, multisend);
     this.txnClient = new MockedTransactionClient(logger);
   }
 
@@ -50,13 +50,12 @@ class MockedMultiCallerClient extends MultiCallerClient {
 }
 
 // encodeFunctionData is called from within MultiCallerClient.buildMultiCallBundle.
-function encodeFunctionData(method: string, args?: ReadonlyArray<any>): string {
+function encodeFunctionData(_method: string, args: ReadonlyArray<any> = []): string {
   return args.join(" ");
 }
 
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
-const multiCaller: MockedMultiCallerClient = new MockedMultiCallerClient(spyLogger);
-const provider = new ethers.providers.StaticJsonRpcProvider("127.0.0.1");
+const multiCaller: DummyMultiCallerClient = new DummyMultiCallerClient(spyLogger);
 const address = randomAddress(); // Test contract address
 
 describe("MultiCallerClient", async function () {
@@ -101,7 +100,7 @@ describe("MultiCallerClient", async function () {
       const txns: AugmentedTransaction[] = chainIds.map((_chainId) => {
         const chainId = Number(_chainId);
         return {
-          chainId: chainId,
+          chainId,
           contract: { address },
           args: [{ result }],
           message: `Test transaction on chain ${chainId}`,
@@ -131,17 +130,18 @@ describe("MultiCallerClient", async function () {
           chainIds.forEach((_chainId) => {
             const chainId = Number(_chainId);
             const txnRequest: AugmentedTransaction = {
-              chainId: chainId,
+              chainId,
               contract: {
                 address,
                 interface: { encodeFunctionData },
-              },
+                multicall: 1,
+              } as unknown as Contract,
               method: "test",
               args: [{ result }],
               value: toBN(value),
               message: `Test ${txnType} transaction (${txn}/${nTxns}) on chain ${chainId}`,
               mrkdwn: `Sample markdown string for chain ${chainId} ${txnType} transaction`,
-            } as AugmentedTransaction;
+            };
 
             multiCaller.enqueueTransaction(txnRequest);
           });
@@ -157,7 +157,7 @@ describe("MultiCallerClient", async function () {
   });
 
   it("Correctly filters loggable vs. ignorable simulation failures", async function () {
-    const txn: AugmentedTransaction = {
+    const txn = {
       chainId: chainIds[0],
       contract: { address },
     } as AugmentedTransaction;
@@ -167,7 +167,7 @@ describe("MultiCallerClient", async function () {
       txn.args = [{ result: revertReason }];
       txn.message = `Transaction simulation failure; expected to fail with: ${revertReason}.`;
 
-      const result: AugmentedTransaction[] = await multiCaller.simulateTransactionQueue([txn]);
+      const result = await multiCaller.simulateTransactionQueue([txn]);
       expect(result.length).to.equal(0);
       expect(multiCaller.ignoredSimulationFailures.length).to.equal(1);
       expect(multiCaller.loggedSimulationFailures.length).to.equal(0);
@@ -179,7 +179,7 @@ describe("MultiCallerClient", async function () {
       txn.method = method;
       txn.message = `${txn.method} simulation; expected to fail with: ${unknownRevertReason}.`;
 
-      const result: AugmentedTransaction[] = await multiCaller.simulateTransactionQueue([txn]);
+      const result = await multiCaller.simulateTransactionQueue([txn]);
       expect(result.length).to.equal(0);
       expect(multiCaller.ignoredSimulationFailures.length).to.equal(1);
       expect(multiCaller.loggedSimulationFailures.length).to.equal(0);
@@ -193,7 +193,7 @@ describe("MultiCallerClient", async function () {
         txn.args = [{ result: revertReason }];
         txn.message = `${txn.method} simulation; expected to fail with: ${unknownRevertReason}.`;
 
-        const result: AugmentedTransaction[] = await multiCaller.simulateTransactionQueue([txn]);
+        const result = await multiCaller.simulateTransactionQueue([txn]);
         expect(result.length).to.equal(0);
         expect(multiCaller.ignoredSimulationFailures.length).to.equal(0);
         expect(multiCaller.loggedSimulationFailures.length).to.equal(1);
@@ -207,9 +207,9 @@ describe("MultiCallerClient", async function () {
     for (const badField of ["address", "chainId"]) {
       const txns: AugmentedTransaction[] = [];
 
-      for (const idx of [1, 2, 3, 4, 5]) {
-        const txn = {
-          chainId: chainId,
+      for (let i = 0; i < 5; ++i) {
+        const txn: AugmentedTransaction = {
+          chainId,
           contract: {
             address,
             interface: { encodeFunctionData },
@@ -218,14 +218,15 @@ describe("MultiCallerClient", async function () {
           args: ["2"],
           value: toBN(0),
           message: `Test multicall candidate on chain ${chainId}`,
-        } as AugmentedTransaction;
+          mrkdwn: "",
+        };
         txns.push(txn);
       }
 
       expect(txns.length).to.not.equal(0);
-      expect(() => multiCaller.buildMultiCallBundle(txns)).to.not.throw();
+      expect(() => multiCaller._buildMultiCallBundle(txns)).to.not.throw();
 
-      const badTxn: AugmentedTransaction = txns.pop();
+      const badTxn = txns.pop() as AugmentedTransaction;
       switch (badField) {
         case "address":
           badTxn.contract = {
@@ -240,8 +241,50 @@ describe("MultiCallerClient", async function () {
       }
 
       txns.push(badTxn);
-      expect(() => multiCaller.buildMultiCallBundle(txns)).to.throw("Multicall bundle data mismatch");
+      expect(() => multiCaller._buildMultiCallBundle(txns)).to.throw("Multicall bundle data mismatch");
     }
+  });
+
+  it("buildMultiCallBundle can handle transactions to different target contracts", async function () {
+    const chainId = chainIds[0];
+    const txns = [
+      {
+        chainId: chainId,
+        contract: {
+          address,
+          interface: { encodeFunctionData },
+        } as Contract,
+        method: "test3",
+        args: ["3"],
+        value: toBN(1),
+        message: `Test3 multicall candidate on chain ${chainId}`,
+      },
+      {
+        chainId: chainId,
+        contract: {
+          address,
+          interface: { encodeFunctionData },
+        } as Contract,
+        method: "test2",
+        args: ["2"],
+        value: toBN(0),
+        message: `Test2 multicall candidate on chain ${chainId}`,
+      },
+      {
+        chainId: chainId,
+        contract: {
+          address: randomAddress(),
+          interface: { encodeFunctionData },
+        } as Contract,
+        method: "test1",
+        args: ["1"],
+        message: `Test1 multicall candidate on chain ${chainId}`,
+      },
+    ] as AugmentedTransaction[];
+
+    // Should return one AugmentedTransaction per unique target, so two in total.
+    expect(() => multiCaller.buildMultiCallBundle(txns)).to.not.throw();
+    expect(multiCaller.buildMultiCallBundle(txns).length).to.equal(2);
   });
 
   it("Respects multicall bundle chunk size configurations", async function () {
@@ -251,7 +294,7 @@ describe("MultiCallerClient", async function () {
         return [chainId, 2 + idx * 2];
       })
     );
-    const _multiCaller = new MockedMultiCallerClient(spyLogger, chunkSize);
+    const _multiCaller = new DummyMultiCallerClient(spyLogger, chunkSize);
 
     const testMethod = "test";
     const nFullBundles = 3;
@@ -259,15 +302,18 @@ describe("MultiCallerClient", async function () {
       const multicallTxns: AugmentedTransaction[] = [];
       const _chunkSize = chunkSize[chainId];
 
-      const sampleTxn = {
+      const sampleTxn: AugmentedTransaction = {
         chainId,
         contract: {
           address,
           interface: { encodeFunctionData },
-        } as Contract,
+          multicall: 1,
+        } as unknown as Contract,
         method: testMethod,
         args: [],
-      } as AugmentedTransaction;
+        message: "",
+        mrkdwn: "",
+      };
 
       const nTxns = nFullBundles * _chunkSize + 1;
       for (let txn = 0; txn < nTxns; ++txn) {
@@ -290,5 +336,127 @@ describe("MultiCallerClient", async function () {
   it("Correctly handles 0-length input to multicall bundle generation", async function () {
     const txnQueue: AugmentedTransaction[] = await multiCaller.buildMultiCallBundles([], 10);
     expect(txnQueue.length).to.equal(0);
+  });
+
+  it("Correctly handles unpermissioned transactions", async function () {
+    const fakeMultisender = await smock.fake(getAbi("Multicall3"), { address: randomAddress() });
+    const multicallerWithMultisend = new DummyMultiCallerClient(spyLogger, {}, fakeMultisender as unknown as Contract);
+
+    // Can't pass any transactions to multisender bundler that are permissioned or different chains:
+    assertPromiseError(
+      multicallerWithMultisend.buildMultiSenderBundle([
+        {
+          chainId: 1,
+          unpermissioned: false,
+          contract: {
+            address,
+            interface: { encodeFunctionData },
+          } as Contract,
+          method: "test",
+          args: [],
+        },
+      ] as AugmentedTransaction[]),
+      "Multisender bundle data mismatch"
+    );
+    assertPromiseError(
+      multicallerWithMultisend.buildMultiSenderBundle([
+        {
+          chainId: 1,
+          unpermissioned: true,
+          contract: {
+            address,
+            interface: { encodeFunctionData },
+          } as Contract,
+          method: "test",
+          args: [],
+        },
+        {
+          chainId: 2,
+          unpermissioned: true,
+          contract: {
+            address,
+            interface: { encodeFunctionData },
+          } as Contract,
+          method: "test",
+          args: [],
+        },
+      ] as AugmentedTransaction[]),
+      "Multisender bundle data mismatch"
+    );
+
+    // Test returned result of `buildMultiSenderBundle`. Need to check target, expected method, data, etc.
+    const unpermissionedTransactions: AugmentedTransaction[] = [
+      {
+        chainId: 1,
+        unpermissioned: true,
+        contract: {
+          address,
+          interface: { encodeFunctionData },
+        } as Contract,
+        method: "test",
+        args: [],
+      } as AugmentedTransaction,
+    ];
+    let multisendTransaction = await multicallerWithMultisend.buildMultiSenderBundle(unpermissionedTransactions);
+    expect(multisendTransaction.method).to.equal("aggregate");
+    expect(multisendTransaction.contract.address).to.equal(fakeMultisender.address);
+    expect(multisendTransaction.args[0].length).to.equal(1);
+    expect(multisendTransaction.args[0][0].target).to.equal(address);
+    expect(multisendTransaction.args[0][0].callData).to.equal(encodeFunctionData("test()", []));
+
+    const secondAddress = randomAddress();
+    unpermissionedTransactions.push({
+      chainId: 1,
+      unpermissioned: true,
+      contract: {
+        address: secondAddress,
+        interface: { encodeFunctionData },
+      } as Contract,
+      method: "test2",
+      args: [11],
+    } as AugmentedTransaction);
+    multisendTransaction = await multicallerWithMultisend.buildMultiSenderBundle(unpermissionedTransactions);
+    expect(multisendTransaction.method).to.equal("aggregate");
+    expect(multisendTransaction.contract.address).to.equal(fakeMultisender.address);
+    expect(multisendTransaction.args[0].length).to.equal(2);
+    expect(multisendTransaction.args[0][1].target).to.equal(secondAddress);
+    expect(multisendTransaction.args[0][1].callData).to.equal(encodeFunctionData("test2(uint256)", [11]));
+
+    // Test that `buildMultiCallBundles` returns correct list (and order) of transactions
+    // given a list of transactions that can be bundled together.
+    const permissionedTransaction = [
+      {
+        chainId: 1,
+        contract: {
+          address: address,
+          interface: { encodeFunctionData },
+          multicall: 1,
+        } as unknown as Contract,
+        method: "test",
+        args: [],
+      },
+      {
+        chainId: 1,
+        contract: {
+          address: address,
+          interface: { encodeFunctionData },
+          multicall: 1,
+        } as unknown as Contract,
+        method: "test",
+        args: [],
+      },
+    ] as AugmentedTransaction[];
+    const bundle = await multicallerWithMultisend.buildMultiCallBundles([
+      ...permissionedTransaction,
+      ...unpermissionedTransactions,
+    ]);
+    expect(bundle.length).to.equal(2);
+
+    expect(bundle[0].method).to.equal("multicall");
+    expect(bundle[1].method).to.equal("aggregate");
+    expect(bundle[1].args[0][0].target).to.equal(address);
+    expect(bundle[1].args[0][1].target).to.equal(secondAddress);
+    expect(bundle[1].args[0][0].callData).to.equal(encodeFunctionData("test()", []));
+    expect(bundle[1].args[0][1].callData).to.equal(encodeFunctionData("test2(uint256)", [11]));
   });
 });

@@ -4,7 +4,7 @@ import { AcrossConfigStoreClient } from "../clients";
 import { ProposedRootBundle, SortableEvent } from "../interfaces";
 
 export async function getDvmContract(mainnetProvider: ethers.providers.Provider): Promise<Contract> {
-  return new Contract(await uma.getVotingAddress(1), uma.getAbi("Voting"), mainnetProvider);
+  return new Contract(await uma.getVotingV2Address(1), uma.getAbi("VotingV2"), mainnetProvider);
 }
 export function getDisputedProposal(
   configStoreClient: AcrossConfigStoreClient,
@@ -21,7 +21,7 @@ export async function getDisputeForTimestamp(
   disputeRequestTimestamp: number,
   disputeRequestBlock?: number
 ): Promise<SortableEvent | undefined> {
-  const filter = dvm.filters.PriceRequestAdded();
+  const filter = dvm.filters.RequestAdded();
   const priceRequestBlock =
     disputeRequestBlock !== undefined
       ? disputeRequestBlock
@@ -29,9 +29,7 @@ export async function getDisputeForTimestamp(
           configStoreClient.hubPoolClient.chainId,
           configStoreClient.hubPoolClient.chainId,
           disputeRequestTimestamp,
-          getCurrentTime(),
-          configStoreClient.blockFinder,
-          configStoreClient.redisClient
+          getCurrentTime()
         );
   const disputes = await dvm.queryFilter(filter, priceRequestBlock, priceRequestBlock);
   return disputes.find((e) => e.args.time.toString() === disputeRequestTimestamp.toString()) as SortableEvent;

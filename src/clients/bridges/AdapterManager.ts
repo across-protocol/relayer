@@ -6,10 +6,11 @@ import {
   etherscanLink,
   Signer,
   getL2TokenAddresses,
+  TransactionResponse,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter } from "./";
-import { OutstandingTransfers } from "../../interfaces/Bridge";
+import { OutstandingTransfers } from "../../interfaces";
 export class AdapterManager {
   public adapters: { [chainId: number]: OptimismAdapter | ArbitrumAdapter | PolygonAdapter } = {};
 
@@ -47,7 +48,12 @@ export class AdapterManager {
     return await this.adapters[chainId].getOutstandingCrossChainTransfers(l1Tokens);
   }
 
-  async sendTokenCrossChain(address: string, chainId: number | string, l1Token: string, amount: BigNumber) {
+  async sendTokenCrossChain(
+    address: string,
+    chainId: number | string,
+    l1Token: string,
+    amount: BigNumber
+  ): Promise<TransactionResponse> {
     chainId = Number(chainId); // Ensure chainId is a number before using.
     this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
     const l2Token = this.l2TokenForL1Token(l1Token, Number(chainId));
@@ -56,7 +62,7 @@ export class AdapterManager {
 
   // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
   // needs to e done on Boba and Optimism as only these two chains require ETH to be sent over the canonical bridge.
-  async wrapEthIfAboveThreshold(wrapThreshold: BigNumber) {
+  async wrapEthIfAboveThreshold(wrapThreshold: BigNumber): Promise<void> {
     const optimismCall =
       this.spokePoolClients[10] !== undefined
         ? (this.adapters[10] as OptimismAdapter).wrapEthIfAboveThreshold(wrapThreshold)
@@ -89,8 +95,12 @@ export class AdapterManager {
       // That the line below is critical. if the hubpoolClient returns the wrong destination token for the L1 token then
       // the bot can irrecoverably send the wrong token to the chain and loose money. It should crash if this is detected.
       const l2TokenForL1Token = this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId);
-      if (!l2TokenForL1Token) throw new Error("No L2 token found for L1 token");
-      if (l2TokenForL1Token !== getL2TokenAddresses(l1Token)[chainId]) throw new Error("Mismatch tokens!");
+      if (!l2TokenForL1Token) {
+        throw new Error("No L2 token found for L1 token");
+      }
+      if (l2TokenForL1Token !== getL2TokenAddresses(l1Token)[chainId]) {
+        throw new Error("Mismatch tokens!");
+      }
       return l2TokenForL1Token;
     } catch (error) {
       this.logger.error({
@@ -104,7 +114,7 @@ export class AdapterManager {
     }
   }
 
-  async setL1TokenApprovals(address: string, l1Tokens: string[]) {
+  async setL1TokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     // Each of these calls must happen sequentially or we'll have collisions within the TransactionUtil. This should
     // be refactored in a follow on PR to separate out by nonce increment by making the transaction util stateful.
     if (this.adapters[10] !== undefined) {
@@ -141,5 +151,5 @@ export class AdapterManager {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function
-  async update() {}
+  async update(): Promise<void> {}
 }

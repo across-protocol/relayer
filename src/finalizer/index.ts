@@ -3,10 +3,12 @@ import {
   config,
   startupLogLevel,
   processEndPollingLoop,
-  Contract,
-  ethers,
   getNetworkName,
   etherscanLink,
+  getBlockForTimestamp,
+  getCurrentTime,
+  disconnectRedisClient,
+  getMultisender,
 } from "../utils";
 import { winston } from "../utils";
 import {
@@ -17,7 +19,7 @@ import {
   multicallArbitrumFinalizations,
 } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { HubPoolClient } from "../clients";
+import { AcrossConfigStoreClient } from "../clients";
 import { DataworkerConfig } from "../dataworker/DataworkerConfig";
 import {
   constructClients,
@@ -26,15 +28,12 @@ import {
   Clients,
   ProcessEnv,
   FINALIZER_TOKENBRIDGE_LOOKBACK,
+  Multicall2Call,
 } from "../common";
-import { Multicall2Ethers__factory } from "@uma/contracts-node";
+import * as optimismSDK from "@eth-optimism/sdk";
+import * as bobaSDK from "@across-protocol/boba-sdk";
 config();
 let logger: winston.Logger;
-
-export interface Multicall2Call {
-  callData: ethers.utils.BytesLike;
-  target: string;
-}
 
 export interface Withdrawal {
   l2ChainId: number;
@@ -43,26 +42,21 @@ export interface Withdrawal {
 }
 
 // Filter for optimistic rollups
-const fiveDaysOfBlocks = 5 * 24 * 60 * 60; // Assuming a slow 1s/block rate for Arbitrum and Optimism.
-// Filter for polygon
-const oneDayOfBlocks = (24 * 60 * 60) / 2; // Assuming 2s/block
+const oneDaySeconds = 24 * 60 * 60;
 
 export async function finalize(
   logger: winston.Logger,
   hubSigner: Wallet,
-  hubPoolClient: HubPoolClient,
+  configStoreClient: AcrossConfigStoreClient,
   spokePoolClients: SpokePoolClientsByChain,
   configuredChainIds: number[],
-  optimisticRollupFinalizationWindow: number = fiveDaysOfBlocks,
-  polygonFinalizationWindow: number = oneDayOfBlocks
+  optimisticRollupFinalizationWindow: number = 5 * oneDaySeconds,
+  polygonFinalizationWindow: number = oneDaySeconds
 ): Promise<void> {
+  const hubPoolClient = configStoreClient.hubPoolClient;
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
-  const multicall2 = new Contract(
-    "0x5ba1e12693dc8f9c48aad8770482f4739beed696",
-    Multicall2Ethers__factory.abi,
-    hubPoolClient.hubPool.signer
-  );
+  const multicall2 = getMultisender(1, hubSigner);
   const finalizationsToBatch: { callData: Multicall2Call[]; withdrawals: Withdrawal[] } = {
     callData: [],
     withdrawals: [],
@@ -71,13 +65,33 @@ export async function finalize(
   // on L1.
   for (const chainId of configuredChainIds) {
     const client = spokePoolClients[chainId];
+    if (client === undefined) {
+      logger.warn({
+        at: "Finalizer",
+        message: `Skipping finalizations for ${getNetworkName(
+          chainId
+        )} because spoke pool client does not exist, is it disabled?`,
+        configuredChainIds,
+        availableChainIds: Object.keys(spokePoolClients),
+      });
+      continue;
+    }
     const tokensBridged = client.getTokensBridged();
 
     if (chainId === 42161) {
-      // Skip events that are likely not past the seven day challenge period.
-      const olderTokensBridgedEvents = tokensBridged.filter(
-        (e) => e.blockNumber < client.latestBlockNumber - optimisticRollupFinalizationWindow
+      const firstBlockToFinalize = await getBlockForTimestamp(
+        hubPoolClient.chainId,
+        chainId,
+        getCurrentTime() - optimisticRollupFinalizationWindow,
+        getCurrentTime()
       );
+      logger.debug({
+        at: "Finalizer",
+        message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
+        firstBlockToFinalize,
+      });
+      // Skip events that are likely not past the seven day challenge period.
+      const olderTokensBridgedEvents = tokensBridged.filter((e) => e.blockNumber < firstBlockToFinalize);
       const finalizations = await multicallArbitrumFinalizations(
         olderTokensBridgedEvents,
         hubSigner,
@@ -88,11 +102,20 @@ export async function finalize(
       finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
     } else if (chainId === 137) {
       const posClient = await getPosClient(hubSigner);
+      const lastBlockToFinalize = await getBlockForTimestamp(
+        hubPoolClient.chainId,
+        chainId,
+        getCurrentTime() - polygonFinalizationWindow,
+        getCurrentTime()
+      );
+      logger.debug({
+        at: "Finalizer",
+        message: `Earliest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
+        lastBlockToFinalize,
+      });
       // Unlike the rollups, withdrawals process very quickly on polygon, so we can conservatively remove any events
       // that are older than 1 day old:
-      const recentTokensBridgedEvents = tokensBridged.filter(
-        (e) => e.blockNumber >= client.latestBlockNumber - polygonFinalizationWindow
-      );
+      const recentTokensBridgedEvents = tokensBridged.filter((e) => e.blockNumber >= lastBlockToFinalize);
       const finalizations = await multicallPolygonFinalizations(
         recentTokensBridgedEvents,
         posClient,
@@ -104,11 +127,45 @@ export async function finalize(
       finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
     } else if (chainId === 10) {
       // Skip events that are likely not past the seven day challenge period.
-      const olderTokensBridgedEvents = tokensBridged.filter(
-        (e) => e.blockNumber < client.latestBlockNumber - optimisticRollupFinalizationWindow
+      const firstBlockToFinalize = await getBlockForTimestamp(
+        hubPoolClient.chainId,
+        chainId,
+        getCurrentTime() - optimisticRollupFinalizationWindow,
+        getCurrentTime()
       );
-      const crossChainMessenger = getOptimismClient(hubSigner);
+      logger.debug({
+        at: "Finalizer",
+        message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
+        firstBlockToFinalize,
+      });
+      const olderTokensBridgedEvents = tokensBridged.filter((e) => e.blockNumber < firstBlockToFinalize);
+      const crossChainMessenger = getOptimismClient(chainId, hubSigner) as optimismSDK.CrossChainMessenger;
       const finalizations = await multicallOptimismFinalizations(
+        chainId,
+        olderTokensBridgedEvents,
+        crossChainMessenger,
+        hubPoolClient,
+        logger
+      );
+      finalizationsToBatch.callData.push(...finalizations.callData);
+      finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
+    } else if (chainId === 288) {
+      // Skip events that are likely not past the seven day challenge period.
+      const firstBlockToFinalize = await getBlockForTimestamp(
+        hubPoolClient.chainId,
+        chainId,
+        getCurrentTime() - optimisticRollupFinalizationWindow,
+        getCurrentTime()
+      );
+      logger.debug({
+        at: "Finalizer",
+        message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
+        firstBlockToFinalize,
+      });
+      const olderTokensBridgedEvents = tokensBridged.filter((e) => e.blockNumber < firstBlockToFinalize);
+      const crossChainMessenger = getOptimismClient(chainId, hubSigner) as bobaSDK.CrossChainMessenger;
+      const finalizations = await multicallOptimismFinalizations(
+        chainId,
         olderTokensBridgedEvents,
         crossChainMessenger,
         hubPoolClient,
@@ -133,7 +190,8 @@ export async function finalize(
           transactionHash: etherscanLink(txn.transactionHash, 1),
         });
       });
-    } catch (error) {
+    } catch (_error) {
+      const error = _error as Error;
       logger.warn({
         at: "Finalizer",
         message: "Error creating aggregateTx",
@@ -144,9 +202,19 @@ export async function finalize(
   }
 }
 
-export async function constructFinalizerClients(_logger: winston.Logger, config, baseSigner: Wallet) {
+export async function constructFinalizerClients(
+  _logger: winston.Logger,
+  config: FinalizerConfig,
+  baseSigner: Wallet
+): Promise<{
+  commonClients: Clients;
+  spokePoolClients: SpokePoolClientsByChain;
+}> {
   const commonClients = await constructClients(_logger, config, baseSigner);
+  await updateFinalizerClients(commonClients);
 
+  // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override
+  // the disabled chain list by setting the DISABLED_CHAINS_OVERRIDE environment variable.
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
     commonClients.configStoreClient,
@@ -167,22 +235,12 @@ async function updateFinalizerClients(clients: Clients) {
 }
 
 export class FinalizerConfig extends DataworkerConfig {
-  readonly optimisticRollupFinalizationWindow: number;
-  readonly polygonFinalizationWindow: number;
   readonly maxFinalizerLookback: number;
 
   constructor(env: ProcessEnv) {
-    const {
-      FINALIZER_OROLLUP_FINALIZATION_WINDOW,
-      FINALIZER_POLYGON_FINALIZATION_WINDOW,
-      FINALIZER_MAX_TOKENBRIDGE_LOOKBACK,
-    } = env;
+    const { FINALIZER_MAX_TOKENBRIDGE_LOOKBACK } = env;
     super(env);
 
-    // By default, filters out any TokensBridged events younger than 5 days old and older than 10 days old.
-    this.optimisticRollupFinalizationWindow = Number(FINALIZER_OROLLUP_FINALIZATION_WINDOW ?? fiveDaysOfBlocks);
-    // By default, filters out any TokensBridged events younger than 1 days old and older than 2 days old.
-    this.polygonFinalizationWindow = Number(FINALIZER_POLYGON_FINALIZATION_WINDOW ?? oneDayOfBlocks);
     // `maxFinalizerLookback` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxFinalizerLookback = Number(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK ?? FINALIZER_TOKENBRIDGE_LOOKBACK);
   }
@@ -193,38 +251,34 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet):
   // Same config as Dataworker for now.
   const config = new FinalizerConfig(process.env);
 
+  logger[startupLogLevel(config)]({ at: "Finalizer#index", message: "Finalizer started 🏋🏿‍♀️", config });
   const { commonClients, spokePoolClients } = await constructFinalizerClients(logger, config, baseSigner);
 
   try {
-    logger[startupLogLevel(config)]({ at: "Finalizer#index", message: "Finalizer started 🏋🏿‍♀️", config });
-
     for (;;) {
       const loopStart = Date.now();
-      await updateFinalizerClients(commonClients);
       await updateSpokePoolClients(spokePoolClients, ["TokensBridged", "EnabledDepositRoute"]);
 
-      if (config.finalizerEnabled)
+      if (config.finalizerEnabled) {
         await finalize(
           logger,
           commonClients.hubSigner,
-          commonClients.hubPoolClient,
+          commonClients.configStoreClient,
           spokePoolClients,
-          config.finalizerChains,
-          config.optimisticRollupFinalizationWindow,
-          config.polygonFinalizationWindow
+          config.finalizerChains
         );
-      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
+      } else {
+        logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
+      }
 
       logger.debug({ at: "Finalizer#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
 
-      if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
+      if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) {
+        break;
+      }
     }
   } catch (error) {
-    if (commonClients.configStoreClient.redisClient !== undefined) {
-      // If this throws an exception, it will mask the underlying error.
-      logger.debug("Disconnecting from redis server.");
-      commonClients.configStoreClient.redisClient.disconnect();
-    }
+    await disconnectRedisClient(logger);
     throw error;
   }
 }

@@ -6,7 +6,7 @@ import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_L
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { MAX_UINT_VAL } from "../src/utils";
 import { BalanceAllocator } from "../src/clients/BalanceAllocator";
-import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
+import { spokePoolClientsToProviders } from "../src/common";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";

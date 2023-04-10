@@ -1,9 +1,8 @@
-/* eslint-disable no-process-exit */
 import { ethers, getSigner, getProvider, ERC20, ZERO_ADDRESS, toBN } from "../src/utils";
 import { askYesNoQuestion } from "./utils";
-const args = require("minimist")(process.argv.slice(2), {
-  string: ["token", "to", "amount"],
-  number: ["chainId"],
+import minimist from "minimist";
+const args = minimist(process.argv.slice(2), {
+  string: ["token", "to", "amount", "chainId"],
 });
 
 // Example run:
@@ -16,22 +15,34 @@ const args = require("minimist")(process.argv.slice(2), {
 
 export async function run(): Promise<void> {
   console.log("Executing Token sender 💸");
-  if (!Object.keys(args).includes("token")) throw new Error("Define `token` as the address of the token to send");
-  if (!Object.keys(args).includes("amount")) throw new Error("Define `amount` as how much you want to send");
-  if (!Object.keys(args).includes("to")) throw new Error("Define `to` as where you want to send funds to");
-  if (!Object.keys(args).includes("chainId")) throw new Error("Define `chainId` as the chain you want to connect on");
+  if (!Object.keys(args).includes("token")) {
+    throw new Error("Define `token` as the address of the token to send");
+  }
+  if (!Object.keys(args).includes("amount")) {
+    throw new Error("Define `amount` as how much you want to send");
+  }
+  if (!Object.keys(args).includes("to")) {
+    throw new Error("Define `to` as where you want to send funds to");
+  }
+  if (!Object.keys(args).includes("chainId")) {
+    throw new Error("Define `chainId` as the chain you want to connect on");
+  }
   const baseSigner = await getSigner();
-  const connectedSigner = baseSigner.connect(getProvider(Number(args.chainId)));
+  const connectedSigner = baseSigner.connect(await getProvider(Number(args.chainId)));
   console.log("Connected to account", connectedSigner.address);
   const recipient = args.to;
   const token = args.token;
-  if (!ethers.utils.isAddress(recipient)) throw new Error("invalid addresses");
+  if (!ethers.utils.isAddress(recipient)) {
+    throw new Error("invalid addresses");
+  }
 
   // Send ETH
   if (token === ZERO_ADDRESS) {
     const amountFromWei = ethers.utils.formatUnits(args.amount, 18);
     console.log(`Send ETH with amount ${amountFromWei} tokens to ${recipient} on chain ${args.chainId}`);
-    if (!(await askYesNoQuestion("\nConfirm that you want to execute this transaction?"))) process.exit(0);
+    if (!(await askYesNoQuestion("\nConfirm that you want to execute this transaction?"))) {
+      return;
+    }
     console.log("sending...");
     const tx = await connectedSigner.sendTransaction({ to: recipient, value: toBN(args.amount) });
     const receipt = await tx.wait();
@@ -45,7 +56,9 @@ export async function run(): Promise<void> {
     const amountFromWei = ethers.utils.formatUnits(args.amount, decimals);
     // Check the user is ok with the info provided. else abort.
     console.log(`Send ${symbol} with amount ${amountFromWei} tokens to ${recipient} on chain ${args.chainId}`);
-    if (!(await askYesNoQuestion("\nConfirm that you want to execute this transaction?"))) process.exit(0);
+    if (!(await askYesNoQuestion("\nConfirm that you want to execute this transaction?"))) {
+      return;
+    }
     console.log("sending...");
     const tx = await erc20.transfer(recipient, args.amount);
     const receipt = await tx.wait();
@@ -56,10 +69,12 @@ export async function run(): Promise<void> {
 if (require.main === module) {
   run()
     .then(async () => {
+      // eslint-disable-next-line no-process-exit
       process.exit(0);
     })
     .catch(async (error) => {
       console.error("Process exited with", error);
+      // eslint-disable-next-line no-process-exit
       process.exit(1);
     });
 }

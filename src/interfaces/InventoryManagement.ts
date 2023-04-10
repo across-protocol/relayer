@@ -1,4 +1,4 @@
-import { BigNumber } from "../utils";
+import { BigNumber } from "ethers";
 
 export interface InventoryConfig {
   tokenConfig: {

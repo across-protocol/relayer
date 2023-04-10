@@ -1,8 +1,9 @@
-import { getProvider, Wallet, winston, convertFromWei, groupObjectCountsByProp, Contract } from "../../utils";
-import { L2ToL1MessageStatus, L2TransactionReceipt, getL2Network, IL2ToL1MessageWriter } from "@arbitrum/sdk";
+import { Wallet, winston, convertFromWei, groupObjectCountsByProp, Contract, getCachedProvider } from "../../utils";
+import { L2ToL1MessageStatus, L2TransactionReceipt, getL2Network, L2ToL1MessageWriter } from "@arbitrum/sdk";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
-import { Multicall2Call, Withdrawal } from "..";
+import { Withdrawal } from "..";
+import { Multicall2Call } from "../../common";
 
 const CHAIN_ID = 42161;
 
@@ -34,10 +35,11 @@ export async function multicallArbitrumFinalizations(
   };
 }
 
-export async function finalizeArbitrum(message: IL2ToL1MessageWriter): Promise<Multicall2Call> {
-  const l2Provider = getProvider(CHAIN_ID);
+export async function finalizeArbitrum(message: L2ToL1MessageWriter): Promise<Multicall2Call> {
+  const l2Provider = getCachedProvider(CHAIN_ID, true);
   const proof = await message.getOutboxProof(l2Provider);
   const outbox = new Contract((await getL2Network(l2Provider)).ethBridge.outbox, outboxAbi);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const eventData = (message as any).nitroWriter.event; // nitroWriter is a private property on the
   // L2ToL1MessageWriter class, which we need to form the calldata so unfortunately we must cast to `any`.
   const callData = await outbox.populateTransaction.executeTransaction(
@@ -58,7 +60,17 @@ export async function finalizeArbitrum(message: IL2ToL1MessageWriter): Promise<M
   };
 }
 
-export async function getFinalizableMessages(logger: winston.Logger, tokensBridged: TokensBridged[], l1Signer: Wallet) {
+export async function getFinalizableMessages(
+  logger: winston.Logger,
+  tokensBridged: TokensBridged[],
+  l1Signer: Wallet
+): Promise<
+  {
+    info: TokensBridged;
+    message: L2ToL1MessageWriter;
+    status: string;
+  }[]
+> {
   const allMessagesWithStatuses = await getAllMessageStatuses(tokensBridged, logger, l1Signer);
   const statusesGrouped = groupObjectCountsByProp(
     allMessagesWithStatuses,
@@ -76,7 +88,13 @@ export async function getAllMessageStatuses(
   tokensBridged: TokensBridged[],
   logger: winston.Logger,
   mainnetSigner: Wallet
-) {
+): Promise<
+  {
+    info: TokensBridged;
+    message: L2ToL1MessageWriter;
+    status: string;
+  }[]
+> {
   // For each token bridge event, store a unique log index for the event within the arbitrum transaction hash.
   // This is important for bridge transactions containing multiple events.
   const uniqueTokenhashes = {};
@@ -106,15 +124,15 @@ export async function getMessageOutboxStatusAndProof(
   l1Signer: Wallet,
   logIndex: number
 ): Promise<{
-  message: IL2ToL1MessageWriter;
+  message: L2ToL1MessageWriter;
   status: string;
 }> {
-  const l2Provider = getProvider(CHAIN_ID);
+  const l2Provider = getCachedProvider(CHAIN_ID, true);
   const receipt = await l2Provider.getTransactionReceipt(event.transactionHash);
   const l2Receipt = new L2TransactionReceipt(receipt);
 
   try {
-    const l2ToL1Messages = await l2Receipt.getL2ToL1Messages(l1Signer, l2Provider);
+    const l2ToL1Messages = await l2Receipt.getL2ToL1Messages(l1Signer);
     if (l2ToL1Messages.length === 0 || l2ToL1Messages.length - 1 < logIndex) {
       const error = new Error(`No outgoing messages found in transaction:${event.transactionHash}`);
       logger.warn({

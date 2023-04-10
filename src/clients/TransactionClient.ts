@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   winston,
   getNetworkName,
@@ -15,9 +16,12 @@ export interface AugmentedTransaction {
   chainId: number;
   method: string;
   args: any[];
-  message: string;
-  mrkdwn: string;
+  message?: string;
+  mrkdwn?: string;
   value?: BigNumber;
+  unpermissioned?: boolean; // If false, the transaction must be sent from the enqueuer of the method.
+  // If true, then can be sent from the MakerDAO multisender contract.
+  canFailInSimulation?: boolean;
 }
 
 export class TransactionClient {
@@ -51,11 +55,13 @@ export class TransactionClient {
     // Transactions are submitted sequentially to avoid nonce collisions. More
     // advanced nonce management may permit them to be submitted in parallel.
     let mrkdwn = "";
-    let nonce: number = null;
+    let nonce: number | null = null;
     for (let idx = 0; idx < txns.length; ++idx) {
       const txn: AugmentedTransaction = txns[idx];
       let response: TransactionResponse;
-      if (nonce !== null) this.logger.debug({ at: "TransactionClient#submit", message: `Using nonce ${nonce}.` });
+      if (nonce !== null) {
+        this.logger.debug({ at: "TransactionClient#submit", message: `Using nonce ${nonce}.` });
+      }
 
       try {
         response = await this._submit(txn, nonce);

@@ -95,7 +95,6 @@ describe("ProfitClient: Consider relay profit", async function () {
       spokePool_1.connect(owner),
       null,
       originChainId,
-      undefined,
       spokePool1DeploymentBlock
     );
     const spokePoolClient_2 = new SpokePoolClient(
@@ -103,19 +102,16 @@ describe("ProfitClient: Consider relay profit", async function () {
       spokePool_2.connect(owner),
       null,
       destinationChainId,
-      undefined,
       spokePool2DeploymentBlock
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
-    const ignoreProfitability = false;
     const debugProfitability = true;
 
     profitClient = new MockProfitClient(
       spyLogger,
       hubPoolClient,
       spokePoolClients,
-      ignoreProfitability,
       [],
       minRelayerFeePct,
       debugProfitability
@@ -194,20 +190,25 @@ describe("ProfitClient: Consider relay profit", async function () {
       } as Deposit;
 
       // Verify that it works before we break it.
-      expect(() => profitClient.calculateFillProfitability(deposit, fillAmount, l1Token)).to.not.throw();
+      expect(() =>
+        profitClient.calculateFillProfitability(deposit, fillAmount, l1Token, minRelayerFeePct)
+      ).to.not.throw();
 
       spyLogger.debug({ message: `Verifying exception on gas cost estimation lookup failure on chain ${chainId}.` });
       profitClient.setGasCosts({});
-      expect(() => profitClient.calculateFillProfitability(deposit, fillAmount, l1Token)).to.throw();
+      expect(() => profitClient.calculateFillProfitability(deposit, fillAmount, l1Token, minRelayerFeePct)).to.throw();
       profitClient.setGasCosts(gasCost);
 
       spyLogger.debug({ message: `Verifying exception on token price lookup failure on chain ${chainId}.` });
-      profitClient.setTokenPrices({});
-      expect(() => profitClient.calculateFillProfitability(deposit, fillAmount, l1Token)).to.throw();
+      profitClient.setTokenPrices({ [l1Token.address]: toBN(0) });
+      // Setting price to 0 causes a downstream error in calculateFillProfitability.
+      expect(() => profitClient.calculateFillProfitability(deposit, fillAmount, l1Token, minRelayerFeePct)).to.throw();
       setDefaultTokenPrices(profitClient);
 
       // Verify we left everything as we found it.
-      expect(() => profitClient.calculateFillProfitability(deposit, fillAmount, l1Token)).to.not.throw();
+      expect(() =>
+        profitClient.calculateFillProfitability(deposit, fillAmount, l1Token, minRelayerFeePct)
+      ).to.not.throw();
     });
   });
 
@@ -280,6 +281,45 @@ describe("ProfitClient: Consider relay profit", async function () {
     });
   });
 
+  it("Allows per-route and per-token fee configuration", async function () {
+    // Setup custom USDC pricing to Optimism.
+    chainIds.forEach((srcChainId) => {
+      process.env[`MIN_RELAYER_FEE_PCT_USDC_${srcChainId}_10`] = Math.random().toPrecision(10).toString();
+      process.env[`MIN_RELAYER_FEE_PCT_USDC_${srcChainId}_42161`] = "0.00005";
+    });
+
+    const envPrefix = "MIN_RELAYER_FEE_PCT";
+    ["USDC", "DAI", "WETH", "WBTC"].forEach((symbol) => {
+      chainIds.forEach((srcChainId) => {
+        chainIds.forEach((dstChainId) => {
+          if (srcChainId === dstChainId) {
+            return;
+          }
+
+          const envVar = `${envPrefix}_${symbol}_${srcChainId}_${dstChainId}`;
+          const routeFee = process.env[envVar];
+          const routeMinRelayerFeePct = routeFee ? toBNWei(routeFee) : minRelayerFeePct;
+          const computedMinRelayerFeePct = profitClient.minRelayerFeePct(symbol, srcChainId, dstChainId);
+          spyLogger.debug({
+            message: `Expect relayerFeePct === ${routeMinRelayerFeePct}`,
+            routeFee,
+            symbol,
+            srcChainId,
+            dstChainId,
+            computedMinRelayerFeePct,
+          });
+
+          // Cleanup env as we go.
+          if (routeFee) {
+            process.env[envVar] = undefined;
+          }
+
+          expect(computedMinRelayerFeePct.eq(routeMinRelayerFeePct)).to.be.true;
+        });
+      });
+    });
+  });
+
   it("Considers deposits with newRelayerFeePct", async function () {
     const l1Token: L1Token = tokens["WETH"];
     hubPoolClient.setTokenInfoToReturn(l1Token);
@@ -291,11 +331,11 @@ describe("ProfitClient: Consider relay profit", async function () {
     } as Deposit;
 
     let fill: FillProfit;
-    fill = profitClient.calculateFillProfitability(deposit, fillAmount, l1Token);
+    fill = profitClient.calculateFillProfitability(deposit, fillAmount, l1Token, minRelayerFeePct);
     expect(fill.grossRelayerFeePct.eq(deposit.relayerFeePct)).to.be.true;
 
     deposit["newRelayerFeePct"] = toBNWei("0.1");
-    fill = profitClient.calculateFillProfitability(deposit, fillAmount, l1Token);
+    fill = profitClient.calculateFillProfitability(deposit, fillAmount, l1Token, minRelayerFeePct);
     expect(fill.grossRelayerFeePct.eq(deposit.newRelayerFeePct)).to.be.true;
   });
 
@@ -311,12 +351,12 @@ describe("ProfitClient: Consider relay profit", async function () {
     const fillAmount = toBNWei(1);
 
     let fill: FillProfit;
-    fill = profitClient.calculateFillProfitability(deposit, fillAmount, l1Token);
+    fill = profitClient.calculateFillProfitability(deposit, fillAmount, l1Token, minRelayerFeePct);
     expect(fill.grossRelayerFeePct.eq(deposit.relayerFeePct)).to.be.true;
 
     deposit.relayerFeePct = toBNWei(".001");
     expect(deposit.relayerFeePct.lt(deposit.newRelayerFeePct)).to.be.true; // Sanity check
-    fill = profitClient.calculateFillProfitability(deposit, fillAmount, l1Token);
+    fill = profitClient.calculateFillProfitability(deposit, fillAmount, l1Token, minRelayerFeePct);
     expect(fill.grossRelayerFeePct.eq(deposit.newRelayerFeePct)).to.be.true;
   });
 

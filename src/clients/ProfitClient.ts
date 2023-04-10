@@ -58,6 +58,7 @@ const { acrossApi, coingecko, defiLlama } = priceClient.adapters;
 
 export class ProfitClient {
   private readonly priceClient;
+  protected minRelayerFees: { [route: string]: BigNumber } = {};
   protected tokenPrices: { [l1Token: string]: BigNumber } = {};
   private unprofitableFills: { [chainId: number]: { deposit: Deposit; fillAmount: BigNumber }[] } = {};
 
@@ -72,9 +73,8 @@ export class ProfitClient {
     readonly logger: winston.Logger,
     readonly hubPoolClient: HubPoolClient,
     spokePoolClients: SpokePoolClientsByChain,
-    readonly ignoreProfitability: boolean,
     readonly enabledChainIds: number[],
-    readonly minRelayerFeePct: BigNumber = toBNWei(constants.RELAYER_MIN_FEE_PCT),
+    readonly defaultMinRelayerFeePct: BigNumber = toBNWei(constants.RELAYER_MIN_FEE_PCT),
     readonly debugProfitability: boolean = false,
     protected gasMultiplier: BigNumber = toBNWei(1)
   ) {
@@ -153,22 +153,45 @@ export class ProfitClient {
     this.unprofitableFills = {};
   }
 
+  // Allow the minimum relayer fee to be overridden per token/route:
+  // 0.1bps on USDC from Optimism to Arbitrum:
+  //   - MIN_RELAYER_FEE_PCT_USDC_42161_10=0.00001
+  minRelayerFeePct(symbol: string, srcChainId: number, dstChainId: number): BigNumber {
+    const routeKey = `${symbol}_${srcChainId}_${dstChainId}`;
+    let minRelayerFeePct = this.minRelayerFees[routeKey];
+
+    if (!minRelayerFeePct) {
+      const _minRelayerFeePct = process.env[`MIN_RELAYER_FEE_PCT_${routeKey}`];
+      minRelayerFeePct = _minRelayerFeePct ? toBNWei(_minRelayerFeePct) : this.defaultMinRelayerFeePct;
+
+      // Save the route for next time.
+      this.minRelayerFees[routeKey] = minRelayerFeePct;
+    }
+
+    return minRelayerFeePct as BigNumber;
+  }
+
   appliedRelayerFeePct(deposit: Deposit): BigNumber {
     // Return the maximum available relayerFeePct (max of Deposit and any SpeedUp).
     return max(toBN(deposit.relayerFeePct), deposit.newRelayerFeePct ? toBN(deposit.newRelayerFeePct) : toBN(0));
   }
 
-  calculateFillProfitability(deposit: Deposit, fillAmount: BigNumber, l1Token?: L1Token): FillProfit {
+  calculateFillProfitability(
+    deposit: Deposit,
+    fillAmount: BigNumber,
+    l1Token: L1Token,
+    minRelayerFeePct: BigNumber
+  ): FillProfit {
     assert(fillAmount.gt(0), `Unexpected fillAmount: ${fillAmount}`);
     assert(
       Object.keys(GAS_TOKEN_BY_CHAIN_ID).includes(deposit.destinationChainId.toString()),
       `Unsupported destination chain ID: ${deposit.destinationChainId}`
     );
 
-    l1Token ??= this.hubPoolClient.getTokenInfoForDeposit(deposit);
-    assert(l1Token !== undefined, `No L1 token found for deposit ${JSON.stringify(deposit)}`);
     const tokenPriceUsd = this.getPriceOfToken(l1Token.address);
-    if (tokenPriceUsd.lte(0)) throw new Error(`Unable to determine ${l1Token.symbol} L1 token price`);
+    if (tokenPriceUsd.lte(0)) {
+      throw new Error(`Unable to determine ${l1Token.symbol} L1 token price`);
+    }
 
     // Normalise to 18 decimals.
     const scaledFillAmount =
@@ -193,7 +216,7 @@ export class ProfitClient {
     const netRelayerFeePct = netRelayerFeeUsd.mul(toBNWei(1)).div(relayerCapitalUsd);
 
     // If token price or gas cost is unknown, assume the relay is unprofitable.
-    const fillProfitable = tokenPriceUsd.gt(0) && gasCostUsd.gt(0) && netRelayerFeePct.gte(this.minRelayerFeePct);
+    const fillProfitable = tokenPriceUsd.gt(0) && gasCostUsd.gt(0) && netRelayerFeePct.gte(minRelayerFeePct);
 
     return {
       grossRelayerFeePct,
@@ -214,19 +237,21 @@ export class ProfitClient {
   // Return USD amount of fill amount for deposited token, should always return in wei as the units.
   getFillAmountInUsd(deposit: Deposit, fillAmount: BigNumber): BigNumber {
     const l1TokenInfo = this.hubPoolClient.getTokenInfoForDeposit(deposit);
-    if (!l1TokenInfo)
+    if (!l1TokenInfo) {
       throw new Error(
         `ProfitClient::isFillProfitable missing l1TokenInfo for deposit with origin token: ${deposit.originToken}`
       );
+    }
     const tokenPriceInUsd = this.getPriceOfToken(l1TokenInfo.address);
     return fillAmount.mul(tokenPriceInUsd).div(toBN(10).pow(l1TokenInfo.decimals));
   }
 
-  isFillProfitable(deposit: Deposit, fillAmount: BigNumber, l1Token?: L1Token): boolean {
+  isFillProfitable(deposit: Deposit, fillAmount: BigNumber, l1Token: L1Token): boolean {
+    const minRelayerFeePct = this.minRelayerFeePct(l1Token.symbol, deposit.originChainId, deposit.destinationChainId);
     let fill: FillProfit;
 
     try {
-      fill = this.calculateFillProfitability(deposit, fillAmount, l1Token);
+      fill = this.calculateFillProfitability(deposit, fillAmount, l1Token, minRelayerFeePct);
     } catch (err) {
       this.logger.debug({
         at: "ProfitClient#isFillProfitable",
@@ -234,7 +259,7 @@ export class ProfitClient {
         deposit,
         fillAmount,
       });
-      return this.ignoreProfitability && this.appliedRelayerFeePct(deposit).gte(this.minRelayerFeePct);
+      return false;
     }
 
     if (!fill.fillProfitable || this.debugProfitability) {
@@ -256,14 +281,12 @@ export class ProfitClient {
         gasCostUsd: fill.gasCostUsd,
         netRelayerFeeUsd: `${fill.netRelayerFeeUsd}`,
         netRelayerFeePct: `${formatFeePct(fill.netRelayerFeePct)}%`,
-        minRelayerFeePct: `${formatFeePct(this.minRelayerFeePct)}%`,
+        minRelayerFeePct: `${formatFeePct(minRelayerFeePct)}%`,
         fillProfitable: fill.fillProfitable,
       });
     }
 
-    // If profitability is disabled, ensure _at least_ that the relayerFeePct >= minRelayerFeePct.
-    // This is a temporary measure and can hopefully be removed (together with ignoreProfitability) in future.
-    return fill.fillProfitable || (this.ignoreProfitability && fill.grossRelayerFeePct.gte(this.minRelayerFeePct));
+    return fill.fillProfitable;
   }
 
   captureUnprofitableFill(deposit: Deposit, fillAmount: BigNumber): void {
@@ -321,11 +344,11 @@ export class ProfitClient {
     } catch (err) {
       const errMsg = `Failed to update token prices (${err})`;
       let mrkdwn = `${errMsg}:\n`;
-      Object.entries(l1Tokens).forEach(([address, l1Token]) => {
+      Object.entries(l1Tokens).forEach(([, l1Token]) => {
         mrkdwn += `- Using last known ${l1Token.symbol} price of ${this.getPriceOfToken(l1Token.address)}.\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
-      if (!this.ignoreProfitability) throw new Error(errMsg);
+      throw new Error(errMsg);
     }
   }
 

@@ -1,14 +1,14 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, Wallet } from "../utils";
+import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClient } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
-import { constructRelayerClients, updateRelayerClients } from "./RelayerClientHelper";
+import { constructRelayerClients, RelayerClients, updateRelayerClients } from "./RelayerClientHelper";
 config();
 let logger: winston.Logger;
 
 export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
   logger = _logger;
   const config = new RelayerConfig(process.env);
-  let relayerClients;
+  let relayerClients: RelayerClients;
 
   try {
     logger[startupLogLevel(config)]({ at: "Relayer#index", message: "Relayer started 🏃‍♂️", config });
@@ -36,14 +36,12 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
       relayerClients.profitClient.clearUnprofitableFills();
       relayerClients.tokenClient.clearTokenShortfall();
 
-      if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) break;
+      if (await processEndPollingLoop(logger, "Relayer", config.pollingDelay)) {
+        break;
+      }
     }
   } catch (error) {
-    if (relayerClients !== undefined && relayerClients.configStoreClient.redisClient !== undefined) {
-      // todo understand why redisClient isn't GCed automagically.
-      logger.debug("Disconnecting from redis server.");
-      relayerClients.configStoreClient.redisClient.disconnect();
-    }
+    await disconnectRedisClient(logger);
     throw error;
   }
 }

@@ -4,7 +4,7 @@ import { deploySpokePoolWithToken, enableRoutes, simpleDeposit, originChainId, d
 import { SpokePoolClient } from "../src/clients";
 
 let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
-let owner: SignerWithAddress, depositor1: SignerWithAddress, depositor2: SignerWithAddress;
+let depositor1: SignerWithAddress, depositor2: SignerWithAddress;
 let deploymentBlock: number;
 const destinationChainId2 = destinationChainId + 1;
 
@@ -12,17 +12,10 @@ let spokePoolClient: SpokePoolClient;
 
 describe("SpokePoolClient: Deposits", async function () {
   beforeEach(async function () {
-    [owner, depositor1, depositor2] = await ethers.getSigners();
+    [, depositor1, depositor2] = await ethers.getSigners();
     ({ spokePool, erc20, destErc20, weth, deploymentBlock } = await deploySpokePoolWithToken(originChainId));
     await enableRoutes(spokePool, [{ originToken: erc20.address, destinationChainId: destinationChainId2 }]);
-    spokePoolClient = new SpokePoolClient(
-      createSpyLogger().spyLogger,
-      spokePool,
-      null,
-      originChainId,
-      undefined,
-      deploymentBlock
-    );
+    spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool, null, originChainId, deploymentBlock);
 
     await setupTokensForWallet(spokePool, depositor1, [erc20, destErc20], weth, 10);
     await setupTokensForWallet(spokePool, depositor2, [erc20, destErc20], weth, 10);

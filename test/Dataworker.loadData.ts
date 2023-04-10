@@ -7,8 +7,8 @@ import {
   buildFillForRepaymentChain,
   getLastBlockNumber,
   assertPromiseError,
-  lastSpyLogIncludes,
   spyLogIncludes,
+  deepEqualsWithBigNumber,
 } from "./utils";
 import { SignerWithAddress, buildSlowRelayTree, enableRoutesOnHubPool } from "./utils";
 import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, buildSlowFill } from "./utils";
@@ -26,7 +26,7 @@ import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { toBN, getRefundForFills, getRealizedLpFeeForFills, MAX_UINT_VAL } from "../src/utils";
-import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
+import { spokePoolClientsToProviders } from "../src/common";
 import { DepositWithBlock, Fill } from "../src/interfaces";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -152,7 +152,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       await updateAllClients();
 
       const latestBlock = await hubPool.provider.getBlockNumber();
-      const blockRange = CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
+      const blockRange = CHAIN_ID_TEST_LIST.map(() => [0, latestBlock]);
       const expectedPoolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
       await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
       for (const leaf of expectedPoolRebalanceRoot.leaves) {
@@ -215,7 +215,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       await updateAllClients();
 
       const latestBlock = await hubPool.provider.getBlockNumber();
-      const blockRange = CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
+      const blockRange = CHAIN_ID_TEST_LIST.map(() => [0, latestBlock]);
       const expectedPoolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
       await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
       for (const leaf of expectedPoolRebalanceRoot.leaves) {
@@ -258,7 +258,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         )
       ).to.equal(getRefundForFills([fill1]));
       const latestBlock2 = await hubPool.provider.getBlockNumber();
-      const blockRange2 = CHAIN_ID_TEST_LIST.map((_) => [latestBlock + 1, latestBlock2]);
+      const blockRange2 = CHAIN_ID_TEST_LIST.map(() => [latestBlock + 1, latestBlock2]);
       const expectedPoolRebalanceRoot2 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange2, spokePoolClients);
       await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
       for (const leaf of expectedPoolRebalanceRoot2.leaves) {
@@ -308,7 +308,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
       // Execute the bundle:
       const latestBlock = await hubPool.provider.getBlockNumber();
-      const blockRange = CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
+      const blockRange = CHAIN_ID_TEST_LIST.map(() => [0, latestBlock]);
       const expectedPoolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
       await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
       for (const leaf of expectedPoolRebalanceRoot.leaves) {
@@ -606,7 +606,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     const slowFill3 = await buildSlowFill(spokePool_1, fill3, depositor, []);
     await updateAllClients();
     const data5 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(3), spokePoolClients);
-    expect(data5.fillsToRefund).to.deep.equal({
+    const expectedData5 = {
       [slowFill3.destinationChainId]: {
         [erc20_1.address]: {
           fills: [slowFill3], // Slow fill gets added to fills list
@@ -621,14 +621,15 @@ describe("Dataworker: Load data used in all functions", async function () {
           realizedLpFees: getRealizedLpFeeForFills([fill1, fill3]),
         },
       },
-    });
+    };
+    expect(deepEqualsWithBigNumber(data5.fillsToRefund, expectedData5)).to.be.true;
 
     // Speed up relays are included. Re-use the same fill information
     const fill4 = await buildModifiedFill(spokePool_2, depositor, relayer, fill1, 2, 0.1);
     expect(fill4.totalFilledAmount.gt(fill4.fillAmount), "speed up fill didn't match original deposit").to.be.true;
     await updateAllClients();
     const data6 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(4), spokePoolClients);
-    expect(data6.fillsToRefund).to.deep.equal({
+    const expectedData6 = {
       [slowFill3.destinationChainId]: {
         [erc20_1.address]: {
           fills: [slowFill3],
@@ -643,7 +644,8 @@ describe("Dataworker: Load data used in all functions", async function () {
           realizedLpFees: getRealizedLpFeeForFills([fill1, fill3, fill4]),
         },
       },
-    });
+    };
+    expect(deepEqualsWithBigNumber(data6.fillsToRefund, expectedData6)).to.be.true;
   });
   it("Returns deposits", async function () {
     await updateAllClients();

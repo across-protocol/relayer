@@ -1,4 +1,5 @@
-import { processEndPollingLoop, winston, config, startupLogLevel, Wallet } from "../utils";
+import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClient } from "../utils";
+import { spokePoolClientsToProviders } from "../common";
 import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -7,13 +8,20 @@ import {
   updateDataworkerClients,
   constructSpokePoolClientsForFastDataworker,
   getSpokePoolClientEventSearchConfigsForFastDataworker,
-  spokePoolClientsToProviders,
+  DataworkerClients,
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
 config();
 let logger: winston.Logger;
 
-export async function createDataworker(_logger: winston.Logger, baseSigner: Wallet) {
+export async function createDataworker(
+  _logger: winston.Logger,
+  baseSigner: Wallet
+): Promise<{
+  config: DataworkerConfig;
+  clients: DataworkerClients;
+  dataworker: Dataworker;
+}> {
   const config = new DataworkerConfig(process.env);
   const clients = await constructDataworkerClients(_logger, config, baseSigner);
 
@@ -88,18 +96,22 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       );
 
       // Validate and dispute pending proposal before proposing a new one
-      if (config.disputerEnabled)
+      if (config.disputerEnabled) {
         await dataworker.validatePendingRootBundle(spokePoolClients, config.sendingDisputesEnabled, fromBlocks);
-      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
+      } else {
+        logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
+      }
 
-      if (config.proposerEnabled)
+      if (config.proposerEnabled) {
         await dataworker.proposeRootBundle(
           spokePoolClients,
           config.rootBundleExecutionThreshold,
           config.sendingProposalsEnabled,
           fromBlocks
         );
-      else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
+      } else {
+        logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
+      }
 
       if (config.executorEnabled) {
         const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
@@ -124,21 +136,20 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           config.sendingExecutionsEnabled,
           fromBlocks
         );
-      } else logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
+      } else {
+        logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
+      }
 
       await clients.multiCallerClient.executeTransactionQueue();
 
       logger.debug({ at: "Dataworker#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
 
-      if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) break;
+      if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) {
+        break;
+      }
     }
   } catch (error) {
-    if (clients.configStoreClient.redisClient !== undefined) {
-      // todo understand why redisClient isn't GCed automagically.
-      logger.debug("Disconnecting from redis server.");
-      clients.configStoreClient.redisClient.disconnect();
-    }
-
+    await disconnectRedisClient(logger);
     throw error;
   }
 }

@@ -22,7 +22,7 @@ import * as constants from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { getNetworkName, getRefundForFills, MAX_UINT_VAL, toBN } from "../src/utils";
-import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
+import { spokePoolClientsToProviders } from "../src/common";
 import { MockAdapterManager } from "./mocks";
 import { BalanceType } from "../src/interfaces";
 
@@ -43,6 +43,8 @@ let updateAllClients: () => Promise<void>;
 const { spy, spyLogger } = createSpyLogger();
 
 const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "Unknown", ALL_CHAINS_NAME];
+
+let defaultMonitorEnvVars;
 
 describe("Monitor", async function () {
   beforeEach(async function () {
@@ -71,7 +73,7 @@ describe("Monitor", async function () {
 
     const configuredNetworks = [1, repaymentChainId, originChainId, destinationChainId];
 
-    const monitorConfig = new MonitorConfig({
+    defaultMonitorEnvVars = {
       STARTING_BLOCK_NUMBER: "0",
       ENDING_BLOCK_NUMBER: "100",
       UTILIZATION_ENABLED: "true",
@@ -84,7 +86,8 @@ describe("Monitor", async function () {
       MONITOR_REPORT_INTERVAL: "10",
       MONITORED_RELAYERS: `["${depositor.address}"]`,
       CONFIGURED_NETWORKS: JSON.stringify(configuredNetworks),
-    });
+    };
+    const monitorConfig = new MonitorConfig(defaultMonitorEnvVars);
 
     // Set the config store version to 0 to match the default version in the ConfigStoreClient.
     process.env.CONFIG_STORE_VERSION = "0";
@@ -344,11 +347,54 @@ describe("Monitor", async function () {
 
     expect(lastSpyLogIncludes(spy, `Transfers that are not fills for relayer ${depositor.address} 🦨`)).to.be.true;
   });
+
+  it("Monitor should send token refills", async function () {
+    const refillConfig = [
+      {
+        account: hubPool.address,
+        isHubPool: true,
+        chainId: hubPoolClient.chainId,
+        trigger: 1,
+        target: 2,
+      },
+      {
+        account: spokePool_1.address,
+        isHubPool: false,
+        chainId: originChainId,
+        trigger: 1,
+        target: 2,
+      },
+    ];
+    const monitorEnvs = {
+      ...defaultMonitorEnvVars,
+      REFILL_BALANCES: JSON.stringify(refillConfig),
+    };
+    const _monitorConfig = new MonitorConfig(monitorEnvs);
+    const _monitor = new Monitor(spyLogger, _monitorConfig, {
+      bundleDataClient,
+      configStoreClient,
+      multiCallerClient,
+      hubPoolClient,
+      spokePoolClients,
+      tokenTransferClient,
+      crossChainTransferClient,
+    });
+    await _monitor.update();
+
+    expect(await spokePool_1.provider.getBalance(spokePool_1.address)).to.equal(0);
+
+    await _monitor.refillBalances();
+
+    expect(multiCallerClient.transactionCount()).to.equal(1);
+    await multiCallerClient.executeTransactionQueue();
+
+    expect(await spokePool_1.provider.getBalance(spokePool_1.address)).to.equal(toBNWei("2"));
+  });
 });
 
 const executeBundle = async (hubPool: Contract) => {
   const latestBlock = await hubPool.provider.getBlockNumber();
-  const blockRange = constants.CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
+  const blockRange = constants.CHAIN_ID_TEST_LIST.map(() => [0, latestBlock]);
   const expectedPoolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
   await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
   for (const leaf of expectedPoolRebalanceRoot.leaves) {

@@ -1,4 +1,11 @@
-import { deploySpokePoolWithToken, expect, ethers, Contract, SignerWithAddress } from "./utils";
+import {
+  deploySpokePoolWithToken,
+  expect,
+  ethers,
+  Contract,
+  SignerWithAddress,
+  deepEqualsWithBigNumber,
+} from "./utils";
 import { createSpyLogger, winston, originChainId, destinationChainId, toBNWei } from "./utils";
 import { TokenClient, SpokePoolClient, HubPoolClient } from "../src/clients";
 import { deployAndConfigureHubPool, zeroAddress } from "./utils";
@@ -6,14 +13,14 @@ import { deployAndConfigureHubPool, zeroAddress } from "./utils";
 let spokePool_1: Contract, spokePool_2: Contract;
 let erc20_2: Contract;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
+let owner: SignerWithAddress, spyLogger: winston.Logger;
 let tokenClient: TokenClient; // tested
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
 describe("TokenClient: Token shortfall", async function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
-    ({ spy, spyLogger } = createSpyLogger());
+    ({ spyLogger } = createSpyLogger());
     // Using deploySpokePoolWithToken will create two tokens and enable both of them as routes.
     ({ spokePool: spokePool_1, deploymentBlock: spokePool1DeploymentBlock } = await deploySpokePoolWithToken(
       originChainId,
@@ -31,7 +38,6 @@ describe("TokenClient: Token shortfall", async function () {
       spokePool_1,
       null,
       originChainId,
-      undefined,
       spokePool1DeploymentBlock
     );
     spokePoolClient_2 = new SpokePoolClient(
@@ -39,7 +45,6 @@ describe("TokenClient: Token shortfall", async function () {
       spokePool_2,
       null,
       destinationChainId,
-      undefined,
       spokePool2DeploymentBlock
     );
 
@@ -61,9 +66,10 @@ describe("TokenClient: Token shortfall", async function () {
     let needed = toBNWei(420);
     let shortfall = needed.sub(balance);
     tokenClient.captureTokenShortfall(destinationChainId, erc20_2.address, depositId, toBNWei(420));
-    expect(tokenClient.getTokenShortfall()).to.deep.equal({
+    const expectedData = {
       [destinationChainId]: { [erc20_2.address]: { deposits: [depositId], balance, needed, shortfall } },
-    });
+    };
+    expect(deepEqualsWithBigNumber(tokenClient.getTokenShortfall(), expectedData)).to.be.true;
 
     // A subsequent shortfall deposit of 42 should add to the token shortfall and append the deposit id as 351+42 = 393.
     const depositId2 = 2;
@@ -71,15 +77,14 @@ describe("TokenClient: Token shortfall", async function () {
     tokenClient.captureTokenShortfall(destinationChainId, erc20_2.address, depositId2, toBNWei(42));
     needed = needed.add(toBNWei(42));
     shortfall = needed.sub(balance);
-    expect(tokenClient.getTokenShortfall()).to.deep.equal({
+    const expectedData2 = {
       [destinationChainId]: { [erc20_2.address]: { deposits: [depositId, depositId2], balance, needed, shortfall } },
-    });
+    };
+    expect(deepEqualsWithBigNumber(tokenClient.getTokenShortfall(), expectedData2)).to.be.true;
 
     // Updating the client should not impact anything.
     await updateAllClients();
-    expect(tokenClient.getTokenShortfall()).to.deep.equal({
-      [destinationChainId]: { [erc20_2.address]: { deposits: [depositId, depositId2], balance, needed, shortfall } },
-    });
+    expect(deepEqualsWithBigNumber(tokenClient.getTokenShortfall(), expectedData2)).to.be.true;
   });
 });
 

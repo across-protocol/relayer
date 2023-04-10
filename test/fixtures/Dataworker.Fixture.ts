@@ -25,6 +25,7 @@ import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { BundleDataClient, TokenClient } from "../../src/clients";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
 import { MockConfigStoreClient } from "../mocks/MockConfigStoreClient";
+import { MockedMultiCallerClient } from "../mocks/MockMultiCallerClient";
 
 async function _constructSpokePoolClientsWithLookback(
   spokePools: Contract[],
@@ -42,10 +43,8 @@ async function _constructSpokePoolClientsWithLookback(
       pool.connect(signer),
       configStoreClient,
       spokePoolChains[i],
-      lookbackForAllChains === undefined
-        ? undefined
-        : { fromBlock: latestBlocks[i] - lookbackForAllChains, toBlock: null },
-      deploymentBlocks && deploymentBlocks[spokePoolChains[i]]
+      deploymentBlocks && deploymentBlocks[spokePoolChains[i]],
+      lookbackForAllChains === undefined ? undefined : { fromBlock: latestBlocks[i] - lookbackForAllChains }
     );
   });
 }
@@ -173,7 +172,7 @@ export async function setupDataworker(
   const hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool);
   const configStoreClient = new MockConfigStoreClient(spyLogger, configStore, hubPoolClient);
 
-  const multiCallerClient = new clients.MultiCallerClient(spyLogger); // leave out the gasEstimator for now.
+  const multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 
   const [spokePoolClient_1, spokePoolClient_2, spokePoolClient_3, spokePoolClient_4] =
     await _constructSpokePoolClientsWithLookback(
@@ -199,7 +198,7 @@ export async function setupDataworker(
     [repaymentChainId]: spokePoolClient_3,
     1: spokePoolClient_4,
   };
-  const profitClient = new clients.ProfitClient(spyLogger, hubPoolClient, spokePoolClients, false, []);
+  const profitClient = new clients.ProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
   const bundleDataClient = new BundleDataClient(
     spyLogger,
     {
@@ -211,14 +210,9 @@ export async function setupDataworker(
     testChainIdList
   );
 
-  const defaultEventSearchConfig = { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 };
   const dataworkerClients: DataworkerClients = {
     bundleDataClient,
     tokenClient,
-    spokePoolSigners: Object.fromEntries([hubPoolChainId, ...testChainIdList].map((chainId) => [chainId, owner])),
-    spokePoolClientSearchSettings: Object.fromEntries(
-      testChainIdList.map((chainId) => [chainId, defaultEventSearchConfig])
-    ),
     hubPoolClient,
     multiCallerClient,
     configStoreClient,

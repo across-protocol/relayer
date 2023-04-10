@@ -5,7 +5,7 @@
 //    NODE_URL_1=https://mainnet.infura.io/v3/KEY
 //    NODE_URL_10=https://optimism-mainnet.infura.io/v3/KEY
 //    NODE_URL_137=https://polygon-mainnet.infura.io/v3/KEY
-//    NODE_URL_288=https://mainnet.boba.network/
+//    NODE_URL_288=https://replica.boba.network/
 //    NODE_URL_42161=https://arb-mainnet.g.alchemy.com/v2/KEY
 // 2. Example of invalid bundle: REQUEST_TIME=1653594774 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
 // 2. Example of valid bundle:   REQUEST_TIME=1653516226 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
@@ -23,6 +23,7 @@ import {
   getCurrentTime,
   sortEventsDescending,
   getDisputeForTimestamp,
+  disconnectRedisClient,
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
@@ -32,7 +33,7 @@ import {
 import { PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
-import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
+import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
 import { CONFIG_STORE_VERSION } from "../common";
 
 config();
@@ -48,7 +49,10 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   // Override default config with sensible defaults:
   // - DATAWORKER_FAST_LOOKBACK_COUNT=8 balances limiting RPC requests with querying
   // enough data to limit # of excess historical deposit queries.
+  // - SPOKE_ROOTS_LOOKBACK_COUNT unused in this script so set to something < DATAWORKER_FAST_LOOKBACK_COUNT
+  // to avoid configuration error.
   process.env.DATAWORKER_FAST_LOOKBACK_COUNT = "8";
+  process.env.SPOKE_ROOTS_LOOKBACK_COUNT = "1";
   const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
   logger[startupLogLevel(config)]({
     at: "RootBundleValidator",
@@ -62,9 +66,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     clients.hubPoolClient.chainId,
     clients.hubPoolClient.chainId,
     priceRequestTime,
-    getCurrentTime(),
-    clients.configStoreClient.blockFinder,
-    clients.configStoreClient.redisClient
+    getCurrentTime()
   );
 
   // Find dispute transaction so we can gain additional confidence that the preceding root bundle is older than the
@@ -92,8 +94,9 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     priceRequestBlock
   );
   let precedingProposeRootBundleEvent: ProposedRootBundle;
-  if (disputeEventForRequestTime !== undefined)
+  if (disputeEventForRequestTime !== undefined) {
     precedingProposeRootBundleEvent = getDisputedProposal(clients.configStoreClient, disputeEventForRequestTime);
+  }
   if (disputeEventForRequestTime === undefined || precedingProposeRootBundleEvent === undefined) {
     logger.debug({
       at: "Dataworker#validate",
@@ -107,7 +110,9 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
       (x) => x.blockNumber <= priceRequestBlock
     );
   }
-  if (!precedingProposeRootBundleEvent) throw new Error("No proposed root bundle found before request time");
+  if (!precedingProposeRootBundleEvent) {
+    throw new Error("No proposed root bundle found before request time");
+  }
 
   const rootBundle: PendingRootBundle = {
     poolRebalanceRoot: precedingProposeRootBundleEvent.poolRebalanceRoot,
@@ -135,7 +140,8 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   // We want the bundle end of blocks following the target bundle so add +1 to the index.
   const overriddenConfig = {
     ...config,
-    dataworkerFastStartBundle: closestFollowingValidatedBundleIndex + 1,
+    dataworkerFastStartBundle:
+      closestFollowingValidatedBundleIndex === -1 ? "latest" : closestFollowingValidatedBundleIndex + 1,
   };
 
   const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
@@ -165,12 +171,21 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     toBlocks
   );
 
-  const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
+  const mainnetBundleEndBlock = getBlockForChain(
+    rootBundle.bundleEvaluationBlockNumbers,
+    1,
+    dataworker.chainIdListForBundleEvaluationBlockNumbers
+  );
+  const widestPossibleBlockRanges = getWidestPossibleExpectedBlockRange(
     dataworker.chainIdListForBundleEvaluationBlockNumbers,
     spokePoolClients,
     getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
     clients,
-    priceRequestBlock
+    priceRequestBlock,
+    clients.configStoreClient.getEnabledChains(
+      mainnetBundleEndBlock,
+      dataworker.chainIdListForBundleEvaluationBlockNumbers
+    )
   );
 
   // Validate the event:
@@ -194,7 +209,8 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
 export async function run(_logger: winston.Logger): Promise<void> {
   const baseSigner: Wallet = await getSigner();
   await validate(_logger, baseSigner);
+  await disconnectRedisClient(logger);
 }
 
 // eslint-disable-next-line no-process-exit
-run(Logger).then(() => process.exit(0));
+run(Logger).then(async () => process.exit(0));

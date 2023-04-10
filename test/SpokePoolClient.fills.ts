@@ -1,9 +1,9 @@
-import { setupTokensForWallet, expect, ethers, Contract, SignerWithAddress, sinon, winston } from "./utils";
+import { setupTokensForWallet, expect, ethers, Contract, SignerWithAddress } from "./utils";
 import { originChainId, deploySpokePoolWithToken, fillRelay, destinationChainId, createSpyLogger } from "./utils";
 import { SpokePoolClient } from "../src/clients";
 
 let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
-let owner: SignerWithAddress, depositor: SignerWithAddress, relayer1: SignerWithAddress, relayer2: SignerWithAddress;
+let depositor: SignerWithAddress, relayer1: SignerWithAddress, relayer2: SignerWithAddress;
 let deploymentBlock: number;
 
 const originChainId2 = originChainId + 1;
@@ -12,7 +12,7 @@ let spokePoolClient: SpokePoolClient;
 
 describe("SpokePoolClient: Fills", async function () {
   beforeEach(async function () {
-    [owner, depositor, relayer1, relayer2] = await ethers.getSigners();
+    [, depositor, relayer1, relayer2] = await ethers.getSigners();
     ({ spokePool, erc20, destErc20, weth, deploymentBlock } = await deploySpokePoolWithToken(
       originChainId,
       destinationChainId
@@ -24,7 +24,6 @@ describe("SpokePoolClient: Fills", async function () {
       spokePool,
       null,
       destinationChainId,
-      undefined,
       deploymentBlock
     );
 

@@ -1,6 +1,6 @@
 import { buildFillForRepaymentChain, lastSpyLogIncludes, lastSpyLogLevel } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit, toBNWei } from "./utils";
-import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
+import { HubPoolClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, originChainId, utf8ToHex } from "./constants";
 import { CHAIN_ID_TEST_LIST } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
@@ -60,7 +60,7 @@ describe("Dataworker: Propose root bundle", async function () {
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     expect(lastSpyLogIncludes(spy, "No pool rebalance leaves, cannot propose")).to.be.true;
     const loadDataResults1 = getMostRecentLog(spy, "Finished loading spoke pool data");
-    expect(loadDataResults1.blockRangesForChains).to.deep.equal(CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock1]));
+    expect(loadDataResults1.blockRangesForChains).to.deep.equal(CHAIN_ID_TEST_LIST.map(() => [0, latestBlock1]));
 
     // TEST 2:
     // Send a deposit and a fill so that dataworker builds simple roots.
@@ -78,7 +78,7 @@ describe("Dataworker: Propose root bundle", async function () {
     await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
     await updateAllClients();
     const latestBlock2 = await hubPool.provider.getBlockNumber();
-    const blockRange2 = CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock2]);
+    const blockRange2 = CHAIN_ID_TEST_LIST.map(() => [0, latestBlock2]);
 
     // Construct expected roots before we propose new root so that last log contains logs about submitted txn.
     const expectedPoolRebalanceRoot2 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange2, spokePoolClients);

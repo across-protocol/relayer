@@ -1,4 +1,5 @@
 import { utils } from "@across-protocol/sdk-v2";
+import { ethers } from "../utils";
 
 // This version should increase each time the ConfigStore's config changes, otherwise relayer and dataworker logic
 // will stop working to protect the user's funds.
@@ -8,8 +9,11 @@ export const CONFIG_STORE_VERSION = utils.CONFIG_STORE_VERSION;
 // deemed valid by ConfigStoreClient.hasValidConfigStoreVersionForTimestamp().
 export const DEFAULT_CONFIG_STORE_VERSION = 0;
 
-// Used for determining which block range corresponsd to which network. In order, the block ranges passed
-// in the HubPool's proposeRootBundle method should be: Mainnet, Optimism, Polygon, Boba, Arbitrum
+// This list contains all chains that Across supports, although some of the chains could be currently disabled.
+// The order of the chains is important to not change, as the dataworker proposes "bundle block numbers" per chain
+// in the same order as the following list. To add a new chain ID, append it to the end of the list, never delete
+// a chain ID. The on-chain ConfigStore should store a list of enabled/disabled chain ID's that are a subset
+// of this list, so this list is simply the list of all possible Chain ID's that Across could support.
 export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
 
 export const RELAYER_MIN_FEE_PCT = 0.0003;
@@ -76,6 +80,8 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
 };
 export const QUOTE_TIME_BUFFER = 12 * 5; // 5 blocks on Mainnet.
 
+export const REDIS_URL_DEFAULT = "redis://localhost:6379";
+
 // Quicknode is the bottleneck here and imposes a 10k block limit on an event search.
 // Alchemy-Polygon imposes a 3500 block limit.
 // Note: a 0 value here leads to an infinite lookback, which would be useful and reduce RPC requests
@@ -90,11 +96,11 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
 };
 
 export const BUNDLE_END_BLOCK_BUFFERS = {
-  1: 100, // At 15s/block, 100 blocks = 20 mins
-  10: 3000, // At a conservative 10 TPS, 300 seconds = 3000 transactions. And 1 block per txn.
-  137: 1500, // At 1s/block, 25 mins seconds = 1500 blocks
-  288: 50, // At 30s/block, 50 blocks = 25 mins
-  42161: 3000, // At a conservative 10 TPS, 300 seconds = 3000 transactions. And 1 block per txn.
+  1: 25, // At 12s/block, 25 blocks = 5 mins
+  10: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
+  137: 750, // At 2s/block, 25 mins = 25 * 60 / 2 = 750 blocks
+  288: 5, // At 60s/block, 50 blocks = 25 mins
+  42161: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
 };
 
 export const DEFAULT_RELAYER_GAS_MULTIPLIER = 1.2;
@@ -102,16 +108,6 @@ export const DEFAULT_RELAYER_GAS_MULTIPLIER = 1.2;
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 100;
 export const DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } = {
   10: 75,
-};
-
-// Maps chain ID to root bundle ID to ignore because the roots are known to be invalid from the perspective of the
-// latest dataworker code, or there is no matching L1 root bundle, because the root bundle was relayed by an admin.
-export const IGNORED_SPOKE_BUNDLES = {
-  1: [357, 322, 321, 104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
-  10: [105, 104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
-  137: [105, 104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
-  288: [96, 93, 90, 85, 78, 72, 68, 67, 65, 2],
-  42161: [105, 104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
 };
 
 // List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals
@@ -138,3 +134,17 @@ export const BLOCK_NUMBER_TTL = 60;
 
 // This is the TTL for the provider cache.
 export const PROVIDER_CACHE_TTL = 3600;
+export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
+
+// Multicall3 Constants:
+export const multicall3Addresses = {
+  1: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  10: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  137: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  288: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  42161: "0xcA11bde05977b3631167028862bE2a173976CA11",
+};
+export type Multicall2Call = {
+  callData: ethers.utils.BytesLike;
+  target: string;
+};

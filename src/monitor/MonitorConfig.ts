@@ -1,9 +1,10 @@
-import { CommonConfig, ProcessEnv } from "../common";
-import { ethers, BigNumber, ZERO_ADDRESS } from "../utils";
+import { CommonConfig, ProcessEnv, CHAIN_ID_LIST_INDICES } from "../common";
+import { ethers, ZERO_ADDRESS } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
   balancesEnabled: boolean;
+  refillBalancesEnabled: boolean;
   reportEnabled: boolean;
   stuckRebalancesEnabled: boolean;
   utilizationEnabled: boolean; // Monitors pool utilization ratio
@@ -24,6 +25,14 @@ export class MonitorConfig extends CommonConfig {
   readonly whitelistedRelayers: string[];
   readonly knownV1Addresses: string[];
   readonly botModes: BotModes;
+  readonly refillEnabledBalances: {
+    chainId: number;
+    isHubPool: boolean;
+    account: string;
+    token: string;
+    target: number;
+    trigger: number;
+  }[] = [];
   readonly monitoredBalances: {
     chainId: number;
     warnThreshold: number | null;
@@ -49,11 +58,14 @@ export class MonitorConfig extends CommonConfig {
       KNOWN_V1_ADDRESSES,
       BALANCES_ENABLED,
       MONITORED_BALANCES,
+      REFILL_BALANCES,
+      REFILL_BALANCES_ENABLED,
       STUCK_REBALANCES_ENABLED,
     } = env;
 
     this.botModes = {
       balancesEnabled: BALANCES_ENABLED === "true",
+      refillBalancesEnabled: REFILL_BALANCES_ENABLED === "true",
       reportEnabled: MONITOR_REPORT_ENABLED === "true",
       utilizationEnabled: UTILIZATION_ENABLED === "true",
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
@@ -69,11 +81,48 @@ export class MonitorConfig extends CommonConfig {
     this.monitoredRelayers = parseAddressesOptional(MONITORED_RELAYERS);
     this.knownV1Addresses = parseAddressesOptional(KNOWN_V1_ADDRESSES);
 
+    // Used to send tokens if available in wallet to balances under target balances.
+    if (REFILL_BALANCES) {
+      this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(
+        ({ chainId, account, isHubPool, target, trigger }) => {
+          if (Number.isNaN(target) || target <= 0) {
+            throw new Error(`target for ${chainId} and ${account} must be > 0, got ${target}`);
+          }
+          if (Number.isNaN(trigger) || trigger <= 0) {
+            throw new Error(`trigger for ${chainId} and ${account} must be > 0, got ${trigger}`);
+          }
+          if (trigger >= target) {
+            throw new Error("trigger must be < target");
+          }
+          return {
+            // Required fields:
+            chainId,
+            account,
+            target,
+            trigger,
+            // Optional fields that will set to defaults:
+            isHubPool: Boolean(isHubPool),
+            // Fields that are always set to defaults:
+            token: ZERO_ADDRESS,
+          };
+        }
+      );
+    }
+
+    // Should only have 1 HubPool.
+    if (Object.values(this.refillEnabledBalances).filter((x) => x.isHubPool).length > 1) {
+      throw new Error("REFILL_BALANCES should only have 1 account marked isHubPool as true");
+    }
+
     // Default pool utilization threshold at 90%.
     this.utilizationThreshold = UTILIZATION_THRESHOLD ? Number(UTILIZATION_THRESHOLD) : 90;
 
-    if (this.utilizationThreshold > 100) throw new Error("UTILIZATION_THRESHOLD must be <= 100");
-    if (this.utilizationThreshold < 0) throw new Error("UTILIZATION_THRESHOLD must be >= 0");
+    if (this.utilizationThreshold > 100) {
+      throw new Error("UTILIZATION_THRESHOLD must be <= 100");
+    }
+    if (this.utilizationThreshold < 0) {
+      throw new Error("UTILIZATION_THRESHOLD must be >= 0");
+    }
 
     // In serverless mode use block range from environment to fetch for latest events.
     this.hubPoolStartingBlock = STARTING_BLOCK_NUMBER ? Number(STARTING_BLOCK_NUMBER) : undefined;
@@ -82,20 +131,23 @@ export class MonitorConfig extends CommonConfig {
     if (MONITORED_BALANCES) {
       this.monitoredBalances = JSON.parse(MONITORED_BALANCES).map(
         ({ errorThreshold, warnThreshold, account, token, chainId }) => {
-          if (!errorThreshold && !warnThreshold)
+          if (!errorThreshold && !warnThreshold) {
             throw new Error("Must provide either an errorThreshold or a warnThreshold");
+          }
 
           let parsedErrorThreshold: number | null = null;
           if (errorThreshold) {
-            if (Number.isNaN(Number(errorThreshold)))
+            if (Number.isNaN(Number(errorThreshold))) {
               throw new Error(`errorThreshold value: ${errorThreshold} cannot be converted to a number`);
+            }
             parsedErrorThreshold = Number(errorThreshold);
           }
 
           let parsedWarnThreshold: number | null = null;
           if (warnThreshold) {
-            if (Number.isNaN(Number(errorThreshold)))
+            if (Number.isNaN(Number(errorThreshold))) {
               throw new Error(`warnThreshold value: ${warnThreshold} cannot be converted to a number`);
+            }
             parsedWarnThreshold = Number(warnThreshold);
           }
 
@@ -111,7 +163,7 @@ export class MonitorConfig extends CommonConfig {
       );
     }
 
-    this.spokePoolChains.forEach((chainId) => {
+    CHAIN_ID_LIST_INDICES.forEach((chainId) => {
       this.spokePoolsBlocks[chainId] = {
         startingBlock: process.env[`STARTING_BLOCK_NUMBER_${chainId}`]
           ? Number(process.env[`STARTING_BLOCK_NUMBER_${chainId}`])

@@ -1,8 +1,7 @@
-import { BigNumber, ERC20, ethers, ZERO_ADDRESS } from "../utils";
-import lodash from "lodash";
+import { BigNumber, ERC20, ethers, ZERO_ADDRESS, min } from "../utils";
 
 // This type is used to map used and current balances of different users.
-interface BalanceMap {
+export interface BalanceMap {
   [chainId: number]: {
     [token: string]: {
       [holder: string]: BigNumber;
@@ -22,12 +21,8 @@ export class BalanceAllocator {
   async requestBalanceAllocations(
     requests: { chainId: number; tokens: string[]; holder: string; amount: BigNumber }[]
   ): Promise<boolean> {
-    // Validate that all input tokens are unique.
-    const tokens = requests.map(({ tokens }) => tokens.map((token) => token.toLowerCase())).flat();
-    if (!lodash.uniq(tokens)) throw new Error("BalanceAllocator::requestBalanceAllocations input tokens not unique!");
-
     // Do all async work up-front to avoid atomicity problems with updating used.
-    const requestsWithbalances = await Promise.all(
+    const requestsWithBalances = await Promise.all(
       requests.map(async (request) => {
         const balances = Object.fromEntries(
           await Promise.all(
@@ -48,27 +43,49 @@ export class BalanceAllocator {
       })
     );
 
-    // Determine if the entire group will be successful.
-    const success = requestsWithbalances.every(({ chainId, tokens, holder, amount, balances }) => {
-      const availableBalance = tokens.reduce(
-        (acc, token) => acc.add(balances[token].sub(this.getUsed(chainId, token, holder))),
-        BigNumber.from(0)
-      );
-      return availableBalance.gte(amount);
-    });
+    // Construct a map of available balances for all requests, taking into account used and balances.
+    const availableBalances: BalanceMap = {};
+    for (const request of requestsWithBalances) {
+      if (!availableBalances[request.chainId]) {
+        availableBalances[request.chainId] = {};
+      }
+      for (const token of request.tokens) {
+        if (!availableBalances[request.chainId][token]) {
+          availableBalances[request.chainId][token] = {};
+        }
+        availableBalances[request.chainId][token][request.holder] = request.balances[token].sub(
+          this.getUsed(request.chainId, token, request.holder)
+        );
+      }
+    }
+
+    // Determine if the entire group will be successful by subtracting the amount from the available balance as we go.
+    for (const request of requestsWithBalances) {
+      const remainingAmount = request.tokens.reduce((acc, token) => {
+        const availableBalance = availableBalances[request.chainId][token][request.holder];
+        const amountToDeduct = min(acc, availableBalance);
+        if (amountToDeduct.gt(0)) {
+          availableBalances[request.chainId][token][request.holder] = availableBalance.sub(amountToDeduct);
+        }
+        return acc.sub(amountToDeduct);
+      }, request.amount);
+      // If there is a remaining amount, the entire group will fail, so return false.
+      if (remainingAmount.gt(0)) {
+        return false;
+      }
+    }
 
     // If the entire group is successful commit to using these tokens.
-    if (success)
-      requestsWithbalances.forEach(({ chainId, tokens, holder, balances, amount }) =>
-        tokens.forEach((token) => {
-          const used = amount.gt(balances[token]) ? balances[token] : amount;
-          this.addUsed(chainId, token, holder, used);
-          amount = amount.sub(used);
-        })
-      );
+    requestsWithBalances.forEach(({ chainId, tokens, holder, balances, amount }) =>
+      tokens.forEach((token) => {
+        const used = min(amount, balances[token].sub(this.getUsed(chainId, token, holder)));
+        this.addUsed(chainId, token, holder, used);
+        amount = amount.sub(used);
+      })
+    );
 
     // Return success.
-    return success;
+    return true;
   }
 
   async requestBalanceAllocation(
@@ -80,41 +97,54 @@ export class BalanceAllocator {
     return this.requestBalanceAllocations([{ chainId, tokens, holder, amount }]);
   }
 
-  async getBalance(chainId: number, token: string, holder: string) {
+  async getBalance(chainId: number, token: string, holder: string): Promise<BigNumber> {
     if (!this.balances?.[chainId]?.[token]?.[holder]) {
-      const balance =
-        token === ZERO_ADDRESS
-          ? await this.providers[chainId].getBalance(holder)
-          : await ERC20.connect(token, this.providers[chainId]).balanceOf(holder);
-
-      // Note: cannot use assign because it breaks the BigNumber object.
-      if (!this.balances[chainId]) this.balances[chainId] = {};
-      if (!this.balances[chainId][token]) this.balances[chainId][token] = {};
-      this.balances[chainId][token][holder] = balance;
+      const balance = await this._queryBalance(chainId, token, holder);
+      // To avoid inconsitencies, we recheck the balances value after the query.
+      // If it exists, skip the assignment so the value doesn't change after being set.
+      if (!this.balances?.[chainId]?.[token]?.[holder]) {
+        // Note: cannot use assign because it breaks the BigNumber object.
+        this.balances[chainId] ??= {};
+        if (!this.balances[chainId][token]) {
+          this.balances[chainId][token] = {};
+        }
+        this.balances[chainId][token][holder] = balance;
+      }
     }
     return this.balances[chainId][token][holder];
   }
 
-  getUsed(chainId: number, token: string, holder: string) {
+  getUsed(chainId: number, token: string, holder: string): BigNumber {
     if (!this.used?.[chainId]?.[token]?.[holder]) {
       // Note: cannot use assign because it breaks the BigNumber object.
-      if (!this.used[chainId]) this.used[chainId] = {};
-      if (!this.used[chainId][token]) this.used[chainId][token] = {};
+      if (!this.used[chainId]) {
+        this.used[chainId] = {};
+      }
+      if (!this.used[chainId][token]) {
+        this.used[chainId][token] = {};
+      }
       this.used[chainId][token][holder] = BigNumber.from(0);
     }
     return this.used[chainId][token][holder];
   }
 
-  addUsed(chainId: number, token: string, holder: string, amount: BigNumber) {
+  addUsed(chainId: number, token: string, holder: string, amount: BigNumber): void {
     const used = this.getUsed(chainId, token, holder);
     this.used[chainId][token][holder] = used.add(amount);
   }
 
-  clearUsed() {
+  clearUsed(): void {
     this.used = {};
   }
 
-  clearBalances() {
+  clearBalances(): void {
     this.balances = {};
+  }
+
+  // This method is primarily here to be overriden for testing purposes.
+  protected async _queryBalance(chainId: number, token: string, holder: string): Promise<BigNumber> {
+    return token === ZERO_ADDRESS
+      ? await this.providers[chainId].getBalance(holder)
+      : await ERC20.connect(token, this.providers[chainId]).balanceOf(holder);
   }
 }

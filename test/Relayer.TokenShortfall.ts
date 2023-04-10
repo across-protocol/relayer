@@ -15,6 +15,7 @@ import { MockInventoryClient, MockProfitClient } from "./mocks";
 
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
+import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -53,13 +54,12 @@ describe("Relayer: Token balance shortfall", async function () {
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
     hubPoolClient = new HubPoolClient(spyLogger, hubPool);
     configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
-    multiCallerClient = new MultiCallerClient(spyLogger); // leave out the gasEstimator for now.
+    multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
     spokePoolClient_1 = new SpokePoolClient(
       spyLogger,
       spokePool_1.connect(relayer),
       configStoreClient,
       originChainId,
-      undefined,
       spokePool1DeploymentBlock
     );
     spokePoolClient_2 = new SpokePoolClient(
@@ -67,12 +67,11 @@ describe("Relayer: Token balance shortfall", async function () {
       spokePool_2.connect(relayer),
       configStoreClient,
       destinationChainId,
-      undefined,
       spokePool2DeploymentBlock
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
-    profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, true, []); // Set the profit discount to 1 (ignore relay cost.)
+    profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     profitClient.testInit();
 
     relayerInstance = new Relayer(
@@ -86,7 +85,7 @@ describe("Relayer: Token balance shortfall", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
       },
       {
         relayerTokens: [],

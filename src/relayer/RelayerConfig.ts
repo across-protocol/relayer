@@ -34,7 +34,6 @@ export class RelayerConfig extends CommonConfig {
     const {
       RELAYER_DESTINATION_CHAINS,
       DEBUG_PROFITABILITY,
-      IGNORE_PROFITABILITY,
       RELAYER_GAS_MULTIPLIER,
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
@@ -77,8 +76,9 @@ export class RelayerConfig extends CommonConfig {
           );
           this.inventoryConfig.tokenConfig[l1Token][chainId].targetPct = toBNWei(targetPct).div(100);
           this.inventoryConfig.tokenConfig[l1Token][chainId].thresholdPct = toBNWei(thresholdPct).div(100);
-          if (unwrapWethThreshold !== undefined)
+          if (unwrapWethThreshold !== undefined) {
             this.inventoryConfig.tokenConfig[l1Token][chainId].unwrapWethThreshold = toBNWei(unwrapWethThreshold);
+          }
           this.inventoryConfig.tokenConfig[l1Token][chainId].unwrapWethTarget = unwrapWethTarget
             ? toBNWei(unwrapWethTarget)
             : toBNWei(2);
@@ -86,7 +86,6 @@ export class RelayerConfig extends CommonConfig {
       });
     }
     this.debugProfitability = DEBUG_PROFITABILITY === "true";
-    this.ignoreProfitability = IGNORE_PROFITABILITY === "true";
     this.relayerGasMultiplier = toBNWei(RELAYER_GAS_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MULTIPLIER);
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
@@ -94,7 +93,7 @@ export class RelayerConfig extends CommonConfig {
     (this.minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS
       ? JSON.parse(MIN_DEPOSIT_CONFIRMATIONS)
       : Constants.MIN_DEPOSIT_CONFIRMATIONS),
-      this.spokePoolChains.forEach((chainId) => {
+      Constants.CHAIN_ID_LIST_INDICES.forEach((chainId) => {
         Object.keys(this.minDepositConfirmations).forEach((threshold) => {
           const nBlocks: number = this.minDepositConfirmations[threshold][chainId];
           assert(

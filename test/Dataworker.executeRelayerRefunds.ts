@@ -8,7 +8,7 @@ import { MAX_UINT_VAL } from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
-import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
+import { spokePoolClientsToProviders } from "../src/common";
 import { BalanceAllocator } from "../src/clients/BalanceAllocator";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;

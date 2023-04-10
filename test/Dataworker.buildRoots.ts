@@ -5,7 +5,8 @@ import {
   enableRoutesOnHubPool,
   signForSpeedUp,
   createSpyLogger,
-  assertPromiseError,
+  lastSpyLogIncludes,
+  deepEqualsWithBigNumber,
 } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
@@ -37,6 +38,8 @@ let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
 let dataworkerInstance: Dataworker;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
+let spy: sinon.SinonSpy;
+
 let updateAllClients: () => Promise<void>;
 
 describe("Dataworker: Build merkle roots", async function () {
@@ -57,6 +60,7 @@ describe("Dataworker: Build merkle roots", async function () {
       dataworker,
       timer,
       spokePoolClients,
+      spy,
       updateAllClients,
     } = await setupFastDataworker(ethers));
   });
@@ -441,7 +445,10 @@ describe("Dataworker: Build merkle roots", async function () {
         await setupTokensForWallet(spokePool_1, sortedAllSigners[i], [erc20_1]);
         fills.push(await buildFillForRepaymentChain(spokePool_1, sortedAllSigners[i], deposit1, 0.1, originChainId));
       }
-      const unfilledAmount = amountToDeposit.sub(fills[fills.length - 1].totalFilledAmount);
+      const unfilledAmount = getRefund(
+        amountToDeposit.sub(fills[fills.length - 1].totalFilledAmount),
+        deposit1.realizedLpFeePct
+      );
       const refundAmountPerFill = getRefund(deposit1.amount, deposit1.realizedLpFeePct)
         .mul(toBNWei("0.1"))
         .div(toBNWei("1"));
@@ -561,16 +568,16 @@ describe("Dataworker: Build merkle roots", async function () {
       // Partial fill deposit1
       const fill1 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.5, destinationChainId);
       const fill1Block = await spokePool_2.provider.getBlockNumber();
-      const unfilledAmount1 = deposit1.amount.sub(fill1.totalFilledAmount);
+      const unfilledAmount1 = getRefund(deposit1.amount.sub(fill1.totalFilledAmount), fill1.realizedLpFeePct);
 
       // Partial fill deposit2
       const fill2 = await buildFillForRepaymentChain(spokePool_1, depositor, deposit2, 0.3, originChainId);
       const fill3 = await buildFillForRepaymentChain(spokePool_1, depositor, deposit2, 0.2, originChainId);
-      const unfilledAmount3 = deposit2.amount.sub(fill3.totalFilledAmount);
+      const unfilledAmount3 = getRefund(deposit2.amount.sub(fill3.totalFilledAmount), fill3.realizedLpFeePct);
 
       // Partial fill deposit3
       const fill4 = await buildFillForRepaymentChain(spokePool_1, depositor, deposit3, 0.5, originChainId);
-      const unfilledAmount4 = deposit3.amount.sub(fill4.totalFilledAmount);
+      const unfilledAmount4 = getRefund(deposit3.amount.sub(fill4.totalFilledAmount), fill4.realizedLpFeePct);
       const blockOfLastFill = await hubPool.provider.getBlockNumber();
 
       // Prior to root bundle being executed, running balances should be:
@@ -699,29 +706,29 @@ describe("Dataworker: Build merkle roots", async function () {
 
       // Test that we can still look up the excess if the first fill for the same deposit as the one slow filed
       //  is older than the spoke pool client's lookback window.
+      const { spy, spyLogger } = createSpyLogger();
       const shortRangeSpokePoolClient = new SpokePoolClient(
-        createSpyLogger().spyLogger,
+        spyLogger,
         spokePool_2,
         configStoreClient,
         destinationChainId,
-        { fromBlock: fill1Block + 1 }, // Set fromBlock to now, after first fill for same deposit as the slowFill1
-        spokePoolClients[destinationChainId].spokePoolDeploymentBlock
+        spokePoolClients[destinationChainId].spokePoolDeploymentBlock,
+        { fromBlock: fill1Block + 1 } // Set fromBlock to now, after first fill for same deposit as the slowFill1
       );
       await shortRangeSpokePoolClient.update();
       expect(shortRangeSpokePoolClient.getFills().length).to.equal(2); // We should only be able to see 2 fills
-      // for this deposit, even though there are 3.
-      await assertPromiseError(
-        dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(3), {
-          ...spokePoolClients,
-          [destinationChainId]: shortRangeSpokePoolClient,
-        }),
-        "Cannot find first fill for for deposit"
-      );
+      await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(3), {
+        ...spokePoolClients,
+        [destinationChainId]: shortRangeSpokePoolClient,
+      });
+
+      // Should have queried for historical fills that it can no longer see.
+      expect(lastSpyLogIncludes(spy, "Queried for fill that triggered a slow fill")).to.be.true;
 
       // The excess amount in the contract is now equal to the partial fill amount sent before the slow fill.
       // Again, now that the slowFill1 was sent, the unfilledAmount1 can be subtracted from running balances since its
       // no longer associated with an unfilled deposit.
-      const excess = fill5.fillAmount;
+      const excess = getRefund(fill5.fillAmount, fill5.realizedLpFeePct);
 
       updateAndCheckExpectedPoolRebalanceCounters(
         expectedRunningBalances,
@@ -824,6 +831,94 @@ describe("Dataworker: Build merkle roots", async function () {
         await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(8), spokePoolClients)
       );
     });
+    it("Loads fills needed to compute slow fill excesses", async function () {
+      await updateAllClients();
+
+      // Send deposit
+      // Send two partial fills
+      const deposit1 = await buildDeposit(
+        configStoreClient,
+        hubPoolClient,
+        spokePool_1,
+        erc20_1,
+        l1Token_1,
+        depositor,
+        destinationChainId,
+        amountToDeposit
+      );
+      const fill1 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.5, destinationChainId);
+      const fill2 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, destinationChainId);
+      const fill2Block = await spokePool_2.provider.getBlockNumber();
+
+      // Produce bundle and execute pool leaves. Should produce a slow fill. Don't execute it.
+      await updateAllClients();
+      const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(1), spokePoolClients);
+      await hubPool
+        .connect(dataworker)
+        .proposeRootBundle(
+          Array(CHAIN_ID_TEST_LIST.length).fill(fill2Block),
+          merkleRoot1.leaves.length,
+          merkleRoot1.tree.getHexRoot(),
+          mockTreeRoot,
+          mockTreeRoot
+        );
+
+      const pendingRootBundle = await hubPool.rootBundleProposal();
+      await timer.connect(dataworker).setCurrentTime(pendingRootBundle.challengePeriodEndTimestamp + 1);
+      for (let i = 0; i < merkleRoot1.leaves.length; i++) {
+        const leaf = merkleRoot1.leaves[i];
+        await hubPool
+          .connect(dataworker)
+          .executeRootBundle(
+            leaf.chainId,
+            leaf.groupIndex,
+            leaf.bundleLpFees,
+            leaf.netSendAmounts,
+            leaf.runningBalances,
+            i,
+            leaf.l1Tokens,
+            merkleRoot1.tree.getHexProof(leaf)
+          );
+      }
+
+      // Create new spoke client with a search range that would miss fill1.
+      const destinationChainSpokePoolClient = new SpokePoolClient(
+        createSpyLogger().spyLogger,
+        spokePool_2,
+        configStoreClient,
+        destinationChainId,
+        spokePoolClients[destinationChainId].spokePoolDeploymentBlock,
+        { fromBlock: fill2Block + 1 }
+      );
+
+      // Send a third partial fill, this will produce an excess since a slow fill is already in flight for the deposit.
+      const fill3 = await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, destinationChainId);
+      await updateAllClients();
+      await destinationChainSpokePoolClient.update();
+      expect(destinationChainSpokePoolClient.getFills().length).to.equal(1);
+      const blockRange2 = Array(CHAIN_ID_TEST_LIST.length).fill([
+        fill2Block + 1,
+        await spokePool_2.provider.getBlockNumber(),
+      ]);
+      const merkleRoot2 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange2, {
+        ...spokePoolClients,
+        [destinationChainId]: destinationChainSpokePoolClient,
+      });
+      const l1TokenForFill = merkleRoot2.leaves[0].l1Tokens[0];
+
+      // New running balance should be fill1 + fill2 + fill3 + slowFillAmount - excess
+      // excess should be the amount remaining after fill2. Since the slow fill was never
+      // executed, the excess should be equal to the slow fill amount so they should cancel out.
+      const expectedExcess = getRefund(fill2.amount.sub(fill2.totalFilledAmount), fill2.realizedLpFeePct);
+      expect(merkleRoot2.runningBalances[destinationChainId][l1TokenForFill]).to.equal(
+        getRefundForFills([fill1, fill2, fill3])
+      );
+
+      expect(lastSpyLogIncludes(spy, "Fills triggering excess returns from L2")).to.be.true;
+      expect(
+        spy.getCall(-1).lastArg.fillsTriggeringExcesses[destinationChainId][fill2.destinationToken][0].excess
+      ).to.equal(expectedExcess.toString());
+    });
     it("Many L1 tokens, testing leaf order and root construction", async function () {
       // In this test, each L1 token will have one deposit and fill associated with it.
       const depositsForL1Token: { [l1Token: string]: Deposit } = {};
@@ -903,7 +998,7 @@ describe("Dataworker: Build merkle roots", async function () {
                 chainId === originChainId
                   ? l1TokensToIncludeInLeaf.map((l1Token) => depositsForL1Token[l1Token].amount.mul(toBN(-1)))
                   : l1TokensToIncludeInLeaf.map((l1Token) => getRefundForFills([fillsForL1Token[l1Token]])),
-              netSendAmounts: l1TokensToIncludeInLeaf.map((_) => toBN(0)), // Should be 0 since running balances are
+              netSendAmounts: l1TokensToIncludeInLeaf.map(() => toBN(0)), // Should be 0 since running balances are
               // under threshold
               l1Tokens: l1TokensToIncludeInLeaf,
             };
@@ -992,7 +1087,7 @@ describe("Dataworker: Build merkle roots", async function () {
         l1Tokens: orderedL1Tokens,
         leafId: 0,
       };
-      expect(merkleRoot1.leaves).to.deep.equal([expectedLeaf]);
+      expect(deepEqualsWithBigNumber(merkleRoot1.leaves, [expectedLeaf])).to.be.true;
     });
     it("Token transfer exceeeds threshold", async function () {
       await updateAllClients();
@@ -1028,7 +1123,7 @@ describe("Dataworker: Build merkle roots", async function () {
         .map((leaf, i) => {
           return { ...leaf, leafId: i };
         });
-      expect(merkleRoot1.leaves).to.deep.equal(expectedLeaves1);
+      expect(deepEqualsWithBigNumber(merkleRoot1.leaves, expectedLeaves1)).to.be.true;
 
       // Now set the threshold much lower than the running balance and check that running balances for all
       // chains gets set to 0 and net send amount is equal to the running balance. This also tests that the
@@ -1049,7 +1144,7 @@ describe("Dataworker: Build merkle roots", async function () {
           netSendAmounts: leaf.runningBalances,
         };
       });
-      expect(merkleRoot2.leaves).to.deep.equal(expectedLeaves2);
+      expect(deepEqualsWithBigNumber(merkleRoot2.leaves, expectedLeaves2)).to.be.true;
     });
     it("Adds latest running balances to next", async function () {
       await updateAllClients();
@@ -1088,9 +1183,8 @@ describe("Dataworker: Build merkle roots", async function () {
       await updateAllClients();
 
       // Should have 1 running balance leaf:
-      expect(
-        (await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(0), spokePoolClients)).leaves
-      ).to.deep.equal([
+      const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(0), spokePoolClients);
+      const expectedLeaves1 = [
         {
           chainId: originChainId,
           bundleLpFees: [toBN(0)],
@@ -1100,16 +1194,15 @@ describe("Dataworker: Build merkle roots", async function () {
           leafId: 0,
           l1Tokens: [l1Token_1.address],
         },
-      ]);
+      ];
+      expect(deepEqualsWithBigNumber(merkleRoot1.leaves, expectedLeaves1)).to.be.true;
 
       // Submit a partial fill on destination chain. This tests that the previous running balance is added to
       // running balances modified by repayments, slow fills, and deposits.
       const fill = await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
-      const slowFillPayment = deposit.amount.sub(fill.totalFilledAmount);
+      const slowFillPayment = getRefund(deposit.amount.sub(fill.totalFilledAmount), deposit.realizedLpFeePct);
       await updateAllClients();
-      expect(
-        (await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(1), spokePoolClients)).leaves
-      ).to.deep.equal([
+      const expectedLeaves2 = [
         {
           chainId: originChainId,
           bundleLpFees: [toBN(0)],
@@ -1128,7 +1221,9 @@ describe("Dataworker: Build merkle roots", async function () {
           leafId: 1,
           l1Tokens: [l1Token_1.address],
         },
-      ]);
+      ];
+      const merkleRoot2 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(1), spokePoolClients);
+      expect(deepEqualsWithBigNumber(merkleRoot2.leaves, expectedLeaves2)).to.be.true;
     });
     it("Spoke pool balance threshold, above and below", async function () {
       await updateAllClients();
@@ -1185,7 +1280,7 @@ describe("Dataworker: Build merkle roots", async function () {
         .map((leaf, i) => {
           return { ...leaf, leafId: i };
         });
-      expect(merkleRoot1.leaves).to.deep.equal(expectedLeaves1);
+      expect(deepEqualsWithBigNumber(merkleRoot1.leaves, expectedLeaves1)).to.be.true;
 
       // Now set the threshold much lower than the running balance and check that running balances for all
       // chains gets set to 0 and net send amount is equal to the running balance. This also tests that the
@@ -1222,7 +1317,7 @@ describe("Dataworker: Build merkle roots", async function () {
           netSendAmounts: leaf.chainId === originChainId ? [expectedTransferAmount.mul(-1)] : leaf.netSendAmounts,
         };
       });
-      expect(merkleRoot2.leaves).to.deep.equal(expectedLeaves2);
+      expect(deepEqualsWithBigNumber(merkleRoot2.leaves, expectedLeaves2)).to.be.true;
     });
     it("Spoke pool balance threshold, below transfer threshold", async function () {
       await updateAllClients();
@@ -1277,8 +1372,7 @@ describe("Dataworker: Build merkle roots", async function () {
         .map((leaf, i) => {
           return { ...leaf, leafId: i };
         });
-      expect(merkleRoot1.leaves).to.deep.equal(expectedLeaves1);
-
+      expect(deepEqualsWithBigNumber(merkleRoot1.leaves, expectedLeaves1)).to.be.true;
       // Now set the threshold much lower than the running balance and check that running balances for all
       // chains gets set to 0 and net send amount is equal to the running balance. This also tests that the
       // dataworker is comparing the absolute value of the running balance with the threshold, not the signed value.
@@ -1315,7 +1409,7 @@ describe("Dataworker: Build merkle roots", async function () {
             leaf.chainId === originChainId ? [expectedTransferAmount.mul(-1)] : [getRefundForFills([fill])],
         };
       });
-      expect(merkleRoot2.leaves).to.deep.equal(expectedLeaves2);
+      expect(deepEqualsWithBigNumber(merkleRoot2.leaves, expectedLeaves2)).to.be.true;
     });
   });
 });
