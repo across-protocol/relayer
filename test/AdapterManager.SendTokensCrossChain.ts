@@ -42,7 +42,7 @@ const mainnetTokens = {
 describe("AdapterManager: Send tokens cross-chain", async function () {
   beforeEach(async function () {
     [relayer] = await ethers.getSigners();
-    ({ spy, spyLogger } = createSpyLogger());
+    ({ spyLogger } = createSpyLogger());
 
     hubPoolClient = new MockHubPoolClient(null, null);
     await seedMocks();

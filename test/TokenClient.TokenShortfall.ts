@@ -20,7 +20,7 @@ let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 describe("TokenClient: Token shortfall", async function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
-    ({ spy, spyLogger } = createSpyLogger());
+    ({ spyLogger } = createSpyLogger());
     // Using deploySpokePoolWithToken will create two tokens and enable both of them as routes.
     ({ spokePool: spokePool_1, deploymentBlock: spokePool1DeploymentBlock } = await deploySpokePoolWithToken(
       originChainId,
