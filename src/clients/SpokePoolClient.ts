@@ -361,7 +361,7 @@ export class SpokePoolClient {
     let deposit: DepositWithBlock, cachedDeposit: Deposit | undefined;
     const redisClient = await getRedis(this.logger);
     if (redisClient) {
-      // cachedDeposit = await getDeposit(getRedisDepositKey(fill), redisClient);
+      cachedDeposit = await getDeposit(getRedisDepositKey(fill), redisClient);
     }
     if (cachedDeposit) {
       deposit = cachedDeposit as DepositWithBlock;
@@ -522,7 +522,7 @@ export class SpokePoolClient {
 
     this.log("debug", `Updating SpokePool client for chain ${this.chainId}`, {
       eventsToQuery,
-      eventSearchConfigs,
+      searchConfig,
       spokePool: this.spokePool.address,
     });
 
@@ -700,7 +700,7 @@ export class SpokePoolClient {
 
     this.isUpdated = true;
     this.log("debug", `SpokePool client for chain ${this.chainId} updated!`, {
-      eventSearchConfigs,
+      searchConfig,
       nextFirstBlockToSearch: this.firstBlockToSearch,
     });
   }
