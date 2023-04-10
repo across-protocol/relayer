@@ -1,4 +1,4 @@
-import { deploySpokePoolWithToken, expect, ethers, Contract, SignerWithAddress, MAX_UINT_VAL, toBN } from "./utils";
+import { deploySpokePoolWithToken, expect, ethers, Contract, SignerWithAddress, MAX_UINT_VAL } from "./utils";
 import { createSpyLogger, winston, originChainId, destinationChainId, lastSpyLogIncludes } from "./utils";
 import { deployAndConfigureHubPool, zeroAddress, getContractFactory, utf8ToHex, toBNWei } from "./utils";
 import { TokenClient, SpokePoolClient, HubPoolClient } from "../src/clients";

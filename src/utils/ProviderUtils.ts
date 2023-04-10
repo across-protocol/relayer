@@ -15,12 +15,6 @@ import { Logger } from ".";
 
 const logger = Logger;
 
-const _ttl = Number(process.env.PROVIDER_CACHE_TTL ?? PROVIDER_CACHE_TTL);
-if (isNaN(_ttl) || _ttl <= 0) {
-  const envVar = process.env.PROVIDER_CACHE_TTL ?? PROVIDER_CACHE_TTL;
-  throw new Error(`PROVIDER_CACHE_TTL (${envVar}) must be numeric and > 0`);
-}
-
 // The async/queue library has a task-based interface for building a concurrent queue.
 // This is the type we pass to define a request "task".
 interface RateLimitTask {
@@ -126,6 +120,7 @@ function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): bo
 class CacheProvider extends RateLimitedProvider {
   public readonly getLogsCachePrefix: string;
   public readonly maxReorgDistance: number;
+  public readonly baseTTL: number;
 
   constructor(
     providerCacheNamespace: string,
@@ -144,6 +139,13 @@ class CacheProvider extends RateLimitedProvider {
     this.getLogsCachePrefix = `${providerCacheNamespace},${new URL(this.connection.url).hostname},${
       this.network.chainId
     }:eth_getLogs,`;
+
+    const _ttlVar = process.env.PROVIDER_CACHE_TTL ?? PROVIDER_CACHE_TTL;
+    const _ttl = Number(_ttlVar);
+    if (isNaN(_ttl) || _ttl <= 0) {
+      throw new Error(`PROVIDER_CACHE_TTL (${_ttlVar}) must be numeric and > 0`);
+    }
+    this.baseTTL = _ttl;
   }
   override async send(method: string, params: Array<any>): Promise<any> {
     if (this.redisClient && (await this.shouldCache(method, params))) {
@@ -161,7 +163,7 @@ class CacheProvider extends RateLimitedProvider {
       const result = await super.send(method, params);
 
       // Apply a random margin to spread expiry over a larger time window.
-      const ttl = _ttl + Math.ceil(lodash.random(-ttl_modifier, ttl_modifier, true) * _ttl);
+      const ttl = this.baseTTL + Math.ceil(lodash.random(-ttl_modifier, ttl_modifier, true) * this.baseTTL);
 
       // Commit result to redis.
       await setRedisKey(redisKey, JSON.stringify(result), this.redisClient, ttl);

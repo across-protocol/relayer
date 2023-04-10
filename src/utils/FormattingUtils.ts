@@ -2,8 +2,8 @@ import { ethers, BigNumber } from "ethers";
 import { utils } from "@across-protocol/sdk-v2";
 import { createFormatFunction } from "../utils";
 
-export type BigNumberish = utils.BigNumberish;
-export type BN = utils.BN;
+export type BigNumberish = ethers.BigNumberish;
+export type BN = ethers.BigNumber;
 
 export const toWei = (num: BigNumberish): BN => ethers.utils.parseEther(num.toString());
 

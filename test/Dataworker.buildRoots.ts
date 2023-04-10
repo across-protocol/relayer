@@ -998,7 +998,7 @@ describe("Dataworker: Build merkle roots", async function () {
                 chainId === originChainId
                   ? l1TokensToIncludeInLeaf.map((l1Token) => depositsForL1Token[l1Token].amount.mul(toBN(-1)))
                   : l1TokensToIncludeInLeaf.map((l1Token) => getRefundForFills([fillsForL1Token[l1Token]])),
-              netSendAmounts: l1TokensToIncludeInLeaf.map((_) => toBN(0)), // Should be 0 since running balances are
+              netSendAmounts: l1TokensToIncludeInLeaf.map(() => toBN(0)), // Should be 0 since running balances are
               // under threshold
               l1Tokens: l1TokensToIncludeInLeaf,
             };
