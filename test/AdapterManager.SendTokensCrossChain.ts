@@ -12,7 +12,7 @@ let hubPoolClient: MockHubPoolClient;
 const mockSpokePoolClients: {
   [chainId: number]: SpokePoolClient;
 } = {};
-let relayer: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger, amountToSend: BigNumber;
+let relayer: SignerWithAddress, spyLogger: winston.Logger, amountToSend: BigNumber;
 let adapterManager: AdapterManager; // tested
 
 // Atomic depositor
@@ -42,7 +42,7 @@ const mainnetTokens = {
 describe("AdapterManager: Send tokens cross-chain", async function () {
   beforeEach(async function () {
     [relayer] = await ethers.getSigners();
-    ({ spy, spyLogger } = createSpyLogger());
+    ({ spyLogger } = createSpyLogger());
 
     hubPoolClient = new MockHubPoolClient(null, null);
     await seedMocks();

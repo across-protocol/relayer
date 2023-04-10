@@ -1,6 +1,5 @@
 import {
   AugmentedTransaction,
-  MultiCallerClient, // tested
   knownRevertReasons,
   unknownRevertReason,
   unknownRevertReasonMethodsToIgnore,
@@ -8,17 +7,7 @@ import {
 import { TransactionSimulationResult } from "../src/utils";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
-import {
-  createSpyLogger,
-  Contract,
-  expect,
-  randomAddress,
-  winston,
-  toBN,
-  ethers,
-  smock,
-  assertPromiseError,
-} from "./utils";
+import { createSpyLogger, Contract, expect, randomAddress, winston, toBN, smock, assertPromiseError } from "./utils";
 import { getAbi } from "@uma/contracts-node";
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 
@@ -218,7 +207,7 @@ describe("MultiCallerClient", async function () {
     for (const badField of ["address", "chainId"]) {
       const txns: AugmentedTransaction[] = [];
 
-      for (const _idx of [1, 2, 3, 4, 5]) {
+      for (let i = 0; i < 5; ++i) {
         const txn: AugmentedTransaction = {
           chainId,
           contract: {

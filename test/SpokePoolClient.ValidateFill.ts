@@ -21,7 +21,6 @@ import {
   deployConfigStore,
   getLastBlockTime,
   buildDeposit,
-  hre,
   assertPromiseError,
   getDepositParams,
   mineRandomBlocks,
