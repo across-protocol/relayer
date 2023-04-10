@@ -581,7 +581,7 @@ export class SpokePoolClient {
           this.logger.debug({
             at: "SpokePoolClient#update",
             message: "Deferring early deposit event.",
-            currentTime: currentTime,
+            currentTime,
             deposit: { args, transactionHash },
           });
           return "earlyDeposits";
