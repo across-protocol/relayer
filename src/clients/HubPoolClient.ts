@@ -1,14 +1,4 @@
-import {
-  assign,
-  Contract,
-  winston,
-  BigNumber,
-  ERC20,
-  sortEventsAscending,
-  EventSearchConfig,
-  MakeOptional,
-  BigNumberish,
-} from "../utils";
+import { assign, Contract, winston, BigNumber, ERC20, EventSearchConfig, MakeOptional, BigNumberish } from "../utils";
 import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
 import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
 import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle, LpToken } from "../interfaces";
@@ -25,7 +15,6 @@ export class HubPoolClient {
   private l1Tokens: L1Token[] = []; // L1Tokens and their associated info.
   private lpTokens: { [token: string]: LpToken } = {};
   private proposedRootBundles: ProposedRootBundle[] = [];
-  private reverseProposedRootBundles: ProposedRootBundle[] = [];
   private canceledRootBundles: CancelledRootBundle[] = [];
   private disputedRootBundles: DisputedRootBundle[] = [];
   private executedRootBundles: ExecutedRootBundle[] = [];
@@ -228,7 +217,8 @@ export class HubPoolClient {
   ): number | undefined {
     let endingBlockNumber: number | undefined;
     // Search proposed root bundles in reverse chronological order.
-    for (const rootBundle of this.reverseProposedRootBundles) {
+    for (let i = this.proposedRootBundles.length - 1; i >= 0; i--) {
+      const rootBundle = this.proposedRootBundles[i];
       const nextRootBundle = this.getFollowingRootBundle(rootBundle);
       if (!this.isRootBundleValid(rootBundle, nextRootBundle ? nextRootBundle.blockNumber : latestMainnetBlock)) {
         continue;
@@ -257,7 +247,7 @@ export class HubPoolClient {
   // TODO: This might not be necessary since the cumulative root bundle count doesn't grow fast enough, but consider
   // using _.findLast/_.find instead of resorting the arrays if these functions begin to take a lot time.
   getProposedRootBundlesInBlockRange(startingBlock: number, endingBlock: number): ProposedRootBundle[] {
-    return this.reverseProposedRootBundles.filter(
+    return this.proposedRootBundles.filter(
       (bundle: ProposedRootBundle) => bundle.blockNumber >= startingBlock && bundle.blockNumber <= endingBlock
     );
   }
@@ -279,13 +269,15 @@ export class HubPoolClient {
   }
 
   getFollowingRootBundle(currentRootBundle: ProposedRootBundle): ProposedRootBundle {
-    const index = this.reverseProposedRootBundles.findIndex(
+    const index = _.findLastIndex(
+      this.proposedRootBundles,
       (bundle) => bundle.blockNumber === currentRootBundle.blockNumber
     );
-    if (index === 0) {
+    // If index of current root bundle is not found or is the last bundle, return undefined.
+    if (index === -1 || index === this.proposedRootBundles.length - 1) {
       return undefined;
     }
-    return this.reverseProposedRootBundles[index - 1];
+    return this.proposedRootBundles[index + 1];
   }
 
   getExecutedLeavesForRootBundle(
@@ -315,7 +307,7 @@ export class HubPoolClient {
   getLatestFullyExecutedRootBundle(latestMainnetBlock: number): ProposedRootBundle | undefined {
     // Search for latest ProposeRootBundleExecuted event followed by all of its RootBundleExecuted event suggesting
     // that all pool rebalance leaves were executed. This ignores any proposed bundles that were partially executed.
-    return this.reverseProposedRootBundles.find((rootBundle: ProposedRootBundle) => {
+    return _.findLast(this.proposedRootBundles, (rootBundle: ProposedRootBundle) => {
       if (rootBundle.blockNumber > latestMainnetBlock) {
         return false;
       }
@@ -538,17 +530,13 @@ export class HubPoolClient {
         .map((event) => spreadEventWithBlockNumber(event) as ExecutedRootBundle)
     );
 
-    // TODO: Consider storing all of the above methods in descending order for reducing the number of times
-    // you need to resort the events. As a shortcut, store an extra set of events sorted in reverse chronological order.
-    this.reverseProposedRootBundles = sortEventsDescending(this.proposedRootBundles);
-
     // If the contract's current rootBundleProposal() value has an unclaimedPoolRebalanceLeafCount > 0, then
     // it means that either the root bundle proposal is in the challenge period and can be disputed, or it has
     // passed the challenge period and pool rebalance leaves can be executed. Once all leaves are executed, the
     // unclaimed count will drop to 0 and at that point there is nothing more that we can do with this root bundle
     // besides proposing another one.
     if (pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount > 0) {
-      const mostRecentProposedRootBundle = this.reverseProposedRootBundles[0];
+      const mostRecentProposedRootBundle = this.proposedRootBundles[this.proposedRootBundles.length - 1];
       this.pendingRootBundle = {
         poolRebalanceRoot: pendingRootBundleProposal.poolRebalanceRoot,
         relayerRefundRoot: pendingRootBundleProposal.relayerRefundRoot,

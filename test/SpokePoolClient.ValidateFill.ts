@@ -306,7 +306,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
     expect(searchRange5.low).to.be.lessThanOrEqual(depositEvents[4].blockNumber);
   });
 
-  it.only("Fuzz: get search bounds for deposit ID", async function () {
+  it("Fuzz: get search bounds for deposit ID", async function () {
     const fuzzClient = new MockedSpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_2,
@@ -342,7 +342,6 @@ describe("SpokePoolClient: Fill Validation", async function () {
       // The correct block is the first block to increment beyond the target. Check that the range
       // contains the correct block where deposit ID incremented to the target + 1.
       const correctBlock = depositIds.findIndex((depositId) => depositId > target);
-      console.log(results, target, correctBlock, depositIds[results.low], depositIds[results.high]);
       expect(depositIds[correctBlock] > target).to.be.true;
       expect(results.low <= correctBlock).to.be.true;
       expect(results.high >= correctBlock).to.be.true;
