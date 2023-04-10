@@ -7,10 +7,14 @@ export class MockedSpokePoolClient extends SpokePoolClient {
 
   setDepositIds(_depositIds: number[]) {
     this.depositIdAtBlock = [];
-    if (_depositIds.length === 0) return;
+    if (_depositIds.length === 0) {
+      return;
+    }
     let lastDepositId = _depositIds[0];
     for (let i = 0; i < _depositIds.length; i++) {
-      if (_depositIds[i] < lastDepositId) throw new Error("deposit ID must be equal to or greater than previous");
+      if (_depositIds[i] < lastDepositId) {
+        throw new Error("deposit ID must be equal to or greater than previous");
+      }
       this.depositIdAtBlock[i] = _depositIds[i];
       lastDepositId = _depositIds[i];
     }

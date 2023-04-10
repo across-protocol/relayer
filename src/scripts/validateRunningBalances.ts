@@ -94,7 +94,9 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
     }
 
     for (const leaf of poolRebalanceLeaves) {
-      if (spokePoolClients[leaf.chainId] === undefined) continue;
+      if (spokePoolClients[leaf.chainId] === undefined) {
+        continue;
+      }
       for (let i = 0; i < leaf.l1Tokens.length; i++) {
         const l1Token = leaf.l1Tokens[i];
         const tokenInfo = clients.hubPoolClient.getTokenInfo(1, l1Token);

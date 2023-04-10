@@ -49,15 +49,6 @@ const FILL_DEPOSIT_COMPARISON_KEYS = [
   "destinationToken",
 ] as const;
 
-// These events are numerous and we should use a fixed lookback when querying them.
-const FIXED_LOOKBACK_EVENTS = [
-  "FundsDeposited",
-  "FilledRelay",
-  "RelayedRootBundle",
-  "ExecutedRelayerRefundRoot",
-  "TokensBridged",
-];
-
 export class SpokePoolClient {
   private currentTime: number;
   private depositHashes: { [depositHash: string]: DepositWithBlock } = {};
@@ -295,21 +286,9 @@ export class SpokePoolClient {
     return `${event.depositId}-${event.originChainId}`;
   }
 
-  // Look for the block number of the event that emitted the deposit with the target deposit ID. We know that
-  // `numberOfDeposits` is strictly increasing for any SpokePool, so we can use a binary search to find the blockTag
-  // where `numberOfDeposits == targetDepositId`.
-  async getBlockRangeForDepositId(
-    targetDepositId: number,
-    initLow = this.spokePoolDeploymentBlock,
-    initHigh = this.latestBlockNumber,
-    maxSearches: number = Number.MAX_SAFE_INTEGER
-  ): Promise<number> {
-    return (await this._getBlockRangeForDepositId(targetDepositId, initLow, initHigh, maxSearches)).mid;
-  }
-
   // We want to find the block range that satisfies these conditions:
   // - the low block has deposit count <= targetDepositId
-  // - the mid block has a deposit count > targetDepositId.
+  // - the high block has a deposit count > targetDepositId.
   // This way the caller can search for a FundsDeposited event between [low, high] that will always
   // contain the event emitted when deposit ID was incremented to targetDepositId + 1. This is the same transaction
   // where the deposit with deposit ID = targetDepositId was created.
@@ -320,7 +299,6 @@ export class SpokePoolClient {
     maxSearches: number
   ): Promise<{
     low: number;
-    mid: number;
     high: number;
   }> {
     assert(initLow <= initHigh, "Binary search failed because low > high");
@@ -331,22 +309,28 @@ export class SpokePoolClient {
     do {
       const mid = Math.floor((high + low) / 2);
       const searchedDepositId = await this._getDepositIdAtBlock(mid);
-      if (!Number.isInteger(searchedDepositId)) throw new Error("Invalid deposit count");
+      if (!Number.isInteger(searchedDepositId)) {
+        throw new Error("Invalid deposit count");
+      }
 
       // Caller can set maxSearches to minimize number of binary searches and eth_call requests.
-      if (i++ >= maxSearches) return { low, mid, high };
+      if (i++ >= maxSearches) {
+        return { low, high };
+      }
 
-      // We want to find a range [low, high] such that deposit at high > targetDepositId and
-      // deposit at low <= targetDepositId.
-      if (targetDepositId > searchedDepositId) low = mid + 1;
-      else if (targetDepositId + 1 < searchedDepositId) high = mid - 1;
-      else return { low, mid, high };
+      // Since the deposit ID can jump by more than 1 in a block (e.g. if multiple deposits are sent
+      // in the same block), we need to search inclusively on on the low and high, instead of the
+      // traditional binary search where we set high to mid - 1 and low to mid + 1. This makes sure we
+      // don't accidentally skip over mid which contains multiple deposit ID's.
+      if (targetDepositId > searchedDepositId) {
+        low = mid;
+      } else if (targetDepositId < searchedDepositId) {
+        high = mid;
+      } else {
+        return { low, high };
+      }
     } while (low <= high);
-    // If we can't find a blockTag where `numberOfDeposits == targetDepositId`,
-    // then its likely that the depositId was included in the same block as deposits that came after it. So we fallback
-    // to returning `low` if we exit the while loop, which should be the block where depositId incremented from
-    // `targetDepositId`.
-    return { low, mid: low, high };
+    throw new Error("Failed to find deposit ID");
   }
 
   async _getDepositIdAtBlock(blockTag: number): Promise<number> {
@@ -358,7 +342,9 @@ export class SpokePoolClient {
   // of a deposit older or younger than its fixed lookback.
   async queryHistoricalDepositForFill(fill: Fill): Promise<DepositWithBlock | undefined> {
     const start = Date.now();
-    if (fill.originChainId !== this.chainId) throw new Error("fill.originChainId !== this.chainid");
+    if (fill.originChainId !== this.chainId) {
+      throw new Error("fill.originChainId !== this.chainid");
+    }
 
     // We need to update client so we know the first and last deposit ID's queried for this spoke pool client, as well
     // as the global first and last deposit ID's for this spoke pool.
@@ -375,20 +361,22 @@ export class SpokePoolClient {
     let deposit: DepositWithBlock, cachedDeposit: Deposit | undefined;
     const redisClient = await getRedis(this.logger);
     if (redisClient) {
-      cachedDeposit = await getDeposit(getRedisDepositKey(fill), redisClient);
+      // cachedDeposit = await getDeposit(getRedisDepositKey(fill), redisClient);
     }
     if (cachedDeposit) {
       deposit = cachedDeposit as DepositWithBlock;
       // Assert that cache hasn't been corrupted.
       assert(deposit.depositId === fill.depositId && deposit.originChainId === fill.originChainId);
     } else {
-      // Binary search for block where SpokePool.numberOfDeposits incremented to fill.depositId + 1. Stop searches after a maximum
+      // Binary search for block where SpokePool.numberOfDeposits incremented to fill.depositId + 1.
+      // This way we can get the blocks before and after the deposit with deposit ID = fill.depositId
+      // and use those blocks to optimize the search for that deposit. Stop searches after a maximum
       // # of searches to limit number of eth_call requests. Make an eth_getLogs call on the remaining block range
       // (i.e. the [low, high] remaining from the binary search) to find the target deposit ID.
       // @dev Limiting between 5-10 searches empirically performs best when there are ~300,000 deposits
       // for a spoke pool and we're looking for a deposit <5 days older than HEAD.
       const searchBounds = await this._getBlockRangeForDepositId(
-        fill.depositId,
+        fill.depositId + 1,
         this.spokePoolDeploymentBlock,
         this.latestBlockNumber,
         7

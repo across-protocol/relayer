@@ -244,7 +244,9 @@ export class HubPoolClient {
       // Since we're iterating from newest to oldest, bundleEvalBlockNumber is only decreasing, and if the
       // bundleEvalBlockNumber is smaller than the target block, then we should return the last set `endingBlockNumber`.
       if (bundleEvalBlockNumber <= block) {
-        if (bundleEvalBlockNumber === block) endingBlockNumber = bundleEvalBlockNumber;
+        if (bundleEvalBlockNumber === block) {
+          endingBlockNumber = bundleEvalBlockNumber;
+        }
         break;
       }
       endingBlockNumber = bundleEvalBlockNumber;
@@ -280,11 +282,16 @@ export class HubPoolClient {
     const index = this.reverseProposedRootBundles.findIndex(
       (bundle) => bundle.blockNumber === currentRootBundle.blockNumber
     );
-    if (index === 0) return undefined;
+    if (index === 0) {
+      return undefined;
+    }
     return this.reverseProposedRootBundles[index - 1];
   }
 
-  getExecutedLeavesForRootBundle(rootBundle: ProposedRootBundle, latestMainnetBlockToSearch: number): ExecutedRootBundle[] {
+  getExecutedLeavesForRootBundle(
+    rootBundle: ProposedRootBundle,
+    latestMainnetBlockToSearch: number
+  ): ExecutedRootBundle[] {
     return this.executedRootBundles.filter(
       (executedLeaf: ExecutedRootBundle) =>
         executedLeaf.blockNumber <= latestMainnetBlockToSearch &&
@@ -309,7 +316,9 @@ export class HubPoolClient {
     // Search for latest ProposeRootBundleExecuted event followed by all of its RootBundleExecuted event suggesting
     // that all pool rebalance leaves were executed. This ignores any proposed bundles that were partially executed.
     return this.reverseProposedRootBundles.find((rootBundle: ProposedRootBundle) => {
-      if (rootBundle.blockNumber > latestMainnetBlock) return false;
+      if (rootBundle.blockNumber > latestMainnetBlock) {
+        return false;
+      }
       return this.isRootBundleValid(rootBundle, latestMainnetBlock);
     });
   }
