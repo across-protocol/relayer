@@ -487,10 +487,10 @@ export class SpokePoolClient {
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
     if (searchConfig.fromBlock > searchConfig.toBlock) {
-      // This failure has only been seen in the hardhat test environment. @todo: Resolve this.
       this.log("warn", "Invalid update() searchConfig.", { searchConfig });
       return {
         success: false,
+        currentTime: this.currentTime,
         firstDepositId,
         latestBlockNumber: this.latestBlockNumber,
         latestDepositId: this.latestDepositIdQueried,
@@ -541,7 +541,7 @@ export class SpokePoolClient {
       firstDepositId,
       latestBlockNumber,
       latestDepositId,
-      searchEndBlock: searchConfig.fromBlock,
+      searchEndBlock: searchConfig.toBlock,
       events,
     };
   }
@@ -551,8 +551,12 @@ export class SpokePoolClient {
       throw new Error("RateModel not updated");
     }
 
-    const { events: queryResults, ...update } = await this._update(eventsToQuery);
+    const { events: queryResults, currentTime, ...update } = await this._update(eventsToQuery);
     if (!update.success) {
+      // This failure only occurs if the RPC searchConfig is miscomputed, and has only been seen in the hardhat test
+      // environment. Normal failures will throw instead. This is therefore an unfortunate workaround until we can
+      // understand why we see this in test. @todo: Resolve.
+      this.isUpdated = true;
       return;
     }
 
@@ -572,12 +576,12 @@ export class SpokePoolClient {
         ...this.earlyDeposits,
       ];
       const { earlyDeposits = [], depositEvents = [] } = groupBy(allDeposits, (depositEvent) => {
-        if (depositEvent.args.quoteTimestamp > this.currentTime) {
+        if (depositEvent.args.quoteTimestamp > currentTime) {
           const { args, transactionHash } = depositEvent;
           this.logger.debug({
             at: "SpokePoolClient#update",
             message: "Deferring early deposit event.",
-            currentTime: this.currentTime,
+            currentTime: currentTime,
             deposit: { args, transactionHash },
           });
           return "earlyDeposits";
@@ -711,7 +715,7 @@ export class SpokePoolClient {
     }
 
     // Next iteration should start off from where this one ended.
-    this.currentTime = update.currentTime;
+    this.currentTime = currentTime;
     this.firstDepositIdForSpokePool = update.firstDepositId;
     this.latestBlockNumber = update.latestBlockNumber;
     this.lastDepositIdForSpokePool = update.latestDepositId;
