@@ -220,6 +220,8 @@ class CacheProvider extends RateLimitedProvider {
 
       // If the block is old enough to cache, cache the call.
       return this.canCacheInformationFromBlock(blockNumber);
+    } else {
+      return false;
     }
   }
 
