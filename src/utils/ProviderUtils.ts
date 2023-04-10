@@ -140,10 +140,10 @@ class CacheProvider extends RateLimitedProvider {
       this.network.chainId
     }:eth_getLogs,`;
 
-    const _ttl = Number(process.env.PROVIDER_CACHE_TTL ?? PROVIDER_CACHE_TTL);
+    const _ttlVar = process.env.PROVIDER_CACHE_TTL ?? PROVIDER_CACHE_TTL;
+    const _ttl = Number(_ttlVar);
     if (isNaN(_ttl) || _ttl <= 0) {
-      const envVar = process.env.PROVIDER_CACHE_TTL ?? PROVIDER_CACHE_TTL;
-      throw new Error(`PROVIDER_CACHE_TTL (${envVar}) must be numeric and > 0`);
+      throw new Error(`PROVIDER_CACHE_TTL (${_ttlVar}) must be numeric and > 0`);
     }
     this.baseTTL = _ttl;
   }
