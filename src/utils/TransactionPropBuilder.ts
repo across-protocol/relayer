@@ -1,9 +1,16 @@
-import { BigNumber } from "../utils";
-import { Deposit } from "../interfaces/SpokePool";
-export function buildFillRelayProps(deposit: Deposit, repaymentChainId: number, maxFillAmount: BigNumber) {
+import { BigNumber, BigNumberish } from "../utils";
+import { Deposit } from "../interfaces";
+export function buildFillRelayProps(
+  deposit: Deposit,
+  repaymentChainId: number,
+  maxFillAmount: BigNumber
+): (string | number | BigNumber)[] {
   // Validate all keys are present.
-  for (const key in deposit)
-    if (deposit[key] == undefined) throw new Error(`Missing or undefined value in props! ${key}`);
+  for (const key in deposit) {
+    if (deposit[key] == undefined) {
+      throw new Error(`Missing or undefined value in props! ${key}`);
+    }
+  }
 
   return [
     deposit.depositor,
@@ -23,10 +30,13 @@ export function buildFillRelayWithUpdatedFeeProps(
   deposit: Deposit,
   repaymentChainId: number,
   maxFillAmount: BigNumber
-) {
+): BigNumberish[] {
   // Validate all keys are present.
-  for (const key in deposit)
-    if (deposit[key] == undefined) throw new Error(`Missing or undefined value in props! ${key}`);
+  for (const key in deposit) {
+    if (deposit[key] == undefined) {
+      throw new Error(`Missing or undefined value in props! ${key}`);
+    }
+  }
 
   return [
     deposit.depositor,

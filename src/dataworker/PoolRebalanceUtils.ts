@@ -24,6 +24,7 @@ import {
   toBNWei,
   formatFeePct,
   getRefund,
+  AnyObject,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "../utils";
@@ -34,12 +35,17 @@ export function updateRunningBalance(
   l2ChainId: number,
   l1Token: string,
   updateAmount: BigNumber
-) {
+): void {
   // Initialize dictionary if empty.
-  if (!runningBalances[l2ChainId]) runningBalances[l2ChainId] = {};
+  if (!runningBalances[l2ChainId]) {
+    runningBalances[l2ChainId] = {};
+  }
   const runningBalance = runningBalances[l2ChainId][l1Token];
-  if (runningBalance) runningBalances[l2ChainId][l1Token] = runningBalance.add(updateAmount);
-  else runningBalances[l2ChainId][l1Token] = updateAmount;
+  if (runningBalance) {
+    runningBalances[l2ChainId][l1Token] = runningBalance.add(updateAmount);
+  } else {
+    runningBalances[l2ChainId][l1Token] = updateAmount;
+  }
 }
 
 export function updateRunningBalanceForFill(
@@ -48,7 +54,7 @@ export function updateRunningBalanceForFill(
   hubPoolClient: HubPoolClient,
   fill: interfaces.FillWithBlock,
   updateAmount: BigNumber
-) {
+): void {
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
     fill.destinationChainId,
     fill.destinationToken,
@@ -62,7 +68,7 @@ export function updateRunningBalanceForDeposit(
   hubPoolClient: HubPoolClient,
   deposit: interfaces.DepositWithBlock,
   updateAmount: BigNumber
-) {
+): void {
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
     deposit.originChainId,
     deposit.originToken,
@@ -75,7 +81,7 @@ export function addLastRunningBalance(
   latestMainnetBlock: number,
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient
-) {
+): void {
   Object.keys(runningBalances).forEach((repaymentChainId) => {
     Object.keys(runningBalances[repaymentChainId]).forEach((l1TokenAddress) => {
       const lastRunningBalance = hubPoolClient.getRunningBalanceBeforeBlockForChain(
@@ -83,8 +89,9 @@ export function addLastRunningBalance(
         Number(repaymentChainId),
         l1TokenAddress
       );
-      if (!lastRunningBalance.eq(toBN(0)))
+      if (!lastRunningBalance.eq(toBN(0))) {
         updateRunningBalance(runningBalances, Number(repaymentChainId), l1TokenAddress, lastRunningBalance);
+      }
     });
   });
 }
@@ -95,7 +102,7 @@ export function initializeRunningBalancesFromRelayerRepayments(
   latestMainnetBlock: number,
   hubPoolClient: HubPoolClient,
   fillsToRefund: interfaces.FillsToRefund
-) {
+): void {
   Object.entries(fillsToRefund).forEach(([_repaymentChainId, fillsForChain]) => {
     const repaymentChainId = Number(_repaymentChainId);
     Object.entries(fillsForChain).forEach(
@@ -112,8 +119,11 @@ export function initializeRunningBalancesFromRelayerRepayments(
 
         // Add total repayment amount to running balances. Note: totalRefundAmount won't exist for chains that
         // only had slow fills, so we should explicitly check for it.
-        if (totalRefundAmount) assign(runningBalances, [repaymentChainId, l1TokenCounterpart], totalRefundAmount);
-        else assign(runningBalances, [repaymentChainId, l1TokenCounterpart], toBN(0));
+        if (totalRefundAmount) {
+          assign(runningBalances, [repaymentChainId, l1TokenCounterpart], totalRefundAmount);
+        } else {
+          assign(runningBalances, [repaymentChainId, l1TokenCounterpart], toBN(0));
+        }
       }
     );
   });
@@ -124,7 +134,7 @@ export function addSlowFillsToRunningBalances(
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient,
   unfilledDeposits: UnfilledDeposit[]
-) {
+): void {
   unfilledDeposits.forEach((unfilledDeposit) => {
     const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
       unfilledDeposit.deposit.originChainId,
@@ -165,7 +175,7 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   allValidFills: interfaces.FillWithBlock[],
   allValidFillsInRange: interfaces.FillWithBlock[],
   chainIdListForBundleEvaluationBlockNumbers: number[]
-) {
+): Promise<AnyObject> {
   const excesses = {};
   // We need to subtract excess from any fills that might replaced a slow fill sent to the fill destination chain.
   // This can only happen if the fill was the last fill for a deposit. Otherwise, its still possible that the slow fill
@@ -196,7 +206,9 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
 
         // Note, if there is NO fill from a previous root bundle for the same deposit as this fill, then there has been
         // no slow fill payment sent to the spoke pool yet, so we can exit early.
-        if (lastMatchingFillInSameBundle === undefined) return;
+        if (lastMatchingFillInSameBundle === undefined) {
+          return;
+        }
 
         // If first fill for this deposit is in this epoch, then no slow fill has been sent so we can ignore this fill.
         // We can check this by searching for a ProposeRootBundle event with a bundle block range that contains the
@@ -208,7 +220,9 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
           fill.destinationChainId,
           chainIdListForBundleEvaluationBlockNumbers
         );
-        if (rootBundleEndBlockContainingFirstFill === rootBundleEndBlockContainingFullFill) return;
+        if (rootBundleEndBlockContainingFirstFill === rootBundleEndBlockContainingFullFill) {
+          return;
+        }
 
         // Recompute how much the matched root bundle sent for this slow fill.
         const preFeeAmountSentForSlowFill = lastMatchingFillInSameBundle.amount.sub(
@@ -222,12 +236,17 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
           fill.isSlowRelay ? preFeeAmountSentForSlowFill.sub(fill.fillAmount) : preFeeAmountSentForSlowFill,
           fill.realizedLpFeePct
         );
-        if (excess.eq(toBN(0))) return;
+        if (excess.eq(toBN(0))) {
+          return;
+        }
 
         // Log excesses for debugging since this logic is so complex.
-        if (excesses[fill.destinationChainId] === undefined) excesses[fill.destinationChainId] = {};
-        if (excesses[fill.destinationChainId][fill.destinationToken] === undefined)
+        if (excesses[fill.destinationChainId] === undefined) {
+          excesses[fill.destinationChainId] = {};
+        }
+        if (excesses[fill.destinationChainId][fill.destinationToken] === undefined) {
           excesses[fill.destinationChainId][fill.destinationToken] = [];
+        }
         excesses[fill.destinationChainId][fill.destinationToken].push({
           excess: excess.toString(),
           lastMatchingFillInSameBundle,
@@ -260,7 +279,7 @@ export function constructPoolRebalanceLeaves(
   configStoreClient: AcrossConfigStoreClient,
   maxL1TokenCount?: number,
   tokenTransferThreshold?: BigNumberForToken
-) {
+): interfaces.PoolRebalanceLeaf[] {
   // Create one leaf per L2 chain ID. First we'll create a leaf with all L1 tokens for each chain ID, and then
   // we'll split up any leaves with too many L1 tokens.
   const leaves: interfaces.PoolRebalanceLeaf[] = [];
@@ -295,26 +314,33 @@ export function constructPoolRebalanceLeaves(
         // Build leaves using running balances and realized lp fees data for l1Token + chain, or default to
         // zero if undefined.
         const leafBundleLpFees = l1TokensToIncludeInThisLeaf.map((l1Token) => {
-          if (realizedLpFees[chainId]?.[l1Token]) return realizedLpFees[chainId][l1Token];
-          else return toBN(0);
+          if (realizedLpFees[chainId]?.[l1Token]) {
+            return realizedLpFees[chainId][l1Token];
+          } else {
+            return toBN(0);
+          }
         });
         const leafNetSendAmounts = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
-          if (runningBalances[chainId] && runningBalances[chainId][l1Token])
+          if (runningBalances[chainId] && runningBalances[chainId][l1Token]) {
             return getNetSendAmountForL1Token(
               transferThresholds[index],
               spokeTargetBalances[index],
               runningBalances[chainId][l1Token]
             );
-          else return toBN(0);
+          } else {
+            return toBN(0);
+          }
         });
         const leafRunningBalances = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
-          if (runningBalances[chainId]?.[l1Token])
+          if (runningBalances[chainId]?.[l1Token]) {
             return getRunningBalanceForL1Token(
               transferThresholds[index],
               spokeTargetBalances[index],
               runningBalances[chainId][l1Token]
             );
-          else return toBN(0);
+          } else {
+            return toBN(0);
+          }
         });
 
         leaves.push({
@@ -336,13 +362,17 @@ export function constructPoolRebalanceLeaves(
 export function computeDesiredTransferAmountToSpoke(
   runningBalance: BigNumber,
   spokePoolTargetBalance: SpokePoolTargetBalance
-) {
+): BigNumber {
   // Transfer is always desired if hub owes spoke.
-  if (runningBalance.gte(0)) return runningBalance;
+  if (runningBalance.gte(0)) {
+    return runningBalance;
+  }
 
   // Running balance is negative, but its absolute value is less than the spoke pool target balance threshold.
   // In this case, we transfer nothing.
-  if (runningBalance.abs().lt(spokePoolTargetBalance.threshold)) return toBN(0);
+  if (runningBalance.abs().lt(spokePoolTargetBalance.threshold)) {
+    return toBN(0);
+  }
 
   // We are left with the case where the spoke pool is beyond the threshold.
   // A transfer needs to be initiated to bring it down to the target.
@@ -351,7 +381,9 @@ export function computeDesiredTransferAmountToSpoke(
   // If the transferSize is < 0, this indicates that the target is still above the running balance.
   // This can only happen if the threshold is less than the target. This is likely due to a misconfiguration.
   // In this case, we transfer nothing until the target is exceeded.
-  if (transferSize.lt(0)) return toBN(0);
+  if (transferSize.lt(0)) {
+    return toBN(0);
+  }
 
   // Negate the transfer size because a transfer from spoke to hub is indicated by a negative number.
   return transferSize.mul(-1);
@@ -428,7 +460,7 @@ export function generateMarkdownForDisputeInvalidBundleBlocks(
   pendingRootBundle: PendingRootBundle,
   widestExpectedBlockRange: number[][],
   buffers: number[]
-) {
+): string {
   const getBlockRangePretty = (blockRange: number[][] | number[]) => {
     let bundleBlockRangePretty = "";
     chainIdListForBundleEvaluationBlockNumbers.forEach((chainId, index) => {
@@ -444,7 +476,7 @@ export function generateMarkdownForDisputeInvalidBundleBlocks(
   );
 }
 
-export function generateMarkdownForDispute(pendingRootBundle: PendingRootBundle) {
+export function generateMarkdownForDispute(pendingRootBundle: PendingRootBundle): string {
   return (
     "Disputed pending root bundle:" +
     `\n\tPoolRebalance leaf count: ${pendingRootBundle.unclaimedPoolRebalanceLeafCount}` +
@@ -460,10 +492,13 @@ export function generateMarkdownForRootBundle(
   chainIdListForBundleEvaluationBlockNumbers: number[],
   hubPoolChainId: number,
   bundleBlockRange: number[][],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   poolRebalanceLeaves: any[],
   poolRebalanceRoot: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   relayerRefundLeaves: any[],
   relayerRefundRoot: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   slowRelayLeaves: any[],
   slowRelayRoot: string
 ): string {
@@ -562,14 +597,17 @@ export function prettyPrintLeaves(
   tree: MerkleTree<PoolRebalanceLeaf> | MerkleTree<RelayerRefundLeaf> | MerkleTree<RelayData>,
   leaves: PoolRebalanceLeaf[] | RelayerRefundLeaf[] | RelayData[],
   logType = "Pool rebalance"
-) {
+): void {
   leaves.forEach((leaf, index) => {
     const prettyLeaf = Object.keys(leaf).reduce((result, key) => {
       // Check if leaf value is list of BN's or single BN.
-      if (Array.isArray(leaf[key]) && BigNumber.isBigNumber(leaf[key][0]))
+      if (Array.isArray(leaf[key]) && BigNumber.isBigNumber(leaf[key][0])) {
         result[key] = leaf[key].map((val) => val.toString());
-      else if (BigNumber.isBigNumber(leaf[key])) result[key] = leaf[key].toString();
-      else result[key] = leaf[key];
+      } else if (BigNumber.isBigNumber(leaf[key])) {
+        result[key] = leaf[key].toString();
+      } else {
+        result[key] = leaf[key];
+      }
       return result;
     }, {});
     logger.debug({

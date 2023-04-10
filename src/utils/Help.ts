@@ -1,7 +1,5 @@
 export function usage(badInput: string | undefined = undefined): boolean {
   let usageStr = badInput ? `\nUnrecognized input: "${badInput}".\n\n` : "";
-  const userModes = "monitor|relayer";
-  const proModes = "dataworker|finalizer";
   const walletOpts = "mnemonic|privateKey|gckms";
 
   usageStr += `
@@ -18,7 +16,7 @@ export function usage(badInput: string | undefined = undefined): boolean {
   process.exit(badInput === undefined ? 0 : 9);
 }
 
-export function help() {
+export function help(): void {
   const botRepoUrl = "https://github.com/across-protocol/relayer-v2";
   const relayerDocsUrl = "https://docs.across.to/v2/developers/running-a-relayer";
   const helpStr = `

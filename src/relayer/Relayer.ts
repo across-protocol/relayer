@@ -38,20 +38,23 @@ export class Relayer {
       this.config.maxRelayerLookBack,
       this.clients.configStoreClient
     );
-    if (unfilledDeposits.some((x) => x.requiresNewConfigStoreVersion))
+    if (unfilledDeposits.some((x) => x.requiresNewConfigStoreVersion)) {
       this.logger.warn({
         at: "Relayer",
         message: "Skipping some deposits because ConfigStore version is not updated, are you using the latest code?",
         latestVersionSupported: CONFIG_STORE_VERSION,
         latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
       });
+    }
 
     const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = unfilledDeposits
       .filter((x) => !x.requiresNewConfigStoreVersion)
       // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
       .reduce((agg, curr) => {
         const unfilledAmountUsd = this.clients.profitClient.getFillAmountInUsd(curr.deposit, curr.unfilledAmount);
-        if (!agg[curr.deposit.originChainId]) agg[curr.deposit.originChainId] = toBN(0);
+        if (!agg[curr.deposit.originChainId]) {
+          agg[curr.deposit.originChainId] = toBN(0);
+        }
         agg[curr.deposit.originChainId] = agg[curr.deposit.originChainId].add(unfilledAmountUsd);
         return agg;
       }, {});
@@ -192,16 +195,21 @@ export class Relayer {
         this.clients.tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
         // If we don't have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
         // 1 wei sized fill to ensure that the deposit is slow relayed. This only needs to be done once.
-        if (sendSlowRelays && this.clients.tokenClient.hasBalanceForZeroFill(deposit) && fillCount === 0)
+        if (sendSlowRelays && this.clients.tokenClient.hasBalanceForZeroFill(deposit) && fillCount === 0) {
           this.zeroFillDeposit(deposit);
+        }
       }
     }
     // If during the execution run we had shortfalls or unprofitable fills then handel it by producing associated logs.
-    if (this.clients.tokenClient.anyCapturedShortFallFills()) this.handleTokenShortfall();
-    if (this.clients.profitClient.anyCapturedUnprofitableFills()) this.handleUnprofitableFill();
+    if (this.clients.tokenClient.anyCapturedShortFallFills()) {
+      this.handleTokenShortfall();
+    }
+    if (this.clients.profitClient.anyCapturedUnprofitableFills()) {
+      this.handleUnprofitableFill();
+    }
   }
 
-  async fillRelay(deposit: Deposit, fillAmount: BigNumber) {
+  async fillRelay(deposit: Deposit, fillAmount: BigNumber): Promise<void> {
     // Skip deposits that this relayer has already filled completely before to prevent double filling (which is a waste
     // of gas as the second fill would fail).
     // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried
@@ -219,8 +227,9 @@ export class Relayer {
     try {
       // Fetch the repayment chain from the inventory client. Sanity check that it is one of the known chainIds.
       const repaymentChain = await this.clients.inventoryClient.determineRefundChainId(deposit);
-      if (!Object.keys(this.clients.spokePoolClients).includes(deposit.destinationChainId.toString()))
+      if (!Object.keys(this.clients.spokePoolClients).includes(deposit.destinationChainId.toString())) {
         throw new Error("Fatal error! Repayment chain set to a chain that is not part of the defined sets of chains!");
+      }
 
       this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain });
 
@@ -267,7 +276,7 @@ export class Relayer {
     }
   }
 
-  zeroFillDeposit(deposit: Deposit) {
+  zeroFillDeposit(deposit: Deposit): void {
     const repaymentChainId = 1; // Always refund zero fills on L1 to not send dust over the chain unnecessarily.
     const fillAmount = toBN(1); // 1 wei; smallest fill size possible.
     this.logger.debug({ at: "Relayer", message: "Zero filling", deposit, repaymentChain: repaymentChainId });

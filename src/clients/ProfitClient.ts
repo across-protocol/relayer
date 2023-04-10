@@ -180,7 +180,7 @@ export class ProfitClient {
     deposit: Deposit,
     fillAmount: BigNumber,
     l1Token: L1Token,
-    minRelayerFeePct?: BigNumber
+    minRelayerFeePct: BigNumber
   ): FillProfit {
     assert(fillAmount.gt(0), `Unexpected fillAmount: ${fillAmount}`);
     assert(
@@ -189,7 +189,9 @@ export class ProfitClient {
     );
 
     const tokenPriceUsd = this.getPriceOfToken(l1Token.address);
-    if (tokenPriceUsd.lte(0)) throw new Error(`Unable to determine ${l1Token.symbol} L1 token price`);
+    if (tokenPriceUsd.lte(0)) {
+      throw new Error(`Unable to determine ${l1Token.symbol} L1 token price`);
+    }
 
     // Normalise to 18 decimals.
     const scaledFillAmount =
@@ -235,10 +237,11 @@ export class ProfitClient {
   // Return USD amount of fill amount for deposited token, should always return in wei as the units.
   getFillAmountInUsd(deposit: Deposit, fillAmount: BigNumber): BigNumber {
     const l1TokenInfo = this.hubPoolClient.getTokenInfoForDeposit(deposit);
-    if (!l1TokenInfo)
+    if (!l1TokenInfo) {
       throw new Error(
         `ProfitClient::isFillProfitable missing l1TokenInfo for deposit with origin token: ${deposit.originToken}`
       );
+    }
     const tokenPriceInUsd = this.getPriceOfToken(l1TokenInfo.address);
     return fillAmount.mul(tokenPriceInUsd).div(toBN(10).pow(l1TokenInfo.decimals));
   }
@@ -341,7 +344,7 @@ export class ProfitClient {
     } catch (err) {
       const errMsg = `Failed to update token prices (${err})`;
       let mrkdwn = `${errMsg}:\n`;
-      Object.entries(l1Tokens).forEach(([address, l1Token]) => {
+      Object.entries(l1Tokens).forEach(([, l1Token]) => {
         mrkdwn += `- Using last known ${l1Token.symbol} price of ${this.getPriceOfToken(l1Token.address)}.\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });

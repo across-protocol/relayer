@@ -8,6 +8,7 @@ import {
   Event,
   isDefined,
   BigNumberish,
+  TransactionResponse,
 } from "../../utils";
 import { ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery, Promise } from "../../utils";
 import { SpokePoolClient } from "../../clients";
@@ -15,6 +16,7 @@ import { BaseAdapter, polygonL1BridgeInterface, polygonL2BridgeInterface } from 
 import { polygonL1RootChainManagerInterface, atomicDepositorInterface } from "./";
 import { SortableEvent } from "../../interfaces";
 import { constants } from "@across-protocol/sdk-v2";
+import { OutstandingTransfers } from "../../interfaces";
 const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
 // ether bridge = 0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30
@@ -113,7 +115,7 @@ export class PolygonAdapter extends BaseAdapter {
   }
 
   // On polygon a bridge transaction looks like a transfer from address(0) to the target.
-  async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
+  async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
@@ -125,24 +127,34 @@ export class PolygonAdapter extends BaseAdapter {
         // Skip the token if we can't find the corresponding bridge.
         // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
         // rather than maintaining a list of native bridge-supported tokens.
-        if (!this.isSupportedToken(l1Token)) continue;
+        if (!this.isSupportedToken(l1Token)) {
+          continue;
+        }
 
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Token = this.getL2Token(l1Token);
 
         const l1Method = tokenToBridge[l1Token].l1Method;
         let l1SearchFilter: (string | undefined)[] = [];
-        if (l1Method === "LockedERC20") l1SearchFilter = [monitoredAddress, undefined, l1Token];
-        if (l1Method === "LockedEther") l1SearchFilter = [undefined, monitoredAddress];
-        if (l1Method === "NewDepositBlock")
+        if (l1Method === "LockedERC20") {
+          l1SearchFilter = [monitoredAddress, undefined, l1Token];
+        }
+        if (l1Method === "LockedEther") {
+          l1SearchFilter = [undefined, monitoredAddress];
+        }
+        if (l1Method === "NewDepositBlock") {
           l1SearchFilter = [monitoredAddress, TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET]];
+        }
 
         const l2Method =
           l1Token === TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET] ? "TokenDeposited" : "Transfer";
         let l2SearchFilter: (string | undefined)[] = [];
-        if (l2Method === "Transfer") l2SearchFilter = [ZERO_ADDRESS, monitoredAddress];
-        if (l2Method === "TokenDeposited")
+        if (l2Method === "Transfer") {
+          l2SearchFilter = [ZERO_ADDRESS, monitoredAddress];
+        }
+        if (l2Method === "TokenDeposited") {
           l2SearchFilter = [TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET], ZERO_ADDRESS, monitoredAddress];
+        }
 
         promises.push(
           paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), l1SearchConfig),
@@ -177,6 +189,7 @@ export class PolygonAdapter extends BaseAdapter {
             [amount in typeof amountProp]?: BigNumberish;
           } & { depositReceiver: string };
           return {
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
             amount: eventSpread[amountProp]!,
             to: eventSpread["depositReceiver"],
             ...eventSpread,
@@ -193,7 +206,12 @@ export class PolygonAdapter extends BaseAdapter {
     return this.computeOutstandingCrossChainTransfers(validTokens);
   }
 
-  async sendTokenToTargetChain(address: string, l1Token: string, l2Token: string, amount: BigNumber) {
+  async sendTokenToTargetChain(
+    address: string,
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumber
+  ): Promise<TransactionResponse> {
     let method = "depositFor";
     // note that the amount is the bytes 32 encoding of the amount.
     let args = [address, l1Token, bnToHex(amount)];
@@ -207,11 +225,15 @@ export class PolygonAdapter extends BaseAdapter {
     return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args);
   }
 
-  async checkTokenApprovals(address: string, l1Tokens: string[]) {
+  async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     const associatedL1Bridges = l1Tokens
       .map((l1Token) => {
-        if (this.isWeth(l1Token)) return this.getL1TokenGateway(l1Token)?.address;
-        if (!this.isSupportedToken(l1Token)) return null;
+        if (this.isWeth(l1Token)) {
+          return this.getL1TokenGateway(l1Token)?.address;
+        }
+        if (!this.isSupportedToken(l1Token)) {
+          return null;
+        }
         return this.getL1Bridge(l1Token).address;
       })
       .filter(isDefined);
@@ -223,8 +245,11 @@ export class PolygonAdapter extends BaseAdapter {
   }
 
   getL1TokenGateway(l1Token: string): Contract {
-    if (this.isWeth(l1Token)) return new Contract(atomicDepositorAddress, atomicDepositorInterface, this.getSigner(1));
-    else return new Contract(l1RootChainManager, polygonL1RootChainManagerInterface, this.getSigner(1));
+    if (this.isWeth(l1Token)) {
+      return new Contract(atomicDepositorAddress, atomicDepositorInterface, this.getSigner(1));
+    } else {
+      return new Contract(l1RootChainManager, polygonL1RootChainManagerInterface, this.getSigner(1));
+    }
   }
 
   // Note that on polygon we dont query events on the L2 bridge. rather, we look for mint events on the L2 token.

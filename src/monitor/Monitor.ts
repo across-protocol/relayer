@@ -23,7 +23,6 @@ import {
   etherscanLinks,
   getNativeTokenSymbol,
   getNetworkName,
-  getSigner,
   getUnfilledDeposits,
   providers,
   toBN,
@@ -77,7 +76,7 @@ export class Monitor {
     this.balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(clients.spokePoolClients));
   }
 
-  public async update() {
+  public async update(): Promise<void> {
     // Clear balance cache at the start of each update.
     // Note: decimals don't need to be cleared because they shouldn't ever change.
     this.balanceCache = {};
@@ -104,7 +103,7 @@ export class Monitor {
     await this.clients.tokenTransferClient.update(searchConfigs, tokensPerChain);
   }
 
-  async checkUtilization() {
+  async checkUtilization(): Promise<void> {
     this.logger.debug({ at: "AcrossMonitor#Utilization", message: "Checking for pool utilization ratio" });
     const l1Tokens = this.clients.hubPoolClient.getL1Tokens();
     const l1TokenUtilizations = await Promise.all(
@@ -114,7 +113,7 @@ export class Monitor {
           l1Token: l1Token.address,
           chainId: this.monitorConfig.hubPoolChainId,
           poolCollateralSymbol: this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token.address).symbol,
-          utilization: toBN(utilization),
+          utilization: toBN(utilization.toString()),
         };
       })
     );
@@ -158,7 +157,7 @@ export class Monitor {
     }
   }
 
-  async checkUnknownRelayers() {
+  async checkUnknownRelayers(): Promise<void> {
     const chainIds = this.monitorChains;
     this.logger.debug({ at: "AcrossMonitor#UnknownRelayers", message: "Checking for unknown relayers", chainIds });
     for (const chainId of chainIds) {
@@ -168,7 +167,9 @@ export class Monitor {
       );
       for (const fill of fills) {
         // Skip notifications for known relay caller addresses.
-        if (this.monitorConfig.whitelistedRelayers.includes(fill.relayer)) continue;
+        if (this.monitorConfig.whitelistedRelayers.includes(fill.relayer)) {
+          continue;
+        }
 
         const mrkdwn =
           `An unknown relayer ${etherscanLink(fill.relayer, chainId)}` +
@@ -178,7 +179,7 @@ export class Monitor {
     }
   }
 
-  async reportUnfilledDeposits() {
+  async reportUnfilledDeposits(): Promise<void> {
     const unfilledDeposits = getUnfilledDeposits(
       this.clients.spokePoolClients,
       this.monitorConfig.maxRelayerLookBack,
@@ -201,7 +202,9 @@ export class Monitor {
     let mrkdwn = "";
     for (const [chainIdStr, amountByToken] of Object.entries(unfilledAmountByChainAndToken)) {
       // Skipping chains with no unfilled deposits.
-      if (!amountByToken) continue;
+      if (!amountByToken) {
+        continue;
+      }
 
       const chainId = parseInt(chainIdStr);
       mrkdwn += `*Destination: ${getNetworkName(chainId)}*\n`;
@@ -218,7 +221,7 @@ export class Monitor {
     }
   }
 
-  async reportRelayerBalances() {
+  async reportRelayerBalances(): Promise<void> {
     const relayers = this.monitorConfig.monitoredRelayers;
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
     const chainIds = this.monitorChains;
@@ -269,7 +272,7 @@ export class Monitor {
   }
 
   // Update current balances of all tokens on each supported chain for each relayer.
-  async updateCurrentRelayerBalances(relayerBalanceReport: RelayerBalanceReport) {
+  async updateCurrentRelayerBalances(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const chainId of this.monitorChains) {
         const l2ToL1Tokens = this.clients.hubPoolClient.getDestinationTokensToL1TokensForChainId(chainId);
@@ -297,7 +300,7 @@ export class Monitor {
     }
   }
 
-  async checkBalances() {
+  async checkBalances(): Promise<void> {
     const { monitoredBalances } = this.monitorConfig;
     const balances = await this._getBalances(monitoredBalances);
     const decimalValues = await this._getDecimals(monitoredBalances);
@@ -312,10 +315,12 @@ export class Monitor {
             const decimals = decimalValues[i];
             let trippedThreshold: { level: "warn" | "error"; threshold: number } | null = null;
 
-            if (warnThreshold !== null && balance.lt(ethers.utils.parseUnits(warnThreshold.toString(), decimals)))
+            if (warnThreshold !== null && balance.lt(ethers.utils.parseUnits(warnThreshold.toString(), decimals))) {
               trippedThreshold = { level: "warn", threshold: warnThreshold };
-            if (errorThreshold !== null && balance.lt(ethers.utils.parseUnits(errorThreshold.toString(), decimals)))
+            }
+            if (errorThreshold !== null && balance.lt(ethers.utils.parseUnits(errorThreshold.toString(), decimals))) {
               trippedThreshold = { level: "error", threshold: errorThreshold };
+            }
             if (trippedThreshold !== null) {
               const symbol =
                 token === ZERO_ADDRESS
@@ -460,12 +465,13 @@ export class Monitor {
       })
     );
     const rejections = promises.filter((promise) => promise.status === "rejected");
-    if (rejections.length > 0)
+    if (rejections.length > 0) {
       this.logger.warn({
         at: "Monitor#refillBalances",
         message: "Some refill transactions rejected for unknown reasons",
         rejections,
       });
+    }
   }
 
   // We approximate stuck rebalances by checking if there are still any pending cross chain transfers to any SpokePools
@@ -473,7 +479,7 @@ export class Monitor {
   // transfers stuck for longer than 1 bundle and the current time is within the last bundle execution + grace period.
   // But this should be okay as we should address any stuck transactions immediately so realistically no transfers
   // should stay unstuck for longer than one bundle.
-  async checkStuckRebalances() {
+  async checkStuckRebalances(): Promise<void> {
     const hubPoolClient = this.clients.hubPoolClient;
     const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(hubPoolClient.latestBlockNumber);
     // This case shouldn't happen outside of tests as Across V2 has already launched.
@@ -523,7 +529,7 @@ export class Monitor {
     }
   }
 
-  async updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport) {
+  async updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
     const validatedBundleRefunds: FillsToRefund[] =
       await this.clients.bundleDataClient.getPendingRefundsFromValidBundles(this.monitorConfig.bundleRefundLookback);
     const nextBundleRefunds = await this.clients.bundleDataClient.getNextBundleRefunds();
@@ -540,7 +546,7 @@ export class Monitor {
     }
   }
 
-  updateCrossChainTransfers(relayer: string, relayerBalanceTable: RelayerBalanceTable) {
+  updateCrossChainTransfers(relayer: string, relayerBalanceTable: RelayerBalanceTable): void {
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
     for (const chainId of this.monitorChains) {
       for (const l1Token of allL1Tokens) {
@@ -563,7 +569,7 @@ export class Monitor {
     }
   }
 
-  updateUnknownTransfers(relayerBalanceReport: RelayerBalanceReport) {
+  updateUnknownTransfers(relayerBalanceReport: RelayerBalanceReport): void {
     const hubPoolClient = this.clients.hubPoolClient;
 
     for (const relayer of this.monitorConfig.monitoredRelayers) {
@@ -583,7 +589,9 @@ export class Monitor {
           const tokenInfo = hubPoolClient.getL1TokenInfoForL2Token(l2Token, chainId);
           const transfers = transfersPerToken[l2Token];
           // Skip if there has been no transfers of this token.
-          if (!transfers) continue;
+          if (!transfers) {
+            continue;
+          }
 
           let totalOutgoingAmount = toBN(0);
           // Filter v2 fills and bond payments from outgoing transfers.
@@ -679,22 +687,26 @@ export class Monitor {
     return { bond, v1, other, all: allUnknownOutgoingTransfers };
   }
 
-  formatCategorizedTransfers(transfers: CategorizedTransfers, decimals: number, chainId: number) {
+  formatCategorizedTransfers(transfers: CategorizedTransfers, decimals: number, chainId: number): string {
     let mrkdwn = this.formatKnownTransfers(transfers.bond, decimals, "bond");
     mrkdwn += this.formatKnownTransfers(transfers.v1, decimals, "v1");
     mrkdwn += this.formatOtherTransfers(transfers.other, decimals, chainId);
     return mrkdwn + "\n";
   }
 
-  formatKnownTransfers(transfers: TokenTransfer[], decimals: number, transferType: string) {
-    if (transfers.length === 0) return "";
+  formatKnownTransfers(transfers: TokenTransfer[], decimals: number, transferType: string): string {
+    if (transfers.length === 0) {
+      return "";
+    }
 
     const totalAmount = this.getTotalTransferAmount(transfers);
     return `${transferType}: ${convertFromWei(totalAmount.toString(), decimals)}\n`;
   }
 
-  formatOtherTransfers(transfers: TokenTransfer[], decimals: number, chainId: number) {
-    if (transfers.length === 0) return "";
+  formatOtherTransfers(transfers: TokenTransfer[], decimals: number, chainId: number): string {
+    if (transfers.length === 0) {
+      return "";
+    }
 
     const totalAmount = this.getTotalTransferAmount(transfers);
     let mrkdwn = `other: ${convertFromWei(totalAmount.toString(), decimals)}\n`;
@@ -703,11 +715,11 @@ export class Monitor {
     return mrkdwn;
   }
 
-  getTotalTransferAmount(transfers: TokenTransfer[]) {
+  getTotalTransferAmount(transfers: TokenTransfer[]): BigNumber {
     return transfers.map((transfer) => transfer.value).reduce((a, b) => a.add(b));
   }
 
-  initializeBalanceReports(relayers: string[], allL1Tokens: L1Token[], allChainNames: string[]) {
+  initializeBalanceReports(relayers: string[], allL1Tokens: L1Token[], allChainNames: string[]): RelayerBalanceReport {
     const reports: RelayerBalanceReport = {};
     for (const relayer of relayers) {
       reports[relayer] = {};
@@ -733,12 +745,16 @@ export class Monitor {
     for (const chainId of this.monitorChains) {
       const fillsToRefund = fillsToRefundPerChain[chainId];
       // Skip chains that don't have any refunds.
-      if (fillsToRefund === undefined) continue;
+      if (fillsToRefund === undefined) {
+        continue;
+      }
 
       for (const tokenAddress of Object.keys(fillsToRefund)) {
         // Skip token if there are no refunds (although there are valid fills).
         // This is an edge case that shouldn't usually happen.
-        if (fillsToRefund[tokenAddress].refunds === undefined) continue;
+        if (fillsToRefund[tokenAddress].refunds === undefined) {
+          continue;
+        }
 
         const totalRefundAmount = fillsToRefund[tokenAddress].refunds[relayer];
         const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
@@ -875,7 +891,9 @@ export class Monitor {
   private async _getBalances(balanceRequests: BalanceRequest[]): Promise<BigNumber[]> {
     return await Promise.all(
       balanceRequests.map(async ({ chainId, token, account }) => {
-        if (this.balanceCache[chainId]?.[token]?.[account]) return this.balanceCache[chainId][token][account];
+        if (this.balanceCache[chainId]?.[token]?.[account]) {
+          return this.balanceCache[chainId][token][account];
+        }
         const balance =
           token === ZERO_ADDRESS
             ? await this.clients.spokePoolClients[chainId].spokePool.provider.getBalance(account)
@@ -887,8 +905,12 @@ export class Monitor {
                 account,
                 { blockTag: this.clients.spokePoolClients[chainId].latestBlockNumber }
               );
-        if (!this.balanceCache[chainId]) this.balanceCache[chainId] = {};
-        if (!this.balanceCache[chainId][token]) this.balanceCache[chainId][token] = {};
+        if (!this.balanceCache[chainId]) {
+          this.balanceCache[chainId] = {};
+        }
+        if (!this.balanceCache[chainId][token]) {
+          this.balanceCache[chainId][token] = {};
+        }
         this.balanceCache[chainId][token][account] = balance;
         return balance;
       })
@@ -898,15 +920,23 @@ export class Monitor {
   private async _getDecimals(decimalrequests: { chainId: number; token: string }[]): Promise<number[]> {
     return await Promise.all(
       decimalrequests.map(async ({ chainId, token }) => {
-        if (token === ZERO_ADDRESS) return 18; // Assume all EVM chains have 18 decimal native tokens.
-        if (this.decimals[chainId]?.[token]) return this.decimals[chainId][token];
+        if (token === ZERO_ADDRESS) {
+          return 18;
+        } // Assume all EVM chains have 18 decimal native tokens.
+        if (this.decimals[chainId]?.[token]) {
+          return this.decimals[chainId][token];
+        }
         const decimals: number = await new Contract(
           token,
           ERC20.abi,
           this.clients.spokePoolClients[chainId].spokePool.provider
         ).decimals();
-        if (!this.decimals[chainId]) this.decimals[chainId] = {};
-        if (!this.decimals[chainId][token]) this.decimals[chainId][token] = decimals;
+        if (!this.decimals[chainId]) {
+          this.decimals[chainId] = {};
+        }
+        if (!this.decimals[chainId][token]) {
+          this.decimals[chainId][token] = decimals;
+        }
         return decimals;
       })
     );
