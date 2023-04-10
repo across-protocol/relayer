@@ -43,6 +43,7 @@ import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalance
 import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
 import { ProposedRootBundle, RelayData, SpokePoolClientsByChain } from "../interfaces";
 import { constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
+import { createConsoleTransport } from "@uma/financial-templates-lib";
 
 config();
 let logger: winston.Logger;
@@ -305,10 +306,10 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
         // balances. If excess is negative, then that means L2 leaves are unexecuted and the protocol could be
         // stuck
         excesses[leaf.chainId][tokenInfo.symbol].push(fromWei(excess.toString(), decimals));
-        mrkdwn += `\n\t\t - tokenBalance: ${fromWei(tokenBalanceAtBundleEndBlock.toString(), decimals)}`;
-        mrkdwn += `\n\t\t - netSendAmount: ${fromWei(netSendAmount.toString(), decimals)}`;
-        mrkdwn += `\n\t\t - excess: ${fromWei(excess.toString(), decimals)}`;
-        mrkdwn += `\n\t\t - runningBalance: ${fromWei(runningBalance.toString(), decimals)}`;
+        mrkdwn += `\n\t\t- tokenBalance: ${fromWei(tokenBalanceAtBundleEndBlock.toString(), decimals)}`;
+        mrkdwn += `\n\t\t- netSendAmount: ${fromWei(netSendAmount.toString(), decimals)}`;
+        mrkdwn += `\n\t\t- excess: ${fromWei(excess.toString(), decimals)}`;
+        mrkdwn += `\n\t\t- runningBalance: ${fromWei(runningBalance.toString(), decimals)}`;
       }
     }
     logger.debug({
@@ -316,8 +317,6 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
       message: `Bundle #${x} proposed at block ${mostRecentValidatedBundle.blockNumber}`,
       mrkdwn,
     });
-    // This script is often run locally, log it to console:
-    console.log(mrkdwn);
   }
 
   // Print out historical excesses for chain ID and token to make it easy to see if excesses have changed.
@@ -383,7 +382,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
       const spokePoolClientsForBundle = await constructSpokePoolClientsWithStartBlocks(
         winston.createLogger({
           level: "debug",
-          transports: [new winston.transports.Console()],
+          transports: [createConsoleTransport()],
         }),
         clients.configStoreClient,
         config,
