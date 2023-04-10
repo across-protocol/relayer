@@ -311,7 +311,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
       // Randomize deposit ID's between initLow and initHigh. ID's should only increase
       // and will do so 50% of the time. The other 50% of the time they will stay the same.
       for (let j = 1; j < depositIds.length; j++) {
-        const increment = Math.random() > 0.5 ? 1 : 0;
+        const increment = Math.max(0, Math.floor((Math.random() - 0.5) * 10));
         depositIds[j] = depositIds[j - 1] + increment;
       }
       fuzzClient.setDepositIds(depositIds);
