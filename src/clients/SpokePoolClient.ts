@@ -526,9 +526,10 @@ export class SpokePoolClient {
     return queryResults;
   }
 
-  async update(eventsToQuery?: string[] = this.queryableEventNames): Promise<void> {
+  async update(eventsToQuery = this.queryableEventNames): Promise<void> {
     if (this.configStoreClient !== null && !this.configStoreClient.isUpdated) {
       throw new Error("RateModel not updated");
+    }
 
     const queryResults = await this._update(eventsToQuery);
     if (queryResults.length === 0) {
