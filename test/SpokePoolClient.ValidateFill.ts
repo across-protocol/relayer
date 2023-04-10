@@ -328,6 +328,10 @@ describe("SpokePoolClient: Fill Validation", async function () {
       expect(results.mid <= results.high && results.mid >= results.low).to.be.true;
       expect(depositIds[results.low] <= target).to.be.true;
       expect(depositIds[results.high] > target).to.be.true;
+      // The correct block is the first block to increment beyond the target.
+      const correctBlock = depositIds.find(depositId => depositId > target);
+      expect(correctBlock <= results.high).to.be.true;
+      expect(results.low <= correctBlock).to.be.true;
     }
   });
 
