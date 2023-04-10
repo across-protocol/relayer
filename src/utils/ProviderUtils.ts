@@ -18,7 +18,7 @@ const logger = Logger;
 const _ttl = Number(process.env.PROVIDER_CACHE_TTL ?? PROVIDER_CACHE_TTL);
 if (isNaN(_ttl) || _ttl <= 0) {
   const envVar = process.env.PROVIDER_CACHE_TTL ?? PROVIDER_CACHE_TTL;
-  throw new Error(`PROVIDER_CACHE_TTL must be numeric and > 0 (${envVar})`);
+  throw new Error(`PROVIDER_CACHE_TTL (${envVar}) must be numeric and > 0`);
 }
 
 // The async/queue library has a task-based interface for building a concurrent queue.
