@@ -5,10 +5,21 @@ import winston from "winston";
 import { isPromiseFulfilled, isPromiseRejected } from "./TypeGuards";
 import createQueue, { QueueObject } from "async/queue";
 import { getRedis, RedisClient, setRedisKey } from "./RedisUtils";
-import { MAX_REORG_DISTANCE, PROVIDER_CACHE_TTL, BLOCK_NUMBER_TTL } from "../common";
+import {
+  MAX_REORG_DISTANCE,
+  PROVIDER_CACHE_TTL,
+  PROVIDER_CACHE_TTL_MODIFIER as ttl_modifier,
+  BLOCK_NUMBER_TTL,
+} from "../common";
 import { Logger } from ".";
 
 const logger = Logger;
+
+const _ttl = Number(process.env.PROVIDER_CACHE_TTL ?? PROVIDER_CACHE_TTL);
+if (isNaN(_ttl) || _ttl <= 0) {
+  const envVar = process.env.PROVIDER_CACHE_TTL ?? PROVIDER_CACHE_TTL;
+  throw new Error(`PROVIDER_CACHE_TTL (${envVar}) must be numeric and > 0`);
+}
 
 // The async/queue library has a task-based interface for building a concurrent queue.
 // This is the type we pass to define a request "task".
@@ -149,8 +160,11 @@ class CacheProvider extends RateLimitedProvider {
       // Cache does not have the result. Query it directly and cache.
       const result = await super.send(method, params);
 
+      // Apply a random margin to spread expiry over a larger time window.
+      const ttl = _ttl + Math.ceil(lodash.random(-ttl_modifier, ttl_modifier, true) * _ttl);
+
       // Commit result to redis.
-      await setRedisKey(redisKey, JSON.stringify(result), this.redisClient, PROVIDER_CACHE_TTL);
+      await setRedisKey(redisKey, JSON.stringify(result), this.redisClient, ttl);
 
       // Return the cached result.
       return result;
