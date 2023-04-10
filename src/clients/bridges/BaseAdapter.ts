@@ -62,7 +62,6 @@ export class BaseAdapter {
     // Update search range based on the latest data from corresponding SpokePoolClients' search ranges.
     const l1LatestBlock = this.spokePoolClients[1].latestBlockNumber;
     const l2LatestBlock = this.spokePoolClients[this.chainId].latestBlockNumber;
-
     if (l1LatestBlock === 0 || l2LatestBlock === 0) {
       throw new Error("One or more SpokePoolClients have not been updated");
     }
