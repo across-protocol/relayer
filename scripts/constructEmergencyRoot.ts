@@ -96,10 +96,12 @@ export async function run(): Promise<void> {
 if (require.main === module) {
   run()
     .then(async () => {
+      // eslint-disable-next-line no-process-exit
       process.exit(0);
     })
     .catch(async (error) => {
       console.error("Process exited with", error);
+      // eslint-disable-next-line no-process-exit
       process.exit(1);
     });
 }

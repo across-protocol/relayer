@@ -21,7 +21,8 @@ export class MockAdapterManager extends AdapterManager {
 
   override async getOutstandingCrossChainTokenTransferAmount(
     chainId: number,
-    l1Tokens: string[]
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _l1Tokens: string[]
   ): Promise<OutstandingTransfers> {
     return this.mockedOutstandingCrossChainTransfers[chainId];
   }

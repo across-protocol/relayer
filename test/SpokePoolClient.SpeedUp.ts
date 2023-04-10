@@ -15,14 +15,14 @@ import { SpokePoolClient } from "../src/clients";
 import { DepositWithBlock } from "../src/interfaces";
 
 let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
-let owner: SignerWithAddress, depositor: SignerWithAddress, deploymentBlock: number;
+let depositor: SignerWithAddress, deploymentBlock: number;
 const destinationChainId2 = destinationChainId + 1;
 
 let spokePoolClient: SpokePoolClient;
 
 describe("SpokePoolClient: SpeedUp", async function () {
   beforeEach(async function () {
-    [owner, depositor] = await ethers.getSigners();
+    [, depositor] = await ethers.getSigners();
     ({ spokePool, erc20, destErc20, weth, deploymentBlock } = await deploySpokePoolWithToken(originChainId));
     await enableRoutes(spokePool, [{ originToken: erc20.address, destinationChainId: destinationChainId2 }]);
     spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool, null, originChainId, deploymentBlock);

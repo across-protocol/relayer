@@ -41,7 +41,7 @@ export async function run(): Promise<void> {
     const amountFromWei = ethers.utils.formatUnits(args.amount, 18);
     console.log(`Send ETH with amount ${amountFromWei} tokens to ${recipient} on chain ${args.chainId}`);
     if (!(await askYesNoQuestion("\nConfirm that you want to execute this transaction?"))) {
-      process.exit(0);
+      return;
     }
     console.log("sending...");
     const tx = await connectedSigner.sendTransaction({ to: recipient, value: toBN(args.amount) });
@@ -57,7 +57,7 @@ export async function run(): Promise<void> {
     // Check the user is ok with the info provided. else abort.
     console.log(`Send ${symbol} with amount ${amountFromWei} tokens to ${recipient} on chain ${args.chainId}`);
     if (!(await askYesNoQuestion("\nConfirm that you want to execute this transaction?"))) {
-      process.exit(0);
+      return;
     }
     console.log("sending...");
     const tx = await erc20.transfer(recipient, args.amount);
@@ -69,10 +69,12 @@ export async function run(): Promise<void> {
 if (require.main === module) {
   run()
     .then(async () => {
+      // eslint-disable-next-line no-process-exit
       process.exit(0);
     })
     .catch(async (error) => {
       console.error("Process exited with", error);
+      // eslint-disable-next-line no-process-exit
       process.exit(1);
     });
 }

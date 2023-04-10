@@ -3,14 +3,14 @@ import { randomAddress, enableRoutes, zeroAddress, originChainId, destinationCha
 
 import { SpokePoolClient } from "../src/clients"; // tested
 
-let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
-let owner: SignerWithAddress, depositor1: SignerWithAddress, depositor2: SignerWithAddress;
+let spokePool: Contract;
+let owner: SignerWithAddress;
 
 let spokePoolClient: SpokePoolClient;
 
 describe("SpokePoolClient: Deposit Routes", async function () {
   beforeEach(async function () {
-    [owner, depositor1, depositor2] = await ethers.getSigners();
+    [owner] = await ethers.getSigners();
     // Deploy a minimal spokePool, without using the fixture as this does some route enabling within it.
     spokePool = await (
       await getContractFactory("MockSpokePool", owner)

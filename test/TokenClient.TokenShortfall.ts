@@ -13,14 +13,14 @@ import { deployAndConfigureHubPool, zeroAddress } from "./utils";
 let spokePool_1: Contract, spokePool_2: Contract;
 let erc20_2: Contract;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
+let owner: SignerWithAddress, spyLogger: winston.Logger;
 let tokenClient: TokenClient; // tested
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
 describe("TokenClient: Token shortfall", async function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
-    ({ spy, spyLogger } = createSpyLogger());
+    ({ spyLogger } = createSpyLogger());
     // Using deploySpokePoolWithToken will create two tokens and enable both of them as routes.
     ({ spokePool: spokePool_1, deploymentBlock: spokePool1DeploymentBlock } = await deploySpokePoolWithToken(
       originChainId,

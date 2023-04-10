@@ -91,7 +91,7 @@ describe("Dataworker block range-related utility methods", async function () {
       latestMainnetBlock,
       chainIdListForBundleEvaluationBlockNumbers
     );
-    expect(zeroRange).to.deep.equal(latestBlocks.map((_) => [0, 0]));
+    expect(zeroRange).to.deep.equal(latestBlocks.map(() => [0, 0]));
   });
   it("DataworkerUtils.blockRangesAreInvalidForSpokeClients", async function () {
     // Only use public chain IDs because getDeploymentBlockNumber will only work for real chain ID's. This is a hack
