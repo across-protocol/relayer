@@ -100,22 +100,23 @@ export class MultiCallerClient {
     );
 
     // Collate the results for each chain.
-    const txnHashes: Record<number, { result: string[]; isError: boolean }> = Object.fromEntries(
-      results.map((result, idx) => {
-        const chainId = chainIds[idx];
-        if (isPromiseFulfilled(result)) {
-          return [chainId, { result: result.value.map((txnResponse) => txnResponse.hash), isError: false }];
-        } else {
-          return [chainId, { result: result.reason, isError: true }];
-        }
-      })
-    );
+    const txnHashes: Record<number, { result: string[]; isError: boolean; isErrorIgnorable?: boolean }> =
+      Object.fromEntries(
+        results.map((result, idx) => {
+          const chainId = chainIds[idx];
+          if (isPromiseFulfilled(result)) {
+            return [chainId, { result: result.value.map((txnResponse) => txnResponse.hash), isError: false }];
+          } else {
+            return [chainId, { result: result.reason, isError: true }];
+          }
+        })
+      );
 
     // We need to iterate over the results to determine if any of the transactions failed.
     // If any of the transactions failed, we need to log the results and throw an error. However, we want to
     // only log the results once, so we need to collate the results into a single object.
     const failedChains = Object.entries(txnHashes)
-      .filter(([, { isError }]) => isError)
+      .filter(([, { isError, isErrorIgnorable }]) => isError && !isErrorIgnorable)
       .map(([chainId]) => chainId);
 
     if (failedChains.length > 0) {
