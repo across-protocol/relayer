@@ -22,10 +22,7 @@ let spokePoolClient: MockSpokePoolClient;
 describe("SpokePoolClient: Refund Requests", async function () {
   beforeEach(async function () {
     [relayer] = await ethers.getSigners();
-    ({
-      spokePool,
-      deploymentBlock,
-    } = await deploySpokePoolWithToken(originChainId, destinationChainId));
+    ({ spokePool, deploymentBlock } = await deploySpokePoolWithToken(originChainId, destinationChainId));
     await spokePool.setChainId(repaymentChainId); // Refunds requests are submitted on the repayment chain.
 
     spokePoolClient = new MockSpokePoolClient(

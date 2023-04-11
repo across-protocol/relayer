@@ -11,7 +11,7 @@ export type EthersEventTemplate = {
   data?: string;
   args?: string[];
   event?: string;
-}
+};
 
 type Block = ethers.providers.Block;
 type TransactionResponse = ethers.providers.TransactionResponse;
@@ -20,16 +20,10 @@ type TransactionReceipt = ethers.providers.TransactionReceipt;
 // This class replaces internal SpokePoolClient functionality, enabling the
 // user to bypass on-chain queries and inject ethers Event objects directly.
 export class MockSpokePoolClient extends SpokePoolClient {
-
   private events: Event[] = [];
   public readonly minBlockRange = 10;
 
-  constructor(
-    logger: winston.Logger,
-    spokePool: Contract,
-    chainId: number,
-    deploymentBlock: number,
-  ) {
+  constructor(logger: winston.Logger, spokePool: Contract, chainId: number, deploymentBlock: number) {
     super(logger, spokePool, null, chainId, deploymentBlock);
     this.latestBlockNumber = deploymentBlock;
   }
@@ -58,13 +52,15 @@ export class MockSpokePoolClient extends SpokePoolClient {
     });
 
     // Ensure all requested events are populated (even if empty).
-    eventsToQuery.forEach((_eventName, idx) => events[idx] ??= []);
+    eventsToQuery.forEach((_eventName, idx) => (events[idx] ??= []));
     this.events = [];
 
     // Update latestDepositIdQueried.
     const idx = eventsToQuery.indexOf("FundsDeposited");
-    const latestDepositId = (events[idx] ?? [])
-      .reduce((depositId, event) => Math.max(depositId, event["depositId"]), this.latestDepositIdQueried);
+    const latestDepositId = (events[idx] ?? []).reduce(
+      (depositId, event) => Math.max(depositId, event["depositId"]),
+      this.latestDepositIdQueried
+    );
 
     return {
       success: true,
@@ -73,7 +69,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
       latestDepositId,
       currentTime,
       events,
-      searchEndBlock:  this.eventSearchConfig.toBlock || latestBlockNumber,
+      searchEndBlock: this.eventSearchConfig.toBlock || latestBlockNumber,
     };
   }
 
@@ -83,7 +79,15 @@ export class MockSpokePoolClient extends SpokePoolClient {
     const eventSignature = "RefundRequested(uint256,uint256,uint256,uint256,uint256,int65,uint32,uint256,uint256)";
     const topics = ["XXX"].concat(inputs.topics);
 
-    return this.generateEvent(inputs.address, event, eventSignature, topics, undefined, inputs.args, inputs.blockNumber);
+    return this.generateEvent(
+      inputs.address,
+      event,
+      eventSignature,
+      topics,
+      undefined,
+      inputs.args,
+      inputs.blockNumber
+    );
   }
 
   private generateEvent(
@@ -94,14 +98,22 @@ export class MockSpokePoolClient extends SpokePoolClient {
     data?: string,
     args?: string[],
     blockNumber?: string,
-    transactionIndex?: number,
+    transactionIndex?: number
   ): Event {
     // Populate these Event functions, even though they appear unused.
-    const getBlock = async (): Promise<Block> => { return {} as Block };
-    const getTransaction = async (): Promise<TransactionResponse> => { return {} as TransactionResponse };
-    const getTransactionReceipt = async (): Promise<TransactionReceipt> => { return {} as TransactionReceipt };
+    const getBlock = async (): Promise<Block> => {
+      return {} as Block;
+    };
+    const getTransaction = async (): Promise<TransactionResponse> => {
+      return {} as TransactionResponse;
+    };
+    const getTransactionReceipt = async (): Promise<TransactionReceipt> => {
+      return {} as TransactionReceipt;
+    };
     const decodeError = new Error(`${event} decoding error`);
-    const removeListener = (): void => {};
+    const removeListener = (): void => {
+      return;
+    };
 
     return {
       blockNumber: blockNumber ?? random(1, 100_000, false),
@@ -124,4 +136,3 @@ export class MockSpokePoolClient extends SpokePoolClient {
     } as Event;
   }
 }
-
