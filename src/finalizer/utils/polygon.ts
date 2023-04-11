@@ -84,7 +84,7 @@ export async function getFinalizableTransactions(
   // can potentially be finalized.
   const payloads = await Promise.all(
     checkpointedTokensBridged.map((e) => {
-      return posClient.exitUtil.buildPayloadForExit(e.event.transactionHash, BURN_SIG, false, e.logIndex);
+      return posClient.exitUtil.buildPayloadForExit(e.event.transactionHash, BURN_SIG, true, e.logIndex);
     })
   );
 
