@@ -66,7 +66,7 @@ describe("SpokePoolClient: Refund Requests", async function () {
     for (let blockNumber = latestBlockNumber + 1; blockNumber <= minExpectedBlockNumber; ++blockNumber) {
       // Barebones Event - only absolutely necessary fields are populated.
       const requestArgs: EthersEventTemplate = {
-        blockNumber: blockNumber.toString(),
+        blockNumber,
         address: relayer.address,
         topics: [relayer.address, originChainId.toString(), ""],
         args: [],

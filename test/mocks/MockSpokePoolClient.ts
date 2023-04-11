@@ -6,7 +6,7 @@ import { Contract, ethers, winston } from "../utils";
 export type EthersEventTemplate = {
   address: string;
   topics: string[];
-  blockNumber?: string;
+  blockNumber?: number;
   transactionIndex?: string;
   data?: string;
   args?: string[];
@@ -97,7 +97,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
     topics: string[],
     data?: string,
     args?: string[],
-    blockNumber?: string,
+    blockNumber?: number,
     transactionIndex?: number
   ): Event {
     // Populate these Event functions, even though they appear unused.
