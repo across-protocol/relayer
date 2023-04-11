@@ -48,7 +48,7 @@ export async function constructSpokePoolClientsWithLookback(
   config: CommonConfig,
   baseSigner: Wallet,
   initialLookBackOverride: number,
-  hubPoolChainId: number
+  hubPoolChainId: number,
 ): Promise<SpokePoolClientsByChain> {
   // Construct spoke pool clients for all chains that were enabled at least once in the block range.
   // Caller can optionally override the disabled chains list, which is useful for executing leaves or validating
@@ -90,14 +90,14 @@ export async function constructSpokePoolClientsWithLookback(
     )
   );
 
-  // @dev: Set toBlocks = {} to construct spoke pool clients that query until the latest blocks.
+  // @dev: If toBlocks = {} then  construct spoke pool clients that query until the latest blocks.
   return await constructSpokePoolClientsWithStartBlocks(
     logger,
     configStoreClient,
     config,
     baseSigner,
     fromBlocks,
-    {},
+    config.toBlockOverride,
     enabledChains
   );
 }
