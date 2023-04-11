@@ -48,7 +48,7 @@ export async function constructSpokePoolClientsWithLookback(
   config: CommonConfig,
   baseSigner: Wallet,
   initialLookBackOverride: number,
-  hubPoolChainId: number,
+  hubPoolChainId: number
 ): Promise<SpokePoolClientsByChain> {
   // Construct spoke pool clients for all chains that were enabled at least once in the block range.
   // Caller can optionally override the disabled chains list, which is useful for executing leaves or validating
