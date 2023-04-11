@@ -26,22 +26,24 @@ const { GCP_STORAGE_CONFIG } = process.env;
 // - retryOptions: object that allows the caller to specify how the library retries.
 const storageConfig = GCP_STORAGE_CONFIG ? JSON.parse(GCP_STORAGE_CONFIG) : undefined;
 
-export function getGckmsConfig(keys) {
+export function getGckmsConfig(keys: string[]): KeyConfig[] {
   let configOverride: GckmsConfig = {};
   if (process.env.GCKMS_CONFIG) {
     configOverride = JSON.parse(process.env.GCKMS_CONFIG);
   } else {
     const overrideFname = ".GckmsOverride.js";
     try {
-      if (fs.existsSync(`${__dirname}/${overrideFname}`)) configOverride = require(`./${overrideFname}`);
+      if (fs.existsSync(`${__dirname}/${overrideFname}`)) {
+        configOverride = require(`./${overrideFname}`);
+      }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(err);
     }
   }
 
-  const keyConfigs = keys.map((keyName) => {
-    return configOverride["mainnet"][keyName] || {}; // Hardcode to "mainnet" network. This makes no impact key retrieval.
+  const keyConfigs = keys.map((keyName: string): KeyConfig => {
+    return (configOverride["mainnet"][keyName] || {}) as KeyConfig; // Hardcode to "mainnet" network. This makes no impact key retrieval.
   });
 
   return keyConfigs;
@@ -58,7 +60,9 @@ export async function retrieveGckmsKeys(gckmsConfigs: KeyConfig[]): Promise<stri
       const client = new kms.KeyManagementServiceClient(); // Send the request to decrypt the downloaded file.
       const name = client.cryptoKeyPath(config.projectId, config.locationId, config.keyRingId, config.cryptoKeyId);
       const [result] = await client.decrypt({ name, ciphertext });
-      if (!(result.plaintext instanceof Uint8Array)) throw new Error("result.plaintext wrong type");
+      if (!(result.plaintext instanceof Uint8Array)) {
+        throw new Error("result.plaintext wrong type");
+      }
       return "0x" + Buffer.from(result.plaintext).toString().trim();
     })
   );

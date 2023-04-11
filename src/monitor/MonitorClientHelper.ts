@@ -66,7 +66,7 @@ export async function constructMonitorClients(
   return { ...commonClients, bundleDataClient, crossChainTransferClient, spokePoolClients, tokenTransferClient };
 }
 
-export async function updateMonitorClients(clients: MonitorClients) {
+export async function updateMonitorClients(clients: MonitorClients): Promise<void> {
   await updateClients(clients);
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
   await updateSpokePoolClients(clients.spokePoolClients, [

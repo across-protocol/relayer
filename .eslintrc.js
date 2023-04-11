@@ -23,6 +23,7 @@ module.exports = {
     "linebreak-style": ["error", "unix"],
     quotes: ["error", "double", { avoidEscape: true }],
     semi: ["error", "always"],
+    curly: ["error", "all"],
     "spaced-comment": ["error", "always", { exceptions: ["-", "+"] }],
     "no-console": 2,
     camelcase: "off",
@@ -31,7 +32,7 @@ module.exports = {
     "@typescript-eslint/no-var-requires": "off",
     "node/no-unsupported-features/es-syntax": ["error", { ignores: ["modules"] }],
     // Disable warnings for { a, b, ...rest } variables, since this is typically used to remove variables.
-    "@typescript-eslint/no-unused-vars": ["warn", { ignoreRestSiblings: true }],
+    "@typescript-eslint/no-unused-vars": ["error", { ignoreRestSiblings: true }],
     "chai-expect/missing-assertion": 2,
   },
   settings: {

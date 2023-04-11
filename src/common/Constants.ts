@@ -134,6 +134,7 @@ export const BLOCK_NUMBER_TTL = 60;
 
 // This is the TTL for the provider cache.
 export const PROVIDER_CACHE_TTL = 3600;
+export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
 
 // Multicall3 Constants:
 export const multicall3Addresses = {

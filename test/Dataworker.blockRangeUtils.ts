@@ -49,7 +49,9 @@ describe("Dataworker block range-related utility methods", async function () {
       )
     );
     const latestMainnetBlock = hubPoolClient.latestBlockNumber;
-    if (latestMainnetBlock === undefined) throw new Error("hubPoolClient.latestBlockNumber is undefined");
+    if (latestMainnetBlock === undefined) {
+      throw new Error("hubPoolClient.latestBlockNumber is undefined");
+    }
     const startingWidestBlocks = getWidestPossibleExpectedBlockRange(
       chainIdListForBundleEvaluationBlockNumbers,
       spokePoolClients,
@@ -71,8 +73,11 @@ describe("Dataworker block range-related utility methods", async function () {
     );
     expect(disabledChainEndBlocks).to.deep.equal(
       latestBlocks.map((endBlock, i) => {
-        if (i === 0) return [0, 0];
-        else return [0, endBlock];
+        if (i === 0) {
+          return [0, 0];
+        } else {
+          return [0, endBlock];
+        }
       })
     );
 
@@ -86,7 +91,7 @@ describe("Dataworker block range-related utility methods", async function () {
       latestMainnetBlock,
       chainIdListForBundleEvaluationBlockNumbers
     );
-    expect(zeroRange).to.deep.equal(latestBlocks.map((_) => [0, 0]));
+    expect(zeroRange).to.deep.equal(latestBlocks.map(() => [0, 0]));
   });
   it("DataworkerUtils.blockRangesAreInvalidForSpokeClients", async function () {
     // Only use public chain IDs because getDeploymentBlockNumber will only work for real chain ID's. This is a hack
@@ -97,11 +102,15 @@ describe("Dataworker block range-related utility methods", async function () {
     // Look if bundle range from block is before the latest invalid
     // bundle start block. If so, then the range is invalid.
     const mainnetDeploymentBlock = spokePoolClients[1].spokePoolDeploymentBlock;
-    if (mainnetDeploymentBlock === undefined) throw new Error("mainnetDeploymentBlock is undefined");
-    if (spokePoolClients[1].latestBlockNumber === undefined)
+    if (mainnetDeploymentBlock === undefined) {
+      throw new Error("mainnetDeploymentBlock is undefined");
+    }
+    if (spokePoolClients[1].latestBlockNumber === undefined) {
       throw new Error("spokePoolClient[1].latestBlockNumber is undefined");
-    if (spokePoolClients[originChainId].latestBlockNumber === undefined)
+    }
+    if (spokePoolClients[originChainId].latestBlockNumber === undefined) {
       throw new Error("spokePoolClient[originChainId].latestBlockNumber is undefined");
+    }
 
     // latestInvalidBundleStartBlock is only used if its greater than the spoke pool deployment block, so in the
     // following tests, set latestInvalidBundleStartBlock > deployment blocks.

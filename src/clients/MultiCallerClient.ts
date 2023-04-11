@@ -1,10 +1,8 @@
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE, Multicall2Call } from "../common";
 import {
-  assert,
   winston,
   getNetworkName,
   isPromiseFulfilled,
-  isPromiseRejected,
   getTarget,
   TransactionResponse,
   TransactionSimulationResult,
@@ -53,20 +51,22 @@ export class MultiCallerClient {
   }
 
   // Adds all information associated with a transaction to the transaction queue.
-  enqueueTransaction(txn: AugmentedTransaction) {
+  enqueueTransaction(txn: AugmentedTransaction): void {
     // Value transactions are sorted immediately because the UMA multicall implementation rejects them.
     const txnQueue = txn.value && txn.value.gt(0) ? this.valueTxns : this.txns;
-    if (txnQueue[txn.chainId] === undefined) txnQueue[txn.chainId] = [];
+    if (txnQueue[txn.chainId] === undefined) {
+      txnQueue[txn.chainId] = [];
+    }
     txnQueue[txn.chainId].push(txn);
   }
 
-  transactionCount() {
+  transactionCount(): number {
     return Object.values(this.txns)
       .concat(Object.values(this.valueTxns))
       .reduce((count, txnQueue) => (count += txnQueue.length), 0);
   }
 
-  clearTransactionQueue(chainId: number = null) {
+  clearTransactionQueue(chainId: number | null = null): void {
     if (chainId !== null) {
       this.txns[chainId] = [];
       this.valueTxns[chainId] = [];
@@ -84,7 +84,7 @@ export class MultiCallerClient {
   }
 
   // For each chain, collate the enqueued transactions and process them in parallel.
-  async executeTxnQueues(simulate = false): Promise<{ [chainId: number]: string[] }> {
+  async executeTxnQueues(simulate = false): Promise<Record<number, string[]>> {
     const chainIds = [...new Set(Object.keys(this.valueTxns).concat(Object.keys(this.txns)))];
 
     // One promise per chain for parallel execution.
@@ -100,16 +100,35 @@ export class MultiCallerClient {
     );
 
     // Collate the results for each chain.
-    const txnHashes: { [chainId: number]: string[] } = Object.fromEntries(
+    const txnHashes: Record<number, { result: string[]; isError: boolean }> = Object.fromEntries(
       results.map((result, idx) => {
         const chainId = chainIds[idx];
-        if (isPromiseFulfilled(result)) return [chainId, result.value.map((txnResponse) => txnResponse.hash)];
-        assert(isPromiseRejected(result), `Unexpected multicall result status: ${result?.status ?? "unknown"}`);
-        return [chainId, [result.reason]];
+        if (isPromiseFulfilled(result)) {
+          return [chainId, { result: result.value.map((txnResponse) => txnResponse.hash), isError: false }];
+        } else {
+          return [chainId, { result: result.reason, isError: true }];
+        }
       })
     );
 
-    return txnHashes;
+    // We need to iterate over the results to determine if any of the transactions failed.
+    // If any of the transactions failed, we need to log the results and throw an error. However, we want to
+    // only log the results once, so we need to collate the results into a single object.
+    const failedChains = Object.entries(txnHashes)
+      .filter(([, { isError }]) => isError)
+      .map(([chainId]) => chainId);
+
+    if (failedChains.length > 0) {
+      // Log the results.
+      this.logger.error({
+        at: "MultiCallerClient#executeTxnQueues",
+        message: `Failed to execute ${failedChains.length} transaction(s) on chain(s) ${failedChains.join(", ")}`,
+        error: txnHashes,
+      });
+      throw new Error(`Failed to execute ${failedChains.length} transaction(s) on chain(s) ${failedChains.join(", ")}`);
+    }
+    // Recombine the results into a single object that match the legacy implementation.
+    return Object.fromEntries(Object.entries(txnHashes).map(([chainId, { result }]) => [chainId, result]));
   }
 
   // For a single chain, simulate all potential multicall txns and group the ones that pass into multicall bundles.
@@ -122,7 +141,9 @@ export class MultiCallerClient {
     simulate = false
   ): Promise<TransactionResponse[]> {
     const nTxns = txns.length + valueTxns.length;
-    if (nTxns === 0) return [];
+    if (nTxns === 0) {
+      return [];
+    }
 
     const networkName = getNetworkName(chainId);
     this.logger.debug({
@@ -186,14 +207,16 @@ export class MultiCallerClient {
   }
 
   async _getMultisender(chainId: number): Promise<Contract | undefined> {
-    return getMultisender(chainId, this.baseSigner.connect(await getProvider(chainId)));
+    return this.baseSigner ? getMultisender(chainId, this.baseSigner.connect(await getProvider(chainId))) : undefined;
   }
 
   async buildMultiSenderBundle(transactions: AugmentedTransaction[]): Promise<AugmentedTransaction> {
     // Validate all transactions have the same chainId and can be sent from multisender.
     const { chainId } = transactions[0];
     const multisender = await this._getMultisender(chainId);
-    if (!multisender) throw new Error("Multisender not available for this chain");
+    if (!multisender) {
+      throw new Error("Multisender not available for this chain");
+    }
 
     if (transactions.some((tx) => !tx.unpermissioned || tx.chainId !== chainId)) {
       this.logger.error({
@@ -285,7 +308,9 @@ export class MultiCallerClient {
     txns: AugmentedTransaction[],
     chunkSize = DEFAULT_MULTICALL_CHUNK_SIZE
   ): Promise<AugmentedTransaction[]> {
-    if (txns.length === 0) return [];
+    if (txns.length === 0) {
+      return [];
+    }
     const { chainId } = txns[0];
 
     const {
@@ -293,9 +318,13 @@ export class MultiCallerClient {
       multisenderTxns = [],
       unsendableTxns = [],
     } = lodash.groupBy(txns, (txn) => {
-      if (txn.unpermissioned) return "multisenderTxns";
-      else if (txn.contract.multicall) return "multicallerTxns";
-      else return "unsendableTxns";
+      if (txn.unpermissioned) {
+        return "multisenderTxns";
+      } else if (txn.contract.multicall) {
+        return "multicallerTxns";
+      } else {
+        return "unsendableTxns";
+      }
     });
 
     // We should never get here but log any transactions that are sent to an ABI that doesn't have
@@ -354,10 +383,15 @@ export class MultiCallerClient {
     // Simulate the transaction execution for the whole queue.
     const txnSimulations = await this.txnClient.simulate(transactions);
     txnSimulations.forEach((txn) => {
-      if (txn.succeed) validTxns.push(txn.transaction);
-      else invalidTxns.push(txn);
+      if (txn.succeed) {
+        validTxns.push(txn.transaction);
+      } else {
+        invalidTxns.push(txn);
+      }
     });
-    if (invalidTxns.length > 0) this.logSimulationFailures(invalidTxns);
+    if (invalidTxns.length > 0) {
+      this.logSimulationFailures(invalidTxns);
+    }
 
     return validTxns;
   }
