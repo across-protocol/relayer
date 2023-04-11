@@ -137,9 +137,9 @@ class CacheProvider extends RateLimitedProvider {
     this.maxReorgDistance = MAX_REORG_DISTANCE[this.network.chainId];
 
     // Pre-compute as much of the redis key as possible.
-    const cachePrefix = `${providerCacheNamespace},${new URL(this.connection.url).hostname},${this.network.chainId}:`;
-    this.getLogsCachePrefix = cachePrefix + "eth_getLogs,";
-    this.callCachePrefix = cachePrefix + "eth_call,";
+    const cachePrefix = `${providerCacheNamespace},${new URL(this.connection.url).hostname},${this.network.chainId}`;
+    this.getLogsCachePrefix = `${cachePrefix}:eth_getLogs,`;
+    this.callCachePrefix = `${cachePrefix}:eth_call,`;
 
     const _ttlVar = process.env.PROVIDER_CACHE_TTL ?? PROVIDER_CACHE_TTL;
     const _ttl = Number(_ttlVar);
