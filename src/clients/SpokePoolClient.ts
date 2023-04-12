@@ -215,14 +215,13 @@ export class SpokePoolClient {
 
     // Always update the following fields of the deposit to the latest speed up params:
     const updatedDeposit = {
-      ...deposit
+      ...deposit,
     };
     if (speedupsForDeposit.length > 0) {
       const latestSpeedUp = speedupsForDeposit[speedupsForDeposit.length - 1];
       updatedDeposit.recipient = latestSpeedUp.updatedRecipient;
       updatedDeposit.message = latestSpeedUp.updatedMessage;
     }
-
 
     // Return deposit with the highest updated relayer fee pct.
     return {
@@ -444,8 +443,7 @@ export class SpokePoolClient {
         originChainId: number;
         originToken: string;
         destinationChainId: number;
-      } =
-        spreadEventWithBlockNumber(event) as DepositWithBlock;
+      } = spreadEventWithBlockNumber(event) as DepositWithBlock;
       const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number } = await this.computeRealizedLpFeePct(
         event
       );
@@ -501,7 +499,7 @@ export class SpokePoolClient {
         undefined, // relayerFeePct
         undefined, // realizedLpFeePct
         matchingFill.depositId, // depositId
-        undefined, // destinationToken 
+        undefined, // destinationToken
         undefined, // relayer
         matchingFill.depositor, // depositor
         undefined, // recipient
@@ -672,11 +670,13 @@ export class SpokePoolClient {
         const deposit = {
           ...processedEvent,
           realizedLpFeePct: dataForQuoteTime[index].realizedLpFeePct,
-          destinationToken: this.getDestinationTokenForDeposit(processedEvent as {
-            originChainId: number;
-            originToken: string;
-            destinationChainId: number;
-          }),
+          destinationToken: this.getDestinationTokenForDeposit(
+            processedEvent as {
+              originChainId: number;
+              originToken: string;
+              destinationChainId: number;
+            }
+          ),
           blockNumber: dataForQuoteTime[index].quoteBlock,
           originBlockNumber: event.blockNumber,
         } as DepositWithBlock;
