@@ -403,6 +403,9 @@ export async function buildDepositStruct(
 ) {
   return {
     ...deposit,
+    message: "0x",
+    originBlockNumber: await getLastBlockNumber(),
+    blockNumber: 0,    
     destinationToken: hubPoolClient.getDestinationTokenForDeposit(deposit),
     realizedLpFeePct: (await configStoreClient.computeRealizedLpFeePct(deposit, l1TokenForDepositedToken.address))
       .realizedLpFeePct,
@@ -440,23 +443,50 @@ export async function buildFill(
   deposit: Deposit,
   pctOfDepositToFill: number
 ): Promise<Fill> {
-  return await fillRelay(
-    spokePool,
-    destinationToken,
-    recipientAndDepositor,
-    recipientAndDepositor,
-    relayer,
-    deposit.depositId,
-    deposit.originChainId,
-    deposit.amount,
-    deposit.amount
-      .mul(toBNWei(1).sub(deposit.realizedLpFeePct.add(deposit.relayerFeePct)))
-      .mul(toBNWei(pctOfDepositToFill))
-      .div(toBNWei(1))
-      .div(toBNWei(1)),
-    deposit.realizedLpFeePct,
-    deposit.relayerFeePct
+  await spokePool.connect(relayer).fillRelay(
+    ...utils.getFillRelayParams(
+      utils.getRelayHash(
+        recipientAndDepositor.address,
+        recipientAndDepositor.address,
+        deposit.depositId,
+        deposit.originChainId,
+        deposit.destinationChainId,
+        destinationToken.address,
+        deposit.amount,
+        deposit.realizedLpFeePct,
+      ).relayData,
+      deposit.amount
+        .mul(toBNWei(1).sub(deposit.realizedLpFeePct.add(deposit.relayerFeePct)))
+        .mul(toBNWei(pctOfDepositToFill))
+        .div(toBNWei(1))
+        .div(toBNWei(1)),
+      deposit.destinationChainId
+    )
   );
+  const [events, destinationChainId] = await Promise.all([
+    spokePool.queryFilter(spokePool.filters.FilledRelay()),
+    spokePool.chainId(),
+  ]);
+  const lastEvent = events[events.length - 1];
+  if (!lastEvent) throw new Error("No FilledRelay event emitted");
+  return {
+    amount: lastEvent.args.amount,
+    totalFilledAmount: lastEvent.args.totalFilledAmount,
+    fillAmount: lastEvent.args.fillAmount,
+    repaymentChainId: Number(lastEvent.args.repaymentChainId),
+    originChainId: Number(lastEvent.args.originChainId),
+    relayerFeePct: lastEvent.args.relayerFeePct,
+    appliedRelayerFeePct: lastEvent.args.updatableRelayData.relayerFeePct,
+    realizedLpFeePct: lastEvent.args.realizedLpFeePct,
+    depositId: lastEvent.args.depositId,
+    destinationToken: lastEvent.args.destinationToken,
+    relayer: lastEvent.args.relayer,
+    depositor: lastEvent.args.depositor,
+    recipient: lastEvent.args.recipient,
+    message: lastEvent.args.message,
+    isSlowRelay: lastEvent.args.updatableRelayData.isSlowRelay,
+    destinationChainId: Number(destinationChainId),
+  };
 }
 
 export async function buildModifiedFill(
@@ -477,15 +507,18 @@ export async function buildModifiedFill(
     realizedLpFeePct: fillToBuildFrom.realizedLpFeePct,
     relayerFeePct: fillToBuildFrom.relayerFeePct,
     depositId: fillToBuildFrom.depositId.toString(),
+    message: fillToBuildFrom.message,
   };
   const { signature } = await utils.modifyRelayHelper(
     fillToBuildFrom.relayerFeePct.mul(multipleOfOriginalRelayerFeePct),
     fillToBuildFrom.depositId.toString(),
     fillToBuildFrom.originChainId.toString(),
-    depositor
+    depositor,
+    relayDataFromFill.recipient,
+    relayDataFromFill.message
   );
   const updatedRelayerFeePct = fillToBuildFrom.relayerFeePct.mul(multipleOfOriginalRelayerFeePct);
-  await spokePool.connect(relayer).fillRelayWithUpdatedFee(
+  await spokePool.connect(relayer).fillRelayWithUpdatedDeposit(
     ...utils.getFillRelayUpdatedFeeParams(
       relayDataFromFill,
       fillToBuildFrom.amount
@@ -494,7 +527,8 @@ export async function buildModifiedFill(
         .div(toBNWei(1))
         .div(toBNWei(1)),
       updatedRelayerFeePct,
-      signature
+      signature,
+      Number(relayDataFromFill.destinationChainId)
     )
   );
   const [events, destinationChainId] = await Promise.all([
@@ -510,14 +544,15 @@ export async function buildModifiedFill(
       repaymentChainId: Number(lastEvent.args.repaymentChainId),
       originChainId: Number(lastEvent.args.originChainId),
       relayerFeePct: lastEvent.args.relayerFeePct,
-      appliedRelayerFeePct: lastEvent.args.appliedRelayerFeePct,
+      appliedRelayerFeePct: lastEvent.args.updatableRelayData.relayerFeePct,
       realizedLpFeePct: lastEvent.args.realizedLpFeePct,
       depositId: lastEvent.args.depositId,
       destinationToken: lastEvent.args.destinationToken,
       relayer: lastEvent.args.relayer,
+      message: lastEvent.args.message,
       depositor: lastEvent.args.depositor,
       recipient: lastEvent.args.recipient,
-      isSlowRelay: lastEvent.args.isSlowRelay,
+      isSlowRelay: lastEvent.args.updatableRelayData.isSlowRelay,
       destinationChainId: Number(destinationChainId),
     };
   } else {
