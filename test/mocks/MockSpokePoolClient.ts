@@ -76,7 +76,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
   generateRefundRequest(inputs: EthersEventTemplate): Event {
     // @todo: Source these from contracts-v2, when available.
     const event = "RefundRequested";
-    const eventSignature = "RefundRequested(uint256,uint256,uint256,uint256,uint256,int65,uint32,uint256,uint256)";
+    const eventSignature = "RefundRequested(address,address,uint256,uint256,uint256,int64,uint32,uint256,uint256)";
     const topics = ["XXX"].concat(inputs.topics);
 
     return this.generateEvent(
