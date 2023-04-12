@@ -236,7 +236,7 @@ export class Relayer {
             (tx.method === "fillRelay" && tx.args[9] === deposit.depositId && tx.args[6] === deposit.originChainId) ||
             (tx.method === "fillRelayWithUpdatedDeposit" &&
               tx.args[11] === deposit.depositId &&
-              tx.args[7] === deposit.originChainId);
+              tx.args[7] === deposit.originChainId)
           );
         }).length > 0;
       // Fetch the repayment chain from the inventory client. Sanity check that it is one of the known chainIds.
