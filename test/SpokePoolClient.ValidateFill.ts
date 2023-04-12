@@ -15,7 +15,6 @@ import {
   destinationChainId,
   createSpyLogger,
   zeroAddress,
-  getLastBlockNumber,
   deployAndConfigureHubPool,
   enableRoutesOnHubPool,
   deployConfigStore,
@@ -26,14 +25,10 @@ import {
   mineRandomBlocks,
   winston,
   lastSpyLogIncludes,
-  getFillRelayParams,
-  getRelayHash,
-  amountToRelay
 } from "./utils";
 
 import { AcrossConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
 import { MockSpokePoolClient } from "./mocks/MockSpokePoolClient";
-import { Deposit } from "../src/interfaces";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract, hubPool: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
@@ -107,7 +102,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
       l1Token,
       depositor,
       destinationChainId
-    );    
+    );
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit, 0.5);
 
     await spokePoolClient2.update();
@@ -136,7 +131,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
       l1Token,
       depositor,
       destinationChainId
-    );    
+    );
     const fill_1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit_1, 0.5);
 
     const spokePoolClientForDestinationChain = new SpokePoolClient(
@@ -620,7 +615,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
       l1Token,
       depositor,
       destinationChainId
-    );    
+    );
     await buildFill(spokePool_2, erc20_2, depositor, relayer, validDeposit, 0.5);
 
     await spokePoolClient2.update();

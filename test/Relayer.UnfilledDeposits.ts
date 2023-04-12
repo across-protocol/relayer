@@ -5,6 +5,7 @@ import {
   buildDepositStruct,
   signForSpeedUp,
   lastSpyLogIncludes,
+  buildFill,
 } from "./utils";
 import {
   deploySpokePoolWithToken,
@@ -21,6 +22,7 @@ import {
   amountToRelay,
   defaultMinDepositConfirmations,
   DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
+  modifyRelayHelper,
 } from "./constants";
 import { SpokePoolClient, HubPoolClient, MultiCallerClient, TokenClient, AcrossApiClient } from "../src/clients";
 import { MockInventoryClient, MockProfitClient } from "./mocks";
@@ -215,7 +217,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, configStoreClient, l1Token);
     const deposit2Complete = await buildDepositStruct(deposit2, hubPoolClient, configStoreClient, l1Token);
 
-    const fill1 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete);
+    const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1Complete, 0.25);
     await updateAllClients();
     // Validate the relayer correctly computes the unfilled amount.
     expect(
@@ -242,8 +244,8 @@ describe("Relayer: Unfilled Deposits", async function () {
       ]);
 
     // Partially fill the same deposit another two times.
-    const fill2 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete);
-    const fill3 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete);
+    const fill2 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1Complete, 0.25);
+    const fill3 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1Complete, 0.25);
     await updateAllClients();
     // Deposit 1 should now be partially filled by all three fills. This should be correctly reflected.
     const unfilledAmount = deposit1.amount.sub(fill1.fillAmount.add(fill2.fillAmount).add(fill3.fillAmount));
@@ -271,7 +273,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       ]);
 
     // Fill the reminding amount on the deposit. It should thus be removed from the unfilledDeposits list.
-    const fill4 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete, unfilledAmount);
+    const fill4 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1Complete, 1);
     expect(fill4.totalFilledAmount).to.equal(deposit1.amount); // should be 100% filled at this point.
     await updateAllClients();
     expect(
@@ -298,7 +300,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, configStoreClient, l1Token);
 
     // Partially fill the deposit, incorrectly by setting the wrong deposit ID.
-    await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, { ...deposit1Complete, depositId: 1337 });
+    await buildFill(spokePool_2, erc20_2, depositor, relayer, { ...deposit1Complete, depositId: 1337 }, 0.25);
     await updateAllClients();
     // The deposit should show up as unfilled, since the fill was incorrectly applied to the wrong deposit.
     expect(
@@ -335,8 +337,22 @@ describe("Relayer: Unfilled Deposits", async function () {
     // update fee before either deposit is filled
     const newRelayFeePct = toBNWei(0.1337);
     for (const deposit of [deposit1, deposit2]) {
-      const speedUpSignature = await signForSpeedUp(depositor, deposit, newRelayFeePct);
-      await spokePool_1.speedUpDeposit(depositor.address, newRelayFeePct, deposit.depositId, speedUpSignature);
+      const speedUpSignature = await modifyRelayHelper(
+        newRelayFeePct,
+        deposit.depositId,
+        deposit.originChainId!.toString(),
+        depositor,
+        deposit.recipient,
+        "0x"
+      );
+      await spokePool_1.speedUpDeposit(
+        depositor.address,
+        newRelayFeePct,
+        deposit.depositId,
+        deposit.recipient,
+        "0x",
+        speedUpSignature.signature
+      );
     }
     await spokePoolClient_1.update();
 
@@ -374,7 +390,7 @@ describe("Relayer: Unfilled Deposits", async function () {
   it("Does not double fill deposit when updating fee after fill", async function () {
     const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, configStoreClient, l1Token);
-    const fill1 = await fillWithRealizedLpFeePct(spokePool_2, relayer, depositor, deposit1Complete);
+    const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1Complete, 0.25);
     await updateAllClients();
     expect(
       getUnfilledDeposits(
@@ -395,10 +411,30 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     // Speed up deposit, and check that unfilled amount is still the same.
     const newRelayerFeePct = toBNWei(0.1337);
-    const speedUpSignature = await signForSpeedUp(depositor, deposit1, newRelayerFeePct);
-    await spokePool_1.speedUpDeposit(depositor.address, newRelayerFeePct, deposit1.depositId, speedUpSignature);
+    const speedUpSignature = await modifyRelayHelper(
+      newRelayerFeePct,
+      deposit1.depositId,
+      deposit1.originChainId!.toString(),
+      depositor,
+      deposit1.recipient,
+      "0x"
+    );
+    await spokePool_1.speedUpDeposit(
+      depositor.address,
+      newRelayerFeePct,
+      deposit1.depositId,
+      deposit1.recipient,
+      "0x",
+      speedUpSignature.signature
+    );
     await updateAllClients();
-    const depositWithSpeedUp = { ...deposit1Complete, newRelayerFeePct, speedUpSignature };
+    const depositWithSpeedUp = {
+      ...deposit1Complete,
+      newRelayerFeePct,
+      newRecipient: deposit1.recipient,
+      newMessage: "0x",
+      speedUpSignature: speedUpSignature.signature,
+    };
     expect(
       getUnfilledDeposits(
         relayerInstance.clients.spokePoolClients,
@@ -422,13 +458,13 @@ describe("Relayer: Unfilled Deposits", async function () {
     const depositComplete = await buildDepositStruct(deposit, hubPoolClient, configStoreClient, l1Token);
     // Send a fill with a different relayer fee pct from the deposit's. This fill should be considered an invalid fill
     // and getUnfilledDeposits should log it.
-    const fill = await fillWithRealizedLpFeePct(
+    const fill = await buildFill(
       spokePool_2,
-      relayer,
+      erc20_2,
       depositor,
-      depositComplete,
-      amountToRelay,
-      toBN(2)
+      relayer,
+      { ...depositComplete, relayerFeePct: toBN(2) },
+      0.25
     );
     await updateAllClients();
 
