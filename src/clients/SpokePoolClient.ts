@@ -556,7 +556,6 @@ export class SpokePoolClient {
       // This failure only occurs if the RPC searchConfig is miscomputed, and has only been seen in the hardhat test
       // environment. Normal failures will throw instead. This is therefore an unfortunate workaround until we can
       // understand why we see this in test. @todo: Resolve.
-      this.isUpdated = true;
       return;
     }
 
