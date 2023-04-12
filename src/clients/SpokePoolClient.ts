@@ -213,21 +213,13 @@ export class SpokePoolClient {
       return deposit;
     }
 
-    // Always update the following fields of the deposit to the latest speed up params:
-    const updatedDeposit = {
-      ...deposit,
-    };
-    if (speedupsForDeposit.length > 0) {
-      const latestSpeedUp = speedupsForDeposit[speedupsForDeposit.length - 1];
-      updatedDeposit.recipient = latestSpeedUp.updatedRecipient;
-      updatedDeposit.message = latestSpeedUp.updatedMessage;
-    }
-
-    // Return deposit with the highest updated relayer fee pct.
+    // Return deposit with updated params from the speedup with the highest updated relayer fee pct.
     return {
-      ...updatedDeposit,
+      ...deposit,
       speedUpSignature: maxSpeedUp.depositorSignature,
       newRelayerFeePct: maxSpeedUp.newRelayerFeePct,
+      newRecipient: maxSpeedUp.updatedRecipient, // @dev This should be `newRecipient` eventually, but locally its stuck at this.
+      newMessage: maxSpeedUp.updatedMessage,
     };
   }
 

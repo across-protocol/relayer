@@ -405,7 +405,7 @@ export async function buildDepositStruct(
     ...deposit,
     message: "0x",
     originBlockNumber: await getLastBlockNumber(),
-    blockNumber: 0,    
+    blockNumber: 0,
     destinationToken: hubPoolClient.getDestinationTokenForDeposit(deposit),
     realizedLpFeePct: (await configStoreClient.computeRealizedLpFeePct(deposit, l1TokenForDepositedToken.address))
       .realizedLpFeePct,
@@ -454,6 +454,7 @@ export async function buildFill(
         destinationToken.address,
         deposit.amount,
         deposit.realizedLpFeePct,
+        deposit.relayerFeePct
       ).relayData,
       deposit.amount
         .mul(toBNWei(1).sub(deposit.realizedLpFeePct.add(deposit.relayerFeePct)))
@@ -468,7 +469,9 @@ export async function buildFill(
     spokePool.chainId(),
   ]);
   const lastEvent = events[events.length - 1];
-  if (!lastEvent) throw new Error("No FilledRelay event emitted");
+  if (!lastEvent) {
+    throw new Error("No FilledRelay event emitted");
+  }
   return {
     amount: lastEvent.args.amount,
     totalFilledAmount: lastEvent.args.totalFilledAmount,

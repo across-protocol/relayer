@@ -7,11 +7,18 @@ import {
   setupTokensForWallet,
   getLastBlockTime,
   signForSpeedUp,
+  buildDeposit,
 } from "./utils";
 import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfigureHubPool, winston } from "./utils";
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId } from "./utils";
 import { originChainId, sinon, toBNWei } from "./utils";
-import { amountToLp, defaultMinDepositConfirmations, defaultTokenConfig } from "./constants";
+import {
+  amountToLp,
+  defaultMinDepositConfirmations,
+  defaultTokenConfig,
+  modifyRelayHelper,
+  randomAddress,
+} from "./constants";
 import {
   SpokePoolClient,
   HubPoolClient,
@@ -146,7 +153,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     expect(fillEvents2[0].args.relayerFeePct).to.equal(deposit1.relayerFeePct);
     expect(fillEvents2[0].args.depositor).to.equal(deposit1.depositor);
     expect(fillEvents2[0].args.recipient).to.equal(deposit1.recipient);
-    expect(fillEvents2[0].args.appliedRelayerFeePct).to.equal(deposit1.relayerFeePct);
+    expect(fillEvents2[0].args.updatableRelayData.relayerFeePct).to.equal(deposit1.relayerFeePct);
 
     // There should be no fill events on the origin spoke pool.
     expect((await spokePool_1.queryFilter(spokePool_1.filters.FilledRelay())).length).to.equal(0);
@@ -233,10 +240,65 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
     // "reasonable" block number based off the block time when looking at quote timestamps.
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
-    const deposit1 = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    const deposit1 = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId
+    );
     const newRelayerFeePct = toBNWei(0.1337);
-    const speedUpSignature = await signForSpeedUp(depositor, deposit1, newRelayerFeePct);
-    await spokePool_1.speedUpDeposit(depositor.address, newRelayerFeePct, deposit1.depositId, speedUpSignature);
+    const newMessage = "0x12";
+    const newRecipient = randomAddress();
+    const speedUpSignature = await modifyRelayHelper(
+      newRelayerFeePct,
+      deposit1.depositId,
+      deposit1.originChainId!.toString(),
+      depositor,
+      newRecipient,
+      newMessage
+    );
+
+    const unusedSpeedUp = {
+      relayerFeePct: toBNWei(0.1),
+      message: "0x1212",
+      recipient: randomAddress(),
+    };
+    const unusedSpeedUpSignature = await modifyRelayHelper(
+      unusedSpeedUp.relayerFeePct,
+      deposit1.depositId,
+      deposit1.originChainId!.toString(),
+      depositor,
+      unusedSpeedUp.recipient,
+      unusedSpeedUp.message
+    );
+    // Send 3 speed ups. Check that only the one with the higher updated relayer fee % is used.
+    await spokePool_1.speedUpDeposit(
+      depositor.address,
+      unusedSpeedUp.relayerFeePct,
+      deposit1.depositId,
+      unusedSpeedUp.recipient,
+      unusedSpeedUp.message,
+      unusedSpeedUpSignature.signature
+    );
+    await spokePool_1.speedUpDeposit(
+      depositor.address,
+      newRelayerFeePct,
+      deposit1.depositId,
+      newRecipient,
+      newMessage,
+      speedUpSignature.signature
+    );
+    await spokePool_1.speedUpDeposit(
+      depositor.address,
+      unusedSpeedUp.relayerFeePct,
+      deposit1.depositId,
+      unusedSpeedUp.recipient,
+      unusedSpeedUp.message,
+      unusedSpeedUpSignature.signature
+    );
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(lastSpyLogIncludes(spy, "Filling deposit")).to.be.true;
@@ -258,7 +320,9 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     // This specific line differs from the above test: the emitted event's appliedRelayerFeePct is
     // now !== relayerFeePct.
-    expect(fillEvents2[0].args.appliedRelayerFeePct).to.equal(newRelayerFeePct);
+    expect(fillEvents2[0].args.updatableRelayData.relayerFeePct).to.equal(newRelayerFeePct);
+    expect(fillEvents2[0].args.updatableRelayData.recipient).to.equal(newRecipient);
+    expect(fillEvents2[0].args.updatableRelayData.message).to.equal(newMessage);
 
     // There should be no fill events on the origin spoke pool.
     expect((await spokePool_1.queryFilter(spokePool_1.filters.FilledRelay())).length).to.equal(0);
