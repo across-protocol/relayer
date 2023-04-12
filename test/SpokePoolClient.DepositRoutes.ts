@@ -1,5 +1,5 @@
 import { expect, ethers, Contract, SignerWithAddress, getContractFactory, createSpyLogger } from "./utils";
-import { randomAddress, enableRoutes, zeroAddress, originChainId, destinationChainId } from "./utils";
+import { randomAddress, enableRoutes, zeroAddress, originChainId, destinationChainId, hre } from "./utils";
 
 import { SpokePoolClient } from "../src/clients"; // tested
 
@@ -12,11 +12,13 @@ describe("SpokePoolClient: Deposit Routes", async function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
     // Deploy a minimal spokePool, without using the fixture as this does some route enabling within it.
-    spokePool = await (
-      await getContractFactory("MockSpokePool", owner)
-    ).deploy(owner.address, owner.address, zeroAddress, zeroAddress);
+    spokePool = await hre.upgrades.deployProxy(await getContractFactory("_MockSpokePool", owner), [
+      0,
+      owner.address,
+      owner.address,
+      zeroAddress,
+    ]);
     const deploymentBlock = await spokePool.provider.getBlockNumber();
-
     spokePoolClient = new SpokePoolClient(createSpyLogger().spyLogger, spokePool, null, originChainId, deploymentBlock);
   });
 
