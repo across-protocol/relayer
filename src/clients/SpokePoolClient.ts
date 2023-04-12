@@ -59,6 +59,7 @@ const FILL_DEPOSIT_COMPARISON_KEYS = [
   "recipient",
   "destinationChainId",
   "destinationToken",
+  "message",
 ] as const;
 
 export class SpokePoolClient {
@@ -101,7 +102,7 @@ export class SpokePoolClient {
       FundsDeposited: this.spokePool.filters.FundsDeposited(),
       RequestedSpeedUpDeposit: this.spokePool.filters.RequestedSpeedUpDeposit(),
       FilledRelay: this.spokePool.filters.FilledRelay(),
-      // RefundRequested: this.spokePool.filters.refundRequested(), @todo update contracts-v2
+      // RefundRequested: this.spokePool.filters.refundRequested(), @todo Only used once we implement UBA fee model
       EnabledDepositRoute: this.spokePool.filters.EnabledDepositRoute(),
       TokensBridged: this.spokePool.filters.TokensBridged(),
       RelayedRootBundle: this.spokePool.filters.RelayedRootBundle(),
@@ -201,7 +202,9 @@ export class SpokePoolClient {
   }
 
   appendMaxSpeedUpSignatureToDeposit(deposit: DepositWithBlock): DepositWithBlock {
-    const maxSpeedUp = this.speedUps[deposit.depositor]?.[deposit.depositId]?.reduce((prev, current) =>
+    const speedupsForDeposit = this.speedUps[deposit.depositor]?.[deposit.depositId];
+
+    const maxSpeedUp = speedupsForDeposit?.reduce((prev, current) =>
       prev.newRelayerFeePct.gt(current.newRelayerFeePct) ? prev : current
     );
 
@@ -209,8 +212,21 @@ export class SpokePoolClient {
     if (!maxSpeedUp || maxSpeedUp.newRelayerFeePct.lte(deposit.relayerFeePct)) {
       return deposit;
     }
+
+    // Always update the following fields of the deposit to the latest speed up params:
+    const updatedDeposit = {
+      ...deposit
+    };
+    if (speedupsForDeposit.length > 0) {
+      const latestSpeedUp = speedupsForDeposit[speedupsForDeposit.length - 1];
+      updatedDeposit.recipient = latestSpeedUp.updatedRecipient;
+      updatedDeposit.message = latestSpeedUp.updatedMessage;
+    }
+
+
+    // Return deposit with the highest updated relayer fee pct.
     return {
-      ...deposit,
+      ...updatedDeposit,
       speedUpSignature: maxSpeedUp.depositorSignature,
       newRelayerFeePct: maxSpeedUp.newRelayerFeePct,
     };
@@ -394,9 +410,18 @@ export class SpokePoolClient {
       );
       const query = await paginatedEventQuery(
         this.spokePool,
-        // TODO: When SpokePool V2 is deployed we can begin to filter on fill.depositId as well as fill.depositor,
-        // which should optimize the RPC request.
-        this.spokePool.filters.FundsDeposited(null, null, null, null, null, null, null, null, fill.depositor),
+        this.spokePool.filters.FundsDeposited(
+          null,
+          null,
+          fill.destinationChainId,
+          null,
+          fill.depositId,
+          null,
+          null,
+          null,
+          fill.depositor,
+          null
+        ),
         {
           fromBlock: searchBounds.low,
           toBlock: searchBounds.high,
@@ -412,8 +437,15 @@ export class SpokePoolClient {
             ` between ${srcChain} blocks [${searchBounds.low}, ${searchBounds.high}]`
         );
       }
-      const partialDeposit = spreadEventWithBlockNumber(event) as DepositWithBlock;
-      const { realizedLpFeePct, quoteBlock: quoteBlockNumber } = await this.computeRealizedLpFeePct(event);
+      const processedEvent: {
+        originChainId: number;
+        originToken: string;
+        destinationChainId: number;
+      } =
+        spreadEventWithBlockNumber(event) as DepositWithBlock;
+      const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number } = await this.computeRealizedLpFeePct(
+        event
+      );
       // Append the realizedLpFeePct.
       // Append destination token and realized lp fee to deposit.
       deposit = {
@@ -454,21 +486,21 @@ export class SpokePoolClient {
     const query = await paginatedEventQuery(
       this.spokePool,
       this.spokePool.filters.FilledRelay(
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        matchingFill.depositor,
-        undefined,
-        undefined
+        undefined, // amount
+        undefined, // totalFilledAmount
+        undefined, // fillAmount
+        undefined, // repaymentChainId
+        matchingFill.originChainId, // originChainId
+        undefined, // destinationChainId
+        undefined, // relayerFeePct
+        undefined, // realizedLpFeePct
+        matchingFill.depositId, // depositId
+        undefined, // destinationToken 
+        undefined, // relayer
+        matchingFill.depositor, // depositor
+        undefined, // recipient
+        undefined, // message
+        undefined // updatableRelayData
       ),
       searchConfig
     );
@@ -633,9 +665,14 @@ export class SpokePoolClient {
         const deposit: DepositWithBlock = {
           ...partialDeposit,
           realizedLpFeePct: dataForQuoteTime[index].realizedLpFeePct,
-          destinationToken: this.getDestinationTokenForDeposit(partialDeposit),
-          quoteBlockNumber: dataForQuoteTime[index].quoteBlock,
-        };
+          destinationToken: this.getDestinationTokenForDeposit(processedEvent as {
+            originChainId: number;
+            originToken: string;
+            destinationChainId: number;
+          }),
+          blockNumber: dataForQuoteTime[index].quoteBlock,
+          originBlockNumber: event.blockNumber,
+        } as DepositWithBlock;
 
         assign(this.depositHashes, [this.getDepositHash(deposit)], deposit);
         assign(this.deposits, [deposit.destinationChainId], [deposit]);
