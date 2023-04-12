@@ -217,7 +217,7 @@ export class SpokePoolClient {
 
     // Return deposit with updated params from the speedup with the highest updated relayer fee pct.
     return {
-      ...deposit,
+      ...updatedDeposit,
       speedUpSignature: maxSpeedUp.depositorSignature,
       newRelayerFeePct: maxSpeedUp.newRelayerFeePct,
       newRecipient: (maxSpeedUp as any).updatedRecipient, // @dev This should be `newRecipient` eventually, but locally its stuck at this.
@@ -437,7 +437,8 @@ export class SpokePoolClient {
         originChainId: number;
         originToken: string;
         destinationChainId: number;
-      } = spreadEventWithBlockNumber(event) as DepositWithBlock;
+      } =
+        spreadEventWithBlockNumber(event) as DepositWithBlock;
       const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number } = await this.computeRealizedLpFeePct(
         event
       );
