@@ -164,7 +164,7 @@ export async function deployAndConfigureHubPool(
     await utils.getContractFactory("HubPool", signer)
   ).deploy(lpTokenFactory.address, finderAddress, zeroAddress, timerAddress);
 
-  const mockAdapter = await (await utils.getContractFactory("Ethereum_Adapter", signer)).deploy();
+  const mockAdapter = await (await utils.getContractFactory("Mock_Adapter", signer)).deploy();
 
   for (const spokePool of spokePools) {
     await hubPool.setCrossChainContracts(spokePool.l2ChainId, mockAdapter.address, spokePool.spokePool.address);
