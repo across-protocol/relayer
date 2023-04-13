@@ -63,7 +63,7 @@ describe("SpokePoolClient: Refund Requests", async function () {
   it("Correctly fetches refund requests", async function () {
     const refundRequests: RefundRequestWithBlock[] = [];
     for (let _idx = 0; _idx < 5; ++_idx) {
-      const blockNumber = random(deploymentBlock, spokePoolClient.latestBlockNumber as number);
+      const blockNumber = random(deploymentBlock, spokePoolClient.latestBlockNumber);
       refundRequests.push({ ...requestBlockTemplate, depositId: random(1, 100), blockNumber });
       ++requestBlockTemplate.transactionIndex;
     }
@@ -80,8 +80,7 @@ describe("SpokePoolClient: Refund Requests", async function () {
   });
 
   it("Correctly filters out unwanted refund requests based on blockNumber", async function () {
-    expect(spokePoolClient.latestBlockNumber).to.not.be.undefined; // type guard
-    const latestBlockNumber = spokePoolClient.latestBlockNumber as number;
+    const latestBlockNumber = spokePoolClient.latestBlockNumber;
     expect(latestBlockNumber - deploymentBlock).to.be.at.least(3);
 
     const refundRequests: RefundRequestWithBlock[] = [];

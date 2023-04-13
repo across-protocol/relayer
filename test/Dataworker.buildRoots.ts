@@ -712,7 +712,7 @@ describe("Dataworker: Build merkle roots", async function () {
         spokePool_2,
         configStoreClient,
         destinationChainId,
-        spokePoolClients[destinationChainId].spokePoolDeploymentBlock,
+        spokePoolClients[destinationChainId].deploymentBlock,
         { fromBlock: fill1Block + 1 } // Set fromBlock to now, after first fill for same deposit as the slowFill1
       );
       await shortRangeSpokePoolClient.update();
@@ -887,7 +887,7 @@ describe("Dataworker: Build merkle roots", async function () {
         spokePool_2,
         configStoreClient,
         destinationChainId,
-        spokePoolClients[destinationChainId].spokePoolDeploymentBlock,
+        spokePoolClients[destinationChainId].deploymentBlock,
         { fromBlock: fill2Block + 1 }
       );
 

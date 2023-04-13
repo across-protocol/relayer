@@ -155,7 +155,7 @@ export function blockRangesAreInvalidForSpokeClients(
 
     // Note: Math.max the from block with the deployment block of the spoke pool to handle the edge case for the first
     // bundle that set its start blocks equal 0.
-    const bundleRangeFromBlock = Math.max(spokePoolClients[chainId].spokePoolDeploymentBlock, blockRangeForChain[0]);
+    const bundleRangeFromBlock = Math.max(spokePoolClients[chainId].deploymentBlock, blockRangeForChain[0]);
     return (
       bundleRangeFromBlock <= latestInvalidBundleStartBlock[chainId] || bundleRangeToBlock > clientLastBlockQueried
     );
