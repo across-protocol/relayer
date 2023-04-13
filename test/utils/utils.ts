@@ -469,7 +469,7 @@ export async function buildFill(
     spokePool.chainId(),
   ]);
   const lastEvent = events[events.length - 1];
-  if (!lastEvent) {
+  if (!lastEvent?.args) {
     throw new Error("No FilledRelay event emitted");
   }
   return {
