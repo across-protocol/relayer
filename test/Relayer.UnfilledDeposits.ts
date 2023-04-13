@@ -521,28 +521,3 @@ async function updateAllClients() {
   await spokePoolClient_1.update();
   await spokePoolClient_2.update();
 }
-
-async function fillWithRealizedLpFeePct(
-  spokePool,
-  relayer,
-  depositor,
-  deposit,
-  relayAmount = amountToRelay,
-  relayerFeePct: BigNumber = undefined
-) {
-  const realizedLpFeePctForDeposit = (await configStoreClient.computeRealizedLpFeePct(deposit, l1Token.address))
-    .realizedLpFeePct;
-  return await fillRelay(
-    spokePool,
-    deposit.destinationToken,
-    depositor,
-    depositor,
-    relayer,
-    deposit.depositId,
-    deposit.originChainId,
-    deposit.amount,
-    relayAmount,
-    realizedLpFeePctForDeposit,
-    relayerFeePct
-  );
-}

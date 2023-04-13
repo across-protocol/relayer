@@ -9,7 +9,6 @@ import "@across-protocol/contracts-v2/contracts/test/MockSpokePool.sol";
  */
 contract _MockSpokePool is SpokePool {
     uint256 private chainId_;
-    uint256 private currentTime;
 
     function initialize(
         uint32 _initialDepositId,
@@ -18,17 +17,8 @@ contract _MockSpokePool is SpokePool {
         address _wethAddress
     ) public initializer {
         __SpokePool_init(_initialDepositId, _crossDomainAdmin, _hubPool, _wethAddress);
-        currentTime = block.timestamp; // solhint-disable-line not-rely-on-time
     }
-
-    function setCurrentTime(uint256 time) external {
-        currentTime = time;
-    }
-
-    function getCurrentTime() public view override returns (uint256) {
-        return currentTime;
-    }
-
+    
     // solhint-disable-next-line no-empty-blocks
     function _bridgeTokensToHubPool(RelayerRefundLeaf memory relayerRefundLeaf) internal override {}
 

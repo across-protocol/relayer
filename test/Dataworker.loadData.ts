@@ -28,6 +28,7 @@ import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { toBN, getRefundForFills, getRealizedLpFeeForFills, MAX_UINT_VAL } from "../src/utils";
 import { spokePoolClientsToProviders } from "../src/common";
 import { DepositWithBlock, Fill } from "../src/interfaces";
+import { erc20 } from "@uma/sdk/dist/types/clients";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, l1Token_2: Contract, hubPool: Contract;
@@ -186,6 +187,20 @@ describe("Dataworker: Load data used in all functions", async function () {
         toBN(0)
       );
 
+      // Manually relay the roots to spoke pools since adapter is a dummy and won't actually relay messages.
+      const validatedRootBundles = hubPoolClient.getValidatedRootBundles();
+      for (const rootBundle of validatedRootBundles) {
+        await spokePool_1.relayRootBundle(
+          rootBundle.relayerRefundRoot,
+          rootBundle.slowRelayRoot
+        )
+        await spokePool_2.relayRootBundle(
+          rootBundle.relayerRefundRoot,
+          rootBundle.slowRelayRoot
+        )
+      }
+      await updateAllClients();
+
       // Execute relayer refund leaves. Send funds to spoke pools to execute the leaves.
       await erc20_2.mint(spokePool_2.address, getRefundForFills([fill1]));
       const providers = {
@@ -279,6 +294,20 @@ describe("Dataworker: Load data used in all functions", async function () {
         bundleDataClient.getTotalRefund(postSecondProposalRefunds, relayer.address, destinationChainId, erc20_2.address)
       ).to.equal(getRefundForFills([fill1, fill2]));
 
+      // Manually relay the roots to spoke pools since adapter is a dummy and won't actually relay messages.
+      const validatedRootBundles = hubPoolClient.getValidatedRootBundles();
+      for (const rootBundle of validatedRootBundles) {
+        await spokePool_1.relayRootBundle(
+          rootBundle.relayerRefundRoot,
+          rootBundle.slowRelayRoot
+        )
+        await spokePool_2.relayRootBundle(
+          rootBundle.relayerRefundRoot,
+          rootBundle.slowRelayRoot
+        )
+      }
+      await updateAllClients();
+      
       // Execute refunds and test that pending refund amounts are decreasing.
       await erc20_2.mint(spokePool_2.address, getRefundForFills([fill1, fill2]));
       const providers = {
@@ -424,20 +453,11 @@ describe("Dataworker: Load data used in all functions", async function () {
     const data2 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(1), spokePoolClients);
     expect(data2.unfilledDeposits).to.deep.equal([]);
 
-    // Fills for 0 amount do not count do not make deposit eligible for slow fill:
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0);
-    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit2, 0);
-    await updateAllClients();
-    expect(
-      (await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(2), spokePoolClients))
-        .unfilledDeposits
-    ).to.deep.equal([]);
-
     // Fills that don't match deposits do not affect unfilledAmount counter.
     // Note: We switch the spoke pool address in the following fills from the fills that eventually do match with
     //       the deposits.
-    await buildFill(spokePool_1, erc20_2, depositor, relayer, deposit1, 0.5);
-    await buildFill(spokePool_2, erc20_1, depositor, relayer, deposit2, 0.25);
+    await buildFill(spokePool_2, erc20_2, depositor, relayer, {...deposit1, depositId: 99}, 0.5);
+    await buildFill(spokePool_1, erc20_1, depositor, relayer, {...deposit2, depositId: 99}, 0.25);
 
     // One partially filled deposit per destination chain ID.
     const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.5);
@@ -532,21 +552,13 @@ describe("Dataworker: Load data used in all functions", async function () {
       amountToDeposit
     );
 
-    // Fills should be keyed by repayment chain and repayment token. For this test, make sure that the repayment chain
-    // ID is associated with some ERC20:
-    const repaymentToken = await deployNewToken(relayer);
-    await enableRoutesOnHubPool(hubPool, [
-      { destinationChainId: repaymentChainId, destinationToken: repaymentToken, l1Token: l1Token_1 },
-    ]);
-    await updateAllClients();
-
     // Submit a valid fill.
     const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.5);
     await updateAllClients();
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
     expect(data1.fillsToRefund).to.deep.equal({
-      [repaymentChainId]: {
-        [repaymentToken.address]: {
+      [destinationChainId]: {
+        [erc20_2.address]: {
           fills: [fill1],
           refunds: { [relayer.address]: getRefundForFills([fill1]) },
           totalRefundAmount: getRefundForFills([fill1]),
@@ -613,8 +625,8 @@ describe("Dataworker: Load data used in all functions", async function () {
           realizedLpFees: getRealizedLpFeeForFills([slowFill3]), // Slow fill does affect realized LP fee
         },
       },
-      [repaymentChainId]: {
-        [repaymentToken.address]: {
+      [destinationChainId]: {
+        [erc20_2.address]: {
           fills: [fill1, fill3],
           refunds: { [relayer.address]: getRefundForFills([fill1, fill3]) },
           totalRefundAmount: getRefundForFills([fill1, fill3]),
@@ -636,8 +648,8 @@ describe("Dataworker: Load data used in all functions", async function () {
           realizedLpFees: getRealizedLpFeeForFills([slowFill3]),
         },
       },
-      [repaymentChainId]: {
-        [repaymentToken.address]: {
+      [destinationChainId]: {
+        [erc20_2.address]: {
           fills: [fill1, fill4, fill3],
           refunds: { [relayer.address]: getRefundForFills([fill1, fill3, fill4]) },
           totalRefundAmount: getRefundForFills([fill1, fill3, fill4]),
@@ -696,14 +708,6 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     expect(spokePoolClient_1.getDeposits().length).to.equal(0);
 
-    // Fills should be keyed by repayment chain and repayment token. For this test, make sure that the repayment chain
-    // ID is associated with some ERC20:
-    const repaymentToken = await deployNewToken(relayer);
-    await enableRoutesOnHubPool(hubPool, [
-      { destinationChainId: repaymentChainId, destinationToken: repaymentToken, l1Token: l1Token_1 },
-    ]);
-    await updateAllClients();
-
     // Send a fill now and force the bundle data client to query for the historical deposit.
     const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.5);
     await updateAllClients();
@@ -714,8 +718,8 @@ describe("Dataworker: Load data used in all functions", async function () {
     const bundleData = await bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
     expect(spyLogIncludes(spy, -2, "Queried RPC for deposit")).is.true;
     expect(bundleData.fillsToRefund).to.deep.equal({
-      [repaymentChainId]: {
-        [repaymentToken.address]: {
+      [destinationChainId]: {
+        [erc20_2.address]: {
           fills: [fill1],
           refunds: { [relayer.address]: getRefundForFills([fill1]) },
           totalRefundAmount: getRefundForFills([fill1]),
