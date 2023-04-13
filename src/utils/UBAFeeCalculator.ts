@@ -33,7 +33,7 @@ export default class UBAFeeCalculator {
     // Recalculate the last validated running balance
     this.lastValidatedRunningBalance = await this.calculateRunningBalance();
     // Resolve the running balance
-    this.runningBalance = this.getRunningBalance();
+    this.runningBalance = this.calculateRecentRunningBalance();
   }
 
   /**
@@ -54,6 +54,7 @@ export default class UBAFeeCalculator {
     // Resolve the new modified balance
     const modifiedBalance = this.runningBalance.add(amountToModify);
     // Return the running balance
+    // TODO: Add the fee calculation
     return modifiedBalance;
   }
 
@@ -61,10 +62,10 @@ export default class UBAFeeCalculator {
    * @description Get the running balance
    * @returns Promise<BigNumber>
    * @private
-   * @method getRunningBalance
+   * @method calculateRecentRunningBalance
    * @memberof UBAFeeCalculator
    */
-  private getRunningBalance(): BigNumber {
+  private calculateRecentRunningBalance(): BigNumber {
     // Reduce over the recent request flow and add the amount to
     // the last validated running balance. If there is no last validated running balance
     // then set the initial value to 0
