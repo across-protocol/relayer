@@ -31,14 +31,15 @@ import {
   Fill,
   FillWithBlock,
   RefundRequestWithBlock,
+  RelayerRefundExecutionWithBlock,
+  RootBundleRelayWithBlock,
   SpeedUp,
   TokensBridged,
   FundsDepositedEvent,
 } from "../interfaces";
-import { RootBundleRelayWithBlock, RelayerRefundExecutionWithBlock } from "../interfaces";
 import { HubPoolClient } from ".";
 
-type SpokePoolUpdate = {
+export type SpokePoolUpdate = {
   success: boolean;
   currentTime: number;
   firstDepositId: number;
