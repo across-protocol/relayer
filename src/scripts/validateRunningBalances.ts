@@ -222,7 +222,8 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
                   .getFillsForOriginChain(slowFillForChain.relayData.originChainId)
                   .filter(
                     (f) =>
-                      f.blockNumber <= bundleEndBlockForChain.toNumber() && f.depositId === slowFillForChain.relayData.depositId
+                      f.blockNumber <= bundleEndBlockForChain.toNumber() &&
+                      f.depositId === slowFillForChain.relayData.depositId
                   );
                 const amountSentForSlowFillLeftUnexecuted = slowFillForChain.relayData.amount.sub(
                   sortEventsDescending(fillsForSameDeposit)[0].totalFilledAmount
@@ -265,7 +266,10 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
                 sortEventsDescending(fillsForSameDeposit)[0].totalFilledAmount
               );
               if (amountSentForSlowFill.gt(0)) {
-                const deductionForSlowFill = getRefund(amountSentForSlowFill, slowFillForChain.relayData.realizedLpFeePct);
+                const deductionForSlowFill = getRefund(
+                  amountSentForSlowFill,
+                  slowFillForChain.relayData.realizedLpFeePct
+                );
                 mrkdwn += `\n\t\t- subtracting amount sent for slow fill: ${fromWei(
                   deductionForSlowFill.toString(),
                   decimals
