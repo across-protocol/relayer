@@ -2,6 +2,22 @@ import { BigNumber, ethers } from "ethers";
 import { UbaFlow, UbaRunningRequest, isUbaInflow, isUbaOutflow } from "../interfaces";
 import { toBN } from "./FormattingUtils";
 
+// This file holds the UBA Fee Calculator class. The goal of this class is to keep track
+// of the running balance of a given spoke pool by fetching the most recent confirmed bundle
+// and computing the inflows and outflows to find the running balance.
+// The class can use this running balance to calculate the fee for a given action (request or refund)
+//
+// Example:
+// const feeCalculator = new UBAFeeCalculator(provider, 123456);
+// await feeCalculator.recalculateRunningBalance(); // <- This will fetch the most recent confirmed bundle and compute the running balance
+// const fee1 = await feeCalculator.getUBAFee({ amount: toBN(100), type: "deposit" }); // <- This will calculate the fee for a given action while taking into account the running balance ( will not fetch the most recent confirmed bundle )
+// console.log(fee1.toString());
+// await feeCalculator.recalculateRunningBalance(); // <- This will fetch the most recent confirmed bundle and compute the running balance
+// const fee2 = await feeCalculator.getUBAFee({ amount: toBN(100), type: "withdraw" }); // <- This will calculate the fee for a given action while taking into account the running balance ( will not fetch the most recent confirmed bundle )
+// console.log(fee2.toString());
+// const fee3 = await feeCalculator.getUBAFee({ amount: toBN(100), type: "deposit" }); // <- This will calculate the fee for a given action while taking into account the running balance ( will not fetch the most recent confirmed bundle )
+// console.log(fee3.toString());
+
 /**
  * @file UBAFeeCalculator.ts
  * @description UBA Fee Calculator
