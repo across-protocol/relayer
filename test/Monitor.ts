@@ -237,14 +237,8 @@ describe("Monitor", async function () {
     // Manually relay the roots to spoke pools since adapter is a dummy and won't actually relay messages.
     const validatedRootBundles = hubPoolClient.getValidatedRootBundles();
     for (const rootBundle of validatedRootBundles) {
-      await spokePool_1.relayRootBundle(
-        rootBundle.relayerRefundRoot,
-        rootBundle.slowRelayRoot
-      )
-      await spokePool_2.relayRootBundle(
-        rootBundle.relayerRefundRoot,
-        rootBundle.slowRelayRoot
-      )
+      await spokePool_1.relayRootBundle(rootBundle.relayerRefundRoot, rootBundle.slowRelayRoot);
+      await spokePool_2.relayRootBundle(rootBundle.relayerRefundRoot, rootBundle.slowRelayRoot);
     }
     await updateAllClients();
 

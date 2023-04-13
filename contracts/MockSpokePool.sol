@@ -18,7 +18,7 @@ contract _MockSpokePool is SpokePool {
     ) public initializer {
         __SpokePool_init(_initialDepositId, _crossDomainAdmin, _hubPool, _wethAddress);
     }
-    
+
     // solhint-disable-next-line no-empty-blocks
     function _bridgeTokensToHubPool(RelayerRefundLeaf memory relayerRefundLeaf) internal override {}
 
@@ -32,5 +32,4 @@ contract _MockSpokePool is SpokePool {
     function setChainId(uint256 _chainId) public {
         chainId_ = _chainId;
     }
-
 }

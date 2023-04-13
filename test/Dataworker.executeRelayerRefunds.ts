@@ -1,16 +1,15 @@
-import { buildFillForRepaymentChain, getDefaultBlockRange } from "./utils";
+import { buildFillForRepaymentChain } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit } from "./utils";
 import { HubPoolClient, AcrossConfigStoreClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
 import { amountToDeposit, destinationChainId } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import { EMPTY_MERKLE_ROOT, MAX_UINT_VAL } from "../src/utils";
+import { MAX_UINT_VAL } from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
-import { spokePoolClientsToProviders, updateSpokePoolClients } from "../src/common";
+import { spokePoolClientsToProviders } from "../src/common";
 import { BalanceAllocator } from "../src/clients/BalanceAllocator";
-import { getBlockRangeForChain } from "../src/dataworker/DataworkerUtils";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, hubPool: Contract;
@@ -114,14 +113,8 @@ describe("Dataworker: Execute relayer refunds", async function () {
     await updateAllClients();
     const validatedRootBundles = hubPoolClient.getValidatedRootBundles();
     for (const rootBundle of validatedRootBundles) {
-      await spokePool_1.relayRootBundle(
-        rootBundle.relayerRefundRoot,
-        rootBundle.slowRelayRoot
-      )
-      await spokePool_2.relayRootBundle(
-        rootBundle.relayerRefundRoot,
-        rootBundle.slowRelayRoot
-      )
+      await spokePool_1.relayRootBundle(rootBundle.relayerRefundRoot, rootBundle.slowRelayRoot);
+      await spokePool_2.relayRootBundle(rootBundle.relayerRefundRoot, rootBundle.slowRelayRoot);
     }
     await updateAllClients();
     await dataworkerInstance.executeRelayerRefundLeaves(spokePoolClients, new BalanceAllocator(providers));

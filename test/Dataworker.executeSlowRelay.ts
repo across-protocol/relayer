@@ -113,14 +113,8 @@ describe("Dataworker: Execute slow relays", async function () {
     await updateAllClients();
     const validatedRootBundles = hubPoolClient.getValidatedRootBundles();
     for (const rootBundle of validatedRootBundles) {
-      await spokePool_1.relayRootBundle(
-        rootBundle.relayerRefundRoot,
-        rootBundle.slowRelayRoot
-      )
-      await spokePool_2.relayRootBundle(
-        rootBundle.relayerRefundRoot,
-        rootBundle.slowRelayRoot
-      )
+      await spokePool_1.relayRootBundle(rootBundle.relayerRefundRoot, rootBundle.slowRelayRoot);
+      await spokePool_2.relayRootBundle(rootBundle.relayerRefundRoot, rootBundle.slowRelayRoot);
     }
     await updateAllClients();
     await dataworkerInstance.executeSlowRelayLeaves(spokePoolClients, new BalanceAllocator(providers));

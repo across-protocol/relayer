@@ -3,7 +3,6 @@ import {
   deployAndConfigureHubPool,
   enableRoutesOnHubPool,
   buildDepositStruct,
-  signForSpeedUp,
   lastSpyLogIncludes,
   buildFill,
 } from "./utils";
@@ -15,11 +14,10 @@ import {
   expect,
   toBNWei,
 } from "./utils";
-import { simpleDeposit, fillRelay, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
+import { simpleDeposit, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
 import {
   amountToLp,
   originChainId,
-  amountToRelay,
   defaultMinDepositConfirmations,
   DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
   modifyRelayHelper,
@@ -31,7 +29,6 @@ import { MockInventoryClient, MockProfitClient } from "./mocks";
 import { Relayer } from "../src/relayer/Relayer";
 import { getUnfilledDeposits, toBN, UnfilledDeposit, utf8ToHex } from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
-import { BigNumber } from "ethers";
 import { MockConfigStoreClient } from "./mocks/MockConfigStoreClient";
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 

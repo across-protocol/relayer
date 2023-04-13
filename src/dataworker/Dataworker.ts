@@ -873,7 +873,6 @@ export class Dataworker {
           message: `Evaluating ${rootBundleRelays.length} historical non-empty slow roots relayed to chain ${chainId}`,
         });
 
-
         const slowFillsForChain = client.getFills().filter((fill) => fill.updatableRelayData.isSlowRelay);
         for (const rootBundleRelay of sortEventsAscending(rootBundleRelays)) {
           const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
@@ -960,7 +959,8 @@ export class Dataworker {
           const leavesForChain = leaves.filter((leaf) => leaf.relayData.destinationChainId === Number(chainId));
           const unexecutedLeaves = leavesForChain.filter((leaf) => {
             const executedLeaf = slowFillsForChain.find(
-              (event) => event.originChainId === leaf.relayData.originChainId && event.depositId === leaf.relayData.depositId
+              (event) =>
+                event.originChainId === leaf.relayData.originChainId && event.depositId === leaf.relayData.depositId
             );
 
             // Only return true if no leaf was found in the list of executed leaves.
