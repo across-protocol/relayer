@@ -3,13 +3,13 @@ import * as interfaces from "../interfaces";
 import {
   BigNumberForToken,
   PoolRebalanceLeaf,
-  RelayData,
   RelayerRefundLeaf,
   PendingRootBundle,
   RunningBalances,
   UnfilledDeposit,
   SpokePoolTargetBalance,
   SpokePoolClientsByChain,
+  SlowFillLeaf,
 } from "../interfaces";
 import {
   assign,
@@ -233,7 +233,9 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         // for this slow fill, and the amount filled. If this fill was not a slow fill, then that means the slow fill
         // was never sent, so we need to send the full slow fill back.
         const excess = getRefund(
-          fill.isSlowRelay ? preFeeAmountSentForSlowFill.sub(fill.fillAmount) : preFeeAmountSentForSlowFill,
+          fill.updatableRelayData.isSlowRelay
+            ? preFeeAmountSentForSlowFill.sub(fill.fillAmount)
+            : preFeeAmountSentForSlowFill,
           fill.realizedLpFeePct
         );
         if (excess.eq(toBN(0))) {
@@ -559,24 +561,25 @@ export function generateMarkdownForRootBundle(
 
   let slowRelayLeavesPretty = "";
   slowRelayLeaves.forEach((leaf, index) => {
-    const decimalsForDestToken = hubPoolClient.getTokenInfo(leaf.destinationChainId, leaf.destinationToken).decimals;
+    const decimalsForDestToken = hubPoolClient.getTokenInfo(leaf.relayData.destinationChainId, leaf.relayData.destinationToken).decimals;
     // Shorten keys for ease of reading from Slack.
-    delete leaf.leafId;
-    leaf.originChain = leaf.originChainId;
-    leaf.destinationChain = leaf.destinationChainId;
-    leaf.depositor = shortenHexString(leaf.depositor);
-    leaf.recipient = shortenHexString(leaf.recipient);
-    leaf.destToken = convertTokenAddressToSymbol(leaf.destinationChainId, leaf.destinationToken);
-    leaf.amount = convertFromWei(leaf.amount, decimalsForDestToken);
+    leaf.relayData.originChain = leaf.relayData.originChainId;
+    leaf.relayData.destinationChain = leaf.relayData.destinationChainId;
+    leaf.relayData.depositor = shortenHexString(leaf.relayData.depositor);
+    leaf.relayData.recipient = shortenHexString(leaf.relayData.recipient);
+    leaf.relayData.destToken = convertTokenAddressToSymbol(leaf.relayData.destinationChainId, leaf.relayData.destinationToken);
+    leaf.relayData.amount = convertFromWei(leaf.relayData.amount, decimalsForDestToken);
     // Fee decimals is always 18. 1e18 = 100% so 1e16 = 1%.
-    leaf.realizedLpFee = `${formatFeePct(leaf.realizedLpFeePct)}%`;
-    leaf.relayerFee = `${formatFeePct(leaf.relayerFeePct)}%`;
-    delete leaf.destinationToken;
-    delete leaf.realizedLpFeePct;
-    delete leaf.relayerFeePct;
-    delete leaf.originChainId;
-    delete leaf.destinationChainId;
-    slowRelayLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
+    leaf.relayData.realizedLpFee = `${formatFeePct(leaf.relayData.realizedLpFeePct)}%`;
+    leaf.relayData.relayerFee = `${formatFeePct(leaf.relayData.relayerFeePct)}%`;
+    leaf.relayData.payoutAdjustmentPct = `${formatFeePct(leaf.payoutAdjustmentPct)}%`;
+    delete leaf.relayData.destinationToken;
+    delete leaf.relayData.realizedLpFeePct;
+    delete leaf.relayData.relayerFeePct;
+    delete leaf.payoutAdjustmentPct;
+    delete leaf.relayData.originChainId;
+    delete leaf.relayData.destinationChainId;
+    slowRelayLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf.relayData)}`;
   });
 
   const slowRelayMsg = slowRelayLeavesPretty
@@ -594,8 +597,8 @@ export function generateMarkdownForRootBundle(
 
 export function prettyPrintLeaves(
   logger: winston.Logger,
-  tree: MerkleTree<PoolRebalanceLeaf> | MerkleTree<RelayerRefundLeaf> | MerkleTree<RelayData>,
-  leaves: PoolRebalanceLeaf[] | RelayerRefundLeaf[] | RelayData[],
+  tree: MerkleTree<PoolRebalanceLeaf> | MerkleTree<RelayerRefundLeaf> | MerkleTree<SlowFillLeaf>,
+  leaves: PoolRebalanceLeaf[] | RelayerRefundLeaf[] | SlowFillLeaf[],
   logType = "Pool rebalance"
 ): void {
   leaves.forEach((leaf, index) => {

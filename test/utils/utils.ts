@@ -11,7 +11,7 @@ import { amountToDeposit, depositRelayerFeePct, l1TokenTransferThreshold, zeroAd
 import { MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF } from "../constants";
 import { HubPoolClient, AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
 import { SpokePoolClient } from "../../src/clients";
-import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber } from "./index";
+import { deposit, Contract, SignerWithAddress, BigNumber } from "./index";
 import { Deposit, Fill, RunningBalances } from "../../src/interfaces";
 import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
 import { providers } from "ethers";
@@ -479,7 +479,6 @@ export async function buildFill(
     repaymentChainId: Number(lastEvent.args.repaymentChainId),
     originChainId: Number(lastEvent.args.originChainId),
     relayerFeePct: lastEvent.args.relayerFeePct,
-    appliedRelayerFeePct: lastEvent.args.updatableRelayData.relayerFeePct,
     realizedLpFeePct: lastEvent.args.realizedLpFeePct,
     depositId: lastEvent.args.depositId,
     destinationToken: lastEvent.args.destinationToken,
@@ -487,7 +486,13 @@ export async function buildFill(
     depositor: lastEvent.args.depositor,
     recipient: lastEvent.args.recipient,
     message: lastEvent.args.message,
-    isSlowRelay: lastEvent.args.updatableRelayData.isSlowRelay,
+    updatableRelayData: {
+      recipient: lastEvent.args.updatableRelayData[0],
+      message: lastEvent.args.updatableRelayData[1],
+      relayerFeePct: toBN(lastEvent.args.updatableRelayData[2]),
+      isSlowRelay: lastEvent.args.updatableRelayData[3],
+      payoutAdjustmentPct: toBN(lastEvent.args.updatableRelayData[4]),
+    },
     destinationChainId: Number(destinationChainId),
   };
 }
@@ -498,7 +503,9 @@ export async function buildModifiedFill(
   relayer: SignerWithAddress,
   fillToBuildFrom: Fill,
   multipleOfOriginalRelayerFeePct: number,
-  pctOfDepositToFill: number
+  pctOfDepositToFill: number,
+  newRecipient?: string,
+  newMessage?: string
 ): Promise<Fill> {
   const relayDataFromFill = {
     depositor: fillToBuildFrom.depositor,
@@ -512,13 +519,14 @@ export async function buildModifiedFill(
     depositId: fillToBuildFrom.depositId.toString(),
     message: fillToBuildFrom.message,
   };
+
   const { signature } = await utils.modifyRelayHelper(
     fillToBuildFrom.relayerFeePct.mul(multipleOfOriginalRelayerFeePct),
     fillToBuildFrom.depositId.toString(),
     fillToBuildFrom.originChainId.toString(),
     depositor,
-    relayDataFromFill.recipient,
-    relayDataFromFill.message
+    newRecipient ?? relayDataFromFill.recipient,
+    newMessage ?? relayDataFromFill.message
   );
   const updatedRelayerFeePct = fillToBuildFrom.relayerFeePct.mul(multipleOfOriginalRelayerFeePct);
   await spokePool.connect(relayer).fillRelayWithUpdatedDeposit(
@@ -531,7 +539,9 @@ export async function buildModifiedFill(
         .div(toBNWei(1)),
       updatedRelayerFeePct,
       signature,
-      Number(relayDataFromFill.destinationChainId)
+      Number(relayDataFromFill.destinationChainId),
+      newRecipient ?? relayDataFromFill.recipient,
+      newMessage ?? relayDataFromFill.message
     )
   );
   const [events, destinationChainId] = await Promise.all([
@@ -547,7 +557,6 @@ export async function buildModifiedFill(
       repaymentChainId: Number(lastEvent.args.repaymentChainId),
       originChainId: Number(lastEvent.args.originChainId),
       relayerFeePct: lastEvent.args.relayerFeePct,
-      appliedRelayerFeePct: lastEvent.args.updatableRelayData.relayerFeePct,
       realizedLpFeePct: lastEvent.args.realizedLpFeePct,
       depositId: lastEvent.args.depositId,
       destinationToken: lastEvent.args.destinationToken,
@@ -555,7 +564,7 @@ export async function buildModifiedFill(
       message: lastEvent.args.message,
       depositor: lastEvent.args.depositor,
       recipient: lastEvent.args.recipient,
-      isSlowRelay: lastEvent.args.updatableRelayData.isSlowRelay,
+      updatableRelayData: lastEvent.args.updatableRelayData,
       destinationChainId: Number(destinationChainId),
     };
   } else {
@@ -606,14 +615,14 @@ export async function buildFillForRepaymentChain(
       repaymentChainId: Number(lastEvent.args.repaymentChainId),
       originChainId: Number(lastEvent.args.originChainId),
       relayerFeePct: lastEvent.args.relayerFeePct,
-      appliedRelayerFeePct: lastEvent.args.appliedRelayerFeePct,
       realizedLpFeePct: lastEvent.args.realizedLpFeePct,
       depositId: lastEvent.args.depositId,
       destinationToken: lastEvent.args.destinationToken,
       relayer: lastEvent.args.relayer,
+      message: lastEvent.args.message,
       depositor: lastEvent.args.depositor,
       recipient: lastEvent.args.recipient,
-      isSlowRelay: lastEvent.args.isSlowRelay,
+      updatableRelayData: lastEvent.args.updatableRelayData,
       destinationChainId: Number(destinationChainId),
     };
   } else {
@@ -627,15 +636,19 @@ export function buildSlowRelayLeaves(deposits: Deposit[]) {
   return deposits
     .map((_deposit) => {
       return {
-        depositor: _deposit.depositor,
-        recipient: _deposit.recipient,
-        destinationToken: _deposit.destinationToken,
-        amount: _deposit.amount,
-        originChainId: _deposit.originChainId.toString(),
-        destinationChainId: _deposit.destinationChainId.toString(),
-        realizedLpFeePct: _deposit.realizedLpFeePct,
-        relayerFeePct: _deposit.relayerFeePct,
-        depositId: _deposit.depositId.toString(),
+        relayData: {
+          depositor: _deposit.depositor,
+          recipient: _deposit.recipient,
+          destinationToken: _deposit.destinationToken,
+          amount: _deposit.amount,
+          originChainId: _deposit.originChainId.toString(),
+          destinationChainId: _deposit.destinationChainId.toString(),
+          realizedLpFeePct: _deposit.realizedLpFeePct,
+          relayerFeePct: _deposit.relayerFeePct,
+          depositId: _deposit.depositId.toString(),
+          message: _deposit.message,
+        },
+        payoutAdjustmentPct: "0",
       };
     }) // leaves should be ordered by origin chain ID and then deposit ID (ascending).
     .sort((relayA, relayB) => {
@@ -697,15 +710,22 @@ export async function buildSlowFill(
       lastFillForDeposit.relayerFeePct.toString(),
       lastFillForDeposit.depositId.toString(),
       rootBundleId,
+      lastFillForDeposit.message,
+      "0",
       proof
     );
   return {
     ...lastFillForDeposit,
     totalFilledAmount: lastFillForDeposit.amount, // Slow relay always fully fills deposit
     fillAmount: lastFillForDeposit.amount.sub(lastFillForDeposit.totalFilledAmount), // Fills remaining after latest fill for deposit
+    updatableRelayData: {
+      relayerFeePct: toBN(0),
+      isSlowRelay: true,
+      recipient: lastFillForDeposit.recipient,
+      message: lastFillForDeposit.message,
+      payoutAdjustmentPct: toBN(0),
+    },
     repaymentChainId: 0, // Always set to 0 for slow fills
-    appliedRelayerFeePct: toBN(0), // Always set to 0 since there was no relayer
-    isSlowRelay: true,
     relayer: relayer.address, // Set to caller of `executeSlowRelayLeaf`
   };
 }

@@ -1,4 +1,3 @@
-import { baseSpeedUpString } from "./../constants";
 import { ethers, SignerWithAddress, BigNumber } from "@across-protocol/contracts-v2/dist/test-utils";
 
 // This function only works if the signer is the depositor and the recipient, and the updated message is 0x.

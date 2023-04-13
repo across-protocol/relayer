@@ -109,6 +109,20 @@ describe("Dataworker: Execute slow relays", async function () {
     // Should be 1 leaf since this is _only_ a second partial fill repayment and doesn't involve the deposit chain.
     await multiCallerClient.executeTransactionQueue();
 
+    // Manually relay the roots to spoke pools since adapter is a dummy and won't actually relay messages.
+    await updateAllClients();
+    const validatedRootBundles = hubPoolClient.getValidatedRootBundles();
+    for (const rootBundle of validatedRootBundles) {
+      await spokePool_1.relayRootBundle(
+        rootBundle.relayerRefundRoot,
+        rootBundle.slowRelayRoot
+      )
+      await spokePool_2.relayRootBundle(
+        rootBundle.relayerRefundRoot,
+        rootBundle.slowRelayRoot
+      )
+    }
+    await updateAllClients();
     await dataworkerInstance.executeSlowRelayLeaves(spokePoolClients, new BalanceAllocator(providers));
 
     // There should be no slow relays to execute because the spoke doesn't have enough funds.
@@ -121,7 +135,6 @@ describe("Dataworker: Execute slow relays", async function () {
     await updateAllClients();
     await dataworkerInstance.executeSlowRelayLeaves(spokePoolClients, new BalanceAllocator(providers));
 
-    // There should be a slow relays to execute because the spoke doesn't has funds.
     expect(multiCallerClient.transactionCount()).to.equal(1);
     await multiCallerClient.executeTransactionQueue();
   });
