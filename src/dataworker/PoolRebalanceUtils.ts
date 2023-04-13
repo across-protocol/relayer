@@ -561,13 +561,19 @@ export function generateMarkdownForRootBundle(
 
   let slowRelayLeavesPretty = "";
   slowRelayLeaves.forEach((leaf, index) => {
-    const decimalsForDestToken = hubPoolClient.getTokenInfo(leaf.relayData.destinationChainId, leaf.relayData.destinationToken).decimals;
+    const decimalsForDestToken = hubPoolClient.getTokenInfo(
+      leaf.relayData.destinationChainId,
+      leaf.relayData.destinationToken
+    ).decimals;
     // Shorten keys for ease of reading from Slack.
     leaf.relayData.originChain = leaf.relayData.originChainId;
     leaf.relayData.destinationChain = leaf.relayData.destinationChainId;
     leaf.relayData.depositor = shortenHexString(leaf.relayData.depositor);
     leaf.relayData.recipient = shortenHexString(leaf.relayData.recipient);
-    leaf.relayData.destToken = convertTokenAddressToSymbol(leaf.relayData.destinationChainId, leaf.relayData.destinationToken);
+    leaf.relayData.destToken = convertTokenAddressToSymbol(
+      leaf.relayData.destinationChainId,
+      leaf.relayData.destinationToken
+    );
     leaf.relayData.amount = convertFromWei(leaf.relayData.amount, decimalsForDestToken);
     // Fee decimals is always 18. 1e18 = 100% so 1e16 = 1%.
     leaf.relayData.realizedLpFee = `${formatFeePct(leaf.relayData.realizedLpFeePct)}%`;

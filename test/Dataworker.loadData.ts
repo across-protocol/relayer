@@ -2,7 +2,6 @@ import {
   expect,
   ethers,
   Contract,
-  deployNewToken,
   getDefaultBlockRange,
   buildFillForRepaymentChain,
   getLastBlockNumber,
@@ -10,7 +9,7 @@ import {
   spyLogIncludes,
   deepEqualsWithBigNumber,
 } from "./utils";
-import { SignerWithAddress, buildSlowRelayTree, enableRoutesOnHubPool } from "./utils";
+import { SignerWithAddress, buildSlowRelayTree } from "./utils";
 import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, buildSlowFill } from "./utils";
 import {
   SpokePoolClient,
@@ -28,7 +27,6 @@ import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { toBN, getRefundForFills, getRealizedLpFeeForFills, MAX_UINT_VAL } from "../src/utils";
 import { spokePoolClientsToProviders } from "../src/common";
 import { DepositWithBlock, Fill } from "../src/interfaces";
-import { erc20 } from "@uma/sdk/dist/types/clients";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, l1Token_2: Contract, hubPool: Contract;
@@ -190,14 +188,8 @@ describe("Dataworker: Load data used in all functions", async function () {
       // Manually relay the roots to spoke pools since adapter is a dummy and won't actually relay messages.
       const validatedRootBundles = hubPoolClient.getValidatedRootBundles();
       for (const rootBundle of validatedRootBundles) {
-        await spokePool_1.relayRootBundle(
-          rootBundle.relayerRefundRoot,
-          rootBundle.slowRelayRoot
-        )
-        await spokePool_2.relayRootBundle(
-          rootBundle.relayerRefundRoot,
-          rootBundle.slowRelayRoot
-        )
+        await spokePool_1.relayRootBundle(rootBundle.relayerRefundRoot, rootBundle.slowRelayRoot);
+        await spokePool_2.relayRootBundle(rootBundle.relayerRefundRoot, rootBundle.slowRelayRoot);
       }
       await updateAllClients();
 
@@ -297,17 +289,11 @@ describe("Dataworker: Load data used in all functions", async function () {
       // Manually relay the roots to spoke pools since adapter is a dummy and won't actually relay messages.
       const validatedRootBundles = hubPoolClient.getValidatedRootBundles();
       for (const rootBundle of validatedRootBundles) {
-        await spokePool_1.relayRootBundle(
-          rootBundle.relayerRefundRoot,
-          rootBundle.slowRelayRoot
-        )
-        await spokePool_2.relayRootBundle(
-          rootBundle.relayerRefundRoot,
-          rootBundle.slowRelayRoot
-        )
+        await spokePool_1.relayRootBundle(rootBundle.relayerRefundRoot, rootBundle.slowRelayRoot);
+        await spokePool_2.relayRootBundle(rootBundle.relayerRefundRoot, rootBundle.slowRelayRoot);
       }
       await updateAllClients();
-      
+
       // Execute refunds and test that pending refund amounts are decreasing.
       await erc20_2.mint(spokePool_2.address, getRefundForFills([fill1, fill2]));
       const providers = {
@@ -456,8 +442,8 @@ describe("Dataworker: Load data used in all functions", async function () {
     // Fills that don't match deposits do not affect unfilledAmount counter.
     // Note: We switch the spoke pool address in the following fills from the fills that eventually do match with
     //       the deposits.
-    await buildFill(spokePool_2, erc20_2, depositor, relayer, {...deposit1, depositId: 99}, 0.5);
-    await buildFill(spokePool_1, erc20_1, depositor, relayer, {...deposit2, depositId: 99}, 0.25);
+    await buildFill(spokePool_2, erc20_2, depositor, relayer, { ...deposit1, depositId: 99 }, 0.5);
+    await buildFill(spokePool_1, erc20_1, depositor, relayer, { ...deposit2, depositId: 99 }, 0.25);
 
     // One partially filled deposit per destination chain ID.
     const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.5);

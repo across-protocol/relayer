@@ -4,7 +4,6 @@ import {
   Contract,
   SignerWithAddress,
   setupTokensForWallet,
-  signForSpeedUp,
   toBNWei,
   deepEqualsWithBigNumber,
 } from "./utils";

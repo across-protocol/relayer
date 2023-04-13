@@ -3,7 +3,6 @@ import {
   buildSlowRelayLeaves,
   buildFillForRepaymentChain,
   enableRoutesOnHubPool,
-  signForSpeedUp,
   createSpyLogger,
   lastSpyLogIncludes,
   deepEqualsWithBigNumber,
@@ -11,7 +10,7 @@ import {
 import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
 import { buildRelayerRefundTreeWithUnassignedLeafIds, constructPoolRebalanceTree } from "./utils";
-import { buildPoolRebalanceLeafTree, sampleRateModel, fillRelay, getDefaultBlockRange } from "./utils";
+import { buildPoolRebalanceLeafTree, sampleRateModel, getDefaultBlockRange } from "./utils";
 import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient } from "../src/clients";
 import {
   amountToDeposit,

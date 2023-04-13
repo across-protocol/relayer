@@ -6,7 +6,6 @@ import {
   SignerWithAddress,
   setupTokensForWallet,
   getLastBlockTime,
-  signForSpeedUp,
   buildDeposit,
 } from "./utils";
 import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfigureHubPool, winston } from "./utils";
