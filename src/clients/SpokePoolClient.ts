@@ -218,8 +218,8 @@ export class SpokePoolClient {
       ...deposit,
       speedUpSignature: maxSpeedUp.depositorSignature,
       newRelayerFeePct: maxSpeedUp.newRelayerFeePct,
-      newRecipient: maxSpeedUp.updatedRecipient, // @dev This should be `newRecipient` eventually, but locally its stuck at this.
-      newMessage: maxSpeedUp.updatedMessage,
+      newRecipient: maxSpeedUp.newRecipient, // @dev This should be `newRecipient` eventually, but locally its stuck at this.
+      newMessage: maxSpeedUp.newMessage,
     };
   }
 
@@ -705,6 +705,15 @@ export class SpokePoolClient {
       }
       for (const event of fillEvents) {
         const fill = spreadEventWithBlockNumber(event) as FillWithBlock;
+        /**
+         * struct RelayExecutionInfo {
+         *   address recipient;
+         *   bytes message;
+         *   int64 relayerFeePct;
+         *   bool isSlowRelay;
+         *   int256 payoutAdjustmentPct;
+         * }
+         */
         fill.updatableRelayData = {
           recipient: fill.updatableRelayData[0],
           message: fill.updatableRelayData[1],
