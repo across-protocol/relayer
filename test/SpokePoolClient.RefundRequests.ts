@@ -36,7 +36,7 @@ describe("SpokePoolClient: Refund Requests", async function () {
 
   it("Correctly fetches refund requests", async function () {
     const refundRequestEvents: RefundRequestWithBlock[] = [];
-    for (let idx = 0; idx < 5; ++idx) {
+    for (let _idx = 0; _idx < 5; ++_idx) {
       const requestArgs: EthersEventTemplate = {
         address: relayer.address,
         topics: [relayer.address, originChainId.toString(), ""],
