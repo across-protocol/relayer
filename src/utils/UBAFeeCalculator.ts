@@ -20,8 +20,8 @@ export default class UBAFeeCalculator {
   }
 
   /**
-   * @description Recalculates running balance and from a given block number
-   * @param blockNumber An optional block number to start from - otherwise will start from the lastest blockNumber
+   * @description Recalculates the running balance by fetching the most recent confirmed bundle to the `blockNumber` and computing all the inflows and outflows to find the running balance.
+   * @param blockNumber An optional block number to act as the current time. If not provided, the current block number will be used. The block number is used to calculate the running balance from the most recent proposed bundle.
    */
   public async recalculateRunningBalance(blockNumber?: number): Promise<void> {
     // Initially set the blockNumber to a new block with either the given input or the last blockNumber available
