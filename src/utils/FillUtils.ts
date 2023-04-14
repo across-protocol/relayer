@@ -223,6 +223,7 @@ export function getUnfilledDeposits(
   const unfilledDeposits: UnfilledDeposit[] = [];
   // Iterate over each chainId and check for unfilled deposits.
   const chainIds = Object.keys(spokePoolClients);
+  console.log("chainIds", chainIds)
   for (const originChain of chainIds) {
     const originClient = spokePoolClients[originChain];
     for (const destinationChain of chainIds) {
