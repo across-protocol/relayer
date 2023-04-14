@@ -29,7 +29,7 @@ import {
 } from "./utils";
 
 import { AcrossConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
-import { MockedSpokePoolClient } from "./mocks/MockSpokePoolClient";
+import { MockSpokePoolClient } from "./mocks/MockSpokePoolClient";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract, hubPool: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
@@ -307,10 +307,9 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Fuzz: get search bounds for deposit ID", async function () {
-    const fuzzClient = new MockedSpokePoolClient(
+    const fuzzClient = new MockSpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_2,
-      null,
       destinationChainId,
       spokePool2DeploymentBlock
     );
