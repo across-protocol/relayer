@@ -1,11 +1,10 @@
-import { assert, Block, getProvider, toBN } from ".";
+import { assert, Block, getProvider, toBN, BigNumberish } from ".";
 import { REDIS_URL_DEFAULT } from "../common/Constants";
 import { BlockFinder } from "@uma/financial-templates-lib";
 import { createClient } from "redis4";
 import winston from "winston";
 import { Deposit, Fill } from "../interfaces";
 import dotenv from "dotenv";
-import { BigNumberish } from "../utils";
 dotenv.config();
 
 export type RedisClient = ReturnType<typeof createClient>;

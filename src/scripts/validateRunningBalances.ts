@@ -250,7 +250,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
           // Not many bundles are expected to have slow fills so we can load them as necessary.
           const { slowFills, bundleSpokePoolClients } = await _constructSlowRootForBundle(
             mostRecentValidatedBundle,
-            validatedBundles[x + 1 + 1],
+            validatedBundles[x + 1 + 2],
             mostRecentValidatedBundle
           );
           const slowFillsForPoolRebalanceLeaf = slowFills.filter(
