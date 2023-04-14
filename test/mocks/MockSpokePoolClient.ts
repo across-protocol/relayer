@@ -24,7 +24,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
   public readonly minBlockRange = 10;
   // Allow tester to set the numberOfDeposits() returned by SpokePool at a block height.
   public depositIdAtBlock: number[] = [];
-  
+
   constructor(logger: winston.Logger, spokePool: Contract, chainId: number, deploymentBlock: number) {
     super(logger, spokePool, null, chainId, deploymentBlock);
     this.latestBlockNumber = deploymentBlock;
@@ -52,7 +52,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
   async _getDepositIdAtBlock(blockTag: number): Promise<number> {
     return this.depositIdAtBlock[blockTag];
   }
-  
+
   override async _update(eventsToQuery: string[]): Promise<SpokePoolUpdate> {
     // Temporarily append "RefundRequested" to the eventsToQuery array.
     // @todo: Remove when the SpokePoolClient supports querying this directly.
