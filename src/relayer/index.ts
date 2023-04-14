@@ -41,11 +41,8 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
       }
     }
   } catch (error) {
+    console.error(error)
     await disconnectRedisClient(logger);
     throw error;
   }
-}
-
-export async function runRelayerOnTestnet(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
-  // Inject environment variables into process.env. and then call runRelayer.
 }

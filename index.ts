@@ -58,7 +58,7 @@ if (require.main === module) {
   config();
 
   const opts = {
-    boolean: ["dataworker", "finalizer", "help", "monitor", "relayer"],
+    boolean: ["dataworker", "finalizer", "help", "monitor", "relayer", "relayerTestnet"],
     string: ["wallet", "keys"],
     alias: { h: "help" },
     unknown: usage,
