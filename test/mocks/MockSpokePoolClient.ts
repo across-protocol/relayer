@@ -1,13 +1,13 @@
 import { random } from "lodash";
 import { SpokePoolClient, SpokePoolUpdate } from "../../src/clients";
-import { Event } from "../../src/utils";
+import { BigNumberish, Event } from "../../src/utils";
 import { Contract, ethers, winston } from "../utils";
 
 export type EthersEventTemplate = {
   address: string;
   event: string;
   topics: string[];
-  args: Record<string,any>;
+  args: Record<string, BigNumberish | string>;
   data?: string;
   blockNumber?: number;
   transactionIndex?: number;
@@ -30,11 +30,11 @@ export class MockSpokePoolClient extends SpokePoolClient {
     this.latestBlockNumber = deploymentBlock;
   }
 
-  addEvent(event: Event) {
+  addEvent(event: Event): void {
     this.events.push(event);
   }
 
-  setDepositIds(_depositIds: number[]) {
+  setDepositIds(_depositIds: number[]): void {
     this.depositIdAtBlock = [];
     if (_depositIds.length === 0) {
       return;
@@ -98,7 +98,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
     FundsDeposited: "uint256,uint256,uint256,int64,uint32,uint32,address,address,address,bytes",
     FilledRelay: "uint256,uint256,uint256,int64,uint32,uint32,address,address,address,bytes",
     RefundRequested: "address,address,uint256,uint256,uint256,int64,uint32,uint256,uint256",
-  }
+  };
 
   // Event topic. Not strictly required, but they make generated events more recognisable.
   // @todo: Source these from contracts-v2, when available.
@@ -106,7 +106,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
     FundsDeposited: "XXX",
     FilledRelay: "XXX",
     RefundRequested: "XXX",
-  }
+  };
 
   generateEvent(inputs: EthersEventTemplate): Event {
     const { address, event, topics, data, args } = inputs;
