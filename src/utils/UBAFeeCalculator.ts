@@ -9,10 +9,10 @@ import { toBN } from "./FormattingUtils";
 //
 // Example:
 // const feeCalculator = new UBAFeeCalculator(provider, 123456);
-// await feeCalculator.recalculateRunningBalance(); // <- This will fetch the most recent confirmed bundle and compute the running balance
+// await feeCalculator.updateRunningBalance(); // <- This will fetch the most recent confirmed bundle and compute the running balance
 // const fee1 = await feeCalculator.getUBAFee({ amount: toBN(100), type: "deposit" }); // <- This will calculate the fee for a given action while taking into account the running balance ( will not fetch the most recent confirmed bundle )
 // console.log(fee1.toString());
-// await feeCalculator.recalculateRunningBalance(); // <- This will fetch the most recent confirmed bundle and compute the running balance
+// await feeCalculator.updateRunningBalance(); // <- This will fetch the most recent confirmed bundle and compute the running balance
 // const fee2 = await feeCalculator.getUBAFee({ amount: toBN(100), type: "withdraw" }); // <- This will calculate the fee for a given action while taking into account the running balance ( will not fetch the most recent confirmed bundle )
 // console.log(fee2.toString());
 // const fee3 = await feeCalculator.getUBAFee({ amount: toBN(100), type: "deposit" }); // <- This will calculate the fee for a given action while taking into account the running balance ( will not fetch the most recent confirmed bundle )
@@ -39,7 +39,7 @@ export default class UBAFeeCalculator {
    * @description Recalculates the running balance by fetching the most recent confirmed bundle to the `blockNumber` and computing all the inflows and outflows to find the running balance.
    * @param blockNumber An optional block number to act as the current time. If not provided, the current block number will be used. The block number is used to calculate the running balance from the most recent proposed bundle.
    */
-  public async recalculateRunningBalance(blockNumber?: number): Promise<void> {
+  public async updateRunningBalance(blockNumber?: number): Promise<void> {
     // Initially set the blockNumber to a new block with either the given input or the last blockNumber available
     this.blockNumber = blockNumber ?? (await this.provider.getBlockNumber());
     // Clear the recent request flow
@@ -47,7 +47,7 @@ export default class UBAFeeCalculator {
     // Resolve the most recent flows
     this.recentRequestFlow = await this.getRecentRequestFlow();
     // Recalculate the last validated running balance
-    this.lastValidatedRunningBalance = await this.calculateRunningBalance();
+    this.lastValidatedRunningBalance = await this.getLastValidatedBundleRunningBalance();
     // Resolve the running balance
     this.runningBalance = this.calculateRecentRunningBalance();
   }
@@ -63,7 +63,7 @@ export default class UBAFeeCalculator {
     // First verify that both the last validated running balance and the runningBalance is
     // set to a non-undefined value
     if (this.lastValidatedRunningBalance === undefined || this.runningBalance === undefined) {
-      await this.recalculateRunningBalance();
+      await this.updateRunningBalance();
     }
     // Set the amount to add to the running balance
     const amountToModify = amount.mul(type === "deposit" ? 1 : -1);
@@ -113,11 +113,11 @@ export default class UBAFeeCalculator {
    * @todo Implement this function
    * @private
    * @async
-   * @method calculateRunningBalance
+   * @method getLastValidatedBundleRunningBalance
    * @memberof UBAFeeCalculator
    * @returns {BigNumber}
    */
-  private async calculateRunningBalance(): Promise<BigNumber> {
+  private async getLastValidatedBundleRunningBalance(): Promise<BigNumber> {
     this.blockNumber;
     throw new Error("Not implemented");
   }
