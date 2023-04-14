@@ -68,6 +68,11 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     priceRequestTime,
     getCurrentTime()
   );
+  logger.debug({
+    at: "Dataworker#validate",
+    message: `Price request block found for request time ${priceRequestTime}`,
+    priceRequestBlock,
+  });
 
   // Find dispute transaction so we can gain additional confidence that the preceding root bundle is older than the
   // dispute. This is a sanity test against the case where a dispute was submitted atomically following proposal
@@ -176,12 +181,14 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
     1,
     dataworker.chainIdListForBundleEvaluationBlockNumbers
   );
-  const widestPossibleBlockRanges = getWidestPossibleExpectedBlockRange(
+
+  // Get widest possible block range that could be used at time of root bundle proposal.
+  const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
     dataworker.chainIdListForBundleEvaluationBlockNumbers,
     spokePoolClients,
     getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
     clients,
-    priceRequestBlock,
+    mainnetBundleEndBlock,
     clients.configStoreClient.getEnabledChains(
       mainnetBundleEndBlock,
       dataworker.chainIdListForBundleEvaluationBlockNumbers

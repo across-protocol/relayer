@@ -1,14 +1,4 @@
-import {
-  assign,
-  Contract,
-  winston,
-  BigNumber,
-  ERC20,
-  sortEventsAscending,
-  EventSearchConfig,
-  MakeOptional,
-  BigNumberish,
-} from "../utils";
+import { assign, Contract, winston, BigNumber, ERC20, EventSearchConfig, MakeOptional, BigNumberish } from "../utils";
 import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
 import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
 import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle, LpToken } from "../interfaces";
@@ -226,26 +216,30 @@ export class HubPoolClient {
     chainIdList: number[]
   ): number | undefined {
     let endingBlockNumber: number | undefined;
-    for (const rootBundle of sortEventsAscending(this.proposedRootBundles)) {
+    // Search proposed root bundles in reverse chronological order.
+    for (let i = this.proposedRootBundles.length - 1; i >= 0; i--) {
+      const rootBundle = this.proposedRootBundles[i];
       const nextRootBundle = this.getFollowingRootBundle(rootBundle);
       if (!this.isRootBundleValid(rootBundle, nextRootBundle ? nextRootBundle.blockNumber : latestMainnetBlock)) {
         continue;
       }
 
+      // 0 is the default value bundleEvalBlockNumber.
       const bundleEvalBlockNumber = this.getBundleEndBlockForChain(
         rootBundle as ProposedRootBundle,
         chain,
         chainIdList
       );
 
-      // If chain list doesn't contain chain, then bundleEvalBlockNumber returns 0 and the following check
-      // always fails.
-      if (bundleEvalBlockNumber >= block) {
-        endingBlockNumber = bundleEvalBlockNumber;
-        // Since events are sorted from oldest to newest, and bundle block ranges should only increase, exit as soon
-        // as we find the first block range that contains the target block.
+      // Since we're iterating from newest to oldest, bundleEvalBlockNumber is only decreasing, and if the
+      // bundleEvalBlockNumber is smaller than the target block, then we should return the last set `endingBlockNumber`.
+      if (bundleEvalBlockNumber <= block) {
+        if (bundleEvalBlockNumber === block) {
+          endingBlockNumber = bundleEvalBlockNumber;
+        }
         break;
       }
+      endingBlockNumber = bundleEvalBlockNumber;
     }
     return endingBlockNumber;
   }
@@ -253,7 +247,7 @@ export class HubPoolClient {
   // TODO: This might not be necessary since the cumulative root bundle count doesn't grow fast enough, but consider
   // using _.findLast/_.find instead of resorting the arrays if these functions begin to take a lot time.
   getProposedRootBundlesInBlockRange(startingBlock: number, endingBlock: number): ProposedRootBundle[] {
-    return sortEventsDescending(this.proposedRootBundles).filter(
+    return this.proposedRootBundles.filter(
       (bundle: ProposedRootBundle) => bundle.blockNumber >= startingBlock && bundle.blockNumber <= endingBlock
     );
   }
@@ -271,20 +265,26 @@ export class HubPoolClient {
   }
 
   getLatestProposedRootBundle(): ProposedRootBundle {
-    return sortEventsDescending(this.proposedRootBundles)[0] as ProposedRootBundle;
+    return this.proposedRootBundles[this.proposedRootBundles.length - 1] as ProposedRootBundle;
   }
 
   getFollowingRootBundle(currentRootBundle: ProposedRootBundle): ProposedRootBundle {
-    return sortEventsAscending(this.proposedRootBundles).find(
-      (_rootBundle: ProposedRootBundle) => _rootBundle.blockNumber > currentRootBundle.blockNumber
-    ) as ProposedRootBundle;
+    const index = _.findLastIndex(
+      this.proposedRootBundles,
+      (bundle) => bundle.blockNumber === currentRootBundle.blockNumber
+    );
+    // If index of current root bundle is not found or is the last bundle, return undefined.
+    if (index === -1 || index === this.proposedRootBundles.length - 1) {
+      return undefined;
+    }
+    return this.proposedRootBundles[index + 1];
   }
 
   getExecutedLeavesForRootBundle(
     rootBundle: ProposedRootBundle,
     latestMainnetBlockToSearch: number
   ): ExecutedRootBundle[] {
-    return sortEventsAscending(this.executedRootBundles).filter(
+    return this.executedRootBundles.filter(
       (executedLeaf: ExecutedRootBundle) =>
         executedLeaf.blockNumber <= latestMainnetBlockToSearch &&
         // Note: We can use > instead of >= here because a leaf can never be executed in same block as its root
@@ -536,7 +536,7 @@ export class HubPoolClient {
     // unclaimed count will drop to 0 and at that point there is nothing more that we can do with this root bundle
     // besides proposing another one.
     if (pendingRootBundleProposal.unclaimedPoolRebalanceLeafCount > 0) {
-      const mostRecentProposedRootBundle = sortEventsDescending(this.proposedRootBundles)[0];
+      const mostRecentProposedRootBundle = this.proposedRootBundles[this.proposedRootBundles.length - 1];
       this.pendingRootBundle = {
         poolRebalanceRoot: pendingRootBundleProposal.poolRebalanceRoot,
         relayerRefundRoot: pendingRootBundleProposal.relayerRefundRoot,

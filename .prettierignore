@@ -4,4 +4,4 @@ cache
 coverage*
 gasReporterOutput.json
 dist
-typechain
+typechain*

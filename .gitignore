@@ -2,7 +2,7 @@ node_modules
 .env
 coverage
 coverage.json
-typechain
+typechain*
 .DS_Store
 dump.rdb*
 .idea

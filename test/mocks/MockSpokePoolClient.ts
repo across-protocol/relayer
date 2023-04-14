@@ -22,6 +22,8 @@ type TransactionReceipt = ethers.providers.TransactionReceipt;
 export class MockSpokePoolClient extends SpokePoolClient {
   private events: Event[] = [];
   public readonly minBlockRange = 10;
+  // Allow tester to set the numberOfDeposits() returned by SpokePool at a block height.
+  public depositIdAtBlock: number[] = [];
 
   constructor(logger: winston.Logger, spokePool: Contract, chainId: number, deploymentBlock: number) {
     super(logger, spokePool, null, chainId, deploymentBlock);
@@ -30,6 +32,25 @@ export class MockSpokePoolClient extends SpokePoolClient {
 
   addEvent(event: Event) {
     this.events.push(event);
+  }
+
+  setDepositIds(_depositIds: number[]) {
+    this.depositIdAtBlock = [];
+    if (_depositIds.length === 0) {
+      return;
+    }
+    let lastDepositId = _depositIds[0];
+    for (let i = 0; i < _depositIds.length; i++) {
+      if (_depositIds[i] < lastDepositId) {
+        throw new Error("deposit ID must be equal to or greater than previous");
+      }
+      this.depositIdAtBlock[i] = _depositIds[i];
+      lastDepositId = _depositIds[i];
+    }
+  }
+
+  async _getDepositIdAtBlock(blockTag: number): Promise<number> {
+    return this.depositIdAtBlock[blockTag];
   }
 
   override async _update(eventsToQuery: string[]): Promise<SpokePoolUpdate> {
