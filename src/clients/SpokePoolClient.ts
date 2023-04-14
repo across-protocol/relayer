@@ -391,7 +391,7 @@ export class SpokePoolClient {
       // for a spoke pool and we're looking for a deposit <5 days older than HEAD.
       const searchBounds = await this._getBlockRangeForDepositId(
         fill.depositId + 1,
-        this.spokePoolDeploymentBlock,
+        this.deploymentBlock,
         this.latestBlockNumber,
         7
       );
