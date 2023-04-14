@@ -114,7 +114,7 @@ export class SpokePoolClient {
   }
 
   getDeposits(): DepositWithBlock[] {
-    return sortEventsAscendingInPlace(Object.values(this.deposits).flat());
+    return Object.values(this.deposits).flat();
   }
 
   getTokensBridged(): TokensBridged[] {
