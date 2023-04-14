@@ -101,7 +101,7 @@ export default class UBAFeeCalculator {
   }
 
   /**
-   * @description Get the most recent request flow
+   * @description Get the most recent request flow array from the most recent validated propsoal block
    * @returns Promise<UbaFlow[]>
    * @todo Implement this function
    * @private
