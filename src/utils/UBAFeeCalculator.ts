@@ -59,9 +59,11 @@ export default class UBAFeeCalculator {
   /**
    * @description Get the recent request flow
    * @param action The action to get the fee for
+   * @param tokenSymbol The token symbol to get the fee for
    * @returns The relevant fee
    */
-  public async getUBAFee(action: UbaRunningRequest): Promise<BigNumber> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  public async getUBAFee(action: UbaRunningRequest, tokenSymbol: string): Promise<BigNumber> {
     // Destructure the action
     const { amount, type } = action;
     // First verify that both the last validated running balance and the runningBalance is
