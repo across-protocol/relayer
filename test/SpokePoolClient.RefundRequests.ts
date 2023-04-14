@@ -19,6 +19,8 @@ let relayer: SignerWithAddress;
 let deploymentBlock: number;
 let spokePoolClient: MockSpokePoolClient;
 
+const event = "RefundRequested";
+
 describe("SpokePoolClient: Refund Requests", async function () {
   beforeEach(async function () {
     [relayer] = await ethers.getSigners();
@@ -39,10 +41,11 @@ describe("SpokePoolClient: Refund Requests", async function () {
     for (let _idx = 0; _idx < 5; ++_idx) {
       const requestArgs: EthersEventTemplate = {
         address: relayer.address,
+        event,
         topics: [relayer.address, originChainId.toString(), ""],
-        args: [],
+        args: {},
       };
-      const testEvent = spokePoolClient.generateRefundRequest(requestArgs);
+      const testEvent = spokePoolClient.generateEvent(requestArgs);
       spokePoolClient.addEvent(testEvent);
       refundRequestEvents.push(spreadEventWithBlockNumber(testEvent) as RefundRequestWithBlock);
     }
@@ -66,12 +69,13 @@ describe("SpokePoolClient: Refund Requests", async function () {
     for (let blockNumber = latestBlockNumber + 1; blockNumber <= minExpectedBlockNumber; ++blockNumber) {
       // Barebones Event - only absolutely necessary fields are populated.
       const requestArgs: EthersEventTemplate = {
-        blockNumber,
         address: relayer.address,
+        event,
         topics: [relayer.address, originChainId.toString(), ""],
-        args: [],
+        args: {},
+        blockNumber,
       };
-      const testEvent = spokePoolClient.generateRefundRequest(requestArgs);
+      const testEvent = spokePoolClient.generateEvent(requestArgs);
       spokePoolClient.addEvent(testEvent);
       refundRequestEvents.push(spreadEventWithBlockNumber(testEvent) as RefundRequestWithBlock);
     }

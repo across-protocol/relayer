@@ -5,12 +5,12 @@ import { Contract, ethers, winston } from "../utils";
 
 export type EthersEventTemplate = {
   address: string;
+  event: string;
   topics: string[];
-  blockNumber?: number;
-  transactionIndex?: string;
+  args: Record<string,any>;
   data?: string;
-  args?: string[];
-  event?: string;
+  blockNumber?: number;
+  transactionIndex?: number;
 };
 
 type Block = ethers.providers.Block;
@@ -63,17 +63,15 @@ export class MockSpokePoolClient extends SpokePoolClient {
     const currentTime = Date.now() / 1000;
 
     // Ensure an array for every requested event exists, in the requested order.
+    // All requested event types must be populated in the array (even if empty).
     const events: Event[][] = [];
+    eventsToQuery.forEach((_eventName, idx) => (events[idx] ??= []));
     this.events.flat().forEach((event) => {
       const idx = eventsToQuery.indexOf(event.event as string);
       if (idx !== -1) {
-        events[idx] ??= [];
         events[idx].push(event);
       }
     });
-
-    // Ensure all requested events are populated (even if empty).
-    eventsToQuery.forEach((_eventName, idx) => (events[idx] ??= []));
     this.events = [];
 
     // Update latestDepositIdQueried.
@@ -94,33 +92,26 @@ export class MockSpokePoolClient extends SpokePoolClient {
     };
   }
 
-  generateRefundRequest(inputs: EthersEventTemplate): Event {
-    // @todo: Source these from contracts-v2, when available.
-    const event = "RefundRequested";
-    const eventSignature = "RefundRequested(address,address,uint256,uint256,uint256,int64,uint32,uint256,uint256)";
-    const topics = ["XXX"].concat(inputs.topics);
-
-    return this.generateEvent(
-      inputs.address,
-      event,
-      eventSignature,
-      topics,
-      undefined,
-      inputs.args,
-      inputs.blockNumber
-    );
+  // Partial event signatures. Not strictly required, but they make generated events more recognisable.
+  // @todo: Source these from contracts-v2, when available.
+  public readonly eventSignatures: Record<string, string> = {
+    FundsDeposited: "uint256,uint256,uint256,int64,uint32,uint32,address,address,address,bytes",
+    FilledRelay: "uint256,uint256,uint256,int64,uint32,uint32,address,address,address,bytes",
+    RefundRequested: "address,address,uint256,uint256,uint256,int64,uint32,uint256,uint256",
   }
 
-  private generateEvent(
-    address: string,
-    event: string,
-    eventSignature: string,
-    topics: string[],
-    data?: string,
-    args?: string[],
-    blockNumber?: number,
-    transactionIndex?: number
-  ): Event {
+  // Event topic. Not strictly required, but they make generated events more recognisable.
+  // @todo: Source these from contracts-v2, when available.
+  public readonly topics: Record<string, string> = {
+    FundsDeposited: "XXX",
+    FilledRelay: "XXX",
+    RefundRequested: "XXX",
+  }
+
+  generateEvent(inputs: EthersEventTemplate): Event {
+    const { address, event, topics, data, args } = inputs;
+    let { blockNumber, transactionIndex } = inputs;
+
     // Populate these Event functions, even though they appear unused.
     const getBlock = async (): Promise<Block> => {
       return {} as Block;
@@ -136,19 +127,25 @@ export class MockSpokePoolClient extends SpokePoolClient {
       return;
     };
 
+    blockNumber ??= random(1, 100_000, false);
+    transactionIndex ??= random(1, 32, false);
+    const transactionHash = ethers.utils.id(
+      `Across-v2-${event}-${blockNumber}-${transactionIndex}-${random(1, 100_000)}`
+    );
+
     return {
-      blockNumber: blockNumber ?? random(1, 100_000, false),
-      transactionIndex: transactionIndex ?? random(1, 32, false),
+      blockNumber,
+      transactionIndex,
+      logIndex: 1,
+      transactionHash,
       removed: false,
       address,
       data: data ?? ethers.utils.id(`Across-v2-random-txndata-${random(1, 100_000)}`),
-      topics,
+      topics: [this.topics[event]].concat(topics),
       args,
-      transactionHash: ethers.utils.id(`Across-v2-${event}-${random(1, 100_000)}`),
       blockHash: ethers.utils.id(`Across-v2-blockHash-${random(1, 100_000)}`),
-      logIndex: 1,
       event,
-      eventSignature,
+      eventSignature: `${event}(${this.eventSignatures[event]})`,
       decodeError,
       getBlock,
       getTransaction,
