@@ -1,6 +1,8 @@
-import { BigNumber, ethers } from "ethers";
+import { BigNumber } from "ethers";
 import { UbaFlow, UbaRunningRequest, isUbaInflow, isUbaOutflow } from "../interfaces";
 import { toBN } from "./FormattingUtils";
+import { SpokePoolClient } from "../clients";
+import { Logger } from "winston";
 
 // This file holds the UBA Fee Calculator class. The goal of this class is to keep track
 // of the running balance of a given spoke pool by fetching the most recent confirmed bundle
@@ -24,15 +26,17 @@ import { toBN } from "./FormattingUtils";
  * @author Across Bots Team
  */
 export default class UBAFeeCalculator {
-  private readonly provider: ethers.providers.Provider;
+  private readonly spokeClient: SpokePoolClient;
+  private readonly logger: Logger;
   private blockNumber: number;
   private lastValidatedRunningBalance?: BigNumber;
   private recentRequestFlow: UbaFlow[];
   private runningBalance?: BigNumber;
 
-  constructor(provider: ethers.providers.Provider, initialBlockNumber: number) {
-    this.provider = provider;
+  constructor(spokeClient: SpokePoolClient, logger: Logger, initialBlockNumber: number) {
+    this.spokeClient = spokeClient;
     this.blockNumber = initialBlockNumber;
+    this.logger = logger;
   }
 
   /**
@@ -41,7 +45,7 @@ export default class UBAFeeCalculator {
    */
   public async updateRunningBalance(blockNumber?: number): Promise<void> {
     // Initially set the blockNumber to a new block with either the given input or the last blockNumber available
-    this.blockNumber = blockNumber ?? (await this.provider.getBlockNumber());
+    this.blockNumber = blockNumber ?? (await this.spokeClient.spokePool.getBlockNumber());
     // Clear the recent request flow
     this.recentRequestFlow = [];
     // Resolve the most recent flows
