@@ -147,7 +147,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         configStoreClient
       )
     )
-      .excludingEvery(["blockNumber", "originBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
           unfilledAmount: deposit1.amount,
@@ -225,7 +225,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         configStoreClient
       )
     )
-      .excludingEvery(["blockNumber", "originBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
           unfilledAmount: deposit1.amount.sub(fill1.fillAmount),
@@ -254,7 +254,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         configStoreClient
       )
     )
-      .excludingEvery(["blockNumber", "originBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
           unfilledAmount: unfilledAmount,
@@ -281,7 +281,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         configStoreClient
       )
     )
-      .excludingEvery(["blockNumber", "originBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
           unfilledAmount: deposit2Complete.amount,
@@ -308,7 +308,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         configStoreClient
       )
     )
-      .excludingEvery(["blockNumber", "originBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
           unfilledAmount: deposit1Complete.amount,
@@ -383,7 +383,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         configStoreClient
       )
     )
-      .excludingEvery(["blockNumber", "originBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
           unfilledAmount: deposit1.amount.sub(fill1.fillAmount),
@@ -406,7 +406,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         configStoreClient
       )
     )
-      .excludingEvery(["blockNumber", "originBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
           unfilledAmount: deposit1.amount.sub(fill1.fillAmount),

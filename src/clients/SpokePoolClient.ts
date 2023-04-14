@@ -401,9 +401,9 @@ export class SpokePoolClient {
         ...processedEvent,
         realizedLpFeePct: dataForQuoteTime.realizedLpFeePct,
         destinationToken: this.getDestinationTokenForDeposit(processedEvent),
-        blockNumber: dataForQuoteTime.quoteBlock,
-        originBlockNumber: event.blockNumber,
-      };
+        quoteBlockNumber: dataForQuoteTime.quoteBlock,
+        blockNumber: event.blockNumber,
+      } as DepositWithBlock;
       this.logger.debug({
         at: "SpokePoolClient",
         message: "Queried RPC for deposit outside SpokePoolClient's search range",
@@ -618,8 +618,8 @@ export class SpokePoolClient {
           ...processedEvent,
           realizedLpFeePct: dataForQuoteTime[index].realizedLpFeePct,
           destinationToken: this.getDestinationTokenForDeposit(processedEvent),
-          blockNumber: dataForQuoteTime[index].quoteBlock,
-          originBlockNumber: event.blockNumber,
+          quoteBlockNumber: dataForQuoteTime[index].quoteBlock,
+          blockNumber: event.blockNumber,
         };
 
         assign(this.depositHashes, [this.getDepositHash(deposit)], deposit);
