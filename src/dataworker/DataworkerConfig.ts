@@ -1,6 +1,5 @@
 import { CommonConfig, ProcessEnv } from "../common";
 import { BigNumber, assert, toBNWei } from "../utils";
-import * as Constants from "../common/Constants";
 
 export class DataworkerConfig extends CommonConfig {
   readonly maxPoolRebalanceLeafSizeOverride: number;

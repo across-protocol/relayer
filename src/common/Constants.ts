@@ -99,8 +99,8 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   137: 3490,
   288: 4990,
   42161: 10000,
-    // Testnets:
-  5: 10000
+  // Testnets:
+  5: 10000,
 };
 
 export const BUNDLE_END_BLOCK_BUFFERS = {

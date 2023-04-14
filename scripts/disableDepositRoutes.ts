@@ -1,11 +1,6 @@
 /* eslint-disable no-process-exit */
 import { getSigner, winston, Logger } from "../src/utils";
-import {
-  CommonConfig,
-  constructClients,
-  constructSpokePoolClientsWithStartBlocks,
-  updateClients,
-} from "../src/common";
+import { CommonConfig, constructClients, constructSpokePoolClientsWithStartBlocks, updateClients } from "../src/common";
 
 import minimist from "minimist";
 const args = minimist(process.argv.slice(2), {

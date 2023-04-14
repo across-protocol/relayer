@@ -93,7 +93,7 @@ export class AcrossConfigStoreClient {
 
     // Test deposit on Goerli was before rate model update.
     if (quoteBlock === 8824889) {
-      quoteBlock =  8825016;
+      quoteBlock = 8825016;
     }
 
     const rateModel = this.getRateModelForBlockNumber(

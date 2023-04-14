@@ -1,6 +1,5 @@
 import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClient } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
-import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
 import {

@@ -556,8 +556,6 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
     chainId,
   ]);
 
-  console.log(constructorArgumentLists)
-
   const provider = new RetryProvider(
     constructorArgumentLists,
     chainId,

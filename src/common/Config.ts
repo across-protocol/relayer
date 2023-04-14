@@ -18,7 +18,7 @@ export class CommonConfig {
   readonly multiCallChunkSize: { [chainId: number]: number };
   readonly version: string;
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
-  readonly chainIdListIndices: number[]
+  readonly chainIdListIndices: number[];
 
   constructor(env: ProcessEnv) {
     const {
@@ -35,7 +35,9 @@ export class CommonConfig {
       ACROSS_BOT_VERSION,
     } = env;
 
-    this.chainIdListIndices = CHAIN_ID_LIST_OVERRIDE ? JSON.parse(CHAIN_ID_LIST_OVERRIDE) : Constants.CHAIN_ID_LIST_INDICES;
+    this.chainIdListIndices = CHAIN_ID_LIST_OVERRIDE
+      ? JSON.parse(CHAIN_ID_LIST_OVERRIDE)
+      : Constants.CHAIN_ID_LIST_INDICES;
 
     this.version = ACROSS_BOT_VERSION ?? "unknown";
 

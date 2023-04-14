@@ -391,7 +391,7 @@ export class ProfitClient {
 
 export class MockProfitClient extends ProfitClient {
   getPriceOfToken(): BigNumber {
-     return toBNWei(1);
+    return toBNWei(1);
   }
   getTotalGasCost(): BigNumber {
     return toBN(100000);
