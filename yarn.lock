@@ -22,21 +22,7 @@
     merkletreejs "^0.2.27"
     rlp "^2.2.7"
 
-"@across-protocol/contracts-v2@^2.0.1":
-  version "2.0.2"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.0.2.tgz#fa8564da0a287faec6d343ac5d2abe2dc336351e"
-  integrity sha512-9re5P8pwT+9Y++feWIDbIDi7Bi67ET5+dyTffRdTzjyLKRTaBTiWDZMLltgY9wLZZ3/nLXxqrGbta22fHuBfGA==
-  dependencies:
-    "@defi-wonderland/smock" "^2.0.7"
-    "@eth-optimism/contracts" "^0.5.11"
-    "@openzeppelin/contracts" "^4.7.3"
-    "@uma/common" "^2.29.0"
-    "@uma/contracts-node" "^0.3.18"
-    "@uma/core" "^2.41.0"
-    arb-bridge-eth "^0.7.4"
-    arb-bridge-peripherals "^1.0.5"
-
-"@across-protocol/contracts-v2@^2.1.0-beta.1":
+"@across-protocol/contracts-v2@^2.1.0-beta.2":
   version "2.1.0"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.1.0.tgz#94fac8659df610d77572278539e659ba31032cc3"
   integrity sha512-0AKeiAAQYxccwFRZQGsZMHxD+wZ3Iz/QYEMZwZKVnkaBLHWyO7j/HeN1XSY3YoCcjsW8UL5mmmGP55WyIC6tAQ==
@@ -60,13 +46,13 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk-v2@^0.5.0-beta.9":
-  version "0.5.0-beta.9"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.5.0-beta.9.tgz#c94fa03eee5f41209d242cf17a0c2a5587d25699"
-  integrity sha512-V8y0niUPKEu6hMoEjUQZI8zxYUZ9pBkunrgaoDP/wdCR75ZI/uYcVR6AFndtKgV+JUJi8mIgpaVQhkzKCnIQjA==
+"@across-protocol/sdk-v2@^0.5.0-beta.11":
+  version "0.5.0-beta.11"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.5.0-beta.11.tgz#12a3fe0c84d0c077141471868b9fe0b87df1a5e9"
+  integrity sha512-nyF30XpXwVYSvbavU2kPA44QIvQC8PT26nh2a6ozvuk7q/khVlPnlh4RTyW2z0kAzpcc7nsYx8Up21autuIjQg==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/contracts-v2" "^2.0.1"
+    "@across-protocol/contracts-v2" "^2.1.0-beta.2"
     "@eth-optimism/sdk" "^1.6.0"
     "@uma/sdk" "^0.29.3"
     axios "^0.27.2"
@@ -289,7 +275,7 @@
     enabled "2.0.x"
     kuler "^2.0.0"
 
-"@defi-wonderland/smock@^2.0.7", "@defi-wonderland/smock@^2.3.4":
+"@defi-wonderland/smock@^2.3.4":
   version "2.3.4"
   resolved "https://registry.yarnpkg.com/@defi-wonderland/smock/-/smock-2.3.4.tgz#2bfe7e19052140634b25db344d77de9b0ac7a96b"
   integrity sha512-VYJbsoCOdFRyGkAwvaQhQRrU6V8AjK3five8xdbo41DEE9n3qXzUNBUxyD9HhXB/dWWPFWT21IGw5Ztl6Qw3Ew==
