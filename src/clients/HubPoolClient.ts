@@ -59,13 +59,14 @@ export class HubPoolClient {
   }
 
   getSpokePoolForBlock(chain: number, block: number = Number.MAX_SAFE_INTEGER): string {
-    const spokePools = {
-      1: "0xdd51F496631322954A2aB3FbdbAd676Af4b564B3",
-      10: "0xA5B9d8a0B0Fa04Ba71BDD68069661ED5C0848884",
-      137: "0x686D6378427e463E093acaD25a0B269ecB9Ed17B",
-      42161: "0x765904d00BaAEF371ea1f6cfd41af19BbA644766",
-    };
-    return spokePools[chain];
+    // Uncomment to run on mainnet:
+    // const spokePools = {
+    //   1: "0xdd51F496631322954A2aB3FbdbAd676Af4b564B3",
+    //   10: "0xA5B9d8a0B0Fa04Ba71BDD68069661ED5C0848884",
+    //   137: "0x686D6378427e463E093acaD25a0B269ecB9Ed17B",
+    //   42161: "0x765904d00BaAEF371ea1f6cfd41af19BbA644766",
+    // };
+    // return spokePools[chain];
     if (!this.crossChainContracts[chain]) {
       throw new Error(`No cross chain contracts set for ${chain}`);
     }
