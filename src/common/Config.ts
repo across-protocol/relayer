@@ -18,6 +18,7 @@ export class CommonConfig {
   readonly multiCallChunkSize: { [chainId: number]: number };
   readonly version: string;
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
+  readonly chainIdListIndices: number[];
 
   constructor(env: ProcessEnv) {
     const {
@@ -30,8 +31,13 @@ export class CommonConfig {
       SEND_TRANSACTIONS,
       BUNDLE_REFUND_LOOKBACK,
       SPOKE_POOL_CHAINS_OVERRIDE,
+      CHAIN_ID_LIST_OVERRIDE,
       ACROSS_BOT_VERSION,
     } = env;
+
+    this.chainIdListIndices = CHAIN_ID_LIST_OVERRIDE
+      ? JSON.parse(CHAIN_ID_LIST_OVERRIDE)
+      : Constants.CHAIN_ID_LIST_INDICES;
 
     this.version = ACROSS_BOT_VERSION ?? "unknown";
 
@@ -39,7 +45,7 @@ export class CommonConfig {
       ? JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER)
       : Constants.BUNDLE_END_BLOCK_BUFFERS;
     if (Object.keys(this.blockRangeEndBlockBuffer).length > 0) {
-      for (const chainId of Constants.CHAIN_ID_LIST_INDICES) {
+      for (const chainId of this.chainIdListIndices) {
         assert(
           Object.keys(this.blockRangeEndBlockBuffer).includes(chainId.toString()),
           "BLOCK_RANGE_END_BLOCK_BUFFER missing networks"
@@ -53,7 +59,7 @@ export class CommonConfig {
     this.spokePoolChainsOverride = SPOKE_POOL_CHAINS_OVERRIDE ? JSON.parse(SPOKE_POOL_CHAINS_OVERRIDE) : [];
     this.maxBlockLookBack = MAX_BLOCK_LOOK_BACK ? JSON.parse(MAX_BLOCK_LOOK_BACK) : {};
     if (Object.keys(this.maxBlockLookBack).length > 0) {
-      for (const chainId of Constants.CHAIN_ID_LIST_INDICES) {
+      for (const chainId of this.chainIdListIndices) {
         assert(Object.keys(this.maxBlockLookBack).includes(chainId.toString()), "MAX_BLOCK_LOOK_BACK missing networks");
       }
     } else {
@@ -65,7 +71,7 @@ export class CommonConfig {
 
     // Multicall chunk size precedence: Environment, chain-specific config, global default.
     this.multiCallChunkSize = Object.fromEntries(
-      Constants.CHAIN_ID_LIST_INDICES.map((_chainId) => {
+      this.chainIdListIndices.map((_chainId) => {
         const chainId = Number(_chainId);
         // prettier-ignore
         const chunkSize = Number(

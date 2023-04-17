@@ -1,7 +1,6 @@
 import winston from "winston";
 import { DataworkerConfig } from "./DataworkerConfig";
 import {
-  CHAIN_ID_LIST_INDICES,
   Clients,
   constructClients,
   constructSpokePoolClientsWithStartBlocks,
@@ -36,7 +35,7 @@ export async function constructDataworkerClients(
     logger,
     commonClients,
     {},
-    CHAIN_ID_LIST_INDICES,
+    config.chainIdListIndices,
     config.blockRangeEndBlockBuffer
   );
 

@@ -36,6 +36,9 @@ export const GAS_TOKEN_BY_CHAIN_ID: { [chainId: number]: string } = {
   137: MATIC,
   288: WETH,
   42161: WETH,
+  // Testnets:
+  5: WETH,
+  421613: WETH,
 };
 // TODO: Make this dynamic once we support chains with gas tokens that have different decimals.
 const GAS_TOKEN_DECIMALS = 18;
@@ -352,7 +355,7 @@ export class ProfitClient {
     }
   }
 
-  private async updateGasCosts(): Promise<void> {
+  async updateGasCosts(): Promise<void> {
     // Pre-fetch total gas costs for relays on enabled chains.
     const gasCosts = await Promise.all(
       this.enabledChainIds.map((chainId) => this.relayerFeeQueries[chainId].getGasCosts())
@@ -386,5 +389,17 @@ export class ProfitClient {
       this.logger,
       gasMarkup
     );
+  }
+}
+
+export class MockProfitClient extends ProfitClient {
+  getPriceOfToken(): BigNumber {
+    return toBNWei(1);
+  }
+  getTotalGasCost(): BigNumber {
+    return toBN(100000);
+  }
+  async updateGasCosts(): Promise<void> {
+    return;
   }
 }

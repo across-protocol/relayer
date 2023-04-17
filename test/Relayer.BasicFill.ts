@@ -248,6 +248,9 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       depositor,
       destinationChainId
     );
+
+    // Relayer will ignore any deposit with a non empty message. Test this by first modifying the deposit's
+    // message to be non-empty. Then, reset it to 0x and check that it ignores it.
     const newRelayerFeePct = toBNWei(0.1337);
     const newMessage = "0x12";
     const newRecipient = randomAddress();
@@ -300,6 +303,34 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     );
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
+    expect(lastSpyLogIncludes(spy, "Skipping fill for sped-up deposit with message")).to.be.true;
+    expect(multiCallerClient.transactionCount()).to.equal(0);
+
+    // Now speed up deposit again with a higher fee and a message of 0x. This should be filled.
+    const emptyMessageSpeedUp = {
+      relayerFeePct: toBNWei(0.2),
+      message: "0x",
+      recipient: randomAddress(),
+    };
+    const emptyMessageSpeedUpSignature = await modifyRelayHelper(
+      emptyMessageSpeedUp.relayerFeePct,
+      deposit1.depositId,
+      deposit1.originChainId!.toString(),
+      depositor,
+      emptyMessageSpeedUp.recipient,
+      emptyMessageSpeedUp.message
+    );
+    await spokePool_1.speedUpDeposit(
+      depositor.address,
+      emptyMessageSpeedUp.relayerFeePct,
+      deposit1.depositId,
+      emptyMessageSpeedUp.recipient,
+      emptyMessageSpeedUp.message,
+      emptyMessageSpeedUpSignature.signature
+    );
+    await updateAllClients();
+    await relayerInstance.checkForUnfilledDepositsAndFill();
+    // console.log(spy.getCall(-1))
     expect(lastSpyLogIncludes(spy, "Filling deposit")).to.be.true;
     expect(multiCallerClient.transactionCount()).to.equal(1); // One transaction, filling the one deposit.
 
@@ -319,9 +350,9 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     // This specific line differs from the above test: the emitted event's appliedRelayerFeePct is
     // now !== relayerFeePct.
-    expect(fillEvents2[0].args.updatableRelayData.relayerFeePct).to.equal(newRelayerFeePct);
-    expect(fillEvents2[0].args.updatableRelayData.recipient).to.equal(newRecipient);
-    expect(fillEvents2[0].args.updatableRelayData.message).to.equal(newMessage);
+    expect(fillEvents2[0].args.updatableRelayData.relayerFeePct).to.equal(emptyMessageSpeedUp.relayerFeePct);
+    expect(fillEvents2[0].args.updatableRelayData.recipient).to.equal(emptyMessageSpeedUp.recipient);
+    expect(fillEvents2[0].args.updatableRelayData.message).to.equal(emptyMessageSpeedUp.message);
 
     // There should be no fill events on the origin spoke pool.
     expect((await spokePool_1.queryFilter(spokePool_1.filters.FilledRelay())).length).to.equal(0);
