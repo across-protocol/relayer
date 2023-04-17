@@ -41,7 +41,6 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
       }
     }
   } catch (error) {
-    console.error(error)
     await disconnectRedisClient(logger);
     throw error;
   }
