@@ -63,6 +63,7 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   42161: 0,
   // Testnets:
   5: 0,
+  421613: 0,
 };
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   1000: {
@@ -73,6 +74,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     42161: 0,
     // Testnets:
     5: 0,
+    421613: 0,
   },
   100: {
     1: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
@@ -82,6 +84,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     42161: 0,
     // Testnets:
     5: 0,
+    421613: 0,
   },
 };
 export const QUOTE_TIME_BUFFER = 12 * 5; // 5 blocks on Mainnet.
@@ -101,6 +104,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   42161: 10000,
   // Testnets:
   5: 10000,
+  421613: 10000,
 };
 
 export const BUNDLE_END_BLOCK_BUFFERS = {
@@ -111,6 +115,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   42161: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
   // Testnets:
   5: 0,
+  421613: 0,
 };
 
 export const DEFAULT_RELAYER_GAS_MULTIPLIER = 1.2;
@@ -139,6 +144,7 @@ export const MAX_REORG_DISTANCE: { [chainId: number]: number } = {
   42161: 0,
   // Testnets:
   5: 0,
+  421613: 0,
 };
 
 // This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
@@ -156,6 +162,7 @@ export const multicall3Addresses = {
   137: "0xcA11bde05977b3631167028862bE2a173976CA11",
   288: "0xcA11bde05977b3631167028862bE2a173976CA11",
   42161: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  421613: "0xcA11bde05977b3631167028862bE2a173976CA11",
 };
 export type Multicall2Call = {
   callData: ethers.utils.BytesLike;
