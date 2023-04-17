@@ -151,7 +151,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
       ...deposit_1,
       destinationToken: zeroAddress,
       realizedLpFeePct: toBN(0),
-      quoteBlockNumber: 0
+      quoteBlockNumber: 0,
     };
     expect(
       spokePoolClientForDestinationChain.getDepositForFill({
@@ -573,7 +573,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
       ...deposit_1,
       destinationToken: zeroAddress,
       realizedLpFeePct: toBN(0),
-      quoteBlockNumber: 0
+      quoteBlockNumber: 0,
     };
     const fill_1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, expectedDeposit, 0.2);
     const fill_2 = await buildModifiedFill(spokePool_2, depositor, relayer, fill_1, 2, 0.2, relayer.address, "0x12"); // Fill same % of deposit with 2x larger relayer fee pct.
