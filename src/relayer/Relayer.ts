@@ -261,7 +261,15 @@ export class Relayer {
       // If deposit has been sped up, call fillRelayWithUpdatedFee instead. This guarantees that the relayer wouldn't
       // accidentally double fill due to the deposit hash being different - SpokePool contract will check that the
       // original hash with the old fee hasn't been filled.
-      if (isDepositSpedUp(deposit) && deposit.newMessage === "0x") {
+      if (isDepositSpedUp(deposit)) {
+        if (deposit.newMessage !== "0x") {
+          this.logger.warn({
+            at: "Relayer",
+            message: "Skipping fill for sped-up deposit with message",
+            deposit,
+          });
+          return;
+        }
         this.clients.multiCallerClient.enqueueTransaction({
           contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
           chainId: deposit.destinationChainId,
