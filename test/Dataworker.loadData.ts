@@ -390,7 +390,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         destinationChainId,
         amountToDeposit
       )),
-      originBlockNumber: await getLastBlockNumber(),
+      blockNumber: await getLastBlockNumber(),
     } as DepositWithBlock;
     deposit1.blockNumber = (await configStoreClient.computeRealizedLpFeePct(deposit1, l1Token_1.address)).quoteBlock;
 
@@ -405,7 +405,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         originChainId,
         amountToDeposit
       )),
-      originBlockNumber: await getLastBlockNumber(),
+      blockNumber: await getLastBlockNumber(),
     } as DepositWithBlock;
     deposit2.blockNumber = (await configStoreClient.computeRealizedLpFeePct(deposit2, l1Token_2.address)).quoteBlock;
 
@@ -492,7 +492,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         originChainId,
         amountToDeposit
       )),
-      originBlockNumber: await getLastBlockNumber(),
+      blockNumber: await getLastBlockNumber(),
     } as DepositWithBlock;
     deposit5.blockNumber = (await configStoreClient.computeRealizedLpFeePct(deposit5, l1Token_1.address)).quoteBlock;
     const fill3 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit5, 0.25);
@@ -666,7 +666,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
     expect(data1.deposits)
       .excludingEvery(["logIndex", "transactionHash", "transactionIndex"])
-      .to.deep.equal([{ ...deposit1, blockNumber: realizedLpFeePctData.quoteBlock, originBlockNumber: originBlock }]);
+      .to.deep.equal([{ ...deposit1, blockNumber: realizedLpFeePctData.quoteBlock, blockNumber: originBlock }]);
 
     // If block range does not cover deposits, then they are not included
     expect(
@@ -716,7 +716,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     expect(bundleData.deposits).to.deep.equal([]);
     expect(bundleData.allValidFills.length).to.equal(1);
     expect(bundleData.unfilledDeposits)
-      .excludingEvery(["logIndex", "transactionHash", "transactionIndex", "blockNumber", "originBlockNumber"])
+      .excludingEvery(["logIndex", "transactionHash", "transactionIndex", "blockNumber", "quoteBlockNumber"])
       .to.deep.equal([
         {
           unfilledAmount: amountToDeposit.sub(fill1.fillAmount),

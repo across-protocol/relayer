@@ -239,7 +239,7 @@ export function getUnfilledDeposits(
         .filter((deposit) => {
           // If deposit is older than unfilled deposit lookback, ignore it
           const latestBlockForOriginChain = originClient.latestBlockNumber;
-          return deposit.originBlockNumber >= latestBlockForOriginChain - maxUnfilledDepositLookBack;
+          return deposit.blockNumber >= latestBlockForOriginChain - maxUnfilledDepositLookBack;
         })
         .map((deposit) => {
           // eslint-disable-next-line no-console
