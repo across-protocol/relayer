@@ -3,6 +3,7 @@ import { UbaFlow, UbaRunningRequest, isUbaInflow, isUbaOutflow } from "../../int
 import { toBN } from "../FormattingUtils";
 import { SpokePoolClient } from "../../clients";
 import { Logger } from "winston";
+import UBAConfig from "./UBAFeeConfig";
 
 // This file holds the UBA Fee Calculator class. The goal of this class is to keep track
 // of the running balance of a given spoke pool by fetching the most recent confirmed bundle
@@ -28,12 +29,14 @@ import { Logger } from "winston";
 export default class UBAFeeCalculator {
   private readonly spokeClient: SpokePoolClient;
   private readonly logger: Logger;
+  private readonly config: UBAConfig;
   private blockNumber: number;
   private lastValidatedRunningBalance?: BigNumber;
   private recentRequestFlow: UbaFlow[];
   private runningBalance?: BigNumber;
 
-  constructor(spokeClient: SpokePoolClient, logger: Logger, initialBlockNumber: number) {
+  constructor(config: UBAConfig, spokeClient: SpokePoolClient, logger: Logger, initialBlockNumber: number) {
+    this.config = config;
     this.spokeClient = spokeClient;
     this.blockNumber = initialBlockNumber;
     this.logger = logger;
@@ -60,10 +63,17 @@ export default class UBAFeeCalculator {
    * @description Get the recent request flow
    * @param action The action to get the fee for
    * @param tokenSymbol The token symbol to get the fee for
+   * @param originChain The origin chain to get the fee for
+   * @param destinationChain The destination chain to get the fee for
    * @returns The relevant fee
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public async getUBAFee(action: UbaRunningRequest, tokenSymbol: string): Promise<BigNumber> {
+  public async getUBAFee(
+    action: UbaRunningRequest,
+    tokenSymbol: string,
+    originChain: number,
+    destinationChain: number
+  ): Promise<BigNumber> {
     // Destructure the action
     const { amount, type } = action;
     // First verify that both the last validated running balance and the runningBalance is
@@ -75,9 +85,16 @@ export default class UBAFeeCalculator {
     const amountToModify = amount.mul(type === "deposit" ? 1 : -1);
     // Resolve the new modified balance
     const modifiedBalance = this.runningBalance.add(amountToModify);
+    // TODO: Compute the accurate fee
     // Return the running balance
-    // TODO: Add the fee calculation
-    return modifiedBalance;
+    const { baselineFee, balancingFee, utilizationFee } = this.config;
+    return baselineFee // Add the baseline fee
+      .add(utilizationFee[tokenSymbol].apply(modifiedBalance)) // Add the utilization fee
+      .add(
+        balancingFee[originChain][tokenSymbol]
+          .apply(modifiedBalance) // Add the origin chain balancing fee
+          .add(balancingFee[destinationChain][tokenSymbol].apply(modifiedBalance)) // Add the destination chain balancing fee
+      );
   }
 
   /**
