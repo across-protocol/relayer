@@ -4,6 +4,7 @@ import { toBN } from "../FormattingUtils";
 import { SpokePoolClient } from "../../clients";
 import { Logger } from "winston";
 import UBAConfig from "./UBAFeeConfig";
+import { getDepositBalancingFee, getRefundBalancingFee } from "./UBAFeeUtility";
 
 // This file holds the UBA Fee Calculator class. The goal of this class is to keep track
 // of the running balance of a given spoke pool by fetching the most recent confirmed bundle
@@ -68,12 +69,7 @@ export default class UBAFeeCalculator {
    * @returns The relevant fee
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public async getUBAFee(
-    action: UbaRunningRequest,
-    tokenSymbol: string,
-    originChain: number,
-    destinationChain: number
-  ): Promise<BigNumber> {
+  public async getUBAFee(action: UbaRunningRequest, originChain: number, destinationChain: number): Promise<BigNumber> {
     // Destructure the action
     const { amount, type } = action;
     // First verify that both the last validated running balance and the runningBalance is
@@ -82,19 +78,35 @@ export default class UBAFeeCalculator {
       await this.updateRunningBalance();
     }
     // Set the amount to add to the running balance
-    const amountToModify = amount.mul(type === "deposit" ? 1 : -1);
-    // Resolve the new modified balance
-    const modifiedBalance = this.runningBalance.add(amountToModify);
-    // TODO: Compute the accurate fee
-    // Return the running balance
-    const { baselineFee, balancingFee, utilizationFee } = this.config;
-    return baselineFee // Add the baseline fee
-      .add(utilizationFee[tokenSymbol].apply(modifiedBalance)) // Add the utilization fee
-      .add(
-        balancingFee[originChain][tokenSymbol]
-          .apply(modifiedBalance) // Add the origin chain balancing fee
-          .add(balancingFee[destinationChain][tokenSymbol].apply(modifiedBalance)) // Add the destination chain balancing fee
-      );
+    // const amountToModify = amount.mul(type === "deposit" ? 1 : -1);
+
+    // Resolve the alpha fee of this action
+    const alphaFee = this.config.getBaselineFee(originChain, destinationChain);
+    // Resolve the utilization fee
+    const utilizationFee = this.config.getUtilizationFee();
+
+    let totalUBAFee = alphaFee.add(utilizationFee);
+
+    // Resolve the balancing fee tuples that are relevant to this operation
+    const originBalancingFeeTuples = this.config.getBalancingFeeTuples(originChain);
+    const destinationBalancingFeeTuples = this.config.getBalancingFeeTuples(destinationChain);
+
+    // If the action is a deposit, then we need to add the origin and destination balancing fee
+    // to the total UBA fee. We can use the getDepositBalancingFee function to do this
+    // Find both of these fees from the origin and destination chains
+    if (type === "deposit") {
+      totalUBAFee = totalUBAFee.add(getDepositBalancingFee(originBalancingFeeTuples, this.runningBalance, amount));
+      totalUBAFee = totalUBAFee.add(getDepositBalancingFee(destinationBalancingFeeTuples, this.runningBalance, amount));
+    }
+    // If the action is a refund, then we need to add the origin and destination balancing fee
+    // to the total UBA fee. We can use the getRefundBalancingFee function to do this
+    // Find both of these fees from the origin and destination chains
+    else {
+      totalUBAFee = totalUBAFee.add(getRefundBalancingFee(originBalancingFeeTuples, this.runningBalance, amount));
+      totalUBAFee = totalUBAFee.add(getRefundBalancingFee(destinationBalancingFeeTuples, this.runningBalance, amount));
+    }
+
+    return totalUBAFee;
   }
 
   /**
@@ -116,6 +128,8 @@ export default class UBAFeeCalculator {
       }
     }, this.lastValidatedRunningBalance ?? toBN(0));
   }
+
+  // THE FOLLOWING FUNCTIONS BELOW WILL BE REMOVED BY THE CODE WRITTEN BY @pxrl
 
   /**
    * @description Get the most recent request flow array from the most recent validated propsoal block
