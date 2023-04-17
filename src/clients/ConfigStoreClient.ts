@@ -36,6 +36,7 @@ import {
 import { lpFeeCalculator } from "@across-protocol/sdk-v2";
 import { BlockFinder, across } from "@uma/sdk";
 import { HubPoolClient } from "./HubPoolClient";
+import UBAConfig from "../utils/UBAFeeCalculator/UBAFeeConfig";
 
 export const GLOBAL_CONFIG_STORE_KEYS = {
   MAX_RELAYER_REPAYMENT_LEAF_SIZE: "MAX_RELAYER_REPAYMENT_LEAF_SIZE",
@@ -456,5 +457,33 @@ export class AcrossConfigStoreClient {
       const [current, post] = result.split(",").map(BigNumber.from);
       return { current, post };
     }
+  }
+
+  /**
+   * Call to onchain to get the UBA config for a given L1 token.
+   * @param l1TokenAddress L1 token address to get UBA config for.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  public async getUBAConfig(l1TokenAddress: string): Promise<UBAConfig> {
+    return {
+      utilizationFee: toBN(0),
+      baselineFee: {
+        default: toBN("300000000000000"),
+        override: {
+          "1-10": toBN("0"),
+          "1-137": toBN("0"),
+          "1-42161": toBN("0"),
+          "10-42161": toBN("100000000000000"),
+        },
+      },
+      balancingFee: {
+        default: [
+          [toBN("100000000000000000000000"), toBN("-400000000000000000")],
+          [toBN("1000000000000000000000000"), toBN("0")],
+          [toBN("3000000000000000000000000"), toBN("0")],
+          [toBN("5000000000000000000000000"), toBN("-400000000000000000")],
+        ],
+      },
+    };
   }
 }
