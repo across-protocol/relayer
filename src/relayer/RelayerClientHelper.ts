@@ -1,6 +1,13 @@
 import winston from "winston";
 import { Wallet } from "../utils";
-import { TokenClient, ProfitClient, BundleDataClient, InventoryClient, AcrossApiClient } from "../clients";
+import {
+  TokenClient,
+  ProfitClient,
+  BundleDataClient,
+  InventoryClient,
+  AcrossApiClient,
+  MockProfitClient,
+} from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import { RelayerConfig } from "./RelayerConfig";
 import { Clients, constructClients, updateClients, updateSpokePoolClients } from "../common";
@@ -46,15 +53,25 @@ export async function constructRelayerClients(
   const enabledChainIds = (
     config.relayerDestinationChains.length > 0 ? config.relayerDestinationChains : config.chainIdListIndices
   ).filter((chainId) => Object.keys(spokePoolClients).includes(chainId.toString()));
-  const profitClient = new ProfitClient(
-    logger,
-    commonClients.hubPoolClient,
-    spokePoolClients,
-    enabledChainIds,
-    config.minRelayerFeePct,
-    config.debugProfitability,
-    config.relayerGasMultiplier
-  );
+  const profitClient = config.ignoreProfitability
+    ? new MockProfitClient(
+        logger,
+        commonClients.hubPoolClient,
+        spokePoolClients,
+        [],
+        config.minRelayerFeePct,
+        config.debugProfitability,
+        config.relayerGasMultiplier
+      )
+    : new ProfitClient(
+        logger,
+        commonClients.hubPoolClient,
+        spokePoolClients,
+        enabledChainIds,
+        config.minRelayerFeePct,
+        config.debugProfitability,
+        config.relayerGasMultiplier
+      );
   await profitClient.update();
 
   const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [

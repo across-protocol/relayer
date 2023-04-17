@@ -281,6 +281,14 @@ export class Relayer {
       // accidentally double fill due to the deposit hash being different - SpokePool contract will check that the
       // original hash with the old fee hasn't been filled.
       if (isDepositSpedUp(deposit)) {
+        if (deposit.newMessage !== "0x") {
+          this.logger.warn({
+            at: "Relayer",
+            message: "Skipping fill for sped-up deposit with message",
+            deposit,
+          });
+          return;
+        }
         this.clients.multiCallerClient.enqueueTransaction({
           contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
           chainId: deposit.destinationChainId,
@@ -293,7 +301,7 @@ export class Relayer {
             this.constructRelayFilledMrkdwn(deposit, repaymentChain, fillAmount) +
             `Modified relayer fee: ${formatFeePct(deposit.newRelayerFeePct)}%.`, // message details mrkdwn
         });
-      } else {
+      } else if (deposit.message === "0x") {
         // Add the fill transaction to the multiCallerClient so it will be executed with the next batch.
         this.clients.multiCallerClient.enqueueTransaction({
           contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
@@ -303,6 +311,16 @@ export class Relayer {
           message: fillAmount.eq(deposit.amount) ? "Relay instantly sent 🚀" : "Instantly completed relay 📫", // message sent to logger.
           mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChain, fillAmount), // message details mrkdwn
         });
+      } else {
+        // We need to build in better simulation logic for deposits with non-empty messages. Currently we only measure
+        // the fill's gas cost against a simple USDC fill with message=0x. This doesn't handle the case where the
+        // message is != 0x and it ends up costing a lot of gas to execute, resulting in a big loss to the relayer.
+        this.logger.warn({
+          at: "Relayer",
+          message: "Skipping fill for deposit with message",
+          deposit,
+        });
+        return;
       }
 
       // TODO: Revisit in the future when we implement partial fills.
