@@ -401,14 +401,14 @@ export async function buildDepositStruct(
   configStoreClient: AcrossConfigStoreClient,
   l1TokenForDepositedToken: Contract
 ) {
+  const { quoteBlock, realizedLpFeePct} = await await configStoreClient.computeRealizedLpFeePct(deposit, l1TokenForDepositedToken.address)
   return {
     ...deposit,
     message: "0x",
-    blockNumber: await getLastBlockNumber(),
-    quoteBlockNumber: await getLastBlockNumber(),
     destinationToken: hubPoolClient.getDestinationTokenForDeposit(deposit),
-    realizedLpFeePct: (await configStoreClient.computeRealizedLpFeePct(deposit, l1TokenForDepositedToken.address))
-      .realizedLpFeePct,
+    quoteBlockNumber: quoteBlock,
+    realizedLpFeePct,
+    blockNumber: await getLastBlockNumber(),
   };
 }
 export async function buildDeposit(
