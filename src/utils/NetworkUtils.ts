@@ -12,7 +12,7 @@ export function getNetworkName(networkId: number | string): string {
       return "Hardhat2";
     }
     if (Number(networkId) == 421613) {
-        return "ArbitrumGoerli"
+      return "ArbitrumGoerli";
     }
     return "unknown";
   }
