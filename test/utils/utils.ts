@@ -404,8 +404,8 @@ export async function buildDepositStruct(
   return {
     ...deposit,
     message: "0x",
-    originBlockNumber: await getLastBlockNumber(),
-    blockNumber: 0,
+    blockNumber: await getLastBlockNumber(),
+    quoteBlockNumber: 0,
     destinationToken: hubPoolClient.getDestinationTokenForDeposit(deposit),
     realizedLpFeePct: (await configStoreClient.computeRealizedLpFeePct(deposit, l1TokenForDepositedToken.address))
       .realizedLpFeePct,
