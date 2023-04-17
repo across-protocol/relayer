@@ -47,6 +47,12 @@ export function performLinearIntegration(
   return feeIntegral;
 }
 
+/**
+ * Retrieve the numerical bounds of a given interval from an array of buckets
+ * @param cutoffArray An array of tuples that define the cutoff points and values of the piecewise function
+ * @param index The index of the cutoffArray that we're currently in
+ * @returns The upper and lower bounds of the interval
+ */
 export function getBounds(cutoffArray: [BigNumber, BigNumber][], index: number): [BigNumber, BigNumber] {
   if (index === 0) {
     return [BigNumber.from(-Infinity), cutoffArray[0][0]];
@@ -57,6 +63,12 @@ export function getBounds(cutoffArray: [BigNumber, BigNumber][], index: number):
   }
 }
 
+/**
+ * Get the interval that the target is within and the bounds of that interval
+ * @param cutoffArray An array of tuples that define the cutoff points and values of the piecewise function
+ * @param target The target value that we're trying to find the interval for
+ * @returns The index of the interval that the target is in and the bounds of that interval
+ */
 export function getInterval(
   cutoffArray: [BigNumber, BigNumber][],
   target: BigNumber
@@ -72,6 +84,13 @@ export function getInterval(
   return result;
 }
 
+/**
+ * Computes the balancing fee for a refund request
+ * @param cutoffArray An array of tuples that define the cutoff points and values of the piecewise function
+ * @param runningBalance The current running balance of the spoke pool
+ * @param modificationAmount The amount that the user will be refunding
+ * @returns The balancing fee for the refund
+ */
 export function getRefundBalancingFee(
   cutoffArray: [BigNumber, BigNumber][],
   runningBalance: BigNumber,
@@ -119,6 +138,13 @@ export function getRefundBalancingFee(
   return totalFee;
 }
 
+/**
+ * Computes the balancing fee for a deposit.
+ * @param cutoffArray An array of tuples that define the cutoff points and values of the piecewise function
+ * @param runningBalance The current running balance of the spoke pool
+ * @param modificationAmount The amount that the user will be depositing
+ * @returns The balancing fee for the deposit
+ */
 export function getDepositBalancingFee(
   cutoffArray: [BigNumber, BigNumber][],
   runningBalance: BigNumber,
