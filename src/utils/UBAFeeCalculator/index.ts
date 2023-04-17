@@ -1,2 +1,3 @@
 export { default as UBAFeeCalculator } from "./UBAFeeCalculator";
-export { default as UBAPiecewiseFunction } from "./UBAPiecewiseFn";
+export * as UBAFeeConfig from "./UBAFeeConfig";
+export * as UBAFeeUtility from "./UBAFeeUtility";
