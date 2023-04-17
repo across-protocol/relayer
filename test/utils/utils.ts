@@ -401,7 +401,10 @@ export async function buildDepositStruct(
   configStoreClient: AcrossConfigStoreClient,
   l1TokenForDepositedToken: Contract
 ) {
-  const { quoteBlock, realizedLpFeePct} = await await configStoreClient.computeRealizedLpFeePct(deposit, l1TokenForDepositedToken.address)
+  const { quoteBlock, realizedLpFeePct } = await await configStoreClient.computeRealizedLpFeePct(
+    deposit,
+    l1TokenForDepositedToken.address
+  );
   return {
     ...deposit,
     message: "0x",
