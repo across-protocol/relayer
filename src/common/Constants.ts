@@ -61,6 +61,9 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   137: 128, // Commonly used finality level for CEX's that accept Polygon deposits
   288: 0,
   42161: 0,
+  // Testnets:
+  5: 0,
+  421613: 0,
 };
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   1000: {
@@ -69,6 +72,9 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     137: 100, // Probabilistically safe level based on historic Polygon reorgs
     288: 0,
     42161: 0,
+    // Testnets:
+    5: 0,
+    421613: 0,
   },
   100: {
     1: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
@@ -76,6 +82,9 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     137: 80,
     288: 0,
     42161: 0,
+    // Testnets:
+    5: 0,
+    421613: 0,
   },
 };
 export const QUOTE_TIME_BUFFER = 12 * 5; // 5 blocks on Mainnet.
@@ -93,6 +102,9 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   137: 3490,
   288: 4990,
   42161: 10000,
+  // Testnets:
+  5: 10000,
+  421613: 10000,
 };
 
 export const BUNDLE_END_BLOCK_BUFFERS = {
@@ -101,6 +113,9 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   137: 750, // At 2s/block, 25 mins = 25 * 60 / 2 = 750 blocks
   288: 5, // At 60s/block, 50 blocks = 25 mins
   42161: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
+  // Testnets:
+  5: 0,
+  421613: 0,
 };
 
 export const DEFAULT_RELAYER_GAS_MULTIPLIER = 1.2;
@@ -127,6 +142,9 @@ export const MAX_REORG_DISTANCE: { [chainId: number]: number } = {
   137: 256,
   288: 0,
   42161: 0,
+  // Testnets:
+  5: 0,
+  421613: 0,
 };
 
 // This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
@@ -139,10 +157,12 @@ export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
 // Multicall3 Constants:
 export const multicall3Addresses = {
   1: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  5: "0xcA11bde05977b3631167028862bE2a173976CA11",
   10: "0xcA11bde05977b3631167028862bE2a173976CA11",
   137: "0xcA11bde05977b3631167028862bE2a173976CA11",
   288: "0xcA11bde05977b3631167028862bE2a173976CA11",
   42161: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  421613: "0xcA11bde05977b3631167028862bE2a173976CA11",
 };
 export type Multicall2Call = {
   callData: ethers.utils.BytesLike;
