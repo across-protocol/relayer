@@ -392,7 +392,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       )),
       blockNumber: await getLastBlockNumber(),
     } as DepositWithBlock;
-    deposit1.blockNumber = (await configStoreClient.computeRealizedLpFeePct(deposit1, l1Token_1.address)).quoteBlock;
+    deposit1.quoteBlockNumber = (await configStoreClient.computeRealizedLpFeePct(deposit1, l1Token_1.address)).quoteBlock;
 
     const deposit2 = {
       ...(await buildDeposit(
@@ -407,7 +407,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       )),
       blockNumber: await getLastBlockNumber(),
     } as DepositWithBlock;
-    deposit2.blockNumber = (await configStoreClient.computeRealizedLpFeePct(deposit2, l1Token_2.address)).quoteBlock;
+    deposit2.quoteBlockNumber = (await configStoreClient.computeRealizedLpFeePct(deposit2, l1Token_2.address)).quoteBlock;
 
     // Unfilled deposits are ignored.
     await updateAllClients();
@@ -494,7 +494,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       )),
       blockNumber: await getLastBlockNumber(),
     } as DepositWithBlock;
-    deposit5.blockNumber = (await configStoreClient.computeRealizedLpFeePct(deposit5, l1Token_1.address)).quoteBlock;
+    deposit5.quoteBlockNumber = (await configStoreClient.computeRealizedLpFeePct(deposit5, l1Token_1.address)).quoteBlock;
     const fill3 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit5, 0.25);
 
     // One unfilled deposit that we're going to slow fill:
