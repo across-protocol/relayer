@@ -377,7 +377,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       )),
       blockNumber: await getLastBlockNumber(),
     } as DepositWithBlock;
-    deposit1["quoteBlockNumber"] = (
+    deposit1.quoteBlockNumber = (
       await configStoreClient.computeRealizedLpFeePct(deposit1, l1Token_1.address)
     ).quoteBlock;
 
@@ -394,7 +394,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       )),
       blockNumber: await getLastBlockNumber(),
     } as DepositWithBlock;
-    deposit2["quoteBlockNumber"] = (
+    deposit2.quoteBlockNumber = (
       await configStoreClient.computeRealizedLpFeePct(deposit2, l1Token_2.address)
     ).quoteBlock;
 
@@ -492,7 +492,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       )),
       blockNumber: await getLastBlockNumber(),
     } as DepositWithBlock;
-    deposit5["quoteBlockNumber"] = (
+    deposit5.quoteBlockNumber = (
       await configStoreClient.computeRealizedLpFeePct(deposit5, l1Token_1.address)
     ).quoteBlock;
     const fill3 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit5, 0.25);
