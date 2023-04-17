@@ -52,21 +52,6 @@
     arb-bridge-eth "^0.7.4"
     arb-bridge-peripherals "^1.0.5"
 
-"@across-protocol/contracts-v2@^2.1.0-beta.1":
-  version "2.1.0"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.1.0.tgz#94fac8659df610d77572278539e659ba31032cc3"
-  integrity sha512-0AKeiAAQYxccwFRZQGsZMHxD+wZ3Iz/QYEMZwZKVnkaBLHWyO7j/HeN1XSY3YoCcjsW8UL5mmmGP55WyIC6tAQ==
-  dependencies:
-    "@defi-wonderland/smock" "^2.3.4"
-    "@eth-optimism/contracts" "^0.5.11"
-    "@openzeppelin/contracts" "^4.7.3"
-    "@openzeppelin/contracts-upgradeable" "^4.8.2"
-    "@uma/common" "^2.29.0"
-    "@uma/contracts-node" "^0.3.18"
-    "@uma/core" "^2.41.0"
-    arb-bridge-eth "^0.7.4"
-    arb-bridge-peripherals "^1.0.5"
-
 "@across-protocol/contracts@^0.1.4":
   version "0.1.4"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-0.1.4.tgz#64b3d91e639d2bb120ea94ddef3d160967047fa5"
