@@ -291,8 +291,8 @@ export class Relayer {
         this.logger.warn({
           at: "Relayer",
           message: "Skipping fill for deposit with message",
-          deposit
-        })
+          deposit,
+        });
         return;
       }
 
