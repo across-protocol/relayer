@@ -102,7 +102,7 @@ export class SpokePoolClient {
       FundsDeposited: this.spokePool.filters.FundsDeposited(),
       RequestedSpeedUpDeposit: this.spokePool.filters.RequestedSpeedUpDeposit(),
       FilledRelay: this.spokePool.filters.FilledRelay(),
-      // RefundRequested: this.spokePool.filters.refundRequested(), @todo Only used once we implement UBA fee model
+      RefundRequested: this.spokePool.filters.refundRequested(),
       EnabledDepositRoute: this.spokePool.filters.EnabledDepositRoute(),
       TokensBridged: this.spokePool.filters.TokensBridged(),
       RelayedRootBundle: this.spokePool.filters.RelayedRootBundle(),
@@ -204,11 +204,13 @@ export class SpokePoolClient {
   appendMaxSpeedUpSignatureToDeposit(deposit: DepositWithBlock): DepositWithBlock {
     const speedupsForDeposit = this.speedUps[deposit.depositor]?.[deposit.depositId];
 
+    // Find the SpeedUp with the highest relayerFeePct
     const maxSpeedUp = speedupsForDeposit?.reduce((prev, current) =>
       prev.newRelayerFeePct.gt(current.newRelayerFeePct) ? prev : current
     );
 
-    // Only if there is a speedup and the new relayer fee is greater than the current relayer fee, save the new fee.
+    // We assume that the depositor authorises SpeedUps in isolation of each other, which keeps the relayer
+    // logic simple: find the SpeedUp with the highest relayerFeePct, and use all of its fields
     if (!maxSpeedUp || maxSpeedUp.newRelayerFeePct.lte(deposit.relayerFeePct)) {
       return deposit;
     }
