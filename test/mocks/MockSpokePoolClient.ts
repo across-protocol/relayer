@@ -64,8 +64,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
 
     // Ensure an array for every requested event exists, in the requested order.
     // All requested event types must be populated in the array (even if empty).
-    const events: Event[][] = [];
-    eventsToQuery.forEach((_eventName, idx) => (events[idx] ??= []));
+    const events: Event[][] = eventsToQuery.map(() => []);
     this.events.flat().forEach((event) => {
       const idx = eventsToQuery.indexOf(event.event as string);
       if (idx !== -1) {
