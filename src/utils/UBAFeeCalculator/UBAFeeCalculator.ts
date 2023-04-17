@@ -1,7 +1,7 @@
 import { BigNumber } from "ethers";
-import { UbaFlow, UbaRunningRequest, isUbaInflow, isUbaOutflow } from "../interfaces";
-import { toBN } from "./FormattingUtils";
-import { SpokePoolClient } from "../clients";
+import { UbaFlow, UbaRunningRequest, isUbaInflow, isUbaOutflow } from "../../interfaces";
+import { toBN } from "../FormattingUtils";
+import { SpokePoolClient } from "../../clients";
 import { Logger } from "winston";
 
 // This file holds the UBA Fee Calculator class. The goal of this class is to keep track
