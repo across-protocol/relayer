@@ -304,7 +304,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(lastSpyLogIncludes(spy, "Skipping fill for sped-up deposit with message")).to.be.true;
-    expect(multiCallerClient.transactionCount()).to.equal(0); 
+    expect(multiCallerClient.transactionCount()).to.equal(0);
 
     // Now speed up deposit again with a higher fee and a message of 0x. This should be filled.
     const emptyMessageSpeedUp = {
