@@ -428,7 +428,6 @@ export class SpokePoolClient {
         destinationToken: this.getDestinationTokenForDeposit(processedEvent),
         quoteBlockNumber: dataForQuoteTime.quoteBlock,
         blockNumber: event.blockNumber,
-      } as DepositWithBlock;
       this.logger.debug({
         at: "SpokePoolClient#queryHistoricalDepositForFill",
         message: "Queried RPC for deposit outside SpokePoolClient's search range",
