@@ -25,7 +25,6 @@ import {
   mineRandomBlocks,
   winston,
   lastSpyLogIncludes,
-  getLastBlockNumber,
 } from "./utils";
 
 import { AcrossConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
