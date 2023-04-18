@@ -67,7 +67,8 @@ export class AcrossConfigStoreClient {
     readonly logger: winston.Logger,
     readonly configStore: Contract,
     readonly hubPoolClient: HubPoolClient,
-    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
+    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
+    readonly enabledChainIds: number[] = CHAIN_ID_LIST_INDICES
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
     this.blockFinder = new BlockFinder(this.configStore.provider.getBlock.bind(this.configStore.provider));
@@ -190,7 +191,7 @@ export class AcrossConfigStoreClient {
   getEnabledChainsInBlockRange(
     fromBlock: number,
     toBlock = Number.MAX_SAFE_INTEGER,
-    allPossibleChains = CHAIN_ID_LIST_INDICES
+    allPossibleChains = this.enabledChainIds
   ): number[] {
     if (toBlock < fromBlock) {
       throw new Error(`Invalid block range: fromBlock ${fromBlock} > toBlock ${toBlock}`);
@@ -220,7 +221,7 @@ export class AcrossConfigStoreClient {
       .sort((a, b) => a - b);
   }
 
-  getEnabledChains(block = Number.MAX_SAFE_INTEGER, allPossibleChains = CHAIN_ID_LIST_INDICES): number[] {
+  getEnabledChains(block = Number.MAX_SAFE_INTEGER, allPossibleChains = this.enabledChainIds): number[] {
     // Get most recent disabled chain list before the block specified.
     const currentlyDisabledChains = this.getDisabledChainsForBlock(block);
     return allPossibleChains.filter((chainId) => !currentlyDisabledChains.includes(chainId));
