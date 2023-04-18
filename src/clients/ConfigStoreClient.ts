@@ -465,9 +465,8 @@ export class AcrossConfigStoreClient {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   public async getUBAConfig(l1TokenAddress: string): Promise<UBAConfig> {
-    return {
-      utilizationFee: toBN(0),
-      baselineFee: {
+    return new UBAConfig(
+      {
         default: toBN("300000000000000"),
         override: {
           "1-10": toBN("0"),
@@ -476,14 +475,15 @@ export class AcrossConfigStoreClient {
           "10-42161": toBN("100000000000000"),
         },
       },
-      balancingFee: {
+      toBN(0),
+      {
         default: [
           [toBN("100000000000000000000000"), toBN("-400000000000000000")],
           [toBN("1000000000000000000000000"), toBN("0")],
           [toBN("3000000000000000000000000"), toBN("0")],
           [toBN("5000000000000000000000000"), toBN("-400000000000000000")],
         ],
-      },
-    };
+      }
+    );
   }
 }
