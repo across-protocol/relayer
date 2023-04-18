@@ -2,7 +2,6 @@ import {
   expect,
   toBNWei,
   ethers,
-  fillRelay,
   SignerWithAddress,
   deposit,
   setupTokensForWallet,
@@ -368,32 +367,16 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Can fetch older deposit matching fill", async function () {
-    const depositData = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-
-    if (!depositData) {
-      throw new Error("Deposit data is null");
-    }
-    const expectedRealizedLpFeePct = await configStoreClient.computeRealizedLpFeePct(
-      {
-        quoteTimestamp: depositData.quoteTimestamp,
-        amount: depositData.amount,
-        destinationChainId: depositData.destinationChainId,
-        originChainId: depositData.originChainId,
-      },
-      l1Token.address
-    );
-    await fillRelay(
-      spokePool_2,
-      erc20_2,
+    const deposit = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
       depositor,
-      depositor,
-      relayer,
-      0,
-      originChainId,
-      depositData?.amount,
-      depositData?.amount,
-      expectedRealizedLpFeePct.realizedLpFeePct
+      destinationChainId
     );
+    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit, 1);
     await spokePoolClient2.update();
     const [fill] = spokePoolClient2.getFills();
 
@@ -407,37 +390,21 @@ describe("SpokePoolClient: Fill Validation", async function () {
     // Client has 0 deposits in memory so querying historical deposit sends fresh RPC requests.
     expect(spokePoolClient1.getDeposits().length).to.equal(0);
     const historicalDeposit = await spokePoolClient1.queryHistoricalDepositForFill(fill);
-    expect(historicalDeposit?.depositId).to.deep.equal(depositData.depositId);
+    expect(historicalDeposit?.depositId).to.deep.equal(deposit.depositId);
   });
 
   it("Can fetch younger deposit matching fill", async function () {
-    const depositData = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
+    const deposit = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId
+    );
     const depositBlock = await spokePool_1.provider.getBlockNumber();
-
-    if (!depositData) {
-      throw new Error("Deposit data is null");
-    }
-    const expectedRealizedLpFeePct = await configStoreClient.computeRealizedLpFeePct(
-      {
-        quoteTimestamp: depositData.quoteTimestamp,
-        amount: depositData.amount,
-        destinationChainId: depositData.destinationChainId,
-        originChainId: depositData.originChainId,
-      },
-      l1Token.address
-    );
-    await fillRelay(
-      spokePool_2,
-      erc20_2,
-      depositor,
-      depositor,
-      relayer,
-      0,
-      originChainId,
-      depositData?.amount,
-      depositData?.amount,
-      expectedRealizedLpFeePct.realizedLpFeePct
-    );
+    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit, 1);
     await spokePoolClient2.update();
     const [fill] = spokePoolClient2.getFills();
 
@@ -450,11 +417,10 @@ describe("SpokePoolClient: Fill Validation", async function () {
     // Client has 0 deposits in memory so querying historical deposit sends fresh RPC requests.
     expect(spokePoolClient1.getDeposits().length).to.equal(0);
     const historicalDeposit = await spokePoolClient1.queryHistoricalDepositForFill(fill);
-    expect(historicalDeposit?.depositId).to.deep.equal(depositData.depositId);
+    expect(historicalDeposit?.depositId).to.deep.equal(deposit.depositId);
   });
 
   it("Loads fills from memory with deposit ID > spoke pool client's earliest deposit ID queried", async function () {
-    // Send fill for deposit ID 0.
     const deposit = await buildDeposit(
       configStoreClient,
       hubPoolClient,
@@ -505,20 +471,16 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Ignores fills with deposit ID < first deposit ID in spoke pool", async function () {
-    // For this test, the client should exit early based on the fill.depositId so we don't need to send
-    // a deposit on chain.
-    await fillRelay(
-      spokePool_2,
-      erc20_2,
+    const deposit = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
       depositor,
-      depositor,
-      relayer,
-      0,
-      originChainId,
-      toBNWei("1"),
-      toBNWei("1"),
-      toBNWei("0.01")
+      destinationChainId
     );
+    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit, 1);
     await spokePoolClient2.update();
     const [fill] = spokePoolClient2.getFills();
 
@@ -531,19 +493,26 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Ignores fills with deposit ID > latest deposit ID in spoke pool", async function () {
-    // For this test, the client should exit early based on the fill.depositId so we don't need to send
-    // a deposit on chain.
-    await fillRelay(
+    const sampleDeposit = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId
+    );
+    // Override the deposit ID that we are "filling" to be > 1, the latest deposit ID in spoke pool 1.
+    await buildFill(
       spokePool_2,
       erc20_2,
       depositor,
-      depositor,
       relayer,
-      1,
-      originChainId,
-      toBNWei("1"),
-      toBNWei("1"),
-      toBNWei("0.01")
+      {
+        ...sampleDeposit,
+        depositId: 2,
+      },
+      1
     );
     await spokePoolClient2.update();
     const [fill] = spokePoolClient2.getFills();
