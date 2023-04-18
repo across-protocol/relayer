@@ -21,6 +21,7 @@ import {
   ethers,
   etherscanLink,
   etherscanLinks,
+  getGasPrice,
   getNativeTokenSymbol,
   getNetworkName,
   getUnfilledDeposits,
@@ -425,9 +426,10 @@ export class Monitor {
               });
             } else {
               // Note: We don't multicall sending ETH as its not a contract call.
+              const gas = await getGasPrice(this.clients.spokePoolClients[chainId].spokePool.provider);
               const tx = await (
                 await this.clients.spokePoolClients[chainId].spokePool.signer
-              ).sendTransaction({ to: account, value: deficit });
+              ).sendTransaction({ to: account, value: deficit, ...gas });
               const receipt = await tx.wait();
               this.logger.info({
                 at: "Monitor#refillBalances",
