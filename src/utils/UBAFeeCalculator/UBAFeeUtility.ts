@@ -1,5 +1,6 @@
 import { BigNumber } from "ethers";
 import { toBN } from "../FormattingUtils";
+import { MAX_SAFE_JS_INT } from "@uma/common";
 
 /**
  * Computes a linear integral over a piecewise function
@@ -55,9 +56,9 @@ export function performLinearIntegration(
  */
 export function getBounds(cutoffArray: [BigNumber, BigNumber][], index: number): [BigNumber, BigNumber] {
   if (index === 0) {
-    return [BigNumber.from(-Infinity), cutoffArray[0][0]];
+    return [BigNumber.from(-MAX_SAFE_JS_INT), cutoffArray[0][0]];
   } else if (index >= cutoffArray.length) {
-    return [cutoffArray[cutoffArray.length - 1][0], BigNumber.from(Infinity)];
+    return [cutoffArray[cutoffArray.length - 1][0], BigNumber.from(MAX_SAFE_JS_INT)];
   } else {
     return [cutoffArray[index - 1][0], cutoffArray[index][0]];
   }
@@ -73,7 +74,10 @@ export function getInterval(
   cutoffArray: [BigNumber, BigNumber][],
   target: BigNumber
 ): [number, [BigNumber, BigNumber]] {
-  let result: [number, [BigNumber, BigNumber]] = [-1, [BigNumber.from(-Infinity), BigNumber.from(Infinity)]];
+  let result: [number, [BigNumber, BigNumber]] = [
+    -1,
+    [BigNumber.from(-MAX_SAFE_JS_INT), BigNumber.from(MAX_SAFE_JS_INT)],
+  ];
   for (let i = 0; i <= cutoffArray.length; i++) {
     const [lowerBound, upperBound] = getBounds(cutoffArray, i);
     if (target.gte(lowerBound) && target.lt(upperBound)) {
