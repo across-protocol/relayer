@@ -15,12 +15,12 @@ import "hardhat-deploy";
 
 dotenv.config();
 
-const solcVersion = "0.8.13";
+const solcVersion = "0.8.18";
 const mnemonic = getMnemonic();
 
 const config: HardhatUserConfig = {
   solidity: {
-    compilers: [{ version: solcVersion, settings: { optimizer: { enabled: true, runs: 1000000 } } }],
+    compilers: [{ version: solcVersion, settings: { optimizer: { enabled: true, runs: 1000000 }, viaIR: true } }],
   },
   networks: {
     hardhat: { accounts: { accountsBalance: "1000000000000000000000000" } },
