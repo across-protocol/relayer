@@ -68,7 +68,6 @@ export default class UBAFeeCalculator {
    * @param destinationChain The destination chain to get the fee for
    * @returns The relevant fee
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   public async getUBAFee(action: UbaRunningRequest, originChain: number, destinationChain: number): Promise<BigNumber> {
     // Destructure the action
     const { amount, type } = action;
@@ -77,16 +76,12 @@ export default class UBAFeeCalculator {
     if (this.lastValidatedRunningBalance === undefined || this.runningBalance === undefined) {
       await this.updateRunningBalance();
     }
-    // Set the amount to add to the running balance
-    // const amountToModify = amount.mul(type === "deposit" ? 1 : -1);
-
     // Resolve the alpha fee of this action
     const alphaFee = this.config.getBaselineFee(originChain, destinationChain);
     // Resolve the utilization fee
     const utilizationFee = this.config.getUtilizationFee();
 
     let totalUBAFee = alphaFee.add(utilizationFee);
-
     // Resolve the balancing fee tuples that are relevant to this operation
     const originBalancingFeeTuples = this.config.getBalancingFeeTuples(originChain);
     const destinationBalancingFeeTuples = this.config.getBalancingFeeTuples(destinationChain);
