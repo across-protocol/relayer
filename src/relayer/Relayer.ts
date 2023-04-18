@@ -303,7 +303,7 @@ export class Relayer {
           message: fillAmount.eq(deposit.amount) ? "Relay instantly sent 🚀" : "Instantly completed relay 📫", // message sent to logger.
           mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChain, fillAmount), // message details mrkdwn
         });
-      } 
+      }
 
       // TODO: Revisit in the future when we implement partial fills.
       this.fullyFilledDeposits[fillKey] = true;
