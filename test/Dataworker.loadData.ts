@@ -672,7 +672,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
     expect(data1.deposits)
       .excludingEvery(["logIndex", "transactionHash", "transactionIndex"])
-      .to.deep.equal([{ ...deposit1, blockNumber: realizedLpFeePctData.quoteBlock, blockNumber: originBlock }]);
+      .to.deep.equal([{ ...deposit1, quoteBlockNumber: realizedLpFeePctData.quoteBlock, blockNumber: originBlock }]);
 
     // If block range does not cover deposits, then they are not included
     expect(

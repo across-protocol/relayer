@@ -159,9 +159,9 @@ describe("SpokePoolClient: SpeedUp", async function () {
     ).to.be.true;
     expect(
       deepEqualsWithBigNumber(spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0], deposit, [
-        "blockNumber",
-        "logIndex",
         "quoteBlockNumber",
+        "logIndex",
+        "blockNumber",
         "transactionHash",
         "transactionIndex",
       ])
@@ -223,7 +223,7 @@ describe("SpokePoolClient: SpeedUp", async function () {
       deepEqualsWithBigNumber(
         spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0],
         expectedDepositData,
-        ["blockNumber", "logIndex", "quoteBlockNumber", "transactionHash", "transactionIndex"]
+        ["quoteBlockNumber", "logIndex", "blockNumber", "transactionHash", "transactionIndex"]
       )
     ).to.be.true;
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId).length).to.equal(1);

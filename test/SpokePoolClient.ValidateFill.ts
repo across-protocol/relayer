@@ -25,6 +25,7 @@ import {
   mineRandomBlocks,
   winston,
   lastSpyLogIncludes,
+  getLastBlockNumber,
 } from "./utils";
 
 import { AcrossConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
@@ -123,16 +124,12 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Returns deposit matched with fill", async function () {
-    const deposit_1 = await buildDeposit(
-      configStoreClient,
-      hubPoolClient,
-      spokePool_1,
-      erc20_1,
-      l1Token,
-      depositor,
-      destinationChainId
-    );
-    const fill_1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit_1, 0.5);
+    const deposit_1 = {
+      ...(await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId)),
+      blockNumber: await getLastBlockNumber(),
+      quoteBlockNumber: 0,
+    };
+    const fill_1 = await fillRelay(spokePool_2, erc20_2, depositor, depositor, relayer, 0, originChainId);
 
     const spokePoolClientForDestinationChain = new SpokePoolClient(
       createSpyLogger().spyLogger,
@@ -556,15 +553,11 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Returns sped up deposit matched with fill", async function () {
-    const deposit_1 = await buildDeposit(
-      configStoreClient,
-      hubPoolClient,
-      spokePool_1,
-      erc20_1,
-      l1Token,
-      depositor,
-      destinationChainId
-    );
+    const deposit_1 = {
+      ...(await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId)),
+      blockNumber: await getLastBlockNumber(),
+      quoteBlockNumber: 0,
+    };
     // Override the fill's realized LP fee % and destination token so that it matches the deposit's default zero'd
     // out values. The destination token and realized LP fee % are set by the spoke pool client by querying the hub pool
     // contract state, however this test ignores the rate model contract and therefore there is no hub pool contract
