@@ -72,7 +72,7 @@ export function updateRunningBalanceForDeposit(
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
     deposit.originChainId,
     deposit.originToken,
-    deposit.blockNumber
+    deposit.quoteBlockNumber
   );
   updateRunningBalance(runningBalances, deposit.originChainId, l1TokenCounterpart, updateAmount);
 }

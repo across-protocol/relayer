@@ -81,8 +81,8 @@ export function getUniqueDepositsInRange(
     .getDepositsForDestinationChain(destinationChain)
     .filter(
       (deposit: DepositWithBlock) =>
-        deposit.originBlockNumber <= originChainBlockRange[1] &&
-        deposit.originBlockNumber >= originChainBlockRange[0] &&
+        deposit.blockNumber <= originChainBlockRange[1] &&
+        deposit.blockNumber >= originChainBlockRange[0] &&
         !existingUniqueDeposits.some(
           (existingDeposit) =>
             existingDeposit.originChainId === deposit.originChainId && existingDeposit.depositId === deposit.depositId
