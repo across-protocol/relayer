@@ -1,4 +1,4 @@
-import { ethers, getSigner, getProvider, ERC20, ZERO_ADDRESS, toBN } from "../src/utils";
+import { ethers, getSigner, getProvider, ERC20, ZERO_ADDRESS, toBN, getGasPrice } from "../src/utils";
 import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
 const args = minimist(process.argv.slice(2), {
@@ -44,7 +44,8 @@ export async function run(): Promise<void> {
       return;
     }
     console.log("sending...");
-    const tx = await connectedSigner.sendTransaction({ to: recipient, value: toBN(args.amount) });
+    const gas = await getGasPrice(connectedSigner.provider);
+    const tx = await connectedSigner.sendTransaction({ to: recipient, value: toBN(args.amount), ...gas });
     const receipt = await tx.wait();
     console.log("Transaction hash:", receipt.transactionHash);
   }
