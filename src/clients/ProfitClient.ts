@@ -43,6 +43,7 @@ export const GAS_TOKEN_BY_CHAIN_ID: { [chainId: number]: string } = {
 // TODO: Make this dynamic once we support chains with gas tokens that have different decimals.
 const GAS_TOKEN_DECIMALS = 18;
 
+// These are used to simulate fills on L2s to return estimated gas costs.
 // Note: the type here assumes that all of these classes take the same constructor parameters.
 const QUERY_HANDLERS: {
   [chainId: number]: new (
@@ -54,6 +55,9 @@ const QUERY_HANDLERS: {
   137: relayFeeCalculator.PolygonQueries,
   288: relayFeeCalculator.BobaQueries,
   42161: relayFeeCalculator.ArbitrumQueries,
+  // Testnets:
+  5: relayFeeCalculator.EthereumQueries,
+  421613: relayFeeCalculator.ArbitrumQueries,
 };
 
 const { PriceClient } = priceClient;
@@ -70,6 +74,8 @@ export class ProfitClient {
 
   // Queries needed to fetch relay gas costs.
   private relayerFeeQueries: { [chainId: number]: relayFeeCalculator.QueryInterface } = {};
+
+  private isGoerli: boolean;
 
   // @todo: Consolidate this set of args before it grows legs and runs away from us.
   constructor(
@@ -99,6 +105,8 @@ export class ProfitClient {
         spokePoolClients[chainId].spokePool.provider
       );
     }
+
+    this.isGoerli = this.hubPoolClient.chainId === CHAIN_IDs.GOERLI;
   }
 
   getAllPrices(): { [address: string]: BigNumber } {
@@ -111,6 +119,10 @@ export class ProfitClient {
     if (this.tokenPrices[token] === undefined) {
       this.logger.warn({ at: "ProfitClient#getPriceOfToken", message: `Token ${token} not in price list.` });
       return toBN(0);
+    }
+
+    if (this.isGoerli && token === TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.GOERLI]) {
+      return this.tokenPrices[WETH];
     }
     return this.tokenPrices[token];
   }
@@ -319,6 +331,16 @@ export class ProfitClient {
       decimals: 18,
     };
 
+    // Support for relaying WETH on public testnet Goerli by adding price lookups for
+    // mainnet tokens which we'll ultimately use as the Goerli token prices.
+    if (this.isGoerli) {
+      l1Tokens[WETH] = {
+        address: WETH,
+        symbol: "WETH",
+        decimals: 18,
+      };
+    }
+
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens: Object.values(l1Tokens) });
 
     // Pre-populate any new addresses.
@@ -389,17 +411,5 @@ export class ProfitClient {
       this.logger,
       gasMarkup
     );
-  }
-}
-
-export class MockProfitClient extends ProfitClient {
-  getPriceOfToken(): BigNumber {
-    return toBNWei(1);
-  }
-  getTotalGasCost(): BigNumber {
-    return toBN(100000);
-  }
-  async updateGasCosts(): Promise<void> {
-    return;
   }
 }
