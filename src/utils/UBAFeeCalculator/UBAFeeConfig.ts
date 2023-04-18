@@ -3,7 +3,7 @@ import { BigNumber } from "ethers";
 type ChainId = number;
 type RouteCombination = string;
 
-type TupleParameter = [BigNumber, BigNumber];
+export type TupleParameter = [BigNumber, BigNumber];
 type DefaultOverrideStructure<PrimaryValue, OverrideKeyType extends string | number | symbol> = {
   default: PrimaryValue;
   override?: Record<OverrideKeyType, PrimaryValue>;
