@@ -220,8 +220,8 @@ export class SpokePoolClient {
       ...deposit,
       speedUpSignature: maxSpeedUp.depositorSignature,
       newRelayerFeePct: maxSpeedUp.newRelayerFeePct,
-      newRecipient: (maxSpeedUp as any).updatedRecipient, // @dev This should be `newRecipient` eventually, but locally its stuck at this.
-      newMessage: (maxSpeedUp as any).updatedMessage,
+      updatedRecipient: maxSpeedUp.updatedRecipient,
+      updatedMessage: maxSpeedUp.updatedMessage,
     };
   }
 

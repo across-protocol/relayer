@@ -189,7 +189,7 @@ export class Relayer {
       // We need to build in better simulation logic for deposits with non-empty messages. Currently we only measure
       // the fill's gas cost against a simple USDC fill with message=0x. This doesn't handle the case where the
       // message is != 0x and it ends up costing a lot of gas to execute, resulting in a big loss to the relayer.
-      if (isDepositSpedUp(deposit) && deposit.newMessage !== "0x") {
+      if (isDepositSpedUp(deposit) && deposit.updatedMessage !== "0x") {
         this.logger.warn({
           at: "Relayer",
           message: "Skipping fill for sped-up deposit with message",
