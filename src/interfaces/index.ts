@@ -69,4 +69,3 @@ export type UbaFlow = interfaces.UbaFlow;
 export type UbaRunningRequest = interfaces.UbaRunningRequest;
 export const isUbaInflow = interfaces.isUbaInflow;
 export const isUbaOutflow = interfaces.isUbaOutflow;
-export const outflowIsFill = interfaces.outflowIsFill;
