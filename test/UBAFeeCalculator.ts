@@ -10,6 +10,7 @@ import {
 } from "../src/utils/UBAFeeCalculator/UBAFeeUtility";
 import { TupleParameter } from "../src/utils/UBAFeeCalculator/UBAFeeConfig";
 import { MAX_SAFE_JS_INT } from "@uma/common";
+import { parseEther, parseUnits } from "ethers/lib/utils";
 
 describe("UBA Fee Calculations", () => {
   let config: UBAFeeConfig;
@@ -23,20 +24,20 @@ describe("UBA Fee Calculations", () => {
       toBN(0),
       {
         default: [
-          [toBN("100000"), toBN("-0.4")],
-          [toBN("250000"), toBN("-0.25")],
-          [toBN("500000"), toBN("-0.1")],
-          [toBN("750000"), toBN("-0.01")],
-          [toBN("1000000"), toBN("-0.005")],
-          [toBN("1500000"), toBN("-0.0005")],
-          [toBN("2000000"), toBN("0.0")],
-          [toBN("4000000"), toBN("0.0")],
-          [toBN("5500000"), toBN("0.0005")],
-          [toBN("6000000"), toBN("0.005")],
-          [toBN("6500000"), toBN("0.01")],
-          [toBN("7000000"), toBN("0.1")],
-          [toBN("8000000"), toBN("0.25")],
-          [toBN("9000000"), toBN("0.4")],
+          [toBN("100000"), parseUnits("-0.4", 18)],
+          [toBN("250000"), parseUnits("-0.25", 18)],
+          [toBN("500000"), parseUnits("-0.1", 18)],
+          [toBN("750000"), parseUnits("-0.01", 18)],
+          [toBN("1000000"), parseUnits("-0.005", 18)],
+          [toBN("1500000"), parseUnits("-0.0005", 18)],
+          [toBN("2000000"), parseUnits("0.0", 18)],
+          [toBN("4000000"), parseUnits("0.0", 18)],
+          [toBN("5500000"), parseUnits("0.0005", 18)],
+          [toBN("6000000"), parseUnits("0.005", 18)],
+          [toBN("6500000"), parseUnits("0.01", 18)],
+          [toBN("7000000"), parseUnits("0.1", 18)],
+          [toBN("8000000"), parseUnits("0.25", 18)],
+          [toBN("9000000"), parseUnits("0.4", 18)],
         ],
       }
     );
@@ -58,31 +59,31 @@ describe("UBA Fee Calculations", () => {
 
   it("should integrate the correct value: test #1", () => {
     const result = performLinearIntegration(tuples, 0, toBN(0), toBN(100_000));
-    expect(result.toString()).to.eq("-50000");
+    expect(result.div(parseEther("1")).toString()).to.eq("-40000");
   });
 
   it("should integrate the correct value: test #2", () => {
     const result = performLinearIntegration(tuples, 0, toBN(100_000), toBN(0));
-    expect(result.toString()).to.eq("50000");
+    expect(result.div(parseEther("1")).toString()).to.eq("40000");
   });
 
   it("should integrate the correct value: test #3", () => {
-    const result = performLinearIntegration(tuples, 0, toBN(100_000), toBN(250_000));
-    expect(result.toString()).to.eq("-56250");
+    const result = performLinearIntegration(tuples, 1, toBN(100_000), toBN(250_000));
+    expect(result.div(parseEther("1")).toString()).to.eq("-56250");
   });
 
   it("should integrate the correct value: test #4", () => {
-    const result = performLinearIntegration(tuples, 0, toBN(250_000), toBN(100_000));
-    expect(result.toString()).to.eq("56250");
+    const result = performLinearIntegration(tuples, 1, toBN(250_000), toBN(100_000));
+    expect(result.div(parseEther("1")).toString()).to.eq("56250");
   });
 
   it("should compute the correct deposit fee", () => {
     const result = getDepositBalancingFee(tuples, toBN(300_000), toBN(50_000));
-    expect(result.toString()).to.eq("-10250");
+    expect(result.div(parseEther("1")).toString()).to.eq("-10250");
   });
 
   it("should compute the correct refund fee", () => {
     const result = getRefundBalancingFee(tuples, toBN(350_000), toBN(50_000));
-    expect(result.toString()).to.eq("10250");
+    expect(result.div(parseEther("1")).toString()).to.eq("10250");
   });
 });
