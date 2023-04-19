@@ -18,7 +18,6 @@ export function performLinearIntegration(
 ): BigNumber {
   const lengthUnderCurve = integralEnd.sub(integralStart);
   const resolveValue = (index: number): BigNumber => cutoffArray[index][1];
-
   let feeIntegral = resolveValue(Math.min(index, cutoffArray.length - 1)).mul(lengthUnderCurve);
   // If we're not in the bounds of this array, we need to perform an additional computation
   if (index > 0 && index < cutoffArray.length) {
@@ -35,15 +34,9 @@ export function performLinearIntegration(
     //     )
     // )
     // NOT: we define the variables above [x_i, fx_i ] as [currCutoff, currValue] in the code below
-    feeIntegral = feeIntegral.add(
-      slope.mul(
-        integralEnd
-          .pow(2)
-          .div(2)
-          .sub(currCutoff.mul(integralEnd))
-          .sub(integralStart.pow(2).div(2).sub(currCutoff.mul(integralStart)))
-      )
-    );
+    const integralEndExpression = integralEnd.pow(2).div(2).sub(currCutoff.mul(integralEnd));
+    const integralStartExpression = integralStart.pow(2).div(2).sub(currCutoff.mul(integralStart));
+    feeIntegral = feeIntegral.add(slope.mul(integralEndExpression.sub(integralStartExpression)));
   }
   return feeIntegral;
 }
