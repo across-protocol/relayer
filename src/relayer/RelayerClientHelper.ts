@@ -3,7 +3,7 @@ import { Wallet } from "../utils";
 import { TokenClient, ProfitClient, BundleDataClient, InventoryClient, AcrossApiClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import { RelayerConfig } from "./RelayerConfig";
-import { CHAIN_ID_LIST_INDICES, Clients, constructClients, updateClients, updateSpokePoolClients } from "../common";
+import { Clients, constructClients, updateClients, updateSpokePoolClients } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { constructSpokePoolClientsWithLookback } from "../common";
 
@@ -44,7 +44,7 @@ export async function constructRelayerClients(
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
   const enabledChainIds = (
-    config.relayerDestinationChains.length > 0 ? config.relayerDestinationChains : CHAIN_ID_LIST_INDICES
+    config.relayerDestinationChains.length > 0 ? config.relayerDestinationChains : config.chainIdListIndices
   ).filter((chainId) => Object.keys(spokePoolClients).includes(chainId.toString()));
   const profitClient = new ProfitClient(
     logger,
@@ -65,7 +65,7 @@ export async function constructRelayerClients(
     logger,
     commonClients,
     spokePoolClients,
-    CHAIN_ID_LIST_INDICES,
+    config.chainIdListIndices,
     config.blockRangeEndBlockBuffer
   );
   const crossChainTransferClient = new CrossChainTransferClient(logger, enabledChainIds, adapterManager);

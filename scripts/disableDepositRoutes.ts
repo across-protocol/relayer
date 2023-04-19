@@ -1,12 +1,6 @@
 /* eslint-disable no-process-exit */
 import { getSigner, winston, Logger } from "../src/utils";
-import {
-  CHAIN_ID_LIST_INDICES,
-  CommonConfig,
-  constructClients,
-  constructSpokePoolClientsWithStartBlocks,
-  updateClients,
-} from "../src/common";
+import { CommonConfig, constructClients, constructSpokePoolClientsWithStartBlocks, updateClients } from "../src/common";
 
 import minimist from "minimist";
 const args = minimist(process.argv.slice(2), {
@@ -31,7 +25,7 @@ export async function run(logger: winston.Logger): Promise<void> {
     baseSigner,
     {}, // Default setting fromBlocks = deployment blocks
     {}, // Default setting toBlocks = latest
-    CHAIN_ID_LIST_INDICES
+    config.chainIdListIndices
   );
   await Promise.all(Object.values(spokePoolClients).map((client) => client.update(["EnabledDepositRoute"])));
 
@@ -50,7 +44,7 @@ export async function run(logger: winston.Logger): Promise<void> {
     originToken: string;
     depositsEnabled: boolean;
   }[] = [];
-  for (const chainId of CHAIN_ID_LIST_INDICES) {
+  for (const chainId of config.chainIdListIndices) {
     const depositRoutesForChain = spokePoolClients[chainId].getDepositRoutes();
     for (const originToken of Object.keys(depositRoutesForChain)) {
       // If chainId is the one we want to disable, disable every route to every other chain from it.
