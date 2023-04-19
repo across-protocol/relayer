@@ -8,7 +8,7 @@ const args = minimist(process.argv.slice(2), {
 });
 
 export async function run(logger: winston.Logger): Promise<void> {
-  const enabledChains = [1, 10, 137, 42161]
+  const enabledChains = [1, 10, 137, 42161];
   const chainsToDisable = args.chainId ? [args.chainId] : enabledChains;
   assert(
     chainsToDisable.length === enabledChains.length || chainsToDisable.length === 1,
