@@ -1,6 +1,5 @@
 import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClient } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
-import * as Constants from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
 import {
@@ -28,7 +27,7 @@ export async function createDataworker(
   const dataworker = new Dataworker(
     _logger,
     clients,
-    Constants.CHAIN_ID_LIST_INDICES,
+    config.chainIdListIndices,
     config.maxRelayerRepaymentLeafSizeOverride,
     config.maxPoolRebalanceLeafSizeOverride,
     config.tokenTransferThresholdOverride,
