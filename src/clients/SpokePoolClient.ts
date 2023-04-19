@@ -434,8 +434,7 @@ export class SpokePoolClient {
         originChainId: number;
         originToken: string;
         destinationChainId: number;
-      } =
-        spreadEventWithBlockNumber(event) as DepositWithBlock;
+      } = spreadEventWithBlockNumber(event) as DepositWithBlock;
       const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number } = await this.computeRealizedLpFeePct(
         event
       );
