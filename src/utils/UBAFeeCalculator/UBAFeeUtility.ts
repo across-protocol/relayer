@@ -156,7 +156,7 @@ export function getDepositBalancingFee(
 
   // If everything is in the same interval, we can just compute the integral
   // from balance to balance + modificationAmount
-  for (let index = balanceIndex; balanceIndex < balancePlusModificationIndex; index++) {
+  for (let index = balanceIndex; index <= balancePlusModificationIndex; index++) {
     let integralStart: BigNumber;
     let integralEnd: BigNumber;
     // If everything is in the same interval, we can just compute the integral
