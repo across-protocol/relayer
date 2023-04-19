@@ -34,7 +34,6 @@ export class RelayerConfig extends CommonConfig {
     const {
       RELAYER_DESTINATION_CHAINS,
       DEBUG_PROFITABILITY,
-      IGNORE_PROFITABILITY,
       RELAYER_GAS_MULTIPLIER,
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
@@ -56,7 +55,6 @@ export class RelayerConfig extends CommonConfig {
       : [];
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
-    this.ignoreProfitability = IGNORE_PROFITABILITY === "true";
 
     if (Object.keys(this.inventoryConfig).length > 0) {
       this.inventoryConfig = replaceAddressCase(this.inventoryConfig); // Cast any non-address case addresses.
