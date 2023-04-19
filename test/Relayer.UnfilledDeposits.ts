@@ -428,8 +428,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     const depositWithSpeedUp = {
       ...deposit1Complete,
       newRelayerFeePct,
-      newRecipient: deposit1.recipient,
-      newMessage: "0x",
+      updatedRecipient: deposit1.recipient,
+      updatedMessage: "0x",
       speedUpSignature: speedUpSignature.signature,
     };
     expect(

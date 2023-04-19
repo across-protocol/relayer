@@ -43,7 +43,7 @@ export function buildFillRelayWithUpdatedFeeProps(
   return [
     deposit.depositor,
     deposit.recipient,
-    deposit.newRecipient,
+    deposit.updatedRecipient,
     deposit.destinationToken,
     deposit.amount,
     maxFillAmount,
@@ -54,7 +54,7 @@ export function buildFillRelayWithUpdatedFeeProps(
     deposit.newRelayerFeePct,
     deposit.depositId,
     deposit.message,
-    deposit.newMessage,
+    deposit.updatedMessage,
     deposit.speedUpSignature,
     BigNumber.from(MAX_UINT_VAL),
   ];
