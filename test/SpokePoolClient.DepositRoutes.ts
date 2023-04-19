@@ -12,7 +12,7 @@ describe("SpokePoolClient: Deposit Routes", async function () {
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
     // Deploy a minimal spokePool, without using the fixture as this does some route enabling within it.
-    spokePool = await hre.upgrades.deployProxy(await getContractFactory("MockSpokePool", owner), [
+    spokePool = await hre.upgrades.deployProxy(await getContractFactory("_MockSpokePool", owner), [
       0,
       owner.address,
       owner.address,
