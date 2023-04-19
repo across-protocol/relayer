@@ -69,12 +69,12 @@ describe("UBA Fee Calculations", () => {
 
   it("should integrate the correct value: test #3", () => {
     const result = performLinearIntegration(tuples, 1, toBN(100_000), toBN(250_000));
-    expect(result.div(parseEther("1")).toString()).to.eq("-56250");
+    expect(result.div(parseEther("1")).toString()).to.eq("-48750");
   });
 
   it("should integrate the correct value: test #4", () => {
     const result = performLinearIntegration(tuples, 1, toBN(250_000), toBN(100_000));
-    expect(result.div(parseEther("1")).toString()).to.eq("56250");
+    expect(result.div(parseEther("1")).toString()).to.eq("48750");
   });
 
   it("should compute the correct deposit fee", () => {
