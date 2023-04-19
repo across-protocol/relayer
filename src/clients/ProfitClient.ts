@@ -377,7 +377,7 @@ export class ProfitClient {
     }
   }
 
-  async updateGasCosts(): Promise<void> {
+  private async updateGasCosts(): Promise<void> {
     // Pre-fetch total gas costs for relays on enabled chains.
     const gasCosts = await Promise.all(
       this.enabledChainIds.map((chainId) => this.relayerFeeQueries[chainId].getGasCosts())
