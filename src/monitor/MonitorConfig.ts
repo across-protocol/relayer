@@ -1,4 +1,4 @@
-import { CommonConfig, ProcessEnv, CHAIN_ID_LIST_INDICES } from "../common";
+import { CommonConfig, ProcessEnv } from "../common";
 import { ethers, ZERO_ADDRESS } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
@@ -163,7 +163,7 @@ export class MonitorConfig extends CommonConfig {
       );
     }
 
-    CHAIN_ID_LIST_INDICES.forEach((chainId) => {
+    this.chainIdListIndices.forEach((chainId) => {
       this.spokePoolsBlocks[chainId] = {
         startingBlock: process.env[`STARTING_BLOCK_NUMBER_${chainId}`]
           ? Number(process.env[`STARTING_BLOCK_NUMBER_${chainId}`])
