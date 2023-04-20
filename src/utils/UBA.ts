@@ -25,10 +25,10 @@ export function getUBAFlows(spokePoolClient: SpokePoolClient, fromBlock?: number
     .getDeposits()
     .filter((deposit: DepositWithBlock) => deposit.blockNumber >= fromBlock && deposit.blockNumber <= toBlock);
 
-  // Filter out the following types of fills:
-  // - Fills where refunds are requested on another chain.
-  // - Any fills _after_ an initial partial fill.
-  // - Any slow fills.
+  // Filter out:
+  // - Fills that request refunds on a different chain.
+  // - Subsequent fills after an initial partial fill.
+  // - Slow fills.
   const fills: UbaFlow[] = spokePoolClient.getFills().filter((fill: FillWithBlock) => {
     const result =
       fill.repaymentChainId === spokePoolClient.chainId &&
