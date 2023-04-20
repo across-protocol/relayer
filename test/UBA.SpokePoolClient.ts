@@ -6,8 +6,7 @@ import {
   DepositWithBlock,
   FillWithBlock,
   RefundRequestWithBlock,
-  UbaInflow,
-  UbaOutflow
+  UbaOutflow,
 } from "../src/interfaces";
 import { getUBAFlows, sortEventsAscending, spreadEventWithBlockNumber } from "../src/utils";
 import {
@@ -152,12 +151,12 @@ describe("UBA: SpokePool Events", async function () {
         fillAmount,
         totalFilledAmount: fillAmount,
         blockNumber,
-        transactionIndex
+        transactionIndex,
       } as FillWithBlock);
       ++transactionIndex;
 
       // Sort the events on the input side, for comparison later.
-      ((fillAmount.eq(amount)) ? fullFills : partialFills).push(fill);
+      (fillAmount.eq(amount) ? fullFills : partialFills).push(fill);
       spokePoolClient.addEvent(fill);
     }
 
@@ -186,9 +185,7 @@ describe("UBA: SpokePool Events", async function () {
 
       while (!totalFilledAmount.eq(amount)) {
         const _fillAmount = amount.div(1 + depositId);
-        const fillAmount = _fillAmount.add(totalFilledAmount).lte(amount)
-          ? _fillAmount
-          : amount.sub(totalFilledAmount);
+        const fillAmount = _fillAmount.add(totalFilledAmount).lte(amount) ? _fillAmount : amount.sub(totalFilledAmount);
 
         totalFilledAmount = totalFilledAmount.add(fillAmount);
 
@@ -204,7 +201,7 @@ describe("UBA: SpokePool Events", async function () {
         ++transactionIndex;
 
         // Inject the fill event.
-        ((fillAmount.eq(amount)) ? fullFills : partialFills).push(fill);
+        (fillAmount.eq(amount) ? fullFills : partialFills).push(fill);
         spokePoolClient.addEvent(fill);
       }
     }
@@ -228,17 +225,17 @@ describe("UBA: SpokePool Events", async function () {
     const events: Event[] = [];
     for (let idx = 0; idx < spokePoolClient.minBlockRange; ++idx) {
       const blockNumber = spokePoolClient.latestBlockNumber + idx;
-      let transactionIndex = 0;
+      const transactionIndex = 0;
       [true, false].forEach((isSlowRelay) => {
         const fill = spokePoolClient.generateFill({
           relayer,
           isSlowRelay,
           blockNumber,
-          transactionIndex
+          transactionIndex,
         } as FillWithBlock);
 
         spokePoolClient.addEvent(fill);
-        events.push(fill)
+        events.push(fill);
       });
     }
 

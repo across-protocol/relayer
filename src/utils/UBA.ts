@@ -29,18 +29,15 @@ export function getUBAFlows(spokePoolClient: SpokePoolClient, fromBlock?: number
   // - Fills where refunds are requested on another chain.
   // - Any fills _after_ an initial partial fill.
   // - Any slow fills.
-  const fills: UbaFlow[] = spokePoolClient
-    .getFills()
-    .filter(
-      (fill: FillWithBlock) => {
-        const result = (
-          fill.repaymentChainId === spokePoolClient.chainId
-          && fill.fillAmount.eq(fill.totalFilledAmount)
-          && fill.isSlowRelay === false
-          && (fill.blockNumber > fromBlock && fill.blockNumber < toBlock)
-        );
-        return result;
-    });
+  const fills: UbaFlow[] = spokePoolClient.getFills().filter((fill: FillWithBlock) => {
+    const result =
+      fill.repaymentChainId === spokePoolClient.chainId &&
+      fill.fillAmount.eq(fill.totalFilledAmount) &&
+      fill.isSlowRelay === false &&
+      fill.blockNumber > fromBlock &&
+      fill.blockNumber < toBlock;
+    return result;
+  });
 
   const refundRequests: UbaFlow[] = spokePoolClient.getRefundRequests(fromBlock, toBlock);
 

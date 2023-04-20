@@ -168,7 +168,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
       relayer: fill.relayer ?? randomAddress(),
       depositor,
       recipient: randomAddress(),
-      isSlowRelay: (fill.isSlowRelay ?? false),
+      isSlowRelay: fill.isSlowRelay ?? false,
       message,
       // updatableRelayData @todo: New ABI needed
     };
