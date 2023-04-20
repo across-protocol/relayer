@@ -8,7 +8,7 @@ export type EthersEventTemplate = {
   address: string;
   event: string;
   topics: string[];
-  args: Record<string, BigNumberish | string>;
+  args: Record<string, boolean | BigNumberish | string>;
   data?: string;
   blockNumber?: number;
   transactionIndex?: number;
@@ -168,7 +168,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
       relayer: fill.relayer ?? randomAddress(),
       depositor,
       recipient: randomAddress(),
-      isSlowRelay: (fill.isSlowRelay ?? false).toString(),
+      isSlowRelay: (fill.isSlowRelay ?? false),
       message,
       // updatableRelayData @todo: New ABI needed
     };
