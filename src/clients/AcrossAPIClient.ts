@@ -1,7 +1,6 @@
 import { winston, BigNumber, getL2TokenAddresses } from "../utils";
 import axios, { AxiosError } from "axios";
 import { HubPoolClient } from "./HubPoolClient";
-import { CHAIN_ID_LIST_INDICES } from "../common";
 import { constants } from "@across-protocol/sdk-v2";
 import { SpokePoolClientsByChain } from "../interfaces";
 import _ from "lodash";
@@ -67,7 +66,7 @@ export class AcrossApiClient {
           return (
             mainnetSpokePoolClient.isDepositRouteEnabled(l1Token, Number(chainId)) &&
             Number(chainId) !== CHAIN_IDs.MAINNET &&
-            CHAIN_ID_LIST_INDICES.includes(Number(chainId))
+            Object.keys(this.spokePoolClients).includes(chainId)
           );
         });
         // No valid deposit routes from mainnet for this token. We won't record a limit for it.

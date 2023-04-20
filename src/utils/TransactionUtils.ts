@@ -83,7 +83,8 @@ export async function runTransaction(
       });
       return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining);
     } else {
-      logger.error({
+      // If transaction error reason is known to be benign, then reduce the log level to warn.
+      logger[txnRetryable(error) ? "warn" : "error"]({
         at: "TxUtil",
         message: "Error executing tx",
         retriesRemaining,
