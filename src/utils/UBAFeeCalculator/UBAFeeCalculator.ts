@@ -37,7 +37,6 @@ export default class UBAFeeCalculator {
   /**
    * @description Get the recent request flow
    * @param action The action to get the fee for
-   * @param tokenSymbol The token symbol to get the fee for
    * @returns The relevant fee
    */
   public async getUBAFee(action: UbaRunningRequest): Promise<UBAFeeResult> {
@@ -98,6 +97,17 @@ export default class UBAFeeCalculator {
       relayerFee,
       totalUBAFee: lpFee.add(relayerFee),
     };
+  }
+
+  public getHistoricalUBAFees(flows: UbaFlow[]): Promise<UBAFeeResult[]> {
+    return Promise.all(
+      flows.map((flow) =>
+        this.getUBAFee({
+          amount: flow.amount,
+          type: isUbaInflow(flow) ? "deposit" : "refund",
+        })
+      )
+    );
   }
 
   /**
