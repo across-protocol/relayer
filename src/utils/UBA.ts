@@ -1,4 +1,4 @@
-import { DepositWithBlock, FillWithBlock, RefundRequestWithBlock, UbaFlow, UbaInflow, UbaOutflow } from "../interfaces";
+import { DepositWithBlock, FillWithBlock, UbaFlow } from "../interfaces";
 import { SpokePoolClient } from "../clients";
 import { sortEventsAscending } from "./";
 
