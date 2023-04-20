@@ -13,3 +13,5 @@ export type UBASpokeBalanceType = {
   recentRequestFlow: UbaFlow[];
   runningBalance?: BigNumber;
 };
+
+export type UBAFeeResult = { lpFee: BigNumber; relayerFee: BigNumber; totalUBAFee: BigNumber };

@@ -4,7 +4,7 @@ import { toBN } from "../FormattingUtils";
 import { Logger } from "winston";
 import UBAConfig from "./UBAFeeConfig";
 import { getDepositBalancingFee, getRefundBalancingFee } from "./UBAFeeUtility";
-import { UBASpokeBalanceType } from ".";
+import { UBAFeeResult, UBASpokeBalanceType } from ".";
 
 // This file holds the UBA Fee Calculator class. The goal of this class is to keep track
 // of the running balance of a given spoke pool by fetching the most recent confirmed bundle
@@ -40,18 +40,30 @@ export default class UBAFeeCalculator {
    * @param tokenSymbol The token symbol to get the fee for
    * @returns The relevant fee
    */
-  public async getUBAFee(action: UbaRunningRequest): Promise<BigNumber> {
+  public async getUBAFee(action: UbaRunningRequest): Promise<UBAFeeResult> {
     // Destructure the action
     const { amount, type } = action;
     // Get the origin and destination chain ids
     const originChain = this.originSpoke.chainId;
     const destinationChain = this.destinationSpoke.chainId;
+
+    let lpFee = toBN(0);
+    let relayerFee = toBN(0);
+
+    // TODO: This value below is related to the LP fee
+
     // Resolve the alpha fee of this action
     const alphaFee = this.config.getBaselineFee(originChain, destinationChain);
+
+    // Contribute the alpha fee to the LP fee
+    lpFee = lpFee.add(alphaFee);
+
     // Resolve the utilization fee
     const utilizationFee = this.config.getUtilizationFee();
 
-    let totalUBAFee = alphaFee.add(utilizationFee);
+    // Contribute the utilization fee to the Relayer fee
+    relayerFee = relayerFee.add(utilizationFee);
+
     // Resolve the balancing fee tuples that are relevant to this operation
     const originBalancingFeeTuples = this.config.getBalancingFeeTuples(originChain);
     const destinationBalancingFeeTuples = this.config.getBalancingFeeTuples(destinationChain);
@@ -60,26 +72,32 @@ export default class UBAFeeCalculator {
     // to the total UBA fee. We can use the getDepositBalancingFee function to do this
     // Find both of these fees from the origin and destination chains
     if (type === "deposit") {
-      totalUBAFee = totalUBAFee.add(
-        getDepositBalancingFee(originBalancingFeeTuples, this.originSpoke.runningBalance, amount)
-      );
-      totalUBAFee = totalUBAFee.add(
+      lpFee = lpFee.add(getDepositBalancingFee(originBalancingFeeTuples, this.originSpoke.runningBalance, amount));
+      relayerFee = relayerFee.add(
         getRefundBalancingFee(destinationBalancingFeeTuples, this.destinationSpoke.runningBalance, amount)
       );
     }
+
     // If the action is a refund, then we need to add the origin and destination balancing fee
     // to the total UBA fee. We can use the getRefundBalancingFee function to do this
     // Find both of these fees from the origin and destination chains
     else {
-      totalUBAFee = totalUBAFee.add(
+      relayerFee = relayerFee.add(
         getRefundBalancingFee(originBalancingFeeTuples, this.originSpoke.runningBalance, amount)
       );
-      totalUBAFee = totalUBAFee.add(
+      lpFee = lpFee.add(
         getDepositBalancingFee(destinationBalancingFeeTuples, this.destinationSpoke.runningBalance, amount)
       );
     }
 
-    return totalUBAFee;
+    // Find the gas fee of this action in the destination chain
+    // TODO: This value below is related to the gas fee
+
+    return {
+      lpFee,
+      relayerFee,
+      totalUBAFee: lpFee.add(relayerFee),
+    };
   }
 
   /**
