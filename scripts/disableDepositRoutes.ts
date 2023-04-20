@@ -54,7 +54,7 @@ export async function run(logger: winston.Logger): Promise<void> {
   for (const chainId of enabledChains) {
     const depositRoutesForChain = spokePoolClients[chainId].getDepositRoutes();
     for (const originToken of Object.keys(depositRoutesForChain)) {
-      // If origin chainId is the only one we want to disable, disable every route to every other chain from it.
+      // If we want to disable this chainId, disable every route to every other chain from it.
       if (chainsToDisable.includes(chainId)) {
         for (const _destinationChainId of Object.keys(depositRoutesForChain[originToken])) {
           const destinationChainId = Number(_destinationChainId);
