@@ -1,4 +1,4 @@
-import { DepositWithBlock, FillWithBlock, RefundRequestWithBlock, UbaFlow } from "../interfaces";
+import { DepositWithBlock, FillWithBlock, RefundRequestWithBlock, UbaFlow, UbaInflow, UbaOutflow } from "../interfaces";
 import { SpokePoolClient } from "../clients";
 import { sortEventsAscending } from "./";
 
@@ -21,7 +21,7 @@ export function getUBAFlows(spokePoolClient: SpokePoolClient, fromBlock?: number
   fromBlock ??= spokePoolClient.deploymentBlock;
   toBlock ??= spokePoolClient.latestBlockNumber;
 
-  const deposits: DepositWithBlock[] = spokePoolClient
+  const deposits: UbaFlow[] = spokePoolClient
     .getDeposits()
     .filter((deposit: DepositWithBlock) => deposit.blockNumber >= fromBlock && deposit.blockNumber <= toBlock);
 
@@ -29,7 +29,7 @@ export function getUBAFlows(spokePoolClient: SpokePoolClient, fromBlock?: number
   // - Fills where refunds are requested on another chain.
   // - Any fills _after_ an initial partial fill.
   // - Any slow fills.
-  const fills: FillWithBlock[] = spokePoolClient
+  const fills: UbaFlow[] = spokePoolClient
     .getFills()
     .filter(
       (fill: FillWithBlock) => {
@@ -42,12 +42,10 @@ export function getUBAFlows(spokePoolClient: SpokePoolClient, fromBlock?: number
         return result;
     });
 
-  const refundRequests: RefundRequestWithBlock[] = spokePoolClient.getRefundRequests(fromBlock, toBlock);
+  const refundRequests: UbaFlow[] = spokePoolClient.getRefundRequests(fromBlock, toBlock);
 
   // This is probably more expensive than we'd like... @todo: optimise.
-  const flows = sortEventsAscending(
-    (deposits as UbaFlow[]).concat(fills as UbaFlow[]).concat(refundRequests as UbaFlow[])
-  );
+  const flows = sortEventsAscending(deposits.concat(fills).concat(refundRequests));
 
   return flows;
 }
