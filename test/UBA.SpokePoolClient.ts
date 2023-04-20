@@ -35,7 +35,7 @@ let spokePoolClient: MockSpokePoolClient;
 
 const logger = createSpyLogger().spyLogger;
 
-describe("SpokePoolClient: Refund Requests", async function () {
+describe("UBA: SpokePool Events", async function () {
   beforeEach(async function () {
     [_relayer] = await ethers.getSigners();
     relayer = _relayer.address;
@@ -184,7 +184,7 @@ describe("SpokePoolClient: Refund Requests", async function () {
       let totalFilledAmount = toBN(0);
       let transactionIndex = 0;
 
-      while (totalFilledAmount.lt(amount)) {
+      while (!totalFilledAmount.eq(amount)) {
         const _fillAmount = amount.div(1 + depositId);
         const fillAmount = _fillAmount.add(totalFilledAmount).lte(amount)
           ? _fillAmount
