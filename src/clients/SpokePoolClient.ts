@@ -212,9 +212,7 @@ export class SpokePoolClient {
     if (depositWithMatchingDepositId === undefined) {
       return undefined;
     }
-    return validateFillForDeposit(fillCopy, depositWithMatchingDepositId)
-      ? depositWithMatchingDepositId
-      : undefined;
+    return validateFillForDeposit(fillCopy, depositWithMatchingDepositId) ? depositWithMatchingDepositId : undefined;
   }
 
   getValidUnfilledAmountForDeposit(deposit: Deposit): {
