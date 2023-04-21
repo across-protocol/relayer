@@ -325,7 +325,12 @@ export class BundleDataClient {
         // return fill events that are younger than the bundle end block.
         const fillsForOriginChain = destinationClient
           .getFillsForOriginChain(Number(originChainId))
-          .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1]);
+          // Do not refund any fills sent with a message. This also prevents building a slow fill leaf for a deposit
+          // that was partially filled with a message.
+          .filter(
+            (fillWithBlock: FillWithBlock) =>
+              fillWithBlock.blockNumber <= blockRangeForChain[1] && fillWithBlock.updatableRelayData.message === "0x"
+          );
         await Promise.all(fillsForOriginChain.map(async (fill) => validateFillAndSaveData(fill, blockRangeForChain)));
       }
     }
