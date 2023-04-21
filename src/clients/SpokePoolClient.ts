@@ -218,14 +218,11 @@ export class SpokePoolClient {
 
   getDepositForFill(fill: Fill): DepositWithBlock | undefined {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill.
     const depositWithMatchingDepositId = this.depositHashes[this.getDepositHash(fill)];
     if (depositWithMatchingDepositId === undefined) {
       return undefined;
     }
-    return this.validateFillForDeposit(fillCopy, depositWithMatchingDepositId)
-      ? depositWithMatchingDepositId
-      : undefined;
+    return this.validateFillForDeposit(fill, depositWithMatchingDepositId) ? depositWithMatchingDepositId : undefined;
   }
 
   getValidUnfilledAmountForDeposit(deposit: Deposit): {
