@@ -615,33 +615,26 @@ describe("SpokePoolClient: Fill Validation", async function () {
     expect(validateFillForDeposit({ ...validFill, depositId: 1337 }, validDeposit)).to.be.false;
 
     // Changed the depositor.
-    expect(validateFillForDeposit({ ...validFill, depositor: relayer.address }, validDeposit)).to.be
-      .false;
+    expect(validateFillForDeposit({ ...validFill, depositor: relayer.address }, validDeposit)).to.be.false;
 
     // Changed the recipient.
-    expect(validateFillForDeposit({ ...validFill, recipient: relayer.address }, validDeposit)).to.be
-      .false;
+    expect(validateFillForDeposit({ ...validFill, recipient: relayer.address }, validDeposit)).to.be.false;
 
     // Changed the relayerFeePct.
-    expect(validateFillForDeposit({ ...validFill, relayerFeePct: toBNWei(1337) }, validDeposit)).to.be
-      .false;
+    expect(validateFillForDeposit({ ...validFill, relayerFeePct: toBNWei(1337) }, validDeposit)).to.be.false;
 
     // Validate the realizedLPFeePct and destinationToken matches. These values are optional in the deposit object and
     // are assigned during the update method, which is not polled in this set of tests.
 
     // Assign a realizedLPFeePct to the deposit and check it matches with the fill. The default set on a fill (from
     // contracts-v2) is 0.1. After, try changing this to a separate value and ensure this is rejected.
-    expect(validateFillForDeposit(validFill, { ...validDeposit, realizedLpFeePct: toBNWei(0.1) })).to
-      .be.true;
+    expect(validateFillForDeposit(validFill, { ...validDeposit, realizedLpFeePct: toBNWei(0.1) })).to.be.true;
 
-    expect(validateFillForDeposit(validFill, { ...validDeposit, realizedLpFeePct: toBNWei(0.1337) }))
-      .to.be.false;
+    expect(validateFillForDeposit(validFill, { ...validDeposit, realizedLpFeePct: toBNWei(0.1337) })).to.be.false;
 
     // Assign a destinationToken to the deposit and ensure it is validated correctly. erc20_2 from the fillRelay method
     // above is the destination token. After, try changing this to something that is clearly wrong.
-    expect(validateFillForDeposit(validFill, { ...validDeposit, destinationToken: erc20_2.address }))
-      .to.be.true;
-    expect(validateFillForDeposit(validFill, { ...validDeposit, destinationToken: owner.address })).to
-      .be.false;
+    expect(validateFillForDeposit(validFill, { ...validDeposit, destinationToken: erc20_2.address })).to.be.true;
+    expect(validateFillForDeposit(validFill, { ...validDeposit, destinationToken: owner.address })).to.be.false;
   });
 });
