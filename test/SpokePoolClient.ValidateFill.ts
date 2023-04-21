@@ -538,7 +538,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
       quoteBlockNumber: 0,
     };
     const fill_1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, expectedDeposit, 0.2);
-    const fill_2 = await buildModifiedFill(spokePool_2, depositor, relayer, fill_1, 2, 0.2, relayer.address, "0x12"); // Fill same % of deposit with 2x larger relayer fee pct.
+    const fill_2 = await buildModifiedFill(spokePool_2, depositor, relayer, fill_1, 2, 0.2, relayer.address); // Fill same % of deposit with 2x larger relayer fee pct.
 
     const spokePoolClientForDestinationChain = new SpokePoolClient(
       createSpyLogger().spyLogger,
@@ -551,8 +551,6 @@ describe("SpokePoolClient: Fill Validation", async function () {
 
     expect(fill_2.updatableRelayData.recipient === relayer.address).to.be.true;
     expect(fill_1.updatableRelayData.recipient === depositor.address).to.be.true;
-    expect(fill_2.updatableRelayData.message === "0x12").to.be.true;
-    expect(fill_1.updatableRelayData.message === "0x").to.be.true;
     expect(fill_1.updatableRelayData.relayerFeePct.eq(fill_2.updatableRelayData.relayerFeePct)).to.be.false;
     expect(fill_1.updatableRelayData.isSlowRelay === fill_2.updatableRelayData.isSlowRelay).to.be.true;
     expect(fill_1.updatableRelayData.payoutAdjustmentPct.eq(fill_2.updatableRelayData.payoutAdjustmentPct)).to.be.true;
