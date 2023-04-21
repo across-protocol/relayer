@@ -18,6 +18,7 @@ import {
   assert,
   sortEventsAscending,
   filledSameDeposit,
+  validateFillForDeposit,
   getCurrentTime,
   getRedis,
   AnyObject,
@@ -48,18 +49,6 @@ export type SpokePoolUpdate = {
   events: Event[][];
   searchEndBlock: number;
 };
-
-const FILL_DEPOSIT_COMPARISON_KEYS = [
-  "amount",
-  "originChainId",
-  "relayerFeePct",
-  "realizedLpFeePct",
-  "depositId",
-  "depositor",
-  "recipient",
-  "destinationChainId",
-  "destinationToken",
-] as const;
 
 export class SpokePoolClient {
   private currentTime = 0;
@@ -223,7 +212,7 @@ export class SpokePoolClient {
     if (depositWithMatchingDepositId === undefined) {
       return undefined;
     }
-    return this.validateFillForDeposit(fillCopy, depositWithMatchingDepositId)
+    return validateFillForDeposit(fillCopy, depositWithMatchingDepositId)
       ? depositWithMatchingDepositId
       : undefined;
   }
@@ -241,7 +230,7 @@ export class SpokePoolClient {
 
     const { validFills, invalidFills } = fillsForDeposit.reduce(
       (groupedFills: { validFills: Fill[]; invalidFills: Fill[] }, fill: Fill) => {
-        if (this.validateFillForDeposit(fill, deposit)) {
+        if (validateFillForDeposit(fill, deposit)) {
           groupedFills.validFills.push(fill);
         } else {
           groupedFills.invalidFills.push(fill);
@@ -283,17 +272,6 @@ export class SpokePoolClient {
       fillCount: validFills.length,
       invalidFills,
     };
-  }
-
-  // Ensure that each deposit element is included with the same value in the fill. This includes all elements defined
-  // by the depositor as well as the realizedLpFeePct and the destinationToken, which are pulled from other clients.
-  validateFillForDeposit(fill: Fill, deposit: Deposit): boolean {
-    // Note: this short circuits when a key is found where the comparison doesn't match.
-    // TODO: if we turn on "strict" in the tsconfig, the elements of FILL_DEPOSIT_COMPARISON_KEYS will be automatically
-    // validated against the fields in Fill and Deposit, generating an error if there is a discrepency.
-    return FILL_DEPOSIT_COMPARISON_KEYS.every((key) => {
-      return fill[key] !== undefined && fill[key].toString() === deposit[key]?.toString();
-    });
   }
 
   getDepositHash(event: Deposit | Fill): string {
@@ -438,7 +416,7 @@ export class SpokePoolClient {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill
-    return this.validateFillForDeposit(fillCopy, deposit) ? deposit : undefined;
+    return validateFillForDeposit(fillCopy, deposit) ? deposit : undefined;
   }
 
   async queryHistoricalMatchingFills(fill: Fill, deposit: Deposit, toBlock: number): Promise<FillWithBlock[]> {
@@ -448,7 +426,7 @@ export class SpokePoolClient {
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
     return (await this.queryFillsInBlockRange(fill, searchConfig)).filter((_fill) =>
-      this.validateFillForDeposit(_fill, deposit)
+      validateFillForDeposit(_fill, deposit)
     );
   }
 
