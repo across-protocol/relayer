@@ -544,7 +544,13 @@ describe("SpokePoolClient: Fill Validation", async function () {
       quoteBlockNumber: 0,
     };
     const fill_1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, expectedDeposit, 0.2);
-    const fill_2 = await buildModifiedFill(spokePool_2, depositor, relayer, fill_1, 2, 0.2, relayer.address, "0x12"); // Fill same % of deposit with 2x larger relayer fee pct.
+
+    // Fill same % of deposit with 2x larger relayer fee pct. Should fail: Can't partial fill on a non-zero message.
+    const fill_2 = buildModifiedFill(spokePool_2, depositor, relayer, fill_1, 2, 0.2, relayer.address, "0x12");
+    await assertPromiseError(fill_2, "invalid partial fill message"); // Cannot partial fill a non-zero message
+
+    // Repeat fill_2, without updated message.
+    const fill_3 = await buildModifiedFill(spokePool_2, depositor, relayer, fill_1, 2, 0.2, relayer.address, "0x");
 
     const spokePoolClientForDestinationChain = new SpokePoolClient(
       createSpyLogger().spyLogger,
@@ -555,13 +561,13 @@ describe("SpokePoolClient: Fill Validation", async function () {
     ); // create spoke pool client on the "target" chain.
     await spokePoolClientForDestinationChain.update();
 
-    expect(fill_2.updatableRelayData.recipient === relayer.address).to.be.true;
     expect(fill_1.updatableRelayData.recipient === depositor.address).to.be.true;
-    expect(fill_2.updatableRelayData.message === "0x12").to.be.true;
+    expect(fill_3.updatableRelayData.recipient === relayer.address).to.be.true;
     expect(fill_1.updatableRelayData.message === "0x").to.be.true;
-    expect(fill_1.updatableRelayData.relayerFeePct.eq(fill_2.updatableRelayData.relayerFeePct)).to.be.false;
-    expect(fill_1.updatableRelayData.isSlowRelay === fill_2.updatableRelayData.isSlowRelay).to.be.true;
-    expect(fill_1.updatableRelayData.payoutAdjustmentPct.eq(fill_2.updatableRelayData.payoutAdjustmentPct)).to.be.true;
+    expect(fill_3.updatableRelayData.message === "0x").to.be.true;
+    expect(fill_1.updatableRelayData.relayerFeePct.eq(fill_3.updatableRelayData.relayerFeePct)).to.be.false;
+    expect(fill_1.updatableRelayData.isSlowRelay === fill_3.updatableRelayData.isSlowRelay).to.be.true;
+    expect(fill_1.updatableRelayData.payoutAdjustmentPct.eq(fill_3.updatableRelayData.payoutAdjustmentPct)).to.be.true;
 
     expect(
       spokePoolClientForDestinationChain.getDepositForFill({
@@ -574,7 +580,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
       .to.deep.equal(expectedDeposit);
     expect(
       spokePoolClientForDestinationChain.getDepositForFill({
-        ...fill_2,
+        ...fill_3,
         destinationToken: zeroAddress,
         realizedLpFeePct: toBN(0),
       })
