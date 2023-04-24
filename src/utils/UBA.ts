@@ -33,7 +33,7 @@ export function getUBAFlows(spokePoolClient: SpokePoolClient, fromBlock?: number
     const result =
       fill.repaymentChainId === spokePoolClient.chainId &&
       fill.fillAmount.eq(fill.totalFilledAmount) &&
-      fill.isSlowRelay === false &&
+      fill.updatableRelayData.isSlowRelay === false &&
       fill.blockNumber > fromBlock &&
       fill.blockNumber < toBlock;
     return result;
