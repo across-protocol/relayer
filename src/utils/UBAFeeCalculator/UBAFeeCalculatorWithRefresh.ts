@@ -38,7 +38,7 @@ export default class UBAFeeCalculatorWithRefresh extends UBAFeeCalculator {
   public async updateRunningBalance(blockNumber?: number): Promise<void> {
     const fn = async (spokeClient: SpokePoolClient, spoke: UBASpokeBalanceType) => {
       // Initially set the blockNumber to a new block with either the given input or the last blockNumber available
-      spoke.blockNumber = blockNumber ?? (await this.originSpokeClient.spokePool.getBlockNumber());
+      spoke.blockNumber = blockNumber ?? (await spokeClient.spokePool.getBlockNumber());
       // Clear the recent request flow
       spoke.recentRequestFlow = [];
       // Resolve the most recent flows
