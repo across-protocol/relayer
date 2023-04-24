@@ -1,6 +1,6 @@
 import { BigNumber } from "ethers";
 import { Logger } from "winston";
-import { UBAFeeCalculator, UBASpokeBalanceType } from ".";
+import { UBAFeeCalculator, UBAFeeResult, UBAFlowRange, UBASpokeBalanceType } from ".";
 import { SpokePoolClient } from "../../clients";
 import { UbaRunningRequest, UbaFlow } from "../../interfaces";
 import UBAConfig from "./UBAFeeConfig";
@@ -49,23 +49,19 @@ export default class UBAFeeCalculatorWithRefresh extends UBAFeeCalculator {
     // Call the function for both the origin and destination spoke
     await fn(this.originSpokeClient, this.originSpoke);
     await fn(this.destinationSpokeClient, this.destinationSpoke);
-    // Resolve the running balance
-    this.calculateRecentRunningBalance();
   }
 
-  public async getUBAFee(action: UbaRunningRequest): Promise<BigNumber> {
+  public async getUBAFee(action: UbaRunningRequest, flowRange?: UBAFlowRange): Promise<UBAFeeResult> {
     // First verify that both the last validated running balance and the runningBalance is
     // set to a non-undefined value
     if (
       super.destinationSpoke?.lastValidatedRunningBalance === undefined ||
-      this.destinationSpoke?.runningBalance === undefined ||
-      this.originSpoke?.lastValidatedRunningBalance === undefined ||
-      this.originSpoke?.runningBalance
+      this.originSpoke?.lastValidatedRunningBalance === undefined
     ) {
       await this.updateRunningBalance();
     }
     // Call the super class getUBAFee function
-    return super.getUBAFee(action);
+    return super.getUBAFee(action, flowRange);
   }
 
   // THE FOLLOWING FUNCTIONS BELOW WILL BE REMOVED BY THE CODE WRITTEN BY @pxrl

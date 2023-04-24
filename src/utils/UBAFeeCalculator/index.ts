@@ -11,5 +11,8 @@ export type UBASpokeBalanceType = {
   blockNumber: number;
   lastValidatedRunningBalance?: BigNumber;
   recentRequestFlow: UbaFlow[];
-  runningBalance?: BigNumber;
 };
+
+export type UBAFeeResult = { lpFee: BigNumber; relayerFee: BigNumber; totalUBAFee: BigNumber };
+
+export type UBAFlowRange = { startIndex: number; endIndex: number };
