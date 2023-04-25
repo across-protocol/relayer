@@ -93,8 +93,16 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Accepts valid fills", async function () {
-    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    await fillRelay(spokePool_2, erc20_2, depositor, depositor, relayer, 0, originChainId);
+    const deposit = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId
+    );
+    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit, 1);
 
     await spokePoolClient2.update();
     await spokePoolClient1.update();
@@ -577,8 +585,16 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Rejects fills that dont match the deposit data", async function () {
-    await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    await fillRelay(spokePool_2, erc20_2, depositor, depositor, relayer, 0, originChainId);
+    const deposit = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId
+    );
+    await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit, 1);
 
     await spokePoolClient2.update();
     await spokePoolClient1.update();
@@ -612,13 +628,21 @@ describe("SpokePoolClient: Fill Validation", async function () {
     // Validate the realizedLPFeePct and destinationToken matches. These values are optional in the deposit object and
     // are assigned during the update method, which is not polled in this set of tests.
 
-    // Assign a realizedLPFeePct to the deposit and check it matches with the fill. The default set on a fill (from
-    // contracts-v2) is 0.1. After, try changing this to a separate value and ensure this is rejected.
-    expect(spokePoolClient2.validateFillForDeposit(validFill, { ...validDeposit, realizedLpFeePct: toBNWei(0.1) })).to
-      .be.true;
+    // Assign a realizedLPFeePct to the deposit and check it matches with the fill. After, try changing this to a
+    // separate value and ensure this is rejected.
+    expect(
+      spokePoolClient2.validateFillForDeposit(validFill, {
+        ...validDeposit,
+        realizedLpFeePct: deposit.realizedLpFeePct,
+      })
+    ).to.be.true;
 
-    expect(spokePoolClient2.validateFillForDeposit(validFill, { ...validDeposit, realizedLpFeePct: toBNWei(0.1337) }))
-      .to.be.false;
+    expect(
+      spokePoolClient2.validateFillForDeposit(validFill, {
+        ...validDeposit,
+        realizedLpFeePct: deposit.realizedLpFeePct.mul(2),
+      })
+    ).to.be.false;
 
     // Assign a destinationToken to the deposit and ensure it is validated correctly. erc20_2 from the fillRelay method
     // above is the destination token. After, try changing this to something that is clearly wrong.
