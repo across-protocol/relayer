@@ -56,7 +56,7 @@
     "watch": "tsc --build --incremental --watch",
     "clean": "dir=\"./node_modules\"; mv \"${dir}\" \"${dir}_\" 2>/dev/null && rm -r \"${dir}_\" &",
     "reinstall": "yarn clean && yarn install && yarn build",
-    "update": "git pull && yarn reinstall && git show --quiet",
+    "update": "git pull && yarn reinstall && yarn version --non-interactive && git show --quiet",
     "relay": "node ./dist/index.js --relayer"
   },
   "devDependencies": {
