@@ -37,6 +37,19 @@
     arb-bridge-eth "^0.7.4"
     arb-bridge-peripherals "^1.0.5"
 
+"@across-protocol/contracts-v2@2.1.0-beta.19":
+  version "2.1.0-beta.19"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.1.0-beta.19.tgz#ab620da6694b267898d905376114e78f8e81270a"
+  integrity sha512-w2EGcCME2rtjMaxZZaQMo3+56DHqKlvfzRiNXlk3QClUsU5NfWX9piLNwxNEEsj0/of8Rz5DEIp9X/VI2Gkc9g==
+  dependencies:
+    "@defi-wonderland/smock" "^2.3.4"
+    "@eth-optimism/contracts" "^0.5.11"
+    "@openzeppelin/contracts" "4.8.3"
+    "@openzeppelin/contracts-upgradeable" "4.8.3"
+    "@uma/common" "^2.29.0"
+    "@uma/contracts-node" "^0.3.18"
+    "@uma/core" "^2.41.0"
+
 "@across-protocol/contracts@^0.1.4":
   version "0.1.4"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-0.1.4.tgz#64b3d91e639d2bb120ea94ddef3d160967047fa5"
@@ -2005,7 +2018,7 @@
     hex2dec "^1.0.1"
     uuid "^8.0.0"
 
-"@openzeppelin/contracts-0.8@npm:@openzeppelin/contracts@^4.3.2", "@openzeppelin/contracts@^4.2.0", "@openzeppelin/contracts@^4.3.2", "@openzeppelin/contracts@^4.7.3", "@openzeppelin/contracts@^4.8.3":
+"@openzeppelin/contracts-0.8@npm:@openzeppelin/contracts@^4.3.2", "@openzeppelin/contracts@4.8.3", "@openzeppelin/contracts@^4.2.0", "@openzeppelin/contracts@^4.3.2", "@openzeppelin/contracts@^4.7.3", "@openzeppelin/contracts@^4.8.3":
   name "@openzeppelin/contracts-0.8"
   version "4.8.3"
   resolved "https://registry.yarnpkg.com/@openzeppelin/contracts/-/contracts-4.8.3.tgz#cbef3146bfc570849405f59cba18235da95a252a"
@@ -2021,7 +2034,7 @@
   resolved "https://registry.yarnpkg.com/@openzeppelin/contracts-upgradeable/-/contracts-upgradeable-4.7.3.tgz#f1d606e2827d409053f3e908ba4eb8adb1dd6995"
   integrity sha512-+wuegAMaLcZnLCJIvrVUDzA9z/Wp93f0Dla/4jJvIhijRrPabjQbZe6fWiECLaJyfn5ci9fqf9vTw3xpQOad2A==
 
-"@openzeppelin/contracts-upgradeable@^4.2.0", "@openzeppelin/contracts-upgradeable@^4.8.3":
+"@openzeppelin/contracts-upgradeable@4.8.3", "@openzeppelin/contracts-upgradeable@^4.2.0", "@openzeppelin/contracts-upgradeable@^4.8.3":
   version "4.8.3"
   resolved "https://registry.yarnpkg.com/@openzeppelin/contracts-upgradeable/-/contracts-upgradeable-4.8.3.tgz#6b076a7b751811b90fe3a172a7faeaa603e13a3f"
   integrity sha512-SXDRl7HKpl2WDoJpn7CK/M9U4Z8gNXDHHChAKh0Iz+Wew3wu6CmFYBeie3je8V0GSXZAIYYwUktSrnW/kwVPtg==
