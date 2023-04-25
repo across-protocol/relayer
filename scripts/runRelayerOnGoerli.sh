@@ -2,10 +2,8 @@
 #!/bin/bash
 echo "Running relayer on Goerli. Will fill any deposits for origin chain [5/421613] to destination chain [421613/5]"
 
-echo "Killing redis server if it's running to avoid production data corruption"
-
-# why not just use a nonstandard redis port and force the user to intentionally spin up redis on that port if they want to use it with this script?
-redis-cli shutdown
+# Use a nonstandard Redis port to avoid data base corruption on any existing Redis instance
+export REDIS_URL=redis://localhost:3636
 
 export RELAYER_IGNORE_LIMITS="true"
 export RELAYER_TOKENS='["0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6"]'
