@@ -206,12 +206,7 @@ export class SpokePoolClient {
   }
 
   getDepositForFill(fill: Fill): DepositWithBlock | undefined {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const depositWithMatchingDepositId = this.depositHashes[this.getDepositHash(fill)];
-    if (depositWithMatchingDepositId === undefined) {
-      return undefined;
-    }
-
     return validateFillForDeposit(fill, depositWithMatchingDepositId) ? depositWithMatchingDepositId : undefined;
   }
 
@@ -412,8 +407,6 @@ export class SpokePoolClient {
       }
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill
     return validateFillForDeposit(fill, deposit) ? deposit : undefined;
   }
 
