@@ -90,14 +90,14 @@ export async function constructSpokePoolClientsWithLookback(
     )
   );
 
-  // @dev: Set toBlocks = {} to construct spoke pool clients that query until the latest blocks.
+  // @dev: If toBlocks = {} then  construct spoke pool clients that query until the latest blocks.
   return await constructSpokePoolClientsWithStartBlocks(
     logger,
     configStoreClient,
     config,
     baseSigner,
     fromBlocks,
-    {},
+    config.toBlockOverride,
     enabledChains
   );
 }

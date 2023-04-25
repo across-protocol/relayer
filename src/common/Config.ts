@@ -18,6 +18,7 @@ export class CommonConfig {
   readonly multiCallChunkSize: { [chainId: number]: number };
   readonly version: string;
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
+  readonly toBlockOverride: Record<number, number> = {};
   readonly chainIdListIndices: number[];
 
   constructor(env: ProcessEnv) {
@@ -52,6 +53,15 @@ export class CommonConfig {
         );
       }
     }
+
+    for (const chainId of Constants.CHAIN_ID_LIST_INDICES) {
+      if (env[`TO_BLOCK_OVERRIDE_${chainId}`] !== undefined) {
+        const toBlock = Number(env[`TO_BLOCK_OVERRIDE_${chainId}`]);
+        assert(toBlock > 0, `TO_BLOCK_OVERRIDE_${chainId} must be greater than 0`);
+        this.toBlockOverride[chainId] = toBlock;
+      }
+    }
+
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
     this.hubPoolChainId = Number(HUB_CHAIN_ID ?? 1);
