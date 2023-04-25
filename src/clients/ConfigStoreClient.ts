@@ -91,6 +91,11 @@ export class AcrossConfigStoreClient {
       quoteBlock = 14856211;
     }
 
+    // Test deposit on Goerli was before rate model update.
+    if (quoteBlock === 8824889) {
+      quoteBlock = 8825016;
+    }
+
     const rateModel = this.getRateModelForBlockNumber(
       l1Token,
       deposit.originChainId,

@@ -1,4 +1,4 @@
-import { BigNumber, BigNumberish } from "../utils";
+import { BigNumber, BigNumberish, MAX_UINT_VAL } from "../utils";
 import { Deposit } from "../interfaces";
 export function buildFillRelayProps(
   deposit: Deposit,
@@ -23,6 +23,8 @@ export function buildFillRelayProps(
     deposit.realizedLpFeePct,
     deposit.relayerFeePct,
     deposit.depositId,
+    deposit.message,
+    BigNumber.from(MAX_UINT_VAL),
   ];
 }
 
@@ -41,6 +43,7 @@ export function buildFillRelayWithUpdatedFeeProps(
   return [
     deposit.depositor,
     deposit.recipient,
+    deposit.updatedRecipient,
     deposit.destinationToken,
     deposit.amount,
     maxFillAmount,
@@ -50,6 +53,9 @@ export function buildFillRelayWithUpdatedFeeProps(
     deposit.relayerFeePct,
     deposit.newRelayerFeePct,
     deposit.depositId,
+    deposit.message,
+    deposit.updatedMessage,
     deposit.speedUpSignature,
+    BigNumber.from(MAX_UINT_VAL),
   ];
 }

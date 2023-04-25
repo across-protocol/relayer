@@ -1,6 +1,7 @@
-import { setupTokensForWallet, expect, ethers, Contract, SignerWithAddress } from "./utils";
-import { originChainId, deploySpokePoolWithToken, fillRelay, destinationChainId, createSpyLogger } from "./utils";
+import { setupTokensForWallet, expect, ethers, Contract, SignerWithAddress, buildFill, toBNWei } from "./utils";
+import { originChainId, deploySpokePoolWithToken, destinationChainId, createSpyLogger } from "./utils";
 import { SpokePoolClient } from "../src/clients";
+import { Deposit } from "../src/interfaces";
 
 let spokePool: Contract, erc20: Contract, destErc20: Contract, weth: Contract;
 let depositor: SignerWithAddress, relayer1: SignerWithAddress, relayer2: SignerWithAddress;
@@ -32,9 +33,22 @@ describe("SpokePoolClient: Fills", async function () {
   });
 
   it("Correctly fetches fill data single fill, single chain", async function () {
-    const fill1 = await fillRelay(spokePool, erc20, depositor, depositor, relayer1, 0); // 0 deposit ID
-    const fill2 = await fillRelay(spokePool, erc20, depositor, depositor, relayer1, 1); // 1 deposit ID
-
+    const deposit: Deposit = {
+      depositId: 0,
+      depositor: depositor.address,
+      recipient: depositor.address,
+      originToken: erc20.address,
+      amount: toBNWei("1"),
+      originChainId,
+      destinationChainId,
+      relayerFeePct: toBNWei("0.01"),
+      quoteTimestamp: Date.now(),
+      realizedLpFeePct: toBNWei("0.01"),
+      destinationToken: destErc20.address,
+      message: "0x",
+    };
+    const fill1 = await buildFill(spokePool, destErc20, depositor, relayer1, deposit, 1);
+    const fill2 = await buildFill(spokePool, destErc20, depositor, relayer1, { ...deposit, depositId: 1 }, 1);
     await spokePoolClient.update();
 
     expect(spokePoolClient.getFills()[0]).to.deep.contains(fill1);
@@ -42,15 +56,51 @@ describe("SpokePoolClient: Fills", async function () {
     expect(spokePoolClient.getFills().length).to.equal(2);
   });
   it("Correctly fetches deposit data multiple fills, multiple chains", async function () {
+    const deposit: Deposit = {
+      depositId: 0,
+      depositor: depositor.address,
+      recipient: depositor.address,
+      originToken: erc20.address,
+      amount: toBNWei("1"),
+      originChainId,
+      destinationChainId,
+      relayerFeePct: toBNWei("0.01"),
+      quoteTimestamp: Date.now(),
+      realizedLpFeePct: toBNWei("0.01"),
+      destinationToken: destErc20.address,
+      message: "0x",
+    };
+
     // Do 6 deposits. 2 for the first depositor on chain1, 1 for the first depositor on chain2, 1 for the second
     // depositor on chain1, and 2 for the second depositor on chain2.
-    const relayer1Chain1_1 = await fillRelay(spokePool, erc20, depositor, depositor, relayer1, 0, originChainId);
-    const relayer1Chain1_2 = await fillRelay(spokePool, erc20, depositor, depositor, relayer1, 0, originChainId);
-    const relayer1Chain2_1 = await fillRelay(spokePool, erc20, depositor, depositor, relayer1, 0, originChainId2);
+    const relayer1Chain1_1 = await buildFill(spokePool, destErc20, depositor, relayer1, deposit, 0.1);
+    const relayer1Chain1_2 = await buildFill(spokePool, destErc20, depositor, relayer1, deposit, 0.1);
+    const relayer1Chain2_1 = await buildFill(
+      spokePool,
+      destErc20,
+      depositor,
+      relayer1,
+      { ...deposit, originChainId: originChainId2 },
+      0.1
+    );
 
-    const relayer2Chain1_1 = await fillRelay(spokePool, erc20, depositor, depositor, relayer2, 0, originChainId);
-    const relayer2Chain2_1 = await fillRelay(spokePool, erc20, depositor, depositor, relayer2, 0, originChainId2);
-    const relayer2Chain2_2 = await fillRelay(spokePool, erc20, depositor, depositor, relayer2, 0, originChainId2);
+    const relayer2Chain1_1 = await buildFill(spokePool, destErc20, depositor, relayer2, deposit, 0.1);
+    const relayer2Chain2_1 = await buildFill(
+      spokePool,
+      destErc20,
+      depositor,
+      relayer2,
+      { ...deposit, originChainId: originChainId2 },
+      0.1
+    );
+    const relayer2Chain2_2 = await buildFill(
+      spokePool,
+      destErc20,
+      depositor,
+      relayer2,
+      { ...deposit, originChainId: originChainId2 },
+      0.1
+    );
 
     await spokePoolClient.update();
 
