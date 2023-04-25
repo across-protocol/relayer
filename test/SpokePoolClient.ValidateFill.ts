@@ -14,7 +14,6 @@ import {
   destinationChainId,
   createSpyLogger,
   zeroAddress,
-  getLastBlockNumber,
   deployAndConfigureHubPool,
   enableRoutesOnHubPool,
   deployConfigStore,

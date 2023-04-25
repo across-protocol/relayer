@@ -427,15 +427,8 @@ export class SpokePoolClient {
             ` between ${srcChain} blocks [${searchBounds.low}, ${searchBounds.high}]`
         );
       }
-      const processedEvent: {
-        originChainId: number;
-        originToken: string;
-        destinationChainId: number;
-      } = spreadEventWithBlockNumber(event) as DepositWithBlock;
-      const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number } = await this.computeRealizedLpFeePct(
-        event
-      );
-      // Append the realizedLpFeePct.
+      const partialDeposit = spreadEventWithBlockNumber(event) as DepositWithBlock;
+      const { realizedLpFeePct, quoteBlock: quoteBlockNumber } = await this.computeRealizedLpFeePct(event); // Append the realizedLpFeePct.
       // Append destination token and realized lp fee to deposit.
       deposit = {
         ...partialDeposit,
@@ -654,15 +647,8 @@ export class SpokePoolClient {
         const deposit: DepositWithBlock = {
           ...partialDeposit,
           realizedLpFeePct: dataForQuoteTime[index].realizedLpFeePct,
-          destinationToken: this.getDestinationTokenForDeposit(
-            processedEvent as {
-              originChainId: number;
-              originToken: string;
-              destinationChainId: number;
-            }
-          ),
-          blockNumber: dataForQuoteTime[index].quoteBlock,
-          originBlockNumber: event.blockNumber,
+          destinationToken: this.getDestinationTokenForDeposit(partialDeposit),
+          quoteBlockNumber: dataForQuoteTime[index].quoteBlock,
         } as DepositWithBlock;
 
         assign(this.depositHashes, [this.getDepositHash(deposit)], deposit);
