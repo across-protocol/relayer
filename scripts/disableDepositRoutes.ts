@@ -5,21 +5,18 @@ import { CommonConfig, constructClients, constructSpokePoolClientsWithStartBlock
 import minimist from "minimist";
 const args = minimist(process.argv.slice(2), {
   string: ["chainId"],
-  boolean: ["enable"],
 });
 
 export async function run(logger: winston.Logger): Promise<void> {
   const enabledChains = [1, 10, 137, 42161];
   const chainsToDisable = args.chainId ? [args.chainId] : enabledChains;
-  const enableRoute = args.enable ? true : false;
-  const enableMode = enableRoute ? "enable" : "disable";
   assert(
     chainsToDisable.length === enabledChains.length || chainsToDisable.length === 1,
-    `Must define exactly one chain to ${enableMode} or all`
+    "Must define exactly one chain to disable or all"
   );
   logger.debug({
-    at: `${enableMode}DepositRoutes`,
-    message: `Constructing data to ${enableMode} all deposits to or from the following chains`,
+    at: "disableDepositRoutes",
+    message: "Constructing data to disable all deposits to or from the following chains",
     chainsToDisable,
   });
   const baseSigner = await getSigner();
@@ -39,7 +36,7 @@ export async function run(logger: winston.Logger): Promise<void> {
   );
   await Promise.all(Object.values(spokePoolClients).map((client) => client.update(["EnabledDepositRoute"])));
 
-  // Save all deposit routes involving chain ID that we want to disable/enable.
+  // Save all deposit routes involving chain ID that we want to disable.
   /**
      *  function setDepositRoute(
             uint256 originChainId,
@@ -85,8 +82,8 @@ export async function run(logger: winston.Logger): Promise<void> {
   // Remove all already disabled routes.
   routesToDisable = routesToDisable.filter((route) => route.depositsEnabled);
   logger.debug({
-    at: `${enableMode}DepositRoutes`,
-    message: `Routes to ${enableMode}`,
+    at: "disableDepositRoutes",
+    message: "Routes to disable",
     routesToDisable,
   });
 
@@ -97,7 +94,7 @@ export async function run(logger: winston.Logger): Promise<void> {
         route.originChainId,
         route.destinationChainId,
         route.originToken,
-        enableRoute
+        false
       );
     })
   );
