@@ -1,5 +1,4 @@
 import * as optimismSDK from "@eth-optimism/sdk";
-import * as bobaSDK from "@across-protocol/boba-sdk";
 import { Withdrawal } from "..";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { L1Token, TokensBridged } from "../../interfaces";
@@ -7,16 +6,11 @@ import { convertFromWei, ethers, getNodeUrlList, groupObjectCountsByProp, Wallet
 import { Multicall2Call } from "../../common";
 
 type OVM_CHAIN_ID = 10 | 288;
-type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger | bobaSDK.CrossChainMessenger;
+type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
 
 export function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Wallet): OVM_CROSS_CHAIN_MESSENGER {
   if (chainId === 288) {
-    return new bobaSDK.CrossChainMessenger({
-      l1ChainId: 1,
-      l1SignerOrProvider: hubSigner.connect(new ethers.providers.JsonRpcProvider(getNodeUrlList(1)[0])),
-      l2SignerOrProvider: hubSigner.connect(new ethers.providers.JsonRpcProvider(getNodeUrlList(chainId)[0])),
-      contracts: { ...bobaSDK.CONTRACT_ADDRESSES[1] }, // Override with Boba system addresses
-    });
+    throw new Error(`ChainId ${chainId} is not supported`);
   } else {
     return new optimismSDK.CrossChainMessenger({
       l1ChainId: 1,
@@ -29,7 +23,7 @@ export function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Wallet): OVM
 
 export interface CrossChainMessageWithEvent {
   event: TokensBridged;
-  message: optimismSDK.MessageLike | bobaSDK.MessageLike;
+  message: optimismSDK.MessageLike;
 }
 export async function getCrossChainMessages(
   chainId: OVM_CHAIN_ID,
@@ -53,7 +47,7 @@ export async function getCrossChainMessages(
         async (l2Event, i) =>
           (
             await crossChainMessenger.getMessagesByTransaction(l2Event.transactionHash, {
-              direction: chainId === 10 ? optimismSDK.MessageDirection.L2_TO_L1 : bobaSDK.MessageDirection.L2_TO_L1,
+              direction: optimismSDK.MessageDirection.L2_TO_L1,
             })
           )[logIndexesForMessage[i]]
       )
@@ -75,20 +69,7 @@ export async function getMessageStatuses(
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER
 ): Promise<CrossChainMessageWithStatus[]> {
   if (chainId === 288) {
-    const statuses = await Promise.all(
-      crossChainMessages.map((message) => {
-        return (crossChainMessenger as bobaSDK.CrossChainMessenger).getMessageStatus(
-          message.message as bobaSDK.MessageLike
-        );
-      })
-    );
-    return statuses.map((status, i) => {
-      return {
-        status: bobaSDK.MessageStatus[status],
-        message: crossChainMessages[i].message,
-        event: crossChainMessages[i].event,
-      };
-    });
+    throw new Error(`ChainId ${chainId} is not supported`);
   } else {
     const statuses = await Promise.all(
       crossChainMessages.map((message) => {
@@ -125,9 +106,7 @@ export async function getOptimismFinalizableMessages(
       (message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]
     );
   } else {
-    return messageStatuses.filter(
-      (message) => message.status === bobaSDK.MessageStatus[bobaSDK.MessageStatus.READY_FOR_RELAY]
-    );
+    throw new Error(`ChainId ${chainId} is not supported`);
   }
 }
 
@@ -156,13 +135,7 @@ export async function finalizeOptimismMessage(
       target: callData.to,
     };
   } else {
-    const callData = await (crossChainMessenger as bobaSDK.CrossChainMessenger).populateTransaction.finalizeMessage(
-      message.message as bobaSDK.MessageLike
-    );
-    return {
-      callData: callData.data,
-      target: callData.to,
-    };
+    throw new Error(`ChainId ${chainId} is not supported`);
   }
 }
 

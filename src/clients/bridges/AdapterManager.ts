@@ -67,19 +67,13 @@ export class AdapterManager {
       this.spokePoolClients[10] !== undefined
         ? (this.adapters[10] as OptimismAdapter).wrapEthIfAboveThreshold(wrapThreshold)
         : Promise.resolve(undefined);
-    const bobaCall =
-      this.spokePoolClients[288] !== undefined
-        ? (this.adapters[288] as OptimismAdapter).wrapEthIfAboveThreshold(wrapThreshold)
-        : Promise.resolve(undefined);
-    const [optimismWrapTx, bobaWrapTx] = await Promise.all([optimismCall, bobaCall]);
+    const [optimismWrapTx] = await Promise.all([optimismCall]);
 
-    if (optimismWrapTx || bobaWrapTx) {
+    if (optimismWrapTx) {
       const mrkdwn =
-        `Ether on ${optimismWrapTx ? "Optimism" : ""}${optimismWrapTx && bobaWrapTx ? " and " : ""}` +
-        `${bobaWrapTx ? "Boba" : ""} was wrapped due to being over the threshold of ` +
+        "Ether on Optimism was wrapped due to being over the threshold of " +
         `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.\n` +
-        `${optimismWrapTx ? `\nOptimism tx: ${etherscanLink(optimismWrapTx.hash, 10)} ` : ""}` +
-        `${bobaWrapTx ? `Boba tx: ${etherscanLink(bobaWrapTx.hash, 288)}` : ""}`;
+        `${`\nOptimism tx: ${etherscanLink(optimismWrapTx.hash, 10)} `}.`;
       this.logger.info({ at: "AdapterManager", message: "Eth wrapped on target chain 🎁", mrkdwn });
     }
   }
