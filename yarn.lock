@@ -2003,13 +2003,37 @@
     hex2dec "^1.0.1"
     uuid "^8.0.0"
 
-"@openzeppelin/contracts-upgradeable@4.7.3", "@openzeppelin/contracts-upgradeable@4.8.3", "@openzeppelin/contracts-upgradeable@^4.2.0":
+"@openzeppelin/contracts-upgradeable@4.7.3", "@openzeppelin/contracts-upgradeable@^4.2.0":
+  version "4.7.3"
+  resolved "https://registry.yarnpkg.com/@openzeppelin/contracts-upgradeable/-/contracts-upgradeable-4.7.3.tgz#f1d606e2827d409053f3e908ba4eb8adb1dd6995"
+  integrity sha512-+wuegAMaLcZnLCJIvrVUDzA9z/Wp93f0Dla/4jJvIhijRrPabjQbZe6fWiECLaJyfn5ci9fqf9vTw3xpQOad2A==
+
+"@openzeppelin/contracts-upgradeable@4.8.3":
   version "4.8.3"
   resolved "https://registry.yarnpkg.com/@openzeppelin/contracts-upgradeable/-/contracts-upgradeable-4.8.3.tgz#6b076a7b751811b90fe3a172a7faeaa603e13a3f"
   integrity sha512-SXDRl7HKpl2WDoJpn7CK/M9U4Z8gNXDHHChAKh0Iz+Wew3wu6CmFYBeie3je8V0GSXZAIYYwUktSrnW/kwVPtg==
 
-"@openzeppelin/contracts@3.4.1-solc-0.7-2", "@openzeppelin/contracts@4.1.0", "@openzeppelin/contracts@4.4.2", "@openzeppelin/contracts@4.7.3", "@openzeppelin/contracts@4.8.3", "@openzeppelin/contracts@^4.2.0", "@openzeppelin/contracts@^4.3.2", "@openzeppelin/contracts@^4.7.3":
-  name "@openzeppelin/contracts-0.8"
+"@openzeppelin/contracts@3.4.1-solc-0.7-2":
+  version "3.4.1-solc-0.7-2"
+  resolved "https://registry.yarnpkg.com/@openzeppelin/contracts/-/contracts-3.4.1-solc-0.7-2.tgz#371c67ebffe50f551c3146a9eec5fe6ffe862e92"
+  integrity sha512-tAG9LWg8+M2CMu7hIsqHPaTyG4uDzjr6mhvH96LvOpLZZj6tgzTluBt+LsCf1/QaYrlis6pITvpIaIhE+iZB+Q==
+
+"@openzeppelin/contracts@4.1.0":
+  version "4.1.0"
+  resolved "https://registry.yarnpkg.com/@openzeppelin/contracts/-/contracts-4.1.0.tgz#baec89a7f5f73e3d8ea582a78f1980134b605375"
+  integrity sha512-TihZitscnaHNcZgXGj9zDLDyCqjziytB4tMCwXq0XimfWkAjBYyk5/pOsDbbwcavhlc79HhpTEpQcrMnPVa1mw==
+
+"@openzeppelin/contracts@4.4.2":
+  version "4.4.2"
+  resolved "https://registry.yarnpkg.com/@openzeppelin/contracts/-/contracts-4.4.2.tgz#4e889c9c66e736f7de189a53f8ba5b8d789425c2"
+  integrity sha512-NyJV7sJgoGYqbtNUWgzzOGW4T6rR19FmX1IJgXGdapGPWsuMelGJn9h03nos0iqfforCbCB0iYIR0MtIuIFLLw==
+
+"@openzeppelin/contracts@4.7.3", "@openzeppelin/contracts@^4.2.0", "@openzeppelin/contracts@^4.3.2", "@openzeppelin/contracts@^4.7.3":
+  version "4.7.3"
+  resolved "https://registry.yarnpkg.com/@openzeppelin/contracts/-/contracts-4.7.3.tgz#939534757a81f8d69cc854c7692805684ff3111e"
+  integrity sha512-dGRS0agJzu8ybo44pCIf3xBaPQN/65AIXNgK8+4gzKd5kbvlqyxryUYVLJv7fK98Seyd2hDZzVEHSWAh0Bt1Yw==
+
+"@openzeppelin/contracts@4.8.3":
   version "4.8.3"
   resolved "https://registry.yarnpkg.com/@openzeppelin/contracts/-/contracts-4.8.3.tgz#cbef3146bfc570849405f59cba18235da95a252a"
   integrity sha512-bQHV8R9Me8IaJoJ2vPG4rXcL7seB7YVuskr4f+f5RyOStSZetwzkWtoqDMl5erkBJy0lDRUnIR2WIkPiC0GJlg==
@@ -2962,10 +2986,10 @@
     "@typescript-eslint/types" "4.33.0"
     eslint-visitor-keys "^2.0.0"
 
-"@uma/common@^2.17.0", "@uma/common@^2.19.0", "@uma/common@^2.28.4", "@uma/common@^2.29.0", "@uma/common@^2.32.0":
-  version "2.32.0"
-  resolved "https://registry.yarnpkg.com/@uma/common/-/common-2.32.0.tgz#7a07e8062eb83164af712b4f1cdd7c77091cbcaa"
-  integrity sha512-+njikZPhAIy7KR2III1UwlAOIL3tGcsicrIM2TG5txVlVxfhjHBk9Y4IaSQAjBU11hh08iSk3fIJnDA8uGSgkg==
+"@uma/common@2.33.0":
+  version "2.33.0"
+  resolved "https://registry.yarnpkg.com/@uma/common/-/common-2.33.0.tgz#25157e804228f91a52f501ca174d9432601836ad"
+  integrity sha512-w6wKpfXHJzFYHN3QqYGJrCRtussgQBu2L/glmuolxIz1kFS5aGjUnqhll+XJBK9G9RDx2b3J1vBEMAlF25sTVw==
   dependencies:
     "@across-protocol/contracts" "^0.1.4"
     "@ethersproject/bignumber" "^5.0.5"
@@ -2997,10 +3021,10 @@
     web3 "^1.6.0"
     winston "^3.2.1"
 
-"@uma/common@^2.33.0":
-  version "2.33.0"
-  resolved "https://registry.yarnpkg.com/@uma/common/-/common-2.33.0.tgz#25157e804228f91a52f501ca174d9432601836ad"
-  integrity sha512-w6wKpfXHJzFYHN3QqYGJrCRtussgQBu2L/glmuolxIz1kFS5aGjUnqhll+XJBK9G9RDx2b3J1vBEMAlF25sTVw==
+"@uma/common@^2.17.0", "@uma/common@^2.19.0", "@uma/common@^2.28.4", "@uma/common@^2.29.0", "@uma/common@^2.32.0":
+  version "2.32.0"
+  resolved "https://registry.yarnpkg.com/@uma/common/-/common-2.32.0.tgz#7a07e8062eb83164af712b4f1cdd7c77091cbcaa"
+  integrity sha512-+njikZPhAIy7KR2III1UwlAOIL3tGcsicrIM2TG5txVlVxfhjHBk9Y4IaSQAjBU11hh08iSk3fIJnDA8uGSgkg==
   dependencies:
     "@across-protocol/contracts" "^0.1.4"
     "@ethersproject/bignumber" "^5.0.5"
@@ -6291,7 +6315,7 @@ ethereumjs-util@7.1.3:
     ethereum-cryptography "^0.1.3"
     rlp "^2.2.4"
 
-ethereumjs-util@7.1.5, ethereumjs-util@^7.1.3, ethereumjs-util@^7.1.5:
+ethereumjs-util@7.1.5, ethereumjs-util@^7.0.3, ethereumjs-util@^7.1.3, ethereumjs-util@^7.1.5:
   version "7.1.5"
   resolved "https://registry.yarnpkg.com/ethereumjs-util/-/ethereumjs-util-7.1.5.tgz#9ecf04861e4fbbeed7465ece5f23317ad1129181"
   integrity sha512-SDl5kKrQAudFBUe5OJM9Ac6WmMyYmXX/6sTmLZ3ffG2eY6ZIGBes3pEDxNN6V72WyOw4CPD5RomKdsa8DAAwLg==
@@ -6328,7 +6352,7 @@ ethereumjs-util@^6.0.0, ethereumjs-util@^6.1.0, ethereumjs-util@^6.2.1:
     ethjs-util "0.1.6"
     rlp "^2.2.3"
 
-ethereumjs-util@^7.0.10, ethereumjs-util@^7.0.3, ethereumjs-util@^7.1.0, ethereumjs-util@^7.1.1, ethereumjs-util@^7.1.2, ethereumjs-util@^7.1.4:
+ethereumjs-util@^7.0.10, ethereumjs-util@^7.1.0, ethereumjs-util@^7.1.1, ethereumjs-util@^7.1.2, ethereumjs-util@^7.1.4:
   version "7.1.4"
   resolved "https://registry.yarnpkg.com/ethereumjs-util/-/ethereumjs-util-7.1.4.tgz#a6885bcdd92045b06f596c7626c3e89ab3312458"
   integrity sha512-p6KmuPCX4mZIqsQzXfmSx9Y0l2hqf+VkAiwSisW3UKUFdk8ZkAt+AYaor83z2nSi6CU2zSsXMlD80hAbNEGM0A==
@@ -7408,10 +7432,15 @@ got@^7.1.0:
     url-parse-lax "^1.0.0"
     url-to-options "^1.0.1"
 
-graceful-fs@^4.1.2, graceful-fs@^4.1.6, graceful-fs@^4.1.9, graceful-fs@^4.2.0, graceful-fs@^4.2.3, graceful-fs@^4.2.4, graceful-fs@^4.2.8:
+graceful-fs@^4.1.2, graceful-fs@^4.1.6, graceful-fs@^4.1.9, graceful-fs@^4.2.0, graceful-fs@^4.2.3, graceful-fs@^4.2.8:
   version "4.2.10"
   resolved "https://registry.yarnpkg.com/graceful-fs/-/graceful-fs-4.2.10.tgz#147d3a006da4ca3ce14728c7aefc287c367d7a6c"
   integrity sha512-9ByhssR2fPVsNZj478qUUbKfmL0+t5BDVyjShtyZZLiK7ZDAArFFfopyOTj0M05wE2tJPisA4iTnnXl2YoPvOA==
+
+graceful-fs@^4.2.4:
+  version "4.2.11"
+  resolved "https://registry.yarnpkg.com/graceful-fs/-/graceful-fs-4.2.11.tgz#4183e4e8bf08bb6e05bbb2f7d2e0c8f712ca40e3"
+  integrity sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==
 
 growl@1.10.5:
   version "1.10.5"
@@ -9479,12 +9508,7 @@ minimatch@^5.0.1:
   dependencies:
     brace-expansion "^2.0.1"
 
-minimist@^1.2.0, minimist@^1.2.3, minimist@^1.2.5, minimist@^1.2.6:
-  version "1.2.6"
-  resolved "https://registry.yarnpkg.com/minimist/-/minimist-1.2.6.tgz#8637a5b759ea0d6e98702cfb3a9283323c93af44"
-  integrity sha512-Jsjnk4bw3YJqYzbdyBiNsPWHPfO++UGG749Cxs6peCu5Xg4nrena6OVxOYxrQTqww0Jmwt+Ref8rggumkTLz9Q==
-
-minimist@^1.2.8:
+minimist@^1.2.0, minimist@^1.2.3, minimist@^1.2.5, minimist@^1.2.6, minimist@^1.2.8:
   version "1.2.8"
   resolved "https://registry.yarnpkg.com/minimist/-/minimist-1.2.8.tgz#c1a464e7693302e082a075cee0c057741ac4772c"
   integrity sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==
@@ -12211,9 +12235,9 @@ solhint@^3.3.6:
     prettier "^1.14.3"
 
 solidity-ast@^0.4.15:
-  version "0.4.31"
-  resolved "https://registry.yarnpkg.com/solidity-ast/-/solidity-ast-0.4.31.tgz#c63e42f894cd047826a05dbb8d1e1dfc17282d39"
-  integrity sha512-kX6o4XE4ihaqENuRRTMJfwQNHoqWusPENZUlX4oVb19gQdfi7IswFWnThONHSW/61umgfWdKtCBgW45iuOTryQ==
+  version "0.4.46"
+  resolved "https://registry.yarnpkg.com/solidity-ast/-/solidity-ast-0.4.46.tgz#d0745172dced937741d07464043564e35b147c59"
+  integrity sha512-MlPZQfPhjWXqh7YxWcBGDXaPZIfMYCOHYoLEhGDWulNwEPIQQZuB7mA9eP17CU0jY/bGR4avCEUVVpvHtT2gbA==
 
 solidity-comments-extractor@^0.0.7:
   version "0.0.7"

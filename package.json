@@ -22,7 +22,8 @@
     "@google-cloud/storage": "^6.9.5",
     "@maticnetwork/maticjs": "^3.4.0-beta.0",
     "@maticnetwork/maticjs-ethers": "^1.0.3",
-    "@uma/common": "^2.33.0",
+    "@openzeppelin/hardhat-upgrades": "^1.22.1",
+    "@uma/common": "2.33.0",
     "@uma/contracts-node": "^0.4.13",
     "@uma/financial-templates-lib": "^2.32.10",
     "@uma/sdk": "^0.34.0",
@@ -40,10 +41,6 @@
     "redis4": "npm:redis@^4.1.0",
     "ts-node": "^10.9.1",
     "winston": "^3.8.2"
-  },
-  "resolutions": {
-    "@openzeppelin/contracts": "4.8.3",
-    "@openzeppelin/contracts-upgradeable": "4.8.3"
   },
   "files": [
     "/dist/**/*"
@@ -67,7 +64,6 @@
     "@nomiclabs/hardhat-ethers": "^2.2.2",
     "@nomiclabs/hardhat-etherscan": "^3.1.7",
     "@nomiclabs/hardhat-waffle": "^2.0.5",
-    "@openzeppelin/hardhat-upgrades": "^1.22.1",
     "@typechain/ethers-v5": "^10.2.0",
     "@typechain/hardhat": "^6.1.5",
     "@types/async-retry": "^1.4.5",
