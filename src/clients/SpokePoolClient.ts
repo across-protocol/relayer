@@ -649,7 +649,7 @@ export class SpokePoolClient {
           realizedLpFeePct: dataForQuoteTime[index].realizedLpFeePct,
           destinationToken: this.getDestinationTokenForDeposit(partialDeposit),
           quoteBlockNumber: dataForQuoteTime[index].quoteBlock,
-        } as DepositWithBlock;
+        };
 
         assign(this.depositHashes, [this.getDepositHash(deposit)], deposit);
         assign(this.deposits, [deposit.destinationChainId], [deposit]);
