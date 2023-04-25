@@ -234,6 +234,14 @@ describe("Monitor", async function () {
       getRefundForFills([fill1])
     );
 
+    // Manually relay the roots to spoke pools since adapter is a dummy and won't actually relay messages.
+    const validatedRootBundles = hubPoolClient.getValidatedRootBundles();
+    for (const rootBundle of validatedRootBundles) {
+      await spokePool_1.relayRootBundle(rootBundle.relayerRefundRoot, rootBundle.slowRelayRoot);
+      await spokePool_2.relayRootBundle(rootBundle.relayerRefundRoot, rootBundle.slowRelayRoot);
+    }
+    await updateAllClients();
+
     // Execute relayer refund leaves. Send funds to spoke pools to execute the leaves.
     await erc20_2.mint(spokePool_2.address, getRefundForFills([fill1]));
     const providers = {

@@ -41,7 +41,7 @@ import { updateDataworkerClients } from "../dataworker/DataworkerClientHelper";
 import { createDataworker } from "../dataworker";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
-import { ProposedRootBundle, RelayData, SpokePoolClientsByChain } from "../interfaces";
+import { ProposedRootBundle, SlowFillLeaf, SpokePoolClientsByChain } from "../interfaces";
 import { constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@uma/financial-templates-lib";
 
@@ -214,23 +214,24 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
             // Compute how much the slow fill will execute by checking if any partial fills were sent after
             // the slow fill amount was sent to the spoke pool.
             const slowFillsForPoolRebalanceLeaf = slowFills.filter(
-              (f) => f.destinationChainId === leaf.chainId && f.destinationToken === l2Token
+              (f) => f.relayData.destinationChainId === leaf.chainId && f.relayData.destinationToken === l2Token
             );
             if (slowFillsForPoolRebalanceLeaf.length > 0) {
               for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {
-                const fillsForSameDeposit = bundleSpokePoolClients[slowFillForChain.destinationChainId]
-                  .getFillsForOriginChain(slowFillForChain.originChainId)
+                const fillsForSameDeposit = bundleSpokePoolClients[slowFillForChain.relayData.destinationChainId]
+                  .getFillsForOriginChain(slowFillForChain.relayData.originChainId)
                   .filter(
                     (f) =>
-                      f.blockNumber <= bundleEndBlockForChain.toNumber() && f.depositId === slowFillForChain.depositId
+                      f.blockNumber <= bundleEndBlockForChain.toNumber() &&
+                      f.depositId === slowFillForChain.relayData.depositId
                   );
-                const amountSentForSlowFillLeftUnexecuted = slowFillForChain.amount.sub(
+                const amountSentForSlowFillLeftUnexecuted = slowFillForChain.relayData.amount.sub(
                   sortEventsDescending(fillsForSameDeposit)[0].totalFilledAmount
                 );
                 if (amountSentForSlowFillLeftUnexecuted.gt(0)) {
                   const deductionForSlowFill = getRefund(
                     amountSentForSlowFillLeftUnexecuted,
-                    slowFillForChain.realizedLpFeePct
+                    slowFillForChain.relayData.realizedLpFeePct
                   );
                   mrkdwn += `\n\t\t- subtracting leftover amount from previous bundle's unexecuted slow fill: ${fromWei(
                     deductionForSlowFill.toString(),
@@ -254,18 +255,21 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
             mostRecentValidatedBundle
           );
           const slowFillsForPoolRebalanceLeaf = slowFills.filter(
-            (f) => f.destinationChainId === leaf.chainId && f.destinationToken === l2Token
+            (f) => f.relayData.destinationChainId === leaf.chainId && f.relayData.destinationToken === l2Token
           );
           if (slowFillsForPoolRebalanceLeaf.length > 0) {
             for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {
-              const fillsForSameDeposit = bundleSpokePoolClients[slowFillForChain.destinationChainId]
-                .getFillsForOriginChain(slowFillForChain.originChainId)
-                .filter((f) => f.depositId === slowFillForChain.depositId);
-              const amountSentForSlowFill = slowFillForChain.amount.sub(
+              const fillsForSameDeposit = bundleSpokePoolClients[slowFillForChain.relayData.destinationChainId]
+                .getFillsForOriginChain(slowFillForChain.relayData.originChainId)
+                .filter((f) => f.depositId === slowFillForChain.relayData.depositId);
+              const amountSentForSlowFill = slowFillForChain.relayData.amount.sub(
                 sortEventsDescending(fillsForSameDeposit)[0].totalFilledAmount
               );
               if (amountSentForSlowFill.gt(0)) {
-                const deductionForSlowFill = getRefund(amountSentForSlowFill, slowFillForChain.realizedLpFeePct);
+                const deductionForSlowFill = getRefund(
+                  amountSentForSlowFill,
+                  slowFillForChain.relayData.realizedLpFeePct
+                );
                 mrkdwn += `\n\t\t- subtracting amount sent for slow fill: ${fromWei(
                   deductionForSlowFill.toString(),
                   decimals
@@ -351,7 +355,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
     bundle: ProposedRootBundle,
     olderBundle: ProposedRootBundle,
     futureBundle: ProposedRootBundle
-  ): Promise<{ slowFills: RelayData[]; bundleSpokePoolClients: SpokePoolClientsByChain }> {
+  ): Promise<{ slowFills: SlowFillLeaf[]; bundleSpokePoolClients: SpokePoolClientsByChain }> {
     // Construct custom spoke pool clients to query events needed to build slow roots.
     const spokeClientFromBlocks = Object.fromEntries(
       Object.keys(spokePoolClients).map((chainId) => {

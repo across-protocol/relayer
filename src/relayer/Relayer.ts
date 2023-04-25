@@ -185,6 +185,25 @@ export class Relayer {
         continue;
       }
 
+      // At this point, check if deposit has a non-empty message.
+      // We need to build in better simulation logic for deposits with non-empty messages. Currently we only measure
+      // the fill's gas cost against a simple USDC fill with message=0x. This doesn't handle the case where the
+      // message is != 0x and it ends up costing a lot of gas to execute, resulting in a big loss to the relayer.
+      if (isDepositSpedUp(deposit) && deposit.updatedMessage !== "0x") {
+        this.logger.warn({
+          at: "Relayer",
+          message: "Skipping fill for sped-up deposit with message",
+          deposit,
+        });
+        continue;
+      } else if (deposit.message !== "0x") {
+        this.logger.warn({
+          at: "Relayer",
+          message: "Skipping fill for deposit with message",
+          deposit,
+        });
+        continue;
+      }
       if (this.clients.tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
         if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount, l1Token)) {
           await this.fillRelay(deposit, unfilledAmount);
@@ -225,10 +244,35 @@ export class Relayer {
     }
 
     try {
+      // TODO: Consider adding some way for Relayer to delete transactions in Queue for fills for same deposit.
+      // This way the relayer could set a repayment chain ID for any fill that follows a 1 wei fill in the queue.
+      // This isn't implemented due to complexity because its a very rare case in production, because its very
+      // unlikely that a relayer could enqueue a 1 wei fill (lacking balance to fully fill it) for a deposit and
+      // then later on in the run have enough balance to fully fill it.
+      const fillsInQueueForSameDeposit =
+        this.clients.multiCallerClient.getQueuedTransactions(deposit.destinationChainId).filter((tx) => {
+          return (
+            (tx.method === "fillRelay" && tx.args[9] === deposit.depositId && tx.args[6] === deposit.originChainId) ||
+            (tx.method === "fillRelayWithUpdatedDeposit" &&
+              tx.args[11] === deposit.depositId &&
+              tx.args[7] === deposit.originChainId)
+          );
+        }).length > 0;
       // Fetch the repayment chain from the inventory client. Sanity check that it is one of the known chainIds.
-      const repaymentChain = await this.clients.inventoryClient.determineRefundChainId(deposit);
-      if (!Object.keys(this.clients.spokePoolClients).includes(deposit.destinationChainId.toString())) {
-        throw new Error("Fatal error! Repayment chain set to a chain that is not part of the defined sets of chains!");
+      // We can only overwrite repayment chain ID if we can fully fill the deposit.
+      let repaymentChain = deposit.destinationChainId;
+      if (fillAmount.eq(deposit.amount) && !fillsInQueueForSameDeposit) {
+        repaymentChain = await this.clients.inventoryClient.determineRefundChainId(deposit);
+        if (!Object.keys(this.clients.spokePoolClients).includes(deposit.destinationChainId.toString())) {
+          throw new Error(
+            "Fatal error! Repayment chain set to a chain that is not part of the defined sets of chains!"
+          );
+        }
+      } else {
+        this.logger.debug({
+          at: "Relayer",
+          message: "Skipping repayment chain determination for partial fill",
+        });
       }
 
       this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain });
@@ -240,7 +284,7 @@ export class Relayer {
         this.clients.multiCallerClient.enqueueTransaction({
           contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
           chainId: deposit.destinationChainId,
-          method: "fillRelayWithUpdatedFee",
+          method: "fillRelayWithUpdatedDeposit",
           args: buildFillRelayWithUpdatedFeeProps(deposit, repaymentChain, fillAmount), // props sent with function call.
           message: fillAmount.eq(deposit.amount)
             ? "Relay instantly sent with modified fee 🚀"
@@ -277,7 +321,8 @@ export class Relayer {
   }
 
   zeroFillDeposit(deposit: Deposit): void {
-    const repaymentChainId = 1; // Always refund zero fills on L1 to not send dust over the chain unnecessarily.
+    // We can only overwrite repayment chain ID if we can fully fill the deposit.
+    const repaymentChainId = deposit.destinationChainId;
     const fillAmount = toBN(1); // 1 wei; smallest fill size possible.
     this.logger.debug({ at: "Relayer", message: "Zero filling", deposit, repaymentChain: repaymentChainId });
     try {

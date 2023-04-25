@@ -6,9 +6,10 @@ import {
   FillWithBlock,
   PoolRebalanceLeaf,
   ProposedRootBundle,
+  SlowFillLeaf,
   SpokePoolClientsByChain,
 } from "../interfaces";
-import { RelayData, RelayerRefundLeaf } from "../interfaces";
+import { RelayerRefundLeaf } from "../interfaces";
 import { RelayerRefundLeafWithGroup, RunningBalances, UnfilledDeposit } from "../interfaces";
 import {
   AnyObject,
@@ -208,20 +209,24 @@ export function prettyPrintSpokePoolEvents(
 }
 
 export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
-  leaves: RelayData[];
-  tree: MerkleTree<RelayData>;
+  leaves: SlowFillLeaf[];
+  tree: MerkleTree<SlowFillLeaf>;
 } {
-  const slowRelayLeaves: RelayData[] = unfilledDeposits.map(
-    (deposit: UnfilledDeposit): RelayData => ({
-      depositor: deposit.deposit.depositor,
-      recipient: deposit.deposit.recipient,
-      destinationToken: deposit.deposit.destinationToken,
-      amount: deposit.deposit.amount,
-      originChainId: deposit.deposit.originChainId,
-      destinationChainId: deposit.deposit.destinationChainId,
-      realizedLpFeePct: deposit.deposit.realizedLpFeePct,
-      relayerFeePct: deposit.deposit.relayerFeePct,
-      depositId: deposit.deposit.depositId,
+  const slowRelayLeaves: SlowFillLeaf[] = unfilledDeposits.map(
+    (deposit: UnfilledDeposit): SlowFillLeaf => ({
+      relayData: {
+        depositor: deposit.deposit.depositor,
+        recipient: deposit.deposit.recipient,
+        destinationToken: deposit.deposit.destinationToken,
+        amount: deposit.deposit.amount,
+        originChainId: deposit.deposit.originChainId,
+        destinationChainId: deposit.deposit.destinationChainId,
+        realizedLpFeePct: deposit.deposit.realizedLpFeePct,
+        relayerFeePct: deposit.deposit.relayerFeePct,
+        depositId: deposit.deposit.depositId,
+        message: "0x",
+      },
+      payoutAdjustmentPct: "0",
     })
   );
 
@@ -229,10 +234,10 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
   // The { Deposit ID, origin chain ID } is guaranteed to be unique so we can sort on them.
   const sortedLeaves = [...slowRelayLeaves].sort((relayA, relayB) => {
     // Note: Smaller ID numbers will come first
-    if (relayA.originChainId === relayB.originChainId) {
-      return relayA.depositId - relayB.depositId;
+    if (relayA.relayData.originChainId === relayB.relayData.originChainId) {
+      return relayA.relayData.depositId - relayB.relayData.depositId;
     } else {
-      return relayA.originChainId - relayB.originChainId;
+      return relayA.relayData.originChainId - relayB.relayData.originChainId;
     }
   });
 
