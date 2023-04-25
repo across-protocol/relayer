@@ -527,12 +527,12 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
       const baseDelay = 1000 * Math.pow(2, attempt); // ms; attempt = [0, 1, 2, ...]
       const delayMs = baseDelay + baseDelay * Math.random();
 
-      if (logger && ++rateLimitLogCounter % logEveryNRateLimitErrors === 0) {
+      if (logger && rateLimitLogCounter++ % logEveryNRateLimitErrors === 0) {
         // Make an effort to filter out any api keys.
         const regex = url.match(/https?:\/\/([\w.-]+)\/.*/);
         logger.debug({
           at: "ProviderUtils#rpcRateLimited",
-          message: `Got 429 on attempt ${attempt}.`,
+          message: `Got rate-limit (429) response on attempt ${attempt}.`,
           rpc: regex ? regex[1] : url,
           retryAfter: `${delayMs} ms`,
           workers: nodeMaxConcurrency,

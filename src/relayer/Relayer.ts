@@ -101,7 +101,7 @@ export class Relayer {
       .filter((x) => {
         return (
           x.deposit.quoteTimestamp + this.config.quoteTimeBuffer <= latestHubPoolTime &&
-          x.deposit.originBlockNumber <=
+          x.deposit.blockNumber <=
             this.clients.spokePoolClients[x.deposit.originChainId].latestBlockNumber -
               mdcPerChain[x.deposit.originChainId]
         );

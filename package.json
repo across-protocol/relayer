@@ -12,7 +12,7 @@
   "dependencies": {
     "@across-protocol/boba-sdk": "^1.0.4",
     "@across-protocol/contracts-v2": "^2.0.2",
-    "@across-protocol/sdk-v2": "^0.4.3",
+    "@across-protocol/sdk-v2": "^0.4.8",
     "@arbitrum/sdk": "^3.1.2",
     "@defi-wonderland/smock": "^2.3.4",
     "@eth-optimism/sdk": "^2.0.1",
@@ -54,6 +54,9 @@
     "test": "hardhat test",
     "build": "tsc --build",
     "watch": "tsc --build --incremental --watch",
+    "clean": "dir=\"./node_modules\"; mv \"${dir}\" \"${dir}_\" 2>/dev/null && rm -r \"${dir}_\" &",
+    "reinstall": "yarn clean && yarn install && yarn build",
+    "update": "git pull && yarn reinstall && yarn version --non-interactive && git show --quiet",
     "relay": "node ./dist/index.js --relayer"
   },
   "devDependencies": {

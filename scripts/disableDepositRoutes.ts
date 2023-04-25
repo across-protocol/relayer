@@ -1,12 +1,6 @@
 /* eslint-disable no-process-exit */
-import { getSigner, winston, Logger } from "../src/utils";
-import {
-  CHAIN_ID_LIST_INDICES,
-  CommonConfig,
-  constructClients,
-  constructSpokePoolClientsWithStartBlocks,
-  updateClients,
-} from "../src/common";
+import { getSigner, winston, Logger, assert } from "../src/utils";
+import { CommonConfig, constructClients, constructSpokePoolClientsWithStartBlocks, updateClients } from "../src/common";
 
 import minimist from "minimist";
 const args = minimist(process.argv.slice(2), {
@@ -14,10 +8,17 @@ const args = minimist(process.argv.slice(2), {
 });
 
 export async function run(logger: winston.Logger): Promise<void> {
-  if (!Object.keys(args).includes("chainId")) {
-    throw new Error("Define `chainId` as the chain you want to disable routes to/from");
-  }
-  const chainToDisable = args.chainId;
+  const enabledChains = [1, 10, 137, 42161];
+  const chainsToDisable = args.chainId ? [args.chainId] : enabledChains;
+  assert(
+    chainsToDisable.length === enabledChains.length || chainsToDisable.length === 1,
+    "Must define exactly one chain to disable or all"
+  );
+  logger.debug({
+    at: "disableDepositRoutes",
+    message: "Constructing data to disable all deposits to or from the following chains",
+    chainsToDisable,
+  });
   const baseSigner = await getSigner();
   const config = new CommonConfig(process.env);
 
@@ -31,7 +32,7 @@ export async function run(logger: winston.Logger): Promise<void> {
     baseSigner,
     {}, // Default setting fromBlocks = deployment blocks
     {}, // Default setting toBlocks = latest
-    CHAIN_ID_LIST_INDICES
+    enabledChains
   );
   await Promise.all(Object.values(spokePoolClients).map((client) => client.update(["EnabledDepositRoute"])));
 
@@ -50,11 +51,11 @@ export async function run(logger: winston.Logger): Promise<void> {
     originToken: string;
     depositsEnabled: boolean;
   }[] = [];
-  for (const chainId of CHAIN_ID_LIST_INDICES) {
+  for (const chainId of enabledChains) {
     const depositRoutesForChain = spokePoolClients[chainId].getDepositRoutes();
     for (const originToken of Object.keys(depositRoutesForChain)) {
-      // If chainId is the one we want to disable, disable every route to every other chain from it.
-      if (chainId === chainToDisable) {
+      // If we want to disable this chainId, disable every route to every other chain from it.
+      if (chainsToDisable.includes(chainId)) {
         for (const _destinationChainId of Object.keys(depositRoutesForChain[originToken])) {
           const destinationChainId = Number(_destinationChainId);
           routesToDisable.push({
@@ -66,12 +67,12 @@ export async function run(logger: winston.Logger): Promise<void> {
         }
         // Otherwise, disable any routes where the disabled chain is the destination.
       } else {
-        if (depositRoutesForChain[originToken][chainToDisable] !== undefined) {
+        if (depositRoutesForChain[originToken][chainsToDisable[0]] !== undefined) {
           routesToDisable.push({
             originChainId: chainId,
-            destinationChainId: chainToDisable,
+            destinationChainId: chainsToDisable[0],
             originToken,
-            depositsEnabled: depositRoutesForChain[originToken][chainToDisable],
+            depositsEnabled: depositRoutesForChain[originToken][chainsToDisable[0]],
           });
         }
       }

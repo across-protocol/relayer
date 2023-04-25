@@ -218,14 +218,11 @@ export class SpokePoolClient {
 
   getDepositForFill(fill: Fill): DepositWithBlock | undefined {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill.
     const depositWithMatchingDepositId = this.depositHashes[this.getDepositHash(fill)];
     if (depositWithMatchingDepositId === undefined) {
       return undefined;
     }
-    return this.validateFillForDeposit(fillCopy, depositWithMatchingDepositId)
-      ? depositWithMatchingDepositId
-      : undefined;
+    return this.validateFillForDeposit(fill, depositWithMatchingDepositId) ? depositWithMatchingDepositId : undefined;
   }
 
   getValidUnfilledAmountForDeposit(deposit: Deposit): {
@@ -415,19 +412,15 @@ export class SpokePoolClient {
             ` between ${srcChain} blocks [${searchBounds.low}, ${searchBounds.high}]`
         );
       }
-      const processedEvent: Omit<DepositWithBlock, "destinationToken" | "realizedLpFeePct"> =
-        spreadEventWithBlockNumber(event) as DepositWithBlock;
-      const dataForQuoteTime: { realizedLpFeePct: BigNumber; quoteBlock: number } = await this.computeRealizedLpFeePct(
-        event
-      );
+      const partialDeposit = spreadEventWithBlockNumber(event) as DepositWithBlock;
+      const { realizedLpFeePct, quoteBlock: quoteBlockNumber } = await this.computeRealizedLpFeePct(event);
       // Append the realizedLpFeePct.
       // Append destination token and realized lp fee to deposit.
       deposit = {
-        ...processedEvent,
-        realizedLpFeePct: dataForQuoteTime.realizedLpFeePct,
-        destinationToken: this.getDestinationTokenForDeposit(processedEvent),
-        blockNumber: dataForQuoteTime.quoteBlock,
-        originBlockNumber: event.blockNumber,
+        ...partialDeposit,
+        realizedLpFeePct,
+        destinationToken: this.getDestinationTokenForDeposit(partialDeposit),
+        quoteBlockNumber,
       };
       this.logger.debug({
         at: "SpokePoolClient#queryHistoricalDepositForFill",
@@ -440,9 +433,7 @@ export class SpokePoolClient {
       }
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { blockNumber, ...fillCopy } = fill as FillWithBlock; // Ignore blockNumber when validating the fill
-    return this.validateFillForDeposit(fillCopy, deposit) ? deposit : undefined;
+    return this.validateFillForDeposit(fill, deposit) ? deposit : undefined;
   }
 
   async queryHistoricalMatchingFills(fill: Fill, deposit: Deposit, toBlock: number): Promise<FillWithBlock[]> {
@@ -636,16 +627,14 @@ export class SpokePoolClient {
       }
       for (const [index, event] of depositEvents.entries()) {
         // Append the realizedLpFeePct.
-        const processedEvent: Omit<DepositWithBlock, "destinationToken" | "realizedLpFeePct"> =
-          spreadEventWithBlockNumber(event) as DepositWithBlock;
+        const partialDeposit = spreadEventWithBlockNumber(event) as DepositWithBlock;
 
         // Append destination token and realized lp fee to deposit.
-        const deposit = {
-          ...processedEvent,
+        const deposit: DepositWithBlock = {
+          ...partialDeposit,
           realizedLpFeePct: dataForQuoteTime[index].realizedLpFeePct,
-          destinationToken: this.getDestinationTokenForDeposit(processedEvent),
-          blockNumber: dataForQuoteTime[index].quoteBlock,
-          originBlockNumber: event.blockNumber,
+          destinationToken: this.getDestinationTokenForDeposit(partialDeposit),
+          quoteBlockNumber: dataForQuoteTime[index].quoteBlock,
         };
 
         assign(this.depositHashes, [this.getDepositHash(deposit)], deposit);
@@ -787,11 +776,7 @@ export class SpokePoolClient {
     return this.configStoreClient.computeRealizedLpFeePct(deposit, hubPoolClient.getL1TokenForDeposit(deposit));
   }
 
-  private getDestinationTokenForDeposit(deposit: {
-    originChainId: number;
-    originToken: string;
-    destinationChainId: number;
-  }): string {
+  private getDestinationTokenForDeposit(deposit: DepositWithBlock): string {
     const hubPoolClient = this.hubPoolClient();
     if (!hubPoolClient) {
       return ZERO_ADDRESS;

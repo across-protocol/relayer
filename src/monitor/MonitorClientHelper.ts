@@ -8,7 +8,6 @@ import {
   updateSpokePoolClients,
   constructClients,
   constructSpokePoolClientsWithLookback,
-  CHAIN_ID_LIST_INDICES,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
 
@@ -42,7 +41,7 @@ export async function constructMonitorClients(
     logger,
     commonClients,
     spokePoolClients,
-    CHAIN_ID_LIST_INDICES,
+    config.chainIdListIndices,
     config.blockRangeEndBlockBuffer
   );
 

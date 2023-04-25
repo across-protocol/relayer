@@ -22,7 +22,7 @@
     merkletreejs "^0.2.27"
     rlp "^2.2.7"
 
-"@across-protocol/contracts-v2@^2.0.1", "@across-protocol/contracts-v2@^2.0.2":
+"@across-protocol/contracts-v2@^2.0.2":
   version "2.0.2"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.0.2.tgz#fa8564da0a287faec6d343ac5d2abe2dc336351e"
   integrity sha512-9re5P8pwT+9Y++feWIDbIDi7Bi67ET5+dyTffRdTzjyLKRTaBTiWDZMLltgY9wLZZ3/nLXxqrGbta22fHuBfGA==
@@ -45,13 +45,13 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk-v2@^0.4.3":
-  version "0.4.3"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.4.3.tgz#18014cebdcef1dcb081aab9bb29cee29d877f029"
-  integrity sha512-w4+2CBqOJWmvug5/kaDEQYqOk0iC5X6xcJo1vmkjakH7K5+bq/HQRfnsbisrKECAuRleioNFLv0uAfIC20d++A==
+"@across-protocol/sdk-v2@^0.4.8":
+  version "0.4.8"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.4.8.tgz#24283395f89177f9d885e55c04072f08678e12e5"
+  integrity sha512-ac5l6p8yPxgljEavrHblFBbVvG6IhkCQu0RP9FedHKRHJVGc20Vuf20YBKfTkOW85wa+lAplIkku/A7IcGzDFA==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/contracts-v2" "^2.0.1"
+    "@across-protocol/contracts-v2" "^2.0.2"
     "@eth-optimism/sdk" "^1.6.0"
     "@uma/sdk" "^0.29.3"
     axios "^0.27.2"

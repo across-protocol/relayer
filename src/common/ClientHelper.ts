@@ -253,7 +253,8 @@ export async function constructClients(
     logger,
     configStore,
     hubPoolClient,
-    rateModelClientSearchSettings
+    rateModelClientSearchSettings,
+    config.chainIdListIndices
   );
 
   const multiCallerClient = new MultiCallerClient(logger, config.multiCallChunkSize, hubSigner);
