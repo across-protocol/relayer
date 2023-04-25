@@ -37,10 +37,10 @@
     arb-bridge-eth "^0.7.4"
     arb-bridge-peripherals "^1.0.5"
 
-"@across-protocol/contracts-v2@2.1.0-beta.19":
-  version "2.1.0-beta.19"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.1.0-beta.19.tgz#ab620da6694b267898d905376114e78f8e81270a"
-  integrity sha512-w2EGcCME2rtjMaxZZaQMo3+56DHqKlvfzRiNXlk3QClUsU5NfWX9piLNwxNEEsj0/of8Rz5DEIp9X/VI2Gkc9g==
+"@across-protocol/contracts-v2@2.1.0-beta.21":
+  version "2.1.0-beta.21"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.1.0-beta.21.tgz#b06492cb0bb21b9029d80566da6d4ff76f75b817"
+  integrity sha512-ocvmDZ/q6hlId2LdwvcIllrbpqacDMRIhP4M33/FIgUo8BzFn6vkuUcL9RNn9aXjW6QKMEbnZqvWM6yeBKNLZw==
   dependencies:
     "@defi-wonderland/smock" "^2.3.4"
     "@eth-optimism/contracts" "^0.5.11"
