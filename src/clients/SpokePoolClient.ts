@@ -694,8 +694,6 @@ export class SpokePoolClient {
       }
       for (const event of fillEvents) {
         const fill = spreadEventWithBlockNumber(event) as FillWithBlock;
-        // speadEventWithBlockNumber() doesn't recurse down into Objects within event.args.
-        // Unpack updatableRelayData here and perform the necessary type conversions.
         assign(this.fills, [fill.originChainId], [fill]);
         assign(this.depositHashesToFills, [this.getDepositHash(fill)], [fill]);
       }
