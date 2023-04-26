@@ -385,7 +385,6 @@ export class Monitor {
       refillEnabledBalances.map(async ({ chainId, isHubPool, token, account, target, trigger }, i) => {
         const currentBalance = currentBalances[i];
         const decimals = decimalValues[i];
-        const nativeSymbolForChain = getNativeTokenSymbol(chainId);
         const balanceTrigger = ethers.utils.parseUnits(trigger.toString(), decimals);
         const isBelowTrigger = currentBalance.lte(balanceTrigger);
         if (isBelowTrigger) {
@@ -428,6 +427,7 @@ export class Monitor {
             } else {
               // Note: We don't multicall sending ETH as its not a contract call.
               const gas = await getGasPrice(this.clients.spokePoolClients[chainId].spokePool.provider);
+              const nativeSymbolForChain = getNativeTokenSymbol(chainId);
               const tx = await (
                 await this.clients.spokePoolClients[chainId].spokePool.signer
               ).sendTransaction({ to: account, value: deficit, ...gas });
