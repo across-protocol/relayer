@@ -167,8 +167,8 @@ export class Monitor {
         this.spokePoolsBlocks[chainId].endingBlock
       );
       for (const fill of fills) {
-        // Skip notifications for known relay caller addresses.
-        if (this.monitorConfig.whitelistedRelayers.includes(fill.relayer) && !fill.updatableRelayData.isSlowRelay) {
+        // Skip notifications for known relay caller addresses, or slow fills.
+        if (this.monitorConfig.whitelistedRelayers.includes(fill.relayer) || fill.updatableRelayData.isSlowRelay) {
           continue;
         }
 
