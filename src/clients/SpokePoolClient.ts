@@ -694,9 +694,9 @@ export class SpokePoolClient {
       }
       for (const event of fillEvents) {
         const fill = spreadEventWithBlockNumber(event) as FillWithBlock;
-        const { recipient, message, relayerFeePct, isSlowRelay, payoutAdjustmentPct } = fill.updatableRelayData;
         // speadEventWithBlockNumber() doesn't recurse down into Objects within event.args.
         // Unpack updatableRelayData here and perform the necessary type conversions.
+        const { recipient, message, relayerFeePct, isSlowRelay, payoutAdjustmentPct } = fill.updatableRelayData;
         fill.updatableRelayData = {
           recipient,
           message,
