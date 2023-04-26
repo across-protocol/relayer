@@ -385,6 +385,7 @@ export class Monitor {
       refillEnabledBalances.map(async ({ chainId, isHubPool, token, account, target, trigger }, i) => {
         const currentBalance = currentBalances[i];
         const decimals = decimalValues[i];
+        const nativeSymbolForChain = getNativeTokenSymbol(chainId);
         const balanceTrigger = ethers.utils.parseUnits(trigger.toString(), decimals);
         const isBelowTrigger = currentBalance.lte(balanceTrigger);
         if (isBelowTrigger) {
@@ -436,8 +437,8 @@ export class Monitor {
                 message: `Reloaded ${ethers.utils.formatUnits(
                   deficit,
                   decimals
-                )} ETH for ${account} from ${signerAddress} 🫡!`,
-                transactionHash: receipt.transactionHash,
+                )} ${nativeSymbolForChain} for ${account} from ${signerAddress} 🫡!`,
+                transactionHash: etherscanLink(receipt.transactionHash, chainId),
               });
             }
           } else {
