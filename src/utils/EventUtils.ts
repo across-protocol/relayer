@@ -14,27 +14,26 @@ export function spreadEvent(args: Result): any {
   const returnedObject: any = {};
   keys.forEach((key: string) => {
     switch (typeof args[key]) {
-    case "boolean": // fallthrough
-    case "number":
-    case "string":
-      returnedObject[key] = args[key];
-      break;
-    case "object":
-      if (Array.isArray(args[key])) {
-        if (Object.keys(args[key].filter((key: string) => isNaN(+key))).length > 0) {
-          // Record/Array hybrid...
-          returnedObject[key] = spreadEvent(args[key]);
+      case "boolean": // fallthrough
+      case "number":
+      case "string":
+        returnedObject[key] = args[key];
+        break;
+      case "object":
+        if (Array.isArray(args[key])) {
+          if (Object.keys(args[key].filter((key: string) => isNaN(+key))).length > 0) {
+            // Record/Array hybrid...
+            returnedObject[key] = spreadEvent(args[key]);
+          } else {
+            // Just an array
+            returnedObject[key] = args[key];
+          }
         } else {
-          // Just an array
           returnedObject[key] = args[key];
         }
-      } else {
-        returnedObject[key] = args[key];
-      }
-      break;
+        break;
     }
   });
-
 
   // ID information, if included in an event, should be cast to a number rather than a BigNumber.
   if (returnedObject.groupIndex) {
