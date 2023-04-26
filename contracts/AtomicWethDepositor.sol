@@ -4,19 +4,11 @@ pragma solidity ^0.8.13;
 interface Weth {
     function withdraw(uint256 _wad) external;
 
-    function transferFrom(
-        address _from,
-        address _to,
-        uint256 _wad
-    ) external;
+    function transferFrom(address _from, address _to, uint256 _wad) external;
 }
 
 interface OvmL1Bridge {
-    function depositETHTo(
-        address _to,
-        uint32 _l2Gas,
-        bytes calldata _data
-    ) external payable;
+    function depositETHTo(address _to, uint32 _l2Gas, bytes calldata _data) external payable;
 }
 
 interface PolygonL1Bridge {
@@ -34,12 +26,7 @@ contract AtomicWethDepositor {
     OvmL1Bridge public immutable bobaL1Bridge = OvmL1Bridge(0xdc1664458d2f0B6090bEa60A8793A4E66c2F1c00);
     PolygonL1Bridge public immutable polygonL1Bridge = PolygonL1Bridge(0xA0c68C638235ee32657e8f720a23ceC1bFc77C77);
 
-    function bridgeWethToOvm(
-        address to,
-        uint256 amount,
-        uint32 l2Gas,
-        uint256 chainId
-    ) public {
+    function bridgeWethToOvm(address to, uint256 amount, uint32 l2Gas, uint256 chainId) public {
         require(chainId == 10 || chainId == 288, "Can only bridge to Optimism Or boba");
         weth.transferFrom(msg.sender, address(this), amount);
         weth.withdraw(amount);
