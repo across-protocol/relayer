@@ -27,7 +27,7 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
       await redisClient.connect();
       if (logger) {
         logger.debug({
-          at: "Dataworker#ClientHelper",
+          at: "RedisUtils#getRedis",
           message: `Connected to redis server at ${url} successfully!`,
           dbSize: await redisClient.dbSize(),
         });
@@ -36,8 +36,8 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
     } catch (err) {
       if (logger) {
         logger.debug({
-          at: "Dataworker#ClientHelper",
-          message: `Failed to connec to redis server at ${url}.`,
+          at: "RedisUtils#getRedis",
+          message: `Failed to connect to redis server at ${url}.`,
         });
       }
     }

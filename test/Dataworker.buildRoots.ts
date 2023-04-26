@@ -3,7 +3,6 @@ import {
   buildSlowRelayLeaves,
   buildFillForRepaymentChain,
   enableRoutesOnHubPool,
-  signForSpeedUp,
   createSpyLogger,
   lastSpyLogIncludes,
   deepEqualsWithBigNumber,
@@ -11,7 +10,7 @@ import {
 import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
 import { buildRelayerRefundTreeWithUnassignedLeafIds, constructPoolRebalanceTree } from "./utils";
-import { buildPoolRebalanceLeafTree, sampleRateModel, fillRelay, getDefaultBlockRange } from "./utils";
+import { buildPoolRebalanceLeafTree, sampleRateModel, getDefaultBlockRange } from "./utils";
 import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient } from "../src/clients";
 import {
   amountToDeposit,
@@ -19,6 +18,7 @@ import {
   originChainId,
   mockTreeRoot,
   buildPoolRebalanceLeaves,
+  modifyRelayHelper,
 } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { refundProposalLiveness, CHAIN_ID_TEST_LIST } from "./constants";
@@ -121,14 +121,28 @@ describe("Dataworker: Build merkle roots", async function () {
     // Returns expected merkle root where leaves are ordered by origin chain ID and then deposit ID
     // (ascending).
     await updateAllClients();
-    const merkleRoot1 = (await dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(0), spokePoolClients)).tree;
     const expectedMerkleRoot1 = await buildSlowRelayTree(expectedSlowRelayLeaves);
+    const merkleRoot1 = (await dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(0), spokePoolClients)).tree;
     expect(merkleRoot1.getHexRoot()).to.equal(expectedMerkleRoot1.getHexRoot());
 
     // Speeding up a deposit should have no effect on the slow root:
     const newRelayerFeePct = toBNWei(0.1337);
-    const speedUpSignature = await signForSpeedUp(depositor, deposit1, newRelayerFeePct);
-    await spokePool_1.speedUpDeposit(depositor.address, newRelayerFeePct, deposit1.depositId, speedUpSignature);
+    const speedUpSignature = await modifyRelayHelper(
+      newRelayerFeePct,
+      deposit1.depositId,
+      deposit1.originChainId!.toString(),
+      depositor,
+      deposit1.recipient,
+      "0x"
+    );
+    await spokePool_1.speedUpDeposit(
+      depositor.address,
+      newRelayerFeePct,
+      deposit1.depositId,
+      deposit1.recipient,
+      "0x",
+      speedUpSignature.signature
+    );
     await updateAllClients();
     expect(merkleRoot1.getHexRoot()).to.equal((await buildSlowRelayTree(expectedSlowRelayLeaves)).getHexRoot());
 
@@ -156,19 +170,9 @@ describe("Dataworker: Build merkle roots", async function () {
       originChainId,
       amountToDeposit
     );
-    await fillRelay(
-      spokePool_1,
-      erc20_1,
-      depositor,
-      depositor,
-      relayer,
-      deposit5.depositId,
-      deposit5.originChainId,
-      deposit5.amount,
-      toBN(1), // 1 wei fill
-      deposit5.realizedLpFeePct,
-      deposit5.relayerFeePct
-    );
+
+    // Trigger slow fill with a partial fill:
+    await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit5, 0.01);
     await updateAllClients();
     const merkleRoot2 = await dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(3), spokePoolClients);
     const expectedMerkleRoot2 = await buildSlowRelayTree(buildSlowRelayLeaves([deposit5]));
@@ -243,14 +247,14 @@ describe("Dataworker: Build merkle roots", async function () {
         { destinationChainId: 98, destinationToken: erc20_1, l1Token: l1Token_1 },
       ]);
       await updateAllClients();
-      await buildFillForRepaymentChain(spokePool_2, depositor, deposit2, 0.25, 100);
-      await buildFillForRepaymentChain(spokePool_2, depositor, deposit2, 1, 100);
-      await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, 100);
-      await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 1, 100);
+      await buildFillForRepaymentChain(spokePool_2, depositor, deposit2, 0.25, destinationChainId);
+      await buildFillForRepaymentChain(spokePool_2, depositor, deposit2, 1, destinationChainId);
+      await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, destinationChainId);
+      await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 1, destinationChainId);
 
       const depositorBeforeRelayer = toBN(depositor.address).lt(toBN(relayer.address));
       const leaf1 = {
-        chainId: 100,
+        chainId: destinationChainId,
         amountToReturn: toBN(0),
         l2TokenAddress: erc20_2.address,
         refundAddresses: [
@@ -283,6 +287,7 @@ describe("Dataworker: Build merkle roots", async function () {
       // reverse order of the fills we sent above to test that the data worker is correctly sorting leaves
       // by L2 token address in ascending order. Also set repayment chain ID lower than first few leaves to test
       // that these leaves come first.
+      // Note: We can set a repayment chain for this fill because it is a full fill.
       await buildFillForRepaymentChain(spokePool_1, relayer, deposit3, 1, 99);
       const leaf2 = {
         chainId: 99,
@@ -318,36 +323,19 @@ describe("Dataworker: Build merkle roots", async function () {
         destinationChainId,
         amountToDeposit
       );
-      const allSigners: SignerWithAddress[] = await ethers.getSigners();
+      // @dev: slice(10) so we don't have duplicates between allSigners and depositor/relayer/etc.
+      const allSigners: SignerWithAddress[] = (await ethers.getSigners()).slice(10);
       expect(
         allSigners.length >= MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1,
         "ethers.getSigners doesn't have enough signers"
       ).to.be.true;
       for (let i = 0; i < MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1; i++) {
         await setupTokensForWallet(spokePool_2, allSigners[i], [erc20_2]);
-        await buildFillForRepaymentChain(spokePool_2, allSigners[i], deposit4, 0.01 + i * 0.01, 98);
+        await buildFillForRepaymentChain(spokePool_2, allSigners[i], deposit4, 0.01 + i * 0.01, destinationChainId);
       }
       // Note: Higher refund amounts for same chain and L2 token should come first, so we test that by increasing
       // the fill amount in the above loop for each fill. Ultimately, the latest fills send the most tokens and
       // should come in the first leaf.
-      const leaf5 = {
-        chainId: 98,
-        amountToReturn: toBN(0),
-        l2TokenAddress: erc20_1.address,
-        refundAddresses: [allSigners[3].address, allSigners[2].address, allSigners[1].address],
-        refundAmounts: [
-          getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.04")).div(toBNWei("1")),
-          getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.03")).div(toBNWei("1")),
-          getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.02")).div(toBNWei("1")),
-        ],
-      };
-      const leaf6 = {
-        chainId: 98,
-        amountToReturn: toBN(0),
-        l2TokenAddress: erc20_1.address,
-        refundAddresses: [allSigners[0].address],
-        refundAmounts: [getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.01")).div(toBNWei("1"))],
-      };
       await updateAllClients();
       const poolRebalanceRoot3 = await dataworkerInstance.buildPoolRebalanceRoot(
         getDefaultBlockRange(3),
@@ -361,7 +349,29 @@ describe("Dataworker: Build merkle roots", async function () {
           poolRebalanceRoot3.runningBalances
         )
       ).tree;
-      const expectedMerkleRoot3 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf5, leaf6, leaf2, leaf1]);
+
+      // The order should be:
+      // - Sort by repayment chain ID in ascending order, so leaf2 goes first since its the only one with an overridden
+      // repayment chain ID.
+      // - Sort by refund amount. So, the refund addresses in leaf1 go first, then the latest refunds. Each leaf can
+      // have a maximum number of refunds so add the latest refund (recall the latest fills from the last loop
+      // were the largest).
+      leaf1.refundAddresses.push(allSigners[3].address);
+      leaf1.refundAmounts.push(
+        getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.04")).div(toBNWei("1"))
+      );
+      const leaf3 = {
+        chainId: destinationChainId,
+        amountToReturn: toBN(0),
+        l2TokenAddress: erc20_2.address,
+        refundAddresses: [allSigners[2].address, allSigners[1].address, allSigners[0].address],
+        refundAmounts: [
+          getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.03")).div(toBNWei("1")),
+          getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.02")).div(toBNWei("1")),
+          getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.01")).div(toBNWei("1")),
+        ],
+      };
+      const expectedMerkleRoot3 = await buildRelayerRefundTreeWithUnassignedLeafIds([leaf2, leaf1, leaf3]);
       expect(merkleRoot3.getHexRoot()).to.equal(expectedMerkleRoot3.getHexRoot());
     });
     it("amountToReturn is non 0", async function () {
@@ -664,7 +674,7 @@ describe("Dataworker: Build merkle roots", async function () {
         expectedSlowRelayTree.getHexProof(
           // We can only execute a slow relay on its destination chain, so look up the relay data with
           // destination chain equal to the deployed spoke pool that we are calling.
-          slowRelayLeaves.find((_) => _.destinationChainId === chainToExecuteSlowRelay.toString())
+          slowRelayLeaves.find((_) => _.relayData.destinationChainId === chainToExecuteSlowRelay.toString())
         )
       );
       await updateAllClients();
@@ -699,7 +709,7 @@ describe("Dataworker: Build merkle roots", async function () {
         expectedSlowRelayTree.getHexProof(
           // We can only execute a slow relay on its destination chain, so look up the relay data with
           // destination chain equal to the deployed spoke pool that we are calling.
-          slowRelayLeaves.find((_) => _.destinationChainId === secondChainToExecuteSlowRelay.toString())
+          slowRelayLeaves.find((_) => _.relayData.destinationChainId === secondChainToExecuteSlowRelay.toString())
         )
       );
       await updateAllClients();

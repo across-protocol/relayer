@@ -34,7 +34,7 @@ export function getRefundInformationFromFill(
 } {
   // Handle slow relay where repaymentChainId = 0. Slow relays always pay recipient on destination chain.
   // So, save the slow fill under the destination chain, and save the fast fill under its repayment chain.
-  const chainToSendRefundTo = fill.isSlowRelay ? fill.destinationChainId : fill.repaymentChainId;
+  const chainToSendRefundTo = fill.updatableRelayData.isSlowRelay ? fill.destinationChainId : fill.repaymentChainId;
 
   // Save fill data and associate with repayment chain and L2 token refund should be denominated in.
   const endBlockForMainnet = getBlockRangeForChain(
@@ -82,7 +82,7 @@ export function updateTotalRefundAmount(
 ): void {
   // Don't count slow relays in total refund amount, since we use this amount to conveniently construct
   // relayer refund leaves.
-  if (fill.isSlowRelay) {
+  if (fill.updatableRelayData.isSlowRelay) {
     return;
   }
   const refundObj = fillsToRefund[chainToSendRefundTo][repaymentToken];

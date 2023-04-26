@@ -168,7 +168,7 @@ export class Monitor {
       );
       for (const fill of fills) {
         // Skip notifications for known relay caller addresses.
-        if (this.monitorConfig.whitelistedRelayers.includes(fill.relayer) && !fill.isSlowRelay) {
+        if (this.monitorConfig.whitelistedRelayers.includes(fill.relayer) && !fill.updatableRelayData.isSlowRelay) {
           continue;
         }
 

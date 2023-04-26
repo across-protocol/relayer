@@ -184,9 +184,6 @@ export async function setupDataworker(
       lookbackForAllChains,
       spokePoolDeploymentBlocks
     );
-  // @dev We need to override the deployment block since 1 is a public network with a much higher deployment block
-  // than we would expect in tests.
-  spokePoolClient_4.spokePoolDeploymentBlock = spokePoolDeploymentBlocks[1];
 
   const tokenClient = new TokenClient(spyLogger, relayer.address, {}, hubPoolClient);
 

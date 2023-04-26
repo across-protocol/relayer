@@ -4,12 +4,11 @@ import {
   Contract,
   SignerWithAddress,
   setupTokensForWallet,
-  signForSpeedUp,
   toBNWei,
   deepEqualsWithBigNumber,
 } from "./utils";
 import { deploySpokePoolWithToken, enableRoutes, simpleDeposit, originChainId, createSpyLogger } from "./utils";
-import { depositRelayerFeePct, destinationChainId } from "./constants";
+import { depositRelayerFeePct, destinationChainId, modifyRelayHelper } from "./constants";
 
 import { SpokePoolClient } from "../src/clients";
 import { DepositWithBlock } from "../src/interfaces";
@@ -39,8 +38,22 @@ describe("SpokePoolClient: SpeedUp", async function () {
     expect(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock)).to.deep.equal(deposit);
 
     const newRelayFeePct = toBNWei(0.1337);
-    const speedUpSignature = await signForSpeedUp(depositor, deposit as DepositWithBlock, newRelayFeePct);
-    await spokePool.speedUpDeposit(depositor.address, newRelayFeePct, deposit.depositId, speedUpSignature);
+    const speedUpSignature = await modifyRelayHelper(
+      newRelayFeePct,
+      deposit.depositId,
+      deposit.originChainId!.toString(),
+      depositor,
+      deposit.recipient,
+      "0x"
+    );
+    await spokePool.speedUpDeposit(
+      depositor.address,
+      newRelayFeePct,
+      deposit.depositId,
+      deposit.recipient,
+      "0x",
+      speedUpSignature.signature
+    );
     await spokePoolClient.update();
 
     // After speedup should return the appended object with the new fee information and signature.
@@ -77,8 +90,22 @@ describe("SpokePoolClient: SpeedUp", async function () {
     expect(spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock)).to.deep.equal(deposit);
 
     const newRelayFeePct = toBNWei(0.1337);
-    const speedUpSignature = await signForSpeedUp(depositor, deposit as DepositWithBlock, newRelayFeePct);
-    await spokePool.speedUpDeposit(depositor.address, newRelayFeePct, deposit.depositId, speedUpSignature);
+    const speedUpSignature = await modifyRelayHelper(
+      newRelayFeePct,
+      deposit.depositId,
+      deposit.originChainId!.toString(),
+      depositor,
+      deposit.recipient,
+      "0x"
+    );
+    await spokePool.speedUpDeposit(
+      depositor.address,
+      newRelayFeePct,
+      deposit.depositId,
+      deposit.recipient,
+      "0x",
+      speedUpSignature.signature
+    );
     await spokePoolClient.update();
 
     // Deposit is not returned until we reach deposit.quoteTimestamp.
@@ -109,8 +136,22 @@ describe("SpokePoolClient: SpeedUp", async function () {
 
     // Speedup below the original fee should not update to use the new fee.
     const newLowerRelayFeePct = depositRelayerFeePct.sub(toBNWei(0.01));
-    const speedUpSignature = await signForSpeedUp(depositor, deposit as DepositWithBlock, newLowerRelayFeePct);
-    await spokePool.speedUpDeposit(depositor.address, newLowerRelayFeePct, deposit.depositId, speedUpSignature);
+    const speedUpSignature = await modifyRelayHelper(
+      newLowerRelayFeePct,
+      deposit.depositId,
+      deposit.originChainId!.toString(),
+      depositor,
+      deposit.recipient,
+      "0x"
+    );
+    await spokePool.speedUpDeposit(
+      depositor.address,
+      newLowerRelayFeePct,
+      deposit.depositId,
+      deposit.recipient,
+      "0x",
+      speedUpSignature.signature
+    );
     await spokePoolClient.update();
     // below the original fee should equal the original deposit with no signature.
     expect(
@@ -131,11 +172,39 @@ describe("SpokePoolClient: SpeedUp", async function () {
     // SpeedUp the deposit twice. Ensure the highest fee (and signature) is used.
 
     const speedupFast = toBNWei(0.1337);
-    const speedUpFastSignature = await signForSpeedUp(depositor, deposit as DepositWithBlock, speedupFast);
-    await spokePool.speedUpDeposit(depositor.address, speedupFast, deposit.depositId, speedUpFastSignature);
+    const speedUpFastSignature = await modifyRelayHelper(
+      speedupFast,
+      deposit.depositId,
+      deposit.originChainId!.toString(),
+      depositor,
+      deposit.recipient,
+      "0x"
+    );
+    await spokePool.speedUpDeposit(
+      depositor.address,
+      speedupFast,
+      deposit.depositId,
+      deposit.recipient,
+      "0x",
+      speedUpFastSignature.signature
+    );
     const speedupFaster = toBNWei(0.1338);
-    const speedUpFasterSignature = await signForSpeedUp(depositor, deposit as DepositWithBlock, speedupFaster);
-    await spokePool.speedUpDeposit(depositor.address, speedupFaster, deposit.depositId, speedUpFasterSignature);
+    const speedUpFasterSignature = await modifyRelayHelper(
+      speedupFaster,
+      deposit.depositId,
+      deposit.originChainId!.toString(),
+      depositor,
+      deposit.recipient,
+      "0x"
+    );
+    await spokePool.speedUpDeposit(
+      depositor.address,
+      speedupFaster,
+      deposit.depositId,
+      deposit.recipient,
+      "0x",
+      speedUpFasterSignature.signature
+    );
     await spokePoolClient.update();
 
     // Should use the faster data between the two speedups.
@@ -168,8 +237,22 @@ describe("SpokePoolClient: SpeedUp", async function () {
     deposit.depositId = 1337;
 
     const newRelayFeePct = toBNWei(0.1337);
-    const speedUpSignature = await signForSpeedUp(depositor, deposit as DepositWithBlock, newRelayFeePct);
-    await spokePool.speedUpDeposit(depositor.address, newRelayFeePct, deposit.depositId, speedUpSignature);
+    const speedUpSignature = await modifyRelayHelper(
+      newRelayFeePct,
+      deposit.depositId,
+      deposit.originChainId!.toString(),
+      depositor,
+      deposit.recipient,
+      "0x"
+    );
+    await spokePool.speedUpDeposit(
+      depositor.address,
+      newRelayFeePct,
+      deposit.depositId,
+      deposit.recipient,
+      "0x",
+      speedUpSignature.signature
+    );
 
     let success = false;
     try {
