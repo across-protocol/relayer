@@ -27,7 +27,7 @@ export class AdapterManager {
       return;
     }
     if (this.spokePoolClients[10] !== undefined) {
-      this.adapters[10] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses, true, senderAddress);
+      this.adapters[10] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses, senderAddress);
     }
     if (this.spokePoolClients[137] !== undefined) {
       this.adapters[137] = new PolygonAdapter(logger, spokePoolClients, monitoredAddresses);

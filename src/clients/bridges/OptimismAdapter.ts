@@ -36,13 +36,12 @@ export class OptimismAdapter extends BaseAdapter {
     logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[],
-    readonly isOptimism: boolean,
     // Optional sender address where the cross chain transfers originate from. This is useful for the use case of
     // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
     readonly senderAddress?: string
   ) {
     super(spokePoolClients, 10, monitoredAddresses, logger);
-    this.l2Gas = isOptimism ? 200000 : 1300000;
+    this.l2Gas = 200000;
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
