@@ -68,7 +68,7 @@ export class AdapterManager {
 
     if (optimismWrapTx) {
       const mrkdwn =
-        `Ether on Optimism was wrapped due to being over the threshold of ` +
+        "Ether on Optimism was wrapped due to being over the threshold of " +
         `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.\n` +
         `${`\nOptimism tx: ${etherscanLink(optimismWrapTx.hash, 10)} `}.`;
       this.logger.info({ at: "AdapterManager", message: "Eth wrapped on target chain 🎁", mrkdwn });
