@@ -645,7 +645,7 @@ export class SpokePoolClient {
       const speedUpEvents = queryResults[eventsToQuery.indexOf("RequestedSpeedUpDeposit")];
 
       for (const event of speedUpEvents) {
-        const speedUp: SpeedUp = { ...spreadEvent(event), originChainId: this.chainId };
+        const speedUp: SpeedUp = { ...spreadEvent(event.args), originChainId: this.chainId };
         assign(this.speedUps, [speedUp.depositor, speedUp.depositId], [speedUp]);
       }
 
@@ -667,22 +667,6 @@ export class SpokePoolClient {
       }
       for (const event of fillEvents) {
         const fill = spreadEventWithBlockNumber(event) as FillWithBlock;
-        /**
-         * struct RelayExecutionInfo {
-         *   address recipient;
-         *   bytes message;
-         *   int64 relayerFeePct;
-         *   bool isSlowRelay;
-         *   int256 payoutAdjustmentPct;
-         * }
-         */
-        fill.updatableRelayData = {
-          recipient: fill.updatableRelayData[0],
-          message: fill.updatableRelayData[1],
-          relayerFeePct: toBN(fill.updatableRelayData[2]),
-          isSlowRelay: fill.updatableRelayData[3],
-          payoutAdjustmentPct: toBN(fill.updatableRelayData[4]),
-        };
         assign(this.fills, [fill.originChainId], [fill]);
         assign(this.depositHashesToFills, [this.getDepositHash(fill)], [fill]);
       }
@@ -708,7 +692,7 @@ export class SpokePoolClient {
       const enableDepositsEvents = queryResults[eventsToQuery.indexOf("EnabledDepositRoute")];
 
       for (const event of enableDepositsEvents) {
-        const enableDeposit = spreadEvent(event);
+        const enableDeposit = spreadEvent(event.args);
         assign(
           this.depositRoutes,
           [enableDeposit.originToken, enableDeposit.destinationChainId],
