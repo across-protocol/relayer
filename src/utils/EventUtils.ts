@@ -1,17 +1,40 @@
 import { delay } from "@uma/financial-templates-lib";
 import { SortableEvent } from "../interfaces";
 import { Contract, Event, EventFilter, Promise } from "./";
+import { Result } from "@ethersproject/abi";
 
 const maxRetries = 3;
 const retrySleepTime = 10;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function spreadEvent(event: Event): any {
-  const keys = Object.keys(event.args).filter((key: string) => isNaN(+key)); // Extract non-numeric keys.
+export function spreadEvent(args: Result): any {
+  const keys = Object.keys(args).filter((key: string) => isNaN(+key)); // Extract non-numeric keys.
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const returnedObject: any = {};
-  keys.forEach((key: string) => (returnedObject[key] = event.args[key]));
+  keys.forEach((key: string) => {
+    switch (typeof args[key]) {
+    case "boolean": // fallthrough
+    case "number":
+    case "string":
+      returnedObject[key] = args[key];
+      break;
+    case "object":
+      if (Array.isArray(args[key])) {
+        if (Object.keys(args[key].filter((key: string) => isNaN(+key))).length > 0) {
+          // Record/Array hybrid...
+          returnedObject[key] = spreadEvent(args[key]);
+        } else {
+          // Just an array
+          returnedObject[key] = args[key];
+        }
+      } else {
+        returnedObject[key] = args[key];
+      }
+      break;
+    }
+  });
+
 
   // ID information, if included in an event, should be cast to a number rather than a BigNumber.
   if (returnedObject.groupIndex) {
@@ -142,7 +165,7 @@ export function getPaginatedBlockRanges({
 
 export function spreadEventWithBlockNumber(event: Event): SortableEvent {
   return {
-    ...spreadEvent(event),
+    ...spreadEvent(event.args),
     blockNumber: event.blockNumber,
     transactionIndex: event.transactionIndex,
     logIndex: event.logIndex,

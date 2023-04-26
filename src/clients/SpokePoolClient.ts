@@ -672,7 +672,7 @@ export class SpokePoolClient {
       const speedUpEvents = queryResults[eventsToQuery.indexOf("RequestedSpeedUpDeposit")];
 
       for (const event of speedUpEvents) {
-        const speedUp: SpeedUp = { ...spreadEvent(event), originChainId: this.chainId };
+        const speedUp: SpeedUp = { ...spreadEvent(event.args), originChainId: this.chainId };
         assign(this.speedUps, [speedUp.depositor, speedUp.depositId], [speedUp]);
       }
 
@@ -696,14 +696,6 @@ export class SpokePoolClient {
         const fill = spreadEventWithBlockNumber(event) as FillWithBlock;
         // speadEventWithBlockNumber() doesn't recurse down into Objects within event.args.
         // Unpack updatableRelayData here and perform the necessary type conversions.
-        const { recipient, message, relayerFeePct, isSlowRelay, payoutAdjustmentPct } = fill.updatableRelayData;
-        fill.updatableRelayData = {
-          recipient,
-          message,
-          isSlowRelay,
-          relayerFeePct: toBN(relayerFeePct),
-          payoutAdjustmentPct: toBN(payoutAdjustmentPct),
-        };
         assign(this.fills, [fill.originChainId], [fill]);
         assign(this.depositHashesToFills, [this.getDepositHash(fill)], [fill]);
       }
@@ -729,7 +721,7 @@ export class SpokePoolClient {
       const enableDepositsEvents = queryResults[eventsToQuery.indexOf("EnabledDepositRoute")];
 
       for (const event of enableDepositsEvents) {
-        const enableDeposit = spreadEvent(event);
+        const enableDeposit = spreadEvent(event.args);
         assign(
           this.depositRoutes,
           [enableDeposit.originToken, enableDeposit.destinationChainId],
