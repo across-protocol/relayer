@@ -48,10 +48,14 @@ describe("Dataworker: Propose root bundle", async function () {
     await updateAllClients();
 
     const getMostRecentLog = (_spy: sinon.SinonSpy, message: string) => {
-      return spy
-        .getCalls()
-        .sort((logA: any, logB: any) => logB.callId - logA.callId) // Sort by callId in descending order
-        .find((log: any) => log.lastArg.message.includes(message)).lastArg;
+      return (
+        spy
+          .getCalls()
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .sort((logA: any, logB: any) => logB.callId - logA.callId) // Sort by callId in descending order
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .find((log: any) => log.lastArg.message.includes(message))?.lastArg
+      );
     };
 
     // TEST 1:

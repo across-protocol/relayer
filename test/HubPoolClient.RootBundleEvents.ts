@@ -137,7 +137,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
       logIndex: 0,
       transactionHash: "",
     };
-    expect(hubPoolClient.isRootBundleValid(rootBundle, hubPoolClient.latestBlockNumber)).to.equal(false);
+    expect(hubPoolClient.isRootBundleValid(rootBundle, hubPoolClient.latestBlockNumber ?? 0)).to.equal(false);
 
     // Execute leaves.
     await timer.connect(dataworker).setCurrentTime(proposeTime + liveness + 1);
@@ -145,15 +145,15 @@ describe("HubPoolClient: RootBundle Events", async function () {
 
     // Not valid until all leaves are executed.
     await hubPoolClient.update();
-    expect(hubPoolClient.isRootBundleValid(rootBundle, hubPoolClient.latestBlockNumber)).to.equal(false);
+    expect(hubPoolClient.isRootBundleValid(rootBundle, hubPoolClient.latestBlockNumber ?? 0)).to.equal(false);
     const blockNumberBeforeAllLeavesExecuted = hubPoolClient.latestBlockNumber;
 
     await hubPool.connect(dataworker).executeRootBundle(...Object.values(leaves[1]), tree.getHexProof(leaves[1]));
     await hubPoolClient.update();
-    expect(hubPoolClient.isRootBundleValid(rootBundle, hubPoolClient.latestBlockNumber)).to.equal(true);
+    expect(hubPoolClient.isRootBundleValid(rootBundle, hubPoolClient.latestBlockNumber ?? 0)).to.equal(true);
 
     // Only searches for executed leaves up to input latest mainnet block to search
-    expect(hubPoolClient.isRootBundleValid(rootBundle, blockNumberBeforeAllLeavesExecuted)).to.equal(false);
+    expect(hubPoolClient.isRootBundleValid(rootBundle, blockNumberBeforeAllLeavesExecuted ?? 0)).to.equal(false);
   });
 
   it("gets most recent RootBundleExecuted event for chainID and L1 token", async function () {

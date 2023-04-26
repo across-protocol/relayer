@@ -26,7 +26,7 @@ import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { toBN, getRefundForFills, getRealizedLpFeeForFills, MAX_UINT_VAL } from "../src/utils";
 import { spokePoolClientsToProviders } from "../src/common";
-import { DepositWithBlock, Fill } from "../src/interfaces";
+import { Deposit, DepositWithBlock, Fill } from "../src/interfaces";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, l1Token_2: Contract, hubPool: Contract;
@@ -102,7 +102,8 @@ describe("Dataworker: Load data used in all functions", async function () {
     });
   });
   describe("Computing refunds for bundles", function () {
-    let fill1: Fill, deposit1;
+    let fill1: Fill;
+    let deposit1: Deposit;
     beforeEach(async function () {
       await updateAllClients();
 
@@ -120,7 +121,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       await updateAllClients();
 
       // Submit a valid fill.
-      fill1 = await buildFillForRepaymentChain(
+      const fill = await buildFillForRepaymentChain(
         spokePool_2,
         relayer,
         deposit1,
@@ -128,6 +129,10 @@ describe("Dataworker: Load data used in all functions", async function () {
         destinationChainId,
         erc20_2.address
       );
+      if (!fill) {
+        throw new Error("Fill is undefined");
+      }
+      fill1 = fill;
       await updateAllClients();
     });
     it("No validated bundle refunds", async function () {

@@ -18,15 +18,15 @@ export class MockHubPoolClient extends HubPoolClient {
     this.events.push(event);
   }
 
-  addL1Token(l1Token: L1Token) {
+  addL1Token(l1Token: L1Token): void {
     this.l1TokensMock.push(l1Token);
   }
 
-  getL1Tokens() {
+  getL1Tokens(): L1Token[] {
     return this.l1TokensMock;
   }
 
-  getTokenInfoForDeposit() {
+  getTokenInfoForDeposit(): L1Token {
     return this.tokenInfoToReturn;
   }
 
@@ -34,26 +34,26 @@ export class MockHubPoolClient extends HubPoolClient {
     return this.l1TokensMock.find((token) => token.address === l1Token);
   }
 
-  setTokenInfoToReturn(tokenInfo: L1Token) {
+  setTokenInfoToReturn(tokenInfo: L1Token): void {
     this.tokenInfoToReturn = tokenInfo;
   }
 
   setL1TokensToDestinationTokens(l1TokensToDestinationTokens: {
     [l1Token: string]: { [destinationChainId: number]: string };
-  }) {
+  }): void {
     this.l1TokensToDestinationTokensMock = l1TokensToDestinationTokens;
   }
 
-  getDestinationTokenForL1Token(l1Token: string, destinationChainId: number) {
+  getDestinationTokenForL1Token(l1Token: string, destinationChainId: number): string {
     return this.l1TokensToDestinationTokensMock[l1Token][destinationChainId];
   }
 
-  setReturnedL1TokenForDeposit(l1Token: string) {
+  setReturnedL1TokenForDeposit(l1Token: string): void {
     this.returnedL1TokenForDeposit = l1Token;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  getL1TokenForDeposit(_deposit: Deposit) {
+  getL1TokenForDeposit(_deposit: Deposit): string {
     return this.returnedL1TokenForDeposit;
   }
 

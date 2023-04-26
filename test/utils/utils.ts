@@ -1,5 +1,5 @@
 import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
-import { TokenRolesEnum } from "@uma/common";
+import { MerkleTree, TokenRolesEnum } from "@uma/common";
 export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "@uma/common";
 import { SpyTransport, bigNumberFormatter } from "@uma/financial-templates-lib";
 import {
@@ -11,10 +11,10 @@ import { amountToDeposit, depositRelayerFeePct, l1TokenTransferThreshold, zeroAd
 import { MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF } from "../constants";
 import { HubPoolClient, AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
 import { SpokePoolClient } from "../../src/clients";
-import { deposit, Contract, SignerWithAddress, BigNumber } from "./index";
-import { Deposit, Fill, RunningBalances } from "../../src/interfaces";
+import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber } from "./index";
+import { Deposit, Fill, RelayerRefundLeaf, RunningBalances } from "../../src/interfaces";
 import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
-import { providers } from "ethers";
+import { ethers, providers } from "ethers";
 
 import winston from "winston";
 import sinon from "sinon";
@@ -32,9 +32,10 @@ export { chai, assert };
  * Works with nested objects.
  * @param x object to compare
  * @param y object to compare
- * @param {omitKeys} keys to omit from comparison
+ * @param keys to omit from comparison
  * @returns
  */
+// eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types, @typescript-eslint/no-explicit-any
 export function deepEqualsWithBigNumber(x: any, y: any, omitKeys?: string[]): boolean {
   if (x.toString() === y.toString()) {
     return true;
@@ -82,7 +83,7 @@ export async function setupTokensForWallet(
   tokens: utils.Contract[],
   weth?: utils.Contract,
   seedMultiplier = 1
-) {
+): Promise<void> {
   await utils.seedWallet(wallet, tokens, weth, utils.amountToSeedWallets.mul(seedMultiplier));
   await Promise.all(
     tokens.map((token) =>
@@ -94,21 +95,36 @@ export async function setupTokensForWallet(
   }
 }
 
-export function createSpyLogger() {
+export function createSpyLogger(): {
+  spy: sinon.SinonSpy<unknown[], unknown>;
+  spyLogger: winston.Logger;
+} {
   const spy = sinon.spy();
   const spyLogger = winston.createLogger({
     level: "debug",
     format: winston.format.combine(winston.format(bigNumberFormatter)(), winston.format.json()),
     transports: [
       new SpyTransport({ level: "debug" }, { spy }),
-      process.env.LOG_IN_TEST ? new winston.transports.Console() : null,
-    ].filter((n) => n),
+      process.env.LOG_IN_TEST ? new winston.transports.Console() : undefined,
+    ].filter((n) => n) as winston.transport[],
   });
 
   return { spy, spyLogger };
 }
 
-export async function deploySpokePoolWithToken(fromChainId = 0, toChainId = 0, enableRoute = true) {
+export async function deploySpokePoolWithToken(
+  fromChainId = 0,
+  toChainId = 0,
+  enableRoute = true
+): Promise<{
+  timer: utils.Contract;
+  weth: utils.Contract;
+  erc20: utils.Contract;
+  spokePool: utils.Contract;
+  unwhitelistedErc20: utils.Contract;
+  destErc20: utils.Contract;
+  deploymentBlock: number;
+}> {
   const { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(utils.ethers);
   const deploymentBlock = await spokePool.provider.getBlockNumber();
 
@@ -130,7 +146,9 @@ export async function deployConfigStore(
   maxRefundPerRelayerRefundLeaf: number = MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   rateModel: unknown = sampleRateModel,
   transferThreshold: BigNumber = DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
-) {
+): Promise<{
+  configStore: utils.Contract;
+}> {
   const configStore = await (await utils.getContractFactory("AcrossConfigStore", signer)).deploy();
   for (const token of tokensToAdd) {
     await configStore.updateTokenConfig(
@@ -158,7 +176,12 @@ export async function deployAndConfigureHubPool(
   spokePools: { l2ChainId: number; spokePool: utils.Contract }[],
   finderAddress: string = zeroAddress,
   timerAddress: string = zeroAddress
-) {
+): Promise<{
+  hubPool: utils.Contract;
+  mockAdapter: utils.Contract;
+  l1Token_1: utils.Contract;
+  l1Token_2: utils.Contract;
+}> {
   const lpTokenFactory = await (await utils.getContractFactory("LpTokenFactory", signer)).deploy();
   const hubPool = await (
     await utils.getContractFactory("HubPool", signer)
@@ -178,7 +201,7 @@ export async function deployAndConfigureHubPool(
   return { hubPool, mockAdapter, l1Token_1, l1Token_2 };
 }
 
-export async function deployNewToken(owner) {
+export async function deployNewToken(owner: utils.Signer): Promise<utils.Contract> {
   const l2Token = await (await utils.getContractFactory("ExpandedERC20", owner)).deploy("L2 Token", "L2", 18);
   await l2Token.addMember(TokenRolesEnum.MINTER, l2Token.address);
   return l2Token;
@@ -192,7 +215,10 @@ export async function deployNewTokenMapping(
   configStore: utils.Contract,
   hubPool: utils.Contract,
   amountToSeedLpPool: BigNumber
-) {
+): Promise<{
+  l2Token: utils.Contract;
+  l1Token: utils.Contract;
+}> {
   // Deploy L2 token and enable it for deposits:
   const spokePoolChainId = await spokePool.chainId();
   const l2Token = await (await utils.getContractFactory("ExpandedERC20", l2TokenHolder)).deploy("L2 Token", "L2", 18);
@@ -226,8 +252,8 @@ export async function deployNewTokenMapping(
 
   // Give signer initial balance and approve hub pool and spoke pool to pull funds from it
   await addLiquidity(l1TokenHolder, hubPool, l1Token, amountToSeedLpPool);
-  await setupTokensForWallet(spokePool, l2TokenHolder, [l2Token, l2TokenDestination], null, 100);
-  await setupTokensForWallet(spokePoolDestination, l2TokenHolder, [l2TokenDestination, l2Token], null, 100);
+  await setupTokensForWallet(spokePool, l2TokenHolder, [l2Token, l2TokenDestination], undefined, 100);
+  await setupTokensForWallet(spokePoolDestination, l2TokenHolder, [l2TokenDestination, l2Token], undefined, 100);
 
   // Set time to provider time so blockfinder can find block for deposit quote time.
   await spokePool.setCurrentTime(await getLastBlockTime(spokePool.provider));
@@ -242,7 +268,7 @@ export async function deployNewTokenMapping(
 export async function enableRoutesOnHubPool(
   hubPool: utils.Contract,
   rebalanceRouteTokens: { destinationChainId: number; l1Token: utils.Contract; destinationToken: utils.Contract }[]
-) {
+): Promise<void> {
   for (const tkn of rebalanceRouteTokens) {
     await hubPool.setPoolRebalanceRoute(tkn.destinationChainId, tkn.l1Token.address, tkn.destinationToken.address);
     await hubPool.enableL1TokenForLiquidityProvision(tkn.l1Token.address);
@@ -257,7 +283,7 @@ export async function simpleDeposit(
   destinationChainId: number = utils.destinationChainId,
   amountToDeposit: utils.BigNumber = utils.amountToDeposit,
   depositRelayerFeePct: utils.BigNumber = utils.depositRelayerFeePct
-) {
+): Promise<Deposit> {
   const depositObject = await utils.deposit(
     spokePool,
     token,
@@ -267,16 +293,23 @@ export async function simpleDeposit(
     amountToDeposit,
     depositRelayerFeePct
   );
-  return { ...depositObject, realizedLpFeePct: utils.toBN(0), destinationToken: zeroAddress };
+  if (!depositObject) {
+    throw new Error("Deposit object is null or undefined.");
+  } else {
+    return { ...depositObject, realizedLpFeePct: utils.toBN(0), destinationToken: zeroAddress };
+  }
 }
 
 export async function deploySpokePoolForIterativeTest(
-  logger,
+  logger: winston.Logger,
   signer: utils.SignerWithAddress,
   mockAdapter: utils.Contract,
   configStoreClient: AcrossConfigStoreClient,
   desiredChainId = 0
-) {
+): Promise<{
+  spokePool: utils.Contract;
+  spokePoolClient: SpokePoolClient;
+}> {
   const { spokePool, deploymentBlock } = await deploySpokePoolWithToken(desiredChainId, 0, false);
 
   await configStoreClient.hubPoolClient.hubPool.setCrossChainContracts(
@@ -302,9 +335,9 @@ export async function deploySingleTokenAcrossSetOfChains(
 
   hubPool: utils.Contract,
   associatedL1Token: utils.Contract
-) {
+): Promise<utils.Contract[]> {
   // Deploy one token per spoke pool. This of this as deploying USDC on all chains.
-  const tokens = [];
+  const tokens: utils.Contract[] = [];
   for (let i = 0; i < spokePools.length; i++) {
     const erc20 = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("Yeet Coin", "Coin", 18);
     await erc20.addMember(TokenRolesEnum.MINTER, signer.address);
@@ -328,11 +361,11 @@ export async function deploySingleTokenAcrossSetOfChains(
   return tokens;
 }
 
-export function appendPropsToDeposit(deposit) {
+export function appendPropsToDeposit(deposit: Deposit): Deposit {
   return { ...deposit, realizedLpFeePct: utils.toBN(0), destinationToken: zeroAddress };
 }
 
-export async function getLastBlockTime(provider: any) {
+export async function getLastBlockTime(provider: ethers.providers.Provider): Promise<number> {
   return (await provider.getBlock(await provider.getBlockNumber())).timestamp;
 }
 
@@ -343,8 +376,17 @@ export async function deployIterativeSpokePoolsAndToken(
   configStoreClient: AcrossConfigStoreClient,
   numSpokePools: number,
   numTokens: number
-) {
-  const spokePools = [];
+): Promise<{
+  spokePools: {
+    spokePool: utils.Contract;
+    spokePoolClient: SpokePoolClient;
+  }[];
+  l1TokenToL2Tokens: Record<string, utils.Contract[]>;
+}> {
+  const spokePools: {
+    spokePool: utils.Contract;
+    spokePoolClient: SpokePoolClient;
+  }[] = [];
   const l1TokenToL2Tokens = {};
 
   // For each count of numSpokePools deploy a new spoke pool. Set the chainId to the index in the array. Note that we
@@ -378,14 +420,14 @@ export async function addLiquidity(
   hubPool: utils.Contract,
   l1Token: utils.Contract,
   amount: utils.BigNumber
-) {
-  await utils.seedWallet(signer, [l1Token], null, amount);
+): Promise<void> {
+  await utils.seedWallet(signer, [l1Token], undefined, amount);
   await l1Token.connect(signer).approve(hubPool.address, amount);
   await hubPool.enableL1TokenForLiquidityProvision(l1Token.address);
   await hubPool.connect(signer).addLiquidity(l1Token.address, amount);
 }
 
-export async function contractAt(contractName: string, signer: utils.Signer, address: string) {
+export async function contractAt(contractName: string, signer: utils.Signer, address: string): Promise<utils.Contract> {
   try {
     const artifactInterface = (await utils.getContractFactory(contractName, signer)).interface;
     return new utils.Contract(address, artifactInterface, signer);
@@ -400,7 +442,7 @@ export async function buildDepositStruct(
   hubPoolClient: HubPoolClient,
   configStoreClient: AcrossConfigStoreClient,
   l1TokenForDepositedToken: Contract
-) {
+): Promise<Deposit> {
   const { quoteBlock, realizedLpFeePct } = await await configStoreClient.computeRealizedLpFeePct(
     deposit,
     l1TokenForDepositedToken.address
@@ -434,7 +476,11 @@ export async function buildDeposit(
     _amountToDeposit,
     _relayerFeePct
   );
-  return await buildDepositStruct(_deposit!, hubPoolClient, configStoreClient, l1TokenForDepositedToken);
+  if (!_deposit) {
+    throw new Error("Deposit is set as null");
+  } else {
+    return await buildDepositStruct(_deposit, hubPoolClient, configStoreClient, l1TokenForDepositedToken);
+  }
 }
 
 // Submits a fillRelay transaction and returns the Fill struct that that clients will interact with.
@@ -571,7 +617,7 @@ export async function buildModifiedFill(
       destinationChainId: Number(destinationChainId),
     };
   } else {
-    return null;
+    throw new Error("Fill event does not have args");
   }
 }
 
@@ -629,13 +675,13 @@ export async function buildFillForRepaymentChain(
       destinationChainId: Number(destinationChainId),
     };
   } else {
-    return null;
+    throw new Error("No fill event found");
   }
 }
 
 // Returns expected leaves ordered by origin chain ID and then deposit ID(ascending). Ordering is implemented
 // same way that dataworker orders them.
-export function buildSlowRelayLeaves(deposits: Deposit[]) {
+export function buildSlowRelayLeaves(deposits: Deposit[]): utils.RelayData[] {
   return deposits
     .map((_deposit) => {
       return {
@@ -672,7 +718,7 @@ export async function buildRelayerRefundTreeWithUnassignedLeafIds(
     refundAddresses: string[];
     refundAmounts: BigNumber[];
   }[]
-) {
+): Promise<MerkleTree<RelayerRefundLeaf>> {
   return await buildRelayerRefundTree(
     leaves.map((leaf, id) => {
       return { ...leaf, leafId: id };
@@ -680,7 +726,14 @@ export async function buildRelayerRefundTreeWithUnassignedLeafIds(
   );
 }
 
-export async function constructPoolRebalanceTree(runningBalances: RunningBalances, realizedLpFees: RunningBalances) {
+export async function constructPoolRebalanceTree(
+  runningBalances: RunningBalances,
+  realizedLpFees: RunningBalances
+): Promise<{
+  leaves: utils.PoolRebalanceLeaf[];
+  tree: MerkleTree<utils.PoolRebalanceLeaf>;
+  startingRunningBalances: utils.BigNumber;
+}> {
   const leaves = utils.buildPoolRebalanceLeaves(
     Object.keys(runningBalances).map((x) => Number(x)), // Where funds are getting sent.
     Object.values(runningBalances).map((runningBalanceForL1Token) => Object.keys(runningBalanceForL1Token)), // l1Tokens.
@@ -736,11 +789,24 @@ export async function buildSlowFill(
 // We use the offset input to bypass the bundleClient's cache key, which is the bundle block range. So, to make sure
 // that the client requeries fresh blockchain state, we need to slightly offset the block range to produce a different
 // cache key.
-export function getDefaultBlockRange(toBlockOffset: number) {
+export function getDefaultBlockRange(toBlockOffset: number): number[][] {
   return DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) => [range[0], range[1] + toBlockOffset]);
 }
 
-export function createRefunds(address: string, refundAmount: BigNumber, token: string) {
+export function createRefunds(
+  address: string,
+  refundAmount: BigNumber,
+  token: string
+): {
+  [x: string]: {
+    refunds: {
+      [x: string]: utils.BigNumber;
+    };
+    fills: never[];
+    totalRefundAmount: utils.BigNumber;
+    realizedLpFees: utils.BigNumber;
+  };
+} {
   return {
     [token]: {
       refunds: { [address]: refundAmount },
@@ -751,6 +817,6 @@ export function createRefunds(address: string, refundAmount: BigNumber, token: s
   };
 }
 
-export function getLastBlockNumber() {
+export function getLastBlockNumber(): Promise<number> {
   return (utils.ethers.provider as providers.Provider).getBlockNumber();
 }

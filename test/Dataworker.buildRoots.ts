@@ -19,6 +19,7 @@ import {
   mockTreeRoot,
   buildPoolRebalanceLeaves,
   modifyRelayHelper,
+  RelayData,
 } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { refundProposalLiveness, CHAIN_ID_TEST_LIST } from "./constants";
@@ -450,7 +451,7 @@ describe("Dataworker: Build merkle roots", async function () {
         "ethers.getSigners doesn't have enough signers"
       ).to.be.true;
       const sortedAllSigners = [...allSigners].sort((x, y) => compareAddresses(x.address, y.address));
-      const fills = [];
+      const fills: Fill[] = [];
       for (let i = 0; i < MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1; i++) {
         await setupTokensForWallet(spokePool_1, sortedAllSigners[i], [erc20_1]);
         fills.push(await buildFillForRepaymentChain(spokePool_1, sortedAllSigners[i], deposit1, 0.1, originChainId));
@@ -666,16 +667,22 @@ describe("Dataworker: Build merkle roots", async function () {
       // Before we can execute the leaves on the spoke pool, we need to actually publish them since we're using a mock
       // adapter that doesn't send messages as you'd expect in executeRootBundle.
       await spokePool_1.relayRootBundle(mockTreeRoot, expectedSlowRelayTree.getHexRoot());
+      // We can only execute a slow relay on its destination chain, so look up the relay data with
+      // destination chain equal to the deployed spoke pool that we are calling.
+      const targetedSlowFillFinder = (targetChain: string): RelayData => {
+        const target = slowRelayLeaves.find((_) => _.destinationChainId === chainToExecuteSlowRelay.toString());
+        if (!target) {
+          throw new Error(`Could not find slow relay leaf for chain ${targetChain}`);
+        } else {
+          return target;
+        }
+      };
       const chainToExecuteSlowRelay = await spokePool_1.chainId();
       const slowFill2 = await buildSlowFill(
         spokePool_1,
         fill3,
         dataworker,
-        expectedSlowRelayTree.getHexProof(
-          // We can only execute a slow relay on its destination chain, so look up the relay data with
-          // destination chain equal to the deployed spoke pool that we are calling.
-          slowRelayLeaves.find((_) => _.relayData.destinationChainId === chainToExecuteSlowRelay.toString())
-        )
+        expectedSlowRelayTree.getHexProof(targetedSlowFillFinder(chainToExecuteSlowRelay.toString()))
       );
       await updateAllClients();
 
@@ -706,11 +713,7 @@ describe("Dataworker: Build merkle roots", async function () {
         spokePool_2,
         fill5,
         dataworker,
-        expectedSlowRelayTree.getHexProof(
-          // We can only execute a slow relay on its destination chain, so look up the relay data with
-          // destination chain equal to the deployed spoke pool that we are calling.
-          slowRelayLeaves.find((_) => _.relayData.destinationChainId === secondChainToExecuteSlowRelay.toString())
-        )
+        expectedSlowRelayTree.getHexProof(targetedSlowFillFinder(secondChainToExecuteSlowRelay.toString()))
       );
       await updateAllClients();
 

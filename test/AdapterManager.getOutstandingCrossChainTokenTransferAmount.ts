@@ -3,6 +3,7 @@ import { toBN } from "./utils";
 import { BaseAdapter } from "../src/clients/bridges";
 import { SpokePoolClient } from "../src/clients";
 import { OutstandingTransfers } from "../src/interfaces";
+import { ZERO_ADDRESS } from "@uma/common";
 
 class TestAdapter extends BaseAdapter {
   constructor() {
@@ -18,14 +19,30 @@ class TestAdapter extends BaseAdapter {
 
   public setDepositEvents(amounts: number[]) {
     const deposits = amounts.map((amount) => {
-      return { amount: toBN(amount) };
+      return {
+        // Added additional fields to satisfy the DepositEventType
+        amount: toBN(amount),
+        to: ZERO_ADDRESS,
+        transactionIndex: 0,
+        blockNumber: 0,
+        logIndex: 0,
+        transactionHash: "",
+      };
     });
     this.l1DepositInitiatedEvents = { "0xmonitored": { token: deposits } };
   }
 
   public setFinalizationEvents(amounts: number[]) {
     const deposits = amounts.map((amount) => {
-      return { amount: toBN(amount) };
+      return {
+        // Added additional fields to satisfy the DepositEventType
+        amount: toBN(amount),
+        to: ZERO_ADDRESS,
+        transactionIndex: 0,
+        blockNumber: 0,
+        logIndex: 0,
+        transactionHash: "",
+      };
     });
     this.l2DepositFinalizedEvents = { "0xmonitored": { token: deposits } };
   }

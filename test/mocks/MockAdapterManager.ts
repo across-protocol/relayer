@@ -10,7 +10,12 @@ export class MockAdapterManager extends AdapterManager {
   } = {};
 
   public mockedOutstandingCrossChainTransfers: { [chainId: number]: OutstandingTransfers } = {};
-  async sendTokenCrossChain(address: string, chainId: number, l1Token: string, amount: BigNumber) {
+  async sendTokenCrossChain(
+    _address: string,
+    chainId: number,
+    l1Token: string,
+    amount: BigNumber
+  ): Promise<TransactionResponse> {
     if (!this.tokensSentCrossChain[chainId]) {
       this.tokensSentCrossChain[chainId] = {};
     }
@@ -27,7 +32,7 @@ export class MockAdapterManager extends AdapterManager {
     return this.mockedOutstandingCrossChainTransfers[chainId];
   }
 
-  setMockedOutstandingCrossChainTransfers(chainId: number, address: string, l1Token: string, amount: BigNumber) {
+  setMockedOutstandingCrossChainTransfers(chainId: number, address: string, l1Token: string, amount: BigNumber): void {
     if (!this.mockedOutstandingCrossChainTransfers[chainId]) {
       this.mockedOutstandingCrossChainTransfers[chainId] = {};
     }
