@@ -1,5 +1,6 @@
 import { DepositWithBlock, FillWithBlock, UbaFlow } from "../interfaces";
-import { SpokePoolClient } from "../clients";
+import { HubPoolClient, SpokePoolClient } from "../clients";
+import { assert, BigNumber, isDefined } from "../utils";
 import { sortEventsAscending } from "./";
 
 /**
@@ -45,4 +46,45 @@ export function getUBAFlows(spokePoolClient: SpokePoolClient, fromBlock?: number
   const flows = sortEventsAscending(deposits.concat(fills).concat(refundRequests));
 
   return flows;
+}
+
+export class UBAClient {
+  private closingBlockNumbers: { [chainId: number]: number[] };
+
+  constructor(
+    private readonly chainIds: number[],
+    private readonly hubPoolClient: HubPoolClient,
+    private readonly spokePoolClients: { [chainId: number]: SpokePoolClient }
+  ) {
+    assert(chainIds.length > 0, "No chainIds provided");
+    assert(Object.values(spokePoolClients).length > 0, "No SpokePools provided");
+    this.closingBlockNumbers = Object.fromEntries(this.chainIds.map((chainId) => [chainId, []]));
+  }
+
+  private resolveClosingBlockNumber(chainId: number, blockNumber: number): number {
+    const endBlock = this.hubPoolClient.getLatestBundleEndBlockForChain(this.chainIds, blockNumber, chainId);
+    return endBlock ?? this.spokePoolClients[chainId].deploymentBlock;
+  }
+
+  getOpeningBalance(
+    chainId: number,
+    spokePoolToken: string,
+    hubPoolBlockNumber?: number
+  ): { balance: BigNumber; blockNumber: number } {
+    assert(Array.isArray(this.closingBlockNumbers[chainId]), `Invalid chainId: ${chainId}`);
+
+    hubPoolBlockNumber = this.hubPoolClient.latestBlockNumber;
+
+    const hubPoolToken = this.hubPoolClient.getL1TokenCounterpartAtBlock(chainId, spokePoolToken, hubPoolBlockNumber);
+    if (!isDefined(hubPoolToken)) {
+      throw new Error(`Could not resolve ${chainId} token ${spokePoolToken} at block ${hubPoolBlockNumber}`);
+    }
+
+    const prevEndBlock = this.resolveClosingBlockNumber(chainId, hubPoolBlockNumber);
+    const blockNumber =
+      prevEndBlock > this.hubPoolClient.deploymentBlock ? prevEndBlock + 1 : this.hubPoolClient.deploymentBlock;
+    const balance = this.hubPoolClient.getRunningBalanceBeforeBlockForChain(hubPoolBlockNumber, chainId, hubPoolToken);
+
+    return { blockNumber, balance };
+  }
 }

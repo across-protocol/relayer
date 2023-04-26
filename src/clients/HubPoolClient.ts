@@ -61,10 +61,12 @@ export class HubPoolClient {
   constructor(
     readonly logger: winston.Logger,
     readonly hubPool: Contract,
+    public deploymentBlock = 0,
     readonly chainId: number = 1,
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
+    this.latestBlockNumber = deploymentBlock === 0 ? deploymentBlock : deploymentBlock - 1;
   }
 
   protected hubPoolEventFilters(): Record<HubPoolEvent, EventFilter> {
