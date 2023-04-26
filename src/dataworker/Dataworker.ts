@@ -1221,10 +1221,8 @@ export class Dataworker {
       );
 
       // We need to know the next root bundle ID for the mainnet spoke pool in order to execute leaves for roots that
-      // will be relayed after executing the above pool rebalance root. However, since we batch together all
-      // transactions, the root bundle won't have been relayed yet. So, we need to infer it by adding 1 to the last
-      // relayed root bundle. This assumes that all previous root bundles have been relayed already.
-      const nextRootBundleIdForMainnet = spokePoolClients[1].getLatestRootBundleId() + 1;
+      // will be relayed after executing the above pool rebalance root.
+      const nextRootBundleIdForMainnet = spokePoolClients[1].getLatestRootBundleId();
 
       // Now, execute refund and slow fill leaves for Mainnet using new funds. These methods will return early if there
       // are no relevant leaves to execute.
