@@ -50,6 +50,17 @@ export class MultiCallerClient {
     this.txnClient = new TransactionClient(logger);
   }
 
+  getQueuedTransactions(chainId: number): AugmentedTransaction[] {
+    const allTxns = [];
+    if (this.valueTxns?.[chainId]) {
+      allTxns.push(...this.valueTxns[chainId]);
+    }
+    if (this.txns?.[chainId]) {
+      allTxns.push(...this.txns[chainId]);
+    }
+    return allTxns;
+  }
+
   // Adds all information associated with a transaction to the transaction queue.
   enqueueTransaction(txn: AugmentedTransaction): void {
     // Value transactions are sorted immediately because the UMA multicall implementation rejects them.

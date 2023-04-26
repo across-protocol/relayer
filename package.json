@@ -1,6 +1,6 @@
 {
   "name": "relayer-v2",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Across Protocol V2 Relayer Bot",
   "repository": "git@github.com:across-protocol/relayer-v2.git",
   "author": "UMA Team",
@@ -11,8 +11,8 @@
   },
   "dependencies": {
     "@across-protocol/boba-sdk": "^1.0.4",
-    "@across-protocol/contracts-v2": "^2.0.2",
-    "@across-protocol/sdk-v2": "^0.4.8",
+    "@across-protocol/contracts-v2": "2.1.0-beta.22",
+    "@across-protocol/sdk-v2": "0.5.0-beta.21",
     "@arbitrum/sdk": "^3.1.2",
     "@defi-wonderland/smock": "^2.3.4",
     "@eth-optimism/sdk": "^2.0.1",
@@ -22,7 +22,8 @@
     "@google-cloud/storage": "^6.9.5",
     "@maticnetwork/maticjs": "^3.4.0-beta.0",
     "@maticnetwork/maticjs-ethers": "^1.0.3",
-    "@uma/common": "^2.32.0",
+    "@openzeppelin/hardhat-upgrades": "^1.22.1",
+    "@uma/common": "2.33.0",
     "@uma/contracts-node": "^0.4.13",
     "@uma/financial-templates-lib": "^2.32.10",
     "@uma/sdk": "^0.34.0",
@@ -54,6 +55,9 @@
     "test": "hardhat test",
     "build": "tsc --build",
     "watch": "tsc --build --incremental --watch",
+    "clean": "dir=\"./node_modules\"; mv \"${dir}\" \"${dir}_\" 2>/dev/null && rm -r \"${dir}_\" &",
+    "reinstall": "yarn clean && yarn install && yarn build",
+    "update": "git pull && yarn reinstall && yarn version --non-interactive && git show --quiet",
     "relay": "node ./dist/index.js --relayer"
   },
   "devDependencies": {
