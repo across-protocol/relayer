@@ -694,21 +694,14 @@ export class SpokePoolClient {
       }
       for (const event of fillEvents) {
         const fill = spreadEventWithBlockNumber(event) as FillWithBlock;
-        /**
-         * struct RelayExecutionInfo {
-         *   address recipient;
-         *   bytes message;
-         *   int64 relayerFeePct;
-         *   bool isSlowRelay;
-         *   int256 payoutAdjustmentPct;
-         * }
-         */
+        // speadEventWithBlockNumber() doesn't recurse down into Objects within event.args.
+        // Unpack updatableRelayData here and perform the necessary type conversions.
         fill.updatableRelayData = {
-          recipient: fill.updatableRelayData[0],
-          message: fill.updatableRelayData[1],
-          relayerFeePct: toBN(fill.updatableRelayData[2]),
-          isSlowRelay: fill.updatableRelayData[3],
-          payoutAdjustmentPct: toBN(fill.updatableRelayData[4]),
+          recipient: fill.updatableRelayData.recipient,
+          message: fill.updatableRelayData.message,
+          relayerFeePct: toBN(fill.updatableRelayData.relayerFeePct),
+          isSlowRelay: fill.updatableRelayData.isSlowRelay,
+          payoutAdjustmentPct: toBN(fill.updatableRelayData.payoutAdjustmentPct),
         };
         assign(this.fills, [fill.originChainId], [fill]);
         assign(this.depositHashesToFills, [this.getDepositHash(fill)], [fill]);

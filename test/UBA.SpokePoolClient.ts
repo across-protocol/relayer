@@ -46,7 +46,7 @@ describe("UBA: SpokePool Events", async function () {
     await spokePoolClient.update();
   });
 
-  it.skip("Correctly orders UBA flows", async function () {
+  it("Correctly orders UBA flows", async function () {
     const nTxns = spokePoolClient.minBlockRange;
     expect(nTxns).to.be.above(5);
 
@@ -131,7 +131,7 @@ describe("UBA: SpokePool Events", async function () {
     });
   });
 
-  it.skip("Correctly includes initial partial fills", async function () {
+  it("Correctly includes initial partial fills", async function () {
     const nTxns = spokePoolClient.minBlockRange;
     expect(nTxns).to.be.above(5);
 
@@ -170,7 +170,7 @@ describe("UBA: SpokePool Events", async function () {
     expect(ubaFlows).to.deep.equal(fills);
   });
 
-  it.skip("Correctly filters subsequent partial fills", async function () {
+  it("Correctly filters subsequent partial fills", async function () {
     const nDeposits = 5;
 
     const fullFills: Event[] = [];
@@ -220,7 +220,7 @@ describe("UBA: SpokePool Events", async function () {
     });
   });
 
-  it.skip("Correctly filters slow fills", async function () {
+  it("Correctly filters slow fills", async function () {
     // Inject slow and instant fill events.
     const events: Event[] = [];
     for (let idx = 0; idx < spokePoolClient.minBlockRange; ++idx) {
@@ -229,9 +229,11 @@ describe("UBA: SpokePool Events", async function () {
       [true, false].forEach((isSlowRelay) => {
         const fill = spokePoolClient.generateFill({
           relayer,
-          isSlowRelay,
           blockNumber,
           transactionIndex,
+          updatableRelayData: {
+            isSlowRelay,
+          },
         } as FillWithBlock);
 
         spokePoolClient.addEvent(fill);
@@ -252,7 +254,7 @@ describe("UBA: SpokePool Events", async function () {
         assert.fail("UBA outflow is not a fill");
       }
 
-      expect((ubaFlow as FillWithBlock).isSlowRelay).to.be.false;
+      expect((ubaFlow as FillWithBlock).updatableRelayData.isSlowRelay).to.be.false;
     });
   });
 });

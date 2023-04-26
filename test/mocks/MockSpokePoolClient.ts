@@ -2,7 +2,7 @@ import { random } from "lodash";
 import { SpokePoolClient, SpokePoolUpdate } from "../../src/clients";
 import { DepositWithBlock, FillWithBlock, RefundRequestWithBlock } from "../../src/interfaces";
 import { BigNumberish, Event } from "../../src/utils";
-import { Contract, ethers, randomAddress, toBNWei, winston } from "../utils";
+import { Contract, ethers, randomAddress, toBN, toBNWei, winston } from "../utils";
 
 export type EthersEventTemplate = {
   address: string;
@@ -152,7 +152,9 @@ export class MockSpokePoolClient extends SpokePoolClient {
     depositor ??= randomAddress();
 
     const topics = [originChainId, depositId, depositor];
+    const recipient = fill.recipient ?? randomAddress();
     const amount = fill.amount ?? toBNWei(random(1, 1000, false));
+    const relayerFeePct = fill.relayerFeePct ?? toBNWei(0.0001);
     const message = fill["message"] ?? `${event} event at block ${blockNumber}, index ${transactionIndex}.`;
 
     const args = {
@@ -163,14 +165,21 @@ export class MockSpokePoolClient extends SpokePoolClient {
       originChainId,
       destinationChainId: fill.destinationChainId,
       realizedLpFeePct: fill.realizedLpFeePct ?? toBNWei(random(0.00001, 0.0001).toPrecision(6)),
+      relayerFeePct,
       depositId,
       destinationToken: randomAddress(),
       relayer: fill.relayer ?? randomAddress(),
       depositor,
-      recipient: randomAddress(),
+      recipient,
       isSlowRelay: fill.isSlowRelay ?? false,
       message,
-      // updatableRelayData @todo: New ABI needed
+      updatableRelayData: {
+        recipient: fill.updatableRelayData?.recipient ?? recipient,
+        message: fill.updatableRelayData?.message ?? message,
+        relayerFeePct: fill.updatableRelayData?.relayerFeePct ?? relayerFeePct,
+        isSlowRelay: fill.updatableRelayData?.isSlowRelay ?? false,
+        payoutAdjustmentPct: fill.updatableRelayData?.payoutAdjustmentPct ?? toBN(0),
+      },
     };
 
     return this.generateEvent({
