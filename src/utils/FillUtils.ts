@@ -21,6 +21,7 @@ const FILL_DEPOSIT_COMPARISON_KEYS = [
   "recipient",
   "destinationChainId",
   "destinationToken",
+  "message",
 ] as const;
 
 export function getRefundInformationFromFill(
