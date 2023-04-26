@@ -32,9 +32,6 @@ export class AdapterManager {
     if (this.spokePoolClients[137] !== undefined) {
       this.adapters[137] = new PolygonAdapter(logger, spokePoolClients, monitoredAddresses);
     }
-    if (this.spokePoolClients[288] !== undefined) {
-      this.adapters[288] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses, false, senderAddress);
-    }
     if (this.spokePoolClients[42161] !== undefined) {
       this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, monitoredAddresses);
     }
@@ -71,7 +68,7 @@ export class AdapterManager {
 
     if (optimismWrapTx) {
       const mrkdwn =
-        "Ether on Optimism was wrapped due to being over the threshold of " +
+        `Ether on Optimism was wrapped due to being over the threshold of ` +
         `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.\n` +
         `${`\nOptimism tx: ${etherscanLink(optimismWrapTx.hash, 10)} `}.`;
       this.logger.info({ at: "AdapterManager", message: "Eth wrapped on target chain 🎁", mrkdwn });
@@ -122,13 +119,6 @@ export class AdapterManager {
       await this.adapters[137].checkTokenApprovals(
         address,
         l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 137))
-      );
-    }
-
-    if (this.adapters[288] !== undefined) {
-      await this.adapters[288].checkTokenApprovals(
-        address,
-        l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 288))
       );
     }
 
