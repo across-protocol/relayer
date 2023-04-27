@@ -18,6 +18,7 @@ import {
   assert,
   sortEventsAscending,
   filledSameDeposit,
+  validateFillForDeposit,
   getCurrentTime,
   getRedis,
   AnyObject,
@@ -48,19 +49,6 @@ export type SpokePoolUpdate = {
   events: Event[][];
   searchEndBlock: number;
 };
-
-const FILL_DEPOSIT_COMPARISON_KEYS = [
-  "amount",
-  "originChainId",
-  "relayerFeePct",
-  "realizedLpFeePct",
-  "depositId",
-  "depositor",
-  "recipient",
-  "destinationChainId",
-  "destinationToken",
-  "message",
-] as const;
 
 export class SpokePoolClient {
   private currentTime = 0;
@@ -227,12 +215,8 @@ export class SpokePoolClient {
   }
 
   getDepositForFill(fill: Fill): DepositWithBlock | undefined {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const depositWithMatchingDepositId = this.depositHashes[this.getDepositHash(fill)];
-    if (depositWithMatchingDepositId === undefined) {
-      return undefined;
-    }
-    return this.validateFillForDeposit(fill, depositWithMatchingDepositId) ? depositWithMatchingDepositId : undefined;
+    return validateFillForDeposit(fill, depositWithMatchingDepositId) ? depositWithMatchingDepositId : undefined;
   }
 
   getValidUnfilledAmountForDeposit(deposit: Deposit): {
@@ -248,7 +232,7 @@ export class SpokePoolClient {
 
     const { validFills, invalidFills } = fillsForDeposit.reduce(
       (groupedFills: { validFills: Fill[]; invalidFills: Fill[] }, fill: Fill) => {
-        if (this.validateFillForDeposit(fill, deposit)) {
+        if (validateFillForDeposit(fill, deposit)) {
           groupedFills.validFills.push(fill);
         } else {
           groupedFills.invalidFills.push(fill);
@@ -290,17 +274,6 @@ export class SpokePoolClient {
       fillCount: validFills.length,
       invalidFills,
     };
-  }
-
-  // Ensure that each deposit element is included with the same value in the fill. This includes all elements defined
-  // by the depositor as well as the realizedLpFeePct and the destinationToken, which are pulled from other clients.
-  validateFillForDeposit(fill: Fill, deposit: Deposit): boolean {
-    // Note: this short circuits when a key is found where the comparison doesn't match.
-    // TODO: if we turn on "strict" in the tsconfig, the elements of FILL_DEPOSIT_COMPARISON_KEYS will be automatically
-    // validated against the fields in Fill and Deposit, generating an error if there is a discrepency.
-    return FILL_DEPOSIT_COMPARISON_KEYS.every((key) => {
-      return fill[key] !== undefined && fill[key].toString() === deposit[key]?.toString();
-    });
   }
 
   getDepositHash(event: Deposit | Fill): string {
@@ -451,7 +424,7 @@ export class SpokePoolClient {
       }
     }
 
-    return this.validateFillForDeposit(fill, deposit) ? deposit : undefined;
+    return validateFillForDeposit(fill, deposit) ? deposit : undefined;
   }
 
   async queryHistoricalMatchingFills(fill: Fill, deposit: Deposit, toBlock: number): Promise<FillWithBlock[]> {
@@ -461,7 +434,7 @@ export class SpokePoolClient {
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
     return (await this.queryFillsInBlockRange(fill, searchConfig)).filter((_fill) =>
-      this.validateFillForDeposit(_fill, deposit)
+      validateFillForDeposit(_fill, deposit)
     );
   }
 
@@ -672,7 +645,7 @@ export class SpokePoolClient {
       const speedUpEvents = queryResults[eventsToQuery.indexOf("RequestedSpeedUpDeposit")];
 
       for (const event of speedUpEvents) {
-        const speedUp: SpeedUp = { ...spreadEvent(event), originChainId: this.chainId };
+        const speedUp: SpeedUp = { ...spreadEvent(event.args), originChainId: this.chainId };
         assign(this.speedUps, [speedUp.depositor, speedUp.depositId], [speedUp]);
       }
 
@@ -694,22 +667,6 @@ export class SpokePoolClient {
       }
       for (const event of fillEvents) {
         const fill = spreadEventWithBlockNumber(event) as FillWithBlock;
-        /**
-         * struct RelayExecutionInfo {
-         *   address recipient;
-         *   bytes message;
-         *   int64 relayerFeePct;
-         *   bool isSlowRelay;
-         *   int256 payoutAdjustmentPct;
-         * }
-         */
-        fill.updatableRelayData = {
-          recipient: fill.updatableRelayData[0],
-          message: fill.updatableRelayData[1],
-          relayerFeePct: toBN(fill.updatableRelayData[2]),
-          isSlowRelay: fill.updatableRelayData[3],
-          payoutAdjustmentPct: toBN(fill.updatableRelayData[4]),
-        };
         assign(this.fills, [fill.originChainId], [fill]);
         assign(this.depositHashesToFills, [this.getDepositHash(fill)], [fill]);
       }
@@ -735,7 +692,7 @@ export class SpokePoolClient {
       const enableDepositsEvents = queryResults[eventsToQuery.indexOf("EnabledDepositRoute")];
 
       for (const event of enableDepositsEvents) {
-        const enableDeposit = spreadEvent(event);
+        const enableDeposit = spreadEvent(event.args);
         assign(
           this.depositRoutes,
           [enableDeposit.originToken, enableDeposit.destinationChainId],

@@ -357,7 +357,7 @@ export class AcrossConfigStoreClient {
         blockNumber: event.blockNumber,
         transactionIndex: event.transactionIndex,
         logIndex: event.logIndex,
-        ...spreadEvent(event),
+        ...spreadEvent(event.args),
       };
 
       if (args.key === utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_RELAYER_REPAYMENT_LEAF_SIZE)) {

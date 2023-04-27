@@ -427,6 +427,7 @@ export class Monitor {
             } else {
               // Note: We don't multicall sending ETH as its not a contract call.
               const gas = await getGasPrice(this.clients.spokePoolClients[chainId].spokePool.provider);
+              const nativeSymbolForChain = getNativeTokenSymbol(chainId);
               const tx = await (
                 await this.clients.spokePoolClients[chainId].spokePool.signer
               ).sendTransaction({ to: account, value: deficit, ...gas });
@@ -436,8 +437,8 @@ export class Monitor {
                 message: `Reloaded ${ethers.utils.formatUnits(
                   deficit,
                   decimals
-                )} ETH for ${account} from ${signerAddress} 🫡!`,
-                transactionHash: receipt.transactionHash,
+                )} ${nativeSymbolForChain} for ${account} from ${signerAddress} 🫡!`,
+                transactionHash: etherscanLink(receipt.transactionHash, chainId),
               });
             }
           } else {
