@@ -27,13 +27,10 @@ export class AdapterManager {
       return;
     }
     if (this.spokePoolClients[10] !== undefined) {
-      this.adapters[10] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses, true, senderAddress);
+      this.adapters[10] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses, senderAddress);
     }
     if (this.spokePoolClients[137] !== undefined) {
       this.adapters[137] = new PolygonAdapter(logger, spokePoolClients, monitoredAddresses);
-    }
-    if (this.spokePoolClients[288] !== undefined) {
-      this.adapters[288] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses, false, senderAddress);
     }
     if (this.spokePoolClients[42161] !== undefined) {
       this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, monitoredAddresses);
@@ -67,19 +64,13 @@ export class AdapterManager {
       this.spokePoolClients[10] !== undefined
         ? (this.adapters[10] as OptimismAdapter).wrapEthIfAboveThreshold(wrapThreshold)
         : Promise.resolve(undefined);
-    const bobaCall =
-      this.spokePoolClients[288] !== undefined
-        ? (this.adapters[288] as OptimismAdapter).wrapEthIfAboveThreshold(wrapThreshold)
-        : Promise.resolve(undefined);
-    const [optimismWrapTx, bobaWrapTx] = await Promise.all([optimismCall, bobaCall]);
+    const [optimismWrapTx] = await Promise.all([optimismCall]);
 
-    if (optimismWrapTx || bobaWrapTx) {
+    if (optimismWrapTx) {
       const mrkdwn =
-        `Ether on ${optimismWrapTx ? "Optimism" : ""}${optimismWrapTx && bobaWrapTx ? " and " : ""}` +
-        `${bobaWrapTx ? "Boba" : ""} was wrapped due to being over the threshold of ` +
+        "Ether on Optimism was wrapped due to being over the threshold of " +
         `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.\n` +
-        `${optimismWrapTx ? `\nOptimism tx: ${etherscanLink(optimismWrapTx.hash, 10)} ` : ""}` +
-        `${bobaWrapTx ? `Boba tx: ${etherscanLink(bobaWrapTx.hash, 288)}` : ""}`;
+        `${`\nOptimism tx: ${etherscanLink(optimismWrapTx.hash, 10)} `}.`;
       this.logger.info({ at: "AdapterManager", message: "Eth wrapped on target chain 🎁", mrkdwn });
     }
   }
@@ -128,13 +119,6 @@ export class AdapterManager {
       await this.adapters[137].checkTokenApprovals(
         address,
         l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 137))
-      );
-    }
-
-    if (this.adapters[288] !== undefined) {
-      await this.adapters[288].checkTokenApprovals(
-        address,
-        l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 288))
       );
     }
 

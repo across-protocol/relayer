@@ -31,7 +31,6 @@ import {
   Multicall2Call,
 } from "../common";
 import * as optimismSDK from "@eth-optimism/sdk";
-import * as bobaSDK from "@across-protocol/boba-sdk";
 config();
 let logger: winston.Logger;
 
@@ -150,29 +149,7 @@ export async function finalize(
       finalizationsToBatch.callData.push(...finalizations.callData);
       finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
     } else if (chainId === 288) {
-      // Skip events that are likely not past the seven day challenge period.
-      const firstBlockToFinalize = await getBlockForTimestamp(
-        hubPoolClient.chainId,
-        chainId,
-        getCurrentTime() - optimisticRollupFinalizationWindow,
-        getCurrentTime()
-      );
-      logger.debug({
-        at: "Finalizer",
-        message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
-        firstBlockToFinalize,
-      });
-      const olderTokensBridgedEvents = tokensBridged.filter((e) => e.blockNumber < firstBlockToFinalize);
-      const crossChainMessenger = getOptimismClient(chainId, hubSigner) as bobaSDK.CrossChainMessenger;
-      const finalizations = await multicallOptimismFinalizations(
-        chainId,
-        olderTokensBridgedEvents,
-        crossChainMessenger,
-        hubPoolClient,
-        logger
-      );
-      finalizationsToBatch.callData.push(...finalizations.callData);
-      finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
+      throw new Error(`ChainId ${chainId} is not supported`);
     }
   }
 

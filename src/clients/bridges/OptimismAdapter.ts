@@ -4,7 +4,6 @@ import {
   ZERO_ADDRESS,
   paginatedEventQuery,
   runTransaction,
-  toBN,
   BigNumberish,
   TransactionResponse,
 } from "../../utils";
@@ -23,13 +22,10 @@ const customOvmBridgeAddresses = {
 } as const;
 
 const l1StandardBridgeAddressOvm = "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1";
-const l1StandardBridgeAddressBoba = "0xdc1664458d2f0B6090bEa60A8793A4E66c2F1c00";
-
 const ovmL2StandardBridgeAddress = "0x4200000000000000000000000000000000000010";
-
 const wethOptimismAddress = "0x4200000000000000000000000000000000000006";
-const wethBobaAddress = "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000";
-export const ovmWethTokens = [wethOptimismAddress, wethBobaAddress];
+
+export const ovmWethTokens = [wethOptimismAddress];
 export const isOvmChain = (chainId: number): boolean => [10, 288].includes(chainId);
 
 const atomicDepositorAddress = "0x26eaf37ee5daf49174637bdcd2f7759a25206c34";
@@ -40,15 +36,12 @@ export class OptimismAdapter extends BaseAdapter {
     logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     monitoredAddresses: string[],
-    readonly isOptimism: boolean,
     // Optional sender address where the cross chain transfers originate from. This is useful for the use case of
     // monitoring transfers from HubPool to SpokePools where the sender is HubPool.
     readonly senderAddress?: string
   ) {
-    // Note based on if this isOptimism or not we switch the chainId and starting L1 blocks. This is critical. If done
-    // wrong funds WILL be deleted in the canonical bridge (eg sending funds to Optimism with a boba L2 token).
-    super(spokePoolClients, isOptimism ? 10 : 288, monitoredAddresses, logger);
-    this.l2Gas = isOptimism ? 200000 : 1300000;
+    super(spokePoolClients, 10, monitoredAddresses, logger);
+    this.l2Gas = 200000;
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
@@ -143,20 +136,20 @@ export class OptimismAdapter extends BaseAdapter {
     }
     this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
 
-    // For some reason ethers will often underestimate the amount of gas Boba bridge needs for a deposit. If this
-    // OptimismAdapter is connected to Boba then manually set the gasLimit to 250k which works consistently.
-    if (this.chainId === 288) {
-      return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args, toBN(0), toBN(250000));
-    } else {
-      return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args);
+    if (this.chainId !== 10) {
+      throw new Error(`chainId ${this.chainId} is not supported`);
     }
+    return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args);
   }
 
   async wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse | null> {
     const ethBalance = await this.getSigner(this.chainId).getBalance();
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(this.chainId);
-      const l2Weth = new Contract(this.isOptimism ? wethOptimismAddress : wethBobaAddress, weth9Abi, l2Signer);
+      if (this.chainId !== 10) {
+        throw new Error(`chainId ${this.chainId} is not supported`);
+      }
+      const l2Weth = new Contract(wethOptimismAddress, weth9Abi, l2Signer);
       const amountToDeposit = ethBalance.sub(threshold);
       this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, amountToDeposit, ethBalance });
       return await runTransaction(this.logger, l2Weth, "deposit", [], amountToDeposit);
@@ -171,11 +164,12 @@ export class OptimismAdapter extends BaseAdapter {
   }
 
   getL1Bridge(l1Token: string): Contract {
-    const l1BridgeAddress = this.isOptimism
-      ? this.hasCustomL1Bridge(l1Token)
-        ? customL1OptimismBridgeAddresses[l1Token]
-        : l1StandardBridgeAddressOvm
-      : l1StandardBridgeAddressBoba;
+    if (this.chainId !== 10) {
+      throw new Error(`chainId ${this.chainId} is not supported`);
+    }
+    const l1BridgeAddress = this.hasCustomL1Bridge(l1Token)
+      ? customL1OptimismBridgeAddresses[l1Token]
+      : l1StandardBridgeAddressOvm;
     return new Contract(l1BridgeAddress, ovmL1BridgeInterface, this.getSigner(1));
   }
 
@@ -188,10 +182,11 @@ export class OptimismAdapter extends BaseAdapter {
   }
 
   getL2Bridge(l1Token: string): Contract {
-    const l2BridgeAddress = this.isOptimism
-      ? this.hasCustomL2Bridge(l1Token)
-        ? customOvmBridgeAddresses[l1Token]
-        : ovmL2StandardBridgeAddress
+    if (this.chainId !== 10) {
+      throw new Error(`chainId ${this.chainId} is not supported`);
+    }
+    const l2BridgeAddress = this.hasCustomL2Bridge(l1Token)
+      ? customOvmBridgeAddresses[l1Token]
       : ovmL2StandardBridgeAddress;
     return new Contract(l2BridgeAddress, ovmL2BridgeInterface, this.getSigner(this.chainId));
   }
