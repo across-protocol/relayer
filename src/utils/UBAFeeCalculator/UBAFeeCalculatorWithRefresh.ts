@@ -37,14 +37,14 @@ export default class UBAFeeCalculatorWithRefresh extends UBAFeeCalculator {
    */
   public async updateRunningBalance(blockNumber?: number): Promise<void> {
     const fn = async (spokeClient: SpokePoolClient, spoke: UBASpokeBalanceType) => {
-      // Initially set the blockNumber to a new block with either the given input or the last blockNumber available
-      spoke.blockNumber = blockNumber ?? (await spokeClient.spokePool.getBlockNumber());
-      // Clear the recent request flow
-      spoke.recentRequestFlow = [];
-      // Resolve the most recent flows
-      spoke.recentRequestFlow = await this.getRecentRequestFlow();
-      // Recalculate the last validated running balance
-      spoke.lastValidatedRunningBalance = await this.getLastValidatedBundleRunningBalance();
+      [spoke.blockNumber, spoke.recentRequestFlow, spoke.lastValidatedRunningBalance] = await Promise.all([
+        // Initially set the blockNumber to a new block with either the given input or the last blockNumber available
+        blockNumber ? Promise.resolve(blockNumber) : spokeClient.spokePool.getBlockNumber(),
+        // Resolve the most recent flows
+        this.getRecentRequestFlow(),
+        // Recalculate the last validated running balance
+        this.getLastValidatedBundleRunningBalance(),
+      ]);
     };
     // Call the function for both the origin and destination spoke
     await fn(this.originSpokeClient, this.originSpoke);
