@@ -492,7 +492,7 @@ export class HubPoolClient {
     // For each enabled Lp token fetch the token symbol and decimals from the token contract. Note this logic will
     // only run iff a new token has been enabled. Will only append iff the info is not there already.
     // Filter out any duplicate addresses. This might happen due to enabling, disabling and re-enabling a token.
-    const uniqueL1Tokens = [...new Set(l1TokensLpEvents.map((event) => spreadEvent(event).l1Token))];
+    const uniqueL1Tokens = [...new Set(l1TokensLpEvents.map((event) => spreadEvent(event.args).l1Token))];
     const [tokenInfo, lpTokenInfo] = await Promise.all([
       Promise.all(uniqueL1Tokens.map((l1Token: string) => this.fetchTokenInfoFromContract(l1Token))),
       Promise.all(uniqueL1Tokens.map(async (l1Token: string) => await this.hubPool.pooledTokens(l1Token))),

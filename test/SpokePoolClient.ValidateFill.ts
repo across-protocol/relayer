@@ -27,6 +27,7 @@ import {
 } from "./utils";
 
 import { AcrossConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
+import { validateFillForDeposit } from "../src/utils";
 import { MockSpokePoolClient } from "./mocks/MockSpokePoolClient";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract, hubPool: Contract;
@@ -113,7 +114,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
     // Some fields are expected to be dynamically populated by the client, but aren't in this environment.
     // Fill them in manually from the fill struct to get a valid comparison.
     expect(
-      spokePoolClient2.validateFillForDeposit(fill_1, {
+      validateFillForDeposit(fill_1, {
         ...deposit_1,
         realizedLpFeePct: fill_1.realizedLpFeePct,
         destinationToken: fill_1.destinationToken,
@@ -608,22 +609,19 @@ describe("SpokePoolClient: Fill Validation", async function () {
     };
 
     // Invalid Amount.
-    expect(spokePoolClient2.validateFillForDeposit({ ...validFill, amount: toBNWei(1337) }, validDeposit)).to.be.false;
+    expect(validateFillForDeposit({ ...validFill, amount: toBNWei(1337) }, validDeposit)).to.be.false;
 
     // Invalid depositId.
-    expect(spokePoolClient2.validateFillForDeposit({ ...validFill, depositId: 1337 }, validDeposit)).to.be.false;
+    expect(validateFillForDeposit({ ...validFill, depositId: 1337 }, validDeposit)).to.be.false;
 
     // Changed the depositor.
-    expect(spokePoolClient2.validateFillForDeposit({ ...validFill, depositor: relayer.address }, validDeposit)).to.be
-      .false;
+    expect(validateFillForDeposit({ ...validFill, depositor: relayer.address }, validDeposit)).to.be.false;
 
     // Changed the recipient.
-    expect(spokePoolClient2.validateFillForDeposit({ ...validFill, recipient: relayer.address }, validDeposit)).to.be
-      .false;
+    expect(validateFillForDeposit({ ...validFill, recipient: relayer.address }, validDeposit)).to.be.false;
 
     // Changed the relayerFeePct.
-    expect(spokePoolClient2.validateFillForDeposit({ ...validFill, relayerFeePct: toBNWei(1337) }, validDeposit)).to.be
-      .false;
+    expect(validateFillForDeposit({ ...validFill, relayerFeePct: toBNWei(1337) }, validDeposit)).to.be.false;
 
     // Validate the realizedLPFeePct and destinationToken matches. These values are optional in the deposit object and
     // are assigned during the update method, which is not polled in this set of tests.
@@ -631,14 +629,14 @@ describe("SpokePoolClient: Fill Validation", async function () {
     // Assign a realizedLPFeePct to the deposit and check it matches with the fill. After, try changing this to a
     // separate value and ensure this is rejected.
     expect(
-      spokePoolClient2.validateFillForDeposit(validFill, {
+      validateFillForDeposit(validFill, {
         ...validDeposit,
         realizedLpFeePct: deposit.realizedLpFeePct,
       })
     ).to.be.true;
 
     expect(
-      spokePoolClient2.validateFillForDeposit(validFill, {
+      validateFillForDeposit(validFill, {
         ...validDeposit,
         realizedLpFeePct: deposit.realizedLpFeePct.mul(2),
       })
@@ -646,9 +644,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
 
     // Assign a destinationToken to the deposit and ensure it is validated correctly. erc20_2 from the fillRelay method
     // above is the destination token. After, try changing this to something that is clearly wrong.
-    expect(spokePoolClient2.validateFillForDeposit(validFill, { ...validDeposit, destinationToken: erc20_2.address }))
-      .to.be.true;
-    expect(spokePoolClient2.validateFillForDeposit(validFill, { ...validDeposit, destinationToken: owner.address })).to
-      .be.false;
+    expect(validateFillForDeposit(validFill, { ...validDeposit, destinationToken: erc20_2.address })).to.be.true;
+    expect(validateFillForDeposit(validFill, { ...validDeposit, destinationToken: owner.address })).to.be.false;
   });
 });
