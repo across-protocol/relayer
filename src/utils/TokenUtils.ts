@@ -1,10 +1,12 @@
 import { constants } from "@across-protocol/sdk-v2";
-import { Contract, ERC20, providers  } from "./";
+import { Contract, ERC20, providers, Signer } from "./";
 import { L1Token } from "../interfaces";
 const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
-export async function fetchTokenInfo(address: string, provider: providers.Provider): Promise<L1Token> {
-  const token = new Contract(address, ERC20.abi, provider);
+type SignerOrProvider = providers.Provider | Signer;
+
+export async function fetchTokenInfo(address: string, signerOrProvider: SignerOrProvider): Promise<L1Token> {
+  const token = new Contract(address, ERC20.abi, signerOrProvider);
   const [symbol, decimals] = await Promise.all([token.symbol(), token.decimals()]);
   return { address, symbol, decimals };
 }

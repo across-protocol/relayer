@@ -1,5 +1,12 @@
-import { assign, Contract, winston, BigNumber, ERC20, EventSearchConfig, MakeOptional, BigNumberish } from "../utils";
-import { fetchTokenInfo, sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
+import { assign, Contract, winston, BigNumber, EventSearchConfig, MakeOptional, BigNumberish } from "../utils";
+import {
+  fetchTokenInfo,
+  sortEventsDescending,
+  spreadEvent,
+  spreadEventWithBlockNumber,
+  paginatedEventQuery,
+  toBN,
+} from "../utils";
 import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
 import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle, LpToken } from "../interfaces";
 import { ExecutedRootBundle, PendingRootBundle, ProposedRootBundle } from "../interfaces";
@@ -494,7 +501,7 @@ export class HubPoolClient {
     // Filter out any duplicate addresses. This might happen due to enabling, disabling and re-enabling a token.
     const uniqueL1Tokens = [...new Set(l1TokensLpEvents.map((event) => spreadEvent(event.args).l1Token))];
     const [tokenInfo, lpTokenInfo] = await Promise.all([
-      Promise.all(uniqueL1Tokens.map((l1Token: string) => fetchTokenInfoFromContract(l1Token, this.hubPool.signer))),
+      Promise.all(uniqueL1Tokens.map((l1Token: string) => fetchTokenInfo(l1Token, this.hubPool.signer))),
       Promise.all(uniqueL1Tokens.map(async (l1Token: string) => await this.hubPool.pooledTokens(l1Token))),
     ]);
     for (const info of tokenInfo) {
