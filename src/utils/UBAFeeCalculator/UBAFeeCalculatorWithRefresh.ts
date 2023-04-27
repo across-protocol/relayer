@@ -2,7 +2,7 @@ import { BigNumber } from "ethers";
 import { Logger } from "winston";
 import { UBAFeeCalculator, UBAFeeResult, UBAFlowRange, UBASpokeBalanceType } from ".";
 import { SpokePoolClient } from "../../clients";
-import { UbaRunningRequest, UbaFlow } from "../../interfaces";
+import { UbaFlow } from "../../interfaces";
 import UBAConfig from "./UBAFeeConfig";
 
 // This file holds the UBA Fee Calculator class with refresh. The goal of this class modify the UBA Fee Calculator class
@@ -51,7 +51,7 @@ export default class UBAFeeCalculatorWithRefresh extends UBAFeeCalculator {
     await fn(this.destinationSpokeClient, this.destinationSpoke);
   }
 
-  public async getUBAFee(action: UbaRunningRequest, flowRange?: UBAFlowRange): Promise<UBAFeeResult> {
+  public async getUBAFee(amount: BigNumber, flowRange?: UBAFlowRange): Promise<UBAFeeResult> {
     // First verify that both the last validated running balance and the runningBalance is
     // set to a non-undefined value
     if (
@@ -61,7 +61,7 @@ export default class UBAFeeCalculatorWithRefresh extends UBAFeeCalculator {
       await this.updateRunningBalance();
     }
     // Call the super class getUBAFee function
-    return super.getUBAFee(action, flowRange);
+    return super.getUBAFee(amount, flowRange);
   }
 
   // THE FOLLOWING FUNCTIONS BELOW WILL BE REMOVED BY THE CODE WRITTEN BY @pxrl
