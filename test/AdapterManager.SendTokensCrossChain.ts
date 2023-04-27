@@ -24,9 +24,6 @@ let l1OptimismBridge: FakeContract, l1OptimismDaiBridge: FakeContract;
 // Polygon contracts
 let l1PolygonRootChainManager: FakeContract;
 
-// Boba contracts
-let l1BobaBridge: FakeContract;
-
 // Arbitrum contracts
 let l1ArbitrumBridge: FakeContract;
 
@@ -152,46 +149,6 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       amountToSend // amount
     );
   });
-  it("Correctly sends tokens to chain: Boba", async function () {
-    const chainId = 288; // Boba ChainId
-    //  ERC20 tokens:
-    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["usdc"], amountToSend);
-    expect(l1BobaBridge.depositERC20).to.have.been.calledWith(
-      mainnetTokens["usdc"], // l1 token
-      getL2TokenAddresses(mainnetTokens["usdc"])[chainId], // l2 token
-      amountToSend, // amount
-      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
-      "0x" // data
-    );
-
-    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["wbtc"], amountToSend);
-    expect(l1BobaBridge.depositERC20).to.have.been.calledWith(
-      mainnetTokens["wbtc"], // l1 token
-      getL2TokenAddresses(mainnetTokens["wbtc"])[chainId], // l2 token
-      amountToSend, // amount
-      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
-      "0x" // data
-    );
-
-    // Note that on boba Dai is a  ERC20
-    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["dai"], amountToSend);
-    expect(l1BobaBridge.depositERC20).to.have.been.calledWith(
-      mainnetTokens["dai"], // l1 token
-      getL2TokenAddresses(mainnetTokens["dai"])[chainId], // l2 token
-      amountToSend, // amount
-      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
-      "0x" // data
-    );
-
-    // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
-    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens["weth"], amountToSend);
-    expect(l1AtomicDepositor.bridgeWethToOvm).to.have.been.calledWith(
-      relayer.address, // to
-      amountToSend, // amount
-      (adapterManager.adapters[chainId] as any).l2Gas, // l2Gas
-      chainId // chainId
-    );
-  });
 
   it("Correctly sends tokens to chain: Arbitrum", async function () {
     const chainId = 42161; // Boba ChainId
@@ -265,9 +222,6 @@ async function constructChainSpecificFakes() {
 
   // Polygon contracts
   l1PolygonRootChainManager = await makeFake("polygonL1RootChainManager", "0xA0c68C638235ee32657e8f720a23ceC1bFc77C77");
-
-  // Boba contracts
-  l1BobaBridge = await makeFake("ovmL1Bridge", "0xdc1664458d2f0B6090bEa60A8793A4E66c2F1c00");
 
   // Arbitrum contracts
   l1ArbitrumBridge = await makeFake("arbitrumL1Erc20Gateway", "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef");

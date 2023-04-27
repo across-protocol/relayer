@@ -1,38 +1,28 @@
 import * as optimismSDK from "@eth-optimism/sdk";
-import * as bobaSDK from "@across-protocol/boba-sdk";
 import { Withdrawal } from "..";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { L1Token, TokensBridged } from "../../interfaces";
 import { convertFromWei, ethers, getNodeUrlList, groupObjectCountsByProp, Wallet, winston } from "../../utils";
 import { Multicall2Call } from "../../common";
 
-type OVM_CHAIN_ID = 10 | 288;
-type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger | bobaSDK.CrossChainMessenger;
+type OVM_CHAIN_ID = 10;
+type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
 
 export function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Wallet): OVM_CROSS_CHAIN_MESSENGER {
-  if (chainId === 288) {
-    return new bobaSDK.CrossChainMessenger({
-      l1ChainId: 1,
-      l1SignerOrProvider: hubSigner.connect(new ethers.providers.JsonRpcProvider(getNodeUrlList(1)[0])),
-      l2SignerOrProvider: hubSigner.connect(new ethers.providers.JsonRpcProvider(getNodeUrlList(chainId)[0])),
-      contracts: { ...bobaSDK.CONTRACT_ADDRESSES[1] }, // Override with Boba system addresses
-    });
-  } else {
-    return new optimismSDK.CrossChainMessenger({
-      l1ChainId: 1,
-      l2ChainId: chainId,
-      l1SignerOrProvider: hubSigner.connect(new ethers.providers.JsonRpcProvider(getNodeUrlList(1)[0])),
-      l2SignerOrProvider: hubSigner.connect(new ethers.providers.JsonRpcProvider(getNodeUrlList(chainId)[0])),
-    });
-  }
+  return new optimismSDK.CrossChainMessenger({
+    l1ChainId: 1,
+    l2ChainId: chainId,
+    l1SignerOrProvider: hubSigner.connect(new ethers.providers.JsonRpcProvider(getNodeUrlList(1)[0])),
+    l2SignerOrProvider: hubSigner.connect(new ethers.providers.JsonRpcProvider(getNodeUrlList(chainId)[0])),
+  });
 }
 
 export interface CrossChainMessageWithEvent {
   event: TokensBridged;
-  message: optimismSDK.MessageLike | bobaSDK.MessageLike;
+  message: optimismSDK.MessageLike;
 }
 export async function getCrossChainMessages(
-  chainId: OVM_CHAIN_ID,
+  _chainId: OVM_CHAIN_ID,
   tokensBridged: TokensBridged[],
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER
 ): Promise<CrossChainMessageWithEvent[]> {
@@ -53,7 +43,7 @@ export async function getCrossChainMessages(
         async (l2Event, i) =>
           (
             await crossChainMessenger.getMessagesByTransaction(l2Event.transactionHash, {
-              direction: chainId === 10 ? optimismSDK.MessageDirection.L2_TO_L1 : bobaSDK.MessageDirection.L2_TO_L1,
+              direction: optimismSDK.MessageDirection.L2_TO_L1,
             })
           )[logIndexesForMessage[i]]
       )
@@ -70,41 +60,24 @@ export interface CrossChainMessageWithStatus extends CrossChainMessageWithEvent 
   status: string;
 }
 export async function getMessageStatuses(
-  chainId: OVM_CHAIN_ID,
+  _chainId: OVM_CHAIN_ID,
   crossChainMessages: CrossChainMessageWithEvent[],
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER
 ): Promise<CrossChainMessageWithStatus[]> {
-  if (chainId === 288) {
-    const statuses = await Promise.all(
-      crossChainMessages.map((message) => {
-        return (crossChainMessenger as bobaSDK.CrossChainMessenger).getMessageStatus(
-          message.message as bobaSDK.MessageLike
-        );
-      })
-    );
-    return statuses.map((status, i) => {
-      return {
-        status: bobaSDK.MessageStatus[status],
-        message: crossChainMessages[i].message,
-        event: crossChainMessages[i].event,
-      };
-    });
-  } else {
-    const statuses = await Promise.all(
-      crossChainMessages.map((message) => {
-        return (crossChainMessenger as optimismSDK.CrossChainMessenger).getMessageStatus(
-          message.message as optimismSDK.MessageLike
-        );
-      })
-    );
-    return statuses.map((status, i) => {
-      return {
-        status: optimismSDK.MessageStatus[status],
-        message: crossChainMessages[i].message,
-        event: crossChainMessages[i].event,
-      };
-    });
-  }
+  const statuses = await Promise.all(
+    crossChainMessages.map((message) => {
+      return (crossChainMessenger as optimismSDK.CrossChainMessenger).getMessageStatus(
+        message.message as optimismSDK.MessageLike
+      );
+    })
+  );
+  return statuses.map((status, i) => {
+    return {
+      status: optimismSDK.MessageStatus[status],
+      message: crossChainMessages[i].message,
+      event: crossChainMessages[i].event,
+    };
+  });
 }
 
 export async function getOptimismFinalizableMessages(
@@ -120,15 +93,9 @@ export async function getOptimismFinalizableMessages(
     message: `${chainId === 10 ? "Optimism" : "Boba"} message statuses`,
     statusesGrouped: groupObjectCountsByProp(messageStatuses, (message: CrossChainMessageWithStatus) => message.status),
   });
-  if (chainId == 10) {
-    return messageStatuses.filter(
-      (message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]
-    );
-  } else {
-    return messageStatuses.filter(
-      (message) => message.status === bobaSDK.MessageStatus[bobaSDK.MessageStatus.READY_FOR_RELAY]
-    );
-  }
+  return messageStatuses.filter(
+    (message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]
+  );
 }
 
 export function getL1TokenInfoForOptimismToken(
@@ -143,27 +110,17 @@ export function getL1TokenInfoForOptimismToken(
 }
 
 export async function finalizeOptimismMessage(
-  chainId: OVM_CHAIN_ID,
+  _chainId: OVM_CHAIN_ID,
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER,
   message: CrossChainMessageWithStatus
 ): Promise<Multicall2Call> {
-  if (chainId === 10) {
-    const callData = await (crossChainMessenger as optimismSDK.CrossChainMessenger).populateTransaction.finalizeMessage(
-      message.message as optimismSDK.MessageLike
-    );
-    return {
-      callData: callData.data,
-      target: callData.to,
-    };
-  } else {
-    const callData = await (crossChainMessenger as bobaSDK.CrossChainMessenger).populateTransaction.finalizeMessage(
-      message.message as bobaSDK.MessageLike
-    );
-    return {
-      callData: callData.data,
-      target: callData.to,
-    };
-  }
+  const callData = await (crossChainMessenger as optimismSDK.CrossChainMessenger).populateTransaction.finalizeMessage(
+    message.message as optimismSDK.MessageLike
+  );
+  return {
+    callData: callData.data,
+    target: callData.to,
+  };
 }
 
 export async function multicallOptimismFinalizations(
