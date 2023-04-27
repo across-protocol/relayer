@@ -1,9 +1,8 @@
 import { BigNumber } from "ethers";
 import { Logger } from "winston";
-import { UBAFeeCalculator, UBAFeeResult, UBAFlowRange, UBASpokeBalanceType } from ".";
 import { SpokePoolClient } from "../../clients";
-import { UbaFlow } from "../../interfaces";
-import UBAConfig from "./UBAFeeConfig";
+import { UBAFeeResult, UBAFlowRange, UBASpokeBalanceType, UbaFlow } from "../../interfaces";
+import { ubaFeeCalculator } from "@across-protocol/sdk-v2";
 
 // This file holds the UBA Fee Calculator class with refresh. The goal of this class modify the UBA Fee Calculator class
 // by adding the ability to refresh the running balance of the spoke pool. This is done by fetching the most recent
@@ -16,12 +15,12 @@ import UBAConfig from "./UBAFeeConfig";
  * @description UBA Fee Calculator with Refresh by use of two spoke pool clients
  * @author Across Bots Team
  */
-export default class UBAFeeCalculatorWithRefresh extends UBAFeeCalculator {
+export default class UBAFeeCalculatorWithRefresh extends ubaFeeCalculator.UBAFeeCalculator {
   private originSpokeClient: SpokePoolClient;
   private destinationSpokeClient: SpokePoolClient;
 
   constructor(
-    config: UBAConfig,
+    config: ubaFeeCalculator.UBAFeeConfig,
     logger: Logger,
     originSpokeClient: SpokePoolClient,
     destinationSpokeClient: SpokePoolClient
