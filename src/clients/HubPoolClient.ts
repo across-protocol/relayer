@@ -1,5 +1,5 @@
 import { assign, Contract, winston, BigNumber, ERC20, EventSearchConfig, MakeOptional, BigNumberish } from "../utils";
-import { sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
+import { fetchTokenInfo, sortEventsDescending, spreadEvent, spreadEventWithBlockNumber, paginatedEventQuery, toBN } from "../utils";
 import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
 import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle, LpToken } from "../interfaces";
 import { ExecutedRootBundle, PendingRootBundle, ProposedRootBundle } from "../interfaces";
@@ -494,7 +494,7 @@ export class HubPoolClient {
     // Filter out any duplicate addresses. This might happen due to enabling, disabling and re-enabling a token.
     const uniqueL1Tokens = [...new Set(l1TokensLpEvents.map((event) => spreadEvent(event.args).l1Token))];
     const [tokenInfo, lpTokenInfo] = await Promise.all([
-      Promise.all(uniqueL1Tokens.map((l1Token: string) => this.fetchTokenInfoFromContract(l1Token))),
+      Promise.all(uniqueL1Tokens.map((l1Token: string) => fetchTokenInfoFromContract(l1Token, this.hubPool.signer))),
       Promise.all(uniqueL1Tokens.map(async (l1Token: string) => await this.hubPool.pooledTokens(l1Token))),
     ]);
     for (const info of tokenInfo) {
@@ -568,12 +568,6 @@ export class HubPoolClient {
     this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
 
     this.logger.debug({ at: "HubPoolClient", message: "HubPool client updated!" });
-  }
-
-  private async fetchTokenInfoFromContract(address: string): Promise<L1Token> {
-    const token = new Contract(address, ERC20.abi, this.hubPool.signer);
-    const [symbol, decimals] = await Promise.all([token.symbol(), token.decimals()]);
-    return { address, symbol, decimals };
   }
 
   // Returns end block for `chainId` in ProposedRootBundle.bundleBlockEvalNumbers. Looks up chainId
