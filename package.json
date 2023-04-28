@@ -1,6 +1,6 @@
 {
   "name": "relayer-v2",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Across Protocol V2 Relayer Bot",
   "repository": "git@github.com:across-protocol/relayer-v2.git",
   "author": "UMA Team",
@@ -10,8 +10,8 @@
     "node": ">=12.9.0"
   },
   "dependencies": {
-    "@across-protocol/contracts-v2": "2.1.0-beta.22",
-    "@across-protocol/sdk-v2": "0.5.0-beta.21",
+    "@across-protocol/contracts-v2": "2.2.0",
+    "@across-protocol/sdk-v2": "0.5.2",
     "@arbitrum/sdk": "^3.1.2",
     "@defi-wonderland/smock": "^2.3.4",
     "@eth-optimism/sdk": "^2.0.1",
