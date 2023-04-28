@@ -4,9 +4,10 @@ import { HardhatUserConfig } from "hardhat/config";
 import { getNodeUrl, getMnemonic } from "@uma/common";
 
 // Custom tasks to add to HRE.
-// @dev: Temporarily commenting out tasks to minimize amount of files imported and executed at compile time
+// FIXME: Temporarily commenting out tasks to minimize amount of files imported and executed at compile time
 // to construct the Hardhat Runtime Environment. Generally we'd prefer to keep the HRE construction
 // lightweight and put runnable scripts in the `scripts` directory rather than add as an HRE task.
+// TODO: Figure out which imported module in `./tasks` is causing HRE construction to fail.
 // require("./tasks");
 
 import "@nomiclabs/hardhat-etherscan";
