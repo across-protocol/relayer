@@ -10,8 +10,8 @@
     "node": ">=12.9.0"
   },
   "dependencies": {
-    "@across-protocol/contracts-v2": "2.2.0",
-    "@across-protocol/sdk-v2": "0.5.2",
+    "@across-protocol/contracts-v2": "2.2.1",
+    "@across-protocol/sdk-v2": "0.5.3",
     "@arbitrum/sdk": "^3.1.2",
     "@defi-wonderland/smock": "^2.3.4",
     "@eth-optimism/sdk": "^2.0.1",
