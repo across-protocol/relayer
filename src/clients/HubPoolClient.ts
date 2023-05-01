@@ -15,7 +15,7 @@ import { ExecutedRootBundle, PendingRootBundle, ProposedRootBundle } from "../in
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
 import _ from "lodash";
 
-type HubPoolUpdate = {
+export type HubPoolUpdate = {
   success: boolean;
   currentTime: number;
   latestBlockNumber: number;
