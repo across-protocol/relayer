@@ -136,8 +136,9 @@ export class MultiCallerClient {
         errors: failedTxns,
       });
       throw new Error(
-        `Failed to execute ${failedChains.length} transaction(s) on chain(s) ${failedChains.join(", ")}`,
-        failedTxns
+        `Failed to execute ${failedChains.length} transaction(s) on chain(s) ${failedChains.join(
+          ", "
+        )}: ${JSON.stringify(failedTxns)}`
       );
     }
     // Recombine the results into a single object that match the legacy implementation.
