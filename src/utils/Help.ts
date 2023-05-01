@@ -4,9 +4,9 @@ export function usage(badInput: string | undefined = undefined): boolean {
 
   usageStr += `
     Usage:
-    \tts-node ./index.ts --help
-    \tts-node ./index.ts [-h] <--monitor|--relayer>      --wallet <${walletOpts}>
-    \tts-node ./index.tx [-h] <--dataworker|--finalizer> --wallet <${walletOpts}>
+    \tnode ./dist/index.js --help
+    \tnode ./dist/index.js [-h] <--monitor|--relayer>      --wallet <${walletOpts}>
+    \tnode ./dist/index.js [-h] <--dataworker|--finalizer> --wallet <${walletOpts}>
   `.slice(1); // Skip leading newline
 
   // eslint-disable-next-line no-console
