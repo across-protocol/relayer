@@ -117,7 +117,8 @@ export class MultiCallerClient {
         if (isPromiseFulfilled(result)) {
           return [chainId, { result: result.value.map((txnResponse) => txnResponse.hash), isError: false }];
         } else {
-          return [chainId, { result: result.reason, isError: true }];
+          // Don't mark transaction as failed if error reason is a known benign one.
+          return [chainId, { result: result.reason, isError: !knownRevertReasons.has(result.reason) }];
         }
       })
     );
@@ -125,18 +126,19 @@ export class MultiCallerClient {
     // We need to iterate over the results to determine if any of the transactions failed.
     // If any of the transactions failed, we need to log the results and throw an error. However, we want to
     // only log the results once, so we need to collate the results into a single object.
-    const failedChains = Object.entries(txnHashes)
-      .filter(([, { isError }]) => isError)
-      .map(([chainId]) => chainId);
-
+    const failedTxns = Object.entries(txnHashes).filter(([, { isError }]) => isError);
+    const failedChains = failedTxns.map(([chainId]) => chainId);
     if (failedChains.length > 0) {
       // Log the results.
       this.logger.error({
         at: "MultiCallerClient#executeTxnQueues",
         message: `Failed to execute ${failedChains.length} transaction(s) on chain(s) ${failedChains.join(", ")}`,
-        error: txnHashes,
+        errors: failedTxns,
       });
-      throw new Error(`Failed to execute ${failedChains.length} transaction(s) on chain(s) ${failedChains.join(", ")}`);
+      throw new Error(
+        `Failed to execute ${failedChains.length} transaction(s) on chain(s) ${failedChains.join(", ")}`,
+        failedTxns
+      );
     }
     // Recombine the results into a single object that match the legacy implementation.
     return Object.fromEntries(Object.entries(txnHashes).map(([chainId, { result }]) => [chainId, result]));
