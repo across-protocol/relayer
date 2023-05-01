@@ -2,7 +2,7 @@ import * as optimismSDK from "@eth-optimism/sdk";
 import { Withdrawal } from "..";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { L1Token, TokensBridged } from "../../interfaces";
-import { convertFromWei, ethers, getNodeUrlList, groupObjectCountsByProp, Wallet, winston } from "../../utils";
+import { convertFromWei, getCachedProvider, groupObjectCountsByProp, Wallet, winston } from "../../utils";
 import { Multicall2Call } from "../../common";
 
 type OVM_CHAIN_ID = 10;
@@ -12,8 +12,8 @@ export function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Wallet): OVM
   return new optimismSDK.CrossChainMessenger({
     l1ChainId: 1,
     l2ChainId: chainId,
-    l1SignerOrProvider: hubSigner.connect(new ethers.providers.JsonRpcProvider(getNodeUrlList(1)[0])),
-    l2SignerOrProvider: hubSigner.connect(new ethers.providers.JsonRpcProvider(getNodeUrlList(chainId)[0])),
+    l1SignerOrProvider: hubSigner.connect(getCachedProvider(1, true)),
+    l2SignerOrProvider: hubSigner.connect(getCachedProvider(10, true)),
   });
 }
 
