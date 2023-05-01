@@ -133,7 +133,7 @@ export class MultiCallerClient {
       this.logger.error({
         at: "MultiCallerClient#executeTxnQueues",
         message: `Failed to execute ${failedChains.length} transaction(s) on chain(s) ${failedChains.join(", ")}`,
-        errors: txnHashes,
+        error: txnHashes,
       });
       throw new Error(
         `Failed to execute ${failedChains.length} transaction(s) on chain(s) ${failedChains.join(
