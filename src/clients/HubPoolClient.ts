@@ -58,7 +58,7 @@ export class HubPoolClient {
 
   protected hubPoolEventFilters(): { [eventName: string]: EventFilter } {
     return {
-      SetPoolRebalanceRoot: this.hubPool.filters.SetPoolRebalanceRoute(),
+      SetPoolRebalanceRoute: this.hubPool.filters.SetPoolRebalanceRoute(),
       L1TokenEnabledForLiquidityProvision: this.hubPool.filters.L1TokenEnabledForLiquidityProvision(),
       ProposeRootBundle: this.hubPool.filters.ProposeRootBundle(),
       RootBundleCanceled: this.hubPool.filters.RootBundleCanceled(),
@@ -529,7 +529,7 @@ export class HubPoolClient {
       );
     }
 
-    for (const event of events["SetPoolRebalanceRoot"]) {
+    for (const event of events["SetPoolRebalanceRoute"]) {
       const args = spreadEventWithBlockNumber(event) as SetPoolRebalanceRoot;
       assign(this.l1TokensToDestinationTokens, [args.l1Token, args.destinationChainId], args.destinationToken);
       assign(
