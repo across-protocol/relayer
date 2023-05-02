@@ -61,7 +61,7 @@
     "relay": "node ./dist/index.js --relayer"
   },
   "devDependencies": {
-    "@nomiclabs/hardhat-ethers": "^2.2.2",
+    "@nomiclabs/hardhat-ethers": "^2.2.3",
     "@nomiclabs/hardhat-etherscan": "^3.1.7",
     "@nomiclabs/hardhat-waffle": "^2.0.5",
     "@typechain/ethers-v5": "^10.2.0",
