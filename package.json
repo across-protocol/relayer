@@ -7,7 +7,7 @@
   "license": "AGPL-3.0-only",
   "private": true,
   "engines": {
-    "node": ">=12.9.0"
+    "node": ">=16.18.0"
   },
   "dependencies": {
     "@across-protocol/contracts-v2": "2.2.1",
