@@ -99,7 +99,7 @@ export class MultiCallerClient {
     const chainIds = [...new Set(Object.keys(this.valueTxns).concat(Object.keys(this.txns)))];
 
     // One promise per chain for parallel execution.
-    const results = await Promise.allSettled(
+    const resultsByChain = await Promise.allSettled(
       chainIds.map((_chainId) => {
         const chainId = Number(_chainId);
         const txns: AugmentedTransaction[] | undefined = this.txns[chainId];
@@ -112,12 +112,12 @@ export class MultiCallerClient {
 
     // Collate the results for each chain.
     const txnHashes: Record<number, { result: string[]; isError: boolean }> = Object.fromEntries(
-      results.map((result, idx) => {
+      resultsByChain.map((chainResult, idx) => {
         const chainId = chainIds[idx];
-        if (isPromiseFulfilled(result)) {
-          return [chainId, { result: result.value.map((txnResponse) => txnResponse.hash), isError: false }];
+        if (isPromiseFulfilled(chainResult)) {
+          return [chainId, { result: chainResult.value.map((txnResponse) => txnResponse.hash), isError: false }];
         } else {
-          return [chainId, { result: result.reason, isError: true }];
+          return [chainId, { result: chainResult.reason, isError: true }];
         }
       })
     );
@@ -128,15 +128,18 @@ export class MultiCallerClient {
     const failedChains = Object.entries(txnHashes)
       .filter(([, { isError }]) => isError)
       .map(([chainId]) => chainId);
-
     if (failedChains.length > 0) {
       // Log the results.
       this.logger.error({
         at: "MultiCallerClient#executeTxnQueues",
         message: `Failed to execute ${failedChains.length} transaction(s) on chain(s) ${failedChains.join(", ")}`,
-        error: txnHashes,
+        error: failedChains.map((chainId) => txnHashes[chainId].result),
       });
-      throw new Error(`Failed to execute ${failedChains.length} transaction(s) on chain(s) ${failedChains.join(", ")}`);
+      throw new Error(
+        `Failed to execute ${failedChains.length} transaction(s) on chain(s) ${failedChains.join(
+          ", "
+        )}: ${JSON.stringify(txnHashes)}`
+      );
     }
     // Recombine the results into a single object that match the legacy implementation.
     return Object.fromEntries(Object.entries(txnHashes).map(([chainId, { result }]) => [chainId, result]));
