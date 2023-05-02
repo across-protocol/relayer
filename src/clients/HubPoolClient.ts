@@ -65,7 +65,6 @@ export class HubPoolClient {
     [l1Token: string]: { [destinationChainId: number]: DestinationTokenWithBlock[] };
   } = {};
   private pendingRootBundle: PendingRootBundle | undefined;
-  private deploymentBlock: number;
 
   public isUpdated = false;
   public firstBlockToSearch: number;
@@ -75,11 +74,11 @@ export class HubPoolClient {
   constructor(
     readonly logger: winston.Logger,
     readonly hubPool: Contract,
+    public deploymentBlock: number = 0,
     readonly chainId: number = 1,
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
-    this.deploymentBlock = Number(getDeploymentBlockNumber("HubPool", this.chainId));
   }
 
   protected hubPoolEventFilters(): Record<HubPoolEvent, EventFilter> {
@@ -486,9 +485,14 @@ export class HubPoolClient {
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
     const truncatedSearchConfig = {
-      fromBlock: this.firstBlockToSearch,
       ...searchConfig,
+      fromBlock: this.firstBlockToSearch,
     };
+    this.logger.debug({
+      at: "HubPoolClient",
+      message: "Updating HubPool client",
+      searchConfig: { ...searchConfig, truncatedFromBlock: truncatedSearchConfig.fromBlock },
+    });
     if (searchConfig.fromBlock > searchConfig.toBlock) {
       this.logger.warn("Invalid update() searchConfig.", { searchConfig });
       return { success: false };
