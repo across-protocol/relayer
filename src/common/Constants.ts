@@ -21,6 +21,9 @@ export const RELAYER_MIN_FEE_PCT = 0.0003;
 // Target ~4 hours
 export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 
+// Target ~7 days
+export const MAX_HUB_POOL_CLIENT_LOOK_BACK = 7 * 24 * 60 * 60;
+
 // Target ~4 days per chain. Should cover all events needed to construct pending bundle.
 export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   1: 28800,

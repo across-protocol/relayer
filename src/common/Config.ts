@@ -15,6 +15,7 @@ export class CommonConfig {
   readonly sendingTransactionsEnabled: boolean;
   readonly bundleRefundLookback: number;
   readonly maxRelayerLookBack: number;
+  readonly maxHubPoolLookBack: number;
   readonly multiCallChunkSize: { [chainId: number]: number };
   readonly version: string;
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
@@ -24,6 +25,7 @@ export class CommonConfig {
   constructor(env: ProcessEnv) {
     const {
       MAX_RELAYER_DEPOSIT_LOOK_BACK,
+      MAX_HUB_POOL_CLIENT_LOOK_BACK,
       BLOCK_RANGE_END_BLOCK_BUFFER,
       HUB_CHAIN_ID,
       POLLING_DELAY,
@@ -64,6 +66,7 @@ export class CommonConfig {
 
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
+    this.maxHubPoolLookBack = Number(MAX_HUB_POOL_CLIENT_LOOK_BACK ?? Constants.MAX_HUB_POOL_CLIENT_LOOK_BACK);
     this.hubPoolChainId = Number(HUB_CHAIN_ID ?? 1);
     this.pollingDelay = Number(POLLING_DELAY ?? 60);
     this.spokePoolChainsOverride = SPOKE_POOL_CHAINS_OVERRIDE ? JSON.parse(SPOKE_POOL_CHAINS_OVERRIDE) : [];

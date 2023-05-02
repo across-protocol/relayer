@@ -1,4 +1,13 @@
-import { assign, Contract, winston, BigNumber, EventSearchConfig, MakeOptional, BigNumberish } from "../utils";
+import {
+  assign,
+  Contract,
+  winston,
+  BigNumber,
+  EventSearchConfig,
+  MakeOptional,
+  BigNumberish,
+  getDeploymentBlockNumber,
+} from "../utils";
 import {
   fetchTokenInfo,
   Event,
@@ -35,6 +44,10 @@ type HubPoolEvent =
   | "RootBundleExecuted"
   | "CrossChainContractsSet";
 
+const FixedLookbackEvents: HubPoolEvent[] = [
+  "RootBundleExecuted",
+]
+
 type L1TokensToDestinationTokens = {
   [l1Token: string]: { [destinationChainId: number]: string };
 };
@@ -52,6 +65,7 @@ export class HubPoolClient {
     [l1Token: string]: { [destinationChainId: number]: DestinationTokenWithBlock[] };
   } = {};
   private pendingRootBundle: PendingRootBundle | undefined;
+  private deploymentBlock: number;
 
   public isUpdated = false;
   public firstBlockToSearch: number;
@@ -65,6 +79,7 @@ export class HubPoolClient {
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
+    this.deploymentBlock = Number(getDeploymentBlockNumber("HubPool", this.chainId));
   }
 
   protected hubPoolEventFilters(): Record<HubPoolEvent, EventFilter> {
@@ -470,6 +485,10 @@ export class HubPoolClient {
       toBlock: this.eventSearchConfig.toBlock || latestBlockNumber,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
+    const truncatedSearchConfig = {
+      fromBlock: this.firstBlockToSearch,
+      ...searchConfig,
+    };
     if (searchConfig.fromBlock > searchConfig.toBlock) {
       this.logger.warn("Invalid update() searchConfig.", { searchConfig });
       return { success: false };
@@ -478,14 +497,23 @@ export class HubPoolClient {
     this.logger.debug({
       at: "HubPoolClient",
       message: "Updating HubPool client",
-      searchConfig,
+      searchConfig: {
+        ...searchConfig,
+        truncatedFromBlock: truncatedSearchConfig.fromBlock
+      },
       eventNames,
     });
     const timerStart = Date.now();
     const [currentTime, pendingRootBundleProposal, ...events] = await Promise.all([
       this.hubPool.getCurrentTime(),
       this.hubPool.rootBundleProposal(),
-      ...eventNames.map((eventName) => paginatedEventQuery(this.hubPool, hubPoolEvents[eventName], searchConfig)),
+      ...eventNames.map((eventName) =>
+        paginatedEventQuery(
+          this.hubPool,
+          hubPoolEvents[eventName],
+          FixedLookbackEvents.includes(eventName) ? truncatedSearchConfig : searchConfig
+        )
+      ),
     ]);
     this.logger.debug({
       at: "HubPoolClient#_update",

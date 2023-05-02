@@ -235,8 +235,15 @@ export async function constructClients(
 
   const configStore = getDeployedContract("AcrossConfigStore", config.hubPoolChainId, hubSigner);
 
+  const currentTime = getCurrentTime();
+  const fromBlock_1 = await getBlockForTimestamp(
+    config.hubPoolChainId,
+    config.hubPoolChainId,
+    currentTime - config.maxHubPoolLookBack,
+    currentTime
+  );
   const hubPoolClientSearchSettings = {
-    fromBlock: Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId)),
+    fromBlock: fromBlock_1,
     toBlock: undefined, // Important that we set this to `undefined` to always look up latest HubPool events such as
     // ProposeRootBundle in order to match a bundle block evaluation block range with a pending root bundle.
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
