@@ -179,7 +179,6 @@ export class MultiCallerClient {
       await this.buildMultiCallBundles(_txns, this.chunkSize[chainId])
     );
 
-
     if (simulate) {
       let mrkdwn = "";
       txnRequests.forEach((txn, idx) => {
