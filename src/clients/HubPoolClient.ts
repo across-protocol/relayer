@@ -1,13 +1,4 @@
-import {
-  assign,
-  Contract,
-  winston,
-  BigNumber,
-  EventSearchConfig,
-  MakeOptional,
-  BigNumberish,
-  getDeploymentBlockNumber,
-} from "../utils";
+import { assign, Contract, winston, BigNumber, EventSearchConfig, MakeOptional, BigNumberish } from "../utils";
 import {
   fetchTokenInfo,
   Event,
