@@ -25,6 +25,15 @@ type _HubPoolUpdate = {
 };
 export type HubPoolUpdate = { success: false } | _HubPoolUpdate;
 
+type HubPoolEvent = "SetPoolRebalanceRoute"
+  | "SetPoolRebalanceRoute"
+  | "L1TokenEnabledForLiquidityProvision"
+  | "ProposeRootBundle"
+  | "RootBundleCanceled"
+  | "RootBundleDisputed"
+  | "RootBundleExecuted"
+  | "CrossChainContractsSet";
+
 type L1TokensToDestinationTokens = {
   [l1Token: string]: { [destinationChainId: number]: string };
 };
@@ -57,7 +66,7 @@ export class HubPoolClient {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
   }
 
-  protected hubPoolEventFilters(): { [eventName: string]: EventFilter } {
+  protected hubPoolEventFilters(): Record<HubPoolEvent, EventFilter> {
     return {
       SetPoolRebalanceRoute: this.hubPool.filters.SetPoolRebalanceRoute(),
       L1TokenEnabledForLiquidityProvision: this.hubPool.filters.L1TokenEnabledForLiquidityProvision(),
@@ -451,7 +460,7 @@ export class HubPoolClient {
     }
   }
 
-  async _update(eventNames: string[]): Promise<HubPoolUpdate> {
+  async _update(eventNames: HubPoolEvent[]): Promise<HubPoolUpdate> {
     const latestBlockNumber = await this.hubPool.provider.getBlockNumber();
     const hubPoolEvents = this.hubPoolEventFilters();
 
@@ -494,8 +503,8 @@ export class HubPoolClient {
     };
   }
 
-  async update(eventsToQuery?: string[]): Promise<void> {
-    eventsToQuery ??= Object.keys(this.hubPoolEventFilters()); // Default to querying all HubPool events.
+  async update(eventsToQuery?: HubPoolEvent[]): Promise<void> {
+    eventsToQuery ??= Object.keys(this.hubPoolEventFilters()) as HubPoolEvent[]; // Query all events by default.
 
     const update = await this._update(eventsToQuery);
     if (!update.success) {
