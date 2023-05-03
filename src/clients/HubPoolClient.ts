@@ -15,14 +15,15 @@ import { ExecutedRootBundle, PendingRootBundle, ProposedRootBundle } from "../in
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
 import _ from "lodash";
 
-export type HubPoolUpdate = {
-  success: boolean;
+type _HubPoolUpdate = {
+  success: true;
   currentTime: number;
   latestBlockNumber: number;
   pendingRootBundleProposal: PendingRootBundle;
   events: Record<string, Event[]>;
   searchEndBlock: number;
 };
+export type HubPoolUpdate = { success: false } | _HubPoolUpdate;
 
 type L1TokensToDestinationTokens = {
   [l1Token: string]: { [destinationChainId: number]: string };
@@ -461,14 +462,7 @@ export class HubPoolClient {
     };
     if (searchConfig.fromBlock > searchConfig.toBlock) {
       this.logger.warn("Invalid update() searchConfig.", { searchConfig });
-      return {
-        success: false,
-        currentTime: this.currentTime,
-        latestBlockNumber: this.latestBlockNumber,
-        pendingRootBundleProposal: this.pendingRootBundle,
-        searchEndBlock: searchConfig.fromBlock - 1,
-        events: {},
-      };
+      return { success: false };
     }
 
     this.logger.debug({
@@ -503,15 +497,14 @@ export class HubPoolClient {
   async update(eventsToQuery?: string[]): Promise<void> {
     eventsToQuery ??= Object.keys(this.hubPoolEventFilters()); // Default to querying all HubPool events.
 
-    const { events, currentTime, latestBlockNumber, pendingRootBundleProposal, ...update } = await this._update(
-      eventsToQuery
-    );
+    const update = await this._update(eventsToQuery);
     if (!update.success) {
       // This failure only occurs if the RPC searchConfig is miscomputed, and has only been seen in the hardhat test
       // environment. Normal failures will throw instead. This is therefore an unfortunate workaround until we can
       // understand why we see this in test. @todo: Resolve.
       return;
     }
+    const { events, currentTime, latestBlockNumber, pendingRootBundleProposal } = update;
 
     for (const event of events["CrossChainContractsSet"]) {
       const args = spreadEventWithBlockNumber(event) as CrossChainContractsSet;
