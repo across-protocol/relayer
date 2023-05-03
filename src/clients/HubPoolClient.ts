@@ -35,9 +35,7 @@ type HubPoolEvent =
   | "RootBundleExecuted"
   | "CrossChainContractsSet";
 
-const FixedLookbackEvents: HubPoolEvent[] = [
-  "RootBundleExecuted",
-]
+const FixedLookbackEvents: HubPoolEvent[] = ["RootBundleExecuted", "ProposeRootBundle"];
 
 type L1TokensToDestinationTokens = {
   [l1Token: string]: { [destinationChainId: number]: string };
@@ -529,7 +527,7 @@ export class HubPoolClient {
       message: "Updating HubPool client",
       searchConfig: {
         ...searchConfig,
-        truncatedFromBlock: truncatedSearchConfig.fromBlock
+        truncatedFromBlock: truncatedSearchConfig.fromBlock,
       },
       eventNames,
     });
