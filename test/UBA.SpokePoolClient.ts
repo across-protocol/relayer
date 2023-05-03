@@ -23,7 +23,7 @@ import {
   toBN,
   toBNWei,
 } from "./utils";
-import { MockSpokePoolClient } from "./mocks/MockSpokePoolClient";
+import { MockSpokePoolClient } from "./mocks";
 
 type Event = ethers.Event;
 
