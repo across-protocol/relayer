@@ -6,7 +6,7 @@ type Block = ethers.providers.Block;
 type TransactionResponse = ethers.providers.TransactionResponse;
 type TransactionReceipt = ethers.providers.TransactionReceipt;
 
-export type EthersEventTemplate = {
+type EthersEventTemplate = {
   address: string;
   event: string;
   topics: string[];
@@ -28,6 +28,12 @@ export class EventManager {
 
     let { blockNumber, transactionIndex } = inputs;
 
+    blockNumber ??= random(1, 100_000, false);
+    transactionIndex ??= random(1, 32, false);
+    const transactionHash = ethers.utils.id(
+      `Across-v2-${event}-${blockNumber}-${transactionIndex}-${random(1, 100_000)}`
+    );
+
     const _logIndex = `${blockNumber}-${transactionIndex}`;
     this.logIndexes[_logIndex] ??= 0;
     const logIndex = this.logIndexes[_logIndex]++;
@@ -46,12 +52,6 @@ export class EventManager {
     const removeListener = (): void => {
       return;
     };
-
-    blockNumber ??= random(1, 100_000, false);
-    transactionIndex ??= random(1, 32, false);
-    const transactionHash = ethers.utils.id(
-      `Across-v2-${event}-${blockNumber}-${transactionIndex}-${random(1, 100_000)}`
-    );
 
     return {
       blockNumber,
