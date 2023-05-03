@@ -518,7 +518,7 @@ export class HubPoolClient {
       searchConfig: { ...searchConfig, truncatedFromBlock: truncatedSearchConfig.fromBlock },
     });
     if (searchConfig.fromBlock > searchConfig.toBlock) {
-      this.logger.warn("Invalid update() searchConfig.", { searchConfig });
+      this.logger.warn({ at: "HubPoolClient#_update", message: "Invalid update() searchConfig.", searchConfig });
       return { success: false };
     }
 
