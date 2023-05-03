@@ -62,7 +62,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
 
     // Generate new "on chain" responses.
     const latestBlockNumber = this.latestBlockNumber + random(this.minBlockRange, this.minBlockRange * 5, false);
-    const currentTime = Date.now() / 1000;
+    const currentTime = Math.floor(Date.now() / 1000);
 
     // Ensure an array for every requested event exists, in the requested order.
     // All requested event types must be populated in the array (even if empty).
