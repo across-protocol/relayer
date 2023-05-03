@@ -25,7 +25,8 @@ type _HubPoolUpdate = {
 };
 export type HubPoolUpdate = { success: false } | _HubPoolUpdate;
 
-type HubPoolEvent = "SetPoolRebalanceRoute"
+type HubPoolEvent =
+  | "SetPoolRebalanceRoute"
   | "SetPoolRebalanceRoute"
   | "L1TokenEnabledForLiquidityProvision"
   | "ProposeRootBundle"
