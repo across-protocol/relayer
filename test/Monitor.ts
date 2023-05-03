@@ -120,6 +120,8 @@ describe("Monitor", async function () {
       tokenTransferClient,
       crossChainTransferClient,
     });
+
+    await updateAllClients();
   });
 
   it("Monitor should log when an unknown disputer proposes or disputes a root bundle", async function () {
@@ -134,12 +136,14 @@ describe("Monitor", async function () {
     await hubPool
       .connect(dataworker)
       .proposeRootBundle(bundleBlockEvalNumbers, 1, mockTreeRoot, mockTreeRoot, mockTreeRoot);
+    await updateAllClients();
     await monitorInstance.update();
 
     await monitorInstance.checkUnknownRootBundleCallers();
     expect(lastSpyLogIncludes(spy, unknownProposerMessage)).to.be.true;
 
     await hubPool.connect(dataworker).disputeRootBundle();
+    await updateAllClients();
     await monitorInstance.update();
     await monitorInstance.checkUnknownRootBundleCallers();
 
@@ -208,6 +212,7 @@ describe("Monitor", async function () {
     await multiCallerClient.executeTransactionQueue();
 
     // While the new bundle is still pending, refunds are in the "next" category
+    await updateAllClients();
     await monitorInstance.update();
     let reports = monitorInstance.initializeBalanceReports(
       monitorInstance.monitorConfig.monitoredRelayers,
@@ -222,6 +227,7 @@ describe("Monitor", async function () {
     await executeBundle(hubPool);
 
     // Before relayer refund leaves are executed, the refund is now in the pending column
+    await updateAllClients();
     await monitorInstance.update();
     reports = monitorInstance.initializeBalanceReports(
       monitorInstance.monitorConfig.monitoredRelayers,
@@ -311,6 +317,7 @@ describe("Monitor", async function () {
       l1Token.address,
       toBN(5)
     );
+    await updateAllClients();
     await monitorInstance.update();
     await monitorInstance.checkStuckRebalances();
 
