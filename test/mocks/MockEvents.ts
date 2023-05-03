@@ -19,13 +19,13 @@ export type EthersEventTemplate = {
 export class EventManager {
   private logIndexes: Record<string, number> = {};
 
-  constructor(
-    public readonly eventSignatures: Record<string, string>,
-    public readonly topics: Record<string, string>
-  ) {}
+  constructor(public readonly eventSignatures: Record<string, string>) {}
 
   generateEvent(inputs: EthersEventTemplate): Event {
-    const { address, event, topics, data, args } = inputs;
+    const { address, event, _topics, data, args } = inputs;
+    const eventSignature = `${event}(${this.eventSignatures[event]})`;
+    const topics = [ethers.utils.keccak256(ethers.utils.toUtf8Bytes(eventSignature))].concat(_topics);
+
     let { blockNumber, transactionIndex } = inputs;
 
     const _logIndex = `${blockNumber}-${transactionIndex}`;
@@ -61,11 +61,11 @@ export class EventManager {
       removed: false,
       address,
       data: data ?? ethers.utils.id(`Across-v2-random-txndata-${random(1, 100_000)}`),
-      topics: [this.topics[event]].concat(topics),
+      topics,
       args,
       blockHash: ethers.utils.id(`Across-v2-blockHash-${random(1, 100_000)}`),
       event,
-      eventSignature: `${event}(${this.eventSignatures[event]})`,
+      eventSignature,
       decodeError,
       getBlock,
       getTransaction,

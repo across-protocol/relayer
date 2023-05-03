@@ -17,7 +17,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
   constructor(logger: winston.Logger, spokePool: Contract, chainId: number, deploymentBlock: number) {
     super(logger, spokePool, null, chainId, deploymentBlock);
     this.latestBlockNumber = deploymentBlock;
-    this.eventManager = new EventManager(this.eventSignatures, this.topics);
+    this.eventManager = new EventManager(this.eventSignatures);
   }
 
   addEvent(event: Event): void {
@@ -87,14 +87,6 @@ export class MockSpokePoolClient extends SpokePoolClient {
     FilledRelay: "uint256,uint256,uint256,int64,uint32,uint32,address,address,address,bytes",
     FundsDeposited: "uint256,uint256,uint256,int64,uint32,uint32,address,address,address,bytes",
     RefundRequested: "address,address,uint256,uint256,uint256,int64,uint32,uint256,uint256",
-  };
-
-  // Event topics. Not strictly required, but they make generated events more recognisable.
-  public readonly topics: Record<string, string> = {
-    EnabledDepositRoute: "0x0a21fdd43d0ad0c62689ee7230a47309a050755bcc52eba00310add65297692a",
-    FilledRelay: "0x8ab9dc6c19fe88e69bc70221b339c84332752fdd49591b7c51e66bae3947b73c",
-    FundsDeposited: "0xafc4df6845a4ab948b492800d3d8a25d538a102a2bc07cd01f1cfa097fddcff6",
-    RefundRequested: "XXX",
   };
 
   generateDeposit(deposit: DepositWithBlock): Event {
