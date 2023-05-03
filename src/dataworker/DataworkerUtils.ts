@@ -434,7 +434,7 @@ export async function _buildPoolRebalanceRoot(
 
   // Add to the running balance value from the last valid root bundle proposal for {chainId, l1Token}
   // combination if found.
-  addLastRunningBalance(latestMainnetBlock, runningBalances, clients.hubPoolClient);
+  await addLastRunningBalance(latestMainnetBlock, runningBalances, clients.hubPoolClient);
 
   const leaves: PoolRebalanceLeaf[] = constructPoolRebalanceLeaves(
     mainnetBundleEndBlock,

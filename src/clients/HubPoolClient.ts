@@ -437,10 +437,15 @@ export class HubPoolClient {
     return endBlock > 0 ? endBlock + 1 : 0;
   }
 
-  getRunningBalanceBeforeBlockForChain(block: number, chain: number, l1Token: string): BigNumber {
+  _getRunningBalanceForToken(
+    executedRootBundles: ExecutedRootBundle[],
+    block: number,
+    chain: number,
+    l1Token: string
+  ): BigNumber | undefined {
     // Search through ExecutedRootBundle events in descending block order so we find the most recent event not greater
     // than the target block.
-    const mostRecentExecutedRootBundleEvent = sortEventsDescending(this.executedRootBundles).find(
+    const mostRecentExecutedRootBundleEvent = sortEventsDescending(executedRootBundles).find(
       (executedLeaf: ExecutedRootBundle) => {
         return (
           executedLeaf.blockNumber <= block &&
@@ -449,21 +454,51 @@ export class HubPoolClient {
         );
       }
     ) as ExecutedRootBundle;
-    if (mostRecentExecutedRootBundleEvent) {
-      // Arguably we don't need to even check these array lengths since we should assume that any proposed root bundle
-      // meets this condition.
-      if (
-        mostRecentExecutedRootBundleEvent.l1Tokens.length !== mostRecentExecutedRootBundleEvent.runningBalances.length
-      ) {
-        throw new Error("runningBalances and L1 token of ExecutedRootBundle event are not same length");
-      }
-      const indexOfL1Token = mostRecentExecutedRootBundleEvent.l1Tokens
-        .map((l1Token) => l1Token.toLowerCase())
-        .indexOf(l1Token.toLowerCase());
-      return mostRecentExecutedRootBundleEvent.runningBalances[indexOfL1Token];
-    } else {
-      return toBN(0);
+    if (mostRecentExecutedRootBundleEvent === undefined) {
+      return undefined;
     }
+
+    if (
+      mostRecentExecutedRootBundleEvent.l1Tokens.length !== mostRecentExecutedRootBundleEvent.runningBalances.length
+    ) {
+      throw new Error("runningBalances and L1 token of ExecutedRootBundle event are not same length");
+    }
+    const indexOfL1Token = mostRecentExecutedRootBundleEvent.l1Tokens
+      .map((l1Token) => l1Token.toLowerCase())
+      .indexOf(l1Token.toLowerCase());
+    return mostRecentExecutedRootBundleEvent.runningBalances[indexOfL1Token];
+  }
+
+  async getRunningBalanceBeforeBlockForChain(block: number, chain: number, l1Token: string): Promise<BigNumber> {
+    // First check if there is a matching running balance in the already queried executed root bundle events.
+    let runningBalance = this._getRunningBalanceForToken(this.executedRootBundles, block, chain, l1Token);
+
+    // If there is no matching one, try to load older events.
+    if (runningBalance === undefined) {
+      // We can do a quick check to see if we have already loaded all possible events by comparing the event
+      // search config against the deployment block.
+      if (this.eventSearchConfig.fromBlock > this.deploymentBlock) {
+        const olderExecutedRootBundleEvents = await paginatedEventQuery(
+          this.hubPool,
+          this.hubPool.filters.RootBundleExecuted(),
+          {
+            fromBlock: this.deploymentBlock,
+            toBlock: this.eventSearchConfig.fromBlock,
+            maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
+          }
+        );
+        const olderExecutedRootBundles = [
+          ...olderExecutedRootBundleEvents
+            .filter((event) => !IGNORED_HUB_EXECUTED_BUNDLES.includes(event.blockNumber))
+            .map((event) => spreadEventWithBlockNumber(event) as ExecutedRootBundle),
+        ];
+        runningBalance = this._getRunningBalanceForToken(olderExecutedRootBundles, block, chain, l1Token);
+      }
+    }
+
+    // If there is still none, we can assume that there has never been a running balance for this token and we'll return
+    // 0 as the running balance.
+    return runningBalance ?? toBN(0);
   }
 
   async _update(eventNames: HubPoolEvent[]): Promise<HubPoolUpdate> {

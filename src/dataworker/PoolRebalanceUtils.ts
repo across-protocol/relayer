@@ -77,14 +77,14 @@ export function updateRunningBalanceForDeposit(
   updateRunningBalance(runningBalances, deposit.originChainId, l1TokenCounterpart, updateAmount);
 }
 
-export function addLastRunningBalance(
+export async function addLastRunningBalance(
   latestMainnetBlock: number,
   runningBalances: interfaces.RunningBalances,
   hubPoolClient: HubPoolClient
-): void {
-  Object.keys(runningBalances).forEach((repaymentChainId) => {
-    Object.keys(runningBalances[repaymentChainId]).forEach((l1TokenAddress) => {
-      const lastRunningBalance = hubPoolClient.getRunningBalanceBeforeBlockForChain(
+): Promise<void> {
+  for (const repaymentChainId of Object.keys(runningBalances)) {
+    for (const l1TokenAddress of Object.keys(runningBalances[repaymentChainId])) {
+      const lastRunningBalance = await hubPoolClient.getRunningBalanceBeforeBlockForChain(
         latestMainnetBlock,
         Number(repaymentChainId),
         l1TokenAddress
@@ -92,8 +92,8 @@ export function addLastRunningBalance(
       if (!lastRunningBalance.eq(toBN(0))) {
         updateRunningBalance(runningBalances, Number(repaymentChainId), l1TokenAddress, lastRunningBalance);
       }
-    });
-  });
+    }
+  }
 }
 
 export function initializeRunningBalancesFromRelayerRepayments(

@@ -172,7 +172,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
     const firstRootBundleBlockNumber = await hubPool.provider.getBlockNumber();
 
     expect(
-      hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      await hubPoolClient.getRunningBalanceBeforeBlockForChain(
         firstRootBundleBlockNumber,
         constants.originChainId,
         l1Token_1.address
@@ -182,7 +182,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
 
     // Happy case where client returns most recent running balance for chain ID and l1 token.
     expect(
-      hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      await hubPoolClient.getRunningBalanceBeforeBlockForChain(
         firstRootBundleBlockNumber,
         constants.originChainId,
         l1Token_1.address
@@ -190,20 +190,20 @@ describe("HubPoolClient: RootBundle Events", async function () {
     ).to.equal(toBNWei(100));
 
     // Target block is before event.
-    expect(hubPoolClient.getRunningBalanceBeforeBlockForChain(0, constants.originChainId, l1Token_1.address)).to.equal(
-      toBN(0)
-    );
+    expect(
+      await hubPoolClient.getRunningBalanceBeforeBlockForChain(0, constants.originChainId, l1Token_1.address)
+    ).to.equal(toBN(0));
 
     // chain ID and L1 token combination not found.
     expect(
-      hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      await hubPoolClient.getRunningBalanceBeforeBlockForChain(
         firstRootBundleBlockNumber,
         constants.destinationChainId,
         l1Token_1.address
       )
     ).to.equal(toBN(0));
     expect(
-      hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      await hubPoolClient.getRunningBalanceBeforeBlockForChain(
         firstRootBundleBlockNumber,
         constants.originChainId,
         timer.address
@@ -212,7 +212,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
 
     // Running balance at index of L1 token returned:
     expect(
-      hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      await hubPoolClient.getRunningBalanceBeforeBlockForChain(
         firstRootBundleBlockNumber,
         constants.originChainId,
         l1Token_2.address
@@ -231,14 +231,14 @@ describe("HubPoolClient: RootBundle Events", async function () {
 
     // Grabs most up to date running balance for block:
     expect(
-      hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      await hubPoolClient.getRunningBalanceBeforeBlockForChain(
         secondRootBundleBlockNumber,
         constants.originChainId,
         l1Token_1.address
       )
     ).to.equal(toBNWei(200)); // Grabs second running balance
     expect(
-      hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      await hubPoolClient.getRunningBalanceBeforeBlockForChain(
         firstRootBundleBlockNumber,
         constants.originChainId,
         l1Token_1.address

@@ -651,7 +651,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
       await updateAllClients();
       for (const leaf of poolRebalanceLeaves) {
-        const lastRunningBalance = hubPoolClient.getRunningBalanceBeforeBlockForChain(
+        const lastRunningBalance = await hubPoolClient.getRunningBalanceBeforeBlockForChain(
           await hubPool.provider.getBlockNumber(),
           leaf.chainId.toNumber(),
           l1Token_1.address
