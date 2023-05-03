@@ -176,6 +176,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
 
     const { blockNumber, transactionIndex } = request;
     let { relayer, originChainId, depositId } = request;
+
     relayer ??= randomAddress();
     originChainId ??= random(1, 42161, false);
     depositId ??= random(1, 100_000, false);
