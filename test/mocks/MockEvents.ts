@@ -22,7 +22,7 @@ export class EventManager {
   constructor(public readonly eventSignatures: Record<string, string>) {}
 
   generateEvent(inputs: EthersEventTemplate): Event {
-    const { address, event, _topics, data, args } = inputs;
+    const { address, event, topics: _topics, data, args } = inputs;
     const eventSignature = `${event}(${this.eventSignatures[event]})`;
     const topics = [ethers.utils.keccak256(ethers.utils.toUtf8Bytes(eventSignature))].concat(_topics);
 
