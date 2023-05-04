@@ -471,7 +471,7 @@ export class HubPoolClient {
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
     if (searchConfig.fromBlock > searchConfig.toBlock) {
-      this.logger.warn("Invalid update() searchConfig.", { searchConfig });
+      this.logger.warn({ at: "HubPoolClient#_update", message: "Invalid update() searchConfig.", searchConfig });
       return { success: false };
     }
 
