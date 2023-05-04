@@ -19,7 +19,7 @@
     "@ethersproject/abstract-provider": "^5.7.0",
     "@ethersproject/abstract-signer": "^5.7.0",
     "@google-cloud/kms": "^3.5.1",
-    "@google-cloud/storage": "^6.9.5",
+    "@google-cloud/storage": "^6.10.0",
     "@maticnetwork/maticjs": "^3.5.0",
     "@maticnetwork/maticjs-ethers": "^1.0.3",
     "@openzeppelin/hardhat-upgrades": "^1.23.1",
