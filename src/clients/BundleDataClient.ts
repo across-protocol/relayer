@@ -332,17 +332,7 @@ export class BundleDataClient {
 
     // For each deposit with a matched fill, figure out the unfilled amount that we need to slow relay. We will filter
     // out any deposits that are fully filled.
-    const _unfilledDeposits = flattenAndFilterUnfilledDepositsByOriginChain(unfilledDepositsForOriginChain);
-    if (_unfilledDeposits.some((x) => x.deposit.message !== "0x")) {
-      this.logger.warn({
-        at: "BundleDataClient#loadData",
-        message: "Some unfilled deposits have non-zero message fields. Refusing to create slow fill roots for them",
-        unfilledDeposits: _unfilledDeposits.filter((x) => x.deposit.message !== "0x"),
-      });
-    }
-    const unfilledDeposits = flattenAndFilterUnfilledDepositsByOriginChain(unfilledDepositsForOriginChain).filter(
-      (x) => x.deposit.message === "0x"
-    );
+    const unfilledDeposits = flattenAndFilterUnfilledDepositsByOriginChain(unfilledDepositsForOriginChain);
 
     const spokeEventsReadable = prettyPrintSpokePoolEvents(
       blockRangesForChains,
