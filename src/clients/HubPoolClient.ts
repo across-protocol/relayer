@@ -35,7 +35,7 @@ type HubPoolEvent =
   | "RootBundleExecuted"
   | "CrossChainContractsSet";
 
-const FixedLookbackEvents: HubPoolEvent[] = ["RootBundleExecuted", "ProposeRootBundle"];
+const FixedLookbackEvents: HubPoolEvent[] = ["RootBundleExecuted"];
 
 type L1TokensToDestinationTokens = {
   [l1Token: string]: { [destinationChainId: number]: string };
