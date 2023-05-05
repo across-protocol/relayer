@@ -2854,10 +2854,10 @@
     "@types/node" "*"
     form-data "^3.0.0"
 
-"@types/node@*", "@types/node@>=12.12.47", "@types/node@>=13.7.0", "@types/node@^18.16.2":
-  version "18.16.2"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-18.16.2.tgz#2f610ea71034b3971c312192377f8a7178eb57f1"
-  integrity sha512-GQW/JL/5Fz/0I8RpeBG9lKp0+aNcXEaVL71c0D2Q0QHDTFvlYKT7an0onCUXj85anv7b4/WesqdfchLc0jtsCg==
+"@types/node@*", "@types/node@>=12.12.47", "@types/node@>=13.7.0", "@types/node@^18.16.3":
+  version "18.16.3"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-18.16.3.tgz#6bda7819aae6ea0b386ebc5b24bdf602f1b42b01"
+  integrity sha512-OPs5WnnT1xkCBiuQrZA4+YAV4HEJejmHneyraIaxsbev5yCEr6KMwINNFP9wQeFIw8FWcoTqF3vQsa5CDaI+8Q==
 
 "@types/node@11.11.6":
   version "11.11.6"
@@ -3056,7 +3056,7 @@
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.18.tgz#40e053ff6bc66f7ae7ce6c5d203a3200cf9ed928"
   integrity sha512-ENFYjvVnyplKZF1G5YxOfpm0Ob1nOKtKcwX+TtfOiQGLNMVed8azV8tTSAWlJG/5SZkekX9Y5xZSP5YfcmMj0A==
 
-"@uma/contracts-node@^0.4.15", "@uma/contracts-node@^0.4.16":
+"@uma/contracts-node@^0.4.16":
   version "0.4.16"
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.16.tgz#1b4d50fae0a6a0233fb9ff7bcaacc003a80feeb2"
   integrity sha512-7x0X68m/th0ieoGkEKniKEu08ee1r/SVF0vF97QRgiD0VvdKrQ9Z8ED0HDXreh/g8Rd7LBPgJzgHrrHOpkLDyQ==
