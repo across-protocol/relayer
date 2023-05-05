@@ -991,10 +991,6 @@ export class Dataworker {
     submitExecution: boolean,
     rootBundleId?: number
   ): Promise<void> {
-    if (_leaves.length === 0) {
-      return;
-    }
-
     // Ignore slow fill leaves for deposits with messages as these messages might be very expensive to execute.
     // The original depositor can always execute these and pay for the gas themselves.
     const leaves = _leaves.filter((leaf) => {
@@ -1009,6 +1005,10 @@ export class Dataworker {
         return true;
       }
     });
+
+    if (leaves.length === 0) {
+      return;
+    }
 
     const chainId = client.chainId;
 
