@@ -33,7 +33,7 @@
     "dotenv": "^16.0.3",
     "ethers": "^5.7.2",
     "hardhat": "^2.14.0",
-    "hardhat-deploy": "^0.11.26",
+    "hardhat-deploy": "^0.11.28",
     "lodash": "^4.17.21",
     "lodash.get": "^4.4.2",
     "minimist": "^1.2.8",
