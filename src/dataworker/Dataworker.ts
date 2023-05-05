@@ -999,7 +999,7 @@ export class Dataworker {
     // The original depositor can always execute these and pay for the gas themselves.
     const leaves = _leaves.filter((leaf) => {
       if (leaf.relayData.message !== "0x") {
-        this.logger.warn({
+        this.logger.error({
           at: "Dataworker#_executeSlowFillLeaf",
           message: "Ignoring slow fill leaf with message",
           leaf,
