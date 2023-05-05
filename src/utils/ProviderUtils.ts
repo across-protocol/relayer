@@ -574,22 +574,48 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
 }
 
 export function getNodeUrlList(chainId: number): string[] {
-  const retryConfigKey = `NODE_URLS_${chainId}`;
-  if (process.env[retryConfigKey]) {
-    const nodeUrls = JSON.parse(process.env[retryConfigKey]) || [];
-    if (nodeUrls?.length === 0) {
-      throw new Error(`Provided ${retryConfigKey}, but parsing it as json did not result in an array of urls.`);
+  const resolveUrls = (): string[] => {
+    const providers = process.env[`RPC_PROVIDERS_${chainId}`];
+    if (providers === undefined) {
+      throw new Error(`No RPC providers defined for chainId ${chainId}`);
     }
+    const nodeUrls = providers.split(",").map((provider) => {
+      const envVar = `RPC_PROVIDER_${provider}_${chainId}`;
+      const url = process.env[envVar];
+      if (url === undefined) {
+        throw new Error(`Missing RPC provider URL (${envVar})`);
+      }
+      return url;
+    });
+
+    if (nodeUrls.length === 0) {
+      throw new Error(`Missing configuration for chainId ${chainId} providers (${providers})`);
+    }
+
     return nodeUrls;
+  };
+
+  try {
+    return resolveUrls();
+  } catch (error) {
+    // Fallback to existing config scheme.
+    const retryConfigKey = `NODE_URLS_${chainId}`;
+    if (process.env[retryConfigKey]) {
+      const nodeUrls = JSON.parse(process.env[retryConfigKey]) || [];
+      if (nodeUrls?.length === 0) {
+        throw new Error(`Provided ${retryConfigKey}, but parsing it as json did not result in an array of urls.`);
+      }
+      return nodeUrls;
+    }
+
+    const nodeUrlKey = `NODE_URL_${chainId}`;
+
+    if (process.env[nodeUrlKey]) {
+      return [process.env[nodeUrlKey]];
+    }
+
+    throw new Error(
+      `Cannot get node url(s) for ${chainId} because neither ${retryConfigKey} or ${nodeUrlKey} were provided.`
+    );
   }
-
-  const nodeUrlKey = `NODE_URL_${chainId}`;
-
-  if (process.env[nodeUrlKey]) {
-    return [process.env[nodeUrlKey]];
-  }
-
-  throw new Error(
-    `Cannot get node url(s) for ${chainId} because neither ${retryConfigKey} or ${nodeUrlKey} were provided.`
-  );
 }
