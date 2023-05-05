@@ -3056,7 +3056,7 @@
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.3.18.tgz#40e053ff6bc66f7ae7ce6c5d203a3200cf9ed928"
   integrity sha512-ENFYjvVnyplKZF1G5YxOfpm0Ob1nOKtKcwX+TtfOiQGLNMVed8azV8tTSAWlJG/5SZkekX9Y5xZSP5YfcmMj0A==
 
-"@uma/contracts-node@^0.4.15", "@uma/contracts-node@^0.4.16":
+"@uma/contracts-node@^0.4.16":
   version "0.4.16"
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.16.tgz#1b4d50fae0a6a0233fb9ff7bcaacc003a80feeb2"
   integrity sha512-7x0X68m/th0ieoGkEKniKEu08ee1r/SVF0vF97QRgiD0VvdKrQ9Z8ED0HDXreh/g8Rd7LBPgJzgHrrHOpkLDyQ==
@@ -7412,10 +7412,10 @@ hardhat-deploy@0.9.1:
     murmur-128 "^0.2.1"
     qs "^6.9.4"
 
-hardhat-deploy@^0.11.2, hardhat-deploy@^0.11.26:
-  version "0.11.26"
-  resolved "https://registry.yarnpkg.com/hardhat-deploy/-/hardhat-deploy-0.11.26.tgz#df2698cbafb575a014be6226e559ef467168cbdd"
-  integrity sha512-GvnkD8v6q0coCQbwZNeUcO3ab1zz36FKsqzNdm6EcnVoAfXVkFpdA0pgJ7/Rk3+Lv5709xOtbneFOyoukUOhWQ==
+hardhat-deploy@^0.11.2, hardhat-deploy@^0.11.27:
+  version "0.11.27"
+  resolved "https://registry.yarnpkg.com/hardhat-deploy/-/hardhat-deploy-0.11.27.tgz#4499624327b1854cb02a3a9919fd3128a962feb4"
+  integrity sha512-dtvJTmjFAo5uu4ftitWnqo1eIh5JHUEsUWNq70qUGS2fx7j/AljBUHDQy6PL4RwzYY2jNY15xbVhuI8g+im9fQ==
   dependencies:
     "@ethersproject/abi" "^5.7.0"
     "@ethersproject/abstract-signer" "^5.7.0"
