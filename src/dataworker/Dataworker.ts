@@ -993,12 +993,25 @@ export class Dataworker {
   ): Promise<void> {
     // Ignore slow fill leaves for deposits with messages as these messages might be very expensive to execute.
     // The original depositor can always execute these and pay for the gas themselves.
-    const leaves = _leaves.filter((leaf) => {
-      if (leaf.relayData.message !== "0x") {
+    const leaves = _leaves.filter(({ relayData, payoutAdjustmentPct }) => {
+      if (relayData.message !== "0x") {
         this.logger.error({
           at: "Dataworker#_executeSlowFillLeaf",
           message: "Ignoring slow fill leaf with message",
-          leaf,
+          leafExecutionArgs: [
+            relayData.depositor,
+            relayData.recipient,
+            relayData.destinationToken,
+            relayData.amount,
+            relayData.originChainId,
+            relayData.realizedLpFeePct,
+            relayData.relayerFeePct,
+            relayData.depositId,
+            rootBundleId,
+            relayData.message,
+            payoutAdjustmentPct,
+            slowRelayTree.getHexProof({ relayData, payoutAdjustmentPct }),
+          ],
         });
         return false;
       } else {
