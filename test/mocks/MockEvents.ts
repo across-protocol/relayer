@@ -16,6 +16,19 @@ type EthersEventTemplate = {
   transactionIndex?: number;
 };
 
+const getBlock = async (): Promise<Block> => {
+  throw new Error("getBlock() not supported");
+};
+const getTransaction = async (): Promise<TransactionResponse> => {
+  throw new Error("getTransaction() not supported");
+};
+const getTransactionReceipt = async (): Promise<TransactionReceipt> => {
+  throw new Error("getTransactionReceipt() not supported");
+};
+const removeListener = (): void => {
+  throw new Error("removeListener not supported");
+};
+
 export class EventManager {
   private logIndexes: Record<string, number> = {};
 
@@ -38,21 +51,9 @@ export class EventManager {
     this.logIndexes[_logIndex] ??= 0;
     const logIndex = this.logIndexes[_logIndex]++;
 
-    // Populate these Event functions, even though they appear unused.
-    const getBlock = async (): Promise<Block> => {
-      return {} as Block;
-    };
-    const getTransaction = async (): Promise<TransactionResponse> => {
-      return {} as TransactionResponse;
-    };
-    const getTransactionReceipt = async (): Promise<TransactionReceipt> => {
-      return {} as TransactionReceipt;
-    };
     const decodeError = new Error(`${event} decoding error`);
-    const removeListener = (): void => {
-      return;
-    };
 
+    // Populate these Event functions, even though they appear unused.
     return {
       blockNumber,
       transactionIndex,
