@@ -575,7 +575,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
 
 export function getNodeUrlList(chainId: number): string[] {
   const resolveUrls = (): string[] => {
-    const providers = process.env[`RPC_PROVIDERS_${chainId}`];
+    const providers = process.env[`RPC_PROVIDERS_${chainId}`] ?? process.env["RPC_PROVIDERS"];
     if (providers === undefined) {
       throw new Error(`No RPC providers defined for chainId ${chainId}`);
     }
