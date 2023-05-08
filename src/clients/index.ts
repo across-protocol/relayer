@@ -12,4 +12,4 @@ export * from "./TransactionClient";
 export * from "./InventoryClient";
 export * from "./AcrossAPIClient";
 
-export const HubPoolClient = clients.HubPoolClient;
+export class HubPoolClient extends clients.HubPoolClient {}
