@@ -123,7 +123,6 @@ export class MockHubPoolClient extends HubPoolClient {
       destinationToken,
     };
 
-
     return this.eventManager.generateEvent({
       event,
       address: this.hubPool.address,
