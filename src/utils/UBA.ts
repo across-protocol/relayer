@@ -73,7 +73,7 @@ export class UBAClient {
   ): { balance: BigNumber; blockNumber: number } {
     assert(Array.isArray(this.closingBlockNumbers[chainId]), `Invalid chainId: ${chainId}`);
 
-    hubPoolBlockNumber = this.hubPoolClient.latestBlockNumber;
+    hubPoolBlockNumber ??= this.hubPoolClient.latestBlockNumber;
 
     const hubPoolToken = this.hubPoolClient.getL1TokenCounterpartAtBlock(chainId, spokePoolToken, hubPoolBlockNumber);
     if (!isDefined(hubPoolToken)) {

@@ -19,7 +19,6 @@ type Event = ethers.Event;
 let spokePoolClients: { [chainId: number]: MockSpokePoolClient };
 let hubPool: Contract, dai: Contract, weth: Contract;
 let uba: UBAClient;
-// let relayer: SignerWithAddress;
 let hubPoolClient: MockHubPoolClient;
 let hubPoolDeploymentBlock: number;
 
@@ -29,12 +28,11 @@ const chainIds = [10, 137];
 
 describe("UBA: HubPool Events", async function () {
   beforeEach(async function () {
-    // [relayer] = await ethers.getSigners();
 
     ({ hubPool, dai, weth } = await hubPoolFixture());
     hubPoolDeploymentBlock = random(1, 100, false);
     hubPoolClient = new MockHubPoolClient(logger, hubPool, hubPoolDeploymentBlock);
-    await hubPoolClient.update(); // Set initial latestBlockNumber
+    await hubPoolClient.update();
 
     spokePoolClients = {};
     for (const originChainId of chainIds) {

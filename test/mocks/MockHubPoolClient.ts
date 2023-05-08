@@ -123,14 +123,13 @@ export class MockHubPoolClient extends HubPoolClient {
       destinationToken,
     };
 
-    // console.log(`HubPoolClient latestBlockNumber is ${this.latestBlockNumber}.`);
 
     return this.eventManager.generateEvent({
       event,
       address: this.hubPool.address,
       topics: topics.map((topic) => topic.toString()),
       args,
-      blockNumber: this.latestBlockNumber + 1,
+      blockNumber: this.firstBlockToSearch,
     });
   }
 
@@ -166,7 +165,7 @@ export class MockHubPoolClient extends HubPoolClient {
       address: this.hubPool.address,
       topics: topics.map((topic) => topic.toString()),
       args,
-      blockNumber: this.latestBlockNumber + 1,
+      blockNumber: this.firstBlockToSearch,
     });
   }
 
@@ -201,7 +200,7 @@ export class MockHubPoolClient extends HubPoolClient {
       address: this.hubPool.address,
       topics: topics.map((topic) => topic.toString()),
       args,
-      blockNumber: this.latestBlockNumber + 1,
+      blockNumber: this.firstBlockToSearch,
     });
   }
 }
