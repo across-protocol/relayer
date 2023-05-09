@@ -4,6 +4,8 @@ import { getRedis, shouldCache, getCurrentTime, setRedisKey, EventSearchConfig, 
 import { CHAIN_ID_LIST_INDICES, CONFIG_STORE_VERSION, DEFAULT_CONFIG_STORE_VERSION } from "../common";
 import { HubPoolClient } from "./HubPoolClient";
 
+export const GLOBAL_CONFIG_STORE_KEYS = clients.GLOBAL_CONFIG_STORE_KEYS;
+
 export class AcrossConfigStoreClient extends clients.AcrossConfigStoreClient {
   constructor(
     logger: winston.Logger,
