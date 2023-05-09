@@ -984,16 +984,45 @@ export class Dataworker {
   }
 
   async _executeSlowFillLeaf(
-    leaves: SlowFillLeaf[],
+    _leaves: SlowFillLeaf[],
     balanceAllocator: BalanceAllocator,
     client: SpokePoolClient,
     slowRelayTree: MerkleTree<SlowFillLeaf>,
     submitExecution: boolean,
     rootBundleId?: number
   ): Promise<void> {
+    // Ignore slow fill leaves for deposits with messages as these messages might be very expensive to execute.
+    // The original depositor can always execute these and pay for the gas themselves.
+    const leaves = _leaves.filter(({ relayData, payoutAdjustmentPct }) => {
+      if (relayData.message !== "0x") {
+        this.logger.error({
+          at: "Dataworker#_executeSlowFillLeaf",
+          message: "Ignoring slow fill leaf with message",
+          leafExecutionArgs: [
+            relayData.depositor,
+            relayData.recipient,
+            relayData.destinationToken,
+            relayData.amount,
+            relayData.originChainId,
+            relayData.realizedLpFeePct,
+            relayData.relayerFeePct,
+            relayData.depositId,
+            rootBundleId,
+            relayData.message,
+            payoutAdjustmentPct,
+            slowRelayTree.getHexProof({ relayData, payoutAdjustmentPct }),
+          ],
+        });
+        return false;
+      } else {
+        return true;
+      }
+    });
+
     if (leaves.length === 0) {
       return;
     }
+
     const chainId = client.chainId;
 
     const sortedFills = client.getFills();

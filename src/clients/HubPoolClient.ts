@@ -1,6 +1,8 @@
 import { assign, Contract, winston, BigNumber, EventSearchConfig, MakeOptional, BigNumberish } from "../utils";
 import {
   fetchTokenInfo,
+  Event,
+  EventFilter,
   sortEventsDescending,
   spreadEvent,
   spreadEventWithBlockNumber,
@@ -12,6 +14,26 @@ import { Deposit, L1Token, CancelledRootBundle, DisputedRootBundle, LpToken } fr
 import { ExecutedRootBundle, PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { CrossChainContractsSet, DestinationTokenWithBlock, SetPoolRebalanceRoot } from "../interfaces";
 import _ from "lodash";
+
+type _HubPoolUpdate = {
+  success: true;
+  currentTime: number;
+  latestBlockNumber: number;
+  pendingRootBundleProposal: PendingRootBundle;
+  events: Record<string, Event[]>;
+  searchEndBlock: number;
+};
+export type HubPoolUpdate = { success: false } | _HubPoolUpdate;
+
+type HubPoolEvent =
+  | "SetPoolRebalanceRoute"
+  | "SetPoolRebalanceRoute"
+  | "L1TokenEnabledForLiquidityProvision"
+  | "ProposeRootBundle"
+  | "RootBundleCanceled"
+  | "RootBundleDisputed"
+  | "RootBundleExecuted"
+  | "CrossChainContractsSet";
 
 type L1TokensToDestinationTokens = {
   [l1Token: string]: { [destinationChainId: number]: string };
@@ -43,6 +65,18 @@ export class HubPoolClient {
     readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
   ) {
     this.firstBlockToSearch = eventSearchConfig.fromBlock;
+  }
+
+  protected hubPoolEventFilters(): Record<HubPoolEvent, EventFilter> {
+    return {
+      SetPoolRebalanceRoute: this.hubPool.filters.SetPoolRebalanceRoute(),
+      L1TokenEnabledForLiquidityProvision: this.hubPool.filters.L1TokenEnabledForLiquidityProvision(),
+      ProposeRootBundle: this.hubPool.filters.ProposeRootBundle(),
+      RootBundleCanceled: this.hubPool.filters.RootBundleCanceled(),
+      RootBundleDisputed: this.hubPool.filters.RootBundleDisputed(),
+      RootBundleExecuted: this.hubPool.filters.RootBundleExecuted(),
+      CrossChainContractsSet: this.hubPool.filters.CrossChainContractsSet(),
+    };
   }
 
   hasPendingProposal(): boolean {
@@ -427,43 +461,62 @@ export class HubPoolClient {
     }
   }
 
-  async update(): Promise<void> {
-    this.latestBlockNumber = await this.hubPool.provider.getBlockNumber();
+  async _update(eventNames: HubPoolEvent[]): Promise<HubPoolUpdate> {
+    const latestBlockNumber = await this.hubPool.provider.getBlockNumber();
+    const hubPoolEvents = this.hubPoolEventFilters();
+
     const searchConfig = {
       fromBlock: this.firstBlockToSearch,
-      toBlock: this.eventSearchConfig.toBlock || this.latestBlockNumber,
+      toBlock: this.eventSearchConfig.toBlock || latestBlockNumber,
       maxBlockLookBack: this.eventSearchConfig.maxBlockLookBack,
     };
-    this.logger.debug({ at: "HubPoolClient", message: "Updating HubPool client", searchConfig });
     if (searchConfig.fromBlock > searchConfig.toBlock) {
-      return;
-    } // If the starting block is greater than the ending block return.
+      this.logger.warn({ at: "HubPoolClient#_update", message: "Invalid update() searchConfig.", searchConfig });
+      return { success: false };
+    }
 
-    const [
-      poolRebalanceRouteEvents,
-      l1TokensLpEvents,
-      proposeRootBundleEvents,
-      canceledRootBundleEvents,
-      disputedRootBundleEvents,
-      executedRootBundleEvents,
-      crossChainContractsSetEvents,
-      pendingRootBundleProposal,
-      currentTime,
-    ] = await Promise.all([
-      paginatedEventQuery(this.hubPool, this.hubPool.filters.SetPoolRebalanceRoute(), searchConfig),
-      paginatedEventQuery(this.hubPool, this.hubPool.filters.L1TokenEnabledForLiquidityProvision(), searchConfig),
-      paginatedEventQuery(this.hubPool, this.hubPool.filters.ProposeRootBundle(), searchConfig),
-      paginatedEventQuery(this.hubPool, this.hubPool.filters.RootBundleCanceled(), searchConfig),
-      paginatedEventQuery(this.hubPool, this.hubPool.filters.RootBundleDisputed(), searchConfig),
-      paginatedEventQuery(this.hubPool, this.hubPool.filters.RootBundleExecuted(), searchConfig),
-      paginatedEventQuery(this.hubPool, this.hubPool.filters.CrossChainContractsSet(), searchConfig),
-      this.hubPool.rootBundleProposal(),
+    this.logger.debug({
+      at: "HubPoolClient",
+      message: "Updating HubPool client",
+      searchConfig,
+      eventNames,
+    });
+    const timerStart = Date.now();
+    const [currentTime, pendingRootBundleProposal, ...events] = await Promise.all([
       this.hubPool.getCurrentTime(),
+      this.hubPool.rootBundleProposal(),
+      ...eventNames.map((eventName) => paginatedEventQuery(this.hubPool, hubPoolEvents[eventName], searchConfig)),
     ]);
+    this.logger.debug({
+      at: "HubPoolClient#_update",
+      message: `Time to query new events from RPC for ${this.chainId}: ${Date.now() - timerStart} ms`,
+    });
 
-    this.currentTime = currentTime;
+    const _events = Object.fromEntries(eventNames.map((eventName, idx) => [eventName, events[idx]]));
 
-    for (const event of crossChainContractsSetEvents) {
+    return {
+      success: true,
+      currentTime,
+      latestBlockNumber,
+      pendingRootBundleProposal,
+      searchEndBlock: searchConfig.toBlock,
+      events: _events,
+    };
+  }
+
+  async update(eventsToQuery?: HubPoolEvent[]): Promise<void> {
+    eventsToQuery ??= Object.keys(this.hubPoolEventFilters()) as HubPoolEvent[]; // Query all events by default.
+
+    const update = await this._update(eventsToQuery);
+    if (!update.success) {
+      // This failure only occurs if the RPC searchConfig is miscomputed, and has only been seen in the hardhat test
+      // environment. Normal failures will throw instead. This is therefore an unfortunate workaround until we can
+      // understand why we see this in test. @todo: Resolve.
+      return;
+    }
+    const { events, currentTime, latestBlockNumber, pendingRootBundleProposal } = update;
+
+    for (const event of events["CrossChainContractsSet"]) {
       const args = spreadEventWithBlockNumber(event) as CrossChainContractsSet;
       assign(
         this.crossChainContracts,
@@ -479,7 +532,7 @@ export class HubPoolClient {
       );
     }
 
-    for (const event of poolRebalanceRouteEvents) {
+    for (const event of events["SetPoolRebalanceRoute"]) {
       const args = spreadEventWithBlockNumber(event) as SetPoolRebalanceRoot;
       assign(this.l1TokensToDestinationTokens, [args.l1Token, args.destinationChainId], args.destinationToken);
       assign(
@@ -499,7 +552,9 @@ export class HubPoolClient {
     // For each enabled Lp token fetch the token symbol and decimals from the token contract. Note this logic will
     // only run iff a new token has been enabled. Will only append iff the info is not there already.
     // Filter out any duplicate addresses. This might happen due to enabling, disabling and re-enabling a token.
-    const uniqueL1Tokens = [...new Set(l1TokensLpEvents.map((event) => spreadEvent(event.args).l1Token))];
+    const uniqueL1Tokens = [
+      ...new Set(events["L1TokenEnabledForLiquidityProvision"].map((event) => spreadEvent(event.args).l1Token)),
+    ];
     const [tokenInfo, lpTokenInfo] = await Promise.all([
       Promise.all(uniqueL1Tokens.map((l1Token: string) => fetchTokenInfo(l1Token, this.hubPool.signer))),
       Promise.all(uniqueL1Tokens.map(async (l1Token: string) => await this.hubPool.pooledTokens(l1Token))),
@@ -519,20 +574,20 @@ export class HubPoolClient {
     });
 
     this.proposedRootBundles.push(
-      ...proposeRootBundleEvents
+      ...events["ProposeRootBundle"]
         .filter((event) => !IGNORED_HUB_PROPOSED_BUNDLES.includes(event.blockNumber))
         .map((event) => {
           return { ...spreadEventWithBlockNumber(event), transactionHash: event.transactionHash } as ProposedRootBundle;
         })
     );
     this.canceledRootBundles.push(
-      ...canceledRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as CancelledRootBundle)
+      ...events["RootBundleCanceled"].map((event) => spreadEventWithBlockNumber(event) as CancelledRootBundle)
     );
     this.disputedRootBundles.push(
-      ...disputedRootBundleEvents.map((event) => spreadEventWithBlockNumber(event) as DisputedRootBundle)
+      ...events["RootBundleDisputed"].map((event) => spreadEventWithBlockNumber(event) as DisputedRootBundle)
     );
     this.executedRootBundles.push(
-      ...executedRootBundleEvents
+      ...events["RootBundleExecuted"]
         .filter((event) => !IGNORED_HUB_EXECUTED_BUNDLES.includes(event.blockNumber))
         .map((event) => spreadEventWithBlockNumber(event) as ExecutedRootBundle)
     );
@@ -571,9 +626,11 @@ export class HubPoolClient {
       this.pendingRootBundle = undefined;
     }
 
-    this.isUpdated = true;
-    this.firstBlockToSearch = searchConfig.toBlock + 1; // Next iteration should start off from where this one ended.
+    this.currentTime = currentTime;
+    this.latestBlockNumber = latestBlockNumber;
+    this.firstBlockToSearch = update.searchEndBlock + 1; // Next iteration should start off from where this one ended.
 
+    this.isUpdated = true;
     this.logger.debug({ at: "HubPoolClient", message: "HubPool client updated!" });
   }
 

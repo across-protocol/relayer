@@ -1,35 +1,23 @@
 import { random } from "lodash";
 import { SpokePoolClient, SpokePoolUpdate } from "../../src/clients";
 import { DepositWithBlock, FillWithBlock, RefundRequestWithBlock } from "../../src/interfaces";
-import { BigNumberish, Event } from "../../src/utils";
-import { Contract, ethers, randomAddress, toBN, toBNWei, winston } from "../utils";
-
-export type EthersEventTemplate = {
-  address: string;
-  event: string;
-  topics: string[];
-  args: Record<string, boolean | BigNumberish | string>;
-  data?: string;
-  blockNumber?: number;
-  transactionIndex?: number;
-};
-
-type Block = ethers.providers.Block;
-type TransactionResponse = ethers.providers.TransactionResponse;
-type TransactionReceipt = ethers.providers.TransactionReceipt;
+import { Event } from "../../src/utils";
+import { Contract, randomAddress, toBN, toBNWei, winston } from "../utils";
+import { EventManager } from "./MockEvents";
 
 // This class replaces internal SpokePoolClient functionality, enabling the
 // user to bypass on-chain queries and inject ethers Event objects directly.
 export class MockSpokePoolClient extends SpokePoolClient {
   private events: Event[] = [];
   public readonly minBlockRange = 10;
-  private logIndexes: Record<string, number> = {};
   // Allow tester to set the numberOfDeposits() returned by SpokePool at a block height.
   public depositIdAtBlock: number[] = [];
+  private eventManager: EventManager;
 
   constructor(logger: winston.Logger, spokePool: Contract, chainId: number, deploymentBlock: number) {
     super(logger, spokePool, null, chainId, deploymentBlock);
     this.latestBlockNumber = deploymentBlock;
+    this.eventManager = new EventManager(this.eventSignatures);
   }
 
   addEvent(event: Event): void {
@@ -62,7 +50,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
 
     // Generate new "on chain" responses.
     const latestBlockNumber = this.latestBlockNumber + random(this.minBlockRange, this.minBlockRange * 5, false);
-    const currentTime = Date.now() / 1000;
+    const currentTime = Math.floor(Date.now() / 1000);
 
     // Ensure an array for every requested event exists, in the requested order.
     // All requested event types must be populated in the array (even if empty).
@@ -93,20 +81,12 @@ export class MockSpokePoolClient extends SpokePoolClient {
     };
   }
 
-  // Partial event signatures. Not strictly required, but they make generated events more recognisable.
-  // @todo: Source these from contracts-v2, when available.
+  // Event signatures. Not strictly required, but they make generated events more recognisable.
   public readonly eventSignatures: Record<string, string> = {
-    FundsDeposited: "uint256,uint256,uint256,int64,uint32,uint32,address,address,address,bytes",
+    EnabledDepositRoute: "address,uint256,bool",
     FilledRelay: "uint256,uint256,uint256,int64,uint32,uint32,address,address,address,bytes",
+    FundsDeposited: "uint256,uint256,uint256,int64,uint32,uint32,address,address,address,bytes",
     RefundRequested: "address,address,uint256,uint256,uint256,int64,uint32,uint256,uint256",
-  };
-
-  // Event topic. Not strictly required, but they make generated events more recognisable.
-  // @todo: Source these from contracts-v2, when available.
-  public readonly topics: Record<string, string> = {
-    FundsDeposited: "XXX",
-    FilledRelay: "XXX",
-    RefundRequested: "XXX",
   };
 
   generateDeposit(deposit: DepositWithBlock): Event {
@@ -132,7 +112,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
       message,
     };
 
-    return this.generateEvent({
+    return this.eventManager.generateEvent({
       event,
       address: this.spokePool.address,
       topics: topics.map((topic) => topic.toString()),
@@ -171,7 +151,6 @@ export class MockSpokePoolClient extends SpokePoolClient {
       relayer: fill.relayer ?? randomAddress(),
       depositor,
       recipient,
-      isSlowRelay: fill.isSlowRelay ?? false,
       message,
       updatableRelayData: {
         recipient: fill.updatableRelayData?.recipient ?? recipient,
@@ -182,7 +161,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
       },
     };
 
-    return this.generateEvent({
+    return this.eventManager.generateEvent({
       event,
       address: this.spokePool.address,
       topics: topics.map((topic) => topic.toString()),
@@ -197,6 +176,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
 
     const { blockNumber, transactionIndex } = request;
     let { relayer, originChainId, depositId } = request;
+
     relayer ??= randomAddress();
     originChainId ??= random(1, 42161, false);
     depositId ??= random(1, 100_000, false);
@@ -214,7 +194,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
       previousIdenticalRequests: request.previousIdenticalRequests ?? "0",
     };
 
-    return this.generateEvent({
+    return this.eventManager.generateEvent({
       event,
       address: this.spokePool.address,
       topics: topics.map((topic) => topic.toString()),
@@ -224,53 +204,18 @@ export class MockSpokePoolClient extends SpokePoolClient {
     });
   }
 
-  generateEvent(inputs: EthersEventTemplate): Event {
-    const { address, event, topics, data, args } = inputs;
-    let { blockNumber, transactionIndex } = inputs;
+  generateDepositRoute(originToken: string, destinationChainId: number, enabled: boolean): Event {
+    const event = "EnabledDepositRoute";
 
-    const _logIndex = `${blockNumber}-${transactionIndex}`;
-    this.logIndexes[_logIndex] ??= 0;
-    const logIndex = this.logIndexes[_logIndex]++;
+    const topics = [originToken, destinationChainId];
+    const args = { originToken, destinationChainId, enabled };
 
-    // Populate these Event functions, even though they appear unused.
-    const getBlock = async (): Promise<Block> => {
-      return {} as Block;
-    };
-    const getTransaction = async (): Promise<TransactionResponse> => {
-      return {} as TransactionResponse;
-    };
-    const getTransactionReceipt = async (): Promise<TransactionReceipt> => {
-      return {} as TransactionReceipt;
-    };
-    const decodeError = new Error(`${event} decoding error`);
-    const removeListener = (): void => {
-      return;
-    };
-
-    blockNumber ??= random(1, 100_000, false);
-    transactionIndex ??= random(1, 32, false);
-    const transactionHash = ethers.utils.id(
-      `Across-v2-${event}-${blockNumber}-${transactionIndex}-${random(1, 100_000)}`
-    );
-
-    return {
-      blockNumber,
-      transactionIndex,
-      logIndex,
-      transactionHash,
-      removed: false,
-      address,
-      data: data ?? ethers.utils.id(`Across-v2-random-txndata-${random(1, 100_000)}`),
-      topics: [this.topics[event]].concat(topics),
-      args,
-      blockHash: ethers.utils.id(`Across-v2-blockHash-${random(1, 100_000)}`),
+    return this.eventManager.generateEvent({
       event,
-      eventSignature: `${event}(${this.eventSignatures[event]})`,
-      decodeError,
-      getBlock,
-      getTransaction,
-      getTransactionReceipt,
-      removeListener,
-    } as Event;
+      address: this.spokePool.address,
+      topics: topics.map((topic) => topic.toString()),
+      args,
+      blockNumber: this.latestBlockNumber + 1,
+    });
   }
 }
