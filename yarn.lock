@@ -11,19 +11,6 @@
     "@uma/common" "^2.17.0"
     hardhat "^2.9.3"
 
-"@across-protocol/contracts-v2@2.2.1":
-  version "2.2.1"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.2.1.tgz#201cc2b5b5dd860ee148949645abad545603cf97"
-  integrity sha512-jNO6SHNlxkWDsE4n0UmZR4LGIlt7sg+WR0vntAq/bxbgxzinm+yFr2p5zaSQvEqGjgVcr39EELWZ+FPpdRduSw==
-  dependencies:
-    "@defi-wonderland/smock" "^2.3.4"
-    "@eth-optimism/contracts" "^0.5.11"
-    "@openzeppelin/contracts" "4.8.3"
-    "@openzeppelin/contracts-upgradeable" "4.8.3"
-    "@uma/common" "^2.29.0"
-    "@uma/contracts-node" "^0.3.18"
-    "@uma/core" "^2.41.0"
-
 "@across-protocol/contracts-v2@2.2.2":
   version "2.2.2"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.2.2.tgz#ff7684317e93678c88f440eca9e7d398bfbd485a"
@@ -46,15 +33,16 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk-v2@0.5.3":
-  version "0.5.3"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.5.3.tgz#d519f0dda1d5904ee93442bdb23d42a80730f4a7"
-  integrity sha512-TvZVkiMYDzXIbQP7MWI6cx5pgt3BGXNH5xGcqH8d5sHoihp2HhLAOwVRlmTOpZ+62AvSNfYKpdec/HAesncskA==
+"@across-protocol/sdk-v2@0.5.8":
+  version "0.5.8"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.5.8.tgz#38d6243298eaebebd7d0ab0a6aa11045ae127df0"
+  integrity sha512-3JebB6pmhTj+0MYK/w8zxe8xzQzQq7+bvXZUbLiwHqs/hJN6/pi78wmsgPck6tuEVsqQdX00cOFBYwmjb/AYFw==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/contracts-v2" "2.2.1"
+    "@across-protocol/contracts-v2" "2.2.2"
     "@eth-optimism/sdk" "^1.6.0"
-    "@uma/sdk" "^0.29.3"
+    "@uma/financial-templates-lib" "^2.32.11"
+    "@uma/sdk" "^0.34.1"
     axios "^0.27.2"
     decimal.js "^10.3.1"
     ethers "^5.7.2"
@@ -3054,11 +3042,6 @@
     web3 "^1.6.0"
     winston "^3.2.1"
 
-"@uma/contracts-frontend@^0.3.18":
-  version "0.3.18"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.3.18.tgz#dc6afcfa401c07d8d08be53eff4a97ca8eb06c79"
-  integrity sha512-eneJdzpxe+UFAmZufL7MAnQ/gX1c9reU12iUpfcBcNscNDoQcHw82P4KTmzIQ2zqHvvnMmvE/uLOsZ5OXGGJBw==
-
 "@uma/contracts-frontend@^0.4.16":
   version "0.4.16"
   resolved "https://registry.yarnpkg.com/@uma/contracts-frontend/-/contracts-frontend-0.4.16.tgz#47f90874800a64e046143eefee9614fcafa8ca5b"
@@ -3117,22 +3100,6 @@
     web3 "^1.6.0"
     winston "^3.2.1"
     winston-transport "^4.3.0"
-
-"@uma/sdk@^0.29.3":
-  version "0.29.3"
-  resolved "https://registry.yarnpkg.com/@uma/sdk/-/sdk-0.29.3.tgz#5ce510b80285df42db8cea671c44c68f1b7cab7a"
-  integrity sha512-BhCehfenH+wTVn4kIcXjPdhyNhbHSFypr5m3n2Kwovfjg/w0CN559+kzvC7mA+X67CsI0hmB+lBFgsmG+kbS+w==
-  dependencies:
-    "@google-cloud/datastore" "^7.0.0"
-    "@types/lodash-es" "^4.17.5"
-    "@uma/contracts-frontend" "^0.3.18"
-    "@uma/contracts-node" "^0.3.18"
-    axios "^0.24.0"
-    bn.js "^4.11.9"
-    decimal.js "^10.3.1"
-    highland "^2.13.5"
-    immer "^9.0.7"
-    lodash-es "^4.17.21"
 
 "@uma/sdk@^0.34.0", "@uma/sdk@^0.34.1":
   version "0.34.1"
