@@ -241,7 +241,7 @@ export async function constructClients(
     // ProposeRootBundle in order to match a bundle block evaluation block range with a pending root bundle.
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
-  const hubPoolClient = new HubPoolClient(logger, hubPool, config.hubPoolChainId, hubPoolClientSearchSettings);
+  const hubPoolClient = new HubPoolClient(logger, hubPool, 0, config.hubPoolChainId, hubPoolClientSearchSettings);
 
   const rateModelClientSearchSettings = {
     fromBlock: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),
