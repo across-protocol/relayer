@@ -8,10 +8,11 @@ export class HubPoolClient extends clients.HubPoolClient {
   constructor(
     logger: winston.Logger,
     hubPool: Contract,
+    deploymentBlock: number,
     chainId = 1,
     eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
   ) {
-    super(logger, hubPool, chainId, eventSearchConfig, {
+    super(logger, hubPool, chainId, deploymentBlock, eventSearchConfig, {
       ignoredHubExecutedBundles: IGNORED_HUB_EXECUTED_BUNDLES,
       ignoredHubProposedBundles: IGNORED_HUB_PROPOSED_BUNDLES,
     });
