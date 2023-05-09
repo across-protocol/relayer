@@ -1,6 +1,6 @@
 import { winston, BigNumber, getL2TokenAddresses } from "../utils";
 import axios, { AxiosError } from "axios";
-import { HubPoolClient } from ".";
+import { HubPoolClient } from "./HubPoolClient";
 import { constants } from "@across-protocol/sdk-v2";
 import { SpokePoolClientsByChain } from "../interfaces";
 import _ from "lodash";
