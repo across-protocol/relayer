@@ -1,5 +1,5 @@
 import { groupBy } from "lodash";
-import { EthersEventTemplate, MockSpokePoolClient } from "./mocks/MockSpokePoolClient";
+import { MockSpokePoolClient } from "./mocks/MockSpokePoolClient";
 import { RefundRequestWithBlock } from "../src/interfaces";
 import { spreadEventWithBlockNumber } from "../src/utils";
 import {
@@ -15,15 +15,15 @@ import {
 } from "./utils";
 
 let spokePool: Contract;
-let relayer: SignerWithAddress;
+let _relayer: SignerWithAddress, relayer: string;
 let deploymentBlock: number;
 let spokePoolClient: MockSpokePoolClient;
 
-const event = "RefundRequested";
-
 describe("SpokePoolClient: Refund Requests", async function () {
   beforeEach(async function () {
-    [relayer] = await ethers.getSigners();
+    [_relayer] = await ethers.getSigners();
+    relayer = _relayer.address;
+
     ({ spokePool, deploymentBlock } = await deploySpokePoolWithToken(originChainId, destinationChainId));
     await spokePool.setChainId(repaymentChainId); // Refunds requests are submitted on the repayment chain.
 
@@ -39,13 +39,8 @@ describe("SpokePoolClient: Refund Requests", async function () {
   it("Correctly fetches refund requests", async function () {
     const refundRequestEvents: RefundRequestWithBlock[] = [];
     for (let _idx = 0; _idx < 5; ++_idx) {
-      const requestArgs: EthersEventTemplate = {
-        address: relayer.address,
-        event,
-        topics: [relayer.address, originChainId.toString(), ""],
-        args: {},
-      };
-      const testEvent = spokePoolClient.generateEvent(requestArgs);
+      const refundRequest = { relayer, originChainId } as RefundRequestWithBlock;
+      const testEvent = spokePoolClient.generateRefundRequest(refundRequest);
       spokePoolClient.addEvent(testEvent);
       refundRequestEvents.push(spreadEventWithBlockNumber(testEvent) as RefundRequestWithBlock);
     }
@@ -68,14 +63,8 @@ describe("SpokePoolClient: Refund Requests", async function () {
     const refundRequestEvents: RefundRequestWithBlock[] = [];
     for (let blockNumber = latestBlockNumber + 1; blockNumber <= minExpectedBlockNumber; ++blockNumber) {
       // Barebones Event - only absolutely necessary fields are populated.
-      const requestArgs: EthersEventTemplate = {
-        address: relayer.address,
-        event,
-        topics: [relayer.address, originChainId.toString(), ""],
-        args: {},
-        blockNumber,
-      };
-      const testEvent = spokePoolClient.generateEvent(requestArgs);
+      const refundRequest = { relayer, originChainId, blockNumber } as RefundRequestWithBlock;
+      const testEvent = spokePoolClient.generateRefundRequest(refundRequest);
       spokePoolClient.addEvent(testEvent);
       refundRequestEvents.push(spreadEventWithBlockNumber(testEvent) as RefundRequestWithBlock);
     }
