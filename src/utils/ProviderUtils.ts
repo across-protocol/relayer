@@ -583,7 +583,7 @@ export function getNodeUrlList(chainId: number): string[] {
       const envVar = `RPC_PROVIDER_${provider}_${chainId}`;
       const url = process.env[envVar];
       if (url === undefined) {
-        throw new Error(`Missing RPC provider URL (${envVar})`);
+        throw new Error(`Missing RPC provider URL for chain ${chainId} (${envVar})`);
       }
       return url;
     });
