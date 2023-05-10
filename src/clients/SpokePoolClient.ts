@@ -1,5 +1,4 @@
 import {
-  Event,
   getDeposit,
   setDeposit,
   getNetworkName,
@@ -10,19 +9,7 @@ import {
   getRedis,
 } from "../utils";
 import { paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
-
 import { Deposit, DepositWithBlock, Fill, FundsDepositedEvent } from "../interfaces";
-
-export type SpokePoolUpdate = {
-  success: boolean;
-  currentTime: number;
-  firstDepositId: number;
-  latestBlockNumber: number;
-  latestDepositId: number;
-  events: Event[][];
-  searchEndBlock: number;
-};
-
 import { clients } from "@across-protocol/sdk-v2";
 
 export class SpokePoolClient extends clients.SpokePoolClient {
