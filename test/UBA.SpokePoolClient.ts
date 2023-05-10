@@ -3,12 +3,15 @@ import {
   isUbaInflow,
   isUbaOutflow,
   outflowIsFill,
+  Deposit,
   DepositWithBlock,
+  Fill,
   FillWithBlock,
+  RefundRequest,
   RefundRequestWithBlock,
   UbaOutflow,
 } from "../src/interfaces";
-import { sortEventsAscending, spreadEventWithBlockNumber, UBAClient } from "../src/utils";
+import { isDefined, sortEventsAscending, spreadEventWithBlockNumber, UBAClient } from "../src/utils";
 import {
   assert,
   createSpyLogger,
@@ -20,6 +23,7 @@ import {
   destinationChainId,
   originChainId,
   repaymentChainId,
+  randomAddress,
   deploySpokePool,
   toBN,
   toBNWei,
@@ -32,10 +36,63 @@ let hubPool: Contract, weth: Contract, dai: Contract;
 let hubPoolClient: MockHubPoolClient;
 let _relayer: SignerWithAddress, relayer: string;
 let spokePoolClients: { [chainId: number]: MockSpokePoolClient };
+let originSpokePool: SpokePoolClient;
+let destSpokePool: SpokePoolClient;
+let refundSpokePool: SpokePoolClient;
 let ubaClient: UBAClient;
+let refundToken: string;
 
 const chainIds = [originChainId, destinationChainId, repaymentChainId];
 const logger = createSpyLogger().spyLogger;
+
+function fillFromDeposit(deposit: Deposit, relayer: string, destinationToken: string): Fill {
+  const { recipient, message, relayerFeePct } = deposit;
+
+  const fill: Fill = {
+    amount: deposit.amount,
+    depositId: deposit.depositId,
+    originChainId: deposit.originChainId,
+    destinationChainId: deposit.destinationChainId,
+    depositor: deposit.depositor,
+    destinationToken,
+    relayerFeePct: deposit.relayerFeePct,
+    realizedLpFeePct: deposit.realizedLpFeePct,
+    recipient,
+    relayer,
+    message,
+
+    // Caller can modify these later.
+    fillAmount: deposit.amount,
+    totalFilledAmount: deposit.amount,
+    repaymentChainId: deposit.destinationChainId,
+
+    updatableRelayData: {
+      recipient: deposit.updatedRecipient ?? recipient,
+      message: deposit.updatedMessage ?? message,
+      relayerFeePct: deposit.updatedRelayerFeePct ?? relayerFeePct,
+      isSlowRelay: false,
+      payoutAdjustmentPct: toBN(0),
+    },
+  };
+
+  return fill;
+}
+
+function refundRequestFromFill(fill: FillWithBlock, relayer: string, refundToken: string): RefundRequest {
+  const refundRequest: RefundRequest = {
+    amount: fill.amount,
+    depositId: fill.depositId,
+    originChainId: fill.originChainId,
+    destinationChainId: fill.destinationChainId,
+    realizedLpFeePct: fill.realizedLpFeePct,
+    fillBlock: toBN(fill.blockNumber),
+    relayer,
+    refundToken,
+    previousIdenticalRequests: toBN(0),
+  };
+
+  return refundRequest;
+}
 
 describe("UBA: SpokePool Events", async function () {
   beforeEach(async function () {
@@ -45,6 +102,7 @@ describe("UBA: SpokePool Events", async function () {
     ({ hubPool, weth, dai } = await hubPoolFixture());
     const deploymentBlock = await hubPool.provider.getBlockNumber();
     hubPoolClient = new MockHubPoolClient(logger, hubPool, deploymentBlock);
+    refundToken = weth.address;
 
     spokePoolClients = {};
     for (const chainId of chainIds) {
@@ -73,12 +131,18 @@ describe("UBA: SpokePool Events", async function () {
       spokePoolClients[chainId] = spokePoolClient;
     }
 
+    originSpokePool = spokePoolClients[originChainId];
+    destSpokePool = spokePoolClients[destinationChainId];
+    refundSpokePool = spokePoolClients[repaymentChainId];
+
     await hubPoolClient.update();
-    ubaClient = new UBAClient(chainIds, hubPoolClient, spokePoolClients);
+    ubaClient = new UBAClient(chainIds, hubPoolClient, spokePoolClients, logger);
   });
 
   it("Correctly orders UBA flows", async function () {
     const spokePoolClient = spokePoolClients[repaymentChainId];
+    const originToken = weth.address;
+    const refundToken = weth.address;
 
     const nTxns = spokePoolClient.minBlockRange;
     expect(nTxns).to.be.above(5);
@@ -88,27 +152,52 @@ describe("UBA: SpokePool Events", async function () {
     for (let idx = 0; idx < nTxns; ++idx) {
       const blockNumber = spokePoolClient.latestBlockNumber + idx;
       let transactionIndex = 0;
+      let deposit: DepositWithBlock, fill: FillWithBlock;
+
       for (const eventType of ["FundsDeposited", "FilledRelay", "RefundRequested"]) {
         let event: Event;
         switch (eventType) {
           case "FundsDeposited":
-            event = spokePoolClient.generateDeposit({
-              depositId: spokePoolClient.latestDepositIdQueried + idx,
-              blockNumber,
-              transactionIndex,
-            } as DepositWithBlock);
+            event = spokePoolClient.generateDeposit({ originToken, blockNumber, transactionIndex } as DepositWithBlock);
             break;
 
           case "FilledRelay":
-            event = spokePoolClient.generateFill({ relayer, blockNumber, transactionIndex } as FillWithBlock);
+            event = spokePoolClient.generateFill({
+              relayer,
+              originChainId,
+              blockNumber,
+              transactionIndex,
+            } as FillWithBlock);
             break;
 
           case "RefundRequested":
+            // First inject a FilledRelay event into the origin chain.
+            event = originSpokePool.generateDeposit({ originToken, destinationChainId } as DepositWithBlock);
+            originSpokePool.addEvent(event);
+            await originSpokePool.update();
+            deposit = originSpokePool
+              .getDepositsForDestinationChain(destinationChainId)
+              .find((deposit) => deposit.transactionHash === event.transactionHash);
+
+            // Then inject a FilledRelay event into the destination chain.
+            fill = fillFromDeposit(deposit, relayer, refundToken);
+            fill.repaymentChainId = repaymentChainId;
+
+            event = destSpokePool.generateFill(fill as FillWithBlock);
+            destSpokePool.addEvent(event);
+            await destSpokePool.update();
+            fill = destSpokePool
+              .getFillsForRelayer(relayer)
+              .find((fill) => fill.transactionHash === event.transactionHash);
+
+            // Now we can issue a RefundRequest on the refund chain.
             event = spokePoolClient.generateRefundRequest({
-              relayer,
+              ...refundRequestFromFill(fill, relayer, refundToken),
               blockNumber,
               transactionIndex,
-            } as RefundRequestWithBlock);
+              logIndex: random(1, 1000, false),
+              transactionHash: ethers.utils.id(`${random(1, 100_000)}`),
+            });
             break;
         }
 
@@ -209,7 +298,6 @@ describe("UBA: SpokePool Events", async function () {
     const spokePoolClient = spokePoolClients[destinationChainId];
 
     const nDeposits = 5;
-
     const fullFills: Event[] = [];
     const partialFills: Event[] = [];
 
@@ -295,5 +383,100 @@ describe("UBA: SpokePool Events", async function () {
 
       expect((ubaFlow as FillWithBlock).updatableRelayData.isSlowRelay).to.be.false;
     });
+  });
+
+  it("Correctly filters invalid refund requests", async function () {
+    const depositEvent = originSpokePool.generateDeposit({
+      amount: toBNWei(random(1, 1000).toPrecision(5)),
+      originChainId,
+      destinationChainId,
+      relayerFeePct: toBNWei(random(0.000001, 0.0001).toPrecision(5)),
+      depositId: random(1, 1_000_000, false),
+      quoteTimestamp: Math.floor(Date.now() / 1000),
+      originToken: refundToken,
+      destinationToken: refundToken,
+      depositor: randomAddress(),
+      recipient: randomAddress(),
+      message: "",
+      blockNumber: originSpokePool.firstBlockToSearch,
+      transactionIndex: random(1, 1000),
+      logIndex: random(1, 1000, false),
+      transactionHash: ethers.utils.id(`${random(1, 100_000)}`),
+    });
+    originSpokePool.addEvent(depositEvent);
+    await originSpokePool.update();
+
+    const _deposit = originSpokePool
+      .getDepositsForDestinationChain(destinationChainId)
+      .find((deposit: DepositWithBlock) => deposit.transactionHash === depositEvent.transactionHash);
+
+    const fill = fillFromDeposit(_deposit);
+    fill.relayer = relayer;
+    fill.destinationToken = weth.address;
+    fill.repaymentChainId = repaymentChainId;
+    fill.blockNumber = destSpokePool.firstBlockToSearch;
+    fill.transactionIndex = random(1, 1000, false);
+    fill.logIndex = random(1, 1000, false);
+    fill.transactionHash = ethers.utils.id(`${random(1, 100_000)}`);
+
+    const fillEvent = destSpokePool.generateFill(fill);
+    destSpokePool.addEvent(fillEvent);
+    await destSpokePool.update();
+    const _fill = destSpokePool
+      .getFillsForRelayer(fill.relayer)
+      .find((fill: FillWithBlock) => fill.transactionHash === fillEvent.transactionHash);
+
+    const _refundRequest: RefundRequest = refundRequestFromFill(_fill, relayer, fill.destinationToken);
+    for (const key of Object.keys(_refundRequest).concat([""])) {
+      let expectValid = false;
+
+      // Construct a standard RefundRequest, but iteratively modify each k/v pair and ensure it fails.
+      const modifiedRefundRequest: RefundRequestWithBlock = {
+        ..._refundRequest,
+        blockNumber: refundSpokePool.firstBlockToSearch,
+        transactionIndex: random(0, 1000, false),
+        logIndex: random(0, 1000, false),
+        transactionHash: ethers.utils.id(`${random(1, 100_000)}`),
+      };
+
+      switch (key) {
+        case "relayer":
+        case "refundToken":
+          modifiedRefundRequest[key] = randomAddress();
+          break;
+
+        case "originChainId":
+        case "destinationChainId":
+        case "depositId":
+          modifiedRefundRequest[key] = modifiedRefundRequest[key] + 1;
+          break;
+
+        case "amount":
+        case "realizedLpFeePct":
+        case "fillBlock":
+          modifiedRefundRequest[key] = toBN(1).add(modifiedRefundRequest[key]);
+          break;
+
+        case "previousIdenticalRequests":
+        default:
+          // Don't modify with; expect a valid refund request.
+          expect(["previousIdenticalRequests", ""].includes(key)).to.be.true;
+          expectValid = true;
+          break;
+      }
+
+      const refundRequestEvent = refundSpokePool.generateRefundRequest(modifiedRefundRequest);
+      refundSpokePool.addEvent(refundRequestEvent);
+      await refundSpokePool.update();
+
+      const refundRequest = refundSpokePool
+        .getRefundRequests()
+        .find((request) => request.transactionHash === refundRequestEvent.transactionHash);
+      expect(isDefined(refundRequest)).to.be.true;
+
+      const { valid, reason } = ubaClient.refundRequestIsValid(repaymentChainId, refundRequest);
+      expect(valid).to.be.equal(expectValid);
+      expect(valid).to.be.equal(reason === undefined); // Require a reason if the RefundRequest was invalid.
+    }
   });
 });

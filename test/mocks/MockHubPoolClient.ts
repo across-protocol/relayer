@@ -63,8 +63,11 @@ export class MockHubPoolClient extends HubPoolClient {
     this.l1TokensToDestinationTokensMock = l1TokensToDestinationTokens;
   }
 
-  getDestinationTokenForL1Token(l1Token: string, destinationChainId: number) {
-    return this.l1TokensToDestinationTokensMock[l1Token][destinationChainId];
+  getDestinationTokenForL1Token(l1Token: string, destinationChainId: number): string {
+    return (
+      this.l1TokensToDestinationTokensMock[l1Token]?.[destinationChainId] ??
+      super.getDestinationTokenForL1Token(l1Token, destinationChainId)
+    );
   }
 
   setReturnedL1TokenForDeposit(l1Token: string) {
@@ -73,7 +76,7 @@ export class MockHubPoolClient extends HubPoolClient {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   getL1TokenForDeposit(_deposit: Deposit) {
-    return this.returnedL1TokenForDeposit;
+    return this.returnedL1TokenForDeposit ?? super.getL1TokenForDeposit(_deposit);
   }
 
   async _update(eventNames: string[]): Promise<HubPoolUpdate> {

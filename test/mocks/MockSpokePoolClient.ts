@@ -1,5 +1,5 @@
 import { random } from "lodash";
-import { SpokePoolClient, SpokePoolUpdate } from "../../src/clients";
+import { HubPoolClient, SpokePoolClient, SpokePoolUpdate } from "../../src/clients";
 import { DepositWithBlock, FillWithBlock, RefundRequestWithBlock } from "../../src/interfaces";
 import { Event } from "../../src/utils";
 import { Contract, randomAddress, toBN, toBNWei, winston } from "../utils";
@@ -13,11 +13,19 @@ export class MockSpokePoolClient extends SpokePoolClient {
   // Allow tester to set the numberOfDeposits() returned by SpokePool at a block height.
   public depositIdAtBlock: number[] = [];
   private eventManager: EventManager;
+  private _hubPoolClient: HubPoolClient;
 
-  constructor(logger: winston.Logger, spokePool: Contract, chainId: number, deploymentBlock: number) {
+  constructor(
+    logger: winston.Logger,
+    spokePool: Contract,
+    chainId: number,
+    deploymentBlock: number,
+    hubPoolClient?: HubPoolClient
+  ) {
     super(logger, spokePool, null, chainId, deploymentBlock);
     this.latestBlockNumber = deploymentBlock;
     this.eventManager = new EventManager(this.eventSignatures);
+    this._hubPoolClient = hubPoolClient;
   }
 
   addEvent(event: Event): void {
@@ -41,6 +49,10 @@ export class MockSpokePoolClient extends SpokePoolClient {
 
   async _getDepositIdAtBlock(blockTag: number): Promise<number> {
     return this.depositIdAtBlock[blockTag];
+  }
+
+  override hubPoolClient(): HubPoolClient {
+    return this._hubPoolClient ?? super.hubPoolClient();
   }
 
   override async _update(eventsToQuery: string[]): Promise<SpokePoolUpdate> {
@@ -92,9 +104,10 @@ export class MockSpokePoolClient extends SpokePoolClient {
   generateDeposit(deposit: DepositWithBlock): Event {
     const event = "FundsDeposited";
 
-    const { depositId, blockNumber, transactionIndex } = deposit;
-    let { depositor, destinationChainId } = deposit;
+    const { blockNumber, transactionIndex } = deposit;
+    let { depositor, depositId, destinationChainId } = deposit;
     destinationChainId ??= random(1, 42161, false);
+    depositId ??= random(1, 1_000_000, false);
     depositor ??= randomAddress();
 
     const message = deposit["message"] ?? `${event} event at block ${blockNumber}, index ${transactionIndex}.`;
@@ -125,11 +138,12 @@ export class MockSpokePoolClient extends SpokePoolClient {
   generateFill(fill: FillWithBlock): Event {
     const event = "FilledRelay";
 
-    const { blockNumber, transactionIndex } = fill;
-    let { depositor, originChainId, depositId } = fill;
+    const { transactionIndex } = fill;
+    let { depositor, originChainId, depositId, blockNumber } = fill;
     originChainId ??= random(1, 42161, false);
     depositId ??= random(1, 100_000, false);
     depositor ??= randomAddress();
+    blockNumber ??= this.firstBlockToSearch;
 
     const topics = [originChainId, depositId, depositor];
     const recipient = fill.recipient ?? randomAddress();
@@ -147,7 +161,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
       realizedLpFeePct: fill.realizedLpFeePct ?? toBNWei(random(0.00001, 0.0001).toPrecision(6)),
       relayerFeePct,
       depositId,
-      destinationToken: randomAddress(),
+      destinationToken: fill.destinationToken ?? randomAddress(),
       relayer: fill.relayer ?? randomAddress(),
       depositor,
       recipient,
@@ -174,12 +188,13 @@ export class MockSpokePoolClient extends SpokePoolClient {
   generateRefundRequest(request: RefundRequestWithBlock): Event {
     const event = "RefundRequested";
 
-    const { blockNumber, transactionIndex } = request;
-    let { relayer, originChainId, depositId } = request;
+    const { transactionIndex } = request;
+    let { relayer, originChainId, depositId, blockNumber } = request;
 
     relayer ??= randomAddress();
     originChainId ??= random(1, 42161, false);
     depositId ??= random(1, 100_000, false);
+    blockNumber ??= this.firstBlockToSearch;
 
     const topics = [relayer, originChainId, depositId];
     const args = {
@@ -190,7 +205,7 @@ export class MockSpokePoolClient extends SpokePoolClient {
       destinationChainId: request.destinationChainId ?? random(1, 42161, false),
       realizedLpFeePct: request.realizedLpFeePct ?? toBNWei(random(0.00001, 0.0001).toPrecision(6)),
       depositId,
-      fillBlock: request.fillBlock ?? random(1, 1000, false),
+      fillBlock: request.fillBlock ?? toBN(random(1, 1000, false)),
       previousIdenticalRequests: request.previousIdenticalRequests ?? "0",
     };
 
