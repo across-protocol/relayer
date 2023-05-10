@@ -66,7 +66,6 @@ export type TokensBridged = interfaces.TokensBridged;
 export type UbaInflow = interfaces.UbaInflow;
 export type UbaOutflow = interfaces.UbaOutflow;
 export type UbaFlow = interfaces.UbaFlow;
-export type UbaRunningRequest = interfaces.UbaRunningRequest;
 export type UBASpokeBalanceType = interfaces.UBASpokeBalanceType;
 export type UBAFeeResult = interfaces.UBAFeeResult;
 export type UBAFlowRange = interfaces.UBAFlowRange;
