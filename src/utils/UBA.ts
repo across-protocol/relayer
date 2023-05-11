@@ -51,6 +51,9 @@ export function getUBAFlows(spokePoolClient: SpokePoolClient, fromBlock?: number
 export class UBAClient {
   private closingBlockNumbers: { [chainId: number]: number[] };
 
+  // Note: chainIds is used to index members of root bundle proposals submitted to the HubPool.
+  // It must include the complete set of chain IDs ever supported by the HubPool.
+  // SpokePoolClients may be a subset of the SpokePools that have been deployed.
   constructor(
     private readonly chainIds: number[],
     private readonly hubPoolClient: HubPoolClient,
