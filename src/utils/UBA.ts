@@ -80,9 +80,17 @@ export class UBAClient {
       throw new Error(`Could not resolve ${chainId} token ${spokePoolToken} at block ${hubPoolBlockNumber}`);
     }
 
+    const spokePoolClient = this.spokePoolClients[chainId];
+    let blockNumber = spokePoolClient.deploymentBlock;
     const prevEndBlock = this.resolveClosingBlockNumber(chainId, hubPoolBlockNumber);
-    const blockNumber =
-      prevEndBlock > this.hubPoolClient.deploymentBlock ? prevEndBlock + 1 : this.hubPoolClient.deploymentBlock;
+    if (prevEndBlock > blockNumber) {
+      blockNumber = prevEndBlock + 1;
+      const latestBlockNumber = spokePoolClient.latestBlockNumber;
+      assert(
+        blockNumber <= latestBlockNumber,
+        `Unexpected UBA opening block number (${blockNumber} > ${latestBlockNumber})`
+      );
+    }
     const balance = this.hubPoolClient.getRunningBalanceBeforeBlockForChain(hubPoolBlockNumber, chainId, hubPoolToken);
 
     return { blockNumber, balance };

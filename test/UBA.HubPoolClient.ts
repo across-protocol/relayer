@@ -62,12 +62,12 @@ describe("UBA: HubPool Events", async function () {
     await hubPoolClient.update();
   });
 
-  it("Defaults to deployment block when no root bundles have been executed", async function () {
+  it("Defaults to SpokePool deployment block when no root bundles have been executed", async function () {
     for (const chainId of chainIds) {
       for (const token of [weth.address, dai.address]) {
         const { balance, blockNumber } = uba.getOpeningBalance(chainId, token);
         expect(balance.eq(0)).to.be.true;
-        expect(blockNumber).to.be.equal(hubPoolDeploymentBlock);
+        expect(blockNumber).to.be.equal(spokePoolClients[chainId].deploymentBlock);
       }
     }
   });
