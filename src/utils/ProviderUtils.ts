@@ -545,8 +545,8 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
 
   // See ethers ConnectionInfo for field descriptions.
   // https://docs.ethers.org/v5/api/utils/web/#ConnectionInfo
-  const constructorArgumentLists = getNodeUrlList(chainId, nodeQuorumThreshold)
-    .map((nodeUrl): [ethers.utils.ConnectionInfo, number] => [
+  const constructorArgumentLists = getNodeUrlList(chainId, nodeQuorumThreshold).map(
+    (nodeUrl): [ethers.utils.ConnectionInfo, number] => [
       {
         url: nodeUrl,
         timeout,
@@ -555,7 +555,8 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
         throttleCallback: rpcRateLimited({ nodeMaxConcurrency, logger }),
       },
       chainId,
-    ]);
+    ]
+  );
 
   const provider = new RetryProvider(
     constructorArgumentLists,
