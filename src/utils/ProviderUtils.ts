@@ -545,16 +545,17 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
 
   // See ethers ConnectionInfo for field descriptions.
   // https://docs.ethers.org/v5/api/utils/web/#ConnectionInfo
-  const constructorArgumentLists = getNodeUrlList(chainId).map((nodeUrl): [ethers.utils.ConnectionInfo, number] => [
-    {
-      url: nodeUrl,
-      timeout,
-      allowGzip: true,
-      throttleSlotInterval: 1, // Effectively disables ethers' internal backoff algorithm.
-      throttleCallback: rpcRateLimited({ nodeMaxConcurrency, logger }),
-    },
-    chainId,
-  ]);
+  const constructorArgumentLists = getNodeUrlList(chainId, nodeQuorumThreshold)
+    .map((nodeUrl): [ethers.utils.ConnectionInfo, number] => [
+      {
+        url: nodeUrl,
+        timeout,
+        allowGzip: true,
+        throttleSlotInterval: 1, // Effectively disables ethers' internal backoff algorithm.
+        throttleCallback: rpcRateLimited({ nodeMaxConcurrency, logger }),
+      },
+      chainId,
+    ]);
 
   const provider = new RetryProvider(
     constructorArgumentLists,
@@ -573,7 +574,7 @@ export async function getProvider(chainId: number, logger?: winston.Logger, useC
   return provider;
 }
 
-export function getNodeUrlList(chainId: number): string[] {
+export function getNodeUrlList(chainId: number, quorum: number): string[] {
   const resolveUrls = (): string[] => {
     const providers = process.env[`RPC_PROVIDERS_${chainId}`] ?? process.env["RPC_PROVIDERS"];
     if (providers === undefined) {
@@ -595,27 +596,31 @@ export function getNodeUrlList(chainId: number): string[] {
     return nodeUrls;
   };
 
+  const retryConfigKey = `NODE_URLS_${chainId}`;
+  const nodeUrlKey = `NODE_URL_${chainId}`;
+  let nodeUrls: string[] = [];
+
   try {
-    return resolveUrls();
-  } catch (error) {
+    nodeUrls = resolveUrls();
+  } catch {
     // Fallback to existing config scheme.
-    const retryConfigKey = `NODE_URLS_${chainId}`;
     if (process.env[retryConfigKey]) {
-      const nodeUrls = JSON.parse(process.env[retryConfigKey]) || [];
+      nodeUrls = JSON.parse(process.env[retryConfigKey]) || [];
       if (nodeUrls?.length === 0) {
         throw new Error(`Provided ${retryConfigKey}, but parsing it as json did not result in an array of urls.`);
       }
-      return nodeUrls;
+    } else {
+      if (process.env[nodeUrlKey]) {
+        nodeUrls = [process.env[nodeUrlKey]];
+      }
     }
-
-    const nodeUrlKey = `NODE_URL_${chainId}`;
-
-    if (process.env[nodeUrlKey]) {
-      return [process.env[nodeUrlKey]];
-    }
-
-    throw new Error(
-      `Cannot get node url(s) for ${chainId} because neither ${retryConfigKey} or ${nodeUrlKey} were provided.`
-    );
   }
+
+  if (nodeUrls.length === 0) {
+    throw new Error(`Can't get ${chainId} node url(s) because neither ${retryConfigKey} or ${nodeUrlKey} are defined.`);
+  } else if (nodeUrls.length < quorum) {
+    throw new Error(`Insufficient RPC providers for chainId ${chainId} to meet quorum (minimum ${quorum} required)`);
+  }
+
+  return nodeUrls;
 }
