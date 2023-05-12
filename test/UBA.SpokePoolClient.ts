@@ -40,7 +40,8 @@ let originSpokePool: SpokePoolClient;
 let destSpokePool: SpokePoolClient;
 let refundSpokePool: SpokePoolClient;
 let ubaClient: UBAClient;
-let refundToken: string;
+let originToken: string, refundToken: string;
+
 
 const chainIds = [originChainId, destinationChainId, repaymentChainId];
 const logger = createSpyLogger().spyLogger;
@@ -102,7 +103,7 @@ describe("UBA: SpokePool Events", async function () {
     ({ hubPool, weth, dai } = await hubPoolFixture());
     const deploymentBlock = await hubPool.provider.getBlockNumber();
     hubPoolClient = new MockHubPoolClient(logger, hubPool, deploymentBlock);
-    refundToken = weth.address;
+    refundToken = originToken = weth.address;
 
     spokePoolClients = {};
     for (const chainId of chainIds) {
@@ -141,8 +142,6 @@ describe("UBA: SpokePool Events", async function () {
 
   it("Correctly orders UBA flows", async function () {
     const spokePoolClient = spokePoolClients[repaymentChainId];
-    const originToken = weth.address;
-    const refundToken = weth.address;
 
     const nTxns = spokePoolClient.minBlockRange;
     expect(nTxns).to.be.above(5);
