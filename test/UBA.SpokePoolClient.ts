@@ -42,7 +42,6 @@ let refundSpokePool: SpokePoolClient;
 let ubaClient: UBAClient;
 let originToken: string, refundToken: string;
 
-
 const chainIds = [originChainId, destinationChainId, repaymentChainId];
 const logger = createSpyLogger().spyLogger;
 
