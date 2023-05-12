@@ -8,30 +8,33 @@ import {
   RefundRequestWithBlock,
   UbaOutflow,
 } from "../src/interfaces";
-import { getUBAFlows, sortEventsAscending, spreadEventWithBlockNumber } from "../src/utils";
+import { sortEventsAscending, spreadEventWithBlockNumber, UBAClient } from "../src/utils";
 import {
   assert,
   createSpyLogger,
   expect,
   ethers,
   Contract,
+  hubPoolFixture,
   SignerWithAddress,
   destinationChainId,
   originChainId,
   repaymentChainId,
-  deploySpokePoolWithToken,
+  deploySpokePool,
   toBN,
   toBNWei,
 } from "./utils";
-import { MockSpokePoolClient } from "./mocks";
+import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 
 type Event = ethers.Event;
 
-let spokePool: Contract;
+let hubPool: Contract, weth: Contract, dai: Contract;
+let hubPoolClient: MockHubPoolClient;
 let _relayer: SignerWithAddress, relayer: string;
-let deploymentBlock: number;
-let spokePoolClient: MockSpokePoolClient;
+let spokePoolClients: { [chainId: number]: MockSpokePoolClient };
+let ubaClient: UBAClient;
 
+const chainIds = [originChainId, destinationChainId, repaymentChainId];
 const logger = createSpyLogger().spyLogger;
 
 describe("UBA: SpokePool Events", async function () {
@@ -39,14 +42,44 @@ describe("UBA: SpokePool Events", async function () {
     [_relayer] = await ethers.getSigners();
     relayer = _relayer.address;
 
-    ({ spokePool, deploymentBlock } = await deploySpokePoolWithToken(originChainId, destinationChainId));
-    await spokePool.setChainId(repaymentChainId); // Refunds requests are submitted on the repayment chain.
+    ({ hubPool, weth, dai } = await hubPoolFixture());
+    const deploymentBlock = await hubPool.provider.getBlockNumber();
+    hubPoolClient = new MockHubPoolClient(logger, hubPool, deploymentBlock);
 
-    spokePoolClient = new MockSpokePoolClient(logger, spokePool, repaymentChainId, deploymentBlock);
-    await spokePoolClient.update();
+    spokePoolClients = {};
+    for (const chainId of chainIds) {
+      const { spokePool } = await deploySpokePool(ethers);
+      const deploymentBlock = await spokePool.provider.getBlockNumber();
+
+      await spokePool.setChainId(chainId);
+      const spokePoolClient = new MockSpokePoolClient(logger, spokePool, chainId, deploymentBlock, hubPoolClient);
+
+      for (const destinationChainId of chainIds) {
+        // For each SpokePool, construct routes to each _other_ SpokePool.
+        if (destinationChainId === chainId) {
+          continue;
+        }
+
+        [weth.address, dai.address].forEach((originToken) => {
+          let event = spokePoolClient.generateDepositRoute(originToken, destinationChainId, true);
+          spokePoolClient.addEvent(event);
+
+          event = hubPoolClient.setPoolRebalanceRoute(destinationChainId, originToken, originToken);
+          hubPoolClient.addEvent(event);
+        });
+      }
+
+      await spokePoolClient.update();
+      spokePoolClients[chainId] = spokePoolClient;
+    }
+
+    await hubPoolClient.update();
+    ubaClient = new UBAClient(chainIds, hubPoolClient, spokePoolClients);
   });
 
   it("Correctly orders UBA flows", async function () {
+    const spokePoolClient = spokePoolClients[repaymentChainId];
+
     const nTxns = spokePoolClient.minBlockRange;
     expect(nTxns).to.be.above(5);
 
@@ -100,7 +133,7 @@ describe("UBA: SpokePool Events", async function () {
       .forEach((event) => spokePoolClient.addEvent(event));
     await spokePoolClient.update();
 
-    const ubaFlows = getUBAFlows(spokePoolClient);
+    const ubaFlows = ubaClient.getFlows(spokePoolClient.chainId);
     expect(ubaFlows.length).is.eq(events.length);
 
     // Sort the generated events by inflow and outflow.
@@ -132,6 +165,8 @@ describe("UBA: SpokePool Events", async function () {
   });
 
   it("Correctly includes initial partial fills", async function () {
+    const spokePoolClient = spokePoolClients[destinationChainId];
+
     const nTxns = spokePoolClient.minBlockRange;
     expect(nTxns).to.be.above(5);
 
@@ -161,7 +196,7 @@ describe("UBA: SpokePool Events", async function () {
     }
 
     await spokePoolClient.update();
-    const ubaFlows = getUBAFlows(spokePoolClient);
+    const ubaFlows = ubaClient.getFlows(spokePoolClient.chainId);
 
     const fills = sortEventsAscending(fullFills.concat(partialFills)).map((event) => spreadEventWithBlockNumber(event));
 
@@ -171,6 +206,8 @@ describe("UBA: SpokePool Events", async function () {
   });
 
   it("Correctly filters subsequent partial fills", async function () {
+    const spokePoolClient = spokePoolClients[destinationChainId];
+
     const nDeposits = 5;
 
     const fullFills: Event[] = [];
@@ -207,7 +244,7 @@ describe("UBA: SpokePool Events", async function () {
     }
 
     await spokePoolClient.update();
-    const ubaFlows = getUBAFlows(spokePoolClient);
+    const ubaFlows = ubaClient.getFlows(spokePoolClient.chainId);
 
     // Each deposit should be _completely_ filled, but there should only be one outflow for each deposit.
     expect(ubaFlows.length).is.equal(nDeposits);
@@ -221,6 +258,8 @@ describe("UBA: SpokePool Events", async function () {
   });
 
   it("Correctly filters slow fills", async function () {
+    const spokePoolClient = spokePoolClients[destinationChainId];
+
     // Inject slow and instant fill events.
     const events: Event[] = [];
     for (let idx = 0; idx < spokePoolClient.minBlockRange; ++idx) {
@@ -242,7 +281,7 @@ describe("UBA: SpokePool Events", async function () {
     }
 
     await spokePoolClient.update();
-    const ubaFlows = getUBAFlows(spokePoolClient);
+    const ubaFlows = ubaClient.getFlows(spokePoolClient.chainId);
 
     expect(ubaFlows.length).is.eq(events.length / 2);
     ubaFlows.forEach((ubaFlow) => {
