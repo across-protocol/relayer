@@ -1,7 +1,8 @@
 import { Result } from "@ethersproject/abi";
 import { delay } from "@uma/financial-templates-lib";
+import { Promise } from "bluebird"
 import { SortableEvent } from "../interfaces";
-import { Contract, Event, EventFilter, Promise } from "./";
+import { Contract, Event, EventFilter } from "./";
 
 const maxRetries = 3;
 const retrySleepTime = 10;
