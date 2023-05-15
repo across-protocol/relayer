@@ -534,12 +534,12 @@ export class Dataworker {
           this._submitDisputeWithMrkdwn(hubPoolChainId, reason);
         }
       }
+    } else {
+      // Once we've validated it, we should see if there are any L1 tokens included in the proposed bundle
+      // who's exchange rates need to be updated. This ensures that any future PoolRebalanceLeaf execution
+      // does not revert due to liquidReserves being out of sync.
+      await this._updateExchangeRates(expectedTrees.poolRebalanceTree.leaves, submitDisputes);
     }
-
-    // Once we've validated it, we should see if there are any L1 tokens included in the proposed bundle 
-    // who's exchange rates need to be updated. This ensures that any future PoolRebalanceLeaf execution 
-    // does not revert due to liquidReserves being out of sync.
-    await this._updateExchangeRates(expectedTrees.poolRebalanceTree.leaves, submitDisputes);
   }
 
   async validateRootBundle(
@@ -1234,13 +1234,6 @@ export class Dataworker {
     if (unexecutedLeaves.length === 0) {
       return;
     }
-
-    // Call `exchangeRateCurrent` on the HubPool before accumulating fees from the executed bundle leaves. This is to
-    // address the situation where `addLiquidity` and `removeLiquidity` have not been called for an L1 token for a
-    // while, which are the other methods that trigger an internal call to `_exchangeRateCurrent()`. Calling
-    // this method triggers a recompounding of fees before new fees come in.
-    await this._updateExchangeRates(unexecutedLeaves, submitExecution);
-
     // First, execute mainnet pool rebalance leaves. Then try to execute any relayer refund and slow leaves for the
     // expected relayed root hash, then proceed with remaining pool rebalance leaves. This is an optimization that
     // takes advantage of the fact that mainnet transfers between HubPool and SpokePool are atomic.
@@ -1409,6 +1402,12 @@ export class Dataworker {
     });
   }
 
+  // Call `exchangeRateCurrent` on the HubPool before accumulating fees from the executed bundle leaves. This is to
+  // address the situation where `addLiquidity` and `removeLiquidity` have not been called for an L1 token for a
+  // while, which are the other methods that trigger an internal call to `_exchangeRateCurrent()`. Calling
+  // this method triggers a recompounding of fees before new fees come in.
+  // This also calls sync() on any L1 tokens making sure that the HubPool is aware of all the reserves it has
+  // available to execute leaves.
   async _updateExchangeRates(leaves: PoolRebalanceLeaf[], submitExecution: boolean): Promise<void> {
     const compoundedFeesForL1Token: string[] = [];
     leaves.forEach((leaf) => {
