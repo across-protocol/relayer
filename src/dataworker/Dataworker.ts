@@ -486,7 +486,7 @@ export class Dataworker {
     // Exit early if challenge period timestamp has passed:
     if (this.clients.hubPoolClient.currentTime > pendingRootBundle.challengePeriodEndTimestamp) {
       this.logger.debug({
-        at: "Dataworke#validater",
+        at: "Dataworke#validate",
         message: "Challenge period passed, cannot dispute",
         expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
       });
@@ -502,7 +502,7 @@ export class Dataworker {
       spokePoolClients,
       mainnetBundleEndBlockForPendingRootBundle
     );
-    const { valid, reason } = await this.validateRootBundle(
+    const { valid, reason, expectedTrees } = await this.validateRootBundle(
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
@@ -535,6 +535,11 @@ export class Dataworker {
         }
       }
     }
+
+    // Once we've validated it, we should see if there are any L1 tokens included in the proposed bundle 
+    // who's exchange rates need to be updated. This ensures that any future PoolRebalanceLeaf execution 
+    // does not revert due to liquidReserves being out of sync.
+    await this._updateExchangeRates(expectedTrees.poolRebalanceTree.leaves, submitDisputes);
   }
 
   async validateRootBundle(
