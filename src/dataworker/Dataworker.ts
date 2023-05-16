@@ -486,7 +486,7 @@ export class Dataworker {
     // Exit early if challenge period timestamp has passed:
     if (this.clients.hubPoolClient.currentTime > pendingRootBundle.challengePeriodEndTimestamp) {
       this.logger.debug({
-        at: "Dataworke#validate",
+        at: "Dataworker#validate",
         message: "Challenge period passed, cannot dispute",
         expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
       });
