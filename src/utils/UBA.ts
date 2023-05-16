@@ -144,11 +144,11 @@ export class UBAClient {
     const fill = destSpoke.getFillsForRelayer(relayer).find((fill) => {
       // prettier-ignore
       return (
-        fill.amount === amount
+        fill.amount.eq(amount)
         && fill.originChainId === originChainId
         && fill.destinationChainId === destinationChainId
         && fill.depositId === depositId
-        && fill.realizedLpFeePct === realizedLpFeePct
+        && fill.realizedLpFeePct.eq(realizedLpFeePct)
         && fill.blockNumber === fillBlock.toNumber()
       );
     });
