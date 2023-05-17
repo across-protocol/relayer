@@ -10,7 +10,7 @@ import {
 } from "../utils";
 import { createFormatFunction, etherscanLink, formatFeePct, toBN, toBNWei } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
-import { Deposit } from "../interfaces";
+import { Deposit, DepositWithBlock } from "../interfaces";
 import { RelayerConfig } from "./RelayerConfig";
 import { CONFIG_STORE_VERSION } from "../common";
 
@@ -389,7 +389,9 @@ export class Relayer {
     Object.keys(unprofitableDeposits).forEach((chainId) => {
       let depositMrkdwn = "";
       Object.keys(unprofitableDeposits[chainId]).forEach((depositId) => {
-        const { deposit, fillAmount } = unprofitableDeposits[chainId][depositId];
+        const unprofitableDeposit = unprofitableDeposits[chainId][depositId];
+        const deposit: DepositWithBlock = unprofitableDeposit.deposit;
+        const fillAmount: BigNumber = unprofitableDeposit.fillAmount;
         // Skip notifying if the unprofitable fill happened too long ago to avoid spamming.
         if (deposit.quoteTimestamp + UNPROFITABLE_DEPOSIT_NOTICE_PERIOD < getCurrentTime()) {
           return;
@@ -400,10 +402,10 @@ export class Relayer {
         const formatFunction = createFormatFunction(2, 4, false, decimals);
         const gasFormatFunction = createFormatFunction(2, 10, false, 18);
         depositMrkdwn +=
-          `- DepositId ${deposit.depositId} of amount ${formatFunction(deposit.amount)} ${symbol}` +
+          `- DepositId ${deposit.depositId} (tx: ${etherscanLink(deposit.transactionHash, deposit.originChainId)}) of amount ${formatFunction(deposit.amount.toString())} ${symbol}` +
           ` with a relayerFeePct ${formatFeePct(deposit.relayerFeePct)}% and gas cost ${gasFormatFunction(gasCost)}` +
           ` from ${getNetworkName(deposit.originChainId)} to ${getNetworkName(deposit.destinationChainId)}` +
-          ` and an unfilled amount of ${formatFunction(fillAmount)} ${symbol} is unprofitable!\n`;
+          ` and an unfilled amount of ${formatFunction(fillAmount.toString())} ${symbol} is unprofitable!\n`;
       });
 
       if (depositMrkdwn) {
