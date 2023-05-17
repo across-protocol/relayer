@@ -401,11 +401,11 @@ export class Relayer {
         const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
         const formatFunction = createFormatFunction(2, 4, false, decimals);
         const gasFormatFunction = createFormatFunction(2, 10, false, 18);
+        const depositEtherscanLink = etherscanLink(deposit.transactionHash, deposit.originChainId);
         depositMrkdwn +=
-          `- DepositId ${deposit.depositId} (tx: ${etherscanLink(
-            deposit.transactionHash,
-            deposit.originChainId
-          )}) of amount ${formatFunction(deposit.amount.toString())} ${symbol}` +
+          `- DepositId ${deposit.depositId} (tx: ${depositEtherscanLink}) of amount ${formatFunction(
+            deposit.amount.toString()
+          )} ${symbol}` +
           ` with a relayerFeePct ${formatFeePct(deposit.relayerFeePct)}% and gas cost ${gasFormatFunction(gasCost)}` +
           ` from ${getNetworkName(deposit.originChainId)} to ${getNetworkName(deposit.destinationChainId)}` +
           ` and an unfilled amount of ${formatFunction(fillAmount.toString())} ${symbol} is unprofitable!\n`;
