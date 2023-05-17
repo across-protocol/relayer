@@ -84,13 +84,13 @@ export function addLastRunningBalance(
 ): void {
   Object.keys(runningBalances).forEach((repaymentChainId) => {
     Object.keys(runningBalances[repaymentChainId]).forEach((l1TokenAddress) => {
-      const lastRunningBalance = hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      const { runningBalance } = hubPoolClient.getRunningBalanceBeforeBlockForChain(
         latestMainnetBlock,
         Number(repaymentChainId),
         l1TokenAddress
       );
-      if (!lastRunningBalance.eq(toBN(0))) {
-        updateRunningBalance(runningBalances, Number(repaymentChainId), l1TokenAddress, lastRunningBalance);
+      if (!runningBalance.eq(toBN(0))) {
+        updateRunningBalance(runningBalances, Number(repaymentChainId), l1TokenAddress, runningBalance);
       }
     });
   });
