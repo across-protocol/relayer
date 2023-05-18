@@ -165,28 +165,53 @@ export class MultiCallerClient {
       message: `${simulate ? "Simulating" : "Executing"} ${nTxns} transaction(s) on ${networkName}.`,
     });
 
-    const txnSims = await Promise.allSettled([
-      this.simulateTransactionQueue(txns),
-      this.simulateTransactionQueue(valueTxns),
-    ]);
+    const txnRequestsToSubmit: AugmentedTransaction[] = [];
 
-    const [_txns, _valueTxns] = txnSims.map((result): AugmentedTransaction[] => {
-      return isPromiseFulfilled(result) ? result.value : [];
-    });
-
-    // Generate the complete set of txns to submit to the network. Anything that failed simulation is dropped.
-    const txnRequests: AugmentedTransaction[] = _valueTxns.concat(
-      await this.buildMultiCallBundles(_txns, this.chunkSize[chainId])
+    // First try to simulate the transaction as a batch. If the full batch succeeded, then we don't
+    // need to simulate transactions individually. If the batch failed, then we need to
+    // simulate the transactions individually and pick out the successful ones.
+    const batchTxns: AugmentedTransaction[] = valueTxns.concat(
+      await this.buildMultiCallBundles(txns, this.chunkSize[chainId])
     );
+    const batchSimResults = await this.txnClient.simulate(batchTxns);
+    let batchesAllSucceeded = true;
+    batchSimResults.forEach((result) => {
+      this.logger[result.succeed ? "debug" : "error"]({
+        at: "MultiCallerClient#executeChainTxnQueue",
+        message: result.succeed
+          ? `Successfully simulated ${networkName} transaction batch!`
+          : `Failed to simulate ${networkName} transaction batch!`,
+        batchTxn: {
+          ...result.transaction,
+          contract: result.transaction.contract.address,
+        },
+      });
+      if (!result.succeed) {
+        batchesAllSucceeded = false;
+      }
+    });
+    if (batchesAllSucceeded) {
+      txnRequestsToSubmit.push(...batchTxns);
+    } else {
+      const individualTxnSimResults = await Promise.allSettled([
+        this.simulateTransactionQueue(txns),
+        this.simulateTransactionQueue(valueTxns),
+      ]);
+      const [_txns, _valueTxns] = individualTxnSimResults.map((result): AugmentedTransaction[] => {
+        return isPromiseFulfilled(result) ? result.value : [];
+      });
+      // Fill in the set of txns to submit to the network. Anything that failed simulation is dropped.
+      txnRequestsToSubmit.push(..._valueTxns.concat(await this.buildMultiCallBundles(_txns, this.chunkSize[chainId])));
+    }
 
     if (simulate) {
       let mrkdwn = "";
-      txnRequests.forEach((txn, idx) => {
+      txnRequestsToSubmit.forEach((txn, idx) => {
         mrkdwn += `  *${idx + 1}. ${txn.message || "No message"}: ${txn.mrkdwn || "No markdown"}\n`;
       });
       this.logger.info({
         at: "MultiCallerClient#executeTxnQueue",
-        message: `${txnRequests.length}/${nTxns} ${networkName} transaction simulation(s) succeeded!`,
+        message: `${txnRequestsToSubmit.length}/${nTxns} ${networkName} transaction simulation(s) succeeded!`,
         mrkdwn,
       });
       this.logger.info({ at: "MulticallerClient#executeTxnQueue", message: "Exiting simulation mode 🎮" });
@@ -194,7 +219,7 @@ export class MultiCallerClient {
     }
 
     const txnResponses: TransactionResponse[] =
-      txnRequests.length > 0 ? await this.txnClient.submit(chainId, txnRequests) : [];
+      txnRequestsToSubmit.length > 0 ? await this.txnClient.submit(chainId, txnRequestsToSubmit) : [];
 
     return txnResponses;
   }
