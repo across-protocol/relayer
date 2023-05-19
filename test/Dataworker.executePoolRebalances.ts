@@ -55,7 +55,6 @@ describe("Dataworker: Execute pool rebalances", async function () {
 
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,

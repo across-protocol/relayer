@@ -1,6 +1,6 @@
-import { expect, ethers, SignerWithAddress, createSpyLogger, winston } from "./utils";
-import { BigNumber, FakeContract, smock, toBN } from "./utils";
-import { MockHubPoolClient } from "./mocks";
+import { expect, ethers, getContractFactory, SignerWithAddress, createSpyLogger, winston } from "./utils";
+import { BigNumber, FakeContract, hubPoolFixture, smock, toBN } from "./utils";
+import { MockConfigStoreClient, MockHubPoolClient } from "./mocks";
 import { bnToHex, getL2TokenAddresses } from "../src/utils";
 import { SpokePoolClient } from "../src/clients";
 import { AdapterManager } from "../src/clients/bridges"; // Tested
@@ -12,7 +12,7 @@ let hubPoolClient: MockHubPoolClient;
 const mockSpokePoolClients: {
   [chainId: number]: SpokePoolClient;
 } = {};
-let relayer: SignerWithAddress, spyLogger: winston.Logger, amountToSend: BigNumber;
+let relayer: SignerWithAddress, owner: SignerWithAddress, spyLogger: winston.Logger, amountToSend: BigNumber;
 let adapterManager: AdapterManager; // tested
 
 // Atomic depositor
@@ -38,10 +38,11 @@ const mainnetTokens = {
 
 describe("AdapterManager: Send tokens cross-chain", async function () {
   beforeEach(async function () {
-    [relayer] = await ethers.getSigners();
+    [relayer, owner] = await ethers.getSigners();
     ({ spyLogger } = createSpyLogger());
 
-    hubPoolClient = new MockHubPoolClient(null, null);
+    const { hubPool, configStoreClient } = await hubPoolFixture();
+    hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
     await seedMocks();
     adapterManager = new AdapterManager(spyLogger, mockSpokePoolClients, hubPoolClient, [relayer.address]);
 

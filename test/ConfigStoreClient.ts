@@ -6,6 +6,7 @@ import { amountToLp, destinationChainId, mockTreeRoot, refundProposalLiveness, t
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
 import { HubPoolClient, GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
+import { SpokePoolTargetBalance } from "../src/interfaces";
 import { MockConfigStoreClient } from "./mocks/MockConfigStoreClient";
 import { DEFAULT_CONFIG_STORE_VERSION } from "../src/common";
 
@@ -56,9 +57,10 @@ describe("AcrossConfigStoreClient", async function () {
     await hubPool.enableL1TokenForLiquidityProvision(l1Token.address);
 
     configStore = await (await getContractFactory("AcrossConfigStore", owner)).deploy();
-    hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
-    configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore, hubPoolClient);
+    configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore);
     configStoreClient.setConfigStoreVersion(0);
+
+    hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, configStoreClient);
 
     await setupTokensForWallet(spokePool, owner, [l1Token], weth, 100); // Seed owner to LP.
     await l1Token.approve(hubPool.address, amountToLp);
@@ -172,7 +174,7 @@ describe("AcrossConfigStoreClient", async function () {
 
       // Relayed amount being 10% of total LP amount should give exact same results as this test in v1:
       // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L1037
-      expect((await configStoreClient.computeRealizedLpFeePct(depositData, l1Token.address)).realizedLpFeePct).to.equal(
+      expect((await hubPoolClient.computeRealizedLpFeePct(depositData, l1Token.address)).realizedLpFeePct).to.equal(
         toBNWei("0.000117987509354032")
       );
 
@@ -196,7 +198,7 @@ describe("AcrossConfigStoreClient", async function () {
       // pool utilization factor.
       expect(
         (
-          await configStoreClient.computeRealizedLpFeePct(
+          await hubPoolClient.computeRealizedLpFeePct(
             {
               ...depositData,
               amount: toBNWei("0.0000001"),
@@ -214,7 +216,7 @@ describe("AcrossConfigStoreClient", async function () {
       // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L1064
       expect(
         (
-          await configStoreClient.computeRealizedLpFeePct(
+          await hubPoolClient.computeRealizedLpFeePct(
             {
               ...depositData,
               // Same as before, we need to use a timestamp following the `executeRootBundle` call so that we can capture
@@ -245,30 +247,48 @@ describe("AcrossConfigStoreClient", async function () {
       ).to.throw(/Could not find TransferThreshold/);
     });
 
+    // @note: expect(...)to.deep.equals() coerces BigNumbers incorrectly and fails. Why?
     it("Get spoke pool balance threshold for block", async function () {
       await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
       await updateAllClients();
+
       const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[0];
-      expect(
-        configStoreClient.getSpokeTargetBalancesForBlock(l1Token.address, originChainId, initialUpdate.blockNumber)
-      ).to.deep.equal({
+      let targetBalance = configStoreClient.getSpokeTargetBalancesForBlock(
+        l1Token.address,
+        originChainId,
+        initialUpdate.blockNumber
+      );
+      let expectedTargetBalance: SpokePoolTargetBalance = {
         target: toBN(sampleSpokeTargetBalances[originChainId].target),
         threshold: toBN(sampleSpokeTargetBalances[originChainId].threshold),
+      };
+      expect(Object.keys(targetBalance).length).to.equal(Object.keys(expectedTargetBalance).length);
+      Object.entries(expectedTargetBalance).forEach(([k,v]) => {
+        expect(v).to.deep.equal(expectedTargetBalance[k]);
       });
+
       // Block number when there is no config, should default to all 0s for back-compat.
-      expect(
-        configStoreClient.getSpokeTargetBalancesForBlock(l1Token.address, originChainId, initialUpdate.blockNumber - 1)
-      ).to.deep.equal({
-        target: toBN(0),
-        threshold: toBN(0),
+      expectedTargetBalance = { target: toBN(0), threshold: toBN(0) };
+      targetBalance = configStoreClient.getSpokeTargetBalancesForBlock(
+        l1Token.address,
+        originChainId,
+        initialUpdate.blockNumber - 1
+      );
+      expect(Object.keys(targetBalance).length).to.equal(Object.keys(expectedTargetBalance).length);
+      Object.entries(expectedTargetBalance).forEach(([k,v]) => {
+        expect(v).to.deep.equal(expectedTargetBalance[k]);
       });
 
       // L1 token where there is no config, should default to all 0s.
-      expect(
-        configStoreClient.getSpokeTargetBalancesForBlock(l2Token.address, originChainId, initialUpdate.blockNumber)
-      ).to.deep.equal({
-        target: toBN(0),
-        threshold: toBN(0),
+      expectedTargetBalance = { target: toBN(0), threshold: toBN(0) };
+      targetBalance = configStoreClient.getSpokeTargetBalancesForBlock(
+        l2Token.address,
+        originChainId,
+        initialUpdate.blockNumber
+      );
+      expect(Object.keys(targetBalance).length).to.equal(Object.keys(expectedTargetBalance).length);
+      Object.entries(expectedTargetBalance).forEach(([k,v]) => {
+        expect(v).to.deep.equal(expectedTargetBalance[k]);
       });
     });
   });
@@ -441,7 +461,7 @@ describe("AcrossConfigStoreClient", async function () {
 });
 
 async function updateAllClients() {
-  // Note: Must update upstream clients first, for example hubPool before rateModel store
-  await hubPoolClient.update();
+  // Note: Must update upstream clients first, for example configStoreClient before hubPoolClient.
   await configStoreClient.update();
+  await hubPoolClient.update();
 }

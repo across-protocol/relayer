@@ -93,13 +93,13 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   // If request timestamp corresponds to a dispute, use that to easily find the associated root bundle.
   const disputeEventForRequestTime = await getDisputeForTimestamp(
     dvm,
-    clients.configStoreClient,
+    clients.hubPoolClient,
     priceRequestTime,
     priceRequestBlock
   );
   let precedingProposeRootBundleEvent: ProposedRootBundle;
   if (disputeEventForRequestTime !== undefined) {
-    precedingProposeRootBundleEvent = getDisputedProposal(clients.configStoreClient, disputeEventForRequestTime);
+    precedingProposeRootBundleEvent = getDisputedProposal(clients.hubPoolClient, disputeEventForRequestTime);
   }
   if (disputeEventForRequestTime === undefined || precedingProposeRootBundleEvent === undefined) {
     logger.debug({
@@ -168,7 +168,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
 
   const spokePoolClients = await constructSpokePoolClientsForFastDataworker(
     logger,
-    clients.configStoreClient,
+    clients.hubPoolClient,
     config,
     baseSigner,
     fromBlocks,
