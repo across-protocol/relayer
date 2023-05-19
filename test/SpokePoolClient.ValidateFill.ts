@@ -27,7 +27,7 @@ import {
 } from "./utils";
 
 import { AcrossConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
-import { validateFillForDeposit } from "../src/utils";
+import { queryHistoricalDepositForFill, validateFillForDeposit } from "../src/utils";
 import { MockSpokePoolClient } from "./mocks/MockSpokePoolClient";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract, hubPool: Contract;
@@ -382,7 +382,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
     await spokePoolClient2.update();
     const [fill] = spokePoolClient2.getFills();
 
-    await assertPromiseError(spokePoolClient1.queryHistoricalDepositForFill(fill), "SpokePoolClient must be updated");
+    await assertPromiseError(queryHistoricalDepositForFill(spokePoolClient1, fill), "SpokePoolClient must be updated");
 
     // Set event search config from block to latest block so client doesn't see event.
     spokePoolClient1.eventSearchConfig.fromBlock = await spokePool_1.provider.getBlockNumber();
@@ -391,7 +391,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
 
     // Client has 0 deposits in memory so querying historical deposit sends fresh RPC requests.
     expect(spokePoolClient1.getDeposits().length).to.equal(0);
-    const historicalDeposit = await spokePoolClient1.queryHistoricalDepositForFill(fill);
+    const historicalDeposit = await queryHistoricalDepositForFill(spokePoolClient1, fill);
     expect(historicalDeposit?.depositId).to.deep.equal(deposit.depositId);
   });
 
@@ -410,7 +410,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
     await spokePoolClient2.update();
     const [fill] = spokePoolClient2.getFills();
 
-    await assertPromiseError(spokePoolClient1.queryHistoricalDepositForFill(fill), "SpokePoolClient must be updated");
+    await assertPromiseError(queryHistoricalDepositForFill(spokePoolClient1, fill), "SpokePoolClient must be updated");
 
     // Set event search config to block to before deposit so client doesn't see event.
     spokePoolClient1.eventSearchConfig.toBlock = depositBlock - 1;
@@ -418,7 +418,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
 
     // Client has 0 deposits in memory so querying historical deposit sends fresh RPC requests.
     expect(spokePoolClient1.getDeposits().length).to.equal(0);
-    const historicalDeposit = await spokePoolClient1.queryHistoricalDepositForFill(fill);
+    const historicalDeposit = await queryHistoricalDepositForFill(spokePoolClient1, fill);
     expect(historicalDeposit?.depositId).to.deep.equal(deposit.depositId);
   });
 
@@ -437,13 +437,13 @@ describe("SpokePoolClient: Fill Validation", async function () {
     expect(spokePoolClient1.earliestDepositIdQueried == 0).is.true;
 
     // Client should NOT send RPC requests to fetch this deposit, instead it should load from memory.
-    expect((await spokePoolClient1.queryHistoricalDepositForFill(fill)) !== undefined).is.true;
+    expect((await queryHistoricalDepositForFill(spokePoolClient1, fill)) !== undefined).is.true;
     expect(lastSpyLogIncludes(spy, "updated!")).is.true;
 
     // Now override earliest deposit ID queried so that its > deposit ID and check that client sends RPC requests.
     spokePoolClient1.earliestDepositIdQueried = 1;
-    expect((await spokePoolClient1.queryHistoricalDepositForFill(fill)) !== undefined).is.true;
-    expect(lastSpyLogIncludes(spy, "Queried RPC for deposit")).is.true;
+    expect((await queryHistoricalDepositForFill(spokePoolClient1, fill)) !== undefined).is.true;
+    expect(lastSpyLogIncludes(spy, "Located deposit outside of SpokePoolClient's search range")).is.true;
   });
 
   it("Loads fills from memory with deposit ID < spoke pool client's latest deposit ID queried", async function () {
@@ -463,13 +463,13 @@ describe("SpokePoolClient: Fill Validation", async function () {
     spokePoolClient1.latestDepositIdQueried = 1;
 
     // Client should NOT send RPC requests to fetch this deposit, instead it should load from memory.
-    expect((await spokePoolClient1.queryHistoricalDepositForFill(fill)) !== undefined).is.true;
+    expect((await queryHistoricalDepositForFill(spokePoolClient1, fill)) !== undefined).is.true;
     expect(lastSpyLogIncludes(spy, "updated!")).is.true;
 
     // Now override latest deposit ID queried so that its < deposit ID and check that client sends RPC requests.
     spokePoolClient1.latestDepositIdQueried = -1;
-    expect((await spokePoolClient1.queryHistoricalDepositForFill(fill)) !== undefined).is.true;
-    expect(lastSpyLogIncludes(spy, "Queried RPC for deposit")).is.true;
+    expect((await queryHistoricalDepositForFill(spokePoolClient1, fill)) !== undefined).is.true;
+    expect(lastSpyLogIncludes(spy, "Located deposit outside of SpokePoolClient's search range")).is.true;
   });
 
   it("Ignores fills with deposit ID < first deposit ID in spoke pool", async function () {
@@ -490,7 +490,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
     await spokePoolClient1.update();
     spokePoolClient1.firstDepositIdForSpokePool = 1;
     expect(fill.depositId < spokePoolClient1.firstDepositIdForSpokePool).is.true;
-    await spokePoolClient1.queryHistoricalDepositForFill(fill);
+    await queryHistoricalDepositForFill(spokePoolClient1, fill);
     expect(lastSpyLogIncludes(spy, "Queried RPC for deposit")).is.not.true;
   });
 
@@ -521,7 +521,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
 
     await spokePoolClient1.update();
     expect(fill.depositId > spokePoolClient1.lastDepositIdForSpokePool).is.true;
-    await spokePoolClient1.queryHistoricalDepositForFill(fill);
+    await queryHistoricalDepositForFill(spokePoolClient1, fill);
     expect(lastSpyLogIncludes(spy, "Queried RPC for deposit")).is.not.true;
   });
 
