@@ -435,14 +435,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
    * @returns A dictionary of chain ID to SpokePoolClient.
    */
   async function _createSpokePoolClients(fromBlocks: { [chainId: number]: number }) {
-    return constructSpokePoolClientsWithStartBlocks(
-      logger,
-      clients.hubPoolClient,
-      config,
-      baseSigner,
-      fromBlocks,
-      {}
-    );
+    return constructSpokePoolClientsWithStartBlocks(logger, clients.hubPoolClient, config, baseSigner, fromBlocks, {});
   }
 }
 

@@ -1,8 +1,8 @@
-import { expect, ethers, getContractFactory, SignerWithAddress, createSpyLogger, winston } from "./utils";
-import { BigNumber, FakeContract, hubPoolFixture, smock, toBN } from "./utils";
-import { MockConfigStoreClient, MockHubPoolClient } from "./mocks";
+import { expect, ethers, SignerWithAddress, createSpyLogger, winston } from "./utils";
+import { BigNumber, deployConfigStore, FakeContract, hubPoolFixture, smock, toBN } from "./utils";
+import { MockHubPoolClient } from "./mocks";
 import { bnToHex, getL2TokenAddresses } from "../src/utils";
-import { SpokePoolClient } from "../src/clients";
+import { AcrossConfigStoreClient as ConfigStoreClient, SpokePoolClient } from "../src/clients";
 import { AdapterManager } from "../src/clients/bridges"; // Tested
 import * as interfaces from "../src/clients/bridges/ContractInterfaces";
 import { constants } from "@across-protocol/sdk-v2";
@@ -41,7 +41,10 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     [relayer, owner] = await ethers.getSigners();
     ({ spyLogger } = createSpyLogger());
 
-    const { hubPool, configStoreClient } = await hubPoolFixture();
+    const { configStore } = await deployConfigStore(owner, []);
+    const configStoreClient = new ConfigStoreClient(spyLogger, configStore);
+
+    const { hubPool } = await hubPoolFixture();
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
     await seedMocks();
     adapterManager = new AdapterManager(spyLogger, mockSpokePoolClients, hubPoolClient, [relayer.address]);

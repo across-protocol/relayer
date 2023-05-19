@@ -31,7 +31,7 @@ export async function constructRelayerClients(
     commonClients.configStoreClient,
     config,
     baseSigner,
-    config.maxRelayerLookBack,
+    config.maxRelayerLookBack
   );
 
   const acrossApiClient = new AcrossApiClient(

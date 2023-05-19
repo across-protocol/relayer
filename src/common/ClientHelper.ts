@@ -48,7 +48,7 @@ export async function constructSpokePoolClientsWithLookback(
   configStoreClient: AcrossConfigStoreClient,
   config: CommonConfig,
   baseSigner: Wallet,
-  initialLookBackOverride: number,
+  initialLookBackOverride: number
 ): Promise<SpokePoolClientsByChain> {
   // Construct spoke pool clients for all chains that were enabled at least once in the block range.
   // Caller can optionally override the disabled chains list, which is useful for executing leaves or validating
@@ -155,18 +155,9 @@ export async function constructSpokePoolClientsWithStartBlocks(
       // spoke pool.
       const latestSpokePool = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
       const spokePoolContract = new Contract(latestSpokePool, SpokePool.abi, spokePoolSigners[chainId]);
-      const spokePoolRegistrationBlock = hubPoolClient.getSpokePoolActivationBlock(
-        chainId,
-        latestSpokePool
-      );
-      const time = (await hubPoolClient.hubPool.provider.getBlock(spokePoolRegistrationBlock))
-        .timestamp;
-      const registrationBlock = await getBlockForTimestamp(
-        hubPoolClient.chainId,
-        chainId,
-        time,
-        getCurrentTime()
-      );
+      const spokePoolRegistrationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, latestSpokePool);
+      const time = (await hubPoolClient.hubPool.provider.getBlock(spokePoolRegistrationBlock)).timestamp;
+      const registrationBlock = await getBlockForTimestamp(hubPoolClient.chainId, chainId, time, getCurrentTime());
       return { chainId, contract: spokePoolContract, registrationBlock };
     })
   );

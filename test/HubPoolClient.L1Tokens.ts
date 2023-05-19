@@ -6,7 +6,7 @@ import {
   Contract,
   SignerWithAddress,
   zeroAddress,
-  createSpyLogger
+  createSpyLogger,
 } from "./utils";
 import { AcrossConfigStoreClient as ConfigStoreClient, HubPoolClient } from "../src/clients";
 

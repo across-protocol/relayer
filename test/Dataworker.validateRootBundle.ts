@@ -96,15 +96,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     expect(lastSpyLogIncludes(spy, "Challenge period passed, cannot dispute")).to.be.true;
 
     // Propose new valid root bundle
-    await buildDeposit(
-      hubPoolClient,
-      spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
-      destinationChainId,
-      amountToDeposit
-    );
+    await buildDeposit(hubPoolClient, spokePool_1, erc20_1, l1Token_1, depositor, destinationChainId, amountToDeposit);
     for (const leaf of expectedPoolRebalanceRoot2.leaves) {
       await hubPool.executeRootBundle(
         leaf.chainId,

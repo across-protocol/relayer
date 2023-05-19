@@ -8,7 +8,7 @@ import {
   winston,
   BigNumber,
   toBN,
-  toBNWei
+  toBNWei,
 } from "./utils";
 
 import { MockHubPoolClient } from "./mocks";

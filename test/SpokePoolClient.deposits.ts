@@ -61,7 +61,7 @@ describe("SpokePoolClient: Deposits", async function () {
       const depositId = inputDeposit.depositId as number;
       const destinationChainId = inputDeposit.destinationChainId as number;
       const outputDeposit = outputDeposits[destinationChainId].find((deposit) => deposit.depositId === depositId);
-      Object.entries(inputDeposit).forEach(([k,v]) => {
+      Object.entries(inputDeposit).forEach(([k, v]) => {
         expect(v).to.not.be.undefined;
         expect(v).to.deep.equal(outputDeposit?.[k]);
       });

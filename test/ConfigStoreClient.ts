@@ -263,7 +263,7 @@ describe("AcrossConfigStoreClient", async function () {
         threshold: toBN(sampleSpokeTargetBalances[originChainId].threshold),
       };
       expect(Object.keys(targetBalance).length).to.equal(Object.keys(expectedTargetBalance).length);
-      Object.entries(expectedTargetBalance).forEach(([k,v]) => {
+      Object.entries(expectedTargetBalance).forEach(([k, v]) => {
         expect(v).to.deep.equal(expectedTargetBalance[k]);
       });
 
@@ -275,7 +275,7 @@ describe("AcrossConfigStoreClient", async function () {
         initialUpdate.blockNumber - 1
       );
       expect(Object.keys(targetBalance).length).to.equal(Object.keys(expectedTargetBalance).length);
-      Object.entries(expectedTargetBalance).forEach(([k,v]) => {
+      Object.entries(expectedTargetBalance).forEach(([k, v]) => {
         expect(v).to.deep.equal(expectedTargetBalance[k]);
       });
 
@@ -287,7 +287,7 @@ describe("AcrossConfigStoreClient", async function () {
         initialUpdate.blockNumber
       );
       expect(Object.keys(targetBalance).length).to.equal(Object.keys(expectedTargetBalance).length);
-      Object.entries(expectedTargetBalance).forEach(([k,v]) => {
+      Object.entries(expectedTargetBalance).forEach(([k, v]) => {
         expect(v).to.deep.equal(expectedTargetBalance[k]);
       });
     });

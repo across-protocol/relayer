@@ -328,15 +328,7 @@ describe("Monitor", async function () {
   it("Monitor should report unfilled deposits", async function () {
     await updateAllClients();
     await monitorInstance.update();
-    await buildDeposit(
-      hubPoolClient,
-      spokePool_1,
-      l2Token,
-      l1Token,
-      depositor,
-      destinationChainId,
-      amountToDeposit
-    );
+    await buildDeposit(hubPoolClient, spokePool_1, l2Token, l1Token, depositor, destinationChainId, amountToDeposit);
     await monitorInstance.update();
     await monitorInstance.reportUnfilledDeposits();
 
