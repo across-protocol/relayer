@@ -139,6 +139,15 @@ export async function constructSpokePoolClientsWithStartBlocks(
   toBlockOverride: { [chainId: number]: number } = {},
   enabledChains?: number[]
 ): Promise<SpokePoolClientsByChain> {
+  if (!enabledChains) {
+    enabledChains = getEnabledChainsInBlockRange(
+      hubPoolClient.configStoreClient,
+      config.spokePoolChainsOverride,
+      startBlocks[hubPoolClient.chainId],
+      toBlockOverride[hubPoolClient.chainId]
+    );
+  }
+
   logger.debug({
     at: "ClientHelper#constructSpokePoolClientsWithStartBlocks",
     message: "Enabled chains in block range",
