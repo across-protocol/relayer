@@ -88,18 +88,7 @@ export async function setupDataworker(
   dataworkerClients: DataworkerClients;
   updateAllClients: () => Promise<void>;
 }> {
-  // Replace origin chainId and destination chain id in the chainIdList.
-  const testChainIdList = CHAIN_ID_TEST_LIST.map((chainId) => {
-    switch (chainId) {
-      case defaultDestinationChainId:
-        return destinationChainId;
-      case defaultOriginChainid:
-        return originChainId;
-      default:
-        return chainId;
-    }
-  });
-
+  const testChainIdList = Array.from(CHAIN_ID_TEST_LIST);
   const [owner, depositor, relayer, dataworker] = await ethers.getSigners();
 
   const { spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId);
