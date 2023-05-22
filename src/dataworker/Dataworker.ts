@@ -132,7 +132,7 @@ export class Dataworker {
       blockRangesForChains,
       this.clients.hubPoolClient.chainId,
       this.chainIdListForBundleEvaluationBlockNumbers
-    )[this.clients.hubPoolClient.chainId];
+    )[1];
 
     const { fillsToRefund } = await this.clients.bundleDataClient.loadData(blockRangesForChains, spokePoolClients);
     const maxRefundCount = this.maxRefundCountOverride
@@ -164,7 +164,7 @@ export class Dataworker {
       blockRangesForChains,
       this.clients.hubPoolClient.chainId,
       this.chainIdListForBundleEvaluationBlockNumbers
-    )[this.clients.hubPoolClient.chainId];
+    )[1];
     const allValidFillsInRange = getFillsInRange(
       allValidFills,
       blockRangesForChains,
@@ -289,7 +289,7 @@ export class Dataworker {
     // to construct the potential next bundle block range.
     const blockRangesForProposal = this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
-      this.clients.hubPoolClient.latestBlockNumber - this.blockRangeEndBlockBuffer[hubPoolChainId]
+      this.clients.hubPoolClient.latestBlockNumber - this.blockRangeEndBlockBuffer[1]
     );
 
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
@@ -319,7 +319,7 @@ export class Dataworker {
       blockRangesForProposal,
       hubPoolChainId,
       this.chainIdListForBundleEvaluationBlockNumbers
-    )[hubPoolChainId];
+    )[1];
 
     // Create roots using constructed block ranges.
     const timerStart = Date.now();
@@ -707,7 +707,7 @@ export class Dataworker {
       blockRangesImpliedByBundleEndBlocks,
       hubPoolChainId,
       this.chainIdListForBundleEvaluationBlockNumbers
-    )[hubPoolChainId];
+    )[1];
     // If config store version isn't up to date, return early. This is a simple rule that is perhaps too aggressive
     // but the proposer role is a specialized one and the user should always be using updated software.
     if (!this.clients.configStoreClient.hasLatestConfigStoreVersion) {
@@ -1559,7 +1559,7 @@ export class Dataworker {
           blockNumberRanges,
           hubPoolChainId,
           this.chainIdListForBundleEvaluationBlockNumbers
-        )[hubPoolChainId];
+        )[1];
         const mainnetEndBlockTimestamp = (
           await this.clients.hubPoolClient.hubPool.provider.getBlock(endBlockForMainnet)
         ).timestamp;
