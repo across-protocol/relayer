@@ -1,5 +1,5 @@
 import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolRebalanceLeaves } from "./utils";
-import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
+import { expect, ethers, Contract, hre, SignerWithAddress, setupTokensForWallet } from "./utils";
 import { toBNWei, toWei, buildPoolRebalanceLeafTree, createSpyLogger } from "./utils";
 import { getContractFactory, hubPoolFixture, toBN, utf8ToHex } from "./utils";
 import { amountToLp, destinationChainId, mockTreeRoot, refundProposalLiveness, totalBond } from "./constants";
@@ -50,6 +50,11 @@ const tokenConfigToUpdate = JSON.stringify({
 });
 
 describe("AcrossConfigStoreClient", async function () {
+  before(async function () {
+    // This test can fail inexplicably due to underlying chain "stall" if it follows after another test.
+    await hre.network.provider.request({ method: "hardhat_reset", params: [] });
+  });
+
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
     ({ spokePool, erc20: l2Token } = await deploySpokePoolWithToken(originChainId, repaymentChainId));
@@ -57,7 +62,9 @@ describe("AcrossConfigStoreClient", async function () {
     await hubPool.enableL1TokenForLiquidityProvision(l1Token.address);
 
     configStore = await (await getContractFactory("AcrossConfigStore", owner)).deploy();
-    configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore);
+    const receipt = await configStore.deployTransaction.wait();
+    const eventSearchConfig = { fromBlock: receipt.blockNumber };
+    configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore, eventSearchConfig);
     configStoreClient.setConfigStoreVersion(0);
 
     await setupTokensForWallet(spokePool, owner, [l1Token], weth, 100); // Seed owner to LP.
@@ -172,8 +179,6 @@ describe("AcrossConfigStoreClient", async function () {
         quoteTimestamp: initialRateModelUpdateTime,
         // Quote time needs to be >= first rate model event time
       };
-      await configStoreClient.update();
-      await hubPoolClient.update();
 
       // Relayed amount being 10% of total LP amount should give exact same results as this test in v1:
       // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L1037
