@@ -466,7 +466,7 @@ export class Dataworker {
     ) {
       throw new Error("HubPoolClient not updated");
     }
-    const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
+    const hubPoolChainId = this.clients.hubPoolClient.chainId;
 
     // Exit early if a bundle is not pending.
     const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundle();
@@ -1152,7 +1152,7 @@ export class Dataworker {
     ) {
       throw new Error("HubPoolClient not updated");
     }
-    const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
+    const hubPoolChainId = this.clients.hubPoolClient.chainId;
 
     // Exit early if a bundle is not pending.
     const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundle();
@@ -1182,7 +1182,7 @@ export class Dataworker {
 
     const mainnetBundleEndBlockForPendingRootBundle = getBlockForChain(
       pendingRootBundle.bundleEvaluationBlockNumbers,
-      this.clients.hubPoolClient.chainId,
+      hubPoolChainId,
       this.chainIdListForBundleEvaluationBlockNumbers
     );
     const widestPossibleExpectedBlockRange = this._getWidestPossibleBlockRangeForNextBundle(
