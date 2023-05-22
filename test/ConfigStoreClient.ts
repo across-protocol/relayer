@@ -68,7 +68,6 @@ describe("AcrossConfigStoreClient", async function () {
     configStoreClient.setConfigStoreVersion(0);
 
     await setupTokensForWallet(spokePool, owner, [l1Token], weth, 100); // Seed owner to LP.
-
   });
 
   it("update", async function () {
