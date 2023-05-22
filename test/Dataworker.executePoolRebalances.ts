@@ -46,12 +46,11 @@ describe("Dataworker: Execute pool rebalances", async function () {
       MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
       DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
       0,
-      destinationChainId,
+      destinationChainId
     ));
   });
   it("Simple lifecycle", async function () {
     await updateAllClients();
-
 
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(

@@ -38,7 +38,9 @@ describe("Dataworker block range-related utility methods", async function () {
   });
   it("PoolRebalanceUtils.getWidestPossibleExpectedBlockRange", async function () {
     // End blocks equal to latest spoke client block, start block for first bundle equal to 0:
-    const chainIdListForBundleEvaluationBlockNumbers = Object.keys(spokePoolClients).map((_chainId) => Number(_chainId)) ;
+    const chainIdListForBundleEvaluationBlockNumbers = Object.keys(spokePoolClients).map((_chainId) =>
+      Number(_chainId)
+    );
     const defaultEndBlockBuffers = Array(chainIdListForBundleEvaluationBlockNumbers.length).fill(1);
     const latestBlocks = await Promise.all(
       chainIdListForBundleEvaluationBlockNumbers.map(async (chainId: number, index) =>
@@ -179,14 +181,24 @@ describe("Dataworker block range-related utility methods", async function () {
     // the latest invalid start block. This means that the dataworker will refuse to validate any bundles with clients
     // that don't have early enough data for the first bundle, which started at the deployment block height.
     expect(
-      blockRangesAreInvalidForSpokeClients(_spokePoolClients, [[0, spokePoolClients[chainId].latestBlockNumber]], chainIds, {
-        [chainId]: mainnetDeploymentBlock + 2,
-      })
+      blockRangesAreInvalidForSpokeClients(
+        _spokePoolClients,
+        [[0, spokePoolClients[chainId].latestBlockNumber]],
+        chainIds,
+        {
+          [chainId]: mainnetDeploymentBlock + 2,
+        }
+      )
     ).to.equal(true);
     expect(
-      blockRangesAreInvalidForSpokeClients(_spokePoolClients, [[0, spokePoolClients[chainId].latestBlockNumber]], chainIds, {
-        [chainId]: mainnetDeploymentBlock - 1,
-      })
+      blockRangesAreInvalidForSpokeClients(
+        _spokePoolClients,
+        [[0, spokePoolClients[chainId].latestBlockNumber]],
+        chainIds,
+        {
+          [chainId]: mainnetDeploymentBlock - 1,
+        }
+      )
     ).to.equal(false);
   });
 });
