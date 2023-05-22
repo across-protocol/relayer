@@ -14,7 +14,7 @@ let spokePool: Contract, hubPool: Contract, l2Token: Contract;
 let configStore: Contract, l1Token: Contract, timer: Contract, weth: Contract;
 let owner: SignerWithAddress;
 
-let configStoreClient: MockConfigStoreClient, hubPoolClient: HubPoolClient;
+let configStoreClient: MockConfigStoreClient;
 
 // Same rate model used for across-v1 tests:
 // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L77
@@ -60,11 +60,8 @@ describe("AcrossConfigStoreClient", async function () {
     configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore);
     configStoreClient.setConfigStoreVersion(0);
 
-    hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, configStoreClient);
-
     await setupTokensForWallet(spokePool, owner, [l1Token], weth, 100); // Seed owner to LP.
-    await l1Token.approve(hubPool.address, amountToLp);
-    await hubPool.addLiquidity(l1Token.address, amountToLp);
+
   });
 
   it("update", async function () {
@@ -124,7 +121,7 @@ describe("AcrossConfigStoreClient", async function () {
   describe("TokenConfig", function () {
     it("getRateModelForBlockNumber", async function () {
       await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
-      await updateAllClients();
+      await configStoreClient.update();
 
       const initialRateModelUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[0];
 
@@ -148,8 +145,13 @@ describe("AcrossConfigStoreClient", async function () {
     });
 
     it("computeRealizedLpFeePct", async function () {
+      const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, configStoreClient);
+      await l1Token.approve(hubPool.address, amountToLp);
+      await hubPool.addLiquidity(l1Token.address, amountToLp);
+
       await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
-      await updateAllClients();
+      await configStoreClient.update();
+      await hubPoolClient.update();
 
       const initialRateModelUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[0];
       const initialRateModelUpdateTime = (await ethers.provider.getBlock(initialRateModelUpdate.blockNumber)).timestamp;
@@ -171,6 +173,7 @@ describe("AcrossConfigStoreClient", async function () {
         // Quote time needs to be >= first rate model event time
       };
       await configStoreClient.update();
+      await hubPoolClient.update();
 
       // Relayed amount being 10% of total LP amount should give exact same results as this test in v1:
       // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L1037
@@ -231,7 +234,7 @@ describe("AcrossConfigStoreClient", async function () {
 
     it("Get token transfer threshold for block", async function () {
       await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
-      await updateAllClients();
+      await configStoreClient.update();
       const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[0];
       expect(configStoreClient.getTokenTransferThresholdForBlock(l1Token.address, initialUpdate.blockNumber)).to.equal(
         DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
@@ -250,7 +253,7 @@ describe("AcrossConfigStoreClient", async function () {
     // @note: expect(...)to.deep.equals() coerces BigNumbers incorrectly and fails. Why?
     it("Get spoke pool balance threshold for block", async function () {
       await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
-      await updateAllClients();
+      await configStoreClient.update();
 
       const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[0];
       let targetBalance = configStoreClient.getSpokeTargetBalancesForBlock(
@@ -306,7 +309,7 @@ describe("AcrossConfigStoreClient", async function () {
       // Client ignores updates for versions that aren't greater than the previous version.
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "5");
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "6");
-      await updateAllClients();
+      await configStoreClient.update();
 
       // There was only one legitimate update.
       expect(configStoreClient.cumulativeConfigStoreVersionUpdates.length).to.equal(1);
@@ -326,7 +329,7 @@ describe("AcrossConfigStoreClient", async function () {
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "1");
       const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[0];
       const initialUpdateTime = (await ethers.provider.getBlock(initialUpdate.blockNumber)).timestamp;
-      await updateAllClients();
+      await configStoreClient.update();
       expect(configStoreClient.hasLatestConfigStoreVersion).to.be.true;
       expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(initialUpdateTime)).to.equal(true);
 
@@ -337,7 +340,7 @@ describe("AcrossConfigStoreClient", async function () {
 
       // Now pretend we downgrade the local version such that it seems we are no longer up to date:
       configStoreClient.setConfigStoreVersion(0);
-      await updateAllClients();
+      await configStoreClient.update();
       expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(initialUpdateTime)).to.equal(false);
 
       // All previous times before the first update are still fine.
@@ -349,7 +352,7 @@ describe("AcrossConfigStoreClient", async function () {
         utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_RELAYER_REPAYMENT_LEAF_SIZE),
         MAX_REFUNDS_PER_RELAYER_REFUND_LEAF.toString()
       );
-      await updateAllClients();
+      await configStoreClient.update();
       const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[0];
       expect(configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(initialUpdate.blockNumber)).to.equal(
         MAX_REFUNDS_PER_RELAYER_REFUND_LEAF
@@ -365,7 +368,7 @@ describe("AcrossConfigStoreClient", async function () {
         utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE),
         MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF.toString()
       );
-      await updateAllClients();
+      await configStoreClient.update();
       const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[0];
       expect(configStoreClient.getMaxL1TokenCountForPoolRebalanceLeafForBlock(initialUpdate.blockNumber)).to.equal(
         MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF
@@ -383,7 +386,7 @@ describe("AcrossConfigStoreClient", async function () {
         utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS),
         JSON.stringify([1.1, 21, "invalid value", 1])
       );
-      await updateAllClients();
+      await configStoreClient.update();
       const events = await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig());
       const allPossibleChains = [1, 19, 21, 23];
 
@@ -459,9 +462,3 @@ describe("AcrossConfigStoreClient", async function () {
     });
   });
 });
-
-async function updateAllClients() {
-  // Note: Must update upstream clients first, for example configStoreClient before hubPoolClient.
-  await configStoreClient.update();
-  await hubPoolClient.update();
-}
