@@ -13,8 +13,7 @@ import * as clients from "../../src/clients";
 import {
   amountToLp,
   destinationChainId as defaultDestinationChainId,
-  originChainId as defaultOriginChainid,
-  CHAIN_ID_TEST_LIST,
+  originChainId as defaultOriginChainId,
   repaymentChainId,
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
@@ -57,7 +56,7 @@ export async function setupDataworker(
   defaultPoolRebalanceTokenTransferThreshold: BigNumber,
   defaultEndBlockBuffer: number,
   destinationChainId = defaultDestinationChainId,
-  originChainId = defaultOriginChainid,
+  originChainId = defaultOriginChainId,
   lookbackForAllChains?: number
 ): Promise<{
   hubPool: Contract;
@@ -96,8 +95,8 @@ export async function setupDataworker(
   const { spokePool: spokePool_3 } = await deploySpokePoolWithToken(repaymentChainId, hubPoolChainId);
   const { spokePool: spokePool_4 } = await deploySpokePoolWithToken(hubPoolChainId, repaymentChainId);
   const spokePoolDeploymentBlocks = {
-    [defaultOriginChainid]: await spokePool_1.provider.getBlockNumber(),
-    [defaultDestinationChainId]: await spokePool_2.provider.getBlockNumber(),
+    [originChainId]: await spokePool_1.provider.getBlockNumber(),
+    [destinationChainId]: await spokePool_2.provider.getBlockNumber(),
     [repaymentChainId]: await spokePool_3.provider.getBlockNumber(),
     [hubPoolChainId]: await spokePool_4.provider.getBlockNumber(),
   };
@@ -165,7 +164,7 @@ export async function setupDataworker(
   const [spokePoolClient_1, spokePoolClient_2, spokePoolClient_3, spokePoolClient_4] =
     await _constructSpokePoolClientsWithLookback(
       [spokePool_1, spokePool_2, spokePool_3, spokePool_4],
-      [defaultOriginChainid, defaultDestinationChainId, repaymentChainId, hubPoolChainId],
+      [originChainId, destinationChainId, repaymentChainId, hubPoolChainId],
       spyLogger,
       relayer,
       configStoreClient,
@@ -312,7 +311,7 @@ export async function setupFastDataworker(
     DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
     0,
     defaultDestinationChainId,
-    defaultOriginChainid,
+    defaultOriginChainId,
     lookbackForAllChains
   );
 }

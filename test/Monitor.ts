@@ -42,7 +42,7 @@ let updateAllClients: () => Promise<void>;
 
 const { spy, spyLogger } = createSpyLogger();
 
-const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "Unknown", ALL_CHAINS_NAME];
+const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "unknown", ALL_CHAINS_NAME];
 
 let defaultMonitorEnvVars;
 
@@ -71,7 +71,7 @@ describe("Monitor", async function () {
       0
     ));
 
-    const configuredNetworks = [1, repaymentChainId, originChainId, destinationChainId];
+    const configuredNetworks = [hubPoolClient.chainId, repaymentChainId, originChainId, destinationChainId];
 
     defaultMonitorEnvVars = {
       STARTING_BLOCK_NUMBER: "0",
@@ -92,7 +92,7 @@ describe("Monitor", async function () {
     // Set the config store version to 0 to match the default version in the ConfigStoreClient.
     process.env.CONFIG_STORE_VERSION = "0";
 
-    const chainIds = [1, repaymentChainId, originChainId, destinationChainId];
+    const chainIds = configuredNetworks;
     bundleDataClient = new BundleDataClient(
       spyLogger,
       {
