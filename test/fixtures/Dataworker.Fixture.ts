@@ -157,7 +157,13 @@ export async function setupDataworker(
   );
 
   const configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
-  const hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool, configStoreClient);
+  const hubPoolClient = new clients.HubPoolClient(
+    spyLogger,
+    hubPool,
+    configStoreClient,
+    hubPoolDeploymentBlock,
+    hubPoolChainId
+  );
   const multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 
   const [spokePoolClient_1, spokePoolClient_2, spokePoolClient_3, spokePoolClient_4] =
