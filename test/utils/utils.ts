@@ -398,9 +398,10 @@ export async function contractAt(contractName: string, signer: utils.Signer, add
 export async function buildDepositStruct(
   deposit: Omit<Deposit, "destinationToken" | "realizedLpFeePct">,
   hubPoolClient: HubPoolClient,
+  configStoreClient: AcrossConfigStoreClient,
   l1TokenForDepositedToken: Contract
 ) {
-  const { quoteBlock, realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct(
+  const { quoteBlock, realizedLpFeePct } = await await configStoreClient.computeRealizedLpFeePct(
     deposit,
     l1TokenForDepositedToken.address
   );
@@ -414,6 +415,7 @@ export async function buildDepositStruct(
   };
 }
 export async function buildDeposit(
+  configStoreClient: AcrossConfigStoreClient,
   hubPoolClient: HubPoolClient,
   spokePool: Contract,
   tokenToDeposit: Contract,
@@ -432,7 +434,7 @@ export async function buildDeposit(
     _amountToDeposit,
     _relayerFeePct
   );
-  return await buildDepositStruct(_deposit!, hubPoolClient, l1TokenForDepositedToken);
+  return await buildDepositStruct(_deposit!, hubPoolClient, configStoreClient, l1TokenForDepositedToken);
 }
 
 // Submits a fillRelay transaction and returns the Fill struct that that clients will interact with.

@@ -19,7 +19,7 @@ import {
   multicallArbitrumFinalizations,
 } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { HubPoolClient } from "../clients";
+import { AcrossConfigStoreClient } from "../clients";
 import { DataworkerConfig } from "../dataworker/DataworkerConfig";
 import {
   constructClients,
@@ -46,12 +46,13 @@ const oneDaySeconds = 24 * 60 * 60;
 export async function finalize(
   logger: winston.Logger,
   hubSigner: Wallet,
-  hubPoolClient: HubPoolClient,
+  configStoreClient: AcrossConfigStoreClient,
   spokePoolClients: SpokePoolClientsByChain,
   configuredChainIds: number[],
   optimisticRollupFinalizationWindow: number = 5 * oneDaySeconds,
   polygonFinalizationWindow: number = oneDaySeconds
 ): Promise<void> {
+  const hubPoolClient = configStoreClient.hubPoolClient;
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
   const multicall2 = getMultisender(1, hubSigner);
@@ -193,11 +194,11 @@ export async function constructFinalizerClients(
   // the disabled chain list by setting the DISABLED_CHAINS_OVERRIDE environment variable.
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
-    commonClients.hubPoolClient,
     commonClients.configStoreClient,
     config,
     baseSigner,
-    config.maxFinalizerLookback
+    config.maxFinalizerLookback,
+    config.hubPoolChainId
   );
 
   return {
@@ -239,7 +240,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet):
         await finalize(
           logger,
           commonClients.hubSigner,
-          commonClients.hubPoolClient,
+          commonClients.configStoreClient,
           spokePoolClients,
           config.finalizerChains
         );

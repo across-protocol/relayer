@@ -69,6 +69,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
     // Submit deposits for multiple destination chain IDs.
     const deposit1 = await buildDeposit(
+      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -78,6 +79,7 @@ describe("Dataworker: Build merkle roots", async function () {
       amountToDeposit
     );
     const deposit2 = await buildDeposit(
+      configStoreClient,
       hubPoolClient,
       spokePool_2,
       erc20_2,
@@ -87,6 +89,7 @@ describe("Dataworker: Build merkle roots", async function () {
       amountToDeposit
     );
     const deposit3 = await buildDeposit(
+      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -96,6 +99,7 @@ describe("Dataworker: Build merkle roots", async function () {
       amountToDeposit
     );
     const deposit4 = await buildDeposit(
+      configStoreClient,
       hubPoolClient,
       spokePool_2,
       erc20_2,
@@ -157,6 +161,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
     // Includes slow fills triggered by "zero" (i.e. 1 wei) fills
     const deposit5 = await buildDeposit(
+      configStoreClient,
       hubPoolClient,
       spokePool_2,
       erc20_2,
@@ -203,6 +208,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
       // Submit deposits for multiple L2 tokens.
       const deposit1 = await buildDeposit(
+        configStoreClient,
         hubPoolClient,
         spokePool_1,
         erc20_1,
@@ -212,6 +218,7 @@ describe("Dataworker: Build merkle roots", async function () {
         amountToDeposit
       );
       const deposit2 = await buildDeposit(
+        configStoreClient,
         hubPoolClient,
         spokePool_1,
         erc20_1,
@@ -221,6 +228,7 @@ describe("Dataworker: Build merkle roots", async function () {
         amountToDeposit
       );
       const deposit3 = await buildDeposit(
+        configStoreClient,
         hubPoolClient,
         spokePool_2,
         erc20_2,
@@ -306,6 +314,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
       // Splits leaf into multiple leaves if refunds > MAX_REFUNDS_PER_RELAYER_REFUND_LEAF.
       const deposit4 = await buildDeposit(
+        configStoreClient,
         hubPoolClient,
         spokePool_1,
         erc20_1,
@@ -370,6 +379,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
       // Submit 1 deposit to make `netSendAmount` for one chain negative.
       await buildDeposit(
+        configStoreClient,
         hubPoolClient,
         spokePool_1,
         erc20_1,
@@ -425,6 +435,7 @@ describe("Dataworker: Build merkle roots", async function () {
       // more than one leaves. Moreover, make sure not to fully fill the deposit so that the netSendAmount is negative,
       // and check that the amountToReturn is 0 for all except the first leaf.
       const deposit1 = await buildDeposit(
+        configStoreClient,
         hubPoolClient,
         spokePool_2,
         erc20_2,
@@ -528,6 +539,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
       // Submit deposits for multiple L2 tokens.
       const deposit1 = await buildDeposit(
+        configStoreClient,
         hubPoolClient,
         spokePool_1,
         erc20_1,
@@ -537,6 +549,7 @@ describe("Dataworker: Build merkle roots", async function () {
         amountToDeposit
       );
       const deposit2 = await buildDeposit(
+        configStoreClient,
         hubPoolClient,
         spokePool_2,
         erc20_2,
@@ -546,6 +559,7 @@ describe("Dataworker: Build merkle roots", async function () {
         amountToDeposit.mul(toBN(2))
       );
       const deposit3 = await buildDeposit(
+        configStoreClient,
         hubPoolClient,
         spokePool_2,
         erc20_2,
@@ -706,7 +720,7 @@ describe("Dataworker: Build merkle roots", async function () {
       const shortRangeSpokePoolClient = new SpokePoolClient(
         spyLogger,
         spokePool_2,
-        hubPoolClient,
+        configStoreClient,
         destinationChainId,
         spokePoolClients[destinationChainId].deploymentBlock,
         { fromBlock: fill1Block + 1 } // Set fromBlock to now, after first fill for same deposit as the slowFill1
@@ -760,6 +774,7 @@ describe("Dataworker: Build merkle roots", async function () {
       // Update client and construct root. This should increase running balance by total deposit amount, to refund
       // the slow relay.
       const deposit4 = await buildDeposit(
+        configStoreClient,
         hubPoolClient,
         spokePool_2,
         erc20_2,
@@ -801,6 +816,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
       // A full fill not following any partial fills is treated as a normal fill: increases the running balance.
       const deposit5 = await buildDeposit(
+        configStoreClient,
         hubPoolClient,
         spokePool_2,
         erc20_2,
@@ -831,6 +847,7 @@ describe("Dataworker: Build merkle roots", async function () {
       // Send deposit
       // Send two partial fills
       const deposit1 = await buildDeposit(
+        configStoreClient,
         hubPoolClient,
         spokePool_1,
         erc20_1,
@@ -939,6 +956,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
         await updateAllClients(); // Update client to be aware of new token mapping so we can build deposit correctly.
         const deposit = await buildDeposit(
+          configStoreClient,
           hubPoolClient,
           spokePool_1,
           l2Token,
@@ -1026,6 +1044,7 @@ describe("Dataworker: Build merkle roots", async function () {
       await updateAllClients(); // Update client to be aware of new token mapping so we can build deposit correctly.
 
       const depositA = await buildDeposit(
+        configStoreClient,
         hubPoolClient,
         spokePool_1,
         l2TokenNew,
@@ -1039,6 +1058,7 @@ describe("Dataworker: Build merkle roots", async function () {
       // running balances and bundle LP fees for two L1 tokens. This allows us to create the situation where one of
       // the bundle LP fees and running balances is zero for an L1 token.
       const depositB = await buildDeposit(
+        configStoreClient,
         hubPoolClient,
         spokePool_1,
         erc20_1,
@@ -1082,6 +1102,7 @@ describe("Dataworker: Build merkle roots", async function () {
     it("Token transfer exceeeds threshold", async function () {
       await updateAllClients();
       const deposit = await buildDeposit(
+        configStoreClient,
         hubPoolClient,
         spokePool_1,
         erc20_1,
@@ -1160,6 +1181,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
       // Submit a deposit on origin chain. Next running balance should be previous minus deposited amount.
       const deposit = await buildDeposit(
+        configStoreClient,
         hubPoolClient,
         spokePool_1,
         erc20_1,
@@ -1216,6 +1238,7 @@ describe("Dataworker: Build merkle roots", async function () {
     it("Spoke pool balance threshold, above and below", async function () {
       await updateAllClients();
       const deposit = await buildDeposit(
+        configStoreClient,
         hubPoolClient,
         spokePool_1,
         erc20_1,
@@ -1309,6 +1332,7 @@ describe("Dataworker: Build merkle roots", async function () {
     it("Spoke pool balance threshold, below transfer threshold", async function () {
       await updateAllClients();
       const deposit = await buildDeposit(
+        configStoreClient,
         hubPoolClient,
         spokePool_1,
         erc20_1,

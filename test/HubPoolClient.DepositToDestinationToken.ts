@@ -1,7 +1,7 @@
 import { getContractFactory, expect, ethers, Contract, SignerWithAddress, originChainId } from "./utils";
-import { deployConfigStore, zeroAddress, destinationChainId, toBN, createSpyLogger } from "./utils";
+import { zeroAddress, destinationChainId, toBN, createSpyLogger } from "./utils";
 import { randomL1Token, randomOriginToken, randomDestinationToken, randomDestinationToken2 } from "./constants";
-import { AcrossConfigStoreClient as ConfigStoreClient, HubPoolClient } from "../src/clients";
+import { HubPoolClient } from "../src/clients";
 
 let hubPool: Contract, lpTokenFactory: Contract, mockAdapter: Contract;
 let owner: SignerWithAddress;
@@ -20,16 +20,11 @@ describe("HubPoolClient: Deposit to Destination Token", async function () {
     mockAdapter = await (await getContractFactory("Mock_Adapter", owner)).deploy();
     await hubPool.setCrossChainContracts(originChainId, mockAdapter.address, zeroAddress);
 
-    const logger = createSpyLogger().spyLogger;
-    const { configStore } = await deployConfigStore(owner, []);
-    const configStoreClient = new ConfigStoreClient(logger, configStore);
-    hubPoolClient = new HubPoolClient(logger, hubPool, configStoreClient);
-
-    await configStoreClient.update();
-    await hubPoolClient.update();
+    hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
   });
 
   it("Correctly appends whitelisted routes to the client", async function () {
+    await hubPoolClient.update();
     expect(hubPoolClient.getL1TokensToDestinationTokens()).to.deep.equal({});
 
     await hubPool.setPoolRebalanceRoute(destinationChainId, randomL1Token, randomDestinationToken);
@@ -64,6 +59,7 @@ describe("HubPoolClient: Deposit to Destination Token", async function () {
     expect(hubPoolClient.getDestinationTokenForDeposit(depositData)).to.equal(randomDestinationToken2);
   });
   it("Get L1 token counterparts at block height", async function () {
+    await hubPoolClient.update();
     expect(() => hubPoolClient.getL1TokenCounterpartAtBlock(destinationChainId, randomDestinationToken, 0)).to.throw(
       /Could not find L1 token mapping/
     );

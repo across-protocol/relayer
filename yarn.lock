@@ -24,21 +24,6 @@
     "@uma/contracts-node" "^0.3.18"
     "@uma/core" "^2.41.0"
 
-"@across-protocol/contracts-v2@2.2.3":
-  version "2.2.3"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.2.3.tgz#c3df3f8f60910fe6b6dfce32a7e1a224aa1a0396"
-  integrity sha512-JwYiNTLMRIjVcgm01GLMfra3x+pTPTtfdplpJ5DhLXbdin6LEirv7gwAOhykAG8rqYQcWbnwXuBxmWMM/4QY7g==
-  dependencies:
-    "@defi-wonderland/smock" "^2.3.4"
-    "@eth-optimism/contracts" "^0.5.40"
-    "@ethersproject/abstract-provider" "5.7.0"
-    "@ethersproject/abstract-signer" "5.7.0"
-    "@openzeppelin/contracts" "4.8.3"
-    "@openzeppelin/contracts-upgradeable" "4.8.3"
-    "@uma/common" "^2.29.0"
-    "@uma/contracts-node" "^0.3.18"
-    "@uma/core" "^2.41.0"
-
 "@across-protocol/contracts@^0.1.4":
   version "0.1.4"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-0.1.4.tgz#64b3d91e639d2bb120ea94ddef3d160967047fa5"
@@ -48,13 +33,13 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk-v2@0.7.0":
-  version "0.7.0"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.7.0.tgz#4d0f092888019b2a70f89044adacbc8b3eb68c6a"
-  integrity sha512-TzNie5yLjUM22nlIku+UKiQYOABpvQjvG2dxDO5Uy0auF9d3jEKcAomzq5URu7jZgN6/ug+vceR4xQr8wr9s8Q==
+"@across-protocol/sdk-v2@0.6.1":
+  version "0.6.1"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.6.1.tgz#0e061a2680778b0850708b99c3036c9e278b1a42"
+  integrity sha512-qQEodEtDfM4IoFS5tN6YmBS/BjkepLYeY+A96XiWCFbXqX71Sc/EP+Sfw2nx46TSMr24a9wMs8wGgTMD5JqwmQ==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/contracts-v2" "2.2.3"
+    "@across-protocol/contracts-v2" "2.2.2"
     "@eth-optimism/sdk" "^1.6.0"
     "@uma/financial-templates-lib" "^2.32.11"
     "@uma/sdk" "^0.34.1"
@@ -417,7 +402,7 @@
     "@ethersproject/abstract-provider" "^5.7.0"
     "@ethersproject/abstract-signer" "^5.7.0"
 
-"@eth-optimism/contracts@0.5.40", "@eth-optimism/contracts@^0.5.11", "@eth-optimism/contracts@^0.5.40", "@eth-optimism/contracts@^0.5.5":
+"@eth-optimism/contracts@0.5.40", "@eth-optimism/contracts@^0.5.11", "@eth-optimism/contracts@^0.5.5":
   version "0.5.40"
   resolved "https://registry.yarnpkg.com/@eth-optimism/contracts/-/contracts-0.5.40.tgz#d13a04a15ea947a69055e6fc74d87e215d4c936a"
   integrity sha512-MrzV0nvsymfO/fursTB7m/KunkPsCndltVgfdHaT1Aj5Vi6R/doKIGGkOofHX+8B6VMZpuZosKCMQ5lQuqjt8w==

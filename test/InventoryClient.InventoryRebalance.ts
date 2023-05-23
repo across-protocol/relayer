@@ -1,9 +1,9 @@
 import { expect, ethers, SignerWithAddress, createSpyLogger, winston, BigNumber, lastSpyLogIncludes } from "./utils";
-import { deployConfigStore, hubPoolFixture, toBN, toWei, randomAddress, spyLogIncludes } from "./utils";
+import { toBN, toWei, randomAddress, spyLogIncludes } from "./utils";
 
 import { InventoryConfig } from "../src/interfaces";
 import { MockBundleDataClient, MockHubPoolClient, MockAdapterManager, MockTokenClient } from "./mocks/";
-import { AcrossConfigStoreClient as ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
+import { InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
@@ -62,12 +62,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     [owner] = await ethers.getSigners();
     ({ spy, spyLogger } = createSpyLogger());
 
-    const { hubPool, dai: l1Token } = await hubPoolFixture();
-    const { configStore } = await deployConfigStore(owner, [l1Token]);
-
-    const configStoreClient = new ConfigStoreClient(spyLogger, configStore);
-    hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
-
+    hubPoolClient = new MockHubPoolClient(null, null);
     adapterManager = new MockAdapterManager(null, null, null, null);
     tokenClient = new MockTokenClient(null, null, null, null);
     bundleDataClient = new MockBundleDataClient(null, null, null, null);

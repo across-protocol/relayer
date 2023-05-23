@@ -1,14 +1,6 @@
-import {
-  deployConfigStore,
-  getContractFactory,
-  expect,
-  ethers,
-  Contract,
-  SignerWithAddress,
-  zeroAddress,
-  createSpyLogger,
-} from "./utils";
-import { AcrossConfigStoreClient as ConfigStoreClient, HubPoolClient } from "../src/clients";
+import { getContractFactory, expect, ethers, Contract, SignerWithAddress, zeroAddress, createSpyLogger } from "./utils";
+
+import { HubPoolClient } from "../src/clients"; // Tested
 
 let hubPool: Contract, lpTokenFactory: Contract;
 let owner: SignerWithAddress;
@@ -24,16 +16,11 @@ describe("HubPoolClient: L1Tokens", async function () {
       await getContractFactory("HubPool", owner)
     ).deploy(lpTokenFactory.address, zeroAddress, zeroAddress, zeroAddress);
 
-    const logger = createSpyLogger().spyLogger;
-    const { configStore } = await deployConfigStore(owner, []);
-    const configStoreClient = new ConfigStoreClient(logger, configStore);
-    hubPoolClient = new HubPoolClient(logger, hubPool, configStoreClient);
-
-    await configStoreClient.update();
-    await hubPoolClient.update();
+    hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
   });
 
   it("Fetches all L1Tokens Addresses", async function () {
+    await hubPoolClient.update();
     expect(hubPoolClient.getL1Tokens()).to.deep.equal([]);
 
     const l1Token1 = await (await getContractFactory("ExpandedERC20", owner)).deploy("Yeet Coin1", "Coin1", 18);

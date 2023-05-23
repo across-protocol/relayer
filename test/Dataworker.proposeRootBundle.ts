@@ -65,6 +65,7 @@ describe("Dataworker: Propose root bundle", async function () {
     // TEST 2:
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
+      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -224,6 +225,7 @@ describe("Dataworker: Propose root bundle", async function () {
     await updateAllClients();
 
     const deposit = await buildDeposit(
+      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,

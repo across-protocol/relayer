@@ -32,7 +32,7 @@ async function _constructSpokePoolClientsWithLookback(
   spokePoolChains: number[],
   spyLogger: winston.Logger,
   signer: SignerWithAddress,
-  hubPoolClient: clients.HubPoolClient,
+  configStoreClient: clients.AcrossConfigStoreClient,
   lookbackForAllChains?: number,
   deploymentBlocks?: { [chainId: number]: number }
 ) {
@@ -41,7 +41,7 @@ async function _constructSpokePoolClientsWithLookback(
     return new clients.SpokePoolClient(
       spyLogger,
       pool.connect(signer),
-      hubPoolClient,
+      configStoreClient,
       spokePoolChains[i],
       deploymentBlocks && deploymentBlocks[spokePoolChains[i]],
       lookbackForAllChains === undefined ? undefined : { fromBlock: latestBlocks[i] - lookbackForAllChains }
@@ -169,8 +169,8 @@ export async function setupDataworker(
     defaultPoolRebalanceTokenTransferThreshold
   );
 
-  const configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
-  const hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool, configStoreClient);
+  const hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool);
+  const configStoreClient = new MockConfigStoreClient(spyLogger, configStore, hubPoolClient);
 
   const multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 
@@ -180,7 +180,7 @@ export async function setupDataworker(
       [originChainId, destinationChainId, repaymentChainId, 1],
       spyLogger,
       relayer,
-      hubPoolClient,
+      configStoreClient,
       lookbackForAllChains,
       spokePoolDeploymentBlocks
     );
@@ -273,8 +273,8 @@ export async function setupDataworker(
     dataworker,
     dataworkerClients,
     updateAllClients: async () => {
-      await configStoreClient.update();
       await hubPoolClient.update();
+      await configStoreClient.update();
       await profitClient.update();
       await spokePoolClient_1.update();
       await spokePoolClient_2.update();

@@ -8,7 +8,7 @@ import {
   updateSpokePoolClients,
 } from "../common";
 import { Wallet } from "../utils";
-import { BundleDataClient, HubPoolClient, ProfitClient, TokenClient } from "../clients";
+import { AcrossConfigStoreClient, BundleDataClient, ProfitClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
 import { ProposedRootBundle, SpokePoolClientsByChain } from "../interfaces";
@@ -77,7 +77,7 @@ export async function updateDataworkerClients(clients: DataworkerClients, setAll
 // wants to propose or validate.
 export async function constructSpokePoolClientsForFastDataworker(
   logger: winston.Logger,
-  hubPoolClient: HubPoolClient,
+  configStoreClient: AcrossConfigStoreClient,
   config: DataworkerConfig,
   baseSigner: Wallet,
   startBlocks: { [chainId: number]: number },
@@ -85,7 +85,7 @@ export async function constructSpokePoolClientsForFastDataworker(
 ): Promise<SpokePoolClientsByChain> {
   const spokePoolClients = await constructSpokePoolClientsWithStartBlocks(
     logger,
-    hubPoolClient,
+    configStoreClient,
     config,
     baseSigner,
     startBlocks,

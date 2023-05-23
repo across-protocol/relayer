@@ -1,6 +1,6 @@
 import { buildFillForRepaymentChain } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit } from "./utils";
-import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
+import { HubPoolClient, AcrossConfigStoreClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
 import { amountToDeposit } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
@@ -16,7 +16,7 @@ let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract;
 let l1Token_1: Contract, hubPool: Contract;
 let depositor: SignerWithAddress;
 
-let hubPoolClient: HubPoolClient;
+let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
 let dataworkerInstance: Dataworker, multiCallerClient: MultiCallerClient;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
@@ -29,6 +29,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       spokePool_1,
       erc20_1,
       spokePool_2,
+      configStoreClient,
       hubPoolClient,
       l1Token_1,
       depositor,
@@ -54,6 +55,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
 
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
+      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,

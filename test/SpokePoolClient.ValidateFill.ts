@@ -65,16 +65,14 @@ describe("SpokePoolClient: Fill Validation", async function () {
 
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-
-    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore);
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
-
-    await configStoreClient.update();
+    hubPoolClient = new HubPoolClient(spyLogger, hubPool);
+    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
     await hubPoolClient.update();
+    await configStoreClient.update();
     spokePoolClient1 = new SpokePoolClient(
       spyLogger,
       spokePool_1,
-      hubPoolClient,
+      configStoreClient,
       originChainId,
       spokePool1DeploymentBlock
     );
@@ -96,7 +94,15 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Accepts valid fills", async function () {
-    const deposit = await buildDeposit(hubPoolClient, spokePool_1, erc20_1, l1Token, depositor, destinationChainId);
+    const deposit = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId
+    );
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit, 1);
 
     await spokePoolClient2.update();
@@ -117,7 +123,15 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Returns deposit matched with fill", async function () {
-    const deposit_1 = await buildDeposit(hubPoolClient, spokePool_1, erc20_1, l1Token, depositor, destinationChainId);
+    const deposit_1 = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId
+    );
     const fill_1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit_1, 0.5);
     const spokePoolClientForDestinationChain = new SpokePoolClient(
       createSpyLogger().spyLogger,
@@ -151,7 +165,15 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Returns all fills that match deposit and fill", async function () {
-    const deposit = await buildDeposit(hubPoolClient, spokePool_1, erc20_1, l1Token, depositor, destinationChainId);
+    const deposit = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId
+    );
     const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit, 0.5);
     let matchingFills = await spokePoolClient2.queryHistoricalMatchingFills(
       fill1,
@@ -347,7 +369,15 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Can fetch older deposit matching fill", async function () {
-    const deposit = await buildDeposit(hubPoolClient, spokePool_1, erc20_1, l1Token, depositor, destinationChainId);
+    const deposit = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId
+    );
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit, 1);
     await spokePoolClient2.update();
     const [fill] = spokePoolClient2.getFills();
@@ -366,7 +396,15 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Can fetch younger deposit matching fill", async function () {
-    const deposit = await buildDeposit(hubPoolClient, spokePool_1, erc20_1, l1Token, depositor, destinationChainId);
+    const deposit = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId
+    );
     const depositBlock = await spokePool_1.provider.getBlockNumber();
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit, 1);
     await spokePoolClient2.update();
@@ -385,7 +423,15 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Loads fills from memory with deposit ID > spoke pool client's earliest deposit ID queried", async function () {
-    const deposit = await buildDeposit(hubPoolClient, spokePool_1, erc20_1, l1Token, depositor, destinationChainId);
+    const deposit = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId
+    );
     const fill = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit, 1);
     await spokePoolClient1.update();
     expect(spokePoolClient1.earliestDepositIdQueried == 0).is.true;
@@ -402,7 +448,15 @@ describe("SpokePoolClient: Fill Validation", async function () {
 
   it("Loads fills from memory with deposit ID < spoke pool client's latest deposit ID queried", async function () {
     // Send fill for deposit ID 0.
-    const deposit = await buildDeposit(hubPoolClient, spokePool_1, erc20_1, l1Token, depositor, destinationChainId);
+    const deposit = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId
+    );
     const fill = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit, 1);
     await spokePoolClient1.update();
     // Manually override latest deposit ID queried so that its > deposit ID.
@@ -419,7 +473,15 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Ignores fills with deposit ID < first deposit ID in spoke pool", async function () {
-    const deposit = await buildDeposit(hubPoolClient, spokePool_1, erc20_1, l1Token, depositor, destinationChainId);
+    const deposit = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId
+    );
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit, 1);
     await spokePoolClient2.update();
     const [fill] = spokePoolClient2.getFills();
@@ -434,6 +496,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
 
   it("Ignores fills with deposit ID > latest deposit ID in spoke pool", async function () {
     const sampleDeposit = await buildDeposit(
+      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -463,7 +526,15 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Returns sped up deposit matched with fill", async function () {
-    const deposit_1 = await buildDeposit(hubPoolClient, spokePool_1, erc20_1, l1Token, depositor, destinationChainId);
+    const deposit_1 = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId
+    );
     // Override the fill's realized LP fee % and destination token so that it matches the deposit's default zero'd
     // out values. The destination token and realized LP fee % are set by the spoke pool client by querying the hub pool
     // contract state, however this test ignores the rate model contract and therefore there is no hub pool contract
@@ -515,7 +586,15 @@ describe("SpokePoolClient: Fill Validation", async function () {
   });
 
   it("Rejects fills that dont match the deposit data", async function () {
-    const deposit = await buildDeposit(hubPoolClient, spokePool_1, erc20_1, l1Token, depositor, destinationChainId);
+    const deposit = await buildDeposit(
+      configStoreClient,
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId
+    );
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit, 1);
 
     await spokePoolClient2.update();

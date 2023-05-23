@@ -1,18 +1,8 @@
 import { L1Token } from "../src/interfaces";
-import {
-  expect,
-  ethers,
-  createSpyLogger,
-  hubPoolFixture,
-  deployConfigStore,
-  winston,
-  BigNumber,
-  toBN,
-  toBNWei,
-} from "./utils";
+import { expect, createSpyLogger, winston, BigNumber, toBN, toBNWei } from "./utils";
 
 import { MockHubPoolClient } from "./mocks";
-import { AcrossConfigStoreClient as ConfigStoreClient, ProfitClient, MATIC, WETH } from "../src/clients"; // Tested
+import { ProfitClient, MATIC, WETH } from "../src/clients"; // Tested
 
 const mainnetTokens: Array<L1Token> = [
   // Checksummed addresses
@@ -64,14 +54,7 @@ let profitClient: ProfitClientWithMockPriceClient; // tested
 
 describe("ProfitClient: Price Retrieval", async function () {
   beforeEach(async function () {
-    const [owner] = await ethers.getSigners();
-
-    const { hubPool, dai: l1Token } = await hubPoolFixture();
-    const { configStore } = await deployConfigStore(owner, [l1Token]);
-
-    const configStoreClient = new ConfigStoreClient(spyLogger, configStore);
-    hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
-
+    hubPoolClient = new MockHubPoolClient(null, null);
     mainnetTokens.forEach((token: L1Token) => hubPoolClient.addL1Token(token));
     profitClient = new ProfitClientWithMockPriceClient(spyLogger, hubPoolClient, {}, [], toBN(0));
   });

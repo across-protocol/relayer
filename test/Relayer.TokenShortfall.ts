@@ -52,20 +52,20 @@ describe("Relayer: Token balance shortfall", async function () {
 
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore);
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
+    hubPoolClient = new HubPoolClient(spyLogger, hubPool);
+    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
     multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
     spokePoolClient_1 = new SpokePoolClient(
       spyLogger,
       spokePool_1.connect(relayer),
-      hubPoolClient,
+      configStoreClient,
       originChainId,
       spokePool1DeploymentBlock
     );
     spokePoolClient_2 = new SpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),
-      hubPoolClient,
+      configStoreClient,
       destinationChainId,
       spokePool2DeploymentBlock
     );
@@ -168,8 +168,8 @@ describe("Relayer: Token balance shortfall", async function () {
 });
 
 async function updateAllClients() {
-  await configStoreClient.update();
   await hubPoolClient.update();
+  await configStoreClient.update();
   await tokenClient.update();
   await spokePoolClient_1.update();
   await spokePoolClient_2.update();
