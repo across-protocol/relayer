@@ -159,7 +159,6 @@ describe("Monitor", async function () {
 
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_1,
       l2Token,
@@ -194,7 +193,6 @@ describe("Monitor", async function () {
     await monitorInstance.update();
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_1,
       l2Token,
@@ -287,7 +285,6 @@ describe("Monitor", async function () {
     await monitorInstance.update();
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_1,
       l2Token,
@@ -331,16 +328,7 @@ describe("Monitor", async function () {
   it("Monitor should report unfilled deposits", async function () {
     await updateAllClients();
     await monitorInstance.update();
-    await buildDeposit(
-      configStoreClient,
-      hubPoolClient,
-      spokePool_1,
-      l2Token,
-      l1Token,
-      depositor,
-      destinationChainId,
-      amountToDeposit
-    );
+    await buildDeposit(hubPoolClient, spokePool_1, l2Token, l1Token, depositor, destinationChainId, amountToDeposit);
     await monitorInstance.update();
     await monitorInstance.reportUnfilledDeposits();
 
