@@ -261,7 +261,8 @@ export async function constructClients(
 }
 
 export async function updateClients(clients: Clients): Promise<void> {
-  await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
+  await clients.configStoreClient.update();
+  await clients.hubPoolClient.update();
 }
 
 export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number]: SpokePoolClient }): {
