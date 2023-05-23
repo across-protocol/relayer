@@ -1,5 +1,15 @@
-import { SpokePoolClient } from "../clients";
+import {
+  assert,
+  getDeposit,
+  setDeposit,
+  getRedisDepositKey,
+  getCurrentTime,
+  getRedis,
+  isDefined,
+  validateFillForDeposit,
+} from "../utils";
 import { Deposit, DepositWithBlock, Fill, UnfilledDeposit, UnfilledDepositsForOriginChain } from "../interfaces";
+import { SpokePoolClient } from "../clients";
 import { assign, toBN, isFirstFillForDeposit } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
@@ -92,4 +102,56 @@ export function getUniqueDepositsInRange(
 
 export function isDepositSpedUp(deposit: Deposit): boolean {
   return deposit.speedUpSignature !== undefined && deposit.newRelayerFeePct !== undefined;
+}
+
+// Load a deposit for a fill if the fill's deposit ID is outside this client's search range.
+// This can be used by the Dataworker to determine whether to give a relayer a refund for a fill
+// of a deposit older or younger than its fixed lookback.
+export async function queryHistoricalDepositForFill(
+  spokePoolClient: SpokePoolClient,
+  fill: Fill
+): Promise<DepositWithBlock | undefined> {
+  if (fill.originChainId !== spokePoolClient.chainId) {
+    throw new Error(`OriginChainId mismatch (${fill.originChainId} != ${spokePoolClient.chainId})`);
+  }
+
+  // We need to update client so we know the first and last deposit ID's queried for this spoke pool client, as well
+  // as the global first and last deposit ID's for this spoke pool.
+  if (!spokePoolClient.isUpdated) {
+    throw new Error("SpokePoolClient must be updated before querying historical deposits");
+  }
+
+  if (
+    fill.depositId < spokePoolClient.firstDepositIdForSpokePool ||
+    fill.depositId > spokePoolClient.lastDepositIdForSpokePool
+  ) {
+    return undefined;
+  }
+
+  if (
+    fill.depositId >= spokePoolClient.earliestDepositIdQueried &&
+    fill.depositId <= spokePoolClient.latestDepositIdQueried
+  ) {
+    return spokePoolClient.getDepositForFill(fill);
+  }
+
+  let deposit: DepositWithBlock, cachedDeposit: Deposit | undefined;
+  const redisClient = await getRedis(spokePoolClient.logger);
+  if (redisClient) {
+    cachedDeposit = await getDeposit(getRedisDepositKey(fill), redisClient);
+  }
+
+  if (isDefined(cachedDeposit)) {
+    deposit = cachedDeposit as DepositWithBlock;
+    // Assert that cache hasn't been corrupted.
+    assert(deposit.depositId === fill.depositId && deposit.originChainId === fill.originChainId);
+  } else {
+    deposit = await spokePoolClient.findDeposit(fill.depositId, fill.destinationChainId, fill.depositor);
+
+    if (redisClient) {
+      await setDeposit(deposit, getCurrentTime(), redisClient, 24 * 60 * 60);
+    }
+  }
+
+  return validateFillForDeposit(fill, deposit) ? deposit : undefined;
 }

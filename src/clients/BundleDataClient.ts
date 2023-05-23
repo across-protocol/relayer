@@ -19,6 +19,7 @@ import {
   flattenAndFilterUnfilledDepositsByOriginChain,
   updateUnfilledDepositsWithMatchedDeposit,
   getUniqueDepositsInRange,
+  queryHistoricalDepositForFill,
 } from "../utils";
 import { Clients } from "../common";
 import {
@@ -254,7 +255,8 @@ export class BundleDataClient {
         // Matched deposit for fill was not found in spoke client. This situation should be rare so let's
         // send some extra RPC requests to blocks older than the spoke client's initial event search config
         // to find the deposit if it exists.
-        const historicalDeposit = await originClient.queryHistoricalDepositForFill(fill);
+        const spokePoolClient = spokePoolClients[fill.originChainId];
+        const historicalDeposit = await queryHistoricalDepositForFill(spokePoolClient, fill);
         if (historicalDeposit) {
           addRefundForValidFill(fill, historicalDeposit, blockRangeForChain);
         } else {
