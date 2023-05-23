@@ -52,22 +52,22 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
 
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
+    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore);
+    hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
 
     multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 
     spokePoolClient_1 = new SpokePoolClient(
       spyLogger,
       spokePool_1.connect(relayer),
-      configStoreClient,
+      hubPoolClient,
       originChainId,
       spokePool1DeploymentBlock
     );
     spokePoolClient_2 = new SpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),
-      configStoreClient,
+      hubPoolClient,
       destinationChainId,
       spokePool2DeploymentBlock
     );
@@ -154,8 +154,8 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
 });
 
 async function updateAllClients() {
-  await hubPoolClient.update();
   await configStoreClient.update();
+  await hubPoolClient.update();
   await tokenClient.update();
   await spokePoolClient_1.update();
   await spokePoolClient_2.update();

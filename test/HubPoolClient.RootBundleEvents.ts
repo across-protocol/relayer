@@ -1,6 +1,6 @@
 import { buildPoolRebalanceLeafTree, buildPoolRebalanceLeaves, createSpyLogger, randomAddress } from "./utils";
-import { SignerWithAddress, expect, ethers, Contract, toBNWei, toBN, BigNumber, hre } from "./utils";
-import { HubPoolClient } from "../src/clients";
+import { SignerWithAddress, expect, ethers, Contract, deployConfigStore, toBNWei, toBN, BigNumber, hre } from "./utils";
+import { AcrossConfigStoreClient as ConfigStoreClient, HubPoolClient } from "../src/clients";
 import * as constants from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { ProposedRootBundle } from "../src/interfaces";
@@ -10,6 +10,7 @@ let l1Token_1: Contract, l1Token_2: Contract;
 let dataworker: SignerWithAddress, owner: SignerWithAddress;
 
 let hubPoolClient: HubPoolClient;
+let configStoreClient: ConfigStoreClient;
 
 async function constructSimpleTree(runningBalance: BigNumber) {
   const netSendAmount = runningBalance.mul(toBN(-1));
@@ -36,12 +37,17 @@ describe("HubPoolClient: RootBundle Events", async function () {
       constants.DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
       0
     ));
-    hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
+
+    const logger = createSpyLogger().spyLogger;
+    const { configStore } = await deployConfigStore(owner, [l1Token_1, l1Token_2]);
+    configStoreClient = new ConfigStoreClient(logger, configStore);
+    hubPoolClient = new HubPoolClient(logger, hubPool, configStoreClient);
   });
 
   it("gets ProposeRootBundle event containing correct bundle block eval number", async function () {
     const { tree, leaves } = await constructSimpleTree(toBNWei(100));
 
+    await configStoreClient.update();
     await hubPoolClient.update();
     expect(hubPoolClient.hasPendingProposal()).to.equal(false);
 
@@ -114,6 +120,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
   it("Returns validated root bundle", async function () {
     const { tree, leaves } = await constructSimpleTree(toBNWei(100));
 
+    await configStoreClient.update();
     await hubPoolClient.update();
     expect(hubPoolClient.hasPendingProposal()).to.equal(false);
 
@@ -160,6 +167,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
     const { tree: tree1, leaves: leaves1 } = await constructSimpleTree(toBNWei(100));
     const { tree: tree2, leaves: leaves2 } = await constructSimpleTree(toBNWei(200));
 
+    await configStoreClient.update();
     await hubPoolClient.update();
 
     // Propose one root bundle with two leaves for two different L2 chains.
@@ -249,6 +257,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
   it("returns proposed and disputed bundles", async function () {
     const { tree: tree1 } = await constructSimpleTree(toBNWei(100));
 
+    await configStoreClient.update();
     await hubPoolClient.update();
 
     // Propose one root bundle with a chain ID list length of 1
@@ -270,6 +279,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
     const { tree: tree1, leaves: leaves1 } = await constructSimpleTree(toBNWei(100));
     const { tree: tree2, leaves: leaves2 } = await constructSimpleTree(toBNWei(100));
 
+    await configStoreClient.update();
     await hubPoolClient.update();
 
     // Propose one root bundle with a chain ID list length of 1
@@ -377,6 +387,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
     expect(() => hubPoolClient.getSpokePoolForBlock(11, firstUpdateBlockNumber)).to.throw(
       /No cross chain contracts set/
     );
+    await configStoreClient.update();
     await hubPoolClient.update();
 
     // Happy case where latest spoke pool at block is returned
