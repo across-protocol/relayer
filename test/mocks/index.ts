@@ -1,4 +1,5 @@
 export * from "./MockBundleDataClient";
+export * from "./MockConfigStoreClient";
 export * from "./MockHubPoolClient";
 export * from "./MockProfitClient";
 export * from "./MockAdapterManager";
