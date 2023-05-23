@@ -4,19 +4,16 @@ import { assert, BigNumber, isDefined } from "../utils";
 import { sortEventsAscending } from "./";
 
 export class UBAClient {
-  private closingBlockNumbers: { [chainId: number]: number[] };
-
-  // Note: chainIds is used to index members of root bundle proposals submitted to the HubPool.
-  // It must include the complete set of chain IDs ever supported by the HubPool.
-  // SpokePoolClients may be a subset of the SpokePools that have been deployed.
+  // @dev chainIdIndices supports indexing members of root bundle proposals submitted to the HubPool.
+  //      It must include the complete set of chain IDs ever supported by the HubPool.
+  // @dev SpokePoolClients may be a subset of the SpokePools that have been deployed.
   constructor(
-    private readonly chainIds: number[],
+    private readonly chainIdIndices: number[],
     private readonly hubPoolClient: HubPoolClient,
     private readonly spokePoolClients: { [chainId: number]: SpokePoolClient }
   ) {
-    assert(chainIds.length > 0, "No chainIds provided");
+    assert(chainIdIndices.length > 0, "No chainIds provided");
     assert(Object.values(spokePoolClients).length > 0, "No SpokePools provided");
-    this.closingBlockNumbers = Object.fromEntries(this.chainIds.map((chainId) => [chainId, []]));
   }
 
   /**
@@ -65,9 +62,8 @@ export class UBAClient {
     return flows;
   }
 
-  private resolveClosingBlockNumber(chainId: number, blockNumber: number): number {
-    const endBlock = this.hubPoolClient.getLatestBundleEndBlockForChain(this.chainIds, blockNumber, chainId);
-    return endBlock ?? this.spokePoolClients[chainId].deploymentBlock;
+  protected resolveClosingBlockNumber(chainId: number, blockNumber: number): number {
+    return this.hubPoolClient.getLatestBundleEndBlockForChain(this.chainIdIndices, blockNumber, chainId);
   }
 
   getOpeningBalance(
@@ -75,8 +71,6 @@ export class UBAClient {
     spokePoolToken: string,
     hubPoolBlockNumber?: number
   ): { balance: BigNumber; blockNumber: number } {
-    assert(Array.isArray(this.closingBlockNumbers[chainId]), `Invalid chainId: ${chainId}`);
-
     hubPoolBlockNumber ??= this.hubPoolClient.latestBlockNumber;
 
     const hubPoolToken = this.hubPoolClient.getL1TokenCounterpartAtBlock(chainId, spokePoolToken, hubPoolBlockNumber);
@@ -86,14 +80,11 @@ export class UBAClient {
 
     const spokePoolClient = this.spokePoolClients[chainId];
     let blockNumber = spokePoolClient.deploymentBlock;
-    const prevEndBlock = this.resolveClosingBlockNumber(chainId, hubPoolBlockNumber);
+    const prevEndBlock =
+      this.resolveClosingBlockNumber(chainId, hubPoolBlockNumber) ?? spokePoolClient.latestBlockNumber;
     if (prevEndBlock > blockNumber) {
       blockNumber = prevEndBlock + 1;
-      const latestBlockNumber = spokePoolClient.latestBlockNumber;
-      assert(
-        blockNumber <= latestBlockNumber,
-        `Unexpected UBA opening block number (${blockNumber} > ${latestBlockNumber})`
-      );
+      assert(blockNumber <= spokePoolClient.latestBlockNumber);
     }
     const balance = this.hubPoolClient.getRunningBalanceBeforeBlockForChain(hubPoolBlockNumber, chainId, hubPoolToken);
 

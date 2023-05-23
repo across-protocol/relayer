@@ -13,7 +13,7 @@ import * as clients from "../../src/clients";
 import {
   amountToLp,
   destinationChainId as defaultDestinationChainId,
-  originChainId as defaultOriginChainid,
+  originChainId as defaultOriginChainId,
   CHAIN_ID_TEST_LIST,
   repaymentChainId,
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
@@ -32,7 +32,7 @@ async function _constructSpokePoolClientsWithLookback(
   spokePoolChains: number[],
   spyLogger: winston.Logger,
   signer: SignerWithAddress,
-  configStoreClient: clients.AcrossConfigStoreClient,
+  hubPoolClient: clients.HubPoolClient,
   lookbackForAllChains?: number,
   deploymentBlocks?: { [chainId: number]: number }
 ) {
@@ -41,7 +41,7 @@ async function _constructSpokePoolClientsWithLookback(
     return new clients.SpokePoolClient(
       spyLogger,
       pool.connect(signer),
-      configStoreClient,
+      hubPoolClient,
       spokePoolChains[i],
       deploymentBlocks && deploymentBlocks[spokePoolChains[i]],
       lookbackForAllChains === undefined ? undefined : { fromBlock: latestBlocks[i] - lookbackForAllChains }
@@ -57,7 +57,7 @@ export async function setupDataworker(
   defaultPoolRebalanceTokenTransferThreshold: BigNumber,
   defaultEndBlockBuffer: number,
   destinationChainId = defaultDestinationChainId,
-  originChainId = defaultOriginChainid,
+  originChainId = defaultOriginChainId,
   lookbackForAllChains?: number
 ): Promise<{
   hubPool: Contract;
@@ -93,7 +93,7 @@ export async function setupDataworker(
     switch (chainId) {
       case defaultDestinationChainId:
         return destinationChainId;
-      case defaultOriginChainid:
+      case defaultOriginChainId:
         return originChainId;
       default:
         return chainId;
@@ -107,8 +107,8 @@ export async function setupDataworker(
   const { spokePool: spokePool_3 } = await deploySpokePoolWithToken(repaymentChainId, 1);
   const { spokePool: spokePool_4 } = await deploySpokePoolWithToken(1, repaymentChainId);
   const spokePoolDeploymentBlocks = {
-    [defaultOriginChainid]: await spokePool_1.provider.getBlockNumber(),
-    [defaultDestinationChainId]: await spokePool_2.provider.getBlockNumber(),
+    [originChainId]: await spokePool_1.provider.getBlockNumber(),
+    [destinationChainId]: await spokePool_2.provider.getBlockNumber(),
     [repaymentChainId]: await spokePool_3.provider.getBlockNumber(),
     [1]: await spokePool_4.provider.getBlockNumber(),
   };
@@ -169,18 +169,18 @@ export async function setupDataworker(
     defaultPoolRebalanceTokenTransferThreshold
   );
 
-  const hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool);
-  const configStoreClient = new MockConfigStoreClient(spyLogger, configStore, hubPoolClient);
+  const configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
+  const hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool, configStoreClient);
 
   const multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 
   const [spokePoolClient_1, spokePoolClient_2, spokePoolClient_3, spokePoolClient_4] =
     await _constructSpokePoolClientsWithLookback(
       [spokePool_1, spokePool_2, spokePool_3, spokePool_4],
-      [defaultOriginChainid, defaultDestinationChainId, repaymentChainId, 1],
+      [originChainId, destinationChainId, repaymentChainId, 1],
       spyLogger,
       relayer,
-      configStoreClient,
+      hubPoolClient,
       lookbackForAllChains,
       spokePoolDeploymentBlocks
     );
@@ -273,8 +273,8 @@ export async function setupDataworker(
     dataworker,
     dataworkerClients,
     updateAllClients: async () => {
-      await hubPoolClient.update();
       await configStoreClient.update();
+      await hubPoolClient.update();
       await profitClient.update();
       await spokePoolClient_1.update();
       await spokePoolClient_2.update();
@@ -324,7 +324,7 @@ export async function setupFastDataworker(
     DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
     0,
     defaultDestinationChainId,
-    defaultOriginChainid,
+    defaultOriginChainId,
     lookbackForAllChains
   );
 }

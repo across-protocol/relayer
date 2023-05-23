@@ -27,7 +27,7 @@ export async function run(logger: winston.Logger): Promise<void> {
   await updateClients(commonClients);
   const spokePoolClients = await constructSpokePoolClientsWithStartBlocks(
     logger,
-    commonClients.configStoreClient,
+    commonClients.hubPoolClient,
     config,
     baseSigner,
     {}, // Default setting fromBlocks = deployment blocks
