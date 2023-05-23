@@ -207,7 +207,8 @@ export async function constructFinalizerClients(
 }
 
 async function updateFinalizerClients(clients: Clients) {
-  await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
+  await clients.configStoreClient.update();
+  await clients.hubPoolClient.update();
 }
 
 export class FinalizerConfig extends DataworkerConfig {
