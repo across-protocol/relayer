@@ -260,6 +260,8 @@ export async function constructClients(
   return { hubPoolClient, configStoreClient, multiCallerClient, hubSigner };
 }
 
+// @dev The HubPoolClient is dependent on the state of the ConfigStoreClient,
+//      so update the ConfigStoreClient first.
 export async function updateClients(clients: Clients): Promise<void> {
   await clients.configStoreClient.update();
   await clients.hubPoolClient.update();
