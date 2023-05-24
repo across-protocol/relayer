@@ -1,9 +1,10 @@
-import { utils } from "@across-protocol/sdk-v2";
+import { constants, utils } from "@across-protocol/sdk-v2";
 import { ethers } from "../utils";
 
 // This version should increase each time the ConfigStore's config changes, otherwise relayer and dataworker logic
 // will stop working to protect the user's funds. Note: Do _not_ change the default version.
 export const { CONFIG_STORE_VERSION, DEFAULT_CONFIG_STORE_VERSION } = utils;
+export const { CHAIN_ID_LIST_INDICES } = constants;
 
 export const RELAYER_MIN_FEE_PCT = 0.0003;
 
