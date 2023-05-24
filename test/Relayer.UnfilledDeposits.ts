@@ -29,8 +29,7 @@ import { MockInventoryClient, MockProfitClient } from "./mocks";
 import { Relayer } from "../src/relayer/Relayer";
 import { getUnfilledDeposits, toBN, UnfilledDeposit, utf8ToHex } from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
-import { MockConfigStoreClient } from "./mocks/MockConfigStoreClient";
-import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
+import { MockConfigStoreClient, MockedMultiCallerClient } from "./mocks";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, l1Token: Contract, configStore: Contract;

@@ -3,7 +3,7 @@ import { deployConfigStore, hubPoolFixture, toBN, toWei, randomAddress, createRe
 
 import { InventoryConfig, Deposit } from "../src/interfaces";
 import { MockBundleDataClient, MockHubPoolClient, MockAdapterManager, MockTokenClient } from "./mocks";
-import { AcrossConfigStoreClient as ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
+import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);

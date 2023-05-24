@@ -6,7 +6,7 @@ import { amountToLp, defaultTokenConfig, amountToDeposit, defaultMinDepositConfi
 import {
   SpokePoolClient,
   HubPoolClient,
-  AcrossConfigStoreClient,
+  ConfigStoreClient,
   MultiCallerClient,
   AcrossApiClient,
 } from "../src/clients";
@@ -23,7 +23,7 @@ let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithA
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let configStoreClient: AcrossConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
+let configStoreClient: ConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
 let relayerInstance: Relayer;
 let multiCallerClient: MultiCallerClient, profitClient: ProfitClient;
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
@@ -52,7 +52,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
 
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore);
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore);
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
 
     multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.

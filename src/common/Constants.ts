@@ -2,12 +2,8 @@ import { utils } from "@across-protocol/sdk-v2";
 import { ethers } from "../utils";
 
 // This version should increase each time the ConfigStore's config changes, otherwise relayer and dataworker logic
-// will stop working to protect the user's funds.
-export const CONFIG_STORE_VERSION = utils.CONFIG_STORE_VERSION;
-
-// Do not change this value. Set 0 as the default version so that all timestamps before the first version update are
-// deemed valid by ConfigStoreClient.hasValidConfigStoreVersionForTimestamp().
-export const DEFAULT_CONFIG_STORE_VERSION = 0;
+// will stop working to protect the user's funds. Note: Do _not_ change the default version.
+export const { CONFIG_STORE_VERSION, DEFAULT_CONFIG_STORE_VERSION } = utils;
 
 // This list contains all chains that Across supports, although some of the chains could be currently disabled.
 // The order of the chains is important to not change, as the dataworker proposes "bundle block numbers" per chain

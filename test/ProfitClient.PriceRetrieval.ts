@@ -12,7 +12,7 @@ import {
 } from "./utils";
 
 import { MockHubPoolClient } from "./mocks";
-import { AcrossConfigStoreClient as ConfigStoreClient, ProfitClient, MATIC, WETH } from "../src/clients"; // Tested
+import { ConfigStoreClient, ProfitClient, MATIC, WETH } from "../src/clients"; // Tested
 
 const mainnetTokens: Array<L1Token> = [
   // Checksummed addresses

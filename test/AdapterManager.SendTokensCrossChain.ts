@@ -2,7 +2,7 @@ import { expect, ethers, SignerWithAddress, createSpyLogger, winston } from "./u
 import { BigNumber, deployConfigStore, FakeContract, hubPoolFixture, smock, toBN } from "./utils";
 import { MockHubPoolClient } from "./mocks";
 import { bnToHex, getL2TokenAddresses } from "../src/utils";
-import { AcrossConfigStoreClient as ConfigStoreClient, SpokePoolClient } from "../src/clients";
+import { ConfigStoreClient, SpokePoolClient } from "../src/clients";
 import { AdapterManager } from "../src/clients/bridges"; // Tested
 import * as interfaces from "../src/clients/bridges/ContractInterfaces";
 import { constants } from "@across-protocol/sdk-v2";

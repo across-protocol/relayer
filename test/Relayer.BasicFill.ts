@@ -21,7 +21,7 @@ import {
 import {
   SpokePoolClient,
   HubPoolClient,
-  AcrossConfigStoreClient,
+  ConfigStoreClient,
   MultiCallerClient,
   AcrossApiClient,
 } from "../src/clients";
@@ -39,7 +39,7 @@ let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
-let configStoreClient: AcrossConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
+let configStoreClient: ConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
 let relayerInstance: Relayer;
 let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
@@ -69,7 +69,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore);
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore);
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
 
     multiCallerClient = new MockedMultiCallerClient(spyLogger);

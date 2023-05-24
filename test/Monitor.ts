@@ -1,7 +1,7 @@
 import { buildDeposit, buildFillForRepaymentChain, createSpyLogger, lastSpyLogIncludes, toBNWei } from "./utils";
 import { Contract, SignerWithAddress, ethers, expect } from "./utils";
 import {
-  AcrossConfigStoreClient,
+  ConfigStoreClient,
   BundleDataClient,
   HubPoolClient,
   SpokePoolClient,
@@ -31,7 +31,7 @@ let hubPool: Contract, spokePool_1: Contract, spokePool_2: Contract;
 let dataworker: SignerWithAddress, depositor: SignerWithAddress;
 let dataworkerInstance: Dataworker;
 let bundleDataClient: BundleDataClient;
-let configStoreClient: AcrossConfigStoreClient;
+let configStoreClient: ConfigStoreClient;
 let hubPoolClient: HubPoolClient, multiCallerClient: MultiCallerClient;
 let tokenTransferClient: TokenTransferClient;
 let monitorInstance: Monitor;
