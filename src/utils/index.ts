@@ -10,7 +10,6 @@ export { utils, EventFilter, BaseContract, Event, Wallet } from "ethers";
 export { ethers, providers } from "ethers";
 export type { Block, TransactionResponse, TransactionReceipt } from "@ethersproject/abstract-provider";
 export { config } from "dotenv";
-export { Promise } from "bluebird";
 
 // Utils specifically for this bot.
 export * from "./ProviderUtils";
