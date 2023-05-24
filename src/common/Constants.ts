@@ -5,13 +5,6 @@ import { ethers } from "../utils";
 // will stop working to protect the user's funds. Note: Do _not_ change the default version.
 export const { CONFIG_STORE_VERSION, DEFAULT_CONFIG_STORE_VERSION } = utils;
 
-// This list contains all chains that Across supports, although some of the chains could be currently disabled.
-// The order of the chains is important to not change, as the dataworker proposes "bundle block numbers" per chain
-// in the same order as the following list. To add a new chain ID, append it to the end of the list, never delete
-// a chain ID. The on-chain ConfigStore should store a list of enabled/disabled chain ID's that are a subset
-// of this list, so this list is simply the list of all possible Chain ID's that Across could support.
-export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
-
 export const RELAYER_MIN_FEE_PCT = 0.0003;
 
 // Target ~4 hours
