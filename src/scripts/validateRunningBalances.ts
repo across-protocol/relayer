@@ -99,7 +99,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
       }
       for (let i = 0; i < leaf.l1Tokens.length; i++) {
         const l1Token = leaf.l1Tokens[i];
-        const tokenInfo = clients.hubPoolClient.getTokenInfo(1, l1Token);
+        const tokenInfo = clients.hubPoolClient.getTokenInfo(clients.hubPoolClient.chainId, l1Token);
         if (!excesses[leaf.chainId]) {
           excesses[leaf.chainId] = {};
         }
@@ -399,7 +399,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Wallet): Pr
       // Reconstruct bundle block range for bundle.
       const mainnetBundleEndBlock = getBlockForChain(
         bundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
-        1,
+        clients.hubPoolClient.chainId,
         dataworker.chainIdListForBundleEvaluationBlockNumbers
       );
       const widestPossibleExpectedBlockRange = getWidestPossibleExpectedBlockRange(
