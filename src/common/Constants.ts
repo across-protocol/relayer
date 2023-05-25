@@ -1,10 +1,12 @@
-import { constants, utils } from "@across-protocol/sdk-v2";
+import { constants } from "@across-protocol/sdk-v2";
 import { ethers } from "../utils";
 
-// This version should increase each time the ConfigStore's config changes, otherwise relayer and dataworker logic
-// will stop working to protect the user's funds. Note: Do _not_ change the default version.
-export const { CONFIG_STORE_VERSION, DEFAULT_CONFIG_STORE_VERSION } = utils;
 export const { CHAIN_ID_LIST_INDICES } = constants;
+
+// Maximum supported version of the configuration loaded into the Across ConfigStore.
+// It protects bots from running outdated code against newer version of the on-chain config store.
+// @dev Incorrectly setting this value may lead to incorrect behaviour and potential loss of funds.
+export const CONFIG_STORE_VERSION = 1;
 
 export const RELAYER_MIN_FEE_PCT = 0.0003;
 
