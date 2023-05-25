@@ -13,6 +13,7 @@ import {
 import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
+import { CONFIG_STORE_VERSION } from "./";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -234,7 +235,8 @@ export async function constructClients(
     logger,
     configStore,
     rateModelClientSearchSettings,
-    { enabledChainIds: config.chainIdListIndices },
+    CONFIG_STORE_VERSION,
+    config.chainIdListIndices,
   );
 
   const hubPoolClientSearchSettings = {
