@@ -102,7 +102,7 @@ export function getImpliedBundleBlockRanges(
   const enabledChains = configStoreClient.getEnabledChains(
     getBlockForChain(
       rootBundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
-      1,
+      hubPoolClient.chainId,
       chainIdListForBundleEvaluationBlockNumbers
     ),
     chainIdListForBundleEvaluationBlockNumbers

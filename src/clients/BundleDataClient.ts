@@ -348,7 +348,7 @@ export class BundleDataClient {
     if (logData) {
       const mainnetRange = getBlockRangeForChain(
         blockRangesForChains,
-        1,
+        this.clients.hubPoolClient.chainId,
         this.chainIdListForBundleEvaluationBlockNumbers
       );
       this.logger.debug({

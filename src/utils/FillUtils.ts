@@ -41,7 +41,7 @@ export function getRefundInformationFromFill(
   // Save fill data and associate with repayment chain and L2 token refund should be denominated in.
   const endBlockForMainnet = getBlockRangeForChain(
     blockRangesForChains,
-    1,
+    hubPoolClient.chainId,
     chainIdListForBundleEvaluationBlockNumbers
   )[1];
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
