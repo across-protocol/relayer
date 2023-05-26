@@ -112,6 +112,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         maxRelayerLookBack: 24 * 60 * 60,
         minDepositConfirmations: defaultMinDepositConfirmations,
         quoteTimeBuffer: 0,
+        messageRules: [],
       } as unknown as RelayerConfig
     );
 
@@ -193,6 +194,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         },
         quoteTimeBuffer: 0,
         sendingRelaysEnabled: false,
+        messageRules: [],
       } as unknown as RelayerConfig
     );
 
@@ -227,6 +229,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         minDepositConfirmations: defaultMinDepositConfirmations,
         quoteTimeBuffer: 100,
         sendingRelaysEnabled: false,
+        messageRules: [],
       } as unknown as RelayerConfig
     );
 
@@ -395,6 +398,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         maxRelayerLookBack: 24 * 60 * 60,
         minDepositConfirmations: defaultMinDepositConfirmations,
         quoteTimeBuffer: 0,
+        messageRules: [],
       } as unknown as RelayerConfig
     );
 

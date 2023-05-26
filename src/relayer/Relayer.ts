@@ -37,7 +37,7 @@ export class Relayer {
   }
 
   // Temporary feature to allow controlled use of message transfers.
-  permitMessageRelay(deposit: Deposit, allowedTransfers: MessageRelayRule[]): boolean {
+  permitMessageRelay(deposit: Deposit, rules: MessageRelayRule[]): boolean {
     const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(deposit.originToken, deposit.originChainId);
     if (!isDefined(l1Token)) {
       return false;
@@ -45,7 +45,7 @@ export class Relayer {
 
     // The recipient might have changed via a speed-up event.
     const recipient = isDepositSpedUp(deposit) ? deposit.updatedRecipient : deposit.recipient;
-    const rule = allowedTransfers.find((rule) => {
+    const rule = rules.find((rule) => {
       return (
         deposit.depositor === rule.depositor &&
         rule.originChainIds.includes(deposit.originChainId) &&
