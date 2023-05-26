@@ -32,7 +32,7 @@ export class Relayer {
     this.logger.debug({
       at: "Relayer",
       message: "Instantiated with message relay rules",
-      messageRelayRules: config.messageRelayRules,
+      messageRules: config.messageRules,
     });
   }
 
@@ -240,7 +240,7 @@ export class Relayer {
       if (
         isDepositSpedUp(deposit) &&
         deposit.updatedMessage !== "0x" &&
-        !this.permitMessageRelay(deposit, this.config.messageRelayRules)
+        !this.permitMessageRelay(deposit, this.config.messageRules)
       ) {
         this.logger.warn({
           at: "Relayer",
@@ -248,7 +248,7 @@ export class Relayer {
           deposit,
         });
         continue;
-      } else if (deposit.message !== "0x" && !this.permitMessageRelay(deposit, this.config.messageRelayRules)) {
+      } else if (deposit.message !== "0x" && !this.permitMessageRelay(deposit, this.config.messageRules)) {
         this.logger.warn({
           at: "Relayer",
           message: "Skipping fill for deposit with message",

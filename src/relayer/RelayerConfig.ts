@@ -40,7 +40,7 @@ export class RelayerConfig extends CommonConfig {
   // fill any deposit over the limit which is based on liquidReserves in the HubPool.
   readonly ignoreLimits: boolean;
 
-  readonly messageRelayRules: MessageRelayRule[] = [];
+  readonly messageRules: MessageRelayRule[] = [];
 
   constructor(env: ProcessEnv) {
     const {
@@ -56,7 +56,7 @@ export class RelayerConfig extends CommonConfig {
       MIN_DEPOSIT_CONFIRMATIONS,
       QUOTE_TIME_BUFFER,
       RELAYER_IGNORE_LIMITS,
-      RELAYER_PERMIT_MESSAGES,
+      RELAYER_MESSAGE_RULES,
     } = env;
     super(env);
 
@@ -120,7 +120,7 @@ export class RelayerConfig extends CommonConfig {
     this.quoteTimeBuffer = QUOTE_TIME_BUFFER ? Number(QUOTE_TIME_BUFFER) : Constants.QUOTE_TIME_BUFFER;
     this.ignoreLimits = RELAYER_IGNORE_LIMITS === "true";
 
-    this.messageRelayRules = RELAYER_PERMIT_MESSAGES?.split(",").map((ruleName) => {
+    this.messageRules = RELAYER_MESSAGE_RULES?.split(",").map((ruleName) => {
       const originChainIds = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_ORIGIN_CHAIN_ID`]?.split(",").map((chainId) => Number(chainId));
       const destinationChainIds = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_DESTINATION_CHAIN_ID`]?.split(",").map((chainId) => Number(chainId));
       const depositor = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_DEPOSITOR`];
