@@ -121,12 +121,18 @@ export class RelayerConfig extends CommonConfig {
     this.ignoreLimits = RELAYER_IGNORE_LIMITS === "true";
 
     this.messageRules = RELAYER_MESSAGE_RULES?.split(",").map((ruleName) => {
-      const originChainIds = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_ORIGIN_CHAIN_ID`]?.split(",").map((chainId) => Number(chainId));
-      const destinationChainIds = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_DESTINATION_CHAIN_ID`]?.split(",").map((chainId) => Number(chainId));
+      const originChainIds = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_ORIGIN_CHAIN_ID`]
+        ?.split(",")
+        .map((chainId) => Number(chainId));
+      const destinationChainIds = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_DESTINATION_CHAIN_ID`]
+        ?.split(",")
+        .map((chainId) => Number(chainId));
       const depositor = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_DEPOSITOR`];
       const recipients = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_RECIPIENTS`]?.split(",");
       const tokenSymbols = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_TOKEN_SYMBOLS`]?.split(",");
-      const tokenAmounts = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_TOKEN_AMOUNTS`]?.split(",").map((amount) => toBNWei(amount));
+      const tokenAmounts = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_TOKEN_AMOUNTS`]
+        ?.split(",")
+        .map((amount) => toBNWei(amount));
 
       const rule: MessageRelayRule = {
         name: ruleName,
