@@ -1,5 +1,7 @@
+import assert from "assert";
 import {
   BigNumber,
+  isDefined,
   winston,
   buildFillRelayProps,
   getNetworkName,
@@ -11,7 +13,7 @@ import {
 import { createFormatFunction, etherscanLink, formatFeePct, toBN, toBNWei } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { Deposit, DepositWithBlock } from "../interfaces";
-import { RelayerConfig } from "./RelayerConfig";
+import { RelayerConfig, MessageRelayRule } from "./RelayerConfig";
 import { CONFIG_STORE_VERSION } from "../common";
 
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
@@ -26,7 +28,53 @@ export class Relayer {
     readonly logger: winston.Logger,
     readonly clients: RelayerClients,
     readonly config: RelayerConfig
-  ) {}
+  ) {
+    this.logger.debug({
+      at: "Relayer",
+      message: "Instantiated with message relay rules",
+      messageRelayRules: config.messageRelayRules,
+    });
+  }
+
+  // Temporary feature to allow controlled use of message transfers.
+  permitMessageRelay(deposit: Deposit, allowedTransfers: MessageRelayRule[]): boolean {
+    const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(deposit.originToken, deposit.originChainId);
+    if (!isDefined(l1Token)) {
+      return false;
+    }
+
+    // The recipient might have changed via a speed-up event.
+    const recipient = isDepositSpedUp(deposit) ? deposit.updatedRecipient : deposit.recipient;
+    const rule = allowedTransfers.find((rule) => {
+      return (
+        deposit.depositor === rule.depositor &&
+        rule.originChainIds.includes(deposit.originChainId) &&
+        rule.destinationChainIds.includes(deposit.destinationChainId) &&
+        rule.recipients.includes(recipient) &&
+        rule.tokenSymbols.includes(l1Token.symbol)
+      );
+    });
+
+    if (!isDefined(rule)) {
+      return false;
+    }
+
+    const idx = rule.tokenSymbols.indexOf(l1Token.symbol);
+    assert(idx !== -1, `Unexpected MessageRelayRule format (${rule.name})`); // invariant
+
+    const maxAmount = rule.tokenAmounts[idx];
+    if (deposit.amount.gt(maxAmount)) {
+      return false;
+    }
+
+    this.logger.info({
+      at: "Relayer::permitMessageRelay",
+      message: "Permitting message relay.",
+      deposit,
+      rule,
+    });
+    return true;
+  }
 
   async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
     // Fetch all unfilled deposits, order by total earnable fee.
@@ -189,14 +237,18 @@ export class Relayer {
       // We need to build in better simulation logic for deposits with non-empty messages. Currently we only measure
       // the fill's gas cost against a simple USDC fill with message=0x. This doesn't handle the case where the
       // message is != 0x and it ends up costing a lot of gas to execute, resulting in a big loss to the relayer.
-      if (isDepositSpedUp(deposit) && deposit.updatedMessage !== "0x") {
+      if (
+        isDepositSpedUp(deposit) &&
+        deposit.updatedMessage !== "0x" &&
+        !this.permitMessageRelay(deposit, this.config.messageRelayRules)
+      ) {
         this.logger.warn({
           at: "Relayer",
           message: "Skipping fill for sped-up deposit with message",
           deposit,
         });
         continue;
-      } else if (deposit.message !== "0x") {
+      } else if (deposit.message !== "0x" && !this.permitMessageRelay(deposit, this.config.messageRelayRules)) {
         this.logger.warn({
           at: "Relayer",
           message: "Skipping fill for deposit with message",

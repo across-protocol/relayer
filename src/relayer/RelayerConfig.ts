@@ -1,7 +1,17 @@
-import { BigNumber, toBNWei, assert, toBN, replaceAddressCase, ethers } from "../utils";
+import { BigNumber, isDefined, toBNWei, assert, toBN, replaceAddressCase, ethers } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
 import { InventoryConfig } from "../interfaces";
+
+export type MessageRelayRule = {
+  name: string;
+  originChainIds: number[];
+  depositor: string;
+  destinationChainIds: number[];
+  recipients: string[];
+  tokenSymbols: string[];
+  tokenAmounts: BigNumber[];
+};
 
 export class RelayerConfig extends CommonConfig {
   readonly inventoryConfig: InventoryConfig;
@@ -30,6 +40,8 @@ export class RelayerConfig extends CommonConfig {
   // fill any deposit over the limit which is based on liquidReserves in the HubPool.
   readonly ignoreLimits: boolean;
 
+  readonly messageRelayRules: MessageRelayRule[] = [];
+
   constructor(env: ProcessEnv) {
     const {
       RELAYER_DESTINATION_CHAINS,
@@ -44,6 +56,7 @@ export class RelayerConfig extends CommonConfig {
       MIN_DEPOSIT_CONFIRMATIONS,
       QUOTE_TIME_BUFFER,
       RELAYER_IGNORE_LIMITS,
+      RELAYER_PERMIT_MESSAGES,
     } = env;
     super(env);
 
@@ -106,5 +119,48 @@ export class RelayerConfig extends CommonConfig {
     this.minDepositConfirmations["default"] = Constants.DEFAULT_MIN_DEPOSIT_CONFIRMATIONS;
     this.quoteTimeBuffer = QUOTE_TIME_BUFFER ? Number(QUOTE_TIME_BUFFER) : Constants.QUOTE_TIME_BUFFER;
     this.ignoreLimits = RELAYER_IGNORE_LIMITS === "true";
+
+    this.messageRelayRules = RELAYER_PERMIT_MESSAGES?.split(",").map((ruleName) => {
+      const originChainIds = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_ORIGIN_CHAIN_ID`]?.split(",").map((chainId) => Number(chainId));
+      const destinationChainIds = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_DESTINATION_CHAIN_ID`]?.split(",").map((chainId) => Number(chainId));
+      const depositor = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_DEPOSITOR`];
+      const recipients = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_RECIPIENTS`]?.split(",");
+      const tokenSymbols = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_TOKEN_SYMBOLS`]?.split(",");
+      const tokenAmounts = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_TOKEN_AMOUNTS`]?.split(",").map((amount) => toBNWei(amount));
+
+      const rule: MessageRelayRule = {
+        name: ruleName,
+        originChainIds,
+        depositor,
+        destinationChainIds,
+        recipients,
+        tokenSymbols,
+        tokenAmounts,
+      };
+
+      ["originChainIds", "destinationChainIds"].forEach((key) => {
+        rule[key].forEach((chainId: unknown) => {
+          if (isNaN(chainId as number)) {
+            throw new Error(`Invalid ${key} for relayer message rule ${ruleName} (${chainId})`);
+          }
+        });
+      });
+
+      if (!isDefined(rule.depositor)) {
+        throw new Error(`Missing or invalid depositor for relayer message rule ${ruleName} (${rule.depositor})`);
+      }
+
+      ["recipients", "tokenSymbols", "tokenAmounts"].forEach((key) => {
+        if (!isDefined(rule[key]) || rule[key].length === 0) {
+          throw new Error(`Missing or invalid ${key} for relayer message rule ${ruleName} (${rule[key]})`);
+        }
+      });
+
+      if (rule.tokenSymbols.length !== rule.tokenAmounts.length) {
+        throw new Error(`Token symbols/amounts length mismatch for relayer message rule ${ruleName})`);
+      }
+
+      return rule;
+    });
   }
 }
