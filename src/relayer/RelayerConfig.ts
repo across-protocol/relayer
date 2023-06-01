@@ -145,6 +145,9 @@ export class RelayerConfig extends CommonConfig {
       };
 
       ["originChainIds", "destinationChainIds"].forEach((key) => {
+        if (!isDefined(rule[key])) {
+          throw new Error(`Missing ${key} for relayer message rule ${ruleName}`);
+        }
         rule[key].forEach((chainId: unknown) => {
           if (isNaN(chainId as number)) {
             throw new Error(`Invalid ${key} for relayer message rule ${ruleName} (${chainId})`);
