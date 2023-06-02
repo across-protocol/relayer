@@ -24,10 +24,10 @@ import {
   ConfigStoreClient,
   MultiCallerClient,
   AcrossApiClient,
+  TokenClient,
 } from "../src/clients";
-import { TokenClient } from "../src/clients";
+import { CONFIG_STORE_VERSION } from "../src/common";
 import { MockInventoryClient, MockProfitClient } from "./mocks";
-
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
@@ -69,7 +69,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    configStoreClient = new ConfigStoreClient(spyLogger, configStore);
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION, []);
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
 
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
