@@ -130,7 +130,7 @@ export class Dataworker {
   }> {
     const endBlockForMainnet = getBlockRangeForChain(
       blockRangesForChains,
-      1,
+      this.clients.hubPoolClient.chainId,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
 
@@ -162,7 +162,7 @@ export class Dataworker {
 
     const mainnetBundleEndBlock = getBlockRangeForChain(
       blockRangesForChains,
-      1,
+      this.clients.hubPoolClient.chainId,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
     const allValidFillsInRange = getFillsInRange(
@@ -260,6 +260,8 @@ export class Dataworker {
     if (!this.clients.hubPoolClient.isUpdated || !this.clients.hubPoolClient.latestBlockNumber) {
       throw new Error("HubPoolClient not updated");
     }
+    const hubPoolChainId = this.clients.hubPoolClient.chainId;
+
     if (this.clients.hubPoolClient.hasPendingProposal()) {
       this.logger.debug({
         at: "Dataworker#propose",
@@ -315,7 +317,7 @@ export class Dataworker {
 
     const mainnetBundleEndBlock = getBlockRangeForChain(
       blockRangesForProposal,
-      1,
+      hubPoolChainId,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
 
@@ -429,7 +431,6 @@ export class Dataworker {
     }
 
     // 4. Propose roots to HubPool contract.
-    const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
     this.logger.debug({
       at: "Dataworker#propose",
       message: "Enqueing new root bundle proposal txn",
@@ -465,7 +466,7 @@ export class Dataworker {
     ) {
       throw new Error("HubPoolClient not updated");
     }
-    const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
+    const hubPoolChainId = this.clients.hubPoolClient.chainId;
 
     // Exit early if a bundle is not pending.
     const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundle();
@@ -704,7 +705,7 @@ export class Dataworker {
 
     const endBlockForMainnet = getBlockRangeForChain(
       blockRangesImpliedByBundleEndBlocks,
-      1,
+      hubPoolChainId,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
     // If config store version isn't up to date, return early. This is a simple rule that is perhaps too aggressive
@@ -1151,7 +1152,7 @@ export class Dataworker {
     ) {
       throw new Error("HubPoolClient not updated");
     }
-    const hubPoolChainId = (await this.clients.hubPoolClient.hubPool.provider.getNetwork()).chainId;
+    const hubPoolChainId = this.clients.hubPoolClient.chainId;
 
     // Exit early if a bundle is not pending.
     const pendingRootBundle = this.clients.hubPoolClient.getPendingRootBundle();
@@ -1181,7 +1182,7 @@ export class Dataworker {
 
     const mainnetBundleEndBlockForPendingRootBundle = getBlockForChain(
       pendingRootBundle.bundleEvaluationBlockNumbers,
-      this.clients.hubPoolClient.chainId,
+      hubPoolChainId,
       this.chainIdListForBundleEvaluationBlockNumbers
     );
     const widestPossibleExpectedBlockRange = this._getWidestPossibleBlockRangeForNextBundle(
@@ -1251,14 +1252,14 @@ export class Dataworker {
 
       // We need to know the next root bundle ID for the mainnet spoke pool in order to execute leaves for roots that
       // will be relayed after executing the above pool rebalance root.
-      const nextRootBundleIdForMainnet = spokePoolClients[1].getLatestRootBundleId();
+      const nextRootBundleIdForMainnet = spokePoolClients[hubPoolChainId].getLatestRootBundleId();
 
       // Now, execute refund and slow fill leaves for Mainnet using new funds. These methods will return early if there
       // are no relevant leaves to execute.
       await this._executeSlowFillLeaf(
         expectedTrees.slowRelayTree.leaves.filter((leaf) => leaf.relayData.destinationChainId === hubPoolChainId),
         balanceAllocator,
-        spokePoolClients[1],
+        spokePoolClients[hubPoolChainId],
         expectedTrees.slowRelayTree.tree,
         submitExecution,
         nextRootBundleIdForMainnet
@@ -1266,7 +1267,7 @@ export class Dataworker {
       await this._executeRelayerRefundLeaves(
         expectedTrees.relayerRefundTree.leaves.filter((leaf) => leaf.chainId === hubPoolChainId),
         balanceAllocator,
-        spokePoolClients[1],
+        spokePoolClients[hubPoolChainId],
         expectedTrees.relayerRefundTree.tree,
         submitExecution,
         nextRootBundleIdForMainnet
@@ -1431,14 +1432,15 @@ export class Dataworker {
         }
 
         if (submitExecution) {
+          const chainId = this.clients.hubPoolClient.chainId;
           this.clients.multiCallerClient.enqueueTransaction({
             contract: this.clients.hubPoolClient.hubPool,
-            chainId: this.clients.hubPoolClient.chainId,
+            chainId,
             method: "exchangeRateCurrent",
             args: [l1Token],
             message: "Updated exchange rate ♻️!",
             mrkdwn: `Updated exchange rate for l1 token: ${
-              this.clients.hubPoolClient.getTokenInfo(1, l1Token)?.symbol
+              this.clients.hubPoolClient.getTokenInfo(chainId, l1Token)?.symbol
             }`,
             unpermissioned: true,
           });
@@ -1453,6 +1455,7 @@ export class Dataworker {
     submitExecution = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<void> {
+    const hubPoolChainId = this.clients.hubPoolClient.chainId;
     this.logger.debug({
       at: "Dataworker#executeRelayerRefundLeaves",
       message: "Executing relayer refund leaves",
@@ -1554,7 +1557,7 @@ export class Dataworker {
 
         const endBlockForMainnet = getBlockRangeForChain(
           blockNumberRanges,
-          1,
+          hubPoolChainId,
           this.chainIdListForBundleEvaluationBlockNumbers
         )[1];
         const mainnetEndBlockTimestamp = (

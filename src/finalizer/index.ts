@@ -206,8 +206,11 @@ export async function constructFinalizerClients(
   };
 }
 
+// @dev The HubPoolClient is dependent on the state of the ConfigStoreClient,
+//      so update the ConfigStoreClient first. @todo: Use common/ClientHelpter.ts.
 async function updateFinalizerClients(clients: Clients) {
-  await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
+  await clients.configStoreClient.update();
+  await clients.hubPoolClient.update();
 }
 
 export class FinalizerConfig extends DataworkerConfig {

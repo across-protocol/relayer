@@ -12,6 +12,9 @@ import { Dataworker } from "../src/dataworker/Dataworker";
 import { spokePoolClientsToProviders } from "../src/common";
 import { BalanceAllocator } from "../src/clients/BalanceAllocator";
 
+// Set to arbitrum to test that the dataworker sends ETH to the HubPool to test L1 --> Arbitrum message transfers.
+const destinationChainId = 42161;
+
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract;
 let l1Token_1: Contract, hubPool: Contract;
 let depositor: SignerWithAddress;
@@ -42,15 +45,11 @@ describe("Dataworker: Execute pool rebalances", async function () {
       MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
       DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
       0,
-      42161
+      destinationChainId
     ));
   });
   it("Simple lifecycle", async function () {
     await updateAllClients();
-
-    // Set to arbitrum so we can test that the dataworker sends ETH to the HubPool to test L1 --> Arbitrum message
-    // transfers.
-    const destinationChainId = 42161;
 
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
@@ -68,7 +67,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
 
     const providers = {
       ...spokePoolClientsToProviders(spokePoolClients),
-      [(await hubPool.provider.getNetwork()).chainId]: hubPool.provider,
+      [hubPoolClient.chainId]: hubPool.provider,
     };
 
     await dataworkerInstance.proposeRootBundle(spokePoolClients);

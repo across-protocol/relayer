@@ -1,7 +1,7 @@
 import { Result } from "@ethersproject/abi";
 import { delay } from "@uma/financial-templates-lib";
 import { SortableEvent } from "../interfaces";
-import { Contract, Event, EventFilter, Promise } from "./";
+import { Contract, Event, EventFilter } from "./";
 
 const maxRetries = 3;
 const retrySleepTime = 10;
@@ -84,12 +84,14 @@ export async function paginatedEventQuery(
   const paginatedRanges = getPaginatedBlockRanges(searchConfig);
 
   try {
-    return (
-      (await Promise.map(paginatedRanges, ([fromBlock, toBlock]) => contract.queryFilter(filter, fromBlock, toBlock)))
-        .flat()
-        // Filter events by block number because ranges can include blocks that are outside the range specified for caching reasons.
-        .filter((event) => event.blockNumber >= searchConfig.fromBlock && event.blockNumber <= searchConfig.toBlock)
+    const results = await Promise.all(
+      paginatedRanges.map(([fromBlock, toBlock]) => contract.queryFilter(filter, fromBlock, toBlock))
     );
+
+    // Filter by block number because results can include blocks outside the requested range for caching reasons.
+    return results
+      .flat()
+      .filter((event) => event.blockNumber >= searchConfig.fromBlock && event.blockNumber <= searchConfig.toBlock);
   } catch (error) {
     if (retryCount < maxRetries) {
       await delay(retrySleepTime);
