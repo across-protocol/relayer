@@ -2,6 +2,8 @@ import { BigNumber, formatFeePct, toBN, toBNWei } from "../src/utils";
 import {
   expect,
   createSpyLogger,
+  deployConfigStore,
+  hubPoolFixture,
   winston,
   ethers,
   deploySpokePoolWithToken,
@@ -9,8 +11,9 @@ import {
   destinationChainId,
 } from "./utils";
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
-import { Deposit, L1Token } from "../src/interfaces";
+import { Deposit, DepositWithBlock, L1Token } from "../src/interfaces";
 import { FillProfit, GAS_TOKEN_BY_CHAIN_ID, SpokePoolClient, MATIC, USDC, WBTC, WETH } from "../src/clients";
+import { AcrossConfigStoreClient as ConfigStoreClient } from "../src/clients";
 
 const chainIds: number[] = [1, 10, 137, 288, 42161];
 
@@ -79,8 +82,15 @@ function testProfitability(deposit: Deposit, fillAmountUsd: BigNumber, gasCostUs
 
 describe("ProfitClient: Consider relay profit", async function () {
   beforeEach(async function () {
-    hubPoolClient = new MockHubPoolClient(null, null);
     const [owner] = await ethers.getSigners();
+    const logger = createSpyLogger().spyLogger;
+
+    const { configStore } = await deployConfigStore(owner, []);
+    const configStoreClient = new ConfigStoreClient(logger, configStore);
+
+    const { hubPool } = await hubPoolFixture();
+    hubPoolClient = new MockHubPoolClient(logger, hubPool, configStoreClient);
+
     const { spokePool: spokePool_1, deploymentBlock: spokePool1DeploymentBlock } = await deploySpokePoolWithToken(
       originChainId,
       destinationChainId
@@ -361,7 +371,7 @@ describe("ProfitClient: Consider relay profit", async function () {
   });
 
   it("Captures unprofitable fills", async function () {
-    const deposit = { relayerFeePct: toBNWei("0.003"), originChainId: 1, depositId: 42 } as Deposit;
+    const deposit = { relayerFeePct: toBNWei("0.003"), originChainId: 1, depositId: 42 } as DepositWithBlock;
     profitClient.captureUnprofitableFill(deposit, toBNWei(1));
     expect(profitClient.getUnprofitableFills()).to.deep.equal({ 1: [{ deposit, fillAmount: toBNWei(1) }] });
   });

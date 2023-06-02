@@ -19,7 +19,7 @@ import {
   multicallArbitrumFinalizations,
 } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { AcrossConfigStoreClient } from "../clients";
+import { HubPoolClient } from "../clients";
 import { DataworkerConfig } from "../dataworker/DataworkerConfig";
 import {
   constructClients,
@@ -46,13 +46,12 @@ const oneDaySeconds = 24 * 60 * 60;
 export async function finalize(
   logger: winston.Logger,
   hubSigner: Wallet,
-  configStoreClient: AcrossConfigStoreClient,
+  hubPoolClient: HubPoolClient,
   spokePoolClients: SpokePoolClientsByChain,
   configuredChainIds: number[],
   optimisticRollupFinalizationWindow: number = 5 * oneDaySeconds,
   polygonFinalizationWindow: number = oneDaySeconds
 ): Promise<void> {
-  const hubPoolClient = configStoreClient.hubPoolClient;
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
   const multicall2 = getMultisender(1, hubSigner);
@@ -194,11 +193,11 @@ export async function constructFinalizerClients(
   // the disabled chain list by setting the DISABLED_CHAINS_OVERRIDE environment variable.
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
+    commonClients.hubPoolClient,
     commonClients.configStoreClient,
     config,
     baseSigner,
-    config.maxFinalizerLookback,
-    config.hubPoolChainId
+    config.maxFinalizerLookback
   );
 
   return {
@@ -207,8 +206,11 @@ export async function constructFinalizerClients(
   };
 }
 
+// @dev The HubPoolClient is dependent on the state of the ConfigStoreClient,
+//      so update the ConfigStoreClient first. @todo: Use common/ClientHelpter.ts.
 async function updateFinalizerClients(clients: Clients) {
-  await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
+  await clients.configStoreClient.update();
+  await clients.hubPoolClient.update();
 }
 
 export class FinalizerConfig extends DataworkerConfig {
@@ -240,7 +242,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Wallet):
         await finalize(
           logger,
           commonClients.hubSigner,
-          commonClients.configStoreClient,
+          commonClients.hubPoolClient,
           spokePoolClients,
           config.finalizerChains
         );

@@ -1,5 +1,6 @@
 import { AcrossConfigStoreClient, HubPoolClient } from "../clients";
 import { Deposit, DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
+import { queryHistoricalDepositForFill } from "../utils";
 import {
   BigNumber,
   assign,
@@ -40,7 +41,7 @@ export function getRefundInformationFromFill(
   // Save fill data and associate with repayment chain and L2 token refund should be denominated in.
   const endBlockForMainnet = getBlockRangeForChain(
     blockRangesForChains,
-    1,
+    hubPoolClient.chainId,
     chainIdListForBundleEvaluationBlockNumbers
   )[1];
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
@@ -154,7 +155,7 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
   // allMatchingFills array, at the end of this block, allMatchingFills should contain all fills for the same
   // deposit as the input fill.
   if (!firstFillForSameDeposit) {
-    const depositForFill = await spokePoolClientsByChain[fill.originChainId].queryHistoricalDepositForFill(fill);
+    const depositForFill = await queryHistoricalDepositForFill(spokePoolClientsByChain[fill.originChainId], fill);
     const matchingFills = await spokePoolClientsByChain[fill.destinationChainId].queryHistoricalMatchingFills(
       fill,
       depositForFill,

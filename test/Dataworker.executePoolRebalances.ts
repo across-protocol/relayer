@@ -1,6 +1,6 @@
 import { buildFillForRepaymentChain } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit } from "./utils";
-import { HubPoolClient, AcrossConfigStoreClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
+import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
 import { amountToDeposit } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
@@ -12,11 +12,14 @@ import { Dataworker } from "../src/dataworker/Dataworker";
 import { spokePoolClientsToProviders } from "../src/common";
 import { BalanceAllocator } from "../src/clients/BalanceAllocator";
 
+// Set to arbitrum to test that the dataworker sends ETH to the HubPool to test L1 --> Arbitrum message transfers.
+const destinationChainId = 42161;
+
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract;
 let l1Token_1: Contract, hubPool: Contract;
 let depositor: SignerWithAddress;
 
-let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
+let hubPoolClient: HubPoolClient;
 let dataworkerInstance: Dataworker, multiCallerClient: MultiCallerClient;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
@@ -29,7 +32,6 @@ describe("Dataworker: Execute pool rebalances", async function () {
       spokePool_1,
       erc20_1,
       spokePool_2,
-      configStoreClient,
       hubPoolClient,
       l1Token_1,
       depositor,
@@ -43,19 +45,14 @@ describe("Dataworker: Execute pool rebalances", async function () {
       MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
       DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
       0,
-      42161
+      destinationChainId
     ));
   });
   it("Simple lifecycle", async function () {
     await updateAllClients();
 
-    // Set to arbitrum so we can test that the dataworker sends ETH to the HubPool to test L1 --> Arbitrum message
-    // transfers.
-    const destinationChainId = 42161;
-
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -70,7 +67,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
 
     const providers = {
       ...spokePoolClientsToProviders(spokePoolClients),
-      [(await hubPool.provider.getNetwork()).chainId]: hubPool.provider,
+      [hubPoolClient.chainId]: hubPool.provider,
     };
 
     await dataworkerInstance.proposeRootBundle(spokePoolClients);

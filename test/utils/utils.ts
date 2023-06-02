@@ -110,7 +110,7 @@ export function createSpyLogger() {
 
 export async function deploySpokePoolWithToken(fromChainId = 0, toChainId = 0, enableRoute = true) {
   const { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(utils.ethers);
-  const deploymentBlock = await spokePool.provider.getBlockNumber();
+  const receipt = await spokePool.deployTransaction.wait();
 
   await spokePool.setChainId(fromChainId == 0 ? utils.originChainId : fromChainId);
 
@@ -120,7 +120,7 @@ export async function deploySpokePoolWithToken(fromChainId = 0, toChainId = 0, e
       { originToken: weth.address, destinationChainId: toChainId == 0 ? utils.destinationChainId : toChainId },
     ]);
   }
-  return { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20, deploymentBlock };
+  return { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20, deploymentBlock: receipt.blockNumber };
 }
 
 export async function deployConfigStore(
@@ -163,6 +163,7 @@ export async function deployAndConfigureHubPool(
   const hubPool = await (
     await utils.getContractFactory("HubPool", signer)
   ).deploy(lpTokenFactory.address, finderAddress, zeroAddress, timerAddress);
+  const receipt = await hubPool.deployTransaction.wait();
 
   const mockAdapter = await (await utils.getContractFactory("Mock_Adapter", signer)).deploy();
 
@@ -175,7 +176,7 @@ export async function deployAndConfigureHubPool(
   const l1Token_2 = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("Rando L1", "L1", 18);
   await l1Token_2.addMember(TokenRolesEnum.MINTER, signer.address);
 
-  return { hubPool, mockAdapter, l1Token_1, l1Token_2 };
+  return { hubPool, mockAdapter, l1Token_1, l1Token_2, hubPoolDeploymentBlock: receipt.blockNumber };
 }
 
 export async function deployNewToken(owner) {
@@ -398,10 +399,9 @@ export async function contractAt(contractName: string, signer: utils.Signer, add
 export async function buildDepositStruct(
   deposit: Omit<Deposit, "destinationToken" | "realizedLpFeePct">,
   hubPoolClient: HubPoolClient,
-  configStoreClient: AcrossConfigStoreClient,
   l1TokenForDepositedToken: Contract
 ) {
-  const { quoteBlock, realizedLpFeePct } = await await configStoreClient.computeRealizedLpFeePct(
+  const { quoteBlock, realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct(
     deposit,
     l1TokenForDepositedToken.address
   );
@@ -415,7 +415,6 @@ export async function buildDepositStruct(
   };
 }
 export async function buildDeposit(
-  configStoreClient: AcrossConfigStoreClient,
   hubPoolClient: HubPoolClient,
   spokePool: Contract,
   tokenToDeposit: Contract,
@@ -434,7 +433,7 @@ export async function buildDeposit(
     _amountToDeposit,
     _relayerFeePct
   );
-  return await buildDepositStruct(_deposit!, hubPoolClient, configStoreClient, l1TokenForDepositedToken);
+  return await buildDepositStruct(_deposit!, hubPoolClient, l1TokenForDepositedToken);
 }
 
 // Submits a fillRelay transaction and returns the Fill struct that that clients will interact with.
