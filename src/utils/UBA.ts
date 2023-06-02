@@ -1,6 +1,6 @@
 import { DepositWithBlock, FillWithBlock, UbaFlow } from "../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../clients";
-import { assert, BigNumber, isDefined } from "../utils";
+import { assert } from "../utils";
 import { sortEventsAscending } from "./";
 
 export class UBAClient {
@@ -60,34 +60,5 @@ export class UBAClient {
     const flows = sortEventsAscending(deposits.concat(fills).concat(refundRequests));
 
     return flows;
-  }
-
-  protected resolveClosingBlockNumber(chainId: number, blockNumber: number): number {
-    return this.hubPoolClient.getLatestBundleEndBlockForChain(this.chainIdIndices, blockNumber, chainId);
-  }
-
-  getOpeningBalance(
-    chainId: number,
-    spokePoolToken: string,
-    hubPoolBlockNumber?: number
-  ): { balance: BigNumber; blockNumber: number } {
-    hubPoolBlockNumber ??= this.hubPoolClient.latestBlockNumber;
-
-    const hubPoolToken = this.hubPoolClient.getL1TokenCounterpartAtBlock(chainId, spokePoolToken, hubPoolBlockNumber);
-    if (!isDefined(hubPoolToken)) {
-      throw new Error(`Could not resolve ${chainId} token ${spokePoolToken} at block ${hubPoolBlockNumber}`);
-    }
-
-    const spokePoolClient = this.spokePoolClients[chainId];
-    let blockNumber = spokePoolClient.deploymentBlock;
-    const prevEndBlock =
-      this.resolveClosingBlockNumber(chainId, hubPoolBlockNumber) ?? spokePoolClient.latestBlockNumber;
-    if (prevEndBlock > blockNumber) {
-      blockNumber = prevEndBlock + 1;
-      assert(blockNumber <= spokePoolClient.latestBlockNumber);
-    }
-    const balance = this.hubPoolClient.getRunningBalanceBeforeBlockForChain(hubPoolBlockNumber, chainId, hubPoolToken);
-
-    return { blockNumber, balance };
   }
 }
