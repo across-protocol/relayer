@@ -121,10 +121,10 @@ export class RelayerConfig extends CommonConfig {
     this.ignoreLimits = RELAYER_IGNORE_LIMITS === "true";
 
     this.messageRules = RELAYER_MESSAGE_RULES?.split(",").map((ruleName) => {
-      const originChainIds = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_ORIGIN_CHAIN_ID`]
+      const originChainIds = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_ORIGIN_CHAIN_IDS`]
         ?.split(",")
         .map((chainId) => Number(chainId));
-      const destinationChainIds = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_DESTINATION_CHAIN_ID`]
+      const destinationChainIds = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_DESTINATION_CHAIN_IDS`]
         ?.split(",")
         .map((chainId) => Number(chainId));
       const depositor = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_DEPOSITOR`];
