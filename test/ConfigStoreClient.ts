@@ -1,5 +1,6 @@
+import hre from "hardhat";
 import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolRebalanceLeaves } from "./utils";
-import { expect, ethers, Contract, hre, SignerWithAddress, setupTokensForWallet } from "./utils";
+import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
 import { toBNWei, toWei, buildPoolRebalanceLeafTree, createSpyLogger } from "./utils";
 import { getContractFactory, hubPoolFixture, toBN, utf8ToHex } from "./utils";
 import { amountToLp, destinationChainId, mockTreeRoot, refundProposalLiveness, totalBond } from "./constants";
