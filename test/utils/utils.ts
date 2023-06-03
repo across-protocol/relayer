@@ -9,7 +9,7 @@ import {
 } from "../constants";
 import { amountToDeposit, depositRelayerFeePct, l1TokenTransferThreshold, zeroAddress } from "../constants";
 import { MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF } from "../constants";
-import { HubPoolClient, AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
+import { HubPoolClient, ConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
 import { SpokePoolClient } from "../../src/clients";
 import { deposit, Contract, SignerWithAddress, BigNumber } from "./index";
 import { Deposit, Fill, RunningBalances } from "../../src/interfaces";
@@ -275,7 +275,7 @@ export async function deploySpokePoolForIterativeTest(
   logger,
   signer: utils.SignerWithAddress,
   mockAdapter: utils.Contract,
-  configStoreClient: AcrossConfigStoreClient,
+  configStoreClient: ConfigStoreClient,
   desiredChainId = 0
 ) {
   const { spokePool, deploymentBlock } = await deploySpokePoolWithToken(desiredChainId, 0, false);
@@ -341,7 +341,7 @@ export async function deployIterativeSpokePoolsAndToken(
   logger: winston.Logger,
   signer: utils.SignerWithAddress,
   mockAdapter: utils.Contract,
-  configStoreClient: AcrossConfigStoreClient,
+  configStoreClient: ConfigStoreClient,
   numSpokePools: number,
   numTokens: number
 ) {

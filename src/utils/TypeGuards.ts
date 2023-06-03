@@ -1,18 +1,6 @@
-export function isPromiseFulfilled<T>(
-  promiseSettledResult: PromiseSettledResult<T>
-): promiseSettledResult is PromiseFulfilledResult<T> {
-  return promiseSettledResult.status === "fulfilled";
-}
+import { utils } from "@across-protocol/sdk-v2";
 
-export function isPromiseRejected<T>(
-  promiseSettledResult: PromiseSettledResult<T>
-): promiseSettledResult is PromiseRejectedResult {
-  return promiseSettledResult.status === "rejected";
-}
-
-export function isDefined<T>(input: T | null | undefined): input is T {
-  return input !== null && input !== undefined;
-}
+export const { isDefined, isPromiseFulfilled, isPromiseRejected } = utils;
 
 // This function allows you to test for the key type in an object literal.
 // For instance, this would compile in typescript strict:

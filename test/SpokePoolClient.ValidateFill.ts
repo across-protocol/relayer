@@ -26,9 +26,9 @@ import {
   lastSpyLogIncludes,
 } from "./utils";
 
-import { AcrossConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
+import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
 import { queryHistoricalDepositForFill, validateFillForDeposit } from "../src/utils";
-import { MockSpokePoolClient } from "./mocks/MockSpokePoolClient";
+import { MockSpokePoolClient } from "./mocks";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract, hubPool: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
@@ -37,7 +37,7 @@ let l1Token: Contract, configStore: Contract;
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
 let spokePoolClient2: SpokePoolClient, hubPoolClient: HubPoolClient;
-let spokePoolClient1: SpokePoolClient, configStoreClient: AcrossConfigStoreClient;
+let spokePoolClient1: SpokePoolClient, configStoreClient: ConfigStoreClient;
 
 describe("SpokePoolClient: Fill Validation", async function () {
   beforeEach(async function () {
@@ -66,7 +66,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
 
-    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore);
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore);
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
 
     await configStoreClient.update();
