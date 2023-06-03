@@ -1,4 +1,3 @@
-import hre from "hardhat";
 import {
   expect,
   toBNWei,
