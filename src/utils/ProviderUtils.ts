@@ -89,6 +89,9 @@ function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): bo
   // back after we do the comparison with unignored keys. This is a faster algorithm than cloning an object but it has
   // some side effects such as the order of keys in the rpcResults object changing.
   const deleteIgnoredKeys = (ignoredKeys: string[], rpcResults: any) => {
+    if (!rpcResults) {
+      return;
+    }
     const ignoredMappings = {};
     for (const key of ignoredKeys) {
       ignoredMappings[key] = rpcResults[key];
