@@ -15,6 +15,7 @@ import {
   expect,
   ethers,
   Contract,
+  deployConfigStore,
   hubPoolFixture,
   SignerWithAddress,
   destinationChainId,
@@ -24,13 +25,13 @@ import {
   toBN,
   toBNWei,
 } from "./utils";
-import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
+import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 
 type Event = ethers.Event;
 
 let hubPool: Contract, weth: Contract, dai: Contract;
 let hubPoolClient: MockHubPoolClient;
-let _relayer: SignerWithAddress, relayer: string;
+let owner: SignerWithAddress, _relayer: SignerWithAddress, relayer: string;
 let spokePoolClients: { [chainId: number]: MockSpokePoolClient };
 let ubaClient: UBAClient;
 
@@ -39,12 +40,15 @@ const logger = createSpyLogger().spyLogger;
 
 describe("UBA: SpokePool Events", async function () {
   beforeEach(async function () {
-    [_relayer] = await ethers.getSigners();
+    [owner, _relayer] = await ethers.getSigners();
     relayer = _relayer.address;
+
+    const { configStore } = await deployConfigStore(owner, []);
+    const configStoreClient = new MockConfigStoreClient(logger, configStore);
 
     ({ hubPool, weth, dai } = await hubPoolFixture());
     const deploymentBlock = await hubPool.provider.getBlockNumber();
-    hubPoolClient = new MockHubPoolClient(logger, hubPool, deploymentBlock);
+    hubPoolClient = new MockHubPoolClient(logger, hubPool, configStoreClient, deploymentBlock);
 
     spokePoolClients = {};
     for (const chainId of chainIds) {
@@ -52,7 +56,7 @@ describe("UBA: SpokePool Events", async function () {
       const deploymentBlock = await spokePool.provider.getBlockNumber();
 
       await spokePool.setChainId(chainId);
-      const spokePoolClient = new MockSpokePoolClient(logger, spokePool, chainId, deploymentBlock, hubPoolClient);
+      const spokePoolClient = new MockSpokePoolClient(logger, spokePool, chainId, deploymentBlock);
 
       for (const destinationChainId of chainIds) {
         // For each SpokePool, construct routes to each _other_ SpokePool.
@@ -73,6 +77,7 @@ describe("UBA: SpokePool Events", async function () {
       spokePoolClients[chainId] = spokePoolClient;
     }
 
+    await configStoreClient.update();
     await hubPoolClient.update();
     ubaClient = new UBAClient(chainIds, hubPoolClient, spokePoolClients);
   });
