@@ -189,6 +189,10 @@ export class Dataworker {
     mainnetBundleEndBlock: number,
     bufferToPropose: number = this.bufferToPropose
   ): { shouldWait: boolean; [key: string]: unknown } {
+    if (this.clients.hubPoolClient.getPendingRootBundle() === undefined) {
+      return { shouldWait: false };
+    }
+
     // Wait until all pool rebalance leaf executions from previous bundle are older than the new mainnet
     // bundle end block. This avoids any complications where a bundle is unable to determine the most recently
     // validated bundle. The HubPoolClient treats a bundle as "validated" once all of its pool rebalance leaves
