@@ -1,15 +1,22 @@
 import { clients } from "@across-protocol/sdk-v2";
+import { Contract, winston } from "../utils";
+import { ConfigStoreClient } from "../../src/clients";
 
-// Adds mocked functions to HubPoolClient to facilitate Dataworker unit testing.
+// Adds functions to MockHubPoolClient to facilitate Dataworker unit testing.
 export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
   public latestBundleEndBlocks: { [chainId: number]: number } = {};
 
   public chainId: number;
 
-  // For convenience, allow caller to base this Mock after already constructed HubPoolClient.
-  constructor(hubPoolClient: clients.HubPoolClient) {
-    super(hubPoolClient.logger, hubPoolClient.hubPool, hubPoolClient.configStoreClient, hubPoolClient.deploymentBlock);
-    this.chainId = hubPoolClient.chainId;
+  constructor(
+    logger: winston.Logger,
+    hubPool: Contract,
+    configStoreClient: ConfigStoreClient,
+    deploymentBlock = 0,
+    chainId = 1
+  ) {
+    super(logger, hubPool, configStoreClient, deploymentBlock);
+    this.chainId = chainId;
   }
 
   setLatestBundleEndBlockForChain(chainId: number, latestBundleEndBlock: number): void {

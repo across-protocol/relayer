@@ -97,7 +97,13 @@ describe("Dataworker block range-related utility methods", async function () {
     expect(zeroRange).to.deep.equal(latestBlocks.map(() => [0, 0]));
   });
   it("PoolRebalanceUtils.getWidestPossibleExpectedBlockRange: chain is paused", async function () {
-    const mockHubPoolClient = new MockHubPoolClient(hubPoolClient);
+    const mockHubPoolClient = new MockHubPoolClient(
+      hubPoolClient.logger,
+      hubPoolClient.hubPool,
+      dataworkerClients.configStoreClient,
+      hubPoolClient.deploymentBlock,
+      hubPoolClient.chainId
+    );
 
     const chainIdListForBundleEvaluationBlockNumbers = Object.keys(spokePoolClients).map((_chainId) =>
       Number(_chainId)
