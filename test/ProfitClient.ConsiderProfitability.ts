@@ -13,7 +13,7 @@ import {
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
 import { Deposit, DepositWithBlock, L1Token } from "../src/interfaces";
 import { FillProfit, GAS_TOKEN_BY_CHAIN_ID, SpokePoolClient, MATIC, USDC, WBTC, WETH } from "../src/clients";
-import { AcrossConfigStoreClient as ConfigStoreClient } from "../src/clients";
+import { ConfigStoreClient } from "../src/clients";
 
 const chainIds: number[] = [1, 10, 137, 288, 42161];
 

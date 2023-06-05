@@ -23,8 +23,7 @@ import {
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { BundleDataClient, TokenClient } from "../../src/clients";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
-import { MockConfigStoreClient } from "../mocks/MockConfigStoreClient";
-import { MockedMultiCallerClient } from "../mocks/MockMultiCallerClient";
+import { MockConfigStoreClient, MockedMultiCallerClient } from "../mocks";
 
 async function _constructSpokePoolClientsWithLookback(
   spokePools: Contract[],

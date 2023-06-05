@@ -1,4 +1,4 @@
-import { AcrossConfigStoreClient, HubPoolClient, SpokePoolClient } from "../clients";
+import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../clients";
 import * as interfaces from "../interfaces";
 import {
   BigNumberForToken,
@@ -278,7 +278,7 @@ export function constructPoolRebalanceLeaves(
   latestMainnetBlock: number,
   runningBalances: interfaces.RunningBalances,
   realizedLpFees: interfaces.RunningBalances,
-  configStoreClient: AcrossConfigStoreClient,
+  configStoreClient: ConfigStoreClient,
   maxL1TokenCount?: number,
   tokenTransferThreshold?: BigNumberForToken
 ): interfaces.PoolRebalanceLeaf[] {
