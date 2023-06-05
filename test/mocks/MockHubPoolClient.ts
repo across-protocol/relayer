@@ -7,17 +7,15 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
   public chainId: number;
 
   // For convenience, allow caller to base this Mock after already constructed HubPoolClient.
-  constructor(
-    hubPoolClient: clients.HubPoolClient
-    ) {
+  constructor(hubPoolClient: clients.HubPoolClient) {
     super(hubPoolClient.logger, hubPoolClient.hubPool, hubPoolClient.configStoreClient, hubPoolClient.deploymentBlock);
     this.chainId = hubPoolClient.chainId;
-    }
+  }
 
-    setLatestBundleEndBlockForChain(chainId: number, latestBundleEndBlock: number): void {
-        this.latestBundleEndBlocks[chainId] = latestBundleEndBlock;
-    }
-    getLatestBundleEndBlockForChain(_chainIdList: number[], _latestMainnetBlock: number, chainId: number): number {
-        return this.latestBundleEndBlocks[chainId] ?? 0;
-    }
+  setLatestBundleEndBlockForChain(chainId: number, latestBundleEndBlock: number): void {
+    this.latestBundleEndBlocks[chainId] = latestBundleEndBlock;
+  }
+  getLatestBundleEndBlockForChain(_chainIdList: number[], _latestMainnetBlock: number, chainId: number): number {
+    return this.latestBundleEndBlocks[chainId] ?? 0;
+  }
 }

@@ -96,50 +96,59 @@ describe("Dataworker block range-related utility methods", async function () {
     );
     expect(zeroRange).to.deep.equal(latestBlocks.map(() => [0, 0]));
   });
-  it("PoolRebalanceUtils.getWidestPossibleExpectedBlockRange: chain is paused", async function() {
-    const mockHubPoolClient = new MockHubPoolClient(
-      hubPoolClient
-    )
+  it("PoolRebalanceUtils.getWidestPossibleExpectedBlockRange: chain is paused", async function () {
+    const mockHubPoolClient = new MockHubPoolClient(hubPoolClient);
 
     const chainIdListForBundleEvaluationBlockNumbers = Object.keys(spokePoolClients).map((_chainId) =>
       Number(_chainId)
     );
-    
 
     // Set bundle end blocks equal to spoke pool clients latest blocks to simulate a chain being paused:
-    // - Buffers are 0: 
+    // - Buffers are 0:
     let defaultEndBlockBuffers = Array(chainIdListForBundleEvaluationBlockNumbers.length).fill(0);
     chainIdListForBundleEvaluationBlockNumbers.forEach((_chainId) => {
       mockHubPoolClient.setLatestBundleEndBlockForChain(_chainId, spokePoolClients[_chainId].latestBlockNumber);
-  });
-    expect(getWidestPossibleExpectedBlockRange(
-      chainIdListForBundleEvaluationBlockNumbers,
-      spokePoolClients,
-      defaultEndBlockBuffers,
-      {
-        ...dataworkerClients,
-        hubPoolClient: mockHubPoolClient
-      },
-      0,
-      chainIdListForBundleEvaluationBlockNumbers
-    )).to.deep.equal(chainIdListForBundleEvaluationBlockNumbers.map((_chainId) => [spokePoolClients[_chainId].latestBlockNumber, spokePoolClients[_chainId].latestBlockNumber]));
-
+    });
+    expect(
+      getWidestPossibleExpectedBlockRange(
+        chainIdListForBundleEvaluationBlockNumbers,
+        spokePoolClients,
+        defaultEndBlockBuffers,
+        {
+          ...dataworkerClients,
+          hubPoolClient: mockHubPoolClient,
+        },
+        0,
+        chainIdListForBundleEvaluationBlockNumbers
+      )
+    ).to.deep.equal(
+      chainIdListForBundleEvaluationBlockNumbers.map((_chainId) => [
+        spokePoolClients[_chainId].latestBlockNumber,
+        spokePoolClients[_chainId].latestBlockNumber,
+      ])
+    );
 
     // - Works with Buffers > 0 such that the latest blocks minus buffers are < latest bundle end blocks.
     defaultEndBlockBuffers = Array(chainIdListForBundleEvaluationBlockNumbers.length).fill(10);
-    expect(getWidestPossibleExpectedBlockRange(
-      chainIdListForBundleEvaluationBlockNumbers,
-      spokePoolClients,
-      defaultEndBlockBuffers,
-      {
-        ...dataworkerClients,
-        hubPoolClient: mockHubPoolClient
-      },
-      0,
-      chainIdListForBundleEvaluationBlockNumbers
-    )).to.deep.equal(chainIdListForBundleEvaluationBlockNumbers.map((_chainId) => [spokePoolClients[_chainId].latestBlockNumber, spokePoolClients[_chainId].latestBlockNumber]));
-
-  })
+    expect(
+      getWidestPossibleExpectedBlockRange(
+        chainIdListForBundleEvaluationBlockNumbers,
+        spokePoolClients,
+        defaultEndBlockBuffers,
+        {
+          ...dataworkerClients,
+          hubPoolClient: mockHubPoolClient,
+        },
+        0,
+        chainIdListForBundleEvaluationBlockNumbers
+      )
+    ).to.deep.equal(
+      chainIdListForBundleEvaluationBlockNumbers.map((_chainId) => [
+        spokePoolClients[_chainId].latestBlockNumber,
+        spokePoolClients[_chainId].latestBlockNumber,
+      ])
+    );
+  });
   it("DataworkerUtils.blockRangesAreInvalidForSpokeClients", async function () {
     const chainId = hubPoolClient.chainId;
 
