@@ -8,7 +8,7 @@ import {
   zeroAddress,
   createSpyLogger,
 } from "./utils";
-import { AcrossConfigStoreClient as ConfigStoreClient, HubPoolClient } from "../src/clients";
+import { ConfigStoreClient, HubPoolClient } from "../src/clients";
 
 let hubPool: Contract, lpTokenFactory: Contract;
 let owner: SignerWithAddress;
