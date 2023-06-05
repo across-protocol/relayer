@@ -449,6 +449,8 @@ export function getWidestPossibleExpectedBlockRange(
       // If the latest block hasn't advanced enough from the previous proposed end block, then re-use it. It will
       // be regarded as disabled by the Dataworker clients. Otherwise, add 1 to the previous proposed end block.
       if (lastEndBlockForChain >= latestPossibleBundleEndBlockNumbers[index]) {
+        // @dev: Without this check, then `getNextBundleStartBlockNumber` could return `latestBlock+1` even when the
+        // latest block for the chain hasn't advanced, resulting in an invalid range being produced.
         return [lastEndBlockForChain, lastEndBlockForChain];
       } else {
         // Chain has advanced far enough including the buffer, return range from previous proposed end block + 1 to
