@@ -11,7 +11,7 @@ import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokens
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
 import { buildRelayerRefundTreeWithUnassignedLeafIds, constructPoolRebalanceTree } from "./utils";
 import { buildPoolRebalanceLeafTree, sampleRateModel, getDefaultBlockRange } from "./utils";
-import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient } from "../src/clients";
+import { HubPoolClient, ConfigStoreClient, SpokePoolClient } from "../src/clients";
 import {
   amountToDeposit,
   destinationChainId,
@@ -34,7 +34,7 @@ let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Co
 let l1Token_1: Contract, hubPool: Contract, timer: Contract, configStore: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress, dataworker: SignerWithAddress;
 
-let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
+let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
 let dataworkerInstance: Dataworker;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 

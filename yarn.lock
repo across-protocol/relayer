@@ -50,13 +50,13 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk-v2@0.7.0":
-  version "0.7.0"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.7.0.tgz#4d0f092888019b2a70f89044adacbc8b3eb68c6a"
-  integrity sha512-TzNie5yLjUM22nlIku+UKiQYOABpvQjvG2dxDO5Uy0auF9d3jEKcAomzq5URu7jZgN6/ug+vceR4xQr8wr9s8Q==
+"@across-protocol/sdk-v2@0.8.0":
+  version "0.8.0"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.8.0.tgz#848bf08973cc7e2adccda3662f69e2a8ffa9c367"
+  integrity sha512-3ZLJQdNDWcqTjPtG+psXKPc1lnVOFBKbqaQ2rkB4bfqosiws5NAmd0d+FeeimcinY841r+vDcstw1co+HFqQVQ==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/contracts-v2" "2.2.3"
+    "@across-protocol/contracts-v2" "2.3.0"
     "@eth-optimism/sdk" "^1.6.0"
     "@uma/financial-templates-lib" "^2.32.11"
     "@uma/sdk" "^0.34.1"

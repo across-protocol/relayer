@@ -10,7 +10,7 @@ import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT, utf8ToHex } from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
-import { MockConfigStoreClient } from "./mocks/MockConfigStoreClient";
+import { MockConfigStoreClient } from "./mocks";
 
 let spy: sinon.SinonSpy;
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract;
