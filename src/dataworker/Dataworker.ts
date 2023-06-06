@@ -601,7 +601,7 @@ export class Dataworker {
     );
 
     // Make sure that all end blocks are >= expected start blocks. Allow for situation where chain was halted
-    // and bundle end blocks hadn't advanced at time of proposal, meaning that the end blocks were equal to the 
+    // and bundle end blocks hadn't advanced at time of proposal, meaning that the end blocks were equal to the
     // previous end blocks. So, even if by the time the disputer runs, the chain has started advancing again, then
     // the proposed block is at most 1 behind the next expected block range.
     if (
