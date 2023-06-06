@@ -76,22 +76,32 @@ export async function runTransaction(
       // If error is due to a nonce collision or gas underpricement then re-submit to fetch latest params.
       retriesRemaining -= 1;
       logger.debug({
-        at: "TxUtil",
+        at: "TxUtil#runTransaction",
         message: "Retrying txn due to expected error",
         error: JSON.stringify(error),
         retriesRemaining,
       });
       return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining);
     } else {
+      // If error is "UNPREDICTABLE_GAS_LIMIT" then the transaction likely reverted on-chain when estimated by the
+      // RPC server. Ethers might populate an "error" object which could contain additional
+      // information about the error encountered when the RPC simulated the transaction.
+      const innerError = (error as any)?.error;
+
       // If transaction error reason is known to be benign, then reduce the log level to warn.
-      logger[txnRetryable(error) ? "warn" : "error"]({
-        at: "TxUtil",
+      logger[txnRetryable(error) || txnRetryable(innerError) ? "warn" : "error"]({
+        at: "TxUtil#runTransaction",
         message: "Error executing tx",
         retriesRemaining,
-        error: JSON.stringify(error),
+        errorReason: innerError?.reason ?? (error as any)?.reason,
+        target: getTarget(contract.address),
+        method,
+        args,
+        value,
+        nonce,
         notificationPath: "across-error",
       });
-      throw error;
+      throw innerError ?? error;
     }
   }
 }
