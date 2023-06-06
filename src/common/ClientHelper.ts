@@ -10,13 +10,14 @@ import {
   getCurrentTime,
   SpokePool,
 } from "../utils";
-import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
+import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
+import { CONFIG_STORE_VERSION } from "./";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
-  configStoreClient: AcrossConfigStoreClient;
+  configStoreClient: ConfigStoreClient;
   multiCallerClient: MultiCallerClient;
   hubSigner?: Wallet;
 }
@@ -44,11 +45,11 @@ async function getSpokePoolSigners(
  */
 export async function constructSpokePoolClientsWithLookback(
   logger: winston.Logger,
-  configStoreClient: AcrossConfigStoreClient,
+  hubPoolClient: HubPoolClient,
+  configStoreClient: ConfigStoreClient,
   config: CommonConfig,
   baseSigner: Wallet,
-  initialLookBackOverride: number,
-  hubPoolChainId: number
+  initialLookBackOverride: number
 ): Promise<SpokePoolClientsByChain> {
   // Construct spoke pool clients for all chains that were enabled at least once in the block range.
   // Caller can optionally override the disabled chains list, which is useful for executing leaves or validating
@@ -56,10 +57,11 @@ export async function constructSpokePoolClientsWithLookback(
   // running the disputer or proposer functionality as it can lead to proposing disputable bundles or
   // disputing valid bundles.
 
-  if (!configStoreClient.isUpdated) {
+  if (!hubPoolClient.isUpdated) {
     throw new Error("Config store client must be updated before constructing spoke pool clients");
   }
 
+  const hubPoolChainId = hubPoolClient.chainId;
   const currentTime = getCurrentTime();
 
   // Use the first block that we'll query on mainnet to figure out which chains were enabled between then
@@ -93,7 +95,7 @@ export async function constructSpokePoolClientsWithLookback(
   // @dev: If toBlocks = {} then  construct spoke pool clients that query until the latest blocks.
   return await constructSpokePoolClientsWithStartBlocks(
     logger,
-    configStoreClient,
+    hubPoolClient,
     config,
     baseSigner,
     fromBlocks,
@@ -109,7 +111,7 @@ export async function constructSpokePoolClientsWithLookback(
  * @returns number[] List of enabled spoke pool chains.
  */
 function getEnabledChainsInBlockRange(
-  configStoreClient: AcrossConfigStoreClient,
+  configStoreClient: ConfigStoreClient,
   spokePoolChainsOverride: number[],
   mainnetStartBlock: number,
   mainnetEndBlock?: number
@@ -131,7 +133,7 @@ function getEnabledChainsInBlockRange(
  */
 export async function constructSpokePoolClientsWithStartBlocks(
   logger: winston.Logger,
-  configStoreClient: AcrossConfigStoreClient,
+  hubPoolClient: HubPoolClient,
   config: CommonConfig,
   baseSigner: Wallet,
   startBlocks: { [chainId: number]: number },
@@ -140,12 +142,13 @@ export async function constructSpokePoolClientsWithStartBlocks(
 ): Promise<SpokePoolClientsByChain> {
   if (!enabledChains) {
     enabledChains = getEnabledChainsInBlockRange(
-      configStoreClient,
+      hubPoolClient.configStoreClient,
       config.spokePoolChainsOverride,
-      startBlocks[1],
-      toBlockOverride[1]
+      startBlocks[hubPoolClient.chainId],
+      toBlockOverride[hubPoolClient.chainId]
     );
   }
+
   logger.debug({
     at: "ClientHelper#constructSpokePoolClientsWithStartBlocks",
     message: "Enabled chains in block range",
@@ -160,25 +163,16 @@ export async function constructSpokePoolClientsWithStartBlocks(
     enabledChains.map(async (chainId) => {
       // Grab latest spoke pool as of `toBlockOverride[1]`. If `toBlockOverride[1]` is undefined, then grabs current
       // spoke pool.
-      const latestSpokePool = configStoreClient.hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
+      const latestSpokePool = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
       const spokePoolContract = new Contract(latestSpokePool, SpokePool.abi, spokePoolSigners[chainId]);
-      const spokePoolRegistrationBlock = configStoreClient.hubPoolClient.getSpokePoolActivationBlock(
-        chainId,
-        latestSpokePool
-      );
-      const time = (await configStoreClient.hubPoolClient.hubPool.provider.getBlock(spokePoolRegistrationBlock))
-        .timestamp;
-      const registrationBlock = await getBlockForTimestamp(
-        configStoreClient.hubPoolClient.chainId,
-        chainId,
-        time,
-        getCurrentTime()
-      );
+      const spokePoolRegistrationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, latestSpokePool);
+      const time = (await hubPoolClient.hubPool.provider.getBlock(spokePoolRegistrationBlock)).timestamp;
+      const registrationBlock = await getBlockForTimestamp(hubPoolClient.chainId, chainId, time, getCurrentTime());
       return { chainId, contract: spokePoolContract, registrationBlock };
     })
   );
 
-  return getSpokePoolClientsForContract(logger, configStoreClient, config, spokePools, startBlocks, toBlockOverride);
+  return getSpokePoolClientsForContract(logger, hubPoolClient, config, spokePools, startBlocks, toBlockOverride);
 }
 
 /**
@@ -190,7 +184,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
  */
 export function getSpokePoolClientsForContract(
   logger: winston.Logger,
-  configStoreClient: AcrossConfigStoreClient,
+  hubPoolClient: HubPoolClient,
   config: CommonConfig,
   spokePools: { chainId: number; contract: Contract; registrationBlock: number }[],
   fromBlocks: { [chainId: number]: number },
@@ -206,7 +200,7 @@ export function getSpokePoolClientsForContract(
     spokePoolClients[chainId] = new SpokePoolClient(
       logger,
       contract,
-      configStoreClient,
+      hubPoolClient,
       chainId,
       registrationBlock,
       spokePoolClientSearchSettings
@@ -230,10 +224,20 @@ export async function constructClients(
 ): Promise<Clients> {
   const hubSigner = baseSigner.connect(await getProvider(config.hubPoolChainId, logger));
 
-  // Create contract instances for each chain for each required contract.
-  const hubPool = getDeployedContract("HubPool", config.hubPoolChainId, hubSigner);
+  const rateModelClientSearchSettings = {
+    fromBlock: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),
+    toBlock: undefined,
+    maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
+  };
 
   const configStore = getDeployedContract("AcrossConfigStore", config.hubPoolChainId, hubSigner);
+  const configStoreClient = new ConfigStoreClient(
+    logger,
+    configStore,
+    rateModelClientSearchSettings,
+    CONFIG_STORE_VERSION,
+    config.chainIdListIndices
+  );
 
   const hubPoolClientSearchSettings = {
     fromBlock: Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId)),
@@ -241,26 +245,16 @@ export async function constructClients(
     // ProposeRootBundle in order to match a bundle block evaluation block range with a pending root bundle.
     maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
+
+  // Create contract instances for each chain for each required contract.
+  const hubPool = getDeployedContract("HubPool", config.hubPoolChainId, hubSigner);
   const hubPoolClient = new HubPoolClient(
     logger,
     hubPool,
+    configStoreClient,
     Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId)),
     config.hubPoolChainId,
     hubPoolClientSearchSettings
-  );
-
-  const rateModelClientSearchSettings = {
-    fromBlock: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),
-    toBlock: undefined,
-    maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
-  };
-
-  const configStoreClient = new AcrossConfigStoreClient(
-    logger,
-    configStore,
-    hubPoolClient,
-    rateModelClientSearchSettings,
-    config.chainIdListIndices
   );
 
   const multiCallerClient = new MultiCallerClient(logger, config.multiCallChunkSize, hubSigner);
@@ -268,8 +262,11 @@ export async function constructClients(
   return { hubPoolClient, configStoreClient, multiCallerClient, hubSigner };
 }
 
+// @dev The HubPoolClient is dependent on the state of the ConfigStoreClient,
+//      so update the ConfigStoreClient first.
 export async function updateClients(clients: Clients): Promise<void> {
-  await Promise.all([clients.hubPoolClient.update(), clients.configStoreClient.update()]);
+  await clients.configStoreClient.update();
+  await clients.hubPoolClient.update();
 }
 
 export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number]: SpokePoolClient }): {

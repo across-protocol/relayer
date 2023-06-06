@@ -1,7 +1,7 @@
 import { buildDeposit, buildFillForRepaymentChain, createSpyLogger, lastSpyLogIncludes, toBNWei } from "./utils";
 import { Contract, SignerWithAddress, ethers, expect } from "./utils";
 import {
-  AcrossConfigStoreClient,
+  ConfigStoreClient,
   BundleDataClient,
   HubPoolClient,
   SpokePoolClient,
@@ -31,7 +31,7 @@ let hubPool: Contract, spokePool_1: Contract, spokePool_2: Contract;
 let dataworker: SignerWithAddress, depositor: SignerWithAddress;
 let dataworkerInstance: Dataworker;
 let bundleDataClient: BundleDataClient;
-let configStoreClient: AcrossConfigStoreClient;
+let configStoreClient: ConfigStoreClient;
 let hubPoolClient: HubPoolClient, multiCallerClient: MultiCallerClient;
 let tokenTransferClient: TokenTransferClient;
 let monitorInstance: Monitor;
@@ -42,7 +42,7 @@ let updateAllClients: () => Promise<void>;
 
 const { spy, spyLogger } = createSpyLogger();
 
-const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "Unknown", ALL_CHAINS_NAME];
+const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "unknown", ALL_CHAINS_NAME];
 
 let defaultMonitorEnvVars;
 
@@ -71,7 +71,7 @@ describe("Monitor", async function () {
       0
     ));
 
-    const configuredNetworks = [1, repaymentChainId, originChainId, destinationChainId];
+    const configuredNetworks = [hubPoolClient.chainId, repaymentChainId, originChainId, destinationChainId];
 
     defaultMonitorEnvVars = {
       STARTING_BLOCK_NUMBER: "0",
@@ -92,7 +92,7 @@ describe("Monitor", async function () {
     // Set the config store version to 0 to match the default version in the ConfigStoreClient.
     process.env.CONFIG_STORE_VERSION = "0";
 
-    const chainIds = [1, repaymentChainId, originChainId, destinationChainId];
+    const chainIds = configuredNetworks;
     bundleDataClient = new BundleDataClient(
       spyLogger,
       {
@@ -159,7 +159,6 @@ describe("Monitor", async function () {
 
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_1,
       l2Token,
@@ -194,7 +193,6 @@ describe("Monitor", async function () {
     await monitorInstance.update();
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_1,
       l2Token,
@@ -287,7 +285,6 @@ describe("Monitor", async function () {
     await monitorInstance.update();
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_1,
       l2Token,
@@ -331,16 +328,7 @@ describe("Monitor", async function () {
   it("Monitor should report unfilled deposits", async function () {
     await updateAllClients();
     await monitorInstance.update();
-    await buildDeposit(
-      configStoreClient,
-      hubPoolClient,
-      spokePool_1,
-      l2Token,
-      l1Token,
-      depositor,
-      destinationChainId,
-      amountToDeposit
-    );
+    await buildDeposit(hubPoolClient, spokePool_1, l2Token, l1Token, depositor, destinationChainId, amountToDeposit);
     await monitorInstance.update();
     await monitorInstance.reportUnfilledDeposits();
 

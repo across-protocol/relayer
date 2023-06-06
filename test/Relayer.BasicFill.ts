@@ -21,13 +21,13 @@ import {
 import {
   SpokePoolClient,
   HubPoolClient,
-  AcrossConfigStoreClient,
+  ConfigStoreClient,
   MultiCallerClient,
   AcrossApiClient,
+  TokenClient,
 } from "../src/clients";
-import { TokenClient } from "../src/clients";
+import { CONFIG_STORE_VERSION } from "../src/common";
 import { MockInventoryClient, MockProfitClient } from "./mocks";
-
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
@@ -39,7 +39,7 @@ let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
-let configStoreClient: AcrossConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
+let configStoreClient: ConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
 let relayerInstance: Relayer;
 let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
@@ -69,22 +69,22 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION, []);
+    hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
 
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
 
     spokePoolClient_1 = new SpokePoolClient(
       spyLogger,
       spokePool_1.connect(relayer),
-      configStoreClient,
+      hubPoolClient,
       originChainId,
       spokePool1DeploymentBlock
     );
     spokePoolClient_2 = new SpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),
-      configStoreClient,
+      hubPoolClient,
       destinationChainId,
       spokePool2DeploymentBlock
     );
@@ -239,15 +239,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
     // "reasonable" block number based off the block time when looking at quote timestamps.
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
-    const deposit1 = await buildDeposit(
-      configStoreClient,
-      hubPoolClient,
-      spokePool_1,
-      erc20_1,
-      l1Token,
-      depositor,
-      destinationChainId
-    );
+    const deposit1 = await buildDeposit(hubPoolClient, spokePool_1, erc20_1, l1Token, depositor, destinationChainId);
 
     // Relayer will ignore any deposit with a non empty message. Test this by first modifying the deposit's
     // message to be non-empty. Then, reset it to 0x and check that it ignores it.
@@ -418,8 +410,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 });
 
 async function updateAllClients() {
-  await hubPoolClient.update();
   await configStoreClient.update();
+  await hubPoolClient.update();
   await tokenClient.update();
   await spokePoolClient_1.update();
   await spokePoolClient_2.update();

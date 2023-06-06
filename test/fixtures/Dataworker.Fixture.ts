@@ -13,8 +13,7 @@ import * as clients from "../../src/clients";
 import {
   amountToLp,
   destinationChainId as defaultDestinationChainId,
-  originChainId as defaultOriginChainid,
-  CHAIN_ID_TEST_LIST,
+  originChainId as defaultOriginChainId,
   repaymentChainId,
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
@@ -24,15 +23,14 @@ import {
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { BundleDataClient, TokenClient } from "../../src/clients";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
-import { MockConfigStoreClient } from "../mocks/MockConfigStoreClient";
-import { MockedMultiCallerClient } from "../mocks/MockMultiCallerClient";
+import { MockConfigStoreClient, MockedMultiCallerClient } from "../mocks";
 
 async function _constructSpokePoolClientsWithLookback(
   spokePools: Contract[],
   spokePoolChains: number[],
   spyLogger: winston.Logger,
   signer: SignerWithAddress,
-  configStoreClient: clients.AcrossConfigStoreClient,
+  hubPoolClient: clients.HubPoolClient,
   lookbackForAllChains?: number,
   deploymentBlocks?: { [chainId: number]: number }
 ) {
@@ -41,7 +39,7 @@ async function _constructSpokePoolClientsWithLookback(
     return new clients.SpokePoolClient(
       spyLogger,
       pool.connect(signer),
-      configStoreClient,
+      hubPoolClient,
       spokePoolChains[i],
       deploymentBlocks && deploymentBlocks[spokePoolChains[i]],
       lookbackForAllChains === undefined ? undefined : { fromBlock: latestBlocks[i] - lookbackForAllChains }
@@ -57,7 +55,7 @@ export async function setupDataworker(
   defaultPoolRebalanceTokenTransferThreshold: BigNumber,
   defaultEndBlockBuffer: number,
   destinationChainId = defaultDestinationChainId,
-  originChainId = defaultOriginChainid,
+  originChainId = defaultOriginChainId,
   lookbackForAllChains?: number
 ): Promise<{
   hubPool: Contract;
@@ -88,33 +86,23 @@ export async function setupDataworker(
   dataworkerClients: DataworkerClients;
   updateAllClients: () => Promise<void>;
 }> {
-  // Replace origin chainId and destination chain id in the chainIdList.
-  const testChainIdList = CHAIN_ID_TEST_LIST.map((chainId) => {
-    switch (chainId) {
-      case defaultDestinationChainId:
-        return destinationChainId;
-      case defaultOriginChainid:
-        return originChainId;
-      default:
-        return chainId;
-    }
-  });
-
   const [owner, depositor, relayer, dataworker] = await ethers.getSigners();
+  const hubPoolChainId = await owner.getChainId();
 
   const { spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId);
   const { spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId);
-  const { spokePool: spokePool_3 } = await deploySpokePoolWithToken(repaymentChainId, 1);
-  const { spokePool: spokePool_4 } = await deploySpokePoolWithToken(1, repaymentChainId);
+  const { spokePool: spokePool_3 } = await deploySpokePoolWithToken(repaymentChainId, hubPoolChainId);
+  const { spokePool: spokePool_4 } = await deploySpokePoolWithToken(hubPoolChainId, repaymentChainId);
   const spokePoolDeploymentBlocks = {
-    [defaultOriginChainid]: await spokePool_1.provider.getBlockNumber(),
-    [defaultDestinationChainId]: await spokePool_2.provider.getBlockNumber(),
+    [originChainId]: await spokePool_1.provider.getBlockNumber(),
+    [destinationChainId]: await spokePool_2.provider.getBlockNumber(),
     [repaymentChainId]: await spokePool_3.provider.getBlockNumber(),
-    [1]: await spokePool_4.provider.getBlockNumber(),
+    [hubPoolChainId]: await spokePool_4.provider.getBlockNumber(),
   };
+  const testChainIdList = Object.keys(spokePoolDeploymentBlocks).map((_chainId) => Number(_chainId));
 
   const umaEcosystem = await setupUmaEcosystem(owner);
-  const { hubPool, l1Token_1, l1Token_2 } = await deployAndConfigureHubPool(
+  const { hubPool, hubPoolDeploymentBlock, l1Token_1, l1Token_2 } = await deployAndConfigureHubPool(
     owner,
     [
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
@@ -122,7 +110,7 @@ export async function setupDataworker(
       // Following spoke pool destinations should not be used in tests but need to be set for dataworker to fetch
       // spoke pools for those chains in proposeRootBundle
       { l2ChainId: repaymentChainId, spokePool: spokePool_3 },
-      { l2ChainId: 1, spokePool: spokePool_4 },
+      { l2ChainId: hubPoolChainId, spokePool: spokePool_4 },
     ],
     umaEcosystem.finder.address,
     umaEcosystem.timer.address
@@ -131,8 +119,6 @@ export async function setupDataworker(
   // Enable deposit routes for second L2 tokens so relays can be sent between spoke pool 1 <--> 2.
   await enableRoutes(spokePool_1, [{ originToken: erc20_2.address, destinationChainId: destinationChainId }]);
   await enableRoutes(spokePool_2, [{ originToken: erc20_1.address, destinationChainId: originChainId }]);
-
-  const hubPoolChainId = (await hubPool.provider.getNetwork()).chainId;
 
   // For each chain, enable routes to both erc20's so that we can fill relays
   await enableRoutesOnHubPool(hubPool, [
@@ -169,18 +155,23 @@ export async function setupDataworker(
     defaultPoolRebalanceTokenTransferThreshold
   );
 
-  const hubPoolClient = new clients.HubPoolClient(spyLogger, hubPool);
-  const configStoreClient = new MockConfigStoreClient(spyLogger, configStore, hubPoolClient);
-
+  const configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
+  const hubPoolClient = new clients.HubPoolClient(
+    spyLogger,
+    hubPool,
+    configStoreClient,
+    hubPoolDeploymentBlock,
+    hubPoolChainId
+  );
   const multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 
   const [spokePoolClient_1, spokePoolClient_2, spokePoolClient_3, spokePoolClient_4] =
     await _constructSpokePoolClientsWithLookback(
       [spokePool_1, spokePool_2, spokePool_3, spokePool_4],
-      [defaultOriginChainid, defaultDestinationChainId, repaymentChainId, 1],
+      [originChainId, destinationChainId, repaymentChainId, hubPoolChainId],
       spyLogger,
       relayer,
-      configStoreClient,
+      hubPoolClient,
       lookbackForAllChains,
       spokePoolDeploymentBlocks
     );
@@ -193,7 +184,7 @@ export async function setupDataworker(
     [originChainId]: spokePoolClient_1,
     [destinationChainId]: spokePoolClient_2,
     [repaymentChainId]: spokePoolClient_3,
-    1: spokePoolClient_4,
+    [hubPoolChainId]: spokePoolClient_4,
   };
   const profitClient = new clients.ProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
   const bundleDataClient = new BundleDataClient(
@@ -273,8 +264,8 @@ export async function setupDataworker(
     dataworker,
     dataworkerClients,
     updateAllClients: async () => {
-      await hubPoolClient.update();
       await configStoreClient.update();
+      await hubPoolClient.update();
       await profitClient.update();
       await spokePoolClient_1.update();
       await spokePoolClient_2.update();
@@ -324,7 +315,7 @@ export async function setupFastDataworker(
     DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
     0,
     defaultDestinationChainId,
-    defaultOriginChainid,
+    defaultOriginChainId,
     lookbackForAllChains
   );
 }
