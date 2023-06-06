@@ -86,6 +86,7 @@ export async function runTransaction(
       // If error is "UNPREDICTABLE_GAS_LIMIT" then the transaction likely reverted on-chain when estimated by the
       // RPC server. Ethers might populate an "error" object which could contain additional
       // information about the error encountered when the RPC simulated the transaction.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const innerError = (error as any)?.error;
 
       // If transaction error reason is known to be benign, then reduce the log level to warn.
