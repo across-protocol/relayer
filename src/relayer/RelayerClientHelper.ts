@@ -34,8 +34,11 @@ export async function constructRelayerClients(
     config.maxRelayerLookBack
   );
 
-  const _spokePoolClients = Object.values(spokePoolClients)
-    .filter((spokePoolClient) => config.relayerDestinationChains.includes(spokePoolClient.chainId));
+  const _spokePoolClients = Object.fromEntries(
+    Object.values(spokePoolClients)
+      .filter((spokePoolClient) => config.relayerDestinationChains.includes(spokePoolClient.chainId))
+      .map((spokePoolClient) => [spokePoolClient.chainId, spokePoolClient]));
+
   const acrossApiClient = new AcrossApiClient(
     logger,
     commonClients.hubPoolClient,
