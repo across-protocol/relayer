@@ -1,5 +1,6 @@
+import hre from "hardhat";
 import { expect, ethers, Contract, SignerWithAddress, getContractFactory, createSpyLogger } from "./utils";
-import { randomAddress, enableRoutes, zeroAddress, originChainId, destinationChainId, hre } from "./utils";
+import { randomAddress, enableRoutes, zeroAddress, originChainId, destinationChainId } from "./utils";
 
 import { SpokePoolClient } from "../src/clients"; // tested
 

@@ -11,21 +11,6 @@
     "@uma/common" "^2.17.0"
     hardhat "^2.9.3"
 
-"@across-protocol/contracts-v2@2.2.3":
-  version "2.2.3"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.2.3.tgz#c3df3f8f60910fe6b6dfce32a7e1a224aa1a0396"
-  integrity sha512-JwYiNTLMRIjVcgm01GLMfra3x+pTPTtfdplpJ5DhLXbdin6LEirv7gwAOhykAG8rqYQcWbnwXuBxmWMM/4QY7g==
-  dependencies:
-    "@defi-wonderland/smock" "^2.3.4"
-    "@eth-optimism/contracts" "^0.5.40"
-    "@ethersproject/abstract-provider" "5.7.0"
-    "@ethersproject/abstract-signer" "5.7.0"
-    "@openzeppelin/contracts" "4.8.3"
-    "@openzeppelin/contracts-upgradeable" "4.8.3"
-    "@uma/common" "^2.29.0"
-    "@uma/contracts-node" "^0.3.18"
-    "@uma/core" "^2.41.0"
-
 "@across-protocol/contracts-v2@2.3.0":
   version "2.3.0"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.3.0.tgz#ebd246717fd4d38ea2d12de4ec22c3ecfec83989"
