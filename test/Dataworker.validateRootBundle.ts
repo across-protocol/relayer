@@ -1,4 +1,5 @@
-import { buildFillForRepaymentChain, lastSpyLogIncludes, hre, spyLogIncludes, lastSpyLogLevel } from "./utils";
+import hre from "hardhat";
+import { buildFillForRepaymentChain, lastSpyLogIncludes, spyLogIncludes, lastSpyLogLevel } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit } from "./utils";
 import { HubPoolClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, BUNDLE_END_BLOCK_BUFFER, createRandomBytes32 } from "./constants";
@@ -9,7 +10,7 @@ import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT, utf8ToHex } from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
-import { MockConfigStoreClient } from "./mocks/MockConfigStoreClient";
+import { MockConfigStoreClient } from "./mocks";
 
 let spy: sinon.SinonSpy;
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract;
