@@ -606,7 +606,7 @@ export class Dataworker {
     // the proposed block is at most 1 behind the next expected block range.
     if (
       rootBundle.bundleEvaluationBlockNumbers.some(
-        (block, index) => block - 1 < widestPossibleExpectedBlockRange[index][0]
+        (block, index) => block + 1 < widestPossibleExpectedBlockRange[index][0]
       )
     ) {
       this.logger.debug({
