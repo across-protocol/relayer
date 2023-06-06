@@ -194,7 +194,9 @@ export class Dataworker {
     // validated bundle. The HubPoolClient treats a bundle as "validated" once all of its pool rebalance leaves
     // are executed so we want to make sure that these are all older than the mainnet bundle end block which is
     // sometimes treated as the "latest" mainnet block.
-    const mostRecentProposedRootBundle = this.clients.hubPoolClient.getLatestProposedRootBundle();
+    const mostRecentProposedRootBundle = this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(
+      this.clients.hubPoolClient.latestBlockNumber
+    );
 
     // If there has never been a validated root bundle, then we can always propose a new one:
     if (mostRecentProposedRootBundle === undefined) {
