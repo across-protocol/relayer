@@ -17,6 +17,7 @@ import {
   multicallOptimismFinalizations,
   multicallPolygonFinalizations,
   multicallArbitrumFinalizations,
+  multicallOptimismL1Proofs,
 } from "./utils";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { HubPoolClient } from "../clients";
@@ -55,9 +56,14 @@ export async function finalize(
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
   const multicall2 = getMultisender(1, hubSigner);
-  const finalizationsToBatch: { callData: Multicall2Call[]; withdrawals: Withdrawal[] } = {
+  const finalizationsToBatch: {
+    callData: Multicall2Call[];
+    withdrawals: Withdrawal[];
+    optimismL1Proofs: Withdrawal[];
+  } = {
     callData: [],
     withdrawals: [],
+    optimismL1Proofs: [],
   };
   // For each chain, look up any TokensBridged events emitted by SpokePool client that we'll attempt to finalize
   // on L1.
@@ -124,20 +130,40 @@ export async function finalize(
       finalizationsToBatch.callData.push(...finalizations.callData);
       finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
     } else if (chainId === 10) {
-      // Skip events that are likely not past the seven day challenge period.
+      const crossChainMessenger = getOptimismClient(chainId, hubSigner) as optimismSDK.CrossChainMessenger;
       const firstBlockToFinalize = await getBlockForTimestamp(
         hubPoolClient.chainId,
         chainId,
         getCurrentTime() - optimisticRollupFinalizationWindow,
         getCurrentTime()
       );
+
+      // First submit proofs for any newly withdrawn tokens. You can submit proofs for any withdrawals that have been
+      // snapshotted on L1, so it takes roughly 1 hour from the withdrawal time. Skip events older than 7 days old.
+      logger.debug({
+        at: "Finalizer",
+        message: `Earliest TokensBridged block to attempt to submit proofs for ${getNetworkName(chainId)}`,
+        earliestBlockToProve: firstBlockToFinalize,
+      });
+      const recentTokensBridgedEvents = tokensBridged.filter((e) => e.blockNumber >= firstBlockToFinalize);
+      const proofs = await multicallOptimismL1Proofs(
+        chainId,
+        recentTokensBridgedEvents,
+        crossChainMessenger,
+        hubPoolClient,
+        logger
+      );
+      finalizationsToBatch.callData.push(...proofs.callData);
+      finalizationsToBatch.optimismL1Proofs.push(...proofs.withdrawals);
+
+      // Next finalize withdrawals that have passed challenge period.
+      // Skip events that are likely not past the seven day challenge period.
       logger.debug({
         at: "Finalizer",
         message: `Oldest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
         firstBlockToFinalize,
       });
       const olderTokensBridgedEvents = tokensBridged.filter((e) => e.blockNumber < firstBlockToFinalize);
-      const crossChainMessenger = getOptimismClient(chainId, hubSigner) as optimismSDK.CrossChainMessenger;
       const finalizations = await multicallOptimismFinalizations(
         chainId,
         olderTokensBridgedEvents,
@@ -163,6 +189,13 @@ export async function finalize(
           message: `Finalized ${getNetworkName(withdrawal.l2ChainId)} withdrawal for ${withdrawal.amount} of ${
             withdrawal.l1TokenSymbol
           } 🪃`,
+          transactionHash: etherscanLink(txn.transactionHash, 1),
+        });
+      });
+      finalizationsToBatch.optimismL1Proofs.forEach((withdrawal) => {
+        logger.info({
+          at: "Finalizer",
+          message: `Submitted L1 proof for Optimism and thereby initiating withdrawal for ${withdrawal.amount} of ${withdrawal.l1TokenSymbol} 🔜`,
           transactionHash: etherscanLink(txn.transactionHash, 1),
         });
       });
