@@ -1,4 +1,6 @@
 import { randomAddress, toWei, originChainId, destinationChainId, repaymentChainId } from "./utils";
+
+export { CONFIG_STORE_VERSION } from "../src/common";
 export const randomL1Token = randomAddress();
 export const randomOriginToken = randomAddress();
 export const randomDestinationToken = randomAddress();
