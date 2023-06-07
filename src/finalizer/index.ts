@@ -56,7 +56,11 @@ export async function finalize(
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
   const multicall2 = getMultisender(1, hubSigner);
-  const finalizationsToBatch: { callData: Multicall2Call[]; withdrawals: Withdrawal[]; optimismL1Proofs: Withdrawal[] } = {
+  const finalizationsToBatch: {
+    callData: Multicall2Call[];
+    withdrawals: Withdrawal[];
+    optimismL1Proofs: Withdrawal[];
+  } = {
     callData: [],
     withdrawals: [],
     optimismL1Proofs: [],
@@ -191,9 +195,7 @@ export async function finalize(
       finalizationsToBatch.optimismL1Proofs.forEach((withdrawal) => {
         logger.info({
           at: "Finalizer",
-          message: `Submitted L1 proof for Optimism and thereby initiating withdrawal for ${withdrawal.amount} of ${
-            withdrawal.l1TokenSymbol
-          } 🔜`,
+          message: `Submitted L1 proof for Optimism and thereby initiating withdrawal for ${withdrawal.amount} of ${withdrawal.l1TokenSymbol} 🔜`,
           transactionHash: etherscanLink(txn.transactionHash, 1),
         });
       });
