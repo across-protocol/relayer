@@ -1,7 +1,7 @@
 import { getContractFactory, expect, ethers, Contract, SignerWithAddress, originChainId } from "./utils";
 import { deployConfigStore, zeroAddress, destinationChainId, toBN, createSpyLogger } from "./utils";
 import { randomL1Token, randomOriginToken, randomDestinationToken, randomDestinationToken2 } from "./constants";
-import { AcrossConfigStoreClient as ConfigStoreClient, HubPoolClient } from "../src/clients";
+import { ConfigStoreClient, HubPoolClient } from "../src/clients";
 
 let hubPool: Contract, lpTokenFactory: Contract, mockAdapter: Contract;
 let owner: SignerWithAddress;
