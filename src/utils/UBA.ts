@@ -4,7 +4,6 @@ import { assert, BigNumber, isDefined, winston } from "../utils";
 import { sortEventsAscending } from "./";
 
 export class UBAClient {
-  private closingBlockNumbers: { [chainId: number]: number[] };
 
   // @dev chainIdIndices supports indexing members of root bundle proposals submitted to the HubPool.
   //      It must include the complete set of chain IDs ever supported by the HubPool.
@@ -17,10 +16,9 @@ export class UBAClient {
   ) {
     assert(chainIdIndices.length > 0, "No chainIds provided");
     assert(Object.values(spokePoolClients).length > 0, "No SpokePools provided");
-    this.closingBlockNumbers = Object.fromEntries(this.chainIdIndices.map((chainId) => [chainId, []]));
   }
 
-  private resolveClosingBlockNumber(chainId: number, blockNumber: number): number | undefined {
+  private resolveClosingBlockNumber(chainId: number, blockNumber: number): number {
     return this.hubPoolClient.getLatestBundleEndBlockForChain(this.chainIdIndices, blockNumber, chainId);
   }
 
@@ -28,10 +26,8 @@ export class UBAClient {
     chainId: number,
     spokePoolToken: string,
     hubPoolBlockNumber?: number
-  ): { balance: BigNumber; blockNumber: number } {
-    assert(Array.isArray(this.closingBlockNumbers[chainId]), `Invalid chainId: ${chainId}`);
-
-    hubPoolBlockNumber ??= this.hubPoolClient.latestBlockNumber;
+  ): { blockNumber: number; spokePoolBalance: BigNumber } {
+    hubPoolBlockNumber = hubPoolBlockNumber ?? this.hubPoolClient.latestBlockNumber;
 
     const hubPoolToken = this.hubPoolClient.getL1TokenCounterpartAtBlock(chainId, spokePoolToken, hubPoolBlockNumber);
     if (!isDefined(hubPoolToken)) {
@@ -43,15 +39,15 @@ export class UBAClient {
     let blockNumber = spokePoolClient.deploymentBlock;
     if (prevEndBlock > blockNumber) {
       blockNumber = prevEndBlock + 1;
-      const latestBlockNumber = spokePoolClient.latestBlockNumber;
-      assert(
-        blockNumber <= latestBlockNumber,
-        `Unexpected UBA opening block number (${blockNumber} > ${latestBlockNumber})`
-      );
+      assert(blockNumber <= spokePoolClient.latestBlockNumber);
     }
-    const balance = this.hubPoolClient.getRunningBalanceBeforeBlockForChain(hubPoolBlockNumber, chainId, hubPoolToken);
+    const spokePoolBalance = this.hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      hubPoolBlockNumber,
+      chainId,
+      hubPoolToken
+    );
 
-    return { blockNumber, balance };
+    return { blockNumber, spokePoolBalance };
   }
 
   /**
@@ -136,7 +132,11 @@ export class UBAClient {
     const destSpoke = this.spokePoolClients[destinationChainId];
 
     if (fillBlock.lt(destSpoke.deploymentBlock) || fillBlock.gt(destSpoke.latestBlockNumber)) {
-      return { valid: false, reason: `Invalid FillBlock (${fillBlock})` };
+      return {
+        valid: false,
+        reason: `FillBlock (${fillBlock} out of SpokePool range` +
+          ` [${destSpoke.deploymentBlock}, ${destSpoke.latestBlockNumber}]`,
+      };
     }
 
     // Validate relayer and depositId.

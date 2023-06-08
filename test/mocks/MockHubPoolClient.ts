@@ -22,7 +22,11 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
   setLatestBundleEndBlockForChain(chainId: number, latestBundleEndBlock: number): void {
     this.latestBundleEndBlocks[chainId] = latestBundleEndBlock;
   }
-  getLatestBundleEndBlockForChain(_chainIdList: number[], _latestMainnetBlock: number, chainId: number): number {
-    return this.latestBundleEndBlocks[chainId] ?? 0;
+  getLatestBundleEndBlockForChain(chainIdList: number[], latestMainnetBlock: number, chainId: number): number {
+    return (
+      this.latestBundleEndBlocks[chainId] ??
+      super.getLatestBundleEndBlockForChain(chainIdList, latestMainnetBlock, chainId) ??
+      0
+    );
   }
 }
