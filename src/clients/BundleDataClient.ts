@@ -19,6 +19,7 @@ import {
   flattenAndFilterUnfilledDepositsByOriginChain,
   updateUnfilledDepositsWithMatchedDeposit,
   getUniqueDepositsInRange,
+  queryHistoricalDepositForFill,
 } from "../utils";
 import { Clients } from "../common";
 import {
@@ -182,12 +183,12 @@ export class BundleDataClient {
       return this.loadDataFromCache(key);
     }
 
-    if (!this.clients.hubPoolClient.isUpdated) {
-      throw new Error("HubPoolClient not updated");
-    }
     if (!this.clients.configStoreClient.isUpdated) {
       throw new Error("ConfigStoreClient not updated");
+    } else if (!this.clients.hubPoolClient.isUpdated) {
+      throw new Error("HubPoolClient not updated");
     }
+
     if (blockRangesForChains.length !== this.chainIdListForBundleEvaluationBlockNumbers.length) {
       throw new Error(
         `Unexpected block range list length of ${blockRangesForChains.length}, should be ${this.chainIdListForBundleEvaluationBlockNumbers.length}`
@@ -254,7 +255,8 @@ export class BundleDataClient {
         // Matched deposit for fill was not found in spoke client. This situation should be rare so let's
         // send some extra RPC requests to blocks older than the spoke client's initial event search config
         // to find the deposit if it exists.
-        const historicalDeposit = await originClient.queryHistoricalDepositForFill(fill);
+        const spokePoolClient = spokePoolClients[fill.originChainId];
+        const historicalDeposit = await queryHistoricalDepositForFill(spokePoolClient, fill);
         if (historicalDeposit) {
           addRefundForValidFill(fill, historicalDeposit, blockRangeForChain);
         } else {
@@ -346,7 +348,7 @@ export class BundleDataClient {
     if (logData) {
       const mainnetRange = getBlockRangeForChain(
         blockRangesForChains,
-        1,
+        this.clients.hubPoolClient.chainId,
         this.chainIdListForBundleEvaluationBlockNumbers
       );
       this.logger.debug({

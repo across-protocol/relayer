@@ -7,7 +7,7 @@ import {
   BigNumberish,
   TransactionResponse,
 } from "../../utils";
-import { spreadEventWithBlockNumber, assign, Promise, winston } from "../../utils";
+import { spreadEventWithBlockNumber, assign, winston } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter, weth9Abi, ovmL1BridgeInterface, ovmL2BridgeInterface, atomicDepositorInterface } from "./";
 import { SortableEvent } from "../../interfaces";

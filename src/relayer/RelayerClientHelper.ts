@@ -27,17 +27,25 @@ export async function constructRelayerClients(
   // the disabled chain list by setting the DISABLED_CHAINS_OVERRIDE environment variable.
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
+    commonClients.hubPoolClient,
     commonClients.configStoreClient,
     config,
     baseSigner,
-    config.maxRelayerLookBack,
-    config.hubPoolChainId
+    config.maxRelayerLookBack
+  );
+
+  // We only use the API client to load /limits for chains so we should remove any chains that are not included in the
+  // destination chain list.
+  const destinationSpokePoolClients = Object.fromEntries(
+    Object.keys(spokePoolClients)
+      .filter((chainId) => config.relayerDestinationChains.includes(Number(chainId)))
+      .map((chainId) => [chainId, spokePoolClients[chainId]])
   );
 
   const acrossApiClient = new AcrossApiClient(
     logger,
     commonClients.hubPoolClient,
-    spokePoolClients,
+    destinationSpokePoolClients,
     config.relayerTokens
   );
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients, commonClients.hubPoolClient);

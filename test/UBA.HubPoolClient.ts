@@ -1,19 +1,18 @@
 import { random } from "lodash";
-// import { PendingRootBundle } from "../../src/interfaces";
 import { UBAClient } from "../src/utils";
 import {
   BigNumber,
   Contract,
   createSpyLogger,
+  deployConfigStore,
   deploySpokePool,
   expect,
   ethers,
   hubPoolFixture,
-  // SignerWithAddress,
   toBN,
   toBNWei,
 } from "./utils";
-import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
+import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 
 type Event = ethers.Event;
 
@@ -29,9 +28,20 @@ const chainIds = [10, 137];
 
 describe("UBA: HubPool Events", async function () {
   beforeEach(async function () {
+    const [owner] = await ethers.getSigners();
+    const { configStore } = await deployConfigStore(owner, []);
+    const configStoreClient = new MockConfigStoreClient(
+      logger,
+      configStore,
+      { fromBlock: 0 },
+      2, // @todo: UBA_MIN_CONFIG_STORE_VERSION ?
+      chainIds
+    );
+    await configStoreClient.update();
+
     ({ hubPool, dai, weth } = await hubPoolFixture());
     hubPoolDeploymentBlock = random(1, 100, false);
-    hubPoolClient = new MockHubPoolClient(logger, hubPool, hubPoolDeploymentBlock);
+    hubPoolClient = new MockHubPoolClient(logger, hubPool, configStoreClient, hubPoolDeploymentBlock);
     await hubPoolClient.update();
 
     spokePoolClients = {};

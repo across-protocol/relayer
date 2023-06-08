@@ -10,7 +10,7 @@ import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT } from "../src/utils";
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { getDepositPath } from "../src/utils";
 import { FillWithBlock } from "../src/interfaces";
-import { MockConfigStoreClient } from "./mocks/MockConfigStoreClient";
+import { MockConfigStoreClient } from "./mocks";
 
 let spy: sinon.SinonSpy;
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -65,7 +65,6 @@ describe("Dataworker: Propose root bundle", async function () {
     // TEST 2:
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -225,7 +224,6 @@ describe("Dataworker: Propose root bundle", async function () {
     await updateAllClients();
 
     const deposit = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,

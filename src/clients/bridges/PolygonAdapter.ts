@@ -10,7 +10,7 @@ import {
   BigNumberish,
   TransactionResponse,
 } from "../../utils";
-import { ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery, Promise } from "../../utils";
+import { ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter, polygonL1BridgeInterface, polygonL2BridgeInterface } from "./";
 import { polygonL1RootChainManagerInterface, atomicDepositorInterface } from "./";

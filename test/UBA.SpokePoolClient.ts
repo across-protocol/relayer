@@ -18,6 +18,7 @@ import {
   expect,
   ethers,
   Contract,
+  deployConfigStore,
   hubPoolFixture,
   SignerWithAddress,
   destinationChainId,
@@ -28,13 +29,14 @@ import {
   toBN,
   toBNWei,
 } from "./utils";
-import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
+import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 
 type Event = ethers.Event;
 
 let hubPool: Contract, weth: Contract, dai: Contract;
 let hubPoolClient: MockHubPoolClient;
-let _relayer: SignerWithAddress, relayer: string;
+
+let owner: SignerWithAddress, _relayer: SignerWithAddress, relayer: string;
 let spokePoolClients: { [chainId: number]: MockSpokePoolClient };
 let originSpokePool: SpokePoolClient;
 let destSpokePool: SpokePoolClient;
@@ -96,12 +98,15 @@ function refundRequestFromFill(fill: FillWithBlock, relayer: string, refundToken
 
 describe("UBA: SpokePool Events", async function () {
   beforeEach(async function () {
-    [_relayer] = await ethers.getSigners();
+    [owner, _relayer] = await ethers.getSigners();
     relayer = _relayer.address;
+
+    const { configStore } = await deployConfigStore(owner, []);
+    const configStoreClient = new MockConfigStoreClient(logger, configStore);
 
     ({ hubPool, weth, dai } = await hubPoolFixture());
     const deploymentBlock = await hubPool.provider.getBlockNumber();
-    hubPoolClient = new MockHubPoolClient(logger, hubPool, deploymentBlock);
+    hubPoolClient = new MockHubPoolClient(logger, hubPool, configStoreClient, deploymentBlock);
     refundToken = originToken = weth.address;
 
     spokePoolClients = {};
@@ -135,6 +140,7 @@ describe("UBA: SpokePool Events", async function () {
     destSpokePool = spokePoolClients[destinationChainId];
     refundSpokePool = spokePoolClients[repaymentChainId];
 
+    await configStoreClient.update();
     await hubPoolClient.update();
     ubaClient = new UBAClient(chainIds, hubPoolClient, spokePoolClients, logger);
   });
@@ -156,7 +162,12 @@ describe("UBA: SpokePool Events", async function () {
         let event: Event;
         switch (eventType) {
           case "FundsDeposited":
-            event = spokePoolClient.generateDeposit({ originToken, blockNumber, transactionIndex } as DepositWithBlock);
+            event = spokePoolClient.generateDeposit({
+              originToken,
+              depositId: spokePoolClient.latestDepositIdQueried + idx,
+              blockNumber,
+              transactionIndex,
+            } as DepositWithBlock);
             break;
 
           case "FilledRelay":
@@ -170,7 +181,11 @@ describe("UBA: SpokePool Events", async function () {
 
           case "RefundRequested":
             // First inject a FilledRelay event into the origin chain.
-            event = originSpokePool.generateDeposit({ originToken, destinationChainId } as DepositWithBlock);
+            event = originSpokePool.generateDeposit({
+              originToken,
+              depositId: random(1, 100_000, false),
+              destinationChainId
+            } as DepositWithBlock);
             originSpokePool.addEvent(event);
             await originSpokePool.update();
             deposit = originSpokePool

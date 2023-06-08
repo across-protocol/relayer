@@ -2,7 +2,7 @@ import { Provider } from "@ethersproject/abstract-provider";
 import * as constants from "../common/Constants";
 import { assert, BigNumber, formatFeePct, max, winston, toBNWei, toBN, assign } from "../utils";
 import { HubPoolClient } from ".";
-import { Deposit, L1Token, SpokePoolClientsByChain } from "../interfaces";
+import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { priceClient, relayFeeCalculator } from "@across-protocol/sdk-v2";
 import { constants as sdkConstants } from "@across-protocol/sdk-v2";
 const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = sdkConstants;
@@ -67,7 +67,7 @@ export class ProfitClient {
   private readonly priceClient;
   protected minRelayerFees: { [route: string]: BigNumber } = {};
   protected tokenPrices: { [l1Token: string]: BigNumber } = {};
-  private unprofitableFills: { [chainId: number]: { deposit: Deposit; fillAmount: BigNumber }[] } = {};
+  private unprofitableFills: { [chainId: number]: { deposit: DepositWithBlock; fillAmount: BigNumber }[] } = {};
 
   // Track total gas costs of a relay on each chain.
   protected totalGasCosts: { [chainId: number]: BigNumber } = {};
@@ -160,7 +160,7 @@ export class ProfitClient {
     };
   }
 
-  getUnprofitableFills(): { [chainId: number]: { deposit: Deposit; fillAmount: BigNumber }[] } {
+  getUnprofitableFills(): { [chainId: number]: { deposit: DepositWithBlock; fillAmount: BigNumber }[] } {
     return this.unprofitableFills;
   }
 
@@ -304,7 +304,7 @@ export class ProfitClient {
     return fill.fillProfitable;
   }
 
-  captureUnprofitableFill(deposit: Deposit, fillAmount: BigNumber): void {
+  captureUnprofitableFill(deposit: DepositWithBlock, fillAmount: BigNumber): void {
     this.logger.debug({ at: "ProfitClient", message: "Handling unprofitable fill", deposit, fillAmount });
     assign(this.unprofitableFills, [deposit.originChainId], [{ deposit, fillAmount }]);
   }

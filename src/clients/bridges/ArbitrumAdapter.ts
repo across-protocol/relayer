@@ -10,7 +10,7 @@ import {
   isDefined,
   TransactionResponse,
 } from "../../utils";
-import { toBN, toWei, paginatedEventQuery, Promise, Event } from "../../utils";
+import { toBN, toWei, paginatedEventQuery, Event } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
 import { arbitrumL2Erc20GatewayInterface, arbitrumL1Erc20GatewayInterface } from "./ContractInterfaces";
