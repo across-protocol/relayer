@@ -1,4 +1,4 @@
-import { AcrossConfigStoreClient, HubPoolClient } from "../clients";
+import { ConfigStoreClient, HubPoolClient } from "../clients";
 import { Deposit, DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
 import { queryHistoricalDepositForFill } from "../utils";
 import {
@@ -41,7 +41,7 @@ export function getRefundInformationFromFill(
   // Save fill data and associate with repayment chain and L2 token refund should be denominated in.
   const endBlockForMainnet = getBlockRangeForChain(
     blockRangesForChains,
-    1,
+    hubPoolClient.chainId,
     chainIdListForBundleEvaluationBlockNumbers
   )[1];
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
@@ -232,7 +232,7 @@ export type UnfilledDeposit = {
 export function getUnfilledDeposits(
   spokePoolClients: SpokePoolClientsByChain,
   maxUnfilledDepositLookBack: number,
-  configStoreClient: AcrossConfigStoreClient
+  configStoreClient: ConfigStoreClient
 ): UnfilledDeposit[] {
   const unfilledDeposits: UnfilledDeposit[] = [];
   // Iterate over each chainId and check for unfilled deposits.

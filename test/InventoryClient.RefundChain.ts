@@ -1,9 +1,9 @@
 import { expect, ethers, SignerWithAddress, createSpyLogger, winston, BigNumber, lastSpyLogIncludes } from "./utils";
-import { toBN, toWei, randomAddress, createRefunds } from "./utils";
+import { deployConfigStore, hubPoolFixture, toBN, toWei, randomAddress, createRefunds } from "./utils";
 
 import { InventoryConfig, Deposit } from "../src/interfaces";
 import { MockBundleDataClient, MockHubPoolClient, MockAdapterManager, MockTokenClient } from "./mocks";
-import { InventoryClient } from "../src/clients"; // Tested
+import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 
 const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
@@ -59,7 +59,12 @@ describe("InventoryClient: Refund chain selection", async function () {
     [owner] = await ethers.getSigners();
     ({ spy, spyLogger } = createSpyLogger());
 
-    hubPoolClient = new MockHubPoolClient(null, null);
+    const { hubPool, dai: l1Token } = await hubPoolFixture();
+    const { configStore } = await deployConfigStore(owner, [l1Token]);
+
+    const configStoreClient = new ConfigStoreClient(spyLogger, configStore);
+    hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
+
     adapterManager = new MockAdapterManager(null, null, null, null);
     tokenClient = new MockTokenClient(null, null, null, null);
     bundleDataClient = new MockBundleDataClient(null, null, null, null);

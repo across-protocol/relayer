@@ -183,12 +183,12 @@ export class BundleDataClient {
       return this.loadDataFromCache(key);
     }
 
-    if (!this.clients.hubPoolClient.isUpdated) {
-      throw new Error("HubPoolClient not updated");
-    }
     if (!this.clients.configStoreClient.isUpdated) {
       throw new Error("ConfigStoreClient not updated");
+    } else if (!this.clients.hubPoolClient.isUpdated) {
+      throw new Error("HubPoolClient not updated");
     }
+
     if (blockRangesForChains.length !== this.chainIdListForBundleEvaluationBlockNumbers.length) {
       throw new Error(
         `Unexpected block range list length of ${blockRangesForChains.length}, should be ${this.chainIdListForBundleEvaluationBlockNumbers.length}`
@@ -348,7 +348,7 @@ export class BundleDataClient {
     if (logData) {
       const mainnetRange = getBlockRangeForChain(
         blockRangesForChains,
-        1,
+        this.clients.hubPoolClient.chainId,
         this.chainIdListForBundleEvaluationBlockNumbers
       );
       this.logger.debug({

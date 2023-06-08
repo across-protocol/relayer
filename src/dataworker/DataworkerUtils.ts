@@ -1,4 +1,4 @@
-import { AcrossConfigStoreClient, HubPoolClient } from "../clients";
+import { ConfigStoreClient, HubPoolClient } from "../clients";
 import {
   BigNumberForToken,
   DepositWithBlock,
@@ -88,7 +88,7 @@ export function getBlockForChain(
  */
 export function getImpliedBundleBlockRanges(
   hubPoolClient: HubPoolClient,
-  configStoreClient: AcrossConfigStoreClient,
+  configStoreClient: ConfigStoreClient,
   rootBundle: ProposedRootBundle,
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ): number[][] {
@@ -102,7 +102,7 @@ export function getImpliedBundleBlockRanges(
   const enabledChains = configStoreClient.getEnabledChains(
     getBlockForChain(
       rootBundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
-      1,
+      hubPoolClient.chainId,
       chainIdListForBundleEvaluationBlockNumbers
     ),
     chainIdListForBundleEvaluationBlockNumbers

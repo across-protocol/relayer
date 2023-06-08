@@ -2,6 +2,8 @@ import { BigNumber, formatFeePct, toBN, toBNWei } from "../src/utils";
 import {
   expect,
   createSpyLogger,
+  deployConfigStore,
+  hubPoolFixture,
   winston,
   ethers,
   deploySpokePoolWithToken,
@@ -11,6 +13,7 @@ import {
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
 import { Deposit, DepositWithBlock, L1Token } from "../src/interfaces";
 import { FillProfit, GAS_TOKEN_BY_CHAIN_ID, SpokePoolClient, MATIC, USDC, WBTC, WETH } from "../src/clients";
+import { ConfigStoreClient } from "../src/clients";
 
 const chainIds: number[] = [1, 10, 137, 288, 42161];
 
@@ -79,8 +82,15 @@ function testProfitability(deposit: Deposit, fillAmountUsd: BigNumber, gasCostUs
 
 describe("ProfitClient: Consider relay profit", async function () {
   beforeEach(async function () {
-    hubPoolClient = new MockHubPoolClient(null, null);
     const [owner] = await ethers.getSigners();
+    const logger = createSpyLogger().spyLogger;
+
+    const { configStore } = await deployConfigStore(owner, []);
+    const configStoreClient = new ConfigStoreClient(logger, configStore);
+
+    const { hubPool } = await hubPoolFixture();
+    hubPoolClient = new MockHubPoolClient(logger, hubPool, configStoreClient);
+
     const { spokePool: spokePool_1, deploymentBlock: spokePool1DeploymentBlock } = await deploySpokePoolWithToken(
       originChainId,
       destinationChainId

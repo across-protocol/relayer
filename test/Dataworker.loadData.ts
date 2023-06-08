@@ -14,7 +14,7 @@ import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, build
 import {
   SpokePoolClient,
   HubPoolClient,
-  AcrossConfigStoreClient,
+  ConfigStoreClient,
   BundleDataClient,
   MultiCallerClient,
   BalanceAllocator,
@@ -33,7 +33,7 @@ let l1Token_1: Contract, l1Token_2: Contract, hubPool: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient, bundleDataClient: BundleDataClient;
-let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
+let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
 let multiCallerClient: MultiCallerClient;
 let dataworkerInstance: Dataworker;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
@@ -70,19 +70,19 @@ describe("Dataworker: Load data used in all functions", async function () {
   });
 
   it("Default conditions", async function () {
-    // Throws error if hub pool client is not updated.
-    await assertPromiseError(
-      bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients),
-      "HubPoolClient not updated"
-    );
-    await hubPoolClient.update();
-
     // Throws error if config store client not updated.
     await assertPromiseError(
       bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients),
       "ConfigStoreClient not updated"
     );
     await configStoreClient.update();
+
+    // Throws error if hub pool client is not updated.
+    await assertPromiseError(
+      bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients),
+      "HubPoolClient not updated"
+    );
+    await hubPoolClient.update();
 
     // Throws error if spoke pool clients not updated
     await assertPromiseError(
@@ -107,7 +107,6 @@ describe("Dataworker: Load data used in all functions", async function () {
       await updateAllClients();
 
       deposit1 = await buildDeposit(
-        configStoreClient,
         hubPoolClient,
         spokePool_1,
         erc20_1,
@@ -381,7 +380,6 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     const deposit1 = {
       ...(await buildDeposit(
-        configStoreClient,
         hubPoolClient,
         spokePool_1,
         erc20_1,
@@ -392,13 +390,10 @@ describe("Dataworker: Load data used in all functions", async function () {
       )),
       blockNumber: await getLastBlockNumber(),
     } as DepositWithBlock;
-    deposit1.quoteBlockNumber = (
-      await configStoreClient.computeRealizedLpFeePct(deposit1, l1Token_1.address)
-    ).quoteBlock;
+    deposit1.quoteBlockNumber = (await hubPoolClient.computeRealizedLpFeePct(deposit1, l1Token_1.address)).quoteBlock;
 
     const deposit2 = {
       ...(await buildDeposit(
-        configStoreClient,
         hubPoolClient,
         spokePool_2,
         erc20_2,
@@ -409,9 +404,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       )),
       blockNumber: await getLastBlockNumber(),
     } as DepositWithBlock;
-    deposit2.quoteBlockNumber = (
-      await configStoreClient.computeRealizedLpFeePct(deposit2, l1Token_2.address)
-    ).quoteBlock;
+    deposit2.quoteBlockNumber = (await hubPoolClient.computeRealizedLpFeePct(deposit2, l1Token_2.address)).quoteBlock;
 
     // Unfilled deposits are ignored.
     await updateAllClients();
@@ -420,7 +413,6 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     // Two deposits with no fills per destination chain ID.
     await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -430,7 +422,6 @@ describe("Dataworker: Load data used in all functions", async function () {
       amountToDeposit.mul(toBN(2))
     );
     await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_2,
       erc20_2,
@@ -487,7 +478,6 @@ describe("Dataworker: Load data used in all functions", async function () {
     // Fill events emitted by slow relays are included in unfilled amount calculations.
     const deposit5 = {
       ...(await buildDeposit(
-        configStoreClient,
         hubPoolClient,
         spokePool_2,
         erc20_2,
@@ -498,9 +488,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       )),
       blockNumber: await getLastBlockNumber(),
     } as DepositWithBlock;
-    deposit5.quoteBlockNumber = (
-      await configStoreClient.computeRealizedLpFeePct(deposit5, l1Token_1.address)
-    ).quoteBlock;
+    deposit5.quoteBlockNumber = (await hubPoolClient.computeRealizedLpFeePct(deposit5, l1Token_1.address)).quoteBlock;
     const fill3 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit5, 0.25);
 
     // One unfilled deposit that we're going to slow fill:
@@ -524,7 +512,6 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
 
     const deposit1 = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -534,7 +521,6 @@ describe("Dataworker: Load data used in all functions", async function () {
       amountToDeposit
     );
     const deposit2 = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_2,
       erc20_2,
@@ -594,7 +580,6 @@ describe("Dataworker: Load data used in all functions", async function () {
 
     // Slow relay fills are added.
     const deposit3 = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_2,
       erc20_2,
@@ -655,7 +640,6 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
 
     const deposit1 = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_2,
       erc20_2,
@@ -665,7 +649,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       amountToDeposit
     );
     const originBlock = await spokePool_2.provider.getBlockNumber();
-    const realizedLpFeePctData = await configStoreClient.computeRealizedLpFeePct(deposit1, l1Token_1.address);
+    const realizedLpFeePctData = await hubPoolClient.computeRealizedLpFeePct(deposit1, l1Token_1.address);
 
     // Should include all deposits, even those not matched by a relay
     await updateAllClients();
@@ -683,7 +667,6 @@ describe("Dataworker: Load data used in all functions", async function () {
     // Send a deposit.
     await updateAllClients();
     const deposit1 = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
