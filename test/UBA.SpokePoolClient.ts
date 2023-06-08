@@ -1,3 +1,5 @@
+// @note: The lines marked @todo: destinationToken need a fix in the sdk-v2 MockSpokePoolClient to permit
+// the HubPoolClient to be passed in. This is needed in order to resolve the correct SpokePool destinationToken.
 import { groupBy, random } from "lodash";
 import {
   isUbaInflow,
@@ -11,7 +13,7 @@ import {
   RefundRequestWithBlock,
   UbaOutflow,
 } from "../src/interfaces";
-import { isDefined, sortEventsAscending, spreadEventWithBlockNumber, UBAClient } from "../src/utils";
+import { ZERO_ADDRESS, isDefined, sortEventsAscending, spreadEventWithBlockNumber, UBAClient } from "../src/utils";
 import {
   assert,
   createSpyLogger,
@@ -47,7 +49,7 @@ let originToken: string, refundToken: string;
 const chainIds = [originChainId, destinationChainId, repaymentChainId];
 const logger = createSpyLogger().spyLogger;
 
-function fillFromDeposit(deposit: Deposit, relayer: string, destinationToken: string): Fill {
+function fillFromDeposit(deposit: Deposit, relayer: string): Fill {
   const { recipient, message, relayerFeePct } = deposit;
 
   const fill: Fill = {
@@ -56,7 +58,7 @@ function fillFromDeposit(deposit: Deposit, relayer: string, destinationToken: st
     originChainId: deposit.originChainId,
     destinationChainId: deposit.destinationChainId,
     depositor: deposit.depositor,
-    destinationToken,
+    destinationToken: deposit.destinationToken,
     relayerFeePct: deposit.relayerFeePct,
     realizedLpFeePct: deposit.realizedLpFeePct,
     recipient,
@@ -115,7 +117,7 @@ describe("UBA: SpokePool Events", async function () {
       const deploymentBlock = await spokePool.provider.getBlockNumber();
 
       await spokePool.setChainId(chainId);
-      const spokePoolClient = new MockSpokePoolClient(logger, spokePool, chainId, deploymentBlock, hubPoolClient);
+      const spokePoolClient = new MockSpokePoolClient(logger, spokePool, chainId, deploymentBlock);
 
       for (const destinationChainId of chainIds) {
         // For each SpokePool, construct routes to each _other_ SpokePool.
@@ -123,7 +125,8 @@ describe("UBA: SpokePool Events", async function () {
           continue;
         }
 
-        [weth.address, dai.address].forEach((originToken) => {
+        // @todo: destinationToken
+        [ZERO_ADDRESS, weth.address, dai.address].forEach((originToken) => {
           let event = spokePoolClient.generateDepositRoute(originToken, destinationChainId, true);
           spokePoolClient.addEvent(event);
 
@@ -154,6 +157,7 @@ describe("UBA: SpokePool Events", async function () {
     // Inject a series of FundsDeposited, FilledRelay and RefundRequested events.
     const events: Event[] = [];
     for (let idx = 0; idx < nTxns; ++idx) {
+      // blockNumbers are deliberately sequential; the ordering is reversed later.
       const blockNumber = spokePoolClient.latestBlockNumber + idx;
       let transactionIndex = 0;
       let deposit: DepositWithBlock, fill: FillWithBlock;
@@ -183,8 +187,9 @@ describe("UBA: SpokePool Events", async function () {
             // First inject a FilledRelay event into the origin chain.
             event = originSpokePool.generateDeposit({
               originToken,
-              depositId: random(1, 100_000, false),
-              destinationChainId
+              depositId: random(1, 100_000_000, false),
+              destinationChainId,
+              blockNumber: originSpokePool.latestBlockNumber + random(1, idx, false),
             } as DepositWithBlock);
             originSpokePool.addEvent(event);
             await originSpokePool.update();
@@ -193,10 +198,12 @@ describe("UBA: SpokePool Events", async function () {
               .find((deposit) => deposit.transactionHash === event.transactionHash);
 
             // Then inject a FilledRelay event into the destination chain.
-            fill = fillFromDeposit(deposit, relayer, refundToken);
+            fill = fillFromDeposit(deposit, relayer) as FillWithBlock;
             fill.repaymentChainId = repaymentChainId;
+            fill.blockNumber = destSpokePool.latestBlockNumber + random(1, idx, false);
 
             event = destSpokePool.generateFill(fill as FillWithBlock);
+            event.args["destinationToken"] = ZERO_ADDRESS; // @todo: destinationToken
             destSpokePool.addEvent(event);
             await destSpokePool.update();
             fill = destSpokePool
@@ -425,7 +432,7 @@ describe("UBA: SpokePool Events", async function () {
 
     const fill = fillFromDeposit(_deposit);
     fill.relayer = relayer;
-    fill.destinationToken = weth.address;
+    fill.destinationToken = weth.address; // @todo: destinationToken
     fill.repaymentChainId = repaymentChainId;
     fill.blockNumber = destSpokePool.firstBlockToSearch;
     fill.transactionIndex = random(1, 1000, false);
@@ -433,6 +440,7 @@ describe("UBA: SpokePool Events", async function () {
     fill.transactionHash = ethers.utils.id(`${random(1, 100_000)}`);
 
     const fillEvent = destSpokePool.generateFill(fill);
+    fillEvent.args["destinationToken"] = ZERO_ADDRESS; // @todo: destinationToken
     destSpokePool.addEvent(fillEvent);
     await destSpokePool.update();
     const _fill = destSpokePool
