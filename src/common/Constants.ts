@@ -68,7 +68,7 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   1000: {
     1: 32, // Justified block
-    10: 0,
+    10: 60,
     137: 100, // Probabilistically safe level based on historic Polygon reorgs
     288: 0,
     42161: 0,
@@ -78,7 +78,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
   },
   100: {
     1: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
-    10: 0,
+    10: 60,
     137: 80,
     288: 0,
     42161: 0,
@@ -138,7 +138,7 @@ export const IGNORED_HUB_EXECUTED_BUNDLES: number[] = [];
 // This is intended to be conservative.
 export const MAX_REORG_DISTANCE: { [chainId: number]: number } = {
   1: 64,
-  10: 0,
+  10: 120,
   137: 256,
   288: 0,
   42161: 0,
