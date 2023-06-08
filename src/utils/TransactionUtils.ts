@@ -1,3 +1,4 @@
+import { typeguards } from "@across-protocol/sdk-v2";
 import { AugmentedTransaction } from "../clients";
 import { winston, Contract, getContractInfoFromAddress, fetch, ethers, Wallet } from "../utils";
 import { multicall3Addresses } from "../common";
@@ -14,11 +15,9 @@ export type TransactionSimulationResult = {
   reason: string;
 };
 
-const isEthersError = (error?: unknown): error is EthersError =>
-  (error as EthersError)?.code in ethers.utils.Logger.errors;
 const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);
 const txnRetryable = (error?: unknown): boolean => {
-  if (isEthersError(error)) {
+  if (typeguards.isEthersError(error)) {
     return txnRetryErrors.has(error.code);
   }
 
