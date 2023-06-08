@@ -88,7 +88,7 @@ export async function runTransaction(
       // - Top-level (Contract method call): "reason":"cannot estimate gas; transaction may fail or may require manual gas limit" (UNPREDICTABLE_GAS_LIMIT)
       // - Mid-level (eth_estimateGas): "reason":"execution reverted: delegatecall failed" (UNPREDICTABLE_GAS_LIMIT)
       // - Bottom-level (JSON-RPC/HTTP): "reason":"processing response error" (SERVER_ERROR)
-      if (isEthersError(error)) {
+      if (typeguards.isEthersError(error)) {
         const ethersErrors: { reason: string; err: EthersError }[] = [];
         let topError: EthersError = error;
         while (topError !== undefined) {
