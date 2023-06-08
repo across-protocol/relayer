@@ -87,7 +87,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       });
       const spokePoolClients = await constructSpokePoolClientsForFastDataworker(
         logger,
-        clients.configStoreClient,
+        clients.hubPoolClient,
         config,
         baseSigner,
         fromBlocks,

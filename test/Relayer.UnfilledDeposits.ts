@@ -29,8 +29,7 @@ import { MockInventoryClient, MockProfitClient } from "./mocks";
 import { Relayer } from "../src/relayer/Relayer";
 import { getUnfilledDeposits, toBN, UnfilledDeposit, utf8ToHex } from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
-import { MockConfigStoreClient } from "./mocks/MockConfigStoreClient";
-import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
+import { MockConfigStoreClient, MockedMultiCallerClient } from "./mocks";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, l1Token: Contract, configStore: Contract;
@@ -66,19 +65,21 @@ describe("Relayer: Unfilled Deposits", async function () {
     ]));
 
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-    configStoreClient = new MockConfigStoreClient(spyLogger, configStore, hubPoolClient);
+
+    configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
+    hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
+
     spokePoolClient_1 = new SpokePoolClient(
       spyLogger,
       spokePool_1,
-      configStoreClient,
+      hubPoolClient,
       originChainId,
       spokePool1DeploymentBlock
     );
     spokePoolClient_2 = new SpokePoolClient(
       spyLogger,
       spokePool_2,
-      configStoreClient,
+      hubPoolClient,
       destinationChainId,
       spokePool2DeploymentBlock,
       { fromBlock: 0, toBlock: null, maxBlockLookBack: 0 }
@@ -136,8 +137,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     const deposit2 = await simpleDeposit(spokePool_2, erc20_2, depositor, depositor, originChainId);
     await updateAllClients();
-    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, configStoreClient, l1Token);
-    const deposit2Complete = await buildDepositStruct(deposit2, hubPoolClient, configStoreClient, l1Token);
+    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, l1Token);
+    const deposit2Complete = await buildDepositStruct(deposit2, hubPoolClient, l1Token);
 
     expect(
       getUnfilledDeposits(
@@ -211,8 +212,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     const deposit2 = await simpleDeposit(spokePool_2, erc20_2, depositor, depositor, originChainId);
 
     // Partially fill the first deposit, which is sent to the second spoke pool, with one fill.
-    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, configStoreClient, l1Token);
-    const deposit2Complete = await buildDepositStruct(deposit2, hubPoolClient, configStoreClient, l1Token);
+    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, l1Token);
+    const deposit2Complete = await buildDepositStruct(deposit2, hubPoolClient, l1Token);
 
     const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1Complete, 0.25);
     await updateAllClients();
@@ -294,7 +295,7 @@ describe("Relayer: Unfilled Deposits", async function () {
   it("Correctly excludes fills that are incorrectly applied to a deposit", async function () {
     expect(true).to.equal(true);
     const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, configStoreClient, l1Token);
+    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, l1Token);
 
     // Partially fill the deposit, incorrectly by setting the wrong deposit ID.
     await buildFill(spokePool_2, erc20_2, depositor, relayer, { ...deposit1Complete, depositId: 1337 }, 0.25);
@@ -386,7 +387,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
   it("Does not double fill deposit when updating fee after fill", async function () {
     const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, configStoreClient, l1Token);
+    const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, l1Token);
     const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1Complete, 0.25);
     await updateAllClients();
     expect(
@@ -452,7 +453,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
   it("Skip invalid fills from the same relayer", async function () {
     const deposit = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
-    const depositComplete = await buildDepositStruct(deposit, hubPoolClient, configStoreClient, l1Token);
+    const depositComplete = await buildDepositStruct(deposit, hubPoolClient, l1Token);
     // Send a fill with a different relayer fee pct from the deposit's. This fill should be considered an invalid fill
     // and getUnfilledDeposits should log it.
     const fill = await buildFill(
@@ -512,8 +513,8 @@ describe("Relayer: Unfilled Deposits", async function () {
 });
 
 async function updateAllClients() {
-  await hubPoolClient.update();
   await configStoreClient.update();
+  await hubPoolClient.update();
   await tokenClient.update();
   await spokePoolClient_1.update();
   await spokePoolClient_2.update();

@@ -10,6 +10,7 @@ type OVM_CROSS_CHAIN_MESSENGER = optimismSDK.CrossChainMessenger;
 
 export function getOptimismClient(chainId: OVM_CHAIN_ID, hubSigner: Wallet): OVM_CROSS_CHAIN_MESSENGER {
   return new optimismSDK.CrossChainMessenger({
+    bedrock: true,
     l1ChainId: 1,
     l2ChainId: chainId,
     l1SignerOrProvider: hubSigner.connect(getCachedProvider(1, true)),
@@ -89,12 +90,14 @@ export async function getOptimismFinalizableMessages(
   const crossChainMessages = await getCrossChainMessages(chainId, tokensBridged, crossChainMessenger);
   const messageStatuses = await getMessageStatuses(chainId, crossChainMessages, crossChainMessenger);
   logger.debug({
-    at: `${chainId === 10 ? "Optimism" : "Boba"}Finalizer`,
-    message: `${chainId === 10 ? "Optimism" : "Boba"} message statuses`,
+    at: "OptimismFinalizer",
+    message: "Optimism message statuses",
     statusesGrouped: groupObjectCountsByProp(messageStatuses, (message: CrossChainMessageWithStatus) => message.status),
   });
   return messageStatuses.filter(
-    (message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]
+    (message) =>
+      message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY] ||
+      message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_TO_PROVE]
   );
 }
 
@@ -123,6 +126,20 @@ export async function finalizeOptimismMessage(
   };
 }
 
+export async function proveOptimismMessage(
+  _chainId: OVM_CHAIN_ID,
+  crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER,
+  message: CrossChainMessageWithStatus
+): Promise<Multicall2Call> {
+  const callData = await (crossChainMessenger as optimismSDK.CrossChainMessenger).populateTransaction.proveMessage(
+    message.message as optimismSDK.MessageLike
+  );
+  return {
+    callData: callData.data,
+    target: callData.to,
+  };
+}
+
 export async function multicallOptimismFinalizations(
   chainId: OVM_CHAIN_ID,
   tokensBridgedEvents: TokensBridged[],
@@ -130,16 +147,41 @@ export async function multicallOptimismFinalizations(
   hubPoolClient: HubPoolClient,
   logger: winston.Logger
 ): Promise<{ callData: Multicall2Call[]; withdrawals: Withdrawal[] }> {
-  const finalizableMessages = await getOptimismFinalizableMessages(
-    chainId,
-    logger,
-    tokensBridgedEvents,
-    crossChainMessenger
-  );
+  const finalizableMessages = (
+    await getOptimismFinalizableMessages(chainId, logger, tokensBridgedEvents, crossChainMessenger)
+  ).filter((message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]);
   const callData = await Promise.all(
     finalizableMessages.map((message) => finalizeOptimismMessage(chainId, crossChainMessenger, message))
   );
   const withdrawals = finalizableMessages.map((message) => {
+    const l1TokenInfo = getL1TokenInfoForOptimismToken(chainId, hubPoolClient, message.event.l2TokenAddress);
+    const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
+    return {
+      l2ChainId: chainId,
+      l1TokenSymbol: l1TokenInfo.symbol,
+      amount: amountFromWei,
+    };
+  });
+  return {
+    callData,
+    withdrawals,
+  };
+}
+
+export async function multicallOptimismL1Proofs(
+  chainId: OVM_CHAIN_ID,
+  tokensBridgedEvents: TokensBridged[],
+  crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER,
+  hubPoolClient: HubPoolClient,
+  logger: winston.Logger
+): Promise<{ callData: Multicall2Call[]; withdrawals: Withdrawal[] }> {
+  const provableMessages = (
+    await getOptimismFinalizableMessages(chainId, logger, tokensBridgedEvents, crossChainMessenger)
+  ).filter((message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_TO_PROVE]);
+  const callData = await Promise.all(
+    provableMessages.map((message) => proveOptimismMessage(chainId, crossChainMessenger, message))
+  );
+  const withdrawals = provableMessages.map((message) => {
     const l1TokenInfo = getL1TokenInfoForOptimismToken(chainId, hubPoolClient, message.event.l2TokenAddress);
     const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
     return {
