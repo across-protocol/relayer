@@ -82,26 +82,47 @@ export async function runTransaction(
       });
       return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining);
     } else {
-      // If error is "UNPREDICTABLE_GAS_LIMIT" then the transaction likely reverted on-chain when estimated by the
-      // RPC server. Ethers might populate an "error" object which could contain additional
-      // information about the error encountered when the RPC simulated the transaction.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const innerError = (error as any)?.error;
 
-      // If transaction error reason is known to be benign, then reduce the log level to warn.
-      logger[txnRetryable(error) || txnRetryable(innerError) ? "warn" : "error"]({
-        at: "TxUtil#runTransaction",
-        message: "Error executing tx",
-        retriesRemaining,
-        errorReason: innerError?.reason ?? (error as any)?.reason,
-        target: getTarget(contract.address),
-        method,
-        args,
-        value,
-        nonce,
-        notificationPath: "across-error",
-      });
-      throw innerError ?? error;
+      // Empirically we have observed that Ethers can produce nested errors, so we try to recurse down them
+      // and log them as clearly as possible. For example:
+      // - Top-level (Contract method call): "reason":"cannot estimate gas; transaction may fail or may require manual gas limit" (UNPREDICTABLE_GAS_LIMIT)
+      // - Mid-level (eth_estimateGas): "reason":"execution reverted: delegatecall failed" (UNPREDICTABLE_GAS_LIMIT)
+      // - Bottom-level (JSON-RPC/HTTP): "reason":"processing response error" (SERVER_ERROR)
+      if (isEthersError(error)) {
+        const ethersErrors: { reason: string; err: EthersError }[] = [];
+        let topError: EthersError = error;
+        while (topError !== undefined) {
+          ethersErrors.push({ reason: topError.reason, err: topError.error });
+          topError = topError.error;
+        }
+        logger[ethersErrors.some((e) => txnRetryable(e.err)) ? "warn" : "error"]({
+          at: "TxUtil#runTransaction",
+          message: "Error executing tx",
+          retriesRemaining,
+          errorReasons: ethersErrors.map((e, i) => `\n\t ${i}: ${e.reason}`),
+          target: getTarget(contract.address),
+          method,
+          args,
+          value,
+          nonce,
+          notificationPath: "across-error",
+        });
+        throw error;
+      } else {
+        logger[txnRetryable(error) ? "warn" : "error"]({
+          at: "TxUtil#runTransaction",
+          message: "Error executing tx",
+          retriesRemaining,
+          error: JSON.stringify(error),
+          target: getTarget(contract.address),
+          method,
+          args,
+          value,
+          nonce,
+          notificationPath: "across-error",
+        });
+        throw error;
+      }
     }
   }
 }
