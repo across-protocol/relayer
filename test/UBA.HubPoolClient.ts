@@ -1,5 +1,4 @@
 import { random } from "lodash";
-// import { PendingRootBundle } from "../../src/interfaces";
 import { UBAClient } from "../src/utils";
 import {
   BigNumber,
