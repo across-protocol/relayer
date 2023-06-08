@@ -24,8 +24,10 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
   }
 
   getLatestBundleEndBlockForChain(chainIdList: number[], latestMainnetBlock: number, chainId: number): number {
-    return this.latestBundleEndBlocks[chainId]
-      ?? super.getLatestBundleEndBlockForChain(chainIdList, latestMainnetBlock, chainId)
-      ?? 0;
+    return (
+      this.latestBundleEndBlocks[chainId] ??
+      super.getLatestBundleEndBlockForChain(chainIdList, latestMainnetBlock, chainId) ??
+      0
+    );
   }
 }

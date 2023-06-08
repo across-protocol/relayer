@@ -24,7 +24,7 @@ export class UBAClient {
     chainId: number,
     spokePoolToken: string,
     hubPoolBlockNumber?: number
-  ): { blockNumber: number, spokePoolBalance: BigNumber } {
+  ): { blockNumber: number; spokePoolBalance: BigNumber } {
     hubPoolBlockNumber = hubPoolBlockNumber ?? this.hubPoolClient.latestBlockNumber;
 
     const hubPoolToken = this.hubPoolClient.getL1TokenCounterpartAtBlock(chainId, spokePoolToken, hubPoolBlockNumber);
@@ -39,7 +39,11 @@ export class UBAClient {
       blockNumber = prevEndBlock + 1;
       assert(blockNumber <= spokePoolClient.latestBlockNumber);
     }
-    const spokePoolBalance = this.hubPoolClient.getRunningBalanceBeforeBlockForChain(hubPoolBlockNumber, chainId, hubPoolToken);
+    const spokePoolBalance = this.hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      hubPoolBlockNumber,
+      chainId,
+      hubPoolToken
+    );
 
     return { blockNumber, spokePoolBalance };
   }
