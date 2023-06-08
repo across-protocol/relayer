@@ -175,7 +175,7 @@ export class Monitor {
         const mrkdwn =
           `An unknown relayer ${etherscanLink(fill.relayer, chainId)}` +
           ` filled a deposit on ${getNetworkName(chainId)}\ntx: ${etherscanLink(fill.transactionHash, chainId)}`;
-        this.logger.error({ at: "Monitor", message: "Unknown relayer 🛺", mrkdwn });
+        this.logger.warn({ at: "Monitor", message: "Unknown relayer 🛺", mrkdwn });
       }
     }
   }
