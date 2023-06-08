@@ -4,7 +4,6 @@ import { assert, BigNumber, isDefined, winston } from "../utils";
 import { sortEventsAscending } from "./";
 
 export class UBAClient {
-
   // @dev chainIdIndices supports indexing members of root bundle proposals submitted to the HubPool.
   //      It must include the complete set of chain IDs ever supported by the HubPool.
   // @dev SpokePoolClients may be a subset of the SpokePools that have been deployed.
@@ -134,7 +133,8 @@ export class UBAClient {
     if (fillBlock.lt(destSpoke.deploymentBlock) || fillBlock.gt(destSpoke.latestBlockNumber)) {
       return {
         valid: false,
-        reason: `FillBlock (${fillBlock} out of SpokePool range` +
+        reason:
+          `FillBlock (${fillBlock} out of SpokePool range` +
           ` [${destSpoke.deploymentBlock}, ${destSpoke.latestBlockNumber}]`,
       };
     }
