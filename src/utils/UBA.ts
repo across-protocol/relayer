@@ -33,9 +33,8 @@ export class UBAClient {
     }
 
     const spokePoolClient = this.spokePoolClients[chainId];
+    const prevEndBlock = this.resolveClosingBlockNumber(chainId, hubPoolBlockNumber);
     let blockNumber = spokePoolClient.deploymentBlock;
-    const prevEndBlock =
-      this.resolveClosingBlockNumber(chainId, hubPoolBlockNumber) ?? spokePoolClient.latestBlockNumber;
     if (prevEndBlock > blockNumber) {
       blockNumber = prevEndBlock + 1;
       assert(blockNumber <= spokePoolClient.latestBlockNumber);
