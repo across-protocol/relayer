@@ -1,6 +1,6 @@
 import { DepositWithBlock, FillWithBlock, UbaFlow } from "../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../clients";
-import { assert } from "../utils";
+import { assert, BigNumber, isDefined } from "../utils";
 import { sortEventsAscending } from "./";
 
 export class UBAClient {
@@ -14,6 +14,38 @@ export class UBAClient {
   ) {
     assert(chainIdIndices.length > 0, "No chainIds provided");
     assert(Object.values(spokePoolClients).length > 0, "No SpokePools provided");
+  }
+
+  private resolveClosingBlockNumber(chainId: number, blockNumber: number): number | undefined {
+    return this.hubPoolClient.getLatestBundleEndBlockForChain(this.chainIdIndices, blockNumber, chainId);
+  }
+
+  getOpeningBalance(
+    chainId: number,
+    spokePoolToken: string,
+    hubPoolBlockNumber?: number
+  ): { blockNumber: number; spokePoolBalance: BigNumber } {
+    hubPoolBlockNumber = hubPoolBlockNumber ?? this.hubPoolClient.latestBlockNumber;
+
+    const hubPoolToken = this.hubPoolClient.getL1TokenCounterpartAtBlock(chainId, spokePoolToken, hubPoolBlockNumber);
+    if (!isDefined(hubPoolToken)) {
+      throw new Error(`Could not resolve ${chainId} token ${spokePoolToken} at block ${hubPoolBlockNumber}`);
+    }
+
+    const spokePoolClient = this.spokePoolClients[chainId];
+    const prevEndBlock = this.resolveClosingBlockNumber(chainId, hubPoolBlockNumber);
+    let blockNumber = spokePoolClient.deploymentBlock;
+    if (prevEndBlock > blockNumber) {
+      blockNumber = prevEndBlock + 1;
+      assert(blockNumber <= spokePoolClient.latestBlockNumber);
+    }
+    const spokePoolBalance = this.hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      hubPoolBlockNumber,
+      chainId,
+      hubPoolToken
+    );
+
+    return { blockNumber, spokePoolBalance };
   }
 
   /**
