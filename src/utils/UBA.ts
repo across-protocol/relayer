@@ -25,7 +25,7 @@ export class UBAClient {
     spokePoolToken: string,
     hubPoolBlockNumber?: number
   ): { balance: BigNumber; blockNumber: number } {
-    hubPoolBlockNumber ??= this.hubPoolClient.latestBlockNumber;
+    hubPoolBlockNumber = hubPoolBlockNumber ?? this.hubPoolClient.latestBlockNumber;
 
     const hubPoolToken = this.hubPoolClient.getL1TokenCounterpartAtBlock(chainId, spokePoolToken, hubPoolBlockNumber);
     if (!isDefined(hubPoolToken)) {
