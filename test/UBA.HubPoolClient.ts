@@ -74,8 +74,8 @@ describe("UBA: HubPool Events", async function () {
   it("Defaults to SpokePool deployment block when no root bundles have been executed", async function () {
     for (const chainId of chainIds) {
       for (const token of [weth.address, dai.address]) {
-        const { balance, blockNumber } = uba.getOpeningBalance(chainId, token);
-        expect(balance.eq(0)).to.be.true;
+        const { spokePoolBalance, blockNumber } = uba.getOpeningBalance(chainId, token);
+        expect(spokePoolBalance.eq(0)).to.be.true;
         expect(blockNumber).to.be.equal(spokePoolClients[chainId].deploymentBlock);
       }
     }
@@ -122,7 +122,7 @@ describe("UBA: HubPool Events", async function () {
     for (const chainId of chainIds) {
       // DAI has executed leaves, WETH does not (running balance should default to 0).
       for (const token of [dai.address, weth.address]) {
-        const { balance, blockNumber } = uba.getOpeningBalance(chainId, token);
+        const { blockNumber, spokePoolBalance } = uba.getOpeningBalance(chainId, token);
 
         // Find the last executed leaf affecting `token` on this chain. If no leaf affecting `token`
         // has ever been executed, default tokenIdx to -1 to indicate an expected runningBalance of 0.
@@ -132,11 +132,11 @@ describe("UBA: HubPool Events", async function () {
         const tokenIdx = event ? event["args"]["l1Tokens"].indexOf(token) : -1;
 
         const expectedBalance = tokenIdx === -1 ? toBN(0) : event["args"]["runningBalances"][tokenIdx];
-        expect(balance.eq(expectedBalance)).to.be.true;
+        expect(spokePoolBalance.eq(expectedBalance)).to.be.true;
 
         const chainIdx = chainIds.indexOf(chainId);
         // @todo: Opening block number is not correctly resolved. To be fixed.
-        expect(bundleEvaluationBlockNumbers[chainIdx].eq(blockNumber - 1) || true).to.be.true;
+        expect(bundleEvaluationBlockNumbers[chainIdx].eq(blockNumber - 1)).to.be.true;
       }
     }
   });
