@@ -1,4 +1,4 @@
-import { hre } from ".";
+import hre from "hardhat";
 
 export async function mineRandomBlocks(): Promise<void> {
   const randomBlocksToMine = Math.ceil(Math.random() * 10);

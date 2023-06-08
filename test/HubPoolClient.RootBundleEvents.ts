@@ -1,5 +1,6 @@
+import hre from "hardhat";
 import { buildPoolRebalanceLeafTree, buildPoolRebalanceLeaves, createSpyLogger, randomAddress } from "./utils";
-import { SignerWithAddress, expect, ethers, Contract, deployConfigStore, toBNWei, toBN, BigNumber, hre } from "./utils";
+import { SignerWithAddress, expect, ethers, Contract, deployConfigStore, toBNWei, toBN, BigNumber } from "./utils";
 import { ConfigStoreClient, HubPoolClient } from "../src/clients";
 import * as constants from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
