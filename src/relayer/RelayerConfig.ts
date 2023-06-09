@@ -120,56 +120,64 @@ export class RelayerConfig extends CommonConfig {
     this.quoteTimeBuffer = QUOTE_TIME_BUFFER ? Number(QUOTE_TIME_BUFFER) : Constants.QUOTE_TIME_BUFFER;
     this.ignoreLimits = RELAYER_IGNORE_LIMITS === "true";
 
-    this.messageRules = RELAYER_MESSAGE_RULES?.split(",").map((ruleName) => {
-      const originChainIds = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_ORIGIN_CHAIN_IDS`]
-        ?.split(",")
-        .map((chainId) => Number(chainId));
-      const destinationChainIds = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_DESTINATION_CHAIN_IDS`]
-        ?.split(",")
-        .map((chainId) => Number(chainId));
-      const depositor = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_DEPOSITOR`];
-      const recipients = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_RECIPIENTS`]?.split(",");
-      const tokenSymbols = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_TOKEN_SYMBOLS`]?.split(",");
-      const tokenAmounts = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_TOKEN_AMOUNTS`]
-        ?.split(",")
-        .map((amount) => toBNWei(amount));
-
-      const rule: MessageRelayRule = {
-        name: ruleName,
-        originChainIds,
-        depositor,
-        destinationChainIds,
-        recipients,
-        tokenSymbols,
-        tokenAmounts,
-      };
-
-      ["originChainIds", "destinationChainIds"].forEach((key) => {
-        if (!isDefined(rule[key])) {
-          throw new Error(`Missing ${key} for relayer message rule ${ruleName}`);
-        }
-        rule[key].forEach((chainId: unknown) => {
-          if (isNaN(chainId as number)) {
-            throw new Error(`Invalid ${key} for relayer message rule ${ruleName} (${chainId})`);
-          }
-        });
-      });
-
-      if (!isDefined(rule.depositor)) {
-        throw new Error(`Missing or invalid depositor for relayer message rule ${ruleName} (${rule.depositor})`);
-      }
-
-      ["recipients", "tokenSymbols", "tokenAmounts"].forEach((key) => {
-        if (!isDefined(rule[key]) || rule[key].length === 0) {
-          throw new Error(`Missing or invalid ${key} for relayer message rule ${ruleName} (${rule[key]})`);
-        }
-      });
-
-      if (rule.tokenSymbols.length !== rule.tokenAmounts.length) {
-        throw new Error(`Token symbols/amounts length mismatch for relayer message rule ${ruleName})`);
-      }
-
-      return rule;
-    });
+    this.messageRules = parseMessageRules(RELAYER_MESSAGE_RULES);
   }
+}
+
+function parseMessageRules(ruleNames?: string): MessageRelayRule[] {
+  const messageRules = ruleNames?.split(",").map((_ruleName) => {
+    const ruleName = _ruleName.trim();
+
+    const originChainIds = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_ORIGIN_CHAIN_IDS`]
+      ?.split(",")
+      .map((chainId) => Number(chainId));
+    const destinationChainIds = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_DESTINATION_CHAIN_IDS`]
+      ?.split(",")
+      .map((chainId) => Number(chainId));
+    const depositor = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_DEPOSITOR`];
+    const recipients = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_RECIPIENTS`]?.split(",");
+    const tokenSymbols = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_TOKEN_SYMBOLS`]?.split(",");
+    const tokenAmounts = process.env[`RELAYER_MESSAGE_RULE_${ruleName}_TOKEN_AMOUNTS`]
+      ?.split(",")
+      .map((amount) => toBNWei(amount));
+
+    const rule: MessageRelayRule = {
+      name: ruleName,
+      originChainIds,
+      depositor,
+      destinationChainIds,
+      recipients,
+      tokenSymbols,
+      tokenAmounts,
+    };
+
+    ["originChainIds", "destinationChainIds"].forEach((key) => {
+      if (!isDefined(rule[key])) {
+        throw new Error(`Missing ${key} for relayer message rule ${ruleName}`);
+      }
+      rule[key].forEach((chainId: unknown) => {
+        if (isNaN(chainId as number)) {
+          throw new Error(`Invalid ${key} for relayer message rule ${ruleName} (${chainId})`);
+        }
+      });
+    });
+
+    if (!isDefined(rule.depositor)) {
+      throw new Error(`Missing or invalid depositor for relayer message rule ${ruleName} (${rule.depositor})`);
+    }
+
+    ["recipients", "tokenSymbols", "tokenAmounts"].forEach((key) => {
+      if (!isDefined(rule[key]) || rule[key].length === 0) {
+        throw new Error(`Missing or invalid ${key} for relayer message rule ${ruleName} (${rule[key]})`);
+      }
+    });
+
+    if (rule.tokenSymbols.length !== rule.tokenAmounts.length) {
+      throw new Error(`Token symbols/amounts length mismatch for relayer message rule ${ruleName})`);
+    }
+
+    return rule;
+  });
+
+  return messageRules;
 }

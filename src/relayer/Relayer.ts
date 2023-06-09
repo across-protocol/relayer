@@ -29,11 +29,13 @@ export class Relayer {
     readonly clients: RelayerClients,
     readonly config: RelayerConfig
   ) {
-    this.logger.debug({
-      at: "Relayer",
-      message: "Instantiated with message relay rules",
-      messageRules: config.messageRules,
-    });
+    if (config.messageRules.length > 0) {
+      this.logger.debug({
+        at: "Relayer",
+        message: "Instantiated realyer with message relay rules",
+        messageRules: config.messageRules,
+      });
+    }
   }
 
   // Temporary feature to allow controlled use of message transfers.
