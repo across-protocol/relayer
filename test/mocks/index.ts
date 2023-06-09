@@ -1,9 +1,9 @@
 import { clients } from "@across-protocol/sdk-v2";
 
-export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {}
 export class MockSpokePoolClient extends clients.mocks.MockSpokePoolClient {}
 
 export * from "./MockConfigStoreClient";
+export * from "./MockHubPoolClient";
 export * from "./MockBundleDataClient";
 export * from "./MockProfitClient";
 export * from "./MockAdapterManager";
