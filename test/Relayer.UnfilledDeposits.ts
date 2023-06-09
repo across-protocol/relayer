@@ -110,6 +110,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         quoteTimeBuffer: 0,
         minDepositConfirmations: defaultMinDepositConfirmations,
         acceptInvalidFills: false,
+        messageRules: [],
       } as unknown as RelayerConfig
     );
 

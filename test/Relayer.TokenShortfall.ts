@@ -93,6 +93,7 @@ describe("Relayer: Token balance shortfall", async function () {
         maxRelayerLookBack: 24 * 60 * 60,
         quoteTimeBuffer: 0,
         minDepositConfirmations: defaultMinDepositConfirmations,
+        messageRules: [],
       } as unknown as RelayerConfig
     );
 

@@ -179,5 +179,5 @@ function parseMessageRules(ruleNames?: string): MessageRelayRule[] {
     return rule;
   });
 
-  return messageRules;
+  return messageRules ?? [];
 }
