@@ -107,13 +107,13 @@ export async function getOptimismFinalizableMessages(
   ).filter((m) => m !== undefined);
   // Temporarily filter out messages with multiple withdrawals until eth-optimism sdk can handle them:
   // https://github.com/ethereum-optimism/optimism/issues/5983
-  const messagesWithSingleWithdrawals = bedrockMessages.filter(
+  const messagesWithMultipleWithdrawals = crossChainMessages.filter(
     (message, i) =>
       !crossChainMessages.some(
         (otherMessage, j) => i !== j && otherMessage.event.transactionHash === message.event.transactionHash
       )
   );
-  const messageStatuses = await getMessageStatuses(chainId, messagesWithSingleWithdrawals, crossChainMessenger);
+  const messageStatuses = await getMessageStatuses(chainId, messagesWithMultipleWithdrawals, crossChainMessenger);
   logger.debug({
     at: "OptimismFinalizer",
     message: "Optimism message statuses",
