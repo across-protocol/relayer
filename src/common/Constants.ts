@@ -74,7 +74,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     421613: 0,
   },
 };
-export const QUOTE_TIME_BUFFER = 12 * 5; // 60 seconds. Used to protect relayer from filling deposits with 
+export const QUOTE_TIME_BUFFER = 12 * 5; // 60 seconds. Used to protect relayer from filling deposits with
 // quote timestamp this number of seconds older than the latest time.
 
 export const REDIS_URL_DEFAULT = "redis://localhost:6379";
