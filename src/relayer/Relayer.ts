@@ -13,7 +13,6 @@ import { createFormatFunction, etherscanLink, formatFeePct, toBN, toBNWei } from
 import { RelayerClients } from "./RelayerClientHelper";
 import { Deposit, DepositWithBlock } from "../interfaces";
 import { RelayerConfig } from "./RelayerConfig";
-import { CONFIG_STORE_VERSION } from "../common";
 
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
