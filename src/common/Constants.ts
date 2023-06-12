@@ -17,15 +17,6 @@ export const RELAYER_MIN_FEE_PCT = 0.0003;
 // Target ~4 hours
 export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 
-// Target ~4 days per chain. Should cover all events needed to construct pending bundle.
-export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
-  1: 28800,
-  10: 1382400,
-  137: 138240,
-  288: 11520,
-  42161: 1382400,
-};
-
 // Target ~14 days per chain. Should cover all events that could be finalized, so 2x the optimistic
 // rollup challenge period seems safe.
 export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
@@ -48,12 +39,12 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 // - Ethereum: https://etherscan.io/blocks_forked
 // - Polygon: https://polygonscan.com/blocks_forked
 
-// Optimistic Rollups are currently centrally serialized and are not expected to reorg. Technically a block on an
+// Arbitrum is currently centrally serialized and are not expected to reorg. Technically a block on an
 // ORU will not be finalized until after 7 days, so there is little difference in following behind 0 blocks versus
 // anything under 7 days.
 export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   1: 64, // Finalized block: https://www.alchemy.com/overviews/ethereum-commitment-levels
-  10: 0,
+  10: 120,
   137: 128, // Commonly used finality level for CEX's that accept Polygon deposits
   288: 0,
   42161: 0,
@@ -83,7 +74,8 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     421613: 0,
   },
 };
-export const QUOTE_TIME_BUFFER = 12 * 5; // 5 blocks on Mainnet.
+export const QUOTE_TIME_BUFFER = 12 * 5; // 60 seconds. Used to protect relayer from filling deposits with 
+// quote timestamp this number of seconds older than the latest time.
 
 export const REDIS_URL_DEFAULT = "redis://localhost:6379";
 
