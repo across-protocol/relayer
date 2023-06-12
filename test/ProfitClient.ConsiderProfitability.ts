@@ -1,3 +1,4 @@
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { BigNumber, formatFeePct, toBN, toBNWei } from "../src/utils";
 import {
   expect,
@@ -14,6 +15,9 @@ import { MockHubPoolClient, MockProfitClient } from "./mocks";
 import { Deposit, DepositWithBlock, L1Token } from "../src/interfaces";
 import { FillProfit, GAS_TOKEN_BY_CHAIN_ID, SpokePoolClient, MATIC, USDC, WBTC, WETH } from "../src/clients";
 import { ConfigStoreClient } from "../src/clients";
+
+const { fixedPointAdjustment: fixedPoint } = sdkUtils;
+const { formatEther } = ethers.utils;
 
 const chainIds: number[] = [1, 10, 137, 288, 42161];
 
@@ -62,12 +66,12 @@ let hubPoolClient: MockHubPoolClient, profitClient: MockProfitClient;
 function testProfitability(deposit: Deposit, fillAmountUsd: BigNumber, gasCostUsd: BigNumber): FillProfit {
   const { relayerFeePct } = deposit;
 
-  const grossRelayerFeeUsd = fillAmountUsd.mul(relayerFeePct).div(toBNWei(1));
+  const grossRelayerFeeUsd = fillAmountUsd.mul(relayerFeePct).div(fixedPoint);
   const relayerCapitalUsd = fillAmountUsd.sub(grossRelayerFeeUsd);
 
-  const minRelayerFeeUsd = relayerCapitalUsd.mul(minRelayerFeePct).div(toBNWei(1));
+  const minRelayerFeeUsd = relayerCapitalUsd.mul(minRelayerFeePct).div(fixedPoint);
   const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd);
-  const netRelayerFeePct = netRelayerFeeUsd.mul(toBNWei(1)).div(relayerCapitalUsd);
+  const netRelayerFeePct = netRelayerFeeUsd.mul(fixedPoint).div(relayerCapitalUsd);
 
   const fillProfitable = netRelayerFeeUsd.gte(minRelayerFeeUsd);
 
@@ -173,8 +177,8 @@ describe("ProfitClient: Consider relay profit", async function () {
         const expectedFillCostUsd = nativeGasCost
           .mul(tokenPrices[gasToken.symbol])
           .mul(toBNWei(gasMultiplier))
-          .div(toBNWei(1))
-          .div(toBNWei(1));
+          .div(fixedPoint)
+          .div(fixedPoint);
         const { gasCostUsd } = profitClient.estimateFillCost(chainId);
         expect(expectedFillCostUsd.eq(gasCostUsd)).to.be.true;
       });
@@ -249,10 +253,10 @@ describe("ProfitClient: Consider relay profit", async function () {
         fillAmounts.forEach((_fillAmount: number | string) => {
           const fillAmount = toBNWei(_fillAmount);
           const nativeFillAmount = toBNWei(_fillAmount, l1Token.decimals);
-          spyLogger.debug({ message: `Testing fillAmount ${_fillAmount} (${fillAmount}).` });
+          spyLogger.debug({ message: `Testing fillAmount ${formatEther(fillAmount)}.` });
 
-          const fillAmountUsd = fillAmount.mul(tokenPriceUsd).div(toBNWei(1));
-          const gasCostPct = gasCostUsd.mul(toBNWei(1)).div(fillAmountUsd);
+          const fillAmountUsd = fillAmount.mul(tokenPriceUsd).div(fixedPoint);
+          const gasCostPct = gasCostUsd.mul(fixedPoint).div(fillAmountUsd);
 
           const relayerFeePcts: BigNumber[] = [
             toBNWei(-1),
@@ -279,7 +283,7 @@ describe("ProfitClient: Consider relay profit", async function () {
               gasCostPct: `${formatFeePct(gasCostPct)} %`,
               relayerCapitalUsd: fill.relayerCapitalUsd,
               minRelayerFeePct: `${formatFeePct(minRelayerFeePct)} %`,
-              minRelayerFeeUsd: minRelayerFeePct.mul(fillAmountUsd).div(toBNWei(1)),
+              minRelayerFeeUsd: minRelayerFeePct.mul(fillAmountUsd).div(fixedPoint),
               netRelayerFeePct: `${formatFeePct(fill.netRelayerFeePct)} %`,
               netRelayerFeeUsd: fill.netRelayerFeeUsd,
             });
