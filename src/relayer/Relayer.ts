@@ -205,7 +205,11 @@ export class Relayer {
         continue;
       }
       if (this.clients.tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
-        if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount, l1Token)) {
+        // @todo: For UBA, compute the anticipated refund fee(s) for candidate refund chain(s).
+        // @todo: Factor in the gas cost of submitting the RefundRequest on alt refund chains.
+        const refundFee = toBN(0);
+
+        if (this.clients.profitClient.isFillProfitable(deposit, unfilledAmount, refundFee, l1Token)) {
           await this.fillRelay(deposit, unfilledAmount);
         } else {
           this.clients.profitClient.captureUnprofitableFill(deposit, unfilledAmount);
