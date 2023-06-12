@@ -71,8 +71,6 @@ describe("Monitor", async function () {
       0
     ));
 
-    const configuredNetworks = [hubPoolClient.chainId, repaymentChainId, originChainId, destinationChainId];
-
     defaultMonitorEnvVars = {
       STARTING_BLOCK_NUMBER: "0",
       ENDING_BLOCK_NUMBER: "100",
@@ -85,14 +83,13 @@ describe("Monitor", async function () {
       MONITOR_REPORT_ENABLED: "true",
       MONITOR_REPORT_INTERVAL: "10",
       MONITORED_RELAYERS: `["${depositor.address}"]`,
-      CONFIGURED_NETWORKS: JSON.stringify(configuredNetworks),
     };
     const monitorConfig = new MonitorConfig(defaultMonitorEnvVars);
 
     // Set the config store version to 0 to match the default version in the ConfigStoreClient.
     process.env.CONFIG_STORE_VERSION = "0";
 
-    const chainIds = configuredNetworks;
+    const chainIds = [hubPoolClient.chainId, repaymentChainId, originChainId, destinationChainId];
     bundleDataClient = new BundleDataClient(
       spyLogger,
       {
