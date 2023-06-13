@@ -50,7 +50,7 @@ export class Relayer {
         return { originChainId, depositId, version: unsupported.version, transactionHash };
       });
       this.logger.warn({
-        at: "Relayer",
+        at: "Relayer::checkForUnfilledDepositsAndFill",
         message: "Skipping deposits that are not supported by this relayer version.",
         latestVersionSupported: maxVersion,
         latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
