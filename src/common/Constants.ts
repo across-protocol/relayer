@@ -143,6 +143,14 @@ export const MAX_REORG_DISTANCE: { [chainId: number]: number } = {
   421613: 0,
 };
 
+// Reasonable default maxFeePerGas and maxPriorityFeePerGas scalers for each chain.
+export const DEFAULT_GAS_FEE_SCALERS: {
+  [chainId: number]: { maxFeePerGasScaler: number; maxPriorityFeePerGasScaler: number };
+} = {
+  1: { maxFeePerGasScaler: 3, maxPriorityFeePerGasScaler: 1.2 },
+  10: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
+};
+
 // This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
 export const BLOCK_NUMBER_TTL = 60;
 
