@@ -35,6 +35,18 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
+"@across-protocol/optimism-sdk@2.1.3":
+  version "2.1.3"
+  resolved "https://registry.yarnpkg.com/@across-protocol/optimism-sdk/-/optimism-sdk-2.1.3.tgz#d03e61ee62cfdade932b4b616ccc88720ea435c3"
+  integrity sha512-cjEr5+deePV632MMezI9fxMZI+BBsi55Sm7RkaSrY13igsCvkERleXPSHTtT8srT9lVcIZWsxNE3O9GtE1R83g==
+  dependencies:
+    "@eth-optimism/contracts" "0.6.0"
+    "@eth-optimism/contracts-bedrock" "0.14.0"
+    "@eth-optimism/core-utils" "0.12.0"
+    lodash "^4.17.21"
+    merkletreejs "^0.2.27"
+    rlp "^2.2.7"
+
 "@across-protocol/sdk-v2@0.8.2":
   version "0.8.2"
   resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.8.2.tgz#53be9495cd1e865c32e9b6f9c5e40bbd1e92d100"
