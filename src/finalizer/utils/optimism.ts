@@ -88,7 +88,15 @@ export async function getOptimismFinalizableMessages(
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER
 ): Promise<CrossChainMessageWithStatus[]> {
   const crossChainMessages = await getCrossChainMessages(chainId, tokensBridged, crossChainMessenger);
-  const messageStatuses = await getMessageStatuses(chainId, crossChainMessages, crossChainMessenger);
+  // Temporarily filter out messages with multiple withdrawals until eth-optimism sdk can handle them:
+  // https://github.com/ethereum-optimism/optimism/issues/5983
+  const messagesWithSingleWithdrawals = crossChainMessages.filter(
+    (message, i) =>
+      !crossChainMessages.some(
+        (otherMessage, j) => i !== j && otherMessage.event.transactionHash === message.event.transactionHash
+      )
+  );
+  const messageStatuses = await getMessageStatuses(chainId, messagesWithSingleWithdrawals, crossChainMessenger);
   logger.debug({
     at: "OptimismFinalizer",
     message: "Optimism message statuses",
