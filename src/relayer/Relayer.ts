@@ -1,3 +1,4 @@
+import { groupBy } from "lodash";
 import {
   BigNumber,
   winston,
@@ -12,7 +13,6 @@ import { createFormatFunction, etherscanLink, formatFeePct, toBN, toBNWei } from
 import { RelayerClients } from "./RelayerClientHelper";
 import { Deposit, DepositWithBlock } from "../interfaces";
 import { RelayerConfig } from "./RelayerConfig";
-import { CONFIG_STORE_VERSION } from "../common";
 
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
@@ -38,17 +38,27 @@ export class Relayer {
       this.config.maxRelayerLookBack,
       this.clients.configStoreClient
     );
-    if (unfilledDeposits.some((x) => x.requiresNewConfigStoreVersion)) {
+
+    const maxVersion = this.clients.configStoreClient.configStoreVersion;
+    const { supportedDeposits = [], unsupportedDeposits = [] } = groupBy(unfilledDeposits, (deposit) =>
+      deposit.version <= maxVersion ? "supportedDeposits" : "unsupportedDeposits"
+    );
+
+    if (unsupportedDeposits.length > 0) {
+      const deposits = unsupportedDeposits.map((unsupported) => {
+        const { originChainId, depositId, transactionHash } = unsupported.deposit;
+        return { originChainId, depositId, version: unsupported.version, transactionHash };
+      });
       this.logger.warn({
-        at: "Relayer",
-        message: "Skipping some deposits because ConfigStore version is not updated, are you using the latest code?",
-        latestVersionSupported: CONFIG_STORE_VERSION,
+        at: "Relayer::checkForUnfilledDepositsAndFill",
+        message: "Skipping deposits that are not supported by this relayer version.",
+        latestVersionSupported: maxVersion,
         latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
+        deposits,
       });
     }
 
-    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = unfilledDeposits
-      .filter((x) => !x.requiresNewConfigStoreVersion)
+    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = supportedDeposits
       // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
       .reduce((agg, curr) => {
         const unfilledAmountUsd = this.clients.profitClient.getFillAmountInUsd(curr.deposit, curr.unfilledAmount);

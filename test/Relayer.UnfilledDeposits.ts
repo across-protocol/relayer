@@ -154,12 +154,14 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: deposit1Complete,
           fillCount: 0,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
         {
           unfilledAmount: deposit2.amount,
           deposit: deposit2Complete,
           fillCount: 0,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
       ]);
   });
@@ -232,12 +234,14 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: deposit1Complete,
           fillCount: 1,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
         {
           unfilledAmount: deposit2.amount,
           deposit: deposit2Complete,
           fillCount: 0,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
       ]);
 
@@ -261,12 +265,14 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: deposit1Complete,
           fillCount: 3,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
         {
           unfilledAmount: deposit2.amount,
           deposit: deposit2Complete,
           fillCount: 0,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
       ]);
 
@@ -288,6 +294,7 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: deposit2Complete,
           fillCount: 0,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
       ]);
   });
@@ -315,6 +322,7 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: deposit1Complete,
           fillCount: 0,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
       ]);
   });
@@ -404,6 +412,7 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: deposit1Complete,
           fillCount: 1,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
       ]);
 
@@ -447,6 +456,7 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: depositWithSpeedUp,
           fillCount: 1,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
       ]);
   });
