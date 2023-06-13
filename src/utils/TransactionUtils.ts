@@ -47,9 +47,11 @@ export async function runTransaction(
 
   try {
     const priorityFeeScaler =
-      Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) || DEFAULT_GAS_FEE_SCALERS[chainId].maxPriorityFeePerGasScaler;
+      Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) ||
+      DEFAULT_GAS_FEE_SCALERS[chainId].maxPriorityFeePerGasScaler;
     const maxFeePerGasScaler =
-      Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) || DEFAULT_GAS_FEE_SCALERS[chainId].maxFeePerGasScaler;
+      Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
+      DEFAULT_GAS_FEE_SCALERS[chainId].maxFeePerGasScaler;
 
     const gas = await getGasPrice(contract.provider, priorityFeeScaler, maxFeePerGasScaler);
     logger.debug({
