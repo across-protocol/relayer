@@ -102,7 +102,24 @@ export async function getOptimismFinalizableMessages(
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER
 ): Promise<CrossChainMessageWithStatus[]> {
   const crossChainMessages = await getCrossChainMessages(chainId, tokensBridged, crossChainMessenger);
-  const messageStatuses = await getMessageStatuses(chainId, crossChainMessages, crossChainMessenger);
+  // Temporary fix until we're well past the bedrock upgrade. Remove non Bedrock messages.
+  // Example way to detect whether message is bedrock:
+  // - https://github.com/ethereum-optimism/optimism/blob/develop/packages/sdk/src/cross-chain-messenger.ts#L332
+  // - https://github.com/ethereum-optimism/optimism/blob/develop/packages/core-utils/src/optimism/encoding.ts#L34
+  const bedrockMessages = (
+    await Promise.all(
+      crossChainMessages.map(async (crossChainMessage) => {
+        const resolved = await crossChainMessenger.toCrossChainMessage(crossChainMessage.message);
+        const version = BigNumber.from(resolved.messageNonce).shr(240).toNumber();
+        if (version !== 1) {
+          return undefined;
+        } else {
+          return crossChainMessage;
+        }
+      })
+    )
+  ).filter((m) => m !== undefined);
+  const messageStatuses = await getMessageStatuses(chainId, bedrockMessages, crossChainMessenger);
   logger.debug({
     at: "OptimismFinalizer",
     message: "Optimism message statuses",
