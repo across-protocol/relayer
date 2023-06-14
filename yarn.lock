@@ -35,14 +35,14 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk-v2@0.8.1":
-  version "0.8.1"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.8.1.tgz#95f3694b74f74e2a319df3587a182b2842d05f32"
-  integrity sha512-d9FKJhrg0m3BtqfDww/zy6mokdRISTzvoGF2VMb5i8unI5YsIwuAQKCTZqzwwE4jONvVLPZu0e4u8J+lmF8Ixg==
+"@across-protocol/sdk-v2@0.8.2":
+  version "0.8.2"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.8.2.tgz#53be9495cd1e865c32e9b6f9c5e40bbd1e92d100"
+  integrity sha512-INOZXX4DFi1E5lVBPf9nAve4WNCO1RvIYemqaYUUyeWyf5j85+74r220mjqm3ytGouX6ZmgzjsVEIhkO/mF6Sw==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/contracts-v2" "2.3.0"
-    "@eth-optimism/sdk" "^1.6.0"
+    "@eth-optimism/sdk" "^2.1.0"
     "@uma/financial-templates-lib" "^2.32.11"
     "@uma/sdk" "^0.34.1"
     axios "^0.27.2"
@@ -383,26 +383,6 @@
     "@openzeppelin/contracts-upgradeable" "4.7.3"
     ethers "^5.7.0"
 
-"@eth-optimism/contracts-bedrock@0.8.3":
-  version "0.8.3"
-  resolved "https://registry.yarnpkg.com/@eth-optimism/contracts-bedrock/-/contracts-bedrock-0.8.3.tgz#a73302b57a61d9516abf80c136bf8298327178d5"
-  integrity sha512-GGe09aHb0ucyh9u1+xMxVs9HUPyAa4ojVARjXztAdGmliash4Kmn8o95qmCM7eQeaMMdVYKKdVk21lqekIhZ2w==
-  dependencies:
-    "@eth-optimism/core-utils" "^0.10.1"
-    "@openzeppelin/contracts" "4.7.3"
-    "@openzeppelin/contracts-upgradeable" "4.7.3"
-    ethers "^5.7.0"
-    hardhat "^2.9.6"
-
-"@eth-optimism/contracts@0.5.37":
-  version "0.5.37"
-  resolved "https://registry.yarnpkg.com/@eth-optimism/contracts/-/contracts-0.5.37.tgz#3aaca1ca1f49ef895d4165cc7bf29c8d1f5b0f56"
-  integrity sha512-HbNUUDIM1dUAM0hWPfGp3l9/Zte40zi8QhVbUSIwdYRA7jG7cZgbteqavrjW8wwFqxkWX9IrtA0KAR7pNlSAIQ==
-  dependencies:
-    "@eth-optimism/core-utils" "0.10.1"
-    "@ethersproject/abstract-provider" "^5.7.0"
-    "@ethersproject/abstract-signer" "^5.7.0"
-
 "@eth-optimism/contracts@0.6.0":
   version "0.6.0"
   resolved "https://registry.yarnpkg.com/@eth-optimism/contracts/-/contracts-0.6.0.tgz#15ae76222a9b4d958a550cafb1960923af613a31"
@@ -420,28 +400,6 @@
     "@eth-optimism/core-utils" "0.12.0"
     "@ethersproject/abstract-provider" "^5.7.0"
     "@ethersproject/abstract-signer" "^5.7.0"
-
-"@eth-optimism/core-utils@0.10.1", "@eth-optimism/core-utils@^0.10.1":
-  version "0.10.1"
-  resolved "https://registry.yarnpkg.com/@eth-optimism/core-utils/-/core-utils-0.10.1.tgz#44515fbca627532a24c6fd433395f00be8525832"
-  integrity sha512-IJvG5UtYvyz6An9QdohlCLoeB3NBFxx2lRJKlPzvYYlfugUNNCHsajRIWIwJTcPRRma0WPd46JUsKACLJDdNrA==
-  dependencies:
-    "@ethersproject/abi" "^5.7.0"
-    "@ethersproject/abstract-provider" "^5.7.0"
-    "@ethersproject/address" "^5.7.0"
-    "@ethersproject/bignumber" "^5.7.0"
-    "@ethersproject/bytes" "^5.7.0"
-    "@ethersproject/constants" "^5.7.0"
-    "@ethersproject/contracts" "^5.7.0"
-    "@ethersproject/hash" "^5.7.0"
-    "@ethersproject/keccak256" "^5.7.0"
-    "@ethersproject/properties" "^5.7.0"
-    "@ethersproject/providers" "^5.7.0"
-    "@ethersproject/rlp" "^5.7.0"
-    "@ethersproject/transactions" "^5.7.0"
-    "@ethersproject/web" "^5.7.0"
-    bufio "^1.0.7"
-    chai "^4.3.4"
 
 "@eth-optimism/core-utils@0.12.0", "@eth-optimism/core-utils@^0.12.0":
   version "0.12.0"
@@ -477,18 +435,6 @@
     chai "^4.3.4"
     ethers "^5.5.4"
     lodash "^4.17.21"
-
-"@eth-optimism/sdk@^1.6.0":
-  version "1.6.9"
-  resolved "https://registry.yarnpkg.com/@eth-optimism/sdk/-/sdk-1.6.9.tgz#0ee019b910cc259d6a88d4e9be22d3a24853476a"
-  integrity sha512-hHdwvNDJZivcEnCMsuOmIHjgYNN7bT6ZlhP9BGDNaQBqeWYR52uE9bLK997uj/Ot9FLVxEAjuvoWnkwUqFCCgw==
-  dependencies:
-    "@eth-optimism/contracts" "0.5.37"
-    "@eth-optimism/contracts-bedrock" "0.8.3"
-    "@eth-optimism/core-utils" "0.10.1"
-    lodash "^4.17.21"
-    merkletreejs "^0.2.27"
-    rlp "^2.2.7"
 
 "@eth-optimism/sdk@^2.1.0":
   version "2.1.0"
@@ -7426,7 +7372,7 @@ hardhat-watcher@^2.1.1:
   dependencies:
     chokidar "^3.4.3"
 
-hardhat@^2.14.0, hardhat@^2.9.3, hardhat@^2.9.6:
+hardhat@^2.14.0, hardhat@^2.9.3:
   version "2.14.0"
   resolved "https://registry.yarnpkg.com/hardhat/-/hardhat-2.14.0.tgz#b60c74861494aeb1b50803cf04cc47865a42b87a"
   integrity sha512-73jsInY4zZahMSVFurSK+5TNCJTXMv+vemvGia0Ac34Mm19fYp6vEPVGF3sucbumszsYxiTT2TbS8Ii2dsDSoQ==
