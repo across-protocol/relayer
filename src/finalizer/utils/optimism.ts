@@ -2,7 +2,7 @@ import * as optimismSDK from "@eth-optimism/sdk";
 import { Withdrawal } from "..";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { L1Token, TokensBridged } from "../../interfaces";
-import { convertFromWei, getCachedProvider, groupObjectCountsByProp, Wallet, winston } from "../../utils";
+import { BigNumber, convertFromWei, getCachedProvider, groupObjectCountsByProp, Wallet, winston } from "../../utils";
 import { Multicall2Call } from "../../common";
 
 type OVM_CHAIN_ID = 10;
@@ -88,9 +88,26 @@ export async function getOptimismFinalizableMessages(
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER
 ): Promise<CrossChainMessageWithStatus[]> {
   const crossChainMessages = await getCrossChainMessages(chainId, tokensBridged, crossChainMessenger);
+  // Temporary fix until we're well past the bedrock upgrade. Remove non Bedrock messages.
+  // Example way to detect whether message is bedrock:
+  // - https://github.com/ethereum-optimism/optimism/blob/develop/packages/sdk/src/cross-chain-messenger.ts#L332
+  // - https://github.com/ethereum-optimism/optimism/blob/develop/packages/core-utils/src/optimism/encoding.ts#L34
+  const bedrockMessages = (
+    await Promise.all(
+      crossChainMessages.map(async (crossChainMessage) => {
+        const resolved = await crossChainMessenger.toCrossChainMessage(crossChainMessage.message);
+        const version = BigNumber.from(resolved.messageNonce).shr(240).toNumber();
+        if (version !== 1) {
+          return undefined;
+        } else {
+          return crossChainMessage;
+        }
+      })
+    )
+  ).filter((m) => m !== undefined);
   // Temporarily filter out messages with multiple withdrawals until eth-optimism sdk can handle them:
   // https://github.com/ethereum-optimism/optimism/issues/5983
-  const messagesWithSingleWithdrawals = crossChainMessages.filter(
+  const messagesWithSingleWithdrawals = bedrockMessages.filter(
     (message, i) =>
       !crossChainMessages.some(
         (otherMessage, j) => i !== j && otherMessage.event.transactionHash === message.event.transactionHash
