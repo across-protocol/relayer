@@ -110,7 +110,12 @@ export async function getGasPrice(
     // Polygon, for some or other reason, does not correctly return an appropriate maxPriorityFeePerGas. Set the
     // maxPriorityFeePerGas to the maxFeePerGas * 5 for now as a temp workaround.
     if (chainInfo.chainId === 137) {
-      feeData.maxPriorityFeePerGas = toGWei((await getPolygonPriorityFee()).fastest.toString());
+      try {
+        feeData.maxPriorityFeePerGas = toGWei((await getPolygonPriorityFee()).fastest.toString());
+      } catch (err) {
+        // hardcode the gas
+        feeData.maxPriorityFeePerGas = toGWei(1000);
+      }
     }
     if (feeData.maxPriorityFeePerGas.gt(feeData.maxFeePerGas)) {
       feeData.maxFeePerGas = scaleByNumber(feeData.maxPriorityFeePerGas, 1.5);
