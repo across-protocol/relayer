@@ -148,7 +148,7 @@ export const DEFAULT_GAS_FEE_SCALERS: {
   [chainId: number]: { maxFeePerGasScaler: number; maxPriorityFeePerGasScaler: number };
 } = {
   1: { maxFeePerGasScaler: 3, maxPriorityFeePerGasScaler: 1.2 },
-  10: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
+  10: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.05 },
 };
 
 // This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
