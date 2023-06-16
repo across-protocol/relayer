@@ -637,7 +637,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
       await updateAllClients();
       for (const leaf of poolRebalanceLeaves) {
-        const lastRunningBalance = hubPoolClient.getRunningBalanceBeforeBlockForChain(
+        const { runningBalance } = hubPoolClient.getRunningBalanceBeforeBlockForChain(
           await hubPool.provider.getBlockNumber(),
           leaf.chainId.toNumber(),
           l1Token_1.address
@@ -645,7 +645,7 @@ describe("Dataworker: Build merkle roots", async function () {
         // Since we fully executed the root bundle, we need to add the running balance for the chain to the expected
         // running balances since the data worker adds these prior running balances.
         expectedRunningBalances[leaf.chainId.toNumber()][l1Token_1.address] =
-          expectedRunningBalances[leaf.chainId.toNumber()][l1Token_1.address].add(lastRunningBalance);
+          expectedRunningBalances[leaf.chainId.toNumber()][l1Token_1.address].add(runningBalance);
       }
 
       // Execute 1 slow relay leaf:

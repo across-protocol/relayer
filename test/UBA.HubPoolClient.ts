@@ -1,5 +1,6 @@
+import { relayFeeCalculator } from "@across-protocol/sdk-v2";
 import { random } from "lodash";
-import { UBAClient } from "../src/utils";
+import { UBAClient } from "../src/clients";
 import {
   BigNumber,
   Contract,
@@ -15,6 +16,7 @@ import {
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 
 type Event = ethers.Event;
+type RelayFeeCalculatorConfig = relayFeeCalculator.RelayFeeCalculatorConfig;
 
 let spokePoolClients: { [chainId: number]: MockSpokePoolClient };
 let hubPool: Contract, dai: Contract, weth: Contract;
@@ -64,7 +66,8 @@ describe("UBA: HubPool Events", async function () {
       }
     }
 
-    uba = new UBAClient(chainIds, hubPoolClient, spokePoolClients);
+    // @todo: The RelayFeeCalculatorConfig should be mocked.
+    uba = new UBAClient(chainIds, hubPoolClient, spokePoolClients, {} as RelayFeeCalculatorConfig);
 
     await Promise.all(Object.values(spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
     await hubPoolClient.update();

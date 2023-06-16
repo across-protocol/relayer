@@ -1,14 +1,17 @@
 import hre from "hardhat";
-import { buildPoolRebalanceLeafTree, buildPoolRebalanceLeaves, createSpyLogger, randomAddress } from "./utils";
-import { SignerWithAddress, expect, ethers, Contract, deployConfigStore, toBNWei, toBN, BigNumber } from "./utils";
-import { ConfigStoreClient, HubPoolClient } from "../src/clients";
+import { random } from "lodash";
+import { buildPoolRebalanceLeafTree, buildPoolRebalanceLeaves, createSpyLogger, randomAddress, winston } from "./utils";
+import { deployConfigStore, SignerWithAddress, expect, ethers, Contract, toBNWei, toBN, BigNumber } from "./utils";
+import { ConfigStoreClient, HubPoolClient, UBA_MIN_CONFIG_STORE_VERSION } from "../src/clients";
 import * as constants from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { ProposedRootBundle } from "../src/interfaces";
+import { DEFAULT_CONFIG_STORE_VERSION, MockConfigStoreClient, MockHubPoolClient } from "./mocks";
 
-let hubPool: Contract, timer: Contract;
+let hubPool: Contract, configStore: Contract, timer: Contract;
 let l1Token_1: Contract, l1Token_2: Contract;
 let dataworker: SignerWithAddress, owner: SignerWithAddress;
+let logger: winston.Logger;
 
 let hubPoolClient: HubPoolClient;
 let configStoreClient: ConfigStoreClient;
@@ -39,9 +42,15 @@ describe("HubPoolClient: RootBundle Events", async function () {
       0
     ));
 
-    const logger = createSpyLogger().spyLogger;
-    const { configStore } = await deployConfigStore(owner, [l1Token_1, l1Token_2]);
-    configStoreClient = new ConfigStoreClient(logger, configStore);
+    logger = createSpyLogger().spyLogger;
+    ({ configStore } = await deployConfigStore(owner, [l1Token_1, l1Token_2]));
+    configStoreClient = new ConfigStoreClient(
+      logger,
+      configStore,
+      { fromBlock: 0 },
+      constants.CONFIG_STORE_VERSION,
+      []
+    );
     hubPoolClient = new HubPoolClient(logger, hubPool, configStoreClient);
   });
 
@@ -167,6 +176,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
   it("gets most recent RootBundleExecuted event for chainID and L1 token", async function () {
     const { tree: tree1, leaves: leaves1 } = await constructSimpleTree(toBNWei(100));
     const { tree: tree2, leaves: leaves2 } = await constructSimpleTree(toBNWei(200));
+    let runningBalance: BigNumber, incentiveBalance: BigNumber;
 
     await configStoreClient.update();
     await hubPoolClient.update();
@@ -180,53 +190,58 @@ describe("HubPoolClient: RootBundle Events", async function () {
     await hubPool.connect(dataworker).executeRootBundle(...Object.values(leaves1[1]), tree1.getHexProof(leaves1[1]));
     const firstRootBundleBlockNumber = await hubPool.provider.getBlockNumber();
 
-    expect(
-      hubPoolClient.getRunningBalanceBeforeBlockForChain(
-        firstRootBundleBlockNumber,
-        constants.originChainId,
-        l1Token_1.address
-      )
-    ).to.equal(toBN(0));
+    ({ runningBalance, incentiveBalance } = hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      firstRootBundleBlockNumber,
+      constants.originChainId,
+      l1Token_1.address
+    ));
+    expect(runningBalance.eq(0)).to.be.true;
+    expect(incentiveBalance.eq(0)).to.be.true;
     await hubPoolClient.update();
 
     // Happy case where client returns most recent running balance for chain ID and l1 token.
-    expect(
-      hubPoolClient.getRunningBalanceBeforeBlockForChain(
-        firstRootBundleBlockNumber,
-        constants.originChainId,
-        l1Token_1.address
-      )
-    ).to.equal(toBNWei(100));
+    ({ runningBalance, incentiveBalance } = hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      firstRootBundleBlockNumber,
+      constants.originChainId,
+      l1Token_1.address
+    ));
+    expect(runningBalance.eq(toBNWei(100))).to.be.true;
+    expect(incentiveBalance.eq(0)).to.be.true;
 
     // Target block is before event.
-    expect(hubPoolClient.getRunningBalanceBeforeBlockForChain(0, constants.originChainId, l1Token_1.address)).to.equal(
-      toBN(0)
-    );
+    ({ runningBalance, incentiveBalance } = hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      0,
+      constants.originChainId,
+      l1Token_1.address
+    ));
+    expect(runningBalance.eq(0)).to.be.true;
+    expect(incentiveBalance.eq(0)).to.be.true;
 
     // chain ID and L1 token combination not found.
-    expect(
-      hubPoolClient.getRunningBalanceBeforeBlockForChain(
-        firstRootBundleBlockNumber,
-        constants.destinationChainId,
-        l1Token_1.address
-      )
-    ).to.equal(toBN(0));
-    expect(
-      hubPoolClient.getRunningBalanceBeforeBlockForChain(
-        firstRootBundleBlockNumber,
-        constants.originChainId,
-        timer.address
-      )
-    ).to.equal(toBN(0));
+    ({ runningBalance, incentiveBalance } = hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      firstRootBundleBlockNumber,
+      constants.destinationChainId,
+      l1Token_1.address
+    ));
+    expect(runningBalance.eq(0)).to.be.true;
+    expect(incentiveBalance.eq(0)).to.be.true;
+
+    ({ runningBalance, incentiveBalance } = hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      firstRootBundleBlockNumber,
+      constants.originChainId,
+      timer.address
+    ));
+    expect(runningBalance.eq(0)).to.be.true;
+    expect(incentiveBalance.eq(0)).to.be.true;
 
     // Running balance at index of L1 token returned:
-    expect(
-      hubPoolClient.getRunningBalanceBeforeBlockForChain(
-        firstRootBundleBlockNumber,
-        constants.originChainId,
-        l1Token_2.address
-      )
-    ).to.equal(toBNWei(200));
+    ({ runningBalance, incentiveBalance } = hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      firstRootBundleBlockNumber,
+      constants.originChainId,
+      l1Token_2.address
+    ));
+    expect(runningBalance.eq(toBNWei(200))).to.be.true;
+    expect(incentiveBalance.eq(0)).to.be.true;
 
     // Propose and execute another root bundle:
     await hubPool
@@ -239,20 +254,21 @@ describe("HubPoolClient: RootBundle Events", async function () {
     await hubPoolClient.update();
 
     // Grabs most up to date running balance for block:
-    expect(
-      hubPoolClient.getRunningBalanceBeforeBlockForChain(
-        secondRootBundleBlockNumber,
-        constants.originChainId,
-        l1Token_1.address
-      )
-    ).to.equal(toBNWei(200)); // Grabs second running balance
-    expect(
-      hubPoolClient.getRunningBalanceBeforeBlockForChain(
-        firstRootBundleBlockNumber,
-        constants.originChainId,
-        l1Token_1.address
-      )
-    ).to.equal(toBNWei(100)); // Grabs first running balance
+    ({ runningBalance, incentiveBalance } = hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      secondRootBundleBlockNumber,
+      constants.originChainId,
+      l1Token_1.address
+    ));
+    expect(runningBalance.eq(toBNWei(200))).to.be.true; // Grabs second running balance
+    expect(incentiveBalance.eq(0)).to.be.true;
+
+    ({ runningBalance, incentiveBalance } = hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      firstRootBundleBlockNumber,
+      constants.originChainId,
+      l1Token_1.address
+    ));
+    expect(runningBalance.eq(toBNWei(100))).to.be.true; // Grabs first running balance
+    expect(incentiveBalance.eq(0)).to.be.true;
   });
 
   it("returns proposed and disputed bundles", async function () {
@@ -399,5 +415,142 @@ describe("HubPoolClient: RootBundle Events", async function () {
     expect(() => hubPoolClient.getSpokePoolForBlock(11, firstUpdateBlockNumber - 1)).to.throw(
       /No cross chain contract found before block/
     );
+  });
+
+  describe("HubPoolClient: UBA-specific runningBalances tests", async function () {
+    const chainIds = [10, 137, 42161];
+    const maxConfigStoreVersion = UBA_MIN_CONFIG_STORE_VERSION + 1;
+    let hubPoolClient: MockHubPoolClient, configStoreClient: MockConfigStoreClient;
+
+    beforeEach(async function () {
+      const { configStore } = await deployConfigStore(owner, []);
+      configStoreClient = new MockConfigStoreClient(
+        logger,
+        configStore,
+        { fromBlock: 0 },
+        maxConfigStoreVersion,
+        chainIds,
+        true
+      );
+      await configStoreClient.update();
+
+      hubPoolClient = new MockHubPoolClient(logger, hubPool, configStoreClient);
+      await hubPoolClient.update();
+    });
+
+    // This test injects artificial events, so both ConfigStoreClient and HubPoolClient must be mocked.
+    it("extracts running incentive balances", async function () {
+      for (let version = DEFAULT_CONFIG_STORE_VERSION; version < maxConfigStoreVersion; ++version) {
+        // Apply a new version in the configStore.
+        configStoreClient.updateGlobalConfig("VERSION", `${version}`);
+        await configStoreClient.update();
+
+        const bundleEvaluationBlockNumbers = chainIds.map(() => toBN(random(100, 1000, false)));
+        const proposalEvent = hubPoolClient.proposeRootBundle(
+          Math.floor(Date.now() / 1000) - 1, // challengePeriodEndTimestamp
+          chainIds.length, // poolRebalanceLeafCount
+          bundleEvaluationBlockNumbers
+        );
+        hubPoolClient.addEvent(proposalEvent);
+        await hubPoolClient.update();
+
+        // Propose a root bundle and execute the associated leaves.
+        const proposedRootBundle = hubPoolClient.getLatestProposedRootBundle();
+        const leafEvents = chainIds.map((chainId, idx) => {
+          const groupIndex = toBN(chainId === hubPoolClient.chainId ? 0 : 1);
+          const l1Tokens = [l1Token_1.address, l1Token_2.address];
+
+          // runningBalances format is version-dependent.
+          const runningBalances =
+            version < UBA_MIN_CONFIG_STORE_VERSION
+              ? l1Tokens.map(() => toBNWei(random(-1000, 1000).toPrecision(5)))
+              : l1Tokens.concat(l1Tokens).map(() => toBNWei(random(-1000, 1000).toPrecision(5)));
+
+          const leafEvent = hubPoolClient.executeRootBundle(
+            groupIndex,
+            idx,
+            toBN(chainId),
+            l1Tokens,
+            l1Tokens.map(() => toBN(0)), // bundleLpFees
+            l1Tokens.map(() => toBN(0)), // netSendAmounts
+            runningBalances
+          );
+          hubPoolClient.addEvent(leafEvent);
+          return leafEvent;
+        });
+        await hubPoolClient.update();
+
+        const executedLeaves = hubPoolClient.getExecutedLeavesForRootBundle(
+          proposedRootBundle,
+          hubPoolClient.latestBlockNumber as number
+        );
+        expect(executedLeaves.length).to.equal(leafEvents.length);
+
+        executedLeaves.forEach((executedLeaf, idx) => {
+          const { l1Tokens, runningBalances, incentiveBalances } = executedLeaf;
+
+          const nTokens = l1Tokens.length;
+          expect(runningBalances.length).to.equal(nTokens);
+          expect(incentiveBalances.length).to.equal(nTokens);
+
+          const leafEvent = leafEvents[idx];
+          expect(leafEvent).to.not.be.undefined;
+
+          // Must truncate runningBalances under UBA.
+          const expectedRunningBalances =
+            version < UBA_MIN_CONFIG_STORE_VERSION
+              ? leafEvent?.args["runningBalances"]
+              : leafEvent?.args["runningBalances"].slice(0, leafEvent.args["l1Tokens"].length);
+          expectedRunningBalances.forEach((balance, idx) => expect(balance.eq(runningBalances[idx])).to.be.true);
+
+          // Must generate 0 incentiveBalances pre-UBA.
+          const expectedIncentiveBalances =
+            version < UBA_MIN_CONFIG_STORE_VERSION
+              ? expectedRunningBalances.map(() => toBN(0))
+              : expectedRunningBalances.slice(nTokens, nTokens);
+          expectedIncentiveBalances.forEach((balance, idx) => expect(balance.eq(incentiveBalances[idx])).to.be.true);
+        });
+      }
+    });
+
+    // This test injects artificial events, so both ConfigStoreClient and HubPoolClient must be mocked.
+    it("handles zero-length runningBalances", async function () {
+      for (let version = DEFAULT_CONFIG_STORE_VERSION; version <= maxConfigStoreVersion; ++version) {
+        // Apply a new version in the configStore.
+        configStoreClient.updateGlobalConfig("VERSION", `${version}`);
+        await configStoreClient.update();
+
+        const bundleEvaluationBlockNumbers = chainIds.map(() => toBN(random(100, 1000, false)));
+        const proposalEvent = hubPoolClient.proposeRootBundle(
+          Math.floor(Date.now() / 1000) - 1, // challengePeriodEndTimestamp
+          chainIds.length, // poolRebalanceLeafCount
+          bundleEvaluationBlockNumbers
+        );
+        hubPoolClient.addEvent(proposalEvent);
+        await hubPoolClient.update();
+
+        // Propose a root bundle and execute the associated leaves.
+        const proposedRootBundle = hubPoolClient.getLatestProposedRootBundle();
+        const leafEvents = chainIds.map((chainId, idx) => {
+          const groupIndex = toBN(chainId === hubPoolClient.chainId ? 0 : 1);
+          const leafEvent = hubPoolClient.executeRootBundle(groupIndex, idx, toBN(chainId), [], [], [], []);
+          hubPoolClient.addEvent(leafEvent);
+          return leafEvent;
+        });
+        await hubPoolClient.update();
+
+        const executedLeaves = hubPoolClient.getExecutedLeavesForRootBundle(
+          proposedRootBundle,
+          hubPoolClient.latestBlockNumber as number
+        );
+        expect(executedLeaves.length).to.equal(leafEvents.length);
+
+        executedLeaves.forEach((executedLeaf) => {
+          expect(executedLeaf.l1Tokens.length).to.equal(0);
+          expect(executedLeaf.runningBalances.length).to.equal(0);
+          expect(executedLeaf.incentiveBalances.length).to.equal(0);
+        });
+      }
+    });
   });
 });
