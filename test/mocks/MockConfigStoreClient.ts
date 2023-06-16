@@ -12,8 +12,9 @@ export class MockConfigStoreClient extends clients.mocks.MockConfigStoreClient {
     configStore: Contract,
     eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
     configStoreVersion = CONFIG_STORE_VERSION,
-    enabledChainIds = CHAIN_ID_LIST_INDICES
+    enabledChainIds = CHAIN_ID_LIST_INDICES,
+    mockUpdate = false
   ) {
-    super(logger, configStore, eventSearchConfig, configStoreVersion, enabledChainIds);
+    super(logger, configStore, eventSearchConfig, configStoreVersion, enabledChainIds, mockUpdate);
   }
 }
