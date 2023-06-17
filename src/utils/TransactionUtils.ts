@@ -2,7 +2,7 @@ import { typeguards } from "@across-protocol/sdk-v2";
 import { AugmentedTransaction } from "../clients";
 import { winston, Contract, getContractInfoFromAddress, fetch, ethers, Wallet } from "../utils";
 import { DEFAULT_GAS_FEE_SCALERS, multicall3Addresses } from "../common";
-import { toBNWei, BigNumber, toBN, toGWei, TransactionResponse } from "../utils";
+import { isDefined, toBNWei, BigNumber, toBN, toGWei, TransactionResponse } from "../utils";
 import { getAbi } from "@uma/contracts-node";
 import dotenv from "dotenv";
 import { FeeData } from "@ethersproject/abstract-provider";
@@ -54,6 +54,15 @@ export async function runTransaction(
       DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
 
     const gas = await getGasPrice(contract.provider, priorityFeeScaler, maxFeePerGasScaler);
+
+    if (
+      isDefined(gasLimit) &&
+      contract.address === multicall3Addresses[chainId] &&
+      method.toLowerCase() === "aggregate"
+    ) {
+      logger.debug({ at: "runTransaction", message: "Padding gas for multicall transaction.", gasLimit });
+      gasLimit = gasLimit.mul("1.2");
+    }
     logger.debug({
       at: "TxUtil",
       message: "Send tx",
@@ -63,6 +72,7 @@ export async function runTransaction(
       value,
       nonce,
       gas,
+      gasLimit,
     });
     // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
     // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
