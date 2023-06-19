@@ -1,20 +1,20 @@
-import { utils } from "@across-protocol/sdk-v2";
 import { ethers } from "../utils";
+import { utils } from "@across-protocol/sdk-v2";
 
-// This version should increase each time the ConfigStore's config changes, otherwise relayer and dataworker logic
-// will stop working to protect the user's funds.
-export const CONFIG_STORE_VERSION = utils.CONFIG_STORE_VERSION;
-
-// Do not change this value. Set 0 as the default version so that all timestamps before the first version update are
-// deemed valid by ConfigStoreClient.hasValidConfigStoreVersionForTimestamp().
-export const DEFAULT_CONFIG_STORE_VERSION = 0;
-
-// This list contains all chains that Across supports, although some of the chains could be currently disabled.
+// This array contains all chains that Across supports, although some of the chains could be currently disabled.
 // The order of the chains is important to not change, as the dataworker proposes "bundle block numbers" per chain
-// in the same order as the following list. To add a new chain ID, append it to the end of the list, never delete
+// in the same order as the following list. To add a new chain ID, append it to the end of the list. Never delete
 // a chain ID. The on-chain ConfigStore should store a list of enabled/disabled chain ID's that are a subset
 // of this list, so this list is simply the list of all possible Chain ID's that Across could support.
 export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
+
+// Maximum supported version of the configuration loaded into the Across ConfigStore.
+// It protects bots from running outdated code against newer version of the on-chain config store.
+// @dev Incorrectly setting this value may lead to incorrect behaviour and potential loss of funds.
+export const CONFIG_STORE_VERSION = 1;
+
+// The first version where UBA is in effect.
+export const { UBA_MIN_CONFIG_STORE_VERSION } = utils;
 
 export const RELAYER_MIN_FEE_PCT = 0.0003;
 
@@ -68,7 +68,7 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   1000: {
     1: 32, // Justified block
-    10: 0,
+    10: 60,
     137: 100, // Probabilistically safe level based on historic Polygon reorgs
     288: 0,
     42161: 0,
@@ -78,7 +78,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
   },
   100: {
     1: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
-    10: 0,
+    10: 60,
     137: 80,
     288: 0,
     42161: 0,
@@ -138,13 +138,21 @@ export const IGNORED_HUB_EXECUTED_BUNDLES: number[] = [];
 // This is intended to be conservative.
 export const MAX_REORG_DISTANCE: { [chainId: number]: number } = {
   1: 64,
-  10: 0,
+  10: 120,
   137: 256,
   288: 0,
   42161: 0,
   // Testnets:
   5: 0,
   421613: 0,
+};
+
+// Reasonable default maxFeePerGas and maxPriorityFeePerGas scalers for each chain.
+export const DEFAULT_GAS_FEE_SCALERS: {
+  [chainId: number]: { maxFeePerGasScaler: number; maxPriorityFeePerGasScaler: number };
+} = {
+  1: { maxFeePerGasScaler: 3, maxPriorityFeePerGasScaler: 1.2 },
+  10: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
 };
 
 // This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.

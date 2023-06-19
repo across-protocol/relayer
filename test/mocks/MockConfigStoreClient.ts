@@ -1,14 +1,20 @@
-import { AcrossConfigStoreClient } from "../../src/clients";
-import { DEFAULT_CONFIG_STORE_VERSION } from "../../src/common";
+import { clients } from "@across-protocol/sdk-v2";
+import { CONFIG_STORE_VERSION, CHAIN_ID_LIST_INDICES } from "../../src/common";
+import { EventSearchConfig, MakeOptional, winston } from "../../src/utils";
+import { Contract } from "../utils";
 
-export class MockConfigStoreClient extends AcrossConfigStoreClient {
-  public configStoreVersion = DEFAULT_CONFIG_STORE_VERSION;
+export const DEFAULT_CONFIG_STORE_VERSION = clients.DEFAULT_CONFIG_STORE_VERSION;
 
-  setConfigStoreVersion(version: number): void {
-    this.configStoreVersion = version;
-  }
-
-  override isValidConfigStoreVersion(_version: number): boolean {
-    return this.configStoreVersion >= _version;
+// @dev This mocked class must re-implement any customisations in the local extended ConfigStoreClient.
+export class MockConfigStoreClient extends clients.mocks.MockConfigStoreClient {
+  constructor(
+    logger: winston.Logger,
+    configStore: Contract,
+    eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
+    configStoreVersion = CONFIG_STORE_VERSION,
+    enabledChainIds = CHAIN_ID_LIST_INDICES,
+    mockUpdate = false
+  ) {
+    super(logger, configStore, eventSearchConfig, configStoreVersion, enabledChainIds, mockUpdate);
   }
 }

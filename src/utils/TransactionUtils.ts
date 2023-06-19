@@ -1,6 +1,7 @@
+import { typeguards } from "@across-protocol/sdk-v2";
 import { AugmentedTransaction } from "../clients";
 import { winston, Contract, getContractInfoFromAddress, fetch, ethers, Wallet } from "../utils";
-import { multicall3Addresses } from "../common";
+import { DEFAULT_GAS_FEE_SCALERS, multicall3Addresses } from "../common";
 import { toBNWei, BigNumber, toBN, toGWei, TransactionResponse } from "../utils";
 import { getAbi } from "@uma/contracts-node";
 import dotenv from "dotenv";
@@ -14,11 +15,9 @@ export type TransactionSimulationResult = {
   reason: string;
 };
 
-const isEthersError = (error?: unknown): error is EthersError =>
-  (error as EthersError)?.code in ethers.utils.Logger.errors;
 const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);
 const txnRetryable = (error?: unknown): boolean => {
-  if (isEthersError(error)) {
+  if (typeguards.isEthersError(error)) {
     return txnRetryErrors.has(error.code);
   }
 
@@ -48,9 +47,11 @@ export async function runTransaction(
 
   try {
     const priorityFeeScaler =
-      Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) || undefined;
+      Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) ||
+      DEFAULT_GAS_FEE_SCALERS[chainId]?.maxPriorityFeePerGasScaler;
     const maxFeePerGasScaler =
-      Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) || undefined;
+      Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
+      DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
 
     const gas = await getGasPrice(contract.provider, priorityFeeScaler, maxFeePerGasScaler);
     logger.debug({
@@ -165,7 +166,7 @@ async function getPolygonPriorityFee(): Promise<{
   blockTime: number;
   blockNumber: number;
 }> {
-  const res = await fetch("https://gasstation-mainnet.matic.network");
+  const res = await fetch("https://gasstation.polygon.technology");
   return (await res.json()) as {
     safeLow: number;
     standard: number;

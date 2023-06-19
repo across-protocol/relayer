@@ -29,8 +29,7 @@ import { MockInventoryClient, MockProfitClient } from "./mocks";
 import { Relayer } from "../src/relayer/Relayer";
 import { getUnfilledDeposits, toBN, UnfilledDeposit, utf8ToHex } from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
-import { MockConfigStoreClient } from "./mocks/MockConfigStoreClient";
-import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
+import { MockConfigStoreClient, MockedMultiCallerClient } from "./mocks";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, l1Token: Contract, configStore: Contract;
@@ -155,12 +154,14 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: deposit1Complete,
           fillCount: 0,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
         {
           unfilledAmount: deposit2.amount,
           deposit: deposit2Complete,
           fillCount: 0,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
       ]);
   });
@@ -233,12 +234,14 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: deposit1Complete,
           fillCount: 1,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
         {
           unfilledAmount: deposit2.amount,
           deposit: deposit2Complete,
           fillCount: 0,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
       ]);
 
@@ -262,12 +265,14 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: deposit1Complete,
           fillCount: 3,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
         {
           unfilledAmount: deposit2.amount,
           deposit: deposit2Complete,
           fillCount: 0,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
       ]);
 
@@ -289,6 +294,7 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: deposit2Complete,
           fillCount: 0,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
       ]);
   });
@@ -316,6 +322,7 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: deposit1Complete,
           fillCount: 0,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
       ]);
   });
@@ -405,6 +412,7 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: deposit1Complete,
           fillCount: 1,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
       ]);
 
@@ -448,6 +456,7 @@ describe("Relayer: Unfilled Deposits", async function () {
           deposit: depositWithSpeedUp,
           fillCount: 1,
           invalidFills: [],
+          version: configStoreClient.configStoreVersion,
         },
       ]);
   });

@@ -11,7 +11,7 @@ import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokens
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
 import { buildRelayerRefundTreeWithUnassignedLeafIds, constructPoolRebalanceTree } from "./utils";
 import { buildPoolRebalanceLeafTree, sampleRateModel, getDefaultBlockRange } from "./utils";
-import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient } from "../src/clients";
+import { HubPoolClient, ConfigStoreClient, SpokePoolClient } from "../src/clients";
 import {
   amountToDeposit,
   destinationChainId,
@@ -34,7 +34,7 @@ let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Co
 let l1Token_1: Contract, hubPool: Contract, timer: Contract, configStore: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress, dataworker: SignerWithAddress;
 
-let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
+let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
 let dataworkerInstance: Dataworker;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
@@ -637,7 +637,7 @@ describe("Dataworker: Build merkle roots", async function () {
 
       await updateAllClients();
       for (const leaf of poolRebalanceLeaves) {
-        const lastRunningBalance = hubPoolClient.getRunningBalanceBeforeBlockForChain(
+        const { runningBalance } = hubPoolClient.getRunningBalanceBeforeBlockForChain(
           await hubPool.provider.getBlockNumber(),
           leaf.chainId.toNumber(),
           l1Token_1.address
@@ -645,7 +645,7 @@ describe("Dataworker: Build merkle roots", async function () {
         // Since we fully executed the root bundle, we need to add the running balance for the chain to the expected
         // running balances since the data worker adds these prior running balances.
         expectedRunningBalances[leaf.chainId.toNumber()][l1Token_1.address] =
-          expectedRunningBalances[leaf.chainId.toNumber()][l1Token_1.address].add(lastRunningBalance);
+          expectedRunningBalances[leaf.chainId.toNumber()][l1Token_1.address].add(runningBalance);
       }
 
       // Execute 1 slow relay leaf:

@@ -1,4 +1,5 @@
 import { clients } from "@across-protocol/sdk-v2";
+import { ConfigStoreClient } from "./";
 import { Contract } from "ethers";
 import winston from "winston";
 import { MakeOptional, EventSearchConfig } from "../utils";
@@ -8,7 +9,7 @@ export class HubPoolClient extends clients.HubPoolClient {
   constructor(
     logger: winston.Logger,
     hubPool: Contract,
-    configStoreClient: clients.AcrossConfigStoreClient,
+    configStoreClient: ConfigStoreClient,
     deploymentBlock?: number,
     chainId = 1,
     eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 }
