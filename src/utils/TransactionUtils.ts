@@ -84,7 +84,6 @@ export async function runTransaction(
       });
       return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining);
     } else {
-
       // Empirically we have observed that Ethers can produce nested errors, so we try to recurse down them
       // and log them as clearly as possible. For example:
       // - Top-level (Contract method call): "reason":"cannot estimate gas; transaction may fail or may require manual gas limit" (UNPREDICTABLE_GAS_LIMIT)
