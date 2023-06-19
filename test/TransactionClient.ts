@@ -97,7 +97,7 @@ describe("TransactionClient", async function () {
     txnResponses.slice(1).forEach((txnResponse) => expect(txnResponse.nonce).to.equal(++nonce));
   });
 
-  it("Transaction simulation estimates gasLimit", async function () {
+  it("Transaction simulation result includes gasLimit", async function () {
     const chainId = chainIds[0];
     txnClient.gasLimit = toGWei(random(100_000, 1_000_000).toPrecision(9));
 
@@ -115,11 +115,9 @@ describe("TransactionClient", async function () {
       txns.push(txnRequest);
     }
     const simResults = await txnClient.simulate([txns[0]]);
-    let gasLimit = simResults[0]?.transaction?.gasLimit;
+    const gasLimit = simResults[0]?.transaction?.gasLimit;
     expect(isDefined(gasLimit)).to.be.true;
-    gasLimit = gasLimit as BigNumber; // Force interpretation as BigNumber.
-
-    expect(txnClient.gasLimit.eq(gasLimit)).to.be.true;
+    expect(txnClient.gasLimit.eq(gasLimit ?? toBN(-1))).to.be.true;
   });
 
   it("Transaction submission applies gasLimitMultiplier", async function () {
