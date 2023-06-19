@@ -12,7 +12,6 @@ dotenv.config();
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
   succeed: boolean;
-  gasLimit?: BigNumber;
   reason?: string;
 };
 
@@ -136,7 +135,7 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
     const { contract, method } = transaction;
     const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
     const gasLimit = await contract.estimateGas[method](...args);
-    return { transaction, succeed: true, gasLimit };
+    return { transaction: { ...transaction, gasLimit }, succeed: true };
   } catch (_error) {
     const error = _error as EthersError;
     return { transaction, succeed: false, reason: error.reason };

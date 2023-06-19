@@ -176,7 +176,6 @@ export class MultiCallerClient {
     const batchSimResults = await this.txnClient.simulate(batchTxns);
     let batchesAllSucceeded = true;
     batchSimResults.forEach((result, idx) => {
-      const { gasLimit } = result;
       this.logger[result.succeed ? "debug" : "error"]({
         at: "MultiCallerClient#executeChainTxnQueue",
         message: result.succeed
@@ -185,13 +184,12 @@ export class MultiCallerClient {
         batchTxn: {
           ...result.transaction,
           contract: result.transaction.contract.address,
-          gasLimit,
         },
       });
       if (!result.succeed) {
         batchesAllSucceeded = false;
       } else {
-        batchTxns[idx].gasLimit = gasLimit;
+        batchTxns[idx].gasLimit = result.transaction.gasLimit;
       }
     });
 
@@ -406,7 +404,7 @@ export class MultiCallerClient {
     const txnSimulations = await this.txnClient.simulate(transactions);
     txnSimulations.forEach((txn) => {
       if (txn.succeed) {
-        validTxns.push({ ...txn.transaction, gasLimit: txn.gasLimit });
+        validTxns.push(txn.transaction);
       } else {
         invalidTxns.push(txn);
       }
