@@ -6,13 +6,15 @@ import { toBNWei, winston } from "../utils";
 
 export const txnClientPassResult = "pass";
 
-const randomGasLimit = () => toBNWei(random(21_000, 30_000_000).toPrecision(9));
-
 export class MockedTransactionClient extends TransactionClient {
   public gasLimit: BigNumber | undefined = undefined;
 
   constructor(logger: winston.Logger) {
     super(logger);
+  }
+
+  randomGasLimit(): BigNumber {
+    return toBNWei(random(21_000, 30_000_000).toPrecision(9));
   }
 
   // Forced failures are appended to any list of transaction arguments.
@@ -34,7 +36,7 @@ export class MockedTransactionClient extends TransactionClient {
       txn,
     });
 
-    const gasLimit = this.gasLimit ?? randomGasLimit();
+    const gasLimit = this.gasLimit ?? this.randomGasLimit();
 
     return {
       transaction: { ...txn, gasLimit },
@@ -56,7 +58,7 @@ export class MockedTransactionClient extends TransactionClient {
       chainId: txn.chainId,
       nonce: _nonce,
       hash: ethers.utils.id(`Across-v2-${txn.contract.address}-${txn.method}-${_nonce}`),
-      gasLimit: txn.gasLimit ?? randomGasLimit(),
+      gasLimit: txn.gasLimit ?? this.randomGasLimit(),
     } as TransactionResponse;
 
     this.logger.debug({

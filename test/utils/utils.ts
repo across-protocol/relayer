@@ -26,8 +26,6 @@ export { winston, sinon };
 const assert = chai.assert;
 export { chai, assert };
 
-export { toGWei } from "../../src/utils";
-
 /**
  * Returns true if every key in `expected` is present in `obj` and has the same value.
  * BigNumber's are cast to String to compare to avoid issues with BigNumber versioning.

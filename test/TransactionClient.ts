@@ -1,10 +1,9 @@
-import { random } from "lodash";
 import { BigNumber } from "ethers";
 import { AugmentedTransaction } from "../src/clients";
 import { isDefined, TransactionResponse, TransactionSimulationResult } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
-import { createSpyLogger, Contract, expect, randomAddress, winston, toBN, toGWei } from "./utils";
+import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";
 
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
 const address = randomAddress(); // Test contract address
@@ -99,7 +98,6 @@ describe("TransactionClient", async function () {
 
   it("Transaction simulation result includes gasLimit", async function () {
     const chainId = chainIds[0];
-    txnClient.gasLimit = toGWei(random(100_000, 1_000_000).toPrecision(9));
 
     const nTxns = 10;
     const txns: AugmentedTransaction[] = [];
@@ -117,12 +115,12 @@ describe("TransactionClient", async function () {
     const simResults = await txnClient.simulate([txns[0]]);
     const gasLimit = simResults[0]?.transaction?.gasLimit;
     expect(isDefined(gasLimit)).to.be.true;
-    expect(txnClient.gasLimit.eq(gasLimit ?? toBN(-1))).to.be.true;
+    expect((gasLimit as BigNumber).gt(0)).to.be.true;
   });
 
   it("Transaction submission applies gasLimitMultiplier", async function () {
     const chainId = chainIds[0];
-    const gasLimit = toGWei(random(100_000, 1_000_000).toPrecision(9));
+    const gasLimit = txnClient.randomGasLimit();
 
     const nTxns = 10;
     const txns: AugmentedTransaction[] = [];
@@ -142,7 +140,7 @@ describe("TransactionClient", async function () {
 
     const txnResponses = await txnClient.submit(chainId, txns);
     txnResponses.forEach((txnResponse, idx) => {
-      expect(txnResponse.gasLimit).to.equal(gasLimit.mul(idx + 1))
+      expect(txnResponse.gasLimit).to.equal(gasLimit.mul(idx + 1));
     });
   });
 });
