@@ -43,15 +43,7 @@ export class TransactionClient {
   }
 
   protected async _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
-    const { contract, method, args, value, gasLimitMultiplier } = txn;
-    const gasLimit = txn.gasLimit?.mul(gasLimitMultiplier ?? GAS_MULTIPLIER_1X);
-    if (gasLimitMultiplier && gasLimitMultiplier != GAS_MULTIPLIER_1X) {
-      this.logger.debug({
-        at: "TransactionClient#_submit",
-        message: `Padded gas on ${method} transaction.`,
-        gasLimitMultiplier,
-      });
-    }
+    const { contract, method, args, value, gasLimit } = txn;
     return runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
   }
 
@@ -73,6 +65,16 @@ export class TransactionClient {
       let response: TransactionResponse;
       if (nonce !== null) {
         this.logger.debug({ at: "TransactionClient#submit", message: `Using nonce ${nonce}.` });
+      }
+
+      const gasLimitMultiplier = txn.gasLimitMultiplier ?? GAS_MULTIPLIER_1X;
+      if (gasLimitMultiplier != GAS_MULTIPLIER_1X) {
+        txn.gasLimit = txn.gasLimit?.mul(gasLimitMultiplier);
+        this.logger.debug({
+          at: "TransactionClient#_submit",
+          message: `Padded gas on ${txn.method} transaction.`,
+          gasLimitMultiplier,
+        });
       }
 
       try {

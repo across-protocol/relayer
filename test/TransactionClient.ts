@@ -1,8 +1,10 @@
+import { random } from "lodash";
+import { BigNumber } from "ethers";
 import { AugmentedTransaction } from "../src/clients";
-import { TransactionResponse, TransactionSimulationResult } from "../src/utils";
+import { isDefined, TransactionResponse, TransactionSimulationResult } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
-import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";
+import { createSpyLogger, Contract, expect, randomAddress, winston, toBN, toGWei } from "./utils";
 
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
 const address = randomAddress(); // Test contract address
@@ -93,5 +95,56 @@ describe("TransactionClient", async function () {
     const txnResponses: TransactionResponse[] = await txnClient.submit(chainId, txns);
     let nonce = txnResponses[0].nonce;
     txnResponses.slice(1).forEach((txnResponse) => expect(txnResponse.nonce).to.equal(++nonce));
+  });
+
+  it("Transaction simulation estimates gasLimit", async function () {
+    const chainId = chainIds[0];
+    txnClient.gasLimit = toGWei(random(100_000, 1_000_000).toPrecision(9));
+
+    const nTxns = 10;
+    const txns: AugmentedTransaction[] = [];
+    for (let txn = 1; txn <= nTxns; ++txn) {
+      const txnRequest: AugmentedTransaction = {
+        chainId,
+        contract: { address } as Contract,
+        method,
+        args: [],
+        message: "",
+        mrkdwn: "",
+      };
+      txns.push(txnRequest);
+    }
+    const simResults = await txnClient.simulate([txns[0]]);
+    let gasLimit = simResults[0]?.transaction?.gasLimit;
+    expect(isDefined(gasLimit)).to.be.true;
+    gasLimit = gasLimit as BigNumber; // Force interpretation as BigNumber.
+
+    expect(txnClient.gasLimit.eq(gasLimit)).to.be.true;
+  });
+
+  it("Transaction submission applies gasLimitMultiplier", async function () {
+    const chainId = chainIds[0];
+    const gasLimit = toGWei(random(100_000, 1_000_000).toPrecision(9));
+
+    const nTxns = 10;
+    const txns: AugmentedTransaction[] = [];
+    for (let txn = 1; txn <= nTxns; ++txn) {
+      const txnRequest: AugmentedTransaction = {
+        chainId,
+        contract: { address } as Contract,
+        method,
+        args: [],
+        gasLimit,
+        gasLimitMultiplier: txn, // number
+        message: "",
+        mrkdwn: "",
+      };
+      txns.push(txnRequest);
+    }
+
+    const txnResponses = await txnClient.submit(chainId, txns);
+    txnResponses.forEach((txnResponse, idx) => {
+      expect(txnResponse.gasLimit).to.equal(gasLimit.mul(idx + 1))
+    });
   });
 });
