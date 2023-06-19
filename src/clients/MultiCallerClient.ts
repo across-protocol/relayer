@@ -272,7 +272,7 @@ export class MultiCallerClient {
       contract: multisender,
       method: "aggregate",
       args: [callData],
-      gasLimitMultiplier: 1.2,
+      gasLimitMultiplier: 2, // @note: Lots of headroom for the executor.
       message: "Across multicall transaction",
       mrkdwn: mrkdwn.join(""),
     } as AugmentedTransaction;
