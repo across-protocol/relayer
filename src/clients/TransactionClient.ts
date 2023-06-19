@@ -41,7 +41,15 @@ export class TransactionClient {
   }
 
   protected async _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
-    const { contract, method, args, value, gasLimit } = txn;
+    const { contract, method, args, value, gasLimitMultiplier } = txn;
+    const gasLimit = txn.gasLimit?.mul(gasLimitMultiplier ?? 1.0);
+    if (gasLimitMultiplier && gasLimitMultiplier != 1.0) {
+      this.logger.debug({
+        at: "TransactionClient#_submit",
+        message: `Padded gas on ${method} transaction.`,
+        gasLimitMultiplier
+      });
+    }
     return runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
   }
 

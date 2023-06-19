@@ -43,7 +43,6 @@ export async function runTransaction(
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
   retriesRemaining = 2,
-  gasLimitMultiplier = 1.0
 ): Promise<TransactionResponse> {
   const chainId = (await contract.provider.getNetwork()).chainId;
 
@@ -57,10 +56,6 @@ export async function runTransaction(
 
     const gas = await getGasPrice(contract.provider, priorityFeeScaler, maxFeePerGasScaler);
 
-    if (isDefined(gasLimit)) {
-      gasLimit = gasLimit.mul(gasLimitMultiplier);
-    }
-
     logger.debug({
       at: "TxUtil",
       message: "Send tx",
@@ -71,7 +66,6 @@ export async function runTransaction(
       nonce,
       gas,
       gasLimit,
-      gasLimitMultiplier,
     });
     // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
     // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
@@ -92,8 +86,7 @@ export async function runTransaction(
         retriesRemaining,
       });
 
-      // @note: Set the gasLimitMultiplier to 1x on subsequent calls because the gas limit has already been padded.
-      return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining, 1.0);
+      return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining);
     } else {
       // If transaction error reason is known to be benign, then reduce the log level to warn.
       logger[txnRetryable(error) ? "warn" : "error"]({
