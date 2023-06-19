@@ -92,7 +92,7 @@ export async function runTransaction(
       // - Bottom-level (JSON-RPC/HTTP): "reason":"processing response error" (SERVER_ERROR)
       if (typeguards.isEthersError(error)) {
         const ethersErrors: { reason: string; err: EthersError }[] = [];
-        let topError: EthersError = error;
+        let topError: EthersError = error as EthersError;
         while (topError !== undefined) {
           ethersErrors.push({ reason: topError.reason, err: topError.error });
           topError = topError.error;
