@@ -38,6 +38,14 @@ export const unknownRevertReasonMethodsToIgnore = new Set([
   "executeRootBundle",
 ]);
 
+// @dev The dataworker executor personality typically bundles an Optimism L1 deposit via multicall3 aggregate(). Per
+//      Optimism's Bedrock migration, gas estimates should be padded by 50% to ensure that transactions do not fail
+//      with OoG. Because we optimistically construct an aggregate() transaction without simulating each simulating
+//      each transaction, we do not know the gas cost of each bundled transaction. Therefore, pad the resulting
+//      gasLimit. This can admittedly pad the gasLimit by a lot more than is required.
+//      See also https://community.optimism.io/docs/developers/bedrock/differences/
+const MULTICALL3_AGGREGATE_GAS_MULTIPLIER = 1.5;
+
 export class MultiCallerClient {
   protected txnClient: TransactionClient;
   protected txns: { [chainId: number]: AugmentedTransaction[] } = {};
@@ -174,23 +182,14 @@ export class MultiCallerClient {
       await this.buildMultiCallBundles(txns, this.chunkSize[chainId])
     );
     const batchSimResults = await this.txnClient.simulate(batchTxns);
-    let batchesAllSucceeded = true;
-    batchSimResults.forEach((result, idx) => {
-      this.logger[result.succeed ? "debug" : "error"]({
+    const batchesAllSucceeded = batchSimResults.every(({succeed, transaction}, idx) => {
+      this.logger[succeed ? "debug" : "error"]({
         at: "MultiCallerClient#executeChainTxnQueue",
-        message: result.succeed
-          ? `Successfully simulated ${networkName} transaction batch!`
-          : `Failed to simulate ${networkName} transaction batch!`,
-        batchTxn: {
-          ...result.transaction,
-          contract: result.transaction.contract.address,
-        },
+        message: `${succeed ? "Successfully simulated" : "Failed to simulate"} ${networkName} transaction batch!`,
+        batchTxn: { ...transaction,  contract: transaction.contract.address },
       });
-      if (!result.succeed) {
-        batchesAllSucceeded = false;
-      } else {
-        batchTxns[idx].gasLimit = result.transaction.gasLimit;
-      }
+      batchTxns[idx].gasLimit = succeed ? transaction.gasLimit : undefined;
+      return succeed;
     });
 
     if (batchesAllSucceeded) {
@@ -272,7 +271,7 @@ export class MultiCallerClient {
       contract: multisender,
       method: "aggregate",
       args: [callData],
-      gasLimitMultiplier: 2, // @note: Lots of headroom for the executor.
+      gasLimitMultiplier: MULTICALL3_AGGREGATE_GAS_MULTIPLIER,
       message: "Across multicall transaction",
       mrkdwn: mrkdwn.join(""),
     } as AugmentedTransaction;
