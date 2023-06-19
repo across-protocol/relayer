@@ -1,5 +1,6 @@
 // @note: The lines marked @todo: destinationToken need a fix in the sdk-v2 MockSpokePoolClient to permit
 // the HubPoolClient to be passed in. This is needed in order to resolve the correct SpokePool destinationToken.
+import { relayFeeCalculator } from "@across-protocol/sdk-v2";
 import { groupBy, random } from "lodash";
 import {
   isUbaInflow,
@@ -13,7 +14,8 @@ import {
   RefundRequestWithBlock,
   UbaOutflow,
 } from "../src/interfaces";
-import { ZERO_ADDRESS, isDefined, sortEventsAscending, spreadEventWithBlockNumber, UBAClient } from "../src/utils";
+import { UBAClient } from "../src/clients";
+import { ZERO_ADDRESS, isDefined, sortEventsAscending, spreadEventWithBlockNumber } from "../src/utils";
 import {
   assert,
   createSpyLogger,
@@ -34,6 +36,7 @@ import {
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 
 type Event = ethers.Event;
+type RelayFeeCalculatorConfig = relayFeeCalculator.RelayFeeCalculatorConfig;
 
 let hubPool: Contract, weth: Contract, dai: Contract;
 let hubPoolClient: MockHubPoolClient;
@@ -145,7 +148,9 @@ describe("UBA: SpokePool Events", async function () {
 
     await configStoreClient.update();
     await hubPoolClient.update();
-    ubaClient = new UBAClient(chainIds, hubPoolClient, spokePoolClients, logger);
+
+    // @todo: The RelayFeeCalculatorConfig should be mocked.
+    ubaClient = new UBAClient(chainIds, hubPoolClient, spokePoolClients, {} as RelayFeeCalculatorConfig, logger);
   });
 
   it("Correctly orders UBA flows", async function () {
