@@ -67,6 +67,7 @@ export class TransactionClient {
         this.logger.debug({ at: "TransactionClient#submit", message: `Using nonce ${nonce}.` });
       }
 
+      // @dev It's assumed that nobody ever wants to discount the gasLimit.
       const gasLimitMultiplier = txn.gasLimitMultiplier ?? DEFAULT_GASLIMIT_MULTIPLIER;
       if (gasLimitMultiplier > DEFAULT_GASLIMIT_MULTIPLIER) {
         txn.gasLimit = txn.gasLimit?.mul(gasLimitMultiplier);
