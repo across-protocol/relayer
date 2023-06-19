@@ -47,7 +47,7 @@ export class TransactionClient {
       this.logger.debug({
         at: "TransactionClient#_submit",
         message: `Padded gas on ${method} transaction.`,
-        gasLimitMultiplier
+        gasLimitMultiplier,
       });
     }
     return runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);

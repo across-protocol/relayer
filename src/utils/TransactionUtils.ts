@@ -2,7 +2,7 @@ import { typeguards } from "@across-protocol/sdk-v2";
 import { AugmentedTransaction } from "../clients";
 import { winston, Contract, getContractInfoFromAddress, fetch, ethers, Wallet } from "../utils";
 import { DEFAULT_GAS_FEE_SCALERS, multicall3Addresses } from "../common";
-import { isDefined, toBNWei, BigNumber, toBN, toGWei, TransactionResponse } from "../utils";
+import { toBNWei, BigNumber, toBN, toGWei, TransactionResponse } from "../utils";
 import { getAbi } from "@uma/contracts-node";
 import dotenv from "dotenv";
 import { FeeData } from "@ethersproject/abstract-provider";
@@ -42,7 +42,7 @@ export async function runTransaction(
   value: BigNumber = toBN(0),
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
-  retriesRemaining = 2,
+  retriesRemaining = 2
 ): Promise<TransactionResponse> {
   const chainId = (await contract.provider.getNetwork()).chainId;
 
