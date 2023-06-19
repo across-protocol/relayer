@@ -198,7 +198,7 @@ async function getPolygonPriorityFee(): Promise<{
   blockTime: number;
   blockNumber: number;
 }> {
-  const res = await fetch("https://gasstation-mainnet.matic.network");
+  const res = await fetch("https://gasstation.polygon.technology");
   return (await res.json()) as {
     safeLow: number;
     standard: number;

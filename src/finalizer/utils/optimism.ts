@@ -1,8 +1,8 @@
-import * as optimismSDK from "@eth-optimism/sdk";
+import * as optimismSDK from "@across-protocol/optimism-sdk";
 import { Withdrawal } from "..";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { L1Token, TokensBridged } from "../../interfaces";
-import { convertFromWei, getCachedProvider, groupObjectCountsByProp, Wallet, winston } from "../../utils";
+import { BigNumber, convertFromWei, getCachedProvider, groupObjectCountsByProp, Wallet, winston } from "../../utils";
 import { Multicall2Call } from "../../common";
 
 type OVM_CHAIN_ID = 10;
@@ -59,16 +59,29 @@ export async function getCrossChainMessages(
 
 export interface CrossChainMessageWithStatus extends CrossChainMessageWithEvent {
   status: string;
+  logIndex: number;
 }
 export async function getMessageStatuses(
   _chainId: OVM_CHAIN_ID,
   crossChainMessages: CrossChainMessageWithEvent[],
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER
 ): Promise<CrossChainMessageWithStatus[]> {
+  // For each token bridge event, store a unique log index for the event within the arbitrum transaction hash.
+  // This is important for bridge transactions containing multiple events.
+  const uniqueTokenhashes = {};
+  const logIndexesForMessage = [];
+  for (const event of crossChainMessages.map((m) => m.event)) {
+    uniqueTokenhashes[event.transactionHash] = uniqueTokenhashes[event.transactionHash] ?? 0;
+    const logIndex = uniqueTokenhashes[event.transactionHash];
+    logIndexesForMessage.push(logIndex);
+    uniqueTokenhashes[event.transactionHash] += 1;
+  }
+
   const statuses = await Promise.all(
-    crossChainMessages.map((message) => {
+    crossChainMessages.map((message, i) => {
       return (crossChainMessenger as optimismSDK.CrossChainMessenger).getMessageStatus(
-        message.message as optimismSDK.MessageLike
+        message.message as optimismSDK.MessageLike,
+        logIndexesForMessage[i]
       );
     })
   );
@@ -77,6 +90,7 @@ export async function getMessageStatuses(
       status: optimismSDK.MessageStatus[status],
       message: crossChainMessages[i].message,
       event: crossChainMessages[i].event,
+      logIndex: logIndexesForMessage[i],
     };
   });
 }
@@ -88,15 +102,24 @@ export async function getOptimismFinalizableMessages(
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER
 ): Promise<CrossChainMessageWithStatus[]> {
   const crossChainMessages = await getCrossChainMessages(chainId, tokensBridged, crossChainMessenger);
-  // Temporarily filter out messages with multiple withdrawals until eth-optimism sdk can handle them:
-  // https://github.com/ethereum-optimism/optimism/issues/5983
-  const messagesWithSingleWithdrawals = crossChainMessages.filter(
-    (message, i) =>
-      !crossChainMessages.some(
-        (otherMessage, j) => i !== j && otherMessage.event.transactionHash === message.event.transactionHash
-      )
-  );
-  const messageStatuses = await getMessageStatuses(chainId, messagesWithSingleWithdrawals, crossChainMessenger);
+  // Temporary fix until we're well past the bedrock upgrade. Remove non Bedrock messages.
+  // Example way to detect whether message is bedrock:
+  // - https://github.com/ethereum-optimism/optimism/blob/develop/packages/sdk/src/cross-chain-messenger.ts#L332
+  // - https://github.com/ethereum-optimism/optimism/blob/develop/packages/core-utils/src/optimism/encoding.ts#L34
+  const bedrockMessages = (
+    await Promise.all(
+      crossChainMessages.map(async (crossChainMessage) => {
+        const resolved = await crossChainMessenger.toCrossChainMessage(crossChainMessage.message);
+        const version = BigNumber.from(resolved.messageNonce).shr(240).toNumber();
+        if (version !== 1) {
+          return undefined;
+        } else {
+          return crossChainMessage;
+        }
+      })
+    )
+  ).filter((m) => m !== undefined);
+  const messageStatuses = await getMessageStatuses(chainId, bedrockMessages, crossChainMessenger);
   logger.debug({
     at: "OptimismFinalizer",
     message: "Optimism message statuses",
@@ -137,10 +160,12 @@ export async function finalizeOptimismMessage(
 export async function proveOptimismMessage(
   _chainId: OVM_CHAIN_ID,
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER,
-  message: CrossChainMessageWithStatus
+  message: CrossChainMessageWithStatus,
+  logIndex = 0
 ): Promise<Multicall2Call> {
   const callData = await (crossChainMessenger as optimismSDK.CrossChainMessenger).populateTransaction.proveMessage(
-    message.message as optimismSDK.MessageLike
+    message.message as optimismSDK.MessageLike,
+    logIndex
   );
   return {
     callData: callData.data,
@@ -187,7 +212,7 @@ export async function multicallOptimismL1Proofs(
     await getOptimismFinalizableMessages(chainId, logger, tokensBridgedEvents, crossChainMessenger)
   ).filter((message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_TO_PROVE]);
   const callData = await Promise.all(
-    provableMessages.map((message) => proveOptimismMessage(chainId, crossChainMessenger, message))
+    provableMessages.map((message) => proveOptimismMessage(chainId, crossChainMessenger, message, message.logIndex))
   );
   const withdrawals = provableMessages.map((message) => {
     const l1TokenInfo = getL1TokenInfoForOptimismToken(chainId, hubPoolClient, message.event.l2TokenAddress);
