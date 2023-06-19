@@ -26,7 +26,7 @@ export interface AugmentedTransaction {
   canFailInSimulation?: boolean;
 }
 
-const GAS_MULTIPLIER_1X = 1.0;
+const DEFAULT_GASLIMIT_MULTIPLIER = 1.0;
 
 export class TransactionClient {
   // eslint-disable-next-line no-useless-constructor
@@ -67,8 +67,8 @@ export class TransactionClient {
         this.logger.debug({ at: "TransactionClient#submit", message: `Using nonce ${nonce}.` });
       }
 
-      const gasLimitMultiplier = txn.gasLimitMultiplier ?? GAS_MULTIPLIER_1X;
-      if (gasLimitMultiplier != GAS_MULTIPLIER_1X) {
+      const gasLimitMultiplier = txn.gasLimitMultiplier ?? DEFAULT_GASLIMIT_MULTIPLIER;
+      if (gasLimitMultiplier > DEFAULT_GASLIMIT_MULTIPLIER) {
         txn.gasLimit = txn.gasLimit?.mul(gasLimitMultiplier);
         this.logger.debug({
           at: "TransactionClient#_submit",
