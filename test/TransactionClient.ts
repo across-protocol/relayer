@@ -1,5 +1,6 @@
+import { BigNumber } from "ethers";
 import { AugmentedTransaction } from "../src/clients";
-import { TransactionResponse, TransactionSimulationResult } from "../src/utils";
+import { isDefined, TransactionResponse, TransactionSimulationResult } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
 import { createSpyLogger, Contract, expect, randomAddress, winston, toBN } from "./utils";
@@ -93,5 +94,53 @@ describe("TransactionClient", async function () {
     const txnResponses: TransactionResponse[] = await txnClient.submit(chainId, txns);
     let nonce = txnResponses[0].nonce;
     txnResponses.slice(1).forEach((txnResponse) => expect(txnResponse.nonce).to.equal(++nonce));
+  });
+
+  it("Transaction simulation result includes gasLimit", async function () {
+    const chainId = chainIds[0];
+
+    const nTxns = 10;
+    const txns: AugmentedTransaction[] = [];
+    for (let txn = 1; txn <= nTxns; ++txn) {
+      const txnRequest: AugmentedTransaction = {
+        chainId,
+        contract: { address } as Contract,
+        method,
+        args: [],
+        message: "",
+        mrkdwn: "",
+      };
+      txns.push(txnRequest);
+    }
+    const simResults = await txnClient.simulate([txns[0]]);
+    const gasLimit = simResults[0]?.transaction?.gasLimit;
+    expect(isDefined(gasLimit)).to.be.true;
+    expect((gasLimit as BigNumber).gt(0)).to.be.true;
+  });
+
+  it("Transaction submission applies gasLimitMultiplier", async function () {
+    const chainId = chainIds[0];
+    const gasLimit = txnClient.randomGasLimit();
+
+    const nTxns = 10;
+    const txns: AugmentedTransaction[] = [];
+    for (let txn = 1; txn <= nTxns; ++txn) {
+      const txnRequest: AugmentedTransaction = {
+        chainId,
+        contract: { address } as Contract,
+        method,
+        args: [],
+        gasLimit,
+        gasLimitMultiplier: txn, // number
+        message: "",
+        mrkdwn: "",
+      };
+      txns.push(txnRequest);
+    }
+
+    const txnResponses = await txnClient.submit(chainId, txns);
+    txnResponses.forEach((txnResponse, idx) => {
+      expect(txnResponse.gasLimit).to.equal(gasLimit.mul(idx + 1));
+    });
   });
 });

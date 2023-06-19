@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   winston,
   getNetworkName,
@@ -6,6 +7,7 @@ import {
   runTransaction,
   BigNumber,
   etherscanLink,
+  toBNWei,
   TransactionResponse,
   TransactionSimulationResult,
   willSucceed,
@@ -16,6 +18,8 @@ export interface AugmentedTransaction {
   chainId: number;
   method: string;
   args: any[];
+  gasLimit?: BigNumber;
+  gasLimitMultiplier?: number;
   message?: string;
   mrkdwn?: string;
   value?: BigNumber;
@@ -23,6 +27,10 @@ export interface AugmentedTransaction {
   // If true, then can be sent from the MakerDAO multisender contract.
   canFailInSimulation?: boolean;
 }
+
+const { fixedPointAdjustment: fixedPoint } = sdkUtils;
+
+const DEFAULT_GASLIMIT_MULTIPLIER = 1.0;
 
 export class TransactionClient {
   // eslint-disable-next-line no-useless-constructor
@@ -39,8 +47,8 @@ export class TransactionClient {
   }
 
   protected async _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
-    const { contract, method, args, value } = txn;
-    return runTransaction(this.logger, contract, method, args, value, null, nonce);
+    const { contract, method, args, value, gasLimit } = txn;
+    return runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
   }
 
   async submit(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {
@@ -61,6 +69,17 @@ export class TransactionClient {
       let response: TransactionResponse;
       if (nonce !== null) {
         this.logger.debug({ at: "TransactionClient#submit", message: `Using nonce ${nonce}.` });
+      }
+
+      // @dev It's assumed that nobody ever wants to discount the gasLimit.
+      const gasLimitMultiplier = txn.gasLimitMultiplier ?? DEFAULT_GASLIMIT_MULTIPLIER;
+      if (gasLimitMultiplier > DEFAULT_GASLIMIT_MULTIPLIER) {
+        txn.gasLimit = txn.gasLimit?.mul(toBNWei(gasLimitMultiplier)).div(fixedPoint);
+        this.logger.debug({
+          at: "TransactionClient#_submit",
+          message: `Padded gas on ${txn.method} transaction.`,
+          gasLimitMultiplier,
+        });
       }
 
       try {
