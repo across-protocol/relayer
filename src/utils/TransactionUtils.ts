@@ -12,7 +12,8 @@ dotenv.config();
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
   succeed: boolean;
-  reason: string;
+  gasLimit?: BigNumber;
+  reason?: string;
 };
 
 const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);
@@ -41,7 +42,8 @@ export async function runTransaction(
   value: BigNumber = toBN(0),
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
-  retriesRemaining = 2
+  retriesRemaining = 2,
+  gasLimitMultiplier = 1.0
 ): Promise<TransactionResponse> {
   const chainId = (await contract.provider.getNetwork()).chainId;
 
@@ -55,14 +57,10 @@ export async function runTransaction(
 
     const gas = await getGasPrice(contract.provider, priorityFeeScaler, maxFeePerGasScaler);
 
-    if (
-      isDefined(gasLimit) &&
-      contract.address === multicall3Addresses[chainId] &&
-      method.toLowerCase() === "aggregate"
-    ) {
-      logger.debug({ at: "runTransaction", message: "Padding gas for multicall transaction.", gasLimit });
-      gasLimit = gasLimit.mul("1.2");
+    if (isDefined(gasLimit)) {
+      gasLimit = gasLimit.mul(gasLimitMultiplier);
     }
+
     logger.debug({
       at: "TxUtil",
       message: "Send tx",
@@ -73,6 +71,7 @@ export async function runTransaction(
       nonce,
       gas,
       gasLimit,
+      gasLimitMultiplier,
     });
     // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
     // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
@@ -92,7 +91,9 @@ export async function runTransaction(
         error: JSON.stringify(error),
         retriesRemaining,
       });
-      return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining);
+
+      // @note: Set the gasLimitMultiplier to 1x on subsequent calls because the gas limit has already been padded.
+      return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining, 1.0);
     } else {
       // If transaction error reason is known to be benign, then reduce the log level to warn.
       logger[txnRetryable(error) ? "warn" : "error"]({
@@ -136,16 +137,13 @@ export async function getGasPrice(
 
 export async function willSucceed(transaction: AugmentedTransaction): Promise<TransactionSimulationResult> {
   if (transaction.canFailInSimulation) {
-    return {
-      transaction,
-      succeed: true,
-      reason: null,
-    };
+    return { transaction, succeed: true };
   }
   try {
+    const { contract, method } = transaction;
     const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
-    await transaction.contract.callStatic[transaction.method](...args);
-    return { transaction, succeed: true, reason: null };
+    const gasLimit = await contract.estimateGas[method](...args);
+    return { transaction, succeed: true, gasLimit };
   } catch (_error) {
     const error = _error as EthersError;
     return { transaction, succeed: false, reason: error.reason };

@@ -175,7 +175,8 @@ export class MultiCallerClient {
     );
     const batchSimResults = await this.txnClient.simulate(batchTxns);
     let batchesAllSucceeded = true;
-    batchSimResults.forEach((result) => {
+    batchSimResults.forEach((result, idx) => {
+      const { gasLimit } = result;
       this.logger[result.succeed ? "debug" : "error"]({
         at: "MultiCallerClient#executeChainTxnQueue",
         message: result.succeed
@@ -184,12 +185,16 @@ export class MultiCallerClient {
         batchTxn: {
           ...result.transaction,
           contract: result.transaction.contract.address,
+          gasLimit,
         },
       });
       if (!result.succeed) {
         batchesAllSucceeded = false;
+      } else {
+        batchTxns[idx].gasLimit = gasLimit;
       }
     });
+
     if (batchesAllSucceeded) {
       txnRequestsToSubmit.push(...batchTxns);
     } else {
@@ -269,6 +274,7 @@ export class MultiCallerClient {
       contract: multisender,
       method: "aggregate",
       args: [callData],
+      gasLimitMultiplier: 1.2,
       message: "Across multicall transaction",
       mrkdwn: mrkdwn.join(""),
     } as AugmentedTransaction;
@@ -380,9 +386,7 @@ export class MultiCallerClient {
         chunkSize
       );
       const multicallerTxnBundle = multicallerTxnChunks
-        .map((txnChunk) => {
-          return txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0];
-        })
+        .map((txnChunk) => (txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0]))
         .flat();
       const multisenderTxnChunks = lodash.chunk(multisenderTxns, chunkSize);
       const multisenderTxnBundle = await Promise.all(
@@ -402,7 +406,7 @@ export class MultiCallerClient {
     const txnSimulations = await this.txnClient.simulate(transactions);
     txnSimulations.forEach((txn) => {
       if (txn.succeed) {
-        validTxns.push(txn.transaction);
+        validTxns.push({ ...txn.transaction, gasLimit: txn.gasLimit });
       } else {
         invalidTxns.push(txn);
       }
