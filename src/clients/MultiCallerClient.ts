@@ -424,7 +424,7 @@ export class MultiCallerClient {
     const knownReason = [...knownRevertReasons].some((knownReason) =>
       [knownReason, `execution reverted: ${knownReason}`].includes(reason)
     );
-    return knownReason || (unknownRevertReasonMethodsToIgnore.has(_txn.method) && reason === unknownRevertReason);
+    return knownReason || (unknownRevertReasonMethodsToIgnore.has(_txn.method) && reason.includes(unknownRevertReason));
   }
 
   // Filter out transactions that revert for non-critical, expected reasons. For example, the "relay filled" error may
