@@ -12,7 +12,7 @@ dotenv.config();
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
   succeed: boolean;
-  reason: string;
+  reason?: string;
 };
 
 const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);
@@ -54,6 +54,7 @@ export async function runTransaction(
       DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
 
     const gas = await getGasPrice(contract.provider, priorityFeeScaler, maxFeePerGasScaler);
+
     logger.debug({
       at: "TxUtil",
       message: "Send tx",
@@ -63,6 +64,7 @@ export async function runTransaction(
       value,
       nonce,
       gas,
+      gasLimit,
     });
     // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
     // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
@@ -82,6 +84,7 @@ export async function runTransaction(
         error: JSON.stringify(error),
         retriesRemaining,
       });
+
       return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining);
     } else {
       // If transaction error reason is known to be benign, then reduce the log level to warn.
@@ -126,16 +129,13 @@ export async function getGasPrice(
 
 export async function willSucceed(transaction: AugmentedTransaction): Promise<TransactionSimulationResult> {
   if (transaction.canFailInSimulation) {
-    return {
-      transaction,
-      succeed: true,
-      reason: null,
-    };
+    return { transaction, succeed: true };
   }
   try {
+    const { contract, method } = transaction;
     const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
-    await transaction.contract.callStatic[transaction.method](...args);
-    return { transaction, succeed: true, reason: null };
+    const gasLimit = await contract.estimateGas[method](...args);
+    return { transaction: { ...transaction, gasLimit }, succeed: true };
   } catch (_error) {
     const error = _error as EthersError;
     return { transaction, succeed: false, reason: error.reason };
