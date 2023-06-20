@@ -420,13 +420,11 @@ export class MultiCallerClient {
   // in order to not ignore errors thrown by non-contract reverts. For example, a NodeJS error might result in a reason
   // string that includes more than just the contract revert reason.
   protected canIgnoreRevertReason(txn: TransactionSimulationResult): boolean {
-    // prettier-ignore
-    return (
-      !txn.succeed && (
-        knownRevertReasons.has(txn.reason) ||
-        (unknownRevertReasonMethodsToIgnore.has(txn.transaction.method) && txn.reason === unknownRevertReason)
-      )
+    const { transaction: _txn, reason } = txn;
+    const knownReason = [...knownRevertReasons].some((knownReason) =>
+      [knownReason, `execution reverted: ${knownReason}`].includes(reason)
     );
+    return knownReason || (unknownRevertReasonMethodsToIgnore.has(_txn.method) && reason === unknownRevertReason);
   }
 
   // Filter out transactions that revert for non-critical, expected reasons. For example, the "relay filled" error may
