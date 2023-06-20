@@ -21,7 +21,7 @@ import lodash from "lodash";
 // .includes() to partially match reason string in order to not ignore errors thrown by non-contract reverts.
 // For example, a NodeJS error might result in a reason string that includes more than just the contract r
 // evert reason.
-export const knownRevertReasons = new Set(["relay filled", "Already claimed"]);
+export const knownRevertReasons = ["relay filled", "Already claimed"];
 
 // The following reason potentially includes false positives of reverts that we should be alerted on, however
 // there is something likely broken in how the provider is interpreting contract reverts. Currently, there are
@@ -423,7 +423,7 @@ export class MultiCallerClient {
     // prettier-ignore
     return (
       !txn.succeed && (
-        knownRevertReasons.has(txn.reason) ||
+        knownRevertReasons.some((reasonSnippet) => txn.reason.includes(reasonSnippet)) ||
         (unknownRevertReasonMethodsToIgnore.has(txn.transaction.method) && txn.reason === unknownRevertReason)
       )
     );
