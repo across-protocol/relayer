@@ -190,7 +190,6 @@ export class MultiCallerClient {
           batchTxn: { ...transaction, contract: transaction.contract.address },
           reason,
         });
-        return true;
       } else {
         this.logger[succeed ? "debug" : "error"]({
           at: "MultiCallerClient#executeChainTxnQueue",
