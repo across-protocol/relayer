@@ -424,7 +424,7 @@ export class MultiCallerClient {
     return (
       !txn.succeed && (
         knownRevertReasons.some((reasonSnippet) => txn.reason.includes(reasonSnippet)) ||
-        (unknownRevertReasonMethodsToIgnore.has(txn.transaction.method) && txn.reason.includes(unknownRevertReason))
+        (unknownRevertReasonMethodsToIgnore.has(txn.transaction.method) && txn.reason === unknownRevertReason)
       )
     );
   }
