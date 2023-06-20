@@ -206,7 +206,7 @@ export class Relayer {
         const refundFee = toBN(0);
 
         if (profitClient.isFillProfitable(deposit, unfilledAmount, refundFee, l1Token)) {
-          await this.fillRelay(deposit, unfilledAmount, repaymentChainId);
+          this.fillRelay(deposit, unfilledAmount, repaymentChainId);
         } else {
           profitClient.captureUnprofitableFill(deposit, unfilledAmount);
         }
@@ -228,7 +228,7 @@ export class Relayer {
     }
   }
 
-  async fillRelay(deposit: Deposit, fillAmount: BigNumber, repaymentChainId: number): Promise<void> {
+  fillRelay(deposit: Deposit, fillAmount: BigNumber, repaymentChainId: number): void {
     // Skip deposits that this relayer has already filled completely before to prevent double filling (which is a waste
     // of gas as the second fill would fail).
     // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried
@@ -244,48 +244,39 @@ export class Relayer {
     }
 
     this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChainId });
-    try {
-      // If deposit has been sped up, call fillRelayWithUpdatedFee instead. This guarantees that the relayer wouldn't
-      // accidentally double fill due to the deposit hash being different - SpokePool contract will check that the
-      // original hash with the old fee hasn't been filled.
-      if (isDepositSpedUp(deposit)) {
-        this.clients.multiCallerClient.enqueueTransaction({
-          contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
-          chainId: deposit.destinationChainId,
-          method: "fillRelayWithUpdatedDeposit",
-          args: buildFillRelayWithUpdatedFeeProps(deposit, repaymentChainId, fillAmount), // props sent with function call.
-          message: fillAmount.eq(deposit.amount)
-            ? "Relay instantly sent with modified fee 🚀"
-            : "Instantly completed relay with modified fee 📫", // message sent to logger.
-          mrkdwn:
-            this.constructRelayFilledMrkdwn(deposit, repaymentChainId, fillAmount) +
-            `Modified relayer fee: ${formatFeePct(deposit.newRelayerFeePct)}%.`, // message details mrkdwn
-        });
-      } else {
-        // Add the fill transaction to the multiCallerClient so it will be executed with the next batch.
-        this.clients.multiCallerClient.enqueueTransaction({
-          contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
-          chainId: deposit.destinationChainId,
-          method: "fillRelay", // method called.
-          args: buildFillRelayProps(deposit, repaymentChainId, fillAmount), // props sent with function call.
-          message: fillAmount.eq(deposit.amount) ? "Relay instantly sent 🚀" : "Instantly completed relay 📫", // message sent to logger.
-          mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChainId, fillAmount), // message details mrkdwn
-        });
-      }
-
-      // TODO: Revisit in the future when we implement partial fills.
-      this.fullyFilledDeposits[fillKey] = true;
-
-      // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
-      this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.destinationToken, fillAmount);
-    } catch (error) {
-      this.logger.error({
-        at: "Relayer",
-        message: "Error creating fillRelayTx",
-        error,
-        notificationPath: "across-error",
+    // If deposit has been sped up, call fillRelayWithUpdatedFee instead. This guarantees that the relayer wouldn't
+    // accidentally double fill due to the deposit hash being different - SpokePool contract will check that the
+    // original hash with the old fee hasn't been filled.
+    if (isDepositSpedUp(deposit)) {
+      this.clients.multiCallerClient.enqueueTransaction({
+        contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
+        chainId: deposit.destinationChainId,
+        method: "fillRelayWithUpdatedDeposit",
+        args: buildFillRelayWithUpdatedFeeProps(deposit, repaymentChainId, fillAmount), // props sent with function call.
+        message: fillAmount.eq(deposit.amount)
+          ? "Relay instantly sent with modified fee 🚀"
+          : "Instantly completed relay with modified fee 📫", // message sent to logger.
+        mrkdwn:
+          this.constructRelayFilledMrkdwn(deposit, repaymentChainId, fillAmount) +
+          `Modified relayer fee: ${formatFeePct(deposit.newRelayerFeePct)}%.`, // message details mrkdwn
+      });
+    } else {
+      // Add the fill transaction to the multiCallerClient so it will be executed with the next batch.
+      this.clients.multiCallerClient.enqueueTransaction({
+        contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
+        chainId: deposit.destinationChainId,
+        method: "fillRelay", // method called.
+        args: buildFillRelayProps(deposit, repaymentChainId, fillAmount), // props sent with function call.
+        message: fillAmount.eq(deposit.amount) ? "Relay instantly sent 🚀" : "Instantly completed relay 📫", // message sent to logger.
+        mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChainId, fillAmount), // message details mrkdwn
       });
     }
+
+    // TODO: Revisit in the future when we implement partial fills.
+    this.fullyFilledDeposits[fillKey] = true;
+
+    // Decrement tokens in token client used in the fill. This ensures that we dont try and fill more than we have.
+    this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.destinationToken, fillAmount);
   }
 
   zeroFillDeposit(deposit: Deposit): void {
