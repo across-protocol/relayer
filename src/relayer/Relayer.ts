@@ -200,12 +200,13 @@ export class Relayer {
       }
 
       if (tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
+        const repaymentChainId = await this.resolveRepaymentChain(deposit, unfilledAmount);
         // @todo: For UBA, compute the anticipated refund fee(s) for candidate refund chain(s).
         // @todo: Factor in the gas cost of submitting the RefundRequest on alt refund chains.
         const refundFee = toBN(0);
 
         if (profitClient.isFillProfitable(deposit, unfilledAmount, refundFee, l1Token)) {
-          await this.fillRelay(deposit, unfilledAmount);
+          await this.fillRelay(deposit, unfilledAmount, repaymentChainId);
         } else {
           profitClient.captureUnprofitableFill(deposit, unfilledAmount);
         }
@@ -227,7 +228,7 @@ export class Relayer {
     }
   }
 
-  async fillRelay(deposit: Deposit, fillAmount: BigNumber): Promise<void> {
+  async fillRelay(deposit: Deposit, fillAmount: BigNumber, repaymentChainId: number): Promise<void> {
     // Skip deposits that this relayer has already filled completely before to prevent double filling (which is a waste
     // of gas as the second fill would fail).
     // TODO: Handle the edge case scenario where the first fill failed due to transient errors and needs to be retried
@@ -242,9 +243,7 @@ export class Relayer {
       return;
     }
 
-    const repaymentChainId = await this.resolveRepaymentChain(deposit, fillAmount);
     this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChainId });
-
     try {
       // If deposit has been sped up, call fillRelayWithUpdatedFee instead. This guarantees that the relayer wouldn't
       // accidentally double fill due to the deposit hash being different - SpokePool contract will check that the
