@@ -92,6 +92,17 @@ export async function runTransaction(
       // - Top-level (Contract method call): "reason":"cannot estimate gas; transaction may fail or may require manual gas limit" (UNPREDICTABLE_GAS_LIMIT)
       // - Mid-level (eth_estimateGas): "reason":"execution reverted: delegatecall failed" (UNPREDICTABLE_GAS_LIMIT)
       // - Bottom-level (JSON-RPC/HTTP): "reason":"processing response error" (SERVER_ERROR)
+      const commonFields = {
+        at: "TxUtil#runTransaction",
+        message: "Error executing tx",
+        retriesRemaining,
+        target: getTarget(contract.address),
+        method,
+        args,
+        value,
+        nonce,
+        notificationPath: "across-error",
+      };
       if (typeguards.isEthersError(error)) {
         const ethersErrors: { reason: string; err: EthersError }[] = [];
         let topError: EthersError = error as EthersError;
@@ -100,29 +111,13 @@ export async function runTransaction(
           topError = topError.error;
         }
         logger[ethersErrors.some((e) => txnRetryable(e.err)) ? "warn" : "error"]({
-          at: "TxUtil#runTransaction",
-          message: "Error executing tx",
-          retriesRemaining,
+          ...commonFields,
           errorReasons: ethersErrors.map((e, i) => `\t ${i}: ${e.reason}`).join("\n"),
-          target: getTarget(contract.address),
-          method,
-          args,
-          value,
-          nonce,
-          notificationPath: "across-error",
         });
       } else {
         logger[txnRetryable(error) ? "warn" : "error"]({
-          at: "TxUtil#runTransaction",
-          message: "Error executing tx",
-          retriesRemaining,
+          ...commonFields,
           error: JSON.stringify(error),
-          target: getTarget(contract.address),
-          method,
-          args,
-          value,
-          nonce,
-          notificationPath: "across-error",
         });
       }
       throw error;
