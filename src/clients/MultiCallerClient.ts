@@ -182,11 +182,11 @@ export class MultiCallerClient {
       await this.buildMultiCallBundles(txns, this.chunkSize[chainId])
     );
     const batchSimResults = await this.txnClient.simulate(batchTxns);
-    const batchesAllSucceeded = batchSimResults.every(({ succeed, transaction }, idx) => {
+    const batchesAllSucceeded = batchSimResults.every(({ succeed, transaction, reason }, idx) => {
       this.logger[succeed ? "debug" : "error"]({
         at: "MultiCallerClient#executeChainTxnQueue",
         message: `${succeed ? "Successfully simulated" : "Failed to simulate"} ${networkName} transaction batch!`,
-        batchTxn: { ...transaction, contract: transaction.contract.address },
+        batchTxn: { ...transaction, contract: transaction.contract.address, reason },
       });
       batchTxns[idx].gasLimit = succeed ? transaction.gasLimit : undefined;
       return succeed;
