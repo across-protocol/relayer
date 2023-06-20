@@ -103,7 +103,7 @@ export async function runTransaction(
           at: "TxUtil#runTransaction",
           message: "Error executing tx",
           retriesRemaining,
-          errorReasons: ethersErrors.map((e, i) => `\t ${i}: ${e.reason}`).join('\n'),
+          errorReasons: ethersErrors.map((e, i) => `\t ${i}: ${e.reason}`).join("\n"),
           target: getTarget(contract.address),
           method,
           args,
