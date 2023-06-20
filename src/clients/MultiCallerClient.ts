@@ -186,7 +186,8 @@ export class MultiCallerClient {
       this.logger[succeed ? "debug" : "error"]({
         at: "MultiCallerClient#executeChainTxnQueue",
         message: `${succeed ? "Successfully simulated" : "Failed to simulate"} ${networkName} transaction batch!`,
-        batchTxn: { ...transaction, contract: transaction.contract.address, reason },
+        batchTxn: { ...transaction, contract: transaction.contract.address },
+        reason,
       });
       batchTxns[idx].gasLimit = succeed ? transaction.gasLimit : undefined;
       return succeed;
