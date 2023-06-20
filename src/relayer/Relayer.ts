@@ -242,40 +242,10 @@ export class Relayer {
       return;
     }
 
+    const repaymentChainId = await this.resolveRepaymentChain(deposit, fillAmount);
+    this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChainId });
+
     try {
-      // TODO: Consider adding some way for Relayer to delete transactions in Queue for fills for same deposit.
-      // This way the relayer could set a repayment chain ID for any fill that follows a 1 wei fill in the queue.
-      // This isn't implemented due to complexity because its a very rare case in production, because its very
-      // unlikely that a relayer could enqueue a 1 wei fill (lacking balance to fully fill it) for a deposit and
-      // then later on in the run have enough balance to fully fill it.
-      const fillsInQueueForSameDeposit =
-        this.clients.multiCallerClient.getQueuedTransactions(deposit.destinationChainId).filter((tx) => {
-          return (
-            (tx.method === "fillRelay" && tx.args[9] === deposit.depositId && tx.args[6] === deposit.originChainId) ||
-            (tx.method === "fillRelayWithUpdatedDeposit" &&
-              tx.args[11] === deposit.depositId &&
-              tx.args[7] === deposit.originChainId)
-          );
-        }).length > 0;
-      // Fetch the repayment chain from the inventory client. Sanity check that it is one of the known chainIds.
-      // We can only overwrite repayment chain ID if we can fully fill the deposit.
-      let repaymentChain = deposit.destinationChainId;
-      if (fillAmount.eq(deposit.amount) && !fillsInQueueForSameDeposit) {
-        repaymentChain = await this.clients.inventoryClient.determineRefundChainId(deposit);
-        if (!Object.keys(this.clients.spokePoolClients).includes(deposit.destinationChainId.toString())) {
-          throw new Error(
-            "Fatal error! Repayment chain set to a chain that is not part of the defined sets of chains!"
-          );
-        }
-      } else {
-        this.logger.debug({
-          at: "Relayer",
-          message: "Skipping repayment chain determination for partial fill",
-        });
-      }
-
-      this.logger.debug({ at: "Relayer", message: "Filling deposit", deposit, repaymentChain });
-
       // If deposit has been sped up, call fillRelayWithUpdatedFee instead. This guarantees that the relayer wouldn't
       // accidentally double fill due to the deposit hash being different - SpokePool contract will check that the
       // original hash with the old fee hasn't been filled.
@@ -284,12 +254,12 @@ export class Relayer {
           contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
           chainId: deposit.destinationChainId,
           method: "fillRelayWithUpdatedDeposit",
-          args: buildFillRelayWithUpdatedFeeProps(deposit, repaymentChain, fillAmount), // props sent with function call.
+          args: buildFillRelayWithUpdatedFeeProps(deposit, repaymentChainId, fillAmount), // props sent with function call.
           message: fillAmount.eq(deposit.amount)
             ? "Relay instantly sent with modified fee 🚀"
             : "Instantly completed relay with modified fee 📫", // message sent to logger.
           mrkdwn:
-            this.constructRelayFilledMrkdwn(deposit, repaymentChain, fillAmount) +
+            this.constructRelayFilledMrkdwn(deposit, repaymentChainId, fillAmount) +
             `Modified relayer fee: ${formatFeePct(deposit.newRelayerFeePct)}%.`, // message details mrkdwn
         });
       } else {
@@ -298,9 +268,9 @@ export class Relayer {
           contract: this.clients.spokePoolClients[deposit.destinationChainId].spokePool, // target contract
           chainId: deposit.destinationChainId,
           method: "fillRelay", // method called.
-          args: buildFillRelayProps(deposit, repaymentChain, fillAmount), // props sent with function call.
+          args: buildFillRelayProps(deposit, repaymentChainId, fillAmount), // props sent with function call.
           message: fillAmount.eq(deposit.amount) ? "Relay instantly sent 🚀" : "Instantly completed relay 📫", // message sent to logger.
-          mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChain, fillAmount), // message details mrkdwn
+          mrkdwn: this.constructRelayFilledMrkdwn(deposit, repaymentChainId, fillAmount), // message details mrkdwn
         });
       }
 
@@ -345,6 +315,40 @@ export class Relayer {
         notificationPath: "across-error",
       });
     }
+  }
+
+  protected async resolveRepaymentChain(deposit: Deposit, fillAmount: BigNumber): Promise<number> {
+    // TODO: Consider adding some way for Relayer to delete transactions in Queue for fills for same deposit.
+    // This way the relayer could set a repayment chain ID for any fill that follows a 1 wei fill in the queue.
+    // This isn't implemented due to complexity because its a very rare case in production, because its very
+    // unlikely that a relayer could enqueue a 1 wei fill (lacking balance to fully fill it) for a deposit and
+    // then later on in the run have enough balance to fully fill it.
+    const fillsInQueueForSameDeposit =
+      this.clients.multiCallerClient.getQueuedTransactions(deposit.destinationChainId).some((tx) => {
+        const { method, args } = tx;
+        const { depositId, originChainId } = deposit;
+        return (
+          (method === "fillRelay" && args[9] === depositId && args[6] === originChainId) ||
+          (method === "fillRelayWithUpdatedDeposit" && args[11] === depositId && args[7] === originChainId)
+        );
+      });
+
+    // Fetch the repayment chain from the inventory client. Sanity check that it is one of the known chainIds.
+    // We can only overwrite repayment chain ID if we can fully fill the deposit.
+    let repaymentChainId = deposit.destinationChainId;
+
+    if (fillAmount.eq(deposit.amount) && !fillsInQueueForSameDeposit) {
+      repaymentChainId = await this.clients.inventoryClient.determineRefundChainId(deposit);
+      if (!Object.keys(this.clients.spokePoolClients).includes(deposit.destinationChainId.toString())) {
+        throw new Error(
+          "Fatal error! Repayment chain set to a chain that is not part of the defined sets of chains!"
+        );
+      }
+    } else {
+      this.logger.debug({ at: "Relayer",  message: "Skipping repayment chain determination for partial fill", });
+    }
+
+    return repaymentChainId;
   }
 
   private handleTokenShortfall() {
