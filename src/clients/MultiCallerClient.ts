@@ -183,12 +183,22 @@ export class MultiCallerClient {
     );
     const batchSimResults = await this.txnClient.simulate(batchTxns);
     const batchesAllSucceeded = batchSimResults.every(({ succeed, transaction, reason }, idx) => {
-      this.logger[succeed ? "debug" : "error"]({
-        at: "MultiCallerClient#executeChainTxnQueue",
-        message: `${succeed ? "Successfully simulated" : "Failed to simulate"} ${networkName} transaction batch!`,
-        batchTxn: { ...transaction, contract: transaction.contract.address },
-        reason,
-      });
+      if (this.canIgnoreRevertReason({ succeed, transaction, reason })) {
+        this.logger.debug({
+          at: "MultiCallerClient#executeChainTxnQueue",
+          message: `Ignoring revert reason for ${networkName} transaction batch!`,
+          batchTxn: { ...transaction, contract: transaction.contract.address },
+          reason,
+        });
+        return true;
+      } else {
+        this.logger[succeed ? "debug" : "error"]({
+          at: "MultiCallerClient#executeChainTxnQueue",
+          message: `${succeed ? "Successfully simulated" : "Failed to simulate"} ${networkName} transaction batch!`,
+          batchTxn: { ...transaction, contract: transaction.contract.address },
+          reason,
+        });
+      }
       batchTxns[idx].gasLimit = succeed ? transaction.gasLimit : undefined;
       return succeed;
     });
