@@ -93,7 +93,7 @@ export class ProfitClient {
   ) {
     // Require 1% <= gasMultiplier <= 400%
     assert(
-      this.gasMultiplier.gte(toBNWei("0.01")) && this.gasMultiplier.lte(toBNWei(4)),
+      this.gasMultiplier.gte(toBNWei("0.00")) && this.gasMultiplier.lte(toBNWei(4)),
       `Gas multiplier out of range (${this.gasMultiplier})`
     );
 
@@ -239,7 +239,7 @@ export class ProfitClient {
     const netRelayerFeePct = netRelayerFeeUsd.mul(fixedPoint).div(relayerCapitalUsd);
 
     // If token price or gas cost is unknown, assume the relay is unprofitable.
-    const fillProfitable = tokenPriceUsd.gt(0) && gasCostUsd.gt(0) && netRelayerFeePct.gte(minRelayerFeePct);
+    const fillProfitable = tokenPriceUsd.gt(0) && gasPriceUsd.gt(0) && netRelayerFeePct.gte(minRelayerFeePct);
 
     return {
       grossRelayerFeePct,
