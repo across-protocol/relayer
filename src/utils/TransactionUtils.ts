@@ -105,8 +105,8 @@ export async function runTransaction(
       };
       if (typeguards.isEthersError(error)) {
         const ethersErrors: { reason: string; err: EthersError }[] = [];
-        let topError: EthersError = error as EthersError;
-        while (topError !== undefined) {
+        let topError = error;
+        while (isEthersError(topError)) {
           ethersErrors.push({ reason: topError.reason, err: topError.error });
           topError = topError.error;
         }
