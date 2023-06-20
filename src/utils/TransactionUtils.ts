@@ -106,9 +106,9 @@ export async function runTransaction(
       if (typeguards.isEthersError(error)) {
         const ethersErrors: { reason: string; err: EthersError }[] = [];
         let topError = error;
-        while (isEthersError(topError)) {
-          ethersErrors.push({ reason: topError.reason, err: topError.error });
-          topError = topError.error;
+        while (typeguards.isEthersError(topError)) {
+          ethersErrors.push({ reason: topError.reason, err: topError.error as EthersError });
+          topError = topError.error as EthersError;
         }
         logger[ethersErrors.some((e) => txnRetryable(e.err)) ? "warn" : "error"]({
           ...commonFields,
