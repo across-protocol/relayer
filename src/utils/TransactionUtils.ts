@@ -111,7 +111,6 @@ export async function runTransaction(
           nonce,
           notificationPath: "across-error",
         });
-        throw error;
       } else {
         logger[txnRetryable(error) ? "warn" : "error"]({
           at: "TxUtil#runTransaction",
@@ -125,8 +124,8 @@ export async function runTransaction(
           nonce,
           notificationPath: "across-error",
         });
-        throw error;
       }
+      throw error;
     }
   }
 }
