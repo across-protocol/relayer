@@ -323,8 +323,9 @@ export class Relayer {
     // This isn't implemented due to complexity because its a very rare case in production, because its very
     // unlikely that a relayer could enqueue a 1 wei fill (lacking balance to fully fill it) for a deposit and
     // then later on in the run have enough balance to fully fill it.
-    const fillsInQueueForSameDeposit =
-      this.clients.multiCallerClient.getQueuedTransactions(deposit.destinationChainId).some((tx) => {
+    const fillsInQueueForSameDeposit = this.clients.multiCallerClient
+      .getQueuedTransactions(deposit.destinationChainId)
+      .some((tx) => {
         const { method, args } = tx;
         const { depositId, originChainId } = deposit;
         return (
@@ -338,14 +339,13 @@ export class Relayer {
     let repaymentChainId = deposit.destinationChainId;
 
     if (fillAmount.eq(deposit.amount) && !fillsInQueueForSameDeposit) {
+      const destinationChainId = deposit.destinationChainId.toString();
       repaymentChainId = await this.clients.inventoryClient.determineRefundChainId(deposit);
-      if (!Object.keys(this.clients.spokePoolClients).includes(deposit.destinationChainId.toString())) {
-        throw new Error(
-          "Fatal error! Repayment chain set to a chain that is not part of the defined sets of chains!"
-        );
+      if (!Object.keys(this.clients.spokePoolClients).includes(destinationChainId)) {
+        throw new Error("Fatal error! Repayment chain set to a chain that is not part of the defined sets of chains!");
       }
     } else {
-      this.logger.debug({ at: "Relayer",  message: "Skipping repayment chain determination for partial fill", });
+      this.logger.debug({ at: "Relayer", message: "Skipping repayment chain determination for partial fill" });
     }
 
     return repaymentChainId;
