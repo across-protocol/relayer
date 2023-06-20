@@ -421,11 +421,10 @@ export class MultiCallerClient {
   // string that includes more than just the contract revert reason.
   protected canIgnoreRevertReason(txn: TransactionSimulationResult): boolean {
     const { transaction: _txn, reason } = txn;
-    const knownReason = [...knownRevertReasons].some((knownReason) =>
-      [knownReason, `execution reverted: ${knownReason}`].includes(reason)
-    );
-    return !txn.succeed && (
-        knownReason || (unknownRevertReasonMethodsToIgnore.has(_txn.method) && reason.includes(unknownRevertReason))
+    const knownReason = [...knownRevertReasons].some((knownReason) => reason.includes(knownReason));
+    return (
+      !txn.succeed &&
+      (knownReason || (unknownRevertReasonMethodsToIgnore.has(_txn.method) && reason.includes(unknownRevertReason)))
     );
   }
 
