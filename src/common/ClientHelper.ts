@@ -10,13 +10,14 @@ import {
   getCurrentTime,
   SpokePool,
 } from "../utils";
-import { HubPoolClient, MultiCallerClient, AcrossConfigStoreClient, SpokePoolClient } from "../clients";
+import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
+import { CONFIG_STORE_VERSION } from "./";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
-  configStoreClient: AcrossConfigStoreClient;
+  configStoreClient: ConfigStoreClient;
   multiCallerClient: MultiCallerClient;
   hubSigner?: Wallet;
 }
@@ -45,7 +46,7 @@ async function getSpokePoolSigners(
 export async function constructSpokePoolClientsWithLookback(
   logger: winston.Logger,
   hubPoolClient: HubPoolClient,
-  configStoreClient: AcrossConfigStoreClient,
+  configStoreClient: ConfigStoreClient,
   config: CommonConfig,
   baseSigner: Wallet,
   initialLookBackOverride: number
@@ -110,7 +111,7 @@ export async function constructSpokePoolClientsWithLookback(
  * @returns number[] List of enabled spoke pool chains.
  */
 function getEnabledChainsInBlockRange(
-  configStoreClient: AcrossConfigStoreClient,
+  configStoreClient: ConfigStoreClient,
   spokePoolChainsOverride: number[],
   mainnetStartBlock: number,
   mainnetEndBlock?: number
@@ -230,10 +231,11 @@ export async function constructClients(
   };
 
   const configStore = getDeployedContract("AcrossConfigStore", config.hubPoolChainId, hubSigner);
-  const configStoreClient = new AcrossConfigStoreClient(
+  const configStoreClient = new ConfigStoreClient(
     logger,
     configStore,
     rateModelClientSearchSettings,
+    CONFIG_STORE_VERSION,
     config.chainIdListIndices
   );
 
@@ -260,6 +262,8 @@ export async function constructClients(
   return { hubPoolClient, configStoreClient, multiCallerClient, hubSigner };
 }
 
+// @dev The HubPoolClient is dependent on the state of the ConfigStoreClient,
+//      so update the ConfigStoreClient first.
 export async function updateClients(clients: Clients): Promise<void> {
   await clients.configStoreClient.update();
   await clients.hubPoolClient.update();

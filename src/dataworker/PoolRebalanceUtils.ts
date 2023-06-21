@@ -1,4 +1,4 @@
-import { AcrossConfigStoreClient, HubPoolClient, SpokePoolClient } from "../clients";
+import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../clients";
 import * as interfaces from "../interfaces";
 import {
   BigNumberForToken,
@@ -84,13 +84,13 @@ export function addLastRunningBalance(
 ): void {
   Object.keys(runningBalances).forEach((repaymentChainId) => {
     Object.keys(runningBalances[repaymentChainId]).forEach((l1TokenAddress) => {
-      const lastRunningBalance = hubPoolClient.getRunningBalanceBeforeBlockForChain(
+      const { runningBalance } = hubPoolClient.getRunningBalanceBeforeBlockForChain(
         latestMainnetBlock,
         Number(repaymentChainId),
         l1TokenAddress
       );
-      if (!lastRunningBalance.eq(toBN(0))) {
-        updateRunningBalance(runningBalances, Number(repaymentChainId), l1TokenAddress, lastRunningBalance);
+      if (!runningBalance.eq(toBN(0))) {
+        updateRunningBalance(runningBalances, Number(repaymentChainId), l1TokenAddress, runningBalance);
       }
     });
   });
@@ -278,7 +278,7 @@ export function constructPoolRebalanceLeaves(
   latestMainnetBlock: number,
   runningBalances: interfaces.RunningBalances,
   realizedLpFees: interfaces.RunningBalances,
-  configStoreClient: AcrossConfigStoreClient,
+  configStoreClient: ConfigStoreClient,
   maxL1TokenCount?: number,
   tokenTransferThreshold?: BigNumberForToken
 ): interfaces.PoolRebalanceLeaf[] {
@@ -425,34 +425,44 @@ export function getWidestPossibleExpectedBlockRange(
   latestMainnetBlock: number,
   enabledChains: number[]
 ): number[][] {
+  // We impose a buffer on the head of the chain to increase the probability that the received blocks are final.
+  // Reducing the latest block that we query also gives partially filled deposits slightly more buffer for relayers
+  // to fully fill the deposit and reduces the chance that the data worker includes a slow fill payment that gets
+  // filled during the challenge period.
+  const latestPossibleBundleEndBlockNumbers = chainIdListForBundleEvaluationBlockNumbers.map(
+    (chainId: number, index) =>
+      spokeClients[chainId] && Math.max(spokeClients[chainId].latestBlockNumber - endBlockBuffers[index], 0)
+  );
   return chainIdListForBundleEvaluationBlockNumbers.map((chainId: number, index) => {
+    const lastEndBlockForChain = clients.hubPoolClient.getLatestBundleEndBlockForChain(
+      chainIdListForBundleEvaluationBlockNumbers,
+      latestMainnetBlock,
+      chainId
+    );
+
     // If chain is disabled, re-use the latest bundle end block for the chain as both the start
     // and end block.
     if (!enabledChains.includes(chainId)) {
-      const lastEndBlockForDisabledChain = clients.hubPoolClient.getLatestBundleEndBlockForChain(
-        chainIdListForBundleEvaluationBlockNumbers,
-        latestMainnetBlock,
-        chainId
-      );
-      return [lastEndBlockForDisabledChain, lastEndBlockForDisabledChain];
+      return [lastEndBlockForChain, lastEndBlockForChain];
     } else {
-      // We subtract a buffer from the end blocks to reduce the chance that network providers
-      // for different bot runs produce different contract state because of variability near the HEAD of the network.
-      // Reducing the latest block that we query also gives partially filled deposits slightly more buffer for relayers
-      // to fully fill the deposit and reduces the chance that the data worker includes a slow fill payment that gets
-      // filled during the challenge period.
-      const latestPossibleBundleEndBlockNumbers = chainIdListForBundleEvaluationBlockNumbers.map(
-        (chainId: number, index) =>
-          spokeClients[chainId] && Math.max(spokeClients[chainId].latestBlockNumber - endBlockBuffers[index], 0)
-      );
-      return [
-        clients.hubPoolClient.getNextBundleStartBlockNumber(
-          chainIdListForBundleEvaluationBlockNumbers,
-          latestMainnetBlock,
-          chainId
-        ),
-        latestPossibleBundleEndBlockNumbers[index],
-      ];
+      // If the latest block hasn't advanced enough from the previous proposed end block, then re-use it. It will
+      // be regarded as disabled by the Dataworker clients. Otherwise, add 1 to the previous proposed end block.
+      if (lastEndBlockForChain >= latestPossibleBundleEndBlockNumbers[index]) {
+        // @dev: Without this check, then `getNextBundleStartBlockNumber` could return `latestBlock+1` even when the
+        // latest block for the chain hasn't advanced, resulting in an invalid range being produced.
+        return [lastEndBlockForChain, lastEndBlockForChain];
+      } else {
+        // Chain has advanced far enough including the buffer, return range from previous proposed end block + 1 to
+        // latest block for chain minus buffer.
+        return [
+          clients.hubPoolClient.getNextBundleStartBlockNumber(
+            chainIdListForBundleEvaluationBlockNumbers,
+            latestMainnetBlock,
+            chainId
+          ),
+          latestPossibleBundleEndBlockNumbers[index],
+        ];
+      }
     }
   });
 }

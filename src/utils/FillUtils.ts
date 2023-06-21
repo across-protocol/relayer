@@ -1,4 +1,4 @@
-import { AcrossConfigStoreClient, HubPoolClient } from "../clients";
+import { ConfigStoreClient, HubPoolClient } from "../clients";
 import { Deposit, DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
 import { queryHistoricalDepositForFill } from "../utils";
 import {
@@ -41,7 +41,7 @@ export function getRefundInformationFromFill(
   // Save fill data and associate with repayment chain and L2 token refund should be denominated in.
   const endBlockForMainnet = getBlockRangeForChain(
     blockRangesForChains,
-    1,
+    hubPoolClient.chainId,
     chainIdListForBundleEvaluationBlockNumbers
   )[1];
   const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
@@ -221,20 +221,24 @@ export function getFillsInRange(
   });
 }
 
-export type UnfilledDeposit = {
+// @dev This type can be confused with UnfilledDeposit from sdk-v2/interfaces, but is different
+//      due to the additional members and the use of DepositWithBlock instead of Deposit.
+// @todo Better alignment with the upstream UnfilledDeposit type.
+export type RelayerUnfilledDeposit = {
   deposit: DepositWithBlock;
+  version: number;
   unfilledAmount: BigNumber;
   fillCount: number;
   invalidFills: Fill[];
-  requiresNewConfigStoreVersion: boolean;
 };
+
 // Returns all unfilled deposits over all spokePoolClients. Return values include the amount of the unfilled deposit.
 export function getUnfilledDeposits(
   spokePoolClients: SpokePoolClientsByChain,
   maxUnfilledDepositLookBack: number,
-  configStoreClient: AcrossConfigStoreClient
-): UnfilledDeposit[] {
-  const unfilledDeposits: UnfilledDeposit[] = [];
+  configStoreClient: ConfigStoreClient
+): RelayerUnfilledDeposit[] {
+  const unfilledDeposits: RelayerUnfilledDeposit[] = [];
   // Iterate over each chainId and check for unfilled deposits.
   const chainIds = Object.keys(spokePoolClients);
   for (const originChain of chainIds) {
@@ -249,15 +253,14 @@ export function getUnfilledDeposits(
       const destinationClient = spokePoolClients[destinationChain];
       const depositsForDestinationChain: DepositWithBlock[] =
         originClient.getDepositsForDestinationChain(destinationChain);
+
+      // If deposit is older than unfilled deposit lookback, ignore it.
+      const cutOff = originClient.latestBlockNumber - maxUnfilledDepositLookBack;
       const unfilledDepositsForDestinationChain = depositsForDestinationChain
-        .filter((deposit) => {
-          // If deposit is older than unfilled deposit lookback, ignore it
-          const latestBlockForOriginChain = originClient.latestBlockNumber;
-          return deposit.blockNumber >= latestBlockForOriginChain - maxUnfilledDepositLookBack;
-        })
+        .filter((deposit) => deposit.blockNumber >= cutOff)
         .map((deposit) => {
-          // eslint-disable-next-line no-console
-          return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit };
+          const version = configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
+          return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit, version };
         });
       // Remove any deposits that have no unfilled amount and append the remaining deposits to unfilledDeposits array.
       unfilledDeposits.push(...unfilledDepositsForDestinationChain.filter((deposit) => deposit.unfilledAmount.gt(0)));

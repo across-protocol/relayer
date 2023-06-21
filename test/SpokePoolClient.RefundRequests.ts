@@ -1,5 +1,5 @@
 import { groupBy } from "lodash";
-import { MockSpokePoolClient } from "./mocks/MockSpokePoolClient";
+import { MockSpokePoolClient } from "./mocks";
 import { RefundRequestWithBlock } from "../src/interfaces";
 import { spreadEventWithBlockNumber } from "../src/utils";
 import {

@@ -14,7 +14,7 @@ import { buildDeposit, buildFill, buildModifiedFill, buildSlowRelayLeaves, build
 import {
   SpokePoolClient,
   HubPoolClient,
-  AcrossConfigStoreClient,
+  ConfigStoreClient,
   BundleDataClient,
   MultiCallerClient,
   BalanceAllocator,
@@ -33,7 +33,7 @@ let l1Token_1: Contract, l1Token_2: Contract, hubPool: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient, bundleDataClient: BundleDataClient;
-let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
+let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
 let multiCallerClient: MultiCallerClient;
 let dataworkerInstance: Dataworker;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };

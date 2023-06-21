@@ -1,6 +1,7 @@
+import { typeguards } from "@across-protocol/sdk-v2";
 import { AugmentedTransaction } from "../clients";
 import { winston, Contract, getContractInfoFromAddress, fetch, ethers, Wallet } from "../utils";
-import { multicall3Addresses } from "../common";
+import { DEFAULT_GAS_FEE_SCALERS, multicall3Addresses } from "../common";
 import { toBNWei, BigNumber, toBN, toGWei, TransactionResponse } from "../utils";
 import { getAbi } from "@uma/contracts-node";
 import dotenv from "dotenv";
@@ -11,14 +12,12 @@ dotenv.config();
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
   succeed: boolean;
-  reason: string;
+  reason?: string;
 };
 
-const isEthersError = (error?: unknown): error is EthersError =>
-  (error as EthersError)?.code in ethers.utils.Logger.errors;
 const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);
 const txnRetryable = (error?: unknown): boolean => {
-  if (isEthersError(error)) {
+  if (typeguards.isEthersError(error)) {
     return txnRetryErrors.has(error.code);
   }
 
@@ -48,11 +47,14 @@ export async function runTransaction(
 
   try {
     const priorityFeeScaler =
-      Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) || undefined;
+      Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) ||
+      DEFAULT_GAS_FEE_SCALERS[chainId]?.maxPriorityFeePerGasScaler;
     const maxFeePerGasScaler =
-      Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) || undefined;
+      Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
+      DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
 
     const gas = await getGasPrice(contract.provider, priorityFeeScaler, maxFeePerGasScaler);
+
     logger.debug({
       at: "TxUtil",
       message: "Send tx",
@@ -62,6 +64,7 @@ export async function runTransaction(
       value,
       nonce,
       gas,
+      gasLimit,
     });
     // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
     // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
@@ -76,21 +79,47 @@ export async function runTransaction(
       // If error is due to a nonce collision or gas underpricement then re-submit to fetch latest params.
       retriesRemaining -= 1;
       logger.debug({
-        at: "TxUtil",
+        at: "TxUtil#runTransaction",
         message: "Retrying txn due to expected error",
         error: JSON.stringify(error),
         retriesRemaining,
       });
+
       return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining);
     } else {
-      // If transaction error reason is known to be benign, then reduce the log level to warn.
-      logger[txnRetryable(error) ? "warn" : "error"]({
-        at: "TxUtil",
+      // Empirically we have observed that Ethers can produce nested errors, so we try to recurse down them
+      // and log them as clearly as possible. For example:
+      // - Top-level (Contract method call): "reason":"cannot estimate gas; transaction may fail or may require manual gas limit" (UNPREDICTABLE_GAS_LIMIT)
+      // - Mid-level (eth_estimateGas): "reason":"execution reverted: delegatecall failed" (UNPREDICTABLE_GAS_LIMIT)
+      // - Bottom-level (JSON-RPC/HTTP): "reason":"processing response error" (SERVER_ERROR)
+      const commonFields = {
+        at: "TxUtil#runTransaction",
         message: "Error executing tx",
         retriesRemaining,
-        error: JSON.stringify(error),
+        target: getTarget(contract.address),
+        method,
+        args,
+        value,
+        nonce,
         notificationPath: "across-error",
-      });
+      };
+      if (typeguards.isEthersError(error)) {
+        const ethersErrors: { reason: string; err: EthersError }[] = [];
+        let topError = error;
+        while (typeguards.isEthersError(topError)) {
+          ethersErrors.push({ reason: topError.reason, err: topError.error as EthersError });
+          topError = topError.error as EthersError;
+        }
+        logger[ethersErrors.some((e) => txnRetryable(e.err)) ? "warn" : "error"]({
+          ...commonFields,
+          errorReasons: ethersErrors.map((e, i) => `\t ${i}: ${e.reason}`).join("\n"),
+        });
+      } else {
+        logger[txnRetryable(error) ? "warn" : "error"]({
+          ...commonFields,
+          error: JSON.stringify(error),
+        });
+      }
       throw error;
     }
   }
@@ -125,16 +154,13 @@ export async function getGasPrice(
 
 export async function willSucceed(transaction: AugmentedTransaction): Promise<TransactionSimulationResult> {
   if (transaction.canFailInSimulation) {
-    return {
-      transaction,
-      succeed: true,
-      reason: null,
-    };
+    return { transaction, succeed: true };
   }
   try {
+    const { contract, method } = transaction;
     const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
-    await transaction.contract.callStatic[transaction.method](...args);
-    return { transaction, succeed: true, reason: null };
+    const gasLimit = await contract.estimateGas[method](...args);
+    return { transaction: { ...transaction, gasLimit }, succeed: true };
   } catch (_error) {
     const error = _error as EthersError;
     return { transaction, succeed: false, reason: error.reason };
@@ -165,7 +191,7 @@ async function getPolygonPriorityFee(): Promise<{
   blockTime: number;
   blockNumber: number;
 }> {
-  const res = await fetch("https://gasstation-mainnet.matic.network");
+  const res = await fetch("https://gasstation.polygon.technology");
   return (await res.json()) as {
     safeLow: number;
     standard: number;

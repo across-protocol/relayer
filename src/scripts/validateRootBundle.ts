@@ -177,7 +177,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
 
   const mainnetBundleEndBlock = getBlockForChain(
     rootBundle.bundleEvaluationBlockNumbers,
-    1,
+    clients.hubPoolClient.chainId,
     dataworker.chainIdListForBundleEvaluationBlockNumbers
   );
 

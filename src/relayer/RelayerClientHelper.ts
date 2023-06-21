@@ -1,6 +1,6 @@
 import winston from "winston";
 import { Wallet } from "../utils";
-import { TokenClient, ProfitClient, BundleDataClient, InventoryClient, AcrossApiClient } from "../clients";
+import { TokenClient, ProfitClient, BundleDataClient, InventoryClient, AcrossApiClient, UBAClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import { RelayerConfig } from "./RelayerConfig";
 import { Clients, constructClients, updateClients, updateSpokePoolClients } from "../common";
@@ -9,6 +9,7 @@ import { constructSpokePoolClientsWithLookback } from "../common";
 
 export interface RelayerClients extends Clients {
   spokePoolClients: SpokePoolClientsByChain;
+  ubaClient: UBAClient;
   tokenClient: TokenClient;
   profitClient: ProfitClient;
   inventoryClient: InventoryClient;
@@ -34,10 +35,20 @@ export async function constructRelayerClients(
     config.maxRelayerLookBack
   );
 
+  const ubaClient = new UBAClient(config.chainIdListIndices, commonClients.hubPoolClient, spokePoolClients, logger);
+
+  // We only use the API client to load /limits for chains so we should remove any chains that are not included in the
+  // destination chain list.
+  const destinationSpokePoolClients = Object.fromEntries(
+    Object.keys(spokePoolClients)
+      .filter((chainId) => config.relayerDestinationChains.includes(Number(chainId)))
+      .map((chainId) => [chainId, spokePoolClients[chainId]])
+  );
+
   const acrossApiClient = new AcrossApiClient(
     logger,
     commonClients.hubPoolClient,
-    spokePoolClients,
+    destinationSpokePoolClients,
     config.relayerTokens
   );
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients, commonClients.hubPoolClient);
@@ -82,7 +93,7 @@ export async function constructRelayerClients(
     config.bundleRefundLookback
   );
 
-  return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient, acrossApiClient };
+  return { ...commonClients, spokePoolClients, ubaClient, tokenClient, profitClient, inventoryClient, acrossApiClient };
 }
 
 export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig): Promise<void> {
