@@ -326,7 +326,7 @@ export class ProfitClient {
     l1Token: L1Token
   ): boolean {
     const { profitable } =  this.computeFillProfitability(deposit, fillAmount, refundFee, l1Token);
-    return profitable;
+    return profitable ?? false;
   }
 
   captureUnprofitableFill(deposit: DepositWithBlock, fillAmount: BigNumber): void {
