@@ -270,7 +270,7 @@ export class ProfitClient {
     return fillAmount.mul(tokenPriceInUsd).div(toBN(10).pow(l1TokenInfo.decimals));
   }
 
-  isFillProfitable(
+  computeFillProfitability(
     deposit: Deposit,
     fillAmount: BigNumber,
     refundFee: BigNumber,
@@ -317,6 +317,16 @@ export class ProfitClient {
     }
 
     return fill;
+  }
+
+ isFillProfitable(
+    deposit: Deposit,
+    fillAmount: BigNumber,
+    refundFee: BigNumber,
+    l1Token: L1Token
+  ): boolean {
+    const { profitable } =  this.computeFillProfitability(deposit, fillAmount, refundFee, l1Token);
+    return profitable;
   }
 
   captureUnprofitableFill(deposit: DepositWithBlock, fillAmount: BigNumber): void {
