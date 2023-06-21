@@ -161,19 +161,6 @@ export class Relayer {
         continue;
       }
 
-      // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
-      if (config.slowDepositors.includes(deposit.depositor) && fillCount === 0) {
-        if (sendSlowRelays && tokenClient.hasBalanceForZeroFill(deposit) && fillCount === 0) {
-          this.logger.debug({
-            at: "Relayer",
-            message: "Initiating slow fill for grey listed depositor",
-            depositor: deposit.depositor,
-          });
-          this.zeroFillDeposit(deposit);
-        }
-        continue;
-      }
-
       // We query the relayer API to get the deposit limits for different token and destination combinations.
       // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
       // refund will be stuck for potentially 7 days.
@@ -209,6 +196,22 @@ export class Relayer {
           message: "Skipping fill for deposit with message",
           deposit,
         });
+        continue;
+      }
+
+      // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
+      if (
+        config.slowDepositors.includes(deposit.depositor) &&
+        fillCount === 0 &&
+        sendSlowRelays &&
+        tokenClient.hasBalanceForZeroFill(deposit)
+      ) {
+        this.logger.debug({
+          at: "Relayer",
+          message: "Initiating slow fill for grey listed depositor",
+          depositor: deposit.depositor,
+        });
+        this.zeroFillDeposit(deposit);
         continue;
       }
 
