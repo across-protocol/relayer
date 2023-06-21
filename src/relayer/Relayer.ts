@@ -350,9 +350,9 @@ export class Relayer {
         );
       });
 
-    const originChain = getNetworkName(originChainId);
-    const destinationChain = getNetworkName(destinationChainId);
-    if (fillAmount.eq(deposit.amount) && !fillsInQueueForSameDeposit) {
+    if (!fillAmount.eq(deposit.amount) || fillsInQueueForSameDeposit) {
+      const originChain = getNetworkName(originChainId);
+      const destinationChain = getNetworkName(destinationChainId);
       this.logger.debug({
         at: "Relayer",
         message: `Skipping repayment chain determination for partial fill on ${destinationChain}`,
