@@ -1,13 +1,5 @@
 import assert from "assert";
-import {
-  Contract,
-  BigNumber,
-  ZERO_ADDRESS,
-  paginatedEventQuery,
-  runTransaction,
-  BigNumberish,
-  TransactionResponse,
-} from "../../utils";
+import { Contract, BigNumber, ZERO_ADDRESS, paginatedEventQuery, BigNumberish, TransactionResponse } from "../../utils";
 import { spreadEventWithBlockNumber, assign, winston } from "../../utils";
 import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../clients";
 import { BaseAdapter, weth9Abi, ovmL1BridgeInterface, ovmL2BridgeInterface, atomicDepositorInterface } from "./";
@@ -161,16 +153,17 @@ export class OptimismAdapter extends BaseAdapter {
   }
 
   async wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse | null> {
-    const ethBalance = await this.getSigner(this.chainId).getBalance();
+    const { chainId, txnClient } = this;
+    assert(chainId === 10, `chainId ${chainId} is not supported`);
+
+    const ethBalance = await this.getSigner(chainId).getBalance();
     if (ethBalance.gt(threshold)) {
-      const l2Signer = this.getSigner(this.chainId);
-      if (this.chainId !== 10) {
-        throw new Error(`chainId ${this.chainId} is not supported`);
-      }
-      const l2Weth = new Contract(wethOptimismAddress, weth9Abi, l2Signer);
-      const amountToDeposit = ethBalance.sub(threshold);
-      this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, amountToDeposit, ethBalance });
-      return await runTransaction(this.logger, l2Weth, "deposit", [], amountToDeposit);
+      const l2Signer = this.getSigner(chainId);
+      const contract = new Contract(wethOptimismAddress, weth9Abi, l2Signer);
+      const method = "deposit";
+      const value = ethBalance.sub(threshold);
+      this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, value, ethBalance });
+      return (await txnClient.submit(chainId, [{ contract, chainId, method, args: [], value }]))[0];
     }
     return null;
   }
