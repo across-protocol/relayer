@@ -183,7 +183,7 @@ export class MultiCallerClient {
     );
     const batchSimResults = await this.txnClient.simulate(batchTxns);
     const batchesAllSucceeded = batchSimResults.every(({ succeed, transaction, reason }, idx) => {
-      if (this.canIgnoreRevertReason({ succeed, transaction, reason })) {
+      if (!succeed && this.canIgnoreRevertReason({ succeed, transaction, reason })) {
         this.logger.debug({
           at: "MultiCallerClient#executeChainTxnQueue",
           message: `Ignoring revert reason for ${networkName} transaction batch!`,
