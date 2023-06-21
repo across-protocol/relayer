@@ -17,6 +17,8 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
   readonly acceptInvalidFills: boolean;
+  // List of depositors we only want to send slow fills for.
+  readonly slowDepositors: string[];
   // Following distances in blocks to guarantee finality on each chain.
   readonly minDepositConfirmations: {
     [threshold: number]: { [chainId: number]: number };
@@ -33,6 +35,7 @@ export class RelayerConfig extends CommonConfig {
   constructor(env: ProcessEnv) {
     const {
       RELAYER_DESTINATION_CHAINS,
+      SLOW_DEPOSITORS,
       DEBUG_PROFITABILITY,
       RELAYER_GAS_MULTIPLIER,
       RELAYER_INVENTORY_CONFIG,
@@ -51,6 +54,9 @@ export class RelayerConfig extends CommonConfig {
     this.relayerDestinationChains = RELAYER_DESTINATION_CHAINS ? JSON.parse(RELAYER_DESTINATION_CHAINS) : [];
     // Empty means all tokens.
     this.relayerTokens = RELAYER_TOKENS
+      ? JSON.parse(RELAYER_TOKENS).map((token) => ethers.utils.getAddress(token))
+      : [];
+    this.slowDepositors = SLOW_DEPOSITORS
       ? JSON.parse(RELAYER_TOKENS).map((token) => ethers.utils.getAddress(token))
       : [];
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
