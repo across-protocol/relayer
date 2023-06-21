@@ -199,6 +199,22 @@ export class Relayer {
         continue;
       }
 
+      // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
+      if (
+        config.slowDepositors.includes(deposit.depositor) &&
+        fillCount === 0 &&
+        sendSlowRelays &&
+        tokenClient.hasBalanceForZeroFill(deposit)
+      ) {
+        this.logger.debug({
+          at: "Relayer",
+          message: "Initiating slow fill for grey listed depositor",
+          depositor: deposit.depositor,
+        });
+        this.zeroFillDeposit(deposit);
+        continue;
+      }
+
       if (tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
         const repaymentChainId = await this.resolveRepaymentChain(deposit, unfilledAmount);
         // @todo: For UBA, compute the anticipated refund fee(s) for candidate refund chain(s).
