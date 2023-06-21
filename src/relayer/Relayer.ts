@@ -347,7 +347,7 @@ export class Relayer {
 
     const preferredChainId = await inventoryClient.determineRefundChainId(deposit);
     if (!sdkUtils.isUBA(version)) {
-      const { profitable } = profitClient.isFillProfitable(deposit, fillAmount, toBN(0), hubPoolToken);
+      const profitable = profitClient.isFillProfitable(deposit, fillAmount, toBN(0), hubPoolToken);
       return profitable ? preferredChainId : undefined;
     }
 
@@ -358,7 +358,7 @@ export class Relayer {
     const refundFees = this.computeRefundFees(version, fillAmount, refundChainIds, hubPoolToken.symbol);
     const refundChainProfits = Object.fromEntries(
       refundChainIds
-        .map((chainId) => profitClient.isFillProfitable(deposit, fillAmount, refundFees[chainId], hubPoolToken))
+        .map((chainId) => profitClient.computeFillProfitability(deposit, fillAmount, refundFees[chainId], hubPoolToken))
         .map(({ profitable, netRelayerFeePct }, idx) => [refundChainIds[idx], { profitable, netRelayerFeePct }])
     );
 
