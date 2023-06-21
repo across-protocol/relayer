@@ -1175,10 +1175,10 @@
     split-array-stream "^2.0.0"
     stream-events "^1.0.5"
 
-"@google-cloud/kms@^3.0.1", "@google-cloud/kms@^3.5.1":
-  version "3.5.1"
-  resolved "https://registry.yarnpkg.com/@google-cloud/kms/-/kms-3.5.1.tgz#8f65a9335b10112f8e3d9ccad654b97d6bc32bff"
-  integrity sha512-mP1ufkAIZCMWo/Nm8+4RiNGWkt92sQiq487uEUqKGEsVacL3otDXiAhXKpIDmBfv8y6J4l68fiKGEMKepFTBYA==
+"@google-cloud/kms@^3.0.1", "@google-cloud/kms@^3.6.0":
+  version "3.6.0"
+  resolved "https://registry.yarnpkg.com/@google-cloud/kms/-/kms-3.6.0.tgz#ca82200a68422bc395ddcac24314c248e679bcb8"
+  integrity sha512-mWh95AN4ghngN+vNkoPDxCelZMhqPFRl7eofkV9xhRbdyzkBT3BOQCNqVuVxpqSWOwz/PmP7OhkNdRV/jCgkmQ==
   dependencies:
     google-gax "^3.5.8"
 
