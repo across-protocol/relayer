@@ -19,7 +19,7 @@
     "@ethersproject/abi": "^5.7.0",
     "@ethersproject/abstract-provider": "^5.7.0",
     "@ethersproject/abstract-signer": "^5.7.0",
-    "@google-cloud/kms": "^3.5.1",
+    "@google-cloud/kms": "^3.6.0",
     "@google-cloud/storage": "^6.10.1",
     "@maticnetwork/maticjs": "^3.5.0",
     "@maticnetwork/maticjs-ethers": "^1.0.3",
@@ -71,7 +71,7 @@
     "@types/chai": "^4.3.5",
     "@types/minimist": "^1.2.2",
     "@types/mocha": "^10.0.1",
-    "@types/node": "^20.1.1",
+    "@types/node": "^20.2.3",
     "@typescript-eslint/eslint-plugin": "^4.29.1",
     "@typescript-eslint/parser": "^4.29.1",
     "chai": "^4.3.7",
@@ -93,7 +93,7 @@
     "sinon": "^15.1.2",
     "solhint": "^3.4.1",
     "solidity-coverage": "^0.8.2",
-    "typechain": "^8.1.1",
+    "typechain": "^8.2.0",
     "typescript": "^5.0.4"
   },
   "husky": {
