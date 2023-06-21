@@ -1,3 +1,4 @@
+import assert from "assert";
 import {
   Contract,
   BigNumber,
@@ -8,7 +9,7 @@ import {
   TransactionResponse,
 } from "../../utils";
 import { spreadEventWithBlockNumber, assign, winston } from "../../utils";
-import { SpokePoolClient } from "../../clients";
+import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../clients";
 import { BaseAdapter, weth9Abi, ovmL1BridgeInterface, ovmL2BridgeInterface, atomicDepositorInterface } from "./";
 import { SortableEvent } from "../../interfaces";
 import { OutstandingTransfers } from "../../interfaces";
@@ -32,6 +33,8 @@ const atomicDepositorAddress = "0x26eaf37ee5daf49174637bdcd2f7759a25206c34";
 
 export class OptimismAdapter extends BaseAdapter {
   public l2Gas: number;
+  private txnClient: TransactionClient;
+
   constructor(
     logger: winston.Logger,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
@@ -42,6 +45,7 @@ export class OptimismAdapter extends BaseAdapter {
   ) {
     super(spokePoolClients, 10, monitoredAddresses, logger);
     this.l2Gas = 200000;
+    this.txnClient = new TransactionClient(logger);
   }
 
   async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
@@ -125,21 +129,35 @@ export class OptimismAdapter extends BaseAdapter {
     l2Token: string,
     amount: BigNumber
   ): Promise<TransactionResponse> {
+    const { chainId: destinationChainId, l2Gas, txnClient } = this;
+    assert(destinationChainId === 10, `chainId ${destinationChainId} is not supported`);
+
+    const contract = this.getL1TokenGateway(l1Token);
+    const originChainId = (await contract.provider.getNetwork()).chainId;
+    assert(originChainId !== destinationChainId);
+
     let method = "depositERC20";
-    let args = [l1Token, l2Token, amount, this.l2Gas, "0x"];
+    let args = [l1Token, l2Token, amount, l2Gas, "0x"];
 
     // If this token is WETH(the tokenToEvent maps to the ETH method) then we modify the params to call bridgeWethToOvm
     // on the atomic depositor contract. Note that value is still 0 as this method will pull WETH from the caller.
     if (this.isWeth(l1Token)) {
       method = "bridgeWethToOvm";
-      args = [address, amount, this.l2Gas, this.chainId];
+      args = [address, amount, l2Gas, destinationChainId];
     }
-    this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
 
-    if (this.chainId !== 10) {
-      throw new Error(`chainId ${this.chainId} is not supported`);
+    // Pad gas when bridging to Optimism: https://community.optimism.io/docs/developers/bedrock/differences
+    const gasLimitMultiplier = 1.5;
+    const _txnRequest: AugmentedTransaction = { contract, chainId: originChainId, method, args, gasLimitMultiplier };
+    const { reason, succeed, transaction: txnRequest } = (await txnClient.simulate([_txnRequest]))[0];
+    if (!succeed) {
+      const message = `Failed to simulate ${method} deposit to chainId ${destinationChainId} for mainnet token ${l1Token}`;
+      this.logger.warn({ at: this.getName(), message, reason });
+      throw new Error(`${message} (${reason})`);
     }
-    return await runTransaction(this.logger, this.getL1TokenGateway(l1Token), method, args);
+
+    this.logger.debug({ at: this.getName(), message: "Bridging tokens", l1Token, l2Token, amount });
+    return (await txnClient.submit(originChainId, [txnRequest]))[0];
   }
 
   async wrapEthIfAboveThreshold(threshold: BigNumber): Promise<TransactionResponse | null> {
