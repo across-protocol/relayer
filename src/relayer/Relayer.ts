@@ -11,7 +11,7 @@ import {
   buildFillRelayWithUpdatedFeeProps,
   isDepositSpedUp,
 } from "../utils";
-import { createFormatFunction, etherscanLink, formatFeePct, RelayerUnfilledDeposit, toBN, toBNWei } from "../utils";
+import { createFormatFunction, etherscanLink, formatFeePct, toBN, toBNWei } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { Deposit, DepositWithBlock, L1Token } from "../interfaces";
 import { RelayerConfig } from "./RelayerConfig";
@@ -214,7 +214,6 @@ export class Relayer {
         } else {
           profitClient.captureUnprofitableFill(deposit, unfilledAmount);
         }
-
       } else {
         tokenClient.captureTokenShortfallForFill(deposit, unfilledAmount);
         // If we don't have enough balance to fill the unfilled amount and the fill count on the deposit is 0 then send a
@@ -369,9 +368,12 @@ export class Relayer {
 
     // If none of the preferred refund chains are profitable, take the refund wherever it's profitable.
     // This may also produce no chainId, in which case the fill is truly unprofitable.
-    const repaymentChainId =
-      [preferredChainId, destinationChainId, hubPoolClient.chainId, ...refundChainsByProfit]
-        .find((chainId) => refundChainProfits[chainId].profitable)[0];
+    const repaymentChainId = [
+      preferredChainId,
+      destinationChainId,
+      hubPoolClient.chainId,
+      ...refundChainsByProfit,
+    ].find((chainId) => refundChainProfits[chainId].profitable)[0];
 
     return repaymentChainId;
   }
