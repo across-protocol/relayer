@@ -319,13 +319,8 @@ export class ProfitClient {
     return fill;
   }
 
- isFillProfitable(
-    deposit: Deposit,
-    fillAmount: BigNumber,
-    refundFee: BigNumber,
-    l1Token: L1Token
-  ): boolean {
-    const { profitable } =  this.computeFillProfitability(deposit, fillAmount, refundFee, l1Token);
+  isFillProfitable(deposit: Deposit, fillAmount: BigNumber, refundFee: BigNumber, l1Token: L1Token): boolean {
+    const { profitable } = this.computeFillProfitability(deposit, fillAmount, refundFee, l1Token);
     return profitable ?? false;
   }
 

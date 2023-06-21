@@ -382,7 +382,7 @@ export class Relayer {
       .filter((chainId) => ![preferredChainId, destinationChainId, hubPoolClient.chainId].includes(chainId))
       .sort((chainA, chainB) =>
         refundChainProfits[chainA].netRelayerFeePct.gte(refundChainProfits[chainB].netRelayerFeePct) ? 1 : -1
-    );
+      );
 
     // If none of the preferred refund chains are profitable, take the refund wherever it's profitable.
     // This may also produce no chainId, in which case the fill is truly unprofitable.
