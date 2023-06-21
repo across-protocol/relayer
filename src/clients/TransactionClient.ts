@@ -65,8 +65,12 @@ export class TransactionClient {
     let mrkdwn = "";
     let nonce: number | null = null;
     for (let idx = 0; idx < txns.length; ++idx) {
-      const txn: AugmentedTransaction = txns[idx];
-      let response: TransactionResponse;
+      const txn = txns[idx];
+
+      if (txn.chainId !== chainId) {
+        throw new Error(`chainId mismatch for method ${txn.method} (${txn.chainId} !== ${chainId})`);
+      }
+
       if (nonce !== null) {
         this.logger.debug({ at: "TransactionClient#submit", message: `Using nonce ${nonce}.` });
       }
@@ -74,14 +78,16 @@ export class TransactionClient {
       // @dev It's assumed that nobody ever wants to discount the gasLimit.
       const gasLimitMultiplier = txn.gasLimitMultiplier ?? DEFAULT_GASLIMIT_MULTIPLIER;
       if (gasLimitMultiplier > DEFAULT_GASLIMIT_MULTIPLIER) {
-        txn.gasLimit = txn.gasLimit?.mul(toBNWei(gasLimitMultiplier)).div(fixedPoint);
         this.logger.debug({
           at: "TransactionClient#_submit",
-          message: `Padded gas on ${txn.method} transaction.`,
+          message: `Padding gasLimit estimate on ${txn.method} transaction.`,
+          estimate: txn.gasLimit,
           gasLimitMultiplier,
         });
+        txn.gasLimit = txn.gasLimit?.mul(toBNWei(gasLimitMultiplier)).div(fixedPoint);
       }
 
+      let response: TransactionResponse;
       try {
         response = await this._submit(txn, nonce);
       } catch (error) {

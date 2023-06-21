@@ -182,11 +182,13 @@ export class MultiCallerClient {
       await this.buildMultiCallBundles(txns, this.chunkSize[chainId])
     );
     const batchSimResults = await this.txnClient.simulate(batchTxns);
-    const batchesAllSucceeded = batchSimResults.every(({ succeed, transaction }, idx) => {
-      this.logger[succeed ? "debug" : "error"]({
+    const batchesAllSucceeded = batchSimResults.every(({ succeed, transaction, reason }, idx) => {
+      // If txn succeeded or the revert reason is known to be benign, then log at debug level.
+      this.logger[succeed || this.canIgnoreRevertReason({ succeed, transaction, reason }) ? "debug" : "error"]({
         at: "MultiCallerClient#executeChainTxnQueue",
         message: `${succeed ? "Successfully simulated" : "Failed to simulate"} ${networkName} transaction batch!`,
         batchTxn: { ...transaction, contract: transaction.contract.address },
+        reason,
       });
       batchTxns[idx].gasLimit = succeed ? transaction.gasLimit : undefined;
       return succeed;
