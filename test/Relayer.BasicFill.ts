@@ -115,7 +115,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       },
       {
         relayerTokens: [],
-        relayerDestinationChains: [],
+        relayerDestinationChains: [originChainId, destinationChainId],
         maxRelayerLookBack: 24 * 60 * 60,
         minDepositConfirmations: defaultMinDepositConfirmations,
         quoteTimeBuffer: 0,
@@ -195,7 +195,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       },
       {
         relayerTokens: [],
-        relayerDestinationChains: [],
+        relayerDestinationChains: [originChainId, destinationChainId],
         minDepositConfirmations: {
           default: { [originChainId]: 10 }, // This needs to be set large enough such that the deposit is ignored.
         },
@@ -232,7 +232,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       },
       {
         relayerTokens: [],
-        relayerDestinationChains: [],
+        relayerDestinationChains: [originChainId, destinationChainId],
         minDepositConfirmations: defaultMinDepositConfirmations,
         quoteTimeBuffer: 100,
         sendingRelaysEnabled: false,
@@ -451,7 +451,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       },
       {
         relayerTokens: [],
-        relayerDestinationChains: [],
+        relayerDestinationChains: [originChainId, destinationChainId],
         maxRelayerLookBack: 24 * 60 * 60,
         minDepositConfirmations: defaultMinDepositConfirmations,
         quoteTimeBuffer: 0,
