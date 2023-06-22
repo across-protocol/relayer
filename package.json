@@ -23,7 +23,7 @@
     "@google-cloud/storage": "^6.10.1",
     "@maticnetwork/maticjs": "^3.6.0",
     "@maticnetwork/maticjs-ethers": "^1.0.3",
-    "@openzeppelin/hardhat-upgrades": "^1.24.0",
+    "@openzeppelin/hardhat-upgrades": "^1.28.0",
     "@uma/common": "2.33.0",
     "@uma/contracts-node": "^0.4.16",
     "@uma/financial-templates-lib": "^2.32.11",
