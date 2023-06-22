@@ -298,8 +298,8 @@ describe("ProfitClient: Consider relay profit", async function () {
               netRelayerFeeUsd: expected.netRelayerFeeUsd,
             });
 
-            const fill = profitClient.isFillProfitable(deposit, nativeFillAmount, zeroRefundFee, l1Token);
-            expect(fill?.profitable).to.equal(expected.profitable);
+            const profitable = profitClient.isFillProfitable(deposit, nativeFillAmount, zeroRefundFee, l1Token);
+            expect(profitable).to.equal(expected.profitable);
           });
         });
       });
@@ -352,8 +352,8 @@ describe("ProfitClient: Consider relay profit", async function () {
               netRelayerFeeUsd: formatEther(expected.netRelayerFeeUsd),
             });
 
-            const fill = profitClient.isFillProfitable(deposit, nativeFillAmount, nativeRefundFee, l1Token);
-            expect(fill?.profitable).to.equal(expected.profitable);
+            const profitable = profitClient.isFillProfitable(deposit, nativeFillAmount, nativeRefundFee, l1Token);
+            expect(profitable).to.equal(expected.profitable);
           });
         });
       });
