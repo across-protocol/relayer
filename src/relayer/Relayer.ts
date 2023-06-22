@@ -126,7 +126,7 @@ export class Relayer {
     // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
     // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
     for (const { deposit, version, unfilledAmount, fillCount, invalidFills } of confirmedUnfilledDeposits) {
-      const { relayerDestinationChains, relayerTokens } = config;
+      const { relayerDestinationChains, relayerTokens, slowDepositors } = config;
 
       // Skip any L1 tokens that are not specified in the config.
       // If relayerTokens is an empty list, we'll assume that all tokens are supported.
@@ -205,9 +205,9 @@ export class Relayer {
 
       // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
       if (
-        config.slowDepositors.includes(deposit.depositor) &&
-        fillCount === 0 &&
         sendSlowRelays &&
+        slowDepositors?.includes(deposit.depositor) &&
+        fillCount === 0 &&
         tokenClient.hasBalanceForZeroFill(deposit)
       ) {
         this.logger.debug({
