@@ -186,7 +186,9 @@ export async function multicallOptimismFinalizations(
     await getOptimismFinalizableMessages(chainId, logger, tokensBridgedEvents, crossChainMessenger)
   ).filter((message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]);
   const callData = await Promise.all(
-    finalizableMessages.map((message) => finalizeOptimismMessage(chainId, crossChainMessenger, message, message.logIndex))
+    finalizableMessages.map((message) =>
+      finalizeOptimismMessage(chainId, crossChainMessenger, message, message.logIndex)
+    )
   );
   const withdrawals = finalizableMessages.map((message) => {
     const l1TokenInfo = getL1TokenInfoForOptimismToken(chainId, hubPoolClient, message.event.l2TokenAddress);
