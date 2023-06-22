@@ -131,8 +131,8 @@ export class ProfitClient {
     return this.tokenPrices[token];
   }
 
+  // @todo: Factor in the gas cost of submitting the RefundRequest on alt refund chains.
   getTotalGasCost(chainId: number): BigNumber {
-    // TODO: Figure out where the mysterious BigNumber -> string conversion happens.
     return this.totalGasCosts[chainId] ? toBN(this.totalGasCosts[chainId]) : toBN(0);
   }
 

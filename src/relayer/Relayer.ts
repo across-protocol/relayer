@@ -1,4 +1,5 @@
 import { groupBy } from "lodash";
+import { clients as sdkClients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   BigNumber,
   winston,
@@ -13,6 +14,8 @@ import { createFormatFunction, etherscanLink, formatFeePct, toBN, toBNWei } from
 import { RelayerClients } from "./RelayerClientHelper";
 import { Deposit, DepositWithBlock } from "../interfaces";
 import { RelayerConfig } from "./RelayerConfig";
+
+const { UBAActionType } = sdkClients;
 
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
@@ -121,8 +124,8 @@ export class Relayer {
     // If not enough ballance add the shortfall to the shortfall tracker to produce an appropriate log. If the deposit
     // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
     // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
-    for (const { deposit, unfilledAmount, fillCount, invalidFills } of confirmedUnfilledDeposits) {
-      const { relayerDestinationChains, relayerTokens } = config;
+    for (const { deposit, version, unfilledAmount, fillCount, invalidFills } of confirmedUnfilledDeposits) {
+      const { relayerDestinationChains, relayerTokens, slowDepositors } = config;
 
       // Skip any L1 tokens that are not specified in the config.
       // If relayerTokens is an empty list, we'll assume that all tokens are supported.
@@ -201,9 +204,9 @@ export class Relayer {
 
       // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
       if (
-        config.slowDepositors.includes(deposit.depositor) &&
-        fillCount === 0 &&
         sendSlowRelays &&
+        fillCount === 0 &&
+        slowDepositors?.includes(deposit.depositor) &&
         tokenClient.hasBalanceForZeroFill(deposit)
       ) {
         this.logger.debug({
@@ -216,10 +219,13 @@ export class Relayer {
       }
 
       if (tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
+        // The pre-computed realizedLpFeePct is for the pre-UBA fee model. Update it to the UBA fee model if necessary.
+        // The SpokePool guarantees the sum of the fees is <= 100% of the deposit amount.
+        deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit, l1Token.symbol);
+
         const repaymentChainId = await this.resolveRepaymentChain(deposit, unfilledAmount);
-        // @todo: For UBA, compute the anticipated refund fee(s) for candidate refund chain(s).
-        // @todo: Factor in the gas cost of submitting the RefundRequest on alt refund chains.
-        const refundFee = toBN(0);
+        // @todo: For UBA, compute the anticipated refund fee(s) for *all* candidate refund chain(s).
+        const refundFee = await this.computeRefundFee(version, unfilledAmount, repaymentChainId, l1Token.symbol);
 
         if (profitClient.isFillProfitable(deposit, unfilledAmount, refundFee, l1Token)) {
           this.fillRelay(deposit, unfilledAmount, repaymentChainId);
@@ -355,6 +361,60 @@ export class Relayer {
     }
 
     return repaymentChainId;
+  }
+
+  protected async computeRealizedLpFeePct(
+    version: number,
+    deposit: Deposit,
+    symbol: string,
+    hubPoolBlockNumber?: number
+  ): Promise<BigNumber> {
+    if (!sdkUtils.isUBA(version)) {
+      return deposit.realizedLpFeePct;
+    }
+
+    const { hubPoolClient, ubaClient } = this.clients;
+    hubPoolBlockNumber ??= hubPoolClient.latestBlockNumber;
+
+    const { originChainId, depositId, destinationChainId, amount } = deposit;
+    const {
+      lpFee,
+      depositBalancingFee: depositFee,
+      systemFee: realizedLpFeePct,
+    } = await ubaClient.computeSystemFee(originChainId, destinationChainId, symbol, amount, hubPoolBlockNumber);
+
+    const chain = getNetworkName(deposit.originChainId);
+    this.logger.debug({
+      at: "relayer::computeRealizedLpFeePct",
+      message: `Computed UBA system fee for ${chain} depositId ${depositId}: ${realizedLpFeePct}`,
+      lpFee,
+      depositFee,
+    });
+
+    return realizedLpFeePct;
+  }
+
+  protected async computeRefundFee(
+    version: number,
+    unfilledAmount: BigNumber,
+    refundChainId: number,
+    symbol: string,
+    hubPoolBlockNumber?: number
+  ): Promise<BigNumber | undefined> {
+    if (!sdkUtils.isUBA(version)) {
+      return toBN(0);
+    }
+
+    const { hubPoolClient, ubaClient } = this.clients;
+    const { balancingFee } = await ubaClient.computeBalancingFee(
+      symbol,
+      unfilledAmount,
+      hubPoolBlockNumber ?? hubPoolClient.latestBlockNumber,
+      refundChainId,
+      UBAActionType.Refund
+    );
+
+    return balancingFee;
   }
 
   private handleTokenShortfall() {
