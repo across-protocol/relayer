@@ -206,8 +206,8 @@ export class Relayer {
       // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
       if (
         sendSlowRelays &&
-        slowDepositors?.includes(deposit.depositor) &&
         fillCount === 0 &&
+        slowDepositors?.includes(deposit.depositor) &&
         tokenClient.hasBalanceForZeroFill(deposit)
       ) {
         this.logger.debug({
