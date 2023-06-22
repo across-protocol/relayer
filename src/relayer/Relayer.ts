@@ -377,13 +377,11 @@ export class Relayer {
     hubPoolBlockNumber ??= hubPoolClient.latestBlockNumber;
 
     const { originChainId, depositId, destinationChainId, amount } = deposit;
-    const { lpFee, depositBalancingFee: depositFee, systemFee: realizedLpFeePct } = await ubaClient.computeSystemFee(
-      originChainId,
-      destinationChainId,
-      symbol,
-      amount,
-      hubPoolBlockNumber
-    );
+    const {
+      lpFee,
+      depositBalancingFee: depositFee,
+      systemFee: realizedLpFeePct,
+    } = await ubaClient.computeSystemFee(originChainId, destinationChainId, symbol, amount, hubPoolBlockNumber);
 
     const chain = getNetworkName(deposit.originChainId);
     this.logger.debug({
