@@ -387,9 +387,18 @@ export class Relayer {
       refundChains[chainA].netRelayerFeePct.gte(refundChains[chainB].netRelayerFeePct) ? 1 : -1
     );
 
-    // If none of the preferred refund chains are profitable, take the refund wherever it's most
-    // profitable. This may also produce no chainId, in which case the fill is truly unprofitable.
-    const preferredChainIds = [preferredChainId, destinationChainId, hubPoolClient.chainId];
+    // When the refund chainId proposed by the inventory client is one of [destinationChainId, HubPoolChainId],
+    // prioritise taking refunds on the desinationChainId first. This helps to avoid the destination SpokePool running
+    // over-balance. If the preferredChainId is for a third chain, then accept that proposal as-is and preference the
+    // destinationChainId and HubPool chainId as the next best options, subject to profitability. If none of these
+    // refund chains are profitable, go mercenary and take the refund wherever it's most profitable. This may also
+    // produce no chainId, in which case the fill is truly unprofitable and may be ignored.
+    const preferredChainIds = [ ...new Set(
+      [destinationChainId, hubPoolClient.chainId].includes(preferredChainId)
+        ? [destinationChainId, hubPoolClient.chainId]
+        : [preferredChainId, destinationChainId, hubPoolClient.chainId]
+    )];
+
     const repaymentChainId = [
       ...preferredChainIds,
       ...refundChainsByProfit.filter((chainId) => !preferredChainIds.includes(chainId)),
