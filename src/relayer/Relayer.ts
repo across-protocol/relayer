@@ -351,8 +351,9 @@ export class Relayer {
       return profitable ? preferredChainId : undefined;
     }
 
-    // @todo: Filter refundChains by whether the token is supported on that chain.
-    const refundChainIds = this.config.relayerDestinationChains;
+    // Ensure that the refund token exists on the candidate chainId.
+    const refundChainIds = this.config.relayerDestinationChains
+      .filter((chainId) => hubPoolClient.l2TokenEnabledForL1Token(hubPoolToken.address, chainId));
 
     // Estimate the profitability of taking a refund on each candidate refundChainId.
     const refundFees = this.computeRefundFees(version, fillAmount, refundChainIds, hubPoolToken.symbol);
