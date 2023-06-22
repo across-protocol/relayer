@@ -371,13 +371,12 @@ export class Relayer {
       refundChains[chainA].netRelayerFeePct.gte(refundChains[chainB].netRelayerFeePct) ? 1 : -1
     );
 
-
     // If none of the preferred refund chains are profitable, take the refund wherever it's most
     // profitable. This may also produce no chainId, in which case the fill is truly unprofitable.
     const preferredChainIds = [preferredChainId, destinationChainId, hubPoolClient.chainId];
     const repaymentChainId = [
       ...preferredChainIds,
-      ...refundChainsByProfit.filter((chainId) => !preferredChainIds.includes(chainId))
+      ...refundChainsByProfit.filter((chainId) => !preferredChainIds.includes(chainId)),
     ].find((chainId) => refundChains[chainId]?.profitable);
 
     return repaymentChainId;
