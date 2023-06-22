@@ -379,14 +379,15 @@ export class Relayer {
         .map(({ profitable, netRelayerFeePct }, idx) => [refundChainIds[idx], { profitable, netRelayerFeePct }])
     );
 
+    // Sort the residual chainIds according to their respective profitabilities.
     const refundChainsByProfit = refundChainIds
       .filter((chainId) => ![preferredChainId, destinationChainId, hubPoolClient.chainId].includes(chainId))
       .sort((chainA, chainB) =>
         refundChainProfits[chainA].netRelayerFeePct.gte(refundChainProfits[chainB].netRelayerFeePct) ? 1 : -1
       );
 
-    // If none of the preferred refund chains are profitable, take the refund wherever it's profitable.
-    // This may also produce no chainId, in which case the fill is truly unprofitable.
+    // If none of the preferred refund chains are profitable, take the refund wherever it's most
+    // profitable This may also produce no chainId, in which case the fill is truly unprofitable.
     // @note: duplicates may appear; it's OK provided the array is ordered by descending preference.
     const repaymentChainId = [
       preferredChainId,
