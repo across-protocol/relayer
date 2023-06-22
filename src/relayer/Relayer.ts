@@ -376,14 +376,22 @@ export class Relayer {
     const { hubPoolClient, ubaClient } = this.clients;
     hubPoolBlockNumber ??= hubPoolClient.latestBlockNumber;
 
-    const { originChainId, destinationChainId, amount } = deposit;
-    const { systemFee: realizedLpFeePct } = await ubaClient.computeSystemFee(
+    const { originChainId, depositId, destinationChainId, amount } = deposit;
+    const { lpFee, depositBalancingFee: depositFee, systemFee: realizedLpFeePct } = await ubaClient.computeSystemFee(
       originChainId,
       destinationChainId,
       symbol,
       amount,
       hubPoolBlockNumber
     );
+
+    const chain = getNetworkName(deposit.originChainId);
+    this.logger.debug({
+      at: "relayer::computeRealizedLpFeePct",
+      message: `Computed UBA system fee for ${chain} depositId ${depositId}: ${realizedLpFeePct}`,
+      lpFee,
+      depositFee,
+    });
 
     return realizedLpFeePct;
   }
