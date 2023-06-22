@@ -393,11 +393,13 @@ export class Relayer {
     // destinationChainId and HubPool chainId as the next best options, subject to profitability. If none of these
     // refund chains are profitable, go mercenary and take the refund wherever it's most profitable. This may also
     // produce no chainId, in which case the fill is truly unprofitable and may be ignored.
-    const preferredChainIds = [ ...new Set(
-      [destinationChainId, hubPoolClient.chainId].includes(preferredChainId)
-        ? [destinationChainId, hubPoolClient.chainId]
-        : [preferredChainId, destinationChainId, hubPoolClient.chainId]
-    )];
+    const preferredChainIds = [
+      ...new Set(
+        [destinationChainId, hubPoolClient.chainId].includes(preferredChainId)
+          ? [destinationChainId, hubPoolClient.chainId]
+          : [preferredChainId, destinationChainId, hubPoolClient.chainId]
+      ),
+    ];
 
     const repaymentChainId = [
       ...preferredChainIds,
