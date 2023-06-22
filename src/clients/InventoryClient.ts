@@ -51,7 +51,8 @@ export class InventoryClient {
   getBalanceOnChainForL1Token(chainId: number | string, l1Token: string): BigNumber {
     // We want to skip any l2 token that is not present in the inventory config.
     chainId = Number(chainId);
-    if (chainId !== this.hubPoolClient.chainId &&
+    if (
+      chainId !== this.hubPoolClient.chainId &&
       this.inventoryConfig.tokenConfig[l1Token][String(chainId)] === undefined
     ) {
       return toBN(0);
