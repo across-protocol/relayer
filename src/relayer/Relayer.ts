@@ -362,7 +362,7 @@ export class Relayer {
     }
 
     const preferredChainId = await inventoryClient.determineRefundChainId(deposit);
-    if (!sdkUtils.isUBA(version) || !inventoryClient.isInventoryManagementEnabled()) {
+    if (!sdkUtils.isUBA(version)) {
       const profitable = profitClient.isFillProfitable(deposit, fillAmount, toBN(0), hubPoolToken);
       return profitable ? preferredChainId : undefined;
     }
@@ -379,6 +379,11 @@ export class Relayer {
         .map((chainId, idx) => profitClient.getFillProfitability(deposit, fillAmount, refundFees[idx], hubPoolToken))
         .map(({ profitable, netRelayerFeePct }, idx) => [refundChainIds[idx], { profitable, netRelayerFeePct }])
     );
+
+    // If no inventory management is defined, only consider taking refunds on the destination chain.
+    if (!inventoryClient.isInventoryManagementEnabled()) {
+      return refundChains[destinationChainId].profitable ? destinationChainId : undefined;
+    }
 
     // Sort the candidate refund chainIds according to their respective profitabilities.
     const refundChainsByProfit = refundChainIds.sort((chainA, chainB) => {
