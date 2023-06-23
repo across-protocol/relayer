@@ -367,12 +367,16 @@ export class Relayer {
       return profitable ? preferredChainId : undefined;
     }
 
-    // Ensure that the refund token exists on the candidate chainId.
-    const refundChainIds = this.config.relayerDestinationChains.filter((chainId) =>
-      hubPoolClient.l2TokenEnabledForL1Token(hubPoolToken.address, chainId)
-    );
+    // Prefer the chainId suggested by the InventoryClient, but fall back to one of destinationChainId
+    // or hubPoolClient.chainId if the refunds on the preferred chainId is unprofitable.
+    const refundChainIds = [preferredChainId];
+    [destinationChainId, hubPoolClient.chainId].forEach((chainId) => {
+      if (!refundChainIds.includes(chainId)) {
+        refundChainIds.push(chainId)
+      }
+    });
 
-    // Estimate the profitability of taking a refund on each candidate refundChainId.
+    // Estimate the profitability of taking a refund on each candidate refund chain.
     const refundFees = await this.computeRefundFees(version, fillAmount, refundChainIds, hubPoolToken.symbol);
     const refundChains = Object.fromEntries(
       refundChainIds
@@ -385,24 +389,7 @@ export class Relayer {
       return refundChains[destinationChainId].profitable ? destinationChainId : undefined;
     }
 
-    // Sort the candidate refund chainIds according to their respective profitabilities.
-    const refundChainsByProfit = refundChainIds.sort((chainA, chainB) => {
-      const result = refundChains[chainA].netRelayerFeePct.sub(refundChains[chainB].netRelayerFeePct);
-      return result.isZero() ? 0 : result.gt(0) ? 1 : -1;
-    });
-
-    // Prioritise taking refunds on the destination chain to avoid the destination SpokePool running over balance. If
-    // the destination chain is unprofitable, consider first the HubPool chain, before evaluating each of the remaining
-    // enabled chains (ordered by most profitable to least). This may also produce no chainId (unprofitable deposit).
-    const preferredChainIds = [destinationChainId, hubPoolClient.chainId].filter((chainId) =>
-      refundChainIds.includes(chainId)
-    );
-    const repaymentChainId = [
-      ...preferredChainIds,
-      ...refundChainsByProfit.filter((chainId) => !preferredChainIds.includes(chainId)),
-    ].find((chainId) => refundChains[chainId]?.profitable);
-
-    return repaymentChainId;
+    return refundChainIds.find((chainId) => refundChains[chainId]?.profitable);
   }
 
   protected async computeRealizedLpFeePct(
