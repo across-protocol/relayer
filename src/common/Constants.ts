@@ -77,7 +77,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     42161: 0,
     // Testnets:
     5: 0,
-    280:0,
+    280: 0,
     421613: 0,
   },
   100: {
@@ -89,7 +89,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     42161: 0,
     // Testnets:
     5: 0,
-    280:0,
+    280: 0,
     421613: 0,
   },
 };

@@ -56,13 +56,13 @@ const config: HardhatUserConfig = {
       accounts: { mnemonic },
       companionNetworks: { l1: "mainnet" },
     },
-    "zksync": {
+    zksync: {
       chainId: 324,
       url: "https://mainnet.era.zksync.io",
       saveDeployments: true,
       accounts: { mnemonic },
       companionNetworks: { l1: "mainnet" },
-      zksync: true
+      zksync: true,
     },
     "arbitrum-rinkeby": {
       chainId: 421611,
