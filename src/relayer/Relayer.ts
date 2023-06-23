@@ -393,8 +393,10 @@ export class Relayer {
 
     // Prioritise taking refunds on the destination chain to avoid the destination SpokePool running over balance. If
     // the destination chain is unprofitable, consider first the HubPool chain, before evaluating each of the remaining
-    // chains (ordered by most profitable to least). This may also produce no chainId (unprofitable deposit).
-    const preferredChainIds = [destinationChainId, hubPoolClient.chainId];
+    // enabled chains (ordered by most profitable to least). This may also produce no chainId (unprofitable deposit).
+    const preferredChainIds = [destinationChainId, hubPoolClient.chainId].filter((chainId) =>
+      refundChainIds.includes(chainId)
+    );
     const repaymentChainId = [
       ...preferredChainIds,
       ...refundChainsByProfit.filter((chainId) => !preferredChainIds.includes(chainId)),
