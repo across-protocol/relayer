@@ -383,9 +383,10 @@ export class Relayer {
     );
 
     // Sort the residual chainIds according to their respective profitabilities.
-    const refundChainsByProfit = refundChainIds.sort((chainA, chainB) =>
-      refundChains[chainA].netRelayerFeePct.gte(refundChains[chainB].netRelayerFeePct) ? 1 : -1
-    );
+    const refundChainsByProfit = refundChainIds.sort((chainA, chainB) => {
+      const result = refundChains[chainA].netRelayerFeePct.sub(refundChains[chainB].netRelayerFeePct);
+      return result.isZero() ? 0 : result.gt(0) ? 1 : -1;
+    });
 
     // When the refund chainId proposed by the inventory client is one of [destinationChainId, HubPoolChainId],
     // prioritise taking refunds on the desinationChainId first. This helps to avoid the destination SpokePool running
