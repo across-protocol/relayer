@@ -380,7 +380,7 @@ export class Relayer {
         .map(({ profitable, netRelayerFeePct }, idx) => [refundChainIds[idx], { profitable, netRelayerFeePct }])
     );
 
-    // Sort the residual chainIds according to their respective profitabilities.
+    // Sort the candidate refund chainIds according to their respective profitabilities.
     const refundChainsByProfit = refundChainIds.sort((chainA, chainB) => {
       const result = refundChains[chainA].netRelayerFeePct.sub(refundChains[chainB].netRelayerFeePct);
       return result.isZero() ? 0 : result.gt(0) ? 1 : -1;
