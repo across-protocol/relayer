@@ -376,7 +376,7 @@ export class Relayer {
     const refundFees = await this.computeRefundFees(version, fillAmount, refundChainIds, hubPoolToken.symbol);
     const refundChains = Object.fromEntries(
       refundChainIds
-        .map((chainId, idx) => profitClient.getFillProfitability(deposit, fillAmount, refundFees[idx], hubPoolToken))
+        .map((_, idx) => profitClient.getFillProfitability(deposit, fillAmount, refundFees[idx], hubPoolToken))
         .map(({ profitable, netRelayerFeePct }, idx) => [refundChainIds[idx], { profitable, netRelayerFeePct }])
     );
 
