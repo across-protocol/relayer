@@ -358,10 +358,10 @@
     enabled "2.0.x"
     kuler "^2.0.0"
 
-"@defi-wonderland/smock@^2.3.4":
-  version "2.3.4"
-  resolved "https://registry.yarnpkg.com/@defi-wonderland/smock/-/smock-2.3.4.tgz#2bfe7e19052140634b25db344d77de9b0ac7a96b"
-  integrity sha512-VYJbsoCOdFRyGkAwvaQhQRrU6V8AjK3five8xdbo41DEE9n3qXzUNBUxyD9HhXB/dWWPFWT21IGw5Ztl6Qw3Ew==
+"@defi-wonderland/smock@^2.3.4", "@defi-wonderland/smock@^2.3.5":
+  version "2.3.5"
+  resolved "https://registry.yarnpkg.com/@defi-wonderland/smock/-/smock-2.3.5.tgz#2f4daa10b4f4c69627200128778f61c51f4b32cc"
+  integrity sha512-klANj1hUpc3cd2ShXdVH/bEGwxJd+LxOngkF5gLcIbg6b37RCgMPMmR/94/hgL62F8bfWtuNKsQD7K+c6M5fWQ==
   dependencies:
     "@nomicfoundation/ethereumjs-evm" "^1.0.0-rc.3"
     "@nomicfoundation/ethereumjs-util" "^8.0.0-rc.3"
