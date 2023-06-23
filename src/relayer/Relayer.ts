@@ -362,7 +362,7 @@ export class Relayer {
     }
 
     const preferredChainId = await inventoryClient.determineRefundChainId(deposit);
-    if (!sdkUtils.isUBA(version)) {
+    if (!sdkUtils.isUBA(version) || !inventoryClient.isInventoryManagementEnabled()) {
       const profitable = profitClient.isFillProfitable(deposit, fillAmount, toBN(0), hubPoolToken);
       return profitable ? preferredChainId : undefined;
     }
