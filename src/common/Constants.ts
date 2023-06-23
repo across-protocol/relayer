@@ -60,9 +60,11 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   10: 0,
   137: 128, // Commonly used finality level for CEX's that accept Polygon deposits
   288: 0,
+  324: 0,
   42161: 0,
   // Testnets:
   5: 0,
+  280: 0,
   421613: 0,
 };
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
@@ -71,9 +73,11 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     10: 60,
     137: 100, // Probabilistically safe level based on historic Polygon reorgs
     288: 0,
+    324: 0,
     42161: 0,
     // Testnets:
     5: 0,
+    280:0,
     421613: 0,
   },
   100: {
@@ -81,9 +85,11 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     10: 60,
     137: 80,
     288: 0,
+    324: 0,
     42161: 0,
     // Testnets:
     5: 0,
+    280:0,
     421613: 0,
   },
 };
@@ -101,9 +107,11 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   10: 10000, // Quick
   137: 3490,
   288: 4990,
+  324: 10000,
   42161: 10000,
   // Testnets:
   5: 10000,
+  280: 10000,
   421613: 10000,
 };
 
@@ -141,9 +149,11 @@ export const MAX_REORG_DISTANCE: { [chainId: number]: number } = {
   10: 120,
   137: 256,
   288: 0,
+  324: 0,
   42161: 0,
   // Testnets:
   5: 0,
+  280: 0,
   421613: 0,
 };
 
