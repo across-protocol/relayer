@@ -83,7 +83,7 @@ export async function run(): Promise<void> {
     }
     console.log("sending...");
     const method = "requestL2Transaction";
-    const l2PubdataByteLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
+    const l2PubdataByteLimit = zksync.utils.DEFAULT_GAS_PER_PUBDATA_LIMIT;
     const l2GasLimit = await zksync.utils.estimateDefaultBridgeDepositL2Gas(
       connectedSigner.provider,
       zkSyncProvider,
