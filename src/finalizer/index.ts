@@ -31,7 +31,7 @@ import {
   FINALIZER_TOKENBRIDGE_LOOKBACK,
   Multicall2Call,
 } from "../common";
-import * as optimismSDK from "@eth-optimism/sdk";
+import * as optimismSDK from "@across-protocol/optimism-sdk";
 config();
 let logger: winston.Logger;
 

@@ -1,4 +1,4 @@
-import { interfaces } from "@across-protocol/sdk-v2";
+import { clients, interfaces } from "@across-protocol/sdk-v2";
 
 export * from "./InventoryManagement";
 export * from "./SpokePool";
@@ -69,6 +69,8 @@ export type UbaFlow = interfaces.UbaFlow;
 export type UBASpokeBalanceType = interfaces.UBASpokeBalanceType;
 export type UBAFeeResult = interfaces.UBAFeeResult;
 export type UBAFlowRange = interfaces.UBAFlowRange;
+export type UBABalancingFee = clients.UBABalancingFee;
+export type UBASystemFee = clients.UBASystemFee;
 export const isUbaInflow = interfaces.isUbaInflow;
 export const isUbaOutflow = interfaces.isUbaOutflow;
 export const outflowIsFill = interfaces.outflowIsFill;

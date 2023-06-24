@@ -1,4 +1,5 @@
 import { ethers } from "../utils";
+import { utils } from "@across-protocol/sdk-v2";
 
 // This array contains all chains that Across supports, although some of the chains could be currently disabled.
 // The order of the chains is important to not change, as the dataworker proposes "bundle block numbers" per chain
@@ -11,6 +12,9 @@ export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
 // It protects bots from running outdated code against newer version of the on-chain config store.
 // @dev Incorrectly setting this value may lead to incorrect behaviour and potential loss of funds.
 export const CONFIG_STORE_VERSION = 1;
+
+// The first version where UBA is in effect.
+export const { UBA_MIN_CONFIG_STORE_VERSION } = utils;
 
 export const RELAYER_MIN_FEE_PCT = 0.0003;
 
@@ -141,6 +145,14 @@ export const MAX_REORG_DISTANCE: { [chainId: number]: number } = {
   // Testnets:
   5: 0,
   421613: 0,
+};
+
+// Reasonable default maxFeePerGas and maxPriorityFeePerGas scalers for each chain.
+export const DEFAULT_GAS_FEE_SCALERS: {
+  [chainId: number]: { maxFeePerGasScaler: number; maxPriorityFeePerGasScaler: number };
+} = {
+  1: { maxFeePerGasScaler: 3, maxPriorityFeePerGasScaler: 1.2 },
+  10: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
 };
 
 // This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.

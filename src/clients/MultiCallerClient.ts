@@ -38,6 +38,14 @@ export const unknownRevertReasonMethodsToIgnore = new Set([
   "executeRootBundle",
 ]);
 
+// @dev The dataworker executor personality typically bundles an Optimism L1 deposit via multicall3 aggregate(). Per
+//      Optimism's Bedrock migration, gas estimates should be padded by 50% to ensure that transactions do not fail
+//      with OoG. Because we optimistically construct an aggregate() transaction without simulating each simulating
+//      each transaction, we do not know the gas cost of each bundled transaction. Therefore, pad the resulting
+//      gasLimit. This can admittedly pad the gasLimit by a lot more than is required.
+//      See also https://community.optimism.io/docs/developers/bedrock/differences/
+const MULTICALL3_AGGREGATE_GAS_MULTIPLIER = 1.5;
+
 export class MultiCallerClient {
   protected txnClient: TransactionClient;
   protected txns: { [chainId: number]: AugmentedTransaction[] } = {};
@@ -174,22 +182,18 @@ export class MultiCallerClient {
       await this.buildMultiCallBundles(txns, this.chunkSize[chainId])
     );
     const batchSimResults = await this.txnClient.simulate(batchTxns);
-    let batchesAllSucceeded = true;
-    batchSimResults.forEach((result) => {
-      this.logger[result.succeed ? "debug" : "error"]({
+    const batchesAllSucceeded = batchSimResults.every(({ succeed, transaction, reason }, idx) => {
+      // If txn succeeded or the revert reason is known to be benign, then log at debug level.
+      this.logger[succeed || this.canIgnoreRevertReason({ succeed, transaction, reason }) ? "debug" : "error"]({
         at: "MultiCallerClient#executeChainTxnQueue",
-        message: result.succeed
-          ? `Successfully simulated ${networkName} transaction batch!`
-          : `Failed to simulate ${networkName} transaction batch!`,
-        batchTxn: {
-          ...result.transaction,
-          contract: result.transaction.contract.address,
-        },
+        message: `${succeed ? "Successfully simulated" : "Failed to simulate"} ${networkName} transaction batch!`,
+        batchTxn: { ...transaction, contract: transaction.contract.address },
+        reason,
       });
-      if (!result.succeed) {
-        batchesAllSucceeded = false;
-      }
+      batchTxns[idx].gasLimit = succeed ? transaction.gasLimit : undefined;
+      return succeed;
     });
+
     if (batchesAllSucceeded) {
       txnRequestsToSubmit.push(...batchTxns);
     } else {
@@ -269,6 +273,7 @@ export class MultiCallerClient {
       contract: multisender,
       method: "aggregate",
       args: [callData],
+      gasLimitMultiplier: MULTICALL3_AGGREGATE_GAS_MULTIPLIER,
       message: "Across multicall transaction",
       mrkdwn: mrkdwn.join(""),
     } as AugmentedTransaction;
@@ -380,9 +385,7 @@ export class MultiCallerClient {
         chunkSize
       );
       const multicallerTxnBundle = multicallerTxnChunks
-        .map((txnChunk) => {
-          return txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0];
-        })
+        .map((txnChunk) => (txnChunk.length > 1 ? this.buildMultiCallBundle(txnChunk) : txnChunk[0]))
         .flat();
       const multisenderTxnChunks = lodash.chunk(multisenderTxns, chunkSize);
       const multisenderTxnBundle = await Promise.all(
@@ -419,13 +422,9 @@ export class MultiCallerClient {
   // in order to not ignore errors thrown by non-contract reverts. For example, a NodeJS error might result in a reason
   // string that includes more than just the contract revert reason.
   protected canIgnoreRevertReason(txn: TransactionSimulationResult): boolean {
-    // prettier-ignore
-    return (
-      !txn.succeed && (
-        knownRevertReasons.has(txn.reason) ||
-        (unknownRevertReasonMethodsToIgnore.has(txn.transaction.method) && txn.reason === unknownRevertReason)
-      )
-    );
+    const { transaction: _txn, reason } = txn;
+    const knownReason = [...knownRevertReasons].some((knownReason) => reason.includes(knownReason));
+    return knownReason || (unknownRevertReasonMethodsToIgnore.has(_txn.method) && reason.includes(unknownRevertReason));
   }
 
   // Filter out transactions that revert for non-critical, expected reasons. For example, the "relay filled" error may
