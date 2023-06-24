@@ -7,8 +7,10 @@ const args = minimist(process.argv.slice(2), {
   string: ["token", "to", "amount", "chainId", "zkSyncChainId"],
 });
 
+// Used to send messages between L1 <> L2. L1 -> L2 communication is implemented as requesting an
+// L2 transaction on L1 and executing it on L2.
+// https://era.zksync.io/docs/reference/architecture/contracts/system-contracts.html#mailboxfacet
 export const mailboxInterface = [
-  { stateMutability: "payable", type: "fallback" },
   {
     inputs: [
       { internalType: "address", name: "_contractL2", type: "address" },
@@ -33,6 +35,21 @@ export const mailboxInterface = [
     name: "l2TransactionBaseCost",
     outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
     stateMutability: "pure",
+    type: "function",
+  },
+];
+export const l1Erc20BridgeInterface = [
+  {
+    inputs: [
+      { internalType: "address", name: "_l2Receiver", type: "address" },
+      { internalType: "address", name: "_l1Token", type: "address" },
+      { internalType: "uint256", name: "_amount", type: "uint256" },
+      { internalType: "uint256", name: "_l2TxGasLimit", type: "uint256" },
+      { internalType: "uint256", name: "_l2TxGasPerPubdataByte", type: "uint256" },
+    ],
+    name: "deposit",
+    outputs: [{ internalType: "bytes32", name: "l2TxHash", type: "bytes32" }],
+    stateMutability: "payable",
     type: "function",
   },
 ];
@@ -67,15 +84,11 @@ export async function run(): Promise<void> {
   const txnClient = new TransactionClient(Logger);
 
   const zkSyncProvider = new zksync.Provider("https://mainnet.era.zksync.io");
-  const zkSyncWeb3Wallet = new zksync.Wallet(baseSigner.privateKey, zkSyncProvider, connectedSigner.provider);
+  const mailboxContract = new Contract("0x32400084C286CF3E17e7B677ea9583e60a000324", mailboxInterface, connectedSigner);
+  const l2PubdataByteLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
 
   // Deposit ETH to ZkSync
   if (token === ZERO_ADDRESS) {
-    const mailboxContract = new Contract(
-      "0x32400084C286CF3E17e7B677ea9583e60a000324",
-      mailboxInterface,
-      connectedSigner
-    );
     const amountFromWei = ethers.utils.formatUnits(args.amount, 18);
     console.log(`Send ETH with amount ${amountFromWei} tokens to ${recipient} on chain ${args.zkSyncChainId}}`);
     if (!(await askYesNoQuestion("\nConfirm that you want to execute this transaction?"))) {
@@ -83,38 +96,30 @@ export async function run(): Promise<void> {
     }
     console.log("sending...");
     const method = "requestL2Transaction";
-    const l2PubdataByteLimit = zksync.utils.DEFAULT_GAS_PER_PUBDATA_LIMIT;
     const l2GasLimit = await zksync.utils.estimateDefaultBridgeDepositL2Gas(
       connectedSigner.provider,
       zkSyncProvider,
-      zksync.utils.ETH_ADDRESS,
+      token,
       toBN(args.amount),
       recipient,
       baseSigner.address,
       l2PubdataByteLimit
     );
     const params = [recipient, args.amount, "0x", l2GasLimit.toString(), l2PubdataByteLimit, [], recipient];
-    console.log(
-      `Params for 'requestL2Transaction': [_contractL2: ${params[0]}, _l2Value: ${params[1]}, _calldata: ${params[2]}, _l2GasLimit: ${params[3]}, _l2GasPerPubdataByteLimit: ${params[4]}, _factoryDeps: ${params[5]}, _refundRecipient: ${params[6]}]`
-    );
-
     const estimatedL2GasPrice = await zkSyncProvider.getGasPrice();
-    console.log("Estimated L2 gas price", estimatedL2GasPrice.toString());
-    const l2TransactionBaseCost = estimatedL2GasPrice.mul(l2GasLimit);
-    console.log("L2 transaction base cost", l2TransactionBaseCost.toString());
-    const _l2TransactionBaseCost = await mailboxContract.l2TransactionBaseCost(
+    const l2TransactionBaseCost = await mailboxContract.l2TransactionBaseCost(
       estimatedL2GasPrice,
       l2GasLimit,
       l2PubdataByteLimit
     );
-    console.log(`Contract estimated L2 transaction base cost: ${_l2TransactionBaseCost.toString()}`);
+    console.log(`Contract estimated L2 transaction base cost: ${l2TransactionBaseCost.toString()}`);
     const _txnRequest: AugmentedTransaction = {
       contract: mailboxContract,
       chainId: args.chainId,
       method,
       args: params,
       gasLimitMultiplier: 1,
-      value: _l2TransactionBaseCost.add(args.amount),
+      value: l2TransactionBaseCost.add(args.amount),
       message: "Deposit ETH to ZkSync",
       mrkdwn: "Deposit ETH to ZkSync",
     };
@@ -125,10 +130,8 @@ export async function run(): Promise<void> {
       console.log("Simulation failed", simulationResult);
     }
   }
-  // TODO: Use TxnClient
   // Send ERC20
   else {
-    // const l1ERC20Bridge = new Contract("0x57891966931Eb4Bb6FB81430E6cE0A03AAbDe063", mailboxInterface, connectedSigner);
     const erc20 = new ethers.Contract(token, ERC20.abi, connectedSigner);
     const decimals = Number(await erc20.decimals());
     const symbol = await erc20.symbol();
@@ -139,15 +142,47 @@ export async function run(): Promise<void> {
       return;
     }
     console.log("sending...");
-    // const approval = await erc20.approve(l1ERC20Bridge.address, toBN(args.amount).mul(100));
-    // console.log("Approval tx hash:", approval.hash);
-    const tx = await zkSyncWeb3Wallet.deposit({
-      to: recipient,
+
+    const l1ERC20Bridge = new Contract(
+      "0x57891966931Eb4Bb6FB81430E6cE0A03AAbDe063",
+      l1Erc20BridgeInterface,
+      connectedSigner
+    );
+    const method = "deposit";
+    const l2GasLimit = await zksync.utils.estimateDefaultBridgeDepositL2Gas(
+      connectedSigner.provider,
+      zkSyncProvider,
       token,
-      amount: toBN(args.amount),
-    });
-    const receipt = await tx.wait();
-    console.log("Transaction hash:", receipt.transactionHash);
+      toBN(args.amount),
+      recipient,
+      baseSigner.address,
+      l2PubdataByteLimit
+    );
+
+    const params = [recipient, token, args.amount, l2GasLimit, l2PubdataByteLimit];
+    const estimatedL2GasPrice = await zkSyncProvider.getGasPrice();
+    const l2TransactionBaseCost = await mailboxContract.l2TransactionBaseCost(
+      estimatedL2GasPrice,
+      l2GasLimit,
+      l2PubdataByteLimit
+    );
+
+    const _txnRequest: AugmentedTransaction = {
+      contract: l1ERC20Bridge,
+      chainId: args.chainId,
+      method,
+      args: params,
+      gasLimitMultiplier: 1,
+      value: l2TransactionBaseCost,
+      message: "Deposit ERC20 to ZkSync",
+      mrkdwn: "Deposit ERC20 to ZkSync",
+    };
+    const simulationResult = (await txnClient.simulate([_txnRequest]))[0];
+    if (simulationResult.succeed) {
+      await txnClient.submit(args.chainId, [simulationResult.transaction]);
+    } else {
+      console.log("Simulation failed", simulationResult);
+    }
   }
 }
 
