@@ -372,7 +372,7 @@ export class Relayer {
     const refundChainIds = [preferredChainId];
     [destinationChainId, hubPoolClient.chainId].forEach((chainId) => {
       if (!refundChainIds.includes(chainId)) {
-        refundChainIds.push(chainId)
+        refundChainIds.push(chainId);
       }
     });
 
