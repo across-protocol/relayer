@@ -87,6 +87,11 @@ export async function run(): Promise<void> {
   const mailboxContract = new Contract("0x32400084C286CF3E17e7B677ea9583e60a000324", mailboxInterface, connectedSigner);
   const l2PubdataByteLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
 
+  // TODO: Track outstanding transfers, which is needed in ZkSyncAdapter:
+  // L1: DepositInitiated(l2DepositTxHash, from, to, l1Token,amount): https://etherscan.io/tx/0x9fc458abe311d5ba7fc9a887e595fa251b24604a286a794ce53f7cb634f29df2#eventlog
+  // L2: TODO figure out how to decode: https://explorer.zksync.io/tx/0xb4df1f44abd7b14afe10af3b0b1eb70ab610ace1e1a6c0ec55742849b77ae9a2#overview
+  // L2 contract should call finalizeDeposit(l1Sender, l2Receiver, l1Token, amount, bridgeData):
+  // https://github.com/matter-labs/era-contracts/blob/main/zksync/contracts/bridge/L2ERC20Bridge.sol#L62
   // Deposit ETH to ZkSync
   if (token === ZERO_ADDRESS) {
     const amountFromWei = ethers.utils.formatUnits(args.amount, 18);
