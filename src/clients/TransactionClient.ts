@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
+  isDefined,
   winston,
   getNetworkName,
   Contract,
@@ -73,6 +74,11 @@ export class TransactionClient {
 
       if (nonce !== null) {
         this.logger.debug({ at: "TransactionClient#submit", message: `Using nonce ${nonce}.` });
+      }
+
+      if (!isDefined(txn.gasLimit)) {
+        const { transaction: simResult }  = (await this.simulate([txn]))[0];
+        txn.gasLimit = simResult.gasLimit;
       }
 
       // @dev It's assumed that nobody ever wants to discount the gasLimit.
