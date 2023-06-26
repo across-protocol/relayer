@@ -77,8 +77,11 @@ export class TransactionClient {
       }
 
       if (!isDefined(txn.gasLimit)) {
-        const { transaction: simResult }  = (await this.simulate([txn]))[0];
-        txn.gasLimit = simResult.gasLimit;
+        const { succeed, transaction: txnSim, reason }  = (await this.simulate([txn]))[0];
+        if (!succeed) {
+          throw new Error(`Unable to simulate chain ${chainId} ${txn.method} transaction (${reason})`);
+        }
+        txn.gasLimit = txnSim.gasLimit;
       }
 
       // @dev It's assumed that nobody ever wants to discount the gasLimit.
