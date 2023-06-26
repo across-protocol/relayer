@@ -1,5 +1,16 @@
 import { AugmentedTransaction, TransactionClient } from "../src/clients";
-import { ethers, getSigner, getProvider, ERC20, ZERO_ADDRESS, toBN, Logger, Contract, isDefined } from "../src/utils";
+import {
+  ethers,
+  getSigner,
+  getProvider,
+  ERC20,
+  ZERO_ADDRESS,
+  toBN,
+  Logger,
+  Contract,
+  isDefined,
+  TransactionSimulationResult,
+} from "../src/utils";
 import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
 import * as zksync from "zksync-web3";
@@ -49,6 +60,8 @@ export async function run(): Promise<void> {
   );
   const l2PubdataByteLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
 
+  let simulationResult: TransactionSimulationResult;
+
   // TODO: Track outstanding transfers, which is needed in ZkSyncAdapter:
   // L1: DepositInitiated(l2DepositTxHash, from, to, l1Token,amount): https://etherscan.io/tx/0x9fc458abe311d5ba7fc9a887e595fa251b24604a286a794ce53f7cb634f29df2#eventlog
   // L2: TODO figure out how to decode: https://explorer.zksync.io/tx/0xb4df1f44abd7b14afe10af3b0b1eb70ab610ace1e1a6c0ec55742849b77ae9a2#overview
@@ -89,12 +102,7 @@ export async function run(): Promise<void> {
       message: "Deposit ETH to ZkSync",
       mrkdwn: "Deposit ETH to ZkSync",
     };
-    const simulationResult = (await txnClient.simulate([_txnRequest]))[0];
-    if (simulationResult.succeed) {
-      await txnClient.submit(args.chainId, [simulationResult.transaction]);
-    } else {
-      console.log("Simulation failed", simulationResult);
-    }
+    simulationResult = (await txnClient.simulate([_txnRequest]))[0];
   }
   // Send ERC20
   else {
@@ -143,12 +151,13 @@ export async function run(): Promise<void> {
       message: "Deposit ERC20 to ZkSync",
       mrkdwn: "Deposit ERC20 to ZkSync",
     };
-    const simulationResult = (await txnClient.simulate([_txnRequest]))[0];
-    if (simulationResult.succeed) {
-      await txnClient.submit(args.chainId, [simulationResult.transaction]);
-    } else {
-      console.log("Simulation failed", simulationResult);
-    }
+    simulationResult = (await txnClient.simulate([_txnRequest]))[0];
+  }
+
+  if (simulationResult.succeed) {
+    await txnClient.submit(args.chainId, [simulationResult.transaction]);
+  } else {
+    console.log("Simulation failed", simulationResult);
   }
 }
 
