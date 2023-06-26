@@ -78,7 +78,7 @@ export async function run(): Promise<void> {
   const recipient = args.to;
   const token = args.token;
   if (!ethers.utils.isAddress(recipient)) {
-    throw new Error("invalid addresses");
+    throw new Error(`invalid \"to\" address: ${recipient}`);
   }
 
   const txnClient = new TransactionClient(Logger);
