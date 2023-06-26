@@ -1,4 +1,3 @@
-
 import assert from "assert";
 import { groupBy } from "lodash";
 import { clients as sdkClients, utils as sdkUtils } from "@across-protocol/sdk-v2";
@@ -17,7 +16,6 @@ import { createFormatFunction, etherscanLink, formatFeePct, toBN, toBNWei } from
 import { RelayerClients } from "./RelayerClientHelper";
 import { Deposit, DepositWithBlock } from "../interfaces";
 import { RelayerConfig, MessageRelayRule } from "./RelayerConfig";
-import { CONFIG_STORE_VERSION } from "../common";
 const { UBAActionType } = sdkClients;
 
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
@@ -33,7 +31,7 @@ export class Relayer {
     readonly clients: RelayerClients,
     readonly config: RelayerConfig
   ) {
-    if (config.messageRules.length > 0) {
+    if (config.messageRules?.length > 0) {
       this.logger.debug({
         at: "Relayer",
         message: "Instantiated realyer with message relay rules",
