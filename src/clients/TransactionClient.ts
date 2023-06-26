@@ -77,7 +77,7 @@ export class TransactionClient {
       }
 
       if (!isDefined(txn.gasLimit)) {
-        const { succeed, transaction: txnSim, reason }  = (await this.simulate([txn]))[0];
+        const { succeed, transaction: txnSim, reason } = (await this.simulate([txn]))[0];
         if (!succeed) {
           throw new Error(`Unable to simulate chain ${chainId} ${txn.method} transaction (${reason})`);
         }
