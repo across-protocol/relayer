@@ -11,25 +11,26 @@
     "@uma/common" "^2.17.0"
     hardhat "^2.9.3"
 
-"@across-protocol/contracts-v2@2.3.0":
-  version "2.3.0"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.3.0.tgz#ebd246717fd4d38ea2d12de4ec22c3ecfec83989"
-  integrity sha512-ZGA3s/YM9PUs3OiTULHZYfIGVnaINGbQ7mRqw32YG74HWsppYJJJwYBdaXJEqgZGz0B/lAaP0ad1OSCbGE8Q9Q==
+"@across-protocol/contracts-v2@2.3.2":
+  version "2.3.2"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.3.2.tgz#f89167a8617db5ffbf097bc7a4026de08e10ea43"
+  integrity sha512-GPRTgu0ESVWPZ1D68DV7UCxW7KXDdht73xKgceEtW1addBjiTVYfr8ag1R/Fj3ljASwl/zERYZdFNQSlunao7w==
   dependencies:
     "@defi-wonderland/smock" "^2.3.4"
     "@eth-optimism/contracts" "^0.5.40"
     "@ethersproject/abstract-provider" "5.7.0"
     "@ethersproject/abstract-signer" "5.7.0"
+    "@ethersproject/bignumber" "5.7.0"
     "@openzeppelin/contracts" "4.8.3"
     "@openzeppelin/contracts-upgradeable" "4.8.3"
     "@uma/common" "^2.29.0"
     "@uma/contracts-node" "^0.3.18"
     "@uma/core" "^2.41.0"
 
-"@across-protocol/contracts-v2@2.3.2":
-  version "2.3.2"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.3.2.tgz#f89167a8617db5ffbf097bc7a4026de08e10ea43"
-  integrity sha512-GPRTgu0ESVWPZ1D68DV7UCxW7KXDdht73xKgceEtW1addBjiTVYfr8ag1R/Fj3ljASwl/zERYZdFNQSlunao7w==
+"@across-protocol/contracts-v2@2.3.3":
+  version "2.3.3"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts-v2/-/contracts-v2-2.3.3.tgz#7581872e3baa7ed1e2a01b09ca0cda13df5461e9"
+  integrity sha512-ei3MvryADWaC33Fn+hu6GAaXTGOoovYkfHAEv1tEF/ULLhjIZ6uhAtQ7cmSiva73zVwaOx15WXunnbn6kV4siQ==
   dependencies:
     "@defi-wonderland/smock" "^2.3.4"
     "@eth-optimism/contracts" "^0.5.40"
