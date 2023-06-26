@@ -1,5 +1,6 @@
 import { groupBy } from "lodash";
 import { clients as sdkClients, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { SpokePoolClient } from "../clients";
 import {
   BigNumber,
   winston,
@@ -12,12 +13,13 @@ import {
 } from "../utils";
 import { createFormatFunction, etherscanLink, formatFeePct, toBN, toBNWei } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
-import { Deposit, DepositWithBlock } from "../interfaces";
+import { Deposit, DepositWithBlock, FillWithBlock, L1Token, RefundRequestWithBlock } from "../interfaces";
 import { RelayerConfig } from "./RelayerConfig";
 
 const { UBAActionType } = sdkClients;
 
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
+export const UINT256_MAX = toBN(2).pow(256).sub(1); // @note: Temporary
 
 export class Relayer {
   // Track by originChainId since depositId is issued on the origin chain.
@@ -306,6 +308,105 @@ export class Relayer {
     this.clients.tokenClient.decrementLocalBalance(deposit.destinationChainId, deposit.destinationToken, fillAmount);
   }
 
+  // Strategy for requesting refunds: Query all refunds requests, and match them to fills.
+  // The remaining fills are eligible for new requests.
+  async requestRefunds(): Promise<void> {
+    const { multiCallerClient, ubaClient } = this.clients;
+    const spokePoolClients = Object.values(this.clients.spokePoolClients);
+
+    await ubaClient.update();
+
+    const eligibleFillsByRefundChain: { [chainId: number]: FillWithBlock[] } = Object.fromEntries(
+      spokePoolClients.map(({ chainId }) => [chainId, []])
+    );
+
+    const refundRequestsByDstChain: { [chainId: number]: RefundRequestWithBlock[] } = {};
+
+    spokePoolClients.forEach((spokePoolClient) => {
+      // For each refund/repayment Spoke Pool, group its set of by corresponding destination chain.
+      spokePoolClient.getRefundRequests().forEach((refundRequest: RefundRequestWithBlock) => {
+        if (
+          refundRequest.relayer === this.relayerAddress &&
+          ubaClient.refundRequestIsValid(spokePoolClient.chainId, refundRequest)
+        ) {
+          refundRequestsByDstChain[refundRequest.destinationChainId].push(refundRequest);
+        }
+      });
+    });
+
+    for (const spokePoolClient of spokePoolClients) {
+      const { chainId: destinationChainId } = spokePoolClient;
+      const fills = this.findEligibleFills(spokePoolClient, refundRequestsByDstChain[destinationChainId]);
+      fills.forEach((fill) => eligibleFillsByRefundChain[fill.repaymentChainId].push(fill));
+    }
+
+    // Enqueue a refund for each eligible fill.
+    Object.values(eligibleFillsByRefundChain).forEach((fills) => {
+      fills.forEach((fill) => {
+        this.logger.debug({ at: "Relayer::requestRefunds", message: "Requesting refund for fill.", fill });
+        this.requestRefund(fill);
+      });
+    });
+
+    await multiCallerClient.executeTransactionQueue();
+  }
+
+  findEligibleFills(
+    spokePoolClient: SpokePoolClient,
+    refundRequests: RefundRequestWithBlock[] = []
+  ): FillWithBlock[] {
+    const refundRequestDepositIds = refundRequests.map(({ depositId }) => depositId);
+
+    // Find fills where repayment was requested on another chain.
+    const eligibleFills = spokePoolClient.getFillsForRelayer(this.relayerAddress).filter((fill) => {
+      return fill.repaymentChainId !== fill.destinationChainId && !refundRequestDepositIds.includes(fill.depositId);
+    });
+
+    return eligibleFills;
+  }
+
+  protected requestRefund(fill: FillWithBlock): void {
+    const { hubPoolClient, multiCallerClient, spokePoolClients } = this.clients;
+    const {
+      originChainId,
+      depositId,
+      destinationChainId,
+      destinationToken,
+      fillAmount: amount,
+      realizedLpFeePct,
+      repaymentChainId: chainId,
+      blockNumber: fillBlock,
+    } = fill;
+
+    const contract = spokePoolClients[chainId].spokePool;
+    const method = "requestRefund";
+    // @todo: Should support specifying max impact against the refund amount (i.e. to mitigate price impact by fills).
+    const maxCount = UINT256_MAX;
+
+    // Resolve the refund token from the fill token. The name getDestinationtTokenForDeposit() is a misnomer here.
+    const refundToken = hubPoolClient.getDestinationTokenForDeposit({
+      originChainId: destinationChainId,
+      originToken: destinationToken,
+      destinationChainId: chainId,
+    });
+
+    const args = [
+      refundToken,
+      amount,
+      originChainId,
+      destinationChainId,
+      realizedLpFeePct,
+      depositId,
+      fillBlock,
+      maxCount,
+    ];
+
+    const message = `Submitted refund request on chain ${getNetworkName(chainId)}.`;
+    const mrkdwn = this.constructRefundRequestMarkdown(fill);
+
+    multiCallerClient.enqueueTransaction({ chainId, contract, method, args, message, mrkdwn });
+  }
+
   zeroFillDeposit(deposit: Deposit): void {
     // We can only overwrite repayment chain ID if we can fully fill the deposit.
     const repaymentChainId = deposit.destinationChainId;
@@ -526,6 +627,24 @@ export class Relayer {
       `Fill amount of ${createFormatFunction(2, 4, false, decimals)(fillAmount.toString())} ${symbol} with ` +
       `relayerFee ${formatFeePct(deposit.relayerFeePct)}% & ` +
       `realizedLpFee ${formatFeePct(deposit.realizedLpFeePct)}%. `
+    );
+  }
+
+  private constructRefundRequestMarkdown(fill: FillWithBlock): string {
+    const { hubPoolClient } = this.clients;
+    const { depositId, destinationChainId, destinationToken } = fill;
+
+    const { symbol, decimals } = hubPoolClient.getL1TokenInfoForL2Token(destinationToken, destinationChainId);
+
+    const refundChain = getNetworkName(fill.repaymentChainId);
+    const originChain = getNetworkName(fill.originChainId);
+    const destinationChain = getNetworkName(destinationChainId);
+
+    const _fillAmount = createFormatFunction(2, 4, false, decimals)(fill.fillAmount.toString());
+
+    return (
+      `Requested refund on ${refundChain} for ${_fillAmount} ${symbol} for ${originChain} depositId ${depositId},` +
+      ` filled on ${destinationChain}, with relayerFee ${formatFeePct(fill.relayerFeePct)}%.`
     );
   }
 }

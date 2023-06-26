@@ -1,3 +1,4 @@
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClient } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
@@ -14,6 +15,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
     logger[startupLogLevel(config)]({ at: "Relayer#index", message: "Relayer started 🏃‍♂️", config });
 
     relayerClients = await constructRelayerClients(logger, config, baseSigner);
+    const { configStoreClient } = relayerClients;
 
     const relayer = new Relayer(baseSigner.address, logger, relayerClients, config);
 
@@ -25,6 +27,11 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
       await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled);
 
       await relayerClients.multiCallerClient.executeTransactionQueue(!config.sendingRelaysEnabled);
+
+      const version = configStoreClient.getConfigStoreVersionForTimestamp();
+      if (sdkUtils.isUBA(version) && version <= configStoreClient.configStoreVersion) {
+        await relayer.requestRefunds();
+      }
 
       // Unwrap WETH after filling deposits so we don't mess up slow fill logic, but before rebalancing
       // any tokens so rebalancing can take into account unwrapped WETH balances.
