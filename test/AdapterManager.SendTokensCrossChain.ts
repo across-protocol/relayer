@@ -229,7 +229,7 @@ async function constructChainSpecificFakes() {
   l1PolygonRootChainManager = await makeFake("polygonL1RootChainManager", "0xA0c68C638235ee32657e8f720a23ceC1bFc77C77");
 
   // Arbitrum contracts
-  l1ArbitrumBridge = await makeFake("arbitrumL1Erc20Gateway", "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef");
+  l1ArbitrumBridge = await makeFake("arbitrumErc20GatewayRouter", "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef");
 }
 
 async function makeFake(contractName: string, address: string) {
