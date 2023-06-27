@@ -1,3 +1,5 @@
+import { constants } from "@across-protocol/sdk-v2"
+const { TOKEN_SYMBOLS_MAP } = constants;
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
   [chainId: number]: {
@@ -143,6 +145,38 @@ export const CONTRACT_ADDRESSES: {
     ovmStandardBridge: {
       address: "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1",
     },
+    weth: {
+      address: TOKEN_SYMBOLS_MAP.WETH.addresses[1],
+      abi: [
+        {
+          constant: false,
+          inputs: [{ name: "wad", type: "uint256" }],
+          name: "withdraw",
+          outputs: [],
+          payable: false,
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          constant: false,
+          inputs: [],
+          name: "deposit",
+          outputs: [],
+          payable: true,
+          stateMutability: "payable",
+          type: "function",
+        },
+        {
+          constant: true,
+          inputs: [{ name: "", type: "address" }],
+          name: "balanceOf",
+          outputs: [{ name: "", type: "uint256" }],
+          payable: false,
+          stateMutability: "view",
+          type: "function",
+        },
+      ],
+    }
   },
   10: {
     daiOptimismBridge: {
