@@ -6,6 +6,7 @@ import { ConfigStoreClient, SpokePoolClient } from "../src/clients";
 import { AdapterManager } from "../src/clients/bridges"; // Tested
 import * as interfaces from "../src/clients/bridges/ContractInterfaces";
 import { constants } from "@across-protocol/sdk-v2";
+import { CONTRACT_ADDRESSES } from "../src/common";
 const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
 let hubPoolClient: MockHubPoolClient;
@@ -221,8 +222,8 @@ async function constructChainSpecificFakes() {
   l1AtomicDepositor = await makeFake("atomicDepositor", "0x26eaf37ee5daf49174637bdcd2f7759a25206c34");
 
   // Optimism contracts
-  l1OptimismBridge = await makeFake("ovmL1Bridge", "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1");
-  l1OptimismDaiBridge = await makeFake("ovmL1Bridge", "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f");
+  l1OptimismBridge = await makeFake("ovmStandardBridge", "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1");
+  l1OptimismDaiBridge = await makeFake("ovmStandardBridge", "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f");
 
   // Polygon contracts
   l1PolygonRootChainManager = await makeFake("polygonL1RootChainManager", "0xA0c68C638235ee32657e8f720a23ceC1bFc77C77");
@@ -232,9 +233,9 @@ async function constructChainSpecificFakes() {
 }
 
 async function makeFake(contractName: string, address: string) {
-  contractName = contractName + "Interface";
-  if (!interfaces[contractName]) {
+  const _interface = interfaces[contractName + "Interface"] ?? CONTRACT_ADDRESSES[1][contractName]?.abi;
+  if (_interface === undefined) {
     throw new Error(`${contractName} is not a valid contract name`);
   }
-  return await smock.fake(interfaces[contractName], { address });
+  return await smock.fake(_interface, { address });
 }

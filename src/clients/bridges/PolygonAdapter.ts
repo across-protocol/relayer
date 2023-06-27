@@ -17,7 +17,7 @@ import { polygonL1RootChainManagerInterface } from "./";
 import { SortableEvent } from "../../interfaces";
 import { constants } from "@across-protocol/sdk-v2";
 import { OutstandingTransfers } from "../../interfaces";
-import { CONTRACT_ADDRESSES } from "@across-protocol/optimism-sdk";
+import { CONTRACT_ADDRESSES } from "../../common";
 const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
 // ether bridge = 0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30

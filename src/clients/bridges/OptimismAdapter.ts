@@ -7,23 +7,23 @@ import { SortableEvent } from "../../interfaces";
 import { OutstandingTransfers } from "../../interfaces";
 import { constants } from "@across-protocol/sdk-v2";
 import { CONTRACT_ADDRESSES } from "../../common";
-const TOKEN_SYMBOLS_MAP = constants.TOKEN_SYMBOLS_MAP;
-
-const customL1OptimismBridgeAddresses = {
-  [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[1].daiOptimismBridge.address,
-} as const;
-
-const customOvmBridgeAddresses = {
-  [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[10].daiOptimismBridge.address,
-} as const;
+const { TOKEN_SYMBOLS_MAP } = constants;
 
 export const isOvmChain = (chainId: number): boolean => [10, 288].includes(chainId);
-
-const atomicDepositorAddress = CONTRACT_ADDRESSES[1].atomicDepositor.address;
 
 export class OptimismAdapter extends BaseAdapter {
   public l2Gas: number;
   private txnClient: TransactionClient;
+
+  private customL1OptimismBridgeAddresses = {
+    [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[1].daiOptimismBridge.address,
+  } as const;
+
+  private customOvmBridgeAddresses = {
+    [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[10].daiOptimismBridge.address,
+  } as const;
+
+  private atomicDepositorAddress = CONTRACT_ADDRESSES[1].atomicDepositor.address;
 
   constructor(
     logger: winston.Logger,
@@ -178,14 +178,14 @@ export class OptimismAdapter extends BaseAdapter {
       throw new Error(`chainId ${this.chainId} is not supported`);
     }
     const l1BridgeAddress = this.hasCustomL1Bridge(l1Token)
-      ? customL1OptimismBridgeAddresses[l1Token]
+      ? this.customL1OptimismBridgeAddresses[l1Token]
       : CONTRACT_ADDRESSES[1].ovmStandardBridge.address;
     return new Contract(l1BridgeAddress, CONTRACT_ADDRESSES[1].daiOptimismBridge.abi, this.getSigner(1));
   }
 
   getL1TokenGateway(l1Token: string): Contract {
     if (this.isWeth(l1Token)) {
-      return new Contract(atomicDepositorAddress, CONTRACT_ADDRESSES[1].atomicDepositor.abi, this.getSigner(1));
+      return new Contract(this.atomicDepositorAddress, CONTRACT_ADDRESSES[1].atomicDepositor.abi, this.getSigner(1));
     } else {
       return this.getL1Bridge(l1Token);
     }
@@ -196,16 +196,16 @@ export class OptimismAdapter extends BaseAdapter {
       throw new Error(`chainId ${this.chainId} is not supported`);
     }
     const l2BridgeAddress = this.hasCustomL2Bridge(l1Token)
-      ? customOvmBridgeAddresses[l1Token]
+      ? this.customOvmBridgeAddresses[l1Token]
       : CONTRACT_ADDRESSES[10].ovmStandardBridge.address;
     return new Contract(l2BridgeAddress, CONTRACT_ADDRESSES[10].ovmStandardBridge.abi, this.getSigner(this.chainId));
   }
 
   private hasCustomL1Bridge(l1Token: string): boolean {
-    return l1Token in customL1OptimismBridgeAddresses;
+    return l1Token in this.customL1OptimismBridgeAddresses;
   }
 
   private hasCustomL2Bridge(l1Token: string): boolean {
-    return l1Token in customOvmBridgeAddresses;
+    return l1Token in this.customOvmBridgeAddresses;
   }
 }
