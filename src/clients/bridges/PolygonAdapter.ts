@@ -85,6 +85,13 @@ const tokenToBridge = {
     l1AmountProp: "amount",
     l2AmountProp: "value",
   }, // ACX
+  [TOKEN_SYMBOLS_MAP.POOL.addresses[CHAIN_IDs.MAINNET]]: {
+    l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
+    l2TokenAddress: TOKEN_SYMBOLS_MAP.POOL.addresses[CHAIN_IDs.POLYGON],
+    l1Method: "LockedERC20",
+    l1AmountProp: "amount",
+    l2AmountProp: "value",
+  }, // POOL
   [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30",
     l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.POLYGON],
