@@ -95,13 +95,10 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       );
 
       const ubaClient = new UBAClient(config.chainIdListIndices, clients.hubPoolClient, spokePoolClients, logger);
-      // TODO: The following UBA client update updates the hub pool, config store and all spoke pool clients.
-      // However, to construct the spoke pool clients with the correct lookbacks, we need to update the hub pool
-      // client first to figure out how far to look back (based on the latest X validated root bundle end blocks), so
-      // its probably best that we add a method to the UBA client that just calls instantiateUBAFeeCalculator
-      // for each chain/token.
-      //
-      // await ubaClient.update()
+      // TODO: Should we update the UBA client here?
+      // Update UBA Calculator and instruct UBA Client that other clients are already updated (i.e. don't force
+      // internal client updates).
+      // await ubaClient.update(false);
 
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled) {
