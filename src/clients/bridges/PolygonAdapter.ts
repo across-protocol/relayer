@@ -13,10 +13,11 @@ import {
 import { ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter, polygonL1BridgeInterface, polygonL2BridgeInterface } from "./";
-import { polygonL1RootChainManagerInterface, atomicDepositorInterface } from "./";
+import { polygonL1RootChainManagerInterface } from "./";
 import { SortableEvent } from "../../interfaces";
 import { constants } from "@across-protocol/sdk-v2";
 import { OutstandingTransfers } from "../../interfaces";
+import { CONTRACT_ADDRESSES } from "@across-protocol/optimism-sdk";
 const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
 // ether bridge = 0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30
@@ -109,8 +110,6 @@ const tokenToBridge = {
 } as const;
 
 type SupportedL1Token = string;
-
-const atomicDepositorAddress = "0x26eaf37ee5daf49174637bdcd2f7759a25206c34";
 
 export class PolygonAdapter extends BaseAdapter {
   constructor(
@@ -253,7 +252,8 @@ export class PolygonAdapter extends BaseAdapter {
 
   getL1TokenGateway(l1Token: string): Contract {
     if (this.isWeth(l1Token)) {
-      return new Contract(atomicDepositorAddress, atomicDepositorInterface, this.getSigner(1));
+      const atomicDepositor = CONTRACT_ADDRESSES[1].atomicDepositor;
+      return new Contract(atomicDepositor.address, atomicDepositor.abi, this.getSigner(1));
     } else {
       return new Contract(l1RootChainManager, polygonL1RootChainManagerInterface, this.getSigner(1));
     }
