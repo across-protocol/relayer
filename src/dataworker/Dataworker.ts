@@ -249,23 +249,22 @@ export class Dataworker {
     }
   }
 
-  async proposeRootBundle(
-    spokePoolClients: { [chainId: number]: SpokePoolClient },
-    usdThresholdToSubmitNewBundle?: BigNumber,
-    submitProposals = true,
+  /**
+   * Returns the next bundle block ranges if a new proposal is possible, otherwise
+   * returns undefined.
+   * @param spokePoolClients
+   * @param earliestBlocksInSpokePoolClients Earliest blocks loaded in SpokePoolClients. Used to determine severity
+   * of log level
+   * @returns Array of blocks ranges to propose for next bundle.
+   */
+  _getNextProposalBlockRanges(
+    spokePoolClients: SpokePoolClientsByChain,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): Promise<void> {
-    // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
-    // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
-    // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
-    // safe strategy but could lead to new roots failing to be proposed until ALL networks are healthy.
-
+  ): number[][] | undefined {
     // Check if a bundle is pending.
     if (!this.clients.hubPoolClient.isUpdated || !this.clients.hubPoolClient.latestBlockNumber) {
       throw new Error("HubPoolClient not updated");
     }
-    const hubPoolChainId = this.clients.hubPoolClient.chainId;
-
     if (this.clients.hubPoolClient.hasPendingProposal()) {
       this.logger.debug({
         at: "Dataworker#propose",
@@ -319,6 +318,26 @@ export class Dataworker {
       return;
     }
 
+    return blockRangesForProposal;
+  }
+
+  async proposeRootBundle(
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    usdThresholdToSubmitNewBundle?: BigNumber,
+    submitProposals = true,
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+  ): Promise<void> {
+    // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
+    // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
+    // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
+    // safe strategy but could lead to new roots failing to be proposed until ALL networks are healthy.
+
+    const blockRangesForProposal = this._getNextProposalBlockRanges(spokePoolClients, earliestBlocksInSpokePoolClients);
+    if (!blockRangesForProposal) {
+      return;
+    }
+
+    const hubPoolChainId = this.clients.hubPoolClient.chainId;
     const mainnetBundleEndBlock = getBlockRangeForChain(
       blockRangesForProposal,
       hubPoolChainId,
@@ -466,67 +485,15 @@ export class Dataworker {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<void> {
-    throw new Error("Unimplemented");
-    // The following is copied without modification from `this.proposeRootBundle` so we can refactor to common
-    // proposal logic. We could also add a specific check about the config store version and make sure it supports
-    // the UBA.
+    const blockRangesForProposal = this._getNextProposalBlockRanges(
+      ubaClient.spokePoolClients as SpokePoolClientsByChain,
+      earliestBlocksInSpokePoolClients
+    );
+    if (!blockRangesForProposal) {
+      return;
+    }
 
-    // // Check if a bundle is pending.
-    // if (!this.clients.hubPoolClient.isUpdated || !this.clients.hubPoolClient.latestBlockNumber) {
-    //   throw new Error("HubPoolClient not updated");
-    // }
-    // if (this.clients.hubPoolClient.hasPendingProposal()) {
-    //   this.logger.debug({
-    //     at: "Dataworker#propose",
-    //     message: "Has pending proposal, cannot propose",
-    //   });
-    //   return;
-    // }
-
-    // // If config store version isn't up to date, return early. This is a simple rule that is perhaps too aggressive
-    // // but the proposer role is a specialized one and the user should always be using updated software.
-    // if (!this.clients.configStoreClient.hasLatestConfigStoreVersion) {
-    //   this.logger.warn({
-    //     at: "Dataworker#propose",
-    //     message: "Skipping proposal because missing updated ConfigStore version, are you using the latest code?",
-    //     latestVersionSupported: CONFIG_STORE_VERSION,
-    //     latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
-    //   });
-    //   return;
-    // }
-
-    // // Construct a list of ending block ranges for each chain that we want to include
-    // // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
-    // // list, and the order of chain ID's is hardcoded in the ConfigStore client.
-    // // Pass in `latest` for the mainnet bundle end block because we want to use the latest disabled chains list
-    // // to construct the potential next bundle block range.
-    // const blockRangesForProposal = this._getWidestPossibleBlockRangeForNextBundle(
-    //   ubaClient.spokePoolClients,
-    //   this.clients.hubPoolClient.latestBlockNumber - this.blockRangeEndBlockBuffer[1]
-    // );
-
-    // // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
-    // // potential proposal
-    // if (
-    //   Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
-    //   blockRangesAreInvalidForSpokeClients(
-    //     ubaClient.spokePoolClients,
-    //     blockRangesForProposal,
-    //     this.chainIdListForBundleEvaluationBlockNumbers,
-    //     earliestBlocksInSpokePoolClients
-    //   )
-    // ) {
-    //   this.logger.warn({
-    //     at: "Dataworke#propose",
-    //     message: "Cannot propose bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
-    //     rootBundleRanges: blockRangesForProposal,
-    //     earliestBlocksInSpokePoolClients,
-    //     spokeClientsEventSearchConfigs: Object.fromEntries(
-    //       Object.entries(ubaClient.spokePoolClients).map(([chainId, client]) => [chainId, client.eventSearchConfig])
-    //     ),
-    //   });
-    //   return;
-    // }
+    throw new Error("Not implemented yet: building UBA root bundle using block ranges for proposal");
   }
 
   async validatePendingRootBundle(
