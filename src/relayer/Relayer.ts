@@ -221,7 +221,12 @@ export class Relayer {
       if (tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
         // The pre-computed realizedLpFeePct is for the pre-UBA fee model. Update it to the UBA fee model if necessary.
         // The SpokePool guarantees the sum of the fees is <= 100% of the deposit amount.
-        deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit, l1Token.symbol);
+        deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(
+          version,
+          deposit,
+          l1Token.symbol,
+          l1Token.address
+        );
 
         const repaymentChainId = await this.resolveRepaymentChain(deposit, unfilledAmount);
         // @todo: For UBA, compute the anticipated refund fee(s) for *all* candidate refund chain(s).
@@ -367,6 +372,7 @@ export class Relayer {
     version: number,
     deposit: Deposit,
     symbol: string,
+    hubPoolTokenAddress: string,
     hubPoolBlockNumber?: number
   ): Promise<BigNumber> {
     if (!sdkUtils.isUBA(version)) {
@@ -381,7 +387,14 @@ export class Relayer {
       lpFee,
       depositBalancingFee: depositFee,
       systemFee: realizedLpFeePct,
-    } = await ubaClient.computeSystemFee(originChainId, destinationChainId, symbol, amount, hubPoolBlockNumber);
+    } = await ubaClient.computeSystemFee(
+      originChainId,
+      destinationChainId,
+      symbol,
+      hubPoolTokenAddress,
+      amount,
+      hubPoolBlockNumber
+    );
 
     const chain = getNetworkName(deposit.originChainId);
     this.logger.debug({
