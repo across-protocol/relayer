@@ -19,6 +19,7 @@ import { constants } from "@across-protocol/sdk-v2";
 import { OutstandingTransfers } from "../../interfaces";
 const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
+// TODO: Move to ../../common/ContractAddresses.ts
 // These values are obtained from Arbitrum's gateway router contract.
 const l1Gateways = {
   [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: "0xcEe284F754E854890e311e3280b767F80797180d", // USDC
