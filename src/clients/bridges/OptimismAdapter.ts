@@ -201,11 +201,11 @@ export class OptimismAdapter extends BaseAdapter {
     return new Contract(l2BridgeAddress, CONTRACT_ADDRESSES[10].ovmStandardBridge.abi, this.getSigner(this.chainId));
   }
 
-  private hasCustomL1Bridge(l1Token: string): l1Token is keyof typeof customL1OptimismBridgeAddresses {
+  private hasCustomL1Bridge(l1Token: string): boolean {
     return l1Token in customL1OptimismBridgeAddresses;
   }
 
-  private hasCustomL2Bridge(l1Token: string): l1Token is keyof typeof customOvmBridgeAddresses {
+  private hasCustomL2Bridge(l1Token: string): boolean {
     return l1Token in customOvmBridgeAddresses;
   }
 }
