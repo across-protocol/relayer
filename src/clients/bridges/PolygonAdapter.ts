@@ -12,8 +12,7 @@ import {
 } from "../../utils";
 import { ZERO_ADDRESS, spreadEventWithBlockNumber, paginatedEventQuery } from "../../utils";
 import { SpokePoolClient } from "../../clients";
-import { BaseAdapter, polygonL1BridgeInterface, polygonL2BridgeInterface } from "./";
-import { polygonL1RootChainManagerInterface } from "./";
+import { BaseAdapter } from "./";
 import { SortableEvent } from "../../interfaces";
 import { constants } from "@across-protocol/sdk-v2";
 import { OutstandingTransfers } from "../../interfaces";
@@ -27,8 +26,7 @@ const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 // When bridging ETH to Polygon we MUST send ETH which is then wrapped in the bridge to WETH. We are unable to send WETH
 // directly over the bridge, just like in the Optimism/Boba cases.
 
-const l1RootChainManager = "0xA0c68C638235ee32657e8f720a23ceC1bFc77C77";
-
+// TODO: Move to ../../common/ContractAddresses.ts
 const tokenToBridge = {
   [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: {
     l1BridgeAddress: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf",
@@ -247,7 +245,11 @@ export class PolygonAdapter extends BaseAdapter {
   }
 
   getL1Bridge(l1Token: SupportedL1Token): Contract {
-    return new Contract(tokenToBridge[l1Token].l1BridgeAddress, polygonL1BridgeInterface, this.getSigner(1));
+    return new Contract(
+      tokenToBridge[l1Token].l1BridgeAddress,
+      CONTRACT_ADDRESSES[137].polygonBridge.abi,
+      this.getSigner(1)
+    );
   }
 
   getL1TokenGateway(l1Token: string): Contract {
@@ -255,13 +257,21 @@ export class PolygonAdapter extends BaseAdapter {
       const atomicDepositor = CONTRACT_ADDRESSES[1].atomicDepositor;
       return new Contract(atomicDepositor.address, atomicDepositor.abi, this.getSigner(1));
     } else {
-      return new Contract(l1RootChainManager, polygonL1RootChainManagerInterface, this.getSigner(1));
+      return new Contract(
+        CONTRACT_ADDRESSES[1].polygonRootChainManager.address,
+        CONTRACT_ADDRESSES[1].polygonRootChainManager.abi,
+        this.getSigner(1)
+      );
     }
   }
 
   // Note that on polygon we dont query events on the L2 bridge. rather, we look for mint events on the L2 token.
   getL2Token(l1Token: SupportedL1Token): Contract {
-    return new Contract(tokenToBridge[l1Token].l2TokenAddress, polygonL2BridgeInterface, this.getSigner(this.chainId));
+    return new Contract(
+      tokenToBridge[l1Token].l2TokenAddress,
+      CONTRACT_ADDRESSES[137].withdrawableErc20.abi,
+      this.getSigner(this.chainId)
+    );
   }
 
   private isSupportedToken(l1Token: string): l1Token is SupportedL1Token {

@@ -4,7 +4,6 @@ import { MockHubPoolClient } from "./mocks";
 import { bnToHex, getL2TokenAddresses } from "../src/utils";
 import { ConfigStoreClient, SpokePoolClient } from "../src/clients";
 import { AdapterManager } from "../src/clients/bridges"; // Tested
-import * as interfaces from "../src/clients/bridges/ContractInterfaces";
 import { constants } from "@across-protocol/sdk-v2";
 import { CONTRACT_ADDRESSES } from "../src/common";
 const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
@@ -226,14 +225,14 @@ async function constructChainSpecificFakes() {
   l1OptimismDaiBridge = await makeFake("ovmStandardBridge", "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f");
 
   // Polygon contracts
-  l1PolygonRootChainManager = await makeFake("polygonL1RootChainManager", "0xA0c68C638235ee32657e8f720a23ceC1bFc77C77");
+  l1PolygonRootChainManager = await makeFake("polygonRootChainManager", "0xA0c68C638235ee32657e8f720a23ceC1bFc77C77");
 
   // Arbitrum contracts
   l1ArbitrumBridge = await makeFake("arbitrumErc20GatewayRouter", "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef");
 }
 
 async function makeFake(contractName: string, address: string) {
-  const _interface = interfaces[contractName + "Interface"] ?? CONTRACT_ADDRESSES[1][contractName]?.abi;
+  const _interface = CONTRACT_ADDRESSES[1][contractName]?.abi;
   if (_interface === undefined) {
     throw new Error(`${contractName} is not a valid contract name`);
   }

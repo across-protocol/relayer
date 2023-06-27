@@ -192,6 +192,65 @@ export const CONTRACT_ADDRESSES: {
         },
       ],
     },
+    polygonRootChainManager: {
+      address: "0xA0c68C638235ee32657e8f720a23ceC1bFc77C77",
+      abi: [
+        {
+          inputs: [
+            { internalType: "address", name: "user", type: "address" },
+            { internalType: "address", name: "rootToken", type: "address" },
+            { internalType: "bytes", name: "depositData", type: "bytes" },
+          ],
+          name: "depositFor",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [{ internalType: "address", name: "user", type: "address" }],
+          name: "depositEtherFor",
+          outputs: [],
+          stateMutability: "payable",
+          type: "function",
+        },
+      ],
+    },
+    polygonBridge: {
+      abi: [
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "depositor", type: "address" },
+            { indexed: true, internalType: "address", name: "depositReceiver", type: "address" },
+            { indexed: true, internalType: "address", name: "rootToken", type: "address" },
+            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
+          ],
+          name: "LockedERC20",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "depositor", type: "address" },
+            { indexed: true, internalType: "address", name: "depositReceiver", type: "address" },
+            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
+          ],
+          name: "LockedEther",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "owner", type: "address" },
+            { indexed: true, internalType: "address", name: "token", type: "address" },
+            { indexed: false, internalType: "uint256", name: "amountOrNFTId", type: "uint256" },
+            { indexed: false, internalType: "uint256", name: "depositBlockId", type: "uint256" },
+          ],
+          name: "NewDepositBlock",
+          type: "event",
+        },
+      ],
+    },
     arbitrumErc20GatewayRouter: {
       address: "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef",
       abi: [
@@ -325,8 +384,36 @@ export const CONTRACT_ADDRESSES: {
       ],
     },
   },
+  137: {
+    withdrawableErc20: {
+      abi: [
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "from", type: "address" },
+            { indexed: true, internalType: "address", name: "to", type: "address" },
+            { indexed: false, internalType: "uint256", name: "value", type: "uint256" },
+          ],
+          name: "Transfer",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            { indexed: true, internalType: "address", name: "rootToken", type: "address" },
+            { indexed: true, internalType: "address", name: "childToken", type: "address" },
+            { indexed: true, internalType: "address", name: "user", type: "address" },
+            { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
+            { indexed: false, internalType: "uint256", name: "depositCount", type: "uint256" },
+          ],
+          name: "TokenDeposited",
+          type: "event",
+        },
+      ],
+    },
+  },
   42161: {
-    arbitrumErc20Gateway: {
+    erc20Gateway: {
       abi: [
         {
           anonymous: false,
