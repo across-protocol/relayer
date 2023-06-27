@@ -467,6 +467,66 @@ export class Dataworker {
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<void> {
     throw new Error("Unimplemented");
+    // The following is copied without modification from `this.proposeRootBundle` so we can refactor to common
+    // proposal logic. We could also add a specific check about the config store version and make sure it supports
+    // the UBA.
+
+    // // Check if a bundle is pending.
+    // if (!this.clients.hubPoolClient.isUpdated || !this.clients.hubPoolClient.latestBlockNumber) {
+    //   throw new Error("HubPoolClient not updated");
+    // }
+    // if (this.clients.hubPoolClient.hasPendingProposal()) {
+    //   this.logger.debug({
+    //     at: "Dataworker#propose",
+    //     message: "Has pending proposal, cannot propose",
+    //   });
+    //   return;
+    // }
+
+    // // If config store version isn't up to date, return early. This is a simple rule that is perhaps too aggressive
+    // // but the proposer role is a specialized one and the user should always be using updated software.
+    // if (!this.clients.configStoreClient.hasLatestConfigStoreVersion) {
+    //   this.logger.warn({
+    //     at: "Dataworker#propose",
+    //     message: "Skipping proposal because missing updated ConfigStore version, are you using the latest code?",
+    //     latestVersionSupported: CONFIG_STORE_VERSION,
+    //     latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
+    //   });
+    //   return;
+    // }
+
+    // // Construct a list of ending block ranges for each chain that we want to include
+    // // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
+    // // list, and the order of chain ID's is hardcoded in the ConfigStore client.
+    // // Pass in `latest` for the mainnet bundle end block because we want to use the latest disabled chains list
+    // // to construct the potential next bundle block range.
+    // const blockRangesForProposal = this._getWidestPossibleBlockRangeForNextBundle(
+    //   ubaClient.spokePoolClients,
+    //   this.clients.hubPoolClient.latestBlockNumber - this.blockRangeEndBlockBuffer[1]
+    // );
+
+    // // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
+    // // potential proposal
+    // if (
+    //   Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
+    //   blockRangesAreInvalidForSpokeClients(
+    //     ubaClient.spokePoolClients,
+    //     blockRangesForProposal,
+    //     this.chainIdListForBundleEvaluationBlockNumbers,
+    //     earliestBlocksInSpokePoolClients
+    //   )
+    // ) {
+    //   this.logger.warn({
+    //     at: "Dataworke#propose",
+    //     message: "Cannot propose bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
+    //     rootBundleRanges: blockRangesForProposal,
+    //     earliestBlocksInSpokePoolClients,
+    //     spokeClientsEventSearchConfigs: Object.fromEntries(
+    //       Object.entries(ubaClient.spokePoolClients).map(([chainId, client]) => [chainId, client.eventSearchConfig])
+    //     ),
+    //   });
+    //   return;
+    // }
   }
 
   async validatePendingRootBundle(
