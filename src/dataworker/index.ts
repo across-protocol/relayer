@@ -10,6 +10,7 @@ import {
   DataworkerClients,
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
+import { UBAClient } from "../clients";
 config();
 let logger: winston.Logger;
 
@@ -94,6 +95,15 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         toBlocks
       );
 
+      const ubaClient = new UBAClient(config.chainIdListIndices, clients.hubPoolClient, spokePoolClients, logger);
+      // TODO: The following UBA client update updates the hub pool, config store and all spoke pool clients.
+      // However, to construct the spoke pool clients with the correct lookbacks, we need to update the hub pool
+      // client first to figure out how far to look back (based on the latest X validated root bundle end blocks), so
+      // its probably best that we add a method to the UBA client that just calls instantiateUBAFeeCalculator
+      // for each chain/token.
+      //
+      // await ubaClient.update()
+
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled) {
         await dataworker.validatePendingRootBundle(spokePoolClients, config.sendingDisputesEnabled, fromBlocks);
@@ -102,12 +112,23 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       }
 
       if (config.proposerEnabled) {
-        await dataworker.proposeRootBundle(
-          spokePoolClients,
-          config.rootBundleExecutionThreshold,
-          config.sendingProposalsEnabled,
-          fromBlocks
-        );
+        // TODO: Add dynamic switch to build UBA root bundle
+        // eslint-disable-next-line no-constant-condition
+        if (false) {
+          await dataworker.UBA_proposeRootBundle(
+            ubaClient,
+            config.rootBundleExecutionThreshold,
+            config.sendingProposalsEnabled,
+            fromBlocks
+          );
+        } else {
+          await dataworker.proposeRootBundle(
+            spokePoolClients,
+            config.rootBundleExecutionThreshold,
+            config.sendingProposalsEnabled,
+            fromBlocks
+          );
+        }
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
       }

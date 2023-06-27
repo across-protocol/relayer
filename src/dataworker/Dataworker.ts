@@ -29,7 +29,7 @@ import {
   BigNumberForToken,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
-import { SpokePoolClient } from "../clients";
+import { SpokePoolClient, UBAClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
 import {
   blockRangesAreInvalidForSpokeClients,
@@ -456,6 +456,17 @@ export class Dataworker {
         slowRelayRoot.tree.getHexRoot()
       );
     }
+  }
+
+  async UBA_proposeRootBundle(
+    ubaClient: UBAClient,
+    usdThresholdToSubmitNewBundle?: BigNumber,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    submitProposals = true,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+  ): Promise<void> {
+    throw new Error("Unimplemented");
   }
 
   async validatePendingRootBundle(
