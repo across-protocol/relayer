@@ -350,11 +350,17 @@ export class Relayer {
   }
 
   findEligibleFills(spokePoolClient: SpokePoolClient, refundRequests: RefundRequestWithBlock[] = []): FillWithBlock[] {
-    const refundRequestDepositIds = refundRequests.map(({ depositId }) => depositId);
+    const refundRequestDepositIds: { [chainId: number]: number[] } = [];
+
+    refundRequests.forEach(({ originChainId, depositId }) => {
+      refundRequestDepositIds[originChainId] ??= [];
+      refundRequestDepositIds[originChainId].push(depositId);
+    });
 
     // Find fills where repayment was requested on another chain.
     const eligibleFills = spokePoolClient.getFillsForRelayer(this.relayerAddress).filter((fill) => {
-      return fill.repaymentChainId !== fill.destinationChainId && !refundRequestDepositIds.includes(fill.depositId);
+      const { depositId, originChainId, destinationChainId, repaymentChainId } = fill;
+      return repaymentChainId !== destinationChainId && !refundRequestDepositIds[originChainId]?.includes(depositId);
     });
 
     return eligibleFills;
