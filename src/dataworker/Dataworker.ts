@@ -8,7 +8,6 @@ import {
   toBN,
   sortEventsAscending,
   isDefined,
-  buildPoolRebalanceLeafTree,
 } from "../utils";
 import { toBNWei, getFillsInRange, ZERO_ADDRESS } from "../utils";
 import {
