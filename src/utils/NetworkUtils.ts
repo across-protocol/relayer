@@ -14,6 +14,12 @@ export function getNetworkName(networkId: number | string): string {
     if (Number(networkId) == 421613) {
       return "ArbitrumGoerli";
     }
+    if (Number(networkId) == 324) {
+      return "ZkSync";
+    }
+    if (Number(networkId) == 280) {
+      return "ZkSync-Goerli";
+    }
     return "unknown";
   }
 }
