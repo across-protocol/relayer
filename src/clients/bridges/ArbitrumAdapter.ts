@@ -177,7 +177,7 @@ export class ArbitrumAdapter extends BaseAdapter {
   }
 
   getL1Bridge(l1Token: SupportedL1Token): Contract {
-    return new Contract(l1Gateways[l1Token], CONTRACT_ADDRESSES[1].arbitrumErc20Gateway.abi, this.getSigner(1));
+    return new Contract(l1Gateways[l1Token], CONTRACT_ADDRESSES[1].arbitrumErc20GatewayRouter.abi, this.getSigner(1));
   }
 
   getL1GatewayRouter(): Contract {
