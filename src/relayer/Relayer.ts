@@ -339,7 +339,7 @@ export class Relayer {
     hubPoolToken: L1Token
   ): Promise<number | undefined> {
     const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
-    const { hubPoolClient, inventoryClient, profitClient } = this.clients;
+    const { inventoryClient, profitClient } = this.clients;
 
     // TODO: Consider adding some way for Relayer to delete transactions in Queue for fills for same deposit.
     // This way the relayer could set a repayment chain ID for any fill that follows a 1 wei fill in the queue.
