@@ -640,7 +640,7 @@ export class Relayer {
     const _fillAmount = createFormatFunction(2, 4, false, decimals)(fill.fillAmount.toString());
 
     return (
-      `Requested refund on ${refundChain} for ${_fillAmount} ${symbol} for ${originChain} depositId ${depositId},` +
+      `🌈 Requested refund on ${refundChain} for ${_fillAmount} ${symbol} for ${originChain} depositId ${depositId},` +
       ` filled on ${destinationChain}, with relayerFee ${formatFeePct(fill.relayerFeePct)}%.`
     );
   }
