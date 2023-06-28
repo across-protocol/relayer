@@ -367,34 +367,10 @@ export class Relayer {
     }
 
     const preferredChainId = await inventoryClient.determineRefundChainId(deposit);
-    if (!sdkUtils.isUBA(version)) {
-      const profitable = profitClient.isFillProfitable(deposit, fillAmount, toBN(0), hubPoolToken);
-      return profitable ? preferredChainId : undefined;
-    }
+    const refundFee = (await this.computeRefundFees(version, fillAmount, [preferredChainId], hubPoolToken.symbol))[0];
 
-    // Prefer the chainId suggested by the InventoryClient, but fall back to one of destinationChainId
-    // or hubPoolClient.chainId if the refunds on the preferred chainId is unprofitable.
-    const refundChainIds = [preferredChainId];
-    [destinationChainId, hubPoolClient.chainId].forEach((chainId) => {
-      if (!refundChainIds.includes(chainId)) {
-        refundChainIds.push(chainId);
-      }
-    });
-
-    // Estimate the profitability of taking a refund on each candidate refund chain.
-    const refundFees = await this.computeRefundFees(version, fillAmount, refundChainIds, hubPoolToken.symbol);
-    const refundChains = Object.fromEntries(
-      refundChainIds
-        .map((_, idx) => profitClient.getFillProfitability(deposit, fillAmount, refundFees[idx], hubPoolToken))
-        .map(({ profitable, netRelayerFeePct }, idx) => [refundChainIds[idx], { profitable, netRelayerFeePct }])
-    );
-
-    // If no inventory management is defined, only consider taking refunds on the destination chain.
-    if (!inventoryClient.isInventoryManagementEnabled()) {
-      return refundChains[destinationChainId].profitable ? destinationChainId : undefined;
-    }
-
-    return refundChainIds.find((chainId) => refundChains[chainId]?.profitable);
+    const profitable = profitClient.isFillProfitable(deposit, fillAmount, refundFee, hubPoolToken);
+    return profitable ? preferredChainId : undefined;
   }
 
   protected async computeRealizedLpFeePct(
