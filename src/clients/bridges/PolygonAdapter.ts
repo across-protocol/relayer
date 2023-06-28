@@ -247,7 +247,7 @@ export class PolygonAdapter extends BaseAdapter {
   getL1Bridge(l1Token: SupportedL1Token): Contract {
     return new Contract(
       tokenToBridge[l1Token].l1BridgeAddress,
-      CONTRACT_ADDRESSES[137].polygonBridge.abi,
+      CONTRACT_ADDRESSES[1].polygonBridge.abi,
       this.getSigner(1)
     );
   }
