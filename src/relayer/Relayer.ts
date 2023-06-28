@@ -13,7 +13,7 @@ import {
 } from "../utils";
 import { createFormatFunction, etherscanLink, formatFeePct, toBN, toBNWei } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
-import { Deposit, DepositWithBlock, FillWithBlock, L1Token, RefundRequestWithBlock } from "../interfaces";
+import { Deposit, DepositWithBlock, FillWithBlock, RefundRequestWithBlock } from "../interfaces";
 import { RelayerConfig } from "./RelayerConfig";
 
 const { UBAActionType } = sdkClients;
@@ -351,10 +351,7 @@ export class Relayer {
     await multiCallerClient.executeTransactionQueue();
   }
 
-  findEligibleFills(
-    spokePoolClient: SpokePoolClient,
-    refundRequests: RefundRequestWithBlock[] = []
-  ): FillWithBlock[] {
+  findEligibleFills(spokePoolClient: SpokePoolClient, refundRequests: RefundRequestWithBlock[] = []): FillWithBlock[] {
     const refundRequestDepositIds = refundRequests.map(({ depositId }) => depositId);
 
     // Find fills where repayment was requested on another chain.
