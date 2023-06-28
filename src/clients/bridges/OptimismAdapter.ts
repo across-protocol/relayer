@@ -2,30 +2,28 @@ import assert from "assert";
 import { Contract, BigNumber, ZERO_ADDRESS, paginatedEventQuery, BigNumberish, TransactionResponse } from "../../utils";
 import { spreadEventWithBlockNumber, assign, winston } from "../../utils";
 import { AugmentedTransaction, SpokePoolClient, TransactionClient } from "../../clients";
-import { BaseAdapter, weth9Abi, ovmL1BridgeInterface, ovmL2BridgeInterface, atomicDepositorInterface } from "./";
+import { BaseAdapter } from "./";
 import { SortableEvent } from "../../interfaces";
 import { OutstandingTransfers } from "../../interfaces";
+import { constants } from "@across-protocol/sdk-v2";
+import { CONTRACT_ADDRESSES } from "../../common";
+const { TOKEN_SYMBOLS_MAP } = constants;
 
-const customL1OptimismBridgeAddresses = {
-  "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f", // DAI
-} as const;
-
-const customOvmBridgeAddresses = {
-  "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0x467194771dae2967aef3ecbedd3bf9a310c76c65", // DAI
-} as const;
-
-const l1StandardBridgeAddressOvm = "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1";
-const ovmL2StandardBridgeAddress = "0x4200000000000000000000000000000000000010";
-const wethOptimismAddress = "0x4200000000000000000000000000000000000006";
-
-export const ovmWethTokens = [wethOptimismAddress];
 export const isOvmChain = (chainId: number): boolean => [10, 288].includes(chainId);
-
-const atomicDepositorAddress = "0x26eaf37ee5daf49174637bdcd2f7759a25206c34";
 
 export class OptimismAdapter extends BaseAdapter {
   public l2Gas: number;
   private txnClient: TransactionClient;
+
+  private customL1OptimismBridgeAddresses = {
+    [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[1].daiOptimismBridge.address,
+  } as const;
+
+  private customOvmBridgeAddresses = {
+    [TOKEN_SYMBOLS_MAP.DAI.addresses[1]]: CONTRACT_ADDRESSES[10].daiOptimismBridge.address,
+  } as const;
+
+  private atomicDepositorAddress = CONTRACT_ADDRESSES[1].atomicDepositor.address;
 
   constructor(
     logger: winston.Logger,
@@ -58,7 +56,7 @@ export class OptimismAdapter extends BaseAdapter {
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
         // Transfers might have come from the monitored address itself or another sender address (if specified).
-        const senderAddress = this.senderAddress || atomicDepositorAddress;
+        const senderAddress = this.senderAddress || this.atomicDepositorAddress;
         const adapterSearchConfig = [ZERO_ADDRESS, undefined, senderAddress];
         promises.push(
           paginatedEventQuery(l1Bridge, l1Bridge.filters[l1Method](...l1SearchFilter), l1SearchConfig),
@@ -156,10 +154,11 @@ export class OptimismAdapter extends BaseAdapter {
     const { chainId, txnClient } = this;
     assert(chainId === 10, `chainId ${chainId} is not supported`);
 
+    const ovmWeth = CONTRACT_ADDRESSES[10].weth;
     const ethBalance = await this.getSigner(chainId).getBalance();
     if (ethBalance.gt(threshold)) {
       const l2Signer = this.getSigner(chainId);
-      const contract = new Contract(wethOptimismAddress, weth9Abi, l2Signer);
+      const contract = new Contract(ovmWeth.address, ovmWeth.abi, l2Signer);
       const method = "deposit";
       const value = ethBalance.sub(threshold);
       this.logger.debug({ at: this.getName(), message: "Wrapping ETH", threshold, value, ethBalance });
@@ -179,14 +178,14 @@ export class OptimismAdapter extends BaseAdapter {
       throw new Error(`chainId ${this.chainId} is not supported`);
     }
     const l1BridgeAddress = this.hasCustomL1Bridge(l1Token)
-      ? customL1OptimismBridgeAddresses[l1Token]
-      : l1StandardBridgeAddressOvm;
-    return new Contract(l1BridgeAddress, ovmL1BridgeInterface, this.getSigner(1));
+      ? this.customL1OptimismBridgeAddresses[l1Token]
+      : CONTRACT_ADDRESSES[1].ovmStandardBridge.address;
+    return new Contract(l1BridgeAddress, CONTRACT_ADDRESSES[1].daiOptimismBridge.abi, this.getSigner(1));
   }
 
   getL1TokenGateway(l1Token: string): Contract {
     if (this.isWeth(l1Token)) {
-      return new Contract(atomicDepositorAddress, atomicDepositorInterface, this.getSigner(1));
+      return new Contract(this.atomicDepositorAddress, CONTRACT_ADDRESSES[1].atomicDepositor.abi, this.getSigner(1));
     } else {
       return this.getL1Bridge(l1Token);
     }
@@ -197,16 +196,16 @@ export class OptimismAdapter extends BaseAdapter {
       throw new Error(`chainId ${this.chainId} is not supported`);
     }
     const l2BridgeAddress = this.hasCustomL2Bridge(l1Token)
-      ? customOvmBridgeAddresses[l1Token]
-      : ovmL2StandardBridgeAddress;
-    return new Contract(l2BridgeAddress, ovmL2BridgeInterface, this.getSigner(this.chainId));
+      ? this.customOvmBridgeAddresses[l1Token]
+      : CONTRACT_ADDRESSES[10].ovmStandardBridge.address;
+    return new Contract(l2BridgeAddress, CONTRACT_ADDRESSES[10].ovmStandardBridge.abi, this.getSigner(this.chainId));
   }
 
-  private hasCustomL1Bridge(l1Token: string): l1Token is keyof typeof customL1OptimismBridgeAddresses {
-    return l1Token in customL1OptimismBridgeAddresses;
+  private hasCustomL1Bridge(l1Token: string): boolean {
+    return l1Token in this.customL1OptimismBridgeAddresses;
   }
 
-  private hasCustomL2Bridge(l1Token: string): l1Token is keyof typeof customOvmBridgeAddresses {
-    return l1Token in customOvmBridgeAddresses;
+  private hasCustomL2Bridge(l1Token: string): boolean {
+    return l1Token in this.customOvmBridgeAddresses;
   }
 }
