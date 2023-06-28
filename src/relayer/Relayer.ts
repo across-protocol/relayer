@@ -370,30 +370,26 @@ export class Relayer {
 
   protected async computeRealizedLpFeePct(
     version: number,
-    deposit: Deposit,
+    deposit: DepositWithBlock,
     symbol: string,
-    hubPoolTokenAddress: string,
-    hubPoolBlockNumber?: number
+    hubPoolTokenAddress: string
   ): Promise<BigNumber> {
     if (!sdkUtils.isUBA(version)) {
       return deposit.realizedLpFeePct;
     }
 
-    const { hubPoolClient, ubaClient } = this.clients;
-    hubPoolBlockNumber ??= hubPoolClient.latestBlockNumber;
-
-    const { originChainId, depositId, destinationChainId, amount } = deposit;
+    const { originChainId, depositId, destinationChainId, amount, quoteBlockNumber } = deposit;
     const {
       lpFee,
       depositBalancingFee: depositFee,
       systemFee: realizedLpFeePct,
-    } = await ubaClient.computeSystemFee(
+    } = await this.clients.ubaClient.computeSystemFee(
       originChainId,
       destinationChainId,
       symbol,
       hubPoolTokenAddress,
       amount,
-      hubPoolBlockNumber
+      quoteBlockNumber
     );
 
     const chain = getNetworkName(deposit.originChainId);
