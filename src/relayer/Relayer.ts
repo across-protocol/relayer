@@ -320,19 +320,17 @@ export class Relayer {
       spokePoolClients.map(({ chainId }) => [chainId, []])
     );
 
-    const refundRequestsByDstChain: { [chainId: number]: RefundRequestWithBlock[] } = {};
-
-    spokePoolClients.forEach((spokePoolClient) => {
-      // For each refund/repayment Spoke Pool, group its set of by corresponding destination chain.
-      spokePoolClient.getRefundRequests().forEach((refundRequest: RefundRequestWithBlock) => {
-        if (
-          refundRequest.relayer === this.relayerAddress &&
-          ubaClient.refundRequestIsValid(spokePoolClient.chainId, refundRequest)
-        ) {
-          refundRequestsByDstChain[refundRequest.destinationChainId].push(refundRequest);
-        }
-      });
-    });
+    // For each refund/repayment Spoke Pool, group its set of by corresponding destination chain.
+    // Bound the event range by the relayer deposit lookback.
+    const refundRequestsByDstChain = Object.fromEntries(
+      spokePoolClients.map(({ chainId, latestBlockNumber }) => {
+        const lookback = latestBlockNumber - this.config.maxRelayerLookBack;
+        const refundRequests = ubaClient
+          .getRefundRequests(chainId, this.relayerAddress)
+          .filter(({ blockNumber }) => blockNumber > lookback);
+        return [chainId, refundRequests];
+      })
+    );
 
     for (const spokePoolClient of spokePoolClients) {
       const { chainId: destinationChainId } = spokePoolClient;
