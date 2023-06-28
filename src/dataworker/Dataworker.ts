@@ -494,6 +494,23 @@ export class Dataworker {
     }
 
     throw new Error("Not implemented yet: building UBA root bundle using block ranges for proposal");
+
+    // Build PoolRebalanceRoot:
+    // 1. Get all flows in range from UBA Client
+    // 2. Set running balances to closing running balances from latest flows in range per token per chain
+    // 3. Set bundleLpFees to sum of SystemFee.LPFee for all flows in range per token per chain
+    // 4. Set netSendAmount to sum of netRunningBalanceAdjustments for all flows in range per token per chain
+
+    // Build RelayerRefundRoot:
+    // 1. Get all fills in range from SpokePoolClient
+    // 2. Get all flows from UBA Client
+    // 3. Validate fills by matching them with a deposit flow. Partial and Full fills should be validated the same (?)
+    // 4. Validate refunds by matching them with a refund flow and checking that they were the first refund.
+
+    // Build SlowRelayRoot:
+    // 1. Get all initial partial fills in range from SpokePoolClient that weren't later fully filled.
+    // 2. Get all flows from UBA Client
+    // 3. Validate fills by matching them with a deposit flow.
   }
 
   async validatePendingRootBundle(
