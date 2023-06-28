@@ -334,7 +334,7 @@ export class Relayer {
 
     for (const spokePoolClient of spokePoolClients) {
       const { chainId: destinationChainId } = spokePoolClient;
-      const fills = this.findEligibleFills(spokePoolClient, refundRequestsByDstChain[destinationChainId]);
+      const fills = this.findFillsWithoutRefundRequests(spokePoolClient, refundRequestsByDstChain[destinationChainId]);
       fills.forEach((fill) => eligibleFillsByRefundChain[fill.repaymentChainId].push(fill));
     }
 
@@ -349,7 +349,10 @@ export class Relayer {
     await multiCallerClient.executeTransactionQueue();
   }
 
-  findEligibleFills(spokePoolClient: SpokePoolClient, refundRequests: RefundRequestWithBlock[] = []): FillWithBlock[] {
+  findFillsWithoutRefundRequests(
+    spokePoolClient: SpokePoolClient,
+    refundRequests: RefundRequestWithBlock[] = []
+  ): FillWithBlock[] {
     const refundRequestDepositIds: { [chainId: number]: number[] } = [];
 
     refundRequests.forEach(({ originChainId, depositId }) => {
@@ -358,12 +361,12 @@ export class Relayer {
     });
 
     // Find fills where repayment was requested on another chain.
-    const eligibleFills = spokePoolClient.getFillsForRelayer(this.relayerAddress).filter((fill) => {
+    const fills = spokePoolClient.getFillsForRelayer(this.relayerAddress).filter((fill) => {
       const { depositId, originChainId, destinationChainId, repaymentChainId } = fill;
       return repaymentChainId !== destinationChainId && !refundRequestDepositIds[originChainId]?.includes(depositId);
     });
 
-    return eligibleFills;
+    return fills;
   }
 
   protected requestRefund(fill: FillWithBlock): void {

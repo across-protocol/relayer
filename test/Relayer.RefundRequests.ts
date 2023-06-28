@@ -161,7 +161,7 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
 
     expect(spokePoolClient_1.getRefundRequests().length).to.equal(0);
 
-    const eligibleFills = relayerInstance.findEligibleFills(spokePoolClient_2, []);
+    const eligibleFills = relayerInstance.findFillsWithoutRefundRequests(spokePoolClient_2, []);
     expect(eligibleFills.length).to.equal(1);
     const eligibleFill = eligibleFills.pop() as FillWithBlock;
     expect(eligibleFill).to.deep.equal(fill);
