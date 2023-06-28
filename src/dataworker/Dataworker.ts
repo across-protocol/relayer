@@ -45,8 +45,8 @@ import {
 } from "./DataworkerUtils";
 import { BalanceAllocator } from "../clients";
 import _ from "lodash";
-import { CONFIG_STORE_VERSION, spokePoolClientsToProviders } from "../common";
-import { isOvmChain, ovmWethTokens } from "../clients/bridges";
+import { CONFIG_STORE_VERSION, CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
+import { isOvmChain } from "../clients/bridges";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -60,6 +60,8 @@ type RootBundle = {
   leaves: SlowFillLeaf[];
   tree: MerkleTree<SlowFillLeaf>;
 };
+
+const ovmWethTokens = [CONTRACT_ADDRESSES[10].weth.address];
 
 export type PoolRebalanceRoot = {
   runningBalances: RunningBalances;
