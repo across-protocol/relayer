@@ -308,11 +308,9 @@ export class Relayer {
 
   // Strategy for requesting refunds: Query all refunds requests, and match them to fills.
   // The remaining fills are eligible for new requests.
-  async requestRefunds(): Promise<void> {
+  async requestRefunds(sendRefundRequests = true): Promise<void> {
     const { multiCallerClient, ubaClient } = this.clients;
     const spokePoolClients = Object.values(this.clients.spokePoolClients);
-
-    await ubaClient.update();
 
     const eligibleFillsByRefundChain: { [chainId: number]: FillWithBlock[] } = Object.fromEntries(
       spokePoolClients.map(({ chainId }) => [chainId, []])
@@ -344,7 +342,7 @@ export class Relayer {
       });
     });
 
-    await multiCallerClient.executeTransactionQueue();
+    await multiCallerClient.executeTransactionQueue(!sendRefundRequests);
   }
 
   findFillsWithoutRefundRequests(
