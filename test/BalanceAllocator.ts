@@ -105,7 +105,21 @@ describe("BalanceAllocator", async function () {
         { chainId: 1, tokens: [testToken1, testToken2], holder: testAccount1, amount: BigNumber.from(50) },
       ])
     ).to.be.true;
-    expect(balanceAllocator.getUsed(1, testToken1, testAccount1)).to.equal(BigNumber.from(99));
-    expect(balanceAllocator.getUsed(1, testToken2, testAccount1)).to.equal(BigNumber.from(1));
+    expect(await balanceAllocator.getBalance(1, testToken1, testAccount1)).to.equal(BigNumber.from(198));
+    expect(await balanceAllocator.getBalance(1, testToken2, testAccount1)).to.equal(BigNumber.from(0));
+    expect(balanceAllocator.getUsed(1, testToken1, testAccount1)).to.equal(BigNumber.from(100));
+    expect(balanceAllocator.getUsed(1, testToken2, testAccount1)).to.equal(BigNumber.from(0));
+  });
+
+  it("Combined request, multiple tokens per request, succeeds even if amount is more than either individual value", async function () {
+    balanceAllocator.setMockBalances(1, testToken1, testAccount1, BigNumber.from(50));
+    balanceAllocator.setMockBalances(1, testToken2, testAccount1, BigNumber.from(50));
+    expect(
+      await balanceAllocator.requestBalanceAllocations([
+        { chainId: 1, tokens: [testToken1, testToken2], holder: testAccount1, amount: BigNumber.from(75) },
+      ])
+    ).to.be.true;
+    expect(balanceAllocator.getUsed(1, testToken1, testAccount1)).to.equal(BigNumber.from(75));
+    expect(balanceAllocator.getUsed(1, testToken2, testAccount1)).to.equal(BigNumber.from(0));
   });
 });

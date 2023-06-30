@@ -61,8 +61,6 @@ type RootBundle = {
   tree: MerkleTree<SlowFillLeaf>;
 };
 
-const ovmWethTokens = [CONTRACT_ADDRESSES[10].weth.address];
-
 export type PoolRebalanceRoot = {
   runningBalances: RunningBalances;
   realizedLpFees: RunningBalances;
@@ -1074,8 +1072,15 @@ export class Dataworker {
           // Note: the getRefund function just happens to perform the same math we need.
           // A refund is the total fill amount minus LP fees, which is the same as the payout for a slow relay!
           const amountRequired = getRefund(relayData.amount.sub(amountFilled), relayData.realizedLpFeePct);
+          const ovmWethTokens = [
+            CONTRACT_ADDRESSES[relayData.destinationChainId].weth.address,
+            CONTRACT_ADDRESSES[relayData.destinationChainId].eth.address,
+          ];
           const success = await balanceAllocator.requestBalanceAllocation(
             relayData.destinationChainId,
+            // If OVM chain, treat ETH and WETH balances on SpokePool as interchangeable. Importantly make sure WETH
+            // comes first in the `tokens` list passed to `requestBalanceAllocation` so that the WETH balance is used for accounting purposes.
+            // Although it doesn't matter, its more accurate since ETH should be swept up into WETH.
             isOvmChain(relayData.destinationChainId) && ovmWethTokens.includes(relayData.destinationToken)
               ? ovmWethTokens
               : [relayData.destinationToken],
@@ -1674,6 +1679,13 @@ export class Dataworker {
           const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
           const refundSum = leaf.refundAmounts.reduce((acc, curr) => acc.add(curr), BigNumber.from(0));
           const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
+          const ovmWethTokens = [
+            CONTRACT_ADDRESSES[leaf.chainId].weth.address,
+            CONTRACT_ADDRESSES[leaf.chainId].eth.address,
+          ];
+          // If OVM chain, treat ETH and WETH balances on SpokePool as interchangeable. Importantly make sure WETH
+          // comes first in the `tokens` list passed to `requestBalanceAllocation` so that the WETH balance is used for accounting purposes.
+          // Although it doesn't matter, its more accurate since ETH should be swept up into WETH.
           const success = await balanceAllocator.requestBalanceAllocation(
             leaf.chainId,
             isOvmChain(leaf.chainId) && ovmWethTokens.includes(leaf.l2TokenAddress)

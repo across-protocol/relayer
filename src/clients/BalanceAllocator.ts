@@ -16,28 +16,42 @@ export class BalanceAllocator {
 
   constructor(readonly providers: { [chainId: number]: ethers.providers.Provider }) {}
 
-  // Note: The caller is suggesting that `tokens` for a request are interchangeable.
-  // The tokens whose balances are depleted first should be placed at the front of the array.
+  /**
+   * @notice Caller is assumiing that all `tokens` are interchangeable and that if their balances are not collapsed
+   * into one, then the accounting could be messed up and future calls to getBalance or getUsed could be incorrect.
+   * @dev: The caller is suggesting that `tokens` for a request are interchangeable.
+   * This assumes therefore that the balance of all `tokens` are ultimately treated as one, so for accounting
+   * purposes we'll credit balances and debut usage to the first token address in the list.
+   * The tokens whose balances are depleted first should be placed at the front of the array.
+   */
   async requestBalanceAllocations(
     requests: { chainId: number; tokens: string[]; holder: string; amount: BigNumber }[]
   ): Promise<boolean> {
     // Do all async work up-front to avoid atomicity problems with updating used.
     const requestsWithBalances = await Promise.all(
       requests.map(async (request) => {
-        const balances = Object.fromEntries(
+        // Add up balances of all `tokens` and store in address of first token in list.
+        const balance = (
           await Promise.all(
             request.tokens.map(
-              async (token): Promise<[string, BigNumber]> => [
-                token,
-                await this.getBalance(request.chainId, token, request.holder),
-              ]
+              async (token): Promise<BigNumber> => this.getBalance(request.chainId, token, request.holder)
             )
           )
-        );
+        ).reduce((acc, balance) => acc.add(balance), BigNumber.from(0));
+
+        // Zero out all token balances besides the first.
+        this.balances[request.chainId][request.tokens[0]][request.holder] = balance;
+        request.tokens.forEach((token, index) => {
+          if (index === 0) {
+            return;
+          }
+          this.balances[request.chainId][token][request.holder] = BigNumber.from(0);
+        });
 
         const returnedRequest = {
           ...request,
-          balances,
+          tokenKey: request.tokens[0],
+          balance,
         };
         return returnedRequest;
       })
@@ -49,40 +63,28 @@ export class BalanceAllocator {
       if (!availableBalances[request.chainId]) {
         availableBalances[request.chainId] = {};
       }
-      for (const token of request.tokens) {
-        if (!availableBalances[request.chainId][token]) {
-          availableBalances[request.chainId][token] = {};
-        }
-        availableBalances[request.chainId][token][request.holder] = request.balances[token].sub(
-          this.getUsed(request.chainId, token, request.holder)
-        );
+      if (!availableBalances[request.chainId][request.tokenKey]) {
+        availableBalances[request.chainId][request.tokenKey] = {};
       }
+      availableBalances[request.chainId][request.tokenKey][request.holder] = request.balance.sub(
+        this.getUsed(request.chainId, request.tokenKey, request.holder)
+      );
     }
-
     // Determine if the entire group will be successful by subtracting the amount from the available balance as we go.
     for (const request of requestsWithBalances) {
-      const remainingAmount = request.tokens.reduce((acc, token) => {
-        const availableBalance = availableBalances[request.chainId][token][request.holder];
-        const amountToDeduct = min(acc, availableBalance);
-        if (amountToDeduct.gt(0)) {
-          availableBalances[request.chainId][token][request.holder] = availableBalance.sub(amountToDeduct);
-        }
-        return acc.sub(amountToDeduct);
-      }, request.amount);
-      // If there is a remaining amount, the entire group will fail, so return false.
-      if (remainingAmount.gt(0)) {
+      const availableBalance = availableBalances[request.chainId][request.tokenKey][request.holder];
+      if (availableBalance.lt(request.amount)) {
         return false;
+      } else {
+        availableBalances[request.chainId][request.tokenKey][request.holder] = availableBalance.sub(request.amount);
       }
     }
 
     // If the entire group is successful commit to using these tokens.
-    requestsWithBalances.forEach(({ chainId, tokens, holder, balances, amount }) =>
-      tokens.forEach((token) => {
-        const used = min(amount, balances[token].sub(this.getUsed(chainId, token, holder)));
-        this.addUsed(chainId, token, holder, used);
-        amount = amount.sub(used);
-      })
-    );
+    requestsWithBalances.forEach(({ chainId, tokenKey, holder, balance, amount }) => {
+      const used = min(amount, balance.sub(this.getUsed(chainId, tokenKey, holder)));
+      this.addUsed(chainId, tokenKey, holder, used);
+    });
 
     // Return success.
     return true;

@@ -383,6 +383,9 @@ export const CONTRACT_ADDRESSES: {
         },
       ],
     },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
   },
   137: {
     withdrawableErc20: {
@@ -410,6 +413,43 @@ export const CONTRACT_ADDRESSES: {
           type: "event",
         },
       ],
+    },
+  },
+  288: {
+    weth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+      abi: [
+        {
+          constant: false,
+          inputs: [{ name: "wad", type: "uint256" }],
+          name: "withdraw",
+          outputs: [],
+          payable: false,
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          constant: false,
+          inputs: [],
+          name: "deposit",
+          outputs: [],
+          payable: true,
+          stateMutability: "payable",
+          type: "function",
+        },
+        {
+          constant: true,
+          inputs: [{ name: "", type: "address" }],
+          name: "balanceOf",
+          outputs: [{ name: "", type: "uint256" }],
+          payable: false,
+          stateMutability: "view",
+          type: "function",
+        },
+      ],
+    },
+    eth: {
+      address: "0x4200000000000000000000000000000000000006",
     },
   },
   42161: {
