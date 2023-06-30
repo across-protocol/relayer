@@ -11,7 +11,7 @@ import {
   PROVIDER_CACHE_TTL_MODIFIER as ttl_modifier,
   BLOCK_NUMBER_TTL,
 } from "../common";
-import { Logger } from ".";
+import { delay, Logger } from "./";
 
 const logger = Logger;
 
@@ -70,10 +70,6 @@ class RateLimitedProvider extends ethers.providers.StaticJsonRpcProvider {
 }
 
 const defaultTimeout = 60 * 1000;
-
-function delay(s: number): Promise<void> {
-  return new Promise<void>((resolve) => setTimeout(resolve, Math.round(s * 1000)));
-}
 
 function formatProviderError(provider: ethers.providers.StaticJsonRpcProvider, rawErrorText: string) {
   return `Provider ${provider.connection.url} failed with error: ${rawErrorText}`;

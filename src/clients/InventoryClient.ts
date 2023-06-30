@@ -13,9 +13,10 @@ import {
   AnyObject,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
-import { AdapterManager, CrossChainTransferClient, weth9Abi } from "./bridges";
+import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { Deposit, FillsToRefund, InventoryConfig } from "../interfaces";
 import lodash from "lodash";
+import { CONTRACT_ADDRESSES } from "../common";
 
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: BigNumber } };
 
@@ -590,7 +591,7 @@ export class InventoryClient {
 
   async _unwrapWeth(chainId: number, _l2Weth: string, amount: BigNumber): Promise<TransactionResponse> {
     const l2Signer = this.tokenClient.spokePoolClients[chainId].spokePool.signer;
-    const l2Weth = new Contract(_l2Weth, weth9Abi, l2Signer);
+    const l2Weth = new Contract(_l2Weth, CONTRACT_ADDRESSES[1].weth.abi, l2Signer);
     this.log("Unwrapping WETH", { amount: amount.toString() });
     return await runTransaction(this.logger, l2Weth, "withdraw", [amount]);
   }

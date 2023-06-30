@@ -222,7 +222,12 @@ export class Relayer {
       if (tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
         // The pre-computed realizedLpFeePct is for the pre-UBA fee model. Update it to the UBA fee model if necessary.
         // The SpokePool guarantees the sum of the fees is <= 100% of the deposit amount.
-        deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit, l1Token.symbol);
+        deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(
+          version,
+          deposit,
+          l1Token.symbol,
+          l1Token.address
+        );
 
         const repaymentChainId = await this.resolveRepaymentChain(version, deposit, unfilledAmount, l1Token);
         if (isDefined(repaymentChainId)) {
@@ -334,7 +339,7 @@ export class Relayer {
     hubPoolToken: L1Token
   ): Promise<number | undefined> {
     const { depositId, originChainId, destinationChainId, transactionHash: depositHash } = deposit;
-    const { hubPoolClient, inventoryClient, profitClient } = this.clients;
+    const { inventoryClient, profitClient } = this.clients;
 
     // TODO: Consider adding some way for Relayer to delete transactions in Queue for fills for same deposit.
     // This way the relayer could set a repayment chain ID for any fill that follows a 1 wei fill in the queue.
@@ -362,51 +367,68 @@ export class Relayer {
     }
 
     const preferredChainId = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
+    const refundFee = (await this.computeRefundFees(version, fillAmount, [preferredChainId], hubPoolToken.symbol))[0];
+
+    const profitable = profitClient.isFillProfitable(deposit, fillAmount, refundFee, hubPoolToken);
+    return profitable ? preferredChainId : undefined;
+  }
+
+  protected async computeRealizedLpFeePct(
+    version: number,
+    deposit: DepositWithBlock,
+    symbol: string,
+    hubPoolTokenAddress: string
+  ): Promise<BigNumber> {
     if (!sdkUtils.isUBA(version)) {
-      const profitable = profitClient.isFillProfitable(deposit, fillAmount, toBN(0), hubPoolToken);
-      return profitable ? preferredChainId : undefined;
+      return deposit.realizedLpFeePct;
     }
 
-    // Ensure that the refund token exists on the candidate chainId.
-    const refundChainIds = this.config.relayerDestinationChains.filter((chainId) =>
-      hubPoolClient.l2TokenEnabledForL1Token(hubPoolToken.address, chainId)
+    const { originChainId, depositId, destinationChainId, amount, quoteBlockNumber } = deposit;
+    const {
+      lpFee,
+      depositBalancingFee: depositFee,
+      systemFee: realizedLpFeePct,
+    } = await this.clients.ubaClient.computeSystemFee(
+      originChainId,
+      destinationChainId,
+      symbol,
+      hubPoolTokenAddress,
+      amount,
+      quoteBlockNumber
     );
 
-    // Estimate the profitability of taking a refund on each candidate refundChainId.
-    const refundFees = await this.computeRefundFees(version, fillAmount, refundChainIds, hubPoolToken.symbol);
-    const refundChains = Object.fromEntries(
-      refundChainIds
-        .map((chainId, idx) =>
-          profitClient.computeFillProfitability(deposit, fillAmount, refundFees[idx], hubPoolToken)
-        )
-        .map(({ profitable, netRelayerFeePct }, idx) => [refundChainIds[idx], { profitable, netRelayerFeePct }])
+    const chain = getNetworkName(deposit.originChainId);
+    this.logger.debug({
+      at: "relayer::computeRealizedLpFeePct",
+      message: `Computed UBA system fee for ${chain} depositId ${depositId}: ${realizedLpFeePct}`,
+      lpFee,
+      depositFee,
+    });
+
+    return realizedLpFeePct;
+  }
+
+  protected async computeRefundFees(
+    version: number,
+    unfilledAmount: BigNumber,
+    chainIds: number[],
+    symbol: string,
+    hubPoolBlockNumber?: number
+  ): Promise<BigNumber[]> {
+    if (!sdkUtils.isUBA(version)) {
+      return chainIds.map(() => toBN(0));
+    }
+
+    const { hubPoolClient, ubaClient } = this.clients;
+    const fees = await ubaClient.computeBalancingFees(
+      symbol,
+      unfilledAmount,
+      hubPoolBlockNumber ?? hubPoolClient.latestBlockNumber,
+      chainIds,
+      UBAActionType.Refund
     );
 
-    // Sort the residual chainIds according to their respective profitabilities.
-    const refundChainsByProfit = refundChainIds.sort((chainA, chainB) =>
-      refundChains[chainA].netRelayerFeePct.gte(refundChains[chainB].netRelayerFeePct) ? 1 : -1
-    );
-
-    // When the refund chainId proposed by the inventory client is one of [destinationChainId, HubPoolChainId],
-    // prioritise taking refunds on the desinationChainId first. This helps to avoid the destination SpokePool running
-    // over-balance. If the preferredChainId is for a third chain, then accept that proposal as-is and preference the
-    // destinationChainId and HubPool chainId as the next best options, subject to profitability. If none of these
-    // refund chains are profitable, go mercenary and take the refund wherever it's most profitable. This may also
-    // produce no chainId, in which case the fill is truly unprofitable and may be ignored.
-    const preferredChainIds = [
-      ...new Set(
-        [destinationChainId, hubPoolClient.chainId].includes(preferredChainId)
-          ? [destinationChainId, hubPoolClient.chainId]
-          : [preferredChainId, destinationChainId, hubPoolClient.chainId]
-      ),
-    ];
-
-    const repaymentChainId = [
-      ...preferredChainIds,
-      ...refundChainsByProfit.filter((chainId) => !preferredChainIds.includes(chainId)),
-    ].find((chainId) => refundChains[chainId]?.profitable);
-
-    return repaymentChainId;
+    return fees.map(({ balancingFee }) => balancingFee);
   }
 
   protected async computeRealizedLpFeePct(

@@ -146,10 +146,12 @@ export function getL1TokenInfoForOptimismToken(
 export async function finalizeOptimismMessage(
   _chainId: OVM_CHAIN_ID,
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER,
-  message: CrossChainMessageWithStatus
+  message: CrossChainMessageWithStatus,
+  logIndex = 0
 ): Promise<Multicall2Call> {
   const callData = await (crossChainMessenger as optimismSDK.CrossChainMessenger).populateTransaction.finalizeMessage(
-    message.message as optimismSDK.MessageLike
+    message.message as optimismSDK.MessageLike,
+    logIndex
   );
   return {
     callData: callData.data,
@@ -184,7 +186,9 @@ export async function multicallOptimismFinalizations(
     await getOptimismFinalizableMessages(chainId, logger, tokensBridgedEvents, crossChainMessenger)
   ).filter((message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]);
   const callData = await Promise.all(
-    finalizableMessages.map((message) => finalizeOptimismMessage(chainId, crossChainMessenger, message))
+    finalizableMessages.map((message) =>
+      finalizeOptimismMessage(chainId, crossChainMessenger, message, message.logIndex)
+    )
   );
   const withdrawals = finalizableMessages.map((message) => {
     const l1TokenInfo = getL1TokenInfoForOptimismToken(chainId, hubPoolClient, message.event.l2TokenAddress);
