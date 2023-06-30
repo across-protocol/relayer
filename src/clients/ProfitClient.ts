@@ -31,7 +31,7 @@ export type FillProfit = {
   relayerCapitalUsd: BigNumber; // Amount to be sent by the relayer in USD.
   netRelayerFeePct: BigNumber; // Relayer fee after gas costs as a portion of relayerCapitalUsd.
   netRelayerFeeUsd: BigNumber; // Relayer fee in USD after paying for gas costs.
-  fillProfitable: boolean; // Fill profitability indicator.
+  profitable: boolean; // Fill profitability indicator.
 };
 
 export const GAS_TOKEN_BY_CHAIN_ID: { [chainId: number]: string } = {
@@ -239,7 +239,7 @@ export class ProfitClient {
     const netRelayerFeePct = netRelayerFeeUsd.mul(fixedPoint).div(relayerCapitalUsd);
 
     // If token price or gas price is unknown, assume the relay is unprofitable.
-    const fillProfitable = tokenPriceUsd.gt(0) && gasPriceUsd.gt(0) && netRelayerFeePct.gte(minRelayerFeePct);
+    const profitable = tokenPriceUsd.gt(0) && gasPriceUsd.gt(0) && netRelayerFeePct.gte(minRelayerFeePct);
 
     return {
       grossRelayerFeePct,
@@ -254,7 +254,7 @@ export class ProfitClient {
       relayerCapitalUsd,
       netRelayerFeePct,
       netRelayerFeeUsd,
-      fillProfitable,
+      profitable,
     };
   }
 
@@ -270,7 +270,12 @@ export class ProfitClient {
     return fillAmount.mul(tokenPriceInUsd).div(toBN(10).pow(l1TokenInfo.decimals));
   }
 
-  isFillProfitable(deposit: Deposit, fillAmount: BigNumber, refundFee: BigNumber, l1Token: L1Token): boolean {
+  getFillProfitability(
+    deposit: Deposit,
+    fillAmount: BigNumber,
+    refundFee: BigNumber,
+    l1Token: L1Token
+  ): FillProfit | undefined {
     const minRelayerFeePct = this.minRelayerFeePct(l1Token.symbol, deposit.originChainId, deposit.destinationChainId);
     let fill: FillProfit;
 
@@ -283,12 +288,12 @@ export class ProfitClient {
         deposit,
         fillAmount,
       });
-      return false;
+      return undefined;
     }
 
-    if (!fill.fillProfitable || this.debugProfitability) {
+    if (!fill.profitable || this.debugProfitability) {
       const { depositId, originChainId } = deposit;
-      const profitable = fill.fillProfitable ? "profitable" : "unprofitable";
+      const profitable = fill.profitable ? "profitable" : "unprofitable";
       this.logger.debug({
         at: "ProfitClient#isFillProfitable",
         message: `${l1Token.symbol} deposit ${depositId} on chain ${originChainId} is ${profitable}`,
@@ -307,11 +312,16 @@ export class ProfitClient {
         netRelayerFeeUsd: formatEther(fill.netRelayerFeeUsd),
         netRelayerFeePct: `${formatFeePct(fill.netRelayerFeePct)}%`,
         minRelayerFeePct: `${formatFeePct(minRelayerFeePct)}%`,
-        fillProfitable: fill.fillProfitable,
+        profitable: fill.profitable,
       });
     }
 
-    return fill.fillProfitable;
+    return fill;
+  }
+
+  isFillProfitable(deposit: Deposit, fillAmount: BigNumber, refundFee: BigNumber, l1Token: L1Token): boolean {
+    const { profitable } = this.getFillProfitability(deposit, fillAmount, refundFee, l1Token);
+    return profitable ?? false;
   }
 
   captureUnprofitableFill(deposit: DepositWithBlock, fillAmount: BigNumber): void {
