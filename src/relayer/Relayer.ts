@@ -1,13 +1,13 @@
 import { constants as ethersConstants } from "ethers";
 import { groupBy } from "lodash";
 import { clients as sdkClients, utils as sdkUtils } from "@across-protocol/sdk-v2";
-import { SpokePoolClient } from "../clients";
 import {
   BigNumber,
   isDefined,
   winston,
   buildFillRelayProps,
   getNetworkName,
+  getBlockForTimestamp,
   getUnfilledDeposits,
   getCurrentTime,
   buildFillRelayWithUpdatedFeeProps,
@@ -316,38 +316,47 @@ export class Relayer {
       spokePoolClients.map(({ chainId }) => [chainId, []])
     );
 
-    // For each refund/repayment Spoke Pool, group its set of by corresponding destination chain.
-    // Bound the event range by the relayer deposit lookback.
+    // Bound the event range by the relayer lookback. Must be resolved from an offset (in seconds) to a block number.
+    const _maxBlockAges = await Promise.all(
+      spokePoolClients.map((spokePoolClient) => {
+        const currentTime = spokePoolClient.getCurrentTime();
+        return getBlockForTimestamp(spokePoolClient.chainId, currentTime - this.config.maxRelayerLookBack);
+      })
+    );
+    const maxBlockAges = Object.fromEntries(
+      _maxBlockAges.map((blockNumber, idx) => [spokePoolClients[idx].chainId, blockNumber])
+    );
+
+    // For each refund/repayment Spoke Pool, group its set of refund requests by corresponding destination chain.
     const refundRequestsByDstChain = Object.fromEntries(
-      spokePoolClients.map(({ chainId, latestBlockNumber }) => {
-        const lookback = latestBlockNumber - this.config.maxRelayerLookBack;
-        const refundRequests = ubaClient
-          .getRefundRequests(chainId, this.relayerAddress)
-          .filter(({ blockNumber }) => blockNumber > lookback);
+      spokePoolClients.map(({ chainId }) => {
+        const maxBlockAge = maxBlockAges[chainId];
+        const refundRequests = ubaClient.getRefundRequests(chainId, { relayer: this.relayerAddress, maxBlockAge });
         return [chainId, refundRequests];
       })
     );
 
+    // For each destination Spoke Pool, find any fills that are eligible for a new refund request.
     for (const spokePoolClient of spokePoolClients) {
       const { chainId: destinationChainId } = spokePoolClient;
-      const fills = this.findFillsWithoutRefundRequests(spokePoolClient, refundRequestsByDstChain[destinationChainId]);
+      const fills = this.findFillsWithoutRefundRequests(
+        destinationChainId,
+        refundRequestsByDstChain[destinationChainId],
+        maxBlockAges[destinationChainId]
+      );
       fills.forEach((fill) => eligibleFillsByRefundChain[fill.repaymentChainId].push(fill));
     }
 
     // Enqueue a refund for each eligible fill.
-    Object.values(eligibleFillsByRefundChain).forEach((fills) => {
-      fills.forEach((fill) => {
-        this.logger.debug({ at: "Relayer::requestRefunds", message: "Requesting refund for fill.", fill });
-        this.requestRefund(fill);
-      });
-    });
+    Object.values(eligibleFillsByRefundChain).forEach((fills) => fills.forEach((fill) => this.requestRefund(fill)));
 
     await multiCallerClient.executeTransactionQueue(!sendRefundRequests);
   }
 
   findFillsWithoutRefundRequests(
-    spokePoolClient: SpokePoolClient,
-    refundRequests: RefundRequestWithBlock[] = []
+    destinationChainId: number,
+    refundRequests: RefundRequestWithBlock[],
+    maxBlockAge: number
   ): FillWithBlock[] {
     const refundRequestDepositIds: { [chainId: number]: number[] } = [];
 
@@ -357,10 +366,12 @@ export class Relayer {
     });
 
     // Find fills where repayment was requested on another chain.
-    const fills = spokePoolClient.getFillsForRelayer(this.relayerAddress).filter((fill) => {
-      const { depositId, originChainId, destinationChainId, repaymentChainId } = fill;
-      return repaymentChainId !== destinationChainId && !refundRequestDepositIds[originChainId]?.includes(depositId);
-    });
+    const fills = this.clients.ubaClient
+      .getFills(destinationChainId, { relayer: this.relayerAddress, maxBlockAge })
+      .filter((fill) => {
+        const { depositId, originChainId, destinationChainId, repaymentChainId } = fill;
+        return repaymentChainId !== destinationChainId && !refundRequestDepositIds[originChainId]?.includes(depositId);
+      });
 
     return fills;
   }
@@ -404,6 +415,7 @@ export class Relayer {
     const message = `Submitted refund request on chain ${getNetworkName(chainId)}.`;
     const mrkdwn = this.constructRefundRequestMarkdown(fill);
 
+    this.logger.debug({ at: "Relayer::requestRefund", message: "Requesting refund for fill.", fill });
     multiCallerClient.enqueueTransaction({ chainId, contract, method, args, message, mrkdwn });
   }
 

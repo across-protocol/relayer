@@ -33,9 +33,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
 
       await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled);
 
-
       await relayerClients.multiCallerClient.executeTransactionQueue(!config.sendingRelaysEnabled);
-
 
       // Unwrap WETH after filling deposits so we don't mess up slow fill logic, but before rebalancing
       // any tokens so rebalancing can take into account unwrapped WETH balances.
