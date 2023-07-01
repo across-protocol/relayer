@@ -431,54 +431,6 @@ export class Relayer {
     return fees.map(({ balancingFee }) => balancingFee);
   }
 
-  protected async computeRealizedLpFeePct(
-    version: number,
-    deposit: Deposit,
-    symbol: string,
-    hubPoolBlockNumber?: number
-  ): Promise<BigNumber> {
-    if (!sdkUtils.isUBA(version)) {
-      return deposit.realizedLpFeePct;
-    }
-
-    const { hubPoolClient, ubaClient } = this.clients;
-    hubPoolBlockNumber ??= hubPoolClient.latestBlockNumber;
-
-    const { originChainId, destinationChainId, amount } = deposit;
-    const { systemFee: realizedLpFeePct } = await ubaClient.computeSystemFee(
-      originChainId,
-      destinationChainId,
-      symbol,
-      amount,
-      hubPoolBlockNumber
-    );
-
-    return realizedLpFeePct;
-  }
-
-  protected async computeRefundFees(
-    version: number,
-    unfilledAmount: BigNumber,
-    chainIds: number[],
-    symbol: string,
-    hubPoolBlockNumber?: number
-  ): Promise<BigNumber[]> {
-    if (!sdkUtils.isUBA(version)) {
-      return chainIds.map(() => toBN(0));
-    }
-
-    const { hubPoolClient, ubaClient } = this.clients;
-    const fees = await ubaClient.computeBalancingFees(
-      symbol,
-      unfilledAmount,
-      hubPoolBlockNumber ?? hubPoolClient.latestBlockNumber,
-      chainIds,
-      UBAActionType.Refund
-    );
-
-    return fees.map(({ balancingFee }) => balancingFee);
-  }
-
   private handleTokenShortfall() {
     const tokenShortfall = this.clients.tokenClient.getTokenShortfall();
 
