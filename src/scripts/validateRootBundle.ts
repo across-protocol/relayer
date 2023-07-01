@@ -5,7 +5,6 @@
 //    NODE_URL_1=https://mainnet.infura.io/v3/KEY
 //    NODE_URL_10=https://optimism-mainnet.infura.io/v3/KEY
 //    NODE_URL_137=https://polygon-mainnet.infura.io/v3/KEY
-//    NODE_URL_288=https://mainnet.boba.network/
 //    NODE_URL_42161=https://arb-mainnet.g.alchemy.com/v2/KEY
 // 2. Example of invalid bundle: REQUEST_TIME=1653594774 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
 // 2. Example of valid bundle:   REQUEST_TIME=1653516226 ts-node ./src/scripts/validateRootBundle.ts --wallet mnemonic
@@ -17,29 +16,42 @@ import {
   getSigner,
   startupLogLevel,
   Logger,
-  getLatestInvalidBundleStartBlocks,
+  getDvmContract,
+  getDisputedProposal,
+  getBlockForTimestamp,
+  getCurrentTime,
+  sortEventsDescending,
+  getDisputeForTimestamp,
+  disconnectRedisClient,
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
   getSpokePoolClientEventSearchConfigsForFastDataworker,
   updateDataworkerClients,
 } from "../dataworker/DataworkerClientHelper";
-import { BlockFinder } from "@uma/sdk";
-import { PendingRootBundle } from "../interfaces";
+import { PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
 import { createDataworker } from "../dataworker";
-import { getEndBlockBuffers } from "../dataworker/DataworkerUtils";
+import { getBlockForChain, getEndBlockBuffers } from "../dataworker/DataworkerUtils";
+import { CONFIG_STORE_VERSION } from "../common";
 
 config();
 let logger: winston.Logger;
 
-export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
+export async function validate(_logger: winston.Logger, baseSigner: Wallet): Promise<void> {
   logger = _logger;
   if (!process.env.REQUEST_TIME) {
     throw new Error("Must set environment variable 'REQUEST_TIME=<NUMBER>' to disputed price request time");
   }
   const priceRequestTime = Number(process.env.REQUEST_TIME);
 
+  // Override default config with sensible defaults:
+  // - DATAWORKER_FAST_LOOKBACK_COUNT=8 balances limiting RPC requests with querying
+  // enough data to limit # of excess historical deposit queries.
+  // - SPOKE_ROOTS_LOOKBACK_COUNT unused in this script so set to something < DATAWORKER_FAST_LOOKBACK_COUNT
+  // to avoid configuration error.
+  process.env.DATAWORKER_FAST_LOOKBACK_COUNT = "8";
+  process.env.SPOKE_ROOTS_LOOKBACK_COUNT = "1";
   const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
   logger[startupLogLevel(config)]({
     at: "RootBundleValidator",
@@ -48,14 +60,64 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
     config,
   });
 
-  // Construct blockfinder to figure out which block corresponds with the disputed price request time.
-  const blockFinder = new BlockFinder(
-    clients.configStoreClient.configStore.provider.getBlock.bind(clients.configStoreClient.configStore.provider)
+  // Figure out which block corresponds with the disputed price request time.
+  const priceRequestBlock = await getBlockForTimestamp(
+    clients.hubPoolClient.chainId,
+    clients.hubPoolClient.chainId,
+    priceRequestTime,
+    getCurrentTime()
   );
-  const priceRequestBlock = (await blockFinder.getBlockForTimestamp(priceRequestTime)).number;
+  logger.debug({
+    at: "Dataworker#validate",
+    message: `Price request block found for request time ${priceRequestTime}`,
+    priceRequestBlock,
+  });
 
+  // Find dispute transaction so we can gain additional confidence that the preceding root bundle is older than the
+  // dispute. This is a sanity test against the case where a dispute was submitted atomically following proposal
+  // in the same block. This also handles the edge case where multiple disputes and proposals are in the
+  // same block.
+  const dvm = await getDvmContract(clients.configStoreClient.configStore.provider);
   await updateDataworkerClients(clients, false);
-  const precedingProposeRootBundleEvent = clients.hubPoolClient.getMostRecentProposedRootBundle(priceRequestBlock);
+
+  if (!clients.configStoreClient.hasLatestConfigStoreVersion) {
+    logger.error({
+      at: "Dataworker#validate",
+      message: "Cannot validate because missing updated ConfigStore version. Update to latest code.",
+      latestVersionSupported: CONFIG_STORE_VERSION,
+      latestInConfigStore: clients.configStoreClient.getConfigStoreVersionForTimestamp(),
+    });
+    return;
+  }
+
+  // If request timestamp corresponds to a dispute, use that to easily find the associated root bundle.
+  const disputeEventForRequestTime = await getDisputeForTimestamp(
+    dvm,
+    clients.hubPoolClient,
+    priceRequestTime,
+    priceRequestBlock
+  );
+  let precedingProposeRootBundleEvent: ProposedRootBundle;
+  if (disputeEventForRequestTime !== undefined) {
+    precedingProposeRootBundleEvent = getDisputedProposal(clients.hubPoolClient, disputeEventForRequestTime);
+  }
+  if (disputeEventForRequestTime === undefined || precedingProposeRootBundleEvent === undefined) {
+    logger.debug({
+      at: "Dataworker#validate",
+      message:
+        "No bundle linked to dispute found for request time, falling back to most recent root bundle before request time",
+      foundDisputeEvent: disputeEventForRequestTime !== undefined,
+      foundProposedRootBundle: precedingProposeRootBundleEvent !== undefined,
+    });
+    // Timestamp doesn't correspond to a dispute, so find the most recent root bundle before the request time.
+    precedingProposeRootBundleEvent = sortEventsDescending(clients.hubPoolClient.getProposedRootBundles()).find(
+      (x) => x.blockNumber <= priceRequestBlock
+    );
+  }
+  if (!precedingProposeRootBundleEvent) {
+    throw new Error("No proposed root bundle found before request time");
+  }
+
   const rootBundle: PendingRootBundle = {
     poolRebalanceRoot: precedingProposeRootBundleEvent.poolRebalanceRoot,
     relayerRefundRoot: precedingProposeRootBundleEvent.relayerRefundRoot,
@@ -73,12 +135,21 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
     transactionHash: precedingProposeRootBundleEvent.transactionHash,
   });
 
-  if (config.dataworkerFastLookbackCount === 0) {
-    throw new Error("Set DATAWORKER_FAST_LOOKBACK_COUNT > 0, otherwise script will take too long to run");
-  }
+  // Calculate the latest blocks we should query in the spoke pool client so we can efficiently reconstruct
+  // older bundles. We do this by setting toBlocks equal to the bundle end blocks of the first validated bundle
+  // following the target bundle.
+  const closestFollowingValidatedBundleIndex = clients.hubPoolClient
+    .getValidatedRootBundles()
+    .findIndex((x) => x.blockNumber > rootBundle.proposalBlockNumber);
+  // We want the bundle end of blocks following the target bundle so add +1 to the index.
+  const overriddenConfig = {
+    ...config,
+    dataworkerFastStartBundle:
+      closestFollowingValidatedBundleIndex === -1 ? "latest" : closestFollowingValidatedBundleIndex + 1,
+  };
 
   const { fromBundle, toBundle, fromBlocks, toBlocks } = getSpokePoolClientEventSearchConfigsForFastDataworker(
-    config,
+    overriddenConfig,
     clients,
     dataworker
   );
@@ -97,29 +168,30 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
 
   const spokePoolClients = await constructSpokePoolClientsForFastDataworker(
     logger,
-    clients.configStoreClient,
+    clients.hubPoolClient,
     config,
     baseSigner,
     fromBlocks,
     toBlocks
   );
 
-  const latestInvalidBundleStartBlocks = getLatestInvalidBundleStartBlocks(spokePoolClients);
-  logger.debug({
-    at: "RootBundleValidator",
-    message:
-      "Identified latest invalid bundle start blocks per chain that we will use to filter root bundles that can be proposed and validated",
-    latestInvalidBundleStartBlocks,
-    fromBlocks,
-    toBlocks,
-  });
+  const mainnetBundleEndBlock = getBlockForChain(
+    rootBundle.bundleEvaluationBlockNumbers,
+    clients.hubPoolClient.chainId,
+    dataworker.chainIdListForBundleEvaluationBlockNumbers
+  );
 
+  // Get widest possible block range that could be used at time of root bundle proposal.
   const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
     dataworker.chainIdListForBundleEvaluationBlockNumbers,
     spokePoolClients,
     getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
     clients,
-    priceRequestBlock
+    mainnetBundleEndBlock,
+    clients.configStoreClient.getEnabledChains(
+      mainnetBundleEndBlock,
+      dataworker.chainIdListForBundleEvaluationBlockNumbers
+    )
   );
 
   // Validate the event:
@@ -128,7 +200,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
     widestPossibleBlockRanges,
     rootBundle,
     spokePoolClients,
-    latestInvalidBundleStartBlocks
+    fromBlocks
   );
 
   logger.info({
@@ -140,10 +212,11 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet) {
   });
 }
 
-export async function run(_logger: winston.Logger) {
+export async function run(_logger: winston.Logger): Promise<void> {
   const baseSigner: Wallet = await getSigner();
   await validate(_logger, baseSigner);
+  await disconnectRedisClient(logger);
 }
 
 // eslint-disable-next-line no-process-exit
-run(Logger).then(() => process.exit(0));
+run(Logger).then(async () => process.exit(0));

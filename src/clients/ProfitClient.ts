@@ -1,16 +1,21 @@
 import { Provider } from "@ethersproject/abstract-provider";
+import { utils as ethersUtils } from "ethers";
 import * as constants from "../common/Constants";
 import { assert, BigNumber, formatFeePct, max, winston, toBNWei, toBN, assign } from "../utils";
 import { HubPoolClient } from ".";
-import { Deposit, L1Token, SpokePoolClientsByChain } from "../interfaces";
-import { priceClient, relayFeeCalculator } from "@across-protocol/sdk-v2";
+import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
+import { constants as sdkConstants, priceClient, relayFeeCalculator, utils as sdkUtils } from "@across-protocol/sdk-v2";
+
+const { formatEther } = ethersUtils;
+const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = sdkConstants;
+const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 
 // We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
 // @todo: These don't belong in the ProfitClient; they should be relocated.
-export const MATIC = "0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0";
-export const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
-export const WBTC = "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599";
-export const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+export const MATIC = TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET];
+export const USDC = TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET];
+export const WBTC = TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET];
+export const WETH = TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET];
 
 // note: All FillProfit BigNumbers are scaled to 18 decimals unless specified otherwise.
 export type FillProfit = {
@@ -22,10 +27,11 @@ export type FillProfit = {
   gasMultiplier: BigNumber; // Multiplier to apply to nativeGasCost as padding or discount
   gasPriceUsd: BigNumber; // Price paid per unit of gas in USD.
   gasCostUsd: BigNumber; // Estimated cost of completing the fill in USD.
+  refundFeeUsd: BigNumber; // Estimated relayer refund fee on the refund chain.
   relayerCapitalUsd: BigNumber; // Amount to be sent by the relayer in USD.
   netRelayerFeePct: BigNumber; // Relayer fee after gas costs as a portion of relayerCapitalUsd.
   netRelayerFeeUsd: BigNumber; // Relayer fee in USD after paying for gas costs.
-  fillProfitable: boolean; // Fill profitability indicator.
+  profitable: boolean; // Fill profitability indicator.
 };
 
 export const GAS_TOKEN_BY_CHAIN_ID: { [chainId: number]: string } = {
@@ -34,10 +40,14 @@ export const GAS_TOKEN_BY_CHAIN_ID: { [chainId: number]: string } = {
   137: MATIC,
   288: WETH,
   42161: WETH,
+  // Testnets:
+  5: WETH,
+  421613: WETH,
 };
 // TODO: Make this dynamic once we support chains with gas tokens that have different decimals.
 const GAS_TOKEN_DECIMALS = 18;
 
+// These are used to simulate fills on L2s to return estimated gas costs.
 // Note: the type here assumes that all of these classes take the same constructor parameters.
 const QUERY_HANDLERS: {
   [chainId: number]: new (
@@ -49,15 +59,19 @@ const QUERY_HANDLERS: {
   137: relayFeeCalculator.PolygonQueries,
   288: relayFeeCalculator.BobaQueries,
   42161: relayFeeCalculator.ArbitrumQueries,
+  // Testnets:
+  5: relayFeeCalculator.EthereumQueries,
+  421613: relayFeeCalculator.ArbitrumQueries,
 };
 
 const { PriceClient } = priceClient;
-const { acrossApi, coingecko } = priceClient.adapters;
+const { acrossApi, coingecko, defiLlama } = priceClient.adapters;
 
 export class ProfitClient {
   private readonly priceClient;
+  protected minRelayerFees: { [route: string]: BigNumber } = {};
   protected tokenPrices: { [l1Token: string]: BigNumber } = {};
-  private unprofitableFills: { [chainId: number]: { deposit: Deposit; fillAmount: BigNumber }[] } = {};
+  private unprofitableFills: { [chainId: number]: { deposit: DepositWithBlock; fillAmount: BigNumber }[] } = {};
 
   // Track total gas costs of a relay on each chain.
   protected totalGasCosts: { [chainId: number]: BigNumber } = {};
@@ -65,28 +79,28 @@ export class ProfitClient {
   // Queries needed to fetch relay gas costs.
   private relayerFeeQueries: { [chainId: number]: relayFeeCalculator.QueryInterface } = {};
 
+  private isGoerli: boolean;
+
   // @todo: Consolidate this set of args before it grows legs and runs away from us.
   constructor(
     readonly logger: winston.Logger,
     readonly hubPoolClient: HubPoolClient,
     spokePoolClients: SpokePoolClientsByChain,
-    readonly ignoreProfitability: boolean,
     readonly enabledChainIds: number[],
-    // Default to throwing errors if fetching token prices fails.
-    readonly ignoreTokenPriceFailures: boolean = false,
-    readonly minRelayerFeePct: BigNumber = toBNWei(constants.RELAYER_MIN_FEE_PCT),
+    readonly defaultMinRelayerFeePct: BigNumber = toBNWei(constants.RELAYER_MIN_FEE_PCT),
     readonly debugProfitability: boolean = false,
     protected gasMultiplier: BigNumber = toBNWei(1)
   ) {
     // Require 1% <= gasMultiplier <= 400%
     assert(
-      this.gasMultiplier.gte(toBNWei("0.01")) && this.gasMultiplier.lte(toBNWei(4)),
+      this.gasMultiplier.gte(toBNWei("0.00")) && this.gasMultiplier.lte(toBNWei(4)),
       `Gas multiplier out of range (${this.gasMultiplier})`
     );
 
     this.priceClient = new PriceClient(logger, [
-      new acrossApi.PriceFeed("Across API", {}),
-      new coingecko.PriceFeed("CoinGecko Free", {}),
+      new acrossApi.PriceFeed(),
+      new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
+      new defiLlama.PriceFeed(),
     ]);
 
     for (const chainId of this.enabledChainIds) {
@@ -95,6 +109,8 @@ export class ProfitClient {
         spokePoolClients[chainId].spokePool.provider
       );
     }
+
+    this.isGoerli = this.hubPoolClient.chainId === CHAIN_IDs.GOERLI;
   }
 
   getAllPrices(): { [address: string]: BigNumber } {
@@ -108,11 +124,15 @@ export class ProfitClient {
       this.logger.warn({ at: "ProfitClient#getPriceOfToken", message: `Token ${token} not in price list.` });
       return toBN(0);
     }
+
+    if (this.isGoerli && token === TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.GOERLI]) {
+      return this.tokenPrices[WETH];
+    }
     return this.tokenPrices[token];
   }
 
+  // @todo: Factor in the gas cost of submitting the RefundRequest on alt refund chains.
   getTotalGasCost(chainId: number): BigNumber {
-    // TODO: Figure out where the mysterious BigNumber -> string conversion happens.
     return this.totalGasCosts[chainId] ? toBN(this.totalGasCosts[chainId]) : toBN(0);
   }
 
@@ -134,7 +154,7 @@ export class ProfitClient {
     const gasCostUsd = nativeGasCost
       .mul(this.gasMultiplier)
       .mul(gasPriceUsd)
-      .div(toBNWei(1))
+      .div(fixedPoint)
       .div(toBN(10).pow(GAS_TOKEN_DECIMALS));
 
     return {
@@ -144,7 +164,7 @@ export class ProfitClient {
     };
   }
 
-  getUnprofitableFills(): { [chainId: number]: { deposit: Deposit; fillAmount: BigNumber }[] } {
+  getUnprofitableFills(): { [chainId: number]: { deposit: DepositWithBlock; fillAmount: BigNumber }[] } {
     return this.unprofitableFills;
   }
 
@@ -152,47 +172,74 @@ export class ProfitClient {
     this.unprofitableFills = {};
   }
 
-  appliedRelayerFeePct(deposit: Deposit): BigNumber {
-    // Return the maximum available relayerFeePct (max of Deposit and any SpeedUp).
-    return max(toBN(deposit.relayerFeePct), deposit.newRelayerFeePct ? toBN(deposit.newRelayerFeePct) : toBN(0));
+  // Allow the minimum relayer fee to be overridden per token/route:
+  // 0.1bps on USDC from Optimism to Arbitrum:
+  //   - MIN_RELAYER_FEE_PCT_USDC_42161_10=0.00001
+  minRelayerFeePct(symbol: string, srcChainId: number, dstChainId: number): BigNumber {
+    const routeKey = `${symbol}_${srcChainId}_${dstChainId}`;
+    let minRelayerFeePct = this.minRelayerFees[routeKey];
+
+    if (!minRelayerFeePct) {
+      const _minRelayerFeePct = process.env[`MIN_RELAYER_FEE_PCT_${routeKey}`];
+      minRelayerFeePct = _minRelayerFeePct ? toBNWei(_minRelayerFeePct) : this.defaultMinRelayerFeePct;
+
+      // Save the route for next time.
+      this.minRelayerFees[routeKey] = minRelayerFeePct;
+    }
+
+    return minRelayerFeePct as BigNumber;
   }
 
-  calculateFillProfitability(deposit: Deposit, fillAmount: BigNumber, l1Token?: L1Token): FillProfit {
+  appliedRelayerFeePct(deposit: Deposit): BigNumber {
+    // Return the maximum available relayerFeePct (max of Deposit and any SpeedUp).
+    return max(toBN(deposit.relayerFeePct), toBN(deposit.newRelayerFeePct ?? 0));
+  }
+
+  calculateFillProfitability(
+    deposit: Deposit,
+    fillAmount: BigNumber,
+    refundFee: BigNumber,
+    l1Token: L1Token,
+    minRelayerFeePct: BigNumber
+  ): FillProfit {
     assert(fillAmount.gt(0), `Unexpected fillAmount: ${fillAmount}`);
     assert(
       Object.keys(GAS_TOKEN_BY_CHAIN_ID).includes(deposit.destinationChainId.toString()),
       `Unsupported destination chain ID: ${deposit.destinationChainId}`
     );
 
-    l1Token ??= this.hubPoolClient.getTokenInfoForDeposit(deposit);
-    assert(l1Token !== undefined, `No L1 token found for deposit ${JSON.stringify(deposit)}`);
     const tokenPriceUsd = this.getPriceOfToken(l1Token.address);
-    if (tokenPriceUsd.lte(0)) throw new Error(`Unable to determine ${l1Token.symbol} L1 token price`);
+    if (tokenPriceUsd.lte(0)) {
+      throw new Error(`Unable to determine ${l1Token.symbol} L1 token price`);
+    }
 
     // Normalise to 18 decimals.
     const scaledFillAmount =
       l1Token.decimals === 18 ? fillAmount : toBN(fillAmount).mul(toBNWei(1, 18 - l1Token.decimals));
+    const scaledRefundFeeAmount =
+      l1Token.decimals === 18 ? refundFee : toBN(refundFee).mul(toBNWei(1, 18 - l1Token.decimals));
 
     const grossRelayerFeePct = this.appliedRelayerFeePct(deposit);
 
     // Calculate relayer fee and capital outlay in relay token terms.
-    const grossRelayerFee = grossRelayerFeePct.mul(scaledFillAmount).div(toBNWei(1));
+    const grossRelayerFee = grossRelayerFeePct.mul(scaledFillAmount).div(fixedPoint);
     const relayerCapital = scaledFillAmount.sub(grossRelayerFee);
 
     // Normalise to USD terms.
-    const fillAmountUsd = scaledFillAmount.mul(tokenPriceUsd).div(toBNWei(1));
-    const grossRelayerFeeUsd = grossRelayerFee.mul(tokenPriceUsd).div(toBNWei(1));
-    const relayerCapitalUsd = relayerCapital.mul(tokenPriceUsd).div(toBNWei(1));
+    const fillAmountUsd = scaledFillAmount.mul(tokenPriceUsd).div(fixedPoint);
+    const refundFeeUsd = scaledRefundFeeAmount.mul(tokenPriceUsd).div(fixedPoint);
+    const grossRelayerFeeUsd = grossRelayerFee.mul(tokenPriceUsd).div(fixedPoint);
+    const relayerCapitalUsd = relayerCapital.mul(tokenPriceUsd).div(fixedPoint);
 
     // Estimate the gas cost of filling this relay.
     const { nativeGasCost, gasPriceUsd, gasCostUsd } = this.estimateFillCost(deposit.destinationChainId);
 
     // Determine profitability.
-    const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd);
-    const netRelayerFeePct = netRelayerFeeUsd.mul(toBNWei(1)).div(relayerCapitalUsd);
+    const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd).sub(refundFeeUsd);
+    const netRelayerFeePct = netRelayerFeeUsd.mul(fixedPoint).div(relayerCapitalUsd);
 
-    // If token price or gas cost is unknown, assume the relay is unprofitable.
-    const fillProfitable = tokenPriceUsd.gt(0) && gasCostUsd.gt(0) && netRelayerFeePct.gte(this.minRelayerFeePct);
+    // If token price or gas price is unknown, assume the relay is unprofitable.
+    const profitable = tokenPriceUsd.gt(0) && gasPriceUsd.gt(0) && netRelayerFeePct.gte(minRelayerFeePct);
 
     return {
       grossRelayerFeePct,
@@ -203,29 +250,37 @@ export class ProfitClient {
       gasMultiplier: this.gasMultiplier,
       gasPriceUsd,
       gasCostUsd,
+      refundFeeUsd,
       relayerCapitalUsd,
       netRelayerFeePct,
       netRelayerFeeUsd,
-      fillProfitable,
+      profitable,
     };
   }
 
   // Return USD amount of fill amount for deposited token, should always return in wei as the units.
   getFillAmountInUsd(deposit: Deposit, fillAmount: BigNumber): BigNumber {
     const l1TokenInfo = this.hubPoolClient.getTokenInfoForDeposit(deposit);
-    if (!l1TokenInfo)
+    if (!l1TokenInfo) {
       throw new Error(
         `ProfitClient::isFillProfitable missing l1TokenInfo for deposit with origin token: ${deposit.originToken}`
       );
+    }
     const tokenPriceInUsd = this.getPriceOfToken(l1TokenInfo.address);
     return fillAmount.mul(tokenPriceInUsd).div(toBN(10).pow(l1TokenInfo.decimals));
   }
 
-  isFillProfitable(deposit: Deposit, fillAmount: BigNumber, l1Token?: L1Token): boolean {
+  getFillProfitability(
+    deposit: Deposit,
+    fillAmount: BigNumber,
+    refundFee: BigNumber,
+    l1Token: L1Token
+  ): FillProfit | undefined {
+    const minRelayerFeePct = this.minRelayerFeePct(l1Token.symbol, deposit.originChainId, deposit.destinationChainId);
     let fill: FillProfit;
 
     try {
-      fill = this.calculateFillProfitability(deposit, fillAmount, l1Token);
+      fill = this.calculateFillProfitability(deposit, fillAmount, refundFee, l1Token, minRelayerFeePct);
     } catch (err) {
       this.logger.debug({
         at: "ProfitClient#isFillProfitable",
@@ -233,39 +288,43 @@ export class ProfitClient {
         deposit,
         fillAmount,
       });
-      return this.ignoreProfitability && this.appliedRelayerFeePct(deposit).gte(this.minRelayerFeePct);
+      return undefined;
     }
 
-    if (!fill.fillProfitable || this.debugProfitability) {
+    if (!fill.profitable || this.debugProfitability) {
       const { depositId, originChainId } = deposit;
-      const profitable = fill.fillProfitable ? "profitable" : "unprofitable";
+      const profitable = fill.profitable ? "profitable" : "unprofitable";
       this.logger.debug({
         at: "ProfitClient#isFillProfitable",
         message: `${l1Token.symbol} deposit ${depositId} on chain ${originChainId} is ${profitable}`,
         deposit,
         l1Token,
-        fillAmount,
-        fillAmountUsd: fill.fillAmountUsd,
+        fillAmount: formatEther(fillAmount),
+        fillAmountUsd: formatEther(fill.fillAmountUsd),
         grossRelayerFeePct: `${formatFeePct(fill.grossRelayerFeePct)}%`,
-        nativeGasCost: fill.nativeGasCost,
+        nativeGasCost: formatEther(fill.nativeGasCost),
         gasMultiplier: `${formatFeePct(fill.gasMultiplier)}%`,
-        gasPriceUsd: fill.gasPriceUsd,
-        relayerCapitalUsd: `${fill.relayerCapitalUsd}`,
-        grossRelayerFeeUsd: fill.grossRelayerFeeUsd,
-        gasCostUsd: fill.gasCostUsd,
-        netRelayerFeeUsd: `${fill.netRelayerFeeUsd}`,
+        gasPriceUsd: formatEther(fill.gasPriceUsd),
+        refundFeeUsd: formatEther(fill.refundFeeUsd),
+        relayerCapitalUsd: formatEther(fill.relayerCapitalUsd),
+        grossRelayerFeeUsd: formatEther(fill.grossRelayerFeeUsd),
+        gasCostUsd: formatEther(fill.gasCostUsd),
+        netRelayerFeeUsd: formatEther(fill.netRelayerFeeUsd),
         netRelayerFeePct: `${formatFeePct(fill.netRelayerFeePct)}%`,
-        minRelayerFeePct: `${formatFeePct(this.minRelayerFeePct)}%`,
-        fillProfitable: fill.fillProfitable,
+        minRelayerFeePct: `${formatFeePct(minRelayerFeePct)}%`,
+        profitable: fill.profitable,
       });
     }
 
-    // If profitability is disabled, ensure _at least_ that the relayerFeePct >= minRelayerFeePct.
-    // This is a temporary measure and can hopefully be removed (together with ignoreProfitability) in future.
-    return fill.fillProfitable || (this.ignoreProfitability && fill.grossRelayerFeePct.gte(this.minRelayerFeePct));
+    return fill;
   }
 
-  captureUnprofitableFill(deposit: Deposit, fillAmount: BigNumber): void {
+  isFillProfitable(deposit: Deposit, fillAmount: BigNumber, refundFee: BigNumber, l1Token: L1Token): boolean {
+    const { profitable } = this.getFillProfitability(deposit, fillAmount, refundFee, l1Token);
+    return profitable ?? false;
+  }
+
+  captureUnprofitableFill(deposit: DepositWithBlock, fillAmount: BigNumber): void {
     this.logger.debug({ at: "ProfitClient", message: "Handling unprofitable fill", deposit, fillAmount });
     assign(this.unprofitableFills, [deposit.originChainId], [{ deposit, fillAmount }]);
   }
@@ -291,6 +350,16 @@ export class ProfitClient {
       symbol: "MATIC",
       decimals: 18,
     };
+
+    // Support for relaying WETH on public testnet Goerli by adding price lookups for
+    // mainnet tokens which we'll ultimately use as the Goerli token prices.
+    if (this.isGoerli) {
+      l1Tokens[WETH] = {
+        address: WETH,
+        symbol: "WETH",
+        decimals: 18,
+      };
+    }
 
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens: Object.values(l1Tokens) });
 
@@ -320,13 +389,11 @@ export class ProfitClient {
     } catch (err) {
       const errMsg = `Failed to update token prices (${err})`;
       let mrkdwn = `${errMsg}:\n`;
-      Object.entries(l1Tokens).forEach(([address, l1Token]) => {
+      Object.entries(l1Tokens).forEach(([, l1Token]) => {
         mrkdwn += `- Using last known ${l1Token.symbol} price of ${this.getPriceOfToken(l1Token.address)}.\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
-      if (!this.ignoreTokenPriceFailures) {
-        throw new Error(errMsg);
-      }
+      throw new Error(errMsg);
     }
   }
 

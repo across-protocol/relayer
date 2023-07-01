@@ -1,14 +1,12 @@
 export function usage(badInput: string | undefined = undefined): boolean {
   let usageStr = badInput ? `\nUnrecognized input: "${badInput}".\n\n` : "";
-  const userModes = "monitor|relayer";
-  const proModes = "dataworker|finalizer";
   const walletOpts = "mnemonic|privateKey|gckms";
 
   usageStr += `
     Usage:
-    \tts-node ./index.ts --help
-    \tts-node ./index.ts [-h] <--monitor|--relayer>      --wallet <${walletOpts}>
-    \tts-node ./index.tx [-h] <--dataworker|--finalizer> --wallet <${walletOpts}>
+    \tnode ./dist/index.js --help
+    \tnode ./dist/index.js [-h] <--monitor|--relayer>      --wallet <${walletOpts}>
+    \tnode ./dist/index.js [-h] <--dataworker|--finalizer> --wallet <${walletOpts}>
   `.slice(1); // Skip leading newline
 
   // eslint-disable-next-line no-console
@@ -18,7 +16,7 @@ export function usage(badInput: string | undefined = undefined): boolean {
   process.exit(badInput === undefined ? 0 : 9);
 }
 
-export function help() {
+export function help(): void {
   const botRepoUrl = "https://github.com/across-protocol/relayer-v2";
   const relayerDocsUrl = "https://docs.across.to/v2/developers/running-a-relayer";
   const helpStr = `

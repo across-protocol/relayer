@@ -1,17 +1,19 @@
 import winston from "winston";
 import { Wallet } from "../utils";
-import { TokenClient, ProfitClient, BundleDataClient, InventoryClient } from "../clients";
+import { TokenClient, ProfitClient, BundleDataClient, InventoryClient, AcrossApiClient, UBAClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 import { RelayerConfig } from "./RelayerConfig";
-import { CHAIN_ID_LIST_INDICES, Clients, constructClients, updateClients, updateSpokePoolClients } from "../common";
+import { Clients, constructClients, updateClients, updateSpokePoolClients } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { constructSpokePoolClientsWithLookback } from "../common";
 
 export interface RelayerClients extends Clients {
   spokePoolClients: SpokePoolClientsByChain;
+  ubaClient: UBAClient;
   tokenClient: TokenClient;
   profitClient: ProfitClient;
   inventoryClient: InventoryClient;
+  acrossApiClient: AcrossApiClient;
 }
 
 export async function constructRelayerClients(
@@ -20,44 +22,70 @@ export async function constructRelayerClients(
   baseSigner: Wallet
 ): Promise<RelayerClients> {
   const commonClients = await constructClients(logger, config, baseSigner);
+  await updateClients(commonClients);
 
+  // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override
+  // the disabled chain list by setting the DISABLED_CHAINS_OVERRIDE environment variable.
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
+    commonClients.hubPoolClient,
     commonClients.configStoreClient,
     config,
     baseSigner,
     config.maxRelayerLookBack
   );
 
+  const ubaClient = new UBAClient(config.chainIdListIndices, commonClients.hubPoolClient, spokePoolClients, logger);
+
+  // We only use the API client to load /limits for chains so we should remove any chains that are not included in the
+  // destination chain list.
+  const destinationSpokePoolClients = Object.fromEntries(
+    Object.keys(spokePoolClients)
+      .filter((chainId) => config.relayerDestinationChains.includes(Number(chainId)))
+      .map((chainId) => [chainId, spokePoolClients[chainId]])
+  );
+
+  const acrossApiClient = new AcrossApiClient(
+    logger,
+    commonClients.hubPoolClient,
+    destinationSpokePoolClients,
+    config.relayerTokens
+  );
   const tokenClient = new TokenClient(logger, baseSigner.address, spokePoolClients, commonClients.hubPoolClient);
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
-  const enabledChainIds =
-    config.relayerDestinationChains.length > 0 ? config.relayerDestinationChains : CHAIN_ID_LIST_INDICES;
+  const enabledChainIds = (
+    config.relayerDestinationChains.length > 0 ? config.relayerDestinationChains : config.chainIdListIndices
+  ).filter((chainId) => Object.keys(spokePoolClients).includes(chainId.toString()));
   const profitClient = new ProfitClient(
     logger,
     commonClients.hubPoolClient,
     spokePoolClients,
-    config.ignoreProfitability,
     enabledChainIds,
-    config.ignoreTokenPriceFailures,
     config.minRelayerFeePct,
     config.debugProfitability,
     config.relayerGasMultiplier
   );
+  await profitClient.update();
 
   const adapterManager = new AdapterManager(logger, spokePoolClients, commonClients.hubPoolClient, [
     baseSigner.address,
   ]);
 
-  const bundleDataClient = new BundleDataClient(logger, commonClients, spokePoolClients, config.spokePoolChains);
-  const crossChainTransferClient = new CrossChainTransferClient(logger, config.spokePoolChains, adapterManager);
+  const bundleDataClient = new BundleDataClient(
+    logger,
+    commonClients,
+    spokePoolClients,
+    config.chainIdListIndices,
+    config.blockRangeEndBlockBuffer
+  );
+  const crossChainTransferClient = new CrossChainTransferClient(logger, enabledChainIds, adapterManager);
   const inventoryClient = new InventoryClient(
     baseSigner.address,
     logger,
     config.inventoryConfig,
     tokenClient,
-    config.spokePoolChains,
+    enabledChainIds,
     commonClients.hubPoolClient,
     bundleDataClient,
     adapterManager,
@@ -65,12 +93,10 @@ export async function constructRelayerClients(
     config.bundleRefundLookback
   );
 
-  return { ...commonClients, spokePoolClients, tokenClient, profitClient, inventoryClient };
+  return { ...commonClients, spokePoolClients, ubaClient, tokenClient, profitClient, inventoryClient, acrossApiClient };
 }
 
-export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig) {
-  await updateClients(clients);
-  await clients.profitClient.update();
+export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig): Promise<void> {
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
 
   // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
@@ -92,6 +118,7 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
 
   // We can update the inventory client at the same time as checking for eth wrapping as these do not depend on each other.
   await Promise.all([
+    clients.acrossApiClient.update(config.ignoreLimits),
     clients.inventoryClient.update(),
     clients.inventoryClient.wrapL2EthIfAboveThreshold(),
     clients.inventoryClient.setL1TokenApprovals(),
@@ -100,5 +127,7 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   // Update the token client after the inventory client has done its wrapping of L2 ETH to ensure latest WETH ballance.
   // The token client needs route data, so wait for update before checking approvals.
   await clients.tokenClient.update();
-  if (config.sendingRelaysEnabled) await clients.tokenClient.setOriginTokenApprovals();
+  if (config.sendingRelaysEnabled) {
+    await clients.tokenClient.setOriginTokenApprovals();
+  }
 }

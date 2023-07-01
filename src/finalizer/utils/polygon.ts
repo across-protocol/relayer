@@ -1,21 +1,18 @@
 import { setProofApi, use, POSClient } from "@maticnetwork/maticjs";
 import { Web3ClientPlugin } from "@maticnetwork/maticjs-ethers";
 import {
-  Contract,
   convertFromWei,
-  delay,
-  ERC20,
-  ethers,
-  etherscanLink,
   getDeployedContract,
-  getProvider,
   groupObjectCountsByProp,
-  toBN,
   Wallet,
   winston,
+  Contract,
+  getCachedProvider,
 } from "../../utils";
-import { TokensBridged } from "../../interfaces";
+import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
+import { Withdrawal } from "..";
+import { Multicall2Call } from "../../common";
 
 // Note!!: This client will only work for PoS tokens. Matic also has Plasma tokens which have a different finalization
 // process entirely.
@@ -35,7 +32,7 @@ export interface PolygonTokensBridged extends TokensBridged {
   payload: string;
 }
 
-export async function getPosClient(mainnetSigner: Wallet) {
+export async function getPosClient(mainnetSigner: Wallet): Promise<POSClient> {
   // Following from https://maticnetwork.github.io/matic.js/docs/pos
   use(Web3ClientPlugin);
   setProofApi("https://apis.matic.network/");
@@ -50,7 +47,7 @@ export async function getPosClient(mainnetSigner: Wallet) {
       },
     },
     child: {
-      provider: mainnetSigner.connect(getProvider(CHAIN_ID)),
+      provider: mainnetSigner.connect(getCachedProvider(CHAIN_ID, true)),
       defaultConfig: {
         from: mainnetSigner.address,
       },
@@ -62,7 +59,7 @@ export async function getFinalizableTransactions(
   logger: winston.Logger,
   tokensBridged: TokensBridged[],
   posClient: POSClient
-) {
+): Promise<PolygonTokensBridged[]> {
   // First look up which L2 transactions were checkpointed to mainnet.
   const isCheckpointed = await Promise.all(
     tokensBridged.map((event) => posClient.exitUtil.isCheckPointed(event.transactionHash))
@@ -74,8 +71,9 @@ export async function getFinalizableTransactions(
   const checkpointedTokensBridged = tokensBridged
     .filter((_, i) => isCheckpointed[i])
     .map((_tokensBridged) => {
-      if (logIndexesForMessage[_tokensBridged.transactionHash] === undefined)
+      if (logIndexesForMessage[_tokensBridged.transactionHash] === undefined) {
         logIndexesForMessage[_tokensBridged.transactionHash] = 0;
+      }
       return {
         logIndex: logIndexesForMessage[_tokensBridged.transactionHash]++,
         event: _tokensBridged,
@@ -86,11 +84,11 @@ export async function getFinalizableTransactions(
   // can potentially be finalized.
   const payloads = await Promise.all(
     checkpointedTokensBridged.map((e) => {
-      return posClient.exitUtil.buildPayloadForExit(e.event.transactionHash, e.logIndex, BURN_SIG, false);
+      return posClient.exitUtil.buildPayloadForExit(e.event.transactionHash, BURN_SIG, false, e.logIndex);
     })
   );
 
-  const finalizableMessages = [];
+  const finalizableMessages: PolygonTokensBridged[] = [];
   const exitStatus = await Promise.all(
     checkpointedTokensBridged.map(async (_, i) => {
       const payload = payloads[i];
@@ -105,10 +103,11 @@ export async function getFinalizableTransactions(
           payload,
         });
         return { status: POLYGON_MESSAGE_STATUS.CAN_EXIT };
-      } catch (err) {
-        if (err.reason.includes("EXIT_ALREADY_PROCESSED"))
+      } catch (_err) {
+        const err = _err as EthersError;
+        if (err?.reason?.includes("EXIT_ALREADY_PROCESSED")) {
           return { status: POLYGON_MESSAGE_STATUS.EXIT_ALREADY_PROCESSED };
-        else {
+        } else {
           logger.debug({
             at: "PolygonFinalizer",
             message: "Exit will fail for unknown reason",
@@ -132,104 +131,80 @@ export async function getFinalizableTransactions(
   return finalizableMessages;
 }
 
-export async function finalizePolygon(
-  posClient: POSClient,
-  hubPoolClient: HubPoolClient,
-  event: PolygonTokensBridged,
-  logger: winston.Logger
-) {
-  const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
-    CHAIN_ID,
-    event.l2TokenAddress,
-    hubPoolClient.latestBlockNumber
-  );
-  const { payload, ...otherEventData } = event;
-  logger.debug({
-    at: "PolygonFinalizer",
-    message: "Checkpointed token bridge, submitting exit transaction",
-    l1TokenCounterpart,
-    event: otherEventData,
-  });
-  const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
-  const amountFromWei = convertFromWei(otherEventData.amountToReturn.toString(), l1TokenInfo.decimals);
-  try {
-    const txn = await posClient.rootChainManager.exit(payload, {});
-    const receipt = await txn.getReceipt();
-    logger.debug({
-      at: "PolygonFinalizer",
-      message: `Finalized Polygon withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
-      transactionHash: receipt.transactionHash,
-    });
-  } catch (error) {
-    logger.warn({
-      at: "PolygonFinalizer",
-      message: "Error creating exitTx",
-      error,
-      notificationPath: "across-error",
-    });
-  }
+export async function finalizePolygon(posClient: POSClient, event: PolygonTokensBridged): Promise<Multicall2Call> {
+  const { payload } = event;
+  const rootChainManager = await posClient.rootChainManager.getContract();
+  const callData = rootChainManager.method("exit", payload).encodeABI();
+  return {
+    callData,
+    target: rootChainManager.address,
+  };
 }
 
-export function getMainnetTokenBridger(mainnetSigner: Wallet) {
+export async function multicallPolygonFinalizations(
+  tokensBridged: TokensBridged[],
+  posClient: POSClient,
+  hubSigner: Wallet,
+  hubPoolClient: HubPoolClient,
+  logger: winston.Logger
+): Promise<{ callData: Multicall2Call[]; withdrawals: Withdrawal[] }> {
+  const finalizableMessages = await getFinalizableTransactions(logger, tokensBridged, posClient);
+  const callData = await Promise.all(finalizableMessages.map((event) => finalizePolygon(posClient, event)));
+  const tokensInFinalizableMessages = getL2TokensToFinalize(
+    finalizableMessages.map((polygonTokensBridged) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { payload, ...tokensBridged } = polygonTokensBridged;
+      return tokensBridged;
+    })
+  );
+  const callDataRetrievals = await Promise.all(
+    tokensInFinalizableMessages.map((l2Token) =>
+      retrieveTokenFromMainnetTokenBridger(l2Token, hubSigner, hubPoolClient)
+    )
+  );
+  callData.push(...callDataRetrievals);
+  const withdrawals = finalizableMessages.map((message) => {
+    const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
+      CHAIN_ID,
+      message.l2TokenAddress,
+      hubPoolClient.latestBlockNumber
+    );
+    const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
+    const amountFromWei = convertFromWei(message.amountToReturn.toString(), l1TokenInfo.decimals);
+    return {
+      l2ChainId: CHAIN_ID,
+      l1TokenSymbol: l1TokenInfo.symbol,
+      amount: amountFromWei,
+    };
+  });
+  return {
+    callData,
+    withdrawals,
+  };
+}
+
+export function getMainnetTokenBridger(mainnetSigner: Wallet): Contract {
   return getDeployedContract("PolygonTokenBridger", 1, mainnetSigner);
 }
 
 export async function retrieveTokenFromMainnetTokenBridger(
-  logger: winston.Logger,
   l2Token: string,
   mainnetSigner: Wallet,
   hubPoolClient: HubPoolClient
-): Promise<boolean> {
+): Promise<Multicall2Call> {
   const l1Token = hubPoolClient.getL1TokenCounterpartAtBlock(CHAIN_ID, l2Token, hubPoolClient.latestBlockNumber);
   const mainnetTokenBridger = getMainnetTokenBridger(mainnetSigner);
-  const token = new Contract(l1Token, ERC20.abi, mainnetSigner);
-  const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1Token);
-  const balance = await token.balanceOf(mainnetTokenBridger.address);
-
-  // WETH is sent to token bridger contract as ETH.
-  const ethBalance = await mainnetTokenBridger.provider.getBalance(mainnetTokenBridger.address);
-  const balanceToRetrieve = l1TokenInfo.symbol === "WETH" ? ethBalance : balance;
-  const balanceFromWei = ethers.utils.formatUnits(balanceToRetrieve.toString(), l1TokenInfo.decimals);
-  if (balanceToRetrieve.eq(toBN(0))) {
-    return false;
-  } else {
-    logger.debug({
-      at: "PolygonFinalizer",
-      message: `Retrieving ${balanceToRetrieve.toString()} ${l1TokenInfo.symbol} from PolygonTokenBridger`,
-    });
-    try {
-      const txn = await mainnetTokenBridger.retrieve(l1Token);
-      logger.info({
-        at: "PolygonFinalizer",
-        message: `Retrieved ${balanceFromWei} of ${l1TokenInfo.symbol} from PolygonTokenBridger 🪃`,
-        transactionHash: etherscanLink(txn.hash, 1),
-      });
-      await delay(30);
-    } catch (error) {
-      logger.warn({
-        at: "PolygonFinalizer",
-        message: "Error creating retrieveTx",
-        error,
-        notificationPath: "across-error",
-      });
-    }
-  }
+  const callData = await mainnetTokenBridger.populateTransaction.retrieve(l1Token);
+  return {
+    callData: callData.data,
+    target: callData.to,
+  };
 }
 
-export function getL2TokensToFinalize(events: TokensBridged[]) {
+export function getL2TokensToFinalize(events: TokensBridged[]): string[] {
   const l2TokenCountInBridgeEvents = events.reduce((l2TokenDictionary, event) => {
     l2TokenDictionary[event.l2TokenAddress] = true;
     return l2TokenDictionary;
   }, {});
   return Object.keys(l2TokenCountInBridgeEvents).filter((token) => l2TokenCountInBridgeEvents[token] === true);
 }
-
-export const minimumRootChainAbi = [
-  {
-    inputs: [{ internalType: "bytes", name: "inputData", type: "bytes" }],
-    name: "exit",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-];

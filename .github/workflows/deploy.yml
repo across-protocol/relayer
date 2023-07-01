@@ -1,10 +1,10 @@
-name: Build & deploy
+name: Deploy
 on:
   push:
     branches:
       - master
 jobs:
-  curl:
+  Deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Curl build and deploy webhook for GCP for UMA protocol repo

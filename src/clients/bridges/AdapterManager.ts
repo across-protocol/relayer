@@ -1,9 +1,16 @@
-import { l2TokensToL1TokenValidation } from "../../common";
-import { BigNumber, winston, toBN, createFormatFunction, etherscanLink } from "../../utils";
+import {
+  BigNumber,
+  winston,
+  toBN,
+  createFormatFunction,
+  etherscanLink,
+  Signer,
+  getL2TokenAddresses,
+  TransactionResponse,
+} from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { OptimismAdapter, ArbitrumAdapter, PolygonAdapter } from "./";
-import { Signer } from "@arbitrum/sdk/node_modules/@ethersproject/abstract-signer";
-import { OutstandingTransfers } from "../../interfaces/Bridge";
+import { OutstandingTransfers } from "../../interfaces";
 export class AdapterManager {
   public adapters: { [chainId: number]: OptimismAdapter | ArbitrumAdapter | PolygonAdapter } = {};
 
@@ -20,13 +27,10 @@ export class AdapterManager {
       return;
     }
     if (this.spokePoolClients[10] !== undefined) {
-      this.adapters[10] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses, true, senderAddress);
+      this.adapters[10] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses, senderAddress);
     }
     if (this.spokePoolClients[137] !== undefined) {
       this.adapters[137] = new PolygonAdapter(logger, spokePoolClients, monitoredAddresses);
-    }
-    if (this.spokePoolClients[288] !== undefined) {
-      this.adapters[288] = new OptimismAdapter(logger, spokePoolClients, monitoredAddresses, false, senderAddress);
     }
     if (this.spokePoolClients[42161] !== undefined) {
       this.adapters[42161] = new ArbitrumAdapter(logger, spokePoolClients, monitoredAddresses);
@@ -41,7 +45,12 @@ export class AdapterManager {
     return await this.adapters[chainId].getOutstandingCrossChainTransfers(l1Tokens);
   }
 
-  async sendTokenCrossChain(address: string, chainId: number | string, l1Token: string, amount: BigNumber) {
+  async sendTokenCrossChain(
+    address: string,
+    chainId: number | string,
+    l1Token: string,
+    amount: BigNumber
+  ): Promise<TransactionResponse> {
     chainId = Number(chainId); // Ensure chainId is a number before using.
     this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
     const l2Token = this.l2TokenForL1Token(l1Token, Number(chainId));
@@ -50,24 +59,18 @@ export class AdapterManager {
 
   // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
   // needs to e done on Boba and Optimism as only these two chains require ETH to be sent over the canonical bridge.
-  async wrapEthIfAboveThreshold(wrapThreshold: BigNumber) {
+  async wrapEthIfAboveThreshold(wrapThreshold: BigNumber): Promise<void> {
     const optimismCall =
       this.spokePoolClients[10] !== undefined
         ? (this.adapters[10] as OptimismAdapter).wrapEthIfAboveThreshold(wrapThreshold)
         : Promise.resolve(undefined);
-    const bobaCall =
-      this.spokePoolClients[288] !== undefined
-        ? (this.adapters[288] as OptimismAdapter).wrapEthIfAboveThreshold(wrapThreshold)
-        : Promise.resolve(undefined);
-    const [optimismWrapTx, bobaWrapTx] = await Promise.all([optimismCall, bobaCall]);
+    const [optimismWrapTx] = await Promise.all([optimismCall]);
 
-    if (optimismWrapTx || bobaWrapTx) {
+    if (optimismWrapTx) {
       const mrkdwn =
-        `Ether on ${optimismWrapTx ? "Optimism" : ""}${optimismWrapTx && bobaWrapTx ? " and " : ""}` +
-        `${bobaWrapTx ? "Boba" : ""} was wrapped due to being over the threshold of ` +
+        "Ether on Optimism was wrapped due to being over the threshold of " +
         `${createFormatFunction(2, 4, false, 18)(toBN(wrapThreshold).toString())} ETH.\n` +
-        `${optimismWrapTx ? `\nOptimism tx: ${etherscanLink(optimismWrapTx.hash, 10)} ` : ""}` +
-        `${bobaWrapTx ? `Boba tx: ${etherscanLink(bobaWrapTx.hash, 288)}` : ""}`;
+        `${`\nOptimism tx: ${etherscanLink(optimismWrapTx.hash, 10)} `}.`;
       this.logger.info({ at: "AdapterManager", message: "Eth wrapped on target chain 🎁", mrkdwn });
     }
   }
@@ -83,8 +86,12 @@ export class AdapterManager {
       // That the line below is critical. if the hubpoolClient returns the wrong destination token for the L1 token then
       // the bot can irrecoverably send the wrong token to the chain and loose money. It should crash if this is detected.
       const l2TokenForL1Token = this.hubPoolClient.getDestinationTokenForL1Token(l1Token, chainId);
-      if (!l2TokenForL1Token) throw new Error("No L2 token found for L1 token");
-      if (l2TokenForL1Token !== l2TokensToL1TokenValidation[l1Token][chainId]) throw new Error("Mismatch tokens!");
+      if (!l2TokenForL1Token) {
+        throw new Error("No L2 token found for L1 token");
+      }
+      if (l2TokenForL1Token !== getL2TokenAddresses(l1Token)[chainId]) {
+        throw new Error("Mismatch tokens!");
+      }
       return l2TokenForL1Token;
     } catch (error) {
       this.logger.error({
@@ -98,7 +105,7 @@ export class AdapterManager {
     }
   }
 
-  async setL1TokenApprovals(address: string, l1Tokens: string[]) {
+  async setL1TokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     // Each of these calls must happen sequentially or we'll have collisions within the TransactionUtil. This should
     // be refactored in a follow on PR to separate out by nonce increment by making the transaction util stateful.
     if (this.adapters[10] !== undefined) {
@@ -115,13 +122,6 @@ export class AdapterManager {
       );
     }
 
-    if (this.adapters[288] !== undefined) {
-      await this.adapters[288].checkTokenApprovals(
-        address,
-        l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, 288))
-      );
-    }
-
     if (this.adapters[42161] !== undefined) {
       await this.adapters[42161].checkTokenApprovals(
         address,
@@ -135,5 +135,5 @@ export class AdapterManager {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function
-  async update() {}
+  async update(): Promise<void> {}
 }

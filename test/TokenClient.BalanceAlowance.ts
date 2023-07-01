@@ -1,4 +1,11 @@
-import { deploySpokePoolWithToken, expect, ethers, Contract, SignerWithAddress } from "./utils";
+import {
+  deploySpokePoolWithToken,
+  expect,
+  ethers,
+  Contract,
+  SignerWithAddress,
+  deepEqualsWithBigNumber,
+} from "./utils";
 import { createSpyLogger, winston, originChainId, destinationChainId, toBNWei } from "./utils";
 import { deployAndConfigureHubPool, zeroAddress } from "./utils";
 
@@ -9,6 +16,7 @@ let erc20_1: Contract, weth_1: Contract, erc20_2: Contract, weth_2: Contract;
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let owner: SignerWithAddress, spyLogger: winston.Logger;
 let tokenClient: TokenClient; // tested
+let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
 describe("TokenClient: Balance and Allowance", async function () {
   beforeEach(async function () {
@@ -19,16 +27,30 @@ describe("TokenClient: Balance and Allowance", async function () {
       spokePool: spokePool_1,
       erc20: erc20_1,
       weth: weth_1,
+      deploymentBlock: spokePool1DeploymentBlock,
     } = await deploySpokePoolWithToken(originChainId, destinationChainId));
     ({
       spokePool: spokePool_2,
       erc20: erc20_2,
       weth: weth_2,
+      deploymentBlock: spokePool2DeploymentBlock,
     } = await deploySpokePoolWithToken(destinationChainId, originChainId));
     const { hubPool } = await deployAndConfigureHubPool(owner, [], zeroAddress, zeroAddress);
 
-    spokePoolClient_1 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_1, null, originChainId);
-    spokePoolClient_2 = new SpokePoolClient(createSpyLogger().spyLogger, spokePool_2, null, destinationChainId);
+    spokePoolClient_1 = new SpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool_1,
+      null,
+      originChainId,
+      spokePool1DeploymentBlock
+    );
+    spokePoolClient_2 = new SpokePoolClient(
+      createSpyLogger().spyLogger,
+      spokePool_2,
+      null,
+      destinationChainId,
+      spokePool2DeploymentBlock
+    );
 
     const spokePoolClients = { [destinationChainId]: spokePoolClient_1, [originChainId]: spokePoolClient_2 };
     const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool);
@@ -38,7 +60,7 @@ describe("TokenClient: Balance and Allowance", async function () {
 
   it("Fetches all associated balances and allowances", async function () {
     await updateAllClients();
-    expect(tokenClient.getAllTokenData()).to.deep.equal({
+    const expectedData = {
       [originChainId]: {
         [erc20_1.address]: { balance: toBNWei(0), allowance: toBNWei(0) },
         [weth_1.address]: { balance: toBNWei(0), allowance: toBNWei(0) },
@@ -47,7 +69,8 @@ describe("TokenClient: Balance and Allowance", async function () {
         [erc20_2.address]: { balance: toBNWei(0), allowance: toBNWei(0) },
         [weth_2.address]: { balance: toBNWei(0), allowance: toBNWei(0) },
       },
-    });
+    };
+    expect(deepEqualsWithBigNumber(tokenClient.getAllTokenData(), expectedData)).to.be.true;
 
     // Check some balance/allowances directly.
     expect(tokenClient.getBalance(originChainId, erc20_1.address)).to.equal(toBNWei(0));
@@ -62,7 +85,7 @@ describe("TokenClient: Balance and Allowance", async function () {
     await weth_2.deposit({ value: toBNWei(1337) });
 
     await updateAllClients();
-    expect(tokenClient.getAllTokenData()).to.deep.equal({
+    const expectedData1 = {
       [originChainId]: {
         [erc20_1.address]: { balance: toBNWei(42069), allowance: toBNWei(0) },
         [weth_1.address]: { balance: toBNWei(0), allowance: toBNWei(420420) },
@@ -71,7 +94,8 @@ describe("TokenClient: Balance and Allowance", async function () {
         [erc20_2.address]: { balance: toBNWei(0), allowance: toBNWei(6969) },
         [weth_2.address]: { balance: toBNWei(1337), allowance: toBNWei(0) },
       },
-    });
+    };
+    expect(deepEqualsWithBigNumber(tokenClient.getAllTokenData(), expectedData1)).to.be.true;
     expect(tokenClient.getBalance(originChainId, erc20_1.address)).to.equal(toBNWei(42069));
     expect(tokenClient.getAllowanceOnChain(originChainId, weth_1.address)).to.equal(toBNWei(420420));
     expect(tokenClient.getAllowanceOnChain(destinationChainId, erc20_2.address)).to.equal(toBNWei(6969));

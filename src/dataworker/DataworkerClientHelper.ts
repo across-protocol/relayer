@@ -1,22 +1,20 @@
 import winston from "winston";
 import { DataworkerConfig } from "./DataworkerConfig";
 import {
-  CHAIN_ID_LIST_INDICES,
   Clients,
   constructClients,
-  constructSpokePoolClientsWithStartBlocksAndUpdate,
-  getSpokePoolSigners,
+  constructSpokePoolClientsWithStartBlocks,
   updateClients,
+  updateSpokePoolClients,
 } from "../common";
-import { Wallet, ethers, EventSearchConfig, getDeploymentBlockNumber } from "../utils";
-import { AcrossConfigStoreClient, BundleDataClient, ProfitClient, SpokePoolClient, TokenClient } from "../clients";
+import { Wallet } from "../utils";
+import { BundleDataClient, HubPoolClient, ProfitClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
+import { ProposedRootBundle, SpokePoolClientsByChain } from "../interfaces";
 
 export interface DataworkerClients extends Clients {
   tokenClient: TokenClient;
-  spokePoolSigners: { [chainId: number]: Wallet };
-  spokePoolClientSearchSettings: { [chainId: number]: EventSearchConfig };
   bundleDataClient: BundleDataClient;
   profitClient?: ProfitClient;
 }
@@ -30,61 +28,48 @@ export async function constructDataworkerClients(
 
   // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
   const tokenClient = new TokenClient(logger, baseSigner.address, {}, commonClients.hubPoolClient);
-  const spokePoolSigners = getSpokePoolSigners(baseSigner, config);
-  const spokePoolClientSearchSettings = Object.fromEntries(
-    config.spokePoolChains.map((chainId) => {
-      return [
-        chainId,
-        {
-          fromBlock: Number(getDeploymentBlockNumber("SpokePool", chainId)),
-          toBlock: null,
-          maxBlockLookBack: config.maxBlockLookBack[chainId],
-        },
-      ];
-    })
-  );
 
   // TODO: Remove need to pass in spokePoolClients into BundleDataClient since we pass in empty {} here and pass in
   // clients for each class level call we make. Its more of a static class.
-  const bundleDataClient = new BundleDataClient(logger, commonClients, {}, CHAIN_ID_LIST_INDICES);
+  const bundleDataClient = new BundleDataClient(
+    logger,
+    commonClients,
+    {},
+    config.chainIdListIndices,
+    config.blockRangeEndBlockBuffer
+  );
 
   // Disable profitability by default as only the relayer needs it.
   // The dataworker only needs price updates from ProfitClient to calculate bundle volume.
   const profitClient = config.proposerEnabled
-    ? new ProfitClient(logger, commonClients.hubPoolClient, {}, false, [], true)
+    ? new ProfitClient(logger, commonClients.hubPoolClient, {}, [])
     : undefined;
 
   return {
     ...commonClients,
     bundleDataClient,
     tokenClient,
-    spokePoolSigners,
-    spokePoolClientSearchSettings,
     profitClient,
   };
 }
 
-export async function updateDataworkerClients(clients: DataworkerClients, setAllowances = true) {
+export async function updateDataworkerClients(clients: DataworkerClients, setAllowances = true): Promise<void> {
   await updateClients(clients);
 
   // Token client needs updated hub pool client to pull bond token data.
   await clients.tokenClient.update();
 
   // Run approval on hub pool.
-  if (setAllowances) await clients.tokenClient.setBondTokenAllowance();
+  if (setAllowances) {
+    await clients.tokenClient.setBondTokenAllowance();
+  }
 
   // Must come after hubPoolClient.
   // TODO: This should be refactored to check if the hubpool client has had one previous update run such that it has
   // L1 tokens within it.If it has we dont need to make it sequential like this.
-  if (clients.profitClient) await clients.profitClient.update();
-}
-
-export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number]: SpokePoolClient }): {
-  [chainId: number]: ethers.providers.Provider;
-} {
-  return Object.fromEntries(
-    Object.entries(spokePoolClients).map(([chainId, client]) => [Number(chainId), client.spokePool.signer.provider!])
-  );
+  if (clients.profitClient) {
+    await clients.profitClient.update();
+  }
 }
 
 // Constructs spoke pool clients with short lookback and validates that the Dataworker can use the data
@@ -92,43 +77,47 @@ export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number
 // wants to propose or validate.
 export async function constructSpokePoolClientsForFastDataworker(
   logger: winston.Logger,
-  configStoreClient: AcrossConfigStoreClient,
+  hubPoolClient: HubPoolClient,
   config: DataworkerConfig,
   baseSigner: Wallet,
   startBlocks: { [chainId: number]: number },
   endBlocks: { [chainId: number]: number }
-) {
-  return await constructSpokePoolClientsWithStartBlocksAndUpdate(
+): Promise<SpokePoolClientsByChain> {
+  const spokePoolClients = await constructSpokePoolClientsWithStartBlocks(
     logger,
-    configStoreClient,
+    hubPoolClient,
     config,
     baseSigner,
     startBlocks,
-    endBlocks,
-    [
-      "FundsDeposited",
-      "RequestedSpeedUpDeposit",
-      "FilledRelay",
-      "EnabledDepositRoute",
-      "RelayedRootBundle",
-      "ExecutedRelayerRefundRoot",
-    ]
-    // Don't use the cache for the quick lookup so we don't load and parse unneccessary events from Redis DB
-    // that we'll throw away if the below checks succeed.
+    endBlocks
   );
+  await updateSpokePoolClients(spokePoolClients, [
+    "FundsDeposited",
+    "RequestedSpeedUpDeposit",
+    "FilledRelay",
+    "EnabledDepositRoute",
+    "RelayedRootBundle",
+    "ExecutedRelayerRefundRoot",
+  ]);
+  return spokePoolClients;
 }
 
 export function getSpokePoolClientEventSearchConfigsForFastDataworker(
   config: DataworkerConfig,
   clients: DataworkerClients,
   dataworker: Dataworker
-) {
+): {
+  fromBundle: ProposedRootBundle;
+  toBundle: ProposedRootBundle;
+  fromBlocks: { [k: string]: number };
+  toBlocks: { [k: string]: number };
+} {
   const toBundle =
     config.dataworkerFastStartBundle === "latest"
       ? undefined
       : clients.hubPoolClient.getNthFullyExecutedRootBundle(Number(config.dataworkerFastStartBundle));
   const fromBundle =
-    config.dataworkerFastLookbackCount >= config.dataworkerFastStartBundle
+    config.dataworkerFastLookbackCount >= Number(config.dataworkerFastStartBundle)
       ? undefined
       : clients.hubPoolClient.getNthFullyExecutedRootBundle(-config.dataworkerFastLookbackCount, toBundle?.blockNumber);
 

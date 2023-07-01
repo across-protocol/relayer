@@ -1,21 +1,23 @@
-import { buildFillForRepaymentChain, lastSpyLogIncludes, hre, spyLogIncludes } from "./utils";
+import hre from "hardhat";
+import { buildFillForRepaymentChain, lastSpyLogIncludes, spyLogIncludes, lastSpyLogLevel } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit } from "./utils";
-import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
-import { amountToDeposit, destinationChainId, BUNDLE_END_BLOCK_BUFFER } from "./constants";
+import { HubPoolClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
+import { amountToDeposit, destinationChainId, BUNDLE_END_BLOCK_BUFFER, createRandomBytes32 } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
-import { CHAIN_ID_TEST_LIST, DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
+import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT, utf8ToHex } from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
+import { MockConfigStoreClient } from "./mocks";
 
 let spy: sinon.SinonSpy;
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract;
-let l1Token_1: Contract, hubPool: Contract;
+let l1Token_1: Contract, hubPool: Contract, configStore: Contract;
 let depositor: SignerWithAddress, dataworker: SignerWithAddress;
 
-let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
+let hubPoolClient: HubPoolClient, configStoreClient: MockConfigStoreClient;
 let dataworkerInstance: Dataworker, multiCallerClient: MultiCallerClient;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
@@ -29,6 +31,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       erc20_1,
       spokePool_2,
       configStoreClient,
+      configStore,
       hubPoolClient,
       l1Token_1,
       depositor,
@@ -51,7 +54,6 @@ describe("Dataworker: Validate pending root bundle", async function () {
 
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -63,20 +65,22 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await updateAllClients();
     await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
     // Mine blocks so event blocks are less than latest minus buffer.
-    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) await hre.network.provider.send("evm_mine");
+    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) {
+      await hre.network.provider.send("evm_mine");
+    }
     await updateAllClients();
     const latestBlock2 = await hubPool.provider.getBlockNumber();
-    const blockRange2 = CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock2]);
+    const blockRange2 = Object.keys(spokePoolClients).map(() => [0, latestBlock2]);
 
     // Construct expected roots before we propose new root so that last log contains logs about submitted txn.
-    const expectedPoolRebalanceRoot2 = dataworkerInstance.buildPoolRebalanceRoot(blockRange2, spokePoolClients);
-    dataworkerInstance.buildRelayerRefundRoot(
+    const expectedPoolRebalanceRoot2 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange2, spokePoolClients);
+    await dataworkerInstance.buildRelayerRefundRoot(
       blockRange2,
       spokePoolClients,
       expectedPoolRebalanceRoot2.leaves,
       expectedPoolRebalanceRoot2.runningBalances
     );
-    dataworkerInstance.buildSlowRelayRoot(blockRange2, spokePoolClients);
+    await dataworkerInstance.buildSlowRelayRoot(blockRange2, spokePoolClients);
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
     await multiCallerClient.executeTransactionQueue();
@@ -93,16 +97,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     expect(lastSpyLogIncludes(spy, "Challenge period passed, cannot dispute")).to.be.true;
 
     // Propose new valid root bundle
-    await buildDeposit(
-      configStoreClient,
-      hubPoolClient,
-      spokePool_1,
-      erc20_1,
-      l1Token_1,
-      depositor,
-      destinationChainId,
-      amountToDeposit
-    );
+    await buildDeposit(hubPoolClient, spokePool_1, erc20_1, l1Token_1, depositor, destinationChainId, amountToDeposit);
     for (const leaf of expectedPoolRebalanceRoot2.leaves) {
       await hubPool.executeRootBundle(
         leaf.chainId,
@@ -115,7 +110,9 @@ describe("Dataworker: Validate pending root bundle", async function () {
         expectedPoolRebalanceRoot2.tree.getHexProof(leaf)
       );
     }
-    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) await hre.network.provider.send("evm_mine");
+    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) {
+      await hre.network.provider.send("evm_mine");
+    }
     await updateAllClients();
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     await multiCallerClient.executeTransactionQueue();
@@ -131,25 +128,27 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await hubPool.emergencyDeleteProposal();
     await updateAllClients();
     const latestBlock4 = await hubPool.provider.getBlockNumber();
-    const blockRange4 = CHAIN_ID_TEST_LIST.map((_) => [latestBlock2 + 1, latestBlock4]);
-    const expectedPoolRebalanceRoot4 = dataworkerInstance.buildPoolRebalanceRoot(blockRange4, spokePoolClients);
-    const expectedRelayerRefundRoot4 = dataworkerInstance.buildRelayerRefundRoot(
+    const blockRange4 = Object.keys(spokePoolClients).map(() => [latestBlock2 + 1, latestBlock4]);
+    const expectedPoolRebalanceRoot4 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange4, spokePoolClients);
+    const expectedRelayerRefundRoot4 = await dataworkerInstance.buildRelayerRefundRoot(
       blockRange4,
       spokePoolClients,
       expectedPoolRebalanceRoot4.leaves,
       expectedPoolRebalanceRoot4.runningBalances
     );
-    const expectedSlowRelayRefundRoot4 = dataworkerInstance.buildSlowRelayRoot(blockRange4, spokePoolClients);
+    const expectedSlowRelayRefundRoot4 = await dataworkerInstance.buildSlowRelayRoot(blockRange4, spokePoolClients);
 
     await hubPool.proposeRootBundle(
-      Array(CHAIN_ID_TEST_LIST.length).fill(await hubPool.provider.getBlockNumber()),
+      Array(Object.keys(spokePoolClients).length).fill(await hubPool.provider.getBlockNumber()),
       expectedPoolRebalanceRoot4.leaves.length,
       expectedPoolRebalanceRoot4.tree.getHexRoot(),
       expectedRelayerRefundRoot4.tree.getHexRoot(),
       expectedSlowRelayRefundRoot4.tree.getHexRoot()
     );
     // Mine blocks so root bundle end blocks are not within latest - buffer range
-    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) await hre.network.provider.send("evm_mine");
+    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) {
+      await hre.network.provider.send("evm_mine");
+    }
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(lastSpyLogIncludes(spy, "Pending root bundle matches with expected")).to.be.true;
@@ -158,7 +157,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     await hubPool.emergencyDeleteProposal();
     await updateAllClients();
     await hubPool.proposeRootBundle(
-      Array(CHAIN_ID_TEST_LIST.length).fill(0),
+      Array(Object.keys(spokePoolClients).length).fill(0),
       expectedPoolRebalanceRoot4.leaves.length,
       expectedPoolRebalanceRoot4.tree.getHexRoot(),
       expectedRelayerRefundRoot4.tree.getHexRoot(),
@@ -214,7 +213,8 @@ describe("Dataworker: Validate pending root bundle", async function () {
     // Bundle range length doesn't match expected chain ID list.
     await updateAllClients();
     await hubPool.proposeRootBundle(
-      [1],
+      // @todo: XXX Confirm the intent of this!
+      Array(Object.keys(spokePoolClients).length).fill(1).concat(1), // Add an extra chain.
       expectedPoolRebalanceRoot4.leaves.length,
       expectedPoolRebalanceRoot4.tree.getHexRoot(),
       expectedRelayerRefundRoot4.tree.getHexRoot(),
@@ -319,5 +319,35 @@ describe("Dataworker: Validate pending root bundle", async function () {
     } catch {}
 
     expect(success).to.be.true;
+  });
+  it("Exits early if config store version is out of date", async function () {
+    // Propose trivial bundle.
+    await updateAllClients();
+
+    const latestBlock = await hubPool.provider.getBlockNumber();
+    await hubPool.connect(dataworker).proposeRootBundle(
+      Object.keys(spokePoolClients).map(() => latestBlock),
+      Object.keys(spokePoolClients).length,
+      createRandomBytes32(),
+      createRandomBytes32(),
+      createRandomBytes32()
+    );
+    await updateAllClients();
+
+    // Set up test so that the latest version in the config store contract is higher than
+    // the version in the config store client.
+    await configStore.updateGlobalConfig(utf8ToHex("VERSION"), "3");
+    configStoreClient.setConfigStoreVersion(1);
+    await updateAllClients();
+    // Mine blocks so root bundle end blocks are not within latest - buffer range
+    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) {
+      await hre.network.provider.send("evm_mine");
+    }
+    await updateAllClients();
+    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
+
+    expect(lastSpyLogIncludes(spy, "Skipping dispute")).to.be.true;
+    expect(spy.getCall(-1).lastArg.reason).to.equal("out-of-date-config-store-version");
+    expect(lastSpyLogLevel(spy)).to.equal("error");
   });
 });

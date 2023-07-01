@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { task } from "hardhat/config";
 import { getSigner, winston } from "../src/utils";
 import { SpyTransport, bigNumberFormatter } from "@uma/financial-templates-lib";
@@ -8,15 +9,20 @@ import sinon from "sinon";
 
 // Redefine create spy logger here so we can test log contents without having to import from ../test/utils
 // which causes errors because of some unknown interaction between hardhat task runner and that folder.
-export function createSpyLogger() {
+export function createSpyLogger(): {
+  spy: sinon.SinonSpy<any[], any>;
+  spyLogger: winston.Logger;
+} {
   const spy = sinon.spy();
+  const transports: winston.transport[] = [new SpyTransport({ level: "debug" }, { spy })];
+  if (process.env.LOG_IN_TEST) {
+    transports.push(new winston.transports.Console());
+  }
+
   const spyLogger = winston.createLogger({
     level: "debug",
     format: winston.format.combine(winston.format(bigNumberFormatter)(), winston.format.json()),
-    transports: [
-      new SpyTransport({ level: "debug" }, { spy }),
-      process.env.LOG_IN_TEST ? new winston.transports.Console() : null,
-    ].filter((n) => n),
+    transports,
   });
 
   return { spy, spyLogger };
@@ -26,12 +32,12 @@ task("integration-tests", "Run integration tests against key Dataworker function
   .addOptionalParam("mnemonic", "Derives signer from MNEMONIC environment variable if wallet=mnemonic")
   .addOptionalParam("wallet", "User can specify 'gckms' or 'mnemonic'")
   .addOptionalParam("keys", "Indicates which gckms bot to use if wallet=gckms")
-  .setAction(async function (taskArguments, hre_) {
-    const hre = hre_ as any;
-    const { spyLogger, spy } = createSpyLogger();
+  .setAction(async function () {
+    const { spyLogger } = createSpyLogger();
 
     // Override environment variables that we want to control for, for example we want to prevent the runner of this
     // script from sending any on-chain transactions.
+    process.env.POLLING_DELAY = "0"; // Set to severless mode so that bot terminates after successful run.
     process.env.DISPUTER_ENABLED = "true";
     process.env.PROPOSER_ENABLED = "true";
     process.env.EXECUTOR_ENABLED = "true";

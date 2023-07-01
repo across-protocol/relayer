@@ -9,9 +9,9 @@ import {
 } from "../constants";
 import { amountToDeposit, depositRelayerFeePct, l1TokenTransferThreshold, zeroAddress } from "../constants";
 import { MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF } from "../constants";
-import { HubPoolClient, AcrossConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
+import { HubPoolClient, ConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
 import { SpokePoolClient } from "../../src/clients";
-import { deposit, Contract, SignerWithAddress, fillRelay, BigNumber } from "./index";
+import { deposit, Contract, SignerWithAddress, BigNumber } from "./index";
 import { Deposit, Fill, RunningBalances } from "../../src/interfaces";
 import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
 import { providers } from "ethers";
@@ -26,12 +26,56 @@ export { winston, sinon };
 const assert = chai.assert;
 export { chai, assert };
 
-export function assertPromiseError(promise: Promise<unknown>, errMessage?: string): Promise<void> {
-  return promise
-    .then(() => assert.isTrue(false))
-    .catch((err) => assert.isTrue(errMessage ? err.message.includes(errMessage) : true));
+/**
+ * Returns true if every key in `expected` is present in `obj` and has the same value.
+ * BigNumber's are cast to String to compare to avoid issues with BigNumber versioning.
+ * Works with nested objects.
+ * @param x object to compare
+ * @param y object to compare
+ * @param {omitKeys} keys to omit from comparison
+ * @returns
+ */
+export function deepEqualsWithBigNumber(x: any, y: any, omitKeys?: string[]): boolean {
+  if (x.toString() === y.toString()) {
+    return true;
+  } else if (typeof x == "object" && x != null && typeof y == "object" && y != null) {
+    const omittedKeysInX = omitKeys?.filter((key) => x.hasOwn(key)).length ?? 0;
+    const omittedKeysInY = omitKeys?.filter((key) => y.hasOwn(key)).length ?? 0;
+    if (Object.keys(x).length - omittedKeysInX !== Object.keys(y).length - omittedKeysInY) {
+      return false;
+    }
+
+    for (const prop in x) {
+      if (omitKeys?.includes(prop)) {
+        continue;
+      }
+      if (y.hasOwn(prop)) {
+        return deepEqualsWithBigNumber(x[prop], y[prop]);
+      } else {
+        return false;
+      }
+    }
+
+    return true;
+  } else {
+    return false;
+  }
 }
 
+export async function assertPromiseError<T>(promise: Promise<T>, errMessage?: string): Promise<void> {
+  const SPECIAL_ERROR_MESSAGE = "Promise didn't fail";
+  try {
+    await promise;
+    throw new Error(SPECIAL_ERROR_MESSAGE);
+  } catch (err) {
+    if (err.message.includes(SPECIAL_ERROR_MESSAGE)) {
+      throw err;
+    }
+    if (errMessage) {
+      assert.isTrue(err.message.includes(errMessage));
+    }
+  }
+}
 export async function setupTokensForWallet(
   contractToApprove: utils.Contract,
   wallet: utils.SignerWithAddress,
@@ -45,7 +89,9 @@ export async function setupTokensForWallet(
       token.connect(wallet).approve(contractToApprove.address, utils.amountToDeposit.mul(seedMultiplier))
     )
   );
-  if (weth) await weth.connect(wallet).approve(contractToApprove.address, utils.amountToDeposit);
+  if (weth) {
+    await weth.connect(wallet).approve(contractToApprove.address, utils.amountToDeposit);
+  }
 }
 
 export function createSpyLogger() {
@@ -62,24 +108,19 @@ export function createSpyLogger() {
   return { spy, spyLogger };
 }
 
-const iterativelyReplaceBigNumbers = (obj: any) => {
-  Object.keys(obj).forEach((key) => {
-    if (BigNumber.isBigNumber(obj[key])) obj[key] = obj[key].toString();
-    else if (typeof obj[key] === "object" && obj[key] !== null) iterativelyReplaceBigNumbers(obj[key]);
-  });
-};
-
 export async function deploySpokePoolWithToken(fromChainId = 0, toChainId = 0, enableRoute = true) {
   const { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(utils.ethers);
+  const receipt = await spokePool.deployTransaction.wait();
 
   await spokePool.setChainId(fromChainId == 0 ? utils.originChainId : fromChainId);
 
-  if (enableRoute)
+  if (enableRoute) {
     await utils.enableRoutes(spokePool, [
       { originToken: erc20.address, destinationChainId: toChainId == 0 ? utils.destinationChainId : toChainId },
       { originToken: weth.address, destinationChainId: toChainId == 0 ? utils.destinationChainId : toChainId },
     ]);
-  return { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20 };
+  }
+  return { timer, weth, erc20, spokePool, unwhitelistedErc20, destErc20, deploymentBlock: receipt.blockNumber };
 }
 
 export async function deployConfigStore(
@@ -91,7 +132,7 @@ export async function deployConfigStore(
   transferThreshold: BigNumber = DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
 ) {
   const configStore = await (await utils.getContractFactory("AcrossConfigStore", signer)).deploy();
-  for (const token of tokensToAdd)
+  for (const token of tokensToAdd) {
     await configStore.updateTokenConfig(
       token.address,
       JSON.stringify({
@@ -99,6 +140,7 @@ export async function deployConfigStore(
         transferThreshold: transferThreshold.toString(),
       })
     );
+  }
   await configStore.updateGlobalConfig(
     utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.MAX_POOL_REBALANCE_LEAF_SIZE),
     maxL1TokensPerPoolRebalanceLeaf.toString()
@@ -121,8 +163,9 @@ export async function deployAndConfigureHubPool(
   const hubPool = await (
     await utils.getContractFactory("HubPool", signer)
   ).deploy(lpTokenFactory.address, finderAddress, zeroAddress, timerAddress);
+  const receipt = await hubPool.deployTransaction.wait();
 
-  const mockAdapter = await (await utils.getContractFactory("Ethereum_Adapter", signer)).deploy();
+  const mockAdapter = await (await utils.getContractFactory("Mock_Adapter", signer)).deploy();
 
   for (const spokePool of spokePools) {
     await hubPool.setCrossChainContracts(spokePool.l2ChainId, mockAdapter.address, spokePool.spokePool.address);
@@ -133,7 +176,7 @@ export async function deployAndConfigureHubPool(
   const l1Token_2 = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("Rando L1", "L1", 18);
   await l1Token_2.addMember(TokenRolesEnum.MINTER, signer.address);
 
-  return { hubPool, mockAdapter, l1Token_1, l1Token_2 };
+  return { hubPool, mockAdapter, l1Token_1, l1Token_2, hubPoolDeploymentBlock: receipt.blockNumber };
 }
 
 export async function deployNewToken(owner) {
@@ -232,17 +275,23 @@ export async function deploySpokePoolForIterativeTest(
   logger,
   signer: utils.SignerWithAddress,
   mockAdapter: utils.Contract,
-  configStoreClient: AcrossConfigStoreClient,
+  configStoreClient: ConfigStoreClient,
   desiredChainId = 0
 ) {
-  const { spokePool } = await deploySpokePoolWithToken(desiredChainId, 0, false);
+  const { spokePool, deploymentBlock } = await deploySpokePoolWithToken(desiredChainId, 0, false);
 
   await configStoreClient.hubPoolClient.hubPool.setCrossChainContracts(
     utils.destinationChainId,
     mockAdapter.address,
     spokePool.address
   );
-  const spokePoolClient = new SpokePoolClient(logger, spokePool.connect(signer), configStoreClient, desiredChainId);
+  const spokePoolClient = new SpokePoolClient(
+    logger,
+    spokePool.connect(signer),
+    configStoreClient,
+    desiredChainId,
+    deploymentBlock
+  );
 
   return { spokePool, spokePoolClient };
 }
@@ -267,7 +316,9 @@ export async function deploySingleTokenAcrossSetOfChains(
   // enable the pool rebalance route for the l1Token and newly deployed token.
   for (const [index, spokePool] of spokePools.entries()) {
     for (const otherSpokePool of spokePools) {
-      if (spokePool === otherSpokePool) continue;
+      if (spokePool === otherSpokePool) {
+        continue;
+      }
       await utils.enableRoutes(spokePool.contract, [
         { originToken: tokens[index].address, destinationChainId: await otherSpokePool.chainId },
       ]);
@@ -290,7 +341,7 @@ export async function deployIterativeSpokePoolsAndToken(
   logger: winston.Logger,
   signer: utils.SignerWithAddress,
   mockAdapter: utils.Contract,
-  configStoreClient: AcrossConfigStoreClient,
+  configStoreClient: ConfigStoreClient,
   numSpokePools: number,
   numTokens: number
 ) {
@@ -299,8 +350,9 @@ export async function deployIterativeSpokePoolsAndToken(
 
   // For each count of numSpokePools deploy a new spoke pool. Set the chainId to the index in the array. Note that we
   // start at index of 1 here. spokePool with a chainId of 0 is not a good idea.
-  for (let i = 1; i < numSpokePools + 1; i++)
+  for (let i = 1; i < numSpokePools + 1; i++) {
     spokePools.push(await deploySpokePoolForIterativeTest(logger, signer, mockAdapter, configStoreClient, i));
+  }
 
   // For each count of numTokens deploy a new token. This will also set it as an enabled route over all chains.
   for (let i = 1; i < numTokens + 1; i++) {
@@ -309,7 +361,9 @@ export async function deployIterativeSpokePoolsAndToken(
       await utils.getContractFactory("ExpandedERC20", signer)
     ).deploy("Yeet Coin L1", "Coin", 18);
     await associatedL1Token.addMember(TokenRolesEnum.MINTER, signer.address);
-    if (!l1TokenToL2Tokens[associatedL1Token.address]) l1TokenToL2Tokens[associatedL1Token.address] = [];
+    if (!l1TokenToL2Tokens[associatedL1Token.address]) {
+      l1TokenToL2Tokens[associatedL1Token.address] = [];
+    }
     l1TokenToL2Tokens[associatedL1Token.address] = await deploySingleTokenAcrossSetOfChains(
       signer,
       spokePools.map((spokePool, index) => ({ contract: spokePool.spokePool, chainId: index + 1 })),
@@ -345,18 +399,22 @@ export async function contractAt(contractName: string, signer: utils.Signer, add
 export async function buildDepositStruct(
   deposit: Omit<Deposit, "destinationToken" | "realizedLpFeePct">,
   hubPoolClient: HubPoolClient,
-  configStoreClient: AcrossConfigStoreClient,
   l1TokenForDepositedToken: Contract
 ) {
+  const { quoteBlock, realizedLpFeePct } = await hubPoolClient.computeRealizedLpFeePct(
+    deposit,
+    l1TokenForDepositedToken.address
+  );
   return {
     ...deposit,
+    message: "0x",
     destinationToken: hubPoolClient.getDestinationTokenForDeposit(deposit),
-    realizedLpFeePct: (await configStoreClient.computeRealizedLpFeePct(deposit, l1TokenForDepositedToken.address))
-      .realizedLpFeePct,
+    quoteBlockNumber: quoteBlock,
+    realizedLpFeePct,
+    blockNumber: await getLastBlockNumber(),
   };
 }
 export async function buildDeposit(
-  configStoreClient: AcrossConfigStoreClient,
   hubPoolClient: HubPoolClient,
   spokePool: Contract,
   tokenToDeposit: Contract,
@@ -375,7 +433,7 @@ export async function buildDeposit(
     _amountToDeposit,
     _relayerFeePct
   );
-  return await buildDepositStruct(_deposit!, hubPoolClient, configStoreClient, l1TokenForDepositedToken);
+  return await buildDepositStruct(_deposit!, hubPoolClient, l1TokenForDepositedToken);
 }
 
 // Submits a fillRelay transaction and returns the Fill struct that that clients will interact with.
@@ -387,23 +445,58 @@ export async function buildFill(
   deposit: Deposit,
   pctOfDepositToFill: number
 ): Promise<Fill> {
-  return await fillRelay(
-    spokePool,
-    destinationToken,
-    recipientAndDepositor,
-    recipientAndDepositor,
-    relayer,
-    deposit.depositId,
-    deposit.originChainId,
-    deposit.amount,
-    deposit.amount
-      .mul(toBNWei(1).sub(deposit.realizedLpFeePct.add(deposit.relayerFeePct)))
-      .mul(toBNWei(pctOfDepositToFill))
-      .div(toBNWei(1))
-      .div(toBNWei(1)),
-    deposit.realizedLpFeePct,
-    deposit.relayerFeePct
+  await spokePool.connect(relayer).fillRelay(
+    ...utils.getFillRelayParams(
+      utils.getRelayHash(
+        recipientAndDepositor.address,
+        recipientAndDepositor.address,
+        deposit.depositId,
+        deposit.originChainId,
+        deposit.destinationChainId,
+        destinationToken.address,
+        deposit.amount,
+        deposit.realizedLpFeePct,
+        deposit.relayerFeePct
+      ).relayData,
+      deposit.amount
+        .mul(toBNWei(1).sub(deposit.realizedLpFeePct.add(deposit.relayerFeePct)))
+        .mul(toBNWei(pctOfDepositToFill))
+        .div(toBNWei(1))
+        .div(toBNWei(1)),
+      deposit.destinationChainId
+    )
   );
+  const [events, destinationChainId] = await Promise.all([
+    spokePool.queryFilter(spokePool.filters.FilledRelay()),
+    spokePool.chainId(),
+  ]);
+  const lastEvent = events[events.length - 1];
+  if (!lastEvent?.args) {
+    throw new Error("No FilledRelay event emitted");
+  }
+  return {
+    amount: lastEvent.args.amount,
+    totalFilledAmount: lastEvent.args.totalFilledAmount,
+    fillAmount: lastEvent.args.fillAmount,
+    repaymentChainId: Number(lastEvent.args.repaymentChainId),
+    originChainId: Number(lastEvent.args.originChainId),
+    relayerFeePct: lastEvent.args.relayerFeePct,
+    realizedLpFeePct: lastEvent.args.realizedLpFeePct,
+    depositId: lastEvent.args.depositId,
+    destinationToken: lastEvent.args.destinationToken,
+    relayer: lastEvent.args.relayer,
+    depositor: lastEvent.args.depositor,
+    recipient: lastEvent.args.recipient,
+    message: lastEvent.args.message,
+    updatableRelayData: {
+      recipient: lastEvent.args.updatableRelayData[0],
+      message: lastEvent.args.updatableRelayData[1],
+      relayerFeePct: toBN(lastEvent.args.updatableRelayData[2]),
+      isSlowRelay: lastEvent.args.updatableRelayData[3],
+      payoutAdjustmentPct: toBN(lastEvent.args.updatableRelayData[4]),
+    },
+    destinationChainId: Number(destinationChainId),
+  };
 }
 
 export async function buildModifiedFill(
@@ -412,7 +505,9 @@ export async function buildModifiedFill(
   relayer: SignerWithAddress,
   fillToBuildFrom: Fill,
   multipleOfOriginalRelayerFeePct: number,
-  pctOfDepositToFill: number
+  pctOfDepositToFill: number,
+  newRecipient?: string,
+  newMessage?: string
 ): Promise<Fill> {
   const relayDataFromFill = {
     depositor: fillToBuildFrom.depositor,
@@ -424,15 +519,19 @@ export async function buildModifiedFill(
     realizedLpFeePct: fillToBuildFrom.realizedLpFeePct,
     relayerFeePct: fillToBuildFrom.relayerFeePct,
     depositId: fillToBuildFrom.depositId.toString(),
+    message: fillToBuildFrom.message,
   };
+
   const { signature } = await utils.modifyRelayHelper(
     fillToBuildFrom.relayerFeePct.mul(multipleOfOriginalRelayerFeePct),
     fillToBuildFrom.depositId.toString(),
     fillToBuildFrom.originChainId.toString(),
-    depositor
+    depositor,
+    newRecipient ?? relayDataFromFill.recipient,
+    newMessage ?? relayDataFromFill.message
   );
   const updatedRelayerFeePct = fillToBuildFrom.relayerFeePct.mul(multipleOfOriginalRelayerFeePct);
-  await spokePool.connect(relayer).fillRelayWithUpdatedFee(
+  await spokePool.connect(relayer).fillRelayWithUpdatedDeposit(
     ...utils.getFillRelayUpdatedFeeParams(
       relayDataFromFill,
       fillToBuildFrom.amount
@@ -441,7 +540,10 @@ export async function buildModifiedFill(
         .div(toBNWei(1))
         .div(toBNWei(1)),
       updatedRelayerFeePct,
-      signature
+      signature,
+      Number(relayDataFromFill.destinationChainId),
+      newRecipient ?? relayDataFromFill.recipient,
+      newMessage ?? relayDataFromFill.message
     )
   );
   const [events, destinationChainId] = await Promise.all([
@@ -449,7 +551,7 @@ export async function buildModifiedFill(
     spokePool.chainId(),
   ]);
   const lastEvent = events[events.length - 1];
-  if (lastEvent.args)
+  if (lastEvent.args) {
     return {
       amount: lastEvent.args.amount,
       totalFilledAmount: lastEvent.args.totalFilledAmount,
@@ -457,17 +559,19 @@ export async function buildModifiedFill(
       repaymentChainId: Number(lastEvent.args.repaymentChainId),
       originChainId: Number(lastEvent.args.originChainId),
       relayerFeePct: lastEvent.args.relayerFeePct,
-      appliedRelayerFeePct: lastEvent.args.appliedRelayerFeePct,
       realizedLpFeePct: lastEvent.args.realizedLpFeePct,
       depositId: lastEvent.args.depositId,
       destinationToken: lastEvent.args.destinationToken,
       relayer: lastEvent.args.relayer,
+      message: lastEvent.args.message,
       depositor: lastEvent.args.depositor,
       recipient: lastEvent.args.recipient,
-      isSlowRelay: lastEvent.args.isSlowRelay,
+      updatableRelayData: lastEvent.args.updatableRelayData,
       destinationChainId: Number(destinationChainId),
     };
-  else return null;
+  } else {
+    return null;
+  }
 }
 
 export async function buildFillForRepaymentChain(
@@ -505,7 +609,7 @@ export async function buildFillForRepaymentChain(
     spokePool.chainId(),
   ]);
   const lastEvent = events[events.length - 1];
-  if (lastEvent.args)
+  if (lastEvent.args) {
     return {
       amount: lastEvent.args.amount,
       totalFilledAmount: lastEvent.args.totalFilledAmount,
@@ -513,17 +617,19 @@ export async function buildFillForRepaymentChain(
       repaymentChainId: Number(lastEvent.args.repaymentChainId),
       originChainId: Number(lastEvent.args.originChainId),
       relayerFeePct: lastEvent.args.relayerFeePct,
-      appliedRelayerFeePct: lastEvent.args.appliedRelayerFeePct,
       realizedLpFeePct: lastEvent.args.realizedLpFeePct,
       depositId: lastEvent.args.depositId,
       destinationToken: lastEvent.args.destinationToken,
       relayer: lastEvent.args.relayer,
+      message: lastEvent.args.message,
       depositor: lastEvent.args.depositor,
       recipient: lastEvent.args.recipient,
-      isSlowRelay: lastEvent.args.isSlowRelay,
+      updatableRelayData: lastEvent.args.updatableRelayData,
       destinationChainId: Number(destinationChainId),
     };
-  else return null;
+  } else {
+    return null;
+  }
 }
 
 // Returns expected leaves ordered by origin chain ID and then deposit ID(ascending). Ordering is implemented
@@ -532,21 +638,27 @@ export function buildSlowRelayLeaves(deposits: Deposit[]) {
   return deposits
     .map((_deposit) => {
       return {
-        depositor: _deposit.depositor,
-        recipient: _deposit.recipient,
-        destinationToken: _deposit.destinationToken,
-        amount: _deposit.amount,
-        originChainId: _deposit.originChainId.toString(),
-        destinationChainId: _deposit.destinationChainId.toString(),
-        realizedLpFeePct: _deposit.realizedLpFeePct,
-        relayerFeePct: _deposit.relayerFeePct,
-        depositId: _deposit.depositId.toString(),
+        relayData: {
+          depositor: _deposit.depositor,
+          recipient: _deposit.recipient,
+          destinationToken: _deposit.destinationToken,
+          amount: _deposit.amount,
+          originChainId: _deposit.originChainId.toString(),
+          destinationChainId: _deposit.destinationChainId.toString(),
+          realizedLpFeePct: _deposit.realizedLpFeePct,
+          relayerFeePct: _deposit.relayerFeePct,
+          depositId: _deposit.depositId.toString(),
+          message: _deposit.message,
+        },
+        payoutAdjustmentPct: "0",
       };
     }) // leaves should be ordered by origin chain ID and then deposit ID (ascending).
     .sort((relayA, relayB) => {
-      if (relayA.originChainId !== relayB.originChainId)
+      if (relayA.originChainId !== relayB.originChainId) {
         return Number(relayA.originChainId) - Number(relayB.originChainId);
-      else return Number(relayA.depositId) - Number(relayB.depositId);
+      } else {
+        return Number(relayA.depositId) - Number(relayB.depositId);
+      }
     });
 }
 
@@ -572,9 +684,9 @@ export async function constructPoolRebalanceTree(runningBalances: RunningBalance
     Object.keys(runningBalances).map((x) => Number(x)), // Where funds are getting sent.
     Object.values(runningBalances).map((runningBalanceForL1Token) => Object.keys(runningBalanceForL1Token)), // l1Tokens.
     Object.values(realizedLpFees).map((realizedLpForL1Token) => Object.values(realizedLpForL1Token)), // bundleLpFees.
-    Object.values(runningBalances).map((_) => Object.values(_).map((_) => toBNWei(-100))), // netSendAmounts.
-    Object.values(runningBalances).map((_) => Object.values(_).map((_) => toBNWei(100))), // runningBalances.
-    Object.keys(runningBalances).map((_) => 0) // group index
+    Object.values(runningBalances).map((_) => Object.values(_).map(() => toBNWei(-100))), // netSendAmounts.
+    Object.values(runningBalances).map((_) => Object.values(_).map(() => toBNWei(100))), // runningBalances.
+    Object.keys(runningBalances).map(() => 0) // group index
   );
   const tree = await utils.buildPoolRebalanceLeafTree(leaves);
 
@@ -600,19 +712,29 @@ export async function buildSlowFill(
       lastFillForDeposit.relayerFeePct.toString(),
       lastFillForDeposit.depositId.toString(),
       rootBundleId,
+      lastFillForDeposit.message,
+      "0",
       proof
     );
   return {
     ...lastFillForDeposit,
     totalFilledAmount: lastFillForDeposit.amount, // Slow relay always fully fills deposit
     fillAmount: lastFillForDeposit.amount.sub(lastFillForDeposit.totalFilledAmount), // Fills remaining after latest fill for deposit
+    updatableRelayData: {
+      relayerFeePct: toBN(0),
+      isSlowRelay: true,
+      recipient: lastFillForDeposit.recipient,
+      message: lastFillForDeposit.message,
+      payoutAdjustmentPct: toBN(0),
+    },
     repaymentChainId: 0, // Always set to 0 for slow fills
-    appliedRelayerFeePct: toBN(0), // Always set to 0 since there was no relayer
-    isSlowRelay: true,
     relayer: relayer.address, // Set to caller of `executeSlowRelayLeaf`
   };
 }
 
+// We use the offset input to bypass the bundleClient's cache key, which is the bundle block range. So, to make sure
+// that the client requeries fresh blockchain state, we need to slightly offset the block range to produce a different
+// cache key.
 export function getDefaultBlockRange(toBlockOffset: number) {
   return DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) => [range[0], range[1] + toBlockOffset]);
 }

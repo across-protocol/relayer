@@ -25,18 +25,30 @@ export async function constructMonitorClients(
   baseSigner: Wallet
 ): Promise<MonitorClients> {
   const commonClients = await constructClients(logger, config, baseSigner);
+  await updateClients(commonClients);
+
+  // Construct spoke pool clients for all chains that are not *currently* disabled. Caller can override
+  // the disabled chain list by setting the DISABLED_CHAINS_OVERRIDE environment variable.
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
+    commonClients.hubPoolClient,
     commonClients.configStoreClient,
     config,
     baseSigner,
     config.maxRelayerLookBack
   );
-  const bundleDataClient = new BundleDataClient(logger, commonClients, spokePoolClients, config.spokePoolChains);
+  const bundleDataClient = new BundleDataClient(
+    logger,
+    commonClients,
+    spokePoolClients,
+    config.chainIdListIndices,
+    config.blockRangeEndBlockBuffer
+  );
 
   // Need to update HubPoolClient to get latest tokens.
+  const spokePoolChains = Object.keys(spokePoolClients).map((chainId) => Number(chainId));
   const providerPerChain = Object.fromEntries(
-    config.spokePoolChains.map((chainId) => [chainId, spokePoolClients[chainId].spokePool.provider])
+    spokePoolChains.map((chainId) => [chainId, spokePoolClients[chainId].spokePool.provider])
   );
   const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
 
@@ -48,14 +60,12 @@ export async function constructMonitorClients(
     [baseSigner.address, ...spokePoolAddresses],
     commonClients.hubPoolClient.hubPool.address
   );
-  const crossChainTransferClient = new CrossChainTransferClient(logger, config.spokePoolChains, adapterManager);
+  const crossChainTransferClient = new CrossChainTransferClient(logger, spokePoolChains, adapterManager);
 
   return { ...commonClients, bundleDataClient, crossChainTransferClient, spokePoolClients, tokenTransferClient };
 }
 
-export async function updateMonitorClients(clients: MonitorClients) {
-  await updateClients(clients);
-  // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
+export async function updateMonitorClients(clients: MonitorClients): Promise<void> {
   await updateSpokePoolClients(clients.spokePoolClients, [
     "FundsDeposited",
     "RequestedSpeedUpDeposit",

@@ -3,12 +3,21 @@ import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfig
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId, spyLogIncludes } from "./utils";
 import { originChainId, sinon } from "./utils";
 import { amountToLp, defaultTokenConfig, amountToDeposit, defaultMinDepositConfirmations } from "./constants";
-import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
-import { TokenClient, ProfitClient } from "../src/clients";
+import {
+  SpokePoolClient,
+  HubPoolClient,
+  ConfigStoreClient,
+  MultiCallerClient,
+  AcrossApiClient,
+  TokenClient,
+  ProfitClient,
+} from "../src/clients";
+import { CONFIG_STORE_VERSION } from "../src/common";
 import { MockInventoryClient } from "./mocks";
 
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
+import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -16,15 +25,24 @@ let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithA
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let configStoreClient: AcrossConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
+let configStoreClient: ConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
 let relayerInstance: Relayer;
 let multiCallerClient: MultiCallerClient, profitClient: ProfitClient;
+let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
 describe("Relayer: Zero sized fill for slow relay", async function () {
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
-    ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId));
-    ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
+    ({
+      spokePool: spokePool_1,
+      erc20: erc20_1,
+      deploymentBlock: spokePool1DeploymentBlock,
+    } = await deploySpokePoolWithToken(originChainId, destinationChainId));
+    ({
+      spokePool: spokePool_2,
+      erc20: erc20_2,
+      deploymentBlock: spokePool2DeploymentBlock,
+    } = await deploySpokePoolWithToken(destinationChainId, originChainId));
     ({ hubPool, l1Token_1: l1Token } = await deployAndConfigureHubPool(owner, [
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
     ]));
@@ -36,21 +54,28 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
 
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION, []);
+    hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
 
-    multiCallerClient = new MultiCallerClient(spyLogger); // leave out the gasEstimator for now.
+    multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 
-    spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(relayer), configStoreClient, originChainId);
+    spokePoolClient_1 = new SpokePoolClient(
+      spyLogger,
+      spokePool_1.connect(relayer),
+      hubPoolClient,
+      originChainId,
+      spokePool1DeploymentBlock
+    );
     spokePoolClient_2 = new SpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),
-      configStoreClient,
-      destinationChainId
+      hubPoolClient,
+      destinationChainId,
+      spokePool2DeploymentBlock
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
-    profitClient = new ProfitClient(spyLogger, hubPoolClient, spokePoolClients, true, []); // Set relayer discount to 100%.
+    profitClient = new ProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -62,10 +87,13 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
       },
       {
         relayerTokens: [],
+        slowDepositors: [],
         relayerDestinationChains: [],
+        maxRelayerLookBack: 24 * 60 * 60,
         quoteTimeBuffer: 0,
         minDepositConfirmations: defaultMinDepositConfirmations,
       } as unknown as RelayerConfig
@@ -129,8 +157,8 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
 });
 
 async function updateAllClients() {
-  await hubPoolClient.update();
   await configStoreClient.update();
+  await hubPoolClient.update();
   await tokenClient.update();
   await spokePoolClient_1.update();
   await spokePoolClient_2.update();

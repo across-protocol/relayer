@@ -19,45 +19,55 @@ import {
   flattenAndFilterUnfilledDepositsByOriginChain,
   updateUnfilledDepositsWithMatchedDeposit,
   getUniqueDepositsInRange,
+  queryHistoricalDepositForFill,
 } from "../utils";
 import { Clients } from "../common";
-import { getBlockRangeForChain, prettyPrintSpokePoolEvents } from "../dataworker/DataworkerUtils";
+import {
+  getBlockRangeForChain,
+  getImpliedBundleBlockRanges,
+  getEndBlockBuffers,
+  prettyPrintSpokePoolEvents,
+} from "../dataworker/DataworkerUtils";
+import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
+
+type DataCacheValue = {
+  unfilledDeposits: UnfilledDeposit[];
+  fillsToRefund: FillsToRefund;
+  allValidFills: FillWithBlock[];
+  deposits: DepositWithBlock[];
+};
+type DataCache = Record<string, DataCacheValue>;
 
 // @notice Shared client for computing data needed to construct or validate a bundle.
 export class BundleDataClient {
-  private loadDataCache: {
-    [key: string]: {
-      unfilledDeposits: UnfilledDeposit[];
-      fillsToRefund: FillsToRefund;
-      allValidFills: FillWithBlock[];
-      deposits: DepositWithBlock[];
-    };
-  } = {};
+  private loadDataCache: DataCache = {};
 
   // eslint-disable-next-line no-useless-constructor
   constructor(
     readonly logger: winston.Logger,
     readonly clients: Clients,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    readonly chainIdListForBundleEvaluationBlockNumbers: number[]
+    readonly chainIdListForBundleEvaluationBlockNumbers: number[],
+    readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {}
   ) {}
 
   // This should be called whenever it's possible that the loadData information for a block range could have changed.
   // For instance, if the spoke or hub clients have been updated, it probably makes sense to clear this to be safe.
-  clearCache() {
+  clearCache(): void {
     this.loadDataCache = {};
   }
 
-  loadDataFromCache(key: string) {
+  loadDataFromCache(key: string): DataCacheValue {
     // Always return a deep cloned copy of object stored in cache. Since JS passes by reference instead of value, we
     // want to minimize the risk that the programmer accidentally mutates data in the cache.
     return _.cloneDeep(this.loadDataCache[key]);
   }
 
-  getPendingRefundsFromValidBundles(bundleLookback: number): FillsToRefund[] {
+  async getPendingRefundsFromValidBundles(bundleLookback: number): Promise<FillsToRefund[]> {
     const refunds = [];
-    if (!this.clients.hubPoolClient.isUpdated || this.clients.hubPoolClient.latestBlockNumber === undefined)
+    if (!this.clients.hubPoolClient.isUpdated || this.clients.hubPoolClient.latestBlockNumber === undefined) {
       throw new Error("BundleDataClient::getPendingRefundsFromValidBundles HubPoolClient not updated.");
+    }
 
     let latestBlock = this.clients.hubPoolClient.latestBlockNumber;
     for (let i = 0; i < bundleLookback; i++) {
@@ -65,27 +75,24 @@ export class BundleDataClient {
       if (bundle !== undefined) {
         // Update latest block so next iteration can get the next oldest bundle:
         latestBlock = bundle.blockNumber;
-        refunds.push(this.getPendingRefundsFromBundle(bundle));
-      } else break; // No more valid bundles in history!
+        refunds.push(await this.getPendingRefundsFromBundle(bundle));
+      } else {
+        break;
+      } // No more valid bundles in history!
     }
     return refunds;
   }
 
   // Return refunds from input bundle.
-  getPendingRefundsFromBundle(bundle: ProposedRootBundle): FillsToRefund {
-    const hubPoolClient = this.clients.hubPoolClient;
-    // Look for the latest fully executed root bundle before the input bundle.
-    // This ensures that we skip over any disputed (invalid) bundles.
-    const previousValidBundle = hubPoolClient.getLatestFullyExecutedRootBundle(bundle.blockNumber);
-
+  async getPendingRefundsFromBundle(bundle: ProposedRootBundle): Promise<FillsToRefund> {
     // Reconstruct latest bundle block range.
-    const bundleEvaluationBlockRanges: number[][] = bundle.bundleEvaluationBlockNumbers.map((endBlock, i) => {
-      const fromBlock = previousValidBundle?.bundleEvaluationBlockNumbers?.[i]
-        ? previousValidBundle.bundleEvaluationBlockNumbers[i].toNumber() + 1
-        : 0;
-      return [fromBlock, endBlock.toNumber()];
-    });
-    const { fillsToRefund } = this.loadData(bundleEvaluationBlockRanges, this.spokePoolClients, false);
+    const bundleEvaluationBlockRanges = getImpliedBundleBlockRanges(
+      this.clients.hubPoolClient,
+      this.clients.configStoreClient,
+      bundle,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
+    const { fillsToRefund } = await this.loadData(bundleEvaluationBlockRanges, this.spokePoolClients, false);
 
     // The latest proposed bundle's refund leaves might have already been partially or entirely executed.
     // We have to deduct the executed amounts from the total refund amounts.
@@ -97,27 +104,21 @@ export class BundleDataClient {
   // - Bundles that passed liveness but have not had all of their pool rebalance leaves executed.
   // - Bundles that are pending liveness
   // - Not yet proposed bundles
-  getNextBundleRefunds(): FillsToRefund {
-    const chainIds = Object.keys(this.spokePoolClients).map(Number);
-    const latestMainnetBlockNumber = this.clients.hubPoolClient.latestBlockNumber;
-    if (latestMainnetBlockNumber === undefined)
-      throw new Error("BundleDataClient::getNextBundleRefunds HubPoolClient not updated");
-    const futureBundleEvaluationBlockRanges: number[][] = chainIds.map((chainId) => {
-      const latestBlockNumber = this.spokePoolClients[chainId].latestBlockNumber;
-      if (latestBlockNumber === undefined)
-        throw new Error(`BundleDataClient::getNextBundleRefunds SpokePoolClient for chainId ${chainId} not updated`);
-      return [
-        this.clients.hubPoolClient.getNextBundleStartBlockNumber(
-          this.chainIdListForBundleEvaluationBlockNumbers,
-          latestMainnetBlockNumber,
-          chainId
-        ),
-        latestBlockNumber,
-      ];
-    });
+  async getNextBundleRefunds(): Promise<FillsToRefund> {
+    const futureBundleEvaluationBlockRanges = getWidestPossibleExpectedBlockRange(
+      this.chainIdListForBundleEvaluationBlockNumbers,
+      this.spokePoolClients,
+      getEndBlockBuffers(this.chainIdListForBundleEvaluationBlockNumbers, this.blockRangeEndBlockBuffer),
+      this.clients,
+      this.clients.hubPoolClient.latestBlockNumber,
+      this.clients.configStoreClient.getEnabledChains(
+        this.clients.hubPoolClient.latestBlockNumber,
+        this.chainIdListForBundleEvaluationBlockNumbers
+      )
+    );
     // Refunds that will be processed in the next bundle that will be proposed after the current pending bundle
     // (if any) has been fully executed.
-    return this.loadData(futureBundleEvaluationBlockRanges, this.spokePoolClients, false).fillsToRefund;
+    return (await this.loadData(futureBundleEvaluationBlockRanges, this.spokePoolClients, false)).fillsToRefund;
   }
 
   deductExecutedRefunds(allRefunds: FillsToRefund, bundleContainingRefunds: ProposedRootBundle): FillsToRefund {
@@ -129,11 +130,15 @@ export class BundleDataClient {
 
       for (const tokenAddress of Object.keys(allRefunds[chainId])) {
         const refunds = allRefunds[chainId][tokenAddress].refunds;
-        if (executedRefunds[tokenAddress] === undefined || refunds === undefined) continue;
+        if (executedRefunds[tokenAddress] === undefined || refunds === undefined) {
+          continue;
+        }
 
         for (const relayer of Object.keys(refunds)) {
           const executedAmount = executedRefunds[tokenAddress][relayer];
-          if (executedAmount === undefined) continue;
+          if (executedAmount === undefined) {
+            continue;
+          }
           // Depending on how far we lookback when loading deposits/fills events, we might be missing some valid
           // refunds in the bundle calculation. If relayer refund leaves are executed later and all the executions are
           // within the lookback period but the corresponding deposits/fills are not, we can run into cases where
@@ -145,8 +150,10 @@ export class BundleDataClient {
     return allRefunds;
   }
 
-  getRefundsFor(bundleRefunds: FillsToRefund, relayer: string, chainId: number, token: string) {
-    if (!bundleRefunds[chainId] || !bundleRefunds[chainId][token]) return BigNumber.from(0);
+  getRefundsFor(bundleRefunds: FillsToRefund, relayer: string, chainId: number, token: string): BigNumber {
+    if (!bundleRefunds[chainId] || !bundleRefunds[chainId][token]) {
+      return BigNumber.from(0);
+    }
     const allRefunds = bundleRefunds[chainId][token].refunds;
     return allRefunds && allRefunds[relayer] ? allRefunds[relayer] : BigNumber.from(0);
   }
@@ -160,52 +167,138 @@ export class BundleDataClient {
   // Common data re-formatting logic shared across all data worker public functions.
   // User must pass in spoke pool to search event data against. This allows the user to refund relays and fill deposits
   // on deprecated spoke pools.
-  loadData(
+  async loadData(
     blockRangesForChains: number[][],
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     logData = true
-  ): {
+  ): Promise<{
     unfilledDeposits: UnfilledDeposit[];
     fillsToRefund: FillsToRefund;
     allValidFills: FillWithBlock[];
     deposits: DepositWithBlock[];
-  } {
+  }> {
     const key = JSON.stringify(blockRangesForChains);
 
     if (this.loadDataCache[key]) {
       return this.loadDataFromCache(key);
     }
 
-    if (!this.clients.hubPoolClient.isUpdated) throw new Error("HubPoolClient not updated");
-    if (!this.clients.configStoreClient.isUpdated) throw new Error("ConfigStoreClient not updated");
-    this.chainIdListForBundleEvaluationBlockNumbers.forEach((chainId) => {
-      if (!spokePoolClients[chainId]) throw new Error(`Missing spoke pool client for chain ${chainId}`);
-    });
-    if (blockRangesForChains.length !== this.chainIdListForBundleEvaluationBlockNumbers.length)
+    if (!this.clients.configStoreClient.isUpdated) {
+      throw new Error("ConfigStoreClient not updated");
+    } else if (!this.clients.hubPoolClient.isUpdated) {
+      throw new Error("HubPoolClient not updated");
+    }
+
+    if (blockRangesForChains.length !== this.chainIdListForBundleEvaluationBlockNumbers.length) {
       throw new Error(
         `Unexpected block range list length of ${blockRangesForChains.length}, should be ${this.chainIdListForBundleEvaluationBlockNumbers.length}`
       );
+    }
 
     const unfilledDepositsForOriginChain: UnfilledDepositsForOriginChain = {};
     const fillsToRefund: FillsToRefund = {};
-    const allRelayerRefunds: any[] = [];
+    const allRelayerRefunds: { repaymentChain: number; repaymentToken: string }[] = [];
     const deposits: DepositWithBlock[] = [];
     const allValidFills: FillWithBlock[] = [];
     const allInvalidFills: FillWithBlock[] = [];
 
+    // Save refund in-memory for validated fill.
+    const addRefundForValidFill = (
+      fillWithBlock: FillWithBlock,
+      matchedDeposit: DepositWithBlock,
+      blockRangeForChain: number[]
+    ) => {
+      // Fill was validated. Save it under all validated fills list with the block number so we can sort it by
+      // time. Note that its important we don't skip fills earlier than the block range at this step because
+      // we use allValidFills to find the first fill in the entire history associated with a fill in the block
+      // range, in order to determine if we already sent a slow fill for it.
+      allValidFills.push(fillWithBlock);
+
+      // If fill is outside block range, we can skip it now since we're not going to add a refund for it.
+      if (fillWithBlock.blockNumber < blockRangeForChain[0]) {
+        return;
+      }
+
+      // Now create a copy of fill with block data removed, and use its data to update the fills to refund obj.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { blockNumber, transactionIndex, transactionHash, logIndex, ...fill } = fillWithBlock;
+      const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
+        fill,
+        this.clients.hubPoolClient,
+        blockRangesForChains,
+        this.chainIdListForBundleEvaluationBlockNumbers
+      );
+
+      // Fills to refund includes both slow and non-slow fills and they both should increase the
+      // total realized LP fee %.
+      assignValidFillToFillsToRefund(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
+      allRelayerRefunds.push({ repaymentToken, repaymentChain: chainToSendRefundTo });
+      updateTotalRealizedLpFeePct(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
+
+      // Save deposit as one that is eligible for a slow fill, since there is a fill
+      // for the deposit in this epoch. We save whether this fill is the first fill for the deposit, because
+      // if a deposit has its first fill in this block range, then we can send a slow fill payment to complete
+      // the deposit. If other fills end up completing this deposit, then we'll remove it from the unfilled
+      // deposits later.
+      updateUnfilledDepositsWithMatchedDeposit(fill, matchedDeposit, unfilledDepositsForOriginChain);
+
+      // Update total refund counter for convenience when constructing relayer refund leaves
+      updateTotalRefundAmount(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
+    };
+
+    const validateFillAndSaveData = async (fill: FillWithBlock, blockRangeForChain: number[]): Promise<void> => {
+      const originClient = spokePoolClients[fill.originChainId];
+      const matchedDeposit = originClient.getDepositForFill(fill);
+      if (matchedDeposit) {
+        addRefundForValidFill(fill, matchedDeposit, blockRangeForChain);
+      } else {
+        // Matched deposit for fill was not found in spoke client. This situation should be rare so let's
+        // send some extra RPC requests to blocks older than the spoke client's initial event search config
+        // to find the deposit if it exists.
+        const spokePoolClient = spokePoolClients[fill.originChainId];
+        const historicalDeposit = await queryHistoricalDepositForFill(spokePoolClient, fill);
+        if (historicalDeposit) {
+          addRefundForValidFill(fill, historicalDeposit, blockRangeForChain);
+        } else {
+          allInvalidFills.push(fill);
+        }
+      }
+    };
+
+    const isChainDisabled = (chainId: number): boolean => {
+      const blockRangeForChain = getBlockRangeForChain(
+        blockRangesForChains,
+        chainId,
+        this.chainIdListForBundleEvaluationBlockNumbers
+      );
+      return blockRangeForChain[0] === blockRangeForChain[1];
+    };
+
     const allChainIds = Object.keys(spokePoolClients).map(Number);
 
     for (const originChainId of allChainIds) {
+      if (isChainDisabled(originChainId)) {
+        continue;
+      }
+
       const originClient = spokePoolClients[originChainId];
-      if (!originClient.isUpdated) throw new Error(`origin SpokePoolClient on chain ${originChainId} not updated`);
+      if (!originClient.isUpdated) {
+        throw new Error(`origin SpokePoolClient on chain ${originChainId} not updated`);
+      }
 
       // Loop over all other SpokePoolClient's to find deposits whose destination chain is the selected origin chain.
       for (const destinationChainId of allChainIds) {
-        if (originChainId === destinationChainId) continue;
+        if (originChainId === destinationChainId) {
+          continue;
+        }
+        if (isChainDisabled(destinationChainId)) {
+          continue;
+        }
 
         const destinationClient = spokePoolClients[destinationChainId];
-        if (!destinationClient.isUpdated)
+        if (!destinationClient.isUpdated) {
           throw new Error(`destination SpokePoolClient with chain ID ${destinationChainId} not updated`);
+        }
 
         // Store all deposits in range, for use in constructing a pool rebalance root. Save deposits with
         // their quote time block numbers so we can pull the L1 token counterparts for the quote timestamp.
@@ -232,53 +325,10 @@ export class BundleDataClient {
         // Find all valid fills matching a deposit on the origin chain and sent on the destination chain.
         // Don't include any fills past the bundle end block for the chain, otherwise the destination client will
         // return fill events that are younger than the bundle end block.
-        destinationClient
+        const fillsForOriginChain = destinationClient
           .getFillsForOriginChain(Number(originChainId))
-          .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1])
-          .forEach((fillWithBlock) => {
-            // If fill matches with a deposit, then its a valid fill.
-            const matchedDeposit = originClient.getDepositForFill(fillWithBlock);
-            if (matchedDeposit) {
-              // Fill was validated. Save it under all validated fills list with the block number so we can sort it by
-              // time. Note that its important we don't skip fills earlier than the block range at this step because
-              // we use allValidFills to find the first fill in the entire history associated with a fill in the block
-              // range, in order to determine if we already sent a slow fill for it.
-              allValidFills.push(fillWithBlock);
-
-              // If fill is outside block range, we can skip it now since we're not going to add a refund for it.
-              if (fillWithBlock.blockNumber < blockRangeForChain[0]) return;
-
-              // Now create a copy of fill with block data removed, and use its data to update the fills to refund obj.
-              const { blockNumber, transactionIndex, transactionHash, logIndex, ...fill } = fillWithBlock;
-              const { chainToSendRefundTo, repaymentToken } = getRefundInformationFromFill(
-                fill,
-                this.clients.hubPoolClient,
-                blockRangesForChains,
-                this.chainIdListForBundleEvaluationBlockNumbers
-              );
-
-              // Fills to refund includes both slow and non-slow fills and they both should increase the
-              // total realized LP fee %.
-              assignValidFillToFillsToRefund(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
-              allRelayerRefunds.push({ repaymentToken, repaymentChain: chainToSendRefundTo });
-              updateTotalRealizedLpFeePct(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
-
-              // Save deposit as one that is eligible for a slow fill, since there is a fill
-              // for the deposit in this epoch. We save whether this fill is the first fill for the deposit, because
-              // if a deposit has its first fill in this block range, then we can send a slow fill payment to complete
-              // the deposit. If other fills end up completing this deposit, then we'll remove it from the unfilled
-              // deposits later.
-              updateUnfilledDepositsWithMatchedDeposit(fill, matchedDeposit, unfilledDepositsForOriginChain);
-
-              // Update total refund counter for convenience when constructing relayer refund leaves
-              updateTotalRefundAmount(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
-            } else {
-              // Note: If the fill's origin chain is set incorrectly (e.g. equal to the destination chain, or
-              // set to some unexpected chain), then it won't be added to `allInvalidFills` because we wouldn't
-              // have been able to grab it from the destinationClient.getFillsForOriginChain call.
-              allInvalidFills.push(fillWithBlock);
-            }
-          });
+          .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1]);
+        await Promise.all(fillsForOriginChain.map(async (fill) => validateFillAndSaveData(fill, blockRangeForChain)));
       }
     }
 
@@ -298,24 +348,26 @@ export class BundleDataClient {
     if (logData) {
       const mainnetRange = getBlockRangeForChain(
         blockRangesForChains,
-        1,
+        this.clients.hubPoolClient.chainId,
         this.chainIdListForBundleEvaluationBlockNumbers
       );
       this.logger.debug({
-        at: "Dataworker",
+        at: "BundleDataClient#loadData",
         message: `Finished loading spoke pool data for the equivalent of mainnet range: [${mainnetRange[0]}, ${mainnetRange[1]}]`,
         blockRangesForChains,
         ...spokeEventsReadable,
       });
     }
 
-    if (Object.keys(spokeEventsReadable.allInvalidFillsInRangeByDestinationChain).length > 0)
+    if (Object.keys(spokeEventsReadable.allInvalidFillsInRangeByDestinationChain).length > 0) {
       this.logger.debug({
-        at: "Dataworker",
+        at: "BundleDataClient#loadData",
         message: "Finished loading spoke pool data and found some invalid fills in range",
         blockRangesForChains,
         allInvalidFillsInRangeByDestinationChain: spokeEventsReadable.allInvalidFillsInRangeByDestinationChain,
+        allInvalidFills,
       });
+    }
 
     this.loadDataCache[key] = { fillsToRefund, deposits, unfilledDeposits, allValidFills };
 

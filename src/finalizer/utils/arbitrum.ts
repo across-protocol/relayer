@@ -1,46 +1,76 @@
-import {
-  getProvider,
-  Wallet,
-  winston,
-  convertFromWei,
-  groupObjectCountsByProp,
-  delay,
-  etherscanLink,
-} from "../../utils";
-import { L2ToL1MessageStatus, L2TransactionReceipt, IL2ToL1MessageWriter } from "@arbitrum/sdk";
+import { Wallet, winston, convertFromWei, groupObjectCountsByProp, Contract, getCachedProvider } from "../../utils";
+import { L2ToL1MessageStatus, L2TransactionReceipt, getL2Network, L2ToL1MessageWriter } from "@arbitrum/sdk";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient } from "../../clients";
+import { Withdrawal } from "..";
+import { Multicall2Call } from "../../common";
 
 const CHAIN_ID = 42161;
 
-export async function finalizeArbitrum(
-  logger: winston.Logger,
-  message: IL2ToL1MessageWriter,
-  messageInfo: TokensBridged,
-  hubPoolClient: HubPoolClient
-) {
-  const l2Provider = getProvider(42161);
-  const l1TokenInfo = hubPoolClient.getL1TokenInfoForL2Token(messageInfo.l2TokenAddress, CHAIN_ID);
-  const amountFromWei = convertFromWei(messageInfo.amountToReturn.toString(), l1TokenInfo.decimals);
-  try {
-    const txn = await message.execute(l2Provider);
-    logger.info({
-      at: "ArbitrumFinalizer",
-      message: `Finalized Arbitrum withdrawal for ${amountFromWei} of ${l1TokenInfo.symbol} 🪃`,
-      transactionHash: etherscanLink(txn.hash, 1),
-    });
-    await delay(30);
-  } catch (error) {
-    logger.warn({
-      at: "ArbitrumFinalizer",
-      message: "Error creating executeTransactionTx",
-      error,
-      notificationPath: "across-error",
-    });
-  }
+export async function multicallArbitrumFinalizations(
+  tokensBridged: TokensBridged[],
+  hubSigner: Wallet,
+  hubPoolClient: HubPoolClient,
+  logger: winston.Logger
+): Promise<{ callData: Multicall2Call[]; withdrawals: Withdrawal[] }> {
+  const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner);
+  const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(message.message)));
+  const withdrawals = finalizableMessages.map((message) => {
+    const l1TokenCounterpart = hubPoolClient.getL1TokenCounterpartAtBlock(
+      CHAIN_ID,
+      message.info.l2TokenAddress,
+      hubPoolClient.latestBlockNumber
+    );
+    const l1TokenInfo = hubPoolClient.getTokenInfo(1, l1TokenCounterpart);
+    const amountFromWei = convertFromWei(message.info.amountToReturn.toString(), l1TokenInfo.decimals);
+    return {
+      l2ChainId: CHAIN_ID,
+      l1TokenSymbol: l1TokenInfo.symbol,
+      amount: amountFromWei,
+    };
+  });
+  return {
+    callData,
+    withdrawals,
+  };
 }
 
-export async function getFinalizableMessages(logger: winston.Logger, tokensBridged: TokensBridged[], l1Signer: Wallet) {
+export async function finalizeArbitrum(message: L2ToL1MessageWriter): Promise<Multicall2Call> {
+  const l2Provider = getCachedProvider(CHAIN_ID, true);
+  const proof = await message.getOutboxProof(l2Provider);
+  const outbox = new Contract((await getL2Network(l2Provider)).ethBridge.outbox, outboxAbi);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const eventData = (message as any).nitroWriter.event; // nitroWriter is a private property on the
+  // L2ToL1MessageWriter class, which we need to form the calldata so unfortunately we must cast to `any`.
+  const callData = await outbox.populateTransaction.executeTransaction(
+    proof,
+    eventData.position,
+    eventData.caller,
+    eventData.destination,
+    eventData.arbBlockNum,
+    eventData.ethBlockNum,
+    eventData.timestamp,
+    eventData.callvalue,
+    eventData.data,
+    {}
+  );
+  return {
+    callData: callData.data,
+    target: callData.to,
+  };
+}
+
+export async function getFinalizableMessages(
+  logger: winston.Logger,
+  tokensBridged: TokensBridged[],
+  l1Signer: Wallet
+): Promise<
+  {
+    info: TokensBridged;
+    message: L2ToL1MessageWriter;
+    status: string;
+  }[]
+> {
   const allMessagesWithStatuses = await getAllMessageStatuses(tokensBridged, logger, l1Signer);
   const statusesGrouped = groupObjectCountsByProp(
     allMessagesWithStatuses,
@@ -58,7 +88,13 @@ export async function getAllMessageStatuses(
   tokensBridged: TokensBridged[],
   logger: winston.Logger,
   mainnetSigner: Wallet
-) {
+): Promise<
+  {
+    info: TokensBridged;
+    message: L2ToL1MessageWriter;
+    status: string;
+  }[]
+> {
   // For each token bridge event, store a unique log index for the event within the arbitrum transaction hash.
   // This is important for bridge transactions containing multiple events.
   const uniqueTokenhashes = {};
@@ -88,15 +124,15 @@ export async function getMessageOutboxStatusAndProof(
   l1Signer: Wallet,
   logIndex: number
 ): Promise<{
-  message: IL2ToL1MessageWriter;
+  message: L2ToL1MessageWriter;
   status: string;
 }> {
-  const l2Provider = getProvider(42161);
+  const l2Provider = getCachedProvider(CHAIN_ID, true);
   const receipt = await l2Provider.getTransactionReceipt(event.transactionHash);
   const l2Receipt = new L2TransactionReceipt(receipt);
 
   try {
-    const l2ToL1Messages = await l2Receipt.getL2ToL1Messages(l1Signer, l2Provider);
+    const l2ToL1Messages = await l2Receipt.getL2ToL1Messages(l1Signer);
     if (l2ToL1Messages.length === 0 || l2ToL1Messages.length - 1 < logIndex) {
       const error = new Error(`No outgoing messages found in transaction:${event.transactionHash}`);
       logger.warn({
@@ -105,7 +141,7 @@ export async function getMessageOutboxStatusAndProof(
         logIndex,
         l2ToL1Messages: l2ToL1Messages.length,
         txnHash: event.transactionHash,
-        error,
+        reason: error.stack || error.message || error.toString(),
         notificationPath: "across-error",
       });
       throw error;
@@ -142,3 +178,59 @@ export async function getMessageOutboxStatusAndProof(
     };
   }
 }
+
+const outboxAbi = [
+  {
+    inputs: [
+      {
+        internalType: "bytes32[]",
+        name: "proof",
+        type: "bytes32[]",
+      },
+      {
+        internalType: "uint256",
+        name: "index",
+        type: "uint256",
+      },
+      {
+        internalType: "address",
+        name: "l2Sender",
+        type: "address",
+      },
+      {
+        internalType: "address",
+        name: "to",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "l2Block",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "l1Block",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "l2Timestamp",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "value",
+        type: "uint256",
+      },
+      {
+        internalType: "bytes",
+        name: "data",
+        type: "bytes",
+      },
+    ],
+    name: "executeTransaction",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+];

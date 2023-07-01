@@ -1,47 +1,32 @@
-import { L1Token, Deposit } from "../../src/interfaces";
-import { HubPoolClient } from "../../src/clients";
+import { clients } from "@across-protocol/sdk-v2";
+import { Contract, winston } from "../utils";
+import { ConfigStoreClient } from "../../src/clients";
 
-export class MockHubPoolClient extends HubPoolClient {
-  private l1TokensMock: L1Token[] = []; // L1Tokens and their associated info.
-  private tokenInfoToReturn: L1Token;
-  private l1TokensToDestinationTokensMock: { [l1Token: string]: { [destinationChainId: number]: string } } = {};
-  private returnedL1TokenForDeposit: string;
+// Adds functions to MockHubPoolClient to facilitate Dataworker unit testing.
+export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
+  public latestBundleEndBlocks: { [chainId: number]: number } = {};
 
-  addL1Token(l1Token: L1Token) {
-    this.l1TokensMock.push(l1Token);
+  public chainId: number;
+
+  constructor(
+    logger: winston.Logger,
+    hubPool: Contract,
+    configStoreClient: ConfigStoreClient,
+    deploymentBlock = 0,
+    chainId = 1
+  ) {
+    super(logger, hubPool, configStoreClient, deploymentBlock);
+    this.chainId = chainId;
   }
 
-  getL1Tokens() {
-    return this.l1TokensMock;
+  setLatestBundleEndBlockForChain(chainId: number, latestBundleEndBlock: number): void {
+    this.latestBundleEndBlocks[chainId] = latestBundleEndBlock;
   }
-
-  getTokenInfoForDeposit() {
-    return this.tokenInfoToReturn;
-  }
-
-  getTokenInfoForL1Token(l1Token: string): L1Token {
-    return this.l1TokensMock.find((token) => token.address === l1Token);
-  }
-
-  setTokenInfoToReturn(tokenInfo: L1Token) {
-    this.tokenInfoToReturn = tokenInfo;
-  }
-
-  setL1TokensToDestinationTokens(l1TokensToDestinationTokens: {
-    [l1Token: string]: { [destinationChainId: number]: string };
-  }) {
-    this.l1TokensToDestinationTokensMock = l1TokensToDestinationTokens;
-  }
-
-  getDestinationTokenForL1Token(l1Token: string, destinationChainId: number) {
-    return this.l1TokensToDestinationTokensMock[l1Token][destinationChainId];
-  }
-
-  setReturnedL1TokenForDeposit(l1Token: string) {
-    this.returnedL1TokenForDeposit = l1Token;
-  }
-
-  getL1TokenForDeposit(deposit: Deposit) {
-    return this.returnedL1TokenForDeposit;
+  getLatestBundleEndBlockForChain(chainIdList: number[], latestMainnetBlock: number, chainId: number): number {
+    return (
+      this.latestBundleEndBlocks[chainId] ??
+      super.getLatestBundleEndBlockForChain(chainIdList, latestMainnetBlock, chainId) ??
+      0
+    );
   }
 }

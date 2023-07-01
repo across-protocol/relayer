@@ -3,12 +3,19 @@ import { expect, deposit, ethers, Contract, SignerWithAddress, setupTokensForWal
 import { lastSpyLogIncludes, toBNWei, createSpyLogger, deployConfigStore } from "./utils";
 import { deployAndConfigureHubPool, winston } from "./utils";
 import { amountToLp, defaultMinDepositConfirmations, defaultTokenConfig } from "./constants";
-import { SpokePoolClient, HubPoolClient, AcrossConfigStoreClient, MultiCallerClient } from "../src/clients";
-import { TokenClient } from "../src/clients";
+import {
+  SpokePoolClient,
+  HubPoolClient,
+  ConfigStoreClient,
+  MultiCallerClient,
+  AcrossApiClient,
+  TokenClient,
+} from "../src/clients";
+import { CONFIG_STORE_VERSION } from "../src/common";
 import { MockInventoryClient, MockProfitClient } from "./mocks";
-
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
+import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -16,15 +23,24 @@ let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithA
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let configStoreClient: AcrossConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
+let configStoreClient: ConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
 let relayerInstance: Relayer;
 let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
+let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
 describe("Relayer: Token balance shortfall", async function () {
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
-    ({ spokePool: spokePool_1, erc20: erc20_1 } = await deploySpokePoolWithToken(originChainId, destinationChainId));
-    ({ spokePool: spokePool_2, erc20: erc20_2 } = await deploySpokePoolWithToken(destinationChainId, originChainId));
+    ({
+      spokePool: spokePool_1,
+      erc20: erc20_1,
+      deploymentBlock: spokePool1DeploymentBlock,
+    } = await deploySpokePoolWithToken(originChainId, destinationChainId));
+    ({
+      spokePool: spokePool_2,
+      erc20: erc20_2,
+      deploymentBlock: spokePool2DeploymentBlock,
+    } = await deploySpokePoolWithToken(destinationChainId, originChainId));
     ({ hubPool, l1Token_1: l1Token } = await deployAndConfigureHubPool(owner, [
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
     ]));
@@ -36,19 +52,26 @@ describe("Relayer: Token balance shortfall", async function () {
 
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool);
-    configStoreClient = new AcrossConfigStoreClient(spyLogger, configStore, hubPoolClient);
-    multiCallerClient = new MultiCallerClient(spyLogger); // leave out the gasEstimator for now.
-    spokePoolClient_1 = new SpokePoolClient(spyLogger, spokePool_1.connect(relayer), configStoreClient, originChainId);
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION, []);
+    hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
+    multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
+    spokePoolClient_1 = new SpokePoolClient(
+      spyLogger,
+      spokePool_1.connect(relayer),
+      hubPoolClient,
+      originChainId,
+      spokePool1DeploymentBlock
+    );
     spokePoolClient_2 = new SpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),
-      configStoreClient,
-      destinationChainId
+      hubPoolClient,
+      destinationChainId,
+      spokePool2DeploymentBlock
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
-    profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, true, []); // Set the profit discount to 1 (ignore relay cost.)
+    profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     profitClient.testInit();
 
     relayerInstance = new Relayer(
@@ -62,10 +85,13 @@ describe("Relayer: Token balance shortfall", async function () {
         profitClient,
         multiCallerClient,
         inventoryClient: new MockInventoryClient(),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
       },
       {
         relayerTokens: [],
+        slowDepositors: [],
         relayerDestinationChains: [],
+        maxRelayerLookBack: 24 * 60 * 60,
         quoteTimeBuffer: 0,
         minDepositConfirmations: defaultMinDepositConfirmations,
       } as unknown as RelayerConfig
@@ -120,7 +146,6 @@ describe("Relayer: Token balance shortfall", async function () {
     expect(lastSpyLogIncludes(spy, "blocking deposits: 1,0")).to.be.true;
 
     const tx = await multiCallerClient.executeTransactionQueue();
-    expect(lastSpyLogIncludes(spy, "Multicall batch sent")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Relayed depositId 2")).to.be.true;
     expect(tx.length).to.equal(1); // There should have been exactly one transaction.
   });
@@ -144,8 +169,8 @@ describe("Relayer: Token balance shortfall", async function () {
 });
 
 async function updateAllClients() {
-  await hubPoolClient.update();
   await configStoreClient.update();
+  await hubPoolClient.update();
   await tokenClient.update();
   await spokePoolClient_1.update();
   await spokePoolClient_2.update();

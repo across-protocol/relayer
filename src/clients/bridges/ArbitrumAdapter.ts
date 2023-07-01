@@ -8,39 +8,44 @@ import {
   winston,
   BigNumberish,
   isDefined,
+  TransactionResponse,
 } from "../../utils";
-import { toBN, toWei, paginatedEventQuery, Promise, Event } from "../../utils";
+import { toBN, toWei, paginatedEventQuery, Event } from "../../utils";
 import { SpokePoolClient } from "../../clients";
 import { BaseAdapter } from "./BaseAdapter";
-import { arbitrumL2Erc20GatewayInterface, arbitrumL1Erc20GatewayInterface } from "./ContractInterfaces";
 import { SortableEvent } from "../../interfaces";
+import { constants } from "@across-protocol/sdk-v2";
+import { OutstandingTransfers } from "../../interfaces";
+import { CONTRACT_ADDRESSES } from "../../common";
+const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = constants;
 
+// TODO: Move to ../../common/ContractAddresses.ts
 // These values are obtained from Arbitrum's gateway router contract.
 const l1Gateways = {
-  "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "0xcEe284F754E854890e311e3280b767F80797180d", // USDC
-  "0xdAC17F958D2ee523a2206206994597C13D831ec7": "0xcEe284F754E854890e311e3280b767F80797180d", // USDT
-  "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "0xd92023E9d9911199a6711321D1277285e6d4e2db", // WETH
-  "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0xD3B5b60020504bc3489D6949d545893982BA3011", // DAI
-  "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // WBTC
-  "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828": "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // UMA
-  "0x3472A5A71965499acd81997a54BBA8D852C6E53d": "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // BADGER
-  "0xba100000625a3754423978a60c9317c58a424e3D": "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // BAL
+  [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: "0xcEe284F754E854890e311e3280b767F80797180d", // USDC
+  [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: "0xcEe284F754E854890e311e3280b767F80797180d", // USDT
+  [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: "0xd92023E9d9911199a6711321D1277285e6d4e2db", // WETH
+  [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: "0xD3B5b60020504bc3489D6949d545893982BA3011", // DAI
+  [TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET]]: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // WBTC
+  [TOKEN_SYMBOLS_MAP.UMA.addresses[CHAIN_IDs.MAINNET]]: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // UMA
+  [TOKEN_SYMBOLS_MAP.BADGER.addresses[CHAIN_IDs.MAINNET]]: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // BADGER
+  [TOKEN_SYMBOLS_MAP.BAL.addresses[CHAIN_IDs.MAINNET]]: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // BAL
+  [TOKEN_SYMBOLS_MAP.ACX.addresses[CHAIN_IDs.MAINNET]]: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC", // ACX
 } as const;
-
-const l1GatewayRouter = "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef";
 
 const l2Gateways = {
-  "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "0x096760F208390250649E3e8763348E783AEF5562", // USDC
-  "0xdAC17F958D2ee523a2206206994597C13D831ec7": "0x096760F208390250649E3e8763348E783AEF5562", // USDT
-  "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "0x6c411aD3E74De3E7Bd422b94A27770f5B86C623B", // WETH
-  "0x6B175474E89094C44Da98b954EedeAC495271d0F": "0x467194771dAe2967Aef3ECbEDD3Bf9a310C76C65", // DAI
-  "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // WBTC
-  "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828": "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // UMA
-  "0x3472A5A71965499acd81997a54BBA8D852C6E53d": "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // BADGER
-  "0xba100000625a3754423978a60c9317c58a424e3D": "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // BAL
+  [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: "0x096760F208390250649E3e8763348E783AEF5562", // USDC
+  [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: "0x096760F208390250649E3e8763348E783AEF5562", // USDT
+  [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: "0x6c411aD3E74De3E7Bd422b94A27770f5B86C623B", // WETH
+  [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: "0x467194771dAe2967Aef3ECbEDD3Bf9a310C76C65", // DAI
+  [TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET]]: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // WBTC
+  [TOKEN_SYMBOLS_MAP.UMA.addresses[CHAIN_IDs.MAINNET]]: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // UMA
+  [TOKEN_SYMBOLS_MAP.BADGER.addresses[CHAIN_IDs.MAINNET]]: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // BADGER
+  [TOKEN_SYMBOLS_MAP.BAL.addresses[CHAIN_IDs.MAINNET]]: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // BAL
+  [TOKEN_SYMBOLS_MAP.ACX.addresses[CHAIN_IDs.MAINNET]]: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe", // ACX
 } as const;
 
-type SupportedL1Token = keyof typeof l1Gateways & keyof typeof l2Gateways;
+type SupportedL1Token = string;
 
 // TODO: replace these numbers using the arbitrum SDK. these are bad values that mean we will over pay but transactions
 // wont get stuck.
@@ -61,7 +66,7 @@ export class ArbitrumAdapter extends BaseAdapter {
     super(spokePoolClients, 42161, monitoredAddresses, logger);
   }
 
-  async getOutstandingCrossChainTransfers(l1Tokens: string[]) {
+  async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     this.log("Getting cross-chain txs", { l1Tokens, l1Config: l1SearchConfig, l2Config: l2SearchConfig });
 
@@ -73,7 +78,9 @@ export class ArbitrumAdapter extends BaseAdapter {
         // Skip the token if we can't find the corresponding bridge.
         // This is a valid use case as it's more convenient to check cross chain transfers for all tokens
         // rather than maintaining a list of native bridge-supported tokens.
-        if (!this.isSupportedToken(l1Token)) continue;
+        if (!this.isSupportedToken(l1Token)) {
+          continue;
+        }
 
         const l1Bridge = this.getL1Bridge(l1Token);
         const l2Bridge = this.getL2Bridge(l1Token);
@@ -115,17 +122,17 @@ export class ArbitrumAdapter extends BaseAdapter {
         const l1Token = validTokens[Math.floor(index / 2)];
         // l1Token is not an indexed field on Aribtrum gateway's deposit events, so these events are for all tokens.
         // Therefore, we need to filter unrelated deposits of other tokens.
-        const filteredEvents = result.filter((event) => spreadEvent(event)["l1Token"] === l1Token);
+        const filteredEvents = result.filter((event) => spreadEvent(event.args)["l1Token"] === l1Token);
         const events = filteredEvents.map((event) => {
           // TODO: typing here is a little janky. To get these right, we'll probably need to rework how we're sorting
           // these different types of events into the array to get stronger guarantees when extracting them.
           const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-            amount?: BigNumberish;
-            _amount?: BigNumberish;
+            amount: BigNumberish;
+            _amount: BigNumberish;
           };
           return {
-            amount: eventSpread[index % 2 === 0 ? "_amount" : "amount"]!,
             ...eventSpread,
+            amount: eventSpread[index % 2 === 0 ? "_amount" : "amount"],
           };
         });
         const eventsStorage = index % 2 === 0 ? this.l1DepositInitiatedEvents : this.l2DepositFinalizedEvents;
@@ -136,20 +143,27 @@ export class ArbitrumAdapter extends BaseAdapter {
     return this.computeOutstandingCrossChainTransfers(validTokens);
   }
 
-  async checkTokenApprovals(address: string, l1Tokens: string[]) {
+  async checkTokenApprovals(address: string, l1Tokens: string[]): Promise<void> {
     // Note we send the approvals to the L1 Bridge but actually send outbound transfers to the L1 Gateway Router.
     // Note that if the token trying to be approved is not configured in this client (i.e. not in the l1Gateways object)
     // then this will pass null into the checkAndSendTokenApprovals. This method gracefully deals with this case.
     const associatedL1Bridges = l1Tokens
       .map((l1Token) => {
-        if (!this.isSupportedToken(l1Token)) return null;
+        if (!this.isSupportedToken(l1Token)) {
+          return null;
+        }
         return this.getL1Bridge(l1Token).address;
       })
       .filter(isDefined);
     await this.checkAndSendTokenApprovals(address, l1Tokens, associatedL1Bridges);
   }
 
-  async sendTokenToTargetChain(address: string, l1Token: string, l2Token: string, amount: BigNumber) {
+  async sendTokenToTargetChain(
+    address: string,
+    l1Token: string,
+    l2Token: string,
+    amount: BigNumber
+  ): Promise<TransactionResponse> {
     this.log("Bridging tokens", { l1Token, l2Token, amount });
     const args = [
       l1Token, // token
@@ -163,15 +177,19 @@ export class ArbitrumAdapter extends BaseAdapter {
   }
 
   getL1Bridge(l1Token: SupportedL1Token): Contract {
-    return new Contract(l1Gateways[l1Token], arbitrumL1Erc20GatewayInterface, this.getSigner(1));
+    return new Contract(l1Gateways[l1Token], CONTRACT_ADDRESSES[1].arbitrumErc20GatewayRouter.abi, this.getSigner(1));
   }
 
-  getL1GatewayRouter() {
-    return new Contract(l1GatewayRouter, arbitrumL1Erc20GatewayInterface, this.getSigner(1));
+  getL1GatewayRouter(): Contract {
+    return new Contract(
+      CONTRACT_ADDRESSES[1].arbitrumErc20GatewayRouter.address,
+      CONTRACT_ADDRESSES[1].arbitrumErc20GatewayRouter.abi,
+      this.getSigner(1)
+    );
   }
 
-  getL2Bridge(l1Token: SupportedL1Token) {
-    return new Contract(l2Gateways[l1Token], arbitrumL2Erc20GatewayInterface, this.getSigner(this.chainId));
+  getL2Bridge(l1Token: SupportedL1Token): Contract {
+    return new Contract(l2Gateways[l1Token], CONTRACT_ADDRESSES[42161].erc20Gateway.abi, this.getSigner(this.chainId));
   }
 
   isSupportedToken(l1Token: string): l1Token is SupportedL1Token {

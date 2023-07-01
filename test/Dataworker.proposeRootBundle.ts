@@ -1,7 +1,7 @@
-import { buildFillForRepaymentChain, lastSpyLogIncludes } from "./utils";
+import { buildFillForRepaymentChain, lastSpyLogIncludes, lastSpyLogLevel } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, buildDeposit, toBNWei } from "./utils";
-import { HubPoolClient, AcrossConfigStoreClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
-import { amountToDeposit, destinationChainId, originChainId } from "./constants";
+import { HubPoolClient, SpokePoolClient, MultiCallerClient } from "../src/clients";
+import { amountToDeposit, destinationChainId, originChainId, utf8ToHex } from "./constants";
 import { CHAIN_ID_TEST_LIST } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT } from "../src/utils";
@@ -10,13 +10,14 @@ import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT } from "../src/utils";
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { getDepositPath } from "../src/utils";
 import { FillWithBlock } from "../src/interfaces";
+import { MockConfigStoreClient } from "./mocks";
 
 let spy: sinon.SinonSpy;
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
-let l1Token_1: Contract, hubPool: Contract;
+let l1Token_1: Contract, hubPool: Contract, configStore: Contract;
 let depositor: SignerWithAddress;
 
-let hubPoolClient: HubPoolClient, configStoreClient: AcrossConfigStoreClient;
+let hubPoolClient: HubPoolClient, configStoreClient: MockConfigStoreClient;
 let dataworkerInstance: Dataworker, multiCallerClient: MultiCallerClient;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
@@ -31,6 +32,7 @@ describe("Dataworker: Propose root bundle", async function () {
       spokePool_2,
       erc20_2,
       configStoreClient,
+      configStore,
       hubPoolClient,
       l1Token_1,
       depositor,
@@ -58,12 +60,11 @@ describe("Dataworker: Propose root bundle", async function () {
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     expect(lastSpyLogIncludes(spy, "No pool rebalance leaves, cannot propose")).to.be.true;
     const loadDataResults1 = getMostRecentLog(spy, "Finished loading spoke pool data");
-    expect(loadDataResults1.blockRangesForChains).to.deep.equal(CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock1]));
+    expect(loadDataResults1.blockRangesForChains).to.deep.equal(CHAIN_ID_TEST_LIST.map(() => [0, latestBlock1]));
 
     // TEST 2:
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_1,
       erc20_1,
@@ -76,17 +77,17 @@ describe("Dataworker: Propose root bundle", async function () {
     await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
     await updateAllClients();
     const latestBlock2 = await hubPool.provider.getBlockNumber();
-    const blockRange2 = CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock2]);
+    const blockRange2 = CHAIN_ID_TEST_LIST.map(() => [0, latestBlock2]);
 
     // Construct expected roots before we propose new root so that last log contains logs about submitted txn.
-    const expectedPoolRebalanceRoot2 = dataworkerInstance.buildPoolRebalanceRoot(blockRange2, spokePoolClients);
-    const expectedRelayerRefundRoot2 = dataworkerInstance.buildRelayerRefundRoot(
+    const expectedPoolRebalanceRoot2 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange2, spokePoolClients);
+    const expectedRelayerRefundRoot2 = await dataworkerInstance.buildRelayerRefundRoot(
       blockRange2,
       spokePoolClients,
       expectedPoolRebalanceRoot2.leaves,
       expectedPoolRebalanceRoot2.runningBalances
     );
-    const expectedSlowRelayRefundRoot2 = dataworkerInstance.buildSlowRelayRoot(blockRange2, spokePoolClients);
+    const expectedSlowRelayRefundRoot2 = await dataworkerInstance.buildSlowRelayRoot(blockRange2, spokePoolClients);
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     const loadDataResults2 = getMostRecentLog(spy, "Finished loading spoke pool data");
     expect(loadDataResults2.blockRangesForChains).to.deep.equal(blockRange2);
@@ -135,8 +136,8 @@ describe("Dataworker: Propose root bundle", async function () {
     // pool rebalance leaves because they should use the chain's end block from the latest fully executed proposed
     // root bundle, which should be the bundle block in expectedPoolRebalanceRoot2 + 1.
     await updateAllClients();
-    await dataworkerInstance.proposeRootBundle(spokePoolClients);
     const latestBlock3 = await hubPool.provider.getBlockNumber();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
     const blockRange3 = [
       [latestBlock2 + 1, latestBlock3],
       [latestBlock2 + 1, latestBlock3],
@@ -158,8 +159,8 @@ describe("Dataworker: Propose root bundle", async function () {
       [latestBlock2 + 1, latestBlock4],
       [latestBlock2 + 1, latestBlock4],
     ];
-    const expectedPoolRebalanceRoot4 = dataworkerInstance.buildPoolRebalanceRoot(blockRange4, spokePoolClients);
-    const expectedRelayerRefundRoot4 = dataworkerInstance.buildRelayerRefundRoot(
+    const expectedPoolRebalanceRoot4 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange4, spokePoolClients);
+    const expectedRelayerRefundRoot4 = await dataworkerInstance.buildRelayerRefundRoot(
       blockRange4,
       spokePoolClients,
       expectedPoolRebalanceRoot4.leaves,
@@ -192,7 +193,7 @@ describe("Dataworker: Propose root bundle", async function () {
     // in a previous root bundle. This would be a case where there is excess slow fill payment sent to the spoke
     // pool and we need to send some back to the hub pool, because of this fill in the current block range that
     // came after the slow fill was sent.
-    const { allValidFills } = dataworkerInstance.clients.bundleDataClient.loadData(
+    const { allValidFills } = await dataworkerInstance.clients.bundleDataClient.loadData(
       loadDataResults4.blockRangesForChains,
       spokePoolClients
     );
@@ -210,5 +211,33 @@ describe("Dataworker: Propose root bundle", async function () {
     expect(dataworkerInstance.rootCache).to.not.deep.equal({});
     dataworkerInstance.clearCache();
     expect(dataworkerInstance.rootCache).to.deep.equal({});
+  });
+  it("Exits early if config store version is out of date", async function () {
+    // Set up test so that the latest version in the config store contract is higher than
+    // the version in the config store client.
+    const update = await configStore.updateGlobalConfig(utf8ToHex("VERSION"), "3");
+    const updateTime = (await configStore.provider.getBlock(update.blockNumber)).timestamp;
+    configStoreClient.setConfigStoreVersion(1);
+
+    // Now send a proposal after the update time. Dataworker should exit early.
+    await spokePool_1.setCurrentTime(updateTime + 1);
+    await updateAllClients();
+
+    const deposit = await buildDeposit(
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token_1,
+      depositor,
+      destinationChainId,
+      amountToDeposit
+    );
+    await updateAllClients();
+    await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 0.5, destinationChainId);
+    await updateAllClients();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    expect(multiCallerClient.transactionCount()).to.equal(0);
+    expect(lastSpyLogIncludes(spy, "Skipping proposal because missing updated ConfigStore version")).to.be.true;
+    expect(lastSpyLogLevel(spy)).to.equal("warn");
   });
 });

@@ -1,8 +1,13 @@
 import { randomAddress, toWei, originChainId, destinationChainId, repaymentChainId } from "./utils";
+
+export { CONFIG_STORE_VERSION } from "../src/common";
 export const randomL1Token = randomAddress();
 export const randomOriginToken = randomAddress();
 export const randomDestinationToken = randomAddress();
 export const randomDestinationToken2 = randomAddress();
+
+// This lookback of 24 hours should be enough to cover all Deposit events in the test cases.
+export const DEFAULT_UNFILLED_DEPOSIT_LOOKBACK = 1 * 24 * 60 * 60;
 
 // Max number of refunds in relayer refund leaf for a { repaymentChainId, L2TokenAddress }.
 export const MAX_REFUNDS_PER_RELAYER_REFUND_LEAF = 3;

@@ -1,36 +1,38 @@
-// Used for determining which block range corresponsd to which network. In order, the block ranges passed
-// in the HubPool's proposeRootBundle method should be: Mainnet, Optimism, Polygon, Boba, Arbitrum
+import { ethers } from "../utils";
+import { utils } from "@across-protocol/sdk-v2";
+
+// This array contains all chains that Across supports, although some of the chains could be currently disabled.
+// The order of the chains is important to not change, as the dataworker proposes "bundle block numbers" per chain
+// in the same order as the following list. To add a new chain ID, append it to the end of the list. Never delete
+// a chain ID. The on-chain ConfigStore should store a list of enabled/disabled chain ID's that are a subset
+// of this list, so this list is simply the list of all possible Chain ID's that Across could support.
 export const CHAIN_ID_LIST_INDICES = [1, 10, 137, 288, 42161];
+
+// Maximum supported version of the configuration loaded into the Across ConfigStore.
+// It protects bots from running outdated code against newer version of the on-chain config store.
+// @dev Incorrectly setting this value may lead to incorrect behaviour and potential loss of funds.
+export const CONFIG_STORE_VERSION = 1;
+
+// The first version where UBA is in effect.
+export const { UBA_MIN_CONFIG_STORE_VERSION } = utils;
 
 export const RELAYER_MIN_FEE_PCT = 0.0003;
 
-// Target ~2 days per chain. Avg. block times: { 1: 12s, 10/42161: 0.5s, 137: 2.5s, 288: 30s }
-export const MAX_RELAYER_DEPOSIT_LOOK_BACK: { [chainId: number]: number } = {
-  1: 14400,
-  10: 345600,
-  137: 69120,
-  288: 5760,
-  42161: 345600,
-};
+// Target ~4 hours
+export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 
 // Target ~4 days per chain. Should cover all events needed to construct pending bundle.
 export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
   1: 28800,
-  10: 691200,
+  10: 1382400,
   137: 138240,
   288: 11520,
-  42161: 691200,
+  42161: 1382400,
 };
 
 // Target ~14 days per chain. Should cover all events that could be finalized, so 2x the optimistic
 // rollup challenge period seems safe.
-export const FINALIZER_TOKENBRIDGE_LOOKBACK: { [chainId: number]: number } = {
-  1: 100800,
-  10: 2419200,
-  137: 483840,
-  288: 40320,
-  42161: 2419200,
-};
+export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 
 // Reorgs are anticipated on Ethereum and Polygon. We use different following distances when processing deposit
 // events based on the USD amount of the deposit. This protects the relayer from the worst case situation where it fills
@@ -58,118 +60,77 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   10: 0,
   137: 128, // Commonly used finality level for CEX's that accept Polygon deposits
   288: 0,
+  324: 0,
   42161: 0,
+  // Testnets:
+  5: 0,
+  280: 0,
+  421613: 0,
 };
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   1000: {
     1: 32, // Justified block
-    10: 0,
+    10: 60,
     137: 100, // Probabilistically safe level based on historic Polygon reorgs
     288: 0,
+    324: 0,
     42161: 0,
+    // Testnets:
+    5: 0,
+    280: 0,
+    421613: 0,
   },
   100: {
     1: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
-    10: 0,
+    10: 60,
     137: 80,
     288: 0,
+    324: 0,
     42161: 0,
+    // Testnets:
+    5: 0,
+    280: 0,
+    421613: 0,
   },
 };
 export const QUOTE_TIME_BUFFER = 12 * 5; // 5 blocks on Mainnet.
 
-// Optimism, ethereum can do infinity lookbacks. boba and Arbitrum limited to 100000 on infura.
+export const REDIS_URL_DEFAULT = "redis://localhost:6379";
+
+// Quicknode is the bottleneck here and imposes a 10k block limit on an event search.
+// Alchemy-Polygon imposes a 3500 block limit.
+// Note: a 0 value here leads to an infinite lookback, which would be useful and reduce RPC requests
+// if the RPC provider allows it. This is why the user should override these lookbacks if they are not using
+// Quicknode for example.
 export const CHAIN_MAX_BLOCK_LOOKBACK = {
-  1: 0, // Note: 0 gets defaulted to infinity lookback
-  10: 0,
+  1: 10000,
+  10: 10000, // Quick
   137: 3490,
   288: 4990,
-  42161: 99990,
+  324: 10000,
+  42161: 10000,
+  // Testnets:
+  5: 10000,
+  280: 10000,
+  421613: 10000,
 };
 
 export const BUNDLE_END_BLOCK_BUFFERS = {
-  1: 100, // At 15s/block, 100 blocks = 20 mins
-  10: 3000, // At a conservative 10 TPS, 300 seconds = 3000 transactions. And 1 block per txn.
-  137: 1500, // At 1s/block, 25 mins seconds = 1500 blocks
-  288: 50, // At 30s/block, 50 blocks = 25 mins
-  42161: 3000, // At a conservative 10 TPS, 300 seconds = 3000 transactions. And 1 block per txn.
+  1: 25, // At 12s/block, 25 blocks = 5 mins
+  10: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
+  137: 750, // At 2s/block, 25 mins = 25 * 60 / 2 = 750 blocks
+  288: 5, // At 60s/block, 50 blocks = 25 mins
+  42161: 300, // At a conservative 1 TPS, 5 mins = 300 seconds = 300 transactions. And 1 block per txn.
+  // Testnets:
+  5: 0,
+  421613: 0,
 };
 
 export const DEFAULT_RELAYER_GAS_MULTIPLIER = 1.2;
 
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 100;
-export const CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } = {
-  1: DEFAULT_MULTICALL_CHUNK_SIZE,
-  10: DEFAULT_MULTICALL_CHUNK_SIZE,
-  137: DEFAULT_MULTICALL_CHUNK_SIZE,
-  288: DEFAULT_MULTICALL_CHUNK_SIZE,
-  42161: DEFAULT_MULTICALL_CHUNK_SIZE,
-};
-
-// The most critical failure mode that can happen in the inventory management module is a miss-mapping between L1 token
-//  and the associated L2 token. If this is wrong the bot WILL delete money. The mapping below is used to enforce that
-// what the hubpool thinks is the correct L2 token for a given L1 token is actually the correct L2 token. It is simply a
-//  sanity check: if for whatever reason this does not line up the bot show fail loudly and stop execution as something
-// is broken and funds are not safe to be sent over the canonical L2 bridges.
-export const l2TokensToL1TokenValidation: { [tokenAddress: string]: { [chainId: number]: string } } = {
-  "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": {
-    10: "0x7F5c764cBc14f9669B88837ca1490cCa17c31607",
-    137: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
-    288: "0x66a2A913e447d6b4BF33EFbec43aAeF87890FBbc",
-    42161: "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8",
-  }, // USDC
-  "0xdAC17F958D2ee523a2206206994597C13D831ec7": {
-    10: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
-    137: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
-    288: "0x5DE1677344D3Cb0D7D465c10b72A8f60699C062d",
-    42161: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
-  }, // USDT
-  "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": {
-    10: "0x4200000000000000000000000000000000000006",
-    137: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619",
-    288: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
-    42161: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-  }, // WETH
-  "0x6B175474E89094C44Da98b954EedeAC495271d0F": {
-    10: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1",
-    137: "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063",
-    288: "0xf74195Bb8a5cf652411867c5C2C5b8C2a402be35",
-    42161: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1",
-  }, // DAI
-  "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": {
-    10: "0x68f180fcCe6836688e9084f035309E29Bf0A2095",
-    137: "0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6",
-    288: "0xdc0486f8bf31DF57a952bcd3c1d3e166e3d9eC8b",
-    42161: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f",
-  }, // WBTC
-  "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828": {
-    10: "0xE7798f023fC62146e8Aa1b36Da45fb70855a77Ea",
-    137: "0x3066818837c5e6eD6601bd5a91B0762877A6B731",
-    288: "0x780f33Ad21314d9A1Ffb6867Fe53d48a76Ec0D16",
-    42161: "0xd693Ec944A85eeca4247eC1c3b130DCa9B0C3b22",
-  }, // UMA
-  "0x42bBFa2e77757C645eeaAd1655E0911a7553Efbc": {
-    288: "0xa18bF3994C0Cc6E3b63ac420308E5383f53120D7",
-  }, // BOBA
-  "0x3472A5A71965499acd81997a54BBA8D852C6E53d": {
-    137: "0x1FcbE5937B0cc2adf69772D228fA4205aCF4D9b2",
-    42161: "0xBfa641051Ba0a0Ad1b0AcF549a89536A0D76472E",
-  }, // BADGER
-  "0xba100000625a3754423978a60c9317c58a424e3D": {
-    10: "0xFE8B128bA8C78aabC59d4c64cEE7fF28e9379921",
-    137: "0x9a71012B13CA4d3D0Cdc72A177DF3ef03b0E76A3",
-    42161: "0x040d1EdC9569d4Bab2D15287Dc5A4F10F56a56B8",
-  }, // BAL
-};
-
-// Maps chain ID to root bundle ID to ignore because the roots are known to be invalid from the perspective of the
-// latest dataworker code, or there is no matching L1 root bundle, because the root bundle was relayed by an admin.
-export const IGNORED_SPOKE_BUNDLES = {
-  1: [357, 322, 321, 104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
-  10: [105, 104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
-  137: [105, 104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
-  288: [96, 93, 90, 85, 78, 72, 68, 67, 65, 2],
-  42161: [105, 104, 101, 96, 89, 83, 79, 78, 75, 74, 23, 2],
+export const DEFAULT_CHAIN_MULTICALL_CHUNK_SIZE: { [chainId: number]: number } = {
+  10: 75,
 };
 
 // List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals
@@ -179,3 +140,49 @@ export const IGNORED_SPOKE_BUNDLES = {
 // to correct the bundles such as 15049343 that missed some events.
 export const IGNORED_HUB_PROPOSED_BUNDLES: number[] = [];
 export const IGNORED_HUB_EXECUTED_BUNDLES: number[] = [];
+
+// This is the max distance on each chain that reorgs can happen.
+// Provider caching will not be allowed for queries whose responses depend on blocks closer than this many blocks.
+// This is intended to be conservative.
+export const MAX_REORG_DISTANCE: { [chainId: number]: number } = {
+  1: 64,
+  10: 120,
+  137: 256,
+  288: 0,
+  324: 0,
+  42161: 0,
+  // Testnets:
+  5: 0,
+  280: 0,
+  421613: 0,
+};
+
+// Reasonable default maxFeePerGas and maxPriorityFeePerGas scalers for each chain.
+export const DEFAULT_GAS_FEE_SCALERS: {
+  [chainId: number]: { maxFeePerGasScaler: number; maxPriorityFeePerGasScaler: number };
+} = {
+  1: { maxFeePerGasScaler: 3, maxPriorityFeePerGasScaler: 1.2 },
+  10: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 1 },
+};
+
+// This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
+export const BLOCK_NUMBER_TTL = 60;
+
+// This is the TTL for the provider cache.
+export const PROVIDER_CACHE_TTL = 3600;
+export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
+
+// Multicall3 Constants:
+export const multicall3Addresses = {
+  1: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  5: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  10: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  137: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  288: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  42161: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  421613: "0xcA11bde05977b3631167028862bE2a173976CA11",
+};
+export type Multicall2Call = {
+  callData: ethers.utils.BytesLike;
+  target: string;
+};

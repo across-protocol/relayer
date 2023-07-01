@@ -1,7 +1,7 @@
 import { buildDeposit, buildFillForRepaymentChain, createSpyLogger, lastSpyLogIncludes, toBNWei } from "./utils";
 import { Contract, SignerWithAddress, ethers, expect } from "./utils";
 import {
-  AcrossConfigStoreClient,
+  ConfigStoreClient,
   BundleDataClient,
   HubPoolClient,
   SpokePoolClient,
@@ -22,7 +22,7 @@ import * as constants from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { getNetworkName, getRefundForFills, MAX_UINT_VAL, toBN } from "../src/utils";
-import { spokePoolClientsToProviders } from "../src/dataworker/DataworkerClientHelper";
+import { spokePoolClientsToProviders } from "../src/common";
 import { MockAdapterManager } from "./mocks";
 import { BalanceType } from "../src/interfaces";
 
@@ -31,7 +31,7 @@ let hubPool: Contract, spokePool_1: Contract, spokePool_2: Contract;
 let dataworker: SignerWithAddress, depositor: SignerWithAddress;
 let dataworkerInstance: Dataworker;
 let bundleDataClient: BundleDataClient;
-let configStoreClient: AcrossConfigStoreClient;
+let configStoreClient: ConfigStoreClient;
 let hubPoolClient: HubPoolClient, multiCallerClient: MultiCallerClient;
 let tokenTransferClient: TokenTransferClient;
 let monitorInstance: Monitor;
@@ -42,7 +42,9 @@ let updateAllClients: () => Promise<void>;
 
 const { spy, spyLogger } = createSpyLogger();
 
-const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "Unknown", ALL_CHAINS_NAME];
+const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "unknown", ALL_CHAINS_NAME];
+
+let defaultMonitorEnvVars;
 
 describe("Monitor", async function () {
   beforeEach(async function () {
@@ -69,9 +71,7 @@ describe("Monitor", async function () {
       0
     ));
 
-    const configuredNetworks = [1, repaymentChainId, originChainId, destinationChainId];
-
-    const monitorConfig = new MonitorConfig({
+    defaultMonitorEnvVars = {
       STARTING_BLOCK_NUMBER: "0",
       ENDING_BLOCK_NUMBER: "100",
       UTILIZATION_ENABLED: "true",
@@ -83,10 +83,13 @@ describe("Monitor", async function () {
       MONITOR_REPORT_ENABLED: "true",
       MONITOR_REPORT_INTERVAL: "10",
       MONITORED_RELAYERS: `["${depositor.address}"]`,
-      CONFIGURED_NETWORKS: JSON.stringify(configuredNetworks),
-    });
+    };
+    const monitorConfig = new MonitorConfig(defaultMonitorEnvVars);
 
-    const chainIds = [1, repaymentChainId, originChainId, destinationChainId];
+    // Set the config store version to 0 to match the default version in the ConfigStoreClient.
+    process.env.CONFIG_STORE_VERSION = "0";
+
+    const chainIds = [hubPoolClient.chainId, repaymentChainId, originChainId, destinationChainId];
     bundleDataClient = new BundleDataClient(
       spyLogger,
       {
@@ -114,6 +117,8 @@ describe("Monitor", async function () {
       tokenTransferClient,
       crossChainTransferClient,
     });
+
+    await updateAllClients();
   });
 
   it("Monitor should log when an unknown disputer proposes or disputes a root bundle", async function () {
@@ -128,12 +133,14 @@ describe("Monitor", async function () {
     await hubPool
       .connect(dataworker)
       .proposeRootBundle(bundleBlockEvalNumbers, 1, mockTreeRoot, mockTreeRoot, mockTreeRoot);
+    await updateAllClients();
     await monitorInstance.update();
 
     await monitorInstance.checkUnknownRootBundleCallers();
     expect(lastSpyLogIncludes(spy, unknownProposerMessage)).to.be.true;
 
     await hubPool.connect(dataworker).disputeRootBundle();
+    await updateAllClients();
     await monitorInstance.update();
     await monitorInstance.checkUnknownRootBundleCallers();
 
@@ -149,7 +156,6 @@ describe("Monitor", async function () {
 
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_1,
       l2Token,
@@ -184,7 +190,6 @@ describe("Monitor", async function () {
     await monitorInstance.update();
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_1,
       l2Token,
@@ -202,13 +207,14 @@ describe("Monitor", async function () {
     await multiCallerClient.executeTransactionQueue();
 
     // While the new bundle is still pending, refunds are in the "next" category
+    await updateAllClients();
     await monitorInstance.update();
     let reports = monitorInstance.initializeBalanceReports(
       monitorInstance.monitorConfig.monitoredRelayers,
       monitorInstance.clients.hubPoolClient.getL1Tokens(),
       TEST_NETWORK_NAMES
     );
-    monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
+    await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
     expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
     expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(getRefundForFills([fill1]));
 
@@ -216,17 +222,26 @@ describe("Monitor", async function () {
     await executeBundle(hubPool);
 
     // Before relayer refund leaves are executed, the refund is now in the pending column
+    await updateAllClients();
     await monitorInstance.update();
     reports = monitorInstance.initializeBalanceReports(
       monitorInstance.monitorConfig.monitoredRelayers,
       monitorInstance.clients.hubPoolClient.getL1Tokens(),
       TEST_NETWORK_NAMES
     );
-    monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
+    await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
     expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
     expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(
       getRefundForFills([fill1])
     );
+
+    // Manually relay the roots to spoke pools since adapter is a dummy and won't actually relay messages.
+    const validatedRootBundles = hubPoolClient.getValidatedRootBundles();
+    for (const rootBundle of validatedRootBundles) {
+      await spokePool_1.relayRootBundle(rootBundle.relayerRefundRoot, rootBundle.slowRelayRoot);
+      await spokePool_2.relayRootBundle(rootBundle.relayerRefundRoot, rootBundle.slowRelayRoot);
+    }
+    await updateAllClients();
 
     // Execute relayer refund leaves. Send funds to spoke pools to execute the leaves.
     await erc20_2.mint(spokePool_2.address, getRefundForFills([fill1]));
@@ -245,7 +260,7 @@ describe("Monitor", async function () {
       monitorInstance.clients.hubPoolClient.getL1Tokens(),
       TEST_NETWORK_NAMES
     );
-    monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
+    await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
     expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
     expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
 
@@ -256,7 +271,7 @@ describe("Monitor", async function () {
       toBN(5),
       destinationChainId
     );
-    monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
+    await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
     expect(
       reports[depositor.address]["L1"][getNetworkName(destinationChainId)][BalanceType.PENDING_TRANSFERS]
     ).to.be.equal(toBN(5));
@@ -267,7 +282,6 @@ describe("Monitor", async function () {
     await monitorInstance.update();
     // Send a deposit and a fill so that dataworker builds simple roots.
     const deposit = await buildDeposit(
-      configStoreClient,
       hubPoolClient,
       spokePool_1,
       l2Token,
@@ -297,6 +311,7 @@ describe("Monitor", async function () {
       l1Token.address,
       toBN(5)
     );
+    await updateAllClients();
     await monitorInstance.update();
     await monitorInstance.checkStuckRebalances();
 
@@ -310,16 +325,7 @@ describe("Monitor", async function () {
   it("Monitor should report unfilled deposits", async function () {
     await updateAllClients();
     await monitorInstance.update();
-    await buildDeposit(
-      configStoreClient,
-      hubPoolClient,
-      spokePool_1,
-      l2Token,
-      l1Token,
-      depositor,
-      destinationChainId,
-      amountToDeposit
-    );
+    await buildDeposit(hubPoolClient, spokePool_1, l2Token, l1Token, depositor, destinationChainId, amountToDeposit);
     await monitorInstance.update();
     await monitorInstance.reportUnfilledDeposits();
 
@@ -341,12 +347,55 @@ describe("Monitor", async function () {
 
     expect(lastSpyLogIncludes(spy, `Transfers that are not fills for relayer ${depositor.address} 🦨`)).to.be.true;
   });
+
+  it("Monitor should send token refills", async function () {
+    const refillConfig = [
+      {
+        account: hubPool.address,
+        isHubPool: true,
+        chainId: hubPoolClient.chainId,
+        trigger: 1,
+        target: 2,
+      },
+      {
+        account: spokePool_1.address,
+        isHubPool: false,
+        chainId: originChainId,
+        trigger: 1,
+        target: 2,
+      },
+    ];
+    const monitorEnvs = {
+      ...defaultMonitorEnvVars,
+      REFILL_BALANCES: JSON.stringify(refillConfig),
+    };
+    const _monitorConfig = new MonitorConfig(monitorEnvs);
+    const _monitor = new Monitor(spyLogger, _monitorConfig, {
+      bundleDataClient,
+      configStoreClient,
+      multiCallerClient,
+      hubPoolClient,
+      spokePoolClients,
+      tokenTransferClient,
+      crossChainTransferClient,
+    });
+    await _monitor.update();
+
+    expect(await spokePool_1.provider.getBalance(spokePool_1.address)).to.equal(0);
+
+    await _monitor.refillBalances();
+
+    expect(multiCallerClient.transactionCount()).to.equal(1);
+    await multiCallerClient.executeTransactionQueue();
+
+    expect(await spokePool_1.provider.getBalance(spokePool_1.address)).to.equal(toBNWei("2"));
+  });
 });
 
 const executeBundle = async (hubPool: Contract) => {
   const latestBlock = await hubPool.provider.getBlockNumber();
-  const blockRange = constants.CHAIN_ID_TEST_LIST.map((_) => [0, latestBlock]);
-  const expectedPoolRebalanceRoot = dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
+  const blockRange = constants.CHAIN_ID_TEST_LIST.map(() => [0, latestBlock]);
+  const expectedPoolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
   await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
   for (const leaf of expectedPoolRebalanceRoot.leaves) {
     await hubPool.executeRootBundle(

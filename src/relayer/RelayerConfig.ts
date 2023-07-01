@@ -1,4 +1,4 @@
-import { BigNumber, toBNWei, assert, toBN, replaceAddressCase } from "../utils";
+import { BigNumber, toBNWei, assert, toBN, replaceAddressCase, ethers } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
 import { InventoryConfig } from "../interfaces";
@@ -10,7 +10,6 @@ export class RelayerConfig extends CommonConfig {
   readonly debugProfitability: boolean;
   // Whether token price fetch failures will be ignored when computing relay profitability.
   // If this is false, the relayer will throw an error when fetching prices fails.
-  readonly ignoreTokenPriceFailures: boolean;
   readonly sendingRelaysEnabled: boolean;
   readonly sendingSlowRelaysEnabled: boolean;
   readonly relayerTokens: string[];
@@ -18,6 +17,8 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
   readonly acceptInvalidFills: boolean;
+  // List of depositors we only want to send slow fills for.
+  readonly slowDepositors: string[];
   // Following distances in blocks to guarantee finality on each chain.
   readonly minDepositConfirmations: {
     [threshold: number]: { [chainId: number]: number };
@@ -27,13 +28,15 @@ export class RelayerConfig extends CommonConfig {
   // timestamp, since the ConfigStoreClient.computeRealizedLpFee returns the current lpFee % for quote times >
   // HEAD
   readonly quoteTimeBuffer: number;
+  // Set to false to skip querying max deposit limit from /limits Vercel API endpoint. Otherwise relayer will not
+  // fill any deposit over the limit which is based on liquidReserves in the HubPool.
+  readonly ignoreLimits: boolean;
 
   constructor(env: ProcessEnv) {
     const {
       RELAYER_DESTINATION_CHAINS,
+      SLOW_DEPOSITORS,
       DEBUG_PROFITABILITY,
-      IGNORE_PROFITABILITY,
-      IGNORE_TOKEN_PRICE_FAILURES,
       RELAYER_GAS_MULTIPLIER,
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
@@ -43,13 +46,19 @@ export class RelayerConfig extends CommonConfig {
       ACCEPT_INVALID_FILLS,
       MIN_DEPOSIT_CONFIRMATIONS,
       QUOTE_TIME_BUFFER,
+      RELAYER_IGNORE_LIMITS,
     } = env;
     super(env);
 
     // Empty means all chains.
     this.relayerDestinationChains = RELAYER_DESTINATION_CHAINS ? JSON.parse(RELAYER_DESTINATION_CHAINS) : [];
     // Empty means all tokens.
-    this.relayerTokens = RELAYER_TOKENS ? JSON.parse(RELAYER_TOKENS) : [];
+    this.relayerTokens = RELAYER_TOKENS
+      ? JSON.parse(RELAYER_TOKENS).map((token) => ethers.utils.getAddress(token))
+      : [];
+    this.slowDepositors = SLOW_DEPOSITORS
+      ? JSON.parse(SLOW_DEPOSITORS).map((depositor) => ethers.utils.getAddress(depositor))
+      : [];
     this.inventoryConfig = RELAYER_INVENTORY_CONFIG ? JSON.parse(RELAYER_INVENTORY_CONFIG) : {};
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
@@ -73,8 +82,9 @@ export class RelayerConfig extends CommonConfig {
           );
           this.inventoryConfig.tokenConfig[l1Token][chainId].targetPct = toBNWei(targetPct).div(100);
           this.inventoryConfig.tokenConfig[l1Token][chainId].thresholdPct = toBNWei(thresholdPct).div(100);
-          if (unwrapWethThreshold !== undefined)
+          if (unwrapWethThreshold !== undefined) {
             this.inventoryConfig.tokenConfig[l1Token][chainId].unwrapWethThreshold = toBNWei(unwrapWethThreshold);
+          }
           this.inventoryConfig.tokenConfig[l1Token][chainId].unwrapWethTarget = unwrapWethTarget
             ? toBNWei(unwrapWethTarget)
             : toBNWei(2);
@@ -82,8 +92,6 @@ export class RelayerConfig extends CommonConfig {
       });
     }
     this.debugProfitability = DEBUG_PROFITABILITY === "true";
-    this.ignoreProfitability = IGNORE_PROFITABILITY === "true";
-    this.ignoreTokenPriceFailures = IGNORE_TOKEN_PRICE_FAILURES === "true";
     this.relayerGasMultiplier = toBNWei(RELAYER_GAS_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MULTIPLIER);
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
@@ -91,7 +99,7 @@ export class RelayerConfig extends CommonConfig {
     (this.minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS
       ? JSON.parse(MIN_DEPOSIT_CONFIRMATIONS)
       : Constants.MIN_DEPOSIT_CONFIRMATIONS),
-      this.spokePoolChains.forEach((chainId) => {
+      this.chainIdListIndices.forEach((chainId) => {
         Object.keys(this.minDepositConfirmations).forEach((threshold) => {
           const nBlocks: number = this.minDepositConfirmations[threshold][chainId];
           assert(
@@ -103,5 +111,6 @@ export class RelayerConfig extends CommonConfig {
     // Force default thresholds in MDC config.
     this.minDepositConfirmations["default"] = Constants.DEFAULT_MIN_DEPOSIT_CONFIRMATIONS;
     this.quoteTimeBuffer = QUOTE_TIME_BUFFER ? Number(QUOTE_TIME_BUFFER) : Constants.QUOTE_TIME_BUFFER;
+    this.ignoreLimits = RELAYER_IGNORE_LIMITS === "true";
   }
 }

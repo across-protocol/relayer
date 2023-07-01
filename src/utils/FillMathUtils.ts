@@ -13,6 +13,14 @@ export function getRefund(fillAmount: BigNumber, realizedLpFeePct: BigNumber): B
   return fillAmount.mul(toBNWei(1).sub(realizedLpFeePct)).div(toBNWei(1));
 }
 
+export function getFillAmountMinusFees(
+  fillAmount: BigNumber,
+  realizedLpFeePct: BigNumber,
+  relayerFeePct: BigNumber
+): BigNumber {
+  return fillAmount.mul(toBNWei(1).sub(realizedLpFeePct).sub(relayerFeePct)).div(toBNWei(1));
+}
+
 export function getRefundForFills(fills: Fill[]): BigNumber {
   let accumulator = toBN(0);
   fills.forEach((fill) => (accumulator = accumulator.add(_getRefundForFill(fill))));
