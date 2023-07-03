@@ -3,6 +3,10 @@ import { DepositWithBlock, FundsDepositedEvent } from "../interfaces";
 import { getNetworkName, paginatedEventQuery, spreadEventWithBlockNumber } from "../utils";
 
 export class SpokePoolClient extends clients.SpokePoolClient {
+  getCurrentTime(): number {
+    return this.currentTime;
+  }
+
   async findDeposit(depositId: number, destinationChainId: number, depositor: string): Promise<DepositWithBlock> {
     // Binary search for block where SpokePool.numberOfDeposits incremented to fill.depositId + 1.
     // This way we can get the blocks before and after the deposit with deposit ID = fill.depositId

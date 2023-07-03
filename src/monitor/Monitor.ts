@@ -181,10 +181,10 @@ export class Monitor {
   }
 
   async reportUnfilledDeposits(): Promise<void> {
-    const unfilledDeposits = getUnfilledDeposits(
+    const unfilledDeposits = await getUnfilledDeposits(
       this.clients.spokePoolClients,
-      this.monitorConfig.maxRelayerLookBack,
-      this.clients.configStoreClient
+      this.clients.configStoreClient,
+      this.monitorConfig.maxRelayerLookBack
     );
 
     // Group unfilled amounts by chain id and token id.
