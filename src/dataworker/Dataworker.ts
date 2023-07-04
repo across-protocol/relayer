@@ -61,7 +61,7 @@ type RootBundle = {
   tree: MerkleTree<SlowFillLeaf>;
 };
 
-const ovmWethTokens = [CONTRACT_ADDRESSES[10].weth.address];
+const ovmWethTokens = [CONTRACT_ADDRESSES[10].weth.address, CONTRACT_ADDRESSES[10].eth.address];
 
 export type PoolRebalanceRoot = {
   runningBalances: RunningBalances;
