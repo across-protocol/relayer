@@ -15,6 +15,7 @@ export { config } from "dotenv";
 export * from "./ProviderUtils";
 export * from "./SignerUtils";
 export * from "./DepositUtils";
+export * from "./BlockUtils";
 export * from "./EventUtils";
 export * from "./FillUtils";
 export * from "./ObjectUtils";
