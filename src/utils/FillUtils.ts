@@ -267,7 +267,7 @@ export async function getUnfilledDeposits(
   for (const originClient of Object.values(spokePoolClients)) {
     const { chainId: originChainId } = originClient;
     const chainIdx = chainIds.indexOf(originChainId);
-    assert(chainIdx !== -1, `Invalid chain index for chainId ${originChainId} (${chainIdx}) (${chainIds}`);
+    assert(chainIdx !== -1, `Invalid chain index for chainId ${originChainId} (${chainIdx})`);
     const earliestBlockNumber = earliestBlockNumbers[chainIdx];
 
     for (const destinationChain of chainIds.filter((chainId) => chainId !== originChainId)) {
