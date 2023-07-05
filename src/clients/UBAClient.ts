@@ -8,8 +8,14 @@ import { SpokePoolClient } from "./SpokePoolClient";
 type RelayFeeCalculatorConfig = relayFeeCalculator.RelayFeeCalculatorConfig;
 
 type SpokePoolEventFilter = {
+  originChainId?: number;
+  destinationChainId?: number;
   relayer?: string;
   maxBlockAge?: number;
+};
+
+type SpokePoolFillFilter = SpokePoolEventFilter & {
+  repaymentChainId?: number;
 };
 
 export class UBAClient extends clients.UBAClient {
@@ -26,27 +32,31 @@ export class UBAClient extends clients.UBAClient {
   // @param chainId Chain ID to search.
   // @param filter  Optional filtering criteria.
   // @returns Array of FillWithBlock events matching the chain ID and optional filtering criteria.
-  getFills(chainId: number, filter: SpokePoolEventFilter): FillWithBlock[] {
-    const { relayer, maxBlockAge } = filter;
-
-    const fills = this.spokePoolClients[chainId].getFillsForOriginChain(chainId).filter((fill) => {
-      const spokePoolClient = this.spokePoolClients[fill.originChainId];
-
+  getFills(chainId: number, filter: SpokePoolFillFilter = {}): FillWithBlock[] {
+    const spokePoolClient = this.spokePoolClients[chainId];
+    let fills = spokePoolClient.getFills();
+    fills = fills.filter((fill) => {
       if (!isDefined(spokePoolClient)) {
         return false;
       }
 
-      if (isDefined(maxBlockAge) && spokePoolClient.latestBlockNumber - fill.blockNumber > maxBlockAge) {
+      if (isDefined(filter.maxBlockAge) && spokePoolClient.latestBlockNumber - fill.blockNumber > filter.maxBlockAge) {
         return false;
       }
 
-      if (isDefined(relayer) && relayer !== fill.relayer) {
-        return false;
-      }
+      ["originChainId", "destinationChainId", "repaymentChainId", "relayer"].forEach((field) => {
+        if (isDefined(filter[field]) && filter[field] !== fill[field]) {
+          return false;
+        }
+      });
 
       // @dev The SDK-v2 UBAClient stores the base SpokePoolClient definition, but here we use an extended variant.
       // This will be resolved when upstreaming to SDK-v2.
-      return isDefined(queryHistoricalDepositForFill(spokePoolClient as SpokePoolClient, fill));
+      const defined = isDefined(
+        queryHistoricalDepositForFill(this.spokePoolClients[fill.originChainId] as SpokePoolClient, fill)
+      );
+
+      return defined;
     });
 
     return fills;
@@ -57,7 +67,7 @@ export class UBAClient extends clients.UBAClient {
   // @param filter  Optional filtering criteria.
   // @returns Array of RefundRequestWithBlock events matching the chain ID and optional filtering criteria.
   getRefundRequests(chainId: number, filter: SpokePoolEventFilter = {}): RefundRequestWithBlock[] {
-    const { relayer, maxBlockAge } = filter;
+    const { maxBlockAge } = filter;
 
     const refundRequests = this.spokePoolClients[chainId].getRefundRequests().filter((refundRequest) => {
       const spokePoolClient = this.spokePoolClients[refundRequest.repaymentChainId];
@@ -66,9 +76,11 @@ export class UBAClient extends clients.UBAClient {
         return false;
       }
 
-      if (isDefined(relayer) && relayer !== refundRequest.relayer) {
-        return false;
-      }
+      ["originChainId", "destinationChainId", "repaymentChainId", "relayer"].forEach((field) => {
+        if (isDefined(refundRequest[field]) && filter[field] !== refundRequest[field]) {
+          return false;
+        }
+      });
 
       return this.refundRequestIsValid(chainId, refundRequest);
     });

@@ -113,7 +113,6 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
         relayerTokens: [],
         slowDepositors: [],
         relayerDestinationChains: [],
-        maxRelayerLookBack: 24 * 60 * 60,
         minDepositConfirmations: defaultMinDepositConfirmations,
         quoteTimeBuffer: 0,
       } as unknown as RelayerConfig
@@ -151,7 +150,7 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
     await buildFillForRepaymentChain(spokePool_2, relayer, deposit, 1, spokePoolClient_1.chainId);
     await updateAllClients();
 
-    const fills = spokePoolClient_2.getFillsForRelayer(relayer.address);
+    const fills = ubaClient.getFills(spokePoolClient_2.chainId, { relayer: relayer.address });
     expect(fills.length).to.equal(1);
     const fill = fills.pop() as FillWithBlock;
 
@@ -159,9 +158,9 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
     expect(fill.amount).to.equal(deposit.amount);
     expect(fill.relayer).to.equal(relayer.address);
 
-    expect(spokePoolClient_1.getRefundRequests().length).to.equal(0);
+    expect(ubaClient.getRefundRequests(spokePoolClient_1.chainId, { relayer: relayer.address }).length).to.equal(0);
 
-    const eligibleFills = relayerInstance.findFillsWithoutRefundRequests(spokePoolClient_2, []);
+    const eligibleFills = relayerInstance.findFillsWithoutRefundRequests(spokePoolClient_2.chainId, []);
     expect(eligibleFills.length).to.equal(1);
     const eligibleFill = eligibleFills.pop() as FillWithBlock;
     expect(eligibleFill).to.deep.equal(fill);

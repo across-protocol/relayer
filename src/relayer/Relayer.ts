@@ -317,15 +317,19 @@ export class Relayer {
     );
 
     // Bound the event range by the relayer lookback. Must be resolved from an offset (in seconds) to a block number.
-    const _maxBlockAges = await Promise.all(
-      spokePoolClients.map((spokePoolClient) => {
-        const currentTime = spokePoolClient.getCurrentTime();
-        return getBlockForTimestamp(spokePoolClient.chainId, currentTime - this.config.maxRelayerLookBack);
-      })
-    );
-    const maxBlockAges = Object.fromEntries(
-      _maxBlockAges.map((blockNumber, idx) => [spokePoolClients[idx].chainId, blockNumber])
-    );
+    let maxBlockAges: { [chainId: number]: number } = {};
+    if (isDefined(this.config.maxRelayerLookBack)) {
+      const _maxBlockAges = await Promise.all(
+        spokePoolClients.map((spokePoolClient) => {
+          const currentTime = spokePoolClient.getCurrentTime();
+          return getBlockForTimestamp(spokePoolClient.chainId, currentTime - this.config.maxRelayerLookBack);
+        })
+      );
+
+      maxBlockAges = Object.fromEntries(
+        _maxBlockAges.map((blockNumber, idx) => [spokePoolClients[idx].chainId, blockNumber])
+      );
+    }
 
     // For each refund/repayment Spoke Pool, group its set of refund requests by corresponding destination chain.
     const refundRequestsByDstChain = Object.fromEntries(
