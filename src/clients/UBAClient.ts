@@ -62,7 +62,7 @@ export class UBAClient extends clients.UBAClient {
     const refundRequests = this.spokePoolClients[chainId].getRefundRequests().filter((refundRequest) => {
       const spokePoolClient = this.spokePoolClients[refundRequest.repaymentChainId];
 
-      if (isDefined(maxBlockAge) ?? spokePoolClient.latestBlockNumber - refundRequest.blockNumber > maxBlockAge) {
+      if (isDefined(maxBlockAge) && spokePoolClient.latestBlockNumber - refundRequest.blockNumber > maxBlockAge) {
         return false;
       }
 
