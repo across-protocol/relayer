@@ -1,3 +1,4 @@
+import hre from "hardhat";
 import { random } from "lodash";
 import {
   ethers,
@@ -8,6 +9,7 @@ import {
   getLastBlockTime,
   buildDeposit,
   buildFillForRepaymentChain,
+  buildRefundRequest,
 } from "./utils";
 import { createSpyLogger, deployConfigStore, deployAndConfigureHubPool, winston } from "./utils";
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId } from "./utils";
@@ -42,6 +44,24 @@ let relayerInstance: Relayer;
 let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 let ubaClient: UBAClient;
+
+// @dev During test it occasionally occurs that hre does not mine a block, even though a transaction was submitted.
+// This leads to sporadic failures. Therefore, implement a polling loop and kick the chain as needed in order to ensure
+// it doesn't stall. This absolutely should not be necessary; there's obviously one or more bugs somewhere.
+// @todo: Resolve this.
+async function waitOnBlock(spokePoolClient: SpokePoolClient): Promise<void> {
+  const provider = spokePoolClient.spokePool.provider;
+
+  let loop = 0;
+  let latest = await provider.getBlockNumber();
+  while (latest <= spokePoolClient.latestBlockNumber) {
+    if (loop++ % 5 === 0) {
+      await hre.network.provider.send("evm_mine");
+    }
+    await delay(0.1);
+    latest = await provider.getBlockNumber();
+  }
+}
 
 describe("Relayer: Request refunds for cross-chain repayments", async function () {
   beforeEach(async function () {
@@ -87,10 +107,14 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
       destinationChainId,
       spokePool2DeploymentBlock
     );
-    spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
-    const chainIds = [originChainId, destinationChainId];
-    ubaClient = new UBAClient(chainIds, hubPoolClient, spokePoolClients, spyLogger);
+    // Map SpokePool clients by chain ID.
+    spokePoolClients = Object.fromEntries(
+      [spokePoolClient_1, spokePoolClient_2].map((spokePoolClient) => [spokePoolClient.chainId, spokePoolClient])
+    );
+    const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
+
+    ubaClient = new UBAClient(chainIds, [], hubPoolClient, spokePoolClients, spyLogger);
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     profitClient.testInit();
@@ -150,19 +174,24 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
     await buildFillForRepaymentChain(spokePool_2, relayer, deposit, 1, spokePoolClient_1.chainId);
     await updateAllClients();
 
-    const fills = ubaClient.getFills(spokePoolClient_2.chainId, { relayer: relayer.address });
+    const fills = await ubaClient.getFills(spokePoolClient_2.chainId, { relayer: relayer.address });
     expect(fills.length).to.equal(1);
-    const fill = fills.pop() as FillWithBlock;
+    const fill = fills[0] as FillWithBlock;
 
     expect(fill.depositId).to.equal(deposit.depositId);
     expect(fill.amount).to.equal(deposit.amount);
     expect(fill.relayer).to.equal(relayer.address);
 
-    expect(ubaClient.getRefundRequests(spokePoolClient_1.chainId, { relayer: relayer.address }).length).to.equal(0);
+    const refundRequests = await ubaClient.getRefundRequests(spokePoolClient_1.chainId, { relayer: relayer.address });
+    expect(refundRequests.length).to.equal(0);
 
-    const eligibleFills = relayerInstance.findFillsWithoutRefundRequests(spokePoolClient_2.chainId, []);
+    const eligibleFills = await relayerInstance.findFillsWithoutRefundRequests(
+      spokePoolClient_2.chainId,
+      [],
+      spokePoolClient_2.deploymentBlock
+    );
     expect(eligibleFills.length).to.equal(1);
-    const eligibleFill = eligibleFills.pop() as FillWithBlock;
+    const eligibleFill = eligibleFills[0] as FillWithBlock;
     expect(eligibleFill).to.deep.equal(fill);
   });
 
@@ -181,7 +210,7 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
 
     const fills = spokePoolClient_2.getFillsForRelayer(relayer.address);
     expect(fills.length).to.equal(1);
-    const fill = fills.pop() as FillWithBlock;
+    const fill = fills[0] as FillWithBlock;
 
     expect(fill.depositId).to.equal(deposit.depositId);
     expect(fill.amount).to.equal(deposit.amount);
@@ -189,28 +218,123 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
 
     expect(spokePoolClient_1.getRefundRequests().length).to.equal(0);
     await relayerInstance.requestRefunds();
-
-    // @note: hre doesn't always increment block numbers immediately after a txn, so burn
-    // some time here so the subsequent call to spokePoolClient.update() doesn't bail.
-    let latest: number;
-    do {
-      latest = await spokePoolClient_1.spokePool.provider.getBlockNumber();
-      await delay(0.25);
-    } while (latest <= spokePoolClient_1.latestBlockNumber);
-
+    await waitOnBlock(spokePoolClient_1);
     await updateAllClients();
 
-    const refundRequests = spokePoolClient_1.getRefundRequests();
+    let refundRequests = spokePoolClient_1.getRefundRequests();
     expect(refundRequests.length).to.equal(1);
-    const refundRequest = refundRequests.pop() as RefundRequestWithBlock;
+    let refundRequest = refundRequests[0] as RefundRequestWithBlock;
+    const transactionHash = refundRequest.transactionHash;
 
     expect(refundRequest.depositId).to.equal(deposit.depositId);
     expect(refundRequest.amount).to.equal(deposit.amount);
     expect(refundRequest.relayer).to.equal(relayer.address);
+
+    // Extension: Ensure that the refund request is not resubmitted.
+    await relayerInstance.requestRefunds();
+    await waitOnBlock(spokePoolClient_1);
+    await updateAllClients();
+
+    refundRequests = spokePoolClient_1.getRefundRequests();
+    expect(refundRequests.length).to.equal(1);
+    refundRequest = refundRequests[0] as RefundRequestWithBlock;
+    expect(refundRequest.transactionHash).to.equal(transactionHash);
   });
 
-  it.skip("Ignores invalid refund requests", async function () {
-    return;
+  // @note Temporarily disabled, pending upstream fixes in the SDK.
+  it("Skips refund requests for invalid fills", async function () {
+    const deposit = await buildDeposit(
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId,
+      toBNWei(random(1, 10).toPrecision(9))
+    );
+
+    // Submit a invalid fill (for a non-existent deposit).
+    const fakeDeposit = { ...deposit };
+    fakeDeposit.realizedLpFeePct = fakeDeposit.realizedLpFeePct.sub(1);
+    fakeDeposit.relayerFeePct = fakeDeposit.relayerFeePct.sub(fakeDeposit.relayerFeePct);
+
+    const fakeFill = await buildFillForRepaymentChain(spokePool_2, relayer, fakeDeposit, 1, spokePoolClient_1.chainId);
+    await waitOnBlock(spokePoolClient_2);
+    await updateAllClients();
+
+    // Confirm that both the deposit and fill were read by the relevant SpokePoolClient instances.
+    expect(spokePoolClient_1.getDeposits().length).to.equal(1);
+    const fills = spokePoolClient_2.getFillsForRelayer(relayer.address);
+    expect(fills.length).to.equal(1); // 1 invalid fill
+    expect(fills[0].depositId).to.equal(fakeDeposit.depositId);
+    expect(fills[0].depositId).to.equal(fakeFill.depositId);
+
+    let refundRequests = spokePoolClient_1.getRefundRequests();
+    expect(refundRequests.length).to.equal(0);
+
+    await relayerInstance.requestRefunds();
+    await waitOnBlock(spokePoolClient_1);
+    await updateAllClients();
+
+    refundRequests = spokePoolClient_1.getRefundRequests();
+    expect(refundRequests.length).to.equal(0);
+  });
+
+  it("Ignores invalid refund requests", async function () {
+    // Submit a deposit.
+    const deposit = await buildDeposit(
+      hubPoolClient,
+      spokePool_1,
+      erc20_1,
+      l1Token,
+      depositor,
+      destinationChainId,
+      toBNWei(random(1, 10).toPrecision(9))
+    );
+
+    // Submit a legitimate fill for the deposit.
+    await buildFillForRepaymentChain(spokePool_2, relayer, deposit, 1, spokePoolClient_1.chainId);
+    await waitOnBlock(spokePoolClient_2);
+    await updateAllClients();
+
+    // Confirm that both the deposit and fill were read by the relevant SpokePoolClient instances.
+    const deposits = spokePoolClient_1.getDeposits();
+    expect(deposits.length).to.equal(1);
+    expect(deposits[0].depositId).to.equal(deposit.depositId);
+
+    const fill = (await ubaClient.getFills(spokePoolClient_2.chainId, { relayer: relayer.address }))[0];
+    expect(fill).to.not.be.undefined;
+    expect(fill.depositId).to.equal(deposit.depositId);
+
+    // Submit an _invalid_ refund request for the valid fill.
+    const refundToken = erc20_1.address;
+    const dummyFill = { ...fill };
+    dummyFill.realizedLpFeePct = dummyFill.realizedLpFeePct.sub(1);
+    const { hash: transactionHash } = await buildRefundRequest(
+      spokePoolClient_1.spokePool,
+      relayer,
+      dummyFill,
+      refundToken
+    );
+    await waitOnBlock(spokePoolClient_2);
+    await updateAllClients();
+
+    // Confirm the invalid fill is received by the SpokePoolClient.
+    let refundRequests = spokePoolClient_1.getRefundRequests();
+    expect(refundRequests.length).to.equal(1);
+    expect(refundRequests[0].depositId).to.equal(deposit.depositId);
+    expect(refundRequests[0].transactionHash).to.equal(transactionHash);
+
+    // Request the relayer to evaluate fills and refund requests, and submit any new refund requests if necessary.
+    await relayerInstance.requestRefunds();
+    await waitOnBlock(spokePoolClient_1);
+    await updateAllClients();
+
+    // Ensure that the relayer submitted a refund request.
+    refundRequests = spokePoolClient_1.getRefundRequests();
+    expect(refundRequests.length).to.equal(2);
+    refundRequests.forEach(({ depositId }) => expect(depositId).to.equal(deposit.depositId));
+    expect(refundRequests[0].transactionHash).to.equal(transactionHash);
   });
 });
 

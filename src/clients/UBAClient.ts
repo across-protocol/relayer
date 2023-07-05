@@ -1,9 +1,12 @@
+import assert from "assert";
 import winston from "winston";
-import { clients, relayFeeCalculator } from "@across-protocol/sdk-v2";
+import { clients, utils as sdkUtils, relayFeeCalculator } from "@across-protocol/sdk-v2";
 import { FillWithBlock, RefundRequestWithBlock } from "../interfaces";
 import { isDefined, queryHistoricalDepositForFill } from "../utils";
 import { HubPoolClient } from "./HubPoolClient";
 import { SpokePoolClient } from "./SpokePoolClient";
+
+const { refundRequestIsValid } = clients;
 
 type RelayFeeCalculatorConfig = relayFeeCalculator.RelayFeeCalculatorConfig;
 
@@ -11,7 +14,7 @@ type SpokePoolEventFilter = {
   originChainId?: number;
   destinationChainId?: number;
   relayer?: string;
-  maxBlockAge?: number;
+  fromBlock?: number;
 };
 
 type SpokePoolFillFilter = SpokePoolEventFilter & {
@@ -42,15 +45,14 @@ export class UBAClient extends clients.UBAClient {
   // @param chainId Chain ID to search.
   // @param filter  Optional filtering criteria.
   // @returns Array of FillWithBlock events matching the chain ID and optional filtering criteria.
-  getFills(chainId: number, filter: SpokePoolFillFilter = {}): FillWithBlock[] {
+  async getFills(chainId: number, filter: SpokePoolFillFilter = {}): Promise<FillWithBlock[]> {
     const spokePoolClient = this.spokePoolClients[chainId];
-    let fills = spokePoolClient.getFills();
-    fills = fills.filter((fill) => {
+    const fills = sdkUtils.filterAsync(spokePoolClient.getFills(), async (fill) => {
       if (!isDefined(spokePoolClient)) {
         return false;
       }
 
-      if (isDefined(filter.maxBlockAge) && spokePoolClient.latestBlockNumber - fill.blockNumber > filter.maxBlockAge) {
+      if (isDefined(filter.fromBlock) && spokePoolClient.latestBlockNumber - fill.blockNumber > filter.fromBlock) {
         return false;
       }
 
@@ -66,7 +68,14 @@ export class UBAClient extends clients.UBAClient {
       if (!isDefined(originSpokePoolClient)) {
         return false;
       }
-      return isDefined(queryHistoricalDepositForFill(originSpokePoolClient, fill));
+
+      const deposit = await queryHistoricalDepositForFill(originSpokePoolClient, fill);
+      const valid = isDefined(deposit);
+      if (!valid) {
+        this.logger.debug({ at: "ubaClient::getRefundRequests", message: "Rejected fill", fill });
+      }
+
+      return valid;
     });
 
     return fills;
@@ -76,23 +85,43 @@ export class UBAClient extends clients.UBAClient {
   // @param chainId Chain ID to search.
   // @param filter  Optional filtering criteria.
   // @returns Array of RefundRequestWithBlock events matching the chain ID and optional filtering criteria.
-  getRefundRequests(chainId: number, filter: SpokePoolEventFilter = {}): RefundRequestWithBlock[] {
-    const { maxBlockAge } = filter;
+  async getRefundRequests(chainId: number, filter: SpokePoolEventFilter = {}): Promise<RefundRequestWithBlock[]> {
+    this.logger.debug({
+      at: "ubaClient::getRefundRequests",
+      message: `Searching for refund requests on chainId ${chainId}`,
+    });
+    const { fromBlock } = filter;
+    const spokePoolClient = this.spokePoolClients[chainId];
 
-    const refundRequests = this.spokePoolClients[chainId].getRefundRequests().filter((refundRequest) => {
-      const spokePoolClient = this.spokePoolClients[refundRequest.repaymentChainId];
+    const refundRequests = sdkUtils.filterAsync(spokePoolClient.getRefundRequests(), async (refundRequest) => {
+      assert(refundRequest.repaymentChainId === chainId);
 
-      if (isDefined(maxBlockAge) && spokePoolClient.latestBlockNumber - refundRequest.blockNumber > maxBlockAge) {
+      if (isDefined(fromBlock) && spokePoolClient.latestBlockNumber - refundRequest.blockNumber > fromBlock) {
         return false;
       }
 
-      ["originChainId", "destinationChainId", "repaymentChainId", "relayer"].forEach((field) => {
+      ["originChainId", "destinationChainId", "relayer"].forEach((field) => {
         if (isDefined(refundRequest[field]) && filter[field] !== refundRequest[field]) {
           return false;
         }
       });
 
-      return this.refundRequestIsValid(chainId, refundRequest);
+      const result = await refundRequestIsValid(
+        this.chainIdIndices,
+        this.spokePoolClients,
+        this.hubPoolClient,
+        refundRequest
+      );
+      if (!result.valid) {
+        this.logger.debug({
+          at: "ubaClient::getRefundRequests",
+          message: `Rejected refund request on chainId ${chainId}`,
+          result,
+          refundRequest,
+        });
+      }
+
+      return result.valid;
     });
 
     return refundRequests;
