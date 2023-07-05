@@ -1,11 +1,13 @@
+import assert from "assert";
 import { ConfigStoreClient, HubPoolClient } from "../clients";
 import { Deposit, DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
-import { queryHistoricalDepositForFill } from "../utils";
+import { getBlockForTimestamp, queryHistoricalDepositForFill } from "../utils";
 import {
   BigNumber,
   assign,
   getRealizedLpFeeForFills,
   getRefundForFills,
+  isDefined,
   sortEventsDescending,
   toBN,
   sortEventsAscending,
@@ -232,21 +234,37 @@ export type RelayerUnfilledDeposit = {
   invalidFills: Fill[];
 };
 
-// Returns all unfilled deposits over all spokePoolClients. Return values include the amount of the unfilled deposit.
-export function getUnfilledDeposits(
+// @description Returns an array of unfilled deposits over all spokePoolClients.
+// @param spokePoolClients  Mapping of chainIds to SpokePoolClient objects.
+// @param configStoreClient ConfigStoreClient instance.
+// @param depositLookBack   Deposit lookback (in seconds) since SpokePoolClient time as at last update.
+// @returns Array of unfilled deposits.
+export async function getUnfilledDeposits(
   spokePoolClients: SpokePoolClientsByChain,
-  maxUnfilledDepositLookBack: number,
-  configStoreClient: ConfigStoreClient
-): RelayerUnfilledDeposit[] {
+  configStoreClient: ConfigStoreClient,
+  depositLookBack?: number
+): Promise<RelayerUnfilledDeposit[]> {
   const unfilledDeposits: RelayerUnfilledDeposit[] = [];
+  const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
+
+  let earliestBlockNumbers = Object.values(spokePoolClients).map(({ deploymentBlock }) => deploymentBlock);
+  if (isDefined(depositLookBack)) {
+    earliestBlockNumbers = await Promise.all(
+      Object.values(spokePoolClients).map((spokePoolClient) => {
+        const currentTime = spokePoolClient.getCurrentTime();
+        return getBlockForTimestamp(spokePoolClient.chainId, currentTime - depositLookBack);
+      })
+    );
+  }
+
   // Iterate over each chainId and check for unfilled deposits.
-  const chainIds = Object.keys(spokePoolClients);
-  for (const originChain of chainIds) {
-    const originClient = spokePoolClients[originChain];
-    for (const destinationChain of chainIds) {
-      if (originChain === destinationChain) {
-        continue;
-      }
+  for (const originClient of Object.values(spokePoolClients)) {
+    const { chainId: originChainId } = originClient;
+    const chainIdx = chainIds.indexOf(originChainId);
+    assert(chainIdx !== -1, `Invalid chain index for chainId ${originChainId} (${chainIdx})`);
+    const earliestBlockNumber = earliestBlockNumbers[chainIdx];
+
+    for (const destinationChain of chainIds.filter((chainId) => chainId !== originChainId)) {
       // Find all unfilled deposits for the current loops originChain -> destinationChain. Note that this also
       // validates that the deposit is filled "correctly" for the given deposit information. This includes validation
       // of the all deposit -> relay props, the realizedLpFeePct and the origin->destination token mapping.
@@ -254,10 +272,8 @@ export function getUnfilledDeposits(
       const depositsForDestinationChain: DepositWithBlock[] =
         originClient.getDepositsForDestinationChain(destinationChain);
 
-      // If deposit is older than unfilled deposit lookback, ignore it.
-      const cutOff = originClient.latestBlockNumber - maxUnfilledDepositLookBack;
       const unfilledDepositsForDestinationChain = depositsForDestinationChain
-        .filter((deposit) => deposit.blockNumber >= cutOff)
+        .filter((deposit) => deposit.blockNumber >= earliestBlockNumber)
         .map((deposit) => {
           const version = configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
           return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit, version };

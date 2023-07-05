@@ -86,6 +86,11 @@ describe("Monitor", async function () {
     };
     const monitorConfig = new MonitorConfig(defaultMonitorEnvVars);
 
+    // @dev: Force maxRelayerLookBack to undefined to skip lookback block resolution.
+    // This overrules the readonly property for MonitorConfig.maxRelayerLookBack (...bodge!!).
+    // @todo: Relocate getUnfilledDeposits() into a class to permit it to be overridden in test.
+    monitorConfig["maxRelayerLookBack"] = undefined;
+
     // Set the config store version to 0 to match the default version in the ConfigStoreClient.
     process.env.CONFIG_STORE_VERSION = "0";
 

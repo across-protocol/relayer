@@ -24,7 +24,7 @@ export async function getBlockFinder(chainId: number): Promise<BlockFinder<Block
  * @param timestamp Approximate timestamp of the to requested block number.
  * @param blockFinder Caller can optionally pass in a block finder object to use instead of creating a new one
  * or loading from cache. This is useful for testing primarily.
- * @returns
+ * @returns Block number for the requested timestamp.
  */
 export async function getBlockForTimestamp(
   chainId: number,

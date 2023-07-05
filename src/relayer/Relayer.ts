@@ -44,7 +44,7 @@ export class Relayer {
       this.clients;
 
     const maxVersion = configStoreClient.configStoreVersion;
-    const unfilledDeposits = getUnfilledDeposits(spokePoolClients, config.maxRelayerLookBack, configStoreClient);
+    const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, configStoreClient, config.maxRelayerLookBack);
     const { supportedDeposits = [], unsupportedDeposits = [] } = groupBy(unfilledDeposits, (deposit) =>
       deposit.version <= maxVersion ? "supportedDeposits" : "unsupportedDeposits"
     );
