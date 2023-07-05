@@ -1,7 +1,7 @@
 import assert from "assert";
-import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../clients";
+import { ConfigStoreClient, HubPoolClient } from "../clients";
 import { Deposit, DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
-import { getBlockFinder, queryHistoricalDepositForFill } from "../utils";
+import { getBlockForTimestamp, queryHistoricalDepositForFill } from "../utils";
 import {
   BigNumber,
   assign,
@@ -234,11 +234,6 @@ export type RelayerUnfilledDeposit = {
   invalidFills: Fill[];
 };
 
-async function resolveBlockNumber(spokePoolClient: SpokePoolClient, timestamp: number): Promise<number> {
-  const blockFinder = await getBlockFinder(spokePoolClient.chainId);
-  return (await blockFinder.getBlockForTimestamp(timestamp)).number;
-}
-
 // @description Returns an array of unfilled deposits over all spokePoolClients.
 // @param spokePoolClients  Mapping of chainIds to SpokePoolClient objects.
 // @param configStoreClient ConfigStoreClient instance.
@@ -254,11 +249,10 @@ export async function getUnfilledDeposits(
 
   let earliestBlockNumbers = Object.values(spokePoolClients).map(({ deploymentBlock }) => deploymentBlock);
   if (isDefined(depositLookBack)) {
-    const spokePoolTimes = Object.values(spokePoolClients).map((spokePoolClient) => spokePoolClient.getCurrentTime());
     earliestBlockNumbers = await Promise.all(
       Object.values(spokePoolClients).map((spokePoolClient) => {
-        const chainIdx = chainIds.indexOf(spokePoolClient.chainId);
-        return resolveBlockNumber(spokePoolClient, spokePoolTimes[chainIdx] - depositLookBack);
+        const currentTime = spokePoolClient.getCurrentTime();
+        return getBlockForTimestamp(spokePoolClient.chainId, currentTime - depositLookBack);
       })
     );
   }
