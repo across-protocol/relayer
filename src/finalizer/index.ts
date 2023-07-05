@@ -82,12 +82,11 @@ export async function finalize(
     }
     const tokensBridged = client.getTokensBridged();
 
+    const currentTime = getCurrentTime();
     if (chainId === 42161) {
       const firstBlockToFinalize = await getBlockForTimestamp(
-        hubPoolClient.chainId,
         chainId,
-        getCurrentTime() - optimisticRollupFinalizationWindow,
-        getCurrentTime()
+        currentTime - optimisticRollupFinalizationWindow
       );
       logger.debug({
         at: "Finalizer",
@@ -106,12 +105,7 @@ export async function finalize(
       finalizationsToBatch.withdrawals.push(...finalizations.withdrawals);
     } else if (chainId === 137) {
       const posClient = await getPosClient(hubSigner);
-      const lastBlockToFinalize = await getBlockForTimestamp(
-        hubPoolClient.chainId,
-        chainId,
-        getCurrentTime() - polygonFinalizationWindow,
-        getCurrentTime()
-      );
+      const lastBlockToFinalize = await getBlockForTimestamp(chainId, currentTime - polygonFinalizationWindow);
       logger.debug({
         at: "Finalizer",
         message: `Earliest TokensBridged block to attempt to finalize for ${getNetworkName(chainId)}`,
@@ -132,10 +126,8 @@ export async function finalize(
     } else if (chainId === 10) {
       const crossChainMessenger = getOptimismClient(chainId, hubSigner) as optimismSDK.CrossChainMessenger;
       const firstBlockToFinalize = await getBlockForTimestamp(
-        hubPoolClient.chainId,
         chainId,
-        getCurrentTime() - optimisticRollupFinalizationWindow,
-        getCurrentTime()
+        currentTime - optimisticRollupFinalizationWindow
       );
 
       // First submit proofs for any newly withdrawn tokens. You can submit proofs for any withdrawals that have been
