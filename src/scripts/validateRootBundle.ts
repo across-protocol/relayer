@@ -19,7 +19,6 @@ import {
   getDvmContract,
   getDisputedProposal,
   getBlockForTimestamp,
-  getCurrentTime,
   sortEventsDescending,
   getDisputeForTimestamp,
   disconnectRedisClient,
@@ -61,12 +60,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Wallet): Pro
   });
 
   // Figure out which block corresponds with the disputed price request time.
-  const priceRequestBlock = await getBlockForTimestamp(
-    clients.hubPoolClient.chainId,
-    clients.hubPoolClient.chainId,
-    priceRequestTime,
-    getCurrentTime()
-  );
+  const priceRequestBlock = await getBlockForTimestamp(clients.hubPoolClient.chainId, priceRequestTime);
   logger.debug({
     at: "Dataworker#validate",
     message: `Price request block found for request time ${priceRequestTime}`,
