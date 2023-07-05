@@ -15,19 +15,13 @@ import {
   toBNWei,
 } from "./utils";
 import { simpleDeposit, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
-import {
-  amountToLp,
-  originChainId,
-  defaultMinDepositConfirmations,
-  DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
-  modifyRelayHelper,
-} from "./constants";
+import { amountToLp, originChainId, defaultMinDepositConfirmations, modifyRelayHelper } from "./constants";
 import { SpokePoolClient, HubPoolClient, MultiCallerClient, TokenClient, AcrossApiClient } from "../src/clients";
 import { MockInventoryClient, MockProfitClient } from "./mocks";
 
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
-import { getUnfilledDeposits, toBN, UnfilledDeposit, utf8ToHex } from "../src/utils";
+import { getUnfilledDeposits, toBN, RelayerUnfilledDeposit, utf8ToHex } from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import { MockConfigStoreClient, MockedMultiCallerClient } from "./mocks";
 
@@ -43,6 +37,9 @@ let profitClient: MockProfitClient;
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
 let relayerInstance: Relayer;
+let unfilledDeposits: RelayerUnfilledDeposit[] = [];
+
+let _getUnfilledDeposits: Promise<RelayerUnfilledDeposit[]>;
 
 describe("Relayer: Unfilled Deposits", async function () {
   beforeEach(async function () {
@@ -106,7 +103,6 @@ describe("Relayer: Unfilled Deposits", async function () {
       {
         relayerTokens: [],
         relayerDestinationChains: [],
-        maxRelayerLookBack: 24 * 60 * 60,
         quoteTimeBuffer: 0,
         minDepositConfirmations: defaultMinDepositConfirmations,
         acceptInvalidFills: false,
@@ -130,6 +126,11 @@ describe("Relayer: Unfilled Deposits", async function () {
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
     await spokePool_2.setCurrentTime(await getLastBlockTime(spokePool_2.provider));
     await updateAllClients();
+
+    _getUnfilledDeposits = async (): Promise<RelayerUnfilledDeposit[]> => {
+      return await getUnfilledDeposits(relayerInstance.clients.spokePoolClients, configStoreClient);
+    };
+    unfilledDeposits = [];
   });
 
   it("Correctly fetches unfilled deposits", async function () {
@@ -140,13 +141,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, l1Token);
     const deposit2Complete = await buildDepositStruct(deposit2, hubPoolClient, l1Token);
 
-    expect(
-      getUnfilledDeposits(
-        relayerInstance.clients.spokePoolClients,
-        DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
-        configStoreClient
-      )
-    )
+    unfilledDeposits = await _getUnfilledDeposits();
+    expect(unfilledDeposits)
       .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
@@ -169,16 +165,6 @@ describe("Relayer: Unfilled Deposits", async function () {
   it("Correctly defers deposits with future quote timestamps", async function () {
     const delta = await spokePool_1.depositQuoteTimeBuffer(); // seconds
 
-    const _getUnfilledDeposits = () => {
-      return (unfilledDeposits = getUnfilledDeposits(
-        relayerInstance.clients.spokePoolClients,
-        DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
-        configStoreClient
-      ));
-    };
-
-    let unfilledDeposits: UnfilledDeposit[] = null;
-
     const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
     await spokePool_1.setCurrentTime(deposit1.quoteTimestamp + delta);
@@ -187,21 +173,24 @@ describe("Relayer: Unfilled Deposits", async function () {
     // One deposit is eligible.
     await spokePool_1.setCurrentTime(deposit1.quoteTimestamp);
     await updateAllClients();
-    unfilledDeposits = _getUnfilledDeposits();
+
+    unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits.length).to.eq(1);
     expect(unfilledDeposits[0].deposit.depositId).to.equal(deposit1.depositId);
 
     // Still only one deposit.
     await spokePool_1.setCurrentTime(deposit2.quoteTimestamp - 1);
     await updateAllClients();
-    unfilledDeposits = _getUnfilledDeposits();
+
+    unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits.length).to.equal(1);
     expect(unfilledDeposits[0].deposit.depositId).to.equal(deposit1.depositId);
 
     // Step slightly beyond the future quoteTimestamp; now both deposits are eligible.
     await spokePool_1.setCurrentTime(deposit2.quoteTimestamp);
     await updateAllClients();
-    unfilledDeposits = _getUnfilledDeposits();
+
+    unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits.length).to.equal(2);
     expect(unfilledDeposits[0].deposit.depositId).to.equal(deposit1.depositId);
     expect(unfilledDeposits[1].deposit.depositId).to.equal(deposit2.depositId);
@@ -219,14 +208,10 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1Complete, 0.25);
     await updateAllClients();
+
     // Validate the relayer correctly computes the unfilled amount.
-    expect(
-      getUnfilledDeposits(
-        relayerInstance.clients.spokePoolClients,
-        DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
-        configStoreClient
-      )
-    )
+    unfilledDeposits = await _getUnfilledDeposits();
+    expect(unfilledDeposits)
       .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
@@ -251,13 +236,9 @@ describe("Relayer: Unfilled Deposits", async function () {
     await updateAllClients();
     // Deposit 1 should now be partially filled by all three fills. This should be correctly reflected.
     const unfilledAmount = deposit1.amount.sub(fill1.fillAmount.add(fill2.fillAmount).add(fill3.fillAmount));
-    expect(
-      getUnfilledDeposits(
-        relayerInstance.clients.spokePoolClients,
-        DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
-        configStoreClient
-      )
-    )
+
+    unfilledDeposits = await _getUnfilledDeposits();
+    expect(unfilledDeposits)
       .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
@@ -280,13 +261,9 @@ describe("Relayer: Unfilled Deposits", async function () {
     const fill4 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1Complete, 1);
     expect(fill4.totalFilledAmount).to.equal(deposit1.amount); // should be 100% filled at this point.
     await updateAllClients();
-    expect(
-      getUnfilledDeposits(
-        relayerInstance.clients.spokePoolClients,
-        DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
-        configStoreClient
-      )
-    )
+
+    unfilledDeposits = await _getUnfilledDeposits();
+    expect(unfilledDeposits)
       .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
@@ -307,14 +284,10 @@ describe("Relayer: Unfilled Deposits", async function () {
     // Partially fill the deposit, incorrectly by setting the wrong deposit ID.
     await buildFill(spokePool_2, erc20_2, depositor, relayer, { ...deposit1Complete, depositId: 1337 }, 0.25);
     await updateAllClients();
+
     // The deposit should show up as unfilled, since the fill was incorrectly applied to the wrong deposit.
-    expect(
-      getUnfilledDeposits(
-        relayerInstance.clients.spokePoolClients,
-        DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
-        configStoreClient
-      )
-    )
+    unfilledDeposits = await _getUnfilledDeposits();
+    expect(unfilledDeposits)
       .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
@@ -329,7 +302,6 @@ describe("Relayer: Unfilled Deposits", async function () {
 
   it("Correctly selects unfilled deposit with updated fee", async function () {
     const delta = await spokePool_1.depositQuoteTimeBuffer(); // seconds
-    let unfilledDeposits: UnfilledDeposit[];
 
     // perform simple deposit
     const deposit1 = await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
@@ -362,12 +334,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     }
     await spokePoolClient_1.update();
 
-    unfilledDeposits = getUnfilledDeposits(
-      relayerInstance.clients.spokePoolClients,
-      DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
-      configStoreClient
-    );
-
+    unfilledDeposits = await _getUnfilledDeposits();
     // expect only one unfilled deposit
     expect(unfilledDeposits.length).to.eq(1);
     expect(unfilledDeposits[0].deposit.depositId).to.equal(deposit1.depositId);
@@ -380,12 +347,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     await spokePool_1.setCurrentTime(deposit2.quoteTimestamp);
     await updateAllClients();
 
-    unfilledDeposits = getUnfilledDeposits(
-      relayerInstance.clients.spokePoolClients,
-      DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
-      configStoreClient
-    );
-
+    unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits.length).to.eq(2);
     expect(unfilledDeposits[1].deposit.depositId).to.equal(deposit2.depositId);
     // The new relayer fee was still applied to the early deposit.
@@ -398,13 +360,9 @@ describe("Relayer: Unfilled Deposits", async function () {
     const deposit1Complete = await buildDepositStruct(deposit1, hubPoolClient, l1Token);
     const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1Complete, 0.25);
     await updateAllClients();
-    expect(
-      getUnfilledDeposits(
-        relayerInstance.clients.spokePoolClients,
-        DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
-        configStoreClient
-      )
-    )
+
+    unfilledDeposits = await _getUnfilledDeposits();
+    expect(unfilledDeposits)
       .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
@@ -442,13 +400,9 @@ describe("Relayer: Unfilled Deposits", async function () {
       updatedMessage: "0x",
       speedUpSignature: speedUpSignature.signature,
     };
-    expect(
-      getUnfilledDeposits(
-        relayerInstance.clients.spokePoolClients,
-        DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
-        configStoreClient
-      )
-    )
+
+    unfilledDeposits = await _getUnfilledDeposits();
+    expect(unfilledDeposits)
       .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
       .to.deep.equal([
         {
@@ -477,11 +431,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     await updateAllClients();
 
     // getUnfilledDeposit still returns the deposit as unfilled but with the invalid fill.
-    const unfilledDeposit = getUnfilledDeposits(
-      relayerInstance.clients.spokePoolClients,
-      DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
-      configStoreClient
-    )[0];
+    const unfilledDeposit = (await _getUnfilledDeposits())[0];
+    expect(unfilledDeposit === undefined).to.be.false;
     expect(unfilledDeposit.unfilledAmount).to.equal(deposit.amount);
     expect(unfilledDeposit.deposit.depositId).to.equal(deposit.depositId);
     expect(unfilledDeposit.invalidFills.length).to.equal(1);
@@ -509,11 +460,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     await updateAllClients();
     await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     await updateAllClients();
-    const unfilledDeposits = getUnfilledDeposits(
-      relayerInstance.clients.spokePoolClients,
-      DEFAULT_UNFILLED_DEPOSIT_LOOKBACK,
-      configStoreClient
-    );
+
+    unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits.length).to.equal(1);
     expect(unfilledDeposits[0].requiresNewConfigStoreVersion).to.be.true;
 

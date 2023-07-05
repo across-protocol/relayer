@@ -21,15 +21,14 @@ export async function getBlockFinder(chainId: number): Promise<BlockFinder<Block
  * @notice Get the block number for a given timestamp fresh from on-chain data if not found in redis cache.
  * If redis cache is not available, then requests block from blockFinder.
  * @param chainId Chain to load block finder for.
+ * @param timestamp Approximate timestamp of the to requested block number.
  * @param blockFinder Caller can optionally pass in a block finder object to use instead of creating a new one
  * or loading from cache. This is useful for testing primarily.
- * @returns
+ * @returns Block number for the requested timestamp.
  */
 export async function getBlockForTimestamp(
-  hubPoolChainId: number,
   chainId: number,
   timestamp: number,
-  currentChainTime: number,
   blockFinder?: BlockFinder<Block>
 ): Promise<number> {
   blockFinder ??= await getBlockFinder(chainId);
@@ -40,14 +39,17 @@ export async function getBlockForTimestamp(
     return (await blockFinder.getBlockForTimestamp(timestamp)).number;
   }
 
-  // We already cache blocks in the ConfigStore on the HubPool chain so re-use that key if the chainId
-  // matches the HubPool's.
-  const key = chainId === hubPoolChainId ? `block_number_${timestamp}` : `${chainId}_block_number_${timestamp}`;
+  const key = `${chainId}_block_number_${timestamp}`;
   const result = await redisClient.get(key);
   if (result === null) {
-    const blockNumber = (await blockFinder.getBlockForTimestamp(timestamp)).number;
+    const provider = await getProvider(chainId);
+    const [currentBlock, { number: blockNumber }] = await Promise.all([
+      provider.getBlock("latest"),
+      blockFinder.getBlockForTimestamp(timestamp),
+    ]);
+
     // Expire key after 90 days.
-    if (shouldCache(timestamp, currentChainTime)) {
+    if (shouldCache(timestamp, currentBlock.timestamp)) {
       await setRedisKey(key, blockNumber.toString(), redisClient, 60 * 60 * 24 * 90);
     }
     return blockNumber;
