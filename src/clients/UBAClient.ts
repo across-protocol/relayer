@@ -52,11 +52,11 @@ export class UBAClient extends clients.UBAClient {
 
       // @dev The SDK-v2 UBAClient stores the base SpokePoolClient definition, but here we use an extended variant.
       // This will be resolved when upstreaming to SDK-v2.
-      const defined = isDefined(
-        queryHistoricalDepositForFill(this.spokePoolClients[fill.originChainId] as SpokePoolClient, fill)
-      );
-
-      return defined;
+      const originSpokePoolClient = this.spokePoolClients[fill.originChainId] as SpokePoolClient;
+      if (!isDefined(originSpokePoolClient)) {
+        return false;
+      }
+      return isDefined(queryHistoricalDepositForFill(originSpokePoolClient, fill));
     });
 
     return fills;
