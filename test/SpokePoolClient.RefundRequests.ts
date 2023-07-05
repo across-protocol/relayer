@@ -66,7 +66,10 @@ describe("SpokePoolClient: Refund Requests", async function () {
       const refundRequest = { relayer, originChainId, blockNumber } as RefundRequestWithBlock;
       const testEvent = spokePoolClient.generateRefundRequest(refundRequest);
       spokePoolClient.addEvent(testEvent);
-      refundRequestEvents.push(spreadEventWithBlockNumber(testEvent) as RefundRequestWithBlock);
+      refundRequestEvents.push({
+        ...spreadEventWithBlockNumber(testEvent),
+        repaymentChainId: spokePoolClient.chainId,
+      }as RefundRequestWithBlock);
     }
     await spokePoolClient.update();
     expect(spokePoolClient.latestBlockNumber - latestBlockNumber).to.be.at.least(4);
