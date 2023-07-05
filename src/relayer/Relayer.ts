@@ -1,3 +1,4 @@
+import { constants as ethersConstants } from "ethers";
 import { groupBy } from "lodash";
 import { clients as sdkClients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { SpokePoolClient } from "../clients";
@@ -20,7 +21,6 @@ import { RelayerConfig } from "./RelayerConfig";
 const { UBAActionType } = sdkClients;
 
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
-export const UINT256_MAX = toBN(2).pow(256).sub(1); // @note: Temporary
 
 export class Relayer {
   // Track by originChainId since depositId is issued on the origin chain.
@@ -380,8 +380,8 @@ export class Relayer {
 
     const contract = spokePoolClients[chainId].spokePool;
     const method = "requestRefund";
-    // @todo: Should support specifying max impact against the refund amount (i.e. to mitigate price impact by fills).
-    const maxCount = UINT256_MAX;
+    // @todo: Support specifying max impact against the refund amount (i.e. to mitigate price impact by fills).
+    const maxCount = ethersConstants.MaxUint256;
 
     // Resolve the refund token from the fill token. The name getDestinationtTokenForDeposit() is a misnomer here.
     const refundToken = hubPoolClient.getDestinationTokenForDeposit({
