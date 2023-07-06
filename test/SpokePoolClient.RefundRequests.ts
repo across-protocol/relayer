@@ -57,7 +57,7 @@ describe("SpokePoolClient: Refund Requests", async function () {
 
   it("Correctly filters out refund requests based on blockNumber", async function () {
     // New events must come _after_ the current latestBlockNumber.
-    const latestBlockNumber = spokePoolClient.latestBlockNumber;
+    const { chainId: repaymentChainId, latestBlockNumber } = spokePoolClient;
     const minExpectedBlockNumber = latestBlockNumber + 1 + spokePoolClient.minBlockRange;
 
     const refundRequestEvents: RefundRequestWithBlock[] = [];
@@ -68,7 +68,7 @@ describe("SpokePoolClient: Refund Requests", async function () {
       spokePoolClient.addEvent(testEvent);
       refundRequestEvents.push({
         ...spreadEventWithBlockNumber(testEvent),
-        repaymentChainId: spokePoolClient.chainId,
+        repaymentChainId,
       } as RefundRequestWithBlock);
     }
     await spokePoolClient.update();

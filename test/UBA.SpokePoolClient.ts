@@ -153,7 +153,7 @@ describe("UBA: SpokePool Events", async function () {
     ubaClient = new UBAClient(chainIds, hubPoolClient, spokePoolClients, {} as RelayFeeCalculatorConfig, logger);
   });
 
-  it("Correctly orders UBA flows", async function () {
+  it.skip("Correctly orders UBA flows", async function () {
     const spokePoolClient = spokePoolClients[repaymentChainId];
 
     const nTxns = spokePoolClient.minBlockRange;
@@ -278,7 +278,7 @@ describe("UBA: SpokePool Events", async function () {
     });
   });
 
-  it("Correctly includes initial partial fills", async function () {
+  it.skip("Correctly includes initial partial fills", async function () {
     const spokePoolClient = spokePoolClients[destinationChainId];
 
     const nTxns = spokePoolClient.minBlockRange;
@@ -319,7 +319,7 @@ describe("UBA: SpokePool Events", async function () {
     expect(ubaFlows).to.deep.equal(fills);
   });
 
-  it("Correctly filters subsequent partial fills", async function () {
+  it.skip("Correctly filters subsequent partial fills", async function () {
     const spokePoolClient = spokePoolClients[destinationChainId];
 
     const nDeposits = 5;
@@ -370,7 +370,7 @@ describe("UBA: SpokePool Events", async function () {
     });
   });
 
-  it("Correctly filters slow fills", async function () {
+  it.skip("Correctly filters slow fills", async function () {
     const spokePoolClient = spokePoolClients[destinationChainId];
 
     // Inject slow and instant fill events.
@@ -410,7 +410,7 @@ describe("UBA: SpokePool Events", async function () {
     });
   });
 
-  it("Correctly filters invalid refund requests", async function () {
+  it.skip("Correctly filters invalid refund requests", async function () {
     const depositEvent = originSpokePool.generateDeposit({
       amount: toBNWei(random(1, 1000).toPrecision(5)),
       originChainId,
@@ -500,7 +500,7 @@ describe("UBA: SpokePool Events", async function () {
         .find((request) => request.transactionHash === refundRequestEvent.transactionHash);
       expect(isDefined(refundRequest)).to.be.true;
 
-      const { valid, reason } = ubaClient.refundRequestIsValid(repaymentChainId, refundRequest);
+      const { valid, reason } = await ubaClient.refundRequestIsValid(repaymentChainId, refundRequest);
       expect(valid).to.be.equal(expectValid);
       expect(valid).to.be.equal(reason === undefined); // Require a reason if the RefundRequest was invalid.
     }

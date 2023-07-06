@@ -224,12 +224,7 @@ export class Relayer {
       if (tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
         // The pre-computed realizedLpFeePct is for the pre-UBA fee model. Update it to the UBA fee model if necessary.
         // The SpokePool guarantees the sum of the fees is <= 100% of the deposit amount.
-        deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(
-          version,
-          deposit,
-          l1Token.symbol,
-          l1Token.address
-        );
+        deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit, l1Token.symbol);
 
         const repaymentChainId = await this.resolveRepaymentChain(version, deposit, unfilledAmount, l1Token);
         if (isDefined(repaymentChainId)) {
@@ -495,8 +490,7 @@ export class Relayer {
   protected async computeRealizedLpFeePct(
     version: number,
     deposit: DepositWithBlock,
-    symbol: string,
-    hubPoolTokenAddress: string
+    symbol: string
   ): Promise<BigNumber> {
     if (!sdkUtils.isUBA(version)) {
       return deposit.realizedLpFeePct;
@@ -511,7 +505,6 @@ export class Relayer {
       originChainId,
       destinationChainId,
       symbol,
-      hubPoolTokenAddress,
       amount,
       quoteBlockNumber
     );

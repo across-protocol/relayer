@@ -21,11 +21,21 @@ type SpokePoolFillFilter = SpokePoolEventFilter & {
 export class UBAClient extends clients.UBAClient {
   constructor(
     chainIdIndices: number[],
+    tokenSymbols: string[],
     hubPoolClient: HubPoolClient,
     spokePoolClients: { [chainId: number]: SpokePoolClient },
-    logger: winston.Logger
+    logger: winston.Logger,
+    maxBundleStates = 1
   ) {
-    super(chainIdIndices, hubPoolClient, spokePoolClients, {} as RelayFeeCalculatorConfig, logger);
+    super(
+      chainIdIndices,
+      tokenSymbols,
+      hubPoolClient,
+      spokePoolClients,
+      {} as RelayFeeCalculatorConfig,
+      maxBundleStates,
+      logger
+    );
   }
 
   // @description Search for fills recorded by a specific SpokePool.
