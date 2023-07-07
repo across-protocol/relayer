@@ -187,7 +187,7 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
 
     const eligibleFills = await relayerInstance.findFillsWithoutRefundRequests(
       spokePoolClient_2.chainId,
-      [],
+      refundRequests,
       spokePoolClient_2.deploymentBlock
     );
     expect(eligibleFills.length).to.equal(1);
