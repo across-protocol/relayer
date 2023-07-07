@@ -336,6 +336,16 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
     refundRequests.forEach(({ depositId }) => expect(depositId).to.equal(deposit.depositId));
     expect(refundRequests[0].transactionHash).to.equal(transactionHash);
   });
+
+  it.skip("Finds deposits outside of the relayer lookback window", async function () {
+    // @todo
+    return;
+  });
+
+  it.skip("Finds fills outside of the relayer lookback window", async function () {
+    // @todo
+    return;
+  });
 });
 
 async function updateAllClients() {
