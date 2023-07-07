@@ -28,6 +28,7 @@ export class UBAClient extends clients.UBAClient {
       maxBundleStates,
       logger
     );
+  }
 
   async getFills(chainId: number, filter: SpokePoolFillFilter = {}): Promise<FillWithBlock[]> {
     return getFills(chainId, this.spokePoolClients, filter);
