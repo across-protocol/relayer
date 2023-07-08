@@ -7403,10 +7403,10 @@ hardhat-deploy@0.9.1:
     murmur-128 "^0.2.1"
     qs "^6.9.4"
 
-hardhat-deploy@^0.11.31:
-  version "0.11.31"
-  resolved "https://registry.yarnpkg.com/hardhat-deploy/-/hardhat-deploy-0.11.31.tgz#1f05adc280bf7c3de502693271aa6700a043db20"
-  integrity sha512-86LObxQri29nxDzP7cjUyfHJ8jBF5aW60ahn883dqlw4rzc5I6ylLFQc6T2aMC2gEZI1oBc2gI2idmUulXP35g==
+hardhat-deploy@^0.11.34:
+  version "0.11.34"
+  resolved "https://registry.yarnpkg.com/hardhat-deploy/-/hardhat-deploy-0.11.34.tgz#61252ebf5dfdda7b0b31298dd5580b0735c05910"
+  integrity sha512-N6xcwD8LSMV/IyfEr8TfR2YRbOh9Q4QvitR9MKZRTXQmgQiiMGjX+2efMjKgNMxwCVlmpfnE1tyDxOJOOUseLQ==
   dependencies:
     "@ethersproject/abi" "^5.7.0"
     "@ethersproject/abstract-signer" "^5.7.0"
