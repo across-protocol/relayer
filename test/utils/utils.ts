@@ -1,3 +1,4 @@
+import { constants as ethersConstants } from "ethers";
 import * as utils from "@across-protocol/contracts-v2/dist/test-utils";
 import { TokenRolesEnum } from "@uma/common";
 export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "@uma/common";
@@ -12,7 +13,7 @@ import { MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, MAX_REFUNDS_PER_RELAYER_REFUND_L
 import { HubPoolClient, ConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
 import { SpokePoolClient } from "../../src/clients";
 import { deposit, Contract, SignerWithAddress, BigNumber } from "./index";
-import { Deposit, Fill, RunningBalances } from "../../src/interfaces";
+import { Deposit, Fill, FillWithBlock, RefundRequest, RunningBalances } from "../../src/interfaces";
 import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
 import { providers } from "ethers";
 
@@ -630,6 +631,44 @@ export async function buildFillForRepaymentChain(
   } else {
     return null;
   }
+}
+
+export async function buildRefundRequest(
+  spokePool: Contract,
+  relayer: SignerWithAddress,
+  fill: FillWithBlock,
+  refundToken: string,
+  maxCount?: BigNumber
+): Promise<RefundRequest> {
+  // @note: These chainIds should align, but don't! @todo: Fix!
+  // const chainId = (await spokePool.provider.getNetwork()).chainId;
+  // assert.isTrue(fill.repaymentChainId === chainId);
+
+  const {
+    originChainId,
+    depositId,
+    destinationChainId,
+    fillAmount: amount,
+    realizedLpFeePct,
+    blockNumber: fillBlock,
+  } = fill;
+
+  maxCount ??= ethersConstants.MaxUint256;
+
+  const refundRequest = await spokePool
+    .connect(relayer)
+    .requestRefund(
+      refundToken,
+      amount,
+      originChainId,
+      destinationChainId,
+      realizedLpFeePct,
+      depositId,
+      fillBlock,
+      maxCount
+    );
+
+  return refundRequest;
 }
 
 // Returns expected leaves ordered by origin chain ID and then deposit ID(ascending). Ordering is implemented

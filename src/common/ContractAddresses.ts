@@ -383,6 +383,9 @@ export const CONTRACT_ADDRESSES: {
         },
       ],
     },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
   },
   137: {
     withdrawableErc20: {
