@@ -48,10 +48,10 @@
     merkletreejs "^0.2.27"
     rlp "^2.2.7"
 
-"@across-protocol/sdk-v2@0.11.4":
-  version "0.11.4"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.11.4.tgz#c28e09d1d3382e8a16f53bed19b61190575c423e"
-  integrity sha512-IzmOvy+9yc1jILxlm1oTJ6ioHBzibI0+TDQB2UXslumac/BT7LemjfSEraQriIO3klY8DYsNxHQ86R/fidoQoQ==
+"@across-protocol/sdk-v2@0.12.1":
+  version "0.12.1"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.12.1.tgz#53e537349186c2279596dd6852bd8ca860af02fa"
+  integrity sha512-uOTDEME7YgCFyEU/g84qRfZXw9+TMrqDpkfFuHabGD3za6aIPsONgq+0moerOWd5cPgp0J9rz++D4bClxUOmhA==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/contracts-v2" "2.3.3"
@@ -13741,10 +13741,10 @@ winston-transport@^4.3.0, winston-transport@^4.5.0:
     readable-stream "^3.6.0"
     triple-beam "^1.3.0"
 
-winston@^3.2.1, winston@^3.8.2:
-  version "3.8.2"
-  resolved "https://registry.yarnpkg.com/winston/-/winston-3.8.2.tgz#56e16b34022eb4cff2638196d9646d7430fdad50"
-  integrity sha512-MsE1gRx1m5jdTTO9Ld/vND4krP2To+lgDoMEHGGa4HIlAUyXJtfc7CxQcGXVyz2IBpw5hbFkj2b/AtUdQwyRew==
+winston@^3.2.1, winston@^3.9.0:
+  version "3.9.0"
+  resolved "https://registry.yarnpkg.com/winston/-/winston-3.9.0.tgz#2bbdeb8167a75fac6d9a0c6d002890cd908016c2"
+  integrity sha512-jW51iW/X95BCW6MMtZWr2jKQBP4hV5bIDq9QrIjfDk6Q9QuxvTKEAlpUNAzP+HYHFFCeENhph16s0zEunu4uuQ==
   dependencies:
     "@colors/colors" "1.5.0"
     "@dabh/diagnostics" "^2.0.2"
