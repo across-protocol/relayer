@@ -204,18 +204,17 @@ export class Relayer {
       }
 
       // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
-      if (
-        sendSlowRelays &&
-        fillCount === 0 &&
-        slowDepositors?.includes(deposit.depositor) &&
-        tokenClient.hasBalanceForZeroFill(deposit)
-      ) {
-        this.logger.debug({
-          at: "Relayer",
-          message: "Initiating slow fill for grey listed depositor",
-          depositor: deposit.depositor,
-        });
-        this.zeroFillDeposit(deposit);
+      if (slowDepositors?.includes(deposit.depositor)) {
+        if (sendSlowRelays && fillCount === 0 && tokenClient.hasBalanceForZeroFill(deposit)) {
+          this.logger.debug({
+            at: "Relayer",
+            message: "Initiating slow fill for grey listed depositor",
+            depositor: deposit.depositor,
+          });
+          this.zeroFillDeposit(deposit);
+        }
+        // Regardless of whether we should send a slow fill or not for this depositor, exit early at this point
+        // so we don't fast fill an already slow filled deposit from the slow fill-only list.
         continue;
       }
 
