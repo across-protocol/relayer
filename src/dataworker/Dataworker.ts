@@ -479,6 +479,7 @@ export class Dataworker {
 
   async UBA_proposeRootBundle(
     ubaClient: UBAClient,
+    spokePoolClients: SpokePoolClientsByChain,
     usdThresholdToSubmitNewBundle?: BigNumber,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     submitProposals = true,
@@ -486,20 +487,50 @@ export class Dataworker {
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<void> {
     const blockRangesForProposal = this._getNextProposalBlockRanges(
-      ubaClient.spokePoolClients as SpokePoolClientsByChain,
+      spokePoolClients as SpokePoolClientsByChain,
       earliestBlocksInSpokePoolClients
     );
     if (!blockRangesForProposal) {
       return;
     }
 
-    throw new Error("Not implemented yet: building UBA root bundle using block ranges for proposal");
+    const enabledChainIds = Object.keys(spokePoolClients).filter((chainId) => {
+      const blockRangeForChain = getBlockRangeForChain(
+        blockRangesForProposal,
+        Number(chainId),
+        this.chainIdListForBundleEvaluationBlockNumbers
+      );
+      return !PoolRebalanceUtils.isChainDisabled(blockRangeForChain);
+    });
 
     // Build PoolRebalanceRoot:
     // 1. Get all flows in range from UBA Client
     // 2. Set running balances to closing running balances from latest flows in range per token per chain
     // 3. Set bundleLpFees to sum of SystemFee.LPFee for all flows in range per token per chain
     // 4. Set netSendAmount to sum of netRunningBalanceAdjustments for all flows in range per token per chain
+    for (const chainId of enabledChainIds) {
+      const spokePoolClient = spokePoolClients[chainId];
+      if (!spokePoolClient.isUpdated) {
+        throw new Error(`SpokePoolClient on chain ${chainId} not updated`);
+      }
+
+      const blockRangeForChain = getBlockRangeForChain(
+        blockRangesForProposal,
+        Number(chainId),
+        this.chainIdListForBundleEvaluationBlockNumbers
+      );
+
+      for (const tokenSymbol of ubaClient.tokens) {
+        const flowsForChain = ubaClient.getFlows(
+          Number(chainId),
+          tokenSymbol,
+          blockRangeForChain[0],
+          blockRangeForChain[1]
+        );
+        // TODO: I want to easily grab closing running balance + net running balance adjustments here as well
+        // as easily sum up all LP fees + incentive balances here.
+      }
+    }
 
     // Build RelayerRefundRoot:
     // 1. Get all fills in range from SpokePoolClient
