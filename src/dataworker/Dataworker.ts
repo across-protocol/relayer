@@ -47,7 +47,7 @@ import { BalanceAllocator } from "../clients";
 import _ from "lodash";
 import { CONFIG_STORE_VERSION, CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
 import { isOvmChain } from "../clients/bridges";
-import { getOpeningTokenBalances } from "@across-protocol/sdk-v2/src/clients/UBAClient/UBAClientUtilities"
+import { getOpeningTokenBalances } from "@across-protocol/sdk-v2/src/clients/UBAClient/UBAClientUtilities";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -508,7 +508,7 @@ export class Dataworker {
       blockRangesForProposal,
       this.clients.hubPoolClient.chainId,
       this.chainIdListForBundleEvaluationBlockNumbers
-    )[1]
+    )[1];
 
     // Build PoolRebalanceRoot:
     // 1. Get all flows in range from UBA Client
@@ -525,7 +525,7 @@ export class Dataworker {
       bundleLpFees: {},
       incentivePoolBalances: {},
       netSendAmounts: {},
-    }
+    };
     for (const chainId of enabledChainIds) {
       const blockRangeForChain = getBlockRangeForChain(
         blockRangesForProposal,
@@ -534,11 +534,13 @@ export class Dataworker {
       );
 
       for (const tokenSymbol of ubaClient.tokens) {
-        poolRebalanceLeafData.runningBalances[chainId] = {}
-        poolRebalanceLeafData.bundleLpFees[chainId] = {}
-        poolRebalanceLeafData.incentivePoolBalances[chainId] = {}
-        poolRebalanceLeafData.netSendAmounts[chainId] = {}
-        const l1TokenAddress = this.clients.hubPoolClient.getL1Tokens().find((l1Token) => l1Token.symbol === tokenSymbol)?.address;
+        poolRebalanceLeafData.runningBalances[chainId] = {};
+        poolRebalanceLeafData.bundleLpFees[chainId] = {};
+        poolRebalanceLeafData.incentivePoolBalances[chainId] = {};
+        poolRebalanceLeafData.netSendAmounts[chainId] = {};
+        const l1TokenAddress = this.clients.hubPoolClient
+          .getL1Tokens()
+          .find((l1Token) => l1Token.symbol === tokenSymbol)?.address;
         if (!l1TokenAddress) {
           throw new Error("Could not find l1 token address for token symbol: " + tokenSymbol);
         }
@@ -556,26 +558,32 @@ export class Dataworker {
             l1TokenAddress,
             this.clients.hubPoolClient,
             mainnetBundleEndBlock
-          )
-          console.log(`No flows, using previous cumulative stats from preceding bundle for ${chainId} and token:${tokenSymbol}`, precedingBundleBalances);
+          );
+          console.log(
+            `No flows, using previous cumulative stats from preceding bundle for ${chainId} and token:${tokenSymbol}`,
+            precedingBundleBalances
+          );
           poolRebalanceLeafData.runningBalances[chainId][l1TokenAddress] = precedingBundleBalances.spokePoolBalance;
           poolRebalanceLeafData.bundleLpFees[chainId][l1TokenAddress] = BigNumber.from(0);
-          poolRebalanceLeafData.incentivePoolBalances[chainId][l1TokenAddress] = precedingBundleBalances.incentiveBalance;
+          poolRebalanceLeafData.incentivePoolBalances[chainId][l1TokenAddress] =
+            precedingBundleBalances.incentiveBalance;
           poolRebalanceLeafData.netSendAmounts[chainId][l1TokenAddress] = BigNumber.from(0);
         } else {
           const closingRunningBalance = flowsForChain[flowsForChain.length - 1].runningBalance;
           const closingIncentiveBalance = flowsForChain[flowsForChain.length - 1].incentiveBalance;
           const bundleLpFees = flowsForChain.reduce((sum, flow) => sum.add(flow.systemFee.lpFee), BigNumber.from(0));
-          const netSendAmount = flowsForChain.reduce((sum, flow) => sum.add(flow.netRunningBalanceAdjustment), BigNumber.from(0));
+          const netSendAmount = flowsForChain.reduce(
+            (sum, flow) => sum.add(flow.netRunningBalanceAdjustment),
+            BigNumber.from(0)
+          );
           poolRebalanceLeafData.runningBalances[chainId][l1TokenAddress] = closingRunningBalance;
           poolRebalanceLeafData.bundleLpFees[chainId][l1TokenAddress] = bundleLpFees;
           poolRebalanceLeafData.incentivePoolBalances[chainId][l1TokenAddress] = closingIncentiveBalance;
           poolRebalanceLeafData.netSendAmounts[chainId][l1TokenAddress] = netSendAmount;
         }
-
       }
     }
-    console.log("poolRebalanceLeafData", poolRebalanceLeafData)
+    console.log("poolRebalanceLeafData", poolRebalanceLeafData);
 
     const poolRebalanceLeaves = PoolRebalanceUtils.constructPoolRebalanceLeaves(
       mainnetBundleEndBlock,
@@ -585,7 +593,7 @@ export class Dataworker {
       this.maxL1TokenCountOverride,
       this.tokenTransferThreshold,
       poolRebalanceLeafData.incentivePoolBalances,
-      poolRebalanceLeafData.netSendAmounts,
+      poolRebalanceLeafData.netSendAmounts
     );
     console.log("poolRebalanceLeaves", poolRebalanceLeaves);
 
