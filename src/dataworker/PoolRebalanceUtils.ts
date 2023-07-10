@@ -29,6 +29,7 @@ import {
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "../utils";
 import { Clients } from "../common";
+import { getBlockRangeForChain } from "./DataworkerUtils";
 
 export function updateRunningBalance(
   runningBalances: interfaces.RunningBalances,
@@ -499,6 +500,10 @@ export function generateMarkdownForDispute(pendingRootBundle: PendingRootBundle)
   );
 }
 
+export function isChainDisabled(blockRangeForChain: number[]): boolean {
+  return blockRangeForChain[0] === blockRangeForChain[1];
+}
+
 export function generateMarkdownForRootBundle(
   hubPoolClient: HubPoolClient,
   chainIdListForBundleEvaluationBlockNumbers: number[],
@@ -517,9 +522,8 @@ export function generateMarkdownForRootBundle(
   // Create helpful logs to send to slack transport
   let bundleBlockRangePretty = "";
   chainIdListForBundleEvaluationBlockNumbers.forEach((chainId, index) => {
-    const isChainDisabled = bundleBlockRange[index][0] === bundleBlockRange[index][1];
     bundleBlockRangePretty += `\n\t\t${chainId}: ${JSON.stringify(bundleBlockRange[index])}${
-      isChainDisabled ? " 🥶" : ""
+      isChainDisabled(bundleBlockRange[index]) ? " 🥶" : ""
     }`;
   });
 
