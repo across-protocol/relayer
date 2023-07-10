@@ -6,7 +6,6 @@ import {
   createSpyLogger,
   lastSpyLogIncludes,
   deepEqualsWithBigNumber,
-  buildRefundRequest,
 } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
@@ -37,7 +36,7 @@ let l1Token_1: Contract, hubPool: Contract, timer: Contract, configStore: Contra
 let depositor: SignerWithAddress, relayer: SignerWithAddress, dataworker: SignerWithAddress;
 
 let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient, spokePoolClient_1: SpokePoolClient;
-let dataworkerInstance: Dataworker, spokePoolClient_2: SpokePoolClient;
+let dataworkerInstance: Dataworker;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
@@ -65,7 +64,6 @@ describe("Dataworker: Build merkle roots", async function () {
       spy,
       spyLogger,
       spokePoolClient_1,
-      spokePoolClient_2,
       updateAllClients,
     } = await setupFastDataworker(ethers));
   });
@@ -1084,7 +1082,7 @@ describe("Dataworker: Build merkle roots", async function () {
       };
       expect(deepEqualsWithBigNumber(merkleRoot1.leaves, [expectedLeaf])).to.be.true;
     });
-    it("Token transfer exceeds threshold", async function () {
+    it("Token transfer exceeeds threshold", async function () {
       await updateAllClients();
       const deposit = await buildDeposit(
         hubPoolClient,
@@ -1403,471 +1401,55 @@ describe("Dataworker: Build merkle roots", async function () {
       expect(deepEqualsWithBigNumber(merkleRoot2.leaves, expectedLeaves2)).to.be.true;
     });
   });
-  describe("UBA Root Bundles", function () {
-    let ubaClient: MockUBAClient;
-    const l1TokenSymbol = "L1Token1";
+  describe.only("UBA Root Bundles", function () {
     beforeEach(async function () {
       await updateAllClients();
-      ubaClient = new MockUBAClient(
+    });
+    it("Build pool rebalance root", async function () {
+      const deposit = await buildDeposit(
+        hubPoolClient,
+        spokePool_1,
+        erc20_1,
+        l1Token_1,
+        depositor,
+        destinationChainId,
+        amountToDeposit
+      );
+      await updateAllClients();
+
+      // Build UBA Client
+      const l1TokenSymbol = "L1Token1";
+      const ubaClient = new MockUBAClient(
         dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers,
         [l1TokenSymbol],
         hubPoolClient,
         spokePoolClients,
         spyLogger
       );
-    });
-    describe("Build pool rebalance root", function () {
-      it("> 0 flows", async function () {
-        ubaClient.setFlows(originChainId, l1TokenSymbol, [
-          {
-            flow: {
-              ...spokePoolClient_1.getFills()[0],
-            },
-            systemFee: {
-              lpFee: BigNumber.from(0),
-              depositBalancingFee: BigNumber.from(0),
-              systemFee: BigNumber.from(0),
-            },
-            relayerFee: {
-              relayerGasFee: BigNumber.from(0),
-              relayerCapitalFee: BigNumber.from(0),
-              relayerBalancingFee: BigNumber.from(0),
-              relayerFee: BigNumber.from(0),
-              amountTooLow: false,
-            },
-            runningBalance: toBNWei("1"),
-            incentiveBalance: toBNWei("1"),
-            netRunningBalanceAdjustment: toBNWei("1"),
+      ubaClient.setFlows(deposit.originChainId, l1TokenSymbol, [
+        {
+          flow: {
+            ...spokePoolClient_1.getFills()[0],
           },
-        ]);
-
-        const blockRanges = dataworkerInstance._getNextProposalBlockRanges(spokePoolClients);
-        if (!blockRanges) {
-          throw new Error("Can't propose new bundle");
-        }
-        const { poolRebalanceLeaves } = dataworkerInstance._UBA_buildPoolRebalanceLeaves(
-          blockRanges,
-          [originChainId, destinationChainId],
-          ubaClient
-        );
-        expect(
-          deepEqualsWithBigNumber(poolRebalanceLeaves[0], {
-            chainId: originChainId,
-            bundleLpFees: [BigNumber.from(0)],
-            netSendAmounts: [toBNWei("1")],
-            runningBalances: [toBNWei("1"), toBNWei("1")],
-            groupIndex: 0,
-            leafId: 0,
-            l1Tokens: [l1Token_1.address],
-          })
-        ).to.be.true;
-      });
-      it("0 flows", async function () {
-        const blockRanges = dataworkerInstance._getNextProposalBlockRanges(spokePoolClients);
-        if (!blockRanges) {
-          throw new Error("Can't propose new bundle");
-        }
-        const { poolRebalanceLeaves } = dataworkerInstance._UBA_buildPoolRebalanceLeaves(
-          blockRanges,
-          [originChainId, destinationChainId],
-          ubaClient
-        );
-        expect(poolRebalanceLeaves.length).to.be.equal(0);
-      });
-    });
-    describe("Build relayer refund root", function () {
-      it("amountToReturn is 0", async function () {
-        await updateAllClients();
-        // No UBA flows in this test so all amounts to return will be 0
-        const { poolRebalanceLeaves } = await dataworkerInstance._UBA_buildPoolRebalanceLeaves(
-          getDefaultBlockRange(0),
-          [originChainId, destinationChainId],
-          ubaClient
-        );
-        const data1 = await dataworkerInstance.clients.bundleDataClient._loadData(
-          getDefaultBlockRange(0),
-          spokePoolClients,
-          true
-        );
-        expect(
-          (
-            await dataworkerInstance._UBA_buildRelayerRefundLeaves(
-              data1.fillsToRefund,
-              poolRebalanceLeaves,
-              getDefaultBlockRange(0)
-            )
-          ).leaves
-        ).to.deep.equal([]);
-
-        // Submit deposits for multiple L2 tokens.
-        const deposit1 = await buildDeposit(
-          hubPoolClient,
-          spokePool_1,
-          erc20_1,
-          l1Token_1,
-          depositor,
-          destinationChainId,
-          amountToDeposit
-        );
-        const deposit2 = await buildDeposit(
-          hubPoolClient,
-          spokePool_1,
-          erc20_1,
-          l1Token_1,
-          depositor,
-          destinationChainId,
-          amountToDeposit
-        );
-
-        // Submit fills for two relayers on one repayment chain and one destination token. Note: we know that
-        // depositor address is alphabetically lower than relayer address, so submit fill from depositor first and test
-        // that data worker sorts on refund address.
-        await updateAllClients();
-        await buildFillForRepaymentChain(spokePool_2, depositor, deposit2, 0.25, destinationChainId);
-        await buildFillForRepaymentChain(spokePool_2, depositor, deposit2, 1, destinationChainId);
-        await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 0.25, destinationChainId);
-        await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 1, destinationChainId);
-
-        const depositorBeforeRelayer = toBN(depositor.address).lt(toBN(relayer.address));
-        const leaf1 = {
-          chainId: destinationChainId,
-          amountToReturn: toBN(0),
-          l2TokenAddress: erc20_2.address,
-          refundAddresses: [
-            depositorBeforeRelayer ? depositor.address : relayer.address,
-            depositorBeforeRelayer ? relayer.address : depositor.address,
-          ], // Sorted ascending alphabetically
-          refundAmounts: [
-            getRefund(deposit1.amount, deposit1.realizedLpFeePct),
-            getRefund(deposit2.amount, deposit2.realizedLpFeePct),
-          ], // Refund amounts should aggregate across all fills.
-        };
-
-        await updateAllClients();
-        const data2 = await dataworkerInstance.clients.bundleDataClient._loadData(
-          getDefaultBlockRange(1),
-          spokePoolClients,
-          true
-        );
-        const relayerRefundLeaves1 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
-          data2.fillsToRefund,
-          poolRebalanceLeaves,
-          getDefaultBlockRange(1)
-        );
-        expect(relayerRefundLeaves1.leaves.length).to.equal(1);
-        deepEqualsWithBigNumber(relayerRefundLeaves1.leaves[0], { ...leaf1, leafId: 0 });
-
-        // Splits leaf into multiple leaves if refunds > MAX_REFUNDS_PER_RELAYER_REFUND_LEAF.
-        const deposit4 = await buildDeposit(
-          hubPoolClient,
-          spokePool_1,
-          erc20_1,
-          l1Token_1,
-          depositor,
-          destinationChainId,
-          amountToDeposit
-        );
-        // @dev: slice(10) so we don't have duplicates between allSigners and depositor/relayer/etc.
-        const allSigners: SignerWithAddress[] = (await ethers.getSigners()).slice(10);
-        expect(
-          allSigners.length >= MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1,
-          "ethers.getSigners doesn't have enough signers"
-        ).to.be.true;
-        for (let i = 0; i < MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1; i++) {
-          await setupTokensForWallet(spokePool_2, allSigners[i], [erc20_2]);
-          await buildFillForRepaymentChain(spokePool_2, allSigners[i], deposit4, 0.01 + i * 0.01, destinationChainId);
-        }
-        // Note: Higher refund amounts for same chain and L2 token should come first, so we test that by increasing
-        // the fill amount in the above loop for each fill. Ultimately, the latest fills send the most tokens and
-        // should come in the first leaf.
-        await updateAllClients();
-        const data4 = await dataworkerInstance.clients.bundleDataClient._loadData(
-          getDefaultBlockRange(3),
-          spokePoolClients,
-          true
-        );
-        const relayerRefundLeaves3 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
-          data4.fillsToRefund,
-          poolRebalanceLeaves,
-          getDefaultBlockRange(3)
-        );
-        expect(relayerRefundLeaves3.leaves.length).to.equal(2);
-
-        // The order should be:
-        // - Sort by repayment chain ID in ascending order, so leaf2 goes first since its the only one with an overridden
-        // repayment chain ID.
-        // - Sort by refund amount. So, the refund addresses in leaf1 go first, then the latest refunds. Each leaf can
-        // have a maximum number of refunds so add the latest refund (recall the latest fills from the last loop
-        // were the largest).
-        leaf1.refundAddresses.push(allSigners[3].address);
-        leaf1.refundAmounts.push(
-          getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.04")).div(toBNWei("1"))
-        );
-        const leaf3 = {
-          chainId: destinationChainId,
-          amountToReturn: toBN(0),
-          l2TokenAddress: erc20_2.address,
-          refundAddresses: [allSigners[2].address, allSigners[1].address, allSigners[0].address],
-          refundAmounts: [
-            getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.03")).div(toBNWei("1")),
-            getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.02")).div(toBNWei("1")),
-            getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.01")).div(toBNWei("1")),
-          ],
-        };
-        deepEqualsWithBigNumber(relayerRefundLeaves3.leaves[0], { ...leaf1, leafId: 0 });
-        deepEqualsWithBigNumber(relayerRefundLeaves3.leaves[1], { ...leaf3, leafId: 1 });
-      });
-      it("amountToReturn is non 0", async function () {
-        await updateAllClients();
-
-        ubaClient.setFlows(originChainId, l1TokenSymbol, [
-          {
-            flow: {
-              ...spokePoolClient_1.getFills()[0],
-            },
-            systemFee: {
-              lpFee: BigNumber.from(0),
-              depositBalancingFee: BigNumber.from(0),
-              systemFee: BigNumber.from(0),
-            },
-            relayerFee: {
-              relayerGasFee: BigNumber.from(0),
-              relayerCapitalFee: BigNumber.from(0),
-              relayerBalancingFee: BigNumber.from(0),
-              relayerFee: BigNumber.from(0),
-              amountTooLow: false,
-            },
-            runningBalance: toBNWei("1"),
-            incentiveBalance: toBNWei("2"),
-            netRunningBalanceAdjustment: toBNWei("-1"),
+          systemFee: {
+            lpFee: BigNumber.from(0),
+            depositBalancingFee: BigNumber.from(0),
+            systemFee: BigNumber.from(0),
           },
-        ]);
-
-        const blockRanges = dataworkerInstance._getNextProposalBlockRanges(spokePoolClients);
-        if (!blockRanges) {
-          throw new Error("Can't propose new bundle");
-        }
-        const { poolRebalanceLeaves } = dataworkerInstance._UBA_buildPoolRebalanceLeaves(
-          blockRanges,
-          [originChainId, destinationChainId],
-          ubaClient
-        );
-
-        // For the UBA, the token transfer threshold shouldn't  matter so set it absurdly high.
-        await configStore.updateTokenConfig(
-          l1Token_1.address,
-          JSON.stringify({
-            rateModel: sampleRateModel,
-            transferThreshold: toBNWei("1000000").toString(),
-          })
-        );
-        await updateAllClients();
-
-        // This leaf's amountToReturn should be non zero since the UBA client was injected with a flow
-        // with a negative netRunningBalanceAdjustment
-        const leaf1 = {
-          chainId: originChainId,
-          amountToReturn: poolRebalanceLeaves[0].netSendAmounts[0].mul(toBN(-1)),
-          l2TokenAddress: erc20_1.address,
-          refundAddresses: [],
-          refundAmounts: [],
-        };
-        const relayerRefundLeaves1 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
-          {},
-          poolRebalanceLeaves,
-          blockRanges
-        );
-        expect(relayerRefundLeaves1.leaves.length).to.equal(1);
-        deepEqualsWithBigNumber(relayerRefundLeaves1.leaves[0], { ...leaf1, leafId: 0 });
-
-        // Now, submit fills on the origin chain such that the refunds for the origin chain need to be split amongst
-        // more than one leaves.
-        const deposit1 = await buildDeposit(
-          hubPoolClient,
-          spokePool_2,
-          erc20_2,
-          l1Token_1,
-          depositor,
-          originChainId,
-          amountToDeposit
-        );
-        const allSigners: SignerWithAddress[] = await ethers.getSigners();
-        expect(
-          allSigners.length >= MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1,
-          "ethers.getSigners doesn't have enough signers"
-        ).to.be.true;
-        const sortedAllSigners = [...allSigners].sort((x, y) => compareAddresses(x.address, y.address));
-        const fills = [];
-        for (let i = 0; i < MAX_REFUNDS_PER_RELAYER_REFUND_LEAF + 1; i++) {
-          await setupTokensForWallet(spokePool_1, sortedAllSigners[i], [erc20_1]);
-          fills.push(await buildFillForRepaymentChain(spokePool_1, sortedAllSigners[i], deposit1, 0.1, originChainId));
-        }
-        const refundAmountPerFill = getRefund(deposit1.amount, deposit1.realizedLpFeePct)
-          .mul(toBNWei("0.1"))
-          .div(toBNWei("1"));
-        const newLeaf1 = {
-          chainId: originChainId,
-          // amountToReturn should be deposit amount minus ALL fills for origin chain minus unfilled amount for slow fill.
-          amountToReturn: poolRebalanceLeaves[0].netSendAmounts[0].mul(toBN(-1)),
-          l2TokenAddress: erc20_1.address,
-          refundAddresses: sortedAllSigners.slice(0, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF).map((x) => x.address),
-          refundAmounts: Array(MAX_REFUNDS_PER_RELAYER_REFUND_LEAF).fill(refundAmountPerFill),
-        };
-        const leaf2 = {
-          chainId: originChainId,
-          amountToReturn: toBN(0),
-          l2TokenAddress: erc20_1.address,
-          refundAddresses: [sortedAllSigners[MAX_REFUNDS_PER_RELAYER_REFUND_LEAF].address],
-          refundAmounts: [refundAmountPerFill],
-        };
-
-        await updateAllClients();
-        const data1 = await dataworkerInstance.clients.bundleDataClient._loadData(
-          getDefaultBlockRange(1),
-          spokePoolClients,
-          true
-        );
-        const relayerRefundLeaves2 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
-          data1.fillsToRefund,
-          poolRebalanceLeaves,
-          getDefaultBlockRange(1)
-        );
-        expect(relayerRefundLeaves2.leaves.length).to.equal(2);
-        deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[0], { ...newLeaf1, leafId: 0 });
-        deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[1], { ...leaf2, leafId: 1 });
-      });
-      it("Refunds are included in UBA mode", async function () {
-        await updateAllClients();
-        const { poolRebalanceLeaves } = await dataworkerInstance._UBA_buildPoolRebalanceLeaves(
-          getDefaultBlockRange(0),
-          [originChainId, destinationChainId],
-          ubaClient
-        );
-
-        // Fill deposit and request refund on origin chain which is NOT the destination chain.
-        const deposit1 = await buildDeposit(
-          hubPoolClient,
-          spokePool_1,
-          erc20_1,
-          l1Token_1,
-          depositor,
-          destinationChainId,
-          amountToDeposit
-        );
-
-        await updateAllClients();
-        await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 1, originChainId);
-
-        await updateAllClients();
-        const data1 = await dataworkerInstance.clients.bundleDataClient._loadData(
-          getDefaultBlockRange(1),
-          spokePoolClients,
-          true
-        );
-        const relayerRefundLeaves1 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
-          data1.fillsToRefund,
-          poolRebalanceLeaves,
-          getDefaultBlockRange(1)
-        );
-        expect(relayerRefundLeaves1.leaves.length).to.equal(0);
-
-        // Now, send a refund:
-        await buildRefundRequest(spokePool_1, relayer, spokePoolClient_2.getFills()[0], erc20_1.address);
-        await updateAllClients();
-        const data2 = await dataworkerInstance.clients.bundleDataClient._loadData(
-          getDefaultBlockRange(2),
-          spokePoolClients,
-          true
-        );
-        const relayerRefundLeaves2 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
-          data2.fillsToRefund,
-          poolRebalanceLeaves,
-          getDefaultBlockRange(2)
-        );
-        const leaf1 = {
-          chainId: originChainId,
-          amountToReturn: toBN(0),
-          l2TokenAddress: erc20_1.address,
-          refundAddresses: [relayer.address],
-          refundAmounts: [getRefund(deposit1.amount, deposit1.realizedLpFeePct)],
-        };
-        deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[0], { ...leaf1, leafId: 0 });
-      });
-    });
-    describe("Build slow relay root", function () {
-      it("Maps unfilled deposit to UBA flow", async function () {
-        await updateAllClients();
-
-        // Submit deposits for multiple destination chain IDs.
-        const deposit1 = await buildDeposit(
-          hubPoolClient,
-          spokePool_1,
-          erc20_1,
-          l1Token_1,
-          depositor,
-          destinationChainId,
-          amountToDeposit
-        );
-
-        // Add fills for each deposit so dataworker includes deposits as slow relays:
-        await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.1);
-
-        // Returns expected merkle root where leaves are ordered by origin chain ID and then deposit ID
-        // (ascending).
-        await updateAllClients();
-
-        const { unfilledDeposits } = await dataworkerInstance.clients.bundleDataClient._loadData(
-          getDefaultBlockRange(0),
-          spokePoolClients
-        );
-
-        // If the flow that triggered the slow relay is not in the UBA flows, then expect an error. This should
-        // never happen in production because each flow that could trigger a slow relay will be included in the UBA
-        // flows. If that deposit never gets fully filled, then it will appear as an `unfilledDeposit` returned by
-        // `loadData`. If it does get fully filled, it will remain a UBA flow but not returned by `loadData`.
-        expect(() =>
-          dataworkerInstance._UBA_buildSlowRelayLeaves(ubaClient, getDefaultBlockRange(0), unfilledDeposits)
-        ).to.throw(`No matching outflow found for deposit ID ${deposit1.depositId}`);
-
-        const expectedRelayerBalancingFee = toBNWei("0.025");
-        ubaClient.setFlows(deposit1.destinationChainId, l1TokenSymbol, [
-          {
-            flow: {
-              ...spokePoolClient_2.getFills()[0],
-            },
-            systemFee: {
-              lpFee: BigNumber.from(0),
-              depositBalancingFee: BigNumber.from(0),
-              systemFee: BigNumber.from(0),
-            },
-            relayerFee: {
-              relayerGasFee: BigNumber.from(0),
-              relayerCapitalFee: BigNumber.from(0),
-              relayerBalancingFee: expectedRelayerBalancingFee,
-              relayerFee: BigNumber.from(0),
-              amountTooLow: false,
-            },
-            runningBalance: toBNWei("1"),
-            incentiveBalance: toBNWei("1"),
-            netRunningBalanceAdjustment: toBNWei("1"),
+          relayerFee: {
+            relayerGasFee: BigNumber.from(0),
+            relayerCapitalFee: BigNumber.from(0),
+            relayerBalancingFee: BigNumber.from(0),
+            relayerFee: BigNumber.from(0),
+            amountTooLow: false,
           },
-        ]);
-        const slowRelayLeaves = dataworkerInstance._UBA_buildSlowRelayLeaves(
-          ubaClient,
-          getDefaultBlockRange(0),
-          unfilledDeposits
-        );
-        expect(slowRelayLeaves.leaves.length).to.equal(1);
-        const expectedSlowRelayLeaves = buildSlowRelayLeaves([deposit1], [expectedRelayerBalancingFee]);
-        const expectedMerkleRoot = await buildSlowRelayTree(expectedSlowRelayLeaves);
-        expect(expectedSlowRelayLeaves[0].payoutAdjustmentPct).to.equal(slowRelayLeaves.leaves[0].payoutAdjustmentPct);
-        expect(expectedMerkleRoot.getHexRoot()).to.equal(slowRelayLeaves.tree.getHexRoot());
+          runningBalance: toBNWei("1"),
+          incentiveBalance: toBNWei("1"),
+          netRunningBalanceAdjustment: toBNWei("1"),
+        },
+      ]);
 
-        // If loadData doesn't return unfilled deposits, then no slow fill leaves.
-        expect(
-          dataworkerInstance._UBA_buildSlowRelayLeaves(ubaClient, getDefaultBlockRange(0), []).leaves.length
-        ).to.equal(0);
-      });
+      await dataworkerInstance.UBA_proposeRootBundle(ubaClient, spokePoolClients, BigNumber.from(0), true);
     });
   });
 });
