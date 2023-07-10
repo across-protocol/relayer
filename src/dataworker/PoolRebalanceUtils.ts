@@ -281,7 +281,9 @@ export function constructPoolRebalanceLeaves(
   realizedLpFees: interfaces.RunningBalances,
   configStoreClient: ConfigStoreClient,
   maxL1TokenCount?: number,
-  tokenTransferThreshold?: BigNumberForToken
+  tokenTransferThreshold?: BigNumberForToken,
+  incentivePoolBalances?: interfaces.RunningBalances,
+  netSendAmounts?: interfaces.RunningBalances
 ): interfaces.PoolRebalanceLeaf[] {
   // Create one leaf per L2 chain ID. First we'll create a leaf with all L1 tokens for each chain ID, and then
   // we'll split up any leaves with too many L1 tokens.
@@ -324,7 +326,9 @@ export function constructPoolRebalanceLeaves(
           }
         });
         const leafNetSendAmounts = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
-          if (runningBalances[chainId] && runningBalances[chainId][l1Token]) {
+          if (netSendAmounts[chainId] && runningBalances[chainId][l1Token]) {
+            return netSendAmounts[chainId][l1Token];
+          } else if (runningBalances[chainId] && runningBalances[chainId][l1Token]) {
             return getNetSendAmountForL1Token(
               transferThresholds[index],
               spokeTargetBalances[index],
@@ -345,12 +349,19 @@ export function constructPoolRebalanceLeaves(
             return toBN(0);
           }
         });
+        const incentiveBalances = l1TokensToIncludeInThisLeaf.map((l1Token) => {
+          if (incentivePoolBalances[chainId]?.[l1Token]) {
+            return incentivePoolBalances[chainId];
+          } else {
+            return toBN(0);
+          }
+        });
 
         leaves.push({
           chainId: Number(chainId),
           bundleLpFees: leafBundleLpFees,
           netSendAmounts: leafNetSendAmounts,
-          runningBalances: leafRunningBalances,
+          runningBalances: leafRunningBalances.concat(incentiveBalances),
           groupIndex: groupIndexForChainId++,
           leafId: leaves.length,
           l1Tokens: l1TokensToIncludeInThisLeaf,

@@ -174,9 +174,9 @@ export async function deployAndConfigureHubPool(
     await hubPool.setCrossChainContracts(spokePool.l2ChainId, mockAdapter.address, spokePool.spokePool.address);
   }
 
-  const l1Token_1 = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("Rando L1", "L1", 18);
+  const l1Token_1 = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("L1Token1", "L1Token1", 18);
   await l1Token_1.addMember(TokenRolesEnum.MINTER, signer.address);
-  const l1Token_2 = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("Rando L1", "L1", 18);
+  const l1Token_2 = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("L1Token2", "L1Token2", 18);
   await l1Token_2.addMember(TokenRolesEnum.MINTER, signer.address);
 
   return { hubPool, mockAdapter, l1Token_1, l1Token_2, hubPoolDeploymentBlock: receipt.blockNumber };

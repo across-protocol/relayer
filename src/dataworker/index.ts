@@ -102,8 +102,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         spokePoolClients,
         logger
       );
-      // @dev: Don't instantiate UBA client with any state and don't re-refresh the Hub/SpokePool clients.
-      await ubaClient.update({}, false);
 
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled) {
@@ -116,6 +114,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         // TODO: Add dynamic switch to build UBA root bundle
         // eslint-disable-next-line no-constant-condition
         if (false) {
+          // @dev: Don't instantiate UBA client with any state and don't re-refresh the Hub/SpokePool clients.
+          await ubaClient.update({}, false);
           await dataworker.UBA_proposeRootBundle(
             ubaClient,
             spokePoolClients,
