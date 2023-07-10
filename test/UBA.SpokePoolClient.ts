@@ -6,9 +6,7 @@ import {
   isUbaInflow,
   isUbaOutflow,
   outflowIsFill,
-  Deposit,
   DepositWithBlock,
-  Fill,
   FillWithBlock,
   RefundRequest,
   RefundRequestWithBlock,
@@ -23,6 +21,8 @@ import {
   ethers,
   Contract,
   deployConfigStore,
+  fillFromDeposit,
+  refundRequestFromFill,
   hubPoolFixture,
   SignerWithAddress,
   destinationChainId,
@@ -51,55 +51,6 @@ let originToken: string, refundToken: string;
 
 const chainIds = [originChainId, destinationChainId, repaymentChainId];
 const logger = createSpyLogger().spyLogger;
-
-function fillFromDeposit(deposit: Deposit, relayer: string): Fill {
-  const { recipient, message, relayerFeePct } = deposit;
-
-  const fill: Fill = {
-    amount: deposit.amount,
-    depositId: deposit.depositId,
-    originChainId: deposit.originChainId,
-    destinationChainId: deposit.destinationChainId,
-    depositor: deposit.depositor,
-    destinationToken: deposit.destinationToken,
-    relayerFeePct: deposit.relayerFeePct,
-    realizedLpFeePct: deposit.realizedLpFeePct,
-    recipient,
-    relayer,
-    message,
-
-    // Caller can modify these later.
-    fillAmount: deposit.amount,
-    totalFilledAmount: deposit.amount,
-    repaymentChainId: deposit.destinationChainId,
-
-    updatableRelayData: {
-      recipient: deposit.updatedRecipient ?? recipient,
-      message: deposit.updatedMessage ?? message,
-      relayerFeePct: deposit.updatedRelayerFeePct ?? relayerFeePct,
-      isSlowRelay: false,
-      payoutAdjustmentPct: toBN(0),
-    },
-  };
-
-  return fill;
-}
-
-function refundRequestFromFill(fill: FillWithBlock, relayer: string, refundToken: string): RefundRequest {
-  const refundRequest: RefundRequest = {
-    amount: fill.amount,
-    depositId: fill.depositId,
-    originChainId: fill.originChainId,
-    destinationChainId: fill.destinationChainId,
-    realizedLpFeePct: fill.realizedLpFeePct,
-    fillBlock: toBN(fill.blockNumber),
-    relayer,
-    refundToken,
-    previousIdenticalRequests: toBN(0),
-  };
-
-  return refundRequest;
-}
 
 describe("UBA: SpokePool Events", async function () {
   beforeEach(async function () {
