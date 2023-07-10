@@ -29,6 +29,7 @@ import {
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { getFillDataForSlowFillFromPreviousRootBundle } from "../utils";
 import { Clients } from "../common";
+import { getBlockRangeForChain } from "./DataworkerUtils";
 
 export function updateRunningBalance(
   runningBalances: interfaces.RunningBalances,
