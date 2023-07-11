@@ -553,20 +553,11 @@ export class Dataworker {
         );
         console.log(`flows for ${chainId} and token:${tokenSymbol}`, flowsForChain);
         if (flowsForChain.length === 0) {
-          const precedingBundleBalances = getOpeningTokenBalances(
-            Number(chainId),
-            l1TokenAddress,
-            this.clients.hubPoolClient,
-            mainnetBundleEndBlock
-          );
-          console.log(
-            `No flows, using previous cumulative stats from preceding bundle for ${chainId} and token:${tokenSymbol}`,
-            precedingBundleBalances
-          );
-          poolRebalanceLeafData.runningBalances[chainId][l1TokenAddress] = precedingBundleBalances.spokePoolBalance;
+          const previousRunningBalance = this.clients.hubPoolClient.getRunningBalanceBeforeBlockForChain(mainnetBundleEndBlock, Number(chainId), l1TokenAddress);
+          poolRebalanceLeafData.runningBalances[chainId][l1TokenAddress] = previousRunningBalance.runningBalance;
           poolRebalanceLeafData.bundleLpFees[chainId][l1TokenAddress] = BigNumber.from(0);
           poolRebalanceLeafData.incentivePoolBalances[chainId][l1TokenAddress] =
-            precedingBundleBalances.incentiveBalance;
+            previousRunningBalance.incentiveBalance;
           poolRebalanceLeafData.netSendAmounts[chainId][l1TokenAddress] = BigNumber.from(0);
         } else {
           const closingRunningBalance = flowsForChain[flowsForChain.length - 1].runningBalance;
