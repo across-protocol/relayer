@@ -131,7 +131,7 @@ export async function deployConfigStore(
   maxRefundPerRelayerRefundLeaf: number = MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   rateModel: unknown = sampleRateModel,
   transferThreshold: BigNumber = DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
-): Promise<{ configStore: utils.Contract, deploymentBlock: number }> {
+): Promise<{ configStore: utils.Contract; deploymentBlock: number }> {
   const configStore = await (await utils.getContractFactory("AcrossConfigStore", signer)).deploy();
   const { blockNumber: deploymentBlock } = await configStore.deployTransaction.wait();
 
