@@ -20,7 +20,7 @@ type EventSearchConfig = sdkUtils.EventSearchConfig;
 
 const { getFills, getRefundRequests } = clients;
 
-let owner: SignerWithAddress, _relayer: SignerWithAddress, relayer: string;
+let owner: SignerWithAddress;
 let chainIds: number[];
 let originChainId: number, destinationChainId: number, repaymentChainId: number;
 let hubPoolClient: MockHubPoolClient;
@@ -30,30 +30,6 @@ let destinationSpokePoolClient: MockSpokePoolClient;
 let repaymentSpokePoolClient: MockSpokePoolClient;
 
 const logger = createSpyLogger().spyLogger;
-
-const generateValidFill = async (
-  origin: MockSpokePoolClient,
-  destination: MockSpokePoolClient
-): Promise<{ deposit: DepositWithBlock; fill: FillWithBlock }> => {
-  let event = origin.generateDeposit({} as DepositWithBlock);
-  origin.addEvent(event);
-  await origin.update();
-
-  // Pull the DepositWithBlock event out of the origin SpokePoolClient to use as a Fill template.
-  const deposit = origin.getDeposits().find(({ transactionHash }) => transactionHash === event.transactionHash);
-  expect(deposit).to.not.be.undefined;
-
-  const fillTemplate = fillFromDeposit(deposit as DepositWithBlock, randomAddress());
-  event = destination.generateFill(fillTemplate as FillWithBlock);
-  destination.addEvent(event);
-  await destination.update();
-
-  // Pull the FillWithBlock event out of the destination SpokePoolClient.
-  const fill = destination.getFills().find(({ transactionHash }) => transactionHash === event.transactionHash);
-  expect(fill).to.not.be.undefined;
-
-  return { deposit: deposit as DepositWithBlock, fill: fill as FillWithBlock };
-};
 
 const generateValidRefundRequest = async (
   origin: MockSpokePoolClient,
@@ -104,9 +80,8 @@ const generateValidRefundRequest = async (
 
 describe("SpokePoolClient: Event Filtering", async function () {
   beforeEach(async function () {
-    [owner, _relayer] = await ethers.getSigners();
+    [owner] = await ethers.getSigners();
     destinationChainId = (await owner.provider.getNetwork()).chainId as number;
-    relayer = _relayer.address;
 
     originChainId = random(100_000, 1_000_000, false);
     repaymentChainId = random(1_000_001, 2_000_000, false);
@@ -166,7 +141,7 @@ describe("SpokePoolClient: Event Filtering", async function () {
     const fillEvents: FillWithBlock[] = [];
 
     for (let idx = 0; idx < 10; ++idx) {
-      const { fill } = await generateValidFill(
+      const { fill } = await generateValidRefundRequest(
         idx === 0 ? repaymentSpokePoolClient : originSpokePoolClient, // Add one random originChainId for filtering.
         destinationSpokePoolClient
       );
