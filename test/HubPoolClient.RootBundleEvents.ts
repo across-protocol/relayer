@@ -44,13 +44,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
 
     logger = createSpyLogger().spyLogger;
     const { configStore, deploymentBlock: fromBlock } = await deployConfigStore(owner, [l1Token_1, l1Token_2]);
-    configStoreClient = new ConfigStoreClient(
-      logger,
-      configStore,
-      { fromBlock },
-      constants.CONFIG_STORE_VERSION,
-      []
-    );
+    configStoreClient = new ConfigStoreClient(logger, configStore, { fromBlock }, constants.CONFIG_STORE_VERSION, []);
     hubPoolClient = new HubPoolClient(logger, hubPool, configStoreClient);
   });
 
