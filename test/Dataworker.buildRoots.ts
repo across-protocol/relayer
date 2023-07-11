@@ -1449,7 +1449,16 @@ describe("Dataworker: Build merkle roots", async function () {
         },
       ]);
 
-      await dataworkerInstance.UBA_proposeRootBundle(ubaClient, spokePoolClients, BigNumber.from(0), true);
+      const blockRanges = dataworkerInstance._getNextProposalBlockRanges(
+        spokePoolClients
+      )
+      if (!blockRanges) throw new Error("Can't propose new bundle")
+      const poolRebalanceLeaves = dataworkerInstance._UBA_buildPoolRebalanceLeaves(
+        blockRanges,
+        [originChainId, destinationChainId],
+        ubaClient
+      );
+      console.log(poolRebalanceLeaves)
     });
   });
 });

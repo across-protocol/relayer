@@ -503,9 +503,41 @@ export class Dataworker {
         this.chainIdListForBundleEvaluationBlockNumbers
       );
       return !PoolRebalanceUtils.isChainDisabled(blockRangeForChain);
-    });
-    const mainnetBundleEndBlock = getBlockRangeForChain(
+    }).map(x => Number(x));
+
+
+    const poolRebalanceLeaves = this._UBA_buildPoolRebalanceLeaves(
       blockRangesForProposal,
+      enabledChainIds,
+      ubaClient
+    )
+
+    // Build RelayerRefundRoot:
+    // 1. Get all fills in range from SpokePoolClient
+    // 2. Get all flows from UBA Client
+    // 3. Validate fills by matching them with a deposit flow. Partial and Full fills should be validated the same (?)
+    // 4. Validate refunds by matching them with a refund flow and checking that they were the first refund.
+
+    // Build SlowRelayRoot:
+    // 1. Get all initial partial fills in range from SpokePoolClient that weren't later fully filled.
+    // 2. Get all flows from UBA Client
+    // 3. Validate fills by matching them with a deposit flow.
+  }
+
+  /**
+   * Builds pool rebalance leaves for the given block ranges and enabled chains.
+   * @param blockRanges Marks the event range that should be used to form pool rebalance leaf data
+   * @param enabledChainIds Chains that we should create pool rebalance leaves for
+   * @param ubaClient 
+   * @returns pool rebalance leaves to propose for `blockRanges`
+   */
+  _UBA_buildPoolRebalanceLeaves(
+    blockRanges: number[][],
+    enabledChainIds: number[],
+    ubaClient: UBAClient
+  ): PoolRebalanceLeaf[] {
+    const mainnetBundleEndBlock = getBlockRangeForChain(
+      blockRanges,
       this.clients.hubPoolClient.chainId,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
@@ -528,7 +560,7 @@ export class Dataworker {
     };
     for (const chainId of enabledChainIds) {
       const blockRangeForChain = getBlockRangeForChain(
-        blockRangesForProposal,
+        blockRanges,
         Number(chainId),
         this.chainIdListForBundleEvaluationBlockNumbers
       );
@@ -551,7 +583,7 @@ export class Dataworker {
           blockRangeForChain[0],
           blockRangeForChain[1]
         );
-        console.log(`flows for ${chainId} and token:${tokenSymbol}`, flowsForChain);
+        // console.log(`flows for ${chainId} and token:${tokenSymbol}`, flowsForChain);
         if (flowsForChain.length === 0) {
           const previousRunningBalance = this.clients.hubPoolClient.getRunningBalanceBeforeBlockForChain(
             mainnetBundleEndBlock,
@@ -578,9 +610,9 @@ export class Dataworker {
         }
       }
     }
-    console.log("poolRebalanceLeafData", poolRebalanceLeafData);
+    // console.log("poolRebalanceLeafData", poolRebalanceLeafData);
 
-    const poolRebalanceLeaves = PoolRebalanceUtils.constructPoolRebalanceLeaves(
+    return PoolRebalanceUtils.constructPoolRebalanceLeaves(
       mainnetBundleEndBlock,
       poolRebalanceLeafData.runningBalances,
       poolRebalanceLeafData.bundleLpFees,
@@ -590,18 +622,6 @@ export class Dataworker {
       poolRebalanceLeafData.incentivePoolBalances,
       poolRebalanceLeafData.netSendAmounts
     );
-    console.log("poolRebalanceLeaves", poolRebalanceLeaves);
-
-    // Build RelayerRefundRoot:
-    // 1. Get all fills in range from SpokePoolClient
-    // 2. Get all flows from UBA Client
-    // 3. Validate fills by matching them with a deposit flow. Partial and Full fills should be validated the same (?)
-    // 4. Validate refunds by matching them with a refund flow and checking that they were the first refund.
-
-    // Build SlowRelayRoot:
-    // 1. Get all initial partial fills in range from SpokePoolClient that weren't later fully filled.
-    // 2. Get all flows from UBA Client
-    // 3. Validate fills by matching them with a deposit flow.
   }
 
   async validatePendingRootBundle(
