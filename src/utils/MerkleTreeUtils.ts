@@ -21,7 +21,7 @@ export function buildPoolRebalanceLeafTree(poolRebalanceLeaves: PoolRebalanceLea
     }
     if (
       poolRebalanceLeaves[i].runningBalances.length !== poolRebalanceLeaves[i].bundleLpFees.length * 2 ||
-      poolRebalanceLeaves[i].runningBalances.length !== poolRebalanceLeaves[i].bundleLpFees.length ||
+      poolRebalanceLeaves[i].runningBalances.length !== poolRebalanceLeaves[i].bundleLpFees.length
     ) {
       throw new Error("Running balances length unexpected");
     }

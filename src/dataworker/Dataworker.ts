@@ -553,7 +553,11 @@ export class Dataworker {
         );
         console.log(`flows for ${chainId} and token:${tokenSymbol}`, flowsForChain);
         if (flowsForChain.length === 0) {
-          const previousRunningBalance = this.clients.hubPoolClient.getRunningBalanceBeforeBlockForChain(mainnetBundleEndBlock, Number(chainId), l1TokenAddress);
+          const previousRunningBalance = this.clients.hubPoolClient.getRunningBalanceBeforeBlockForChain(
+            mainnetBundleEndBlock,
+            Number(chainId),
+            l1TokenAddress
+          );
           poolRebalanceLeafData.runningBalances[chainId][l1TokenAddress] = previousRunningBalance.runningBalance;
           poolRebalanceLeafData.bundleLpFees[chainId][l1TokenAddress] = BigNumber.from(0);
           poolRebalanceLeafData.incentivePoolBalances[chainId][l1TokenAddress] =
