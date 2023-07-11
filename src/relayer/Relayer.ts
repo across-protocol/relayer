@@ -42,7 +42,7 @@ export class Relayer {
       this.clients;
 
     const maxVersion = configStoreClient.configStoreVersion;
-    const unfilledDeposits = getUnfilledDeposits(spokePoolClients, config.maxRelayerLookBack, configStoreClient);
+    const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, configStoreClient, config.maxRelayerLookBack);
     const { supportedDeposits = [], unsupportedDeposits = [] } = groupBy(unfilledDeposits, (deposit) =>
       deposit.version <= maxVersion ? "supportedDeposits" : "unsupportedDeposits"
     );
@@ -204,30 +204,24 @@ export class Relayer {
       }
 
       // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
-      if (
-        sendSlowRelays &&
-        fillCount === 0 &&
-        slowDepositors?.includes(deposit.depositor) &&
-        tokenClient.hasBalanceForZeroFill(deposit)
-      ) {
-        this.logger.debug({
-          at: "Relayer",
-          message: "Initiating slow fill for grey listed depositor",
-          depositor: deposit.depositor,
-        });
-        this.zeroFillDeposit(deposit);
+      if (slowDepositors?.includes(deposit.depositor)) {
+        if (sendSlowRelays && fillCount === 0 && tokenClient.hasBalanceForZeroFill(deposit)) {
+          this.logger.debug({
+            at: "Relayer",
+            message: "Initiating slow fill for grey listed depositor",
+            depositor: deposit.depositor,
+          });
+          this.zeroFillDeposit(deposit);
+        }
+        // Regardless of whether we should send a slow fill or not for this depositor, exit early at this point
+        // so we don't fast fill an already slow filled deposit from the slow fill-only list.
         continue;
       }
 
       if (tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
         // The pre-computed realizedLpFeePct is for the pre-UBA fee model. Update it to the UBA fee model if necessary.
         // The SpokePool guarantees the sum of the fees is <= 100% of the deposit amount.
-        deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(
-          version,
-          deposit,
-          l1Token.symbol,
-          l1Token.address
-        );
+        deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit, l1Token.symbol);
 
         const repaymentChainId = await this.resolveRepaymentChain(version, deposit, unfilledAmount, l1Token);
         if (isDefined(repaymentChainId)) {
@@ -376,8 +370,7 @@ export class Relayer {
   protected async computeRealizedLpFeePct(
     version: number,
     deposit: DepositWithBlock,
-    symbol: string,
-    hubPoolTokenAddress: string
+    symbol: string
   ): Promise<BigNumber> {
     if (!sdkUtils.isUBA(version)) {
       return deposit.realizedLpFeePct;
@@ -392,7 +385,6 @@ export class Relayer {
       originChainId,
       destinationChainId,
       symbol,
-      hubPoolTokenAddress,
       amount,
       quoteBlockNumber
     );
