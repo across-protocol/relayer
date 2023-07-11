@@ -58,11 +58,13 @@ describe("SpokePoolClient: Refund Requests", async function () {
   it("Correctly filters out refund requests based on blockNumber", async function () {
     // New events must come _after_ the current latestBlockNumber.
     const { chainId: repaymentChainId, latestBlockNumber } = spokePoolClient;
-    const minExpectedBlockNumber = latestBlockNumber + 1 + spokePoolClient.minBlockRange;
+    const nEvents = 5;
+    const minExpectedBlockNumber = latestBlockNumber + nEvents;
 
     const refundRequestEvents: RefundRequestWithBlock[] = [];
-    for (let blockNumber = latestBlockNumber + 1; blockNumber <= minExpectedBlockNumber; ++blockNumber) {
+    for (let txn = 0; txn < nEvents; ++txn) {
       // Barebones Event - only absolutely necessary fields are populated.
+      const blockNumber = latestBlockNumber + 1 + txn;
       const refundRequest = { relayer, originChainId, blockNumber } as RefundRequestWithBlock;
       const testEvent = spokePoolClient.generateRefundRequest(refundRequest);
       spokePoolClient.addEvent(testEvent);
@@ -72,7 +74,7 @@ describe("SpokePoolClient: Refund Requests", async function () {
       } as RefundRequestWithBlock);
     }
     await spokePoolClient.update();
-    expect(spokePoolClient.latestBlockNumber - latestBlockNumber).to.be.at.least(4);
+    expect(spokePoolClient.latestBlockNumber - latestBlockNumber).to.be.at.least(nEvents);
 
     // Filter out the RefundRequests at the fringes.
     const fromBlock = latestBlockNumber + 2;
