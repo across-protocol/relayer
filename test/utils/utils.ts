@@ -131,8 +131,10 @@ export async function deployConfigStore(
   maxRefundPerRelayerRefundLeaf: number = MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   rateModel: unknown = sampleRateModel,
   transferThreshold: BigNumber = DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
-) {
+): Promise<{ configStore: utils.Contract; deploymentBlock: number }> {
   const configStore = await (await utils.getContractFactory("AcrossConfigStore", signer)).deploy();
+  const { blockNumber: deploymentBlock } = await configStore.deployTransaction.wait();
+
   for (const token of tokensToAdd) {
     await configStore.updateTokenConfig(
       token.address,
@@ -151,7 +153,7 @@ export async function deployConfigStore(
     maxRefundPerRelayerRefundLeaf.toString()
   );
 
-  return { configStore };
+  return { configStore, deploymentBlock };
 }
 
 export async function deployAndConfigureHubPool(
