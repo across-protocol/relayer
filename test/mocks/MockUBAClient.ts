@@ -1,7 +1,6 @@
 import * as UBAClientTypes from "@across-protocol/sdk-v2/src/clients/UBAClient/UBAClientTypes";
 import { UBAClient } from "../../src/clients";
 import { BigNumber, toBN } from "../utils";
-import { ModifiedUBAFlow } from "@across-protocol/sdk-v2/dist/clients/UBAClient/UBAClientTypes";
 
 // Adds functions to MockHubPoolClient to facilitate Dataworker unit testing.
 export class MockUBAClient extends UBAClient {
@@ -35,9 +34,11 @@ export class MockUBAClient extends UBAClient {
   getModifiedFlows(
     chainId: number,
     tokenSymbol: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _fromBlock?: number | undefined,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _toBlock?: number | undefined
-  ): ModifiedUBAFlow[] {
+  ): UBAClientTypes.ModifiedUBAFlow[] {
     return this.flows[chainId]?.[tokenSymbol] ?? [];
   }
 }
