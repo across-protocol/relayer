@@ -61,6 +61,8 @@ describe("SpokePoolClient: SpeedUp", async function () {
       ...deposit,
       speedUpSignature: speedUpSignature.signature,
       newRelayerFeePct: newRelayFeePct,
+      updatedMessage: "0x",
+      updatedRecipient: deposit.recipient,
     };
     expect(
       deepEqualsWithBigNumber(
@@ -122,6 +124,8 @@ describe("SpokePoolClient: SpeedUp", async function () {
       ...deposit,
       speedUpSignature: speedUpSignature.signature,
       newRelayerFeePct: newRelayFeePct,
+      updatedMessage: "0x",
+      updatedRecipient: deposit.recipient,
     };
     expect(
       deepEqualsWithBigNumber(
@@ -221,6 +225,8 @@ describe("SpokePoolClient: SpeedUp", async function () {
       ...deposit,
       speedUpSignature: speedUpFasterSignature.signature,
       newRelayerFeePct: speedupFaster,
+      updatedMessage: "0x",
+      updatedRecipient: deposit.recipient,
     };
     expect(
       deepEqualsWithBigNumber(
