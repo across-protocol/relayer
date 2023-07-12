@@ -6,6 +6,7 @@ import {
   createSpyLogger,
   lastSpyLogIncludes,
   deepEqualsWithBigNumber,
+  assert,
 } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
@@ -1082,7 +1083,7 @@ describe("Dataworker: Build merkle roots", async function () {
       };
       expect(deepEqualsWithBigNumber(merkleRoot1.leaves, [expectedLeaf])).to.be.true;
     });
-    it("Token transfer exceeeds threshold", async function () {
+    it("Token transfer exceeds threshold", async function () {
       await updateAllClients();
       const deposit = await buildDeposit(
         hubPoolClient,
@@ -1401,7 +1402,7 @@ describe("Dataworker: Build merkle roots", async function () {
       expect(deepEqualsWithBigNumber(merkleRoot2.leaves, expectedLeaves2)).to.be.true;
     });
   });
-  describe.only("UBA Root Bundles", function () {
+  describe("UBA Root Bundles", function () {
     beforeEach(async function () {
       await updateAllClients();
     });
@@ -1415,8 +1416,6 @@ describe("Dataworker: Build merkle roots", async function () {
         destinationChainId,
         amountToDeposit
       );
-      await updateAllClients();
-
       // Build UBA Client
       const l1TokenSymbol = "L1Token1";
       const ubaClient = new MockUBAClient(
@@ -1449,16 +1448,26 @@ describe("Dataworker: Build merkle roots", async function () {
         },
       ]);
 
-      const blockRanges = dataworkerInstance._getNextProposalBlockRanges(
-        spokePoolClients
-      )
-      if (!blockRanges) throw new Error("Can't propose new bundle")
+      const blockRanges = dataworkerInstance._getNextProposalBlockRanges(spokePoolClients);
+      if (!blockRanges) {
+        throw new Error("Can't propose new bundle");
+      }
       const poolRebalanceLeaves = dataworkerInstance._UBA_buildPoolRebalanceLeaves(
         blockRanges,
         [originChainId, destinationChainId],
         ubaClient
       );
-      console.log(poolRebalanceLeaves)
+      expect(
+        deepEqualsWithBigNumber(poolRebalanceLeaves[0], {
+          chainId: deposit.originChainId,
+          bundleLpFees: [BigNumber.from(0)],
+          netSendAmounts: [toBNWei("1")],
+          runningBalances: [toBNWei("1"), toBNWei("1")],
+          groupIndex: 0,
+          leafId: 0,
+          l1Tokens: [l1Token_1.address],
+        })
+      ).to.be.true;
     });
   });
 });
