@@ -1,5 +1,4 @@
-import * as UBAClientTypes from "@across-protocol/sdk-v2/src/clients/UBAClient/UBAClientTypes";
-import { UBAActionType } from "@across-protocol/sdk-v2/src/UBAFeeCalculator/UBAFeeTypes";
+import * as ubaClientSdk from "@across-protocol/sdk-v2/dist/clients/UBAClient";
 import { UBAClient } from "../../src/clients";
 import { BigNumber, toBN } from "../utils";
 
@@ -7,7 +6,7 @@ import { BigNumber, toBN } from "../utils";
 export class MockUBAClient extends UBAClient {
   public readonly balancingFees: { [chainId: number]: BigNumber } = {};
   public readonly lpFees: { [chainId: number]: BigNumber } = {};
-  public readonly flows: { [chainId: number]: { [token: string]: UBAClientTypes.ModifiedUBAFlow[] } } = {};
+  public readonly flows: { [chainId: number]: { [token: string]: ubaClientSdk.ModifiedUBAFlow[] } } = {};
 
   setBalancingFee(chainId: number, fee: BigNumber): void {
     this.balancingFees[chainId] = fee;
@@ -18,8 +17,8 @@ export class MockUBAClient extends UBAClient {
     _amount: BigNumber,
     _hubPoolBlockNumber: number,
     chainId: number,
-    feeType: UBAActionType
-  ): UBAClientTypes.BalancingFeeReturnType {
+    feeType: ubaClientSdk.UBAActionType
+  ): ubaClientSdk.BalancingFeeReturnType {
     return { balancingFee: this.getBalancingFee(chainId), actionType: feeType };
   }
 
@@ -54,7 +53,7 @@ export class MockUBAClient extends UBAClient {
     spokePoolToken: string,
     amount: BigNumber,
     hubPoolBlockNumber: number
-  ): UBAClientTypes.SystemFeeResult {
+  ): ubaClientSdk.SystemFeeResult {
     const hubPoolToken = ""; // ignored
     // @dev pass in anything for hubPoolChainId since it's not used
     const lpFee = this.computeLpFee(amount, depositChainId, depositChainId, hubPoolToken, destinationChainId);
@@ -64,13 +63,13 @@ export class MockUBAClient extends UBAClient {
       amount,
       hubPoolBlockNumber,
       depositChainId,
-      UBAActionType.Deposit
+      ubaClientSdk.UBAActionType.Deposit
     );
     const systemFee = lpFee.add(depositBalancingFee);
 
     return { lpFee, depositBalancingFee, systemFee };
   }
-  setFlows(chainId: number, token: string, modifiedFlows: UBAClientTypes.ModifiedUBAFlow[]): void {
+  setFlows(chainId: number, token: string, modifiedFlows: ubaClientSdk.ModifiedUBAFlow[]): void {
     if (!this.flows[chainId]) {
       this.flows[chainId] = {};
     }
@@ -84,7 +83,7 @@ export class MockUBAClient extends UBAClient {
     _fromBlock?: number | undefined,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _toBlock?: number | undefined
-  ): UBAClientTypes.ModifiedUBAFlow[] {
+  ): ubaClientSdk.ModifiedUBAFlow[] {
     return this.flows[chainId]?.[tokenSymbol] ?? [];
   }
 }
