@@ -18,6 +18,7 @@ import {
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD,
+  CONFIG_STORE_VERSION,
 } from "../constants";
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
@@ -155,7 +156,15 @@ export async function setupDataworker(
     defaultPoolRebalanceTokenTransferThreshold
   );
 
-  const configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
+  const configStoreClient = new clients.ConfigStoreClient(
+    spyLogger,
+    configStore,
+    { fromBlock: 0 },
+    CONFIG_STORE_VERSION,
+    []
+  );
+
+  // const configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
   const hubPoolClient = new clients.HubPoolClient(
     spyLogger,
     hubPool,

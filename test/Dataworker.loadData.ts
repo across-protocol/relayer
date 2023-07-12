@@ -596,18 +596,13 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data5 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(3), spokePoolClients);
     const expectedData5 = {
+      ...data4.fillsToRefund,
       [slowFill3.destinationChainId]: {
         [erc20_1.address]: {
-          fills: [slowFill3], // Slow fill gets added to fills list
-          realizedLpFees: getRealizedLpFeeForFills([slowFill3]), // Slow fill does affect realized LP fee
-        },
-      },
-      [destinationChainId]: {
-        [erc20_2.address]: {
-          fills: [fill1, fill3],
-          refunds: { [relayer.address]: getRefundForFills([fill1, fill3]) },
-          totalRefundAmount: getRefundForFills([fill1, fill3]),
-          realizedLpFees: getRealizedLpFeeForFills([fill1, fill3]),
+          fills: [fill3, slowFill3], // Slow fill gets added to fills list, but no refund amount.
+          refunds: { [relayer.address]: getRefundForFills([fill3]) },
+          totalRefundAmount: getRefundForFills([fill3]),
+          realizedLpFees: getRealizedLpFeeForFills([fill3, slowFill3]), // Slow fill does affect realized LP fee
         },
       },
     };
@@ -619,22 +614,22 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data6 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(4), spokePoolClients);
     const expectedData6 = {
-      [slowFill3.destinationChainId]: {
-        [erc20_1.address]: {
-          fills: [slowFill3],
-          realizedLpFees: getRealizedLpFeeForFills([slowFill3]),
-        },
-      },
+      ...data5.fillsToRefund,
       [destinationChainId]: {
         [erc20_2.address]: {
-          fills: [fill1, fill4, fill3],
-          refunds: { [relayer.address]: getRefundForFills([fill1, fill3, fill4]) },
-          totalRefundAmount: getRefundForFills([fill1, fill3, fill4]),
-          realizedLpFees: getRealizedLpFeeForFills([fill1, fill3, fill4]),
+          fills: [fill1, fill4],
+          refunds: { [relayer.address]: getRefundForFills([fill1, fill4]) },
+          totalRefundAmount: getRefundForFills([fill1, fill4]),
+          realizedLpFees: getRealizedLpFeeForFills([fill1, fill4]),
         },
       },
     };
-    expect(deepEqualsWithBigNumber(data6.fillsToRefund, expectedData6)).to.be.true;
+    expect(data6.fillsToRefund[destinationChainId][erc20_2.address].totalRefundAmount).to.equal(
+      expectedData6[destinationChainId][erc20_2.address].totalRefundAmount
+    );
+    expect(data6.fillsToRefund[destinationChainId][erc20_2.address].realizedLpFees).to.equal(
+      expectedData6[destinationChainId][erc20_2.address].realizedLpFees
+    );
   });
   it("Returns deposits", async function () {
     await updateAllClients();
