@@ -496,21 +496,18 @@ export class Dataworker {
       return;
     }
 
-    const enabledChainIds = Object.keys(spokePoolClients).filter((chainId) => {
-      const blockRangeForChain = getBlockRangeForChain(
-        blockRangesForProposal,
-        Number(chainId),
-        this.chainIdListForBundleEvaluationBlockNumbers
-      );
-      return !PoolRebalanceUtils.isChainDisabled(blockRangeForChain);
-    }).map(x => Number(x));
+    const enabledChainIds = Object.keys(spokePoolClients)
+      .filter((chainId) => {
+        const blockRangeForChain = getBlockRangeForChain(
+          blockRangesForProposal,
+          Number(chainId),
+          this.chainIdListForBundleEvaluationBlockNumbers
+        );
+        return !PoolRebalanceUtils.isChainDisabled(blockRangeForChain);
+      })
+      .map((x) => Number(x));
 
-
-    const poolRebalanceLeaves = this._UBA_buildPoolRebalanceLeaves(
-      blockRangesForProposal,
-      enabledChainIds,
-      ubaClient
-    )
+    const poolRebalanceLeaves = this._UBA_buildPoolRebalanceLeaves(blockRangesForProposal, enabledChainIds, ubaClient);
 
     // Build RelayerRefundRoot:
     // 1. Get all fills in range from SpokePoolClient
@@ -528,7 +525,7 @@ export class Dataworker {
    * Builds pool rebalance leaves for the given block ranges and enabled chains.
    * @param blockRanges Marks the event range that should be used to form pool rebalance leaf data
    * @param enabledChainIds Chains that we should create pool rebalance leaves for
-   * @param ubaClient 
+   * @param ubaClient
    * @returns pool rebalance leaves to propose for `blockRanges`
    */
   _UBA_buildPoolRebalanceLeaves(
