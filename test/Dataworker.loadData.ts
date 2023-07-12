@@ -599,10 +599,10 @@ describe("Dataworker: Load data used in all functions", async function () {
       ...data4.fillsToRefund,
       [slowFill3.destinationChainId]: {
         [erc20_1.address]: {
-          fills: [fill3, slowFill3], // Slow fill gets added to fills list, but no refund amount.
-          refunds: { [relayer.address]: getRefundForFills([fill3]) },
-          totalRefundAmount: getRefundForFills([fill3]),
+          fills: [fill3, slowFill3], // Slow fill gets added to fills list
           realizedLpFees: getRealizedLpFeeForFills([fill3, slowFill3]), // Slow fill does affect realized LP fee
+          totalRefundAmount: getRefundForFills([fill3]),
+          refunds: { [relayer.address]: getRefundForFills([fill3]) },
         },
       },
     };
@@ -613,22 +613,11 @@ describe("Dataworker: Load data used in all functions", async function () {
     expect(fill4.totalFilledAmount.gt(fill4.fillAmount), "speed up fill didn't match original deposit").to.be.true;
     await updateAllClients();
     const data6 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(4), spokePoolClients);
-    const expectedData6 = {
-      ...data5.fillsToRefund,
-      [destinationChainId]: {
-        [erc20_2.address]: {
-          fills: [fill1, fill4],
-          refunds: { [relayer.address]: getRefundForFills([fill1, fill4]) },
-          totalRefundAmount: getRefundForFills([fill1, fill4]),
-          realizedLpFees: getRealizedLpFeeForFills([fill1, fill4]),
-        },
-      },
-    };
     expect(data6.fillsToRefund[destinationChainId][erc20_2.address].totalRefundAmount).to.equal(
-      expectedData6[destinationChainId][erc20_2.address].totalRefundAmount
+      getRefundForFills([fill1, fill4])
     );
     expect(data6.fillsToRefund[destinationChainId][erc20_2.address].realizedLpFees).to.equal(
-      expectedData6[destinationChainId][erc20_2.address].realizedLpFees
+      getRealizedLpFeeForFills([fill1, fill4])
     );
   });
   it("Returns deposits", async function () {

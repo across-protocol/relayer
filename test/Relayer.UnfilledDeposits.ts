@@ -16,14 +16,21 @@ import {
 } from "./utils";
 import { simpleDeposit, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
 import { amountToLp, originChainId, defaultMinDepositConfirmations, modifyRelayHelper } from "./constants";
-import { SpokePoolClient, HubPoolClient, MultiCallerClient, TokenClient, AcrossApiClient } from "../src/clients";
-import { MockInventoryClient, MockProfitClient } from "./mocks";
+import {
+  SpokePoolClient,
+  HubPoolClient,
+  MultiCallerClient,
+  TokenClient,
+  AcrossApiClient,
+  ConfigStoreClient,
+} from "../src/clients";
+import { DEFAULT_CONFIG_STORE_VERSION, MockInventoryClient, MockProfitClient, MockUBAClient } from "./mocks";
 
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
 import { getUnfilledDeposits, toBN, RelayerUnfilledDeposit, utf8ToHex } from "../src/utils";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
-import { MockConfigStoreClient, MockedMultiCallerClient } from "./mocks";
+import { MockedMultiCallerClient } from "./mocks";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, l1Token: Contract, configStore: Contract;
@@ -31,7 +38,7 @@ let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithA
 
 const { spy, spyLogger } = createSpyLogger();
 let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let configStoreClient: MockConfigStoreClient, hubPoolClient: HubPoolClient;
+let configStoreClient: ConfigStoreClient, hubPoolClient: HubPoolClient;
 let multiCallerClient: MultiCallerClient, tokenClient: TokenClient;
 let profitClient: MockProfitClient;
 let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
@@ -63,7 +70,13 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
 
-    configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
+    configStoreClient = new ConfigStoreClient(
+      spyLogger,
+      configStore,
+      { fromBlock: 0 },
+      DEFAULT_CONFIG_STORE_VERSION,
+      []
+    );
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
 
     spokePoolClient_1 = new SpokePoolClient(
@@ -94,6 +107,13 @@ describe("Relayer: Unfilled Deposits", async function () {
         spokePoolClients,
         hubPoolClient,
         configStoreClient,
+        ubaClient: new MockUBAClient(
+          [originChainId, destinationChainId],
+          hubPoolClient.getL1Tokens().map((x) => x.symbol),
+          hubPoolClient,
+          spokePoolClients,
+          spyLogger
+        ),
         profitClient,
         tokenClient,
         multiCallerClient,
@@ -452,7 +472,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     // the version in the config store client.
     const update = await configStore.updateGlobalConfig(utf8ToHex("VERSION"), "3");
     const updateTime = (await configStore.provider.getBlock(update.blockNumber)).timestamp;
-    configStoreClient.setConfigStoreVersion(1);
+    // configStoreClient.setConfigStoreVersion(1);
 
     // Now send a deposit after the update time. This deposit should be skipped as we don't have the latest
     // version at the quote timestamp.
