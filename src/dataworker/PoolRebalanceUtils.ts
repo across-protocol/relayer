@@ -326,7 +326,7 @@ export function constructPoolRebalanceLeaves(
           }
         });
         const leafNetSendAmounts = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
-          if (netSendAmounts[chainId] && runningBalances[chainId][l1Token]) {
+          if (netSendAmounts?.[chainId] && netSendAmounts[chainId][l1Token]) {
             return netSendAmounts[chainId][l1Token];
           } else if (runningBalances[chainId] && runningBalances[chainId][l1Token]) {
             return getNetSendAmountForL1Token(
@@ -349,19 +349,21 @@ export function constructPoolRebalanceLeaves(
             return toBN(0);
           }
         });
-        const incentiveBalances = l1TokensToIncludeInThisLeaf.map((l1Token) => {
-          if (incentivePoolBalances[chainId]?.[l1Token]) {
-            return incentivePoolBalances[chainId];
-          } else {
-            return toBN(0);
-          }
-        });
+        const incentiveBalances =
+          incentivePoolBalances &&
+          l1TokensToIncludeInThisLeaf.map((l1Token) => {
+            if (incentivePoolBalances[chainId]?.[l1Token]) {
+              return incentivePoolBalances[chainId][l1Token];
+            } else {
+              return toBN(0);
+            }
+          });
 
         leaves.push({
           chainId: Number(chainId),
           bundleLpFees: leafBundleLpFees,
           netSendAmounts: leafNetSendAmounts,
-          runningBalances: leafRunningBalances.concat(incentiveBalances),
+          runningBalances: leafRunningBalances.concat(incentivePoolBalances ? incentiveBalances : []),
           groupIndex: groupIndexForChainId++,
           leafId: leaves.length,
           l1Tokens: l1TokensToIncludeInThisLeaf,
