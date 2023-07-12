@@ -13,8 +13,8 @@ import { MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, MAX_REFUNDS_PER_RELAYER_REFUND_L
 import { HubPoolClient, ConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
 import { SpokePoolClient } from "../../src/clients";
 import { deposit, Contract, SignerWithAddress, BigNumber } from "./index";
-import { Deposit, Fill, FillWithBlock, RefundRequest, RunningBalances } from "../../src/interfaces";
-import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
+import { Deposit, Fill, FillWithBlock, RunningBalances } from "../../src/interfaces";
+import { buildRelayerRefundTree, toBN, toBNWei, TransactionResponse, utf8ToHex } from "../../src/utils";
 import { providers } from "ethers";
 
 import winston from "winston";
@@ -641,7 +641,7 @@ export async function buildRefundRequest(
   fill: FillWithBlock,
   refundToken: string,
   maxCount?: BigNumber
-): Promise<RefundRequest> {
+): Promise<TransactionResponse> {
   // @note: These chainIds should align, but don't! @todo: Fix!
   // const chainId = (await spokePool.provider.getNetwork()).chainId;
   // assert.isTrue(fill.repaymentChainId === chainId);
