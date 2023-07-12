@@ -1,4 +1,4 @@
-import * as ubaClientSdk from "@across-protocol/sdk-v2/dist/clients/UBAClient";
+import { clients } from "@across-protocol/sdk-v2";
 import { UBAClient } from "../../src/clients";
 import { BigNumber, toBN } from "../utils";
 import { UBABalancingFee, UBASystemFee } from "../../src/interfaces";
@@ -7,7 +7,7 @@ import { UBABalancingFee, UBASystemFee } from "../../src/interfaces";
 export class MockUBAClient extends UBAClient {
   public readonly balancingFees: { [chainId: number]: BigNumber } = {};
   public readonly lpFees: { [chainId: number]: BigNumber } = {};
-  public readonly flows: { [chainId: number]: { [token: string]: ubaClientSdk.ModifiedUBAFlow[] } } = {};
+  public readonly flows: { [chainId: number]: { [token: string]: clients.ModifiedUBAFlow[] } } = {};
 
   setBalancingFee(chainId: number, fee: BigNumber): void {
     this.balancingFees[chainId] = fee;
@@ -18,7 +18,7 @@ export class MockUBAClient extends UBAClient {
     _amount: BigNumber,
     _hubPoolBlockNumber: number,
     chainId: number,
-    feeType: ubaClientSdk.UBAActionType
+    feeType: clients.UBAActionType
   ): UBABalancingFee {
     return { balancingFee: this.getBalancingFee(chainId), actionType: feeType };
   }
@@ -64,13 +64,13 @@ export class MockUBAClient extends UBAClient {
       amount,
       hubPoolBlockNumber,
       depositChainId,
-      ubaClientSdk.UBAActionType.Deposit
+      clients.UBAActionType.Deposit
     );
     const systemFee = lpFee.add(depositBalancingFee);
 
     return { lpFee, depositBalancingFee, systemFee };
   }
-  setFlows(chainId: number, token: string, modifiedFlows: ubaClientSdk.ModifiedUBAFlow[]): void {
+  setFlows(chainId: number, token: string, modifiedFlows: clients.ModifiedUBAFlow[]): void {
     if (!this.flows[chainId]) {
       this.flows[chainId] = {};
     }
@@ -84,7 +84,7 @@ export class MockUBAClient extends UBAClient {
     _fromBlock?: number | undefined,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _toBlock?: number | undefined
-  ): ubaClientSdk.ModifiedUBAFlow[] {
+  ): clients.ModifiedUBAFlow[] {
     return this.flows[chainId]?.[tokenSymbol] ?? [];
   }
 }
