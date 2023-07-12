@@ -10,13 +10,14 @@ import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT } from "../src/utils";
 import { Dataworker } from "../src/dataworker/Dataworker";
 import { getDepositPath } from "../src/utils";
 import { FillWithBlock } from "../src/interfaces";
+import { MockConfigStoreClient } from "./mocks";
 
 let spy: sinon.SinonSpy;
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, hubPool: Contract, configStore: Contract;
 let depositor: SignerWithAddress;
 
-let hubPoolClient: HubPoolClient;
+let hubPoolClient: HubPoolClient, configStoreClient: MockConfigStoreClient;
 let dataworkerInstance: Dataworker, multiCallerClient: MultiCallerClient;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
@@ -30,6 +31,7 @@ describe("Dataworker: Propose root bundle", async function () {
       erc20_1,
       spokePool_2,
       erc20_2,
+      configStoreClient,
       configStore,
       hubPoolClient,
       l1Token_1,
@@ -215,6 +217,7 @@ describe("Dataworker: Propose root bundle", async function () {
     // the version in the config store client.
     const update = await configStore.updateGlobalConfig(utf8ToHex("VERSION"), "3");
     const updateTime = (await configStore.provider.getBlock(update.blockNumber)).timestamp;
+    configStoreClient.setConfigStoreVersion(1);
 
     // Now send a proposal after the update time. Dataworker should exit early.
     await spokePool_1.setCurrentTime(updateTime + 1);

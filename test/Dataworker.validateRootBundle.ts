@@ -10,13 +10,14 @@ import { MAX_UINT_VAL, EMPTY_MERKLE_ROOT, utf8ToHex } from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
+import { MockConfigStoreClient } from "./mocks";
 
 let spy: sinon.SinonSpy;
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract;
 let l1Token_1: Contract, hubPool: Contract, configStore: Contract;
 let depositor: SignerWithAddress, dataworker: SignerWithAddress;
 
-let hubPoolClient: HubPoolClient;
+let hubPoolClient: HubPoolClient, configStoreClient: MockConfigStoreClient;
 let dataworkerInstance: Dataworker, multiCallerClient: MultiCallerClient;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
@@ -29,6 +30,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       spokePool_1,
       erc20_1,
       spokePool_2,
+      configStoreClient,
       configStore,
       hubPoolClient,
       l1Token_1,
@@ -335,6 +337,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
     // Set up test so that the latest version in the config store contract is higher than
     // the version in the config store client.
     await configStore.updateGlobalConfig(utf8ToHex("VERSION"), "3");
+    configStoreClient.setConfigStoreVersion(1);
     await updateAllClients();
     // Mine blocks so root bundle end blocks are not within latest - buffer range
     for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) {

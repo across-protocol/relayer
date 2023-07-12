@@ -173,8 +173,6 @@ describe("SpokePoolClient: SpeedUp", async function () {
         "blockNumber",
         "transactionHash",
         "transactionIndex",
-        "updatedRecipient",
-        "updatedMessage",
       ])
     ).to.be.true;
     expect(spokePoolClient.getDepositsForDestinationChain(destinationChainId).length).to.equal(1);

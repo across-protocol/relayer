@@ -256,8 +256,6 @@ export async function simpleDeposit(
     realizedLpFeePct: toBNWei("0"),
     destinationToken: zeroAddress,
     message: "0x",
-    updatedMessage: "0x",
-    updatedRecipient: recipient.address,
   };
 }
 
