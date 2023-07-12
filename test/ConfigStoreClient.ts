@@ -227,9 +227,10 @@ describe("AcrossConfigStoreClient", async function () {
       expect(configStoreClient.getConfigStoreVersionForTimestamp(initialUpdateTime - 1)).to.equal(0);
     });
     it("Validate config store version", async function () {
-      expect(configStoreClient.configStoreVersion).to.equal(CONFIG_STORE_VERSION);
+      expect(configStoreClient.configStoreVersion).to.equal(0);
 
       // Local config store version matches one in contract's global config:
+      configStoreClient.setConfigStoreVersion(1);
       await configStore.updateGlobalConfig(utf8ToHex(GLOBAL_CONFIG_STORE_KEYS.VERSION), "1");
       const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedGlobalConfig()))[0];
       const initialUpdateTime = (await ethers.provider.getBlock(initialUpdate.blockNumber)).timestamp;
@@ -243,7 +244,7 @@ describe("AcrossConfigStoreClient", async function () {
       expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(initialUpdateTime - 1)).to.equal(true);
 
       // Now pretend we downgrade the local version such that it seems we are no longer up to date:
-      configStoreClient = new ConfigStoreClient(createSpyLogger().spyLogger, configStore, configStoreClient.eventSearchConfig, CONFIG_STORE_VERSION-1, []);
+      configStoreClient.setConfigStoreVersion(0);
       await configStoreClient.update();
       expect(configStoreClient.hasValidConfigStoreVersionForTimestamp(initialUpdateTime)).to.equal(false);
 
