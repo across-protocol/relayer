@@ -337,7 +337,6 @@ describe("Dataworker: Validate pending root bundle", async function () {
     // Set up test so that the latest version in the config store contract is higher than
     // the version in the config store client.
     await configStore.updateGlobalConfig(utf8ToHex("VERSION"), "3");
-    configStoreClient.setConfigStoreVersion(1);
     await updateAllClients();
     // Mine blocks so root bundle end blocks are not within latest - buffer range
     for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) {

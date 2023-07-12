@@ -217,7 +217,6 @@ describe("Dataworker: Propose root bundle", async function () {
     // the version in the config store client.
     const update = await configStore.updateGlobalConfig(utf8ToHex("VERSION"), "3");
     const updateTime = (await configStore.provider.getBlock(update.blockNumber)).timestamp;
-    configStoreClient.setConfigStoreVersion(1);
 
     // Now send a proposal after the update time. Dataworker should exit early.
     await spokePool_1.setCurrentTime(updateTime + 1);
