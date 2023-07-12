@@ -68,7 +68,6 @@ export type UbaOutflow = interfaces.UbaOutflow;
 export type UbaFlow = interfaces.UbaFlow;
 export type UBASpokeBalanceType = interfaces.UBASpokeBalanceType;
 export type UBAFeeResult = interfaces.UBAFeeResult;
-export type UBAFlowRange = interfaces.UBAFlowRange;
 export type UBABalancingFee = clients.UBABalancingFee;
 export type UBASystemFee = clients.UBASystemFee;
 export const isUbaInflow = interfaces.isUbaInflow;
