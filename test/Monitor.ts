@@ -221,7 +221,9 @@ describe("Monitor", async function () {
     );
     await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
     expect(reports[depositor.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
-    expect(reports[depositor.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(getRefundForFills([fill1]));
+    expect(reports[depositor.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(
+      getRefundForFills([fill1])
+    );
 
     // Execute pool rebalance leaves.
     await executeBundle(hubPool);
