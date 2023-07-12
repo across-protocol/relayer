@@ -8,6 +8,7 @@ import {
   toBN,
   sortEventsAscending,
   isDefined,
+  buildPoolRebalanceLeafTree,
 } from "../utils";
 import { toBNWei, getFillsInRange, ZERO_ADDRESS } from "../utils";
 import {
@@ -47,7 +48,6 @@ import { BalanceAllocator } from "../clients";
 import _ from "lodash";
 import { CONFIG_STORE_VERSION, CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
 import { isOvmChain } from "../clients/bridges";
-import { getOpeningTokenBalances } from "@across-protocol/sdk-v2/src/clients/UBAClient/UBAClientUtilities";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -491,7 +491,7 @@ export class Dataworker {
       spokePoolClients as SpokePoolClientsByChain,
       earliestBlocksInSpokePoolClients
     );
-    console.log("blockRangesForProposal", blockRangesForProposal);
+    // console.log("blockRangesForProposal", blockRangesForProposal);
     if (!blockRangesForProposal) {
       return;
     }
@@ -508,6 +508,7 @@ export class Dataworker {
       .map((x) => Number(x));
 
     const poolRebalanceLeaves = this._UBA_buildPoolRebalanceLeaves(blockRangesForProposal, enabledChainIds, ubaClient);
+    buildPoolRebalanceLeafTree(poolRebalanceLeaves);
 
     // Build RelayerRefundRoot:
     // 1. Get all fills in range from SpokePoolClient
