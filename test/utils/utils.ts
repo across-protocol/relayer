@@ -251,7 +251,14 @@ export async function simpleDeposit(
     amountToDeposit,
     depositRelayerFeePct
   );
-  return { ...depositObject, realizedLpFeePct: toBNWei("0"), destinationToken: zeroAddress };
+  return {
+    ...depositObject,
+    realizedLpFeePct: toBNWei("0"),
+    destinationToken: zeroAddress,
+    message: "0x",
+    updatedMessage: "0x",
+    updatedRecipient: recipient.address,
+  };
 }
 
 export async function deploySpokePoolForIterativeTest(
