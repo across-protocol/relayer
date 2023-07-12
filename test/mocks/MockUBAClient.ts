@@ -1,6 +1,7 @@
 import * as ubaClientSdk from "@across-protocol/sdk-v2/dist/clients/UBAClient";
 import { UBAClient } from "../../src/clients";
 import { BigNumber, toBN } from "../utils";
+import { UBABalancingFee, UBASystemFee } from "../../src/interfaces";
 
 // Adds functions to MockHubPoolClient to facilitate Dataworker unit testing.
 export class MockUBAClient extends UBAClient {
@@ -18,7 +19,7 @@ export class MockUBAClient extends UBAClient {
     _hubPoolBlockNumber: number,
     chainId: number,
     feeType: ubaClientSdk.UBAActionType
-  ): ubaClientSdk.BalancingFeeReturnType {
+  ): UBABalancingFee {
     return { balancingFee: this.getBalancingFee(chainId), actionType: feeType };
   }
 
@@ -53,7 +54,7 @@ export class MockUBAClient extends UBAClient {
     spokePoolToken: string,
     amount: BigNumber,
     hubPoolBlockNumber: number
-  ): ubaClientSdk.SystemFeeResult {
+  ): UBASystemFee {
     const hubPoolToken = ""; // ignored
     // @dev pass in anything for hubPoolChainId since it's not used
     const lpFee = this.computeLpFee(amount, depositChainId, depositChainId, hubPoolToken, destinationChainId);
