@@ -360,7 +360,7 @@ export class Relayer {
       return destinationChainId;
     }
 
-    const preferredChainId = await inventoryClient.determineRefundChainId(deposit);
+    const preferredChainId = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
     const refundFee = (await this.computeRefundFees(version, fillAmount, [preferredChainId], hubPoolToken.symbol))[0];
 
     const profitable = profitClient.isFillProfitable(deposit, fillAmount, refundFee, hubPoolToken);
