@@ -21,46 +21,26 @@ import winston from "winston";
 import sinon from "sinon";
 import chai from "chai";
 import chaiExclude from "chai-exclude";
+import _ from "lodash";
 chai.use(chaiExclude);
 export { winston, sinon };
 
 const assert = chai.assert;
 export { chai, assert };
 
-/**
- * Returns true if every key in `expected` is present in `obj` and has the same value.
- * BigNumber's are cast to String to compare to avoid issues with BigNumber versioning.
- * Works with nested objects.
- * @param x object to compare
- * @param y object to compare
- * @param {omitKeys} keys to omit from comparison
- * @returns
- */
-export function deepEqualsWithBigNumber(x: any, y: any, omitKeys?: string[]): boolean {
-  if (x.toString() === y.toString()) {
-    return true;
-  } else if (typeof x == "object" && x != null && typeof y == "object" && y != null) {
-    const omittedKeysInX = omitKeys?.filter((key) => x.hasOwn(key)).length ?? 0;
-    const omittedKeysInY = omitKeys?.filter((key) => y.hasOwn(key)).length ?? 0;
-    if (Object.keys(x).length - omittedKeysInX !== Object.keys(y).length - omittedKeysInY) {
-      return false;
-    }
-
-    for (const prop in x) {
-      if (omitKeys?.includes(prop)) {
-        continue;
-      }
-      if (y.hasOwn(prop)) {
-        return deepEqualsWithBigNumber(x[prop], y[prop]);
-      } else {
-        return false;
-      }
-    }
-
-    return true;
-  } else {
-    return false;
-  }
+export function deepEqualsWithBigNumber(x: any, y: any, omitKeys: string[] = []): boolean {
+  const sortedKeysX = Object.fromEntries(
+    Object.keys(x)
+      .sort()
+      .map((key) => [key, x[key]])
+  );
+  const sortedKeysY = Object.fromEntries(
+    Object.keys(y)
+      .sort()
+      .map((key) => [key, y[key]])
+  );
+  assert.deepStrictEqual(_.omit(sortedKeysX, omitKeys), _.omit(sortedKeysY, omitKeys));
+  return true;
 }
 
 export async function assertPromiseError<T>(promise: Promise<T>, errMessage?: string): Promise<void> {
@@ -271,7 +251,12 @@ export async function simpleDeposit(
     amountToDeposit,
     depositRelayerFeePct
   );
-  return { ...depositObject, realizedLpFeePct: utils.toBN(0), destinationToken: zeroAddress };
+  return {
+    ...depositObject,
+    realizedLpFeePct: toBNWei("0"),
+    destinationToken: zeroAddress,
+    message: "0x",
+  };
 }
 
 export async function deploySpokePoolForIterativeTest(
