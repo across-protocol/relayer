@@ -94,7 +94,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         fromBlocks,
         toBlocks
       );
-      
+
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled) {
         await dataworker.validatePendingRootBundle(spokePoolClients, config.sendingDisputesEnabled, fromBlocks);
