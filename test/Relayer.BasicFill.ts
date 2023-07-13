@@ -336,7 +336,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     );
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    // console.log(spy.getCall(-1))
     expect(lastSpyLogIncludes(spy, "Filling deposit")).to.be.true;
     expect(multiCallerClient.transactionCount()).to.equal(1); // One transaction, filling the one deposit.
 
