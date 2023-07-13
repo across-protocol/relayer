@@ -507,7 +507,11 @@ export class Dataworker {
       })
       .map((x) => Number(x));
 
-    const poolRebalanceLeaves = this._UBA_buildPoolRebalanceLeaves(blockRangesForProposal, enabledChainIds, ubaClient);
+    const { poolRebalanceLeaves, runningBalances } = this._UBA_buildPoolRebalanceLeaves(
+      blockRangesForProposal,
+      enabledChainIds,
+      ubaClient
+    );
     buildPoolRebalanceLeafTree(poolRebalanceLeaves);
 
     // Build RelayerRefundRoot:
@@ -515,6 +519,7 @@ export class Dataworker {
     // 2. Get all flows from UBA Client
     // 3. Validate fills by matching them with a deposit flow. Partial and Full fills should be validated the same (?)
     // 4. Validate refunds by matching them with a refund flow and checking that they were the first refund.
+    await this._UBA_buildRelayerRefundLeaves(poolRebalanceLeaves, runningBalances, blockRangesForProposal, ubaClient);
 
     // Build SlowRelayRoot:
     // 1. Get all initial partial fills in range from SpokePoolClient that weren't later fully filled.
@@ -533,7 +538,7 @@ export class Dataworker {
     blockRanges: number[][],
     enabledChainIds: number[],
     ubaClient: UBAClient
-  ): PoolRebalanceLeaf[] {
+  ): { poolRebalanceLeaves: PoolRebalanceLeaf[]; runningBalances: RunningBalances } {
     const mainnetBundleEndBlock = getBlockRangeForChain(
       blockRanges,
       this.clients.hubPoolClient.chainId,
@@ -610,7 +615,7 @@ export class Dataworker {
     }
     // console.log("poolRebalanceLeafData", poolRebalanceLeafData);
 
-    return PoolRebalanceUtils.constructPoolRebalanceLeaves(
+    const poolRebalanceLeaves = PoolRebalanceUtils.constructPoolRebalanceLeaves(
       mainnetBundleEndBlock,
       poolRebalanceLeafData.runningBalances,
       poolRebalanceLeafData.bundleLpFees,
@@ -620,6 +625,46 @@ export class Dataworker {
       poolRebalanceLeafData.incentivePoolBalances,
       poolRebalanceLeafData.netSendAmounts
     );
+    const runningBalances = poolRebalanceLeafData.runningBalances;
+    return {
+      poolRebalanceLeaves,
+      runningBalances,
+    };
+  }
+
+  async _UBA_buildRelayerRefundLeaves(
+    poolRebalanceLeaves: PoolRebalanceLeaf[],
+    runningBalances: RunningBalances,
+    blockRanges: number[][],
+    ubaClient: UBAClient
+  ): Promise<RelayerRefundLeaf[]> {
+    const hubPoolChainId = this.clients.hubPoolClient.chainId;
+    const mainnetBundleEndBlock = getBlockRangeForChain(
+      blockRanges,
+      hubPoolChainId,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    )[1];
+
+    // Create roots using constructed block ranges.
+    const timerStart = Date.now();
+    const { fillsToRefund } = await this.clients.bundleDataClient.loadData(blockRanges, ubaClient.spokePoolClients);
+    this.logger.debug({
+      at: "Dataworker",
+      message: `Time to load data from BundleDataClient: ${Date.now() - timerStart}ms`,
+    });
+    const relayerRefundRoot = _buildRelayerRefundRoot(
+      mainnetBundleEndBlock,
+      fillsToRefund,
+      poolRebalanceLeaves,
+      runningBalances,
+      this.clients,
+      this.maxRefundCountOverride
+        ? this.maxRefundCountOverride
+        : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(mainnetBundleEndBlock),
+      this.tokenTransferThreshold,
+      true // Instruct function to always set amountToReturn = -netSendAmount iff netSendAmount < 0
+    );
+    return relayerRefundRoot.leaves;
   }
 
   async validatePendingRootBundle(
