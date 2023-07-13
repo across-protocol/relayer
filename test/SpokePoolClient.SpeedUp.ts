@@ -57,7 +57,13 @@ describe("SpokePoolClient: SpeedUp", async function () {
     await spokePoolClient.update();
 
     // After speedup should return the appended object with the new fee information and signature.
-    const expectedDepositData = { ...deposit, speedUpSignature, newRelayerFeePct: newRelayFeePct };
+    const expectedDepositData = {
+      ...deposit,
+      speedUpSignature: speedUpSignature.signature,
+      newRelayerFeePct: newRelayFeePct,
+      updatedMessage: "0x",
+      updatedRecipient: deposit.recipient,
+    };
     expect(
       deepEqualsWithBigNumber(
         spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock),
@@ -114,7 +120,13 @@ describe("SpokePoolClient: SpeedUp", async function () {
     await spokePoolClient.update();
 
     // After speedup should return the appended object with the new fee information and signature.
-    const expectedDepositData = { ...deposit, speedUpSignature, newRelayerFeePct: newRelayFeePct };
+    const expectedDepositData = {
+      ...deposit,
+      speedUpSignature: speedUpSignature.signature,
+      newRelayerFeePct: newRelayFeePct,
+      updatedMessage: "0x",
+      updatedRecipient: deposit.recipient,
+    };
     expect(
       deepEqualsWithBigNumber(
         spokePoolClient.appendMaxSpeedUpSignatureToDeposit(deposit as DepositWithBlock),
@@ -126,7 +138,8 @@ describe("SpokePoolClient: SpeedUp", async function () {
     expect(
       deepEqualsWithBigNumber(
         spokePoolClient.getDepositsForDestinationChain(destinationChainId)[0],
-        expectedDepositData
+        expectedDepositData,
+        ["blockNumber", "logIndex", "quoteBlockNumber", "transactionHash", "transactionIndex"]
       )
     ).to.be.true;
   });
@@ -210,8 +223,10 @@ describe("SpokePoolClient: SpeedUp", async function () {
     // Should use the faster data between the two speedups.
     const expectedDepositData = {
       ...deposit,
-      speedUpSignature: speedUpFasterSignature,
+      speedUpSignature: speedUpFasterSignature.signature,
       newRelayerFeePct: speedupFaster,
+      updatedMessage: "0x",
+      updatedRecipient: deposit.recipient,
     };
     expect(
       deepEqualsWithBigNumber(
