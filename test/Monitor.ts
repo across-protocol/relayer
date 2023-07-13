@@ -185,7 +185,7 @@ describe("Monitor", async function () {
     );
     await monitorInstance.updateCurrentRelayerBalances(reports);
 
-    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.CURRENT].toString()).to.be.equal(
+    expect(reports[depositor.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.CURRENT].toString()).to.be.equal(
       "60000000000000000000000"
     );
   });
@@ -220,8 +220,10 @@ describe("Monitor", async function () {
       TEST_NETWORK_NAMES
     );
     await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
-    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
-    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(getRefundForFills([fill1]));
+    expect(reports[depositor.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
+    expect(reports[depositor.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(
+      getRefundForFills([fill1])
+    );
 
     // Execute pool rebalance leaves.
     await executeBundle(hubPool);
@@ -235,8 +237,8 @@ describe("Monitor", async function () {
       TEST_NETWORK_NAMES
     );
     await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
-    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
-    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(
+    expect(reports[depositor.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
+    expect(reports[depositor.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(
       getRefundForFills([fill1])
     );
 
@@ -266,8 +268,8 @@ describe("Monitor", async function () {
       TEST_NETWORK_NAMES
     );
     await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
-    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
-    expect(reports[depositor.address]["L1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
+    expect(reports[depositor.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
+    expect(reports[depositor.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
 
     // Simulate some pending cross chain transfers.
     crossChainTransferClient.increaseOutstandingTransfer(
@@ -278,7 +280,7 @@ describe("Monitor", async function () {
     );
     await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
     expect(
-      reports[depositor.address]["L1"][getNetworkName(destinationChainId)][BalanceType.PENDING_TRANSFERS]
+      reports[depositor.address]["L1Token1"][getNetworkName(destinationChainId)][BalanceType.PENDING_TRANSFERS]
     ).to.be.equal(toBN(5));
   });
 

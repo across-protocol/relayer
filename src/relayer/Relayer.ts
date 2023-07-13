@@ -537,13 +537,7 @@ export class Relayer {
       lpFee,
       depositBalancingFee: depositFee,
       systemFee: realizedLpFeePct,
-    } = await this.clients.ubaClient.computeSystemFee(
-      originChainId,
-      destinationChainId,
-      symbol,
-      amount,
-      quoteBlockNumber
-    );
+    } = this.clients.ubaClient.computeSystemFee(originChainId, destinationChainId, symbol, amount, quoteBlockNumber);
 
     const chain = getNetworkName(deposit.originChainId);
     this.logger.debug({
@@ -568,7 +562,7 @@ export class Relayer {
     }
 
     const { hubPoolClient, ubaClient } = this.clients;
-    const fees = await ubaClient.computeBalancingFees(
+    const fees = ubaClient.computeBalancingFees(
       symbol,
       unfilledAmount,
       hubPoolBlockNumber ?? hubPoolClient.latestBlockNumber,
