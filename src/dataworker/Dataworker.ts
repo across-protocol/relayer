@@ -475,9 +475,10 @@ export class Dataworker {
     spokePoolClients: SpokePoolClientsByChain
   ): Promise<ProposeRootBundleReturnType> {
     const timerStart = Date.now();
-    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = await this.clients.bundleDataClient.loadData(
+    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = await this.clients.bundleDataClient._loadData(
       blockRangesForProposal,
-      spokePoolClients
+      spokePoolClients,
+      false
     );
     this.logger.debug({
       at: "Dataworker",
@@ -574,7 +575,8 @@ export class Dataworker {
     // refund requests in the fills to refund list.
     const { fillsToRefund, unfilledDeposits } = await this.clients.bundleDataClient.loadData(
       blockRangesForProposal,
-      ubaClient.spokePoolClients
+      ubaClient.spokePoolClients,
+      true
     );
     // Build RelayerRefundRoot:
     // 1. Get all fills in range from SpokePoolClient
