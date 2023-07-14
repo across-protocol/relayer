@@ -512,14 +512,26 @@ export class Dataworker {
       enabledChainIds,
       ubaClient
     );
-    buildPoolRebalanceLeafTree(poolRebalanceLeaves);
+    const poolRebalanceTree = buildPoolRebalanceLeafTree(poolRebalanceLeaves);
+    PoolRebalanceUtils.prettyPrintLeaves(this.logger, poolRebalanceTree, poolRebalanceLeaves, "Pool rebalance");
 
     // Build RelayerRefundRoot:
     // 1. Get all fills in range from SpokePoolClient
     // 2. Get all flows from UBA Client
     // 3. Validate fills by matching them with a deposit flow. Partial and Full fills should be validated the same (?)
     // 4. Validate refunds by matching them with a refund flow and checking that they were the first refund.
-    await this._UBA_buildRelayerRefundLeaves(poolRebalanceLeaves, runningBalances, blockRangesForProposal, ubaClient);
+    const relayerRefundTree = await this._UBA_buildRelayerRefundLeaves(
+      poolRebalanceLeaves,
+      runningBalances,
+      blockRangesForProposal,
+      ubaClient
+    );
+    PoolRebalanceUtils.prettyPrintLeaves(
+      this.logger,
+      relayerRefundTree.tree,
+      relayerRefundTree.leaves,
+      "Relayer refund"
+    );
 
     // Build SlowRelayRoot:
     // 1. Get all initial partial fills in range from SpokePoolClient that weren't later fully filled.
@@ -586,18 +598,14 @@ export class Dataworker {
           blockRangeForChain[0],
           blockRangeForChain[1]
         );
-        // console.log(`flows for ${chainId} and token:${tokenSymbol}`, flowsForChain);
+
+        // If no flows for chain, we won't create a pool rebalance leaf for it. The next time there is a flow for this
+        // chain, we'll find the previous running balance for it and use that as the starting point.
         if (flowsForChain.length === 0) {
-          const previousRunningBalance = this.clients.hubPoolClient.getRunningBalanceBeforeBlockForChain(
-            mainnetBundleEndBlock,
-            Number(chainId),
-            l1TokenAddress
-          );
-          poolRebalanceLeafData.runningBalances[chainId][l1TokenAddress] = previousRunningBalance.runningBalance;
-          poolRebalanceLeafData.bundleLpFees[chainId][l1TokenAddress] = BigNumber.from(0);
-          poolRebalanceLeafData.incentivePoolBalances[chainId][l1TokenAddress] =
-            previousRunningBalance.incentiveBalance;
-          poolRebalanceLeafData.netSendAmounts[chainId][l1TokenAddress] = BigNumber.from(0);
+          this.logger.debug({
+            at: "UBA buildPoolRebalanceLeaves",
+            message: `No flows for chain ${chainId} and token ${tokenSymbol}`,
+          });
         } else {
           const closingRunningBalance = flowsForChain[flowsForChain.length - 1].runningBalance;
           const closingIncentiveBalance = flowsForChain[flowsForChain.length - 1].incentiveBalance;
@@ -613,8 +621,6 @@ export class Dataworker {
         }
       }
     }
-    // console.log("poolRebalanceLeafData", poolRebalanceLeafData);
-
     const poolRebalanceLeaves = PoolRebalanceUtils.constructPoolRebalanceLeaves(
       mainnetBundleEndBlock,
       poolRebalanceLeafData.runningBalances,
@@ -637,7 +643,7 @@ export class Dataworker {
     runningBalances: RunningBalances,
     blockRanges: number[][],
     ubaClient: UBAClient
-  ): Promise<RelayerRefundLeaf[]> {
+  ): Promise<{ leaves: RelayerRefundLeaf[]; tree: MerkleTree<RelayerRefundLeaf> }> {
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
     const mainnetBundleEndBlock = getBlockRangeForChain(
       blockRanges,
@@ -647,7 +653,11 @@ export class Dataworker {
 
     // Create roots using constructed block ranges.
     const timerStart = Date.now();
-    const { fillsToRefund } = await this.clients.bundleDataClient.loadData(blockRanges, ubaClient.spokePoolClients);
+    const { fillsToRefund } = await this.clients.bundleDataClient.loadData(
+      blockRanges,
+      ubaClient.spokePoolClients,
+      true
+    );
     this.logger.debug({
       at: "Dataworker",
       message: `Time to load data from BundleDataClient: ${Date.now() - timerStart}ms`,
@@ -664,7 +674,7 @@ export class Dataworker {
       this.tokenTransferThreshold,
       true // Instruct function to always set amountToReturn = -netSendAmount iff netSendAmount < 0
     );
-    return relayerRefundRoot.leaves;
+    return relayerRefundRoot;
   }
 
   async validatePendingRootBundle(

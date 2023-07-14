@@ -30,7 +30,7 @@ import {
   prettyPrintSpokePoolEvents,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
-import { clients, utils } from "@across-protocol/sdk-v2";
+import { clients } from "@across-protocol/sdk-v2";
 const { refundRequestIsValid } = clients;
 
 type DataCacheValue = {
@@ -173,31 +173,6 @@ export class BundleDataClient {
   async loadData(
     blockRangesForChains: number[][],
     spokePoolClients: { [chainId: number]: SpokePoolClient },
-    logData = true
-  ): Promise<{
-    unfilledDeposits: UnfilledDeposit[];
-    fillsToRefund: FillsToRefund;
-    allValidFills: FillWithBlock[];
-    deposits: DepositWithBlock[];
-  }> {
-    const mainnetStartBlock = getBlockRangeForChain(
-      blockRangesForChains,
-      this.clients.hubPoolClient.chainId,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    )[0];
-    const version = this.clients.configStoreClient.getConfigStoreVersionForBlock(mainnetStartBlock);
-    let isUBA = false;
-    if (utils.isUBA(version)) {
-      if (!this.clients.configStoreClient.isValidConfigStoreVersion(version)) {
-        throw new Error("loadData: Invalid config store version");
-      }
-      isUBA = true;
-    }
-    return this._loadData(blockRangesForChains, spokePoolClients, isUBA, logData);
-  }
-  async _loadData(
-    blockRangesForChains: number[][],
-    spokePoolClients: { [chainId: number]: SpokePoolClient },
     isUBA = false,
     logData = true
   ): Promise<{
@@ -262,9 +237,6 @@ export class BundleDataClient {
       // total realized LP fee %.
       assignValidFillToFillsToRefund(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
       allRelayerRefunds.push({ repaymentToken, repaymentChain: chainToSendRefundTo });
-
-      // Note: the UBA model doesn't use the following realized LP fees data but we keep it for backwards
-      // compatibility.
       updateTotalRealizedLpFeePct(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
 
       // Save deposit as one that is eligible for a slow fill, since there is a fill
@@ -383,10 +355,6 @@ export class BundleDataClient {
           .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1]);
         await Promise.all(
           fillsForOriginChain.map(async (fill) => {
-            // In the UBA model, fills that request repayment on another chain must send a separate refund request
-            // in order to mark their place in the outflow queue for that chain. This is because the UBA determines
-            // fees based on sequencing of events. Pre-UBA, the fee model treats each fill independently so there
-            // is no need to mark a fill's place in line on the repayment chain.
             if (!isUBA || fill.destinationChainId === fill.repaymentChainId) {
               validateFillAndSaveData(fill, blockRangeForChain);
             }
@@ -394,8 +362,7 @@ export class BundleDataClient {
         );
       }
 
-      // Handle fills that requested repayment on a different chain and submitted a refund request.
-      // These should map with only full fills where fill.destinationChainId !== fill.repaymentChainId.
+      // Handle fills that requested repayment on a different chain.
       if (isUBA) {
         const blockRangeForChain = getBlockRangeForChain(
           blockRangesForChains,
