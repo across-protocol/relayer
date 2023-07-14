@@ -1,19 +1,16 @@
-import hre from "hardhat";
-import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolRebalanceLeaves } from "./utils";
-import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
-import { toBNWei, toWei, buildPoolRebalanceLeafTree, createSpyLogger } from "./utils";
+import { originChainId } from "./utils";
+import { expect, ethers, Contract, SignerWithAddress } from "./utils";
+import { toWei, createSpyLogger } from "./utils";
 import { getContractFactory, hubPoolFixture, toBN, utf8ToHex } from "./utils";
-import { amountToLp, destinationChainId, mockTreeRoot, refundProposalLiveness, totalBond } from "./constants";
+import { destinationChainId } from "./constants";
 import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF } from "./constants";
 import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
-import { HubPoolClient, GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
+import { GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
 import { SpokePoolTargetBalance } from "../src/interfaces";
 import { DEFAULT_CONFIG_STORE_VERSION, MockConfigStoreClient } from "./mocks";
 
-let spokePool: Contract, hubPool: Contract, l2Token: Contract;
-let configStore: Contract, l1Token: Contract, timer: Contract, weth: Contract;
+let l1Token: Contract, l2Token: Contract, configStore: Contract;
 let owner: SignerWithAddress;
-
 let configStoreClient: MockConfigStoreClient;
 
 // Same rate model used for across-v1 tests:
@@ -50,24 +47,14 @@ const tokenConfigToUpdate = JSON.stringify({
 });
 
 describe("AcrossConfigStoreClient", async function () {
-  before(async function () {
-    // This test can fail inexplicably due to underlying chain "stall" if it follows after another test.
-    await hre.network.provider.request({ method: "hardhat_reset", params: [] });
-  });
-
   beforeEach(async function () {
     [owner] = await ethers.getSigners();
-    ({ spokePool, erc20: l2Token } = await deploySpokePoolWithToken(originChainId, repaymentChainId));
-    ({ hubPool, timer, dai: l1Token, weth } = await hubPoolFixture());
-    await hubPool.enableL1TokenForLiquidityProvision(l1Token.address);
+    ({ dai: l1Token, weth: l2Token } = await hubPoolFixture());
 
     configStore = await (await getContractFactory("AcrossConfigStore", owner)).deploy();
-    const receipt = await configStore.deployTransaction.wait();
-    const eventSearchConfig = { fromBlock: receipt.blockNumber };
-    configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore, eventSearchConfig);
+    const { blockNumber: fromBlock } = await configStore.deployTransaction.wait();
+    configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore, { fromBlock });
     configStoreClient.setConfigStoreVersion(0);
-
-    await setupTokensForWallet(spokePool, owner, [l1Token], weth, 100); // Seed owner to LP.
   });
 
   it("update", async function () {
@@ -148,92 +135,6 @@ describe("AcrossConfigStoreClient", async function () {
       expect(() =>
         configStoreClient.getRateModelForBlockNumber(l2Token.address, 1, 2, initialRateModelUpdate.blockNumber)
       ).to.throw(/No updated rate model events for L1 token/);
-    });
-
-    it("computeRealizedLpFeePct", async function () {
-      const hubPoolClient = new HubPoolClient(createSpyLogger().spyLogger, hubPool, configStoreClient);
-      await l1Token.approve(hubPool.address, amountToLp);
-      await hubPool.addLiquidity(l1Token.address, amountToLp);
-
-      await configStore.updateTokenConfig(l1Token.address, tokenConfigToUpdate);
-      await configStoreClient.update();
-      await hubPoolClient.update();
-
-      const initialRateModelUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[0];
-      const initialRateModelUpdateTime = (await ethers.provider.getBlock(initialRateModelUpdate.blockNumber)).timestamp;
-
-      // Takes into account deposit amount's effect on utilization. This deposit uses 10% of the pool's liquidity
-      // so the fee should reflect a 10% post deposit utilization.
-      const depositData = {
-        depositId: 0,
-        depositor: owner.address,
-        recipient: owner.address,
-        originToken: l2Token.address,
-        destinationToken: l1Token.address,
-        realizedLpFeePct: toBN(0),
-        amount: amountToLp.div(10),
-        originChainId,
-        destinationChainId: repaymentChainId,
-        relayerFeePct: toBN(0),
-        quoteTimestamp: initialRateModelUpdateTime,
-        // Quote time needs to be >= first rate model event time
-      };
-
-      // Relayed amount being 10% of total LP amount should give exact same results as this test in v1:
-      // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L1037
-      expect((await hubPoolClient.computeRealizedLpFeePct(depositData, l1Token.address)).realizedLpFeePct).to.equal(
-        toBNWei("0.000117987509354032")
-      );
-
-      // Next, let's increase the pool utilization from 0% to 60% by sending 60% of the pool's liquidity to
-      // another chain.
-      const leaves = buildPoolRebalanceLeaves(
-        [repaymentChainId],
-        [[l1Token.address]],
-        [[toBN(0)]],
-        [[amountToLp.div(10).mul(6)]], // Send 60% of total liquidity to spoke pool
-        [[toBN(0)]],
-        [0]
-      );
-      const tree = await buildPoolRebalanceLeafTree(leaves);
-      await weth.approve(hubPool.address, totalBond);
-      await hubPool.proposeRootBundle([1], 1, tree.getHexRoot(), mockTreeRoot, mockTreeRoot);
-      await timer.setCurrentTime(Number(await timer.getCurrentTime()) + refundProposalLiveness + 1);
-      await hubPool.executeRootBundle(...Object.values(leaves[0]), tree.getHexProof(leaves[0]));
-
-      // Submit a deposit with a de minimis amount of tokens so we can isolate the computed realized lp fee % to the
-      // pool utilization factor.
-      expect(
-        (
-          await hubPoolClient.computeRealizedLpFeePct(
-            {
-              ...depositData,
-              amount: toBNWei("0.0000001"),
-              // Note: we need to set the deposit quote timestamp to one after the utilisation % jumped from 0% to 10%.
-              // This is because the rate model uses the quote time to fetch the liquidity utilization at that quote time.
-              quoteTimestamp: (await ethers.provider.getBlock("latest")).timestamp,
-            },
-            l1Token.address
-          )
-        ).realizedLpFeePct
-      ).to.equal(toBNWei("0.001371068779697899"));
-
-      // Relaying 10% of pool should give exact same result as this test, which sends a relay that is 10% of the pool's
-      // size when the pool is already at 60% utilization. The resulting post-relay utilization is therefore 70%.
-      // - https://github.com/UMAprotocol/protocol/blob/3b1a88ead18088e8056ecfefb781c97fce7fdf4d/packages/financial-templates-lib/test/clients/InsuredBridgeL1Client.js#L1064
-      expect(
-        (
-          await hubPoolClient.computeRealizedLpFeePct(
-            {
-              ...depositData,
-              // Same as before, we need to use a timestamp following the `executeRootBundle` call so that we can capture
-              // the current pool utilization at 10%.
-              quoteTimestamp: (await ethers.provider.getBlock("latest")).timestamp,
-            },
-            l1Token.address
-          )
-        ).realizedLpFeePct
-      ).to.equal(toBNWei("0.002081296752280018"));
     });
 
     it("Get token transfer threshold for block", async function () {

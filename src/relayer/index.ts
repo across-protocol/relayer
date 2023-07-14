@@ -1,3 +1,4 @@
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClient } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
@@ -14,6 +15,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
     logger[startupLogLevel(config)]({ at: "Relayer#index", message: "Relayer started 🏃‍♂️", config });
 
     relayerClients = await constructRelayerClients(logger, config, baseSigner);
+    const { configStoreClient } = relayerClients;
 
     const relayer = new Relayer(baseSigner.address, logger, relayerClients, config);
 
@@ -21,6 +23,13 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Wallet): P
 
     for (;;) {
       await updateRelayerClients(relayerClients, config);
+
+      // @note: For fills with a different repaymentChainId, refunds are requested on the _subsequent_ relayer run.
+      // Refunds requests are enqueued before new fills, so fillRelay simulation occurs closest to txn submission.
+      const version = configStoreClient.getConfigStoreVersionForTimestamp();
+      if (sdkUtils.isUBA(version) && version <= configStoreClient.configStoreVersion) {
+        await relayer.requestRefunds(config.sendingSlowRelaysEnabled);
+      }
 
       await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled);
 

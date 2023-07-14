@@ -12,6 +12,7 @@ export class RelayerConfig extends CommonConfig {
   // If this is false, the relayer will throw an error when fetching prices fails.
   readonly sendingRelaysEnabled: boolean;
   readonly sendingSlowRelaysEnabled: boolean;
+  readonly sendingRefundRequestsEnabled: boolean;
   readonly relayerTokens: string[];
   readonly relayerDestinationChains: number[];
   readonly relayerGasMultiplier: BigNumber;
@@ -42,6 +43,7 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_TOKENS,
       SEND_RELAYS,
       SEND_SLOW_RELAYS,
+      SEND_REFUND_REQUESTS,
       MIN_RELAYER_FEE_PCT,
       ACCEPT_INVALID_FILLS,
       MIN_DEPOSIT_CONFIRMATIONS,
@@ -94,6 +96,7 @@ export class RelayerConfig extends CommonConfig {
     this.debugProfitability = DEBUG_PROFITABILITY === "true";
     this.relayerGasMultiplier = toBNWei(RELAYER_GAS_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MULTIPLIER);
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
+    this.sendingRefundRequestsEnabled = SEND_REFUND_REQUESTS !== "false";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
     this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";
     (this.minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS

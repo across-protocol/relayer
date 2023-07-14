@@ -94,7 +94,13 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
     const chainIds = [originChainId, destinationChainId];
-    ubaClient = new MockUBAClient(chainIds, hubPoolClient, spokePoolClients, spyLogger);
+    ubaClient = new MockUBAClient(
+      chainIds,
+      hubPoolClient.getL1Tokens().map((x) => x.symbol),
+      hubPoolClient,
+      spokePoolClients,
+      spyLogger
+    );
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     profitClient.testInit();
@@ -330,7 +336,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     );
     await updateAllClients();
     await relayerInstance.checkForUnfilledDepositsAndFill();
-    // console.log(spy.getCall(-1))
     expect(lastSpyLogIncludes(spy, "Filling deposit")).to.be.true;
     expect(multiCallerClient.transactionCount()).to.equal(1); // One transaction, filling the one deposit.
 
