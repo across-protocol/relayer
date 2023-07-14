@@ -24,21 +24,22 @@ import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_L
 import { refundProposalLiveness, CHAIN_ID_TEST_LIST } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import { Deposit, Fill, RunningBalances } from "../src/interfaces";
-import { getRealizedLpFeeForFills, getRefundForFills, getRefund, EMPTY_MERKLE_ROOT } from "../src/utils";
+import { getRealizedLpFeeForFills, getRefundForFills, getRefund, EMPTY_MERKLE_ROOT, winston } from "../src/utils";
 import { compareAddresses } from "../src/utils";
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
+import { MockUBAClient } from "./mocks";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract, hubPool: Contract, timer: Contract, configStore: Contract;
 let depositor: SignerWithAddress, relayer: SignerWithAddress, dataworker: SignerWithAddress;
 
-let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
+let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient, spokePoolClient_1: SpokePoolClient;
 let dataworkerInstance: Dataworker;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
-let spy: sinon.SinonSpy;
+let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
 let updateAllClients: () => Promise<void>;
 
@@ -61,6 +62,8 @@ describe("Dataworker: Build merkle roots", async function () {
       timer,
       spokePoolClients,
       spy,
+      spyLogger,
+      spokePoolClient_1,
       updateAllClients,
     } = await setupFastDataworker(ethers));
   });
@@ -1079,7 +1082,7 @@ describe("Dataworker: Build merkle roots", async function () {
       };
       expect(deepEqualsWithBigNumber(merkleRoot1.leaves, [expectedLeaf])).to.be.true;
     });
-    it("Token transfer exceeeds threshold", async function () {
+    it("Token transfer exceeds threshold", async function () {
       await updateAllClients();
       const deposit = await buildDeposit(
         hubPoolClient,
@@ -1396,6 +1399,74 @@ describe("Dataworker: Build merkle roots", async function () {
         };
       });
       expect(deepEqualsWithBigNumber(merkleRoot2.leaves, expectedLeaves2)).to.be.true;
+    });
+  });
+  describe("UBA Root Bundles", function () {
+    beforeEach(async function () {
+      await updateAllClients();
+    });
+    it("Build pool rebalance root", async function () {
+      const deposit = await buildDeposit(
+        hubPoolClient,
+        spokePool_1,
+        erc20_1,
+        l1Token_1,
+        depositor,
+        destinationChainId,
+        amountToDeposit
+      );
+      // Build UBA Client
+      const l1TokenSymbol = "L1Token1";
+      const ubaClient = new MockUBAClient(
+        dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers,
+        [l1TokenSymbol],
+        hubPoolClient,
+        spokePoolClients,
+        spyLogger
+      );
+      ubaClient.setFlows(deposit.originChainId, l1TokenSymbol, [
+        {
+          flow: {
+            ...spokePoolClient_1.getFills()[0],
+          },
+          systemFee: {
+            lpFee: BigNumber.from(0),
+            depositBalancingFee: BigNumber.from(0),
+            systemFee: BigNumber.from(0),
+          },
+          relayerFee: {
+            relayerGasFee: BigNumber.from(0),
+            relayerCapitalFee: BigNumber.from(0),
+            relayerBalancingFee: BigNumber.from(0),
+            relayerFee: BigNumber.from(0),
+            amountTooLow: false,
+          },
+          runningBalance: toBNWei("1"),
+          incentiveBalance: toBNWei("1"),
+          netRunningBalanceAdjustment: toBNWei("1"),
+        },
+      ]);
+
+      const blockRanges = dataworkerInstance._getNextProposalBlockRanges(spokePoolClients);
+      if (!blockRanges) {
+        throw new Error("Can't propose new bundle");
+      }
+      const poolRebalanceLeaves = dataworkerInstance._UBA_buildPoolRebalanceLeaves(
+        blockRanges,
+        [originChainId, destinationChainId],
+        ubaClient
+      );
+      expect(
+        deepEqualsWithBigNumber(poolRebalanceLeaves[0], {
+          chainId: deposit.originChainId,
+          bundleLpFees: [BigNumber.from(0)],
+          netSendAmounts: [toBNWei("1")],
+          runningBalances: [toBNWei("1"), toBNWei("1")],
+          groupIndex: 0,
+          leafId: 0,
+          l1Tokens: [l1Token_1.address],
+        })
+      ).to.be.true;
     });
   });
 });

@@ -28,7 +28,7 @@ import {
   getEndBlockBuffers,
   prettyPrintSpokePoolEvents,
 } from "../dataworker/DataworkerUtils";
-import { getWidestPossibleExpectedBlockRange } from "../dataworker/PoolRebalanceUtils";
+import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
 
 type DataCacheValue = {
   unfilledDeposits: UnfilledDeposit[];
@@ -265,19 +265,19 @@ export class BundleDataClient {
       }
     };
 
-    const isChainDisabled = (chainId: number): boolean => {
+    const _isChainDisabled = (chainId: number): boolean => {
       const blockRangeForChain = getBlockRangeForChain(
         blockRangesForChains,
         chainId,
         this.chainIdListForBundleEvaluationBlockNumbers
       );
-      return blockRangeForChain[0] === blockRangeForChain[1];
+      return isChainDisabled(blockRangeForChain);
     };
 
     const allChainIds = Object.keys(spokePoolClients).map(Number);
 
     for (const originChainId of allChainIds) {
-      if (isChainDisabled(originChainId)) {
+      if (_isChainDisabled(originChainId)) {
         continue;
       }
 
@@ -291,7 +291,7 @@ export class BundleDataClient {
         if (originChainId === destinationChainId) {
           continue;
         }
-        if (isChainDisabled(destinationChainId)) {
+        if (_isChainDisabled(destinationChainId)) {
           continue;
         }
 

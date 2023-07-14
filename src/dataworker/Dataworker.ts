@@ -8,6 +8,7 @@ import {
   toBN,
   sortEventsAscending,
   isDefined,
+  buildPoolRebalanceLeafTree,
 } from "../utils";
 import { toBNWei, getFillsInRange, ZERO_ADDRESS } from "../utils";
 import {
@@ -29,7 +30,7 @@ import {
   BigNumberForToken,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
-import { SpokePoolClient } from "../clients";
+import { SpokePoolClient, UBAClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
 import {
   blockRangesAreInvalidForSpokeClients,
@@ -249,23 +250,22 @@ export class Dataworker {
     }
   }
 
-  async proposeRootBundle(
-    spokePoolClients: { [chainId: number]: SpokePoolClient },
-    usdThresholdToSubmitNewBundle?: BigNumber,
-    submitProposals = true,
+  /**
+   * Returns the next bundle block ranges if a new proposal is possible, otherwise
+   * returns undefined.
+   * @param spokePoolClients
+   * @param earliestBlocksInSpokePoolClients Earliest blocks loaded in SpokePoolClients. Used to determine severity
+   * of log level
+   * @returns Array of blocks ranges to propose for next bundle.
+   */
+  _getNextProposalBlockRanges(
+    spokePoolClients: SpokePoolClientsByChain,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): Promise<void> {
-    // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
-    // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
-    // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
-    // safe strategy but could lead to new roots failing to be proposed until ALL networks are healthy.
-
+  ): number[][] | undefined {
     // Check if a bundle is pending.
     if (!this.clients.hubPoolClient.isUpdated || !this.clients.hubPoolClient.latestBlockNumber) {
       throw new Error("HubPoolClient not updated");
     }
-    const hubPoolChainId = this.clients.hubPoolClient.chainId;
-
     if (this.clients.hubPoolClient.hasPendingProposal()) {
       this.logger.debug({
         at: "Dataworker#propose",
@@ -319,6 +319,26 @@ export class Dataworker {
       return;
     }
 
+    return blockRangesForProposal;
+  }
+
+  async proposeRootBundle(
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    usdThresholdToSubmitNewBundle?: BigNumber,
+    submitProposals = true,
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+  ): Promise<void> {
+    // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
+    // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
+    // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
+    // safe strategy but could lead to new roots failing to be proposed until ALL networks are healthy.
+
+    const blockRangesForProposal = this._getNextProposalBlockRanges(spokePoolClients, earliestBlocksInSpokePoolClients);
+    if (!blockRangesForProposal) {
+      return;
+    }
+
+    const hubPoolChainId = this.clients.hubPoolClient.chainId;
     const mainnetBundleEndBlock = getBlockRangeForChain(
       blockRangesForProposal,
       hubPoolChainId,
@@ -456,6 +476,150 @@ export class Dataworker {
         slowRelayRoot.tree.getHexRoot()
       );
     }
+  }
+
+  async UBA_proposeRootBundle(
+    ubaClient: UBAClient,
+    spokePoolClients: SpokePoolClientsByChain,
+    usdThresholdToSubmitNewBundle?: BigNumber,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    submitProposals = true,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+  ): Promise<void> {
+    const blockRangesForProposal = this._getNextProposalBlockRanges(
+      spokePoolClients as SpokePoolClientsByChain,
+      earliestBlocksInSpokePoolClients
+    );
+    // console.log("blockRangesForProposal", blockRangesForProposal);
+    if (!blockRangesForProposal) {
+      return;
+    }
+
+    const enabledChainIds = Object.keys(spokePoolClients)
+      .filter((chainId) => {
+        const blockRangeForChain = getBlockRangeForChain(
+          blockRangesForProposal,
+          Number(chainId),
+          this.chainIdListForBundleEvaluationBlockNumbers
+        );
+        return !PoolRebalanceUtils.isChainDisabled(blockRangeForChain);
+      })
+      .map((x) => Number(x));
+
+    const poolRebalanceLeaves = this._UBA_buildPoolRebalanceLeaves(blockRangesForProposal, enabledChainIds, ubaClient);
+    buildPoolRebalanceLeafTree(poolRebalanceLeaves);
+
+    // Build RelayerRefundRoot:
+    // 1. Get all fills in range from SpokePoolClient
+    // 2. Get all flows from UBA Client
+    // 3. Validate fills by matching them with a deposit flow. Partial and Full fills should be validated the same (?)
+    // 4. Validate refunds by matching them with a refund flow and checking that they were the first refund.
+
+    // Build SlowRelayRoot:
+    // 1. Get all initial partial fills in range from SpokePoolClient that weren't later fully filled.
+    // 2. Get all flows from UBA Client
+    // 3. Validate fills by matching them with a deposit flow.
+  }
+
+  /**
+   * Builds pool rebalance leaves for the given block ranges and enabled chains.
+   * @param blockRanges Marks the event range that should be used to form pool rebalance leaf data
+   * @param enabledChainIds Chains that we should create pool rebalance leaves for
+   * @param ubaClient
+   * @returns pool rebalance leaves to propose for `blockRanges`
+   */
+  _UBA_buildPoolRebalanceLeaves(
+    blockRanges: number[][],
+    enabledChainIds: number[],
+    ubaClient: UBAClient
+  ): PoolRebalanceLeaf[] {
+    const mainnetBundleEndBlock = getBlockRangeForChain(
+      blockRanges,
+      this.clients.hubPoolClient.chainId,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    )[1];
+
+    // Build PoolRebalanceRoot:
+    // 1. Get all flows in range from UBA Client
+    // 2. Set running balances to closing running balances from latest flows in range per token per chain
+    // 3. Set bundleLpFees to sum of SystemFee.LPFee for all flows in range per token per chain
+    // 4. Set netSendAmount to sum of netRunningBalanceAdjustments for all flows in range per token per chain
+    const poolRebalanceLeafData: {
+      runningBalances: RunningBalances;
+      bundleLpFees: RunningBalances;
+      incentivePoolBalances: RunningBalances;
+      netSendAmounts: RunningBalances;
+    } = {
+      runningBalances: {},
+      bundleLpFees: {},
+      incentivePoolBalances: {},
+      netSendAmounts: {},
+    };
+    for (const chainId of enabledChainIds) {
+      const blockRangeForChain = getBlockRangeForChain(
+        blockRanges,
+        Number(chainId),
+        this.chainIdListForBundleEvaluationBlockNumbers
+      );
+
+      for (const tokenSymbol of ubaClient.tokens) {
+        poolRebalanceLeafData.runningBalances[chainId] = {};
+        poolRebalanceLeafData.bundleLpFees[chainId] = {};
+        poolRebalanceLeafData.incentivePoolBalances[chainId] = {};
+        poolRebalanceLeafData.netSendAmounts[chainId] = {};
+        const l1TokenAddress = this.clients.hubPoolClient
+          .getL1Tokens()
+          .find((l1Token) => l1Token.symbol === tokenSymbol)?.address;
+        if (!l1TokenAddress) {
+          throw new Error("Could not find l1 token address for token symbol: " + tokenSymbol);
+        }
+
+        const flowsForChain = ubaClient.getModifiedFlows(
+          Number(chainId),
+          tokenSymbol,
+          blockRangeForChain[0],
+          blockRangeForChain[1]
+        );
+        // console.log(`flows for ${chainId} and token:${tokenSymbol}`, flowsForChain);
+        if (flowsForChain.length === 0) {
+          const previousRunningBalance = this.clients.hubPoolClient.getRunningBalanceBeforeBlockForChain(
+            mainnetBundleEndBlock,
+            Number(chainId),
+            l1TokenAddress
+          );
+          poolRebalanceLeafData.runningBalances[chainId][l1TokenAddress] = previousRunningBalance.runningBalance;
+          poolRebalanceLeafData.bundleLpFees[chainId][l1TokenAddress] = BigNumber.from(0);
+          poolRebalanceLeafData.incentivePoolBalances[chainId][l1TokenAddress] =
+            previousRunningBalance.incentiveBalance;
+          poolRebalanceLeafData.netSendAmounts[chainId][l1TokenAddress] = BigNumber.from(0);
+        } else {
+          const closingRunningBalance = flowsForChain[flowsForChain.length - 1].runningBalance;
+          const closingIncentiveBalance = flowsForChain[flowsForChain.length - 1].incentiveBalance;
+          const bundleLpFees = flowsForChain.reduce((sum, flow) => sum.add(flow.systemFee.lpFee), BigNumber.from(0));
+          const netSendAmount = flowsForChain.reduce(
+            (sum, flow) => sum.add(flow.netRunningBalanceAdjustment),
+            BigNumber.from(0)
+          );
+          poolRebalanceLeafData.runningBalances[chainId][l1TokenAddress] = closingRunningBalance;
+          poolRebalanceLeafData.bundleLpFees[chainId][l1TokenAddress] = bundleLpFees;
+          poolRebalanceLeafData.incentivePoolBalances[chainId][l1TokenAddress] = closingIncentiveBalance;
+          poolRebalanceLeafData.netSendAmounts[chainId][l1TokenAddress] = netSendAmount;
+        }
+      }
+    }
+    // console.log("poolRebalanceLeafData", poolRebalanceLeafData);
+
+    return PoolRebalanceUtils.constructPoolRebalanceLeaves(
+      mainnetBundleEndBlock,
+      poolRebalanceLeafData.runningBalances,
+      poolRebalanceLeafData.bundleLpFees,
+      this.clients.configStoreClient,
+      this.maxL1TokenCountOverride,
+      this.tokenTransferThreshold,
+      poolRebalanceLeafData.incentivePoolBalances,
+      poolRebalanceLeafData.netSendAmounts
+    );
   }
 
   async validatePendingRootBundle(
