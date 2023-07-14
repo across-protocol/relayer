@@ -6,6 +6,7 @@ import {
   createSpyLogger,
   lastSpyLogIncludes,
   deepEqualsWithBigNumber,
+  buildRefundRequest,
 } from "./utils";
 import { SignerWithAddress, expect, ethers, Contract, toBN, toBNWei, setupTokensForWallet } from "./utils";
 import { buildDeposit, buildFill, buildSlowFill, BigNumber, deployNewTokenMapping } from "./utils";
@@ -36,7 +37,7 @@ let l1Token_1: Contract, hubPool: Contract, timer: Contract, configStore: Contra
 let depositor: SignerWithAddress, relayer: SignerWithAddress, dataworker: SignerWithAddress;
 
 let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient, spokePoolClient_1: SpokePoolClient;
-let dataworkerInstance: Dataworker;
+let dataworkerInstance: Dataworker, spokePoolClient_2: SpokePoolClient;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let spy: sinon.SinonSpy, spyLogger: winston.Logger;
@@ -64,6 +65,7 @@ describe("Dataworker: Build merkle roots", async function () {
       spy,
       spyLogger,
       spokePoolClient_1,
+      spokePoolClient_2,
       updateAllClients,
     } = await setupFastDataworker(ethers));
   });
@@ -1414,50 +1416,64 @@ describe("Dataworker: Build merkle roots", async function () {
         spyLogger
       );
     });
-    it("Build pool rebalance root", async function () {
-      ubaClient.setFlows(originChainId, l1TokenSymbol, [
-        {
-          flow: {
-            ...spokePoolClient_1.getFills()[0],
+    describe("Build pool rebalance root", function () {
+      it("> 0 flows", async function () {
+        ubaClient.setFlows(originChainId, l1TokenSymbol, [
+          {
+            flow: {
+              ...spokePoolClient_1.getFills()[0],
+            },
+            systemFee: {
+              lpFee: BigNumber.from(0),
+              depositBalancingFee: BigNumber.from(0),
+              systemFee: BigNumber.from(0),
+            },
+            relayerFee: {
+              relayerGasFee: BigNumber.from(0),
+              relayerCapitalFee: BigNumber.from(0),
+              relayerBalancingFee: BigNumber.from(0),
+              relayerFee: BigNumber.from(0),
+              amountTooLow: false,
+            },
+            runningBalance: toBNWei("1"),
+            incentiveBalance: toBNWei("1"),
+            netRunningBalanceAdjustment: toBNWei("1"),
           },
-          systemFee: {
-            lpFee: BigNumber.from(0),
-            depositBalancingFee: BigNumber.from(0),
-            systemFee: BigNumber.from(0),
-          },
-          relayerFee: {
-            relayerGasFee: BigNumber.from(0),
-            relayerCapitalFee: BigNumber.from(0),
-            relayerBalancingFee: BigNumber.from(0),
-            relayerFee: BigNumber.from(0),
-            amountTooLow: false,
-          },
-          runningBalance: toBNWei("1"),
-          incentiveBalance: toBNWei("1"),
-          netRunningBalanceAdjustment: toBNWei("1"),
-        },
-      ]);
+        ]);
 
-      const blockRanges = dataworkerInstance._getNextProposalBlockRanges(spokePoolClients);
-      if (!blockRanges) {
-        throw new Error("Can't propose new bundle");
-      }
-      const { poolRebalanceLeaves } = dataworkerInstance._UBA_buildPoolRebalanceLeaves(
-        blockRanges,
-        [originChainId, destinationChainId],
-        ubaClient
-      );
-      expect(
-        deepEqualsWithBigNumber(poolRebalanceLeaves[0], {
-          chainId: originChainId,
-          bundleLpFees: [BigNumber.from(0)],
-          netSendAmounts: [toBNWei("1")],
-          runningBalances: [toBNWei("1"), toBNWei("1")],
-          groupIndex: 0,
-          leafId: 0,
-          l1Tokens: [l1Token_1.address],
-        })
-      ).to.be.true;
+        const blockRanges = dataworkerInstance._getNextProposalBlockRanges(spokePoolClients);
+        if (!blockRanges) {
+          throw new Error("Can't propose new bundle");
+        }
+        const { poolRebalanceLeaves } = dataworkerInstance._UBA_buildPoolRebalanceLeaves(
+          blockRanges,
+          [originChainId, destinationChainId],
+          ubaClient
+        );
+        expect(
+          deepEqualsWithBigNumber(poolRebalanceLeaves[0], {
+            chainId: originChainId,
+            bundleLpFees: [BigNumber.from(0)],
+            netSendAmounts: [toBNWei("1")],
+            runningBalances: [toBNWei("1"), toBNWei("1")],
+            groupIndex: 0,
+            leafId: 0,
+            l1Tokens: [l1Token_1.address],
+          })
+        ).to.be.true;
+      });
+      it("0 flows", async function () {
+        const blockRanges = dataworkerInstance._getNextProposalBlockRanges(spokePoolClients);
+        if (!blockRanges) {
+          throw new Error("Can't propose new bundle");
+        }
+        const { poolRebalanceLeaves } = dataworkerInstance._UBA_buildPoolRebalanceLeaves(
+          blockRanges,
+          [originChainId, destinationChainId],
+          ubaClient
+        );
+        expect(poolRebalanceLeaves.length).to.be.equal(0);
+      });
     });
     describe("Build relayer refund root", function () {
       it("amountToReturn is 0", async function () {
@@ -1469,12 +1485,14 @@ describe("Dataworker: Build merkle roots", async function () {
           ubaClient
         );
         expect(
-          await dataworkerInstance._UBA_buildRelayerRefundLeaves(
-            poolRebalanceLeaves,
-            runningBalances,
-            getDefaultBlockRange(0),
-            ubaClient
-          )
+          (
+            await dataworkerInstance._UBA_buildRelayerRefundLeaves(
+              poolRebalanceLeaves,
+              runningBalances,
+              getDefaultBlockRange(0),
+              ubaClient
+            )
+          ).leaves
         ).to.deep.equal([]);
 
         // Submit deposits for multiple L2 tokens.
@@ -1542,7 +1560,7 @@ describe("Dataworker: Build merkle roots", async function () {
           getDefaultBlockRange(1),
           ubaClient
         );
-        deepEqualsWithBigNumber(relayerRefundLeaves1[0], { ...leaf1, leafId: 0 });
+        deepEqualsWithBigNumber(relayerRefundLeaves1.leaves[0], { ...leaf1, leafId: 0 });
 
         // Submit fills for multiple repayment chains. Note: Send the fills for destination tokens in the
         // reverse order of the fills we sent above to test that the data worker is correctly sorting leaves
@@ -1564,8 +1582,8 @@ describe("Dataworker: Build merkle roots", async function () {
           getDefaultBlockRange(2),
           ubaClient
         );
-        deepEqualsWithBigNumber(relayerRefundLeaves2[0], { ...leaf2, leafId: 0 });
-        deepEqualsWithBigNumber(relayerRefundLeaves2[1], { ...leaf1, leafId: 1 });
+        deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[0], { ...leaf2, leafId: 0 });
+        deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[1], { ...leaf1, leafId: 1 });
 
         // Splits leaf into multiple leaves if refunds > MAX_REFUNDS_PER_RELAYER_REFUND_LEAF.
         const deposit4 = await buildDeposit(
@@ -1619,9 +1637,9 @@ describe("Dataworker: Build merkle roots", async function () {
             getRefund(deposit4.amount, deposit4.realizedLpFeePct).mul(toBNWei("0.01")).div(toBNWei("1")),
           ],
         };
-        deepEqualsWithBigNumber(relayerRefundLeaves3[0], { ...leaf2, leafId: 0 });
-        deepEqualsWithBigNumber(relayerRefundLeaves3[1], { ...leaf1, leafId: 1 });
-        deepEqualsWithBigNumber(relayerRefundLeaves3[2], { ...leaf3, leafId: 2 });
+        deepEqualsWithBigNumber(relayerRefundLeaves3.leaves[0], { ...leaf2, leafId: 0 });
+        deepEqualsWithBigNumber(relayerRefundLeaves3.leaves[1], { ...leaf1, leafId: 1 });
+        deepEqualsWithBigNumber(relayerRefundLeaves3.leaves[2], { ...leaf3, leafId: 2 });
       });
       it("amountToReturn is non 0", async function () {
         await updateAllClients();
@@ -1684,7 +1702,7 @@ describe("Dataworker: Build merkle roots", async function () {
           blockRanges,
           ubaClient
         );
-        deepEqualsWithBigNumber(relayerRefundLeaves1[0], { ...leaf1, leafId: 0 });
+        deepEqualsWithBigNumber(relayerRefundLeaves1.leaves[0], { ...leaf1, leafId: 0 });
 
         // Now, submit fills on the origin chain such that the refunds for the origin chain need to be split amongst
         // more than one leaves.
@@ -1734,19 +1752,57 @@ describe("Dataworker: Build merkle roots", async function () {
           getDefaultBlockRange(1),
           ubaClient
         );
-        deepEqualsWithBigNumber(relayerRefundLeaves2[0], { ...newLeaf1, leafId: 0 });
-        deepEqualsWithBigNumber(relayerRefundLeaves2[1], { ...leaf2, leafId: 1 });
+        deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[0], { ...newLeaf1, leafId: 0 });
+        deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[1], { ...leaf2, leafId: 1 });
+      });
+      it("Refunds are included in UBA mode", async function () {
+        await updateAllClients();
+        const { poolRebalanceLeaves, runningBalances } = await dataworkerInstance._UBA_buildPoolRebalanceLeaves(
+          getDefaultBlockRange(0),
+          [originChainId, destinationChainId],
+          ubaClient
+        );
 
-        // const merkleRoot2 = (
-        //   await dataworkerInstance.buildRelayerRefundRoot(
-        //     getDefaultBlockRange(1),
-        //     spokePoolClients,
-        //     poolRebalanceRoot2.leaves,
-        //     poolRebalanceRoot2.runningBalances
-        //   )
-        // ).tree;
-        // const expectedMerkleRoot2 = await buildRelayerRefundTreeWithUnassignedLeafIds([newLeaf1, leaf2, leaf3]);
-        // expect(merkleRoot2.getHexRoot()).to.equal(expectedMerkleRoot2.getHexRoot());
+        // Fill deposit and request refund on origin chain which is NOT the destination chain.
+        const deposit1 = await buildDeposit(
+          hubPoolClient,
+          spokePool_1,
+          erc20_1,
+          l1Token_1,
+          depositor,
+          destinationChainId,
+          amountToDeposit
+        );
+
+        await updateAllClients();
+        await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 1, originChainId);
+
+        await updateAllClients();
+        const relayerRefundLeaves1 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
+          poolRebalanceLeaves,
+          runningBalances,
+          getDefaultBlockRange(1),
+          ubaClient
+        );
+        expect(relayerRefundLeaves1.leaves.length).to.equal(0);
+
+        // Now, send a refund:
+        await buildRefundRequest(spokePool_1, relayer, spokePoolClient_2.getFills()[0], erc20_1.address);
+        await updateAllClients();
+        const relayerRefundLeaves2 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
+          poolRebalanceLeaves,
+          runningBalances,
+          getDefaultBlockRange(2),
+          ubaClient
+        );
+        const leaf1 = {
+          chainId: originChainId,
+          amountToReturn: toBN(0),
+          l2TokenAddress: erc20_1.address,
+          refundAddresses: [relayer.address],
+          refundAmounts: [getRefund(deposit1.amount, deposit1.realizedLpFeePct)],
+        };
+        deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[0], { ...leaf1, leafId: 0 });
       });
     });
   });

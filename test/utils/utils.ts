@@ -431,7 +431,8 @@ export async function buildFill(
   recipientAndDepositor: SignerWithAddress,
   relayer: SignerWithAddress,
   deposit: Deposit,
-  pctOfDepositToFill: number
+  pctOfDepositToFill: number,
+  repaymentChainId?: number
 ): Promise<Fill> {
   await spokePool.connect(relayer).fillRelay(
     ...utils.getFillRelayParams(
@@ -451,7 +452,7 @@ export async function buildFill(
         .mul(toBNWei(pctOfDepositToFill))
         .div(toBNWei(1))
         .div(toBNWei(1)),
-      deposit.destinationChainId
+      repaymentChainId ?? deposit.destinationChainId
     )
   );
   const [events, destinationChainId] = await Promise.all([
