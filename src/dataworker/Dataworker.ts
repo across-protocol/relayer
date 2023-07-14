@@ -1062,50 +1062,58 @@ export class Dataworker {
         reason: "out-of-date-config-store-version",
       };
     }
-
-    // Compare roots with expected. The roots will be different if the block range start blocks were different
-    // than the ones we constructed above when the original proposer submitted their proposal. The roots will also
-    // be different if the events on any of the contracts were different.
-    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = await this.clients.bundleDataClient.loadData(
+    let rootBundleData: ProposeRootBundleReturnType;
+    const mainnetBundleStartBlock = getBlockRangeForChain(
       blockRangesImpliedByBundleEndBlocks,
-      spokePoolClients
-    );
-    const allValidFillsInRange = getFillsInRange(
-      allValidFills,
-      blockRangesImpliedByBundleEndBlocks,
+      hubPoolChainId,
       this.chainIdListForBundleEvaluationBlockNumbers
-    );
-    const expectedPoolRebalanceRoot = await this._getPoolRebalanceRoot(
-      spokePoolClients,
-      blockRangesImpliedByBundleEndBlocks,
-      rootBundle.proposalBlockNumber,
-      endBlockForMainnet,
-      fillsToRefund,
-      deposits,
-      allValidFills,
-      allValidFillsInRange,
-      unfilledDeposits,
-      true
-    );
-    const expectedRelayerRefundRoot = _buildRelayerRefundRoot(
-      endBlockForMainnet,
-      fillsToRefund,
-      expectedPoolRebalanceRoot.leaves,
-      expectedPoolRebalanceRoot.runningBalances,
-      this.clients,
-      this.maxRefundCountOverride
-        ? this.maxRefundCountOverride
-        : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(endBlockForMainnet),
-      this.tokenTransferThreshold
-    );
-
-    const expectedSlowRelayRoot = _buildSlowRelayRoot(unfilledDeposits);
-
+    )[0];
+    const version = this.clients.configStoreClient.getConfigStoreVersionForBlock(mainnetBundleStartBlock);
+    let isUBA = false;
+    if (utils.isUBA(version)) {
+      if (!this.clients.configStoreClient.isValidConfigStoreVersion(version)) {
+        throw new Error("validateRootBundle: Invalid config store version");
+      }
+      isUBA = true;
+    }
+    if (!isUBA) {
+      const _rootBundleData = await this.Legacy_proposeRootBundle(blockRangesImpliedByBundleEndBlocks, spokePoolClients);
+      rootBundleData = {
+        ..._rootBundleData,
+      };
+    } else {
+      const ubaClient = new UBAClient(
+        this.chainIdListForBundleEvaluationBlockNumbers,
+        this.clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
+        this.clients.hubPoolClient,
+        spokePoolClients,
+        this.logger
+      );
+      // TODO: Move this .update() to the Dataworker ClientHelper once we confirm it works.
+      await ubaClient.update({}, false);
+      const _rootBundleData = await this.UBA_proposeRootBundle(blockRangesImpliedByBundleEndBlocks, ubaClient, spokePoolClients);
+      rootBundleData = {
+        ..._rootBundleData,
+      };
+    }
+    const expectedPoolRebalanceRoot = {
+      leaves: rootBundleData.poolRebalanceLeaves,
+      tree: rootBundleData.poolRebalanceTree,
+    };
+    const expectedRelayerRefundRoot = {
+      leaves: rootBundleData.relayerRefundLeaves,
+      tree: rootBundleData.relayerRefundTree,
+    };
+    const expectedSlowRelayRoot = {
+      leaves: rootBundleData.slowFillLeaves,
+      tree: rootBundleData.slowFillTree,
+    };
     const expectedTrees = {
       poolRebalanceTree: expectedPoolRebalanceRoot,
       relayerRefundTree: expectedRelayerRefundRoot,
       slowRelayTree: expectedSlowRelayRoot,
     };
+
     if (
       // Its ok if there are fewer unclaimed leaves than in the reconstructed root, because some of the leaves
       // might already have been executed, but its an issue if the reconstructed root expects fewer leaves than there
