@@ -1484,7 +1484,7 @@ describe("Dataworker: Build merkle roots", async function () {
           [originChainId, destinationChainId],
           ubaClient
         );
-        const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        const data1 = await dataworkerInstance.clients.bundleDataClient._loadData(
           getDefaultBlockRange(0),
           spokePoolClients,
           true
@@ -1544,7 +1544,7 @@ describe("Dataworker: Build merkle roots", async function () {
         };
 
         await updateAllClients();
-        const data2 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        const data2 = await dataworkerInstance.clients.bundleDataClient._loadData(
           getDefaultBlockRange(1),
           spokePoolClients,
           true
@@ -1581,7 +1581,7 @@ describe("Dataworker: Build merkle roots", async function () {
         // the fill amount in the above loop for each fill. Ultimately, the latest fills send the most tokens and
         // should come in the first leaf.
         await updateAllClients();
-        const data4 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        const data4 = await dataworkerInstance.clients.bundleDataClient._loadData(
           getDefaultBlockRange(3),
           spokePoolClients,
           true
@@ -1722,7 +1722,7 @@ describe("Dataworker: Build merkle roots", async function () {
         };
 
         await updateAllClients();
-        const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        const data1 = await dataworkerInstance.clients.bundleDataClient._loadData(
           getDefaultBlockRange(1),
           spokePoolClients,
           true
@@ -1759,7 +1759,7 @@ describe("Dataworker: Build merkle roots", async function () {
         await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 1, originChainId);
 
         await updateAllClients();
-        const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        const data1 = await dataworkerInstance.clients.bundleDataClient._loadData(
           getDefaultBlockRange(1),
           spokePoolClients,
           true
@@ -1774,7 +1774,7 @@ describe("Dataworker: Build merkle roots", async function () {
         // Now, send a refund:
         await buildRefundRequest(spokePool_1, relayer, spokePoolClient_2.getFills()[0], erc20_1.address);
         await updateAllClients();
-        const data2 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        const data2 = await dataworkerInstance.clients.bundleDataClient._loadData(
           getDefaultBlockRange(2),
           spokePoolClients,
           true
@@ -1816,7 +1816,7 @@ describe("Dataworker: Build merkle roots", async function () {
         // (ascending).
         await updateAllClients();
 
-        const { unfilledDeposits } = await dataworkerInstance.clients.bundleDataClient.loadData(
+        const { unfilledDeposits } = await dataworkerInstance.clients.bundleDataClient._loadData(
           getDefaultBlockRange(0),
           spokePoolClients
         );

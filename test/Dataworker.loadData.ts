@@ -652,7 +652,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     });
 
     // UBA mode requires refund request to be sent to add to fills to refund.
-    const data2 = await dataworkerInstance.clients.bundleDataClient.loadData(
+    const data2 = await dataworkerInstance.clients.bundleDataClient._loadData(
       getDefaultBlockRange(1),
       spokePoolClients,
       true
@@ -675,7 +675,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       erc20_1.address
     );
     await updateAllClients();
-    const data3 = await dataworkerInstance.clients.bundleDataClient.loadData(
+    const data3 = await dataworkerInstance.clients.bundleDataClient._loadData(
       getDefaultBlockRange(2),
       spokePoolClients,
       true

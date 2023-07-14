@@ -10,7 +10,6 @@ import {
   DataworkerClients,
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
-import { UBAClient } from "../clients";
 config();
 let logger: winston.Logger;
 
@@ -103,33 +102,12 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
       }
 
       if (config.proposerEnabled) {
-        // TODO: Add dynamic switch to build UBA root bundle
-        // eslint-disable-next-line no-constant-condition
-        if (false) {
-          const ubaClient = new UBAClient(
-            config.chainIdListIndices,
-            clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
-            clients.hubPoolClient,
-            spokePoolClients,
-            logger
-          );
-          // @dev: Don't instantiate UBA client with any state and don't re-refresh the Hub/SpokePool clients.
-          await ubaClient.update({}, false);
-          await dataworker.UBA_proposeRootBundle(
-            ubaClient,
-            spokePoolClients,
-            config.rootBundleExecutionThreshold,
-            config.sendingProposalsEnabled,
-            fromBlocks
-          );
-        } else {
-          await dataworker.proposeRootBundle(
-            spokePoolClients,
-            config.rootBundleExecutionThreshold,
-            config.sendingProposalsEnabled,
-            fromBlocks
-          );
-        }
+        await dataworker.proposeRootBundle(
+          spokePoolClients,
+          config.rootBundleExecutionThreshold,
+          config.sendingProposalsEnabled,
+          fromBlocks
+        );
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
       }
