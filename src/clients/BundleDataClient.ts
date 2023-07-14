@@ -30,7 +30,7 @@ import {
   prettyPrintSpokePoolEvents,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
-import { clients } from "@across-protocol/sdk-v2";
+import { clients, utils } from "@across-protocol/sdk-v2";
 const { refundRequestIsValid } = clients;
 
 type DataCacheValue = {
@@ -171,6 +171,31 @@ export class BundleDataClient {
   // User must pass in spoke pool to search event data against. This allows the user to refund relays and fill deposits
   // on deprecated spoke pools.
   async loadData(
+    blockRangesForChains: number[][],
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
+    logData = true
+  ): Promise<{
+    unfilledDeposits: UnfilledDeposit[];
+    fillsToRefund: FillsToRefund;
+    allValidFills: FillWithBlock[];
+    deposits: DepositWithBlock[];
+  }> {
+    const mainnetStartBlock = getBlockRangeForChain(
+      blockRangesForChains,
+      this.clients.hubPoolClient.chainId,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    )[0];
+    const version = this.clients.configStoreClient.getConfigStoreVersionForBlock(mainnetStartBlock);
+    let isUBA = false;
+    if (utils.isUBA(version)) {
+      if (!this.clients.configStoreClient.isValidConfigStoreVersion(version)) {
+        throw new Error("loadData: Invalid config store version");
+      }
+      isUBA = true;
+    }
+    return this._loadData(blockRangesForChains, spokePoolClients, isUBA, logData);
+  }
+  async _loadData(
     blockRangesForChains: number[][],
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     isUBA = false,
