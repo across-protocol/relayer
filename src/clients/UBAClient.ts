@@ -8,8 +8,6 @@ const { getFills, getRefundRequests } = clients;
 type SpokePoolEventFilter = clients.SpokePoolEventFilter;
 type SpokePoolFillFilter = clients.SpokePoolFillFilter;
 
-type RelayFeeCalculatorConfig = relayFeeCalculator.RelayFeeCalculatorConfig;
-
 export class UBAClient extends clients.UBAClient {
   constructor(
     chainIdIndices: number[],
@@ -24,7 +22,7 @@ export class UBAClient extends clients.UBAClient {
       tokenSymbols,
       hubPoolClient,
       spokePoolClients,
-      {} as RelayFeeCalculatorConfig,
+      {} as relayFeeCalculator.RelayFeeCalculatorConfigWithMap,
       maxBundleStates,
       logger
     );
