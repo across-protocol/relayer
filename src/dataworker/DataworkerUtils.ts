@@ -226,7 +226,7 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
         depositId: deposit.deposit.depositId,
         message: "0x",
       },
-      payoutAdjustmentPct: "0",
+      payoutAdjustmentPct: deposit?.relayerBalancingFee?.toString() ?? "0",
     })
   );
 
@@ -247,6 +247,8 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
   };
 }
 
+// @dev `runningBalances` is only used in pre-UBA model to determine whether a spoke's running balances
+// are over the target/threshold. In the UBA model, this is handled at the UBA client level.
 export function _buildRelayerRefundRoot(
   endBlockForMainnet: number,
   fillsToRefund: FillsToRefund,
