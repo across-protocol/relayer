@@ -369,7 +369,7 @@ export class BundleDataClient {
         );
       }
 
-      // Handle fills that requested repayment on a different chain and submitted a refund request. 
+      // Handle fills that requested repayment on a different chain and submitted a refund request.
       // These should map with only full fills where fill.destinationChainId !== fill.repaymentChainId.
       if (isUBA) {
         const blockRangeForChain = getBlockRangeForChain(

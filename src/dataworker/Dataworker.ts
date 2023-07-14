@@ -507,7 +507,7 @@ export class Dataworker {
       })
       .map((x) => Number(x));
 
-    const { poolRebalanceLeaves, runningBalances } = this._UBA_buildPoolRebalanceLeaves(
+    const { poolRebalanceLeaves } = this._UBA_buildPoolRebalanceLeaves(
       blockRangesForProposal,
       enabledChainIds,
       ubaClient
@@ -515,16 +515,22 @@ export class Dataworker {
     const poolRebalanceTree = buildPoolRebalanceLeafTree(poolRebalanceLeaves);
     PoolRebalanceUtils.prettyPrintLeaves(this.logger, poolRebalanceTree, poolRebalanceLeaves, "Pool rebalance");
 
+    // Load data for slow fill and relayer refund leaves. Set UBA mode to true to include
+    // refund requests in the fills to refund list.
+    const { fillsToRefund, unfilledDeposits } = await this.clients.bundleDataClient.loadData(
+      blockRangesForProposal,
+      ubaClient.spokePoolClients,
+      true
+    );
     // Build RelayerRefundRoot:
     // 1. Get all fills in range from SpokePoolClient
     // 2. Get all flows from UBA Client
     // 3. Validate fills by matching them with a deposit flow. Partial and Full fills should be validated the same (?)
     // 4. Validate refunds by matching them with a refund flow and checking that they were the first refund.
-    const relayerRefundTree = await this._UBA_buildRelayerRefundLeaves(
+    const relayerRefundTree = this._UBA_buildRelayerRefundLeaves(
+      fillsToRefund,
       poolRebalanceLeaves,
-      runningBalances,
-      blockRangesForProposal,
-      ubaClient
+      blockRangesForProposal
     );
     PoolRebalanceUtils.prettyPrintLeaves(
       this.logger,
@@ -537,6 +543,8 @@ export class Dataworker {
     // 1. Get all initial partial fills in range from SpokePoolClient that weren't later fully filled.
     // 2. Get all flows from UBA Client
     // 3. Validate fills by matching them with a deposit flow.
+    const slowFillTree = this._UBA_buildSlowRelayLeaves(ubaClient, blockRangesForProposal, unfilledDeposits);
+    PoolRebalanceUtils.prettyPrintLeaves(this.logger, slowFillTree.tree, slowFillTree.leaves, "Slow relay");
   }
 
   /**
@@ -638,12 +646,18 @@ export class Dataworker {
     };
   }
 
-  async _UBA_buildRelayerRefundLeaves(
+  /**
+   * Builds relayer refund leaves for the given block ranges and enabled chains.
+   * @param poolRebalanceLeaves Used to determine how to set amountToReturn in relayer refund leaves
+   * @param runningBalances
+   * @param blockRanges
+   * @returns
+   */
+  _UBA_buildRelayerRefundLeaves(
+    fillsToRefund: FillsToRefund,
     poolRebalanceLeaves: PoolRebalanceLeaf[],
-    runningBalances: RunningBalances,
-    blockRanges: number[][],
-    ubaClient: UBAClient
-  ): Promise<{ leaves: RelayerRefundLeaf[]; tree: MerkleTree<RelayerRefundLeaf> }> {
+    blockRanges: number[][]
+  ): { leaves: RelayerRefundLeaf[]; tree: MerkleTree<RelayerRefundLeaf> } {
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
     const mainnetBundleEndBlock = getBlockRangeForChain(
       blockRanges,
@@ -653,11 +667,6 @@ export class Dataworker {
 
     // Create roots using constructed block ranges.
     const timerStart = Date.now();
-    const { fillsToRefund } = await this.clients.bundleDataClient.loadData(
-      blockRanges,
-      ubaClient.spokePoolClients,
-      true
-    );
     this.logger.debug({
       at: "Dataworker",
       message: `Time to load data from BundleDataClient: ${Date.now() - timerStart}ms`,
@@ -666,7 +675,7 @@ export class Dataworker {
       mainnetBundleEndBlock,
       fillsToRefund,
       poolRebalanceLeaves,
-      runningBalances,
+      {}, // runningBalancess unused in UBA model.
       this.clients,
       this.maxRefundCountOverride
         ? this.maxRefundCountOverride
@@ -675,6 +684,44 @@ export class Dataworker {
       true // Instruct function to always set amountToReturn = -netSendAmount iff netSendAmount < 0
     );
     return relayerRefundRoot;
+  }
+
+  _UBA_buildSlowRelayLeaves(
+    ubaClient: UBAClient,
+    blockRanges: number[][],
+    unfilledDeposits: UnfilledDeposit[]
+  ): { leaves: SlowFillLeaf[]; tree: MerkleTree<SlowFillLeaf> } {
+    // In UBA mode, each unfilled deposit must be matched with a payout adjustment percent,
+    // which is set equal to the refund balancing fee for the partial fill that triggered the slow fill.
+    const unfilledDepositsWithPayoutAdjustmentPcts: UnfilledDeposit[] = unfilledDeposits.map(
+      (unfilledDeposit: UnfilledDeposit) => {
+        const deposit = unfilledDeposit.deposit;
+        const destinationChainId = deposit.destinationChainId;
+        const blockRangesForDestChain = getBlockRangeForChain(
+          blockRanges,
+          destinationChainId,
+          this.chainIdListForBundleEvaluationBlockNumbers
+        );
+        const tokenSymbol = this.clients.hubPoolClient.getL1TokenInfoForL2Token(
+          deposit.destinationToken,
+          destinationChainId
+        ).symbol;
+        // There should only be one outflow on the deposit.destinationchain matching this deposit ID.
+        const matchingOutflow = ubaClient
+          .getModifiedFlows(destinationChainId, tokenSymbol, blockRangesForDestChain[0], blockRangesForDestChain[1])
+          .find((flow) => flow.flow.depositId === deposit.depositId);
+        if (!matchingOutflow) {
+          throw new Error(`No matching outflow found for deposit ID ${deposit.depositId}`);
+        }
+        return {
+          ...unfilledDeposit,
+          relayerBalancingFee: matchingOutflow.relayerFee.relayerBalancingFee,
+        };
+      }
+    );
+    const slowRelayRoot = _buildSlowRelayRoot(unfilledDepositsWithPayoutAdjustmentPcts);
+
+    return slowRelayRoot;
   }
 
   async validatePendingRootBundle(
