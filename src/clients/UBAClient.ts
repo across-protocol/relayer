@@ -8,7 +8,7 @@ const { getFills, getRefundRequests } = clients;
 type SpokePoolEventFilter = clients.SpokePoolEventFilter;
 type SpokePoolFillFilter = clients.SpokePoolFillFilter;
 
-type RelayFeeCalculatorConfig = relayFeeCalculator.RelayFeeCalculatorConfig;
+type RelayFeeCalculatorConfig = relayFeeCalculator.RelayFeeCalculatorConfigWithMap;
 
 export class UBAClient extends clients.UBAClient {
   constructor(
