@@ -1,3 +1,4 @@
+import assert from "assert";
 import winston from "winston";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { Wallet } from "../utils";
@@ -111,6 +112,8 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   await configStoreClient.update();
   const version = configStoreClient.getConfigStoreVersionForTimestamp();
   if (sdkUtils.isUBA(version)) {
+    const version = configStoreClient.getConfigStoreVersionForTimestamp();
+    assert(configStoreClient.isValidConfigStoreVersion(version));
     await ubaClient.update(undefined, true);
   } else {
     // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
