@@ -431,7 +431,8 @@ export async function buildFill(
   recipientAndDepositor: SignerWithAddress,
   relayer: SignerWithAddress,
   deposit: Deposit,
-  pctOfDepositToFill: number
+  pctOfDepositToFill: number,
+  repaymentChainId?: number
 ): Promise<Fill> {
   await spokePool.connect(relayer).fillRelay(
     ...utils.getFillRelayParams(
@@ -451,7 +452,7 @@ export async function buildFill(
         .mul(toBNWei(pctOfDepositToFill))
         .div(toBNWei(1))
         .div(toBNWei(1)),
-      deposit.destinationChainId
+      repaymentChainId ?? deposit.destinationChainId
     )
   );
   const [events, destinationChainId] = await Promise.all([
@@ -660,9 +661,9 @@ export async function buildRefundRequest(
 
 // Returns expected leaves ordered by origin chain ID and then deposit ID(ascending). Ordering is implemented
 // same way that dataworker orders them.
-export function buildSlowRelayLeaves(deposits: Deposit[]) {
+export function buildSlowRelayLeaves(deposits: Deposit[], payoutAdjustmentPcts: BigNumber[] = []) {
   return deposits
-    .map((_deposit) => {
+    .map((_deposit, i) => {
       return {
         relayData: {
           depositor: _deposit.depositor,
@@ -676,7 +677,7 @@ export function buildSlowRelayLeaves(deposits: Deposit[]) {
           depositId: _deposit.depositId.toString(),
           message: _deposit.message,
         },
-        payoutAdjustmentPct: "0",
+        payoutAdjustmentPct: payoutAdjustmentPcts[i]?.toString() ?? "0",
       };
     }) // leaves should be ordered by origin chain ID and then deposit ID (ascending).
     .sort((relayA, relayB) => {
