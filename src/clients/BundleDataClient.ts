@@ -237,6 +237,9 @@ export class BundleDataClient {
       // total realized LP fee %.
       assignValidFillToFillsToRefund(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
       allRelayerRefunds.push({ repaymentToken, repaymentChain: chainToSendRefundTo });
+
+      // Note: the UBA model doesn't use the following realized LP fees data but we keep it for backwards
+      // compatibility.
       updateTotalRealizedLpFeePct(fillsToRefund, fill, chainToSendRefundTo, repaymentToken);
 
       // Save deposit as one that is eligible for a slow fill, since there is a fill
@@ -355,6 +358,10 @@ export class BundleDataClient {
           .filter((fillWithBlock) => fillWithBlock.blockNumber <= blockRangeForChain[1]);
         await Promise.all(
           fillsForOriginChain.map(async (fill) => {
+            // In the UBA model, fills that request repayment on another chain must send a separate refund request
+            // in order to mark their place in the outflow queue for that chain. This is because the UBA determines
+            // fees based on sequencing of events. Pre-UBA, the fee model treats each fill independently so there
+            // is no need to mark a fill's place in line on the repayment chain.
             if (!isUBA || fill.destinationChainId === fill.repaymentChainId) {
               validateFillAndSaveData(fill, blockRangeForChain);
             }
@@ -362,7 +369,8 @@ export class BundleDataClient {
         );
       }
 
-      // Handle fills that requested repayment on a different chain.
+      // Handle fills that requested repayment on a different chain and submitted a refund request. 
+      // These should map with only full fills where fill.destinationChainId !== fill.repaymentChainId.
       if (isUBA) {
         const blockRangeForChain = getBlockRangeForChain(
           blockRangesForChains,
