@@ -226,7 +226,7 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
         depositId: deposit.deposit.depositId,
         message: "0x",
       },
-      payoutAdjustmentPct: "0",
+      payoutAdjustmentPct: deposit?.relayerBalancingFee?.toString() ?? "0",
     })
   );
 
@@ -247,6 +247,8 @@ export function _buildSlowRelayRoot(unfilledDeposits: UnfilledDeposit[]): {
   };
 }
 
+// @dev `runningBalances` is only used in pre-UBA model to determine whether a spoke's running balances
+// are over the target/threshold. In the UBA model, this is handled at the UBA client level.
 export function _buildRelayerRefundRoot(
   endBlockForMainnet: number,
   fillsToRefund: FillsToRefund,
@@ -254,7 +256,8 @@ export function _buildRelayerRefundRoot(
   runningBalances: RunningBalances,
   clients: DataworkerClients,
   maxRefundCount: number,
-  tokenTransferThresholdOverrides: BigNumberForToken
+  tokenTransferThresholdOverrides: BigNumberForToken,
+  isUBA = false
 ): {
   leaves: RelayerRefundLeaf[];
   tree: MerkleTree<RelayerRefundLeaf>;
@@ -276,27 +279,34 @@ export function _buildRelayerRefundRoot(
 
       // Create leaf for { repaymentChainId, L2TokenAddress }, split leaves into sub-leaves if there are too many
       // refunds.
-      const l1TokenCounterpart = clients.hubPoolClient.getL1TokenCounterpartAtBlock(
-        repaymentChainId,
-        l2TokenAddress,
-        endBlockForMainnet
-      );
-      const transferThreshold =
-        tokenTransferThresholdOverrides[l1TokenCounterpart] ||
-        clients.configStoreClient.getTokenTransferThresholdForBlock(l1TokenCounterpart, endBlockForMainnet);
 
-      const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
-        l1TokenCounterpart,
-        Number(repaymentChainId),
-        endBlockForMainnet
-      );
+      // If UBA model, set amount to return to 0 for now until we match this leaf against a pool rebalance leaf. In
+      // the UBA model, the amount to return is simpler to compute: simply set it equal to the negative
+      // net send amount value if the net send amount is negative.
+      let amountToReturn = toBN(0);
+      if (!isUBA) {
+        const l1TokenCounterpart = clients.hubPoolClient.getL1TokenCounterpartAtBlock(
+          repaymentChainId,
+          l2TokenAddress,
+          endBlockForMainnet
+        );
+        const transferThreshold =
+          tokenTransferThresholdOverrides[l1TokenCounterpart] ||
+          clients.configStoreClient.getTokenTransferThresholdForBlock(l1TokenCounterpart, endBlockForMainnet);
 
-      // The `amountToReturn` for a { repaymentChainId, L2TokenAddress} should be set to max(-netSendAmount, 0).
-      const amountToReturn = getAmountToReturnForRelayerRefundLeaf(
-        transferThreshold,
-        spokePoolTargetBalance,
-        runningBalances[repaymentChainId][l1TokenCounterpart]
-      );
+        const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
+          l1TokenCounterpart,
+          Number(repaymentChainId),
+          endBlockForMainnet
+        );
+
+        // The `amountToReturn` for a { repaymentChainId, L2TokenAddress} should be set to max(-netSendAmount, 0).
+        amountToReturn = getAmountToReturnForRelayerRefundLeaf(
+          transferThreshold,
+          spokePoolTargetBalance,
+          runningBalances[repaymentChainId][l1TokenCounterpart]
+        );
+      }
       for (let i = 0; i < sortedRefundAddresses.length; i += maxRefundCount) {
         relayerRefundLeaves.push({
           groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
@@ -324,30 +334,37 @@ export function _buildRelayerRefundRoot(
         leaf.l1Tokens[index],
         leaf.chainId
       );
-      // If we've already seen this leaf, then skip.
-      if (
-        relayerRefundLeaves.some(
-          (relayerRefundLeaf) =>
-            relayerRefundLeaf.chainId === leaf.chainId && relayerRefundLeaf.l2TokenAddress === l2TokenCounterpart
-        )
-      ) {
+      // If we've already seen this leaf, then skip. If UBA, reset the net send amount and then skip.
+      const existingLeaf = relayerRefundLeaves.find(
+        (relayerRefundLeaf) =>
+          relayerRefundLeaf.chainId === leaf.chainId && relayerRefundLeaf.l2TokenAddress === l2TokenCounterpart
+      );
+      if (existingLeaf !== undefined) {
+        if (isUBA) {
+          existingLeaf.amountToReturn = netSendAmount.mul(-1);
+        }
         return;
       }
-      const transferThreshold =
-        tokenTransferThresholdOverrides[leaf.l1Tokens[index]] ||
-        clients.configStoreClient.getTokenTransferThresholdForBlock(leaf.l1Tokens[index], endBlockForMainnet);
 
-      const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
-        leaf.l1Tokens[index],
-        leaf.chainId,
-        endBlockForMainnet
-      );
+      // If UBA model we don't need to do the following to figure out the amount to return:
+      let amountToReturn = netSendAmount.mul(-1);
+      if (!isUBA) {
+        const transferThreshold =
+          tokenTransferThresholdOverrides[leaf.l1Tokens[index]] ||
+          clients.configStoreClient.getTokenTransferThresholdForBlock(leaf.l1Tokens[index], endBlockForMainnet);
 
-      const amountToReturn = getAmountToReturnForRelayerRefundLeaf(
-        transferThreshold,
-        spokePoolTargetBalance,
-        runningBalances[leaf.chainId][leaf.l1Tokens[index]]
-      );
+        const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
+          leaf.l1Tokens[index],
+          leaf.chainId,
+          endBlockForMainnet
+        );
+
+        amountToReturn = getAmountToReturnForRelayerRefundLeaf(
+          transferThreshold,
+          spokePoolTargetBalance,
+          runningBalances[leaf.chainId][leaf.l1Tokens[index]]
+        );
+      }
       relayerRefundLeaves.push({
         groupIndex: 0, // Will delete this group index after using it to sort leaves for the same chain ID and
         // L2 token address

@@ -114,6 +114,7 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
     "FundsDeposited",
     "RequestedSpeedUpDeposit",
     "FilledRelay",
+    "RefundRequested",
     "EnabledDepositRoute",
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",

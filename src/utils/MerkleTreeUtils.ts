@@ -12,12 +12,18 @@ export function buildSlowRelayTree(relays: SlowFillLeaf[]): MerkleTree<SlowFillL
 
 export function buildPoolRebalanceLeafTree(poolRebalanceLeaves: PoolRebalanceLeaf[]): MerkleTree<PoolRebalanceLeaf> {
   for (let i = 0; i < poolRebalanceLeaves.length; i++) {
-    // The 4 provided parallel arrays must be of equal length.
+    // The 4 provided parallel arrays must be of equal length. Running Balances can optionally be 2x the length
     if (
       poolRebalanceLeaves[i].l1Tokens.length !== poolRebalanceLeaves[i].bundleLpFees.length ||
-      poolRebalanceLeaves[i].netSendAmounts.length !== poolRebalanceLeaves[i].runningBalances.length
+      poolRebalanceLeaves[i].netSendAmounts.length !== poolRebalanceLeaves[i].bundleLpFees.length
     ) {
       throw new Error("Provided lef arrays are not of equal length");
+    }
+    if (
+      poolRebalanceLeaves[i].runningBalances.length !== poolRebalanceLeaves[i].bundleLpFees.length * 2 &&
+      poolRebalanceLeaves[i].runningBalances.length !== poolRebalanceLeaves[i].bundleLpFees.length
+    ) {
+      throw new Error("Running balances length unexpected");
     }
   }
 

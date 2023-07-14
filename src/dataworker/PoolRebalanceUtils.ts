@@ -280,7 +280,9 @@ export function constructPoolRebalanceLeaves(
   realizedLpFees: interfaces.RunningBalances,
   configStoreClient: ConfigStoreClient,
   maxL1TokenCount?: number,
-  tokenTransferThreshold?: BigNumberForToken
+  tokenTransferThreshold?: BigNumberForToken,
+  incentivePoolBalances?: interfaces.RunningBalances,
+  netSendAmounts?: interfaces.RunningBalances
 ): interfaces.PoolRebalanceLeaf[] {
   // Create one leaf per L2 chain ID. First we'll create a leaf with all L1 tokens for each chain ID, and then
   // we'll split up any leaves with too many L1 tokens.
@@ -323,7 +325,9 @@ export function constructPoolRebalanceLeaves(
           }
         });
         const leafNetSendAmounts = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
-          if (runningBalances[chainId] && runningBalances[chainId][l1Token]) {
+          if (netSendAmounts?.[chainId] && netSendAmounts[chainId][l1Token]) {
+            return netSendAmounts[chainId][l1Token];
+          } else if (runningBalances[chainId] && runningBalances[chainId][l1Token]) {
             return getNetSendAmountForL1Token(
               transferThresholds[index],
               spokeTargetBalances[index],
@@ -344,12 +348,21 @@ export function constructPoolRebalanceLeaves(
             return toBN(0);
           }
         });
+        const incentiveBalances =
+          incentivePoolBalances &&
+          l1TokensToIncludeInThisLeaf.map((l1Token) => {
+            if (incentivePoolBalances[chainId]?.[l1Token]) {
+              return incentivePoolBalances[chainId][l1Token];
+            } else {
+              return toBN(0);
+            }
+          });
 
         leaves.push({
           chainId: Number(chainId),
           bundleLpFees: leafBundleLpFees,
           netSendAmounts: leafNetSendAmounts,
-          runningBalances: leafRunningBalances,
+          runningBalances: leafRunningBalances.concat(incentivePoolBalances ? incentiveBalances : []),
           groupIndex: groupIndexForChainId++,
           leafId: leaves.length,
           l1Tokens: l1TokensToIncludeInThisLeaf,
@@ -499,6 +512,10 @@ export function generateMarkdownForDispute(pendingRootBundle: PendingRootBundle)
   );
 }
 
+export function isChainDisabled(blockRangeForChain: number[]): boolean {
+  return blockRangeForChain[0] === blockRangeForChain[1];
+}
+
 export function generateMarkdownForRootBundle(
   hubPoolClient: HubPoolClient,
   chainIdListForBundleEvaluationBlockNumbers: number[],
@@ -517,9 +534,8 @@ export function generateMarkdownForRootBundle(
   // Create helpful logs to send to slack transport
   let bundleBlockRangePretty = "";
   chainIdListForBundleEvaluationBlockNumbers.forEach((chainId, index) => {
-    const isChainDisabled = bundleBlockRange[index][0] === bundleBlockRange[index][1];
     bundleBlockRangePretty += `\n\t\t${chainId}: ${JSON.stringify(bundleBlockRange[index])}${
-      isChainDisabled ? " 🥶" : ""
+      isChainDisabled(bundleBlockRange[index]) ? " 🥶" : ""
     }`;
   });
 

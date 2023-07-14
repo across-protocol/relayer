@@ -13,54 +13,34 @@ import { MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, MAX_REFUNDS_PER_RELAYER_REFUND_L
 import { HubPoolClient, ConfigStoreClient, GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
 import { SpokePoolClient } from "../../src/clients";
 import { deposit, Contract, SignerWithAddress, BigNumber } from "./index";
-import { Deposit, Fill, FillWithBlock, RefundRequest, RunningBalances } from "../../src/interfaces";
-import { buildRelayerRefundTree, toBN, toBNWei, utf8ToHex } from "../../src/utils";
+import { Deposit, Fill, FillWithBlock, RunningBalances } from "../../src/interfaces";
+import { buildRelayerRefundTree, toBN, toBNWei, TransactionResponse, utf8ToHex } from "../../src/utils";
 import { providers } from "ethers";
 
 import winston from "winston";
 import sinon from "sinon";
 import chai from "chai";
 import chaiExclude from "chai-exclude";
+import _ from "lodash";
 chai.use(chaiExclude);
 export { winston, sinon };
 
 const assert = chai.assert;
 export { chai, assert };
 
-/**
- * Returns true if every key in `expected` is present in `obj` and has the same value.
- * BigNumber's are cast to String to compare to avoid issues with BigNumber versioning.
- * Works with nested objects.
- * @param x object to compare
- * @param y object to compare
- * @param {omitKeys} keys to omit from comparison
- * @returns
- */
-export function deepEqualsWithBigNumber(x: any, y: any, omitKeys?: string[]): boolean {
-  if (x.toString() === y.toString()) {
-    return true;
-  } else if (typeof x == "object" && x != null && typeof y == "object" && y != null) {
-    const omittedKeysInX = omitKeys?.filter((key) => x.hasOwn(key)).length ?? 0;
-    const omittedKeysInY = omitKeys?.filter((key) => y.hasOwn(key)).length ?? 0;
-    if (Object.keys(x).length - omittedKeysInX !== Object.keys(y).length - omittedKeysInY) {
-      return false;
-    }
-
-    for (const prop in x) {
-      if (omitKeys?.includes(prop)) {
-        continue;
-      }
-      if (y.hasOwn(prop)) {
-        return deepEqualsWithBigNumber(x[prop], y[prop]);
-      } else {
-        return false;
-      }
-    }
-
-    return true;
-  } else {
-    return false;
-  }
+export function deepEqualsWithBigNumber(x: any, y: any, omitKeys: string[] = []): boolean {
+  const sortedKeysX = Object.fromEntries(
+    Object.keys(x)
+      .sort()
+      .map((key) => [key, x[key]])
+  );
+  const sortedKeysY = Object.fromEntries(
+    Object.keys(y)
+      .sort()
+      .map((key) => [key, y[key]])
+  );
+  assert.deepStrictEqual(_.omit(sortedKeysX, omitKeys), _.omit(sortedKeysY, omitKeys));
+  return true;
 }
 
 export async function assertPromiseError<T>(promise: Promise<T>, errMessage?: string): Promise<void> {
@@ -131,8 +111,10 @@ export async function deployConfigStore(
   maxRefundPerRelayerRefundLeaf: number = MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   rateModel: unknown = sampleRateModel,
   transferThreshold: BigNumber = DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD
-) {
+): Promise<{ configStore: utils.Contract; deploymentBlock: number }> {
   const configStore = await (await utils.getContractFactory("AcrossConfigStore", signer)).deploy();
+  const { blockNumber: deploymentBlock } = await configStore.deployTransaction.wait();
+
   for (const token of tokensToAdd) {
     await configStore.updateTokenConfig(
       token.address,
@@ -151,7 +133,7 @@ export async function deployConfigStore(
     maxRefundPerRelayerRefundLeaf.toString()
   );
 
-  return { configStore };
+  return { configStore, deploymentBlock };
 }
 
 export async function deployAndConfigureHubPool(
@@ -172,9 +154,9 @@ export async function deployAndConfigureHubPool(
     await hubPool.setCrossChainContracts(spokePool.l2ChainId, mockAdapter.address, spokePool.spokePool.address);
   }
 
-  const l1Token_1 = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("Rando L1", "L1", 18);
+  const l1Token_1 = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("L1Token1", "L1Token1", 18);
   await l1Token_1.addMember(TokenRolesEnum.MINTER, signer.address);
-  const l1Token_2 = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("Rando L1", "L1", 18);
+  const l1Token_2 = await (await utils.getContractFactory("ExpandedERC20", signer)).deploy("L1Token2", "L1Token2", 18);
   await l1Token_2.addMember(TokenRolesEnum.MINTER, signer.address);
 
   return { hubPool, mockAdapter, l1Token_1, l1Token_2, hubPoolDeploymentBlock: receipt.blockNumber };
@@ -269,7 +251,12 @@ export async function simpleDeposit(
     amountToDeposit,
     depositRelayerFeePct
   );
-  return { ...depositObject, realizedLpFeePct: utils.toBN(0), destinationToken: zeroAddress };
+  return {
+    ...depositObject,
+    realizedLpFeePct: toBNWei("0"),
+    destinationToken: zeroAddress,
+    message: "0x",
+  };
 }
 
 export async function deploySpokePoolForIterativeTest(
@@ -444,7 +431,8 @@ export async function buildFill(
   recipientAndDepositor: SignerWithAddress,
   relayer: SignerWithAddress,
   deposit: Deposit,
-  pctOfDepositToFill: number
+  pctOfDepositToFill: number,
+  repaymentChainId?: number
 ): Promise<Fill> {
   await spokePool.connect(relayer).fillRelay(
     ...utils.getFillRelayParams(
@@ -464,7 +452,7 @@ export async function buildFill(
         .mul(toBNWei(pctOfDepositToFill))
         .div(toBNWei(1))
         .div(toBNWei(1)),
-      deposit.destinationChainId
+      repaymentChainId ?? deposit.destinationChainId
     )
   );
   const [events, destinationChainId] = await Promise.all([
@@ -639,7 +627,7 @@ export async function buildRefundRequest(
   fill: FillWithBlock,
   refundToken: string,
   maxCount?: BigNumber
-): Promise<RefundRequest> {
+): Promise<TransactionResponse> {
   // @note: These chainIds should align, but don't! @todo: Fix!
   // const chainId = (await spokePool.provider.getNetwork()).chainId;
   // assert.isTrue(fill.repaymentChainId === chainId);
@@ -673,9 +661,9 @@ export async function buildRefundRequest(
 
 // Returns expected leaves ordered by origin chain ID and then deposit ID(ascending). Ordering is implemented
 // same way that dataworker orders them.
-export function buildSlowRelayLeaves(deposits: Deposit[]) {
+export function buildSlowRelayLeaves(deposits: Deposit[], payoutAdjustmentPcts: BigNumber[] = []) {
   return deposits
-    .map((_deposit) => {
+    .map((_deposit, i) => {
       return {
         relayData: {
           depositor: _deposit.depositor,
@@ -689,7 +677,7 @@ export function buildSlowRelayLeaves(deposits: Deposit[]) {
           depositId: _deposit.depositId.toString(),
           message: _deposit.message,
         },
-        payoutAdjustmentPct: "0",
+        payoutAdjustmentPct: payoutAdjustmentPcts[i]?.toString() ?? "0",
       };
     }) // leaves should be ordered by origin chain ID and then deposit ID (ascending).
     .sort((relayA, relayB) => {

@@ -8,7 +8,7 @@ import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { ProposedRootBundle } from "../src/interfaces";
 import { DEFAULT_CONFIG_STORE_VERSION, MockConfigStoreClient, MockHubPoolClient } from "./mocks";
 
-let hubPool: Contract, configStore: Contract, timer: Contract;
+let hubPool: Contract, timer: Contract;
 let l1Token_1: Contract, l1Token_2: Contract;
 let dataworker: SignerWithAddress, owner: SignerWithAddress;
 let logger: winston.Logger;
@@ -43,14 +43,8 @@ describe("HubPoolClient: RootBundle Events", async function () {
     ));
 
     logger = createSpyLogger().spyLogger;
-    ({ configStore } = await deployConfigStore(owner, [l1Token_1, l1Token_2]));
-    configStoreClient = new ConfigStoreClient(
-      logger,
-      configStore,
-      { fromBlock: 0 },
-      constants.CONFIG_STORE_VERSION,
-      []
-    );
+    const { configStore, deploymentBlock: fromBlock } = await deployConfigStore(owner, [l1Token_1, l1Token_2]);
+    configStoreClient = new ConfigStoreClient(logger, configStore, { fromBlock }, constants.CONFIG_STORE_VERSION, []);
     hubPoolClient = new HubPoolClient(logger, hubPool, configStoreClient);
   });
 
@@ -418,31 +412,35 @@ describe("HubPoolClient: RootBundle Events", async function () {
   });
 
   describe("HubPoolClient: UBA-specific runningBalances tests", async function () {
+    const hubPoolChainId = 1;
     const chainIds = [10, 137, 42161];
     const maxConfigStoreVersion = UBA_MIN_CONFIG_STORE_VERSION + 1;
     let hubPoolClient: MockHubPoolClient, configStoreClient: MockConfigStoreClient;
 
     beforeEach(async function () {
-      const { configStore } = await deployConfigStore(owner, []);
+      const { configStore, deploymentBlock: fromBlock } = await deployConfigStore(owner, []);
       configStoreClient = new MockConfigStoreClient(
         logger,
         configStore,
-        { fromBlock: 0 },
+        { fromBlock },
         maxConfigStoreVersion,
         chainIds,
+        hubPoolChainId,
         true
       );
       await configStoreClient.update();
 
-      hubPoolClient = new MockHubPoolClient(logger, hubPool, configStoreClient);
+      hubPoolClient = new MockHubPoolClient(logger, hubPool, configStoreClient, hubPoolChainId);
       await hubPoolClient.update();
     });
 
     // This test injects artificial events, so both ConfigStoreClient and HubPoolClient must be mocked.
     it("extracts running incentive balances", async function () {
       for (let version = DEFAULT_CONFIG_STORE_VERSION; version < maxConfigStoreVersion; ++version) {
-        // Apply a new version in the configStore.
-        configStoreClient.updateGlobalConfig("VERSION", `${version}`);
+        if (version != DEFAULT_CONFIG_STORE_VERSION) {
+          // Apply a new version in the configStore.
+          configStoreClient.updateGlobalConfig("VERSION", `${version}`);
+        }
         await configStoreClient.update();
 
         const bundleEvaluationBlockNumbers = chainIds.map(() => toBN(random(100, 1000, false)));
