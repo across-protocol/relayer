@@ -9,6 +9,7 @@ import {
   sortEventsAscending,
   isDefined,
   buildPoolRebalanceLeafTree,
+  assert,
 } from "../utils";
 import { toBNWei, getFillsInRange, ZERO_ADDRESS } from "../utils";
 import {
@@ -573,7 +574,7 @@ export class Dataworker {
 
     // Load data for slow fill and relayer refund leaves. Set UBA mode to true to include
     // refund requests in the fills to refund list.
-    const { fillsToRefund, unfilledDeposits } = await this.clients.bundleDataClient.loadData(
+    const { fillsToRefund, unfilledDeposits } = await this.clients.bundleDataClient._loadData(
       blockRangesForProposal,
       ubaClient.spokePoolClients,
       true
@@ -674,7 +675,7 @@ export class Dataworker {
         this.logger.debug({
           at: "UBA buildPoolRebalanceLeaves",
           message: `🌊 Found ${flowsForChain.length} flows for chain ${chainId} and token ${tokenSymbol}`,
-          flowsForChain
+          flowsForChain,
         });
 
         // If no flows for chain, we won't create a pool rebalance leaf for it. The next time there is a flow for this
@@ -1048,11 +1049,6 @@ export class Dataworker {
       chainIdListForBundleEvaluationBlockNumbers: this.chainIdListForBundleEvaluationBlockNumbers,
     });
 
-    const endBlockForMainnet = getBlockRangeForChain(
-      blockRangesImpliedByBundleEndBlocks,
-      hubPoolChainId,
-      this.chainIdListForBundleEvaluationBlockNumbers
-    )[1];
     // If config store version isn't up to date, return early. This is a simple rule that is perhaps too aggressive
     // but the proposer role is a specialized one and the user should always be using updated software.
     if (!this.clients.configStoreClient.hasLatestConfigStoreVersion) {
@@ -1082,7 +1078,10 @@ export class Dataworker {
       isUBA = true;
     }
     if (!isUBA) {
-      const _rootBundleData = await this.Legacy_proposeRootBundle(blockRangesImpliedByBundleEndBlocks, spokePoolClients);
+      const _rootBundleData = await this.Legacy_proposeRootBundle(
+        blockRangesImpliedByBundleEndBlocks,
+        spokePoolClients
+      );
       rootBundleData = {
         ..._rootBundleData,
       };
@@ -1096,7 +1095,11 @@ export class Dataworker {
       );
       // TODO: Move this .update() to the Dataworker ClientHelper once we confirm it works.
       await ubaClient.update({}, false);
-      const _rootBundleData = await this.UBA_proposeRootBundle(blockRangesImpliedByBundleEndBlocks, ubaClient, spokePoolClients);
+      const _rootBundleData = await this.UBA_proposeRootBundle(
+        blockRangesImpliedByBundleEndBlocks,
+        ubaClient,
+        spokePoolClients
+      );
       rootBundleData = {
         ..._rootBundleData,
       };
