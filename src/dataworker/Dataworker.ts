@@ -671,6 +671,11 @@ export class Dataworker {
           blockRangeForChain[0],
           blockRangeForChain[1]
         );
+        this.logger.debug({
+          at: "UBA buildPoolRebalanceLeaves",
+          message: `🌊 Found ${flowsForChain.length} flows for chain ${chainId} and token ${tokenSymbol}`,
+          flowsForChain
+        });
 
         // If no flows for chain, we won't create a pool rebalance leaf for it. The next time there is a flow for this
         // chain, we'll find the previous running balance for it and use that as the starting point.
