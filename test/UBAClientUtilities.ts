@@ -142,14 +142,17 @@ describe("UBAClientUtilities", function () {
       // Generate 3 valid bundles.
       const expectedBlockRanges = await publishValidatedBundles(3);
       for (const chainId of CHAIN_ID_LIST_INDICES) {
+        // Get 2 most recent bundles.
         const result = getMostRecentBundleBlockRanges(
           chainId,
-          3,
+          2,
           Number(hubPoolClient.latestBlockNumber),
           hubPoolClient,
           spokePoolClients
         );
-        deepEqualsWithBigNumber(result, expectedBlockRanges[chainId]);
+        // Should only return 2 most recent bundles.
+        expect(result.length).to.equal(2);
+        deepEqualsWithBigNumber(result, expectedBlockRanges[chainId].slice(1));
       }
     });
     it("Returns only bundles before `mostRecentHubPoolBlockNumber`", async function () {
