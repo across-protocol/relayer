@@ -6,7 +6,6 @@ import {
   deploySpokePool,
   ethers,
   hubPoolFixture,
-  toBNWei,
 } from "./utils";
 import { expect, toBN } from "./constants";
 import { SpokePoolClientsByChain } from "../src/interfaces";
@@ -159,8 +158,9 @@ describe("UBAClientUtilities", function () {
       const latestExecutedRootBundle = hubPoolClient.getLatestFullyExecutedRootBundle(
         Number(hubPoolClient.latestBlockNumber)
       );
-      if (!latestExecutedRootBundle || latestExecutedRootBundle.blockNumber === 0)
+      if (!latestExecutedRootBundle || latestExecutedRootBundle.blockNumber === 0) {
         throw new Error("No latest executed root bundle");
+      }
       const result = getMostRecentBundleBlockRanges(
         chainIds[0],
         1,
