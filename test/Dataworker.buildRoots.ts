@@ -1827,7 +1827,7 @@ describe("Dataworker: Build merkle roots", async function () {
         // `loadData`. If it does get fully filled, it will remain a UBA flow but not returned by `loadData`.
         expect(() =>
           dataworkerInstance._UBA_buildSlowRelayLeaves(ubaClient, getDefaultBlockRange(0), unfilledDeposits)
-        ).to.throw(`No matching outflow found for deposit ID ${deposit1.depositId}`);
+        ).to.throw(`No matching outflow with refund balancing fee found for deposit ID ${deposit1.depositId}`);
 
         const expectedRelayerBalancingFee = toBNWei("0.025");
         ubaClient.setFlows(deposit1.destinationChainId, l1TokenSymbol, [
