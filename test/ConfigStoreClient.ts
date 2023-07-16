@@ -8,6 +8,7 @@ import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
 import { GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
 import { SpokePoolTargetBalance } from "../src/interfaces";
 import { DEFAULT_CONFIG_STORE_VERSION, MockConfigStoreClient } from "./mocks";
+import { UBA_MIN_CONFIG_STORE_VERSION } from "../src/common";
 
 let l1Token: Contract, l2Token: Contract, configStore: Contract;
 let owner: SignerWithAddress;
@@ -198,6 +199,53 @@ describe("AcrossConfigStoreClient", async function () {
       Object.entries(expectedTargetBalance).forEach(([k, v]) => {
         expect(v).to.deep.equal(expectedTargetBalance[k]);
       });
+    });
+
+    it("Get UBA fee config", async function () {
+      configStoreClient.setConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION);
+      // Can have a mix of strings and numbers in config JSON.
+      const realisticConfig = {
+        alpha: {
+          default: "400000000000000",
+          "1-10": 100000000000000,
+          "1-137": 100000000000000,
+          "1-42161": 100000000000000,
+        },
+        gamma: {
+          default: [
+            [500000000000000000, 0],
+            [650000000000000000, "500000000000000"],
+            [750000000000000000, 1000000000000000],
+            ["850000000000000000", 2500000000000000],
+            [900000000000000000, 5000000000000000],
+            [950000000000000000, 50000000000000000],
+          ],
+        },
+        omega: { "10": [[0, 0]], "137": [[0, 0]], "42161": [[0, 0]], default: [[0, 0]] },
+        rebalance: {
+          "10": { threshold_upper: 200000000, target_upper: "100000000" },
+          "137": { threshold_upper: 100000000, target_upper: 0 },
+          "42161": { threshold_upper: "200000000", target_upper: 100000000 },
+        },
+      };
+      const update = JSON.stringify({
+        uba: realisticConfig,
+      });
+      await configStore.updateTokenConfig(l1Token.address, update);
+      await configStoreClient.update();
+      const initialUpdate = (await configStore.queryFilter(configStore.filters.UpdatedTokenConfig()))[0];
+      const parsedConfig = configStoreClient.getUBAConfig(l1Token.address, initialUpdate.blockNumber);
+
+      // Test a few objects
+      expect(parsedConfig).to.not.be.undefined;
+      expect(parsedConfig.rebalance["137"].threshold_upper).to.equal("100000000");
+      expect(parsedConfig.gamma.default.length).to.equal(6);
+
+      // If block number is set too low, returns undefined.
+      expect(configStoreClient.getUBAConfig(l1Token.address, 0)).to.be.undefined;
+
+      // Default returns latest.
+      expect(configStoreClient.getUBAConfig(l1Token.address)).to.not.be.undefined;
     });
   });
   describe("GlobalConfig", function () {
