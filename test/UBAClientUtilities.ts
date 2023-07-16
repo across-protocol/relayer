@@ -1,5 +1,6 @@
 import {
   Contract,
+  createRandomBytes32,
   createSpyLogger,
   deepEqualsWithBigNumber,
   deployConfigStore,
@@ -8,11 +9,11 @@ import {
   hubPoolFixture,
 } from "./utils";
 import { expect, toBN } from "./constants";
-import { SpokePoolClientsByChain } from "../src/interfaces";
+import { ProposedRootBundle, SpokePoolClientsByChain } from "../src/interfaces";
 import { clients } from "@across-protocol/sdk-v2";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { CHAIN_ID_LIST_INDICES, UBA_MIN_CONFIG_STORE_VERSION } from "../src/common";
-const { getMostRecentBundleBlockRanges } = clients;
+const { getMostRecentBundles } = clients;
 
 let hubPoolClient: MockHubPoolClient;
 let hubPool: Contract;
@@ -28,10 +29,10 @@ describe("UBAClientUtilities", function () {
   async function publishValidatedBundles(
     numberOfBundles: number,
     randomJumpOverride?: number
-  ): Promise<Record<number, { start: number; end: number }[]>> {
+  ): Promise<Record<number, { start: number; end: number; bundle: ProposedRootBundle }[]>> {
     // Create a sets of unique block ranges per chain so that we have a lower chance of false positives
     // when fetching the block ranges for a specific chain.
-    const expectedBlockRanges: Record<number, { start: number; end: number }[]> = {}; // Save expected ranges here
+    const expectedBlockRanges: Record<number, { start: number; end: number; bundle: ProposedRootBundle }[]> = {}; // Save expected ranges here
     let nextBlockRangesForChain = Object.fromEntries(
       CHAIN_ID_LIST_INDICES.map((chainId) => {
         const randomJump = randomJumpOverride ?? Math.floor(Math.random() * 3);
@@ -44,30 +45,25 @@ describe("UBAClientUtilities", function () {
         if (!expectedBlockRanges[chainId]) {
           expectedBlockRanges[chainId] = [];
         }
-        expectedBlockRanges[chainId].push(nextBlockRangesForChain[chainId]);
         return toBN(nextBlockRangesForChain[chainId].end);
       });
-      // Make next block range span a random number of blocks:
-      const nextBlockRangeSize = Math.ceil(Math.random() * 10);
-      nextBlockRangesForChain = Object.fromEntries(
-        CHAIN_ID_LIST_INDICES.map((chainId) => [
-          chainId,
-          {
-            start: nextBlockRangesForChain[chainId].end + 1,
-            end: nextBlockRangesForChain[chainId].end + nextBlockRangeSize,
-          },
-        ])
-      );
-
 
       const rootBundleProposal = hubPoolClient.proposeRootBundle(
         Date.now(), // challengePeriodEndTimestamp
         CHAIN_ID_LIST_INDICES.length, // poolRebalanceLeafCount
-        bundleEvaluationBlockNumbers
+        bundleEvaluationBlockNumbers,
+        createRandomBytes32() // Random pool rebalance root we can check.
       );
       hubPoolClient.addEvent(rootBundleProposal);
       await hubPoolClient.update();
-
+      const proposedRootBundle =
+        hubPoolClient.getProposedRootBundles()[hubPoolClient.getProposedRootBundles().length - 1];
+      CHAIN_ID_LIST_INDICES.forEach((chainId) => {
+        expectedBlockRanges[chainId].push({
+          ...nextBlockRangesForChain[chainId],
+          bundle: proposedRootBundle,
+        });
+      });
       chainIds.forEach((chainId, leafIndex) => {
         const leafEvent = hubPoolClient.executeRootBundle(
           toBN(0),
@@ -82,11 +78,23 @@ describe("UBAClientUtilities", function () {
       });
 
       await hubPoolClient.update();
+
+      // Make next block range span a random number of blocks:
+      const nextBlockRangeSize = Math.ceil(Math.random() * 10);
+      nextBlockRangesForChain = Object.fromEntries(
+        CHAIN_ID_LIST_INDICES.map((chainId) => [
+          chainId,
+          {
+            start: nextBlockRangesForChain[chainId].end + 1,
+            end: nextBlockRangesForChain[chainId].end + nextBlockRangeSize,
+          },
+        ])
+      );
     }
     await Promise.all(chainIds.map((chainId) => spokePoolClients[Number(chainId)].update()));
     return expectedBlockRanges;
   }
-  describe("getMostRecentBundleBlockRanges", function () {
+  describe("getMostRecentBundles", function () {
     beforeEach(async function () {
       const [owner] = await ethers.getSigners();
       const { configStore } = await deployConfigStore(owner, []);
@@ -117,7 +125,7 @@ describe("UBAClientUtilities", function () {
       }
     });
     it("Request maxBundleState 0", async function () {
-      const result = getMostRecentBundleBlockRanges(
+      const result = getMostRecentBundles(
         chainIds[0],
         0,
         Number(hubPoolClient.latestBlockNumber),
@@ -129,13 +137,7 @@ describe("UBAClientUtilities", function () {
     it("No bundles", async function () {
       // Should throw an error that we're trying to load more bundle states than are available
       expect(() =>
-        getMostRecentBundleBlockRanges(
-          chainIds[0],
-          1,
-          Number(hubPoolClient.latestBlockNumber),
-          hubPoolClient,
-          spokePoolClients
-        )
+        getMostRecentBundles(chainIds[0], 1, Number(hubPoolClient.latestBlockNumber), hubPoolClient, spokePoolClients)
       ).to.throw(`No validated root bundle found before hubpool block ${hubPoolClient.latestBlockNumber}`);
     });
     it("Correctly returns n most recent validated bundles", async function () {
@@ -143,7 +145,7 @@ describe("UBAClientUtilities", function () {
       const expectedBlockRanges = await publishValidatedBundles(3);
       for (const chainId of CHAIN_ID_LIST_INDICES) {
         // Get 2 most recent bundles.
-        const result = getMostRecentBundleBlockRanges(
+        const result = getMostRecentBundles(
           chainId,
           2,
           Number(hubPoolClient.latestBlockNumber),
@@ -164,7 +166,7 @@ describe("UBAClientUtilities", function () {
       if (!latestExecutedRootBundle || latestExecutedRootBundle.blockNumber === 0) {
         throw new Error("No latest executed root bundle");
       }
-      const result = getMostRecentBundleBlockRanges(
+      const result = getMostRecentBundles(
         chainIds[0],
         1,
         latestExecutedRootBundle?.blockNumber,
@@ -176,15 +178,9 @@ describe("UBAClientUtilities", function () {
     });
     it("Throws if spoke pool clients don't have event search ranges to validate any of the bundles", async function () {
       // Create block ranges that end at block heights much larger than last spoke pool client blocks searched.
-      await publishValidatedBundles(3, 1_000_000);
+      await publishValidatedBundles(3, 10_000_000);
       expect(() =>
-        getMostRecentBundleBlockRanges(
-          chainIds[0],
-          1,
-          Number(hubPoolClient.latestBlockNumber),
-          hubPoolClient,
-          spokePoolClients
-        )
+        getMostRecentBundles(chainIds[0], 1, Number(hubPoolClient.latestBlockNumber), hubPoolClient, spokePoolClients)
       ).to.throw(/Spoke pool clients do not have the block ranges necessary/);
     });
   });

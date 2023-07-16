@@ -537,7 +537,15 @@ export class Relayer {
       lpFee,
       depositBalancingFee: depositFee,
       systemFee: realizedLpFeePct,
-    } = this.clients.ubaClient.computeSystemFee(originChainId, destinationChainId, symbol, amount, quoteBlockNumber);
+    } = await this.clients.ubaClient.computeSystemFee(
+      originChainId,
+      destinationChainId,
+      symbol,
+      this.clients.hubPoolClient,
+      this.clients.spokePoolClients,
+      amount,
+      quoteBlockNumber
+    );
 
     const chain = getNetworkName(deposit.originChainId);
     this.logger.debug({

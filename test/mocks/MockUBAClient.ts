@@ -1,7 +1,7 @@
 import { clients } from "@across-protocol/sdk-v2";
-import { UBAClient } from "../../src/clients";
+import { HubPoolClient, UBAClient } from "../../src/clients";
 import { BigNumber, toBN } from "../utils";
-import { UBABalancingFee, UBASystemFee } from "../../src/interfaces";
+import { SpokePoolClientsByChain, UBABalancingFee, UBASystemFee } from "../../src/interfaces";
 
 // Adds functions to MockHubPoolClient to facilitate Dataworker unit testing.
 export class MockUBAClient extends UBAClient {
@@ -32,13 +32,16 @@ export class MockUBAClient extends UBAClient {
   }
 
   /* eslint-disable @typescript-eslint/no-unused-vars */
-  computeLpFee(
+  async computeLpFee(
+    _hubPoolBlockNumber: number,
     _amount: BigNumber,
     depositChainId: number,
+    _refundChainId: number,
     _hubPoolChainId: number,
     _tokenSymbol: string,
-    _refundChainId: number
-  ): BigNumber {
+    hubPoolClient: HubPoolClient,
+    spokePoolClients: SpokePoolClientsByChain
+  ): Promise<BigNumber> {
     // Ignore destinationChainId
     return this.getLpFee(depositChainId);
   }
@@ -48,19 +51,28 @@ export class MockUBAClient extends UBAClient {
   }
 
   /* eslint-enable @typescript-eslint/no-unused-vars */
-  computeSystemFee(
+  async computeSystemFee(
     depositChainId: number,
     destinationChainId: number,
-    spokePoolToken: string,
+    tokenSymbol: string,
+    hubPoolClient: HubPoolClient,
+    spokePoolClients: SpokePoolClientsByChain,
     amount: BigNumber,
     hubPoolBlockNumber: number
-  ): UBASystemFee {
-    const hubPoolToken = ""; // ignored
-    // @dev pass in anything for hubPoolChainId since it's not used
-    const lpFee = this.computeLpFee(amount, depositChainId, depositChainId, hubPoolToken, destinationChainId);
+  ): Promise<UBASystemFee> {
+    const lpFee = await this.computeLpFee(
+      hubPoolBlockNumber,
+      amount,
+      depositChainId,
+      destinationChainId,
+      hubPoolClient.chainId,
+      tokenSymbol,
+      hubPoolClient,
+      spokePoolClients
+    );
 
     const { balancingFee: depositBalancingFee } = this.computeBalancingFee(
-      spokePoolToken,
+      tokenSymbol,
       amount,
       hubPoolBlockNumber,
       depositChainId,
