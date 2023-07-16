@@ -49,7 +49,7 @@ export class CommonConfig {
       for (const chainId of this.chainIdListIndices) {
         assert(
           Object.keys(this.blockRangeEndBlockBuffer).includes(chainId.toString()),
-          "BLOCK_RANGE_END_BLOCK_BUFFER missing networks"
+          `BLOCK_RANGE_END_BLOCK_BUFFER missing network ${chainId}`
         );
       }
     }
@@ -70,7 +70,10 @@ export class CommonConfig {
     this.maxBlockLookBack = MAX_BLOCK_LOOK_BACK ? JSON.parse(MAX_BLOCK_LOOK_BACK) : {};
     if (Object.keys(this.maxBlockLookBack).length > 0) {
       for (const chainId of this.chainIdListIndices) {
-        assert(Object.keys(this.maxBlockLookBack).includes(chainId.toString()), "MAX_BLOCK_LOOK_BACK missing networks");
+        assert(
+          Object.keys(this.maxBlockLookBack).includes(chainId.toString()),
+          `MAX_BLOCK_LOOK_BACK missing network ${chainId}`
+        );
       }
     } else {
       this.maxBlockLookBack = Constants.CHAIN_MAX_BLOCK_LOOKBACK;

@@ -7,15 +7,15 @@ import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../
 import { constants as sdkConstants, priceClient, relayFeeCalculator, utils as sdkUtils } from "@across-protocol/sdk-v2";
 
 const { formatEther } = ethersUtils;
-const { TOKEN_SYMBOLS_MAP, CHAIN_IDs } = sdkConstants;
+const { TOKEN_SYMBOLS_MAP: TOKENS, CHAIN_IDs } = sdkConstants;
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 
 // We use wrapped ERC-20 versions instead of the native tokens such as ETH, MATIC for ease of computing prices.
 // @todo: These don't belong in the ProfitClient; they should be relocated.
-export const MATIC = TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET];
-export const USDC = TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET];
-export const WBTC = TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET];
-export const WETH = TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET];
+export const MATIC = TOKENS.MATIC.addresses[CHAIN_IDs.MAINNET];
+export const USDC = TOKENS.USDC.addresses[CHAIN_IDs.MAINNET];
+export const WBTC = TOKENS.WBTC.addresses[CHAIN_IDs.MAINNET];
+export const WETH = TOKENS.WETH.addresses[CHAIN_IDs.MAINNET];
 
 // note: All FillProfit BigNumbers are scaled to 18 decimals unless specified otherwise.
 export type FillProfit = {
@@ -43,6 +43,7 @@ export const GAS_TOKEN_BY_CHAIN_ID: { [chainId: number]: string } = {
   // Testnets:
   5: WETH,
   421613: WETH,
+  11155111: WETH,
 };
 // TODO: Make this dynamic once we support chains with gas tokens that have different decimals.
 const GAS_TOKEN_DECIMALS = 18;
@@ -62,6 +63,7 @@ const QUERY_HANDLERS: {
   // Testnets:
   5: relayFeeCalculator.EthereumQueries,
   421613: relayFeeCalculator.ArbitrumQueries,
+  11155111: relayFeeCalculator.EthereumQueries,
 };
 
 const { PriceClient } = priceClient;
@@ -79,7 +81,7 @@ export class ProfitClient {
   // Queries needed to fetch relay gas costs.
   private relayerFeeQueries: { [chainId: number]: relayFeeCalculator.QueryInterface } = {};
 
-  private isGoerli: boolean;
+  private isTestnet: boolean;
 
   // @todo: Consolidate this set of args before it grows legs and runs away from us.
   constructor(
@@ -110,7 +112,7 @@ export class ProfitClient {
       );
     }
 
-    this.isGoerli = this.hubPoolClient.chainId === CHAIN_IDs.GOERLI;
+    this.isTestnet = [CHAIN_IDs.GOERLI, CHAIN_IDs.SEPOLIA].includes(this.hubPoolClient.chainId);
   }
 
   getAllPrices(): { [address: string]: BigNumber } {
@@ -125,7 +127,10 @@ export class ProfitClient {
       return toBN(0);
     }
 
-    if (this.isGoerli && token === TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.GOERLI]) {
+    if (
+      this.isTestnet &&
+      [TOKENS.WETH.addresses[CHAIN_IDs.GOERLI], TOKENS.WETH.addresses[CHAIN_IDs.SEPOLIA]].includes(token)
+    ) {
       return this.tokenPrices[WETH];
     }
     return this.tokenPrices[token];
@@ -353,7 +358,7 @@ export class ProfitClient {
 
     // Support for relaying WETH on public testnet Goerli by adding price lookups for
     // mainnet tokens which we'll ultimately use as the Goerli token prices.
-    if (this.isGoerli) {
+    if (this.isTestnet) {
       l1Tokens[WETH] = {
         address: WETH,
         symbol: "WETH",

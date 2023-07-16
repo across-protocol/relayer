@@ -66,31 +66,22 @@ export const DEFAULT_MIN_DEPOSIT_CONFIRMATIONS = {
   5: 0,
   280: 0,
   421613: 0,
+  11155111: 0,
 };
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   1000: {
     1: 32, // Justified block
     10: 60,
     137: 100, // Probabilistically safe level based on historic Polygon reorgs
-    288: 0,
     324: 0,
     42161: 0,
-    // Testnets:
-    5: 0,
-    280: 0,
-    421613: 0,
   },
   100: {
     1: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
     10: 60,
     137: 80,
-    288: 0,
     324: 0,
     42161: 0,
-    // Testnets:
-    5: 0,
-    280: 0,
-    421613: 0,
   },
 };
 export const QUOTE_TIME_BUFFER = 12 * 5; // 5 blocks on Mainnet.
@@ -113,6 +104,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   5: 10000,
   280: 10000,
   421613: 10000,
+  11155111: 10000,
 };
 
 export const BUNDLE_END_BLOCK_BUFFERS = {
@@ -124,6 +116,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   // Testnets:
   5: 0,
   421613: 0,
+  11155111: 0,
 };
 
 export const DEFAULT_RELAYER_GAS_MULTIPLIER = 1.2;
@@ -155,6 +148,7 @@ export const MAX_REORG_DISTANCE: { [chainId: number]: number } = {
   5: 0,
   280: 0,
   421613: 0,
+  11155111: 0,
 };
 
 // Reasonable default maxFeePerGas and maxPriorityFeePerGas scalers for each chain.
