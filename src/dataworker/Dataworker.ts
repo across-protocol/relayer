@@ -807,8 +807,8 @@ export class Dataworker {
         const matchingOutflow = ubaClient
           .getModifiedFlows(destinationChainId, tokenSymbol, blockRangesForDestChain[0], blockRangesForDestChain[1])
           .find((flow) => flow.flow.depositId === deposit.depositId);
-        if (!matchingOutflow) {
-          throw new Error(`No matching outflow found for deposit ID ${deposit.depositId}`);
+        if (!matchingOutflow || !matchingOutflow?.relayerFee?.relayerBalancingFee) {
+          throw new Error(`No matching outflow with refund balancing fee found for deposit ID ${deposit.depositId}`);
         }
         return {
           ...unfilledDeposit,
