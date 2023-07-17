@@ -101,7 +101,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     expect(multiCallerClient.transactionCount()).to.equal(0);
 
     // TEST 4:
-    // Submit another fill and check that dataworker proposes another root:
+    // Submit another fill and check that dataworker proposes another root with 1 leaf.
     await buildFillForRepaymentChain(spokePool_2, depositor, deposit, 1, destinationChainId);
     await updateAllClients();
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
@@ -112,8 +112,12 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await updateAllClients();
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
 
-    // Should be 1 leaf since this is _only_ a second partial fill repayment and doesn't involve the deposit chain.
-    expect(multiCallerClient.transactionCount()).to.equal(1);
+    // Dataworker actually executes the leaf:
+    let pendingBundle = await hubPool.rootBundleProposal();
+    expect(pendingBundle.unclaimedPoolRebalanceLeafCount).to.equal(1);
     await multiCallerClient.executeTransactionQueue();
+
+    pendingBundle = await hubPool.rootBundleProposal();
+    expect(pendingBundle.unclaimedPoolRebalanceLeafCount).to.equal(0);
   });
 });
