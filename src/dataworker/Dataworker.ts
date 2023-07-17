@@ -5,7 +5,6 @@ import {
   BigNumber,
   getRefund,
   MerkleTree,
-  toBN,
   sortEventsAscending,
   isDefined,
   buildPoolRebalanceLeafTree,
@@ -48,6 +47,7 @@ import { BalanceAllocator } from "../clients";
 import _ from "lodash";
 import { CONFIG_STORE_VERSION, CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
 import { isOvmChain } from "../clients/bridges";
+import { utils } from "@across-protocol/sdk-v2";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -60,6 +60,15 @@ const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback", "out-
 type RootBundle = {
   leaves: SlowFillLeaf[];
   tree: MerkleTree<SlowFillLeaf>;
+};
+
+type ProposeRootBundleReturnType = {
+  poolRebalanceLeaves: PoolRebalanceLeaf[];
+  poolRebalanceTree: MerkleTree<PoolRebalanceLeaf>;
+  relayerRefundLeaves: RelayerRefundLeaf[];
+  relayerRefundTree: MerkleTree<RelayerRefundLeaf>;
+  slowFillLeaves: SlowFillLeaf[];
+  slowFillTree: MerkleTree<SlowFillLeaf>;
 };
 
 const ovmWethTokens = [CONTRACT_ADDRESSES[10].weth.address, CONTRACT_ADDRESSES[10].eth.address];
@@ -345,53 +354,57 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[1];
 
-    // Create roots using constructed block ranges.
-    const timerStart = Date.now();
-    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = await this.clients.bundleDataClient.loadData(
+    let rootBundleData: ProposeRootBundleReturnType;
+
+    const mainnetBundleStartBlock = getBlockRangeForChain(
       blockRangesForProposal,
-      spokePoolClients
-    );
-    this.logger.debug({
-      at: "Dataworker",
-      message: `Time to load data from BundleDataClient: ${Date.now() - timerStart}ms`,
-    });
-    const allValidFillsInRange = getFillsInRange(
-      allValidFills,
-      blockRangesForProposal,
+      hubPoolChainId,
       this.chainIdListForBundleEvaluationBlockNumbers
-    );
-    this.logger.debug({ at: "Dataworker", message: "Building pool rebalance root", blockRangesForProposal });
-    const poolRebalanceRoot = await this._getPoolRebalanceRoot(
-      spokePoolClients,
-      blockRangesForProposal,
-      this.clients.hubPoolClient.latestBlockNumber,
-      mainnetBundleEndBlock,
-      fillsToRefund,
-      deposits,
-      allValidFills,
-      allValidFillsInRange,
-      unfilledDeposits,
-      true
-    );
-    PoolRebalanceUtils.prettyPrintLeaves(
-      this.logger,
-      poolRebalanceRoot.tree,
-      poolRebalanceRoot.leaves,
-      "Pool rebalance"
-    );
+    )[0];
+    const version = this.clients.configStoreClient.getConfigStoreVersionForBlock(mainnetBundleStartBlock);
+    let isUBA = false;
+    if (utils.isUBA(version)) {
+      if (!this.clients.configStoreClient.isValidConfigStoreVersion(version)) {
+        throw new Error("proposeRootBundle: Invalid config store version");
+      }
+      isUBA = true;
+    }
+    if (!isUBA) {
+      const _rootBundleData = await this.Legacy_proposeRootBundle(blockRangesForProposal, spokePoolClients);
+      rootBundleData = {
+        ..._rootBundleData,
+      };
+    } else {
+      const ubaClient = new UBAClient(
+        this.chainIdListForBundleEvaluationBlockNumbers,
+        this.clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
+        this.clients.hubPoolClient,
+        spokePoolClients,
+        this.logger
+      );
+      // TODO: Move this .update() to the Dataworker ClientHelper once we confirm it works.
+      await ubaClient.update({}, false);
+      const _rootBundleData = await this.UBA_proposeRootBundle(blockRangesForProposal, ubaClient, spokePoolClients);
+      rootBundleData = {
+        ..._rootBundleData,
+      };
+    }
 
     if (usdThresholdToSubmitNewBundle !== undefined) {
       // Exit early if volume of pool rebalance leaves exceeds USD threshold. Volume includes netSendAmounts only since
       // that is the actual amount sent over bridges. This also mitigates the chance that a RelayerRefundLeaf is
       // published but its refund currency isn't sent over the bridge in a PoolRebalanceLeaf.
-      const totalUsdRefund = PoolRebalanceUtils.computePoolRebalanceUsdVolume(poolRebalanceRoot.leaves, this.clients);
+      const totalUsdRefund = PoolRebalanceUtils.computePoolRebalanceUsdVolume(
+        rootBundleData.poolRebalanceLeaves,
+        this.clients
+      );
       if (totalUsdRefund.lt(usdThresholdToSubmitNewBundle)) {
         this.logger.debug({
           at: "Dataworker",
           message: "Root bundle USD volume does not exceed threshold, exiting early 🟡",
           usdThresholdToSubmitNewBundle,
           totalUsdRefund,
-          leaves: poolRebalanceRoot.leaves,
+          leaves: rootBundleData.poolRebalanceLeaves,
         });
         return;
       } else {
@@ -424,6 +437,83 @@ export class Dataworker {
       });
     }
 
+    if (rootBundleData.poolRebalanceLeaves.length === 0) {
+      this.logger.debug({
+        at: "Dataworker#propose",
+        message: "No pool rebalance leaves, cannot propose",
+      });
+      return;
+    }
+
+    // 4. Propose roots to HubPool contract.
+    this.logger.debug({
+      at: "Dataworker#propose",
+      message: "Enqueing new root bundle proposal txn",
+      blockRangesForProposal,
+      poolRebalanceLeavesCount: rootBundleData.poolRebalanceLeaves.length,
+      poolRebalanceRoot: rootBundleData.poolRebalanceTree.getHexRoot(),
+      relayerRefundRoot: rootBundleData.relayerRefundTree.getHexRoot(),
+      slowRelayRoot: rootBundleData.slowFillTree.getHexRoot(),
+    });
+    if (submitProposals) {
+      this._proposeRootBundle(
+        hubPoolChainId,
+        blockRangesForProposal,
+        rootBundleData.poolRebalanceLeaves,
+        rootBundleData.poolRebalanceTree.getHexRoot(),
+        rootBundleData.relayerRefundLeaves,
+        rootBundleData.relayerRefundTree.getHexRoot(),
+        rootBundleData.slowFillLeaves,
+        rootBundleData.slowFillTree.getHexRoot()
+      );
+    }
+  }
+
+  async Legacy_proposeRootBundle(
+    blockRangesForProposal: number[][],
+    spokePoolClients: SpokePoolClientsByChain
+  ): Promise<ProposeRootBundleReturnType> {
+    const timerStart = Date.now();
+    const { fillsToRefund, deposits, allValidFills, unfilledDeposits } = await this.clients.bundleDataClient._loadData(
+      blockRangesForProposal,
+      spokePoolClients,
+      false
+    );
+    this.logger.debug({
+      at: "Dataworker",
+      message: `Time to load data from BundleDataClient: ${Date.now() - timerStart}ms`,
+    });
+    const allValidFillsInRange = getFillsInRange(
+      allValidFills,
+      blockRangesForProposal,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    );
+    this.logger.debug({ at: "Dataworker", message: "Building pool rebalance root", blockRangesForProposal });
+
+    const hubPoolChainId = this.clients.hubPoolClient.chainId;
+    const mainnetBundleEndBlock = getBlockRangeForChain(
+      blockRangesForProposal,
+      hubPoolChainId,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    )[1];
+    const poolRebalanceRoot = await this._getPoolRebalanceRoot(
+      spokePoolClients,
+      blockRangesForProposal,
+      this.clients.hubPoolClient.latestBlockNumber,
+      mainnetBundleEndBlock,
+      fillsToRefund,
+      deposits,
+      allValidFills,
+      allValidFillsInRange,
+      unfilledDeposits,
+      true
+    );
+    PoolRebalanceUtils.prettyPrintLeaves(
+      this.logger,
+      poolRebalanceRoot.tree,
+      poolRebalanceRoot.leaves,
+      "Pool rebalance"
+    );
     this.logger.debug({ at: "Dataworker", message: "Building relayer refund root", blockRangesForProposal });
     const relayerRefundRoot = _buildRelayerRefundRoot(
       mainnetBundleEndBlock,
@@ -446,56 +536,21 @@ export class Dataworker {
     const slowRelayRoot = _buildSlowRelayRoot(unfilledDeposits);
     PoolRebalanceUtils.prettyPrintLeaves(this.logger, slowRelayRoot.tree, slowRelayRoot.leaves, "Slow relay");
 
-    if (poolRebalanceRoot.leaves.length === 0) {
-      this.logger.debug({
-        at: "Dataworker#propose",
-        message: "No pool rebalance leaves, cannot propose",
-      });
-      return;
-    }
-
-    // 4. Propose roots to HubPool contract.
-    this.logger.debug({
-      at: "Dataworker#propose",
-      message: "Enqueing new root bundle proposal txn",
-      blockRangesForProposal,
-      poolRebalanceLeavesCount: poolRebalanceRoot.leaves.length,
-      poolRebalanceRoot: poolRebalanceRoot.tree.getHexRoot(),
-      relayerRefundRoot: relayerRefundRoot.tree.getHexRoot(),
-      slowRelayRoot: slowRelayRoot.tree.getHexRoot(),
-    });
-    if (submitProposals) {
-      this._proposeRootBundle(
-        hubPoolChainId,
-        blockRangesForProposal,
-        poolRebalanceRoot.leaves,
-        poolRebalanceRoot.tree.getHexRoot(),
-        relayerRefundRoot.leaves,
-        relayerRefundRoot.tree.getHexRoot(),
-        slowRelayRoot.leaves,
-        slowRelayRoot.tree.getHexRoot()
-      );
-    }
+    return {
+      poolRebalanceLeaves: poolRebalanceRoot.leaves,
+      poolRebalanceTree: poolRebalanceRoot.tree,
+      relayerRefundLeaves: relayerRefundRoot.leaves,
+      relayerRefundTree: relayerRefundRoot.tree,
+      slowFillLeaves: slowRelayRoot.leaves,
+      slowFillTree: slowRelayRoot.tree,
+    };
   }
 
   async UBA_proposeRootBundle(
+    blockRangesForProposal: number[][],
     ubaClient: UBAClient,
-    spokePoolClients: SpokePoolClientsByChain,
-    usdThresholdToSubmitNewBundle?: BigNumber,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    submitProposals = true,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): Promise<void> {
-    const blockRangesForProposal = this._getNextProposalBlockRanges(
-      spokePoolClients as SpokePoolClientsByChain,
-      earliestBlocksInSpokePoolClients
-    );
-    // console.log("blockRangesForProposal", blockRangesForProposal);
-    if (!blockRangesForProposal) {
-      return;
-    }
-
+    spokePoolClients: SpokePoolClientsByChain
+  ): Promise<ProposeRootBundleReturnType> {
     const enabledChainIds = Object.keys(spokePoolClients)
       .filter((chainId) => {
         const blockRangeForChain = getBlockRangeForChain(
@@ -507,19 +562,53 @@ export class Dataworker {
       })
       .map((x) => Number(x));
 
-    const poolRebalanceLeaves = this._UBA_buildPoolRebalanceLeaves(blockRangesForProposal, enabledChainIds, ubaClient);
-    buildPoolRebalanceLeafTree(poolRebalanceLeaves);
+    const { poolRebalanceLeaves } = this._UBA_buildPoolRebalanceLeaves(
+      blockRangesForProposal,
+      enabledChainIds,
+      ubaClient
+    );
+    const poolRebalanceTree = buildPoolRebalanceLeafTree(poolRebalanceLeaves);
+    PoolRebalanceUtils.prettyPrintLeaves(this.logger, poolRebalanceTree, poolRebalanceLeaves, "Pool rebalance");
 
+    // Load data for slow fill and relayer refund leaves. Set UBA mode to true to include
+    // refund requests in the fills to refund list.
+    const { fillsToRefund, unfilledDeposits } = await this.clients.bundleDataClient.loadData(
+      blockRangesForProposal,
+      ubaClient.spokePoolClients,
+      true
+    );
     // Build RelayerRefundRoot:
     // 1. Get all fills in range from SpokePoolClient
     // 2. Get all flows from UBA Client
     // 3. Validate fills by matching them with a deposit flow. Partial and Full fills should be validated the same (?)
     // 4. Validate refunds by matching them with a refund flow and checking that they were the first refund.
+    const relayerRefundTree = this._UBA_buildRelayerRefundLeaves(
+      fillsToRefund,
+      poolRebalanceLeaves,
+      blockRangesForProposal
+    );
+    PoolRebalanceUtils.prettyPrintLeaves(
+      this.logger,
+      relayerRefundTree.tree,
+      relayerRefundTree.leaves,
+      "Relayer refund"
+    );
 
     // Build SlowRelayRoot:
     // 1. Get all initial partial fills in range from SpokePoolClient that weren't later fully filled.
     // 2. Get all flows from UBA Client
     // 3. Validate fills by matching them with a deposit flow.
+    const slowFillTree = this._UBA_buildSlowRelayLeaves(ubaClient, blockRangesForProposal, unfilledDeposits);
+    PoolRebalanceUtils.prettyPrintLeaves(this.logger, slowFillTree.tree, slowFillTree.leaves, "Slow relay");
+
+    return {
+      poolRebalanceLeaves,
+      poolRebalanceTree,
+      relayerRefundLeaves: relayerRefundTree.leaves,
+      relayerRefundTree: relayerRefundTree.tree,
+      slowFillLeaves: slowFillTree.leaves,
+      slowFillTree: slowFillTree.tree,
+    };
   }
 
   /**
@@ -533,7 +622,7 @@ export class Dataworker {
     blockRanges: number[][],
     enabledChainIds: number[],
     ubaClient: UBAClient
-  ): PoolRebalanceLeaf[] {
+  ): { poolRebalanceLeaves: PoolRebalanceLeaf[]; runningBalances: RunningBalances } {
     const mainnetBundleEndBlock = getBlockRangeForChain(
       blockRanges,
       this.clients.hubPoolClient.chainId,
@@ -581,18 +670,14 @@ export class Dataworker {
           blockRangeForChain[0],
           blockRangeForChain[1]
         );
-        // console.log(`flows for ${chainId} and token:${tokenSymbol}`, flowsForChain);
+
+        // If no flows for chain, we won't create a pool rebalance leaf for it. The next time there is a flow for this
+        // chain, we'll find the previous running balance for it and use that as the starting point.
         if (flowsForChain.length === 0) {
-          const previousRunningBalance = this.clients.hubPoolClient.getRunningBalanceBeforeBlockForChain(
-            mainnetBundleEndBlock,
-            Number(chainId),
-            l1TokenAddress
-          );
-          poolRebalanceLeafData.runningBalances[chainId][l1TokenAddress] = previousRunningBalance.runningBalance;
-          poolRebalanceLeafData.bundleLpFees[chainId][l1TokenAddress] = BigNumber.from(0);
-          poolRebalanceLeafData.incentivePoolBalances[chainId][l1TokenAddress] =
-            previousRunningBalance.incentiveBalance;
-          poolRebalanceLeafData.netSendAmounts[chainId][l1TokenAddress] = BigNumber.from(0);
+          this.logger.debug({
+            at: "UBA buildPoolRebalanceLeaves",
+            message: `No flows for chain ${chainId} and token ${tokenSymbol}`,
+          });
         } else {
           const closingRunningBalance = flowsForChain[flowsForChain.length - 1].runningBalance;
           const closingIncentiveBalance = flowsForChain[flowsForChain.length - 1].incentiveBalance;
@@ -608,9 +693,7 @@ export class Dataworker {
         }
       }
     }
-    // console.log("poolRebalanceLeafData", poolRebalanceLeafData);
-
-    return PoolRebalanceUtils.constructPoolRebalanceLeaves(
+    const poolRebalanceLeaves = PoolRebalanceUtils.constructPoolRebalanceLeaves(
       mainnetBundleEndBlock,
       poolRebalanceLeafData.runningBalances,
       poolRebalanceLeafData.bundleLpFees,
@@ -620,6 +703,89 @@ export class Dataworker {
       poolRebalanceLeafData.incentivePoolBalances,
       poolRebalanceLeafData.netSendAmounts
     );
+    const runningBalances = poolRebalanceLeafData.runningBalances;
+    return {
+      poolRebalanceLeaves,
+      runningBalances,
+    };
+  }
+
+  /**
+   * Builds relayer refund leaves for the given block ranges and enabled chains.
+   * @param poolRebalanceLeaves Used to determine how to set amountToReturn in relayer refund leaves
+   * @param runningBalances
+   * @param blockRanges
+   * @returns
+   */
+  _UBA_buildRelayerRefundLeaves(
+    fillsToRefund: FillsToRefund,
+    poolRebalanceLeaves: PoolRebalanceLeaf[],
+    blockRanges: number[][]
+  ): { leaves: RelayerRefundLeaf[]; tree: MerkleTree<RelayerRefundLeaf> } {
+    const hubPoolChainId = this.clients.hubPoolClient.chainId;
+    const mainnetBundleEndBlock = getBlockRangeForChain(
+      blockRanges,
+      hubPoolChainId,
+      this.chainIdListForBundleEvaluationBlockNumbers
+    )[1];
+
+    // Create roots using constructed block ranges.
+    const timerStart = Date.now();
+    this.logger.debug({
+      at: "Dataworker",
+      message: `Time to load data from BundleDataClient: ${Date.now() - timerStart}ms`,
+    });
+    const relayerRefundRoot = _buildRelayerRefundRoot(
+      mainnetBundleEndBlock,
+      fillsToRefund,
+      poolRebalanceLeaves,
+      {}, // runningBalancess unused in UBA model.
+      this.clients,
+      this.maxRefundCountOverride
+        ? this.maxRefundCountOverride
+        : this.clients.configStoreClient.getMaxRefundCountForRelayerRefundLeafForBlock(mainnetBundleEndBlock),
+      this.tokenTransferThreshold,
+      true // Instruct function to always set amountToReturn = -netSendAmount iff netSendAmount < 0
+    );
+    return relayerRefundRoot;
+  }
+
+  _UBA_buildSlowRelayLeaves(
+    ubaClient: UBAClient,
+    blockRanges: number[][],
+    unfilledDeposits: UnfilledDeposit[]
+  ): { leaves: SlowFillLeaf[]; tree: MerkleTree<SlowFillLeaf> } {
+    // In UBA mode, each unfilled deposit must be matched with a payout adjustment percent,
+    // which is set equal to the refund balancing fee for the partial fill that triggered the slow fill.
+    const unfilledDepositsWithPayoutAdjustmentPcts: UnfilledDeposit[] = unfilledDeposits.map(
+      (unfilledDeposit: UnfilledDeposit) => {
+        const deposit = unfilledDeposit.deposit;
+        const destinationChainId = deposit.destinationChainId;
+        const blockRangesForDestChain = getBlockRangeForChain(
+          blockRanges,
+          destinationChainId,
+          this.chainIdListForBundleEvaluationBlockNumbers
+        );
+        const tokenSymbol = this.clients.hubPoolClient.getL1TokenInfoForL2Token(
+          deposit.destinationToken,
+          destinationChainId
+        ).symbol;
+        // There should only be one outflow on the deposit.destinationchain matching this deposit ID.
+        const matchingOutflow = ubaClient
+          .getModifiedFlows(destinationChainId, tokenSymbol, blockRangesForDestChain[0], blockRangesForDestChain[1])
+          .find((flow) => flow.flow.depositId === deposit.depositId);
+        if (!matchingOutflow) {
+          throw new Error(`No matching outflow found for deposit ID ${deposit.depositId}`);
+        }
+        return {
+          ...unfilledDeposit,
+          relayerBalancingFee: matchingOutflow.relayerFee.relayerBalancingFee,
+        };
+      }
+    );
+    const slowRelayRoot = _buildSlowRelayRoot(unfilledDepositsWithPayoutAdjustmentPcts);
+
+    return slowRelayRoot;
   }
 
   async validatePendingRootBundle(
@@ -1343,16 +1509,6 @@ export class Dataworker {
       pendingRootBundle,
     });
 
-    // Exit early if challenge period timestamp has not passed:
-    if (this.clients.hubPoolClient.currentTime <= pendingRootBundle.challengePeriodEndTimestamp) {
-      this.logger.debug({
-        at: "Dataworke#executePoolRebalanceLeaves",
-        message: `Challenge period not passed, cannot execute until ${pendingRootBundle.challengePeriodEndTimestamp}`,
-        expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
-      });
-      return;
-    }
-
     const mainnetBundleEndBlockForPendingRootBundle = getBlockForChain(
       pendingRootBundle.bundleEvaluationBlockNumbers,
       hubPoolChainId,
@@ -1369,6 +1525,33 @@ export class Dataworker {
       spokePoolClients,
       earliestBlocksInSpokePoolClients
     );
+
+    // Call `exchangeRateCurrent` on the HubPool before accumulating fees from the executed bundle leaves and before
+    // exiting early if challenge period isn't passed. This ensures that there is a maximum amount of time between
+    // exchangeRateCurrent calls and that these happen before pool leaves are executed. This is to
+    // address the situation where `addLiquidity` and `removeLiquidity` have not been called for an L1 token for a
+    // while, which are the other methods that trigger an internal call to `_exchangeRateCurrent()`. Calling
+    // this method triggers a recompounding of fees before new fees come in.
+    const l1TokensInBundle = expectedTrees.poolRebalanceTree.leaves.reduce((l1TokenSet, leaf) => {
+      const currLeafL1Tokens = leaf.l1Tokens;
+      currLeafL1Tokens.forEach((l1Token) => {
+        if (!l1TokenSet.includes(l1Token)) {
+          l1TokenSet.push(l1Token);
+        }
+      });
+      return l1TokenSet;
+    }, []);
+    await this._updateExchangeRates(l1TokensInBundle, submitExecution);
+
+    // Exit early if challenge period timestamp has not passed:
+    if (this.clients.hubPoolClient.currentTime <= pendingRootBundle.challengePeriodEndTimestamp) {
+      this.logger.debug({
+        at: "Dataworke#executePoolRebalanceLeaves",
+        message: `Challenge period not passed, cannot execute until ${pendingRootBundle.challengePeriodEndTimestamp}`,
+        expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
+      });
+      return;
+    }
 
     if (!valid) {
       this.logger.error({
@@ -1403,12 +1586,6 @@ export class Dataworker {
     if (unexecutedLeaves.length === 0) {
       return;
     }
-
-    // Call `exchangeRateCurrent` on the HubPool before accumulating fees from the executed bundle leaves. This is to
-    // address the situation where `addLiquidity` and `removeLiquidity` have not been called for an L1 token for a
-    // while, which are the other methods that trigger an internal call to `_exchangeRateCurrent()`. Calling
-    // this method triggers a recompounding of fees before new fees come in.
-    await this._updateExchangeRates(unexecutedLeaves, submitExecution);
 
     // First, execute mainnet pool rebalance leaves. Then try to execute any relayer refund and slow leaves for the
     // expected relayed root hash, then proceed with remaining pool rebalance leaves. This is an optimization that
@@ -1578,47 +1755,40 @@ export class Dataworker {
     });
   }
 
-  async _updateExchangeRates(leaves: PoolRebalanceLeaf[], submitExecution: boolean): Promise<void> {
-    const compoundedFeesForL1Token: string[] = [];
-    leaves.forEach((leaf) => {
-      leaf.l1Tokens.forEach((l1Token, i) => {
-        // Exit early if lp fees are 0
-        if (leaf.bundleLpFees[i].eq(toBN(0))) {
-          return;
-        }
+  async _updateExchangeRates(l1Tokens: string[], submitExecution: boolean): Promise<void> {
+    const syncedL1Tokens: string[] = [];
+    l1Tokens.forEach((l1Token) => {
+      // Exit early if we already synced this l1 token on this loop
+      if (syncedL1Tokens.includes(l1Token)) {
+        return;
+      } else {
+        syncedL1Tokens.push(l1Token);
+      }
 
-        // Exit early if we already compounded fees for this l1 token on this loop
-        if (compoundedFeesForL1Token.includes(l1Token)) {
-          return;
-        } else {
-          compoundedFeesForL1Token.push(l1Token);
-        }
+      // Exit early if we recently synced this token.
+      const lastestFeesCompoundedTime =
+        this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.lastLpFeeUpdate ?? 0;
+      if (
+        this.clients.hubPoolClient.currentTime === undefined ||
+        this.clients.hubPoolClient.currentTime - lastestFeesCompoundedTime <= 7200 // 2 hours
+      ) {
+        return;
+      }
 
-        // Exit early if we recently compounded fees
-        const lastestFeesCompoundedTime =
-          this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.lastLpFeeUpdate ?? 0;
-        if (
-          this.clients.hubPoolClient.currentTime === undefined ||
-          this.clients.hubPoolClient.currentTime - lastestFeesCompoundedTime <= 86400
-        ) {
-          return;
-        }
-
-        if (submitExecution) {
-          const chainId = this.clients.hubPoolClient.chainId;
-          this.clients.multiCallerClient.enqueueTransaction({
-            contract: this.clients.hubPoolClient.hubPool,
-            chainId,
-            method: "exchangeRateCurrent",
-            args: [l1Token],
-            message: "Updated exchange rate ♻️!",
-            mrkdwn: `Updated exchange rate for l1 token: ${
-              this.clients.hubPoolClient.getTokenInfo(chainId, l1Token)?.symbol
-            }`,
-            unpermissioned: true,
-          });
-        }
-      });
+      if (submitExecution) {
+        const chainId = this.clients.hubPoolClient.chainId;
+        this.clients.multiCallerClient.enqueueTransaction({
+          contract: this.clients.hubPoolClient.hubPool,
+          chainId,
+          method: "exchangeRateCurrent",
+          args: [l1Token],
+          message: "Updated exchange rate ♻️!",
+          mrkdwn: `Updated exchange rate for l1 token: ${
+            this.clients.hubPoolClient.getTokenInfo(chainId, l1Token)?.symbol
+          }`,
+          unpermissioned: true,
+        });
+      }
     });
   }
 
