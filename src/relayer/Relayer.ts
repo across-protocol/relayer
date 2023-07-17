@@ -1,4 +1,4 @@
-import { ethers, constants as ethersConstants } from "ethers";
+import { constants as ethersConstants } from "ethers";
 import { groupBy } from "lodash";
 import { clients as sdkClients, utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
@@ -537,15 +537,7 @@ export class Relayer {
       lpFee,
       depositBalancingFee: depositFee,
       systemFee: realizedLpFeePct,
-    } = await this.clients.ubaClient.computeSystemFee(
-      quoteBlockNumber,
-      amount,
-      originChainId,
-      destinationChainId,
-      symbol,
-      ethers.constants.Zero,
-      ethers.constants.Zero
-    );
+    } = this.clients.ubaClient.computeSystemFee(quoteBlockNumber, amount, originChainId, destinationChainId, symbol);
 
     const chain = getNetworkName(deposit.originChainId);
     this.logger.debug({

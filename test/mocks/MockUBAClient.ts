@@ -32,14 +32,12 @@ export class MockUBAClient extends UBAClient {
   }
 
   /* eslint-disable @typescript-eslint/no-unused-vars */
-  async computeLpFee(
+  computeLpFee(
     _hubPoolBlockNumber: number,
-    _amount: BigNumber,
     depositChainId: number,
     _refundChainId: number,
     _tokenSymbol: string
-  ): Promise<BigNumber> {
-    // Ignore destinationChainId
+  ): BigNumber {
     return this.getLpFee(depositChainId);
   }
 
@@ -47,15 +45,14 @@ export class MockUBAClient extends UBAClient {
     return this.lpFees[chainId] ?? toBN(0);
   }
 
-  /* eslint-enable @typescript-eslint/no-unused-vars */
-  async computeSystemFee(
+  computeSystemFee(
     hubPoolBlockNumber: number,
     amount: BigNumber,
     depositChainId: number,
     destinationChainId: number,
     tokenSymbol: string
-  ): Promise<UBASystemFee> {
-    const lpFee = await this.computeLpFee(hubPoolBlockNumber, amount, depositChainId, destinationChainId, tokenSymbol);
+  ): UBASystemFee {
+    const lpFee = this.computeLpFee(hubPoolBlockNumber, depositChainId, destinationChainId, tokenSymbol);
 
     const { balancingFee: depositBalancingFee } = this.computeBalancingFee(
       tokenSymbol,
