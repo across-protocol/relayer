@@ -437,7 +437,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // New ConfigStoreClient and relayer instances with a higher supported version.
     const version = UBA_MIN_CONFIG_STORE_VERSION;
     configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, version, []);
-    ubaClient.configStoreClient = hubPoolClient.configStoreClient = configStoreClient;
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,

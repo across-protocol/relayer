@@ -39,7 +39,7 @@ describe("UBAFeeConfig", async function () {
         },
         lowerBound: {},
       });
-      expect(config.getTotalSpokeTargetBalanceForComputingLpFee(originToken)).to.equal(toBNWei("20"));
+      expect(config.getTotalSpokeTargetBalanceForComputingLpFee(originToken)).to.equal(toBNWei("30"));
     });
     it("No upper bound", async function () {
       config.setBalanceTriggerThreshold(originChainId, originToken, {

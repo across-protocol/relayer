@@ -8,7 +8,6 @@ import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
 import { GLOBAL_CONFIG_STORE_KEYS } from "../src/clients";
 import { SpokePoolTargetBalance } from "../src/interfaces";
 import { DEFAULT_CONFIG_STORE_VERSION, MockConfigStoreClient } from "./mocks";
-import { UBA_MIN_CONFIG_STORE_VERSION } from "../src/common";
 
 let l1Token: Contract, l2Token: Contract, configStore: Contract;
 let owner: SignerWithAddress;
@@ -72,12 +71,8 @@ describe("AcrossConfigStoreClient", async function () {
     expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(1);
     expect(configStoreClient.cumulativeTokenTransferUpdates.length).to.equal(1);
 
-    // Update ignores TokenConfig events that don't include all expected keys:
+    // Update ignores TokenConfig events that don't include a rate model:
     await configStore.updateTokenConfig(l1Token.address, "gibberish");
-    await configStore.updateTokenConfig(
-      l1Token.address,
-      JSON.stringify({ rateModel: sampleRateModel, routeRateModel: { "999-888": sampleRateModel2 } })
-    );
     await configStore.updateTokenConfig(
       l1Token.address,
       JSON.stringify({ transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD })
@@ -202,7 +197,6 @@ describe("AcrossConfigStoreClient", async function () {
     });
 
     it("Get UBA fee config", async function () {
-      configStoreClient.setConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION);
       // Can have a mix of strings and numbers in config JSON.
       const realisticConfig = {
         alpha: {

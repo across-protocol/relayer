@@ -1,7 +1,7 @@
 import { clients } from "@across-protocol/sdk-v2";
-import { HubPoolClient, UBAClient } from "../../src/clients";
+import { UBAClient } from "../../src/clients";
 import { BigNumber, toBN } from "../utils";
-import { SpokePoolClientsByChain, UBABalancingFee, UBASystemFee } from "../../src/interfaces";
+import { UBABalancingFee, UBASystemFee } from "../../src/interfaces";
 
 // Adds functions to MockHubPoolClient to facilitate Dataworker unit testing.
 export class MockUBAClient extends UBAClient {
@@ -37,10 +37,7 @@ export class MockUBAClient extends UBAClient {
     _amount: BigNumber,
     depositChainId: number,
     _refundChainId: number,
-    _hubPoolChainId: number,
-    _tokenSymbol: string,
-    hubPoolClient: HubPoolClient,
-    spokePoolClients: SpokePoolClientsByChain
+    _tokenSymbol: string
   ): Promise<BigNumber> {
     // Ignore destinationChainId
     return this.getLpFee(depositChainId);
@@ -52,24 +49,13 @@ export class MockUBAClient extends UBAClient {
 
   /* eslint-enable @typescript-eslint/no-unused-vars */
   async computeSystemFee(
+    hubPoolBlockNumber: number,
+    amount: BigNumber,
     depositChainId: number,
     destinationChainId: number,
-    tokenSymbol: string,
-    hubPoolClient: HubPoolClient,
-    spokePoolClients: SpokePoolClientsByChain,
-    amount: BigNumber,
-    hubPoolBlockNumber: number
+    tokenSymbol: string
   ): Promise<UBASystemFee> {
-    const lpFee = await this.computeLpFee(
-      hubPoolBlockNumber,
-      amount,
-      depositChainId,
-      destinationChainId,
-      hubPoolClient.chainId,
-      tokenSymbol,
-      hubPoolClient,
-      spokePoolClients
-    );
+    const lpFee = await this.computeLpFee(hubPoolBlockNumber, amount, depositChainId, destinationChainId, tokenSymbol);
 
     const { balancingFee: depositBalancingFee } = this.computeBalancingFee(
       tokenSymbol,

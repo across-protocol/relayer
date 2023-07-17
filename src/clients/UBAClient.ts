@@ -1,5 +1,5 @@
 import winston from "winston";
-import { clients, relayFeeCalculator } from "@across-protocol/sdk-v2";
+import { clients } from "@across-protocol/sdk-v2";
 import { FillWithBlock, RefundRequestWithBlock } from "../interfaces";
 import { HubPoolClient } from "./HubPoolClient";
 import { SpokePoolClient } from "./SpokePoolClient";
@@ -7,8 +7,6 @@ import { SpokePoolClient } from "./SpokePoolClient";
 const { getFills, getRefundRequests } = clients;
 type SpokePoolEventFilter = clients.SpokePoolEventFilter;
 type SpokePoolFillFilter = clients.SpokePoolFillFilter;
-
-type RelayFeeCalculatorConfigWithMap = relayFeeCalculator.RelayFeeCalculatorConfigWithMap;
 
 export class UBAClient extends clients.UBAClient {
   constructor(
@@ -19,15 +17,7 @@ export class UBAClient extends clients.UBAClient {
     logger: winston.Logger,
     maxBundleStates = 1
   ) {
-    super(
-      chainIdIndices,
-      tokenSymbols,
-      hubPoolClient,
-      spokePoolClients,
-      {} as RelayFeeCalculatorConfigWithMap,
-      maxBundleStates,
-      logger
-    );
+    super(chainIdIndices, tokenSymbols, hubPoolClient, spokePoolClients, maxBundleStates, logger);
   }
 
   async getFills(chainId: number, filter: SpokePoolFillFilter = {}): Promise<FillWithBlock[]> {
