@@ -1766,7 +1766,7 @@ export class Dataworker {
           this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.lastLpFeeUpdate ?? 0;
         if (
           this.clients.hubPoolClient.currentTime === undefined ||
-          this.clients.hubPoolClient.currentTime - lastestFeesCompoundedTime <= 86400
+          this.clients.hubPoolClient.currentTime - lastestFeesCompoundedTime <= 3600
         ) {
           return;
         }
