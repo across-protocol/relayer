@@ -310,7 +310,6 @@ export class BundleDataClient {
 
     const validateRefundRequestAndSaveData = async (refundRequest: RefundRequestWithBlock): Promise<void> => {
       const result = await refundRequestIsValid(
-        allChainIds,
         spokePoolClients,
         this.clients.hubPoolClient,
         refundRequest
