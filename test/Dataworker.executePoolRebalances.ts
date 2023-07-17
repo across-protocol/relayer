@@ -81,9 +81,9 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await updateAllClients();
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
 
-    // Should be 4 transactions: 1 for exchangeRateCurrent, 1 for the to chain, 1 for the from chain, and 1 for the extra ETH sent to cover
-    // arbitrum gas fees.
-    expect(multiCallerClient.transactionCount()).to.equal(4);
+    // Should be 3 transactions: 1 for the to chain, 1 for the from chain, and 1 for the extra ETH sent to cover
+    // arbitrum gas fees.Should NOT be 3 since not enough time has passed since the last lp fee update.
+    expect(multiCallerClient.transactionCount()).to.equal(3);
     await multiCallerClient.executeTransactionQueue();
 
     // TEST 3:
@@ -112,8 +112,8 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await updateAllClients();
     await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, new BalanceAllocator(providers));
 
-    // Should be 1 leaf in addition to exchangeRateCurrent since this is _only_ a second partial fill repayment and doesn't involve the deposit chain.
-    expect(multiCallerClient.transactionCount()).to.equal(2);
+    // Should be 1 leaf since this is _only_ a second partial fill repayment and doesn't involve the deposit chain.
+    expect(multiCallerClient.transactionCount()).to.equal(1);
     await multiCallerClient.executeTransactionQueue();
   });
 });
