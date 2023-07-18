@@ -5,7 +5,6 @@ import {
   BigNumber,
   getRefund,
   MerkleTree,
-  toBN,
   sortEventsAscending,
   isDefined,
   buildPoolRebalanceLeafTree,
@@ -1589,16 +1588,6 @@ export class Dataworker {
       pendingRootBundle,
     });
 
-    // Exit early if challenge period timestamp has not passed:
-    if (this.clients.hubPoolClient.currentTime <= pendingRootBundle.challengePeriodEndTimestamp) {
-      this.logger.debug({
-        at: "Dataworke#executePoolRebalanceLeaves",
-        message: `Challenge period not passed, cannot execute until ${pendingRootBundle.challengePeriodEndTimestamp}`,
-        expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
-      });
-      return;
-    }
-
     const mainnetBundleEndBlockForPendingRootBundle = getBlockForChain(
       pendingRootBundle.bundleEvaluationBlockNumbers,
       hubPoolChainId,
@@ -1615,6 +1604,33 @@ export class Dataworker {
       spokePoolClients,
       earliestBlocksInSpokePoolClients
     );
+
+    // Call `exchangeRateCurrent` on the HubPool before accumulating fees from the executed bundle leaves and before
+    // exiting early if challenge period isn't passed. This ensures that there is a maximum amount of time between
+    // exchangeRateCurrent calls and that these happen before pool leaves are executed. This is to
+    // address the situation where `addLiquidity` and `removeLiquidity` have not been called for an L1 token for a
+    // while, which are the other methods that trigger an internal call to `_exchangeRateCurrent()`. Calling
+    // this method triggers a recompounding of fees before new fees come in.
+    const l1TokensInBundle = expectedTrees.poolRebalanceTree.leaves.reduce((l1TokenSet, leaf) => {
+      const currLeafL1Tokens = leaf.l1Tokens;
+      currLeafL1Tokens.forEach((l1Token) => {
+        if (!l1TokenSet.includes(l1Token)) {
+          l1TokenSet.push(l1Token);
+        }
+      });
+      return l1TokenSet;
+    }, []);
+    await this._updateExchangeRates(l1TokensInBundle, submitExecution);
+
+    // Exit early if challenge period timestamp has not passed:
+    if (this.clients.hubPoolClient.currentTime <= pendingRootBundle.challengePeriodEndTimestamp) {
+      this.logger.debug({
+        at: "Dataworke#executePoolRebalanceLeaves",
+        message: `Challenge period not passed, cannot execute until ${pendingRootBundle.challengePeriodEndTimestamp}`,
+        expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
+      });
+      return;
+    }
 
     if (!valid) {
       this.logger.error({
@@ -1649,12 +1665,6 @@ export class Dataworker {
     if (unexecutedLeaves.length === 0) {
       return;
     }
-
-    // Call `exchangeRateCurrent` on the HubPool before accumulating fees from the executed bundle leaves. This is to
-    // address the situation where `addLiquidity` and `removeLiquidity` have not been called for an L1 token for a
-    // while, which are the other methods that trigger an internal call to `_exchangeRateCurrent()`. Calling
-    // this method triggers a recompounding of fees before new fees come in.
-    await this._updateExchangeRates(unexecutedLeaves, submitExecution);
 
     // First, execute mainnet pool rebalance leaves. Then try to execute any relayer refund and slow leaves for the
     // expected relayed root hash, then proceed with remaining pool rebalance leaves. This is an optimization that
@@ -1824,47 +1834,40 @@ export class Dataworker {
     });
   }
 
-  async _updateExchangeRates(leaves: PoolRebalanceLeaf[], submitExecution: boolean): Promise<void> {
-    const compoundedFeesForL1Token: string[] = [];
-    leaves.forEach((leaf) => {
-      leaf.l1Tokens.forEach((l1Token, i) => {
-        // Exit early if lp fees are 0
-        if (leaf.bundleLpFees[i].eq(toBN(0))) {
-          return;
-        }
+  async _updateExchangeRates(l1Tokens: string[], submitExecution: boolean): Promise<void> {
+    const syncedL1Tokens: string[] = [];
+    l1Tokens.forEach((l1Token) => {
+      // Exit early if we already synced this l1 token on this loop
+      if (syncedL1Tokens.includes(l1Token)) {
+        return;
+      } else {
+        syncedL1Tokens.push(l1Token);
+      }
 
-        // Exit early if we already compounded fees for this l1 token on this loop
-        if (compoundedFeesForL1Token.includes(l1Token)) {
-          return;
-        } else {
-          compoundedFeesForL1Token.push(l1Token);
-        }
+      // Exit early if we recently synced this token.
+      const lastestFeesCompoundedTime =
+        this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.lastLpFeeUpdate ?? 0;
+      if (
+        this.clients.hubPoolClient.currentTime === undefined ||
+        this.clients.hubPoolClient.currentTime - lastestFeesCompoundedTime <= 7200 // 2 hours
+      ) {
+        return;
+      }
 
-        // Exit early if we recently compounded fees
-        const lastestFeesCompoundedTime =
-          this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.lastLpFeeUpdate ?? 0;
-        if (
-          this.clients.hubPoolClient.currentTime === undefined ||
-          this.clients.hubPoolClient.currentTime - lastestFeesCompoundedTime <= 86400
-        ) {
-          return;
-        }
-
-        if (submitExecution) {
-          const chainId = this.clients.hubPoolClient.chainId;
-          this.clients.multiCallerClient.enqueueTransaction({
-            contract: this.clients.hubPoolClient.hubPool,
-            chainId,
-            method: "exchangeRateCurrent",
-            args: [l1Token],
-            message: "Updated exchange rate ♻️!",
-            mrkdwn: `Updated exchange rate for l1 token: ${
-              this.clients.hubPoolClient.getTokenInfo(chainId, l1Token)?.symbol
-            }`,
-            unpermissioned: true,
-          });
-        }
-      });
+      if (submitExecution) {
+        const chainId = this.clients.hubPoolClient.chainId;
+        this.clients.multiCallerClient.enqueueTransaction({
+          contract: this.clients.hubPoolClient.hubPool,
+          chainId,
+          method: "exchangeRateCurrent",
+          args: [l1Token],
+          message: "Updated exchange rate ♻️!",
+          mrkdwn: `Updated exchange rate for l1 token: ${
+            this.clients.hubPoolClient.getTokenInfo(chainId, l1Token)?.symbol
+          }`,
+          unpermissioned: true,
+        });
+      }
     });
   }
 

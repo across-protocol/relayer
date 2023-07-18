@@ -529,6 +529,9 @@ export class Relayer {
     symbol: string
   ): Promise<BigNumber> {
     if (!sdkUtils.isUBA(version)) {
+      if (deposit.realizedLpFeePct === undefined) {
+        throw new Error(`Deposit ${deposit.depositId} is missing realizedLpFeePct`);
+      }
       return deposit.realizedLpFeePct;
     }
 
@@ -537,7 +540,7 @@ export class Relayer {
       lpFee,
       depositBalancingFee: depositFee,
       systemFee: realizedLpFeePct,
-    } = this.clients.ubaClient.computeSystemFee(originChainId, destinationChainId, symbol, amount, quoteBlockNumber);
+    } = this.clients.ubaClient.computeSystemFee(quoteBlockNumber, amount, originChainId, destinationChainId, symbol);
 
     const chain = getNetworkName(deposit.originChainId);
     this.logger.debug({

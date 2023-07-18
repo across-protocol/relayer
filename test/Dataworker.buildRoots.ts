@@ -1756,7 +1756,17 @@ describe("Dataworker: Build merkle roots", async function () {
         );
 
         await updateAllClients();
-        await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 1, originChainId);
+
+        // In UBA Mode, realized Lp fee is not set during update(), so we need to manually overwrite it.
+        const ubaRealizedLpFeePct = toBNWei("0.1");
+        spokePoolClient_1.updateDepositRealizedLpFeePct(deposit1, ubaRealizedLpFeePct);
+        await buildFillForRepaymentChain(
+          spokePool_2,
+          relayer,
+          { ...deposit1, realizedLpFeePct: ubaRealizedLpFeePct },
+          1,
+          originChainId
+        );
 
         await updateAllClients();
         const data1 = await dataworkerInstance.clients.bundleDataClient._loadData(
@@ -1789,7 +1799,7 @@ describe("Dataworker: Build merkle roots", async function () {
           amountToReturn: toBN(0),
           l2TokenAddress: erc20_1.address,
           refundAddresses: [relayer.address],
-          refundAmounts: [getRefund(deposit1.amount, deposit1.realizedLpFeePct)],
+          refundAmounts: [getRefund(deposit1.amount, ubaRealizedLpFeePct)],
         };
         deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[0], { ...leaf1, leafId: 0 });
       });
