@@ -1,5 +1,5 @@
 import { ubaFeeCalculator } from "@across-protocol/sdk-v2";
-import { toBN, toBNWei } from "../utils";
+import { BigNumber, toBN, toBNWei } from "../utils";
 
 export class MockUBAConfig extends ubaFeeCalculator.UBAFeeConfig {
   public readonly mockBalanceTriggerThreshold: Record<string, ubaFeeCalculator.ThresholdBoundType> = {};
@@ -33,11 +33,23 @@ export class MockUBAConfig extends ubaFeeCalculator.UBAFeeConfig {
     );
   }
 
-  setBalancingFeeTuple(chainId: number, flowCurve: FlowTupleParameters): void {
+  setBalancingFeeTuple(chainId: number, flowCurve: ubaFeeCalculator.FlowTupleParameters): void {
     this.mockBalancingFeeTuple[chainId] = flowCurve;
   }
 
-  getBalancingFeeTuples(chainId: number): FlowTupleParameters {
+  getBalancingFeeTuples(chainId: number): ubaFeeCalculator.FlowTupleParameters {
     return this.mockBalancingFeeTuple[chainId] ?? super.getBalancingFeeTuples(chainId);
+  }
+
+  setBaselineFee(originChainId: number, destinationChainId: number, fee: BigNumber, isDefault?: boolean): void {
+    if (isDefault) {
+      this.baselineFee.default = fee;
+    } else {
+      this.baselineFee.override = {
+        ...(this.baselineFee.override ?? {}),
+        [`${originChainId}-${destinationChainId}`]: fee,
+      };
+    }
+    this.baselineFee[isDefault ? "default" : `${originChainId}-${destinationChainId}`] = fee;
   }
 }

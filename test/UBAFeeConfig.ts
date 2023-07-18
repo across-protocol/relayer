@@ -59,4 +59,18 @@ describe("UBAFeeConfig", async function () {
       expect(config.getTotalSpokeTargetBalanceForComputingLpFee(originToken)).to.equal(toBNWei("0"));
     });
   });
+  describe("getBaselineFee", function () {
+    it("No baseline fee exists. Use hardcoded zero", function () {
+      expect(config.getBaselineFee(-5, -10)).to.equal(toBNWei("0"));
+    });
+    it("Should defer to a default if that is defined", function () {
+      config.setBaselineFee(-5, -10, toBNWei("100"), true);
+      expect(config.getBaselineFee(1, 10)).to.equal(toBNWei("100"));
+    });
+    it("Should defer to a specific fee if that is defined", function () {
+      config.setBaselineFee(0, 1, toBNWei("100"), true);
+      config.setBaselineFee(5, 10, toBNWei("101"));
+      expect(config.getBaselineFee(5, 10)).to.equal(toBNWei("101"));
+    });
+  });
 });
