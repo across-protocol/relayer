@@ -11,12 +11,22 @@ const destinationChainId = 137;
 const hubPoolChainId = constants.HUBPOOL_CHAIN_ID;
 
 describe("UBAFeeConfig", async function () {
-  describe("getTotalSpokeTargetBalanceForComputingLpFee", function () {
-    beforeEach(async function () {
-      originToken = randomAddress();
+  beforeEach(async function () {
+    originToken = randomAddress();
 
-      config = new MockUBAConfig();
-    });
+    config = new MockUBAConfig();
+  });
+  it("getUbaRewardMultiplier", async function () {
+    config = new MockUBAConfig();
+    // Default should be 1
+    expect(config.getUbaRewardMultiplier("999")).to.equal(1);
+  });
+  it("getIncentivePoolAdjustment", async function () {
+    config = new MockUBAConfig();
+    // Default should be 0
+    expect(config.getIncentivePoolAdjustment("999")).to.equal(0);
+  });
+  describe("getTotalSpokeTargetBalanceForComputingLpFee", function () {
     it("No lower bound", async function () {
       config.setBalanceTriggerThreshold(originChainId, originToken, {
         upperBound: {

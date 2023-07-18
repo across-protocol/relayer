@@ -1,6 +1,6 @@
 import assert from "assert";
 import { ConfigStoreClient, HubPoolClient } from "../clients";
-import { Deposit, DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
+import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
 import { getBlockForTimestamp, queryHistoricalDepositForFill } from "../utils";
 import {
   BigNumber,
@@ -13,19 +13,6 @@ import {
   sortEventsAscending,
 } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
-
-const FILL_DEPOSIT_COMPARISON_KEYS = [
-  "amount",
-  "originChainId",
-  "relayerFeePct",
-  "realizedLpFeePct",
-  "depositId",
-  "depositor",
-  "recipient",
-  "destinationChainId",
-  "destinationToken",
-  "message",
-] as const;
 
 export function getRefundInformationFromFill(
   fill: Fill,
@@ -297,23 +284,4 @@ export async function getUnfilledDeposits(
       };
     });
   }
-}
-
-// Ensure that each deposit element is included with the same value in the fill. This includes all elements defined
-// by the depositor as well as the realizedLpFeePct and the destinationToken, which are pulled from other clients.
-export function validateFillForDeposit(fill: Fill, deposit?: Deposit): boolean {
-  if (deposit === undefined) {
-    return false;
-  }
-
-  if (deposit.realizedLpFeePct === undefined) {
-    throw new Error("Deposit.realizedLpFeePct is undefined");
-  }
-
-  // Note: this short circuits when a key is found where the comparison doesn't match.
-  // TODO: if we turn on "strict" in the tsconfig, the elements of FILL_DEPOSIT_COMPARISON_KEYS will be automatically
-  // validated against the fields in Fill and Deposit, generating an error if there is a discrepency.
-  return FILL_DEPOSIT_COMPARISON_KEYS.every((key) => {
-    return fill[key] !== undefined && fill[key].toString() === deposit[key]?.toString();
-  });
 }
