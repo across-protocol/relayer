@@ -112,7 +112,6 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   await configStoreClient.update();
   const version = configStoreClient.getConfigStoreVersionForTimestamp();
   if (sdkUtils.isUBA(version)) {
-    const version = configStoreClient.getConfigStoreVersionForTimestamp();
     assert(configStoreClient.isValidConfigStoreVersion(version));
     await ubaClient.update(undefined, true);
   } else {
