@@ -13,7 +13,7 @@ import { SpokePoolClientsByChain } from "../src/interfaces";
 import { clients } from "@across-protocol/sdk-v2";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { CHAIN_ID_LIST_INDICES, UBA_MIN_CONFIG_STORE_VERSION } from "../src/common";
-const { getMostRecentBundles } = clients;
+const { getMostRecentBundleBlockRanges } = clients;
 
 let hubPoolClient: MockHubPoolClient;
 let hubPool: Contract;
@@ -94,7 +94,7 @@ describe("UBAClientUtilities", function () {
     await Promise.all(chainIds.map((chainId) => spokePoolClients[Number(chainId)].update()));
     return expectedBlockRanges;
   }
-  describe("getMostRecentBundles", function () {
+  describe("getMostRecentBundleBlockRanges", function () {
     beforeEach(async function () {
       const [owner] = await ethers.getSigners();
       const { configStore } = await deployConfigStore(owner, []);
@@ -125,7 +125,7 @@ describe("UBAClientUtilities", function () {
       }
     });
     it("Request maxBundleState 0", async function () {
-      const result = getMostRecentBundles(
+      const result = getMostRecentBundleBlockRanges(
         chainIds[0],
         0,
         Number(hubPoolClient.latestBlockNumber),
@@ -137,7 +137,7 @@ describe("UBAClientUtilities", function () {
     it("No bundles", async function () {
       // Should throw an error that we're trying to load more bundle states than are available
       expect(() =>
-        getMostRecentBundles(chainIds[0], 1, Number(hubPoolClient.latestBlockNumber), hubPoolClient, spokePoolClients)
+      getMostRecentBundleBlockRanges(chainIds[0], 1, Number(hubPoolClient.latestBlockNumber), hubPoolClient, spokePoolClients)
       ).to.throw(`No validated root bundle found before hubpool block ${hubPoolClient.latestBlockNumber}`);
     });
     it("Correctly returns n most recent validated bundles", async function () {
@@ -145,7 +145,7 @@ describe("UBAClientUtilities", function () {
       const expectedBlockRanges = await publishValidatedBundles(3);
       for (const chainId of CHAIN_ID_LIST_INDICES) {
         // Get 2 most recent bundles.
-        const result = getMostRecentBundles(
+        const result = getMostRecentBundleBlockRanges(
           chainId,
           2,
           Number(hubPoolClient.latestBlockNumber),
@@ -166,7 +166,7 @@ describe("UBAClientUtilities", function () {
       if (!latestExecutedRootBundle || latestExecutedRootBundle.blockNumber === 0) {
         throw new Error("No latest executed root bundle");
       }
-      const result = getMostRecentBundles(
+      const result = getMostRecentBundleBlockRanges(
         chainIds[0],
         1,
         latestExecutedRootBundle?.blockNumber,
@@ -180,7 +180,7 @@ describe("UBAClientUtilities", function () {
       // Create block ranges that end at block heights much larger than last spoke pool client blocks searched.
       await publishValidatedBundles(3, 10_000_000);
       expect(() =>
-        getMostRecentBundles(chainIds[0], 1, Number(hubPoolClient.latestBlockNumber), hubPoolClient, spokePoolClients)
+      getMostRecentBundleBlockRanges(chainIds[0], 1, Number(hubPoolClient.latestBlockNumber), hubPoolClient, spokePoolClients)
       ).to.throw(/Spoke pool clients do not have the block ranges necessary/);
     });
   });
