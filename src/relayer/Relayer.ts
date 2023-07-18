@@ -529,6 +529,9 @@ export class Relayer {
     symbol: string
   ): Promise<BigNumber> {
     if (!sdkUtils.isUBA(version)) {
+      if (deposit.realizedLpFeePct === undefined) {
+        throw new Error(`Deposit ${deposit.depositId} is missing realizedLpFeePct`);
+      }
       return deposit.realizedLpFeePct;
     }
 

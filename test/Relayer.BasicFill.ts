@@ -423,8 +423,31 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
   it("UBA: Ignores deposits after version bump", async function () {
     await configStore.updateGlobalConfig(utf8ToHex("VERSION"), `${UBA_MIN_CONFIG_STORE_VERSION ?? 2}`);
+    const version = UBA_MIN_CONFIG_STORE_VERSION;
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, version, []);
+    relayerInstance = new Relayer(
+      relayer.address,
+      spyLogger,
+      {
+        configStoreClient,
+        hubPoolClient,
+        spokePoolClients,
+        ubaClient,
+        tokenClient,
+        profitClient,
+        multiCallerClient,
+        inventoryClient: new MockInventoryClient(),
+        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
+      },
+      {
+        relayerTokens: [],
+        relayerDestinationChains: [originChainId, destinationChainId],
+        minDepositConfirmations: defaultMinDepositConfirmations,
+        quoteTimeBuffer: 0,
+      } as unknown as RelayerConfig
+    );
     // "reasonable" block number based off the block time when looking at quote timestamps.
-    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
+    await spokePool_1.setCurrentTime((await getLastBlockTime(spokePool_1.provider)) + 100);
     await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
     await updateAllClients();
@@ -437,7 +460,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // New ConfigStoreClient and relayer instances with a higher supported version.
     const version = UBA_MIN_CONFIG_STORE_VERSION;
     configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, version, []);
-    ubaClient.configStoreClient = hubPoolClient.configStoreClient = configStoreClient;
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
