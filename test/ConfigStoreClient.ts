@@ -71,12 +71,8 @@ describe("AcrossConfigStoreClient", async function () {
     expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(1);
     expect(configStoreClient.cumulativeTokenTransferUpdates.length).to.equal(1);
 
-    // Update ignores TokenConfig events that don't include all expected keys:
+    // Update ignores TokenConfig events that don't include a rate model.
     await configStore.updateTokenConfig(l1Token.address, "gibberish");
-    await configStore.updateTokenConfig(
-      l1Token.address,
-      JSON.stringify({ rateModel: sampleRateModel, routeRateModel: { "999-888": sampleRateModel2 } })
-    );
     await configStore.updateTokenConfig(
       l1Token.address,
       JSON.stringify({ transferThreshold: DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD })
