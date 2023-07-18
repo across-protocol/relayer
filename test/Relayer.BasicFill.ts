@@ -8,6 +8,7 @@ import {
   setupTokensForWallet,
   getLastBlockTime,
   buildDeposit,
+  assertPromiseError,
 } from "./utils";
 import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfigureHubPool, winston } from "./utils";
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId } from "./utils";
@@ -33,6 +34,7 @@ import { MockInventoryClient, MockProfitClient, MockUBAClient } from "./mocks";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
+import { Deposit } from "../src/interfaces";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
@@ -421,45 +423,21 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     expect(lastSpyLogIncludes(spy, "Skipping deposit for unsupported destination chain")).to.be.true;
   });
 
-  it("UBA: Ignores deposits after version bump", async function () {
+  it("UBA: Crashes if client cannot support version bump", async function () {
+    // Client is out of sync with on chain version, should crash.
     await configStore.updateGlobalConfig(utf8ToHex("VERSION"), `${UBA_MIN_CONFIG_STORE_VERSION ?? 2}`);
-    const version = UBA_MIN_CONFIG_STORE_VERSION;
-    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, version, []);
-    relayerInstance = new Relayer(
-      relayer.address,
-      spyLogger,
-      {
-        configStoreClient,
-        hubPoolClient,
-        spokePoolClients,
-        ubaClient,
-        tokenClient,
-        profitClient,
-        multiCallerClient,
-        inventoryClient: new MockInventoryClient(),
-        acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, spokePoolClients),
-      },
-      {
-        relayerTokens: [],
-        relayerDestinationChains: [originChainId, destinationChainId],
-        minDepositConfirmations: defaultMinDepositConfirmations,
-        quoteTimeBuffer: 0,
-      } as unknown as RelayerConfig
-    );
     // "reasonable" block number based off the block time when looking at quote timestamps.
-    await spokePool_1.setCurrentTime((await getLastBlockTime(spokePool_1.provider)) + 100);
+    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
     await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
-    await updateAllClients();
-    await relayerInstance.checkForUnfilledDepositsAndFill();
-    expect(lastSpyLogIncludes(spy, "No unfilled deposits")).to.be.true;
-    expect(multiCallerClient.transactionCount()).to.equal(0); // One transaction, filling the one deposit.
+    await assertPromiseError(updateAllClients(), "ConfigStoreClient cannot handle UBA config store version");
   });
 
   it("UBA: Uses UBA fee model after version bump", async function () {
     // New ConfigStoreClient and relayer instances with a higher supported version.
     const version = UBA_MIN_CONFIG_STORE_VERSION;
     configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, version, []);
+    ubaClient.configStoreClient = hubPoolClient.configStoreClient = configStoreClient;
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -488,6 +466,10 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
     const deposit1 = await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     await updateAllClients();
+
+    // In UBA Mode, realized Lp fee is not set during update(), so we need to manually overwrite it.
+    const ubaRealizedLpFeePct = toBNWei("0.1");
+    spokePoolClient_1.updateDepositRealizedLpFeePct(deposit1 as Deposit, ubaRealizedLpFeePct);
 
     // Set the deposit balancing fee.
     const expectedBalancingFeePct = toBNWei(random(0, 0.249999).toPrecision(9));
