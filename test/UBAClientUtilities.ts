@@ -14,7 +14,7 @@ import { clients } from "@across-protocol/sdk-v2";
 import { MockConfigStoreClient, MockHubPoolClient } from "./mocks";
 import { CHAIN_ID_LIST_INDICES, UBA_MIN_CONFIG_STORE_VERSION } from "../src/common";
 import { SpokePoolClient } from "../src/clients";
-const { getMostRecentBundleBlockRanges, getOpeningBalances } = clients
+const { getMostRecentBundleBlockRanges, getOpeningBalances } = clients;
 
 let hubPoolClient: MockHubPoolClient;
 let hubPool: Contract;
@@ -24,7 +24,7 @@ const logger = createSpyLogger().spyLogger;
 
 const chainIds = CHAIN_ID_LIST_INDICES;
 
-const tokenAddresses = chainIds.map(() =>randomAddress());
+const tokenAddresses = chainIds.map(() => randomAddress());
 
 describe("UBAClientUtilities", function () {
   beforeEach(async function () {
@@ -55,7 +55,7 @@ describe("UBAClientUtilities", function () {
       // `blockRangesAreInvalidForSpokeClients` to be true.
       const spokePoolClient = new SpokePoolClient(logger, spokePool, hubPoolClient, originChainId, deploymentBlock);
       spokePoolClients[originChainId] = spokePoolClient;
-      await spokePoolClient.update()
+      await spokePoolClient.update();
     }
   });
   // Propose and validate `numberOfBundles` bundles, each with random size block ranges. The block range size
@@ -111,7 +111,6 @@ describe("UBAClientUtilities", function () {
           [startingRunningBalance, startingIncentiveBalance] // runningBalances
         );
         hubPoolClient.addEvent(leafEvent);
-        console.log(leafEvent)
       });
 
       await hubPoolClient.update();
@@ -152,7 +151,13 @@ describe("UBAClientUtilities", function () {
         spokePoolClients
       );
       const spokePoolClient = spokePoolClients[chainIds[0]];
-      deepEqualsWithBigNumber(result, [{ proposalBlock: hubPoolClient.latestBlockNumber, start: spokePoolClient.deploymentBlock, end: spokePoolClient.latestBlockNumber}])
+      deepEqualsWithBigNumber(result, [
+        {
+          proposalBlock: hubPoolClient.latestBlockNumber,
+          start: spokePoolClient.deploymentBlock,
+          end: spokePoolClient.latestBlockNumber,
+        },
+      ]);
     });
     it("Correctly returns n most recent validated bundles", async function () {
       // Generate 3 valid bundles.
@@ -194,63 +199,69 @@ describe("UBAClientUtilities", function () {
       // Create block ranges that end at block heights much larger than last spoke pool client blocks searched.
       await publishValidatedBundles(3, 10_000_000);
       expect(() =>
-      getMostRecentBundleBlockRanges(chainIds[0], 1, Number(hubPoolClient.latestBlockNumber), hubPoolClient, spokePoolClients)
+        getMostRecentBundleBlockRanges(
+          chainIds[0],
+          1,
+          Number(hubPoolClient.latestBlockNumber),
+          hubPoolClient,
+          spokePoolClients
+        )
       ).to.throw(/Spoke pool clients do not have the block ranges necessary/);
     });
   });
   describe("getOpeningBalances", function () {
-      it("No bundles", async function () {
-        const result = getOpeningBalances(
-          hubPoolClient,
-          chainIds[0],
-          tokenAddresses[0],
-          Number(hubPoolClient.latestBlockNumber),
-        );
-        deepEqualsWithBigNumber(result, { 
-          runningBalance: ethers.constants.Zero,
-          incentiveBalance: ethers.constants.Zero,
-        })
+    it("No bundles", async function () {
+      const result = getOpeningBalances(
+        hubPoolClient,
+        chainIds[0],
+        tokenAddresses[0],
+        Number(hubPoolClient.latestBlockNumber)
+      );
+      deepEqualsWithBigNumber(result, {
+        runningBalance: ethers.constants.Zero,
+        incentiveBalance: ethers.constants.Zero,
       });
-      it("One bundles", async function() {
-        // Getting opening balances before latest block returns first bundle running balances
-        await publishValidatedBundles(1, undefined, toBNWei("11"), toBNWei("22"));
-        const result1 = getOpeningBalances(
-          hubPoolClient,
-          chainIds[0],
-          tokenAddresses[0],
-          Number(hubPoolClient.latestBlockNumber),
-        );
-        deepEqualsWithBigNumber(result1, { 
-          runningBalance: toBNWei("11"),
-          incentiveBalance: toBNWei("22"),
-        })
-
-        // Execute another bundle. Getting opening balances before latest block now returns second
-        // bundle running balances
-        const bundle2 = await publishValidatedBundles(1, undefined, toBNWei("33"), toBNWei("44"));
-        const result2 = getOpeningBalances(
-          hubPoolClient,
-          chainIds[0],
-          tokenAddresses[0],
-          Number(hubPoolClient.latestBlockNumber),
-        );
-        deepEqualsWithBigNumber(result2, { 
-          runningBalance: toBNWei("33"),
-          incentiveBalance: toBNWei("44"),
-        })
-
-        // Now try getting the opening balances as of the second bundle's proposal block. This should return
-        // the first bundle's balances.
-        const result3 = getOpeningBalances(
-          hubPoolClient,
-          chainIds[0],
-          tokenAddresses[0],
-          bundle2[chainIds[0]][0].proposalBlock,
-        );
-        deepEqualsWithBigNumber(result3, { 
-          runningBalance: toBNWei("11"),
-          incentiveBalance: toBNWei("22"),
-        })
+    });
+    it("One bundles", async function () {
+      // Getting opening balances before latest block returns first bundle running balances
+      await publishValidatedBundles(1, undefined, toBNWei("11"), toBNWei("22"));
+      const result1 = getOpeningBalances(
+        hubPoolClient,
+        chainIds[0],
+        tokenAddresses[0],
+        Number(hubPoolClient.latestBlockNumber)
+      );
+      deepEqualsWithBigNumber(result1, {
+        runningBalance: toBNWei("11"),
+        incentiveBalance: toBNWei("22"),
       });
-  })
+
+      // Execute another bundle. Getting opening balances before latest block now returns second
+      // bundle running balances
+      const bundle2 = await publishValidatedBundles(1, undefined, toBNWei("33"), toBNWei("44"));
+      const result2 = getOpeningBalances(
+        hubPoolClient,
+        chainIds[0],
+        tokenAddresses[0],
+        Number(hubPoolClient.latestBlockNumber)
+      );
+      deepEqualsWithBigNumber(result2, {
+        runningBalance: toBNWei("33"),
+        incentiveBalance: toBNWei("44"),
+      });
+
+      // Now try getting the opening balances as of the second bundle's proposal block. This should return
+      // the first bundle's balances.
+      const result3 = getOpeningBalances(
+        hubPoolClient,
+        chainIds[0],
+        tokenAddresses[0],
+        bundle2[chainIds[0]][0].proposalBlock
+      );
+      deepEqualsWithBigNumber(result3, {
+        runningBalance: toBNWei("11"),
+        incentiveBalance: toBNWei("22"),
+      });
+    });
+  });
 });
