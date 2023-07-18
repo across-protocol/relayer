@@ -427,7 +427,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // Client is out of sync with on chain version, should crash.
     await configStore.updateGlobalConfig(utf8ToHex("VERSION"), `${UBA_MIN_CONFIG_STORE_VERSION ?? 2}`);
     // "reasonable" block number based off the block time when looking at quote timestamps.
-    await spokePool_1.setCurrentTime((await getLastBlockTime(spokePool_1.provider)));
+    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
     await deposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
 
     await assertPromiseError(updateAllClients(), "ConfigStoreClient cannot handle UBA config store version");
