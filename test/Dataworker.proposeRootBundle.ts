@@ -215,9 +215,9 @@ describe("Dataworker: Propose root bundle", async function () {
   it("Exits early if config store version is out of date", async function () {
     // Set up test so that the latest version in the config store contract is higher than
     // the version in the config store client.
-    const update = await configStore.updateGlobalConfig(utf8ToHex("VERSION"), "3");
+    const update = await configStore.updateGlobalConfig(utf8ToHex("VERSION"), "1");
     const updateTime = (await configStore.provider.getBlock(update.blockNumber)).timestamp;
-    configStoreClient.setConfigStoreVersion(1);
+    configStoreClient.setConfigStoreVersion(0);
 
     // Now send a proposal after the update time. Dataworker should exit early.
     await spokePool_1.setCurrentTime(updateTime + 1);

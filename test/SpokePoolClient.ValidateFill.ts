@@ -29,6 +29,8 @@ import {
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
 import { queryHistoricalDepositForFill, validateFillForDeposit } from "../src/utils";
 import { MockSpokePoolClient } from "./mocks";
+import { utils } from "@across-protocol/sdk-v2";
+const { validateFillForDeposit } = utils;
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract, hubPool: Contract;
 let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;

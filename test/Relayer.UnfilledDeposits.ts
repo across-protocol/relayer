@@ -450,9 +450,9 @@ describe("Relayer: Unfilled Deposits", async function () {
   it("Skip deposits we don't have updated config store version for", async function () {
     // Set up test so that the latest version in the config store contract is higher than
     // the version in the config store client.
-    const update = await configStore.updateGlobalConfig(utf8ToHex("VERSION"), "3");
+    const update = await configStore.updateGlobalConfig(utf8ToHex("VERSION"), "1");
     const updateTime = (await configStore.provider.getBlock(update.blockNumber)).timestamp;
-    configStoreClient.setConfigStoreVersion(1);
+    configStoreClient.setConfigStoreVersion(0);
 
     // Now send a deposit after the update time. This deposit should be skipped as we don't have the latest
     // version at the quote timestamp.
