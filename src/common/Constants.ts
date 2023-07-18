@@ -75,6 +75,10 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     137: 100, // Probabilistically safe level based on historic Polygon reorgs
     324: 0,
     42161: 0,
+    // Testnets:
+    5: 0,
+    421613: 0,
+    11155111: 0,
   },
   100: {
     1: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
@@ -82,6 +86,10 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     137: 80,
     324: 0,
     42161: 0,
+    // Testnets:
+    5: 0,
+    421613: 0,
+    11155111: 0,
   },
 };
 export const QUOTE_TIME_BUFFER = 12 * 5; // 5 blocks on Mainnet.
