@@ -112,7 +112,7 @@ export async function updateRelayerClients(clients: RelayerClients, config: Rela
   await configStoreClient.update();
   const version = configStoreClient.getConfigStoreVersionForTimestamp();
   if (sdkUtils.isUBA(version)) {
-    assert(configStoreClient.isValidConfigStoreVersion(version));
+    assert(configStoreClient.isValidConfigStoreVersion(version), `Relayer does not support UBA transfers`);
     await ubaClient.update(undefined, true);
   } else {
     // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
