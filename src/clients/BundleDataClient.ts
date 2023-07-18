@@ -309,12 +309,7 @@ export class BundleDataClient {
     const allChainIds = Object.keys(spokePoolClients).map(Number);
 
     const validateRefundRequestAndSaveData = async (refundRequest: RefundRequestWithBlock): Promise<void> => {
-      const result = await refundRequestIsValid(
-        allChainIds,
-        spokePoolClients,
-        this.clients.hubPoolClient,
-        refundRequest
-      );
+      const result = await refundRequestIsValid(spokePoolClients, this.clients.hubPoolClient, refundRequest);
       if (result.valid) {
         const { blockNumber, transactionIndex, transactionHash, logIndex, ...fill } = result.matchingFill;
         assignValidFillToFillsToRefund(fillsToRefund, fill, refundRequest.repaymentChainId, refundRequest.refundToken);

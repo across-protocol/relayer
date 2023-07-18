@@ -306,6 +306,10 @@ export function validateFillForDeposit(fill: Fill, deposit?: Deposit): boolean {
     return false;
   }
 
+  if (deposit.realizedLpFeePct === undefined) {
+    throw new Error("Deposit.realizedLpFeePct is undefined");
+  }
+
   // Note: this short circuits when a key is found where the comparison doesn't match.
   // TODO: if we turn on "strict" in the tsconfig, the elements of FILL_DEPOSIT_COMPARISON_KEYS will be automatically
   // validated against the fields in Fill and Deposit, generating an error if there is a discrepency.

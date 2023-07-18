@@ -9,7 +9,7 @@ import {
   hubPoolFixture,
 } from "./utils";
 import { expect, toBN } from "./constants";
-import { ProposedRootBundle, SpokePoolClientsByChain } from "../src/interfaces";
+import { SpokePoolClientsByChain } from "../src/interfaces";
 import { clients } from "@across-protocol/sdk-v2";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { CHAIN_ID_LIST_INDICES, UBA_MIN_CONFIG_STORE_VERSION } from "../src/common";
@@ -29,10 +29,10 @@ describe("UBAClientUtilities", function () {
   async function publishValidatedBundles(
     numberOfBundles: number,
     randomJumpOverride?: number
-  ): Promise<Record<number, { start: number; end: number; bundle: ProposedRootBundle }[]>> {
+  ): Promise<Record<number, { start: number; end: number; proposalBlock: number }[]>> {
     // Create a sets of unique block ranges per chain so that we have a lower chance of false positives
     // when fetching the block ranges for a specific chain.
-    const expectedBlockRanges: Record<number, { start: number; end: number; bundle: ProposedRootBundle }[]> = {}; // Save expected ranges here
+    const expectedBlockRanges: Record<number, { start: number; end: number; proposalBlock: number }[]> = {}; // Save expected ranges here
     let nextBlockRangesForChain = Object.fromEntries(
       CHAIN_ID_LIST_INDICES.map((chainId) => {
         const randomJump = randomJumpOverride ?? Math.floor(Math.random() * 3);
@@ -61,7 +61,7 @@ describe("UBAClientUtilities", function () {
       CHAIN_ID_LIST_INDICES.forEach((chainId) => {
         expectedBlockRanges[chainId].push({
           ...nextBlockRangesForChain[chainId],
-          bundle: proposedRootBundle,
+          proposalBlock: proposedRootBundle.blockNumber,
         });
       });
       chainIds.forEach((chainId, leafIndex) => {

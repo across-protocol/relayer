@@ -224,6 +224,9 @@ export class Relayer {
         // The pre-computed realizedLpFeePct is for the pre-UBA fee model. Update it to the UBA fee model if necessary.
         // The SpokePool guarantees the sum of the fees is <= 100% of the deposit amount.
         deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit, l1Token.symbol);
+        if (deposit.realizedLpFeePct === undefined) {
+          throw new Error("realizedLpFeePct should never be undefined pre UBA");
+        }
 
         const repaymentChainId = await this.resolveRepaymentChain(version, deposit, unfilledAmount, l1Token);
         if (isDefined(repaymentChainId)) {

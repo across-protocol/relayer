@@ -201,7 +201,7 @@ describe("SpokePoolClient: Event Filtering", async function () {
     refundRequestEvents.push(refundRequest as RefundRequestWithBlock);
 
     // Should receive _all_ fills submitted on destinationChainId.
-    let refundRequests = await getRefundRequests(repaymentChainId, chainIds, hubPoolClient, spokePoolClients);
+    let refundRequests = await getRefundRequests(repaymentChainId, hubPoolClient, spokePoolClients);
     expect(refundRequests.length).to.equal(refundRequestEvents.length);
 
     // Take the field from the last event and filter on it.
@@ -224,7 +224,7 @@ describe("SpokePoolClient: Event Filtering", async function () {
         filter = { [field]: sampleEvent.blockNumber };
       }
 
-      refundRequests = await getRefundRequests(repaymentChainId, chainIds, hubPoolClient, spokePoolClients, filter);
+      refundRequests = await getRefundRequests(repaymentChainId, hubPoolClient, spokePoolClients, filter);
       expect(refundRequests.length).to.equal(1);
 
       if (field === "fromBlock") {
