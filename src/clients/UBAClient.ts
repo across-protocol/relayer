@@ -17,14 +17,7 @@ export class UBAClient extends clients.UBAClient {
     logger: winston.Logger,
     maxBundleStates = 1
   ) {
-    super(
-      chainIdIndices,
-      tokenSymbols,
-      hubPoolClient,
-      spokePoolClients,
-      maxBundleStates,
-      logger
-    );
+    super(chainIdIndices, tokenSymbols, hubPoolClient, spokePoolClients, maxBundleStates, logger);
   }
 
   async getFills(chainId: number, filter: SpokePoolFillFilter = {}): Promise<FillWithBlock[]> {
