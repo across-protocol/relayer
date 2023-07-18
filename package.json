@@ -94,7 +94,7 @@
     "sinon": "^15.2.0",
     "solhint": "^3.4.1",
     "solidity-coverage": "^0.8.3",
-    "typechain": "^8.2.0",
+    "typechain": "^8.3.0",
     "typescript": "^5.1.6"
   },
   "husky": {
