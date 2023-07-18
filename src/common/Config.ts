@@ -17,6 +17,7 @@ export class CommonConfig {
   readonly maxRelayerLookBack: number;
   readonly multiCallChunkSize: { [chainId: number]: number };
   readonly version: string;
+  readonly maxConfigVersion: number;
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
   readonly toBlockOverride: Record<number, number> = {};
   readonly chainIdListIndices: number[];
@@ -34,6 +35,7 @@ export class CommonConfig {
       SPOKE_POOL_CHAINS_OVERRIDE,
       CHAIN_ID_LIST_OVERRIDE,
       ACROSS_BOT_VERSION,
+      ACROSS_MAX_CONFIG_VERSION,
     } = env;
 
     this.chainIdListIndices = CHAIN_ID_LIST_OVERRIDE
@@ -41,6 +43,12 @@ export class CommonConfig {
       : Constants.CHAIN_ID_LIST_INDICES;
 
     this.version = ACROSS_BOT_VERSION ?? "unknown";
+
+    // Maximum version of the Across ConfigStore version that is supported.
+    // Operators should normally use the defaults here, but it can be overridden for testing.
+    // Warning: Possible loss of funds if this is misconfigured.
+    this.maxConfigVersion = Number(ACROSS_MAX_CONFIG_VERSION ?? Constants.CONFIG_STORE_VERSION);
+    assert(!isNaN(this.maxConfigVersion), `Invalid maximum config version: ${this.maxConfigVersion}`);
 
     this.blockRangeEndBlockBuffer = BLOCK_RANGE_END_BLOCK_BUFFER
       ? JSON.parse(BLOCK_RANGE_END_BLOCK_BUFFER)
