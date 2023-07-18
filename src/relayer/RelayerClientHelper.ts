@@ -1,4 +1,6 @@
+import assert from "assert";
 import winston from "winston";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import { Wallet } from "../utils";
 import { TokenClient, ProfitClient, BundleDataClient, InventoryClient, AcrossApiClient, UBAClient } from "../clients";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
@@ -105,20 +107,27 @@ export async function constructRelayerClients(
 
 export async function updateRelayerClients(clients: RelayerClients, config: RelayerConfig): Promise<void> {
   // SpokePoolClient client requires up to date HubPoolClient and ConfigStore client.
+  const { configStoreClient, spokePoolClients, ubaClient } = clients;
 
-  // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
-  // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
-  // having a "first run" update and then a "normal" update that considers this. see previous implementation here
-  // https://github.com/across-protocol/relayer-v2/pull/37/files#r883371256 as a reference.
-  await updateSpokePoolClients(clients.spokePoolClients, [
-    "FundsDeposited",
-    "RequestedSpeedUpDeposit",
-    "FilledRelay",
-    "RefundRequested",
-    "EnabledDepositRoute",
-    "RelayedRootBundle",
-    "ExecutedRelayerRefundRoot",
-  ]);
+  await configStoreClient.update();
+  const version = configStoreClient.getConfigStoreVersionForTimestamp();
+  if (sdkUtils.isUBA(version)) {
+    assert(configStoreClient.isValidConfigStoreVersion(version), "Relayer does not support UBA transfers");
+    await ubaClient.update(undefined, true);
+  } else {
+    // TODO: the code below can be refined by grouping with promise.all. however you need to consider the inter
+    // dependencies of the clients. some clients need to be updated before others. when doing this refactor consider
+    // having a "first run" update and then a "normal" update that considers this. see previous implementation here
+    // https://github.com/across-protocol/relayer-v2/pull/37/files#r883371256 as a reference.
+    await updateSpokePoolClients(spokePoolClients, [
+      "FundsDeposited",
+      "RequestedSpeedUpDeposit",
+      "FilledRelay",
+      "EnabledDepositRoute",
+      "RelayedRootBundle",
+      "ExecutedRelayerRefundRoot",
+    ]);
+  }
 
   // Update the token client first so that inventory client has latest balances.
 
