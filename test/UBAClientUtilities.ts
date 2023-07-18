@@ -137,7 +137,13 @@ describe("UBAClientUtilities", function () {
     it("No bundles", async function () {
       // Should throw an error that we're trying to load more bundle states than are available
       expect(() =>
-      getMostRecentBundleBlockRanges(chainIds[0], 1, Number(hubPoolClient.latestBlockNumber), hubPoolClient, spokePoolClients)
+        getMostRecentBundleBlockRanges(
+          chainIds[0],
+          1,
+          Number(hubPoolClient.latestBlockNumber),
+          hubPoolClient,
+          spokePoolClients
+        )
       ).to.throw(`No validated root bundle found before hubpool block ${hubPoolClient.latestBlockNumber}`);
     });
     it("Correctly returns n most recent validated bundles", async function () {
@@ -180,7 +186,13 @@ describe("UBAClientUtilities", function () {
       // Create block ranges that end at block heights much larger than last spoke pool client blocks searched.
       await publishValidatedBundles(3, 10_000_000);
       expect(() =>
-      getMostRecentBundleBlockRanges(chainIds[0], 1, Number(hubPoolClient.latestBlockNumber), hubPoolClient, spokePoolClients)
+        getMostRecentBundleBlockRanges(
+          chainIds[0],
+          1,
+          Number(hubPoolClient.latestBlockNumber),
+          hubPoolClient,
+          spokePoolClients
+        )
       ).to.throw(/Spoke pool clients do not have the block ranges necessary/);
     });
   });
