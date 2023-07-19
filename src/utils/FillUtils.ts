@@ -1,5 +1,5 @@
 import assert from "assert";
-import { ConfigStoreClient, HubPoolClient } from "../clients";
+import { HubPoolClient } from "../clients";
 import { DepositWithBlock, Fill, FillsToRefund, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
 import { getBlockForTimestamp, queryHistoricalDepositForFill } from "../utils";
 import {
@@ -76,19 +76,29 @@ export function updateTotalRefundAmount(
   if (fill.updatableRelayData.isSlowRelay) {
     return;
   }
-  const refundObj = fillsToRefund[chainToSendRefundTo][repaymentToken];
   const refund = getRefundForFills([fill]);
-  refundObj.totalRefundAmount = refundObj.totalRefundAmount ? refundObj.totalRefundAmount.add(refund) : refund;
+  updateTotalRefundAmountRaw(fillsToRefund, refund, chainToSendRefundTo, fill.relayer, repaymentToken);
+}
+
+export function updateTotalRefundAmountRaw(
+  fillsToRefund: FillsToRefund,
+  amount: BigNumber,
+  chainToSendRefundTo: number,
+  recipient: string,
+  repaymentToken: string
+): void {
+  const refundObj = fillsToRefund[chainToSendRefundTo][repaymentToken];
+  refundObj.totalRefundAmount = refundObj.totalRefundAmount ? refundObj.totalRefundAmount.add(amount) : amount;
 
   // Instantiate dictionary if it doesn't exist.
   if (!refundObj.refunds) {
     assign(fillsToRefund, [chainToSendRefundTo, repaymentToken, "refunds"], {});
   }
 
-  if (refundObj.refunds[fill.relayer]) {
-    refundObj.refunds[fill.relayer] = refundObj.refunds[fill.relayer].add(refund);
+  if (refundObj.refunds[recipient]) {
+    refundObj.refunds[recipient] = refundObj.refunds[recipient].add(amount);
   } else {
-    refundObj.refunds[fill.relayer] = refund;
+    refundObj.refunds[recipient] = amount;
   }
 }
 
@@ -228,7 +238,7 @@ export type RelayerUnfilledDeposit = {
 // @returns Array of unfilled deposits.
 export async function getUnfilledDeposits(
   spokePoolClients: SpokePoolClientsByChain,
-  configStoreClient: ConfigStoreClient,
+  hubPoolClient: HubPoolClient,
   depositLookBack?: number
 ): Promise<RelayerUnfilledDeposit[]> {
   const unfilledDeposits: RelayerUnfilledDeposit[] = [];
@@ -262,7 +272,23 @@ export async function getUnfilledDeposits(
       const unfilledDepositsForDestinationChain = depositsForDestinationChain
         .filter((deposit) => deposit.blockNumber >= earliestBlockNumber)
         .map((deposit) => {
-          const version = configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
+          let version: number;
+          // To determine if the fill is a UBA fill, we need to check against the bundle start block that would contain
+          // this fill.
+          const bundleStartBlockContainingDeposit = hubPoolClient.getBundleStartBlockContainingBlock(
+            deposit.blockNumber,
+            deposit.originChainId,
+            hubPoolClient.latestBlockNumber
+          );
+          if (hubPoolClient.configStoreClient.isUbaBlock(bundleStartBlockContainingDeposit)) {
+            // Use version at start of bundle:
+            version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(
+              bundleStartBlockContainingDeposit
+            );
+          } else {
+            // Deposit is not a UBA deposit, so use version at deposit quote timestamp:
+            version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
+          }
           return { ...destinationClient.getValidUnfilledAmountForDeposit(deposit), deposit, version };
         });
       // Remove any deposits that have no unfilled amount and append the remaining deposits to unfilledDeposits array.

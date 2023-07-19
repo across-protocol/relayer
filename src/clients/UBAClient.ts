@@ -21,7 +21,7 @@ export class UBAClient extends clients.UBAClient {
   }
 
   async getFills(chainId: number, filter: SpokePoolFillFilter = {}): Promise<FillWithBlock[]> {
-    return getFills(chainId, this.spokePoolClients, filter);
+    return getFills(chainId, this.hubPoolClient, this.spokePoolClients, filter);
   }
 
   async getRefundRequests(chainId: number, filter: SpokePoolEventFilter = {}): Promise<RefundRequestWithBlock[]> {

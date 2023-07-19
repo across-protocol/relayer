@@ -8,12 +8,16 @@ import {
   sortEventsAscending,
   isDefined,
   buildPoolRebalanceLeafTree,
+  updateTotalRefundAmountRaw,
 } from "../utils";
 import { toBNWei, getFillsInRange, ZERO_ADDRESS } from "../utils";
 import {
   DepositWithBlock,
   FillsToRefund,
   FillWithBlock,
+  isUbaOutflow,
+  outflowIsFill,
+  outflowIsRefund,
   ProposedRootBundle,
   RootBundleRelayWithBlock,
   SlowFillLeaf,
@@ -381,14 +385,16 @@ export class Dataworker {
       };
     } else {
       const ubaClient = new UBAClient(
-        this.chainIdListForBundleEvaluationBlockNumbers,
+        // Infer enabled chains from constructed spoke pool clients.
+        Object.keys(spokePoolClients).map((chainId) => Number(chainId)),
         this.clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
         this.clients.hubPoolClient,
         spokePoolClients,
         this.logger
       );
       // TODO: Move this .update() to the Dataworker ClientHelper once we confirm it works.
-      await ubaClient.update({}, false);
+      await ubaClient.update(undefined, false);
+      return;
       const _rootBundleData = await this.UBA_proposeRootBundle(
         blockRangesForProposal,
         ubaClient,
@@ -602,7 +608,9 @@ export class Dataworker {
     const relayerRefundTree = this._UBA_buildRelayerRefundLeaves(
       fillsToRefund,
       poolRebalanceLeaves,
-      blockRangesForProposal
+      blockRangesForProposal,
+      enabledChainIds,
+      ubaClient
     );
 
     // Build SlowRelayRoot:
@@ -752,7 +760,9 @@ export class Dataworker {
   _UBA_buildRelayerRefundLeaves(
     fillsToRefund: FillsToRefund,
     poolRebalanceLeaves: PoolRebalanceLeaf[],
-    blockRanges: number[][]
+    blockRanges: number[][],
+    enabledChainIds: number[],
+    ubaClient: UBAClient
   ): { leaves: RelayerRefundLeaf[]; tree: MerkleTree<RelayerRefundLeaf> } {
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
     const mainnetBundleEndBlock = getBlockRangeForChain(
@@ -767,6 +777,43 @@ export class Dataworker {
       at: "Dataworker",
       message: `Time to load data from BundleDataClient: ${Date.now() - timerStart}ms`,
     });
+
+    // Go through all flows in range. For each outflow, add the refund balancing fee to the refund entry
+    // of the relayer.
+    for (const chainId of enabledChainIds) {
+      const blockRangeForChain = getBlockRangeForChain(
+        blockRanges,
+        Number(chainId),
+        this.chainIdListForBundleEvaluationBlockNumbers
+      );
+      for (const tokenSymbol of ubaClient.tokens) {
+        const flowsForChain = ubaClient.getModifiedFlows(
+          Number(chainId),
+          tokenSymbol,
+          blockRangeForChain[0],
+          blockRangeForChain[1]
+        );
+        flowsForChain.forEach(({ flow, relayerFee }) => {
+          if (isUbaOutflow(flow) && outflowIsFill(flow)) {
+            updateTotalRefundAmountRaw(
+              fillsToRefund,
+              relayerFee.relayerBalancingFee,
+              flow.destinationChainId,
+              flow.relayer,
+              flow.destinationToken
+            );
+          } else if (isUbaOutflow(flow) && outflowIsRefund(flow)) {
+            updateTotalRefundAmountRaw(
+              fillsToRefund,
+              relayerFee.relayerBalancingFee,
+              flow.repaymentChainId,
+              flow.relayer,
+              flow.refundToken
+            );
+          }
+        });
+      }
+    }
     const relayerRefundRoot = _buildRelayerRefundRoot(
       mainnetBundleEndBlock,
       fillsToRefund,
