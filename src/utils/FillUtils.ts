@@ -88,6 +88,9 @@ export function updateTotalRefundAmountRaw(
   recipient: string,
   repaymentToken: string
 ): void {
+  if (!fillsToRefund?.[chainToSendRefundTo]?.[repaymentToken]) {
+    assign(fillsToRefund, [chainToSendRefundTo, repaymentToken], {});
+  }
   const refundObj = fillsToRefund[chainToSendRefundTo][repaymentToken];
   refundObj.totalRefundAmount = refundObj.totalRefundAmount ? refundObj.totalRefundAmount.add(amount) : amount;
 

@@ -173,7 +173,8 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
   hubPoolClient: HubPoolClient,
   spokePoolClientsByChain: SpokePoolClientsByChain,
   allValidFills: interfaces.FillWithBlock[],
-  allValidFillsInRange: interfaces.FillWithBlock[]
+  allValidFillsInRange: interfaces.FillWithBlock[],
+  chainIdListForBundleEvaluationBlockNumbers: number[]
 ): Promise<AnyObject> {
   const excesses = {};
   // We need to subtract excess from any fills that might replaced a slow fill sent to the fill destination chain.
@@ -194,7 +195,8 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
             fill,
             allValidFills,
             hubPoolClient,
-            spokePoolClientsByChain
+            spokePoolClientsByChain,
+            chainIdListForBundleEvaluationBlockNumbers
           );
 
         // Now that we have the last fill sent in a previous root bundle that also sent a slow fill, we can compute
@@ -215,7 +217,8 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
         const rootBundleEndBlockContainingFullFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
           hubPoolClient.latestBlockNumber,
           fill.blockNumber,
-          fill.destinationChainId
+          fill.destinationChainId,
+          chainIdListForBundleEvaluationBlockNumbers
         );
         if (rootBundleEndBlockContainingFirstFill === rootBundleEndBlockContainingFullFill) {
           return;

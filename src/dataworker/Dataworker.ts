@@ -9,6 +9,7 @@ import {
   isDefined,
   buildPoolRebalanceLeafTree,
   updateTotalRefundAmountRaw,
+  _getFeeAmount,
 } from "../utils";
 import { toBNWei, getFillsInRange, ZERO_ADDRESS } from "../utils";
 import {
@@ -17,7 +18,6 @@ import {
   FillWithBlock,
   isUbaOutflow,
   outflowIsFill,
-  outflowIsRefund,
   ProposedRootBundle,
   RootBundleRelayWithBlock,
   SlowFillLeaf,
@@ -790,21 +790,17 @@ export class Dataworker {
           blockRangeForChain[1]
         );
         flowsForChain.forEach(({ flow, relayerFee }) => {
-          if (isUbaOutflow(flow) && outflowIsFill(flow)) {
+          // All flows in here are assumed to be valid, so we can use the flow's
+          // repayment chain to pay out the refund. But we need to check which
+          // token should be repaid in.
+          if (isUbaOutflow(flow)) {
+            const feeAmount = _getFeeAmount(flow.amount, relayerFee.relayerBalancingFee)
             updateTotalRefundAmountRaw(
               fillsToRefund,
-              relayerFee.relayerBalancingFee,
-              flow.destinationChainId,
-              flow.relayer,
-              flow.destinationToken
-            );
-          } else if (isUbaOutflow(flow) && outflowIsRefund(flow)) {
-            updateTotalRefundAmountRaw(
-              fillsToRefund,
-              relayerFee.relayerBalancingFee,
+              feeAmount,
               flow.repaymentChainId,
               flow.relayer,
-              flow.refundToken
+              outflowIsFill(flow) ? flow.destinationToken : flow.refundToken
             );
           }
         });
@@ -1164,7 +1160,7 @@ export class Dataworker {
         this.logger
       );
       // TODO: Move this .update() to the Dataworker ClientHelper once we confirm it works.
-      await ubaClient.update({}, false);
+      await ubaClient.update(undefined, false);
       const _rootBundleData = await this.UBA_proposeRootBundle(
         blockRangesImpliedByBundleEndBlocks,
         ubaClient,
@@ -1397,7 +1393,7 @@ export class Dataworker {
               this.logger
             );
             // TODO: Move this .update() to the Dataworker ClientHelper once we confirm it works.
-            await ubaClient.update({}, false);
+            await ubaClient.update(undefined, false);
             const _rootBundleData = await this.UBA_proposeRootBundle(blockNumberRanges, ubaClient, spokePoolClients);
             rootBundleData = {
               ..._rootBundleData,
@@ -2262,6 +2258,7 @@ export class Dataworker {
         unfilledDeposits,
         this.clients,
         spokePoolClients,
+        this.chainIdListForBundleEvaluationBlockNumbers,
         this.maxL1TokenCountOverride,
         this.tokenTransferThreshold,
         logSlowFillExcessData ? this.logger : undefined

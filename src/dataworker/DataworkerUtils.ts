@@ -324,6 +324,7 @@ export async function _buildPoolRebalanceRoot(
   unfilledDeposits: UnfilledDeposit[],
   clients: DataworkerClients,
   spokePoolClients: SpokePoolClientsByChain,
+  chainIdListForBundleEvaluationBlockNumbers: number[],
   maxL1TokenCountOverride: number | undefined,
   tokenTransferThreshold: BigNumberForToken,
   logger?: winston.Logger
@@ -358,7 +359,8 @@ export async function _buildPoolRebalanceRoot(
     clients.hubPoolClient,
     spokePoolClients,
     allValidFills,
-    allValidFillsInRange
+    allValidFillsInRange,
+    chainIdListForBundleEvaluationBlockNumbers
   );
   if (logger && Object.keys(fillsTriggeringExcesses).length > 0) {
     logger.debug({
