@@ -24,6 +24,12 @@ export class MockUBAConfig extends ubaFeeCalculator.UBAFeeConfig {
   setBalanceTriggerThreshold(chainId: number, token: string, threshold: ubaFeeCalculator.ThresholdBoundType): void {
     const chainTokenCombination = `${chainId}-${token}`;
     this.mockBalanceTriggerThreshold[chainTokenCombination] = threshold;
+    this.balanceTriggerThreshold[chainTokenCombination] = threshold;
+  }
+
+  setDefaultBalanceTriggerThreshold(threshold: ubaFeeCalculator.ThresholdBoundType): void {
+    this.mockBalanceTriggerThreshold.default = threshold;
+    this.balanceTriggerThreshold.default = threshold;
   }
 
   getBalanceTriggerThreshold(chainId: number, tokenSymbol: string): ubaFeeCalculator.ThresholdBoundType {
