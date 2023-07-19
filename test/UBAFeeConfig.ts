@@ -13,7 +13,6 @@ const hubPoolChainId = constants.HUBPOOL_CHAIN_ID;
 describe("UBAFeeConfig", async function () {
   beforeEach(async function () {
     originToken = randomAddress();
-
     config = new MockUBAConfig();
   });
   it("getUbaRewardMultiplier", async function () {
@@ -59,6 +58,7 @@ describe("UBAFeeConfig", async function () {
       expect(config.getTotalSpokeTargetBalanceForComputingLpFee(originToken)).to.equal(toBNWei("0"));
     });
   });
+
   describe("getBaselineFee", function () {
     it("No baseline fee exists. Use hardcoded zero", function () {
       expect(config.getBaselineFee(-5, -10)).to.equal(toBNWei("0"));
@@ -73,6 +73,7 @@ describe("UBAFeeConfig", async function () {
       expect(config.getBaselineFee(5, 10)).to.equal(toBNWei("101"));
     });
   });
+
   describe("getBalanceTriggerThreshold", function () {
     const chainId = 1;
     const tokenSymbol = "ETH";
@@ -80,13 +81,13 @@ describe("UBAFeeConfig", async function () {
       config.setDefaultBalanceTriggerThreshold({
         upperBound: {},
         lowerBound: {
-          threshold: toBNWei("100_000"),
+          threshold: toBNWei("100000"),
         },
       });
       expect(config.getBalanceTriggerThreshold(chainId, tokenSymbol + "Wrong")).to.be.deep.equal({
         upperBound: {},
         lowerBound: {
-          threshold: toBNWei("100_000"),
+          threshold: toBNWei("100000"),
         },
       });
     });
@@ -103,6 +104,41 @@ describe("UBAFeeConfig", async function () {
         },
         lowerBound: {},
       });
+    });
+  });
+
+  describe("getLpGammaFunctionTuples", function () {
+    it("No lp gamma function tuples exist. Use default", function () {
+      config.setDefaultLpGammaFunctionTuples([[toBNWei("100"), toBNWei("100")]]);
+      expect(config.getLpGammaFunctionTuples(2)).to.be.deep.equal([[toBNWei("100"), toBNWei("100")]]);
+    });
+    it("Should defer to a specific fee if that is defined", function () {
+      config.setLpGammaFunctionTuples(2, [[toBNWei("100"), toBNWei("100")]]);
+      expect(config.getLpGammaFunctionTuples(2)).to.be.deep.equal([[toBNWei("100"), toBNWei("100")]]);
+    });
+  });
+
+  describe("getBalancingFeeTuples", function () {
+    it("No balancing fee tuples exist. Use default", function () {
+      config.setDefaultBalancingFeeTuple([[toBNWei("100"), toBNWei("100")]]);
+      expect(config.getBalancingFeeTuples(2)).to.be.deep.equal([[toBNWei("100"), toBNWei("100")]]);
+    });
+    it("Should defer to a specific fee if that is defined", function () {
+      config.setBalancingFeeTuple(2, [[toBNWei("100"), toBNWei("100")]]);
+      expect(config.getBalancingFeeTuples(2)).to.be.deep.equal([[toBNWei("100"), toBNWei("100")]]);
+    });
+  });
+
+  describe("getTargetBalance", function () {
+    const chainId = 1;
+    const tokenSymbol = "ETH";
+    it("No target balance exists. Use default", function () {
+      config.setDefaultTargetBalance(toBNWei("100"));
+      expect(config.getTargetBalance(chainId, tokenSymbol)).to.be.deep.equal(toBNWei("100"));
+    });
+    it("Should defer to a specific fee if that is defined", function () {
+      config.setTargetBalance(chainId, tokenSymbol, toBNWei("100"));
+      expect(config.getTargetBalance(chainId, tokenSymbol)).to.be.deep.equal(toBNWei("100"));
     });
   });
 });

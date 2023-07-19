@@ -3,7 +3,11 @@ import { BigNumber, toBN, toBNWei } from "../utils";
 
 export class MockUBAConfig extends ubaFeeCalculator.UBAFeeConfig {
   public readonly mockBalanceTriggerThreshold: Record<string, ubaFeeCalculator.ThresholdBoundType> = {};
+  public mockBalanceTriggerThresholdDefault: ubaFeeCalculator.ThresholdBoundType;
   public readonly mockBalancingFeeTuple: Record<number, ubaFeeCalculator.FlowTupleParameters> = {};
+  public mockBalancingFeeTupleDefault: ubaFeeCalculator.FlowTupleParameters;
+  public readonly mockTargetBalance: Record<string, BigNumber> = {};
+  public mockTargetBalanceDefault: BigNumber;
 
   constructor() {
     super(
@@ -28,14 +32,27 @@ export class MockUBAConfig extends ubaFeeCalculator.UBAFeeConfig {
   }
 
   setDefaultBalanceTriggerThreshold(threshold: ubaFeeCalculator.ThresholdBoundType): void {
-    this.mockBalanceTriggerThreshold.default = threshold;
+    this.mockBalanceTriggerThresholdDefault = threshold;
     this.balanceTriggerThreshold.default = threshold;
+  }
+
+  setLpGammaFunctionTuples(chainId: number, flowCurve: ubaFeeCalculator.FlowTupleParameters): void {
+    this.lpGammaFunction.override = {
+      ...(this.lpGammaFunction.override ?? {}),
+      [chainId]: flowCurve,
+    };
+  }
+
+  setDefaultLpGammaFunctionTuples(flowCurve: ubaFeeCalculator.FlowTupleParameters): void {
+    this.lpGammaFunction.default = flowCurve;
   }
 
   getBalanceTriggerThreshold(chainId: number, tokenSymbol: string): ubaFeeCalculator.ThresholdBoundType {
     const chainTokenCombination = `${chainId}-${tokenSymbol}`;
     return (
-      this.mockBalanceTriggerThreshold[chainTokenCombination] ?? super.getBalanceTriggerThreshold(chainId, tokenSymbol)
+      this.mockBalanceTriggerThreshold[chainTokenCombination] ??
+      this.mockBalanceTriggerThresholdDefault ??
+      super.getBalanceTriggerThreshold(chainId, tokenSymbol)
     );
   }
 
@@ -43,8 +60,14 @@ export class MockUBAConfig extends ubaFeeCalculator.UBAFeeConfig {
     this.mockBalancingFeeTuple[chainId] = flowCurve;
   }
 
+  setDefaultBalancingFeeTuple(flowCurve: ubaFeeCalculator.FlowTupleParameters): void {
+    this.mockBalancingFeeTupleDefault = flowCurve;
+  }
+
   getBalancingFeeTuples(chainId: number): ubaFeeCalculator.FlowTupleParameters {
-    return this.mockBalancingFeeTuple[chainId] ?? super.getBalancingFeeTuples(chainId);
+    return (
+      this.mockBalancingFeeTuple[chainId] ?? this.mockBalancingFeeTupleDefault ?? super.getBalancingFeeTuples(chainId)
+    );
   }
 
   setBaselineFee(originChainId: number, destinationChainId: number, fee: BigNumber, isDefault?: boolean): void {
@@ -57,5 +80,21 @@ export class MockUBAConfig extends ubaFeeCalculator.UBAFeeConfig {
       };
     }
     this.baselineFee[isDefault ? "default" : `${originChainId}-${destinationChainId}`] = fee;
+  }
+
+  setTargetBalance(chainId: number, tokenSymbol: string, target: BigNumber): void {
+    this.mockTargetBalance[`${chainId}-${tokenSymbol}`] = target;
+  }
+
+  setDefaultTargetBalance(target: BigNumber): void {
+    this.mockTargetBalanceDefault = target;
+  }
+
+  getTargetBalance(chainId: number, tokenSymbol: string): BigNumber {
+    return (
+      this.mockTargetBalance[`${chainId}-${tokenSymbol}`] ??
+      this.mockTargetBalanceDefault ??
+      super.getTargetBalance(chainId, tokenSymbol)
+    );
   }
 }
