@@ -13,6 +13,7 @@ import {
   sortEventsAscending,
 } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
+import { clients } from "@across-protocol/sdk-v2";
 
 export function getRefundInformationFromFill(
   fill: Fill,
@@ -133,8 +134,7 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
   fill: FillWithBlock,
   allValidFills: FillWithBlock[],
   hubPoolClient: HubPoolClient,
-  spokePoolClientsByChain: SpokePoolClientsByChain,
-  chainIdListForBundleEvaluationBlockNumbers: number[]
+  spokePoolClientsByChain: SpokePoolClientsByChain
 ): Promise<{
   lastMatchingFillInSameBundle: FillWithBlock;
   rootBundleEndBlockContainingFirstFill: number;
@@ -187,8 +187,7 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
   const rootBundleEndBlockContainingFirstFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
     latestMainnetBlock,
     firstFillForSameDeposit.blockNumber,
-    firstFillForSameDeposit.destinationChainId,
-    chainIdListForBundleEvaluationBlockNumbers
+    firstFillForSameDeposit.destinationChainId
   );
   // Using bundle block number for chain from ProposeRootBundleEvent, find latest fill in the root bundle.
   let lastMatchingFillInSameBundle: FillWithBlock;
@@ -280,7 +279,7 @@ export async function getUnfilledDeposits(
             deposit.originChainId,
             hubPoolClient.latestBlockNumber
           );
-          if (hubPoolClient.configStoreClient.isUbaBlock(bundleStartBlockContainingDeposit)) {
+          if (clients.isUbaBlock(bundleStartBlockContainingDeposit, hubPoolClient.configStoreClient)) {
             // Use version at start of bundle:
             version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(
               bundleStartBlockContainingDeposit
@@ -298,13 +297,13 @@ export async function getUnfilledDeposits(
 
   // If the config store version is up to date, then we can return the unfilled deposits as is. Otherwise, we need to
   // make sure we have a high enough version for each deposit.
-  if (configStoreClient.hasLatestConfigStoreVersion) {
+  if (hubPoolClient.configStoreClient.hasLatestConfigStoreVersion) {
     return unfilledDeposits;
   } else {
     return unfilledDeposits.map((unfilledDeposit) => {
       return {
         ...unfilledDeposit,
-        requiresNewConfigStoreVersion: !configStoreClient.hasValidConfigStoreVersionForTimestamp(
+        requiresNewConfigStoreVersion: !hubPoolClient.configStoreClient.hasValidConfigStoreVersionForTimestamp(
           unfilledDeposit.deposit.quoteTimestamp
         ),
       };

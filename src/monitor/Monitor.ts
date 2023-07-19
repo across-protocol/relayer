@@ -183,7 +183,7 @@ export class Monitor {
   async reportUnfilledDeposits(): Promise<void> {
     const unfilledDeposits = await getUnfilledDeposits(
       this.clients.spokePoolClients,
-      this.clients.configStoreClient,
+      this.clients.hubPoolClient,
       this.monitorConfig.maxRelayerLookBack
     );
 

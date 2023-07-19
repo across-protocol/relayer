@@ -394,7 +394,6 @@ export class Dataworker {
       );
       // TODO: Move this .update() to the Dataworker ClientHelper once we confirm it works.
       await ubaClient.update(undefined, false);
-      return;
       const _rootBundleData = await this.UBA_proposeRootBundle(
         blockRangesForProposal,
         ubaClient,
@@ -722,10 +721,7 @@ export class Dataworker {
           const closingRunningBalance = flowsForChain[flowsForChain.length - 1].runningBalance;
           const closingIncentiveBalance = flowsForChain[flowsForChain.length - 1].incentiveBalance;
           const bundleLpFees = flowsForChain.reduce((sum, flow) => sum.add(flow.systemFee.lpFee), BigNumber.from(0));
-          const netSendAmount = flowsForChain.reduce(
-            (sum, flow) => sum.add(flow.netRunningBalanceAdjustment),
-            BigNumber.from(0)
-          );
+          const netSendAmount = flowsForChain[flowsForChain.length - 1].netRunningBalanceAdjustment;
           poolRebalanceLeafData.runningBalances[chainId][l1TokenAddress] = closingRunningBalance;
           poolRebalanceLeafData.bundleLpFees[chainId][l1TokenAddress] = bundleLpFees;
           poolRebalanceLeafData.incentivePoolBalances[chainId][l1TokenAddress] = closingIncentiveBalance;
@@ -2266,7 +2262,6 @@ export class Dataworker {
         unfilledDeposits,
         this.clients,
         spokePoolClients,
-        this.chainIdListForBundleEvaluationBlockNumbers,
         this.maxL1TokenCountOverride,
         this.tokenTransferThreshold,
         logSlowFillExcessData ? this.logger : undefined

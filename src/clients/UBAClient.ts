@@ -4,8 +4,7 @@ import { FillWithBlock, RefundRequestWithBlock } from "../interfaces";
 import { HubPoolClient } from "./HubPoolClient";
 import { SpokePoolClient } from "./SpokePoolClient";
 
-const { getFills, getRefundRequests } = clients;
-type SpokePoolEventFilter = clients.SpokePoolEventFilter;
+const { getValidFillCandidates, getValidRefundCandidates } = clients;
 type SpokePoolFillFilter = clients.SpokePoolFillFilter;
 
 export class UBAClient extends clients.UBAClient {
@@ -21,10 +20,10 @@ export class UBAClient extends clients.UBAClient {
   }
 
   async getFills(chainId: number, filter: SpokePoolFillFilter = {}): Promise<FillWithBlock[]> {
-    return getFills(chainId, this.hubPoolClient, this.spokePoolClients, filter);
+    return getValidFillCandidates(chainId, this.hubPoolClient, this.spokePoolClients, filter);
   }
 
-  async getRefundRequests(chainId: number, filter: SpokePoolEventFilter = {}): Promise<RefundRequestWithBlock[]> {
-    return getRefundRequests(chainId, this.hubPoolClient, this.spokePoolClients, filter);
+  async getRefundRequests(chainId: number, filter: SpokePoolFillFilter = {}): Promise<RefundRequestWithBlock[]> {
+    return getValidRefundCandidates(chainId, this.hubPoolClient, this.spokePoolClients, filter);
   }
 }
