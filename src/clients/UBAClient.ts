@@ -20,6 +20,12 @@ export class UBAClient extends clients.UBAClient {
     super(chainIdIndices, tokenSymbols, hubPoolClient, spokePoolClients, maxBundleStates, logger);
   }
 
+  override async update(state: { [chainId: number]: clients.UBAChainState }, forceClientRefresh?: boolean): Promise<void> {
+    this.logger.debug({ at: "UBAClient::update", message: "Updating UBA client." });
+    await super.update(state, forceClientRefresh);
+    return;
+  }
+
   async getFills(chainId: number, filter: SpokePoolFillFilter = {}): Promise<FillWithBlock[]> {
     return getFills(chainId, this.hubPoolClient, this.spokePoolClients, filter);
   }
