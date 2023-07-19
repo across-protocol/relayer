@@ -73,4 +73,36 @@ describe("UBAFeeConfig", async function () {
       expect(config.getBaselineFee(5, 10)).to.equal(toBNWei("101"));
     });
   });
+  describe("getBalanceTriggerThreshold", function () {
+    const chainId = 1;
+    const tokenSymbol = "ETH";
+    it("No balance trigger threshold exists. Use default", function () {
+      config.setDefaultBalanceTriggerThreshold({
+        upperBound: {},
+        lowerBound: {
+          threshold: toBNWei("100_000"),
+        },
+      });
+      expect(config.getBalanceTriggerThreshold(chainId, tokenSymbol + "Wrong")).to.be.deep.equal({
+        upperBound: {},
+        lowerBound: {
+          threshold: toBNWei("100_000"),
+        },
+      });
+    });
+    it("Should defer to a specific fee if that is defined", function () {
+      config.setBalanceTriggerThreshold(chainId, tokenSymbol, {
+        upperBound: {
+          target: toBNWei("100"),
+        },
+        lowerBound: {},
+      });
+      expect(config.getBalanceTriggerThreshold(chainId, tokenSymbol)).to.be.deep.equal({
+        upperBound: {
+          target: toBNWei("100"),
+        },
+        lowerBound: {},
+      });
+    });
+  });
 });
