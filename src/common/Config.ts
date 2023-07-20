@@ -38,6 +38,8 @@ export class CommonConfig {
       ACROSS_MAX_CONFIG_VERSION,
     } = env;
 
+    // This should really not be changed unless we're on Testnet as a lot depends on the order of these
+    // indices. If anything, add chains to this list.
     this.chainIdListIndices = CHAIN_ID_LIST_OVERRIDE
       ? JSON.parse(CHAIN_ID_LIST_OVERRIDE)
       : Constants.CHAIN_ID_LIST_INDICES;

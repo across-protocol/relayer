@@ -440,6 +440,7 @@ describe("HubPoolClient: RootBundle Events", async function () {
         if (version != DEFAULT_CONFIG_STORE_VERSION) {
           // Apply a new version in the configStore.
           configStoreClient.updateGlobalConfig("VERSION", `${version}`);
+          configStoreClient.setConfigStoreVersion(version);
         }
         await configStoreClient.update();
 

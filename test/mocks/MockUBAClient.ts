@@ -1,7 +1,7 @@
-import { clients } from "@across-protocol/sdk-v2";
+import { clients, interfaces } from "@across-protocol/sdk-v2";
 import { UBAClient } from "../../src/clients";
 import { BigNumber, toBN } from "../utils";
-import { UBABalancingFee, UBASystemFee } from "../../src/interfaces";
+import { UBASystemFee } from "../../src/interfaces";
 
 // Adds functions to MockHubPoolClient to facilitate Dataworker unit testing.
 export class MockUBAClient extends UBAClient {
@@ -13,17 +13,7 @@ export class MockUBAClient extends UBAClient {
     this.balancingFees[chainId] = fee;
   }
 
-  computeBalancingFee(
-    _spokePoolToken: string,
-    _amount: BigNumber,
-    _hubPoolBlockNumber: number,
-    chainId: number,
-    feeType: clients.UBAActionType
-  ): UBABalancingFee {
-    return { balancingFee: this.getBalancingFee(chainId), actionType: feeType };
-  }
-
-  getBalancingFee(chainId: number): BigNumber {
+  _getBalancingFee(chainId: number): BigNumber {
     return this.balancingFees[chainId] ?? toBN(0);
   }
 
@@ -31,40 +21,29 @@ export class MockUBAClient extends UBAClient {
     this.lpFees[chainId] = fee;
   }
 
-  /* eslint-disable @typescript-eslint/no-unused-vars */
-  computeLpFee(
-    _hubPoolBlockNumber: number,
-    depositChainId: number,
-    _refundChainId: number,
-    _tokenSymbol: string
-  ): BigNumber {
-    return this.getLpFee(depositChainId);
+  _computeLpFee(chain: number): BigNumber {
+    return this.lpFees[chain] ?? toBN(0);
   }
 
-  getLpFee(chainId: number): BigNumber {
-    return this.lpFees[chainId] ?? toBN(0);
+  computeFeesForDeposit(deposit: interfaces.UbaInflow): {
+    systemFee: UBASystemFee;
+    relayerFee: clients.RelayerFeeResult;
+  } {
+    const lpFee = this._computeLpFee(deposit.originChainId);
+    const depositBalancingFee = this._getBalancingFee(deposit.originChainId);
+    const relayerBalancingFee = this._getBalancingFee(deposit.destinationChainId);
+    return {
+      systemFee: {
+        systemFee: lpFee.add(depositBalancingFee),
+        lpFee,
+        depositBalancingFee,
+      },
+      relayerFee: {
+        relayerBalancingFee,
+      },
+    };
   }
 
-  computeSystemFee(
-    hubPoolBlockNumber: number,
-    amount: BigNumber,
-    depositChainId: number,
-    destinationChainId: number,
-    tokenSymbol: string
-  ): UBASystemFee {
-    const lpFee = this.computeLpFee(hubPoolBlockNumber, depositChainId, destinationChainId, tokenSymbol);
-
-    const { balancingFee: depositBalancingFee } = this.computeBalancingFee(
-      tokenSymbol,
-      amount,
-      hubPoolBlockNumber,
-      depositChainId,
-      clients.UBAActionType.Deposit
-    );
-    const systemFee = lpFee.add(depositBalancingFee);
-
-    return { lpFee, depositBalancingFee, systemFee };
-  }
   setFlows(chainId: number, token: string, modifiedFlows: clients.ModifiedUBAFlow[]): void {
     if (!this.flows[chainId]) {
       this.flows[chainId] = {};

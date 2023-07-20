@@ -45,6 +45,7 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     } = await deploySpokePoolWithToken(destinationChainId, originChainId));
     ({ hubPool, l1Token_1: l1Token } = await deployAndConfigureHubPool(owner, [
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
+      { l2ChainId: originChainId, spokePool: spokePool_1 },
     ]));
 
     await enableRoutesOnHubPool(hubPool, [
