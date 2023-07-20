@@ -392,7 +392,7 @@ export class Dataworker {
       );
       // TODO: Move this .update() to the Dataworker ClientHelper once we confirm it works.
       await ubaClient.update(undefined, false);
-      console.log(`UBA CLIENT UPDATED`)
+      console.log("UBA CLIENT UPDATED");
       return;
       const _rootBundleData = await this.UBA_proposeRootBundle(
         blockRangesForProposal,
