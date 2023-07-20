@@ -18,7 +18,7 @@ import {
 
 type EventSearchConfig = sdkUtils.EventSearchConfig;
 
-const { getFills, getRefundRequests } = clients;
+const { getValidFillCandidates, getValidRefundCandidates } = clients;
 
 let owner: SignerWithAddress;
 let chainIds: number[];
@@ -142,31 +142,32 @@ describe("SpokePoolClient: Event Filtering", async function () {
 
     for (let idx = 0; idx < 10; ++idx) {
       const { fill } = await generateValidRefundRequest(
-        idx === 0 ? repaymentSpokePoolClient : originSpokePoolClient, // Add one random originChainId for filtering.
-        destinationSpokePoolClient
+        originSpokePoolClient,
+        destinationSpokePoolClient,
+        idx === 0 ? repaymentSpokePoolClient : destinationSpokePoolClient // Add one random repaymentChainId for filtering.
       );
       fillEvents.push(fill);
     }
 
     // Should receive _all_ fills submitted on destinationChainId.
-    let fills = await getFills(destinationChainId, spokePoolClients);
+    let fills = await getValidFillCandidates(destinationChainId, hubPoolClient, spokePoolClients);
     expect(fills.length).to.equal(fillEvents.length);
 
     // Take the field from the last event and filter on it.
     // Should only get one event in response.
-    for (const field of ["originChainId", "relayer", "fromBlock"]) {
+    for (const field of ["repaymentChainId", "relayer", "fromBlock"]) {
       let sampleEvent = fillEvents.slice(-1)[0];
       let filter = { [field]: sampleEvent[field] };
 
-      if (field === "originChainId") {
+      if (field === "repaymentChainId") {
         // originChainId is the first event in the array.
-        sampleEvent = fillEvents.find(({ originChainId }) => originChainId === repaymentChainId) as FillWithBlock;
+        sampleEvent = fillEvents.find(({ repaymentChainId }) => repaymentChainId === repaymentChainId) as FillWithBlock;
         filter = { [field]: repaymentChainId };
       } else if (field === "fromBlock") {
         filter = { [field]: sampleEvent.blockNumber };
       }
 
-      fills = await getFills(destinationChainId, spokePoolClients, filter);
+      fills = await getValidFillCandidates(destinationChainId, hubPoolClient, spokePoolClients, filter);
       expect(fills.length).to.equal(1);
 
       if (field === "fromBlock") {
@@ -185,46 +186,24 @@ describe("SpokePoolClient: Event Filtering", async function () {
     const refundRequestEvents: RefundRequestWithBlock[] = [];
     for (let idx = 0; idx < 10; ++idx) {
       const { refundRequest } = await generateValidRefundRequest(
-        idx === 0 ? repaymentSpokePoolClient : originSpokePoolClient, // Add one random originChainId for filtering.
+        originSpokePoolClient,
         destinationSpokePoolClient,
-        repaymentSpokePoolClient
+        idx === 0 ? originSpokePoolClient : repaymentSpokePoolClient // Add one random originChainId for filtering.
       );
       refundRequestEvents.push(refundRequest as RefundRequestWithBlock);
     }
 
-    // Swap origin and destination SpokePoolClients for additional filtering.
-    const { refundRequest } = await generateValidRefundRequest(
-      destinationSpokePoolClient,
-      originSpokePoolClient,
-      repaymentSpokePoolClient
-    );
-    refundRequestEvents.push(refundRequest as RefundRequestWithBlock);
-
-    // Should receive _all_ fills submitted on destinationChainId.
-    let refundRequests = await getRefundRequests(repaymentChainId, hubPoolClient, spokePoolClients);
-    expect(refundRequests.length).to.equal(refundRequestEvents.length);
+    // Should receive _all_ refunds sent on repayment chain.
+    let refundRequests = await getValidRefundCandidates(repaymentChainId, hubPoolClient, spokePoolClients);
+    expect(refundRequests.length).to.equal(refundRequestEvents.length - 1);
 
     // Take the field from the last event and filter on it.
     // Should only get one event in response.
-    for (const field of ["originChainId", "destinationChainId", "relayer", "fromBlock"]) {
-      let sampleEvent = refundRequestEvents.slice(-1)[0];
-      let filter = { [field]: sampleEvent[field] };
+    for (const field of ["fromBlock"]) {
+      const sampleEvent = refundRequestEvents.slice(-1)[0];
+      const filter = { [field]: sampleEvent.blockNumber };
 
-      if (field === "originChainId") {
-        sampleEvent = refundRequestEvents.find(
-          ({ originChainId }) => originChainId === repaymentChainId
-        ) as RefundRequestWithBlock;
-        filter = { [field]: repaymentChainId };
-      } else if (field === "destinationChainId") {
-        sampleEvent = refundRequestEvents.find(
-          ({ destinationChainId }) => destinationChainId === originChainId
-        ) as RefundRequestWithBlock;
-        filter = { [field]: originChainId };
-      } else if (field === "fromBlock") {
-        filter = { [field]: sampleEvent.blockNumber };
-      }
-
-      refundRequests = await getRefundRequests(repaymentChainId, hubPoolClient, spokePoolClients, filter);
+      refundRequests = await getValidRefundCandidates(repaymentChainId, hubPoolClient, spokePoolClients, filter);
       expect(refundRequests.length).to.equal(1);
 
       if (field === "fromBlock") {
