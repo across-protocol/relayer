@@ -12,7 +12,7 @@ import { CHAIN_ID_TEST_LIST, expect, toBN } from "./constants";
 import { SpokePoolClientsByChain } from "../src/interfaces";
 import { clients } from "@across-protocol/sdk-v2";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
-import { CHAIN_ID_LIST_INDICES, UBA_MIN_CONFIG_STORE_VERSION } from "../src/common";
+import { UBA_MIN_CONFIG_STORE_VERSION } from "../src/common";
 const { getMostRecentBundleBlockRanges, getUbaActivationBundleStartBlocks } = clients;
 
 let hubPoolClient: MockHubPoolClient;

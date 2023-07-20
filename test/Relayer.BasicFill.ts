@@ -8,13 +8,11 @@ import {
   setupTokensForWallet,
   getLastBlockTime,
   buildDeposit,
-  assertPromiseError,
 } from "./utils";
 import { lastSpyLogIncludes, createSpyLogger, deployConfigStore, deployAndConfigureHubPool, winston } from "./utils";
 import { deploySpokePoolWithToken, enableRoutesOnHubPool, destinationChainId } from "./utils";
 import { originChainId, sinon, toBNWei } from "./utils";
 import {
-  CHAIN_ID_TEST_LIST,
   amountToLp,
   defaultMinDepositConfirmations,
   defaultTokenConfig,
@@ -36,7 +34,6 @@ import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 import { Deposit } from "../src/interfaces";
-import { MockConfigStoreClient } from "@across-protocol/sdk-v2/dist/clients/mocks";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let hubPool: Contract, configStore: Contract, l1Token: Contract;
