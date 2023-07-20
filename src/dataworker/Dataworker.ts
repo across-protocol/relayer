@@ -794,7 +794,7 @@ export class Dataworker {
           // repayment chain to pay out the refund. But we need to check which
           // token should be repaid in.
           if (isUbaOutflow(flow)) {
-            const feeAmount = _getFeeAmount(flow.amount, relayerFee.relayerBalancingFee)
+            const feeAmount = _getFeeAmount(flow.amount, relayerFee.relayerBalancingFee);
             updateTotalRefundAmountRaw(
               fillsToRefund,
               feeAmount,
