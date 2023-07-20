@@ -73,3 +73,4 @@ export type UBASystemFee = clients.SystemFeeResult;
 export const isUbaInflow = interfaces.isUbaInflow;
 export const isUbaOutflow = interfaces.isUbaOutflow;
 export const outflowIsFill = interfaces.outflowIsFill;
+export const outflowIsRefund = interfaces.outflowIsRefund;

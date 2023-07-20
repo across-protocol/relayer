@@ -25,7 +25,14 @@ import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_L
 import { refundProposalLiveness, CHAIN_ID_TEST_LIST } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import { Deposit, Fill, RunningBalances } from "../src/interfaces";
-import { getRealizedLpFeeForFills, getRefundForFills, getRefund, EMPTY_MERKLE_ROOT, winston } from "../src/utils";
+import {
+  getRealizedLpFeeForFills,
+  getRefundForFills,
+  getRefund,
+  EMPTY_MERKLE_ROOT,
+  winston,
+  _getFeeAmount,
+} from "../src/utils";
 import { compareAddresses } from "../src/utils";
 
 // Tested
@@ -1494,7 +1501,9 @@ describe("Dataworker: Build merkle roots", async function () {
             await dataworkerInstance._UBA_buildRelayerRefundLeaves(
               data1.fillsToRefund,
               poolRebalanceLeaves,
-              getDefaultBlockRange(0)
+              getDefaultBlockRange(0),
+              [originChainId, destinationChainId],
+              ubaClient
             )
           ).leaves
         ).to.deep.equal([]);
@@ -1552,7 +1561,9 @@ describe("Dataworker: Build merkle roots", async function () {
         const relayerRefundLeaves1 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
           data2.fillsToRefund,
           poolRebalanceLeaves,
-          getDefaultBlockRange(1)
+          getDefaultBlockRange(1),
+          [originChainId, destinationChainId],
+          ubaClient
         );
         expect(relayerRefundLeaves1.leaves.length).to.equal(1);
         deepEqualsWithBigNumber(relayerRefundLeaves1.leaves[0], { ...leaf1, leafId: 0 });
@@ -1589,7 +1600,9 @@ describe("Dataworker: Build merkle roots", async function () {
         const relayerRefundLeaves3 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
           data4.fillsToRefund,
           poolRebalanceLeaves,
-          getDefaultBlockRange(3)
+          getDefaultBlockRange(3),
+          [originChainId, destinationChainId],
+          ubaClient
         );
         expect(relayerRefundLeaves3.leaves.length).to.equal(2);
 
@@ -1624,6 +1637,7 @@ describe("Dataworker: Build merkle roots", async function () {
           {
             flow: {
               ...spokePoolClient_1.getFills()[0],
+              matchedDeposit: spokePoolClient_2.getDeposits()[0],
             },
             systemFee: {
               lpFee: BigNumber.from(0),
@@ -1675,7 +1689,9 @@ describe("Dataworker: Build merkle roots", async function () {
         const relayerRefundLeaves1 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
           {},
           poolRebalanceLeaves,
-          blockRanges
+          blockRanges,
+          [originChainId],
+          ubaClient
         );
         expect(relayerRefundLeaves1.leaves.length).to.equal(1);
         deepEqualsWithBigNumber(relayerRefundLeaves1.leaves[0], { ...leaf1, leafId: 0 });
@@ -1730,7 +1746,9 @@ describe("Dataworker: Build merkle roots", async function () {
         const relayerRefundLeaves2 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
           data1.fillsToRefund,
           poolRebalanceLeaves,
-          getDefaultBlockRange(1)
+          getDefaultBlockRange(1),
+          [originChainId],
+          ubaClient
         );
         expect(relayerRefundLeaves2.leaves.length).to.equal(2);
         deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[0], { ...newLeaf1, leafId: 0 });
@@ -1777,7 +1795,9 @@ describe("Dataworker: Build merkle roots", async function () {
         const relayerRefundLeaves1 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
           data1.fillsToRefund,
           poolRebalanceLeaves,
-          getDefaultBlockRange(1)
+          getDefaultBlockRange(1),
+          [originChainId],
+          ubaClient
         );
         expect(relayerRefundLeaves1.leaves.length).to.equal(0);
 
@@ -1792,7 +1812,9 @@ describe("Dataworker: Build merkle roots", async function () {
         const relayerRefundLeaves2 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
           data2.fillsToRefund,
           poolRebalanceLeaves,
-          getDefaultBlockRange(2)
+          getDefaultBlockRange(2),
+          [originChainId],
+          ubaClient
         );
         const leaf1 = {
           chainId: originChainId,
@@ -1802,6 +1824,187 @@ describe("Dataworker: Build merkle roots", async function () {
           refundAmounts: [getRefund(deposit1.amount, ubaRealizedLpFeePct)],
         };
         deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[0], { ...leaf1, leafId: 0 });
+      });
+      it("Relayer balancing fees are added to refunded amonts to relayers", async function () {
+        // Submit 1 deposit and 1 fill on same chain:
+        await updateAllClients();
+        const deposit1 = await buildDeposit(
+          hubPoolClient,
+          spokePool_2,
+          erc20_2,
+          l1Token_1,
+          depositor,
+          originChainId,
+          amountToDeposit
+        );
+        await updateAllClients();
+        await buildFillForRepaymentChain(spokePool_2, relayer, deposit1, 1, originChainId);
+        await updateAllClients();
+        const deposit = spokePoolClient_2.getDeposits()[0];
+        const refund = spokePoolClient_2.getFills()[0];
+
+        ubaClient.setFlows(originChainId, l1TokenSymbol, [
+          {
+            flow: {
+              ...deposit,
+            },
+            systemFee: {
+              lpFee: BigNumber.from(0),
+              depositBalancingFee: BigNumber.from(0),
+              systemFee: BigNumber.from(0),
+            },
+            relayerFee: {
+              relayerGasFee: BigNumber.from(0),
+              relayerCapitalFee: BigNumber.from(0),
+              relayerBalancingFee: toBNWei("0.1"),
+              relayerFee: BigNumber.from(0),
+              amountTooLow: false,
+            },
+            runningBalance: toBNWei("0"),
+            incentiveBalance: toBNWei("0"),
+            netRunningBalanceAdjustment: toBNWei("0"),
+          },
+          {
+            flow: {
+              ...refund,
+              matchedDeposit: deposit,
+            },
+            systemFee: {
+              lpFee: BigNumber.from(0),
+              depositBalancingFee: BigNumber.from(0),
+              systemFee: BigNumber.from(0),
+            },
+            relayerFee: {
+              relayerGasFee: BigNumber.from(0),
+              relayerCapitalFee: BigNumber.from(0),
+              relayerBalancingFee: toBNWei("0.1"),
+              relayerFee: BigNumber.from(0),
+              amountTooLow: false,
+            },
+            runningBalance: toBNWei("0"),
+            incentiveBalance: toBNWei("0"),
+            netRunningBalanceAdjustment: toBNWei("0"),
+          },
+        ]);
+
+        const blockRanges = dataworkerInstance._getNextProposalBlockRanges(spokePoolClients);
+        if (!blockRanges) {
+          throw new Error("Can't propose new bundle");
+        }
+        const { poolRebalanceLeaves } = dataworkerInstance._UBA_buildPoolRebalanceLeaves(
+          blockRanges,
+          [originChainId, destinationChainId],
+          ubaClient
+        );
+
+        // For the UBA, the token transfer threshold shouldn't  matter so set it absurdly high.
+        await configStore.updateTokenConfig(
+          l1Token_1.address,
+          JSON.stringify({
+            rateModel: sampleRateModel,
+            transferThreshold: toBNWei("1000000").toString(),
+          })
+        );
+        await updateAllClients();
+
+        // Can pass in a fills to refund object that is empty for the refund chain and token, or
+        // has an existing value. The relayer balancing fee is tacked on to that.
+        const relayerRefundLeaves1 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
+          {},
+          poolRebalanceLeaves,
+          blockRanges,
+          [originChainId],
+          ubaClient
+        );
+        let expectedRefundAmount = _getFeeAmount(refund.amount, toBNWei("0.1"));
+        expect(relayerRefundLeaves1.leaves.length).to.equal(1);
+        deepEqualsWithBigNumber(relayerRefundLeaves1.leaves[0], {
+          amountToReturn: ethers.constants.Zero,
+          chainId: originChainId,
+          leafId: 0,
+          refundAmounts: [expectedRefundAmount],
+          l2TokenAddress: erc20_1.address,
+          refundAddresses: [relayer.address],
+        });
+
+        // Try again while passing in an already populated fills to refund object.
+        const relayerRefundLeaves2 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
+          {
+            [originChainId.toString()]: {
+              [erc20_1.address]: {
+                totalRefundAmount: ethers.constants.Zero,
+                fills: [],
+                realizedLpFees: ethers.constants.Zero,
+                refunds: {
+                  [relayer.address]: toBNWei("1"),
+                },
+              },
+            },
+          },
+          poolRebalanceLeaves,
+          blockRanges,
+          [originChainId],
+          ubaClient
+        );
+        // Expected refund amount is now 1 + new balancing fee.
+        expectedRefundAmount = _getFeeAmount(refund.amount, toBNWei("0.1")).add(toBNWei("1"));
+        expect(relayerRefundLeaves2.leaves.length).to.equal(1);
+        deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[0], {
+          amountToReturn: ethers.constants.Zero,
+          chainId: originChainId,
+          leafId: 0,
+          refundAmounts: [expectedRefundAmount],
+          l2TokenAddress: erc20_1.address,
+          refundAddresses: [relayer.address],
+        });
+
+        // Add a refund, not a fill, to the flows object. Check that refund
+        // is sent to repayment chain.
+        await buildRefundRequest(spokePool_1, relayer, spokePoolClient_2.getFills()[0], erc20_1.address);
+        await updateAllClients();
+        const refundRequest = spokePoolClient_1.getRefundRequests()[0];
+        ubaClient.setFlows(originChainId, l1TokenSymbol, [
+          {
+            flow: {
+              ...refundRequest,
+              matchedDeposit: deposit,
+            },
+            systemFee: {
+              lpFee: BigNumber.from(0),
+              depositBalancingFee: BigNumber.from(0),
+              systemFee: BigNumber.from(0),
+            },
+            relayerFee: {
+              relayerGasFee: BigNumber.from(0),
+              relayerCapitalFee: BigNumber.from(0),
+              relayerBalancingFee: toBNWei("0.15"),
+              relayerFee: BigNumber.from(0),
+              amountTooLow: false,
+            },
+            runningBalance: toBNWei("0"),
+            incentiveBalance: toBNWei("0"),
+            netRunningBalanceAdjustment: toBNWei("0"),
+          },
+        ]);
+
+        const relayerRefundLeaves3 = await dataworkerInstance._UBA_buildRelayerRefundLeaves(
+          {},
+          poolRebalanceLeaves,
+          blockRanges,
+          [refundRequest.repaymentChainId],
+          ubaClient
+        );
+        // Expected refund amount is now 1 + new balancing fee.
+        expectedRefundAmount = _getFeeAmount(refundRequest.amount, toBNWei("0.15"));
+        expect(relayerRefundLeaves3.leaves.length).to.equal(1);
+        deepEqualsWithBigNumber(relayerRefundLeaves3.leaves[0], {
+          amountToReturn: ethers.constants.Zero,
+          chainId: refundRequest.repaymentChainId,
+          leafId: 0,
+          refundAmounts: [expectedRefundAmount],
+          l2TokenAddress: refundRequest.refundToken,
+          refundAddresses: [refundRequest.relayer],
+        });
       });
     });
     describe("Build slow relay root", function () {
@@ -1837,7 +2040,7 @@ describe("Dataworker: Build merkle roots", async function () {
         // `loadData`. If it does get fully filled, it will remain a UBA flow but not returned by `loadData`.
         expect(() =>
           dataworkerInstance._UBA_buildSlowRelayLeaves(ubaClient, getDefaultBlockRange(0), unfilledDeposits)
-        ).to.throw(`No matching outflow found for deposit ID ${deposit1.depositId}`);
+        ).to.throw(`No matching outflow with refund balancing fee found for deposit ID ${deposit1.depositId}`);
 
         const expectedRelayerBalancingFee = toBNWei("0.025");
         ubaClient.setFlows(deposit1.destinationChainId, l1TokenSymbol, [

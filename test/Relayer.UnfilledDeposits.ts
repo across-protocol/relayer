@@ -128,7 +128,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     await updateAllClients();
 
     _getUnfilledDeposits = async (): Promise<RelayerUnfilledDeposit[]> => {
-      return await getUnfilledDeposits(relayerInstance.clients.spokePoolClients, configStoreClient);
+      return await getUnfilledDeposits(relayerInstance.clients.spokePoolClients, hubPoolClient);
     };
     unfilledDeposits = [];
   });

@@ -79,6 +79,7 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
 
     ({ hubPool, l1Token_1: l1Token } = await deployAndConfigureHubPool(owner, [
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
+      { l2ChainId: originChainId, spokePool: spokePool_1 },
     ]));
 
     await enableRoutesOnHubPool(hubPool, [
