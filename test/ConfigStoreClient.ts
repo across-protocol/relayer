@@ -58,6 +58,14 @@ describe("AcrossConfigStoreClient", async function () {
   });
 
   it("update", async function () {
+    [owner] = await ethers.getSigners();
+    ({ dai: l1Token, weth: l2Token } = await hubPoolFixture());
+
+    configStore = await (await getContractFactory("AcrossConfigStore", owner)).deploy();
+    const { blockNumber: fromBlock } = await configStore.deployTransaction.wait();
+    configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore, { fromBlock });
+    configStoreClient.setConfigStoreVersion(0);
+
     // If ConfigStore has no events, stores nothing.
     await configStoreClient.update();
     expect(configStoreClient.cumulativeRateModelUpdates.length).to.equal(0);
@@ -232,8 +240,12 @@ describe("AcrossConfigStoreClient", async function () {
 
       // Test a few objects
       expect(parsedConfig).to.not.be.undefined;
-      expect(parsedConfig.rebalance["137"].threshold_upper).to.equal("100000000");
-      expect(parsedConfig.gamma.default.length).to.equal(6);
+
+      // This is guaranteed to be defined as the expect above would have thrown if it was undefined.
+      if (parsedConfig) {
+        expect(parsedConfig.rebalance["137"].threshold_upper).to.equal("100000000");
+        expect(parsedConfig.gamma.default.length).to.equal(6);
+      }
 
       // If block number is set too low, returns undefined.
       expect(configStoreClient.getUBAConfig(l1Token.address, 0)).to.be.undefined;
