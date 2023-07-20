@@ -39,7 +39,6 @@ export async function constructRelayerClients(
 
   const tokenSymbols = []; // @todo: Populate with token list.
   const ubaClient = new UBAClient(
-    config.chainIdListIndices,
     tokenSymbols,
     commonClients.hubPoolClient,
     spokePoolClients,

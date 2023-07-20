@@ -284,7 +284,7 @@ export class Dataworker {
         at: "Dataworker#propose",
         message: "Has pending proposal, cannot propose",
       });
-      return;
+      // return;
     }
 
     // If config store version isn't up to date, return early. This is a simple rule that is perhaps too aggressive
@@ -385,8 +385,6 @@ export class Dataworker {
       };
     } else {
       const ubaClient = new UBAClient(
-        // Infer enabled chains from constructed spoke pool clients.
-        Object.keys(spokePoolClients).map((chainId) => Number(chainId)),
         this.clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
         this.clients.hubPoolClient,
         spokePoolClients,
@@ -394,6 +392,8 @@ export class Dataworker {
       );
       // TODO: Move this .update() to the Dataworker ClientHelper once we confirm it works.
       await ubaClient.update(undefined, false);
+      console.log(`UBA CLIENT UPDATED`)
+      return;
       const _rootBundleData = await this.UBA_proposeRootBundle(
         blockRangesForProposal,
         ubaClient,
@@ -720,7 +720,7 @@ export class Dataworker {
         } else {
           const closingRunningBalance = flowsForChain[flowsForChain.length - 1].runningBalance;
           const closingIncentiveBalance = flowsForChain[flowsForChain.length - 1].incentiveBalance;
-          const bundleLpFees = flowsForChain.reduce((sum, flow) => sum.add(flow.systemFee.lpFee), BigNumber.from(0));
+          const bundleLpFees = flowsForChain.reduce((sum, flow) => sum.add(flow.lpFee), BigNumber.from(0));
           const netSendAmount = flowsForChain[flowsForChain.length - 1].netRunningBalanceAdjustment;
           poolRebalanceLeafData.runningBalances[chainId][l1TokenAddress] = closingRunningBalance;
           poolRebalanceLeafData.bundleLpFees[chainId][l1TokenAddress] = bundleLpFees;
@@ -789,12 +789,12 @@ export class Dataworker {
           blockRangeForChain[0],
           blockRangeForChain[1]
         );
-        flowsForChain.forEach(({ flow, relayerFee }) => {
+        flowsForChain.forEach(({ flow, balancingFee }) => {
           // All flows in here are assumed to be valid, so we can use the flow's
           // repayment chain to pay out the refund. But we need to check which
           // token should be repaid in.
           if (isUbaOutflow(flow)) {
-            const feeAmount = _getFeeAmount(flow.amount, relayerFee.relayerBalancingFee);
+            const feeAmount = _getFeeAmount(flow.amount, balancingFee);
             updateTotalRefundAmountRaw(
               fillsToRefund,
               feeAmount,
@@ -845,12 +845,12 @@ export class Dataworker {
         const matchingOutflow = ubaClient
           .getModifiedFlows(destinationChainId, tokenSymbol, blockRangesForDestChain[0], blockRangesForDestChain[1])
           .find((flow) => flow.flow.depositId === deposit.depositId);
-        if (!matchingOutflow || !matchingOutflow?.relayerFee?.relayerBalancingFee) {
+        if (!matchingOutflow || !matchingOutflow?.balancingFee) {
           throw new Error(`No matching outflow with refund balancing fee found for deposit ID ${deposit.depositId}`);
         }
         return {
           ...unfilledDeposit,
-          relayerBalancingFee: matchingOutflow.relayerFee.relayerBalancingFee,
+          relayerBalancingFee: matchingOutflow.balancingFee,
         };
       }
     );
@@ -955,9 +955,18 @@ export class Dataworker {
         valid: false;
         reason: string;
         expectedTrees?: {
-          poolRebalanceTree: TreeData<PoolRebalanceLeaf>;
-          relayerRefundTree: TreeData<RelayerRefundLeaf>;
-          slowRelayTree: TreeData<SlowFillLeaf>;
+          poolRebalanceTree: {
+            tree: MerkleTree<PoolRebalanceLeaf>;
+            leaves: PoolRebalanceLeaf[];
+          };
+          relayerRefundTree: {
+            tree: MerkleTree<RelayerRefundLeaf>;
+            leaves: RelayerRefundLeaf[];
+          };
+          slowRelayTree: {
+            tree: MerkleTree<SlowFillLeaf>;
+            leaves: SlowFillLeaf[];
+          };
         };
       }
     // If valid is true, we don't get a reason, and we always get expected trees.
@@ -965,9 +974,18 @@ export class Dataworker {
         valid: true;
         reason: undefined;
         expectedTrees: {
-          poolRebalanceTree: TreeData<PoolRebalanceLeaf>;
-          relayerRefundTree: TreeData<RelayerRefundLeaf>;
-          slowRelayTree: TreeData<SlowFillLeaf>;
+          poolRebalanceTree: {
+            tree: MerkleTree<PoolRebalanceLeaf>;
+            leaves: PoolRebalanceLeaf[];
+          };
+          relayerRefundTree: {
+            tree: MerkleTree<RelayerRefundLeaf>;
+            leaves: RelayerRefundLeaf[];
+          };
+          slowRelayTree: {
+            tree: MerkleTree<SlowFillLeaf>;
+            leaves: SlowFillLeaf[];
+          };
         };
       }
   > {
@@ -1153,7 +1171,6 @@ export class Dataworker {
       };
     } else {
       const ubaClient = new UBAClient(
-        this.chainIdListForBundleEvaluationBlockNumbers,
         this.clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
         this.clients.hubPoolClient,
         spokePoolClients,
@@ -1385,7 +1402,6 @@ export class Dataworker {
             };
           } else {
             const ubaClient = new UBAClient(
-              this.chainIdListForBundleEvaluationBlockNumbers,
               this.clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
               this.clients.hubPoolClient,
               spokePoolClients,
@@ -2033,7 +2049,6 @@ export class Dataworker {
           };
         } else {
           const ubaClient = new UBAClient(
-            this.chainIdListForBundleEvaluationBlockNumbers,
             this.clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
             this.clients.hubPoolClient,
             spokePoolClients,

@@ -113,9 +113,8 @@ describe("Relayer: Request refunds for cross-chain repayments", async function (
     spokePoolClients = Object.fromEntries(
       [spokePoolClient_1, spokePoolClient_2].map((spokePoolClient) => [spokePoolClient.chainId, spokePoolClient])
     );
-    const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
 
-    ubaClient = new UBAClient(chainIds, [], hubPoolClient, spokePoolClients, spyLogger);
+    ubaClient = new UBAClient([], hubPoolClient, spokePoolClients, spyLogger);
     tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     profitClient.testInit();

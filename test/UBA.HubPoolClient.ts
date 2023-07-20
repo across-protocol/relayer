@@ -67,7 +67,7 @@ describe("UBA: HubPool Events", async function () {
 
     // @todo: The RelayFeeCalculatorConfig should be mocked.
     const tokenSymbols = ["WETH", "DAI"];
-    uba = new UBAClient(chainIds, tokenSymbols, hubPoolClient, spokePoolClients, logger);
+    uba = new UBAClient(tokenSymbols, hubPoolClient, spokePoolClients, logger);
 
     await Promise.all(Object.values(spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
     await hubPoolClient.update();

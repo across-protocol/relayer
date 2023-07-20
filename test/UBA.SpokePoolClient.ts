@@ -101,7 +101,7 @@ describe("UBA: SpokePool Events", async function () {
     await hubPoolClient.update();
 
     // @todo: The RelayFeeCalculatorConfig should be mocked.
-    ubaClient = new UBAClient(chainIds, hubPoolClient, spokePoolClients, {} as RelayFeeCalculatorConfig, logger);
+    ubaClient = new UBAClient(hubPoolClient, spokePoolClients, {} as RelayFeeCalculatorConfig, logger);
   });
 
   it.skip("Correctly orders UBA flows", async function () {

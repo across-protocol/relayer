@@ -9,18 +9,17 @@ type SpokePoolFillFilter = clients.SpokePoolFillFilter;
 
 export class UBAClient extends clients.UBAClient {
   constructor(
-    chainIdIndices: number[],
     tokenSymbols: string[],
     hubPoolClient: HubPoolClient,
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     logger: winston.Logger,
     maxBundleStates = 1
   ) {
-    super(chainIdIndices, tokenSymbols, hubPoolClient, spokePoolClients, maxBundleStates, logger);
+    super(tokenSymbols, hubPoolClient, spokePoolClients, maxBundleStates, logger);
   }
 
   async getFills(chainId: number, filter: SpokePoolFillFilter = {}): Promise<FillWithBlock[]> {
-    return getValidFillCandidates(chainId, this.hubPoolClient, this.spokePoolClients, filter);
+    return getValidFillCandidates(chainId, this.spokePoolClients, filter);
   }
 
   async getRefundRequests(chainId: number, filter: SpokePoolFillFilter = {}): Promise<RefundRequestWithBlock[]> {

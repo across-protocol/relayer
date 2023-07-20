@@ -10,7 +10,7 @@ import {
   getCurrentTime,
   SpokePool,
 } from "../utils";
-import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
+import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient, UBA_MIN_CONFIG_STORE_VERSION } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { CONFIG_STORE_VERSION } from "./";
@@ -226,7 +226,7 @@ export async function constructClients(
     logger,
     configStore,
     rateModelClientSearchSettings,
-    CONFIG_STORE_VERSION,
+    UBA_MIN_CONFIG_STORE_VERSION,
     config.chainIdListIndices
   );
 

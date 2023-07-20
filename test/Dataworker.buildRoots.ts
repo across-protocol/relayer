@@ -1425,7 +1425,30 @@ describe("Dataworker: Build merkle roots", async function () {
     });
     describe("Build pool rebalance root", function () {
       it("> 0 flows", async function () {
+        // Test that the running balance, incentive balance, and the net running balance adjustment of only
+        // the latest flow are used, since these values are accumulated by the UBA client. So, add two
+        // flows.
         ubaClient.setFlows(originChainId, l1TokenSymbol, [
+          {
+            flow: {
+              ...spokePoolClient_1.getFills()[0],
+            },
+            systemFee: {
+              lpFee: BigNumber.from(0),
+              depositBalancingFee: BigNumber.from(0),
+              systemFee: BigNumber.from(0),
+            },
+            relayerFee: {
+              relayerGasFee: BigNumber.from(0),
+              relayerCapitalFee: BigNumber.from(0),
+              relayerBalancingFee: BigNumber.from(0),
+              relayerFee: BigNumber.from(0),
+              amountTooLow: false,
+            },
+            runningBalance: toBNWei("2"),
+            incentiveBalance: toBNWei("2"),
+            netRunningBalanceAdjustment: toBNWei("2"),
+          },
           {
             flow: {
               ...spokePoolClient_1.getFills()[0],
@@ -1457,6 +1480,8 @@ describe("Dataworker: Build merkle roots", async function () {
           [originChainId, destinationChainId],
           ubaClient
         );
+        // The running balance, incentive balance, and net running balance adjustment are not accumulated from
+        // all flows, only the latest values are used.
         expect(
           deepEqualsWithBigNumber(poolRebalanceLeaves[0], {
             chainId: originChainId,
@@ -1825,7 +1850,7 @@ describe("Dataworker: Build merkle roots", async function () {
         };
         deepEqualsWithBigNumber(relayerRefundLeaves2.leaves[0], { ...leaf1, leafId: 0 });
       });
-      it("Relayer balancing fees are added to refunded amonts to relayers", async function () {
+      it("Relayer balancing fees are added to refunded amounts to relayers", async function () {
         // Submit 1 deposit and 1 fill on same chain:
         await updateAllClients();
         const deposit1 = await buildDeposit(
