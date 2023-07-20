@@ -195,8 +195,7 @@ export async function subtractExcessFromPreviousSlowFillsFromRunningBalances(
             fill,
             allValidFills,
             hubPoolClient,
-            spokePoolClientsByChain,
-            chainIdListForBundleEvaluationBlockNumbers
+            spokePoolClientsByChain
           );
 
         // Now that we have the last fill sent in a previous root bundle that also sent a slow fill, we can compute

@@ -92,8 +92,7 @@ export class BundleDataClient {
     const bundleEvaluationBlockRanges = getImpliedBundleBlockRanges(
       this.clients.hubPoolClient,
       this.clients.configStoreClient,
-      bundle,
-      this.chainIdListForBundleEvaluationBlockNumbers
+      bundle
     );
     const { fillsToRefund } = await this.loadData(bundleEvaluationBlockRanges, this.spokePoolClients, false);
 

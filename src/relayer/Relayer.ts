@@ -1,6 +1,6 @@
 import { constants as ethersConstants } from "ethers";
 import { groupBy } from "lodash";
-import { clients as sdkClients, utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as sdkUtils } from "@across-protocol/sdk-v2";
 import {
   BigNumber,
   isDefined,
@@ -17,8 +17,6 @@ import { createFormatFunction, etherscanLink, formatFeePct, toBN, toBNWei } from
 import { RelayerClients } from "./RelayerClientHelper";
 import { Deposit, DepositWithBlock, FillWithBlock, L1Token, RefundRequestWithBlock } from "../interfaces";
 import { RelayerConfig } from "./RelayerConfig";
-
-const { UBAActionType } = sdkClients;
 
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 
@@ -44,7 +42,7 @@ export class Relayer {
       this.clients;
 
     const maxVersion = configStoreClient.configStoreVersion;
-    const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, configStoreClient, config.maxRelayerLookBack);
+    const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient, config.maxRelayerLookBack);
     const { supportedDeposits = [], unsupportedDeposits = [] } = groupBy(unfilledDeposits, (deposit) =>
       deposit.version <= maxVersion ? "supportedDeposits" : "unsupportedDeposits"
     );
@@ -223,7 +221,7 @@ export class Relayer {
       if (tokenClient.hasBalanceForFill(deposit, unfilledAmount)) {
         // The pre-computed realizedLpFeePct is for the pre-UBA fee model. Update it to the UBA fee model if necessary.
         // The SpokePool guarantees the sum of the fees is <= 100% of the deposit amount.
-        deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit, l1Token.symbol);
+        deposit.realizedLpFeePct = await this.computeRealizedLpFeePct(version, deposit);
 
         const repaymentChainId = await this.resolveRepaymentChain(version, deposit, unfilledAmount, l1Token);
         if (isDefined(repaymentChainId)) {
@@ -517,17 +515,13 @@ export class Relayer {
     }
 
     const preferredChainId = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
-    const refundFee = (await this.computeRefundFees(version, fillAmount, [preferredChainId], hubPoolToken.symbol))[0];
+    const refundFee = this.computeRefundFee(version, deposit);
 
     const profitable = profitClient.isFillProfitable(deposit, fillAmount, refundFee, hubPoolToken);
     return profitable ? preferredChainId : undefined;
   }
 
-  protected async computeRealizedLpFeePct(
-    version: number,
-    deposit: DepositWithBlock,
-    symbol: string
-  ): Promise<BigNumber> {
+  protected async computeRealizedLpFeePct(version: number, deposit: DepositWithBlock): Promise<BigNumber> {
     if (!sdkUtils.isUBA(version)) {
       if (deposit.realizedLpFeePct === undefined) {
         throw new Error(`Deposit ${deposit.depositId} is missing realizedLpFeePct`);
@@ -535,45 +529,25 @@ export class Relayer {
       return deposit.realizedLpFeePct;
     }
 
-    const { originChainId, depositId, destinationChainId, amount, quoteBlockNumber } = deposit;
-    const {
-      lpFee,
-      depositBalancingFee: depositFee,
-      systemFee: realizedLpFeePct,
-    } = this.clients.ubaClient.computeSystemFee(quoteBlockNumber, amount, originChainId, destinationChainId, symbol);
+    const { depositId } = deposit;
+    const { systemFee } = this.clients.ubaClient.computeFeesForDeposit(deposit);
+    const { systemFee: realizedLpFeePct } = systemFee;
 
     const chain = getNetworkName(deposit.originChainId);
     this.logger.debug({
       at: "relayer::computeRealizedLpFeePct",
       message: `Computed UBA system fee for ${chain} depositId ${depositId}: ${realizedLpFeePct}`,
-      lpFee,
-      depositFee,
     });
 
     return realizedLpFeePct;
   }
 
-  protected async computeRefundFees(
-    version: number,
-    unfilledAmount: BigNumber,
-    chainIds: number[],
-    symbol: string,
-    hubPoolBlockNumber?: number
-  ): Promise<BigNumber[]> {
+  protected computeRefundFee(version: number, deposit: DepositWithBlock): BigNumber {
     if (!sdkUtils.isUBA(version)) {
-      return chainIds.map(() => toBN(0));
+      return toBN(0);
     }
-
-    const { hubPoolClient, ubaClient } = this.clients;
-    const fees = ubaClient.computeBalancingFees(
-      symbol,
-      unfilledAmount,
-      hubPoolBlockNumber ?? hubPoolClient.latestBlockNumber,
-      chainIds,
-      UBAActionType.Refund
-    );
-
-    return fees.map(({ balancingFee }) => balancingFee);
+    const { relayerFee } = this.clients.ubaClient.computeFeesForDeposit(deposit);
+    return relayerFee.relayerBalancingFee;
   }
 
   private handleTokenShortfall() {
