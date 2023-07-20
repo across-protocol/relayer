@@ -190,7 +190,8 @@ export async function getFillDataForSlowFillFromPreviousRootBundle(
   const rootBundleEndBlockContainingFirstFill = hubPoolClient.getRootBundleEvalBlockNumberContainingBlock(
     latestMainnetBlock,
     firstFillForSameDeposit.blockNumber,
-    firstFillForSameDeposit.destinationChainId
+    firstFillForSameDeposit.destinationChainId,
+    hubPoolClient.configStoreClient.enabledChainIds
   );
   // Using bundle block number for chain from ProposeRootBundleEvent, find latest fill in the root bundle.
   let lastMatchingFillInSameBundle: FillWithBlock;

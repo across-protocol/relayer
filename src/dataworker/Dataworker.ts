@@ -1332,8 +1332,7 @@ export class Dataworker {
           const blockNumberRanges = getImpliedBundleBlockRanges(
             this.clients.hubPoolClient,
             this.clients.configStoreClient,
-            matchingRootBundle,
-            this.chainIdListForBundleEvaluationBlockNumbers
+            matchingRootBundle
           );
 
           if (
@@ -1982,8 +1981,7 @@ export class Dataworker {
         const blockNumberRanges = getImpliedBundleBlockRanges(
           this.clients.hubPoolClient,
           this.clients.configStoreClient,
-          matchingRootBundle,
-          this.chainIdListForBundleEvaluationBlockNumbers
+          matchingRootBundle
         );
 
         if (
