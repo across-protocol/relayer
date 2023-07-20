@@ -1914,8 +1914,7 @@ export class Dataworker {
     submitExecution = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<void> {
-    const { bundleDataClient, configStoreClient, hubPoolClient } = this.clients;
-    const hubPoolChainId = hubPoolClient.chainId;
+    const { configStoreClient, hubPoolClient } = this.clients;
     this.logger.debug({ at: "Dataworker#executeRelayerRefundLeaves", message: "Executing relayer refund leaves" });
 
     let latestRootBundles = sortEventsDescending(hubPoolClient.getValidatedRootBundles());
@@ -2002,7 +2001,7 @@ export class Dataworker {
 
         const mainnetBundleStartBlock = getBlockRangeForChain(
           blockNumberRanges,
-          hubPoolChainId,
+          hubPoolClient.chainId,
           this.chainIdListForBundleEvaluationBlockNumbers
         )[0];
         const version = this.clients.configStoreClient.getConfigStoreVersionForBlock(mainnetBundleStartBlock);
