@@ -546,7 +546,15 @@ export class Relayer {
     if (!sdkUtils.isUBA(version)) {
       return toBN(0);
     }
-    const { relayerBalancingFee } = this.clients.ubaClient.computeFeesForDeposit(deposit);
+    const tokenSymbol = this.clients.hubPoolClient.getL1TokenInfoForL2Token(
+      deposit.originToken,
+      deposit.originChainId
+    )?.symbol;
+    const relayerBalancingFee = this.clients.ubaClient.computeBalancingFeeForNextRefund(
+      deposit.destinationChainId,
+      tokenSymbol,
+      deposit.amount
+    );
     return relayerBalancingFee;
   }
 

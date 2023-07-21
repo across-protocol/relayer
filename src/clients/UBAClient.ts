@@ -1,4 +1,3 @@
-import winston from "winston";
 import { clients } from "@across-protocol/sdk-v2";
 import { FillWithBlock, RefundRequestWithBlock } from "../interfaces";
 import { HubPoolClient } from "./HubPoolClient";
@@ -11,11 +10,9 @@ export class UBAClient extends clients.UBAClient {
   constructor(
     tokenSymbols: string[],
     hubPoolClient: HubPoolClient,
-    spokePoolClients: { [chainId: number]: SpokePoolClient },
-    logger: winston.Logger,
-    maxBundleStates = 1
+    spokePoolClients: { [chainId: number]: SpokePoolClient }
   ) {
-    super(tokenSymbols, hubPoolClient, spokePoolClients, maxBundleStates, logger);
+    super(tokenSymbols, hubPoolClient, spokePoolClients);
   }
 
   async getFills(chainId: number, filter: SpokePoolFillFilter = {}): Promise<FillWithBlock[]> {

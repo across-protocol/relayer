@@ -26,7 +26,6 @@ import {
 } from "../interfaces";
 import {
   PendingRootBundle,
-  TreeData,
   RunningBalances,
   PoolRebalanceLeaf,
   RelayerRefundLeaf,
@@ -339,7 +338,8 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     usdThresholdToSubmitNewBundle?: BigNumber,
     submitProposals = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
+    ubaClient?: UBAClient
   ): Promise<void> {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and _loadData to skip chains with zero block ranges.
@@ -373,7 +373,7 @@ export class Dataworker {
       }
       isUBA = true;
     }
-    if (!isUBA) {
+    if (!isUBA || !ubaClient) {
       const _rootBundleData = await this.Legacy_proposeRootBundle(
         blockRangesForProposal,
         spokePoolClients,
@@ -384,16 +384,6 @@ export class Dataworker {
         ..._rootBundleData,
       };
     } else {
-      const ubaClient = new UBAClient(
-        this.clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
-        this.clients.hubPoolClient,
-        spokePoolClients,
-        this.logger
-      );
-      // TODO: Move this .update() to the Dataworker ClientHelper once we confirm it works.
-      await ubaClient.update(undefined, false);
-      console.log("UBA CLIENT UPDATED");
-      return;
       const _rootBundleData = await this.UBA_proposeRootBundle(
         blockRangesForProposal,
         ubaClient,
@@ -707,7 +697,6 @@ export class Dataworker {
         this.logger.debug({
           at: "UBA buildPoolRebalanceLeaves",
           message: `🌊 Found ${flowsForChain.length} flows for chain ${chainId} and token ${tokenSymbol}`,
-          flowsForChain,
         });
 
         // If no flows for chain, we won't create a pool rebalance leaf for it. The next time there is a flow for this
@@ -862,7 +851,8 @@ export class Dataworker {
   async validatePendingRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     submitDisputes = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
+    ubaClient?: UBAClient
   ): Promise<void> {
     if (
       !this.clients.hubPoolClient.isUpdated ||
@@ -913,7 +903,8 @@ export class Dataworker {
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
       spokePoolClients,
-      earliestBlocksInSpokePoolClients
+      earliestBlocksInSpokePoolClients,
+      ubaClient
     );
     if (!valid) {
       // In the case where the Dataworker config is improperly configured, emit an error level alert so bot runner
@@ -948,7 +939,8 @@ export class Dataworker {
     widestPossibleExpectedBlockRange: number[][],
     rootBundle: PendingRootBundle,
     spokePoolClients: { [chainId: number]: SpokePoolClient },
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number }
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number },
+    ubaClient?: UBAClient
   ): Promise<
     // If valid is false, we get a reason and we might get expected trees.
     | {
@@ -1159,7 +1151,7 @@ export class Dataworker {
       }
       isUBA = true;
     }
-    if (!isUBA) {
+    if (!isUBA || !ubaClient) {
       const _rootBundleData = await this.Legacy_proposeRootBundle(
         blockRangesImpliedByBundleEndBlocks,
         spokePoolClients,
@@ -1170,14 +1162,6 @@ export class Dataworker {
         ..._rootBundleData,
       };
     } else {
-      const ubaClient = new UBAClient(
-        this.clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
-        this.clients.hubPoolClient,
-        spokePoolClients,
-        this.logger
-      );
-      // TODO: Move this .update() to the Dataworker ClientHelper once we confirm it works.
-      await ubaClient.update(undefined, false);
       const _rootBundleData = await this.UBA_proposeRootBundle(
         blockRangesImpliedByBundleEndBlocks,
         ubaClient,
@@ -1283,7 +1267,8 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
+    ubaClient?: UBAClient
   ): Promise<void> {
     this.logger.debug({
       at: "Dataworker#executeSlowRelayLeaves",
@@ -1391,7 +1376,7 @@ export class Dataworker {
             }
             isUBA = true;
           }
-          if (!isUBA) {
+          if (!isUBA || !ubaClient) {
             const _rootBundleData = await this.Legacy_proposeRootBundle(
               blockNumberRanges,
               spokePoolClients,
@@ -1401,14 +1386,6 @@ export class Dataworker {
               ..._rootBundleData,
             };
           } else {
-            const ubaClient = new UBAClient(
-              this.clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
-              this.clients.hubPoolClient,
-              spokePoolClients,
-              this.logger
-            );
-            // TODO: Move this .update() to the Dataworker ClientHelper once we confirm it works.
-            await ubaClient.update(undefined, false);
             const _rootBundleData = await this.UBA_proposeRootBundle(blockNumberRanges, ubaClient, spokePoolClients);
             rootBundleData = {
               ..._rootBundleData,
@@ -1610,7 +1587,8 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
+    ubaClient?: UBAClient
   ): Promise<void> {
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
@@ -1656,7 +1634,8 @@ export class Dataworker {
       widestPossibleExpectedBlockRange,
       pendingRootBundle,
       spokePoolClients,
-      earliestBlocksInSpokePoolClients
+      earliestBlocksInSpokePoolClients,
+      ubaClient
     );
 
     // Call `exchangeRateCurrent` on the HubPool before accumulating fees from the executed bundle leaves and before
@@ -1929,7 +1908,8 @@ export class Dataworker {
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
+    ubaClient?: UBAClient
   ): Promise<void> {
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
     this.logger.debug({
@@ -2038,7 +2018,7 @@ export class Dataworker {
           }
           isUBA = true;
         }
-        if (!isUBA) {
+        if (!isUBA || !ubaClient) {
           const _rootBundleData = await this.Legacy_proposeRootBundle(
             blockNumberRanges,
             spokePoolClients,
@@ -2048,14 +2028,6 @@ export class Dataworker {
             ..._rootBundleData,
           };
         } else {
-          const ubaClient = new UBAClient(
-            this.clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
-            this.clients.hubPoolClient,
-            spokePoolClients,
-            this.logger
-          );
-          // TODO: Move this .update() to the Dataworker ClientHelper once we confirm it works.
-          await ubaClient.update({}, false);
           const _rootBundleData = await this.UBA_proposeRootBundle(blockNumberRanges, ubaClient, spokePoolClients);
           rootBundleData = {
             ..._rootBundleData,
