@@ -1,5 +1,5 @@
 import { clients, interfaces } from "@across-protocol/sdk-v2";
-import { CONFIG_STORE_VERSION, CHAIN_ID_LIST_INDICES } from "../../src/common";
+import { CHAIN_ID_LIST_INDICES } from "../../src/common";
 import { EventSearchConfig, MakeOptional, winston } from "../../src/utils";
 import { Contract } from "../utils";
 
