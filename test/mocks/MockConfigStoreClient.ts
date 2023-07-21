@@ -12,7 +12,7 @@ export class MockConfigStoreClient extends clients.mocks.MockConfigStoreClient {
     logger: winston.Logger,
     configStore: Contract,
     eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
-    configStoreVersion = CONFIG_STORE_VERSION,
+    configStoreVersion = DEFAULT_CONFIG_STORE_VERSION,
     enabledChainIds = CHAIN_ID_LIST_INDICES,
     chainId = 1,
     mockUpdate = false

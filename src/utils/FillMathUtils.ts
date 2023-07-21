@@ -5,6 +5,10 @@ export function _getRefundForFill(fill: Fill): BigNumber {
   return fill.fillAmount.mul(toBNWei(1).sub(fill.realizedLpFeePct)).div(toBNWei(1));
 }
 
+export function _getFeeAmount(fillAmount: BigNumber, feePct: BigNumber): BigNumber {
+  return fillAmount.mul(feePct).div(toBNWei(1));
+}
+
 export function _getRealizedLpFeeForFill(fill: Fill): BigNumber {
   return fill.fillAmount.mul(fill.realizedLpFeePct).div(toBNWei(1));
 }
