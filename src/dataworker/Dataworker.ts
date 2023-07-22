@@ -694,19 +694,10 @@ export class Dataworker {
           blockRangeForChain[0],
           blockRangeForChain[1]
         );
-        this.logger.debug({
-          at: "UBA buildPoolRebalanceLeaves",
-          message: `🌊 Found ${flowsForChain.length} flows for chain ${chainId} and token ${tokenSymbol}`,
-        });
 
         // If no flows for chain, we won't create a pool rebalance leaf for it. The next time there is a flow for this
         // chain, we'll find the previous running balance for it and use that as the starting point.
-        if (flowsForChain.length === 0) {
-          this.logger.debug({
-            at: "UBA buildPoolRebalanceLeaves",
-            message: `No flows for chain ${chainId} and token ${tokenSymbol}`,
-          });
-        } else {
+        if (flowsForChain.length > 0) {
           const closingRunningBalance = flowsForChain[flowsForChain.length - 1].runningBalance;
           const closingIncentiveBalance = flowsForChain[flowsForChain.length - 1].incentiveBalance;
           const bundleLpFees = flowsForChain.reduce((sum, flow) => sum.add(flow.lpFee), BigNumber.from(0));
