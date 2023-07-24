@@ -117,6 +117,7 @@ function compareRpcResults(method: string, rpcResultA: any, rpcResultB: any): bo
 }
 
 class CacheProvider extends RateLimitedProvider {
+  public readonly getBlockByNumberPrefix: string;
   public readonly getLogsCachePrefix: string;
   public readonly callCachePrefix: string;
   public readonly maxReorgDistance: number;
@@ -137,6 +138,7 @@ class CacheProvider extends RateLimitedProvider {
 
     // Pre-compute as much of the redis key as possible.
     const cachePrefix = `${providerCacheNamespace},${new URL(this.connection.url).hostname},${this.network.chainId}`;
+    this.getBlockByNumberPrefix = `${cachePrefix}:getBlockByNumber,`;
     this.getLogsCachePrefix = `${cachePrefix}:eth_getLogs,`;
     this.callCachePrefix = `${cachePrefix}:eth_call,`;
 
@@ -178,6 +180,8 @@ class CacheProvider extends RateLimitedProvider {
   private buildRedisKey(method: string, params: Array<any>) {
     // Only handles eth_getLogs and eth_call right now.
     switch (method) {
+      case "eth_getBlockByNumber":
+        return this.getBlockByNumberPrefix + JSON.stringify(params);
       case "eth_getLogs":
         return this.getLogsCachePrefix + JSON.stringify(params);
       case "eth_call":
@@ -208,9 +212,10 @@ class CacheProvider extends RateLimitedProvider {
       }
 
       return this.canCacheInformationFromBlock(toBlock);
-    } else if (method === "eth_call") {
-      // Block number is the second argument. Parse as hex.
-      const blockNumber = parseInt(params[1], 16);
+    } else if ("eth_call" === method || "eth_getBlockByNumber" === method) {
+      const idx = method === "eth_getBlockByNumber" ? 0 : 1;
+      // Numeric blockNumbers are hex-encoded strings.
+      const blockNumber = parseInt(params[idx], 16);
 
       // If the block number isn't present or is a text string, this will be NaN and we return false.
       if (Number.isNaN(blockNumber)) {
