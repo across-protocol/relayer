@@ -1,4 +1,4 @@
-import { winston, BigNumber, toBN } from "../utils";
+import { winston, BigNumber, toBN, isDefined } from "../utils";
 import * as _ from "lodash";
 import {
   DepositWithBlock,
@@ -185,7 +185,8 @@ export class BundleDataClient {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[0];
     let isUBA = false;
-    if (clients.isUBABlock(mainnetStartBlock)) {
+    const ubaActivationBlock = this.clients.configStoreClient.getUBAActivationBlock();
+    if (isDefined(ubaActivationBlock) && mainnetStartBlock >= ubaActivationBlock) {
       if (!this.clients.configStoreClient.isValidConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION)) {
         throw new Error("loadData: Invalid config store version");
       }
