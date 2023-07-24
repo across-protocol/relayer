@@ -65,10 +65,10 @@
     merkletreejs "^0.2.27"
     rlp "^2.2.7"
 
-"@across-protocol/sdk-v2@0.14.10":
-  version "0.14.10"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.14.10.tgz#a8be6fc3be59627d636f928d245a4b4ecc285729"
-  integrity sha512-YbpG7SDFE/ksZk2GVv9OEYFwgG1eKyevHJW1yeBvJAloiqURmRqdcl5hrFtueVKAcCYqT6sRXbxasXiwMAh0Bg==
+"@across-protocol/sdk-v2@0.14.11":
+  version "0.14.11"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk-v2/-/sdk-v2-0.14.11.tgz#91ecb903e5e6338567db6fded188ae51049e90f3"
+  integrity sha512-ZJ7hhMn66wFVW0mbKgUJ6C4otCc++SqM9HdifTbY80Y4egUPfQNrpduo5ICFIenwi64unZ00XhWvLz8NiMqZgA==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/contracts-v2" "2.4.0"
