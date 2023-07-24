@@ -8,7 +8,7 @@ import {
   updateSpokePoolClients,
 } from "../common";
 import { Wallet } from "../utils";
-import { BundleDataClient, HubPoolClient, ProfitClient, TokenClient, UBAClient } from "../clients";
+import { BundleDataClient, HubPoolClient, ProfitClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
 import { ProposedRootBundle, SpokePoolClientsByChain } from "../interfaces";

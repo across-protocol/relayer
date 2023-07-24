@@ -12,7 +12,7 @@ import {
   toBN,
   sortEventsAscending,
 } from "./";
-import { getBlockForChain, getBlockRangeForChain } from "../dataworker/DataworkerUtils";
+import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 import { clients, utils } from "@across-protocol/sdk-v2";
 
 export function getRefundInformationFromFill(

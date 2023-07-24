@@ -19,7 +19,6 @@ import {
 } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { CONFIG_STORE_VERSION } from "./";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;

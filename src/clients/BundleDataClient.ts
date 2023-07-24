@@ -30,7 +30,7 @@ import {
   prettyPrintSpokePoolEvents,
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
-import { clients, utils } from "@across-protocol/sdk-v2";
+import { clients } from "@across-protocol/sdk-v2";
 const { refundRequestIsValid } = clients;
 
 type DataCacheValue = {
