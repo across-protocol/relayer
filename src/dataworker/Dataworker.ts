@@ -48,9 +48,14 @@ import {
 } from "./DataworkerUtils";
 import { BalanceAllocator } from "../clients";
 import _ from "lodash";
-import { CONFIG_STORE_VERSION, CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
+import {
+  CONFIG_STORE_VERSION,
+  CONTRACT_ADDRESSES,
+  UBA_MIN_CONFIG_STORE_VERSION,
+  spokePoolClientsToProviders,
+} from "../common";
 import { isOvmChain } from "../clients/bridges";
-import { utils } from "@across-protocol/sdk-v2";
+import { clients } from "@across-protocol/sdk-v2";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -365,15 +370,18 @@ export class Dataworker {
       hubPoolChainId,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[0];
-    const version = this.clients.configStoreClient.getConfigStoreVersionForBlock(mainnetBundleStartBlock);
     let isUBA = false;
-    if (utils.isUBA(version)) {
-      if (!this.clients.configStoreClient.isValidConfigStoreVersion(version)) {
+    if (clients.isUBABlock(mainnetBundleStartBlock)) {
+      if (!this.clients.configStoreClient.isValidConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION)) {
         throw new Error("proposeRootBundle: Invalid config store version");
       }
       isUBA = true;
     }
     if (!isUBA || !ubaClient) {
+      this.logger.debug({
+        at: "Dataworker#propose",
+        message: "Proposing Legacy root bundle",
+      });
       const _rootBundleData = await this.Legacy_proposeRootBundle(
         blockRangesForProposal,
         spokePoolClients,
@@ -384,6 +392,12 @@ export class Dataworker {
         ..._rootBundleData,
       };
     } else {
+      this.logger.debug({
+        at: "Dataworker#propose",
+        message: "Proposing UBA root bundle",
+        mainnetBundleStartBlock,
+        ubaActivationStartBlock: clients.getUbaActivationBundleStartBlocks()[0],
+      });
       const _rootBundleData = await this.UBA_proposeRootBundle(
         blockRangesForProposal,
         ubaClient,
@@ -675,12 +689,11 @@ export class Dataworker {
         Number(chainId),
         this.chainIdListForBundleEvaluationBlockNumbers
       );
-
+      poolRebalanceLeafData.runningBalances[chainId] = {};
+      poolRebalanceLeafData.bundleLpFees[chainId] = {};
+      poolRebalanceLeafData.incentivePoolBalances[chainId] = {};
+      poolRebalanceLeafData.netSendAmounts[chainId] = {};
       for (const tokenSymbol of ubaClient.tokens) {
-        poolRebalanceLeafData.runningBalances[chainId] = {};
-        poolRebalanceLeafData.bundleLpFees[chainId] = {};
-        poolRebalanceLeafData.incentivePoolBalances[chainId] = {};
-        poolRebalanceLeafData.netSendAmounts[chainId] = {};
         const l1TokenAddress = this.clients.hubPoolClient
           .getL1Tokens()
           .find((l1Token) => l1Token.symbol === tokenSymbol)?.address;
@@ -717,7 +730,8 @@ export class Dataworker {
       this.maxL1TokenCountOverride,
       this.tokenTransferThreshold,
       poolRebalanceLeafData.incentivePoolBalances,
-      poolRebalanceLeafData.netSendAmounts
+      poolRebalanceLeafData.netSendAmounts,
+      true
     );
     const runningBalances = poolRebalanceLeafData.runningBalances;
     return {
@@ -775,13 +789,9 @@ export class Dataworker {
           // token should be repaid in.
           if (isUbaOutflow(flow)) {
             const feeAmount = _getFeeAmount(flow.amount, balancingFee);
-            updateTotalRefundAmountRaw(
-              fillsToRefund,
-              feeAmount,
-              flow.repaymentChainId,
-              flow.relayer,
-              outflowIsFill(flow) ? flow.destinationToken : flow.refundToken
-            );
+            const refundToken = outflowIsFill(flow) ? flow.destinationToken : flow.refundToken;
+            updateTotalRefundAmountRaw(fillsToRefund, feeAmount, flow.repaymentChainId, flow.relayer, refundToken);
+            // console.log(`[${flow.repaymentChainId}] Added balancing fee ${balancingFee.toString()} as refund for token ${refundToken} for relayer ${flow.relayer}`, fillsToRefund?.[flow.repaymentChainId]?.[refundToken]?.refunds)
           }
         });
       }
@@ -1134,10 +1144,9 @@ export class Dataworker {
       hubPoolChainId,
       this.chainIdListForBundleEvaluationBlockNumbers
     )[0];
-    const version = this.clients.configStoreClient.getConfigStoreVersionForBlock(mainnetBundleStartBlock);
     let isUBA = false;
-    if (utils.isUBA(version)) {
-      if (!this.clients.configStoreClient.isValidConfigStoreVersion(version)) {
+    if (clients.isUBABlock(mainnetBundleStartBlock)) {
+      if (!this.clients.configStoreClient.isValidConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION)) {
         throw new Error("validateRootBundle: Invalid config store version");
       }
       isUBA = true;
@@ -1359,10 +1368,9 @@ export class Dataworker {
             this.clients.hubPoolClient.chainId,
             this.chainIdListForBundleEvaluationBlockNumbers
           )[0];
-          const version = this.clients.configStoreClient.getConfigStoreVersionForBlock(mainnetBundleStartBlock);
           let isUBA = false;
-          if (utils.isUBA(version)) {
-            if (!this.clients.configStoreClient.isValidConfigStoreVersion(version)) {
+          if (clients.isUBABlock(mainnetBundleStartBlock)) {
+            if (!this.clients.configStoreClient.isValidConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION)) {
               throw new Error("proposeRootBundle: Invalid config store version");
             }
             isUBA = true;
@@ -2001,10 +2009,9 @@ export class Dataworker {
           hubPoolChainId,
           this.chainIdListForBundleEvaluationBlockNumbers
         )[0];
-        const version = this.clients.configStoreClient.getConfigStoreVersionForBlock(mainnetBundleStartBlock);
         let isUBA = false;
-        if (utils.isUBA(version)) {
-          if (!this.clients.configStoreClient.isValidConfigStoreVersion(version)) {
+        if (clients.isUBABlock(mainnetBundleStartBlock)) {
+          if (!this.clients.configStoreClient.isValidConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION)) {
             throw new Error("proposeRootBundle: Invalid config store version");
           }
           isUBA = true;

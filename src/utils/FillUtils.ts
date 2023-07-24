@@ -12,8 +12,8 @@ import {
   toBN,
   sortEventsAscending,
 } from "./";
-import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
-import { clients } from "@across-protocol/sdk-v2";
+import { getBlockForChain, getBlockRangeForChain } from "../dataworker/DataworkerUtils";
+import { clients, utils } from "@across-protocol/sdk-v2";
 
 export function getRefundInformationFromFill(
   fill: Fill,
@@ -278,16 +278,18 @@ export async function getUnfilledDeposits(
           let version: number;
           // To determine if the fill is a UBA fill, we need to check against the bundle start block that would contain
           // this fill.
-          const bundleStartBlockContainingDeposit = hubPoolClient.getBundleStartBlockContainingBlock(
+          const bundleStartBlocksContainingDeposit = hubPoolClient.getBundleStartBlocksForProposalContainingBlock(
             deposit.blockNumber,
-            deposit.originChainId,
-            hubPoolClient.latestBlockNumber
+            deposit.originChainId
           );
-          if (clients.isUbaBlock(bundleStartBlockContainingDeposit, hubPoolClient.configStoreClient)) {
+          const depositBundleStartBlock = utils.getBlockForChain(
+            bundleStartBlocksContainingDeposit,
+            deposit.originChainId,
+            hubPoolClient.configStoreClient.enabledChainIds
+          );
+          if (clients.isUBABlock(depositBundleStartBlock)) {
             // Use version at start of bundle:
-            version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(
-              bundleStartBlockContainingDeposit
-            );
+            version = hubPoolClient.configStoreClient.getConfigStoreVersionForBlock(depositBundleStartBlock);
           } else {
             // Deposit is not a UBA deposit, so use version at deposit quote timestamp:
             version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
