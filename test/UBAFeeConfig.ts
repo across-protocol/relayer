@@ -19,7 +19,7 @@ describe("UBAFeeConfig", async function () {
   it("getUbaRewardMultiplier", async function () {
     config = new MockUBAConfig();
     // Default should be 1
-    expect(config.getUbaRewardMultiplier("999")).to.equal(1);
+    expect(config.getUbaRewardMultiplier("999")).to.equal(toBNWei("1"));
   });
   it("getIncentivePoolAdjustment", async function () {
     config = new MockUBAConfig();

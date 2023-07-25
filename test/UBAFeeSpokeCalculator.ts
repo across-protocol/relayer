@@ -1,6 +1,6 @@
 import { toBNWei } from "./utils";
-import { randomAddress, createRandomBytes32, expect, toBN } from "./constants";
-import { DepositWithBlock, FillWithBlock, UbaFlow } from "../src/interfaces";
+import { randomAddress, createRandomBytes32, expect, toBN, BigNumber } from "./constants";
+import { DepositWithBlock, FillWithBlock, UbaFlow, UbaInflow, UbaOutflow } from "../src/interfaces";
 import { ubaFeeCalculator } from "@across-protocol/sdk-v2";
 import { MockUBAConfig } from "./mocks/MockUBAConfig";
 
@@ -14,6 +14,7 @@ const destinationChainId = 42161;
 const tokenSymbol = "L1";
 const lastValidatedRunningBalance = toBNWei("100");
 const lastValidatedIncentiveRunningBalance = toBNWei("10");
+const startingNetRunningBalanceAdjustment = toBNWei("0");
 
 describe("UBAFeeSpokeCalculator", async function () {
   describe("Analog", function () {
@@ -74,6 +75,7 @@ describe("UBAFeeSpokeCalculator", async function () {
         [],
         lastValidatedRunningBalance,
         lastValidatedIncentiveRunningBalance,
+        startingNetRunningBalanceAdjustment,
         10,
         tokenSymbol,
         new MockUBAConfig()
@@ -87,7 +89,6 @@ describe("UBAFeeSpokeCalculator", async function () {
       // This is a simple test with simple flows and no thresholds. Check that a deposit adds to a running balance
       // and fills and refunds subtract from the running balance. Check that the balancing fee is added only to
       // the incentive balance.
-      const flows: UbaFlow[] = [deposit, fill];
 
       // Replicate the balancing fee computation used in getEventFee
       const expectedBalancingFeeForDeposit = ubaFeeCalculator.UBAFeeUtility.computePiecewiseLinearFunction(
@@ -102,10 +103,21 @@ describe("UBAFeeSpokeCalculator", async function () {
       );
       const expectedBalancingFeeTotal = expectedBalancingFeeForDeposit.add(expectedBalancingFeeForFill);
 
+      const flows: (UbaFlow & { incentiveFee: BigNumber })[] = [
+        {
+          ...(deposit as UbaInflow),
+          incentiveFee: expectedBalancingFeeForDeposit,
+        },
+        {
+          ...(fill as UbaOutflow),
+          incentiveFee: expectedBalancingFeeForFill,
+        },
+      ];
       const result = ubaFeeCalculator.analog.calculateHistoricalRunningBalance(
         flows,
         lastValidatedRunningBalance,
         lastValidatedIncentiveRunningBalance,
+        startingNetRunningBalanceAdjustment,
         10,
         tokenSymbol,
         config
@@ -118,8 +130,6 @@ describe("UBAFeeSpokeCalculator", async function () {
       expect(result.netRunningBalanceAdjustment).to.equal(0);
     });
     it("Upper bound threshold triggered by deposit", async function () {
-      const flows: UbaFlow[] = [deposit, fill];
-
       // Set hurdle such that next deposit triggers it.
       const upperBoundThreshold = { threshold: toBNWei("100"), target: toBNWei("0") };
       config.setBalanceTriggerThreshold(originChainId, tokenSymbol, {
@@ -140,12 +150,23 @@ describe("UBAFeeSpokeCalculator", async function () {
         upperBoundThreshold.target,
         upperBoundThreshold.target.sub(fill.amount)
       );
+      const flows: (UbaFlow & { incentiveFee: BigNumber })[] = [
+        {
+          ...(deposit as UbaInflow),
+          incentiveFee: expectedBalancingFeeForDeposit,
+        },
+        {
+          ...(fill as UbaOutflow),
+          incentiveFee: expectedBalancingFeeForFill,
+        },
+      ];
       const expectedBalancingFeeTotal = expectedBalancingFeeForDeposit.add(expectedBalancingFeeForFill);
 
       const result = ubaFeeCalculator.analog.calculateHistoricalRunningBalance(
         flows,
         lastValidatedRunningBalance,
         lastValidatedIncentiveRunningBalance,
+        startingNetRunningBalanceAdjustment,
         10,
         tokenSymbol,
         config
@@ -167,7 +188,6 @@ describe("UBAFeeSpokeCalculator", async function () {
     it("Upper bound threshold triggered by next flow", async function () {
       // If the threshold is reset at a certain time, the current running balance can be so high over the threshold
       // that the next flow, even if its an outflow, can trigger the upper bound.
-      const flows: UbaFlow[] = [fill];
 
       // Replicate the balancing fee computation used in getEventFee
       const expectedBalancingFeeForFill = ubaFeeCalculator.UBAFeeUtility.computePiecewiseLinearFunction(
@@ -175,6 +195,12 @@ describe("UBAFeeSpokeCalculator", async function () {
         lastValidatedRunningBalance,
         lastValidatedRunningBalance.sub(fill.amount)
       );
+      const flows: (UbaFlow & { incentiveFee: BigNumber })[] = [
+        {
+          ...(fill as UbaOutflow),
+          incentiveFee: expectedBalancingFeeForFill,
+        },
+      ];
 
       // The hurdle is set really low, so even a fill leaves the running balance over the threshold.
       const upperBoundThreshold = { threshold: toBNWei("10"), target: toBNWei("10") };
@@ -186,6 +212,7 @@ describe("UBAFeeSpokeCalculator", async function () {
         flows,
         lastValidatedRunningBalance,
         lastValidatedIncentiveRunningBalance,
+        startingNetRunningBalanceAdjustment,
         10,
         tokenSymbol,
         config
@@ -203,8 +230,6 @@ describe("UBAFeeSpokeCalculator", async function () {
       expect(result.netRunningBalanceAdjustment).to.equal(expectedNetRunningAdjustment);
     });
     it("Lower bound threshold triggered by refund", async function () {
-      const flows: UbaFlow[] = [fill, deposit];
-
       // Replicate the balancing fee computation used in getEventFee
       const expectedBalancingFeeForFill = ubaFeeCalculator.UBAFeeUtility.computePiecewiseLinearFunction(
         config.getBalancingFeeTuples(originChainId),
@@ -216,6 +241,16 @@ describe("UBAFeeSpokeCalculator", async function () {
         lastValidatedRunningBalance.sub(fill.amount),
         lastValidatedRunningBalance.sub(fill.amount).add(deposit.amount)
       );
+      const flows: (UbaFlow & { incentiveFee: BigNumber })[] = [
+        {
+          ...(fill as UbaOutflow),
+          incentiveFee: expectedBalancingFeeForFill,
+        },
+        {
+          ...(deposit as UbaInflow),
+          incentiveFee: expectedBalancingFeeForDeposit,
+        },
+      ];
       const expectedBalancingFeeTotal = expectedBalancingFeeForDeposit.add(expectedBalancingFeeForFill);
 
       // Set hurdle such that next refund triggers it.
@@ -229,6 +264,7 @@ describe("UBAFeeSpokeCalculator", async function () {
         flows,
         lastValidatedRunningBalance,
         lastValidatedIncentiveRunningBalance,
+        startingNetRunningBalanceAdjustment,
         10,
         tokenSymbol,
         config
@@ -248,7 +284,6 @@ describe("UBAFeeSpokeCalculator", async function () {
     it("Lower bound threshold triggered by next flow", async function () {
       // If the threshold is reset at a certain time, the current running balance can be so low under the threshold
       // that the next flow, even if its an inflow, can trigger the lower bound.
-      const flows: UbaFlow[] = [deposit];
 
       // Replicate the balancing fee computation used in getEventFee
       const expectedBalancingFeeForDeposit = ubaFeeCalculator.UBAFeeUtility.computePiecewiseLinearFunction(
@@ -256,6 +291,12 @@ describe("UBAFeeSpokeCalculator", async function () {
         lastValidatedRunningBalance,
         lastValidatedRunningBalance.add(deposit.amount)
       );
+      const flows: (UbaFlow & { incentiveFee: BigNumber })[] = [
+        {
+          ...(deposit as UbaInflow),
+          incentiveFee: expectedBalancingFeeForDeposit,
+        },
+      ];
 
       // The hurdle is set really high, so even a deposit leaves the running balance under the threshold.
       const lowerBoundThreshold = { threshold: toBNWei("200"), target: toBNWei("150") };
@@ -267,6 +308,7 @@ describe("UBAFeeSpokeCalculator", async function () {
         flows,
         lastValidatedRunningBalance,
         lastValidatedIncentiveRunningBalance,
+        startingNetRunningBalanceAdjustment,
         10,
         tokenSymbol,
         config
@@ -281,8 +323,6 @@ describe("UBAFeeSpokeCalculator", async function () {
       expect(result.netRunningBalanceAdjustment).to.equal(expectedNetRunningAdjustment);
     });
     it("Multiple net running adjustments are applied in a flow sequence", async function () {
-      const flows: UbaFlow[] = [deposit, fill];
-
       // Set hurdle such that first the deposit triggers the upper bound, and then the reset to the target
       // minus the fill triggers the lower bound.
       const upperBoundThreshold = { threshold: toBNWei("100"), target: toBNWei("50") };
@@ -305,12 +345,23 @@ describe("UBAFeeSpokeCalculator", async function () {
         upperBoundThreshold.target,
         upperBoundThreshold.target.sub(fill.amount)
       );
+      const flows: (UbaFlow & { incentiveFee: BigNumber })[] = [
+        {
+          ...(deposit as UbaInflow),
+          incentiveFee: expectedBalancingFeeForDeposit,
+        },
+        {
+          ...(fill as UbaOutflow),
+          incentiveFee: expectedBalancingFeeForFill,
+        },
+      ];
       const expectedBalancingFeeTotal = expectedBalancingFeeForDeposit.add(expectedBalancingFeeForFill);
 
       const result = ubaFeeCalculator.analog.calculateHistoricalRunningBalance(
         flows,
         lastValidatedRunningBalance,
         lastValidatedIncentiveRunningBalance,
+        startingNetRunningBalanceAdjustment,
         10,
         tokenSymbol,
         config
@@ -332,6 +383,27 @@ describe("UBAFeeSpokeCalculator", async function () {
       expect(result.netRunningBalanceAdjustment).to.equal(
         expectedNetRunningAdjustmentFromDeposit.add(expectedNetRunningAdjustmentFromFill)
       );
+    });
+    it("Throws if incentive fee for any flow is greater than incentive balance", async function () {
+      const flows: (UbaFlow & { incentiveFee: BigNumber })[] = [
+        {
+          ...(deposit as UbaInflow),
+          // Incentive reward is larger than incentive pot
+          incentiveFee: toBNWei("-5"),
+        },
+      ];
+      expect(() =>
+        ubaFeeCalculator.analog.calculateHistoricalRunningBalance(
+          flows,
+          lastValidatedRunningBalance,
+          // Incentive pot smaller than incentive reward
+          toBNWei("4.5"),
+          startingNetRunningBalanceAdjustment,
+          10,
+          tokenSymbol,
+          config
+        )
+      ).to.throw(/Incentive balance will go negative/);
     });
   });
 });
