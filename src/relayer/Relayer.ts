@@ -12,6 +12,7 @@ import {
   getCurrentTime,
   buildFillRelayWithUpdatedFeeProps,
   isDepositSpedUp,
+  RelayerUnfilledDeposit,
 } from "../utils";
 import { createFormatFunction, etherscanLink, formatFeePct, toBN, toBNWei } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
@@ -32,25 +33,23 @@ export class Relayer {
     readonly config: RelayerConfig
   ) {}
 
-  async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
-    // Fetch all unfilled deposits, order by total earnable fee.
-    // TODO: Note this does not consider the price of the token which will be added once the profitability module is
-    // added to this bot.
-
-    const { config } = this;
-    const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } =
-      this.clients;
-
+  /**
+   * @description Retrieve the complete array of unfilled deposits.
+   * @returns An array of RelayerUnfilledDeposit objects, filtered by the maximum current supported config version.
+   */
+  public async getUnfilledDeposits(): Promise<RelayerUnfilledDeposit[]> {
+    const { configStoreClient, hubPoolClient, spokePoolClients } = this.clients;
     const maxVersion = configStoreClient.configStoreVersion;
-    const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient, config.maxRelayerLookBack);
-    const { supportedDeposits = [], unsupportedDeposits = [] } = groupBy(unfilledDeposits, (deposit) =>
-      deposit.version <= maxVersion ? "supportedDeposits" : "unsupportedDeposits"
-    );
+
+    const unfilledDeposits = await getUnfilledDeposits(spokePoolClients, hubPoolClient, this.config.maxRelayerLookBack);
+    const { supportedDeposits = [], unsupportedDeposits = [] } = groupBy(unfilledDeposits, ({ version }) => {
+      return version <= maxVersion ? "supportedDeposits" : "unsupportedDeposits";
+    });
 
     if (unsupportedDeposits.length > 0) {
-      const deposits = unsupportedDeposits.map((unsupported) => {
-        const { originChainId, depositId, transactionHash } = unsupported.deposit;
-        return { originChainId, depositId, version: unsupported.version, transactionHash };
+      const deposits = unsupportedDeposits.map(({ deposit, version }) => {
+        const { originChainId, depositId, blockTimestamp, transactionHash } = deposit;
+        return { originChainId, depositId, version, blockTimestamp, transactionHash };
       });
       this.logger.warn({
         at: "Relayer::checkForUnfilledDepositsAndFill",
@@ -61,16 +60,25 @@ export class Relayer {
       });
     }
 
-    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = supportedDeposits
-      // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
-      .reduce((agg, curr) => {
-        const unfilledAmountUsd = profitClient.getFillAmountInUsd(curr.deposit, curr.unfilledAmount);
-        if (!agg[curr.deposit.originChainId]) {
-          agg[curr.deposit.originChainId] = toBN(0);
-        }
-        agg[curr.deposit.originChainId] = agg[curr.deposit.originChainId].add(unfilledAmountUsd);
-        return agg;
-      }, {});
+    return supportedDeposits;
+  }
+
+  async checkForUnfilledDepositsAndFill(sendSlowRelays = true): Promise<void> {
+    // Fetch all unfilled deposits, order by total earnable fee.
+    const { config } = this;
+    const { acrossApiClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } = this.clients;
+
+    const unfilledDeposits = await this.getUnfilledDeposits();
+
+    // Sum the total unfilled deposit amount per origin chain and set a MDC for that chain.
+    const unfilledDepositAmountsPerChain: { [chainId: number]: BigNumber } = unfilledDeposits.reduce((agg, curr) => {
+      const unfilledAmountUsd = profitClient.getFillAmountInUsd(curr.deposit, curr.unfilledAmount);
+      if (!agg[curr.deposit.originChainId]) {
+        agg[curr.deposit.originChainId] = toBN(0);
+      }
+      agg[curr.deposit.originChainId] = agg[curr.deposit.originChainId].add(unfilledAmountUsd);
+      return agg;
+    }, {});
 
     // Sort thresholds in ascending order.
     const minimumDepositConfirmationThresholds = Object.keys(config.minDepositConfirmations)

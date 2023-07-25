@@ -448,11 +448,12 @@ describe("Relayer: Unfilled Deposits", async function () {
   });
 
   it("Skip deposits we don't have updated config store version for", async function () {
+    const highVersion = 1;
     // Set up test so that the latest version in the config store contract is higher than
     // the version in the config store client.
-    const update = await configStore.updateGlobalConfig(utf8ToHex("VERSION"), "1");
+    const update = await configStore.updateGlobalConfig(utf8ToHex("VERSION"), `${highVersion}`);
     const updateTime = (await configStore.provider.getBlock(update.blockNumber)).timestamp;
-    configStoreClient.setConfigStoreVersion(0);
+    configStoreClient.setConfigStoreVersion(highVersion - 1);
 
     // Now send a deposit after the update time. This deposit should be skipped as we don't have the latest
     // version at the quote timestamp.
@@ -461,9 +462,14 @@ describe("Relayer: Unfilled Deposits", async function () {
     await simpleDeposit(spokePool_1, erc20_1, depositor, depositor, destinationChainId);
     await updateAllClients();
 
+    let unfilledDeposits: RelayerUnfilledDeposit[];
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits.length).to.equal(1);
-    expect(unfilledDeposits[0].requiresNewConfigStoreVersion).to.be.true;
+    expect(unfilledDeposits[0].version).to.equal(highVersion);
+
+    // Relayer class should filter out based on its highest supported version.
+    unfilledDeposits = await relayerInstance.getUnfilledDeposits();
+    expect(unfilledDeposits.length).to.equal(0);
 
     await relayerInstance.checkForUnfilledDepositsAndFill();
     expect(multiCallerClient.transactionCount()).to.equal(0);
