@@ -2,7 +2,15 @@ import { deploySpokePoolWithToken, repaymentChainId, originChainId, buildPoolReb
 import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet } from "./utils";
 import { toBNWei, toWei, buildPoolRebalanceLeafTree, createSpyLogger } from "./utils";
 import { deployConfigStore, hubPoolFixture, toBN } from "./utils";
-import { amountToLp, destinationChainId, mockTreeRoot, refundProposalLiveness, totalBond } from "./constants";
+import {
+  CHAIN_ID_TEST_LIST,
+  amountToLp,
+  destinationChainId,
+  mockTreeRoot,
+  randomAddress,
+  refundProposalLiveness,
+  totalBond,
+} from "./constants";
 import { DEFAULT_POOL_BALANCE_TOKEN_TRANSFER_THRESHOLD } from "./constants";
 import { HubPoolClient } from "../src/clients";
 import { DEFAULT_CONFIG_STORE_VERSION, MockConfigStoreClient } from "./mocks";
@@ -54,6 +62,7 @@ describe("HubPool Utilization", async function () {
     let spokePool: Contract;
     ({ spokePool, erc20: l2Token } = await deploySpokePoolWithToken(originChainId, repaymentChainId));
     ({ hubPool, timer, dai: l1Token, weth } = await hubPoolFixture());
+    await hubPool.setCrossChainContracts(1, randomAddress(), randomAddress());
     await hubPool.enableL1TokenForLiquidityProvision(l1Token.address);
 
     let fromBlock: number;
@@ -63,7 +72,7 @@ describe("HubPool Utilization", async function () {
       configStore,
       { fromBlock },
       DEFAULT_CONFIG_STORE_VERSION,
-      [],
+      [originChainId, repaymentChainId, 1],
       chainId,
       false
     );

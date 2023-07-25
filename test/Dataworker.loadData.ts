@@ -7,7 +7,6 @@ import {
   getLastBlockNumber,
   assertPromiseError,
   spyLogIncludes,
-  deepEqualsWithBigNumber,
   buildRefundRequest,
 } from "./utils";
 import { SignerWithAddress, buildSlowRelayTree } from "./utils";
@@ -42,6 +41,8 @@ let spokePoolClients: { [chainId: number]: SpokePoolClient };
 let spy: sinon.SinonSpy;
 
 let updateAllClients: () => Promise<void>;
+
+const ignoredDepositParams = ["logIndex", "transactionHash", "transactionIndex", "blockTimestamp"]
 
 // TODO: Rename this file to BundleDataClient
 describe("Dataworker: Load data used in all functions", async function () {
@@ -447,7 +448,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data3 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(3), spokePoolClients);
     expect(data3.unfilledDeposits)
-      .excludingEvery(["logIndex", "transactionHash", "transactionIndex"])
+      .excludingEvery(ignoredDepositParams)
       .to.deep.equal([
         {
           unfilledAmount: amountToDeposit.sub(fill1.fillAmount),
@@ -496,8 +497,8 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data6 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
     expect(data6.unfilledDeposits)
-      .excludingEvery(["logIndex", "transactionHash", "transactionIndex"])
-      .to.deep.equal([{ unfilledAmount: amountToDeposit.sub(fill3.fillAmount), deposit: deposit5 }]);
+    .excludingEvery(ignoredDepositParams)
+    .to.deep.equal([{ unfilledAmount: amountToDeposit.sub(fill3.fillAmount), deposit: deposit5 }]);
 
     const slowRelays = buildSlowRelayLeaves([deposit5]);
     const tree = await buildSlowRelayTree(slowRelays);
@@ -535,7 +536,9 @@ describe("Dataworker: Load data used in all functions", async function () {
     const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.5);
     await updateAllClients();
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
-    expect(data1.fillsToRefund).to.deep.equal({
+    expect(data1.fillsToRefund)
+    .excludingEvery(ignoredDepositParams)
+    .to.deep.equal({
       [destinationChainId]: {
         [erc20_2.address]: {
           fills: [fill1],
@@ -607,7 +610,9 @@ describe("Dataworker: Load data used in all functions", async function () {
         },
       },
     };
-    expect(deepEqualsWithBigNumber(data5.fillsToRefund, expectedData5)).to.be.true;
+    expect(data5.fillsToRefund)
+    .excludingEvery(ignoredDepositParams)
+    .to.deep.equal(expectedData5);
 
     // Speed up relays are included. Re-use the same fill information
     const fill4 = await buildModifiedFill(spokePool_2, depositor, relayer, fill1, 2, 0.1);
@@ -640,7 +645,9 @@ describe("Dataworker: Load data used in all functions", async function () {
     // Normal mode should add to fills to refund to origin chain Id without a refund requested.
     await updateAllClients();
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
-    expect(data1.fillsToRefund).to.deep.equal({
+    expect(data1.fillsToRefund)
+    .excludingEvery(ignoredDepositParams)
+    .to.deep.equal({
       [originChainId]: {
         [erc20_1.address]: {
           fills: [fill1],
@@ -680,7 +687,9 @@ describe("Dataworker: Load data used in all functions", async function () {
       spokePoolClients,
       true
     );
-    expect(data3.fillsToRefund).to.deep.equal({
+    expect(data3.fillsToRefund)
+    .excludingEvery(ignoredDepositParams)
+    .to.deep.equal({
       [originChainId]: {
         [erc20_1.address]: {
           fills: [fill1],
@@ -709,7 +718,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
     expect(data1.deposits)
-      .excludingEvery(["logIndex", "transactionHash", "transactionIndex"])
+      .excludingEvery(ignoredDepositParams)
       .to.deep.equal([{ ...deposit1, quoteBlockNumber: realizedLpFeePctData.quoteBlock, blockNumber: originBlock }]);
 
     // If block range does not cover deposits, then they are not included

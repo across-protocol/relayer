@@ -133,6 +133,9 @@ export async function setupDataworker(
       l1Token: l1Token_1,
       destinationToken: l1Token_1,
     },
+    // Similar to above, should enable route for repayment chain as well so that config store client can look up
+    // token on that chain.
+    { destinationChainId: repaymentChainId, l1Token: l1Token_1, destinationToken: l1Token_1 },
   ]);
 
   // Set bond currency on hub pool so that roots can be proposed.

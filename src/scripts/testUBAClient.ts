@@ -32,7 +32,7 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
     // Allow caller to set a uba activation block or default to a block on the hub pool chain from 6 hours ago.
     const mockedUBAActivationBlock =
       Number(process.env.UBA_ACTIVATION_BLOCK) ||
-      (await getBlockForTimestamp(1, Math.floor(Date.now() / 1000) - 6 * 60 * 60));
+      (await getBlockForTimestamp(1, Math.floor(Date.now() / 1000) - 12 * 60 * 60));
     const mockConfigStoreClient = new sdk.clients.mocks.MockConfigStoreClient(
       logger,
       configStoreClient.configStore,
@@ -79,7 +79,7 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
 
   // Now, simply update the UBA client:
   const ubaClient = new sdk.clients.UBAClient(
-    ["WETH"],
+    ["USDC"],
     // clients.hubPoolClient.getL1Tokens().map((x) => x.symbol),
     clients.hubPoolClient,
     spokePoolClients

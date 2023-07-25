@@ -59,4 +59,16 @@ describe("UBAFeeConfig", async function () {
       expect(config.getTotalSpokeTargetBalanceForComputingLpFee(originToken)).to.equal(toBNWei("0"));
     });
   });
+  describe("getBalancingFeeTuples", function() {
+    it("getZeroFeePointOnBalancingFeeCurve", async function() {
+      config.setBalancingFeeTuple(originChainId, [[toBNWei("1"), toBNWei("0")], [toBNWei("2"), toBNWei("1")]]);
+      expect(config.getZeroFeePointOnBalancingFeeCurve(originChainId)).to.equal(toBNWei("1"));
+    })
+    it("isBalancingFeeCurveFlatAtZero", async function() {
+      config.setBalancingFeeTuple(originChainId, [[toBNWei("1"), toBNWei("0")]]);
+      expect(config.isBalancingFeeCurveFlatAtZero(originChainId)).to.be.false;
+      expect(config.isBalancingFeeCurveFlatAtZero(destinationChainId)).to.be.true;
+
+    })
+  })
 });

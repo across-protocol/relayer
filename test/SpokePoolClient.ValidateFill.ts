@@ -28,8 +28,9 @@ import {
 
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
 import { queryHistoricalDepositForFill, validateFillForDeposit } from "../src/utils";
-import { MockSpokePoolClient } from "./mocks";
+import { MockConfigStoreClient, MockSpokePoolClient } from "./mocks";
 import { utils } from "@across-protocol/sdk-v2";
+import { CHAIN_ID_TEST_LIST, repaymentChainId } from "./constants";
 const { validateFillForDeposit } = utils;
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract, hubPool: Contract;
@@ -58,6 +59,8 @@ describe("SpokePoolClient: Fill Validation", async function () {
     ({ hubPool, l1Token_1: l1Token } = await deployAndConfigureHubPool(owner, [
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
       { l2ChainId: originChainId, spokePool: spokePool_1 },
+      { l2ChainId: repaymentChainId, spokePool: spokePool_1 },
+      { l2ChainId: 1, spokePool: spokePool_1 },
     ]));
 
     await enableRoutesOnHubPool(hubPool, [
@@ -68,7 +71,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
 
-    configStoreClient = new ConfigStoreClient(spyLogger, configStore);
+    configStoreClient = new MockConfigStoreClient(spyLogger, configStore, undefined, undefined, CHAIN_ID_TEST_LIST);
     hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
 
     await configStoreClient.update();
@@ -147,7 +150,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
         realizedLpFeePct: toBN(0),
       })
     )
-      .excludingEvery(["logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber"])
+      .excludingEvery(["logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber", "blockTimestamp"])
       .to.deep.equal(expectedDeposit);
   });
 
@@ -501,7 +504,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
         realizedLpFeePct: toBN(0),
       })
     )
-      .excludingEvery(["logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber"])
+      .excludingEvery(["logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber", "blockTimestamp"])
       .to.deep.equal(expectedDeposit);
     expect(
       spokePoolClientForDestinationChain.getDepositForFill({
@@ -510,7 +513,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
         realizedLpFeePct: toBN(0),
       })
     )
-      .excludingEvery(["logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber"])
+      .excludingEvery(["logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber", "blockTimestamp"])
       .to.deep.equal(expectedDeposit);
   });
 

@@ -19,6 +19,8 @@ let _relayer: SignerWithAddress, relayer: string;
 let deploymentBlock: number;
 let spokePoolClient: MockSpokePoolClient;
 
+const blockTimestamp = Math.floor(Date.now() / 1000);
+
 describe("SpokePoolClient: Refund Requests", async function () {
   beforeEach(async function () {
     [_relayer] = await ethers.getSigners();
@@ -34,6 +36,7 @@ describe("SpokePoolClient: Refund Requests", async function () {
       deploymentBlock
     );
     await spokePoolClient.update();
+    spokePoolClient.setBlockTimestamp(blockTimestamp);
   });
 
   it("Correctly fetches refund requests", async function () {
@@ -71,6 +74,7 @@ describe("SpokePoolClient: Refund Requests", async function () {
       refundRequestEvents.push({
         ...spreadEventWithBlockNumber(testEvent),
         repaymentChainId,
+        blockTimestamp,
       } as RefundRequestWithBlock);
     }
     await spokePoolClient.update();

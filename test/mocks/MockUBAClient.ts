@@ -1,7 +1,6 @@
 import { clients, interfaces } from "@across-protocol/sdk-v2";
 import { UBAClient } from "../../src/clients";
 import { BigNumber, toBN } from "../utils";
-import { UBASystemFee } from "../../src/interfaces";
 
 // Adds functions to MockHubPoolClient to facilitate Dataworker unit testing.
 export class MockUBAClient extends UBAClient {
@@ -26,22 +25,25 @@ export class MockUBAClient extends UBAClient {
   }
 
   computeFeesForDeposit(deposit: interfaces.UbaInflow): {
-    systemFee: UBASystemFee;
-    relayerFee: clients.RelayerFeeResult;
+    lpFee: BigNumber;
+    depositBalancingFee: BigNumber;
   } {
     const lpFee = this._computeLpFee(deposit.originChainId);
     const depositBalancingFee = this._getBalancingFee(deposit.originChainId);
-    const relayerBalancingFee = this._getBalancingFee(deposit.destinationChainId);
     return {
-      systemFee: {
-        systemFee: lpFee.add(depositBalancingFee),
-        lpFee,
-        depositBalancingFee,
-      },
-      relayerFee: {
-        relayerBalancingFee,
-      },
+      lpFee,
+      depositBalancingFee,
     };
+  }
+
+  computeBalancingFeeForNextRefund(
+    repaymentChainId: number,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _refundTokenSymbol: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _amount: BigNumber
+  ): BigNumber {
+    return this._getBalancingFee(repaymentChainId);
   }
 
   setFlows(chainId: number, token: string, modifiedFlows: clients.ModifiedUBAFlow[]): void {

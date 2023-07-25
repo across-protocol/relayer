@@ -8,7 +8,7 @@ import {
   ethers,
   hubPoolFixture,
 } from "./utils";
-import { CHAIN_ID_TEST_LIST, expect, l1TokenTransferThreshold, randomAddress, toBN, toBNWei } from "./constants";
+import { CHAIN_ID_TEST_LIST, expect, randomAddress, toBN, toBNWei } from "./constants";
 import { SpokePoolClientsByChain } from "../src/interfaces";
 import { clients } from "@across-protocol/sdk-v2";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";

@@ -286,7 +286,7 @@ export class Dataworker {
         at: "Dataworker#propose",
         message: "Has pending proposal, cannot propose",
       });
-      // return;
+      return;
     }
 
     // If config store version isn't up to date, return early. This is a simple rule that is perhaps too aggressive
