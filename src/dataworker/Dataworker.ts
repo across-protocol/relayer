@@ -47,7 +47,7 @@ import {
 } from "./DataworkerUtils";
 import { BalanceAllocator } from "../clients";
 import _ from "lodash";
-import { CONTRACT_ADDRESSES, UBA_MIN_CONFIG_STORE_VERSION, spokePoolClientsToProviders } from "../common";
+import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
 import { isOvmChain } from "../clients/bridges";
 import * as sdk from "@across-protocol/sdk-v2";
 
@@ -365,9 +365,6 @@ export class Dataworker {
     )[0];
     let isUBA = false;
     if (sdk.clients.isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetBundleStartBlock)) {
-      if (!this.clients.configStoreClient.isValidConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION)) {
-        throw new Error("proposeRootBundle: Invalid config store version");
-      }
       isUBA = true;
     }
     if (!isUBA || !ubaClient) {
@@ -1137,9 +1134,6 @@ export class Dataworker {
     )[0];
     let isUBA = false;
     if (sdk.clients.isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetBundleStartBlock)) {
-      if (!this.clients.configStoreClient.isValidConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION)) {
-        throw new Error("validateRootBundle: Invalid config store version");
-      }
       isUBA = true;
     }
     if (!isUBA || !ubaClient) {
@@ -1361,9 +1355,6 @@ export class Dataworker {
           )[0];
           let isUBA = false;
           if (sdk.clients.isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetBundleStartBlock)) {
-            if (!this.clients.configStoreClient.isValidConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION)) {
-              throw new Error("executeSlowRelayLeaves: Invalid config store version");
-            }
             isUBA = true;
           }
           if (!isUBA || !ubaClient) {
@@ -1993,9 +1984,6 @@ export class Dataworker {
         )[0];
         let isUBA = false;
         if (sdk.clients.isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetBundleStartBlock)) {
-          if (!this.clients.configStoreClient.isValidConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION)) {
-            throw new Error("executeRelayerRefundLeaves: Invalid config store version");
-          }
           isUBA = true;
         }
         if (!isUBA || !ubaClient) {

@@ -22,7 +22,7 @@ import {
   getUniqueDepositsInRange,
   queryHistoricalDepositForFill,
 } from "../utils";
-import { Clients, UBA_MIN_CONFIG_STORE_VERSION } from "../common";
+import { Clients } from "../common";
 import {
   getBlockRangeForChain,
   getImpliedBundleBlockRanges,
@@ -186,9 +186,6 @@ export class BundleDataClient {
     )[0];
     let isUBA = false;
     if (isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetStartBlock)) {
-      if (!this.clients.configStoreClient.isValidConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION)) {
-        throw new Error("loadData: Invalid config store version");
-      }
       isUBA = true;
     }
     return this._loadData(blockRangesForChains, spokePoolClients, isUBA, logData);
