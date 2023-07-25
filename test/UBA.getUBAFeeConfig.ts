@@ -133,6 +133,13 @@ describe("UBAClientUtilities.getUBAConfig", () => {
         },
       ];
 
+      await hubPoolClient.configStoreClient.update();
+      await hubPoolClient.update();
+
+      // Test that the config is correctly resolved to undefined for a scenario where the block number is before the
+      // first config update
+      expect(getUBAFeeConfig(undefined, undefined, 0)).to.be.undefined;
+
       const blockNumbers: number[] = [];
       for (const config of realisticConfigs) {
         const { blockNumber } = mockConfigStore.updateTokenConfig(validToken.address, JSON.stringify({ uba: config }));
