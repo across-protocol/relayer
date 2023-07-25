@@ -1,6 +1,7 @@
 import { constants as ethersConstants } from "ethers";
 import { groupBy } from "lodash";
 import { utils as sdkUtils } from "@across-protocol/sdk-v2";
+import { utils as umaUtils } from "@uma/sdk";
 import {
   BigNumber,
   isDefined,
@@ -85,6 +86,13 @@ export class Relayer {
       .filter((x) => x !== "default")
       .sort((x, y) => Number(x) - Number(y));
 
+    const avgBlockTimes = Object.fromEntries(
+      await sdkUtils.mapAsync(Object.values(spokePoolClients), async ({ chainId }) => [
+        chainId,
+        await umaUtils.averageBlockTimeSeconds(chainId),
+      ])
+    );
+
     // Set the MDC for each origin chain equal to lowest threshold greater than the unfilled USD deposit amount.
     // If we can't find a threshold greater than the USD amount, then use the default.
     const mdcPerChain = Object.fromEntries(
@@ -93,7 +101,9 @@ export class Relayer {
           return toBNWei(_usdThreshold).gte(unfilledAmount);
         });
         // If no thresholds are greater than unfilled amount, then use fallback which should have largest MDCs.
-        return [chainId, config.minDepositConfirmations[usdThreshold ?? "default"][chainId]];
+        const blocks = config.minDepositConfirmations[usdThreshold ?? "default"][chainId];
+        const seconds = blocks * avgBlockTimes;
+        return [chainId, { blocks, seconds }];
       })
     );
     this.logger.debug({
@@ -105,24 +115,27 @@ export class Relayer {
     });
 
     // Filter out deposits that fall under the following criteria:
-    // - Deposit age does not meet the minimum number of confirmations for the corresponding origin chain.
     // - quoteTimestamp is in the future (impossible to know HubPool utilization => LP fee cannot be computed).
-    const confirmedUnfilledDeposits = unfilledDeposits
+    // - Deposit age in blocks does not meet the minimum required age for the origin chain.
+    // - Destination chain timestamp is not at least mdcSeconds ahead of the deposit timestamp on the origin chain.
+    const fillableDeposits = unfilledDeposits
       .filter((x) => {
+        const { originChainId, destinationChainId, quoteTimestamp, blockNumber, blockTimestamp } = x.deposit;
+        const { blocks: mdcBlocks, seconds: mdcSeconds } = mdcPerChain[originChainId];
         return (
-          x.deposit.quoteTimestamp + config.quoteTimeBuffer <= hubPoolClient.currentTime &&
-          x.deposit.blockNumber <=
-            spokePoolClients[x.deposit.originChainId].latestBlockNumber - mdcPerChain[x.deposit.originChainId]
+          hubPoolClient.currentTime >= quoteTimestamp + config.quoteTimeBuffer &&
+          blockNumber <= spokePoolClients[originChainId].latestBlockNumber - mdcBlocks &&
+          spokePoolClients[destinationChainId].getCurrentTime() >= blockTimestamp + mdcSeconds
         );
       })
       .sort((a, b) =>
         a.unfilledAmount.mul(a.deposit.relayerFeePct).lt(b.unfilledAmount.mul(b.deposit.relayerFeePct)) ? 1 : -1
       );
-    if (confirmedUnfilledDeposits.length > 0) {
+    if (fillableDeposits.length > 0) {
       this.logger.debug({
         at: "Relayer",
         message: "Unfilled deposits found",
-        number: confirmedUnfilledDeposits.length,
+        number: fillableDeposits.length,
       });
     } else {
       this.logger.debug({ at: "Relayer", message: "No unfilled deposits" });
@@ -133,7 +146,7 @@ export class Relayer {
     // If not enough ballance add the shortfall to the shortfall tracker to produce an appropriate log. If the deposit
     // is has no other fills then send a 0 sized fill to initiate a slow relay. If unprofitable then add the
     // unprofitable tx to the unprofitable tx tracker to produce an appropriate log.
-    for (const { deposit, version, unfilledAmount, fillCount, invalidFills } of confirmedUnfilledDeposits) {
+    for (const { deposit, version, unfilledAmount, fillCount, invalidFills } of fillableDeposits) {
       const { relayerDestinationChains, relayerTokens, slowDepositors } = config;
 
       // Skip any L1 tokens that are not specified in the config.
