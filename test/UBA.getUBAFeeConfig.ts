@@ -137,8 +137,6 @@ describe("UBAClientUtilities.getUBAConfig", () => {
       for (const config of realisticConfigs) {
         const { blockNumber } = mockConfigStore.updateTokenConfig(validToken.address, JSON.stringify({ uba: config }));
         blockNumbers.push(blockNumber);
-        // Sleep for 1 second to ensure that the block number is different
-        await new Promise((resolve) => setTimeout(resolve, 500));
       }
 
       // Find the starting and ending block range of all the block numbers
