@@ -47,7 +47,7 @@ import {
 } from "./DataworkerUtils";
 import { BalanceAllocator } from "../clients";
 import _ from "lodash";
-import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
+import { CONTRACT_ADDRESSES, UBA_MIN_CONFIG_STORE_VERSION, spokePoolClientsToProviders } from "../common";
 import { isOvmChain } from "../clients/bridges";
 import * as sdk from "@across-protocol/sdk-v2";
 
