@@ -47,12 +47,7 @@ import {
 } from "./DataworkerUtils";
 import { BalanceAllocator } from "../clients";
 import _ from "lodash";
-import {
-  CONFIG_STORE_VERSION,
-  CONTRACT_ADDRESSES,
-  UBA_MIN_CONFIG_STORE_VERSION,
-  spokePoolClientsToProviders,
-} from "../common";
+import { CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
 import { isOvmChain } from "../clients/bridges";
 import * as sdk from "@across-protocol/sdk-v2";
 
@@ -278,26 +273,25 @@ export class Dataworker {
     spokePoolClients: SpokePoolClientsByChain,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): number[][] | undefined {
+    const { configStoreClient, hubPoolClient } = this.clients;
+
     // Check if a bundle is pending.
-    if (!this.clients.hubPoolClient.isUpdated || !this.clients.hubPoolClient.latestBlockNumber) {
+    if (!hubPoolClient.isUpdated || !hubPoolClient.latestBlockNumber) {
       throw new Error("HubPoolClient not updated");
     }
-    if (this.clients.hubPoolClient.hasPendingProposal()) {
-      this.logger.debug({
-        at: "Dataworker#propose",
-        message: "Has pending proposal, cannot propose",
-      });
+    if (hubPoolClient.hasPendingProposal()) {
+      this.logger.debug({ at: "Dataworker#propose", message: "Has pending proposal, cannot propose" });
       return;
     }
 
     // If config store version isn't up to date, return early. This is a simple rule that is perhaps too aggressive
     // but the proposer role is a specialized one and the user should always be using updated software.
-    if (!this.clients.configStoreClient.hasLatestConfigStoreVersion) {
+    if (!configStoreClient.hasLatestConfigStoreVersion) {
       this.logger.warn({
         at: "Dataworker#propose",
         message: "Skipping proposal because missing updated ConfigStore version, are you using the latest code?",
-        latestVersionSupported: CONFIG_STORE_VERSION,
-        latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
+        latestVersionSupported: configStoreClient.configStoreVersion,
+        latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
       });
       return;
     }
@@ -309,7 +303,7 @@ export class Dataworker {
     // to construct the potential next bundle block range.
     const blockRangesForProposal = this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
-      this.clients.hubPoolClient.latestBlockNumber - this.blockRangeEndBlockBuffer[1]
+      hubPoolClient.latestBlockNumber - this.blockRangeEndBlockBuffer[hubPoolClient.chainId]
     );
 
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
@@ -1127,7 +1121,7 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker#validate",
         message: "Cannot validate because missing updated ConfigStore version. Update to latest code.",
-        latestVersionSupported: CONFIG_STORE_VERSION,
+        latestVersionSupported: this.clients.configStoreClient.configStoreVersion,
         latestInConfigStore: this.clients.configStoreClient.getConfigStoreVersionForTimestamp(),
       });
       return {
@@ -1907,13 +1901,10 @@ export class Dataworker {
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
     ubaClient?: UBAClient
   ): Promise<void> {
-    const hubPoolChainId = this.clients.hubPoolClient.chainId;
-    this.logger.debug({
-      at: "Dataworker#executeRelayerRefundLeaves",
-      message: "Executing relayer refund leaves",
-    });
+    const { configStoreClient, hubPoolClient } = this.clients;
+    this.logger.debug({ at: "Dataworker#executeRelayerRefundLeaves", message: "Executing relayer refund leaves" });
 
-    let latestRootBundles = sortEventsDescending(this.clients.hubPoolClient.getValidatedRootBundles());
+    let latestRootBundles = sortEventsDescending(hubPoolClient.getValidatedRootBundles());
     if (this.spokeRootsLookbackCount !== 0) {
       latestRootBundles = latestRootBundles.slice(0, this.spokeRootsLookbackCount);
     }
@@ -1941,19 +1932,18 @@ export class Dataworker {
       const executedLeavesForChain = client.getRelayerRefundExecutions();
 
       for (const rootBundleRelay of sortEventsAscending(rootBundleRelays)) {
-        const matchingRootBundle = this.clients.hubPoolClient.getProposedRootBundles().find((bundle) => {
+        const matchingRootBundle = hubPoolClient.getProposedRootBundles().find((bundle) => {
           if (bundle.relayerRefundRoot !== rootBundleRelay.relayerRefundRoot) {
             return false;
           }
           const followingBlockNumber =
-            this.clients.hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber ||
-            this.clients.hubPoolClient.latestBlockNumber;
+            hubPoolClient.getFollowingRootBundle(bundle)?.blockNumber || hubPoolClient.latestBlockNumber;
 
           if (followingBlockNumber === undefined) {
             return false;
           }
 
-          const leaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
+          const leaves = hubPoolClient.getExecutedLeavesForRootBundle(bundle, followingBlockNumber);
 
           // Only use this bundle if it had valid leaves returned (meaning it was at least partially executed).
           return leaves.length > 0;
@@ -1970,12 +1960,7 @@ export class Dataworker {
           continue;
         }
 
-        const blockNumberRanges = getImpliedBundleBlockRanges(
-          this.clients.hubPoolClient,
-          this.clients.configStoreClient,
-          matchingRootBundle
-        );
-
+        const blockNumberRanges = getImpliedBundleBlockRanges(hubPoolClient, configStoreClient, matchingRootBundle);
         if (
           Object.keys(earliestBlocksInSpokePoolClients).length > 0 &&
           blockRangesAreInvalidForSpokeClients(
@@ -2003,7 +1988,7 @@ export class Dataworker {
 
         const mainnetBundleStartBlock = getBlockRangeForChain(
           blockNumberRanges,
-          hubPoolChainId,
+          hubPoolClient.chainId,
           this.chainIdListForBundleEvaluationBlockNumbers
         )[0];
         let isUBA = false;
