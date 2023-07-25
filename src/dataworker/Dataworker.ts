@@ -779,7 +779,6 @@ export class Dataworker {
           if (isUbaOutflow(flow)) {
             const refundToken = outflowIsFill(flow) ? flow.destinationToken : flow.refundToken;
             updateTotalRefundAmountRaw(fillsToRefund, balancingFee, flow.repaymentChainId, flow.relayer, refundToken);
-            // console.log(`[${flow.repaymentChainId}] Added balancing fee ${balancingFee.toString()} as refund for token ${refundToken} for relayer ${flow.relayer}`, fillsToRefund?.[flow.repaymentChainId]?.[refundToken]?.refunds)
           }
         });
       }

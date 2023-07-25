@@ -36,8 +36,11 @@ export async function constructRelayerClients(
     config.maxRelayerLookBack
   );
 
-  const tokenSymbols = []; // @todo: Populate with token list.
-  const ubaClient = new UBAClient(tokenSymbols, commonClients.hubPoolClient, spokePoolClients);
+  const ubaClient = new UBAClient(
+    commonClients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
+    commonClients.hubPoolClient,
+    spokePoolClients
+  );
 
   // We only use the API client to load /limits for chains so we should remove any chains that are not included in the
   // destination chain list.

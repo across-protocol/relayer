@@ -1,3 +1,13 @@
+/**
+ * Easy script to run UBA client on live production flow data. This script overrides the ConfigStoreClient
+ * to pretend that the UBA was activated some time ago (configurable via UBA_ACTIVATION_BLOCK env var or defaults
+ * to some time ~12 hours ago). It will log out all flows for all bundles over that time.
+ *
+ * All of the outflows will be "invalidated" because their realizedLpFeePct will not be equal to the expected
+ * balancing fees, but all inflows should be added to the flow.
+ *
+ * Run with `ts-node ./src/scripts/testUBAClient.ts --wallet mnemonic`
+ */
 import { Wallet, winston, config, getSigner, Logger, getBlockForTimestamp, disconnectRedisClient } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
