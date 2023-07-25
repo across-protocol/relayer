@@ -4,7 +4,6 @@ import { RedisClient, getRedis, objectWithBigNumberReviver, setRedisKey, winston
 export class RedisCache implements interfaces.CachingMechanismInterface {
   private readonly logger: winston.Logger | undefined;
   private readonly redisUrl: string;
-  private isInstantiated: boolean;
   private redisClient: RedisClient | undefined;
 
   constructor(redisUrl: string, logger?: winston.Logger) {
@@ -14,7 +13,7 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
   }
 
   public async instantiate(): Promise<void> {
-    if (!this.isInstantiated) {
+    if (!this.redisClient) {
       this.redisClient = await getRedis(this.logger, this.redisUrl);
     }
   }
