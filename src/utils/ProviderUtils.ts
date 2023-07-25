@@ -213,8 +213,9 @@ class CacheProvider extends RateLimitedProvider {
 
       return this.canCacheInformationFromBlock(toBlock);
     } else if ("eth_call" === method || "eth_getBlockByNumber" === method) {
+      // Pull out the block tag from params. Its position in params is dependent on the method.
+      // We are only interested in numeric block tags, which would be hex-encoded strings.
       const idx = method === "eth_getBlockByNumber" ? 0 : 1;
-      // Numeric blockNumbers are hex-encoded strings.
       const blockNumber = parseInt(params[idx], 16);
 
       // If the block number isn't present or is a text string, this will be NaN and we return false.
