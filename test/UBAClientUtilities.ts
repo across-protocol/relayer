@@ -8,12 +8,12 @@ import {
   ethers,
   hubPoolFixture,
 } from "./utils";
-import { CHAIN_ID_TEST_LIST, expect, toBN } from "./constants";
+import { CHAIN_ID_TEST_LIST, expect, l1TokenTransferThreshold, randomAddress, toBN, toBNWei } from "./constants";
 import { SpokePoolClientsByChain } from "../src/interfaces";
 import { clients } from "@across-protocol/sdk-v2";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { UBA_MIN_CONFIG_STORE_VERSION } from "../src/common";
-const { getMostRecentBundleBlockRanges, getUbaActivationBundleStartBlocks } = clients;
+const { getMostRecentBundleBlockRanges, getUbaActivationBundleStartBlocks, getOpeningRunningBalanceForEvent } = clients;
 
 let hubPoolClient: MockHubPoolClient;
 let hubPool: Contract;
@@ -23,6 +23,9 @@ let configStoreClient: MockConfigStoreClient;
 const logger = createSpyLogger().spyLogger;
 
 const chainIds = CHAIN_ID_TEST_LIST;
+const l1Tokens = [randomAddress(), randomAddress()];
+const runningBalances = [toBNWei("10"), toBNWei("20")];
+const incentiveBalances = [toBNWei("1"), toBNWei("2")];
 
 describe("UBAClientUtilities", function () {
   beforeEach(async function () {
@@ -101,10 +104,10 @@ describe("UBAClientUtilities", function () {
           toBN(0),
           leafIndex,
           toBN(chainId),
-          [], // l1Tokens
-          [], // bundleLpFees
-          [], // netSendAmounts
-          [] // runningBalances
+          l1Tokens, // l1Tokens
+          runningBalances, // bundleLpFees
+          runningBalances, // netSendAmounts
+          runningBalances.concat(incentiveBalances) // runningBalances
         );
         hubPoolClient.addEvent(leafEvent);
       });
@@ -200,6 +203,69 @@ describe("UBAClientUtilities", function () {
         // Should only return 2 most recent bundles.
         expect(result.length).to.equal(2);
         deepEqualsWithBigNumber(result, expectedBlockRanges[chainId].slice(1));
+      }
+    });
+  });
+  describe("getOpeningRunningBalances", function () {
+    it("No valid bundles", async function () {
+      const result = getOpeningRunningBalanceForEvent(
+        hubPoolClient,
+        0,
+        chainIds[0],
+        l1Tokens[0],
+        Number.MAX_SAFE_INTEGER
+      );
+      expect(result.runningBalance).to.equal(0);
+      expect(result.incentiveBalance).to.equal(0);
+    });
+    it("Selects running balance from bundle before event block", async function () {
+      const expectedBlockRanges = await publishValidatedBundles(3);
+
+      // Test 1: UBA is active for all bundles tested, should return running balance and incentive balance as
+      // published on chain.
+      configStoreClient.setUBAActivationBlock(0);
+      for (const chain of chainIds) {
+        for (let i = 0; i < l1Tokens.length; i++) {
+          const result1 = getOpeningRunningBalanceForEvent(
+            hubPoolClient,
+            // Start block of bundle should select running balance from previous bundle
+            expectedBlockRanges[chain][1].start,
+            chain,
+            l1Tokens[i],
+            Number.MAX_SAFE_INTEGER
+          );
+          expect(result1.runningBalance).to.equal(runningBalances[i]);
+          expect(result1.incentiveBalance).to.equal(incentiveBalances[i]);
+
+          const result2 = getOpeningRunningBalanceForEvent(
+            hubPoolClient,
+            // Block before all bundle should return 0
+            0,
+            chain,
+            l1Tokens[i],
+            Number.MAX_SAFE_INTEGER
+          );
+          expect(result2.runningBalance).to.equal(0);
+          expect(result2.incentiveBalance).to.equal(0);
+        }
+      }
+
+      // Test 2: UBA is not activated at time of input block, running balances should be negated and incentive
+      // balance should be 0
+      configStoreClient.setUBAActivationBlock(Number.MAX_SAFE_INTEGER);
+      for (const chain of chainIds) {
+        for (let i = 0; i < l1Tokens.length; i++) {
+          const result1 = getOpeningRunningBalanceForEvent(
+            hubPoolClient,
+            // Start block of bundle should select running balance from previous bundle
+            expectedBlockRanges[chain][1].start,
+            chain,
+            l1Tokens[i],
+            Number.MAX_SAFE_INTEGER
+          );
+          expect(result1.runningBalance).to.equal(runningBalances[i].mul(-1));
+          expect(result1.incentiveBalance).to.equal(0);
+        }
       }
     });
   });

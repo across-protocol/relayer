@@ -39,6 +39,7 @@ describe("UBAFeeSpokeCalculator", async function () {
         message: "0x",
         quoteBlockNumber: 200,
         blockNumber: 200,
+        blockTimestamp: 10,
         transactionIndex: 0,
         logIndex: 0,
         transactionHash: createRandomBytes32(),
@@ -51,6 +52,7 @@ describe("UBAFeeSpokeCalculator", async function () {
         originChainId,
         destinationChainId,
         relayerFeePct: toBNWei("0.1"),
+        realizedLpFeePct: toBNWei("0.1"),
         depositId: 0,
         destinationToken,
         relayer: depositor,
@@ -64,6 +66,11 @@ describe("UBAFeeSpokeCalculator", async function () {
           isSlowRelay: false,
           payoutAdjustmentPct: toBNWei("0"),
         },
+        blockNumber: 200,
+        blockTimestamp: 10,
+        transactionIndex: 0,
+        logIndex: 0,
+        transactionHash: createRandomBytes32(),
       };
 
       config = new MockUBAConfig();
