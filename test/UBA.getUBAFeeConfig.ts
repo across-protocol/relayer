@@ -1,4 +1,4 @@
-import { clients, interfaces } from "@across-protocol/sdk-v2";
+import { clients, interfaces, ubaFeeCalculator } from "@across-protocol/sdk-v2";
 import { MockConfigStoreClient, MockHubPoolClient } from "./mocks";
 import { ethers, createSpyLogger, hubPoolFixture, expect, deployConfigStore } from "./utils";
 import { findLast, range } from "lodash";
@@ -140,9 +140,8 @@ describe("UBAClientUtilities.getUBAConfig", () => {
       }
 
       // Find the starting and ending block range of all the block numbers
-      // Add an additional 10 blocks to the end to ensure that the config is correctly resolved post update
       const startingBlock = Math.min(...blockNumbers);
-      const endingBlock = Math.max(...blockNumbers) + 10;
+      const endingBlock = Math.max(...blockNumbers);
 
       // Sort the configs by their respective block numbers. This is to ensure that the configs are correctly resolved
       // in the correct order
@@ -156,22 +155,35 @@ describe("UBAClientUtilities.getUBAConfig", () => {
       // Ensure that their length is 3
       expect(hubPoolClient.configStoreClient.ubaConfigUpdates).to.be.lengthOf(3);
 
-      // Iterate through 30 blocks and ensure that the config is correctly resolved
-      for (const blockNumber of range(startingBlock, endingBlock)) {
-        const correctConfig = findLast(sortedConfigs, ({ block }) => block <= blockNumber);
-        expect(correctConfig).to.not.be.undefined;
-        // Should never happen but just in case
-        if (!correctConfig) {
-          throw new Error("correctConfig is undefined");
+      // Iterate through blocks and ensure that the config is correctly resolved
+      for (const blockNumber of range(startingBlock - 10, endingBlock + 10)) {
+        let configGroundTruth: ubaFeeCalculator.UBAFeeConfig | undefined = undefined;
+
+        if (blockNumber >= startingBlock) {
+          const correctConfig = findLast(sortedConfigs, ({ block }) => block <= blockNumber);
+          expect(correctConfig).to.not.be.undefined;
+          // Should never happen but just in case
+          if (!correctConfig) {
+            throw new Error("correctConfig is undefined");
+          }
+          configGroundTruth = clients.parseUBAFeeConfig(
+            validChainId,
+            validToken.symbol,
+            clients.parseUBAConfigFromOnChain(correctConfig.config)
+          );
         }
-        const parsedConfig = clients.parseUBAFeeConfig(
-          validChainId,
-          validToken.symbol,
-          clients.parseUBAConfigFromOnChain(correctConfig.config)
-        );
 
         const resolvedConfig = getUBAFeeConfig(undefined, undefined, blockNumber);
-        expect(resolvedConfig).to.deep.equal(parsedConfig);
+
+        if (blockNumber < startingBlock) {
+          expect(configGroundTruth).to.be.undefined;
+          expect(resolvedConfig).to.be.undefined;
+        } else {
+          expect(configGroundTruth).to.not.be.undefined;
+          expect(resolvedConfig).to.not.be.undefined;
+        }
+
+        expect(resolvedConfig).to.deep.equal(configGroundTruth);
       }
     });
   });
