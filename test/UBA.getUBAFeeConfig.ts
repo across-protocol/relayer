@@ -138,7 +138,7 @@ describe("UBAClientUtilities.getUBAConfig", () => {
 
       // Test that the config is correctly resolved to undefined for a scenario where the block number is before the
       // first config update
-      expect(getUBAFeeConfig(undefined, undefined, 0)).to.be.undefined;
+      expect(() => getUBAFeeConfig(undefined, undefined, 0)).to.throw;
 
       const blockNumbers: number[] = [];
       for (const config of realisticConfigs) {
@@ -180,17 +180,17 @@ describe("UBAClientUtilities.getUBAConfig", () => {
           );
         }
 
-        const resolvedConfig = getUBAFeeConfig(undefined, undefined, blockNumber);
-
-        if (blockNumber < startingBlock) {
-          expect(configGroundTruth).to.be.undefined;
-          expect(resolvedConfig).to.be.undefined;
-        } else {
+        // The case where we should have a config
+        if (blockNumber >= startingBlock) {
+          const resolvedConfig = getUBAFeeConfig(undefined, undefined, blockNumber);
           expect(configGroundTruth).to.not.be.undefined;
           expect(resolvedConfig).to.not.be.undefined;
+          expect(resolvedConfig).to.deep.equal(configGroundTruth);
         }
-
-        expect(resolvedConfig).to.deep.equal(configGroundTruth);
+        // We are before the first config update. The function should throw
+        else {
+          expect(() => getUBAFeeConfig(undefined, undefined, blockNumber)).to.throw;
+        }
       }
     });
   });
