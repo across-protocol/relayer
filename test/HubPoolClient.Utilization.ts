@@ -3,7 +3,6 @@ import { expect, ethers, Contract, SignerWithAddress, setupTokensForWallet } fro
 import { toBNWei, toWei, buildPoolRebalanceLeafTree, createSpyLogger } from "./utils";
 import { deployConfigStore, hubPoolFixture, toBN } from "./utils";
 import {
-  CHAIN_ID_TEST_LIST,
   amountToLp,
   destinationChainId,
   mockTreeRoot,

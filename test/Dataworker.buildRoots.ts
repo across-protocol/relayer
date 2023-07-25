@@ -26,12 +26,7 @@ import { MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_L
 import { refundProposalLiveness, CHAIN_ID_TEST_LIST } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import { Deposit, Fill, RunningBalances } from "../src/interfaces";
-import {
-  getRealizedLpFeeForFills,
-  getRefundForFills,
-  getRefund,
-  EMPTY_MERKLE_ROOT,
-} from "../src/utils";
+import { getRealizedLpFeeForFills, getRefundForFills, getRefund, EMPTY_MERKLE_ROOT } from "../src/utils";
 import { compareAddresses } from "../src/utils";
 
 // Tested

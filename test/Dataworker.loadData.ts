@@ -42,7 +42,7 @@ let spy: sinon.SinonSpy;
 
 let updateAllClients: () => Promise<void>;
 
-const ignoredDepositParams = ["logIndex", "transactionHash", "transactionIndex", "blockTimestamp"]
+const ignoredDepositParams = ["logIndex", "transactionHash", "transactionIndex", "blockTimestamp"];
 
 // TODO: Rename this file to BundleDataClient
 describe("Dataworker: Load data used in all functions", async function () {
@@ -497,8 +497,8 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data6 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
     expect(data6.unfilledDeposits)
-    .excludingEvery(ignoredDepositParams)
-    .to.deep.equal([{ unfilledAmount: amountToDeposit.sub(fill3.fillAmount), deposit: deposit5 }]);
+      .excludingEvery(ignoredDepositParams)
+      .to.deep.equal([{ unfilledAmount: amountToDeposit.sub(fill3.fillAmount), deposit: deposit5 }]);
 
     const slowRelays = buildSlowRelayLeaves([deposit5]);
     const tree = await buildSlowRelayTree(slowRelays);
@@ -537,17 +537,17 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
     expect(data1.fillsToRefund)
-    .excludingEvery(ignoredDepositParams)
-    .to.deep.equal({
-      [destinationChainId]: {
-        [erc20_2.address]: {
-          fills: [fill1],
-          refunds: { [relayer.address]: getRefundForFills([fill1]) },
-          totalRefundAmount: getRefundForFills([fill1]),
-          realizedLpFees: getRealizedLpFeeForFills([fill1]),
+      .excludingEvery(ignoredDepositParams)
+      .to.deep.equal({
+        [destinationChainId]: {
+          [erc20_2.address]: {
+            fills: [fill1],
+            refunds: { [relayer.address]: getRefundForFills([fill1]) },
+            totalRefundAmount: getRefundForFills([fill1]),
+            realizedLpFees: getRealizedLpFeeForFills([fill1]),
+          },
         },
-      },
-    });
+      });
 
     // If block range does not cover fills, then they are not included
     expect(
@@ -610,9 +610,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         },
       },
     };
-    expect(data5.fillsToRefund)
-    .excludingEvery(ignoredDepositParams)
-    .to.deep.equal(expectedData5);
+    expect(data5.fillsToRefund).excludingEvery(ignoredDepositParams).to.deep.equal(expectedData5);
 
     // Speed up relays are included. Re-use the same fill information
     const fill4 = await buildModifiedFill(spokePool_2, depositor, relayer, fill1, 2, 0.1);
@@ -646,17 +644,17 @@ describe("Dataworker: Load data used in all functions", async function () {
     await updateAllClients();
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
     expect(data1.fillsToRefund)
-    .excludingEvery(ignoredDepositParams)
-    .to.deep.equal({
-      [originChainId]: {
-        [erc20_1.address]: {
-          fills: [fill1],
-          refunds: { [relayer.address]: getRefundForFills([fill1]) },
-          totalRefundAmount: getRefundForFills([fill1]),
-          realizedLpFees: getRealizedLpFeeForFills([fill1]),
+      .excludingEvery(ignoredDepositParams)
+      .to.deep.equal({
+        [originChainId]: {
+          [erc20_1.address]: {
+            fills: [fill1],
+            refunds: { [relayer.address]: getRefundForFills([fill1]) },
+            totalRefundAmount: getRefundForFills([fill1]),
+            realizedLpFees: getRealizedLpFeeForFills([fill1]),
+          },
         },
-      },
-    });
+      });
 
     // UBA mode requires refund request to be sent to add to fills to refund.
     const data2 = await dataworkerInstance.clients.bundleDataClient._loadData(
@@ -688,16 +686,16 @@ describe("Dataworker: Load data used in all functions", async function () {
       true
     );
     expect(data3.fillsToRefund)
-    .excludingEvery(ignoredDepositParams)
-    .to.deep.equal({
-      [originChainId]: {
-        [erc20_1.address]: {
-          fills: [fill1],
-          refunds: { [relayer.address]: getRefundForFills([fill1]) },
-          totalRefundAmount: getRefundForFills([fill1]),
+      .excludingEvery(ignoredDepositParams)
+      .to.deep.equal({
+        [originChainId]: {
+          [erc20_1.address]: {
+            fills: [fill1],
+            refunds: { [relayer.address]: getRefundForFills([fill1]) },
+            totalRefundAmount: getRefundForFills([fill1]),
+          },
         },
-      },
-    });
+      });
   });
   it("Returns deposits", async function () {
     await updateAllClients();

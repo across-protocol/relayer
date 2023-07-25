@@ -54,6 +54,7 @@ import {
   spokePoolClientsToProviders,
 } from "../common";
 import { isOvmChain } from "../clients/bridges";
+import * as sdk from "@across-protocol/sdk-v2";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -369,8 +370,7 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[0];
     let isUBA = false;
-    const ubaActivationBlock = this.clients.configStoreClient.getUBAActivationBlock();
-    if (isDefined(ubaActivationBlock) && mainnetBundleStartBlock >= ubaActivationBlock) {
+    if (sdk.clients.isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetBundleStartBlock)) {
       if (!this.clients.configStoreClient.isValidConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION)) {
         throw new Error("proposeRootBundle: Invalid config store version");
       }
@@ -395,7 +395,6 @@ export class Dataworker {
         at: "Dataworker#propose",
         message: "Proposing UBA root bundle",
         mainnetBundleStartBlock,
-        ubaActivationStartBlock: this.clients.configStoreClient.getUBAActivationBlock(),
       });
       const _rootBundleData = await this.UBA_proposeRootBundle(
         blockRangesForProposal,
@@ -1143,8 +1142,7 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[0];
     let isUBA = false;
-    const ubaActivationBlock = this.clients.configStoreClient.getUBAActivationBlock();
-    if (isDefined(ubaActivationBlock) && mainnetBundleStartBlock >= ubaActivationBlock) {
+    if (sdk.clients.isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetBundleStartBlock)) {
       if (!this.clients.configStoreClient.isValidConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION)) {
         throw new Error("validateRootBundle: Invalid config store version");
       }
@@ -1368,10 +1366,9 @@ export class Dataworker {
             this.chainIdListForBundleEvaluationBlockNumbers
           )[0];
           let isUBA = false;
-          const ubaActivationBlock = this.clients.configStoreClient.getUBAActivationBlock();
-          if (isDefined(ubaActivationBlock) && mainnetBundleStartBlock >= ubaActivationBlock) {
+          if (sdk.clients.isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetBundleStartBlock)) {
             if (!this.clients.configStoreClient.isValidConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION)) {
-              throw new Error("proposeRootBundle: Invalid config store version");
+              throw new Error("executeSlowRelayLeaves: Invalid config store version");
             }
             isUBA = true;
           }
@@ -2010,10 +2007,9 @@ export class Dataworker {
           this.chainIdListForBundleEvaluationBlockNumbers
         )[0];
         let isUBA = false;
-        const ubaActivationBlock = this.clients.configStoreClient.getUBAActivationBlock();
-        if (isDefined(ubaActivationBlock) && mainnetBundleStartBlock >= ubaActivationBlock) {
+        if (sdk.clients.isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetBundleStartBlock)) {
           if (!this.clients.configStoreClient.isValidConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION)) {
-            throw new Error("proposeRootBundle: Invalid config store version");
+            throw new Error("executeRelayerRefundLeaves: Invalid config store version");
           }
           isUBA = true;
         }

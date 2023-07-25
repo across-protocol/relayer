@@ -1,12 +1,4 @@
-import {
-  processEndPollingLoop,
-  winston,
-  config,
-  startupLogLevel,
-  Wallet,
-  disconnectRedisClient,
-  assert,
-} from "../utils";
+import { processEndPollingLoop, winston, config, startupLogLevel, Wallet, disconnectRedisClient } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -18,8 +10,6 @@ import {
   DataworkerClients,
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
-import { utils } from "@across-protocol/sdk-v2";
-import { UBAClient } from "../clients";
 
 config();
 let logger: winston.Logger;
@@ -104,17 +94,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
         fromBlocks,
         toBlocks
       );
-      const version = clients.configStoreClient.getConfigStoreVersionForBlock();
-      let ubaClient: UBAClient;
-      if (utils.isUBA(version)) {
-        ubaClient = new UBAClient(
-          clients.hubPoolClient.getL1Tokens().map((token) => token.symbol),
-          clients.hubPoolClient,
-          spokePoolClients
-        );
-        assert(clients.configStoreClient.isValidConfigStoreVersion(version), "Relayer does not support UBA transfers");
-        await ubaClient.update();
-      }
 
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled) {
@@ -128,8 +107,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Wallet)
           spokePoolClients,
           config.rootBundleExecutionThreshold,
           config.sendingProposalsEnabled,
-          fromBlocks,
-          ubaClient
+          fromBlocks
         );
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });

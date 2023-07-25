@@ -13,7 +13,7 @@ import {
   sortEventsAscending,
 } from "./";
 import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
-import { utils } from "@across-protocol/sdk-v2";
+import { utils, clients } from "@across-protocol/sdk-v2";
 
 export function getRefundInformationFromFill(
   fill: Fill,
@@ -287,8 +287,7 @@ export async function getUnfilledDeposits(
             deposit.originChainId,
             hubPoolClient.configStoreClient.enabledChainIds
           );
-          const ubaActivationBlock = hubPoolClient.configStoreClient.getUBAActivationBlock();
-          if (isDefined(ubaActivationBlock) && depositBundleStartBlock >= ubaActivationBlock) {
+          if (clients.isUBAActivatedAtBlock(hubPoolClient, depositBundleStartBlock)) {
             // Use version at start of bundle:
             version = hubPoolClient.configStoreClient.getConfigStoreVersionForBlock(depositBundleStartBlock);
           } else {

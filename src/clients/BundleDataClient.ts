@@ -1,4 +1,4 @@
-import { winston, BigNumber, toBN, isDefined } from "../utils";
+import { winston, BigNumber, toBN } from "../utils";
 import * as _ from "lodash";
 import {
   DepositWithBlock,
@@ -31,7 +31,7 @@ import {
 } from "../dataworker/DataworkerUtils";
 import { getWidestPossibleExpectedBlockRange, isChainDisabled } from "../dataworker/PoolRebalanceUtils";
 import { clients } from "@across-protocol/sdk-v2";
-const { refundRequestIsValid } = clients;
+const { refundRequestIsValid, isUBAActivatedAtBlock } = clients;
 
 type DataCacheValue = {
   unfilledDeposits: UnfilledDeposit[];
@@ -185,8 +185,7 @@ export class BundleDataClient {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[0];
     let isUBA = false;
-    const ubaActivationBlock = this.clients.configStoreClient.getUBAActivationBlock();
-    if (isDefined(ubaActivationBlock) && mainnetStartBlock >= ubaActivationBlock) {
+    if (isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetStartBlock)) {
       if (!this.clients.configStoreClient.isValidConfigStoreVersion(UBA_MIN_CONFIG_STORE_VERSION)) {
         throw new Error("loadData: Invalid config store version");
       }
