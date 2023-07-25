@@ -6,6 +6,7 @@ import { L1Token } from "../src/interfaces";
 
 describe("UBAClientUtilities.getUBAConfig", () => {
   let hubPoolClient: MockHubPoolClient;
+  let mockConfigStore: MockConfigStoreClient;
   const validChainId = 1;
   const validToken: L1Token = {
     address: "0x0000000000000000000000000000000000000000",
@@ -39,6 +40,7 @@ describe("UBAClientUtilities.getUBAConfig", () => {
       true
     );
 
+    mockConfigStore = configStoreClient;
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
 
     hubPoolClient.addL1Token(validToken);
@@ -131,14 +133,9 @@ describe("UBAClientUtilities.getUBAConfig", () => {
         },
       ];
 
-      const mockedConfigStore = hubPoolClient.configStoreClient as MockConfigStoreClient;
-
       const blockNumbers: number[] = [];
       for (const config of realisticConfigs) {
-        const { blockNumber } = mockedConfigStore.updateTokenConfig(
-          validToken.address,
-          JSON.stringify({ uba: config })
-        );
+        const { blockNumber } = mockConfigStore.updateTokenConfig(validToken.address, JSON.stringify({ uba: config }));
         blockNumbers.push(blockNumber);
         // Sleep for 1 second to ensure that the block number is different
         await new Promise((resolve) => setTimeout(resolve, 500));
