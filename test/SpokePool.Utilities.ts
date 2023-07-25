@@ -150,7 +150,7 @@ describe("SpokePoolClient: Event Filtering", async function () {
     }
 
     // Should receive _all_ fills submitted on destinationChainId.
-    let fills = await getValidFillCandidates(destinationChainId, hubPoolClient, spokePoolClients);
+    let fills = await getValidFillCandidates(destinationChainId, spokePoolClients);
     expect(fills.length).to.equal(fillEvents.length);
 
     // Take the field from the last event and filter on it.
@@ -167,7 +167,7 @@ describe("SpokePoolClient: Event Filtering", async function () {
         filter = { [field]: sampleEvent.blockNumber };
       }
 
-      fills = await getValidFillCandidates(destinationChainId, hubPoolClient, spokePoolClients, filter);
+      fills = await getValidFillCandidates(destinationChainId, spokePoolClients, filter);
       expect(fills.length).to.equal(1);
 
       if (field === "fromBlock") {
