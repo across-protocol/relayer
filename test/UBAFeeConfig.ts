@@ -131,7 +131,7 @@ describe("UBAFeeConfig", async function () {
       config.setBalancingFeeTuple(originChainId, [[toBNWei("1"), toBNWei("0")]]);
       expect(config.isBalancingFeeCurveFlatAtZero(originChainId)).to.be.false;
       expect(config.isBalancingFeeCurveFlatAtZero(destinationChainId)).to.be.true;
-    })
+    });
     it("No balancing fee tuples exist. Use default", function () {
       config.setDefaultBalancingFeeTuple([[toBNWei("100"), toBNWei("100")]]);
       expect(config.getBalancingFeeTuples(2)).to.be.deep.equal([[toBNWei("100"), toBNWei("100")]]);

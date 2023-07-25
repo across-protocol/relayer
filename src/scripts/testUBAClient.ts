@@ -29,7 +29,7 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
   // Create a mock config store client so we can inject a fake UBA activation block number to force the UBA client
   // to load UBA flows.
   if (!isDefined(ubaActivationBlock)) {
-    // Allow caller to set a uba activation block or default to a block on the hub pool chain from 6 hours ago.
+    // Allow caller to set a uba activation block or default to a recent bundle.
     const mockedUBAActivationBlock =
       Number(process.env.UBA_ACTIVATION_BLOCK) ||
       (await getBlockForTimestamp(1, Math.floor(Date.now() / 1000) - 12 * 60 * 60));
@@ -79,10 +79,12 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
 
   // Now, simply update the UBA client:
   const ubaClient = new sdk.clients.UBAClient(
-    ["USDC"],
+    ["WETH", "USDC"],
     // clients.hubPoolClient.getL1Tokens().map((x) => x.symbol),
     clients.hubPoolClient,
     spokePoolClients
+    // Pass in no redis client for now as testing with fresh state is easier to reason about
+    // new RedisCache(REDIS_URL)
   );
   await ubaClient.update();
 }
