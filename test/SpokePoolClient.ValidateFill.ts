@@ -27,7 +27,7 @@ import {
 } from "./utils";
 
 import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
-import { queryHistoricalDepositForFill, validateFillForDeposit } from "../src/utils";
+import { queryHistoricalDepositForFill } from "../src/utils";
 import { MockConfigStoreClient, MockSpokePoolClient } from "./mocks";
 import { utils } from "@across-protocol/sdk-v2";
 import { CHAIN_ID_TEST_LIST, repaymentChainId } from "./constants";
