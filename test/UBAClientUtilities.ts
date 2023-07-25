@@ -269,4 +269,47 @@ describe("UBAClientUtilities", function () {
       }
     });
   });
+  describe("getBundleStartBlocksForProposalContainingBlock", function () {
+    it("No validated bundles", async function () {
+      // Should return 0 for all chains.
+      const result = hubPoolClient.getBundleStartBlocksForProposalContainingBlock(0, chainIds[0]);
+      deepEqualsWithBigNumber(result, Array(chainIds.length).fill(0));
+    });
+    it("Selects bundle start blocks from range containing block", async function () {
+      const expectedBlockRanges = await publishValidatedBundles(3);
+      const chainId = chainIds[0];
+      for (let i = 0; i < expectedBlockRanges[chainId].length; i++) {
+        const blockRange = expectedBlockRanges[chainId][i];
+        const result = hubPoolClient.getBundleStartBlocksForProposalContainingBlock(blockRange.start, chainId);
+        const expectedBundleStartBlocks = chainIds.map((chainId) => expectedBlockRanges[chainId][i].start);
+        deepEqualsWithBigNumber(result, expectedBundleStartBlocks);
+
+        // If searching for block after end, will select next block range start:
+        const result2 = hubPoolClient.getBundleStartBlocksForProposalContainingBlock(blockRange.end + 1, chainId);
+
+        // If event block is beyond latest block range, then uses the latest fully executed bundle end blocks + 1
+        if (i === expectedBlockRanges[chainId].length - 1) {
+          const latestExecutedBundleForBlockRange = hubPoolClient.getLatestFullyExecutedRootBundle(
+            hubPoolClient.latestBlockNumber!
+          );
+          const nextStartBlocks = latestExecutedBundleForBlockRange!.bundleEvaluationBlockNumbers.map(
+            (blockNumber) => blockNumber.toNumber() + 1
+          );
+          deepEqualsWithBigNumber(result2, nextStartBlocks);
+        } else {
+          const expectedBundleStartBlock2 = chainIds.map((_chainId) => expectedBlockRanges[_chainId][i].end + 1);
+          deepEqualsWithBigNumber(result2, expectedBundleStartBlock2);
+        }
+
+        // If less than start block, will select previous block, unless its the first block range then returns
+        // all 0's
+        const result3 = hubPoolClient.getBundleStartBlocksForProposalContainingBlock(blockRange.start - 1, chainId);
+        const expectedBundleStartBlock3 =
+          i > 0
+            ? chainIds.map((_chainId) => expectedBlockRanges[_chainId][i - 1].start)
+            : Array(chainIds.length).fill(0);
+        deepEqualsWithBigNumber(result3, expectedBundleStartBlock3);
+      }
+    });
+  });
 });
