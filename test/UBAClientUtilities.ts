@@ -269,6 +269,8 @@ describe("UBAClientUtilities", function () {
       }
     });
   });
+  // TODO: Probably should move this to HubPoolClient since its in that class but all of the setup in this 
+  // test is shared. Perhaps that indicates that more HubPoolClient functionalty can be tested with this setup.
   describe("getBundleStartBlocksForProposalContainingBlock", function () {
     it("No validated bundles", async function () {
       // Should return 0 for all chains.
