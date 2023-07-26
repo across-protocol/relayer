@@ -42,6 +42,15 @@ let unfilledDeposits: RelayerUnfilledDeposit[] = [];
 let _getUnfilledDeposits: Promise<RelayerUnfilledDeposit[]>;
 
 describe("Relayer: Unfilled Deposits", async function () {
+  const sortableEventFields = [
+    "blockNumber",
+    "blockTimestamp",
+    "quoteBlockNumber",
+    "logIndex",
+    "transactionIndex",
+    "transactionHash",
+  ];
+
   beforeEach(async function () {
     [owner, depositor, relayer] = await ethers.getSigners();
     // Deploy the two spokePools and their associated tokens. Set the chainId to match to associated chainIds. The first
@@ -143,7 +152,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(sortableEventFields)
       .to.deep.equal([
         {
           unfilledAmount: deposit1.amount,
@@ -212,7 +221,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     // Validate the relayer correctly computes the unfilled amount.
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(sortableEventFields)
       .to.deep.equal([
         {
           unfilledAmount: deposit1.amount.sub(fill1.fillAmount),
@@ -239,7 +248,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(sortableEventFields)
       .to.deep.equal([
         {
           unfilledAmount: unfilledAmount,
@@ -264,7 +273,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(sortableEventFields)
       .to.deep.equal([
         {
           unfilledAmount: deposit2Complete.amount,
@@ -288,7 +297,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     // The deposit should show up as unfilled, since the fill was incorrectly applied to the wrong deposit.
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(sortableEventFields)
       .to.deep.equal([
         {
           unfilledAmount: deposit1Complete.amount,
@@ -363,7 +372,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(sortableEventFields)
       .to.deep.equal([
         {
           unfilledAmount: deposit1.amount.sub(fill1.fillAmount),
@@ -403,7 +412,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     unfilledDeposits = await _getUnfilledDeposits();
     expect(unfilledDeposits)
-      .excludingEvery(["blockNumber", "quoteBlockNumber", "logIndex", "transactionIndex", "transactionHash"])
+      .excludingEvery(sortableEventFields)
       .to.deep.equal([
         {
           unfilledAmount: deposit1.amount.sub(fill1.fillAmount),
