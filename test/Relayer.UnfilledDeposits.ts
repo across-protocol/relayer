@@ -437,6 +437,8 @@ describe("Relayer: Unfilled Deposits", async function () {
       { ...depositComplete, relayerFeePct: toBN(2) },
       0.25
     );
+    const currentTime = (await spokePool_1.provider.getBlock()).timestamp;
+    await spokePool_2.setCurrentTime(currentTime + 5);
     await updateAllClients();
 
     // getUnfilledDeposit still returns the deposit as unfilled but with the invalid fill.
