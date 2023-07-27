@@ -49,8 +49,8 @@ export class Relayer {
 
     if (unsupportedDeposits.length > 0) {
       const deposits = unsupportedDeposits.map(({ deposit, version }) => {
-        const { originChainId, depositId, blockTimestamp, transactionHash } = deposit;
-        return { originChainId, depositId, version, blockTimestamp, transactionHash };
+        const { originChainId, depositId, transactionHash } = deposit;
+        return { originChainId, depositId, version, transactionHash };
       });
       this.logger.warn({
         at: "Relayer::checkForUnfilledDepositsAndFill",
