@@ -454,5 +454,4 @@ describe("UBAClient: Flow validation", function () {
     //   })
     // })
   });
-  // describe("validateFlowsInBundle", function () {});
 });

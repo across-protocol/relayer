@@ -364,7 +364,13 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[0];
     let isUBA = false;
-    if (sdk.clients.isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetBundleStartBlock)) {
+    if (
+      sdk.clients.isUBAActivatedAtBlock(
+        this.clients.hubPoolClient,
+        mainnetBundleStartBlock,
+        this.clients.hubPoolClient.chainId
+      )
+    ) {
       isUBA = true;
     }
     if (!isUBA || !ubaClient) {
@@ -1132,7 +1138,13 @@ export class Dataworker {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[0];
     let isUBA = false;
-    if (sdk.clients.isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetBundleStartBlock)) {
+    if (
+      sdk.clients.isUBAActivatedAtBlock(
+        this.clients.hubPoolClient,
+        mainnetBundleStartBlock,
+        this.clients.hubPoolClient.chainId
+      )
+    ) {
       isUBA = true;
     }
     if (!isUBA || !ubaClient) {
@@ -1353,7 +1365,13 @@ export class Dataworker {
             this.chainIdListForBundleEvaluationBlockNumbers
           )[0];
           let isUBA = false;
-          if (sdk.clients.isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetBundleStartBlock)) {
+          if (
+            sdk.clients.isUBAActivatedAtBlock(
+              this.clients.hubPoolClient,
+              mainnetBundleStartBlock,
+              this.clients.hubPoolClient.chainId
+            )
+          ) {
             isUBA = true;
           }
           if (!isUBA || !ubaClient) {
@@ -1982,7 +2000,13 @@ export class Dataworker {
           this.chainIdListForBundleEvaluationBlockNumbers
         )[0];
         let isUBA = false;
-        if (sdk.clients.isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetBundleStartBlock)) {
+        if (
+          sdk.clients.isUBAActivatedAtBlock(
+            this.clients.hubPoolClient,
+            mainnetBundleStartBlock,
+            this.clients.hubPoolClient.chainId
+          )
+        ) {
           isUBA = true;
         }
         if (!isUBA || !ubaClient) {

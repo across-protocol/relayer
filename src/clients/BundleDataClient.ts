@@ -185,7 +185,7 @@ export class BundleDataClient {
       this.chainIdListForBundleEvaluationBlockNumbers
     )[0];
     let isUBA = false;
-    if (isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetStartBlock)) {
+    if (isUBAActivatedAtBlock(this.clients.hubPoolClient, mainnetStartBlock, this.clients.hubPoolClient.chainId)) {
       isUBA = true;
     }
     return this._loadData(blockRangesForChains, spokePoolClients, isUBA, logData);
