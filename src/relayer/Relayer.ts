@@ -102,7 +102,7 @@ export class Relayer {
         });
         // If no thresholds are greater than unfilled amount, then use fallback which should have largest MDCs.
         const blocks = config.minDepositConfirmations[usdThreshold ?? "default"][chainId];
-        const seconds = blocks * avgBlockTimes;
+        const seconds = blocks * avgBlockTimes[chainId] ?? 0;
         return [chainId, { blocks, seconds }];
       })
     );
