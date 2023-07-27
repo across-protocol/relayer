@@ -147,7 +147,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
         realizedLpFeePct: toBN(0),
       })
     )
-      .excludingEvery(["logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber"])
+      .excludingEvery(["blockTimestamp", "logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber"])
       .to.deep.equal(expectedDeposit);
   });
 
@@ -501,7 +501,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
         realizedLpFeePct: toBN(0),
       })
     )
-      .excludingEvery(["logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber"])
+      .excludingEvery(["blockTimestamp", "logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber"])
       .to.deep.equal(expectedDeposit);
     expect(
       spokePoolClientForDestinationChain.getDepositForFill({
@@ -510,7 +510,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
         realizedLpFeePct: toBN(0),
       })
     )
-      .excludingEvery(["logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber"])
+      .excludingEvery(["blockTimestamp", "logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber"])
       .to.deep.equal(expectedDeposit);
   });
 
