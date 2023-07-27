@@ -117,8 +117,13 @@ describe("Relayer: Zero sized fill for slow relay", async function () {
     const balance = await erc20_1.balanceOf(relayer.address);
     await erc20_1.connect(relayer).transfer(owner.address, balance.sub(amountToDeposit));
     await erc20_2.connect(relayer).transfer(owner.address, balance.sub(amountToDeposit));
+
+    // The relayer requires that the destination SpokePool time is ahead of the origin SpokePool time.
+    const currentTime = await getLastBlockTime(spokePool_1.provider);
+    await spokePool_1.setCurrentTime(currentTime);
+    await spokePool_2.setCurrentTime(currentTime + 5);
+
     // The relayer wallet was seeded with 5x the deposit amount. Make the deposit 6x this size.
-    await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
     const deposit1 = await deposit(
       spokePool_1,
       erc20_1,
