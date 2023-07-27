@@ -1,5 +1,6 @@
 import {
   Contract,
+  assertPromiseError,
   createRandomBytes32,
   createSpyLogger,
   deepEqualsWithBigNumber,
@@ -388,10 +389,8 @@ describe("UBAClient: Flow validation", function () {
           // Outflow and Inflow are otherwise typical UBA flows so the running balances and balancing fees should be
           // as expected.
           expect(result?.balancingFee).to.equal(expectedBalancingFee);
-          expect(result?.runningBalance).to.equal(
-            validatedInflow.runningBalance.sub(outflow.amount).sub(expectedBalancingFee)
-          );
-          expect(result?.incentiveBalance).to.equal(validatedInflow.incentiveBalance.add(expectedBalancingFee));
+          expect(result?.runningBalance).to.equal(outflow.amount.mul(-1).sub(expectedBalancingFee));
+          expect(result?.incentiveBalance).to.equal(expectedBalancingFee);
           expect(result?.netRunningBalanceAdjustment).to.equal(validatedInflow.netRunningBalanceAdjustment);
 
           // LP fee is just the realizedLpFee applied to the amount, which should also be equal to the lp fee.
@@ -400,14 +399,18 @@ describe("UBAClient: Flow validation", function () {
           expect(result?.lpFee).to.equal(inflow.amount.mul(baselineFee).div(toBNWei(1)));
         });
         it("Matched deposit is in same bundle", async function () {
+          const expectedLpFee = outflow.amount.mul(baselineFee).div(toBNWei(1));
+
           // Add the inflow to the client state. This is a UBA deposit with an undefined realizedLpFeePct.
-          // The outflow's realizedLpFeePct should be equal to the deposit's LP fee plus the balancing fee.
           const validatedInflow: clients.ModifiedUBAFlow = {
             flow: {
               ...inflow,
             },
+            // For this test, the expected realizedLpFeePct for the outflow needs to be equal to the lpFee
+            // for the deposit plus the balancing fee for the deposit, so its important we set the following
+            // two params correctly.
             balancingFee: expectedBalancingFee,
-            lpFee: toBNWei("0"),
+            lpFee: expectedLpFee,
             runningBalance: runningBalances[0],
             netRunningBalanceAdjustment: toBNWei("0"),
             incentiveBalance: incentiveBalances[0],
@@ -429,29 +432,206 @@ describe("UBAClient: Flow validation", function () {
           expect(result).to.not.be.undefined;
 
           expect(result?.balancingFee).to.equal(expectedBalancingFee);
-          expect(result?.runningBalance).to.equal(
-            validatedInflow.runningBalance.sub(outflow.amount).sub(expectedBalancingFee)
-          );
-          expect(result?.incentiveBalance).to.equal(validatedInflow.incentiveBalance.add(expectedBalancingFee));
+          expect(result?.runningBalance).to.equal(outflow.amount.mul(-1).sub(expectedBalancingFee));
+          expect(result?.incentiveBalance).to.equal(expectedBalancingFee);
           expect(result?.netRunningBalanceAdjustment).to.equal(validatedInflow.netRunningBalanceAdjustment);
 
-          // The LP fee should
-          const expectedLpFee = outflow.amount.mul(baselineFee).div(toBNWei(1));
+          // The LP fee should be equal to baseline fee.
           expect(result?.lpFee).to.equal(expectedLpFee);
         });
-        //   it("Matched deposit is not found in any bundle", async function () {
-        //     // Before
-        //     // After
-        //     // Should both result in an error, since we assume that any outflow has been matched with
-        //     // an inflow, so if we can't find it then its an error.
-        //   });
+        it("Matched deposit is not found in any bundle", async function () {
+          // Add the inflow to the client state. This is a UBA deposit with an undefined realizedLpFeePct.
+          // The outflow's realizedLpFeePct should be equal to the deposit's LP fee plus the balancing fee.
+          const validatedInflow: clients.ModifiedUBAFlow = {
+            flow: {
+              ...inflow,
+            },
+            balancingFee: expectedBalancingFee,
+            lpFee: toBNWei("0"),
+            runningBalance: runningBalances[0],
+            netRunningBalanceAdjustment: toBNWei("0"),
+            incentiveBalance: incentiveBalances[0],
+          };
+          outflow.matchedDeposit = validatedInflow.flow as UbaInflow;
+          const expectedBalancingFeePct = expectedBalancingFee.mul(toBNWei("1")).div(inflow.amount);
+          outflow.realizedLpFeePct = inflow.amount.mul(baselineFee.add(expectedBalancingFeePct)).div(toBNWei(1));
+
+          // Don't add inflow to uba bundle state.
+
+          // Throws errors if inflow is before, after, or in same bundle as outflow.
+          assertPromiseError(ubaClient.validateFlow(outflow), "Could not find matched deposit in same bundle");
+          outflow.matchedDeposit.blockNumber = expectedBlockRanges[originChainId][0].start - 1;
+          assertPromiseError(ubaClient.validateFlow(outflow), "Could not find bundle block range containing flow");
+          outflow.matchedDeposit.blockNumber = expectedBlockRanges[originChainId][0].end + 1;
+          assertPromiseError(ubaClient.validateFlow(outflow), "Could not find bundle block range containing flow");
+        });
       });
     });
-    // describe("Many bundles", function() {
-    //   describe("Outflow", function() {
-    //     it("Matched deposit is in previous bundle", async function() {})
-    //     it("Matched deposit is in later bundle", async function() {})
-    //   })
-    // })
+    describe("Many bundles", function () {
+      let expectedBlockRanges: Record<number, { start: number; end: number }[]>;
+      const bundleCount = 3;
+      const expectedBalancingFee = toBNWei("0.1");
+      beforeEach(async function () {
+        expectedBlockRanges = await publishValidatedBundles(bundleCount);
+
+        // Construct a UBA config that we'll use and seed directly into the UBA client and map with the
+        // injected block ranges.
+        mockUbaConfig = new MockUBAConfig();
+        // UBA Config will be set up with 0 running balance hurdles, a non zero baseline fee that produces
+        // non zero realizedLpFees for deposits, and a non zero balancing fee curve.
+        // - Set a default baseline fee so the origin chain and destination chain don't need to be specified
+        mockUbaConfig.setBaselineFee(0, 0, baselineFee, true);
+        // Set a curve such that the balancing fee for this inflow should be ~= 10% for any deposit amount
+        // between 0 and 1_000_000.
+        // The curve must also have a zero fee point which is after the 1_000_000 upper limit.
+        mockUbaConfig.setBalancingFeeTuple(originChainId, [
+          [toBNWei("0"), expectedBalancingFee],
+          [toBNWei("1000000"), expectedBalancingFee],
+          [toBNWei("1000001"), toBNWei("0")],
+        ]);
+        // Negate the outflow's balancing fee curve so that all balancing fees are penalties instead of rewards,
+        // so we don't have to deal with any of the discounting logic in getEventFee.
+        mockUbaConfig.setBalancingFeeTuple(destinationChainId, [
+          [toBNWei("0"), expectedBalancingFee.mul(-1)],
+          [toBNWei("1000000"), expectedBalancingFee.mul(-1)],
+          [toBNWei("1000001"), toBNWei("0")],
+        ]);
+
+        for (let i = 0; i < bundleCount; i++) {
+          bundleRanges = chainIds.map((chainId) => {
+            return [expectedBlockRanges[chainId][i].start, expectedBlockRanges[chainId][i].end];
+          });
+
+          // Seed UBA Client with bundle block range
+          ubaClient.ubaBundleBlockRanges.push(bundleRanges);
+
+          // Associate a config and opening balances for the block range for the origin chain and destination chain.
+          ubaClient.ubaBundleStates[ubaClient.getKeyForBundle(bundleRanges, tokenSymbols[0], originChainId)] = {
+            openingBalances: {
+              runningBalance: runningBalances[0],
+              incentiveBalance: incentiveBalances[0],
+            },
+            ubaConfig: mockUbaConfig,
+            flows: [],
+            loadedFromCache: false,
+          };
+          ubaClient.ubaBundleStates[ubaClient.getKeyForBundle(bundleRanges, tokenSymbols[0], destinationChainId)] = {
+            openingBalances: {
+              runningBalance: runningBalances[0],
+              incentiveBalance: incentiveBalances[0],
+            },
+            ubaConfig: mockUbaConfig,
+            flows: [],
+            loadedFromCache: false,
+          };
+        }
+      });
+      describe("Outflow", function () {
+        it("Matched deposit is in previous bundle", async function () {
+          // Add inflow to first bundle
+          const expectedLpFee = partialInflow.amount.mul(baselineFee).div(toBNWei(1));
+          const validatedInflow: clients.ModifiedUBAFlow = {
+            flow: {
+              ...partialInflow,
+              blockNumber: expectedBlockRanges[originChainId][0].start,
+            },
+            // For this test, the expected realizedLpFeePct for the outflow needs to be equal to the lpFee
+            // for the deposit plus the balancing fee for the deposit, so its important we set the following
+            // two params correctly.
+            balancingFee: expectedBalancingFee,
+            lpFee: expectedLpFee,
+            runningBalance: runningBalances[0],
+            netRunningBalanceAdjustment: toBNWei("0"),
+            incentiveBalance: incentiveBalances[0],
+          };
+
+          // Set outflow to second bundle.
+          outflow = {
+            ...partialOutflow,
+            // Need to reset the matched deposit now that we have a block for the inflow.
+            matchedDeposit: inflow,
+            // Need to set this to a number in the bundle block range.
+            blockNumber: expectedBlockRanges[destinationChainId][1].start,
+          } as UbaOutflow;
+          outflow.matchedDeposit = validatedInflow.flow as UbaInflow;
+          const expectedBalancingFeePct = expectedBalancingFee.mul(toBNWei("1")).div(validatedInflow.flow.amount);
+          outflow.realizedLpFeePct = validatedInflow.flow.amount
+            .mul(baselineFee.add(expectedBalancingFeePct))
+            .div(toBNWei(1));
+
+          const bundleKey = ubaClient.getKeyForBundle(
+            ubaClient.ubaBundleBlockRanges[0],
+            tokenSymbols[0],
+            originChainId
+          );
+          ubaClient.ubaBundleStates[bundleKey].flows = [validatedInflow];
+
+          // This test should look identical to the zero balancing fee curve one above assuming that the outflow
+          // and inflow match. The outflow's balancing fee should be the same as the above case.
+          const result = await ubaClient.validateFlow(outflow);
+          expect(result).to.not.be.undefined;
+
+          expect(result?.balancingFee).to.equal(expectedBalancingFee);
+
+          expect(result?.runningBalance).to.equal(outflow.amount.mul(-1).sub(expectedBalancingFee));
+          expect(result?.incentiveBalance).to.equal(expectedBalancingFee);
+          expect(result?.netRunningBalanceAdjustment).to.equal(validatedInflow.netRunningBalanceAdjustment);
+
+          expect(result?.lpFee).to.equal(expectedLpFee);
+        });
+        it("Matched deposit is in later bundle", async function () {
+          // Add inflow to second bundle
+          const expectedLpFee = partialInflow.amount.mul(baselineFee).div(toBNWei(1));
+          const validatedInflow: clients.ModifiedUBAFlow = {
+            flow: {
+              ...partialInflow,
+              blockNumber: expectedBlockRanges[originChainId][1].start,
+            },
+            // For this test, the expected realizedLpFeePct for the outflow needs to be equal to the lpFee
+            // for the deposit plus the balancing fee for the deposit, so its important we set the following
+            // two params correctly.
+            balancingFee: expectedBalancingFee,
+            lpFee: expectedLpFee,
+            runningBalance: runningBalances[0],
+            netRunningBalanceAdjustment: toBNWei("0"),
+            incentiveBalance: incentiveBalances[0],
+          };
+
+          // Set outflow to first bundle.
+          outflow = {
+            ...partialOutflow,
+            // Need to reset the matched deposit now that we have a block for the inflow.
+            matchedDeposit: inflow,
+            // Need to set this to a number in the bundle block range.
+            blockNumber: expectedBlockRanges[destinationChainId][0].start,
+          } as UbaOutflow;
+          outflow.matchedDeposit = validatedInflow.flow as UbaInflow;
+          const expectedBalancingFeePct = expectedBalancingFee.mul(toBNWei("1")).div(validatedInflow.flow.amount);
+          outflow.realizedLpFeePct = validatedInflow.flow.amount
+            .mul(baselineFee.add(expectedBalancingFeePct))
+            .div(toBNWei(1));
+
+          const bundleKey = ubaClient.getKeyForBundle(
+            ubaClient.ubaBundleBlockRanges[1],
+            tokenSymbols[0],
+            originChainId
+          );
+          ubaClient.ubaBundleStates[bundleKey].flows = [validatedInflow];
+
+          // This test should look identical to the zero balancing fee curve one above assuming that the outflow
+          // and inflow match. The outflow's balancing fee should be the same as the above case.
+          const result = await ubaClient.validateFlow(outflow);
+          expect(result).to.not.be.undefined;
+
+          expect(result?.balancingFee).to.equal(expectedBalancingFee);
+
+          expect(result?.runningBalance).to.equal(outflow.amount.mul(-1).sub(expectedBalancingFee));
+          expect(result?.incentiveBalance).to.equal(expectedBalancingFee);
+          expect(result?.netRunningBalanceAdjustment).to.equal(validatedInflow.netRunningBalanceAdjustment);
+
+          expect(result?.lpFee).to.equal(expectedLpFee);
+        });
+      });
+    });
   });
 });
