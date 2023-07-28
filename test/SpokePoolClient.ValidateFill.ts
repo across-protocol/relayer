@@ -512,8 +512,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
         destinationToken: zeroAddress,
         realizedLpFeePct: toBN(0),
       })
-    )
-      .excludingEvery(["blockTimestamp", "logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber"])
+    ).excludingEvery(["blockTimestamp", "logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber"]);
     const deposit = await buildDeposit(hubPoolClient, spokePool_1, erc20_1, l1Token, depositor, destinationChainId);
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit, 1);
 
