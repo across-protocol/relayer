@@ -19,8 +19,6 @@ let _relayer: SignerWithAddress, relayer: string;
 let deploymentBlock: number;
 let spokePoolClient: MockSpokePoolClient;
 
-const blockTimestamp = Math.floor(Date.now() / 1000);
-
 describe("SpokePoolClient: Refund Requests", async function () {
   beforeEach(async function () {
     [_relayer] = await ethers.getSigners();
@@ -36,7 +34,6 @@ describe("SpokePoolClient: Refund Requests", async function () {
       deploymentBlock
     );
     await spokePoolClient.update();
-    spokePoolClient.setBlockTimestamp(blockTimestamp);
   });
 
   it("Correctly fetches refund requests", async function () {
@@ -64,7 +61,7 @@ describe("SpokePoolClient: Refund Requests", async function () {
     const nEvents = 5;
     const minExpectedBlockNumber = latestBlockNumber + nEvents;
 
-    const refundRequestEvents: RefundRequestWithBlock[] = [];
+    let refundRequestEvents: RefundRequestWithBlock[] = [];
     for (let txn = 0; txn < nEvents; ++txn) {
       // Barebones Event - only absolutely necessary fields are populated.
       const blockNumber = latestBlockNumber + 1 + txn;
@@ -74,10 +71,17 @@ describe("SpokePoolClient: Refund Requests", async function () {
       refundRequestEvents.push({
         ...spreadEventWithBlockNumber(testEvent),
         repaymentChainId,
-        blockTimestamp,
+        blockTimestamp: 0,
       } as RefundRequestWithBlock);
     }
     await spokePoolClient.update();
+    refundRequestEvents = refundRequestEvents.map((e) => {
+      const block = spokePoolClient.blocks[e.blockNumber];
+      return {
+        ...e,
+        blockTimestamp: block.timestamp,
+      };
+    }) as RefundRequestWithBlock[];
     expect(spokePoolClient.latestBlockNumber - latestBlockNumber).to.be.at.least(nEvents);
 
     // Filter out the RefundRequests at the fringes.

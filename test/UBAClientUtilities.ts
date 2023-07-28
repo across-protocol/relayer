@@ -8,7 +8,7 @@ import {
   ethers,
   hubPoolFixture,
 } from "./utils";
-import { CHAIN_ID_TEST_LIST, createRandomBytes32, expect, randomAddress, toBNWei } from "./constants";
+import { CHAIN_ID_TEST_LIST, expect, randomAddress, toBNWei } from "./constants";
 import { DepositWithBlock, FillWithBlock, RefundRequestWithBlock, SpokePoolClientsByChain } from "../src/interfaces";
 import { clients, interfaces } from "@across-protocol/sdk-v2";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
@@ -59,6 +59,8 @@ describe("UBAClientUtilities", function () {
     });
     // Make all deposits return the same L1 token.
     hubPoolClient.setReturnedL1TokenForDeposit(l1Token);
+    // Make all destination tokens link wth l1 token.
+    hubPoolClient.setDestinationTokenForL1Token(l2Token);
 
     await hubPoolClient.update();
     const latestBlockNumber = await hubPool.provider.getBlockNumber();
@@ -76,13 +78,6 @@ describe("UBAClientUtilities", function () {
       hubPoolClient.setCrossChainContracts(originChainId, spokePool.address, deploymentBlock);
       spokePoolClient.setLatestBlockSearched(deploymentBlock + 1000);
       spokePoolClient.setDestinationTokenForChain(originChainId, l2Token);
-      // Link each chain's "L2 token" to the same L1 token.
-      hubPoolClient.setL1TokensToDestinationTokens({
-        [l1Token]: {
-          ...hubPoolClient.l1TokensToDestinationTokensMock[l1Token],
-          [originChainId]: l2Token,
-        },
-      });
     }
   });
 
@@ -280,12 +275,8 @@ describe("UBAClientUtilities", function () {
         destinationToken: l2Token,
         message: "0x",
         quoteBlockNumber: 200,
-        blockNumber: fromBlock + 1,
         blockTimestamp: 10,
-        transactionIndex: 0,
-        logIndex: 0,
-        transactionHash: createRandomBytes32(),
-      };
+      } as DepositWithBlock;
       // We need to match this fill with the deposit
       fill = {
         fillAmount: deposit.amount,
@@ -311,12 +302,8 @@ describe("UBAClientUtilities", function () {
         },
         realizedLpFeePct: toBNWei("0.01"),
         message: "0x",
-        blockNumber: destinationFromBlock + 1,
         blockTimestamp: 10,
-        transactionIndex: 0,
-        logIndex: 0,
-        transactionHash: createRandomBytes32(),
-      };
+      } as FillWithBlock;
 
       // We need to match this with the refund.
       refund = {
@@ -330,9 +317,9 @@ describe("UBAClientUtilities", function () {
         repaymentChainId,
         realizedLpFeePct: fill.realizedLpFeePct,
         depositId: fill.depositId,
-        fillBlock: toBN(fill.blockNumber),
         previousIdenticalRequests: toBN(0),
-      };
+        blockTimestamp: 10,
+      } as RefundRequestWithBlock;
     });
     // Generate mock events, very simple tests to start
     it("Returns UBA deposits", async function () {
@@ -406,13 +393,17 @@ describe("UBAClientUtilities", function () {
       destinationSpokePoolClient.addEvent(fillEvent);
       await destinationSpokePoolClient.update();
 
-      const event = repaymentSpokePoolClient.generateRefundRequest(refund);
+      const event = repaymentSpokePoolClient.generateRefundRequest({
+        ...refund,
+        fillBlock: toBN(fillEvent.blockNumber),
+      });
       repaymentSpokePoolClient.addEvent(event);
       await repaymentSpokePoolClient.update();
 
       // Add an invalid refund:
       const invalidRefundEvent = repaymentSpokePoolClient.generateRefundRequest({
         ...refund,
+        fillBlock: toBN(fillEvent.blockNumber),
         previousIdenticalRequests: toBN(2),
       });
       repaymentSpokePoolClient.addEvent(invalidRefundEvent);

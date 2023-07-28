@@ -24,15 +24,13 @@ export class MockUBAClient extends UBAClient {
     return this.lpFees[chain] ?? toBN(0);
   }
 
-  computeFeesForDeposit(deposit: interfaces.UbaInflow): {
-    lpFee: BigNumber;
-    depositBalancingFee: BigNumber;
-  } {
+  computeFeesForDeposit(deposit: interfaces.UbaInflow): clients.SystemFeeResult {
     const lpFee = this._computeLpFee(deposit.originChainId);
     const depositBalancingFee = this._getBalancingFee(deposit.originChainId);
     return {
       lpFee,
       depositBalancingFee,
+      systemFee: lpFee.add(depositBalancingFee),
     };
   }
 
