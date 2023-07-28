@@ -9,12 +9,13 @@ import {
   ethers,
   hubPoolFixture,
 } from "./utils";
-import { CHAIN_ID_TEST_LIST, expect, randomAddress, toBN, toBNWei } from "./constants";
+import { CHAIN_ID_TEST_LIST, expect, randomAddress, toBNWei } from "./constants";
 import { SpokePoolClientsByChain, UbaFlow, UbaInflow, UbaOutflow } from "../src/interfaces";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient, MockUBAClient } from "./mocks";
 import { UBA_MIN_CONFIG_STORE_VERSION } from "../src/common";
 import { MockUBAConfig } from "./mocks/MockUBAConfig";
 import { clients } from "@across-protocol/sdk-v2";
+import { publishValidatedBundles } from "./utils/HubPoolUtils";
 
 let hubPoolClient: MockHubPoolClient;
 let hubPool: Contract;
@@ -141,81 +142,17 @@ describe("UBAClient: Flow validation", function () {
     };
   });
 
-  // Propose and validate `numberOfBundles` bundles, each with random size block ranges. The block range size
-  // can be hardcoded by providing a `randomJumpOverride` parameter.
-  async function publishValidatedBundles(
-    numberOfBundles: number,
-    randomJumpOverride?: number
-  ): Promise<Record<number, { start: number; end: number }[]>> {
-    // Create a sets of unique block ranges per chain so that we have a lower chance of false positives
-    // when fetching the block ranges for a specific chain.
-    const expectedBlockRanges: Record<number, { start: number; end: number }[]> = {}; // Save expected ranges here
-    let nextBlockRangesForChain = Object.fromEntries(
-      chainIds.map((chainId) => {
-        const randomJump = randomJumpOverride ?? Math.floor(Math.random() * 3);
-        const _blockRange = [chainId, { start: 0, end: randomJump }];
-        return _blockRange;
-      })
+  const _publishValidatedBundles = async (bundleCount: number) => {
+    return await publishValidatedBundles(
+      chainIds,
+      l1Tokens,
+      hubPoolClient,
+      spokePoolClients,
+      bundleCount,
+      runningBalances,
+      incentiveBalances
     );
-    for (let i = 0; i < numberOfBundles; i++) {
-      const bundleEvaluationBlockNumbers = chainIds.map((chainId) => {
-        if (!expectedBlockRanges[chainId]) {
-          expectedBlockRanges[chainId] = [];
-        }
-        return toBN(nextBlockRangesForChain[chainId].end);
-      });
-
-      const rootBundleProposal = hubPoolClient.proposeRootBundle(
-        Date.now(), // challengePeriodEndTimestamp
-        chainIds.length, // poolRebalanceLeafCount
-        bundleEvaluationBlockNumbers,
-        createRandomBytes32() // Random pool rebalance root we can check.
-      );
-      hubPoolClient.addEvent(rootBundleProposal);
-      await hubPoolClient.update();
-      chainIds.forEach((chainId) => {
-        expectedBlockRanges[chainId].push({
-          ...nextBlockRangesForChain[chainId],
-        });
-      });
-      chainIds.forEach((chainId, leafIndex) => {
-        const leafEvent = hubPoolClient.executeRootBundle(
-          toBN(0),
-          leafIndex,
-          toBN(chainId),
-          l1Tokens, // l1Tokens
-          runningBalances, // bundleLpFees
-          runningBalances, // netSendAmounts
-          runningBalances.concat(incentiveBalances) // runningBalances
-        );
-        hubPoolClient.addEvent(leafEvent);
-      });
-
-      await hubPoolClient.update();
-
-      // Make next block range span a random number of blocks:
-      const nextBlockRangeSize = Math.ceil(Math.random() * 10);
-      nextBlockRangesForChain = Object.fromEntries(
-        chainIds.map((chainId) => [
-          chainId,
-          {
-            start: nextBlockRangesForChain[chainId].end + 1,
-            end: nextBlockRangesForChain[chainId].end + nextBlockRangeSize,
-          },
-        ])
-      );
-    }
-    await Promise.all(chainIds.map((chainId) => spokePoolClients[Number(chainId)].update()));
-
-    // Make the last bundle to cover until the last spoke client searched block, unless a spoke pool
-    // client was provided for the chain. In this case we assume that chain is disabled.
-    chainIds.forEach((chainId) => {
-      expectedBlockRanges[chainId][expectedBlockRanges[chainId].length - 1].end =
-        spokePoolClients[chainId].latestBlockSearched;
-    });
-    return expectedBlockRanges;
-  }
-  // describe("getUBAFlows", function () {});
+  };
   describe("validateFlow", function () {
     let inflow: UbaFlow, outflow: UbaOutflow, mockUbaConfig: MockUBAConfig, bundleRanges: number[][];
     // Assumption: all flows stored in the UBA client have been validated against a matched deposit.
@@ -224,7 +161,7 @@ describe("UBAClient: Flow validation", function () {
       const bundleCount = 1;
       const expectedBalancingFee = toBNWei("0.1");
       beforeEach(async function () {
-        expectedBlockRanges = await publishValidatedBundles(bundleCount);
+        expectedBlockRanges = await _publishValidatedBundles(bundleCount);
 
         // Construct a UBA config that we'll use and seed directly into the UBA client and map with the
         // injected block ranges.
@@ -472,7 +409,7 @@ describe("UBAClient: Flow validation", function () {
       const bundleCount = 3;
       const expectedBalancingFee = toBNWei("0.1");
       beforeEach(async function () {
-        expectedBlockRanges = await publishValidatedBundles(bundleCount);
+        expectedBlockRanges = await _publishValidatedBundles(bundleCount);
 
         // Construct a UBA config that we'll use and seed directly into the UBA client and map with the
         // injected block ranges.
