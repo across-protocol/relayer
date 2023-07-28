@@ -339,6 +339,9 @@ export function constructPoolRebalanceLeaves(
         });
         const leafRunningBalances = l1TokensToIncludeInThisLeaf.map((l1Token, index) => {
           if (runningBalances[chainId]?.[l1Token]) {
+            // If UBA bundle, then we don't need to compare running balance to transfer thresholds or
+            // spoke target balances, as the UBA client already performs similar logic to set the running balances
+            // for each flow. In the UBA, simply take the running balances computed by the UBA client.
             if (ubaMode) {
               return runningBalances[chainId][l1Token];
             } else {
