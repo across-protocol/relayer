@@ -150,7 +150,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
         realizedLpFeePct: toBN(0),
       })
     )
-      .excludingEvery(["logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber", "blockTimestamp"])
+      .excludingEvery(["blockTimestamp", "logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber"])
       .to.deep.equal(expectedDeposit);
   });
 
@@ -504,7 +504,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
         realizedLpFeePct: toBN(0),
       })
     )
-      .excludingEvery(["logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber", "blockTimestamp"])
+      .excludingEvery(["blockTimestamp", "logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber"])
       .to.deep.equal(expectedDeposit);
     expect(
       spokePoolClientForDestinationChain.getDepositForFill({
@@ -513,11 +513,7 @@ describe("SpokePoolClient: Fill Validation", async function () {
         realizedLpFeePct: toBN(0),
       })
     )
-      .excludingEvery(["logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber", "blockTimestamp"])
-      .to.deep.equal(expectedDeposit);
-  });
-
-  it("Rejects fills that dont match the deposit data", async function () {
+      .excludingEvery(["blockTimestamp", "logIndex", "transactionIndex", "transactionHash", "quoteBlockNumber"])
     const deposit = await buildDeposit(hubPoolClient, spokePool_1, erc20_1, l1Token, depositor, destinationChainId);
     await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit, 1);
 

@@ -297,18 +297,5 @@ export async function getUnfilledDeposits(
     }
   }
 
-  // If the config store version is up to date, then we can return the unfilled deposits as is. Otherwise, we need to
-  // make sure we have a high enough version for each deposit.
-  if (hubPoolClient.configStoreClient.hasLatestConfigStoreVersion) {
-    return unfilledDeposits;
-  } else {
-    return unfilledDeposits.map((unfilledDeposit) => {
-      return {
-        ...unfilledDeposit,
-        requiresNewConfigStoreVersion: !hubPoolClient.configStoreClient.hasValidConfigStoreVersionForTimestamp(
-          unfilledDeposit.deposit.quoteTimestamp
-        ),
-      };
-    });
-  }
+  return unfilledDeposits;
 }

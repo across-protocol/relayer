@@ -71,7 +71,7 @@ describe("SpokePoolClient: Refund Requests", async function () {
       refundRequestEvents.push({
         ...spreadEventWithBlockNumber(testEvent),
         repaymentChainId,
-        blockTimestamp: 0,
+        blockTimestamp: (await testEvent.getBlock()).timestamp,
       } as RefundRequestWithBlock);
     }
     await spokePoolClient.update();

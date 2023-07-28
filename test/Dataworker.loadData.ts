@@ -489,6 +489,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         amountToDeposit
       )),
       blockNumber: await getLastBlockNumber(),
+      blockTimestamp: (await spokePool_2.provider.getBlock(await getLastBlockNumber())).timestamp,
     } as DepositWithBlock;
     deposit5.quoteBlockNumber = (await hubPoolClient.computeRealizedLpFeePct(deposit5, l1Token_1.address)).quoteBlock;
     const fill3 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit5, 0.25);
@@ -533,7 +534,10 @@ describe("Dataworker: Load data used in all functions", async function () {
     );
 
     // Submit a valid fill.
-    const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.5);
+    const fill1 = {
+      ...(await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 0.5)),
+      blockTimestamp: (await spokePool_2.provider.getBlock(await getLastBlockNumber())).timestamp,
+    };
     await updateAllClients();
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(0), spokePoolClients);
     expect(data1.fillsToRefund)
@@ -592,11 +596,19 @@ describe("Dataworker: Load data used in all functions", async function () {
       originChainId,
       amountToDeposit
     );
-    const fill3 = await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit3, 0.25);
+    const fill3 = {
+      ...(await buildFill(spokePool_1, erc20_1, depositor, relayer, deposit3, 0.25)),
+      blockTimestamp: (await spokePool_1.provider.getBlock(await getLastBlockNumber())).timestamp,
+    };
+
     const slowRelays = buildSlowRelayLeaves([deposit3]);
     const tree = await buildSlowRelayTree(slowRelays);
     await spokePool_1.relayRootBundle(tree.getHexRoot(), tree.getHexRoot());
-    const slowFill3 = await buildSlowFill(spokePool_1, fill3, depositor, []);
+    const slowFill3 = {
+      ...(await buildSlowFill(spokePool_1, fill3, depositor, [])),
+      blockTimestamp: (await spokePool_1.provider.getBlock(await getLastBlockNumber())).timestamp,
+    };
+
     await updateAllClients();
     const data5 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(3), spokePoolClients);
     const expectedData5 = {
@@ -638,7 +650,10 @@ describe("Dataworker: Load data used in all functions", async function () {
     );
 
     // Submit valid full fill for different chain:
-    const fill1 = await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 1, originChainId);
+    const fill1 = {
+      ...(await buildFill(spokePool_2, erc20_2, depositor, relayer, deposit1, 1, originChainId)),
+      blockTimestamp: (await spokePool_2.provider.getBlock(await getLastBlockNumber())).timestamp,
+    };
 
     // Normal mode should add to fills to refund to origin chain Id without a refund requested.
     await updateAllClients();
@@ -709,15 +724,16 @@ describe("Dataworker: Load data used in all functions", async function () {
       originChainId,
       amountToDeposit
     );
-    const originBlock = await spokePool_2.provider.getBlockNumber();
+    const blockNumber = await spokePool_2.provider.getBlockNumber();
+    const blockTimestamp = (await spokePool_2.provider.getBlock(blockNumber)).timestamp;
     const realizedLpFeePctData = await hubPoolClient.computeRealizedLpFeePct(deposit1, l1Token_1.address);
 
     // Should include all deposits, even those not matched by a relay
     await updateAllClients();
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
     expect(data1.deposits)
-      .excludingEvery(ignoredDepositParams)
-      .to.deep.equal([{ ...deposit1, quoteBlockNumber: realizedLpFeePctData.quoteBlock, blockNumber: originBlock }]);
+      .excludingEvery(["logIndex", "transactionHash", "transactionIndex"])
+      .to.deep.equal([{ ...deposit1, quoteBlockNumber: realizedLpFeePctData.quoteBlock, blockNumber, blockTimestamp }]);
 
     // If block range does not cover deposits, then they are not included
     expect(
