@@ -231,16 +231,11 @@ describe("UBAClientUtilities", function () {
     let spokePoolClient: MockSpokePoolClient,
       destinationSpokePoolClient: MockSpokePoolClient,
       repaymentSpokePoolClient: MockSpokePoolClient;
-    let fromBlock: number, toBlock: number;
-    let destinationFromBlock: number, destinationToBlock: number;
-    let repaymentFromBlock: number, repaymentToBlock: number;
 
     beforeEach(async function () {
       // Deposit spoke pool client:
       chainId = chainIds[0];
       spokePoolClient = spokePoolClients[chainId] as MockSpokePoolClient;
-      fromBlock = spokePoolClient.deploymentBlock;
-      toBlock = fromBlock + 100;
       // We should be overriding the realizedLpFeePct to undefined for UBA deposits in order for
       // getUBAFlows to identify them as UBA deposits.
       spokePoolClient.setDefaultRealizedLpFeePct(undefined);
@@ -248,14 +243,10 @@ describe("UBAClientUtilities", function () {
       // Fill spoke pool client:
       destinationChainId = chainIds[1];
       destinationSpokePoolClient = spokePoolClients[destinationChainId] as MockSpokePoolClient;
-      destinationFromBlock = destinationSpokePoolClient.deploymentBlock;
-      destinationToBlock = destinationFromBlock + 100;
 
       // Refund spoke pool client:
       repaymentChainId = chainIds[2];
       repaymentSpokePoolClient = spokePoolClients[repaymentChainId] as MockSpokePoolClient;
-      repaymentFromBlock = repaymentSpokePoolClient.deploymentBlock;
-      repaymentToBlock = repaymentFromBlock + 100;
 
       deposit = {
         depositId: 0,
@@ -294,7 +285,7 @@ describe("UBAClientUtilities", function () {
         relayerFeePct: deposit.relayerFeePct,
         // Outflows are identified by the UBAClient as those that have `updatableRelayData`
         updatableRelayData: {
-          recipient: deposit.message,
+          recipient: deposit.recipient,
           isSlowRelay: false,
           message: deposit.message,
           payoutAdjustmentPct: toBNWei("0"),
@@ -302,7 +293,7 @@ describe("UBAClientUtilities", function () {
         },
         realizedLpFeePct: toBNWei("0.01"),
         message: "0x",
-        blockTimestamp: 10,
+        blockTimestamp: 11,
       } as FillWithBlock;
 
       // We need to match this with the refund.
@@ -327,14 +318,7 @@ describe("UBAClientUtilities", function () {
       spokePoolClient.addEvent(event);
       await spokePoolClient.update();
 
-      const flows = await clients.getUBAFlows(
-        tokenSymbol,
-        chainId,
-        spokePoolClients,
-        hubPoolClient,
-        fromBlock,
-        toBlock
-      );
+      const flows = await clients.getUBAFlows(tokenSymbol, chainId, spokePoolClients, hubPoolClient);
       expect(flows.length).to.equal(1);
       expect(interfaces.isUbaInflow(flows[0])).to.be.true;
     });
@@ -347,7 +331,7 @@ describe("UBAClientUtilities", function () {
       await spokePoolClient.update();
 
       assertPromiseError(
-        clients.getUBAFlows(tokenSymbol, chainId, spokePoolClients, hubPoolClient, fromBlock, toBlock),
+        clients.getUBAFlows(tokenSymbol, chainId, spokePoolClients, hubPoolClient),
         "Found a UBA deposit with a defined realizedLpFeePct"
       );
     });
@@ -368,14 +352,7 @@ describe("UBAClientUtilities", function () {
       await destinationSpokePoolClient.update();
 
       // Look up flows on destination chain
-      const flows = await clients.getUBAFlows(
-        tokenSymbol,
-        destinationChainId,
-        spokePoolClients,
-        hubPoolClient,
-        destinationFromBlock,
-        destinationToBlock
-      );
+      const flows = await clients.getUBAFlows(tokenSymbol, destinationChainId, spokePoolClients, hubPoolClient);
       expect(flows.length).to.equal(1);
       expect(destinationSpokePoolClient.getFills().length).to.equal(2);
       expect(interfaces.isUbaOutflow(flows[0])).to.be.true;
@@ -410,14 +387,7 @@ describe("UBAClientUtilities", function () {
       await repaymentSpokePoolClient.update();
 
       // Look up flows on destination chain
-      const flows = await clients.getUBAFlows(
-        tokenSymbol,
-        repaymentChainId,
-        spokePoolClients,
-        hubPoolClient,
-        repaymentFromBlock,
-        repaymentToBlock
-      );
+      const flows = await clients.getUBAFlows(tokenSymbol, repaymentChainId, spokePoolClients, hubPoolClient);
       expect(flows.length).to.equal(1);
       expect(repaymentSpokePoolClient.getRefundRequests().length).to.equal(2);
       expect(interfaces.isUbaOutflow(flows[0])).to.be.true;
