@@ -8,7 +8,16 @@
  *
  * Run with `ts-node ./src/scripts/testUBAClient.ts --wallet mnemonic`
  */
-import { Wallet, winston, config, getSigner, Logger, getBlockForTimestamp, disconnectRedisClient } from "../utils";
+import {
+  Wallet,
+  winston,
+  config,
+  getSigner,
+  Logger,
+  getBlockForTimestamp,
+  disconnectRedisClient,
+  REDIS_URL,
+} from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
   getSpokePoolClientEventSearchConfigsForFastDataworker,
@@ -17,6 +26,7 @@ import { updateClients } from "../common";
 import * as sdk from "@across-protocol/sdk-v2";
 import { isDefined } from "@uma/financial-templates-lib/dist/types";
 import { createDataworker } from "../dataworker";
+import { RedisCache } from "../caching/RedisCache";
 
 config();
 let logger: winston.Logger;
@@ -92,9 +102,9 @@ export async function testUBAClient(_logger: winston.Logger, baseSigner: Wallet)
     ["WETH", "USDC"],
     // clients.hubPoolClient.getL1Tokens().map((x) => x.symbol),
     clients.hubPoolClient,
-    spokePoolClients
+    spokePoolClients,
     // Pass in no redis client for now as testing with fresh state is easier to reason about
-    // new RedisCache(REDIS_URL)
+    new RedisCache(REDIS_URL)
   );
   await ubaClient.update();
 }
