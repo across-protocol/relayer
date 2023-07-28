@@ -550,14 +550,14 @@ describe("SpokePoolClient: Fill Validation", async function () {
     expect(
       validateFillForDeposit(validFill, {
         ...validDeposit,
-        realizedLpFeePct: deposit.realizedLpFeePct,
+        realizedLpFeePct: validFill.realizedLpFeePct,
       })
     ).to.be.true;
 
     expect(
       validateFillForDeposit(validFill, {
         ...validDeposit,
-        realizedLpFeePct: deposit.realizedLpFeePct.mul(2),
+        realizedLpFeePct: validFill.realizedLpFeePct.add(toBNWei("0.1")),
       })
     ).to.be.false;
 
