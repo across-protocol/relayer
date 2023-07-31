@@ -172,8 +172,8 @@ export async function finalize(
     try {
       // Note: We might want to slice these up in the future but I don't forsee us including enough events
       // to approach the block gas limit.
-      const txn = await (await multicall2.estimateGas.aggregate(finalizationsToBatch.callData));
-      console.log(txn)
+      const txn = await await multicall2.estimateGas.aggregate(finalizationsToBatch.callData);
+      console.log(txn);
       return;
       // finalizationsToBatch.withdrawals.forEach((withdrawal) => {
       //   logger.info({
