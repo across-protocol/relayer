@@ -373,7 +373,7 @@ export class Dataworker {
     ) {
       isUBA = true;
     }
-    if (!isUBA || !ubaClient) {
+    if (!isUBA) {
       this.logger.debug({
         at: "Dataworker#propose",
         message: "Proposing Legacy root bundle",
@@ -571,6 +571,9 @@ export class Dataworker {
     spokePoolClients: SpokePoolClientsByChain,
     logData = false
   ): Promise<ProposeRootBundleReturnType> {
+    if (!ubaClient) {
+      throw new Error("UBA_proposeRootBundle#Undefined UBA client");
+    }
     const timerStart = Date.now();
     const enabledChainIds = Object.keys(spokePoolClients)
       .filter((chainId) => {
@@ -1147,7 +1150,7 @@ export class Dataworker {
     ) {
       isUBA = true;
     }
-    if (!isUBA || !ubaClient) {
+    if (!isUBA) {
       const _rootBundleData = await this.Legacy_proposeRootBundle(
         blockRangesImpliedByBundleEndBlocks,
         spokePoolClients,
@@ -1374,7 +1377,7 @@ export class Dataworker {
           ) {
             isUBA = true;
           }
-          if (!isUBA || !ubaClient) {
+          if (!isUBA) {
             const _rootBundleData = await this.Legacy_proposeRootBundle(
               blockNumberRanges,
               spokePoolClients,
@@ -2009,7 +2012,7 @@ export class Dataworker {
         ) {
           isUBA = true;
         }
-        if (!isUBA || !ubaClient) {
+        if (!isUBA) {
           const _rootBundleData = await this.Legacy_proposeRootBundle(
             blockNumberRanges,
             spokePoolClients,
